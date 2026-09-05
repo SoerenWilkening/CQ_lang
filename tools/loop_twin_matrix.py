@@ -176,21 +176,31 @@ THE SIXTH AXIS — THE `cq_phi` SURFACE (`--phi-surface`, bd
 test_C_libtooling-3qlq Increment 1, "retire the swap route"). NOT a cell axis:
 a whole-matrix MODE, because it changes the FRONTEND, not the program shape.
 
-    register (DEFAULT)  `a = cq_phi(a, T)`   the shipped 15-width per-register Rz
-    void                `cq_phi(T);`         the Increment-1 branch phase
+    void      (SHIPPED)  `cq_phi(T);`         the Increment-1 branch phase
+    register  (RETIRED)  `a = cq_phi(a, T)`   the pre-3qlq 15-width per-register Rz
 
-DEFAULT `register` IS LOAD-BEARING. `e2e-loop-twin-matrix` passes no
-`--phi-surface`, so the ctest gate, `tools/loop_twin_matrix.expected.txt` and
-`tools/loop_twin_matrix.quarantine.txt` are byte-for-byte the artefacts they
-were, and the generated source of all 274 cells is byte-identical to the
-pre-3qlq script's (proven by diffing the generator output, not asserted).
+`void` IS THE SURFACE THE GATE RUNS. `e2e-loop-twin-matrix` passes
+`--phi-surface void` and `include/CQ.h` declares `void cq_phi(double angle)`;
+`register` survives only as an argparse default so that a by-hand invocation
+written before Increment 1 keeps its meaning, and it is UNREACHABLE against the
+shipped header. Each surface owns ITS OWN table pair (`SURFACE_TABLES`): the
+void one took the live names, the register one is `.register.txt` with its
+content byte-unchanged, and no file is ever read as a measurement of a surface
+it was not measured on.
 
-UNDER `void` THE C SOURCE NEEDS A DIFFERENT HEADER — `include/CQ.h` still
-declares the 15-width family — so `--include-dir` must point at a header whose
-`cq_phi` is the ONE extern `void cq_phi(double)`. The mode REFUSES TO RUN if it
-does not find that declaration, because a `register`-surface header would
-silently generate `cq_phi(T)` as a one-argument call to a two-argument macro and
-the failure would read like a compiler decline.
+THE HEADER GUARD RUNS ON EVERY INVOCATION AND IN BOTH DIRECTIONS: the surface a
+run generates and the surface `--include-dir`'s CQ.h declares must agree, or
+every cell fails at stage 1 and the wall of clang errors reads like a wall of
+lowering declines. Both halves of that were measured defects (round-1 review
+finding F-L5-7): `void` used to test the LITERAL substring `"void cq_phi(double"`
+and so refused the shipped header, whose declaration is column-aligned; and
+`register` was never asked at all, so the committed ctest invocation produced
+175 HARNESS-ERRORs plus 172 "verdict changed" instead of one line naming the
+surface it had been handed. The question is now asked by
+`phi_surface_of_header`, a pure function over the header text with C comments
+stripped, which `loop_twin_matrix_quarantine_test.py` exercises against the REAL
+`include/CQ.h` — a guard exercised only against the stand-in it was written
+beside is a guard that has not been tested.
 
 WHAT EACH AXIS MEANS UNDER `void`, WRITTEN OUT BECAUSE THREE OF THEM CHANGE
 MEANING AND ONE GOES VACUOUS:
@@ -237,27 +247,39 @@ MEANING AND ONE GOES VACUOUS:
     rolled/unrolled, so that split costs it nothing — but do not carry the
     `ifelse` row across to a cross-stem instrument and expect one gate line.
 
-A `void` RUN DOES NOT CONSULT THE EXPECTED TABLE AND READS THE QUARANTINE FOR
-ITS CELL NAMES ONLY; `--regenerate` / `--refresh-quarantine` ARE REFUSED. The
-split is the split between what each artefact CLAIMS and what it MEASURES.
-`loop_twin_matrix.expected.txt` is entirely a set of register-surface
-measurements, so it is not read at all. The quarantine's CLAIM — "this cell holds
-a FILED, root-caused defect: bd test_C_libtooling-1m5p class A, bd
-test_C_libtooling-a3z7 class B" — is about `Uncomputation`/`FreePoint` interior
-placement and `ArithLowering` M-C, neither of which has anything to do with
-`cq_phi`, so it is surface-INDEPENDENT; its SIGNATURE is a SHA-256 digest of a
-register-surface trace and cannot mean anything here. So a quarantined divergence
-is recorded as a VERDICT carrying its bd issue, a quarantined cell that does NOT
-diverge is not "quarantine stale", and A NON-QUARANTINED DIVERGENCE IS STILL A
-HARD FAILURE — which is the half that matters. MEASURED on the pre-3qlq oracle
-52d7764: the 13 void divergences are a SUBSET of the 15 register-surface
-quarantined cells, ZERO new; the 2 that drop out are `..._rzpost`, whose
-`r = cq_phi(r, .125)` RGATE becomes an uncontrolled void filler the oracle leaves
-unlowered. Writing either committed file from a `void` run would put a table on
-disk under a name that says it measures something else, so both writers refuse;
-use `--out FILE`. The two BOUNDARY CONTROLS still run and their verdicts are
-printed, but they are NOT hard failures under `void`: they exist to keep the
-quarantine's SIGNATURE story a measurement, and the signatures are not applied.
+A `void` RUN IS AN ORDINARY RUN OF THIS GATE. It reads and writes ITS OWN
+expected table and quarantine, with the same semantics in both directions and
+the same two deliberate write modes. That is a CHANGE, and the reason for the
+change is worth more than the change: while `register` was the shipped surface
+and the only tables on disk were its, a void run correctly consulted neither —
+both artefacts held register-surface measurements and neither claim survived the
+surface change, so a void run measured, printed and returned. Once `void` BECAME
+the shipped surface that arrangement inverted into a defect: a gate whose
+expected table is "none" pins nothing, so a cell may change disposition run to
+run with no red anywhere, which is precisely what this table exists to stop
+(Rule 12; the 8h7d.5 F-4 argument above). Two files per surface, one code path.
+
+THE QUARANTINE'S TWO CLAIMS SPLIT ACROSS THE SURFACE CHANGE, and that split is
+why the void quarantine is a NEW FILE rather than the old one carried over. Its
+CLAIM — "this cell holds a FILED, root-caused defect: bd test_C_libtooling-1m5p
+class A, bd test_C_libtooling-a3z7 class B" — is about `Uncomputation` /
+`FreePoint` interior placement and `ArithLowering` M-C, neither of which has
+anything to do with `cq_phi`; that is surface-INDEPENDENT and carries over
+verbatim. Its SIGNATURE is a SHA-256 digest of a TRACE, and a register-surface
+trace says nothing about a void one; every void signature is therefore
+re-measured on the void surface, and a cell is in the void quarantine only
+because it was measured diverging THERE.
+
+THE ONE THING THE VOID SURFACE COSTS THIS FILE is the second boundary control —
+see `SURFACE_CONTROL_VERDICTS`. `q_armoncond` isolates "the divergence needs an
+arm OFF the condition register" by putting the arm back ON it, and a branch phase
+reads no register by construction, so that isolation is not expressible here and
+no substitute exists (the only void gate that writes a register is `cq_theta`,
+and an in-place Ry arm on the condition's own wire is itself a loud decline).
+Both controls are still a GATE — their exact verdicts are PINNED and any change
+is a red — but on the void surface the quarantine's class story is bounded by
+`q_noregion` (whose two sources contain no `cq_phi` at all and are byte-identical
+on both surfaces) plus the per-cell signatures, and NOT by `q_armoncond`.
 
 ONE NEW SIDE STATE EXISTS ONLY UNDER `void`, AND IT IS A DISPOSITION RATHER THAN
 A HARNESS BREAK. A binary that predates Increment 1 has no concept of
@@ -619,6 +641,28 @@ HDR = "#include <math.h>\nvolatile int off = 3;\n"
 # like a frontend bug.
 PHI_SURFACES = ("register", "void")
 
+# ── ONE TABLE PAIR PER SURFACE, and the LIVE names belong to the SHIPPED one ──
+# bd 3qlq Increment 1. Before it, `register` was the only surface and owned the
+# unqualified names; after it, `a = cq_phi(a, T)` does not compile against
+# include/CQ.h at all and every verdict in those two files is HISTORY.
+#
+# The rule this encodes, and it is the rule rather than a convenience: THE FILE
+# THE SHIPPED GATE READS ALWAYS HOLDS THE SHIPPED SURFACE'S VERDICTS. So the void
+# tables took the live names and the register tables were renamed to `.register.`
+# with their CONTENT byte-unchanged (`git log --follow` recovers them either way).
+# The alternative — leaving the retired surface on the unqualified name and
+# giving the live gate a `_void` one — puts the gate on the qualified name and the
+# dead measurements on the name every doc, every memory and every future reader
+# reaches for first. That is how F-L5-7(a) happened: an invocation kept pointing
+# at the artifact of a surface that no longer existed, and it took a 349-failure
+# run to notice.
+SURFACE_TABLES = {
+    "void":     ("loop_twin_matrix.expected.txt",
+                 "loop_twin_matrix.quarantine.txt"),
+    "register": ("loop_twin_matrix.expected.register.txt",
+                 "loop_twin_matrix.quarantine.register.txt"),
+}
+
 # Statement keywords that can stand immediately before an assignment and would
 # otherwise be read as a type by the `decl` group. `else` is the one that bit;
 # the rest are here so the next generator shape does not have to rediscover it.
@@ -641,6 +685,45 @@ _PHI_CALL = re.compile(
 # The REGISTER spelling, for the post-condition assert only: `cq_phi(` then a
 # first argument containing no paren, then a comma.
 _PHI_CALL_TWOARG = re.compile(r"cq_phi\([^,;()]*,")
+
+
+# ── WHICH SURFACE DOES A `CQ.h` DECLARE? ───────────────────────────────────
+# bd 3qlq Inc 1, Rule-13 round-1 review finding F-L5-7(b). This used to be the
+# literal substring test `"void cq_phi(double" not in text`, and the SHIPPED
+# header spells the declaration column-aligned —
+#     void                cq_phi     (double angle);
+# — so `--phi-surface void` REFUSED the very header it was written to require,
+# with a message asserting that header was a `register`-surface one. That is the
+# instrument telling a falsehood about the artifact it was handed, which is the
+# whole class of defect a guard exists to prevent.
+#
+# So the question is asked of DECLARATIONS, not of prose: C comments are stripped
+# first (the shipped header's own commentary names both surfaces, line 52 quoting
+# the retired `cq_phi_<sfx>(x, angle)` family it replaces), and each side is a
+# whitespace-insensitive regex.
+#
+# It is a PURE FUNCTION of the header text on purpose: `loop_twin_matrix_
+# quarantine_test.py` asserts it says `void` for the real `include/CQ.h` and
+# `register` for the pre-3qlq one, so the guard is exercised against the SHIPPED
+# header rather than against a stand-in — which is exactly what F-L5-7(b) says
+# was missing.
+_C_COMMENT = re.compile(r"/\*.*?\*/|//[^\n]*", re.S)
+_DECL_VOID_PHI = re.compile(r"\bvoid\s+cq_phi\s*\(\s*double")
+_DECL_REG_PHI = re.compile(r"\bcq_phi_[A-Za-z0-9_]+\s*\(|#\s*define\s+cq_phi\b")
+
+
+def phi_surface_of_header(text):
+    """`"void"` | `"register"` | `"hybrid"` | `"unknown"` for one CQ.h text."""
+    code = _C_COMMENT.sub(" ", text)
+    v = bool(_DECL_VOID_PHI.search(code))
+    r = bool(_DECL_REG_PHI.search(code))
+    if v and r:
+        return "hybrid"
+    if v:
+        return "void"
+    if r:
+        return "register"
+    return "unknown"
 
 
 def phi_void_source(text):
@@ -765,6 +848,43 @@ QUARANTINE_CONTROLS = {
                    " { a = cq_phi(a, M_PI); }\n",
 }
 
+# ── WHAT THE CONTROLS MEAN ON EACH SURFACE, PINNED. ────────────────────────
+# bd 3qlq Increment 1, and this is the one place the surface change genuinely
+# COSTS the instrument something, so it is written down rather than papered over.
+#
+# `q_armoncond` isolates "the disjoint-register arm is necessary" by putting the
+# arm back ON the condition register, which keeps `a` loop-VARIANT so LICM cannot
+# hoist the `sitofp; fadd; sqrt` chain. On the REGISTER surface the arm is
+# `a = cq_phi(a, M_PI)` and it writes `a`; the pair comes out ACCEPT-IDENTICAL
+# and the isolation is a measurement.
+#
+# UNDER THE VOID SURFACE THAT ISOLATION IS NOT EXPRESSIBLE. A branch phase reads
+# and writes no register by construction (PRD §3), so the arm becomes
+# `cq_phi(M_PI);`, `a` goes loop-INVARIANT, and the pair DECLINES on both sides
+# with different messages. Nor is there a substitute: the only void gate that
+# still writes a register is `cq_theta`, and an in-place Ry arm on the
+# CONDITION's own wire is itself a documented loud decline (drbq Inc 1). So on
+# the void surface this control cannot say "both spellings agree"; the strongest
+# true statement left is "it does not DIVERGE", plus the exact verdict pinned
+# here so that a change of any kind is a red.
+#
+# Consequence, stated so nobody quotes the void quarantine as more measured than
+# it is: on the void surface the quarantine's class story is bounded by the
+# `q_noregion` half (which contains no `cq_phi` at all, so its two generated
+# sources are BYTE-IDENTICAL on both surfaces) and by the per-cell pinned
+# signatures — not by `q_armoncond`.
+SURFACE_CONTROL_VERDICTS = {
+    # `register`: BOTH must be ACCEPT-IDENTICAL — the pre-3qlq behaviour,
+    # unchanged, and `None` selects that stronger rule rather than a pin.
+    "register": None,
+    # `void`: MEASURED on the subject build of bd 3qlq Increment 1
+    # (c4bd888 + the round-1 fixes), 2026-09-05.
+    "void": {
+        "q_noregion": "ACCEPT-IDENTICAL",
+        "q_armoncond": "DECLINE-BOTH-DIFFERENT",
+    },
+}
+
 
 def control_sources(name, surface="register"):
     """(rolled, unrolled) C for one boundary control. No second register, no
@@ -798,14 +918,27 @@ def run_boundary_controls(cfg):
         finally:
             shutil.rmtree(work, ignore_errors=True)
         v, report = verdict(cname, cr, cu)
-        # UNDER `--phi-surface void` THE CONTROLS ARE INFORMATIONAL, NOT A GATE.
-        # They exist to keep the QUARANTINE's class story a measurement, and the
-        # quarantine is not applied under `void` (it was pinned on the `register`
-        # surface). Reporting them as failures there would make every `void` run
-        # red for a claim it is not making. Their verdicts are still PRINTED by
-        # `main`, which is the whole of their value in that mode.
         got.append((cname, v.split("\t")[0]))
-        if cfg.phi_surface == "void":
+        pins = SURFACE_CONTROL_VERDICTS[cfg.phi_surface]
+        if pins is not None:
+            # A PINNED verdict, not a weaker gate: the control still fails on any
+            # change at all, including a change to ACCEPT-IDENTICAL. See
+            # `SURFACE_CONTROL_VERDICTS` for why the void surface cannot use the
+            # stronger identity rule and what that costs the quarantine's class
+            # story. `--regenerate` does NOT rewrite these — moving a control is
+            # a human decision with a measurement attached, exactly like moving a
+            # quarantined signature.
+            want = pins[cname]
+            if v.split("\t")[0] != want:
+                fails.append(
+                    "%s: BOUNDARY CONTROL moved (pinned %s, got %s).\n"
+                    "    On the `%s` surface this control's verdict is PINNED in "
+                    "SURFACE_CONTROL_VERDICTS,\n    because it is what bounds "
+                    "the quarantine's class story. It just changed, so that\n"
+                    "    story is no longer the measured one — a human decides "
+                    "whether the pin moves.%s"
+                    % (cname, want, v.split("\t")[0], cfg.phi_surface,
+                       "\n" + report if report else ""))
             continue
         # `ACCEPT-IDENTICAL-WARN` counts as identical: both sides warned with the
         # SAME message, which is not a divergence. A one-sided warning is already
@@ -1257,34 +1390,43 @@ def main():
     ap.add_argument("--include", "--include-dir", required=True, dest="include")
     ap.add_argument("--runtime", required=True)
     ap.add_argument("--templates", required=True)
-    ap.add_argument("--expected",
-                    default=os.path.join(HERE, "loop_twin_matrix.expected.txt"))
+    ap.add_argument("--expected", default="",
+                    help="the committed disposition table. Empty (the default) "
+                         "resolves to the table of the SURFACE being run — see "
+                         "`SURFACE_TABLES`: the `void` surface owns the LIVE "
+                         "names, the retired `register` surface owns the "
+                         "`.register.txt` ones.")
     ap.add_argument("--ld", default=os.environ.get("CQ_LD", ""),
                     help="the bd dgn5 link wrapper (CMake exports it as CQ_LD); "
                          "empty falls back to the clang driver")
-    ap.add_argument("--quarantine",
-                    default=os.path.join(HERE, "loop_twin_matrix.quarantine.txt"),
+    ap.add_argument("--quarantine", default="",
                     help="the PINNED-SIGNATURE quarantine of filed divergences. "
                          "A quarantine is NOT a blessing — read that file's "
-                         "header before touching it.")
+                         "header before touching it. Empty (the default) "
+                         "resolves per surface exactly as --expected does.")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--phi-surface", choices=PHI_SURFACES, default="register",
                     help="the `cq_phi` FRONTEND surface the cells are generated "
                          "against (bd test_C_libtooling-3qlq Increment 1). "
-                         "`register` (DEFAULT) is the shipped 15-width "
-                         "`a = cq_phi(a, T)`; `void` is the register-free branch "
-                         "phase `cq_phi(T)`, which needs an --include-dir whose "
-                         "header declares `void cq_phi(double)`. A `void` run "
-                         "does NOT read --expected, reads --quarantine for its "
-                         "CELL NAMES only (its filed defects are "
-                         "surface-independent, its SHA-256 trace signatures are "
-                         "not), and REFUSES --regenerate / --refresh-quarantine; "
-                         "use --out.")
+                         "`void` is the SHIPPED surface and the one the "
+                         "`e2e-loop-twin-matrix` ctest entry runs: the "
+                         "register-free branch phase `cq_phi(T)`. `register` is "
+                         "the RETIRED 15-width `a = cq_phi(a, T)`; it remains "
+                         "the argparse default so that a by-hand invocation "
+                         "written before Increment 1 keeps its meaning, but it "
+                         "is UNREACHABLE against the shipped include/CQ.h and "
+                         "the header guard says so in one line rather than "
+                         "producing 175 harness errors. Each surface reads and "
+                         "writes ITS OWN expected table and quarantine "
+                         "(`SURFACE_TABLES`), so no file on disk is ever read as "
+                         "a measurement of a surface it was not measured on.")
     ap.add_argument("--out", default="",
                     help="also write the verdict table to FILE (name + verdict, "
                          "one row per cell, the same two columns --regenerate "
-                         "writes). This is how a `void` run records a table, "
-                         "since it may not overwrite the committed ones.")
+                         "writes), WITHOUT touching the committed table. This is "
+                         "how the pre/post records under "
+                         "docs/prd/phase-04-swap-route-control/inc1-records/ are "
+                         "taken.")
     ap.add_argument("--regenerate", action="store_true",
                     help="rewrite the expected table from this run. DELIBERATE "
                          "ONLY — say which cells moved and why (Rule 12).")
@@ -1298,36 +1440,44 @@ def main():
                          "message what moved and why (Rule 12).")
     cfg = ap.parse_args()
 
-    # ── bd 3qlq Increment 1 — the `void` cq_phi surface. Three refusals, and
-    #    each of them exists because the alternative is a file on disk whose
-    #    name says it measures something it does not.
-    if cfg.phi_surface == "void":
-        hdr = os.path.join(cfg.include, "CQ.h")
-        try:
-            text = open(hdr).read()
-        except OSError as e:
-            print("--phi-surface void: cannot read %s (%s)" % (hdr, e))
-            return 2
-        # A `register` header would take `cq_phi(T)` as a ONE-argument call to a
-        # TWO-argument _Generic macro; clang would reject every cell at stage 1
-        # and the run would read like a wall of compiler declines.
-        if "void cq_phi(double" not in text:
-            print("--phi-surface void: %s does not declare `void cq_phi(double "
-                  "...)`.\n  That header is a `register`-surface one, so every "
-                  "generated cell would fail at\n  stage 1 and the failure would "
-                  "read like a lowering decline. Point --include-dir\n  at a "
-                  "header whose cq_phi is the ONE register-free extern (PRD "
-                  "§4.1)." % hdr)
-            return 2
-        if cfg.regenerate or cfg.refresh_quarantine:
-            print("REFUSED: --regenerate / --refresh-quarantine are `register`-"
-                  "surface operations.\n  tools/loop_twin_matrix.expected.txt and "
-                  "tools/loop_twin_matrix.quarantine.txt\n  were both MEASURED on "
-                  "the register surface and neither claim survives the\n  surface "
-                  "change; writing either from a void run would put a table on "
-                  "disk\n  under a name that says it measures something else. "
-                  "Use --out FILE.")
-            return 2
+    # ── THE TABLES THIS RUN OWNS. Resolved from the surface, never from a
+    #    default baked into argparse, so that adding a surface cannot leave a
+    #    gate silently reading the previous one's file (`SURFACE_TABLES`).
+    _exp, _quar = SURFACE_TABLES[cfg.phi_surface]
+    if not cfg.expected:
+        cfg.expected = os.path.join(HERE, _exp)
+    if not cfg.quarantine:
+        cfg.quarantine = os.path.join(HERE, _quar)
+
+    # ── THE HEADER GUARD, both directions (bd 3qlq Inc 1; round-1 finding
+    #    F-L5-7). The surface a run GENERATES and the surface its --include-dir
+    #    DECLARES must agree, or every cell fails at stage 1 and the wall of
+    #    stage-1 failures reads like a wall of lowering declines. It was
+    #    one-directional and whitespace-sensitive, and BOTH halves of that cost a
+    #    measured run: `void` refused the shipped header (F-L5-7(b), the literal
+    #    substring vs the header's column alignment) and `register` was never
+    #    asked at all, so the committed ctest invocation produced 175
+    #    HARNESS-ERRORs plus 172 "verdict changed" against the shipped header
+    #    instead of one line saying which surface it was handed (F-L5-7(a)).
+    hdr = os.path.join(cfg.include, "CQ.h")
+    try:
+        hdr_surface = phi_surface_of_header(open(hdr).read())
+    except OSError as e:
+        print("--phi-surface %s: cannot read %s (%s)" % (cfg.phi_surface, hdr, e))
+        return 2
+    if hdr_surface != cfg.phi_surface:
+        print("--phi-surface %s: %s declares the `%s` cq_phi surface.\n"
+              "  Every generated cell would fail at STAGE 1 (clang), and a wall "
+              "of stage-1\n  failures reads like a wall of lowering declines — "
+              "which is what this guard\n  exists to stop it doing. The shipped "
+              "include/CQ.h declares `void cq_phi(double)`\n  (PRD §4.1) and is "
+              "the `void` surface; the retired 15-width `cq_phi_<sfx>(x, angle)`\n"
+              "  family is the `register` one and no longer exists in the tree.\n"
+              "  Either pass --phi-surface %s or point --include-dir at a %s "
+              "header."
+              % (cfg.phi_surface, hdr, hdr_surface, hdr_surface,
+                 cfg.phi_surface))
+        return 2
 
     cells = cells_of_matrix()
     results = {}
@@ -1423,44 +1573,22 @@ def main():
             for n in sorted(rows):
                 f.write("%-24s %s\n" % (n, rows[n]))
 
-    # ── the `void` run: measure, report, write. ─────────────────────────────
-    if cfg.phi_surface == "void":
-        for n in sorted(got):
-            if n in quar and got[n] == "TRACE-DIVERGENCE":
-                got[n] = ("TRACE-DIVERGENCE(quarantined %s %s)"
-                          % (quar[n]["bd"], quar[n]["class"]))
-                hard.pop(n, None)
-        for n in sorted(got):
-            print("%-24s %s" % (n, got[n]))
-        tal = {}
-        for v in got.values():
-            tal[v.split("\t")[0]] = tal.get(v.split("\t")[0], 0) + 1
-        print("\n=== TALLY (--phi-surface void, %d cells) ===" % len(got))
-        for k in sorted(tal):
-            print("  %-30s %d" % (k, tal[k]))
-        print("\nboundary controls (INFORMATIONAL under void — the quarantine "
-              "they bound is not applied):")
-        for cn, cv in ctlgot:
-            print("  %-16s %s" % (cn, cv))
-        print("\nthe committed expected table was NOT consulted (it was measured "
-              "on the\n`register` surface). The quarantine was read for its CELL "
-              "NAMES only — its\nfiled defects are surface-independent, its "
-              "SIGNATURES are not — so a\nquarantined divergence is a verdict "
-              "here and a NON-quarantined one is still a\nhard failure. See the "
-              "--phi-surface help and the module docstring's SIXTH\nAXIS "
-              "section.")
-        write_out(got)
-        if cfg.out:
-            print("wrote %s" % cfg.out)
-        # A TRACE DIVERGENCE, a WARN ASYMMETRY and a HARNESS ERROR are still hard
-        # failures here. The surface changed; the F-4 class did not.
-        if hard:
-            print("\nFAILED (%d):" % len(hard))
-            for n in sorted(hard):
-                print(hard[n])
-                print()
-            return 1
-        return 0
+    # THE `void` SURFACE NO LONGER HAS A MODE OF ITS OWN, and that is the
+    # substantive half of this change (bd 3qlq Inc 1, round-1 finding F-L5-7).
+    # It used to measure, print a tally and return — reading no expected table,
+    # reading the quarantine for CELL NAMES only, and refusing to write either,
+    # because both files held `register`-surface measurements and neither claim
+    # survived the surface change. That was right while the register tables were
+    # the only ones on disk. It is wrong now that `void` is the SHIPPED surface
+    # and the ctest entry runs it: a gate whose expected table is "none" pins
+    # nothing, so a cell may change disposition run to run with no red anywhere
+    # — which is precisely what tools/loop_twin_matrix.expected.txt exists to
+    # stop (Rule 12, and the 8h7d.5 F-4 argument in the docstring).
+    #
+    # So `void` falls through into the SAME gate below, against ITS OWN table
+    # pair (`SURFACE_TABLES`), with the same quarantine semantics in both
+    # directions, the same two write modes, and the same boundary controls. One
+    # code path, two surfaces, no mode-specific verdict handling to drift.
 
     if cfg.refresh_quarantine:
         if not quar:
@@ -1556,20 +1684,29 @@ def main():
     write_out(got)
     accepts = sum(1 for v in got.values() if v.startswith("ACCEPT-IDENTICAL"))
     declines = sum(1 for v in got.values() if v.startswith("DECLINE"))
-    print("loop_twin_matrix: %d cells — %d ACCEPT-IDENTICAL, %d DECLINE, %d other; "
-          "%d quarantined (pinned signatures), 2 boundary controls"
-          % (len(got), accepts, declines, len(got) - accepts - declines,
-             len(quar)))
+    print("loop_twin_matrix [--phi-surface %s]: %d cells — %d ACCEPT-IDENTICAL, "
+          "%d DECLINE, %d other; %d quarantined (pinned signatures), "
+          "2 boundary controls"
+          % (cfg.phi_surface, len(got), accepts, declines,
+             len(got) - accepts - declines, len(quar)))
+    tal = {}
+    for v in got.values():
+        tal[v.split("\t")[0]] = tal.get(v.split("\t")[0], 0) + 1
+    for k in sorted(tal):
+        print("    %-34s %d" % (k, tal[k]))
+    for cn, cv in ctlgot:
+        print("    control %-26s %s" % (cn, cv))
     if fails:
         print("\nFAILED (%d):" % len(fails))
         for r in fails:
             print(r)
             print()
         return 1
-    print("all cells match tools/loop_twin_matrix.expected.txt; all %d "
-          "quarantined cells diverge with their pinned signature "
-          "(tools/loop_twin_matrix.quarantine.txt); both boundary controls "
-          "identical" % len(quar))
+    print("all cells match %s; all %d quarantined cells diverge with their "
+          "pinned signature (%s); both boundary controls as pinned for the `%s` "
+          "surface"
+          % (os.path.basename(cfg.expected), len(quar),
+             os.path.basename(cfg.quarantine), cfg.phi_surface))
     return 0
 
 

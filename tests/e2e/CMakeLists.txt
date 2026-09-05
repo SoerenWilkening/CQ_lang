@@ -4260,11 +4260,24 @@ add_test(NAME e2e-grover-loop-range-oracle-twin-identical
 # ctest's scheduler to overlap it with the slice layer. It uses `cq-opt` and the
 # bd dgn5 link wrapper for the same reasons the slices do; without them it is ~2x
 # slower and still correct.
+#
+# ⚠ `--phi-surface void` IS NOT OPTIONAL AND IS NOT A TUNING KNOB (bd
+# test_C_libtooling-3qlq Increment 1, round-1 review finding F-L5-7(a)). Every
+# REGION cell generates the `cq_phi` call, and Increment 1 replaced the 15-width
+# `a = cq_phi(a, T)` family with the register-free `void cq_phi(double)`. Without
+# this flag the generator emits the RETIRED spelling, `include/CQ.h` rejects it
+# with `too many arguments to function call`, and the run reports 175
+# HARNESS-ERROR + 172 "verdict changed" — a wall of STAGE-1 failures that reads
+# exactly like a wall of lowering declines. It fails loud, which is the safe
+# direction, but it measures NOTHING while it does so, and this is the only
+# instrument in the tree that can see a leaked TEMPLATE-minted rail. The tool's
+# header guard now refuses the mismatch in one line instead, in both directions.
 add_test(NAME e2e-loop-twin-matrix
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/loop_twin_matrix.py"
     --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
     --include "${CMAKE_SOURCE_DIR}/include"
     --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
+    --phi-surface void
     --jobs 6)
 
 # ── bd test_C_libtooling-drbq Increment 3 — THE CONTROL-IN-PLACE Ry ARM IN A
