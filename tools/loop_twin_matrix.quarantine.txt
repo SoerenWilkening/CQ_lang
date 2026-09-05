@@ -85,6 +85,11 @@
 #
 # ── CLASS A — 6 cells, bd test_C_libtooling-1m5p. `oder` (the OPAQUE derived
 #    condition) with no a-register gate. ROLLED IS THE DEFICIENT SIDE.
+#    ⚠ ON THE VOID SURFACE THE BOUNDARY CONTROL `q_armoncond` IS AN INSTANCE OF
+#    THIS CLASS rather than a bound on it — a branch phase writes no register, so
+#    the control's own body satisfies the precondition below. See
+#    `SURFACE_CONTROL_VERDICTS`; it is pinned by signature and it is the smallest
+#    class-A reproducer in the tree.
 #    With the arm on `r`, `a` is loop-invariant, so `clang -O1` LICM-hoists the
 #    whole `sitofp; fadd; sqrt` chain into the preheader on the ROLLED side and
 #    CSEs the two repetitions' chains on the FLAT side. The rolled form then
@@ -102,8 +107,13 @@
 #    OWNER: `Uncomputation` / `FreePoint` interior placement for a chain the loop
 #    does not own.
 #
-# ── CLASS B — 9 cells, bd test_C_libtooling-a3z7. Any cell with `add` in the
-#    a-register SUFFIX field. FLAT IS THE DEFICIENT SIDE.
+# ── CLASS B — 21 cells, bd test_C_libtooling-a3z7. ONE DECISION, TWO
+#    DIRECTIONS: `ArithLowering`'s M-C in-place-vs-out-of-place choice for a
+#    constant op on the `a` register disagrees with the rolled form's, and WHERE
+#    that op sits decides whether the disagreement leaks.
+#
+#    (B-suffix, 17 cells) `add` in the a-register SUFFIX field, so the op feeds
+#    the MEASURE. FLAT IS THE DEFICIENT SIDE.
 #    Rolled emits `cqrt_addc_i32(h0, 3)` and measures `h0`; flat emits
 #    `cq_template_add_i32_hl(h0, 3) -> h10` and measures `h10`. Same value, same
 #    `_unc` and `cqrt_free` counts, one extra rail on the FLAT side — and `h0` is
@@ -117,6 +127,61 @@
 #    good one the deviation. DO NOT "fix" the roll to match the flat.
 #    OWNER: `ArithLowering` M-C G6/G7 versus `LoopLowering::collapseRailPhisIn`
 #    step (3).
+#
+#    (B-prefix, 4 cells) `xor` in the a-register PREFIX field, so the op feeds
+#    only the CONDITION and is dead by the measure. NEITHER SIDE IS DEFICIENT.
+#    Rolled emits `cqrt_xorc_i32(h0, 9)` in place; flat emits
+#    `cq_template_xor_i32_hl(h0, 9) -> h1` out of place AND THEN `_unc`s and
+#    frees it, so no rail is left allocated on either side and no which-path
+#    record survives. Same decision, same owner, one extra transient rail. It is
+#    quarantined rather than blessed because it is still a rolled != flat gate
+#    stream from one M-C disagreement, and because "harmless today" is how a
+#    class earns a customer that is not (the B-suffix half of this very class).
+#    MEASURED on the void surface 2026-09-05; on the `register` surface three of
+#    these four were ROLLED-ONLY (the flat side declined `mixed phase/value arm`)
+#    and one was ACCEPT-IDENTICAL, so this population is NEW and the void
+#    surface is what exposed it.
+#
+# ── CLASS C — 2 cells, bd test_C_libtooling-3qlq (AWAITING AN OWNER DECISION —
+#    this class has no filed issue of its own and MUST NOT be quoted as though it
+#    had). `m_xor_range_{none,rz}`, and they are here because they FIT NEITHER
+#    CLASS ABOVE: they carry the B-prefix disagreement AND, independently, a
+#    `clang -O1` fold that makes the two sides different programs.
+#    MEASURED: the rolled side emits `cqrt_xorc_i32(h0, 9)`; the flat side emits
+#    `cq_template_xor_i32_hl(h0, 8)` — MASK 8, NOT 9. The region is
+#    `if (a > 5 && a < 20)`, which `-O1` canonicalizes to `(x - 6) <u 14`, and
+#    [6,20) is closed under a bit-0 flip because both bounds are even; so on the
+#    FLAT spelling — where the second repetition's `a ^ 9` cancels the first and
+#    the xor result reaches nothing but the range test — InstCombine drops the
+#    low bit of the mask. In the rolled loop the xor is in place on the
+#    loop-carried `a` and the low bit is genuinely live, so it cannot.
+#    THE TWO SIDES HAVE STOPPED BEING THE SAME PROGRAM, which is the situation
+#    this instrument's own docstring says is answered by making the immediate
+#    OPAQUE (as `off` already is), not by a quarantine. Doing that changes the
+#    generated source of every `xor`-prefix cell, so it is an owner decision
+#    rather than a prep one, and until it is taken these two are pinned here so
+#    that neither side may drift unnoticed.
+#    The same phenomenon is already documented for these cells on the `register`
+#    surface, where it produced a DISPOSITION mismatch instead: see
+#    `loop_twin_matrix.expected.register.txt`'s note on the three `xor`/`none`
+#    ROLLED-ONLY cells.
+#    OWNER: the GENERATOR (`REGION["range"]` x `PREFIX["xor"]`), not the compiler.
+
+cell     m_add_der_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   fa06a1d4e6b38c0a
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_add_range_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   cd41bf671ac4d527
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h5
 
 cell     m_add_rder_add_none_none
 class    B
@@ -125,6 +190,14 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   ab3da2e60e22f26c
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_der_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   4a2e8dfbe0311684
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h9
 
 cell     m_none_oder_add_none_addpost
 class    B
@@ -162,7 +235,7 @@ cell     m_none_oder_add_none_rzpost
 class    B
 bd       test_C_libtooling-a3z7
 owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
-digest   7f6ab3e402ed801a
+digest   b116e741a03c8b71
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h10
 
@@ -210,7 +283,7 @@ cell     m_none_oder_none_none_rzpost
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   22d3c49762fbfc12
+digest   23e11d73657198da
 rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
 unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
 
@@ -221,6 +294,14 @@ owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hois
 digest   23e11d73657198da
 rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
 unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_range_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   3196feecb00f9eee
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h5
 
 cell     m_none_rder_add_none_none
 class    B
@@ -237,4 +318,84 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   3cab7f1fd3f74d82
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h6
+
+cell     m_rz_der_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   4a2e8dfbe0311684
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_rz_range_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   3196feecb00f9eee
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h5
+
+cell     m_xor_der_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   fa06a1d4e6b38c0a
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_xor_der_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — NEITHER deficient (the flat's out-of-place xor rail is _unc'd and freed)
+digest   1fbe01231c4e7e22
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 9) -> h1
+
+cell     m_xor_der_rz
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — NEITHER deficient (the flat's out-of-place xor rail is _unc'd and freed)
+digest   1fbe01231c4e7e22
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 9) -> h1
+
+cell     m_xor_gt_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — NEITHER deficient (the flat's out-of-place xor rail is _unc'd and freed)
+digest   887a23adbd5062f3
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 9) -> h1
+
+cell     m_xor_gt_rz
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — NEITHER deficient (the flat's out-of-place xor rail is _unc'd and freed)
+digest   887a23adbd5062f3
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 9) -> h1
+
+cell     m_xor_range_add
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   cd41bf671ac4d527
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h5
+
+cell     m_xor_range_none
+class    C
+bd       test_C_libtooling-3qlq
+owner    the GENERATOR: -O1 folds the FLAT spelling's xor mask 9 -> 8 under the even-bounded range test, so the two sides are different programs
+digest   7c31a377ffbfc95f
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 8) -> h1
+
+cell     m_xor_range_rz
+class    C
+bd       test_C_libtooling-3qlq
+owner    the GENERATOR: -O1 folds the FLAT spelling's xor mask 9 -> 8 under the even-bounded range test, so the two sides are different programs
+digest   7c31a377ffbfc95f
+rolled   cqrt_xorc_i32(h0, 9)
+unrolled cq_template_xor_i32_hl(h0, 8) -> h1
 

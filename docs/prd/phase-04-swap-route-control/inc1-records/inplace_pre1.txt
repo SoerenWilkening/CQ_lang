@@ -1,0 +1,674 @@
+# inplace_pre1.txt — the PRE-Increment-1 verdict table for the ALL-PAIRS pool of
+# tools/inplace_twin_matrix.py under `--phi-surface void`
+# (bd test_C_libtooling-3qlq Increment 1, "retire the swap route"; PRD
+# docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md).
+#
+# THIS IS A PRE-IMPLEMENTATION RECORD, taken BEFORE any Increment-1 lowering
+# exists, so that the diff produced when Increment 1 lands IS the witness. A
+# table generated after the implementation could only say the implementation
+# agrees with itself. (Inc-4 precedent: inc4-records/inplace_stateprep_
+# {pre4,post4}.txt; the PAIR is the witness, never one half of it.)
+#
+# INVOCATION (from the worktree root; CQ_LD set to the oracle's cq_link.sh):
+#   python3 tools/inplace_twin_matrix.py \
+#     --root $S/wt/pre-3qlq --include-dir $S/progress/prep_d_include \
+#     --phi-surface void --jobs 8 --out <this file's table half>
+#
+#   BOTH SIDES built with : $S/wt/pre-3qlq/build/ir-pass/cq-opt   (52d7764,
+#                           the last commit before this epic)
+#   --include-dir points at a SCRATCH copy of include/CQ.h whose `cq_phi` is the
+#   ONE register-free extern `void cq_phi(double)` (PRD §4.1). include/CQ.h in
+#   the tree is UNCHANGED by this record; the header change is Increment 1's.
+#
+# ⚠ NO `--route-oracle`, AND THE FLAG IS NOW REFUSED UNDER `void`. It wants a
+# PRE-2a binary in which the Rz spelling still ROUTES, and this surface has no
+# route to compare against — retiring the route is the whole of this epic. The
+# oracle here is the same binary's Rz side, which is what the flagless mode does.
+#
+# 472 cells, 944 pipelines. MEASURED WALL TIME 5 min 59 s at --jobs 8
+# (14:43:01 -> 14:49:00, 2026-09-05) on a box carrying other agent sessions —
+# not comparable to a quiet-box figure. Exit 0.
+#
+# TALLY
+#   RY-ONLY(suspicious)    232   <- the EXPECTED pre-Increment-1 verdict
+#   DECLINE-BOTH-DIFF       87
+#   DECLINE-BOTH            75
+#   PHI-UNLOWERED           78
+#   PREFIX-IDENTICAL         0   ) nothing reached a trace comparison, because
+#   PREFIX-MISMATCH          0   ) the Rz kickback lowers nowhere on this binary
+#   HARNESS-ERROR            0
+#   232 rows flagged `!!` (every one of them a RY-ONLY), 1 invariant note.
+#
+# ⚠ HOW TO READ `RY-ONLY(suspicious)` HERE, BECAUSE THE WORD IS THE
+# REGISTER-SURFACE READING AND IS NOT THE RIGHT ONE. On the register surface it
+# means "the new path took a shape the TRUSTED path refused", and it is a
+# dangerous direction. Under `void` on a PRE-Increment-1 binary it means only
+# that the Ry side lowers (drbq Increment 1 shipped that) while the Rz KICKBACK
+# declines — and the kickback IS the capability Increment 1 adds. The verdict
+# vocabulary was deliberately NOT renamed for the surface, exactly as
+# `UNROLLED-ONLY` was the EXPECTED pre-Inc-3 verdict in
+# tools/loop_twin_matrix.expected.txt. What Increment 1 must do to these 232 rows
+# is move them to PREFIX-IDENTICAL.
+#   The Rz side's diagnostics on those 232 rows:
+#     145  cq controlled lowering: control flow under quantum control
+#      55  cq rotation lowering: non-diagonal gate over a live derived record
+#      19  cq taint escape: tainted value consumed by an unknown callee
+#      13  cq controlled lowering: nested control flow under quantum control
+#
+# THE SAME NUMBERS SPLIT BY WHAT THE SURFACE ACTUALLY TOUCHES:
+#   322 cells whose Ry side spells NO `cq_phi` at all (the arm is the only phase
+#       gate, and on the Ry side the arm is a `cq_theta`):
+#         232 RY-ONLY · 66 DECLINE-BOTH · 24 DECLINE-BOTH-DIFF.
+#   150 cells whose Ry side ALSO carries a NON-ARM `cq_phi` — `base=phial`
+#       (`T r = cq_phi(p,.05)`), `cond=aliaseq` (`int cqa = cq_phi(cq0,.07)`) and
+#       the `aliasmeas` / `launder` / `phi_after` / `route2` / `invert` consumers:
+#          78 PHI-UNLOWERED · 63 DECLINE-BOTH-DIFF · 9 DECLINE-BOTH.
+#       Under `void` each of those becomes a plain ALIAS plus an UNCONTROLLED
+#       branch phase, so `phial` degenerates to `src`, `aliaseq` to `eq` and
+#       `aliasmeas` to a second measure of the same register. After Increment 1,
+#       D2 DELETES the uncontrolled call and those degeneracies are the cells'
+#       real meaning — a `void` run in which one of them differs from its
+#       degenerate sibling means the D2 deletion did not happen.
+#
+# THE 78 `PHI-UNLOWERED` ROWS ARE A DISPOSITION, NOT A HARNESS ERROR. A
+# pre-Increment-1 binary has no concept of `void @cq_phi(double)`: it neither
+# lowers nor deletes the call, which SURVIVES into the lowered IR and cannot link
+# (no such runtime symbol, and this epic adds none — PRD D3). MEASURED on
+# 52d7764. The instrument reads the LOWERED IR (never the trace — there is no
+# trace) and skips stages 2b/3/4. Every note reports BOTH sides and says which
+# was never asked: `ry 2 residual, rz not asked (declined)`. AFTER INCREMENT 1
+# THIS VERDICT MUST NOT APPEAR.
+#
+# ⚠ ONE INVARIANT NOTE, AND IT IS PRE-EXISTING AND SURFACE-INDEPENDENT.
+# `c_src_ne_ifelse_meas_i32` trips
+#     INV : I2 negated controlled rotation: cqrt_ry_i32_controlled(h2, h1, -0x1p-1)
+# and REPRODUCES VERBATIM ON THE REGISTER SURFACE on this same oracle binary
+# (measured, single-cell run). -0.5 is 0.4 - 0.9, i.e. the drbq Increment-2b
+# BY-DIFFERENCE angle, not an adjoint. The I2 invariant's stated premise — "every
+# angle in this generator is positive, so a negative one can only have been
+# synthesized [by EmitInverse]" — has been FALSE since Inc 2b. Reported, NOT
+# fixed here: it is not this epic's to decide.
+#
+# WHAT THE DIFF SHOULD LOOK LIKE AFTER INCREMENT 1
+#   * the 232 RY-ONLY rows move to PREFIX-IDENTICAL. Under `void` the comparison
+#     is "the same stream except the ONE gate line" (`reduce_kickback`
+#     canonicalises both stems' arm gate to `cq_arm_gate(<flag>, <angle>)`), so
+#     PREFIX-IDENTICAL there means: same flag mint, same `cqrt_x` bracketing,
+#     same position, same angle, same strip, same free — with the Rz side firing
+#     `cqrt_rz_i1(f, T)` where the Ry side fires
+#     `cqrt_ry_<W>_controlled(f, r, T)`.
+#     ⚠ AND WHAT THAT DOES *NOT* WITNESS: the kickback line names NO register, so
+#     the prefix comparison can no longer see that the controlled Ry named the
+#     ROTATED RAIL. That is policed by the invariants on the raw Ry trace (I1
+#     count, I3 no free of a rotated rail, I6 no adjoint across the rotation) and
+#     by the lit family — not by a green prefix. Do not quote it as such.
+#   * the 78 PHI-UNLOWERED rows get a real verdict (D2 deletes the call).
+#   * a row landing on PREFIX-MISMATCH is a FINDING.
+#   * `cfg=ifelse` / `ifelse2` rows are expected to differ by MORE than one gate
+#     line and must not be read as findings: PRD §3 gives the void Rz stem the
+#     EXACT two-gate angle select (no subtraction, run-time arms admitted) while
+#     the Ry stem keeps the Inc-2b by-difference form. Different lowerings, by
+#     design.
+#
+# FORMAT: the tool's own table (`!!` flag, cell, verdict, suffix class, reduction
+# note, diagnostic) with `note:` / `INV :` continuation lines. This file is a
+# RECORD, not a gate: nothing reads it, and the POST table beside it is what
+# turns it into a witness.
+
+   c_add_aliaseq_diamond_meas_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_add_eq_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_add_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_add_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_add_eq_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_add_eq_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_add_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_add_eq_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_add_eq_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_add_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_add_eq_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_add_eq_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_add_eq_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_add_eq_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_eq_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_add_eq_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_add_eq_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_add_eq_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_add_eq_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_fcmp_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_ge_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_gt_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_add_ne_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_cast_aliaseq_diamond_meas_i32                            PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_cast_eq_clsbefore_meas_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_clsbetween_meas_i32                              RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_cast_eq_diamond_aliasmeas_i32                            DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_cast_eq_diamond_call_i32                                 DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_cast_eq_diamond_deadadd_i32                              RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_deadmul_i32                              RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_cast_eq_diamond_invert_i32                               PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_cast_eq_diamond_launder_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_cast_eq_diamond_meas_f64                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_meas_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_meas_i64                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_meas_i8                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_mul3_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_cast_eq_diamond_none_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_cast_eq_diamond_phi_after_i32                            PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_cast_eq_diamond_printf_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_region2_i32                              RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_cast_eq_diamond_ret_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_cast_eq_diamond_route2_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_cast_eq_diamond_spine_i32                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_diamond_theta_after_i32                          RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_cast_eq_diamond_value2_i32                               DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_cast_eq_ifelse2_meas_i32                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_cast_eq_ifelse_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_eq_negated_meas_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_fcmp_diamond_meas_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_ge_diamond_meas_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_gt_diamond_meas_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_cast_ne_diamond_meas_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_chain_aliaseq_diamond_meas_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_chain_eq_clsbefore_meas_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_clsbetween_meas_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_chain_eq_diamond_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_chain_eq_diamond_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_chain_eq_diamond_deadadd_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_deadmul_i32                             RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_chain_eq_diamond_invert_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_chain_eq_diamond_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_chain_eq_diamond_meas_f64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_meas_i64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_meas_i8                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_mul3_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_chain_eq_diamond_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_chain_eq_diamond_phi_after_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_chain_eq_diamond_printf_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_region2_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_chain_eq_diamond_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_chain_eq_diamond_route2_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_spine_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_eq_diamond_theta_after_i32                         RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_chain_eq_diamond_value2_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_chain_eq_ifelse2_meas_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_chain_eq_ifelse_meas_i32                                 RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_chain_eq_negated_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_fcmp_diamond_meas_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_ge_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_gt_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_chain_ne_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_mul_aliaseq_diamond_meas_i32                             PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_mul_eq_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_mul_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_mul_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_mul_eq_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_mul_eq_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_mul_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_mul_eq_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_mul_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_mul_eq_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_mul_eq_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_mul_eq_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_mul_eq_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_mul_eq_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_mul_eq_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_mul_eq_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_mul_eq_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_eq_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_fcmp_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_ge_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_gt_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_mul_ne_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_phial_aliaseq_diamond_meas_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_clsbefore_meas_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_clsbetween_meas_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_phial_eq_diamond_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_phial_eq_diamond_deadadd_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_deadmul_i32                             PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_invert_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_phial_eq_diamond_meas_f64                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_meas_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_meas_i64                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_meas_i8                                 PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_mul3_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_phial_eq_diamond_phi_after_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_printf_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_region2_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: nested control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_phial_eq_diamond_route2_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_phial_eq_diamond_spine_i32                               PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_theta_after_i32                         PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_diamond_value2_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_phial_eq_ifelse2_meas_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_phial_eq_ifelse_meas_i32                                 PHI-UNLOWERED                                                                  cq taint escape: tainted value consumed by an unknown callee
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_eq_negated_meas_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_fcmp_diamond_meas_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_ge_diamond_meas_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_gt_diamond_meas_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_phial_ne_diamond_meas_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_clsbefore_meas_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_clsbetween_meas_i32                          PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_aliasmeas_i32                        DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_aliaseq_diamond_call_i32                             DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_src_aliaseq_diamond_deadadd_i32                          PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_deadmul_i32                          PHI-UNLOWERED                                                                  cq rotation lowering: non-diagonal gate over a live derived record
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_invert_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_launder_i32                          DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_aliaseq_diamond_meas_f64                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_meas_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_meas_i64                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_meas_i8                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_mul3_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_none_i32                             DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_aliaseq_diamond_phi_after_i32                        PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_printf_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_region2_i32                          PHI-UNLOWERED                                                                  cq controlled lowering: nested control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_ret_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_aliaseq_diamond_route2_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_aliaseq_diamond_spine_i32                            PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_theta_after_i32                      PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_diamond_value2_i32                           DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_aliaseq_ifelse2_meas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_aliaseq_ifelse_meas_i32                              PHI-UNLOWERED                                                                  cq taint escape: tainted value consumed by an unknown callee
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_aliaseq_negated_meas_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_clsbefore_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_clsbefore_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_eq_clsbefore_deadadd_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_deadmul_i32                             RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_eq_clsbefore_invert_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_clsbefore_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_eq_clsbefore_meas_f64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_meas_i64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_meas_i8                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_mul3_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbefore_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbefore_phi_after_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_eq_clsbefore_printf_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_region2_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_eq_clsbefore_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbefore_route2_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_spine_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbefore_theta_after_i32                         RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbefore_value2_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_aliasmeas_i32                          DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_clsbetween_call_i32                               DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_eq_clsbetween_deadadd_i32                            RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_deadmul_i32                            RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_eq_clsbetween_invert_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_clsbetween_launder_i32                            DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_eq_clsbetween_meas_f64                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_meas_i64                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_meas_i8                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_mul3_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_none_i32                               DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_phi_after_i32                          PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_eq_clsbetween_printf_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_region2_i32                            RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_ret_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_route2_i32                             DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_spine_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_clsbetween_theta_after_i32                        RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_clsbetween_value2_i32                             DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_aliasmeas_f64                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_aliasmeas_i64                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_aliasmeas_i8                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_call_f64                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_src_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_src_eq_diamond_call_i64                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_src_eq_diamond_call_i8                                   DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_eq_diamond_deadadd_f64                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_src_eq_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_deadadd_i64                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_deadadd_i8                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_deadmul_f64                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_src_eq_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_src_eq_diamond_deadmul_i64                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+!! c_src_eq_diamond_deadmul_i8                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_eq_diamond_invert_f64                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_invert_i64                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_invert_i8                                 PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_launder_f64                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_launder_i64                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_diamond_launder_i8                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_eq_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_mul3_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_mul3_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_mul3_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_none_f64                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_none_i64                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_none_i8                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_phi_after_f64                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_phi_after_i64                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_diamond_phi_after_i8                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_eq_diamond_printf_f64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_printf_i64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_printf_i8                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_region2_f64                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+!! c_src_eq_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+!! c_src_eq_diamond_region2_i64                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+!! c_src_eq_diamond_region2_i8                                RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_eq_diamond_ret_f64                                   DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   c_src_eq_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_ret_i64                                   DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   c_src_eq_diamond_ret_i8                                    DECLINE-BOTH                                                                   cq taint escape: tainted value returned at non-i32 width
+   c_src_eq_diamond_route2_f64                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_route2_i64                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_route2_i8                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_spine_f64                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_spine_i64                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_spine_i8                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_theta_after_f64                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_theta_after_i64                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_diamond_theta_after_i8                            RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_value2_f64                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_value2_i64                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_diamond_value2_i8                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+   c_src_eq_ifelse2_deadadd_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_deadmul_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_invert_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_meas_f64                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_meas_i64                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_meas_i8                                   DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_mul3_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_none_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: impure phase arm under quantum control
+   c_src_eq_ifelse2_phi_after_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_printf_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_region2_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_ret_i32                                   DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_spine_i32                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_theta_after_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse2_value2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_ifelse_aliasmeas_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_ifelse_call_i32                                   DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_eq_ifelse_deadadd_i32                                RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_deadmul_i32                                RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_eq_ifelse_invert_i32                                 PHI-UNLOWERED                                                                  cq taint escape: tainted value consumed by an unknown callee
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_ifelse_launder_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_eq_ifelse_meas_f64                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_meas_i64                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_meas_i8                                    RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_mul3_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_none_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+   c_src_eq_ifelse_phi_after_i32                              PHI-UNLOWERED                                                                  cq taint escape: tainted value consumed by an unknown callee
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_eq_ifelse_printf_i32                                 RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_region2_i32                                RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_ret_i32                                    RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+   c_src_eq_ifelse_route2_i32                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_eq_ifelse_spine_i32                                  RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_eq_ifelse_theta_after_i32                            RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+   c_src_eq_ifelse_value2_i32                                 DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+   c_src_eq_negated_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_eq_negated_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_eq_negated_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_eq_negated_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_eq_negated_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_eq_negated_meas_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_negated_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_negated_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_eq_negated_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_eq_negated_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_eq_negated_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_eq_negated_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_eq_negated_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_clsbefore_meas_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_clsbetween_meas_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_fcmp_diamond_aliasmeas_i32                           DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_fcmp_diamond_call_i32                                DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_fcmp_diamond_deadadd_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_deadmul_i32                             RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_fcmp_diamond_invert_i32                              PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_fcmp_diamond_launder_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_fcmp_diamond_meas_f64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_meas_i64                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_meas_i8                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_mul3_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_fcmp_diamond_none_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_fcmp_diamond_phi_after_i32                           PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_fcmp_diamond_printf_i32                              RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_region2_i32                             RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_fcmp_diamond_ret_i32                                 DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_fcmp_diamond_route2_i32                              DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_spine_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_diamond_theta_after_i32                         RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_fcmp_diamond_value2_i32                              DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_fcmp_ifelse2_meas_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_fcmp_ifelse_meas_i32                                 RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_fcmp_negated_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ge_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_ge_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_ge_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_ge_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_ge_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_ge_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ge_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ge_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_ge_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_ge_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ge_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ge_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ge_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ge_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_ge_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_ge_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_gt_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_gt_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_gt_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_gt_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_gt_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_gt_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_gt_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_gt_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_gt_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_gt_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_gt_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_gt_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_gt_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_gt_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_gt_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_src_gt_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ne_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_src_ne_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_src_ne_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_src_ne_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_src_ne_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_src_ne_diamond_meas_f64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ne_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ne_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_src_ne_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_src_ne_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ne_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_src_ne_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_src_ne_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_src_ne_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_src_ne_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+      INV : I2 negated controlled rotation: cqrt_ry_i32_controlled(h2, h1, -0x1p-1)
+!! c_src_ne_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_xor_aliaseq_diamond_meas_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_xor_eq_clsbefore_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_clsbetween_meas_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_xor_eq_diamond_aliasmeas_i32                             DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+   c_xor_eq_diamond_call_i32                                  DECLINE-BOTH                                                                   cq specialization: callee measures under quantum lift
+!! c_xor_eq_diamond_deadadd_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_deadmul_i32                               RY-ONLY(suspicious)                                                            cq rotation lowering: non-diagonal gate over a live derived record
+   c_xor_eq_diamond_invert_i32                                PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 1 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+   c_xor_eq_diamond_launder_i32                               DECLINE-BOTH-DIFF                                                              cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+!! c_xor_eq_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_meas_i64                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_meas_i8                                   RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_mul3_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_xor_eq_diamond_none_i32                                  DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_xor_eq_diamond_phi_after_i32                             PHI-UNLOWERED                                                                  cq controlled lowering: control flow under quantum control
+      note: residual `call void @cq_phi` in the LOWERED IR: ry 2 residual, rz not asked (declined) — a PRE-Increment-1 binary neither lowers nor deletes the void surface, so the module cannot link. A disposition, not a harness error.
+!! c_xor_eq_diamond_printf_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_region2_i32                               RY-ONLY(suspicious)                                                            cq controlled lowering: nested control flow under quantum control
+   c_xor_eq_diamond_ret_i32                                   DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_xor_eq_diamond_route2_i32                                DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_spine_i32                                 RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_eq_diamond_theta_after_i32                           RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+   c_xor_eq_diamond_value2_i32                                DECLINE-BOTH                                                                   cq controlled lowering: control flow under quantum control
+   c_xor_eq_ifelse2_meas_i32                                  DECLINE-BOTH-DIFF                                                              cq controlled lowering: control flow under quantum control
+!! c_xor_eq_ifelse_meas_i32                                   RY-ONLY(suspicious)                                                            cq taint escape: tainted value consumed by an unknown callee
+!! c_xor_eq_negated_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_fcmp_diamond_meas_i32                                RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_ge_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_gt_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+!! c_xor_ne_diamond_meas_i32                                  RY-ONLY(suspicious)                                                            cq controlled lowering: control flow under quantum control
+
+=== TALLY (ALL-PAIRS, --phi-surface void, 472 cells) ===
+  DECLINE-BOTH               75
+  DECLINE-BOTH-DIFF          87
+  PHI-UNLOWERED              78
+  RY-ONLY(suspicious)        232

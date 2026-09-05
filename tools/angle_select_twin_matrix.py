@@ -204,9 +204,73 @@ exactly the all-pairs cells that set `angle=args`: 2 (stem) + 5 (cond) + 5 (base
 16, the twin ACCEPTS in 14 and declines in 2 — and the 14 are not evidence of an
 over-decline, for the reason in the `args` bullet above.
 
+═══════════════════════════════════════════════════════════════════════════════
+THE `cq_phi` SURFACE (`--phi-surface {register,void}`, bd
+test_C_libtooling-3qlq Increment 1 — "retire the swap route")
+
+`register` (DEFAULT) is the shipped 15-width `r = cq_phi(r, T)`. `void` is the
+Increment-1 register-free branch phase `cq_phi(T)`, which needs an
+`--include-dir` whose header declares the ONE extern `void cq_phi(double)` —
+the mode REFUSES TO RUN otherwise, because a `register` header would take
+`cq_phi(T)` as a one-argument call to a two-argument macro and the whole run
+would read like a wall of compiler declines.
+
+THE TWO STEMS SPLIT UNDER `void`, AND THIS INSTRUMENT SPLITS WITH THEM.
+
+  * `stem=theta` (Ry) IS UNCHANGED IN SUBSTANCE. PRD D5 keeps
+    `r = cq_theta(r, T)`, the 2b BY-DIFFERENCE lowering stands, its constant-arm
+    narrowing stands, and the twin is still the manual `R(r,B); if (c) R(r,A-B)`
+    diamond. What DOES change in those cells is the non-arm `cq_phi` spellings —
+    `base=phialias` (`int r = cq_phi(p,.11)`) and `use=premark`/`postmark`
+    (`int mark = cq_phi(r,.13)`) — which the surface rewriter turns into a plain
+    ALIAS plus an UNCONTROLLED branch phase that PRD D2 DELETES. So `phialias`
+    degenerates to `src` and the two `mark` cells lose their distinct rail. They
+    are kept: a `void` run in which one of them differs from its degenerate
+    sibling means the D2 deletion did not happen.
+
+  * `stem=phi` (Rz) LOSES ITS TWIN ENTIRELY, AND THAT IS A MEASUREMENT, NOT A
+    DESIGN CHOICE. PRD §3 lowers the void Rz angle select to the EXACT two-gate
+    form `x(f); rz_i1(f,B); x(f); rz_i1(f,A)` — no subtraction, so the 2b
+    by-difference twin is not the right oracle and the `2^-40` rounding fence is
+    retired for this stem (run-time arms ADMITTED, PRD §3 / Rule-13 lens 5). The
+    natural replacement twin is the flat PAIR OF DIAMONDS with the compare
+    recomputed:
+
+        if (q == 5) cq_phi(A);
+        if (q != 5) cq_phi(B);
+
+    MEASURED 2026-09-05, `clang -O1`, the void header, at CONSTANT arms
+    (`0.9`/`0.3`) and at RUN-TIME arms (two `double` parameters): the two-diamond
+    spelling and the `if/else` spelling produce WHOLE MODULES THAT ARE IDENTICAL
+    — `diff` ignoring only `ModuleID`/`source_filename` — both folding to ONE
+    `tail call void @cq_phi(double %s)` on `select i1 %c, double A, double B`.
+    SimplifyCFG merges them before the pass ever sees a diamond.
+
+    So there is NO COMPILABLE BYTE-IDENTITY TWIN for the Rz stem under `void`:
+    every candidate spelling IS the subject. **Byte-identity is NOT available for
+    that stem, and the PRD §10.2(d) GOLDEN-AUDIT SUBSTITUTION is the witness
+    instead** — the requirement that each regenerated golden's diff be exactly
+    the 2b pair `rz(h,B); rz_controlled(f,h,A-B)` -> the exact two-gate form and
+    nothing else. This file does NOT attempt to reconstruct that; it would be a
+    second, unvalidated spelling of the audit (Rule 14 in reverse). What it does
+    instead is honest and small: it builds the SELECT side only, on both
+    binaries, and reports `RZ-VOID-NO-TWIN(...)` with the disposition and — when
+    the build under test accepts — the emitted `cqrt_rz_i1` lines VERBATIM, so a
+    reader can check the two-gate shape against PRD §3 by eye. It asserts
+    nothing about the unitary. A cell in that verdict is a RECORD, not a pass.
+
+⚠ A PRE-INCREMENT-1 BINARY LEAVES THE CALL BEHIND. It has no concept of
+`void @cq_phi(double)` — neither lowers nor deletes it — so the call survives
+into the lowered IR and the module cannot link (no such runtime symbol, and this
+epic adds none, PRD D3). MEASURED on the pre-3qlq oracle 52d7764. Reported
+`PHI-UNLOWERED`, stages 2b/3/4 skipped: a DISPOSITION, not a harness error.
+After Increment 1 it must not appear.
+
 The build harness (`Side` / `build`) is IMPORTED from
 `tools/inplace_twin_matrix.py` rather than re-implemented (Rule 14): one
-spelling of "compile, lower, stage-2b, link, run", one place to fix it.
+spelling of "compile, lower, stage-2b, link, run", one place to fix it. The
+`cq_phi` SURFACE REWRITER reaches this file through that same import — it is
+defined once, in `tools/loop_twin_matrix.py`.
 """
 
 import argparse
@@ -219,7 +283,9 @@ import sys
 import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from inplace_twin_matrix import Side, build, normalise  # noqa: E402  (Rule 14)
+from inplace_twin_matrix import (Side, build, normalise,   # noqa: E402
+                                 PHI_SURFACES, phi_surface_of_header,
+                                 phi_void_source)  # (Rule 14)
 
 
 # ─────────────────────────────── THE AXES ────────────────────────────────────
@@ -319,7 +385,7 @@ TWIN_C   = dict(COND_C, ne="q == 5")   # the SELECT's post-canonicalization test
 TWIN_SWAP = {"ne"}                     # …and its arms, swapped to match
 
 
-def gen(c, form):
+def gen(c, form, surface="register"):
     R = "cq_theta" if c["stem"] == "theta" else "cq_phi"
     A, B = ANGLE_PAIR[c["angle"]]
     fp_cond = c["cond"] == "fcmp"
@@ -424,7 +490,11 @@ def gen(c, form):
     L.append("}")
     L.append("int main(void) { (void) slice(1.25, 0.75, 1.25 - 0.75, "
              "0.75 - 1.25); return 0; }")
-    return "\n".join(L) + "\n"
+    out = "\n".join(L) + "\n"
+    # The bd 3qlq surface rewrite is applied to the FINISHED text of BOTH forms,
+    # in ONE place, so a surface artefact can never look like a select-vs-twin
+    # difference. `register` returns it byte-unchanged.
+    return phi_void_source(out) if surface == "void" else out
 
 
 # ────────────────────────────── ONE CELL ─────────────────────────────────────
@@ -435,13 +505,25 @@ def run_cell(cfg, c):
             else tempfile.mkdtemp(prefix="cqas_"))
     if cfg.keep:
         os.makedirs(work, exist_ok=True)
+    sf = cfg.phi_surface
+    # THE Rz STEM HAS NO TWIN UNDER `void`, MEASURED (see the docstring's
+    # `cq_phi` SURFACE section): `clang -O1` folds every candidate spelling —
+    # including the two-diamond one with the compare recomputed — into the SAME
+    # single call on an angle `select`, whole modules identical. So the twin
+    # pipelines are not built at all rather than built and quietly ignored: a
+    # twin that is byte-identical to its subject is not an oracle, and running
+    # it would print a green `BOTH-ACCEPT-IDENTICAL` that means nothing.
+    no_twin = (sf == "void" and c["stem"] == "phi")
     try:
-        sel_new = build(cfg, work, nm + "_sel_new", gen(c, "select"))
-        twn_new = build(cfg, work, nm + "_twn_new", gen(c, "twin"))
-        sel_old = (build(cfg, work, nm + "_sel_old", gen(c, "select"), cfg.oracle)
+        sel_new = build(cfg, work, nm + "_sel_new", gen(c, "select", sf))
+        twn_new = (None if no_twin
+                   else build(cfg, work, nm + "_twn_new", gen(c, "twin", sf)))
+        sel_old = (build(cfg, work, nm + "_sel_old", gen(c, "select", sf),
+                         cfg.oracle)
                    if cfg.oracle else None)
-        twn_old = (build(cfg, work, nm + "_twn_old", gen(c, "twin"), cfg.oracle)
-                   if cfg.oracle else None)
+        twn_old = (None if no_twin else
+                   (build(cfg, work, nm + "_twn_old", gen(c, "twin", sf),
+                          cfg.oracle) if cfg.oracle else None))
         # DEGENERATE-FOLD is a property of the stage-1 IR, so read it there.
         s1 = os.path.join(work, nm + "_sel_new.s1.ll")
         degenerate = (os.path.exists(s1)
@@ -450,7 +532,16 @@ def run_cell(cfg, c):
         if not cfg.keep:
             shutil.rmtree(work, ignore_errors=True)
     return nm, c, classify(sel_new, twn_new, sel_old, twn_old, degenerate,
-                           c["use"], c["angle"])
+                           c["use"], c["angle"], no_twin)
+
+
+def _resid(side):
+    """How to read one side's residual-`cq_phi` state, in words. A side that
+    DECLINED was never asked — reporting `0` there would say "this side lowered
+    the void surface cleanly", which is the opposite of what happened."""
+    if not getattr(side, "phi_asked", False):
+        return "not asked (%s)" % ("declined" if side.exit else "harness error")
+    return "%d residual" % side.phi_unlowered
 
 
 def _diag(s):
@@ -458,7 +549,8 @@ def _diag(s):
                          .replace(" under quantum control", "")
 
 
-def classify(sel, twn, sel_old, twn_old, degenerate, c_use="", c_angle=""):
+def classify(sel, twn, sel_old, twn_old, degenerate, c_use="", c_angle="",
+             no_twin=False):
     R = dict(verdict="", note="", diff="")
 
     for tag, s in (("select@new", sel), ("twin@new", twn),
@@ -468,14 +560,59 @@ def classify(sel, twn, sel_old, twn_old, degenerate, c_use="", c_angle=""):
             R["note"] = "%s: %s" % (tag, s.error)
             return R
 
-    # STRICT stage 2b on every side that lowered.
+    # bd 3qlq Inc 1 — asked EARLY, because a side in this state lowered cleanly
+    # and simply still names a symbol nothing defines, so there is no trace to
+    # compare and no diagnostic to report. A pre-Increment-1 binary neither
+    # lowers nor deletes `void @cq_phi`. A disposition, not a harness error.
+    sides = (("select@new", sel), ("twin@new", twn),
+             ("select@old", sel_old), ("twin@old", twn_old))
+    if any(s is not None and s.phi_unlowered for _, s in sides):
+        R["verdict"] = "PHI-UNLOWERED"
+        # Every side is reported, not only the ones with a residual: a side that
+        # DECLINED was never asked, and printing only the non-zero counts would
+        # let a reader take the silence for a clean lowering.
+        R["note"] = ("residual `call void @cq_phi` in the LOWERED IR: "
+                     + ", ".join("%s %s" % (t, _resid(s))
+                                 for t, s in sides if s is not None))
+        return R
+
+    # STRICT stage 2b on every side that lowered. `twn` is None for a cell whose
+    # stem has no twin under `--phi-surface void` (bd 3qlq Inc 1), so the side is
+    # skipped rather than asked — there is nothing to ask.
     bad2b = [t for t, s in (("select@new", sel), ("twin@new", twn))
-             if s.exit == 0 and ("violation(s), 0 unproven" not in s.pair)]
+             if s is not None and s.exit == 0
+             and ("violation(s), 0 unproven" not in s.pair)]
     if bad2b:
         R["note"] = "STAGE2B " + ",".join(bad2b)
 
     if degenerate:
         R["verdict"] = "DEGENERATE-FOLD"
+        return R
+
+    # ── THE Rz STEM UNDER `void`: A RECORD, NOT A PASS. ─────────────────────
+    # There is no compilable byte-identity twin (measured — see the docstring),
+    # so this branch asserts nothing about the unitary. It records the SELECT
+    # side's disposition on both binaries and, when the build under test accepts,
+    # prints the emitted `cqrt_rz_i1` lines VERBATIM so a reader can check the
+    # PRD §3 two-gate shape `x(f); rz_i1(f,B); x(f); rz_i1(f,A)` by eye. The
+    # witness for that stem is the PRD §10.2(d) golden-audit substitution, which
+    # this file deliberately does not re-implement.
+    if no_twin:
+        if sel.exit != 0:
+            R["verdict"] = "RZ-VOID-NO-TWIN-DECLINE"
+            R["note"] = "select declines: " + _diag(sel)
+            return R
+        if sel_old is not None and sel_old.exit == 0:
+            R["verdict"] = "RED-GREEN-MISS"
+            R["note"] = "select@old ACCEPTED — the shape is not new"
+            return R
+        gates = [l for l in (sel.trace or []) if l.startswith("cqrt_rz_i1(")]
+        xs = sum(1 for l in (sel.trace or []) if l.startswith("cqrt_x("))
+        R["verdict"] = "RZ-VOID-NO-TWIN-ACCEPT"
+        R["note"] = ("byte-identity NOT available for this stem (the twin folds "
+                     "to the subject); PRD §10.2(d) is the witness. %d rz_i1, "
+                     "%d cqrt_x: %s"
+                     % (len(gates), xs, " | ".join(gates) or "<none>"))
         return R
 
     if twn_old is not None and twn.exit == 0 and twn_old.exit == 0 \
@@ -571,6 +708,21 @@ def _star(t):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.getcwd())
+    ap.add_argument("--include-dir", default="",
+                    help="the directory holding CQ.h. Default `<root>/include`. "
+                         "Under --phi-surface void it MUST point at a header "
+                         "whose cq_phi is the ONE register-free extern "
+                         "`void cq_phi(double)` (bd 3qlq Inc 1, PRD §4.1).")
+    ap.add_argument("--phi-surface", choices=PHI_SURFACES, default="register",
+                    help="the `cq_phi` FRONTEND surface the cells are generated "
+                         "against (bd test_C_libtooling-3qlq Increment 1). "
+                         "`register` (DEFAULT) is the shipped 15-width "
+                         "`r = cq_phi(r, T)`; `void` is the register-free branch "
+                         "phase `cq_phi(T)`. Under `void` the Rz stem has NO "
+                         "TWIN — measured: -O1 folds every candidate spelling "
+                         "into the subject — so its cells are RECORDS "
+                         "(`RZ-VOID-NO-TWIN-*`), not passes. See the module "
+                         "docstring's `cq_phi` SURFACE section.")
     ap.add_argument("--llvm", default="/usr/local/opt/llvm@19/bin")
     ap.add_argument("--jobs", type=int, default=8)
     ap.add_argument("--only", default="")
@@ -585,12 +737,48 @@ def main():
                          "red-green) and that the TWIN's own trace did not move "
                          "between the two binaries (ORACLE-MOVED).")
     cfg = ap.parse_args()
+    if cfg.phi_surface == "void":
+        hdr = os.path.join(cfg.include_dir or os.path.join(cfg.root, "include"),
+                           "CQ.h")
+        try:
+            text = open(hdr).read()
+        except OSError as e:
+            sys.stderr.write("--phi-surface void: cannot read %s (%s)\n"
+                             % (hdr, e))
+            return 2
+        # A `register` header would take `cq_phi(T)` as a ONE-argument call to a
+        # TWO-argument _Generic macro; clang would reject every cell at stage 1
+        # and the run would read like a wall of compiler declines.
+        #
+        # ASKED BY `phi_surface_of_header`, THE ONE SPELLING IN THE TREE (Rule
+        # 14, and the same import that already brings `phi_void_source` here).
+        # It was a LITERAL substring test `"void cq_phi(double" not in text`,
+        # duplicated in all three instruments, and the SHIPPED include/CQ.h
+        # spells the declaration column-aligned — `void                cq_phi
+        # (double angle);` — so all three REFUSED the very header they require
+        # and said it was a `register`-surface one (bd 3qlq Inc 1, round-1 review
+        # finding F-L5-7(b); MEASURED here on 2026-09-05, where it stopped the
+        # POST run of this instrument dead). The classifier strips C comments
+        # first, so the shipped header's own prose about the retired
+        # `cq_phi_<sfx>(x, angle)` family cannot flip the answer, and
+        # `loop_twin_matrix_quarantine_test.py` exercises it against the REAL
+        # include/CQ.h.
+        hdr_surface = phi_surface_of_header(text)
+        if hdr_surface != "void":
+            sys.stderr.write(
+                "--phi-surface void: %s declares the `%s` cq_phi surface, not "
+                "`void`.\n  Every cell would fail at STAGE 1 and the wall of "
+                "clang errors would read like\n  a wall of lowering declines. "
+                "Point --include-dir at a header whose cq_phi is\n  the ONE "
+                "register-free extern `void cq_phi(double)` (PRD §4.1) — the "
+                "shipped\n  include/CQ.h is one.\n" % (hdr, hdr_surface))
+            return 2
     if cfg.oracle and not os.access(cfg.oracle, os.X_OK):
         sys.stderr.write("oracle not executable: %s\n" % cfg.oracle)
         return 2
     cfg.clang = os.path.join(cfg.llvm, "clang")
     cfg.cqopt = os.path.join(cfg.root, "build/ir-pass/cq-opt")
-    cfg.include = os.path.join(cfg.root, "include")
+    cfg.include = cfg.include_dir or os.path.join(cfg.root, "include")
     cfg.pairchk = os.path.join(cfg.root, "tools/free_pairing_check.py")
     cfg.templates = os.path.join(cfg.root, "build/runtime/libcq_templates.a")
     cfg.runtime = os.path.join(cfg.root, "build/runtime/libcq_runtime.a")
@@ -628,8 +816,10 @@ def main():
                 lines.append("      " + l)
     out = "\n".join(lines)
     print(out)
-    print("\n=== TALLY (%s, %d cells) ===" %
-          ("QUICK" if cfg.quick else "ALL-PAIRS", len(res)))
+    print("\n=== TALLY (%s%s, %d cells) ===" %
+          ("QUICK" if cfg.quick else "ALL-PAIRS",
+           ", --phi-surface void" if cfg.phi_surface == "void" else "",
+           len(res)))
     for k in sorted(tally):
         print("  %-24s %d" % (k, tally[k]))
     bad = sum(tally.get(k, 0) for k in BAD)
