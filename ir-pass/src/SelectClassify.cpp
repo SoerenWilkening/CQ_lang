@@ -88,7 +88,19 @@ bool isRotationCall(const Value *V) { return isPhiCall(V) || isThetaCall(V); }
 // exclusion is per-operand-use, not global), but splitting — merge for the data
 // uses, rotate for the angle use — double-realizes the value (a silent
 // miscompile). So ANY reach returns true; never split.
-bool selReachesRotationArg1(SelectInst *Sel) {
+//
+// ⚠ THE NAME NOW UNDER-DESCRIBES IT (bd test_C_libtooling-3qlq Inc 1). The
+// register-free BRANCH PHASE `void @cq_phi(double)` carries its angle at arg
+// **0**, because it has no register operand at all. It is renamed nothing and
+// kept as one walk deliberately: the question this predicate asks is "does the
+// select's value reach an ANGLE SLOT", and there are now two slot spellings for
+// it. Missing the arg-0 one is not a decline — it is a MISS: gate 3 would not
+// fire, the select would fall through to the data/mux gates, and the P2 accept
+// (PRD §6.2) would be unreachable while the shape declined later, in
+// `deleteGlobalPhases`, with a message about an angle nobody claimed (MEASURED
+// before this clause: `cq rotation lowering: unsupported quantum-derived
+// rotation angle`, in the wrong function).
+bool selReachesRotationArg1(SelectInst *Sel, const TaintSet &taint) {
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Sel);
@@ -99,10 +111,16 @@ bool selReachesRotationArg1(SelectInst *Sel) {
       // arg-1 angle reach — the per-use predicate (the angle operand of a
       // cq_phi/cq_theta is classical; a value reaching it as data is the
       // f64/angle miscompile family).
-      if (auto *CI = dyn_cast<CallInst>(X))
+      if (auto *CI = dyn_cast<CallInst>(X)) {
         if (isRotationCall(CI) && CI->arg_size() >= 2 &&
             CI->getArgOperand(1) == U && CI->getArgOperand(0) != U)
           return true;  // angle — decline the WHOLE select (fan-out rule).
+        // ...and the register-free branch phase's arg-0 angle slot. EXACT
+        // membership (`isRegisterFreePhaseCall`), never a name test.
+        if (isRegisterFreePhaseCall(CI, taint) && CI->arg_size() == 1 &&
+            CI->getArgOperand(0) == U)
+          return true;
+      }
 
       // value-preserving carriers only (do NOT cross arithmetic/compare).
       // `freeze` is value-preserving (Phase-7.1 Increment B); the escape guard no
@@ -748,7 +766,7 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // have their own precise strings (`control flow inside a loop body`,
   // `rotation arm on a condition wire`, `stale rail record read past a
   // controlled Ry`) that `rotation angle` would MISLABEL.
-  if (selReachesRotationArg1(Sel)) {
+  if (selReachesRotationArg1(Sel, taint)) {
     switch (classifyAngleSelect(Sel, Tree, taint, wd, DT, LI, plan)) {
     case AngleSelectDisp::Accepted:
     case AngleSelectDisp::Declined:

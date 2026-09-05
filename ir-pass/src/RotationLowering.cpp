@@ -219,6 +219,17 @@ bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
 
 void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
                     const ControlPlan *plan) {
+  // `plan->InShadow` was this function's only reader of the plan, and it was
+  // read ONLY by the deleted PHI loop below. NOTHING has ever inserted into that
+  // set (`grep -rn "InShadow" ir-pass/` finds the declaration, its comments and
+  // that one read), so the parameter is now unused rather than newly-dead. It is
+  // KEPT in the signature: both pipeline entry points pass it, `ControlPlan.h`
+  // documents it as the channel for a future control emitter that keeps gate
+  // bodies IN PLACE, and removing it would touch the twin-pipeline call sites
+  // for no behavioural gain.
+  (void)plan;
+  // `PhiCalls` is permanently empty since 3qlq Inc 1 and is kept in the
+  // predicate as the vacuous term it now is (see TaintPropagation.h).
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty())
     return;
 
@@ -383,85 +394,30 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     ToErase.push_back(Theta);
   }
 
-  // --- PHI. Iterate in collection order (collected regardless of taint).
-  for (CallInst *Phi : taint.PhiCalls) {
-    // `plan->InShadow` names cq_phi gate bodies a control emitter handles
-    // itself (so they must NOT be lowered here). For the 4.1 swap-route emitter
-    // (`SwapRouteEmit::lowerControlRegions`) this set is EMPTY: that emitter runs
-    // BEFORE this pass and ERASES each arm cq_phi (scrubbing it from
-    // taint.PhiCalls), so an in-shadow phi never reaches this loop. The guard is
-    // retained for forward control work that keeps gate bodies in place (the
-    // §6a control-in-place peephole).
-    //
-    // ⚠ SAY IT FLATLY RATHER THAN AS "empty FOR the 4.1 emitter", which reads as
-    // if some other emitter fills it (bd drbq round-2 review, lens C §2):
-    // `InShadow` HAS NO `insert` ANYWHERE IN `ir-pass/` — measured, `grep -rn
-    // "InShadow" ir-pass/` finds the declaration, its comments, and this read.
-    // NOTHING populates it today, from any path. That is also what makes this
-    // read safe across the round-1/round-2 plan split: this loop runs AFTER
-    // round-2 emission, so a populated round-1 set would be holding
-    // possibly-freed `Instruction *`s here (see the note on `ControlPlan`).
-    if (plan && plan->InShadow.count(Phi))
-      continue;
-    Value *Op = Phi->getArgOperand(0);
-    Value *Angle = Phi->getArgOperand(1);
-    // Quantum-derived angle → loud decline BEFORE any emission, on the
-    // classical-operand path too (deleting an Rz whose angle is entangled
-    // data would silently drop a quantum-dependent operation; over-declining
-    // is safe). The phi is left standing (test_C_libtooling-659).
-    if (declineTaintedAngle(Phi, taint))
-      continue;
-    // CONTROL-IN-PLACE PHASE ARM (control-in-place-PRD §12.2, bd
-    // test_C_libtooling-drbq Inc 2a — the §6a Rz peephole, default-on for the
-    // FLAT `emitRegion` path). `SwapRouteEmit`'s phase path HOISTED this
-    // `cq_phi` out of a tainted arm into the pred and recorded the control flag
-    // it must fire under; mint `cqrt_rz_<W>_controlled(f, handle, θ)` at the
-    // hoisted position instead of the unconditional gate. Everything else (the
-    // handle, the RAUW-to-operand, the `UserPhaseRotations` recording) is
-    // unchanged — the two arms of `emitRz` differ only in the symbol and the
-    // prepended flag.
-    Value *Ctrl = nullptr;
-    if (auto It = taint.ControlledRotations.find(Phi);
-        It != taint.ControlledRotations.end())
-      Ctrl = It->second;
-    if (taint.Tainted.count(Op)) {
-      // Tainted operand → emit the rz on the handle, CONTROLLED iff the emitter
-      // recorded a flag for it. A failed emit (unsupported width) leaves the phi
-      // standing for the verifier — do not erase it.
-      if (!emitRz(Phi, Op, Angle, wd, /*controlled=*/Ctrl != nullptr, Ctrl,
-                  &taint.UserPhaseRotations))
-        continue;
-    } else if (Ctrl) {
-      // A recorded CONTROLLED gate whose arg 0 is CLASSICAL. On the accept path
-      // this cannot happen: `emitRegion`'s step-2 re-anchor rewrites a folded
-      // `ConstantInt` base to the region's proven routed handle (which is
-      // tainted) and declines loudly on any other non-`Q` base, so a recorded
-      // `cq_phi` always has a tainted arg 0 here. Reaching this line means the
-      // plan and the IR disagree — and the fall-through below (RAUW to the
-      // classical operand, erase) would DROP the arm's rotation silently, which
-      // is precisely the verify-clean wrong unitary the re-anchor exists to
-      // prevent. Bail LOUDLY instead (Rule 1).
-      //
-      // ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L4 finding
-      // F-L4-1). This used to call itself "the mirror of `controlled theta
-      // operand` on the theta loop above". THAT SIBLING NO LONGER EXISTS: Inc 4
-      // turned it into the state-prep ACCEPT path, and `grep` finds the string
-      // in no other code site or fixture in the tree. The asymmetry is NOT an
-      // oversight and this bail must NOT be "tidied" to match the theta loop:
-      // there is no Rz state prep (PRD §14.7, Rule 3 — `cq_phi` on a classical
-      // operand propagates no taint and is DELETED at lowering, so it never
-      // allocates; measured on `..._reject_stateprep_rz_prep.ll`). A classical
-      // arg-0 `cq_phi` under a control therefore still means only one thing:
-      // the plan and the IR disagree.
-      diagnoseUnsupported(Phi, "controlled phi operand");
-      continue;
-    }
-    // Classical operand → no rz (Rz on a basis state is unobservable,
-    // PRD §4.1). RAUW the phi result to its operand either way (the
-    // quantum value is unchanged at the handle level), then erase.
-    Phi->replaceAllUsesWith(Op);
-    ToErase.push_back(Phi);
-  }
+  // --- PHI. GONE (bd test_C_libtooling-3qlq Inc 1, 2026-09-05).
+  //
+  // This loop lowered the 15-width `@cq_phi_<sfx>(x, angle)` family to
+  // `cqrt_rz_<W>` / `cqrt_rz_<W>_controlled`, and BOTH targets are exactly the
+  // defect the increment exists to remove (PRD `retire-swap-route-PRD.md` §1):
+  // `cqrt_rz_<W>` is TENSORED — Rz on EACH qubit of the register — so the
+  // routed/controlled form put phase `(−1)^popcount(target)` on the marked
+  // branch and could never mark `|0…0⟩` at all. Every Grover golden built on it
+  // was a self-consistent trace of the IDENTITY on `q`, and Rule 2 says exactly
+  // why nothing caught it.
+  //
+  // The family is RETIRED at the surface (`CQ.h`) and unresolved by
+  // `resolveSources`, so `taint.PhiCalls` is now permanently empty and this loop
+  // could not fire. It is DELETED rather than left as a no-op because a dead
+  // loop reading `getArgOperand(1)` of a call it can no longer identify is
+  // precisely the shape the prototype guard exists to prevent. The RUNTIME
+  // DECLARATIONS are NOT deleted (owner question Q1: at the Phase-11 freeze,
+  // not now), and `emitRz` itself is kept — see its own header note.
+  //
+  // What replaces it: the register-free `void @cq_phi(double)` is claimed by
+  // `ArmClassify::classifyPhaseKickback` (P1) or `classifyAngleSelect` (P2) and
+  // emitted as an UNCONTROLLED `cqrt_rz_i1` on the CONDITION FLAG, or deleted as
+  // a global phase by `deleteGlobalPhases` (P7). None of those paths runs here:
+  // all three complete before `lowerRotations` is reached.
 
   for (Instruction *I : ToErase)
     I->eraseFromParent();

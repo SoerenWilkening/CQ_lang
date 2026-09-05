@@ -26,6 +26,7 @@
 namespace llvm {
 class BasicBlock;
 class BranchInst;
+class PHINode;
 class CallInst;
 class CmpInst;
 class DominatorTree;
@@ -223,6 +224,39 @@ bool angleSelectArmsAdmissible(const llvm::Value *A, const llvm::Value *B);
 // Pure analysis (Rule 9): recognition is by SSA-value identity and nothing is
 // mutated.
 enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
+
+// The MERGE-TAIL ANGLE PHI of a kickback region, or false (bd
+// test_C_libtooling-3qlq Inc 1, orchestrator refinement (1), 2026-09-05).
+//
+// `clang -O1` does NOT always fold `if (c) cq_phi(A); else cq_phi(B);` into one
+// call on a `select` over the angle. When the two arms differ by more than the
+// angle — the MEASURED customer is `tests/e2e/slice_control_phase_ifelse_
+// derived.c`, whose true arm carries TWO phases and its false arm one — it
+// leaves a DIAMOND plus, in the merge block:
+//
+//     %a = phi double [ 1.250000e-01, %arm ], [ 7.500000e-01, %pred ]
+//     call void @cq_phi(double %a)
+//
+// i.e. the LAST phase of each arm sunk into the merge with its angle muxed. That
+// is the same P2 lowering as the `select` spelling — one `cqrt_rz_i1` per
+// incoming, on the region's own flag, bracketed by that incoming's polarity —
+// and it needs no arithmetic, so a run-time incoming would be admissible too
+// (they are `ConstantFP` in every measured case).
+//
+// ⚠ THIS PREDICATE IS ALSO A CORRECTNESS FENCE FOR THE PLAIN P1 ACCEPT, not only
+// the entry to a widening. `flattenRegion` splices the arm and merge blocks into
+// `Pred` and erases them; a PHINode left standing in that merge becomes a phi
+// with the wrong predecessor count in a block that no longer branches — MEASURED
+// as `PHI nodes not grouped at top of basic block!`, a BROKEN MODULE at `opt`
+// exit 0, on exactly the customer above. So the classifier must decide about
+// EVERY phi in the merge: this one it claims and the emitter erases, and any
+// other one makes the whole region `NotApplicable`.
+//
+// ONE SPELLING, asked by BOTH the classifier (to accept) and the emitter (to
+// re-validate before mutating) — never two (Rule 14). On true, `Phi` and
+// `Consumer` are set; on false they are untouched.
+bool phaseAngleTail(llvm::BasicBlock *MergeBB, const TaintSet &Taint,
+                    llvm::PHINode *&Phi, llvm::CallInst *&Consumer);
 
 PhaseKickbackDisp classifyPhaseKickback(llvm::BranchInst *BI, TaintSet &Taint,
                                         ControlRegion &Region,

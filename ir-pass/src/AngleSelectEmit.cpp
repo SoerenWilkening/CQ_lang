@@ -17,6 +17,7 @@
 #include "ArmAnalysis.h"       // angleSelectArmsAdmissible / comparePredLowerable
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
 #include "ControlPlan.h"       // ControlRegion / diagnoseUnderControl
+#include "ControlledSymbols.h"  // xFn (3qlq Inc 1 phase angle select bracket)
 #include "TaintPropagation.h"  // TaintSet
 #include "WidthDispatch.h"     // freeFn
 
@@ -25,6 +26,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -71,6 +73,136 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   }
 }
 
+
+// ── bd test_C_libtooling-3qlq Inc 1 — P2, the REGISTER-FREE PHASE ANGLE SELECT ─
+//
+// `if (c) cq_phi(A); else cq_phi(B);` never reaches the pass as a diamond:
+// `clang -O1` sinks both calls into ONE `call void @cq_phi(double %sel)` with
+// `%sel = select i1 %c, double A, double B` (MEASURED, PRD §6.1 row 2). The
+// emitted stream, at the consumer's position, is:
+//
+//     cq_template_icmp_<pred>_<W>_hl(q, lit) -> f     ; flag mint
+//     cqrt_x(f); cqrt_rz_i1(f, B); cqrt_x(f)          ; P(B) on the f = 0 branch
+//     cqrt_rz_i1(f, A)                                ; P(A) on the f = 1 branch
+//     cq_template_icmp_<pred>_<W>_hl_unc(f, q, lit)   ; flag strip → |0>
+//     cqrt_free(f)
+//
+// WHY THIS IS EXACT WHERE THE BY-DIFFERENCE FORM IS NOT (PRD §3). Under
+// `Rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` the four gates give `|0⟩` the factor
+// `e^{i(B−A)/2}` and `|1⟩` the factor `e^{i(A−B)/2}` — a RELATIVE phase of
+// `e^{i(A−B)}` between the two branches, which is the same relative phase
+// `P(A)`-on-1 / `P(B)`-on-0 produces, times an unobservable global phase. No
+// `fsub` is performed, so no value the source did not name enters a gate slot:
+// `A` and `B` are passed through VERBATIM. That is the whole reason a RUN-TIME
+// arm is admitted here (owner question Q3) while the by-difference Ry stem below
+// refuses one — there, `fl(A−B)` is unbounded in absolute radians (MEASURED at
+// 0.858 rad for `π`/`1e16`) and can be `inf` from two finite arms.
+//
+// THERE IS NO POLARITY CASE. A `select` means "A when the condition is 1", full
+// stop — unlike a `br` diamond, whose gate arm `clang -O1` often makes the FALSE
+// successor (Rule 9). The `cqrt_x` bracket here is not a polarity fix: it is how
+// the `f = 0` branch's gate is expressed at all, and it is the same self-inverse
+// pair every "fires on ¬f" emission in this tree uses.
+void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
+                          WidthDispatch &wd, TaintSet &taint) {
+  // ---- 0. RE-VALIDATE, before mutating anything (the step-0 discipline of the
+  // by-difference emitter: a mid-stream decline leaves a minted flag and a
+  // half-rewired consumer behind).
+  Value *A = Sel->getTrueValue();
+  Value *B = Sel->getFalseValue();
+  if (T->arg_size() != 1 || T->getArgOperand(0) != Sel || !Sel->hasOneUse() ||
+      Sel->user_back() != T || Sel->getCondition() != Cond ||
+      taint.Tainted.count(A) || taint.Tainted.count(B)) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+  Instruction *After = T->getNextNode();
+  if (T->getParent() != Sel->getParent() ||
+      Cond->getParent() != T->getParent() || !Cond->comesBefore(Sel) ||
+      !Sel->comesBefore(T) || !After) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+  // S4's SEMANTIC half, re-asked in lockstep (the round-1 L4-1 repair, which
+  // applies here for the identical reason: a PRECEDING region's RAUW in this
+  // same `lowerControlRegions` loop can turn the compare Q+Q between detection
+  // and now, and this emitter has no Q+Q mint either).
+  const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
+  const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
+  if (LTainted == RTainted || !comparePredLowerable(Cond) ||
+      !compareFlagMintable(Cond, taint)) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+  FunctionCallee Rz = wd.rzRtFn("i1");
+  // `cqrt_x` through `ControlledSymbols` — the ONE spelling of the negation
+  // bracket in this tree (Rule 14). The object is a trivial `{Module&,
+  // WidthDispatch&}` wrapper whose resolvers are `getOrInsertFunction`, i.e.
+  // idempotent, so constructing one here costs nothing and cannot mint a second
+  // symbol.
+  ControlledSymbols Csyms(*T->getModule(), wd);
+  FunctionCallee X = Csyms.xFn();
+  if (!Rz || !X) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+
+  // ---- EMISSION STARTS HERE. Nothing below may decline.
+  const DebugLoc DL = Sel->getDebugLoc();
+  IRBuilder<> Bld(T);
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+
+  // ---- 1. FLAG MINT, at the consumer — byte-identical to every other path's
+  // step 1 (`lowerCompareToFlag` classifies the operands by taint and applies
+  // the classical-on-left predicate flip itself).
+  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                   /*inverse=*/false, /*before=*/T);
+  if (!Flag)
+    // UNREACHABLE for the two reasons the sibling records — the lockstep re-ask
+    // above, and `DS_Error` → `exit(1)` inside `lowerCompareToFlag`'s own
+    // failure path. Nothing has been emitted yet, so the `return` is honest
+    // defence in depth rather than a mid-stream bail.
+    return;
+
+  // ---- 2. THE TWO GATES.
+  stamp(Bld.CreateCall(X, {Flag}));
+  stamp(Bld.CreateCall(Rz, {Flag, B}));
+  stamp(Bld.CreateCall(X, {Flag}));
+  stamp(Bld.CreateCall(Rz, {Flag, A}));
+
+  // ---- 3. STRIP + FREE, after the consumer's position. Valid unconditionally:
+  // this region emits no gate on any register the compare reads, so the basis
+  // the strip recomputes is identically the basis the mint read.
+  auto *Strip = dyn_cast_or_null<CallInst>(
+      lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                         /*before=*/After, /*negate=*/false,
+                         /*railToStrip=*/Flag));
+  if (Strip)
+    taint.DischargedFlagGates.insert(Strip);
+  IRBuilder<> Post(After);
+  stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+
+  // ---- 4. ERASE the consumer, then the select, then the compare if it is now
+  // dead. The order is forced by the use lists (the call uses the select, the
+  // select uses the compare). Leaving a dead tainted COMPARE standing is not
+  // cosmetic — `lowerOps` would lower it into a second `cq_template_icmp_*` flag
+  // rail that nothing strips and nothing frees (the `SelectMergeEmit` step-6
+  // discipline, verbatim).
+  auto &PC = taint.PhaseCalls;
+  PC.erase(std::remove(PC.begin(), PC.end(), T), PC.end());
+  T->eraseFromParent();
+  scrubTaint(Sel, taint);
+  Sel->eraseFromParent();
+  if (Cond->use_empty()) {
+    scrubTaint(Cond, taint);
+    Cond->eraseFromParent();
+  }
+}
+
 }  // namespace
 
 void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
@@ -108,6 +240,22 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   Function *Callee = T->getCalledFunction();
   if (!Callee) {
     diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
+  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P2) — the REGISTER-FREE
+  // BRANCH-PHASE consumer takes a DIFFERENT lowering, not a different symbol,
+  // so it forks the whole emitter rather than a `Callee` string:
+  //
+  //   x(f); rz_i1(f, B); x(f); rz_i1(f, A)
+  //
+  // `P(A)` on `f = 1`, `P(B)` on `f = 0`, EXACT, no subtraction. Everything the
+  // by-difference form below exists to fence — the `fsub` the source never
+  // wrote, its `½ ulp(A−B)` residual, the `2^-40` bound, the constant-arms-only
+  // narrowing of clearance blocker F-11 — has no subject here, which is why a
+  // RUN-TIME arm is admissible for this stem (owner question Q3) and remains
+  // refused for the Ry one.
+  if (isRegisterFreePhaseCall(T, taint)) {
+    emitPhaseAngleSelect(Sel, Cond, T, wd, taint);
     return;
   }
   const StringRef CalleeName = Callee->getName();

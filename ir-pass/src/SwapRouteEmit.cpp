@@ -20,6 +20,7 @@
 #include "SwapRouteEmit.h"
 
 #include "AbortParkEmit.h"       // emitAbortParkRegion (the 7.2 Inc 3 park cascade)
+#include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
 #include "CompareLowering.h"     // lowerCompareToFlag
@@ -1304,35 +1305,72 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // minted flag and a half-lowered arm behind (the Inc-2a round-1 F-5 finding).
   auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
   auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
-  auto *Phase = R.Shadow.size() == 1 ? dyn_cast<CallInst>(R.Shadow.front())
-                                     : nullptr;
-  if (!Cond || !BI || !BI->isConditional() || !R.Arm || !R.MergeBB || !Phase ||
-      Phase->getParent() != R.Arm || Phase->arg_size() != 1 ||
-      BI->getCondition() != Cond) {
+  auto anchor = [&]() -> Instruction * {
     if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+      return A;
+    return BI;
+  };
+  if (!Cond || !BI || !BI->isConditional() || !R.Arm || !R.MergeBB ||
+      BI->getCondition() != Cond) {
+    if (Instruction *A = anchor())
       diagnoseUnderControl(A, "control flow");
-    else if (Phase)
-      diagnoseUnderControl(Phase, "control flow");
     return;
   }
-  // The ANGLE is defined outside the arm (the classifier's `Arm->size() == 2`
-  // makes that structural), so it dominates `BI` and the hoisted gate can read
-  // it. Asked again here because it is an EMISSION fact, not a shape fact.
-  if (auto *AngI = dyn_cast<Instruction>(Phase->getArgOperand(0)))
-    if (AngI->getParent() == R.Arm) {
-      diagnoseUnderControl(Phase, "control flow");
-      return;
+  // Each recorded gate must still be a one-operand phase call in the arm the
+  // plan says it is in, with an angle defined OUTSIDE that arm (the classifier's
+  // `Arm->size() == N + 1` makes the latter structural, but it is an EMISSION
+  // fact — the angle has to dominate `BI`, where the gate is hoisted to — so it
+  // is re-asked here rather than inherited).
+  auto validGates = [&](ArrayRef<Instruction *> Gates, BasicBlock *BB) {
+    for (Instruction *I : Gates) {
+      auto *CI = dyn_cast<CallInst>(I);
+      if (!CI || CI->getParent() != BB || CI->arg_size() != 1)
+        return false;
+      if (auto *AngI = dyn_cast<Instruction>(CI->getArgOperand(0)))
+        if (AngI->getParent() == BB)
+          return false;
     }
+    return true;
+  };
+  if (!validGates(R.Shadow, R.Arm) ||
+      (R.ArmFalse && !validGates(R.ShadowFalse, R.ArmFalse)) ||
+      (!R.ArmFalse && !R.ShadowFalse.empty())) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  // The MERGE-TAIL ANGLE PHI, re-asked through the SAME predicate detection used
+  // (Rule 14 — never a second spelling). Its ABSENCE is as load-bearing as its
+  // presence: a φ left standing in a merge `flattenRegion` splices away is a
+  // BROKEN MODULE at `opt` exit 0 (`PHI nodes not grouped at top of basic
+  // block!`, MEASURED on `slice_control_phase_ifelse_derived`), so if the merge
+  // carries a φ that is not this one, decline rather than flatten over it.
+  PHINode *TailPhi = nullptr;
+  CallInst *TailCall = nullptr;
+  const bool HasTail = phaseAngleTail(R.MergeBB, taint, TailPhi, TailCall);
+  if (!HasTail && !R.MergeBB->phis().empty()) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  if (R.Shadow.empty() && R.ShadowFalse.empty() && !HasTail) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
   // `cqrt_rz_i1` is the ONLY Rz this pass emits after 3qlq (PRD §5). Resolve it
   // BEFORE any mutation so a resolution failure is a decline, not a half-stream.
   FunctionCallee Rz = wd.rzRtFn("i1");
   if (!Rz) {
-    diagnoseUnderControl(Phase, "control flow");
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
     return;
   }
 
   // ---- EMISSION STARTS HERE. Nothing below may decline.
-  const DebugLoc DL = Phase->getDebugLoc();
+  const DebugLoc DL = R.Shadow.empty()
+                          ? (HasTail ? TailCall->getDebugLoc() : BI->getDebugLoc())
+                          : R.Shadow.front()->getDebugLoc();
   IRBuilder<> B(BI);
   auto stamp = [&](CallInst *C) {
     if (DL)
@@ -1347,33 +1385,86 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
                                    /*inverse=*/false, /*before=*/FlagAt);
   if (!Flag)
-    // UNREACHABLE — `classifyPhaseKickback` asked `compareFlagMintable` in
-    // lockstep with this call, and `lowerCompareToFlag`'s own failure path
-    // diagnoses with `DS_Error`, which `LLVMContext::diagnose` turns into
-    // `exit(1)` before this line is reached. Defence in depth against a future
-    // `DS_Warning` re-grading, not a decline: nothing has been emitted yet.
+    // REACHABLE, and say so plainly rather than calling it unreachable — an
+    // overstated justification is how a real bail later gets deleted as dead.
+    // `classifyPhaseKickback` asks `compareFlagMintable` (a dry run of the
+    // template lookup) but deliberately does NOT ask whether the compare is
+    // Q+Q, so a `q == p` condition reaches here and `lowerCompareToFlag` fails.
+    //
+    // THAT IS SAFE AND IT IS THE PRE-EXISTING DISPOSITION, both MEASURED. Safe:
+    // the mint is the FIRST emission, so returning leaves the module exactly as
+    // it was — this is not a mid-stream bail (contrast `AngleSelectEmit`, whose
+    // `fsub` and unconditional twin precede its mint, which is why IT re-asks
+    // the semantic half at step 0b). Pre-existing: `lowerCompareToFlag` has
+    // already diagnosed `no template for opcode 'icmp i1' in tainted context`,
+    // which is CHARACTER-FOR-CHARACTER what the pre-3qlq oracle emits for the
+    // same Q+Q phase diamond in the retired register form (measured on
+    // `$SP/wt/pre-3qlq` 2026-09-05) — so this shape's message did not churn.
+    // `emitRegion`'s flat phase path has the identical structure and comment.
+    // Q+Q flag minting is a filed follow-on (PRD §9), not a defect here.
     return;
   if (R.ShareCondFlag)
     taint.SharedCondFlags[Cond] = Flag;
 
-  // ---- 2. THE GATE — `cqrt_rz_i1(f, θ)`, UNCONTROLLED, `cqrt_x`-bracketed for
-  // a ¬flag arm. The bracket is the self-inverse pair every other "fires on ¬f"
-  // emission in this file uses, so the two spellings cannot drift; a ¬flag arm
-  // therefore carries TWO `cqrt_x(f)`, the same arithmetic the flat phase path
-  // has since Inc 2a (the route carries FOUR, bracketing each of its two
-  // cswaps).
+  // ---- 2. THE GATES — `cqrt_rz_i1(f, θ)` each, UNCONTROLLED, in SOURCE ORDER,
+  // `cqrt_x`-bracketed per arm-polarity.
+  //
+  // N GATES ARE EXACT AND NEED NO ARITHMETIC (orchestrator decision 2026-09-05,
+  // PRD §6.3 row 1 superseded — see `classifyPhaseKickback`'s header). Each
+  // angle is passed through VERBATIM; the composition `P(θ₁)·P(θ₂) = P(θ₁+θ₂)`
+  // happens in the hardware, not in this compiler, so there is no `fsub`, no
+  // rounding residual and no bound to fence — unlike the 2b by-difference Ry
+  // form, whose whole arm-value fence exists because it realizes `A − B`.
+  //
+  // ONE BRACKET PAIR PER ARM, not per gate: `cqrt_x` is self-inverse, so
+  // `x;g1;x;x;g2;x` and `x;g1;g2;x` are the same unitary and the second is what
+  // the flat phase path has emitted since Inc 2a (`SwapRouteEmit.cpp:1063`'s
+  // `-2 cqrt_x` audit arithmetic assumes exactly this).
   FunctionCallee X = csyms.xFn();
-  if (R.ArmNegated)
-    stamp(B.CreateCall(X, {Flag}));
-  stamp(B.CreateCall(Rz, {Flag, Phase->getArgOperand(0)}));
-  if (R.ArmNegated)
-    stamp(B.CreateCall(X, {Flag}));
+  auto emitArm = [&](ArrayRef<Instruction *> Gates, bool Neg) {
+    if (Gates.empty())
+      return;
+    if (Neg)
+      stamp(B.CreateCall(X, {Flag}));
+    for (Instruction *I : Gates)
+      stamp(B.CreateCall(Rz, {Flag, cast<CallInst>(I)->getArgOperand(0)}));
+    if (Neg)
+      stamp(B.CreateCall(X, {Flag}));
+  };
+  emitArm(R.Shadow, R.ArmNegated);
+  // The FALSE arm of an if/else always fires on ¬f — `ArmNegated` is the
+  // DIAMOND's polarity and is false for an if/else, so the bracket here is
+  // unconditional (the field convention: `Shadow` is `Arm`'s, `ShadowFalse` is
+  // `ArmFalse`'s, by field identity and not by edge truth).
+  emitArm(R.ShadowFalse, /*Neg=*/true);
+
+  // ---- 2b. THE MERGE-TAIL ANGLE PHI: one gate per incoming, each bracketed by
+  // THAT incoming's own polarity. `%a = phi double [A, %arm], [B, %pred]` means
+  // "A when the arm ran, B otherwise", so the gate for the `%arm` incoming fires
+  // on the arm's polarity and the `%pred` incoming's fires on its negation. Walk
+  // the incoming list in index order so the emitted stream is a deterministic
+  // function of the IR.
+  if (HasTail)
+    for (unsigned I = 0; I != 2; ++I) {
+      BasicBlock *In = TailPhi->getIncomingBlock(I);
+      // `Arm` fires on f == 1 unless the diamond polarity is inverted; `ArmFalse`
+      // always fires on f == 0; the straight-through `Pred` edge is taken exactly
+      // when `Arm` is not, so its polarity is `Arm`'s negation.
+      const bool FiresOnOne = In == R.Arm         ? !R.ArmNegated
+                              : In == R.ArmFalse  ? false
+                                                  : R.ArmNegated;
+      if (!FiresOnOne)
+        stamp(B.CreateCall(X, {Flag}));
+      stamp(B.CreateCall(Rz, {Flag, TailPhi->getIncomingValue(I)}));
+      if (!FiresOnOne)
+        stamp(B.CreateCall(X, {Flag}));
+    }
 
   // ---- 3. STRIP + FREE. The strip recomputes the predicate on the CONDITION's
-  // OWN registers and XORs it back onto the flag, returning it to |0⟩ so the
-  // free is clean (Rule 6). Its validity here is unconditional in a way no other
-  // arm class can claim: this region emits NO gate on any condition register at
-  // all, so the basis the strip reads is identically the basis the mint read.
+  // OWN registers and XORs it back onto the flag, returning it to |0⟩ so the free
+  // is clean (Rule 6). Its validity here is unconditional in a way no other arm
+  // class can claim: this region emits NO gate on any condition register at all,
+  // so the basis the strip reads is identically the basis the mint read.
   // (`emitRegion` needs §3c for the same conclusion; the Ry path needs S8's
   // disjoint-wire proof.)
   //
@@ -1389,14 +1480,27 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
     stamp(B.CreateCall(wd.freeFn(), {Flag}));
   }
 
-  // ---- 4. ERASE THE ARM CALL, THEN FLATTEN. The call is erased rather than
-  // hoisted: its whole content is now the `cqrt_rz_i1` above. Scrub it from
-  // `PhaseCalls` first so `deleteGlobalPhases` (which derives its survivors from
-  // the IR) and any later module walk cannot dereference freed memory.
-  auto &PC = taint.PhaseCalls;
-  PC.erase(std::remove(PC.begin(), PC.end(), Phase), PC.end());
-  Phase->eraseFromParent();
-  // `R.Merge` is null, so `flattenRegion` dissolves no φ — it splices the arm
+  // ---- 4. ERASE THE ARM CALLS AND THE TAIL, THEN FLATTEN. Each call is erased
+  // rather than hoisted: its whole content is now a `cqrt_rz_i1` above. Scrub
+  // from `PhaseCalls` first so `deleteGlobalPhases` (which derives its survivors
+  // from the IR) and any later module walk cannot dereference freed memory.
+  auto erasePhase = [&](CallInst *CI) {
+    auto &PC = taint.PhaseCalls;
+    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    CI->eraseFromParent();
+  };
+  for (Instruction *I : R.Shadow)
+    erasePhase(cast<CallInst>(I));
+  for (Instruction *I : R.ShadowFalse)
+    erasePhase(cast<CallInst>(I));
+  if (HasTail) {
+    // Consumer first (it is the φ's only user), then the φ — which MUST go
+    // before `flattenRegion` splices its block away.
+    erasePhase(TailCall);
+    scrubTaint(TailPhi, taint);
+    TailPhi->eraseFromParent();
+  }
+  // `R.Merge` is null, so `flattenRegion` dissolves no φ — it splices the arm(s)
   // and merge blocks into `Pred` and rewires the branch, exactly as it does for
   // the void-I/O diamond.
   flattenRegion(R, taint);
