@@ -460,3 +460,37 @@ retired twin gate of §9). The three reds, each with its owner:
 | `e2e-angle-select-rz-twin-identical` | **this agent — FIXED** | §9. The gate became FALSE under D2, and was retired; both its slices pass individually (re-measured 2/2 after the reconfigure). |
 | `e2e-fixture-guard-liveness` | **prep-a / the fixture re-derive** | 7 SKIPs, every one verified to carry **2** `@cq_phi_<sfx>` references (`grep -c '@cq_phi_[a-z0-9]'`): `lowering_io_tape_rz_preserving`, `lowering_live_record_mb_{router_phi,sibling_alias}_accept`, `lowering_uncompute_interior_leak_{region_wire_measured,route_in_interval}`, `lowering_uncompute_interior_region_{chain,routed_base}`. Each is in the retired family, the pass declines it (rc=1), so its anchored `NOFREE` guard cannot be checked. **0 DEAD guards.** `impl_inc1b` reported this identical failure for this identical reason. |
 | `e2e-loop-twin-matrix` | **prep-d2** (round-1 F-L5-7, OQ-18) | `274 cells — 50 ACCEPT-IDENTICAL, 33 DECLINE, 191 other; 15 quarantined`. Its GENERATOR emits programs on the RETIRED two-argument surface, so they fail at stage 1 (`clang` error). It needs `--phi-surface void` and regenerated tables. |
+
+## 12. FINDING F-B2-3 — FOUR slices whose SUBJECT was the uncontrolled Rz itself
+
+Not a defect and not a mismatch: all four audit `SUBSTITUTION-ONLY` class (c), which
+is owner decision D2 working exactly as written (an uncontrolled or
+classically-controlled `cq_phi` is a global phase and is DELETED). They are recorded
+because a slice that still compiles, still has a golden, and no longer exercises the
+thing its header claims is the bd `3c6m.63` / `165/174` failure mode, and it is
+invisible to a green suite. **This agent did NOT rewrite them** — the remedy is the
+same class of decision the orchestrator took for OQ-2 / OQ-3 / OQ-5, and it is not
+`prep_b2`'s to take.
+
+MEASURED (`grep -c cqrt_rz_i1` on the new golden vs `grep -c cqrt_rz` on 52d7764's):
+
+| slice | golden then -> now | what the slice claimed to prove | what survives |
+|---|---|---|---|
+| `slice_classical_if_gate` | 1 rz -> **0**, 6 lines | a CLASSICAL condition gating a quantum Rz: one arm FIRES, one does NOT — the contrast IS the test | nothing of the contrast; the golden is two `alloc/ry/measure` triples |
+| `slice_classical_switch_gate` | 2 rz -> **0**, 6 lines | the same over a 7-arm classical `switch` (incl. a 2-gate arm and a default) | as above — byte-identical to `slice_classical_if_gate`'s golden |
+| `slice_loop_phase_accum` | 3 rz -> **0**, 3 lines | an Rz accumulating a phase over a classically-bounded loop | nothing: the loop body was ONE uncontrolled `cq_phi`, so the body is empty and the golden is `alloc; ry; measure` |
+| `slice_control_cond_onward_phase` | 1 rz -> **0**, 19 lines | an ONWARD phase on a value produced by a control merge (the `dugh` re-propagation) | the 4.5 switch DATA-MUX half is intact and fully exercised (3 eq-flag mints, 3 controlled copies, 3 strips, 3 frees); only the ONWARD phase is gone |
+
+Two more lose an Rz line without losing their subject, and are listed so the count
+is complete rather than because they need anything: `spec_select_caller` and
+`spec_twoarm_caller` (1 rz -> 0 each) keep their whole specialization stream (12 and
+30 trace lines) — the deleted line was a trailing onward phase.
+
+**Proposed remedy, for whoever rules on it** (one line each, all inside the existing
+machinery): re-base the first three on the Ry stem — `if (taken) q1 = cq_theta(q1, .25);`
+and `for (...) q = cq_theta(q, .1);` — which restores the FIRES / does-NOT-fire
+contrast and the loop accumulation without touching what the slices are about (a
+CLASSICAL branch must not become quantum control); and give
+`slice_control_cond_onward_phase` a kickback onward region (`if (r == 9) cq_phi(.25);`)
+so the merged value is read by a real consumer. Each would then be a REWRITTEN PROGRAM
+under §5's rules.
