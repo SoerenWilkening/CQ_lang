@@ -1408,10 +1408,14 @@ and the mutation `M4` (skip without inserting) is the pin.
 #### F-C1-3 / F-C1-4 — the two documentation findings
 
 * **F-C1-3.** A bare `short q` (`p/r5_short_inv.c`) makes `-O1` hoist `sext i16 %2 to i32`
-  into the preheader, so the per-bit condition reads a TEMPLATE rail and clause (ii) refuses.
-  3/0 vs 3/3 on all three binaries, rolled trace BYTE-UNCHANGED. This IS the Q-R1-1 class,
+  into the preheader, so the per-bit condition reads a TEMPLATE rail
+  (`cq_template_sext_i16_to_i32`) and clause (ii) refuses. 3/0 vs 3/3 on all three binaries,
+  rolled trace BYTE-UNCHANGED across 542d588, FIX-1 and this HEAD. This IS the Q-R1-1 class,
   but PRD §0 E2's wording ("a cast, a Q+Q op, an onward `mul`") reads as if the user wrote
-  the cast; here the user wrote a TYPE. E2 now says so.
+  the cast; here NO cast appears in the program at all — the user wrote a TYPE. E2 now says
+  so, and the shape is pinned as the accept-and-leak control
+  `control_phase_kickback_mixed_short_sext_leak_control.ll` (0 MISSED / 0 DIRTY under the
+  injection matrix).
 * **F-C1-4.** §3.5's `d2` and `n4` rows were published as `0/0`; both are **3/0 | 3/3**. The
   conditions are `i64`, so an `and_i32_hl`-pinned grep read zero. Corrected in place with the
   reason; dispositions unchanged.
