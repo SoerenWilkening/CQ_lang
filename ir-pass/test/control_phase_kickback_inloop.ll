@@ -1,8 +1,30 @@
 ; control_phase_kickback_inloop.ll — ACCEPT, ROLLED. P6: a kickback region inside
 ; a classically-bounded loop (PRD §6.2 row P6; the 8h7d.5 rolled in-loop path).
 ;
-; This is Grover written as `for (i = 0; i < K; i++) { oracle; diffusion; }`. The
-; region is admitted only through `flatRegionRollableInLoop` — the SAME 8h7d.5
+; ⚠ READ THE NEXT PARAGRAPH BEFORE THIS FILE'S ASSERTIONS. Its module is
+; HAND-WRITTEN IR that `clang -O1` DOES NOT PRODUCE, and its original header
+; called it "Grover written as `for (i = 0; i < K; i++) { oracle; diffusion; }`"
+; — there is no diffusion in it and NO GATE ON THE REGISTER AT ALL (Rule-13
+; round-1 finding F-L5-3). The compare sits in the loop HEADER on a `%q0` defined
+; in `entry`; from C, `for (…) { if (q == k) cq_phi(θ); }` with `q` untouched in
+; the body has a LOOP-INVARIANT condition register, so `-O1` LICM-hoists that
+; compare into the PREHEADER and `condWireDisposition`'s P4 precondition
+; (`Cond->getParent() != R.Pred`) returns `DeclineNow` — the program declines
+; `condition predates a non-diagonal gate under quantum control`. That is bd
+; `drbq.12`'s over-decline arriving at the PHASE stem, where it did not exist
+; before: under the register surface a phase arm always gated `q`, so the
+; register was loop-VARIANT; under kickback a pure-phase body never gates it.
+;
+; So this file pins the ROLLED EMISSION SHAPE and nothing about reachability.
+; The two files that carry the reachable halves are
+; `control_phase_kickback_inloop_body_gate.ll` (ACCEPT — the shape `-O1` really
+; produces for a rolled Grover, where the body's own `cq_theta` diffusion makes
+; the register loop-variant) and
+; `control_phase_kickback_reject_inloop_invariant_cond_hoisted.ll` (DECLINE — the
+; hoisted-compare class, whose Ry-stem twin has had a fixture since drbq Inc 3
+; and whose phase-stem twin had none).
+;
+; The region is admitted only through `flatRegionRollableInLoop` — the SAME 8h7d.5
 ; predicate the flat phase path uses, asked from the kickback classifier's own
 ; pre-peel rather than re-spelled (Rule 14; it is declared in `ControlShape.h` for
 ; that reason). Everything else on a cycle (irreducible, multi-latch, nested)
@@ -67,7 +89,8 @@ exit:
 ; ---------------------------------------------------------------------------
 ; WHOLE-FILE, PURE-NEGATIVE (the Inc-3 F-L6-1 / Inc-4 F-L7-1 discipline: a
 ; POSITIVE directive inside a prefix WINDOWS every negative one of that prefix,
-; so every count lives in its own GCNT prefix and NOROUTE carries no positives).
+; so every count lives in its own C<n> prefix and NOROUTE carries no positives;
+; the prefixes are C1..C5, not the `GCNT` this line used to name — F-L4-2).
 ;
 ; The four things a register-free kickback must NEVER emit:
 ;   * a route of any kind — the whole point is that no work rail exists;
