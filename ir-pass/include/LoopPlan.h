@@ -256,6 +256,15 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // the onward pass is exactly the DELTA and every pre-round-2 module is
 // byte-identical. Pass nullptr (the default) on the round-1 call.
 //
+// ⚠ THE ONWARD CALL CAN ALSO DECLINE, and that is deliberate rather than a side
+// effect: it runs the SAME `collapseRailPhisIn`, whose `Declined` outcomes (the
+// X1 cross-iteration dirty rail, the Rule-8 rail fan-out, the stale rail-record
+// read) are LOUD. A round-2-opened loop therefore gets exactly the treatment a
+// round-1-opened one gets, including its refusals. No fixture in the 1666-file
+// corpus changed disposition when this call was added (the red set is the same
+// 396 files, file for file), so nothing shipped relies on such a loop having
+// been silently unexamined.
+//
 // ⚠ WHAT THE DELTA DOES NOT DO, stated because it is the honest limit. A loop
 // that round 1 processed is NOT re-examined under round-2 taint, so a marking
 // GRANTED at round 1 stands even if a value that becomes tainted at round 2
