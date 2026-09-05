@@ -560,16 +560,30 @@ HDR = "#include <math.h>\nvolatile int off = 3;\n"
 # The rewrite turns the shipped REGISTER spelling into the Increment-1 VOID one,
 # textually, on generated source only:
 #
-#     <TYPE> <n> = cq_phi(<x>, <T>);   ->   <TYPE> <n> = <x>; cq_phi(<T>);
-#     <n>        = cq_phi(<x>, <T>);   ->   <n> = <x>; cq_phi(<T>);
 #     <n>        = cq_phi(<n>, <T>);   ->   cq_phi(<T>);          (lhs == arg0)
+#     <TYPE> <n> = cq_phi(<x>, <T>);   ->   <TYPE> <n> = (cq_phi(<T>), <x>);
+#     <n>        = cq_phi(<x>, <T>);   ->   <n> = (cq_phi(<T>), <x>);
 #
-# The declaration/assignment half is NOT decoration: `int cqa = cq_phi(cq0,.07)`
-# and `T r = cq_phi(p, .05)` are ALIAS spellings in the sibling instruments, and
-# dropping the alias would silently change which register a later line names. The
-# third form is the common one here (every `cq_phi` in this file is an in-place
-# `a = cq_phi(a, T)`), and `r = r;` is elided rather than emitted so the void
-# source reads like source.
+# The alias half is NOT decoration: `int cqa = cq_phi(cq0,.07)` and
+# `T r = cq_phi(p,.05)` are ALIAS spellings in the sibling instruments, and
+# dropping the alias would silently change which register a later line names.
+#
+# ⚠ EVERY OUTPUT FORM IS EXACTLY ONE STATEMENT, AND THAT IS A CORRECTNESS
+# REQUIREMENT, NOT A STYLE ONE. It was found by reading a generated sample rather
+# than by reasoning (Rule 11). The angle-select generator writes its arms
+# BRACE-LESS —
+#     if (q == 5) r = cq_phi(r, A); else r = cq_phi(r, B);
+# — so a two-statement expansion `r = r; cq_phi(B);` puts the SECOND statement
+# OUTSIDE the `else`, and the B phase then fires unconditionally: a DIFFERENT
+# PROGRAM that compiles, links and runs. The comma operator keeps the alias and
+# the phase in one expression (`(void_expr, x)` is C11 6.5.17), so the rewrite is
+# safe at any site a single statement is legal — which is every site these
+# generators write.
+#
+# ⚠ AND THE `decl` GROUP EXCLUDES THE STATEMENT KEYWORDS. Without that, `else` in
+# `else r = cq_phi(r, B);` matches "an identifier followed by whitespace" and is
+# read as a TYPE, so the rewrite forces the comma form where the plain
+# `cq_phi(B);` is right. Same sample, same reading.
 #
 # ⚠ IT IS TEXTUAL, ON TEXT THESE GENERATORS WROTE, and it is not a C parser: a
 # nested call or a comma inside the arg-0 expression would defeat it. Every
@@ -580,12 +594,28 @@ HDR = "#include <math.h>\nvolatile int off = 3;\n"
 # like a frontend bug.
 PHI_SURFACES = ("register", "void")
 
+# Statement keywords that can stand immediately before an assignment and would
+# otherwise be read as a type by the `decl` group. `else` is the one that bit;
+# the rest are here so the next generator shape does not have to rediscover it.
+_STMT_KW = ("else", "do", "return", "case", "default")
+
 _PHI_CALL = re.compile(
-    r"(?P<indent>[ \t]*)"
-    r"(?:(?P<decl>(?:[A-Za-z_][A-Za-z0-9_]*[ \t]+)+)(?P<name1>[A-Za-z_][A-Za-z0-9_]*)"
-    r"|(?P<name2>[A-Za-z_][A-Za-z0-9_]*))"
-    r"[ \t]*=[ \t]*cq_phi\([ \t]*(?P<arg0>[A-Za-z_][A-Za-z0-9_]*)[ \t]*,"
-    r"[ \t]*(?P<angle>[^,()]*?)[ \t]*\)[ \t]*;")
+    # `\b` AFTER the indent, applying to BOTH alternatives, is load-bearing: a
+    # negative lookahead alone does not stop the engine from starting the match
+    # INSIDE a word, and it did — `else r = cq_phi(r, B);` matched from "lse",
+    # whose lookahead passes, and read `lse ` as a declaration. Measured on the
+    # angle-select generator's brace-less arm, which is the same sample that
+    # produced the one-statement rule above.
+    (r"(?P<indent>[ \t]*)\b"
+     r"(?:(?P<decl>(?:(?!(?:%s)\b)[A-Za-z_][A-Za-z0-9_]*[ \t]+)+)"
+     r"(?P<name1>[A-Za-z_][A-Za-z0-9_]*)"
+     r"|(?P<name2>[A-Za-z_][A-Za-z0-9_]*))"
+     r"[ \t]*=[ \t]*cq_phi\([ \t]*(?P<arg0>[A-Za-z_][A-Za-z0-9_]*)[ \t]*,"
+     r"[ \t]*(?P<angle>[^,()]*?)[ \t]*\)[ \t]*;") % "|".join(_STMT_KW))
+
+# The REGISTER spelling, for the post-condition assert only: `cq_phi(` then a
+# first argument containing no paren, then a comma.
+_PHI_CALL_TWOARG = re.compile(r"cq_phi\([^,;()]*,")
 
 
 def phi_void_source(text):
@@ -598,17 +628,22 @@ def phi_void_source(text):
     def one(m):
         ind, angle, arg0 = m.group("indent"), m.group("angle"), m.group("arg0")
         decl, name = m.group("decl"), m.group("name1") or m.group("name2")
-        call = "%scq_phi(%s);" % (ind, angle)
-        if decl:
-            return "%s%s%s = %s; cq_phi(%s);" % (ind, decl, name, arg0, angle)
-        if name == arg0:
-            return call
-        return "%s%s = %s; cq_phi(%s);" % (ind, name, arg0, angle)
+        if not decl and name == arg0:
+            return "%scq_phi(%s);" % (ind, angle)
+        # ONE statement, always — see the block comment: a brace-less arm makes a
+        # two-statement expansion a silently different program.
+        return "%s%s%s = (cq_phi(%s), %s);" % (ind, decl or "", name, angle, arg0)
 
     out = _PHI_CALL.sub(one, text)
-    for m in re.finditer(r"cq_phi\(([^;]*)\)", out):
-        assert "," not in m.group(1), (
-            "phi_void_source left a two-argument cq_phi behind: %r" % m.group(0))
+    # The assertion looks for the REGISTER form specifically — `cq_phi(<expr>,`
+    # with no paren in the first argument — rather than "a comma anywhere inside
+    # the parens", which would fire on the rewriter's own comma form
+    # `(cq_phi(T), x)`. (It did; caught by the same sample that found the
+    # brace-less `else`.)
+    left = _PHI_CALL_TWOARG.search(out)
+    assert left is None, (
+        "phi_void_source left a two-argument cq_phi behind: %r"
+        % out[left.start():left.start() + 60] if left else "")
     return out
 
 # TWO TRIPS, and two is not arbitrary: it is the smallest count at which the back
