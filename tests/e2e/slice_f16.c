@@ -1,3 +1,34 @@
+/* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, OQ-2 / prep-b2). The golden below is a NEW
+   PROGRAM's trace, not an audit substitution of the old one, and it is recorded
+   as such in docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md.
+
+     OLD IDIOM: (void) cq_phi(d, 0.30)  [Rz keep-alive on the dead f16 add]
+     NEW IDIOM: if (d == (_Float16)4.0f) cq_phi(0.30)
+
+   WHY. Under owner decision D1 `cq_phi` takes no register, so the documented
+   "Rz keep-alive" — the opaque READER that stopped `clang -O1` deleting the dead
+   tainted lineage this slice exists to exercise — no longer reads anything, and
+   the whole lineage is DCE'd at STAGE 1 (prep-b PROBE 2, measured: the migrated
+   `slice_intrinsic_bswap` lost its `llvm.bswap.i32` outright). Nothing else in
+   `CQ.h` reads a quantum value without being a sink or a non-diagonal gate
+   (PRE_DISPOSITIONS.md §5 OQ-1 checks all four candidates).
+
+   The replacement consumer is a KICKBACK UNDER A DERIVED CONDITION, which is the
+   honest CQ consumer for a dead chain: it exercises the forward chain, the flag
+   mint, `cqrt_rz_i1`, the compare `_unc` strip, the chain's OWN `_unc` reversal
+   and the frees — i.e. it keeps exactly the coverage this slice was written for.
+   RECOVERED AND MEASURED IN THE GOLDEN BELOW:
+     cq_template_fadd_f16_unc
+
+   ⚠ THE CONDITION'S SHAPE IS LOAD-BEARING, NOT DECORATION. A plain equality
+   against a constant is folded THROUGH the very op under test whenever that op
+   is invertible — MEASURED: `bswap(c) == K` becomes `c == bswap(K)` and the
+   bswap disappears; `clz(c) == 12` becomes a range test on `c`; `sext(b) == K`
+   becomes `b == K`; `-fc == K` becomes `fc == -K`; `(a<<2)^9 == 9` becomes a
+   mask test. Where that happened the condition was changed to one the folder
+   cannot invert — an ORDERED compare, or a Q+Q op against a second tainted
+   register whose operands are both non-constant — and the recovered `_unc`
+   symbol above is the witness that it worked. */
 /* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
    FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
    `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
@@ -48,6 +79,6 @@ void slice(_Float16 x, _Float16 y) {
     _Float16 p = cq_theta(x, 0.10);   /* alloc f16 + ry */
     _Float16 q = cq_theta(y, 0.20);   /* alloc f16 + ry */
     _Float16 d = p + q;               /* fadd half QQ (dead) */
-    cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
+    if (d == (_Float16)4.0f) cq_phi(0.30);           /* Rz keep-alive; result dropped (dead) */
 }
 int main(void) { slice((_Float16)1.5, (_Float16)2.5); return 0; }
