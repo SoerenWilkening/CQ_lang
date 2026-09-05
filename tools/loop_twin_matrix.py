@@ -599,6 +599,17 @@ HDR = "#include <math.h>\nvolatile int off = 3;\n"
 # read as a TYPE, so the rewrite forces the comma form where the plain
 # `cq_phi(B);` is right. Same sample, same reading.
 #
+# ⚠ MEASURED SIDE EFFECT, RECORDED SO NOBODY RE-DISCOVERS IT AS A BUG: an Rz ARM
+# on a register nothing else reads becomes `-Wunused-variable` under `void`, and
+# that is the surface change itself rather than a rewrite artefact. On the
+# register surface `if (c) { r = cq_phi(r, .9); }` READS `r` (it is the call's
+# arg-0); under `void` the arm is `cq_phi(.9);` and `r` is assigned and never
+# read. Swept 2026-09-05, `clang -fsyntax-only -Wall -Wextra`, 2882 generated
+# void sources across all three instruments and all their pools: 0 compile
+# failures; 22 texts carry a warning other than `-Wunused-parameter`, 15 of which
+# carry the identical one on the register surface, and the 7 that do not are all
+# exactly this — `cons=none` / `use=none` cells whose arm is a `cq_phi`.
+#
 # ⚠ IT IS TEXTUAL, ON TEXT THESE GENERATORS WROTE, and it is not a C parser: a
 # nested call or a comma inside the arg-0 expression would defeat it. Every
 # generated `cq_phi` site in all three instruments is a bare identifier arg-0, so
