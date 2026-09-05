@@ -16,7 +16,7 @@
 ; never the same block, and two distinct regions cannot share a merge) is read off
 ; `soleMergePhi`'s 2-incoming φ — and a kickback merge has NO φ to read it off.
 ; `classifyPhaseKickback` therefore asks `MergeBB->hasNPredecessors(2)` directly.
-; MEASURED: without the widening this exact program declines `control flow`.
+; MEASURED — without the widening this exact program declines `control flow`.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -24,6 +24,41 @@
 ; RUN: %filecheck %s --check-prefix=C2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C3 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C4 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDTAG < %t.cqd0.ll
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+
+; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+
+
+; ── THE BRANCH-PHASE RECORD, COUNTED — Rule-13 round-2, the `g_drop_mark`
+; injection. Round 1's F-L7-1 was a CONFIRMED miscompile in which the whole-DAG
+; spine ADJOINTED a kickback gate and cancelled the user's phase exactly; the
+; `!cq.branchphase` record on every emitted gate is what stops it. Dropping that
+; record from one gate was CAUGHT by 15 of the 35 gate-bearing accepts and MISSED
+; by 20 — including every P4 nest but one and every P5 switch but one. MDCNT
+; counts the GATES and MDTAG the MARKED gates, in SEPARATE prefixes, and they
+; must agree. (An unmarked gate BEFORE a marked one moves only MDCNT; a dropped
+; mark moves only MDTAG; an extra marked gate after moves both — round-2 F-R2-11.)
+; MDCNT-COUNT-2: call void @cqrt_rz_i1(
+; MDCNT-NOT: call void @cqrt_rz_i1(
+; MDTAG-COUNT-2: call void @cqrt_rz_i1({{.*}}), !cq.branchphase
+; MDTAG-NOT: call void @cqrt_rz_i1(
+
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

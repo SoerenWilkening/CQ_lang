@@ -29,7 +29,7 @@
 ; predicate — `BB` post-dominates a successor of the tainted branch and does not
 ; post-dominate the branch — with post-dominance read over RETURNING paths only,
 ; so the park's own `unreachable` arm decides nothing. That last clause is not a
-; convenience: the classical CFG says the abort arm does not continue, while the
+; convenience — the classical CFG says the abort arm does not continue, while the
 ; EMITTED circuit routes `q` into a graveyard rail and runs the remainder
 ; COHERENTLY ON EVERY BRANCH — so a phase after a park really is global, and a
 ; textbook post-dominance query (which treats the `unreachable` block as its own

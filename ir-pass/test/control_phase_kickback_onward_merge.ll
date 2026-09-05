@@ -22,7 +22,7 @@
 ; was deleted as a "global phase" BEFORE its region had ever been looked at.
 ;
 ; TWO defects came out of that one deletion, and the second is worse than the
-; first: (1) the branch phase P(0.9)/P(0.3) vanished; and (2) with its only
+; first — (1) the branch phase P(0.9)/P(0.3) vanished; and (2) with its only
 ; consumer gone, the ANGLE `select` was re-classified at round 2 as plain fp DATA
 ; and lowered through the 4.4/kjd1 merge — MEASURED
 ; `cqrt_alloc_f64(0x1.ccccccccccccdp-1)` … `cqrt_copy_f64_controlled(...)`, i.e. a
@@ -47,15 +47,37 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+
+; THE ROUND-1 6.5 CLASSICAL-CALL ARM, ASSERTED FIRST — Rule-13 round-2 finding
+; F-R2-8. This chain used to start at the SECOND region, leaving the round-1
+; region in the same function entirely unasserted while the fixture's whole point
+; is the INTERACTION between the two rounds. The classical call is HOISTED (it is
+; pure — 6.5), the flag is minted from `%h`, `%out` is the |0> merge rail, and the
+; two arms are controlled copies with a `cqrt_x` bracket around the false one.
+; CHECK: %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 3)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[R:.*]] = tail call i32 @ext_f(i32 noundef 7)
+; CHECK-NEXT: %[[F1:.*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 5)
+; CHECK-NEXT: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: %[[S0:.*]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S0]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: %[[S1:.*]] = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F1]], i32 %[[S1]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F1]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F1]], i32 %[[H]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F1]])
 
 ; The onward region lowers as an ordinary P2 angle select on the %out rail:
 ; the false-arm angle inside the cqrt_x bracket, the true-arm angle outside it.
-; CHECK: %[[F2:.*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %out, i32 50)
+; CHECK-NEXT: %[[F2:.*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[OUT]], i32 50)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F2]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double 3.000000e-01), !cq.branchphase
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F2]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F2]], double 9.000000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %out, i32 50)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F2]], i32 %[[OUT]], i32 50)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F2]])
 
 ; Two phase gates per inlined copy of the region; the module carries the same
@@ -68,11 +90,33 @@
 ; NOROUTE-NOT: cqrt_alloc_f64
 ; NOROUTE-NOT: cqrt_copy_f64_controlled
 ; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: @cqrt_rz_i32
 ; NOROUTE-NOT: double -
 
 
 ; Function Attrs: nounwind ssp uwtable
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
+; NOROUTE-NOT: call void @cqrt_cswap(
+
+; The `cqrt_x` census. An UNPAIRED bracket is a wrong-branch phase.
+; XCNT-COUNT-8: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
+
+; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
+; FCNT-COUNT-4: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+
 define i32 @slice() local_unnamed_addr #0 {
   %1 = tail call i32 @cq_theta_si32(i32 noundef 3, double noundef 5.000000e-01) #3
   %2 = icmp sgt i32 %1, 5

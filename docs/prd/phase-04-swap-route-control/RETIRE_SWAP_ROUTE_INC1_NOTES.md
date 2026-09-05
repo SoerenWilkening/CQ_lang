@@ -139,11 +139,17 @@ falseness of that claim is precisely where the miscompile lived — `emitRegion`
   `u9_share_measureflag`: the phase survives, the flag rail is left allocated, STRICT 2b PASS.
 * `u6_datause_negshare` and `u8_share_tail` (the polarities that were already correct by
   accident): BYTE-IDENTICAL to SUBJECT-BEFORE.
-* **The e2e witness**: prep-b's already-rewritten `tests/e2e/slice_control_cond_datause.c`
+* **The e2e witness — AND IT IS ON ANOTHER BRANCH, which round 2 is right to flag**
+  (finding F-R2-4): prep-b's already-rewritten `tests/e2e/slice_control_cond_datause.c`
   run on this binary is BYTE-IDENTICAL to its committed (old-surface) golden EXCEPT the two
   intended lines `cqrt_rz_i32_controlled(h1, h0, θ)` → `cqrt_rz_i1(h1, θ)` — PRD §10.2 diff
   class (a), twice, and nothing else. Before the fix that same slice emitted two extra
-  NEGATED angles.
+  NEGATED angles. ⚠ THE REWRITTEN SLICE IS NOT IN **THIS** TREE: it lands with branch
+  `3qlq-inc1-slices` (prep-b), merged before the epic's commit. MEASURED at this HEAD,
+  **63 of the 66** `tests/e2e/*.c` that call `cq_phi` fail STAGE 1 against the
+  register-free `CQ.h`, so **stage 2b runs on not one program Inc 1 lowers and
+  `ir-pass-lit` is this branch's only gate** — which is why the F-R2-1 assertion repair
+  below is not bookkeeping.
 * `diff` of the ORACLE's `j3_old` trace against this binary's `j3` trace is EXACTLY
   `-cqrt_rz_i32_controlled(h1, h0, 0x1p-2)` / `+cqrt_rz_i1(h1, 0x1p-2)`.
 
@@ -612,3 +618,368 @@ still reading `cqrt_rz_` the old way; `deleteGlobalPhases` still standing where 
 one-round pipeline had put it). **Budget round 2, and point it at the sets this round
 NARROWED** — the branch-phase membership and the invariant-register roots — because that is
 the direction this round's own findings say gets missed.
+
+---
+
+## §2 — Rule-13 adversarial round 2 (2026-09-05)
+
+Two read-only lenses (R1 = the round-1 FIXES, adversarially; R2 = fixture / doc truth of the
+whole branch) plus one hand-off from the slice-migration agent (F-B2-2). Both lenses returned
+**NOT CLEAR**. R1 found **one CONFIRMED rolled≠unrolled divergence** and **one plain-C
+OVER-DECLINE**, both in code round 1 had just written; R2 found **0 miscompiles and 0
+over-accepts** and **five substantive fixture/doc-truth findings, one systemic**.
+
+**The round's own lesson, and it is round 1's lesson pointing back at round 1.** Round 1
+closed with "point round 2 at the sets this round NARROWED, because 'a set was narrowed and a
+consumer was not re-asked' is the failure mode two of this round's three CONFIRMED defects
+share." Round 2 found both of its substantive defects there — but the shape was one level up
+from what that sentence predicted:
+
+* **F-R1-1** is a STAGE that runs once, in a pipeline that now has two rounds, whose premise
+  ("the marking stage runs after this flatten") is round-2-FALSE. That is F-L3-1's own shape,
+  one increment later, in a different stage. Round 1 moved `deleteGlobalPhases` for exactly
+  this reason and did not ask the same question of the stage sitting one line ABOVE it.
+* **F-R1-2** is a PREDICATE whose header promised one property (`CONTROL-DEPENDENT ON`) and
+  whose body computed a weaker one (`reached from`), where the gap is invisible at the slot
+  the code was copied FROM and load-bearing at the slot it was copied TO.
+
+Both are "a thing that was true where it was written and false where it was used". The
+round-2 discipline that follows is written at the end of this section as the
+**"what else runs once before round 2"** table, which is the artifact this round owes the
+next one.
+
+### F-R1-1 — CONFIRMED. An in-loop kickback whose loop-invariant register is a Phase-4 MERGE OUT-RAIL leaked one entangled which-path record per activation.
+
+**Reproducer** (2 TU, the shipped onward harness; `p/o_onward_inloop.c` + `p/j1_lib.c`):
+
+```c
+int ext_f(int a);
+int slice(void) {
+    int q = 3; q = cq_theta(q, 0.5);
+    int y = 5; if (q > 5) y = ext_f(7);          /* 6.5 classical-call arm -> %out */
+    for (int i = 0; i < 3; ++i)
+        if (((y >> i) & 1)) cq_phi(0.25);        /* D4's per-bit idiom, ROLLED     */
+    return cq_measure(y);
+}
+```
+
+MEASURED at `c4bd888`: `opt` exit 0, verify-clean, **STRICT stage 2b `0 violation(s)`**, 34
+trace lines, THREE `cq_template_and_i32_hl` mints and **ZERO** `_unc` discharges, against a
+hand-unrolled twin that discharges all three (40 lines). `diff` of the two traces is exactly
+three inserted `_unc` + `cqrt_free` pairs. Each leaked rail holds one BIT of `y` — a
+which-path record — and R1's interference probe (`y = cq_theta(y, 0.9);` after the loop)
+compiles at rc 0 with the `cqrt_ry_i32` executing while all three records are live. Rolled
+and unrolled are different unitaries: the 8h7d.5 F-4 signature, which round 1 itself graded
+CONFIRMED as F-L7-2 on the flat surface. Stage 2b is structurally blind to it (a leaked
+TEMPLATE-minted rail has no `cqrt_alloc` to count), as its own header says.
+
+**THE POPULATION IS WIDER THAN THE REPORT, and finding that out is what made the fix two
+halves instead of one.** R1 located the cause as stage ORDER and proposed either re-running
+the collapse or declining a round-2 in-loop region. I built the two adjacent populations
+before touching anything, and both are **ROUND-1** regions with the identical leak:
+
+| probe | rolled `and_hl` / `and_unc` / `free` (before) | after |
+|---|---|---|
+| `p/s1_selectmerge_inloop.c` — 4.4 tainted-condition SELECT merge (`y = (q>5)?7:5`) | 3 / **0** / 4 | 3 / **3** / 7 |
+| `p/s2_switchmux_inloop.c` — 4.5 switch DATA-MUX | 3 / **0** / 5 | 3 / **3** / 8 |
+| `p/o_onward_inloop.c` — 6.5 classical-call arm (ROUND 2) | 3 / **0** / 4 | 3 / **3** / 7 |
+
+So the common cause is not "round 2": it is **`invariantRegisterRoots` clause (ii) admitting
+exactly ONE spelling of "a rail the M-B interior partition can never claim"** — a
+classical-arg-0 `cq_theta` root mint — when a `-O1` program routinely produces another one.
+Fixing only the stage order leaves s1 and s2; fixing only the clause leaves the onward case.
+
+**THE FIX, both halves.**
+
+*(A) `LoopLowering::invariantRegisterRoots` clause (ii-b).* A **CONTROL-OWNED MERGE OUT-RAIL**
+is admitted as a Root: `taint.ControlOwnedRails` MEMBERSHIP **and** a structural
+`cqrt_alloc_`-prefixed producer, both required. The proof is clause (ii)'s OWN proof, not a
+new one — clause (ii) is sound because `ChainWalk::isInteriorTerminalHandle` clause (I1)
+needs `isTemplateProducer` AND a `cq_template_`-prefixed callee, so a root mint (which lowers
+to `cqrt_alloc_<W>` + `cqrt_ry_<W>`) can never be the preheader forward gate whose interior
+`At` lands in the K-times body. A merge out-rail is ALREADY a `cqrt_alloc_<W>` call at this
+point in the pipeline and fails (I1) identically, and the whole-DAG partition excludes it
+twice over (`ControlOwnedRails` is checked by name at `Uncomputation.cpp:1356`/`:1558`). A new
+clause **(iii-b)** requires such a root to be READ-ONLY inside the loop (any VOID `cqrt_*`
+user inside `L` refuses) — the emitters never build that shape, and the clause says so rather
+than relying on it. The hoisted `cq_template_mul_i32_hl` rail of owner question Q-R1-1 is what
+(I1) ADMITS, so it is what this clause must not, and it is **still refused, measured**.
+
+*(B) the ONWARD loop-rail pass.* `repropagateControlMerges` calls the SAME
+`collapseFlattenedLoopRails` a second time at its end, handed the snapshot of
+`taint.InLoopFlattenedPreds` taken at entry, so it processes exactly the loops ROUND 2
+opened and every pre-round-2 module is byte-identical. It lives INSIDE that function rather
+than at the two `CQLoweringPass` call sites so both entry points get it. ⚠ The
+`runOnFunction` shim calls neither collapse — a PRE-EXISTING twin-pipeline divergence
+inherited from bd 8h7d.5, recorded and not repaired (that shim has zero callers, and the file
+already documents four module-wide stages the same way).
+
+**MEASURED after the fix** (`$SP/progress/fix_r2_work/run.sh`, subject vs main @ `c4bd888`):
+the onward rolled trace is **BYTE-IDENTICAL to its hand-unrolled twin** (40 lines each); s1
+and s2 discharge 3/3; the interference probe discharges 3/3; R1's discriminating control
+(the loop reading the `cq_theta` ROOT instead of `%out`) is unchanged; `q1_hoisted_temp` is
+byte-identical to main and still leaking. STRICT 2b PASS on every probe.
+
+**MUTATION-VALIDATED ONE HALF AT A TIME** (three build+lit cycles):
+
+| mutation | `..._onward_inloop.ll` | `..._inloop_merge_rail.ll` | the two controls |
+|---|---|---|---|
+| (B) the onward call deleted | **FAIL** | PASS | green |
+| (A) clause (ii-b) disabled | **FAIL** | **FAIL** | green |
+| restored | PASS | PASS | green |
+
+**Fixtures.** `control_phase_kickback_onward_inloop.ll` (ACCEPT; `UCNT` and `FCNT` are the
+discriminators — measured per prefix against main's binary, `ACNT`/`XCNT`/`NOROUTE` pass
+there) and `control_phase_kickback_inloop_merge_rail.ll` (ACCEPT; the round-1 half). Both red
+on main, green here.
+
+**WHAT THE DELTA DOES NOT DO, stated because it is the honest limit.** A loop ROUND 1
+processed is not re-examined under round-2 taint, so a marking GRANTED at round 1 stands even
+if a value that becomes tainted at round 2 would have made `markIfRailLocal` refuse. Marking
+is additive and neither call ever unmarks. The residual is bounded by construction: round 2
+taints only `%out` rails and their derivations; an `%out` rail is itself an admitted Root
+(clause (ii-b)); and a DERIVED one is a template rail whose in-loop region round 2 would have
+to claim first. It is recorded here rather than fenced because an unmark would have to be
+scoped to the blocks THIS stage marked (`IterationLocalBlocks` is shared with the Case-B
+`markIfIterationLocal` owner) — a bookkeeping change to the Rule-13 core with no measured
+customer. **OWNER QUESTION Q-R2-1.**
+
+### F-R1-2 — OVER-DECLINE (plain C), introduced by round 1's own F-L5-6 fix, together with a "LATENT / unreachable at HEAD" claim that is measurably false.
+
+```c
+void abort(void);
+int slice(int u){ int q = cq_theta(u, 0.5);
+  if (q == 5) abort();      /* the 7.2 abort park                        */
+  cq_phi(0.75);             /* UNCONDITIONAL -> a GLOBAL phase; D2 DELETES it */
+  return cq_measure(q); }
+```
+
+declined `cq controlled lowering: phase-class value escaping under quantum control`, while
+the SAME statement one line EARLIER compiled and the round-1 binary compiled BOTH to the
+identical 8-line trace. **A statement the compiler is required to delete made a compiling
+program stop compiling.** The classically-guarded twin (`if (g) cq_phi(0.75);` after the
+park) declined too.
+
+**Root cause.** `functionCarriesBranchPhase` asked `reachedThroughTaintedBranch` — which is
+`deleteGlobalPhases`' Rule-1 assert and answers "is a tainted branch anywhere on any path
+reaching this block". At P7's slot that crudeness is SOUND (every tainted `br` is by then
+claimed-and-erased or declined, so the honest answer is always "no" and a "yes" means the
+invariant broke); at the three carriers' slot, which is BEFORE `lowerControlRegions`, every
+tainted `br` still stands and the predicate answers something strictly weaker than the
+`CONTROL-DEPENDENT ON` its header promises.
+
+**Fix.** A second, separately-named predicate `controlDependentOnTaintedBranch`: `BB`
+post-dominates a CONTINUING successor of the tainted branch and does not post-dominate the
+branch itself. **Post-dominance is read over RETURNING paths only**, and that clause is
+load-bearing rather than a detail — a textbook `PostDominatorTree` treats the park's
+`unreachable` arm as its own root, which makes the remainder "control-dependent" on the park
+and keeps the decline. The returning-paths reading matches the physics: the park is coherent
+routing, `q` is `cqrt_cswap`ed into a graveyard rail and the remainder runs on EVERY branch,
+so a phase after a park really is global. The crude walk stays as a cheap pre-filter (it is
+implied by control dependence, so it can only skip work) and keeps its own name — **two
+questions, two spellings, which is what Rule 14 actually asks for.**
+
+**MEASURED**: `g_abort_uncond_phase` rc 1 → rc 0, 8 lines, BYTE-IDENTICAL to the same program
+with the phase deleted by hand AND to the round-1 subject's trace; the class-guarded twin
+likewise; the phase-before-the-branch program unchanged; R1's CLEAR item 6 (three
+classically-controlled phases that must be DELETED, not declined) unchanged.
+
+**THE FENCE IS STILL A DISCRIMINATOR, and I had to construct the discriminator** because
+R1's own probe is not one: `if (q==7) cq_phi(.75); if (q==5) abort();` is folded by
+`clang -O1` into ONE `switch` with an abort case, declines earlier at `control flow`, and
+never reaches the carrier at all. `if (q>7) cq_phi(.75); if (q==5) abort();` does not fold,
+reaches the carrier, and **still declines** on both binaries.
+
+**Fixtures.** `control_phase_kickback_abort_global_phase.ll` (ACCEPT, red on main) and
+`control_phase_kickback_reject_abort_branch_phase.ll` (DECLINE). Their headers say explicitly
+that the pair differs in ONE respect — whether the `cq_phi` sits on an ARM or on the path
+every returning execution takes — so a future change that makes both accept or both decline
+has broken the predicate in one direction or the other.
+
+**And the write-up claim is corrected.** Round 1 graded F-L5-6 *"FIXED (coarse,
+over-declining; LATENT — unreachable at HEAD)"*. The `return` and `break` carriers ARE held
+shut by earlier fences (measured: `value-arm swap-route` and `loop under quantum control` on
+both binaries); the ABORT PARK is not, in either direction — it was reachable with a GLOBAL
+phase (the over-decline) and it is reachable with a genuine BRANCH phase (the fence doing its
+job). "Unreachable at HEAD" was false about both halves.
+
+### F-R1-3 / F-R2-2 — DOC. The emission-site enumeration said THREE; the tree it shipped in had SIX, in the one comment whose whole job is to make that audit possible.
+
+`ChainWalk.h`'s `markBranchPhaseGate` comment and this file's F-L7-1 paragraph both said
+"three today". MEASURED (`grep -rn 'markBranchPhaseGate' ir-pass/src`): **six** calls
+wrapping **six** `CreateCall(Rz, …)` expressions, in **four** files, belonging to **five**
+emitters. Round 1's own hand-back records finding the two extra minters during the Inc-1b
+merge; the sentinel sentence was never updated. Both places now enumerate all six WITH the
+fixture that pins each, and say to re-measure rather than trust the list.
+
+### F-R1-4 — DOC. The F-L7-1 closure table was short by one row, and the missing row is a `cqrt_rz_` NAME test that ADMITS the gate the fix refuses.
+
+`Uncomputation::preservesBorrowedParent` clause **(1)** (`Uncomputation.cpp:591`) tests
+`starts_with("cqrt_rz_") && !ends_with("_controlled") && arity 2 && arg0 == P` — which a
+kickback gate matches EXACTLY. The table listed clause (1b) and marked it unchanged; it did
+not list clause (1). **The verdict `true` is SOUND**: the three narrowed predicates ask "may
+the spine ADJOINT this gate?" (no) and this one asks "does this gate DISTURB the borrowed
+parent's basis label?" (no — it is diagonal, whoever emitted it). It is REACHED, not
+hypothetical (`u8_share_tail`). The row is added, and a note now ships at the site saying the
+verdict must NOT be narrowed "for symmetry" — clause (1b)'s own comment records that the
+identical narrowing of the CONTROLLED twin cost nine modules their whole interior discharge.
+
+### F-R1-5 / F-R2-5 — DOC. A reason that is unreachable by the round's own other fix, and a census that does not reproduce.
+
+Reason **(3)** for choosing metadata over a `TaintSet` set ("metadata survives
+`CloneFunctionInto`") is not a live hazard at this HEAD: F-L3-3's own fix makes a callee
+containing ANY `cq_phi` a loud reject, so no clone can contain a kickback gate to lose. It is
+restated as a PROPERTY of the record. Reasons (1) and (2) are measured and carry the choice
+alone. The "19 call sites in 6 files" figure is **22 in 7** by my measurement (R2 measured
+21/7; the residue is whether `ChainWalk.cpp`'s adjacent `isInPlaceGateOn` /
+`preservesBasisUnderRecord` pair counts once or twice). The argument is unaffected in every
+reading; the figure is corrected because a census that does not reproduce is the F-L6-2
+class, and this one sat in the paragraph that RECORDS F-L6-2.
+
+### F-R2-1 — SYSTEMIC (the round's headline on the fixture layer). Round 1's assertion repairs were applied to the corpus in front of it and to nothing else in the merged tree.
+
+MEASURED by R2's injection harness at `c4bd888`, and re-measured by me: `cqrt_rz_f80` /
+`cqrt_rz_f16` NOT CAUGHT in **18** accepts, an UNPAIRED `cqrt_x` (a WRONG-BRANCH PHASE — the
+L1-lens miscompile class) NOT CAUGHT in **21**, an EXTRA `cqrt_free` (a HIDDEN MEASUREMENT,
+Rule 6) NOT CAUGHT in **20**. Fifteen of the 18 carry, VERBATIM, the same header sentence the
+round-1 repair was made to make true. The provenance partitions exactly: the 18 with the
+complement regex are part A's 11 plus the 7 written after that repair; the 15 enumerating six
+of eight widths are EXACTLY part B's (a parallel branch that never saw it); the 3 one-width
+files are the round-1 fix agent's OWN accepts, written before it repaired the same defect in
+eleven inherited files and never revisited.
+
+**Why it is worse here than the same finding was in round 1**: at this HEAD **63 of the 66**
+`tests/e2e/*.c` that call `cq_phi` FAIL STAGE 1 against the register-free `CQ.h`, so stage 2b
+— which R2 measured DOES catch dropped-strip / extra-free / unpaired-`cqrt_x` on exactly the
+nest and switch shapes whose fixtures are blind — runs on **not one program Inc 1 lowers**.
+`ir-pass-lit` is this branch's only gate.
+
+**Repaired mechanically, over EVERY accept in the branch** (`$SP/progress/fix_r2_work/repair.py`,
+which derives every count from the fixture's OWN pass output rather than from a table): the
+Rz negative is the complement regex everywhere (the trailing `(` is load-bearing —
+`cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`); every accept has a `cqrt_x` assertion (a
+blanket negative where the correct stream has none, an `XCNT-COUNT-n` + `XCNT-NOT` pair where
+it legitimately emits them); every accept has a `cqrt_free` assertion on the same rule; and
+the one accept with no `cqrt_cswap` negative has one.
+
+### F-R2-3 / F-R2-4 / F-R2-6 / F-R2-7 / F-R2-8 — the rest of the fixture-truth batch.
+
+* **F-R2-3.** Two fixture headers still carried the "BROKEN MODULE at `opt` exit 0" claim
+  round-1 F-L3-5 measured FALSE (a `report_fatal_error`, **exit 134**, no module written) —
+  one of them written on part B's branch AFTER the correction, i.e. the false claim had
+  already propagated once. Both corrected, each naming the finding that corrected it.
+* **F-R2-4.** Four shipped documents cite e2e witnesses that are absent or non-compiling
+  here. Each is now marked "on branch `3qlq-inc1-slices` (prep-b), merged before this epic's
+  commit", and the 63-of-66 measurement is stated where the claim is made rather than left
+  for a reader to discover.
+* **F-R2-6.** `control_phase_switch_reject_default_body.ll` did not pin its named cause:
+  deleting the default arm's phase still declines; only re-pointing the default EDGE at the
+  merge accepts. RENAMED to `control_phase_switch_reject_default_edge.ll` and retitled to the
+  edge condition, with the mutation recorded and the consequence stated (an EMPTY-but-distinct
+  default block declines too — an over-decline, not plain-C reachable because SimplifyCFG
+  folds it, and deliberately NOT given a fixture of its own that would be the same
+  discriminator under a second name).
+* **F-R2-7.** The `!cq.branchphase` record for the whole `AngleSelectEmit` stem — two of the
+  six emission sites — was pinned by ONE file in 1665, whose stated subject is the `inf`-arm
+  pass-through. The two flagship P2 accepts now carry `MDCNT`/`MDTAG` and assert the
+  `, !cq.branchphase` suffix on their `CHECK-NEXT` gate lines. Dropping the mark there now
+  reddens three files instead of one.
+* **F-R2-8.** `control_phase_kickback_onward_merge.ll` was the weakest accept in the family
+  on the axis its own finding is about. It now has the complement Rz negative, a `cqrt_cswap`
+  negative, `XCNT`/`FCNT` counts, and — the substantive half — a full ordered `CHECK` chain
+  for the ROUND-1 6.5 classical-call-arm region that shares its function, which was entirely
+  unasserted while the fixture's whole point is the interaction between the two rounds.
+
+### F-B2-2 (hand-off from the slice-migration agent) — a Q+Q kickback condition declined in the OPCODE layer, not the control layer. Rule 1's third path.
+
+MEASURED by prep_b2 from C: the pre-3qlq ORACLE declines `if (q == p) cq_phi(θ)` with
+`cq controlled lowering: control flow under quantum control`; the subject declined it with
+`no template for opcode 'icmp i1' in tainted context`. `classifyPhaseKickback` deliberately
+did not ask whether the compare was Q+Q, so the region was ACCEPTED at detection and
+`lowerCompareToFlag` returned null at the emitter's step 1 — leaving the tainted `br`
+**neither claimed nor declined by the control layer**. It was sound only incidentally (the
+mint is the first emission, so nothing had been mutated), and it named an OPCODE where the
+user wrote a BRANCH.
+
+⚠ The shipped fixture header asserted the opposite and was wrong in BOTH halves: it said the
+oracle "emits the same string for the same shape" and therefore that "the surface change
+churned no message here". The message DID churn, and it churned LAYERS.
+
+**Fix.** One reason string for the whole phase path (`kQQCondReason` =
+`quantum-quantum compare condition`), asked BEFORE any emission, per LEAF, on the
+single-compare path and inside a condition tree alike, and asked again by P4's nest ladder.
+It replaces three spellings of one question across two layers (`no template for opcode` on
+P1-single, `control flow` on P1-tree and on P4). **P5 is exempt STRUCTURALLY, not by
+omission**: a switch's flags are `scrutinee == <ConstantInt>`, so a Q+Q eq-flag cannot be
+built. `compareFlagMintable` cannot carry this fence and never could — bd adia deliberately
+lifted its categorical Q+Q decline for the 4.4 select, which DOES have a Q+Q mint.
+
+**Fixtures.** `control_phase_kickback_reject_qq_compare.ll` and
+`control_phase_kickback_reject_tree_qq_leaf.ll` re-pointed at the control-layer string, each
+with a `CHECK-NOT: no template for opcode` so the old layer cannot come back; plus a new
+`control_phase_nest_reject_qq_leaf.ll` so the shared string is a discriminator at BOTH
+classifiers rather than asserted at one. All three red on main's binary.
+
+---
+
+## ⭐ WHAT ELSE RUNS ONCE BEFORE ROUND 2 — the table this round owes the next one
+
+F-L3-1 (round 1) and F-R1-1 (round 2) are the same defect in two different stages: *a stage
+standing where a ONE-ROUND pipeline put it, whose premise is FALSE once
+`repropagateControlMerges` runs a SECOND full round of control detection + lowering.* Two of
+them have now been found by adversarial review and zero by the 1665-fixture suite. So every
+stage between `lowerControlRegions` and `repropagateControlMerges` is asked the question
+explicitly here, with a disposition. **`repropagateControlMerges` itself already re-runs four
+stages** (`declineTaintEscapes`, `declineStaleRecordOps`, `detectSpecializations`,
+`replanReseedSpecialization`) — those four are the pattern, not the exception.
+
+| stage, in pipeline order | runs before round 2? | is its premise round-2-false? | disposition |
+|---|---|---|---|
+| `foldIdentityBitcasts`, `foldVolatileConst*Loads` | yes | **no** — pure syntactic folds over IR shape, and round 2 creates no new bitcast/volatile-load | no action |
+| `promoteFp80Union`, `flattenPredMuxRegions`, `recognizeCtlzIdiomLoops` | yes, each to a FIXPOINT with a full re-`propagate` | **no** — each is already a fixpoint, and round 2 adds no fp80 union / PredMux region / ctlz loop (its output is `cqrt_alloc` rails and flattened diamonds) | no action |
+| `detectSpecializations` | yes | **YES** — and it is ALREADY re-run inside `repropagateControlMerges` (bd 9paa), with `replanReseedSpecialization` beside it for the frozen-mask half (bd 0vvq / afmv) | **already handled**; ⚠ but see **Q-R2-2** — at ROUND 1 it pre-empts D2 entirely (R1's F-R1-6) |
+| `declineTaintEscapes` | yes | **YES** — a round-2 `%out` derivation can be a new escape | **already handled** (re-run inside `repropagateControlMerges`) |
+| `declineStaleRecordOps` | yes | **YES** — a round-2-tainted op can be scheduled past a wire gate | **already handled** (re-run inside `repropagateControlMerges`) |
+| `lowerControlledIOSinks` | yes | **YES in principle** — an onward `if (%out > k) printf(...)` is a round-2 I/O-under-control shape | **NOT re-run. Over-DECLINES, MEASURED** (`$SP/progress/fix_r2_work/p/z1_onward_io.c`, 2 TU): rc 1, `cq controlled lowering: control flow under quantum control` — the round-2 `detectControlRegions` sees a void-arm diamond with no merge φ and refuses it. The identical program with a ROUND-1 condition ACCEPTS (`p/z3_io_flat.c`, 8 trace lines), so the difference really is the round. Safe direction, no customer. **Q-R2-3** |
+| `lowerLoops` (Q1 / Case A / Case B) | yes | **YES in principle** — a loop whose EXIT condition becomes tainted at round 2 | **NOT re-run. Over-DECLINES, MEASURED** (`p/z2_onward_loopexit.c`: `while (%out > 0) { cq_phi(.25); y = y-1; }`): rc 1, `cq controlled lowering: nested control flow under quantum control`. Q1's own message would have been `loop under quantum control`; the CONTROL layer refuses first, so the decline is loud and in the right layer even though it is not Q1's. Recorded as a residual, **Q-R2-3** |
+| **`collapseFlattenedLoopRails`** | yes | **YES — THIS IS F-R1-1** | **FIXED**: re-run at the end of `repropagateControlMerges` over the DELTA of `InLoopFlattenedPreds` |
+| `deleteGlobalPhases` (P7) | — | — | **already moved AFTER `repropagateControlMerges`** by round-1 F-L3-1 |
+| `lowerIOSinks`, `lowerQramReads`, `lowerShadowMemory`, `declineClassicalMuxes`, `declineLiftedStaleRecordOps`, `specialize`, `lowerRotations`, `lowerOps`, `lowerMeasures`, `lowerBreakReversePlay`, `uncompute` | **NO** — all run AFTER | n/a | no action; they see the round-2 CFG and round-2 taint by construction |
+
+**The three residuals above are all in the DECLINE direction** (an unclaimed round-2 shape
+falls through to the re-run escape/mux nets, which are loud), which is why they are owner
+questions and not fixes. The one that was in the ACCEPT direction — a marking permission
+granted on a round-1 premise — is F-R1-1, and it is fixed.
+
+**READ THIS TABLE AS A METHOD, NOT A RESULT.** The question it answers is not "is this stage
+correct?" but "**does this stage compute something that a LATER stage consumes, over a
+premise round 2 falsifies?**" Both defects found so far answer yes on a MARKING or a
+DELETION — a stage whose output is a permission or an erasure, consumed much later, where
+being asked at the wrong time is invisible to `opt -verify`, invisible to the golden diff,
+and invisible to stage 2b.
+
+## OWNER QUESTIONS FROM ROUND 2
+
+**Q-R2-1 — the round-1 marking is never re-verified under round-2 taint.** `markIfRailLocal`
+only ever GRANTS, and neither collapse call unmarks, so a permission granted at round 1
+survives a round-2 taint change that would have refused it. Bounded by construction (round 2
+taints only `%out` rails, which are themselves admitted Roots, and their derivations, which
+are template rails whose in-loop region round 2 must claim first) and with no measured
+customer. Making it exact means scoping an UNMARK to the blocks this stage marked, since
+`IterationLocalBlocks` is shared with the Case-B `markIfIterationLocal` owner — a bookkeeping
+change to the Rule-13 core. Do it now, or file it?
+
+**Q-R2-2 — at ROUND 1, `detectSpecializations` pre-empts D2 entirely** (R1's F-R1-6,
+disposition unchanged from `fa96336` and matching the oracle, so not a regression). A
+`static int h(int x){ cq_phi(PI); return x+1; }` called with a tainted argument declines
+`callee contains a quantum primitive (cq_*)`, although D2 says that phase is a GLOBAL phase
+and is DELETED — after which `h` is `return x+1`, a clean lift. It is the one D2-designated
+shape that never gets D2's treatment. Owner-scale: it is a question about where P7 sits
+relative to the spec scan, not a fix a review round should make.
+
+**Q-R2-3 — two stages before the round-2 fixpoint are not re-run, and both over-decline.**
+`lowerControlledIOSinks` (an onward `if (%out > k) printf(...)`) and `lowerLoops` (a loop
+whose exit condition becomes tainted at round 2). Both fall through to the re-run escape /
+classical-mux nets and decline LOUDLY, so the Prime Directive is satisfied and no customer
+exists today. Are they owed the same treatment `collapseFlattenedLoopRails` just got, or is
+"round 2 emits only rails and flattened diamonds, so these shapes are exotic" the ruling?

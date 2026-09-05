@@ -10,7 +10,7 @@
 ; increment's, and a classical conjunct is not even a leaf P3 recognizes.
 ;
 ; The classifier refuses it structurally rather than by reasoning about the inner
-; branch: the arm block must be exactly `{ N × cq_phi, br }`, and this one's
+; branch — the arm block must be exactly `{ N × cq_phi, br }`, and this one's
 ; terminator is a CONDITIONAL br with no phase call in it at all.
 ;
 ; ⚠ THIS FIXTURE IS ALSO PRD §10.3 LENS 4 — P7's BOUNDARY — and that is a second,
@@ -37,7 +37,7 @@
 ; exercises it. It is Rule 1's assert inside `deleteGlobalPhases`: a surviving
 ; `cq_phi` whose block is reachable through a TAINTED branch condition. Lens L3
 ; probed 90+ shapes and could not reach it, for a structural reason worth
-; carrying: every region kind that CLAIMS a tainted `br` also REMOVES it (the
+; carrying — every region kind that CLAIMS a tainted `br` also REMOVES it (the
 ; flatten, the abort park's `br label`, the loop lowering's bound), and every
 ; kind that declines exits `opt` at its first `DS_Error` — so on every reachable
 ; program state there is no tainted `br` left to find. Constructing a module that

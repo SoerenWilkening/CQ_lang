@@ -3481,6 +3481,32 @@ bool phaseAngleTail(BasicBlock *MergeBB, const TaintSet &Taint, PHINode *&Phi,
 // PHI, when present, is claimed through `phaseAngleTail` and ERASED by the
 // emitter before the flatten) while `MergeBB` is set, exactly as
 // `lowerControlledIOSinks` builds its synthetic flatten region.
+// THE Q+Q CONDITION REASON, ONE SPELLING FOR THE WHOLE PHASE PATH — bd
+// test_C_libtooling-3qlq Inc 1, Rule-13 ROUND-2 finding F-B2-2 (prep_b2's
+// golden-regeneration measurement).
+//
+// A kickback whose condition compares TWO tainted registers has no flag mint at
+// any width (`CompareLowering` builds `cq_template_icmp_<pred>_<W>_hl(q, lit)` —
+// a HANDLE-and-LITERAL template) and must decline. It always DID decline, but on
+// the SINGLE-COMPARE path it declined in the OPCODE layer, at
+// `no template for opcode 'icmp i1' in tainted context`, because
+// `classifyPhaseKickback` deliberately did not ask the question and the emitter's
+// `lowerCompareToFlag` returned null as its first emission. THAT IS A RULE-1
+// PROBLEM, not a message-cosmetics one: a tainted `br` must be CLAIMED OR
+// DECLINED BY THE CONTROL LAYER, and "the flag mint happens to have no template"
+// is a third path — it works only for as long as no other stage claims the
+// compare first, and it names an opcode where the user wrote a branch. The
+// pre-3qlq ORACLE declined the same shape in the control layer
+// (`control flow under quantum control`), so this also restores the layer the
+// diagnostic came from.
+//
+// Asked BEFORE any emission, for EVERY leaf, on the single-compare path and
+// inside a condition tree alike, with ONE string. The nest (P4) asks the same
+// thing at its own leaf ladder. The switch (P5) is exempt STRUCTURALLY, not by
+// omission: its flags are `scrutinee == <ConstantInt>`, so a Q+Q eq-flag cannot
+// be built. The value path carries the identical fence from Inc 2's own round-1.
+constexpr const char *kQQCondReason = "quantum-quantum compare condition";
+
 PhaseKickbackDisp classifyPhaseKickback(
     BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
     const DominatorTree *DT, const LoopInfo *LI,
@@ -3724,9 +3750,21 @@ PhaseKickbackDisp classifyPhaseKickback(
                            "control condition has no template");
       return PhaseKickbackDisp::Declined;
     }
-    // Q+Q: the flag mint passes no Q+Q width (pre-existing, PRD §6.3 / §9). Asked
-    // by the SAME dry-run predicate the mint itself uses (Rule 14), so detection
-    // and emission cannot disagree.
+    // Q+Q — EXPLICIT, IN THE CONTROL LAYER, FOR EVERY LEAF (Rule-13 round-2
+    // F-B2-2; see `kQQCondReason`). `compareFlagMintable` ADMITS a Q+Q leaf (bd
+    // adia lifted that decline for the 4.4 select, which does have a Q+Q mint),
+    // so it cannot carry this and never could: on the single-compare path the
+    // refusal used to happen in the emitter's first `lowerCompareToFlag`, whose
+    // null return left the tainted `br` neither claimed nor declined by this
+    // layer — the opcode net then reported `no template for opcode 'icmp i1'`.
+    if (Taint.Tainted.count(Leaf->getOperand(0)) &&
+        Taint.Tainted.count(Leaf->getOperand(1))) {
+      diagnoseUnderControl(declAnchor(Region), kQQCondReason);
+      return PhaseKickbackDisp::Declined;
+    }
+    // The remaining un-mintable widths / out-of-scope shapes. Asked by the SAME
+    // dry-run predicate the mint itself uses (Rule 14), so detection and
+    // emission cannot disagree.
     if (!compareFlagMintable(Leaf, Taint)) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return PhaseKickbackDisp::Declined;
@@ -3742,19 +3780,12 @@ PhaseKickbackDisp classifyPhaseKickback(
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return PhaseKickbackDisp::Declined;
     }
-    // A Q+Q leaf IS `compareFlagMintable` (bd adia lifted that decline for the
-    // select), but the branch-phase network mints with `AllowQQLeaves = false`,
-    // so its `lowerCompareToFlag` would return null MID-NETWORK. On the
-    // single-compare path that null is the FIRST emission and returning is free
-    // (part A's documented reachable bail); inside a tree it is not. Refuse it
-    // here instead, keeping the two paths' DISPOSITION identical (both decline)
-    // even though their message differs — the single-compare one keeps the
-    // pre-existing `no template for opcode 'icmp i1'` the oracle prints.
-    if (Taint.Tainted.count(Leaf->getOperand(0)) &&
-        Taint.Tainted.count(Leaf->getOperand(1))) {
-      diagnoseUnderControl(declAnchor(Region), "control flow");
-      return PhaseKickbackDisp::Declined;
-    }
+    // (The Q+Q leaf is refused ABOVE, for tree and single-compare alike, with
+    // `kQQCondReason`. It used to be refused only HERE, and only for a tree —
+    // "keeping the two paths' DISPOSITION identical even though their message
+    // differs" — which round-2 finding F-B2-2 showed was not a message
+    // difference but a LAYER difference: the single-compare path was declining
+    // in the opcode net, not in this one. One question, one spelling, one layer.)
     // An i1-OPERAND leaf is non-canonical (InstCombine rewrites i1 eq/ne to
     // xor/not forms) and would smuggle a boolean NOT past the tree grammar; its
     // mint also passes a raw i1 into the i32 handle slot. The 4.4 select fences
@@ -4132,15 +4163,20 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
         diagnoseUnderControl(BI, "control condition has no template");
         return false;
       }
+      // Q+Q first, and with the PHASE PATH'S OWN STRING (Rule-13 round-2
+      // F-B2-2, `kQQCondReason`) — the same question P1 asks one classifier up,
+      // so the two cannot drift about what a Q+Q condition is called.
+      if (Taint.Tainted.count(Leaf->getOperand(0)) &&
+          Taint.Tainted.count(Leaf->getOperand(1))) {
+        diagnoseUnderControl(BI, kQQCondReason);
+        return false;
+      }
       if (!compareFlagMintable(Leaf, Taint) || !Taint.Tainted.count(Leaf) ||
-          Leaf->getOperand(0)->getType()->isIntegerTy(1) ||
-          (Taint.Tainted.count(Leaf->getOperand(0)) &&
-           Taint.Tainted.count(Leaf->getOperand(1)))) {
+          Leaf->getOperand(0)->getType()->isIntegerTy(1)) {
         // Un-mintable width / out-of-scope predicate, a CLASSICAL leaf (nothing
-        // to mint — the §5.2 classical-as-handle prohibition), an i1-operand
-        // leaf (a smuggled boolean NOT), or Q+Q (the network mints with
-        // `AllowQQLeaves = false`). Each would fail MID-network, which is the
-        // ziov.4 mutate-then-decline class; refuse here.
+        // to mint — the §5.2 classical-as-handle prohibition), or an i1-operand
+        // leaf (a smuggled boolean NOT). Each would fail MID-network, which is
+        // the ziov.4 mutate-then-decline class; refuse here.
         diagnoseUnderControl(BI, "control flow");
         return false;
       }

@@ -32,6 +32,25 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDTAG < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; NOROUTE-NOT: call void @cqrt_x(i32
+
+; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
+; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
@@ -88,12 +107,6 @@ merge:
 ; NOROUTE-NOT: cqrt_cswap
 ; NOROUTE-NOT: cqrt_copy
 ; NOROUTE-NOT: _controlled
-; NOROUTE-NOT: cqrt_rz_i8
-; NOROUTE-NOT: cqrt_rz_i16
-; NOROUTE-NOT: cqrt_rz_i32
-; NOROUTE-NOT: cqrt_rz_i64
-; NOROUTE-NOT: cqrt_rz_f32
-; NOROUTE-NOT: cqrt_rz_f64
 ; NOROUTE-NOT: call void @cq_phi(
 ; NOROUTE-NOT: cq_phi_
 

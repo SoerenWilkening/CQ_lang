@@ -13,7 +13,7 @@
 ; brackets the two gates with `cqrt_x(f)`.
 ;
 ; WHY THIS FILE EXISTS. Before the fix, lens L1 MEASURED that F-L7-1 was
-; POLARITY-DEPENDENT: this spelling was CORRECT and its un-negated twin was not.
+; POLARITY-DEPENDENT — this spelling was CORRECT and its un-negated twin was not.
 ; The reason was an accident, not a fence — `ChainWalk::isInPlaceGateOn`
 ; deliberately does not recognise `cqrt_x`, so a bracketed flag carried an
 ; UNRECOGNIZED consumer, the DAG went `NotClosed`, and nothing was inverted. A
@@ -68,7 +68,19 @@
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: _controlled
 ; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: @cqrt_rz_i32
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+
 
 define i32 @slice() local_unnamed_addr #0 {
   %1 = tail call i32 @cq_theta_si32(i32 noundef 3, double noundef 5.000000e-01) #2

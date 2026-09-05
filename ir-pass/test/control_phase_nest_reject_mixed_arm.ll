@@ -1,6 +1,11 @@
 ; control_phase_nest_reject_mixed_arm.ll — DECLINE. THE MIXED NEST: an in-place
 ; `cq_theta` (Ry) in the OUTER arm beside the inner PHASE region (prep-b OQ-6,
-; the migrated `slice_control_phase_nest_deep.c`).
+; the migrated `slice_control_phase_nest_deep.c` — ⚠ NOT IN THIS TREE YET: the e2e slices for the register-free surface live on branch
+; `3qlq-inc1-slices` (prep-b) and are merged before this epic's commit. MEASURED at this
+; HEAD, 63 of the 66 `tests/e2e/*.c` that call `cq_phi` FAIL STAGE 1 against the
+; register-free `CQ.h`, so `ir-pass-lit` is this branch's ONLY gate and every e2e claim
+; below is a statement about that other branch (Rule-13 round-2 finding F-R2-4).
+; That slice is prep-b's; this fixture does not depend on it.)
 ;
 ;     if (q == 5) { s = cq_theta(s, 0.7); if (r == 3) cq_phi(0.3); }
 ;

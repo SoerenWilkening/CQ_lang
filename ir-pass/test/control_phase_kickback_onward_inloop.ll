@@ -40,7 +40,7 @@
 ; `isTemplateProducer` + a `cq_template_` callee; `%out` is a `cqrt_alloc_i32`
 ; call and fails both, so no interior `At` can ever be placed for it).
 ;
-; WITNESS: the trace of this program is now BYTE-IDENTICAL to the hand-unrolled
+; WITNESS — the trace of this program is now BYTE-IDENTICAL to the hand-unrolled
 ; twin's (40 lines each; it was 34 vs 40). That is the 8h7d.5 witness, and it is
 ; the one this file stands in for at the lit layer.
 ;
@@ -81,8 +81,10 @@
 ; ACNT-COUNT-1: call void @cqrt_rz_i1(
 ; ACNT-NOT: call void @cqrt_rz_i1(
 
-; FOUR frees: the round-1 6.5 compare flag, then the body's bit rail + flag, and
-; NOTHING else. An extra `cqrt_free` is a hidden measurement (Rule 6).
+; THREE frees: the round-1 6.5 compare flag, then the body's bit rail and its
+; flag, and NOTHING else. An extra `cqrt_free` is a hidden measurement (Rule 6).
+; (The `%out` rail is the measure's and the two `%selop` copy sources are left
+; allocated — Rule 6 leaks, never freed dirty.)
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
@@ -96,7 +98,7 @@
 ; NOROUTE-NOT: @cq_phi
 ; NOROUTE-NOT: @cq_theta
 ; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-; NOROUTE-NOT: @cqrt_rz_i1_controlled
+; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
 ; NOROUTE-NOT: fneg
 ; NOROUTE-NOT: call void @cqrt_rz_i1(i32 %{{.*}}, double -
 

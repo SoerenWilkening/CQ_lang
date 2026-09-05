@@ -3,7 +3,12 @@
 ; 2026-09-05, on the prep-b measurement OQ-7 / finding 3(b)).
 ;
 ; This module is `clang -O1`'s OUTPUT for `tests/e2e/slice_control_phase_ifelse_
-; derived.c`, transcribed:
+; derived.c`, transcribed. ⚠ THE COMMITTED COPY OF THAT SLICE IS STILL ON THE
+; RETIRED SURFACE (`q = cq_phi(q, 0.9)`), so `clang` refuses it here and the
+; transcription cannot be re-derived from the tree as it stands; the rewritten
+; slice lands with branch `3qlq-inc1-slices` (prep-b), merged before this epic's
+; commit (Rule-13 round-2 finding F-R2-4). The IR below is what this file
+; asserts on, and it stands on its own:
 ;
 ;     cq_phi(0.9);                                  // pre-region: a global phase
 ;     if (q > 5) { cq_phi(0.25); cq_phi(0.125); }   // TWO gates in the true arm
@@ -25,8 +30,17 @@
 ; The pre-refinement classifier never looked at the merge's phis, so it ACCEPTED
 ; this program and `flattenRegion` spliced the merge block away with the
 ; `phi double` still standing in it: `PHI nodes not grouped at top of basic
-; block!` at **opt exit 0**. Every φ in the merge is now accounted for — this one,
-; which the emitter erases before the flatten, or the region is NotApplicable.
+; block!`. ⚠ NOT "at `opt` exit 0" — that spelling shipped in this header and is
+; MEASURED FALSE (Rule-13 round-1 finding F-L3-5, re-flagged for this file by
+; round-2 finding F-R2-3, which found the claim still standing in two fixture
+; headers after the two SOURCE comments were corrected). `cq-opt` builds
+; `CQLoweringPass -> VerifierPass -> print` and `VerifierPass`'s default
+; `FatalErrors=true` makes a failure a `report_fatal_error`: the process ABORTS
+; with `LLVM ERROR: Broken module found, compilation aborted!`, **exit 134
+; (SIGABRT)**, and NO module is written. A broken module is LOUD; what it is not
+; is a DECLINE, and Rule 1 wants a decline. Every φ in the merge is now accounted
+; for — this one, which the emitter erases before the flatten, or the region is
+; NotApplicable.
 ;
 ; NOTE the uncontrolled `cq_phi(0.9)` before the region: it is a GLOBAL phase and
 ; is DELETED (owner decision D2), which is why no gate for it appears below.
@@ -37,6 +51,46 @@
 ; RUN: %filecheck %s --check-prefix=C2 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C3 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C4 < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDTAG < %t.cqd0.ll
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+
+; The `cqrt_x` census. An UNPAIRED bracket is a wrong-branch phase.
+; XCNT-COUNT-2: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
+
+; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
+; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+
+
+; ── THE BRANCH-PHASE RECORD, COUNTED — Rule-13 round-2, the `g_drop_mark`
+; injection. Round 1's F-L7-1 was a CONFIRMED miscompile in which the whole-DAG
+; spine ADJOINTED a kickback gate and cancelled the user's phase exactly; the
+; `!cq.branchphase` record on every emitted gate is what stops it. Dropping that
+; record from one gate was CAUGHT by 15 of the 35 gate-bearing accepts and MISSED
+; by 20 — including every P4 nest but one and every P5 switch but one. MDCNT
+; counts the GATES and MDTAG the MARKED gates, in SEPARATE prefixes, and they
+; must agree. (An unmarked gate BEFORE a marked one moves only MDCNT; a dropped
+; mark moves only MDTAG; an extra marked gate after moves both — round-2 F-R2-11.)
+; MDCNT-COUNT-3: call void @cqrt_rz_i1(
+; MDCNT-NOT: call void @cqrt_rz_i1(
+; MDTAG-COUNT-3: call void @cqrt_rz_i1({{.*}}), !cq.branchphase
+; MDTAG-NOT: call void @cqrt_rz_i1(
+
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

@@ -32,7 +32,7 @@
 ;
 ; — `opt` exit 0, verify-clean, STRICT `free_pairing_check.py` `2 verified, 0
 ; violation(s)`, the flag minted and stripped and freed, and THE PHASE GATE
-; DROPPED: the emitted circuit is the IDENTITY on `q`, which is PRD §1's own
+; DROPPED — the emitted circuit is the IDENTITY on `q`, which is PRD §1's own
 ; defect class reached through a different door. The only thing that noticed was
 ; `ld` (`Undefined symbols: "_cq_phi_si32"`), and it is one linkable body away
 ; from being silent.

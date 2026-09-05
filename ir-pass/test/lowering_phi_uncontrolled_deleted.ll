@@ -29,7 +29,7 @@
 ; exercises it. It is Rule 1's assert inside `deleteGlobalPhases`: a surviving
 ; `cq_phi` whose block is reachable through a TAINTED branch condition. Lens L3
 ; probed 90+ shapes and could not reach it, for a structural reason worth
-; carrying: every region kind that CLAIMS a tainted `br` also REMOVES it (the
+; carrying — every region kind that CLAIMS a tainted `br` also REMOVES it (the
 ; flatten, the abort park's `br label`, the loop lowering's bound), and every
 ; kind that declines exits `opt` at its first `DS_Error` — so on every reachable
 ; program state there is no tainted `br` left to find. Constructing a module that
@@ -44,6 +44,20 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C1 < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=C2 < %t.cqd0.ll
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+; NOROUTE-NOT: call void @cqrt_x(i32
+; NOROUTE-NOT: call void @cqrt_free(
+
 
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

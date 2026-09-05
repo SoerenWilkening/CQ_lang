@@ -14,7 +14,7 @@
 ; compound level's logical `select i1` out of the tainted-select scan.
 ;
 ; WHEN THE ASSUMPTION FAILS THE OUTCOME IS A LOUD DECLINE, MEASURED, NOT A
-; MISCOMPILE: the inner `br` is visited first, recovers `OffPattern` on its own,
+; MISCOMPILE — the inner `br` is visited first, recovers `OffPattern` on its own,
 ; and fires `control flow` — `opt` exits non-zero before any output is written.
 ; Verified clean under `DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib` (no
 ; use-after-free from the region that IS accepted a moment later), and no module

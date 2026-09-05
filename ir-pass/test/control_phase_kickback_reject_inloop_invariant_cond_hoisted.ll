@@ -29,7 +29,7 @@
 ; (`volatile int off;` … `q == 5 + off`), which defeats LICM.
 ;
 ; LOUD AND SAFE (Prime Directive), so it ships as a decline rather than as a
-; widening: `condWireDisposition`'s P4 clause is a POSITIONAL fence in the
+; widening — `condWireDisposition`'s P4 clause is a POSITIONAL fence in the
 ; Rule-13 core and moving it is its own increment with its own adversarial round.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

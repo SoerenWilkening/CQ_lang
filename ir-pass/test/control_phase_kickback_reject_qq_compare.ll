@@ -7,17 +7,27 @@
 ; lit)` — a HANDLE-and-LITERAL template. There is no Q+Q flag mint at any width,
 ; so the flag this region needs cannot be built.
 ;
-; THE MESSAGE IS THE PRE-EXISTING ONE, AND THAT IS MEASURED, NOT ASSUMED. The
-; pre-3qlq oracle emits `no template for opcode 'icmp i1' in tainted context` for
-; the SAME shape written in the retired register form
-; (`%qa = cq_phi_si32(%q, θ)` in the arm, measured 2026-09-05 on the
-; `pre-3qlq` worktree binary), so the surface change churned no message here.
+; ⚠ THE MESSAGE MOVED, AND IT MOVED LAYERS — Rule-13 ROUND-2 finding F-B2-2
+; (prep_b2's golden-regeneration measurement). This header used to say the string
+; was `no template for opcode 'icmp i1' in tainted context` and that the
+; pre-3qlq oracle "emits the same string for the same shape", so "the surface
+; change churned no message here". BOTH halves were wrong. Measured from C by
+; prep_b2 — the ORACLE declines this shape in the CONTROL layer
+; (`control flow under quantum control`) and the subject declined it in the
+; OPCODE layer — so the surface change DID churn the message, and it churned it
+; downward, out of the layer that owns tainted control.
 ;
-; WHERE IT COMES FROM, precisely: `classifyPhaseKickback` deliberately does NOT
-; ask whether the compare is Q+Q, so this region is ACCEPTED at detection and
-; `lowerCompareToFlag` refuses at the emitter's step 1. That is safe — and only
-; safe — because the mint is the FIRST emission, so the module is untouched when
-; the emitter returns. `emitRegion`'s flat phase path has the identical structure.
+; THAT IS A RULE-1 PROBLEM, NOT COSMETICS, which is why the fix is a fence and
+; not a `CHECK` edit. `classifyPhaseKickback` deliberately did not ask whether
+; the compare was Q+Q; the region was ACCEPTED at detection and
+; `lowerCompareToFlag` returned null at the emitter's step 1, leaving the tainted
+; `br` NEITHER CLAIMED NOR DECLINED by the control layer. It was sound only
+; incidentally — the mint is the first emission, so nothing had been mutated —
+; and it named an OPCODE where the user wrote a BRANCH. `classifyPhaseKickback`
+; now asks the question explicitly, for every leaf, before any emission
+; (`kQQCondReason`), and P4's nest ladder asks the same one with the same string.
+; P5 is exempt structurally: a switch's flags are `scrutinee == <ConstantInt>`,
+; so a Q+Q eq-flag cannot be built.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare void @cq_phi(double)
@@ -38,4 +48,6 @@ merge:
   ret i32 %m
 }
 
-; CHECK: no template for opcode 'icmp i1' in tainted context
+; CHECK: cq controlled lowering: quantum-quantum compare condition under quantum control
+; It is the CONTROL layer that refuses, not the opcode net: the old string must not return.
+; CHECK-NOT: no template for opcode

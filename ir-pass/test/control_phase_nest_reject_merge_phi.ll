@@ -3,9 +3,15 @@
 ;
 ; P4 requires the merge to have NO φ at all. A register-free phase region
 ; produces no value, so a φ there belongs to somebody else — and a φ left
-; standing in a block `flattenRegionTree` splices away is a BROKEN MODULE at
-; `opt` exit 0 (`PHI nodes not grouped at top of basic block!`), which part A
-; measured on the FLAT path before its own merge-φ rule existed. The flat
+; standing in a block `flattenRegionTree` splices away is a BROKEN MODULE
+; (`PHI nodes not grouped at top of basic block!`), which part A measured on the
+; FLAT path before its own merge-φ rule existed. ⚠ NOT "at `opt` exit 0": this
+; header was written on a parallel branch that never saw round-1 finding F-L3-5,
+; which MEASURED that `cq-opt`'s `VerifierPass` (default `FatalErrors=true`)
+; makes a broken module a `report_fatal_error` — **exit 134 (SIGABRT)**, no
+; module written. Round-2 finding F-R2-3 caught the false claim propagating here.
+; The point of the fixture is unchanged and stronger: a broken module is LOUD but
+; it is not a DECLINE, and Rule 1 wants a decline. The flat
 ; kickback can claim ONE 2-incoming `phi double` as a merge-tail ANGLE
 ; (`phaseAngleTail`); a nest merge has THREE incomings, which that predicate
 ; refuses outright, so there is no φ this emitter knows how to account for.

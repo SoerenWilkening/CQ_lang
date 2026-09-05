@@ -28,7 +28,7 @@
 ; MUTATION-VALIDATED both ways (see the notes' §2 table).
 ;
 ; WHY (ii-b) IS SOUND, in one line, because it is a widening inside a Rule-13
-; fence: clause (ii)'s whole proof is that a Root can never be the PREHEADER
+; fence — clause (ii)'s whole proof is that a Root can never be the PREHEADER
 ; forward gate whose interior `At` lands in the K-times body, and that proof is
 ; `ChainWalk::isInteriorTerminalHandle` clause (I1) — which needs
 ; `isTemplateProducer` AND a `cq_template_`-prefixed callee. A `cqrt_alloc_<W>`
@@ -84,7 +84,7 @@
 ; NOROUTE-NOT: @cq_phi
 ; NOROUTE-NOT: @cq_theta
 ; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-; NOROUTE-NOT: @cqrt_rz_i1_controlled
+; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
 ; NOROUTE-NOT: fneg
 ; NOROUTE-NOT: call void @cqrt_rz_i1(i32 %{{.*}}, double -
 
