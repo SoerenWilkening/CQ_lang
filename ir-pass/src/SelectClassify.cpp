@@ -45,6 +45,25 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
   const Function *F = CI->getCalledFunction();
   return F && F->getName().starts_with(Prefix);
 }
+// ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 (2026-09-05), AND DELIBERATELY
+// KEPT (PRD `retire-swap-route-PRD.md` §6.2 row P6: "every 'Rz is diagonal and
+// exempt' clause becomes VACUOUS rather than deleted").
+//
+// The 15-width `@cq_phi_<sfx>(x, angle)` family is RETIRED: `CQ.h` no longer
+// declares it and `resolveSources` no longer resolves it, so no call this
+// predicate can match exists in a module the pass lowers. It CANNOT accidentally
+// match the register-free replacement, and that is a fact about the strings, not
+// a hope: `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE — six characters
+// against a seven-character prefix. The new call is recognized by EXACT
+// membership instead (`TaintPropagation.h`'s `isRegisterFreePhaseCall`), which is
+// also the project's standing accept-side discipline (never a name prefix — the
+// `cq_theta_evil` hazard).
+//
+// KEEPING IT IS THE POINT: a `void(double)` call has no arg-0 WIRE and no arg-1
+// ANGLE, so every clause below that follows `getArgOperand(0)` as a rail, or
+// reads `getArgOperand(1)` as an angle, would be reading the wrong operand — or
+// out of range — if this predicate were widened to admit it. Do not "fix" this by
+// making it match `cq_phi`.
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 bool isRotationCall(const Value *V) { return isPhiCall(V) || isThetaCall(V); }

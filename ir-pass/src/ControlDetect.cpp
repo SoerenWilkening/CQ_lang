@@ -398,6 +398,11 @@ bool retLineageCarriesPhase(Value *Op, const TaintSet &Taint) {
     Value *V = Work.pop_back_val();
     if (auto *CI = dyn_cast<CallInst>(V)) {
       const Function *F = CI->getCalledFunction();
+      // ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 — the `@cq_phi_<sfx>` family is
+      // RETIRED and `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE, so the
+      // register-free `void @cq_phi(double)` never reaches here. Kept, not deleted
+      // (PRD §6.2 row P6); see the note at `ArmClassify.cpp`'s `isPhiCall` for why
+      // widening it would read the wrong operand.
       if (F && F->getName().starts_with("cq_phi_"))
         return true;  // an Rz (cq_phi) in the lineage — a relative-phase carrier.
     }
