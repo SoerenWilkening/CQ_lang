@@ -1020,7 +1020,7 @@ def main(argv=None):
                     help='comma list of classes to APPLY (default U,A,S,MIX,D)')
     ap.add_argument('--no-checks', action='store_true',
                     help='never touch CHECK lines (IR body only)')
-    g = ap.add_mutually_exclusive_group(required=True)
+    g = ap.add_mutually_exclusive_group(required='--limits' not in (argv or sys.argv[1:]))
     g.add_argument('--report', action='store_true')
     g.add_argument('--dry-run', action='store_true')
     g.add_argument('--apply', action='store_true')
