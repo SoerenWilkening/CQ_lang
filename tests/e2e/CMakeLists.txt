@@ -200,18 +200,29 @@ add_test(NAME e2e-slice-control-phase-ifelse-derived
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_ifelse_derived.expected.log")
 
-# Phase 4.2 (WI-6, test_C_libtooling-paj.6): RSSA swap-routed VALUE-arm diamond
-# (method-B). The only layer that LINKS — and 4.2 adds a NEW runtime symbol, so
-# this golden is the ONLY proof cqrt_copy_i32 resolves + signature-matches
-# against libcq_runtime (Rule 2/16). The 6-op linear chain `if (q>5) { p=p+3;
-# p=p*5; p=p^9; p=p+1; p=p*7; p=p^2; }` SURVIVES -O1 as a clean br-diamond (a
-# short arm folds to a tainted SELECT — 4.4-deferred, PRD §8.4); clang
-# reassociates the constants, so the golden pins the POST-reassociation method-B
-# stream (§5d): flag mint -> |0> rail -> cswap in -> chain verbatim -> cswap
-# back -> cqrt_copy_i32 (sole basis copy) -> R-dagger (route-back-dagger,
-# reversed _inv chain, route-in-dagger) -> rail free -> icmp_inv strip -> flag
-# free. EXACTLY TWO frees (rail + flag); out and the restored source p are never
-# freed; ZERO controlled gates, no surviving `phi i32`.
+# Phase 4.2 (WI-6, test_C_libtooling-paj.6): the VALUE-arm diamond. The only
+# layer that LINKS. The 6-op linear chain `if (q>5) { p=p+3; p=p*5; p=p^9;
+# p=p+1; p=p*7; p=p^2; }` SURVIVES -O1 as a clean br-diamond (a short arm folds
+# to a tainted SELECT at -O1 — SimplifyCFG speculation); clang reassociates the
+# constants, so the golden pins the POST-reassociation stream.
+#
+# ⚠ REGENERATED AT bd test_C_libtooling-3qlq Inc 2 (2026-09-05): 28 -> 23 lines.
+# The swap route is RETIRED for value arms. The old stream was `flag mint -> |0>
+# rail -> cswap in -> chain verbatim on the rail -> cswap back -> alloc out ->
+# cqrt_copy_i32(p,out) -> cswap -> reversed chain _unc -> cswap -> rail free ->
+# icmp_inv strip -> flag free` (4 cswap = 4W Toffoli + 8W CNOT, one W-bit work
+# rail, TWO frees). The new stream hoists the chain onto the ORIGINAL p and
+# merges with the 4.4 controlled-XOR copy pair: `chain on p (M-C converts the
+# in-place links on the FRESH intermediate rails) -> flag mint -> alloc out ->
+# copy_controlled(f, armvalue, out) -> x -> copy_controlled(f, p, out) -> x ->
+# icmp_inv strip -> ONE free`. The whole diff was audited line by line and is
+# exactly that substitution (progress record: impl_inc2.md AUDIT 1).
+#
+# THE WITNESS IS slice_control_value_diamond_twin.c — the PRE-HOISTED SELECT
+# spelling of the same program, whose golden must be byte-identical
+# (`e2e-value-diamond-twin-identical`). NOTE it is NOT the `?:` spelling: `-O1`
+# compiles `p = (q>5) ? R(p) : p` to the SAME diamond at this arm size (measured
+# 2026-09-05), so the `?:` "twin" would be this program.
 add_test(NAME e2e-slice-control-value-diamond
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -219,6 +230,92 @@ add_test(NAME e2e-slice-control-value-diamond
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.expected.log")
+
+# bd test_C_libtooling-3qlq Inc 2 — THE VALUE-ARM TWIN GROUP (3 subject/twin
+# pairs + 3 `cmp` gates below). Each twin is the PRE-HOISTED SELECT spelling
+# (`int t = R(p); p = (q>5) ? t : p;`) of its subject diamond: `clang -O1` hands
+# that to the pass as a straight-line chain plus a `select`, which is EXACTLY the
+# shape Inc 2 rewrites the diamond into, and which lowers through the
+# Rule-13-cleared 4.4 `SelectMergeEmit`. Byte identity of the two goldens is the
+# increment's witness (the drbq Inc-2b by-difference-twin precedent).
+add_test(NAME e2e-slice-control-value-diamond-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond_twin.expected.log")
+
+# The if/else value arm (V2): both chains hoisted, `out ^= f.R1(p)` then, X-
+# bracketed, `out ^= !f.R2(p)`. 54 -> 33 trace lines vs the pre-3qlq route.
+add_test(NAME e2e-slice-control-value-ifelse
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse.expected.log")
+
+add_test(NAME e2e-slice-control-value-ifelse-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse_twin.expected.log")
+
+# The mixed-stem chain (`sub`/`and`/`or`/`shl`/`xor`/`mul`) — the pair that would
+# catch a hoist that changed operand order (`sub` is non-commutative) or the M-C
+# in-place disposition relative to the manual straight-line spelling.
+add_test(NAME e2e-slice-control-value-mixedops
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops.expected.log")
+
+add_test(NAME e2e-slice-control-value-mixedops-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops_twin.expected.log")
+
+# The DERIVED-base value diamond (a pre-region `cq_phi` on the value register;
+# the 9hh discipline). NO twin gate: the pre-hoisted select twin of this program
+# DECLINES `control flow` on BOTH the pre-3qlq oracle and this binary, because
+# `SelectClassify` conservatively refuses a coherent Rz-lineage select OPERAND
+# while the `br`-value classifier deliberately ACCEPTS a derived base. Inc 2
+# reuses the select EMITTER, not the select CLASSIFIER, so the two dispositions
+# stay different by design; a `compare_files` gate here would assert something
+# false. See the slice header.
+add_test(NAME e2e-slice-control-value-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_derived.expected.log")
+
+# THE THREE VALUE-ARM TWIN GATES. `cmp` over committed goldens — no clang, no
+# opt, no plugin, milliseconds. Same construction as the 8h7d.5 rolled-loop and
+# drbq Inc-2b angle-select twin gates.
+add_test(NAME e2e-value-diamond-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_diamond_twin.expected.log")
+
+add_test(NAME e2e-value-ifelse-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_ifelse_twin.expected.log")
+
+add_test(NAME e2e-value-mixedops-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops_twin.expected.log")
 
 # 3c6m.14 L6 / bd 20xt.5 (d): PredMux tolerates `unreachable` switch-defaults.
 # The only layer that LINKS — proves the (d)-flattened nest (a tainted special-
