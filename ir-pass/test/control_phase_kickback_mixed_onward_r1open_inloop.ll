@@ -49,6 +49,7 @@
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
@@ -93,6 +94,13 @@
 
 ; MDCNT-COUNT-2: !cq.branchphase
 ; MDCNT-NOT: !cq.branchphase
+
+; FOUR `cqrt_x`: the 6.5 arm's two-arm bracket, and the ROUND-2 kickback's ¬flag
+; bracket. The ROUND-1 region has none — `-O1` gives `if (r == 3)` the true
+; polarity. An UNPAIRED one is a wrong-branch phase. (Added by the injection
+; matrix: without this prefix the `extra_x` mutation was caught by NO block.)
+; XCNT-COUNT-4: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: @cq_phi

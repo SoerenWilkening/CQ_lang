@@ -372,8 +372,24 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > success, with a `CarriedRoots` skip so the collapse's own rail is not judged), on
 > clause (ii)'s UNCHANGED (I1) proof; witnessed by
 > `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
-> pinned in lit by `control_phase_kickback_mixed_invariant_carried_inloop.ll`. **One
-> independent lens and a re-clearance are pending; landing on `main` follows the
+> pinned in lit by `control_phase_kickback_mixed_invariant_carried_inloop.ll`.
+> **⚠ THE INDEPENDENT LENS ON THAT FIX THEN FOUND TWO MORE CONFIRMED MISCOMPILES OF
+> THE SAME CLASS IN ITS OWN NEIGHBOURHOOD, both fixed in a SECOND round on the same
+> branch (2026-09-06, findings F-C1-1 / F-C1-2 — `RETIRE_SWAP_ROUTE_INC1_NOTES.md`
+> §3.10):** one added line, `q = q + 7;` in the loop's PREHEADER, restored the leak
+> verbatim on 542d588 AND on the round-1 fix (3 mints / **0** `_unc` against 3/3
+> hand-unrolled; PRE-EXISTING and F-L5-1-era, since the same program with no carried
+> register leaks identically) — fixed by asking the ONE owner of the in-place
+> decision, `ArithLowering::classifyInPlaceReassignment`, and COMMITTING to its
+> answer via `taint.InPlaceRailOps`; and the same mixed loop with an ONWARD
+> (round-2) in-loop region leaked for two further reasons — the "already claimed"
+> fact was a caller LOCAL while the collapse happens in the ROUND-1 call, and the
+> round-2 delta was keyed on block MEMBERSHIP while a round-2 region flattens into
+> the very `Pred` a round-1 region already used — fixed by `taint.ClaimedRailRoots`
+> (written at both collapse sites) and by making `taint.InLoopFlattenedPreds` a
+> per-block COUNT. Witnessed by `e2e-phase-perbit-loop-mixed-preadd-twin-identical`
+> (38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical`
+> (47 = 47, was 41 vs 47). **A re-clearance is pending; landing on `main` follows the
 > re-clearance verdict — do not read this block as landed.** `cq_phi` is
 > **register-free** —
 > `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
@@ -819,7 +835,19 @@ after a statevector-checked design dialogue; see
   Every one of the 245 earlier rows is byte-unchanged (`comm -23` over the `^m_`
   rows, empty) and all 1104 pre-existing generated sources hash identically; 9 of
   the 10 new cells would have been hard failures on 542d588 (4 sampled by hand) and
-  are `ACCEPT-IDENTICAL` on the fix. The old register-surface
+  are `ACCEPT-IDENTICAL` on the fix. **And re-measured again after the SECOND C-1
+  round on the same branch: 257 expected rows + 29 quarantined = 286 cells** — the
+  +2 is **sub-grid F3**, a PREHEADER in-place `add` on the invariant register at the
+  diffusing and non-diffusing per-bit regions, which is the position finding F-C1-1
+  lived in and which `PREFIX` (body text) structurally could not reach. Both cells
+  were TRACE-DIVERGENCE on 542d588 AND on the round-1 fix and are ACCEPT-IDENTICAL
+  now, measured by hand on all three binaries; all **1136** pre-existing generated
+  sources hash identically (twice — once after the `preloop` slot, once after the
+  cells) and the quarantine file is byte-unchanged. The `xor` spelling of the same
+  axis is DROPPED with its measurement in the code: `xor` distributes over a bit
+  test, so `-O1` rewrites the FLAT side's `((a^9)>>i)&1` onto the PRE-xor register
+  and the two spellings stop being the same program — the `addpost` precedent, not a
+  quarantine. The old register-surface
   tables are kept byte-unchanged as `*.register.txt` — frozen history, not a live
   mode, since the register surface is unreachable from the shipped `CQ.h`. The
   second boundary control (arm ON the condition register ⇒ identical) is now

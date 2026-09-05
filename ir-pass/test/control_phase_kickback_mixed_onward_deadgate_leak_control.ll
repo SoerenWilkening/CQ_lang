@@ -35,6 +35,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 ; The two root mints and the 6.5 arm's `%out`.
@@ -63,6 +64,12 @@
 ; rail (that is the leak).
 ; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
+
+; FOUR `cqrt_x`: the 6.5 arm's two-arm bracket and the kickback's ¬flag bracket.
+; (Added by the injection matrix: without this prefix the `extra_x` mutation was
+; caught by NO block.)
+; XCNT-COUNT-4: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: @cq_phi

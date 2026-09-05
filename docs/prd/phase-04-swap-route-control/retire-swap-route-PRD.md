@@ -95,12 +95,38 @@ twin's (37 = 37, gated by `e2e-phase-perbit-loop-mixed-twin-identical`), pinned 
 `control_phase_kickback_mixed_invariant_carried_inloop.ll`, and the matrix gained its
 first second-CARRIED-register axis (`loop_twin_matrix.py` sub-grid F).
 
+⚠⚠ **AND THE SECOND C-1 REVIEW ROUND (2026-09-06) FOUND TWO MORE OF THE SAME CLASS IN THE
+FIX ITSELF, both CONFIRMED MISCOMPILES, both now FIXED** (notes §3.10). Read the count as
+*five* things this row did not cover, found over three rounds, not two. **F-C1-1**: one
+added line, `q = q + 7;` in the loop's PREHEADER, put the leak straight back (3 mints /
+**0** `_unc` rolled against 3/3 hand-unrolled, on 542d588 AND on the round-1 C-1 fix, with
+the pre-3qlq oracle at 3/3 rolled == unrolled) — because `invariantRegisterRoots` peels only
+through ops whose DISPOSITION is `InPlace` and a preheader `add` is `Unproven` there, while
+`lowerOps`' M-C lowers that very op IN PLACE. It is PRE-EXISTING and F-L5-1-era, not the C-1
+fix's: the same program with NO carried register leaks identically on both binaries. Fixed
+by asking the ONE owner of that decision, `ArithLowering::classifyInPlaceReassignment`, and
+COMMITTING to its answer via `taint.InPlaceRailOps` (with a `hasOneUse` stability conjunct
+and a rollback on failure). **F-C1-2**: the same mixed loop with an ONWARD (round-2) in-loop
+region leaked for two independent reasons — the "already claimed" fact was a caller LOCAL
+while the collapse happens in the ROUND-1 call (fixed by `taint.ClaimedRailRoots`, written
+at both collapse sites), and the round-2 delta was keyed on block MEMBERSHIP while a round-2
+region flattens into the very `Pred` a round-1 region already used (fixed by making
+`taint.InLoopFlattenedPreds` a per-block COUNT). WITNESSES: `e2e-phase-perbit-loop-mixed-preadd-twin-identical`
+(38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical` (47 = 47,
+was 41 vs 47), plus three lit accepts and two accept-and-leak controls.
+
 ⚠ **The other two are UNCHANGED and both remain Prime-Directive refusals rather than
 proofs.** (i) A hoisted loop-invariant **TEMPLATE** rail read by the body's condition is
 still refused and still leaks — **and the disclosure is now "ANY loop-invariant TEMPLATE
 rail", not only `q * 3`**: the clearance re-measured the class over a `sext` rail
 (`long long p = q;`), a Q+Q rail (`p = q + r`) and an ONWARD hoisted `mul`, and all three
-leak identically (Q-R1-1). Its rolled trace is BYTE-UNCHANGED across the C-1 fix, pinned
+leak identically (Q-R1-1). **The second review round widened the disclosure again, and the
+new members are not casts the user wrote**: a bare `short q` makes `-O1` hoist a `sext` of
+its own (F-C1-3, `p/r5_short_inv.c` — a TYPE, not a cast, and the same 3/0 vs 3/3), and a
+preheader dtzb `add`/`xor` whose PRE-op value is read later (`int keep = q; q = q + 7; …
+cq_measure(keep)`) makes M-C itself go out of place and mint one (F-C1-1's own leak control,
+`control_phase_kickback_mixed_preheader_add_outofplace_leak_control.ll`, byte-unchanged on
+all three binaries). Its rolled trace is BYTE-UNCHANGED across the C-1 fix, pinned
 by `control_phase_kickback_mixed_hoisted_template_leak_control.ll`. (ii) A loop whose
 CONDITION REGISTER is loop-INVARIANT **and compared DIRECTLY** — `for (…) if (q == k)
 cq_phi(θ);` with `q` untouched in the body — **declines** `condition predates a
