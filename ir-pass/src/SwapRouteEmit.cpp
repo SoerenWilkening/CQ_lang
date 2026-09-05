@@ -5,8 +5,9 @@
 // (an if/else routes BOTH arms to distinct rails, the else under ¬flag via the
 // cqrt_x bracket), then rewire + flatten. VALUE arms — a one-content-arm
 // DIAMOND (§5d, WI-4) or a two-arm IF/ELSE (§5e, WI-5), likewise one
-// arm-list-parameterized procedure — lower by method-B B-keep: route +
-// verbatim chain replay + ONE copy-out + per-arm reverse-play R† — see
+// arm-list-parameterized procedure — no longer route at all: since bd
+// test_C_libtooling-3qlq Inc 2 they HOIST the arm chain into the pred and merge
+// with the 4.4 controlled-XOR copy pair (`emitSelectRegion`) — see
 // emitValueRegion.
 //
 // Correctness rests on analytic state reasoning, NOT on `opt -verify` (Rule 2):

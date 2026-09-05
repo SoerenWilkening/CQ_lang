@@ -242,9 +242,13 @@ struct ControlRegion {
   // lowering survives only as the §6a control-in-place reserve,
   // `ControlledSymbols`). For a VALUE arm (4.2, `ClassArm == Value`)
   // `ArmClassify` populates it with the arm's ordered chain links
-  // (FORWARD/base-first order — the §4 emit order: the WI-4 emitter moves +
-  // `rewriteBinary`s each link onto the rail, then reverse-plays the minted
-  // calls via `emitInverseChain`). `Shadow` is `Arm`'s content and
+  // (FORWARD/base-first order. ⚠ THE EMIT ORDER CHANGED AT bd
+  // test_C_libtooling-3qlq Inc 2: the pre-3qlq emitter moved each link onto a |0>
+  // work rail, `rewriteBinary`d it there and reverse-played the minted calls via
+  // `emitInverseChain`; `emitValueRegion` now simply HOISTS the links into the
+  // pred as ORDINARY tainted instructions — `lowerOps` lowers them and the
+  // whole-DAG spine reverses them — and merges via the 4.4 controlled-copy
+  // `emitSelectRegion`. Forward/base-first order is still what the hoist needs.) `Shadow` is `Arm`'s content and
   // `ShadowFalse` is `ArmFalse`'s — by FIELD identity, not edge truth: for an
   // orientation-B diamond `Arm` is the FALSE successor (`ArmNegated` carries
   // the polarity, Rule 9).
