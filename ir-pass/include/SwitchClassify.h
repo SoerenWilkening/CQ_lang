@@ -25,8 +25,24 @@ class SwitchInst;
 
 namespace cq {
 
+struct ControlRegion;
+
 struct TaintSet;
 struct ControlPlan;
+
+// bd test_C_libtooling-3qlq Inc 1 part B — P5, the register-free PHASE SWITCH
+// pre-peel. It runs BEFORE `classifySwitchRegion` because the register-free shape
+// has NO merge φ, so that ladder's G1 (`soleSwitchMergePhi`) refuses it outright
+// and declines generically — MEASURED at part A's HEAD. On ACCEPT `Region` is a
+// `SwitchRegion` with `SwitchCls == Phase` and `Merge == nullptr` (that null IS
+// the marker of the register-free shape) for `emitSwitchPhaseRegion`; on
+// NotApplicable the caller runs the ordinary G0-G11 ladder, which still owns the
+// VALUE and DATA-MUX classes. See the definition's header for the unitary and
+// for why P5 has no plain-C customer.
+enum class SwitchPhaseKickbackDisp { Accept, Declined, NotApplicable };
+SwitchPhaseKickbackDisp classifyPhaseKickbackSwitch(llvm::SwitchInst *SI,
+                                                    TaintSet &Taint,
+                                                    ControlRegion &Region);
 
 void classifySwitchRegion(llvm::SwitchInst *SI, TaintSet &taint,
                           ControlPlan &plan);

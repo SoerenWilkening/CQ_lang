@@ -31,7 +31,6 @@
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
-#include "NestedRouteEmit.h"     // lowerNestedRegion (the depth-2 nest dispatch)
 #include "OpcodeSupport.h"       // abiWidthFromType · abiWidthHasControlledRotation
 #include "RegionFlatten.h"   // flattenRegion / flattenRegionTree       // flattenRegion
 #include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
@@ -2227,24 +2226,26 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     }
     if (R.Depth > 0)
       continue;  // a nested child — owned by its parent's dispatch.
-    const ControlRegion *Child = nullptr;
-    for (size_t j = 0; j < Regions.size(); ++j)
-      if (Regions[j].Depth == R.Depth + 1 && Regions[j].ParentIdx == i) {
-        Child = &Regions[j];
-        break;
-      }
-    if (Child)
-      lowerNestedRegion(R, *Child, wd, csyms, taint);
-    else {
-      // bd test_C_libtooling-8h7d.5 — record the SURVIVING `Pred` of an in-loop
-      // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which
-      // erases `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger
-      // for the round-2 rail collapse (`collapseFlattenedLoopRails`); a module
-      // with no in-loop region records nothing and is byte-identical.
-      if (R.InLoop)
-        taint.InLoopFlattenedPreds.insert(R.Pred);
-      emitRegion(R, wd, csyms, taint);
-    }
+    // ⚠ THE PARENT/CHILD NEST DISPATCH IS GONE (bd test_C_libtooling-3qlq Inc 1
+    // part B). It called `NestedRouteEmit::lowerNestedRegion`, which is DELETED
+    // along with the 4.3 swap-routed nest it emitted: that emitter's per-level
+    // `cqrt_cswap` route existed only to carry a REGISTER-form arm gate, and one
+    // of its two work-rail replays was the TENSORED `cqrt_rz_<W>` this epic
+    // exists to retire. Its detector (`recoverRegionTree`) now declines instead
+    // of accepting — every criterion it proves is a consequence of the register
+    // form — so NOTHING pushes a Depth-1 region any more, and the
+    // `Depth > 0`/`ParentIdx` machinery above is the vestige that makes that
+    // fact checkable rather than assumed. The REGISTER-FREE depth-2 nest is a
+    // SINGLE `PhaseKickbackNest` region dispatched a few lines above.
+    //
+    // bd test_C_libtooling-8h7d.5 — record the SURVIVING `Pred` of an in-loop
+    // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which erases
+    // `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger for the
+    // round-2 rail collapse (`collapseFlattenedLoopRails`); a module with no
+    // in-loop region records nothing and is byte-identical.
+    if (R.InLoop)
+      taint.InLoopFlattenedPreds.insert(R.Pred);
+    emitRegion(R, wd, csyms, taint);
   }
 }
 

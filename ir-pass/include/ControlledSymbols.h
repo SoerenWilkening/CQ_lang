@@ -40,8 +40,9 @@ public:
   // pass owns all three for the duration of a run).
   ControlledSymbols(llvm::Module &M, WidthDispatch &wd) : M(M), Wd(wd) {}
 
-  // Which rotation stem `controlledRotationFn` spells. `Rz` (the default,
-  // PRD §2.8) is the diagonal phase rotation — the lowered `cq_phi`. `Ry`
+  // Which rotation stem `controlledRotationFn` spells. `Rz` (PRD §2.8) is the
+  // diagonal phase rotation — what the RETIRED register-form `cq_phi` lowered
+  // to. `Ry`
   // (control-in-place-PRD §5, bd test_C_libtooling-drbq Inc 0) is the
   // NON-diagonal superposition rotation — the lowered `cq_theta` — and is
   // the reason the whole family exists: a tainted-control Ry arm has NO
@@ -62,8 +63,20 @@ public:
   // rotation in this compiler it inverts as the SAME symbol with a NEGATED
   // angle (`EmitInverse`). So `(Ry, inverse=true)` is refused with a null
   // callee rather than minting a name whose meaning is not the caller's.
+  //
+  // ⚠ `stem` HAS NO DEFAULT SINCE bd test_C_libtooling-3qlq Inc 1 part B, and
+  // that is a deliberate compile-time fence rather than tidiness. It used to
+  // default to `Rz`, and after this increment NOTHING in the pass mints a
+  // controlled Rz at all: the register-free `cq_phi` is UNCONTROLLED
+  // `cqrt_rz_i1` on a condition FLAG (kickback), so a `cqrt_rz_<W>_controlled`
+  // is the TENSORED per-register gate PRD §1 records as the defect that made
+  // every Grover golden the identity on `q`. A defaulted `Rz` would let a future
+  // caller mint one by OMISSION — the exact "absence of a decision" failure mode
+  // bd 3c6m.67 and bd big5 both document. Both live call sites pass
+  // `RotStem::Ry` explicitly (`RotationLowering`, the drbq control-in-place
+  // arm); make it three before you make it default again.
   llvm::FunctionCallee controlledRotationFn(llvm::StringRef abiWidth,
-                                            RotStem stem = RotStem::Rz,
+                                            RotStem stem,
                                             bool inverse = false) const;
 
   // Pauli-X gate primitive (the De Morgan `||` bracket, PRD §2.5):

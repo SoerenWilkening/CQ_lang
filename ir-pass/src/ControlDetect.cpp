@@ -778,10 +778,28 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
           // generic `control flow`; no in-loop switch is ever soundly ACCEPTED
           // (the N-way route + merge would flatten across the backedge), so this
           // only sharpens an already-declining path.
-          if (regionEntryInLoop(SI))
+          if (regionEntryInLoop(SI)) {
             diagnoseUnderControl(SI, "control flow inside a loop body");
-          else
-            classifySwitchRegion(SI, taint, plan);
+          } else {
+            // 3qlq Inc 1 part B (PRD §6.2 row P5) — the register-free PHASE
+            // switch is PRE-PEELED, the fifth pre-peel and for the same reason
+            // as the third and fourth: with `void @cq_phi(double)` arms the
+            // merge carries no φ, so the G0-G11 ladder's G1
+            // (`soleSwitchMergePhi`) refuses it and declines generically. The
+            // ladder still owns the VALUE and DATA-MUX classes, which DO have a
+            // merge φ.
+            ControlRegion SR;
+            switch (classifyPhaseKickbackSwitch(SI, taint, SR)) {
+            case SwitchPhaseKickbackDisp::Accept:
+              plan.Regions.push_back(SR);
+              break;
+            case SwitchPhaseKickbackDisp::Declined:
+              break;
+            case SwitchPhaseKickbackDisp::NotApplicable:
+              classifySwitchRegion(SI, taint, plan);
+              break;
+            }
+          }
         }
       }
       // 4.4 — prove-or-decline a tainted-condition `select` instead of the
