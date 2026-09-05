@@ -443,16 +443,24 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // `classifyArms`); asking it again is free and keeps the pair together so a
   // later change to either cannot silently unpair them.
   //
-  // NO FIXTURE PINS THIS, and that is measured rather than assumed: the only
-  // shape with `comparePredLowerable` true and `compareFlagMintable` false is
-  // an out-of-surface (i128) condition width, and a tainted `icmp i128` branch
-  // condition never reaches the control layer at all on EITHER binary — it is
-  // neither claimed nor declined by it (round-1 finding F-V1-9, PRE-EXISTING at
-  // 52d7764; reproducers in `docs/prd/phase-04-swap-route-control/inc2-records/`,
-  // bd test_C_libtooling-3qlq.8). If that gap is ever closed, this fence becomes
-  // live in the same change — write the fixture then. Until then it is the
-  // Rule-1 defensive bail, in the same class as the `StaleDeclined` pre-fence
-  // one screen above, and it can only DECLINE, never widen.
+  // ⚠ IT IS REACHABLE, AND THE ROUND-1 REVIEW'S "no reproducer exists" NOTE IS
+  // SUPERSEDED — measured while writing the fence, not assumed. The only shape
+  // with `comparePredLowerable` true and `compareFlagMintable` false is an
+  // out-of-surface (i128) condition width, and the review recorded that such a
+  // `br` "never reaches the control layer at all on EITHER binary" (finding
+  // F-V1-9: neither claimed nor declined, only a later `no template for opcode
+  // 'icmp i1'` from the compare failing in DATA position — which Rule 1 says
+  // cannot happen). That is true of the PHASE arm and FALSE of the VALUE arm:
+  // detection DOES hand an i128-condition value diamond to this function, so
+  // this fence fires and the module now declines LOUDLY at the compare
+  // (`CQ_CTRL_DBG=1` names it). Pinned by
+  // `control_swap_value_reject_i128_cond.ll`; red-green measured against the
+  // pre-fix binary, which reports only the template error. So this fence also
+  // closes the VALUE half of F-V1-9. The PHASE half is untouched and still open
+  // (bd test_C_libtooling-3qlq.8; both reproducers are committed under
+  // `docs/prd/phase-04-swap-route-control/inc2-records/`). Nothing moved in the
+  // accept direction: both binaries exit non-zero on that module and neither
+  // emits a gate — this fence can only DECLINE.
   if (!comparePredLowerable(Cond) || !compareFlagMintable(Cond, taint)) {
     diagnoseUnderControl(Cond, "control flow");
     return;
