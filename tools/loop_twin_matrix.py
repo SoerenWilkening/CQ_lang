@@ -237,13 +237,27 @@ MEANING AND ONE GOES VACUOUS:
     rolled/unrolled, so that split costs it nothing — but do not carry the
     `ifelse` row across to a cross-stem instrument and expect one gate line.
 
-A `void` RUN DOES NOT CONSULT THE COMMITTED TABLES, AND `--regenerate` /
-`--refresh-quarantine` ARE REFUSED IN IT. Both artefacts were measured on the
-`register` surface and neither claim survives the surface change; overwriting
-either from a `void` run would put a table on disk under a name that says it
-measures something else. Use `--out FILE`. The two BOUNDARY CONTROLS still run
-and their verdicts are printed, but they are NOT hard failures under `void` for
-the same reason: the quarantine whose class story they bound is not applied.
+A `void` RUN DOES NOT CONSULT THE EXPECTED TABLE AND READS THE QUARANTINE FOR
+ITS CELL NAMES ONLY; `--regenerate` / `--refresh-quarantine` ARE REFUSED. The
+split is the split between what each artefact CLAIMS and what it MEASURES.
+`loop_twin_matrix.expected.txt` is entirely a set of register-surface
+measurements, so it is not read at all. The quarantine's CLAIM — "this cell holds
+a FILED, root-caused defect: bd test_C_libtooling-1m5p class A, bd
+test_C_libtooling-a3z7 class B" — is about `Uncomputation`/`FreePoint` interior
+placement and `ArithLowering` M-C, neither of which has anything to do with
+`cq_phi`, so it is surface-INDEPENDENT; its SIGNATURE is a SHA-256 digest of a
+register-surface trace and cannot mean anything here. So a quarantined divergence
+is recorded as a VERDICT carrying its bd issue, a quarantined cell that does NOT
+diverge is not "quarantine stale", and A NON-QUARANTINED DIVERGENCE IS STILL A
+HARD FAILURE — which is the half that matters. MEASURED on the pre-3qlq oracle
+52d7764: the 13 void divergences are a SUBSET of the 15 register-surface
+quarantined cells, ZERO new; the 2 that drop out are `..._rzpost`, whose
+`r = cq_phi(r, .125)` RGATE becomes an uncontrolled void filler the oracle leaves
+unlowered. Writing either committed file from a `void` run would put a table on
+disk under a name that says it measures something else, so both writers refuse;
+use `--out FILE`. The two BOUNDARY CONTROLS still run and their verdicts are
+printed, but they are NOT hard failures under `void`: they exist to keep the
+quarantine's SIGNATURE story a measurement, and the signatures are not applied.
 
 ONE NEW SIDE STATE EXISTS ONLY UNDER `void`, AND IT IS A DISPOSITION RATHER THAN
 A HARNESS BREAK. A binary that predates Increment 1 has no concept of
@@ -1250,8 +1264,11 @@ def main():
                          "`a = cq_phi(a, T)`; `void` is the register-free branch "
                          "phase `cq_phi(T)`, which needs an --include-dir whose "
                          "header declares `void cq_phi(double)`. A `void` run "
-                         "does NOT consult --expected or --quarantine and "
-                         "REFUSES --regenerate / --refresh-quarantine; use --out.")
+                         "does NOT read --expected, reads --quarantine for its "
+                         "CELL NAMES only (its filed defects are "
+                         "surface-independent, its SHA-256 trace signatures are "
+                         "not), and REFUSES --regenerate / --refresh-quarantine; "
+                         "use --out.")
     ap.add_argument("--out", default="",
                     help="also write the verdict table to FILE (name + verdict, "
                          "one row per cell, the same two columns --regenerate "
