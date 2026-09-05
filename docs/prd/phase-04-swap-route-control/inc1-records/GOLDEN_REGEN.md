@@ -474,11 +474,12 @@ The reds, each with its owner:
 | `e2e-fixture-guard-liveness` | **prep-a / the fixture re-derive** | 7 SKIPs, every one verified to carry **2** `@cq_phi_<sfx>` references (`grep -c '@cq_phi_[a-z0-9]'`): `lowering_io_tape_rz_preserving`, `lowering_live_record_mb_{router_phi,sibling_alias}_accept`, `lowering_uncompute_interior_leak_{region_wire_measured,route_in_interval}`, `lowering_uncompute_interior_region_{chain,routed_base}`. Each is in the retired family, the pass declines it (rc=1), so its anchored `NOFREE` guard cannot be checked. **0 DEAD guards.** `impl_inc1b` reported this identical failure for this identical reason. |
 | `e2e-loop-twin-matrix` | **prep-d2** (round-1 F-L5-7, OQ-18) | `274 cells — 50 ACCEPT-IDENTICAL, 33 DECLINE, 191 other; 15 quarantined`. Its GENERATOR emits programs on the RETIRED two-argument surface, so they fail at stage 1 (`clang` error). It needs `--phi-surface void` and regenerated tables. |
 
-⚠ **The §12 remedies landed AFTER that run.** They add one slice and one `cmp` gate
-(329 entries) and change four goldens; the targeted re-run
-`ctest -j6 -R '^e2e-slice-(classical|loop-phase|control-cond-onward)'` is
-**7/7 PASSED**, and `e2e-loop-phase-accum-twin-identical` is **PASSED** beside it.
-Nothing in §12 touches either remaining red or its cause.
+⚠ **The §12 remedies landed AFTER that run**, so the layer was re-run whole:
+**99% passed, 2 failed of 329**, 635.78 s (`$SP/progress/prep_b2_e2e4.log`) — the SAME
+two reds, unchanged, and the 7 targeted entries plus the new `cmp` gate all green
+(`ctest -j6 -R '^e2e-slice-(classical|loop-phase|control-cond-onward)'` = **7/7**,
+`e2e-loop-phase-accum-twin-identical` = **PASSED**). Nothing in §12 touches either
+remaining red or its cause.
 
 ## 12. FINDING F-B2-3 — FOUR slices whose SUBJECT was the uncontrolled Rz itself — **REMEDIED**
 
