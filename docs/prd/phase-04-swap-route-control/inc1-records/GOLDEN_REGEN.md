@@ -40,17 +40,17 @@ python3 tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764 <the 71 goldens
 
 | | |
 |---|---|
-| slices swept | **71** (61 migrated with a pre-existing golden + 10 new) |
-| stage 2 exit 0 | **71 / 71** |
-| stage 2b STRICT PASS | **71 / 71** (0 `--allow-unproven`) |
-| stage 3 link + stage 4 trace | **71 / 71** |
+| slices swept | **72** (61 migrated with a pre-existing golden + 11 new — the 11th is §12.2's rolled/unrolled twin) |
+| stage 2 exit 0 | **72 / 72** |
+| stage 2b STRICT PASS | **72 / 72** (0 `--allow-unproven`) |
+| stage 3 link + stage 4 trace | **72 / 72** |
 | audit `--selftest` | **PASS, 0 survivors** (25 mutants + 10 controls + 2 tolerance pins) |
-| audit statuses | 33 `SUBSTITUTION-ONLY` · 1 `AMBIGUOUS-d` · 1 `AMBIGUOUS-ca` · 10 `NEW-FILE` · **26 `FINDING`** |
-| every one of the 26 `FINDING`s | a **REWRITTEN PROGRAM** listed in §4 below — 15 (OQ-2) + 10 (OQ-3) + 1 (OQ-5) |
+| audit statuses | 29 `SUBSTITUTION-ONLY` · 1 `AMBIGUOUS-d` · 1 `AMBIGUOUS-ca` · 11 `NEW-FILE` · **30 `FINDING`** |
+| every one of the 30 `FINDING`s | a **REWRITTEN PROGRAM** — 15 (OQ-2) + 10 (OQ-3) + 1 (OQ-5) + 4 (§12, the F-B2-3 remedies); verified as a set difference in BOTH directions |
 | `cqrt_rz_i1` with a NEGATIVE angle, tree-wide | **0** (`grep -l 'cqrt_rz_i1(h[0-9]*, -' tests/e2e/*.expected.log`) |
 | `cqrt_rz_<W>_controlled` surviving, tree-wide | **0** |
-| non-`i1` `cqrt_rz` surviving, tree-wide | **0** of 303 goldens (56 carry a `cqrt_rz`, all `_i1`) |
-| `cqrt_rz_i1` lines, tree-wide | **161** |
+| non-`i1` `cqrt_rz` surviving, tree-wide | **0** of **304** goldens |
+| `cqrt_rz_i1` lines, tree-wide | **168** |
 
 The last three rows are PRD §5's table (`cqrt_rz_{i8..f80}` become "not emitted")
 verified at the only layer that LINKS. The negative-angle row is the standing
@@ -89,7 +89,14 @@ recoverable only as `fl(B+D)`: recovered `0x1.ccccccccccccep-1` against the new
 trace's `0x1.ccccccccccccdp-1` — **ONE ULP APART**, error 1.110e-16 against a
 tolerance of 3.331e-16. An `==` there would have failed the flagship golden.
 
-## 4. Per-golden table (all 71)
+## 4. Per-golden table (the 71 audited BEFORE §12's remedies)
+
+⚠ This table is the state BEFORE §12's four remedies. Four of its rows —
+`slice_classical_if_gate`, `slice_classical_switch_gate`, `slice_loop_phase_accum`
+and `slice_control_cond_onward_phase` — moved from `SUBSTITUTION-ONLY` to
+**REWRITTEN PROGRAM (§12)** afterwards, and one row was ADDED
+(`slice_loop_phase_accum_unrolled`, `NEW-FILE`). §12.3 carries the final tally; the
+table is left at the earlier state because §12 is written as a delta against it.
 
 `class` is the audit's verdict. **REWRITTEN PROGRAM** means the audit correctly
 reported `FINDING` and the finding is EXPECTED: the `.c` was changed, so the
@@ -467,7 +474,13 @@ The reds, each with its owner:
 | `e2e-fixture-guard-liveness` | **prep-a / the fixture re-derive** | 7 SKIPs, every one verified to carry **2** `@cq_phi_<sfx>` references (`grep -c '@cq_phi_[a-z0-9]'`): `lowering_io_tape_rz_preserving`, `lowering_live_record_mb_{router_phi,sibling_alias}_accept`, `lowering_uncompute_interior_leak_{region_wire_measured,route_in_interval}`, `lowering_uncompute_interior_region_{chain,routed_base}`. Each is in the retired family, the pass declines it (rc=1), so its anchored `NOFREE` guard cannot be checked. **0 DEAD guards.** `impl_inc1b` reported this identical failure for this identical reason. |
 | `e2e-loop-twin-matrix` | **prep-d2** (round-1 F-L5-7, OQ-18) | `274 cells — 50 ACCEPT-IDENTICAL, 33 DECLINE, 191 other; 15 quarantined`. Its GENERATOR emits programs on the RETIRED two-argument surface, so they fail at stage 1 (`clang` error). It needs `--phi-surface void` and regenerated tables. |
 
-## 12. FINDING F-B2-3 — FOUR slices whose SUBJECT was the uncontrolled Rz itself
+⚠ **The §12 remedies landed AFTER that run.** They add one slice and one `cmp` gate
+(329 entries) and change four goldens; the targeted re-run
+`ctest -j6 -R '^e2e-slice-(classical|loop-phase|control-cond-onward)'` is
+**7/7 PASSED**, and `e2e-loop-phase-accum-twin-identical` is **PASSED** beside it.
+Nothing in §12 touches either remaining red or its cause.
+
+## 12. FINDING F-B2-3 — FOUR slices whose SUBJECT was the uncontrolled Rz itself — **REMEDIED**
 
 Not a defect and not a mismatch: all four audit `SUBSTITUTION-ONLY` class (c), which
 is owner decision D2 working exactly as written (an uncontrolled or
@@ -477,6 +490,14 @@ thing its header claims is the bd `3c6m.63` / `165/174` failure mode, and it is
 invisible to a green suite. **This agent did NOT rewrite them** — the remedy is the
 same class of decision the orchestrator took for OQ-2 / OQ-3 / OQ-5, and it is not
 `prep_b2`'s to take.
+
+> **RESOLVED 2026-09-05 by orchestrator instruction.** All four remedies proposed
+> below were applied; each slice is now a **REWRITTEN PROGRAM** with a `⚠ REWRITTEN
+> PROGRAM` header carrying its measurement, a regenerated golden, the full STRICT
+> pipeline and an audit row. §12.1 records what shipped, §12.1's two bullets record
+> where the one-line proposal was WRONG, and §12.2 the new twin slice + gate. The
+> table and the proposal below are left verbatim as the record of the finding as
+> raised — read the "then -> now" column as "then -> BEFORE the remedy".
 
 MEASURED (`grep -c cqrt_rz_i1` on the new golden vs `grep -c cqrt_rz` on 52d7764's):
 
@@ -492,7 +513,7 @@ is complete rather than because they need anything: `spec_select_caller` and
 `spec_twoarm_caller` (1 rz -> 0 each) keep their whole specialization stream (12 and
 30 trace lines) — the deleted line was a trailing onward phase.
 
-**Proposed remedy, for whoever rules on it** (one line each, all inside the existing
+**Remedy as PROPOSED** (left verbatim; §12.1 records what was actually needed) (one line each, all inside the existing
 machinery): re-base the first three on the Ry stem — `if (taken) q1 = cq_theta(q1, .25);`
 and `for (...) q = cq_theta(q, .1);` — which restores the FIRES / does-NOT-fire
 contrast and the loop accumulation without touching what the slices are about (a
@@ -500,3 +521,65 @@ CLASSICAL branch must not become quantum control); and give
 `slice_control_cond_onward_phase` a kickback onward region (`if (r == 9) cq_phi(.25);`)
 so the merged value is read by a real consumer. Each would then be a REWRITTEN PROGRAM
 under §5's rules.
+
+### 12.1 What shipped, and the two places the one-line proposal was WRONG
+
+All four are now REWRITTEN PROGRAMS under §5's rules. MEASURED on the SUBJECT, full
+pipeline, stage 2b **STRICT**:
+
+| slice | new idiom | golden | what it proves again |
+|---|---|---|---|
+| `slice_classical_if_gate` | `if (taken) q1 = cq_theta(q1,.25);` / `if (nottaken) q2 = cq_theta(q2,.75);` | 6 -> **7** lines | the CONTRAST is back: `q1` carries `ry(0x1p-1)` **and** `ry(0x1p-2)`, `q2` carries only its base `ry`. `cq_theta` is in place and its result RAUWs to the same handle, so the merge phi is still a pure renaming and `liftOneRegisterMergePhi` — the thing this slice LINKS — is exercised unchanged. No flag, no routing, no controlled gate. |
+| `slice_classical_switch_gate` | each arm's `cq_phi(θ)` -> `q<n> = cq_theta(q<n>, θ)` (7 sites) | 6 -> **8** lines | arm selection AND the 2-GATE ARM are visible again: `q1` gets base `ry(0.5)` + case 2's `ry(0.5)` + `ry(0.55)`; `q2` takes the DEFAULT arm and gets its base `ry` only. Before the remedy this golden was byte-identical to `slice_classical_if_gate`'s. |
+| `slice_loop_phase_accum` | `for (i<n) { if (q == 2.0) cq_phi(0.1); q = cq_theta(q, 0.05); }` | 3 -> **18** lines | a per-iteration BRANCH phase by kickback inside a ROLLED, RUN-TIME-bounded loop: three x (`fcmp_oeq_f64_hl` mint, `cqrt_rz_i1`, `_unc` strip, `cqrt_free`), the flag minted, stripped and freed INSIDE its own iteration, so nothing dirty crosses the back edge and stage 2b runs STRICT. |
+| `slice_control_cond_onward_phase` | `int t = r + argc; if (t == 10) cq_phi(0.25);` | 19 -> **26** lines | the `dugh` SECOND propagation round now has TWO consumers of the emitted `%out`, not one: an onward ARITHMETIC op (`cq_template_add_i32_hl(h1, 1)` + its `_unc`) and an onward CONTROL REGION (compare mint, `cqrt_rz_i1`, strip, two frees). The 4.5 switch data-mux half is untouched — 3 eq-flag mints, 3 controlled copies, 3 strips, 3 frees. |
+
+⚠ **The one-line proposal was WRONG in two places, and both had to be measured.**
+
+1. **`for (...) q = cq_theta(q, .1);` would not have restored the phase accumulator**
+   — it replaces a PHASE with a ROTATION, which is a different physical claim
+   (Rule 7). The orchestrator's instruction ("a per-iteration kickback under a
+   tainted condition") is what shipped. But a kickback needs a LOOP-VARIANT
+   condition register: with no gate on `q` in the body, `clang -O1` LICM-hoists the
+   `fcmp` into the preheader and `condWireDisposition`'s P4 precondition declines
+   the program with `condition predates a non-diagonal gate` (the drbq.12 /
+   CLAUDE.md "row W" over-decline, arm-class-independent). So the body carries BOTH
+   the kickback AND a trailing `cq_theta` — the drbq Inc-3 Grover customer shape —
+   and the slice header says so in as many words.
+2. **`if (r == 9) cq_phi(.25);` DECLINES.** MEASURED: `clang -O1` HOISTS that
+   comparison INTO the switch, giving the merge block a SECOND phi
+   (`%6 = phi i1 [false,%entry],[false],[true],[false]`) beside the i32 data mux,
+   and the module declines `cq controlled lowering: control flow under quantum
+   control` — the C1 multi-phi row. A run-time classical operand the compiler
+   cannot evaluate per arm defeats the hoist, so the shipped condition is
+   `t = r + argc; t == 10` (with `argc == 1` that IS `r == 9`, the `case 5` arm the
+   original comment named). Same `argc` trick, same reason, as
+   `slice_classical_if_gate.c`. The TRACE does not depend on the run-time value:
+   the kickback is quantum control, so the mint, the `cqrt_rz_i1`, the strip and the
+   free are emitted unconditionally.
+
+### 12.2 ONE NEW SLICE AND ONE NEW GATE — the rolled/unrolled twin the header only CLAIMED
+
+`slice_loop_phase_accum.c`'s header has asserted since Phase 7.3 Inc 1 that its trace
+is *"BYTE-IDENTICAL to the manually-unrolled 3xcqrt_rz form — the PRD §4
+done-criterion"*, and **there was no twin in the tree to check it against**. There is
+now: `slice_loop_phase_accum_unrolled.c` (three hand-written activations, no loop),
+registered as `e2e-slice-loop-phase-accum-unrolled`, with the `cmp` gate
+`e2e-loop-phase-accum-twin-identical` over the two committed goldens. MEASURED:
+**18 lines each, BYTE-IDENTICAL, both stage 2b STRICT PASS**, both gates green.
+
+### 12.3 Audit and counts after the remedies
+
+`golden_multiset_audit.py --epic 3qlq --rev 52d7764` over all **72** changed goldens:
+**29 SUBSTITUTION-ONLY · 1 AMBIGUOUS-d · 1 AMBIGUOUS-ca · 11 NEW-FILE · 30 FINDING**,
+and the 30 FINDINGs are **exactly** the 30 REWRITTEN PROGRAMS (§5's 26 plus these
+four) — verified as a set difference in BOTH directions, not by eye. **0 unexplained
+diffs.** `--selftest` re-run: PASS, 0 survivors. Tree-wide scans re-run and unchanged
+in kind: **304** goldens, negative-angle `cqrt_rz_i1` **0**, non-`i1` `cqrt_rz` **0**,
+`cqrt_rz_<W>_controlled` **0**, `cqrt_rz_i1` lines **168** (was 161; +7 for the four
+remedies' kickbacks). e2e layer: **329** entries (327 + the twin slice + its gate).
+
+⚠ **FOR prep-c (the audit's owner):** `golden_multiset_audit.py` raises
+`FileNotFoundError` in `audit()` when a DELETED golden is in its default changed-file
+set — and this increment deletes two (§6). Every run recorded here therefore passes an
+EXPLICIT list of paths. Not fixed here: `tools/` is outside this agent's file scope.

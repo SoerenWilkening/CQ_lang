@@ -3064,6 +3064,24 @@ add_test(NAME e2e-slice-loop-phase-accum
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log")
 
+# 3qlq Inc 1, finding F-B2-3 (prep-b2): the HAND-UNROLLED twin of the phase
+# accumulator above, and the `cmp` gate over the two committed goldens. The rolled
+# slice's header has claimed byte-identity with a manual unroll since Phase 7.3
+# Inc 1 and there was no twin in the tree to check it against; there is now.
+# `cmp` only — no clang, no opt, no plugin, milliseconds.
+add_test(NAME e2e-slice-loop-phase-accum-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.expected.log")
+
+add_test(NAME e2e-loop-phase-accum-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.expected.log")
+
 # Issue dtzb (the in-place reversible arithmetic strategy): the VALUE twin of the
 # phase accumulator above. A classically-bounded loop over an in-place-mutated
 # value rail `q = q ^ 9` lowers ROLLED — `cqrt_xorc_i32(h0, 9)` rolled in place,

@@ -1,9 +1,40 @@
-/* 3qlq Inc 1: migrated to register-free cq_phi -- the ONWARD phase after the data-mux loses its register.
-   FLAG: this call is UNCONTROLLED (it sits after the switch merge, not inside an arm),
-   so under D2 it is a GLOBAL phase and is DELETED. The slice's stated purpose -- the
-   dugh re-propagation that re-taints the onward cq_phi so it lowers as a gate on %out
-   -- has NO CUSTOMER left in this program. Purpose does NOT survive.
-   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
+/* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, finding F-B2-3 / prep-b2, orchestrator remedy).
+   The golden below is a NEW PROGRAM's trace, not an audit substitution of the old
+   one, and it is recorded as such in
+   docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md §12.
+
+     OLD: cq_phi(0.25);                          (an UNCONTROLLED onward Rz on %out)
+     NEW: int t = r + argc;  if (t == 10) cq_phi(0.25);   (an ONWARD KICKBACK)
+
+   WHY. The onward call sits AFTER the switch merge, so it is uncontrolled, and
+   under owner decision D2 an uncontrolled `cq_phi` is a GLOBAL PHASE and is
+   DELETED. MEASURED before this rewrite: the golden lost its only `cqrt_rz` line
+   and this slice — whose whole subject is the `dugh` SECOND propagation round
+   (`repropagateControlMerges` re-seeding taint from the emitted `%out` so an
+   onward op over the data-mux result lowers and LINKS) — had no onward op left to
+   re-taint. The 4.5 switch data-mux half kept working, which is exactly what made
+   the loss invisible.
+
+   WHAT THE NEW ONWARD OP IS, AND WHY IT IS BETTER THAN THE OLD ONE. `t = r + argc`
+   is a real onward ARITHMETIC op on the merged rail (it emits
+   `cq_template_add_i32_hl` on `%out` and its `_unc` twin), and the compare on `t`
+   mints a flag that carries the branch phase by kickback. So the second
+   propagation round is now proved by TWO consumers of `%out` — an arithmetic op
+   and a control region — where it used to be proved by one in-place gate.
+
+   ⚠ `argc` IS LOAD-BEARING, NOT STYLE, AND IT IS MEASURED. Written as the obvious
+   `if (r == 9) cq_phi(0.25);`, `clang -O1` HOISTS the comparison INTO the switch:
+   the merge block gets a SECOND phi, `%6 = phi i1 [false,%entry],[false],[true],[false]`,
+   beside the i32 data mux, and the module declines
+   `cq controlled lowering: control flow under quantum control` (the C1 multi-phi
+   row). Adding a run-time classical operand the compiler cannot evaluate per arm
+   defeats that hoist and leaves the merge a pure data mux, which is the shape this
+   slice is about. `argc` is 1 on every real invocation, so `t == 10` means `r == 9`
+   — the `case 5` arm — which is the value the original comment named. Note the
+   trace does not depend on that: the kickback is quantum control, so the flag mint,
+   `cqrt_rz_i1`, the strip and the free are emitted unconditionally.
+
+   Same `argc` trick, same reason, as `slice_classical_if_gate.c`. */
 /* slice_control_cond_onward_phase.c — dugh (Phase 4×6) e2e smoke: an untainted
    control-merge result feeding an ONWARD-QUANTUM PHASE (Rz), driven through the full
    clang -O1 → opt cq-lowering → link → run pipeline. The only test layer that LINKS,
@@ -36,7 +67,7 @@
    freed (benign leak, Rule 6); EXACTLY THREE frees (the N=3 eq-flags). The onward Rz
    is applied to out IN PLACE and out is MEASURED. The golden pins the trace from REAL
    linked output (templates BEFORE runtime — load-bearing link order). */
-int slice(void) {
+int slice(int argc) {
     int q = 3, r = 3;              /* r preset to v_d (the default value)         */
     q = cq_theta(q, 0.5);          /* taint q -> scrutinee handle                */
     switch (q) {                   /* tainted switch -> preload + XOR-delta mux   */
@@ -44,7 +75,8 @@ int slice(void) {
         case 5:  r = 9;  break;    /* delta 9^3=10  (non-contiguous: defeats fold)*/
         case 17: r = 11; break;    /* delta 11^3=8                                */
     }
-    cq_phi(0.25);           /* ONWARD phase on the muxed answer (Rz on out)*/
+    int t = r + argc;              /* ONWARD arithmetic on the muxed answer      */
+    if (t == 10) cq_phi(0.25);     /* ONWARD BRANCH phase by kickback (argc==1)  */
     return cq_measure(r);          /* reads the phased muxed answer               */
 }
-int main(void) { (void) slice(); return 0; }
+int main(int argc, char **argv) { (void) argv; (void) slice(argc); return 0; }

@@ -1,8 +1,30 @@
-/* 3qlq Inc 1: migrated to register-free cq_phi -- the classically-guarded gate loses its register.
-   FLAG: the gate is CLASSICALLY controlled, so under D2 it is a global phase and is
-   DELETED -- both the FIRES and the does-NOT-fire shot. The slice's whole contrast
-   (one rz in the trace, not two) has nothing left to contrast. Purpose does NOT survive.
-   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
+/* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, finding F-B2-3 / prep-b2, orchestrator remedy).
+   The golden below is a NEW PROGRAM's trace, not an audit substitution of the old
+   one, and it is recorded as such in
+   docs/prd/phase-04-swap-route-control/inc1-records/GOLDEN_REGEN.md §12.
+
+     OLD: if (taken) cq_phi(0.25);        / if (nottaken) cq_phi(0.75);
+     NEW: if (taken) q1 = cq_theta(q1,.25); / if (nottaken) q2 = cq_theta(q2,.75);
+
+   WHY. This slice's whole subject is the CONTRAST — one classically-guarded gate
+   FIRES this shot and one does NOT — and under owner decision D2 a
+   classically-controlled `cq_phi` is a GLOBAL PHASE and is DELETED, so BOTH shots
+   lost their gate. MEASURED before this rewrite: the golden went from 1 `cqrt_rz`
+   to ZERO and read `alloc; ry; measure` twice, i.e. it had nothing left to
+   contrast and was byte-identical to `slice_classical_switch_gate`'s golden. A
+   test that still compiles and no longer exercises its own subject is the bd
+   `3c6m.63` / `165/174` failure mode, and it is invisible to a green suite.
+
+   `cq_theta` is the replacement gate and nothing else about the slice moves. It is
+   the right one for THIS property, not a convenience: like the retired register
+   `cq_phi` it is an IN-PLACE gate whose lowered result RAUWs to its argument's i32
+   handle, so the two incomings of the merge phi are still distinct SSA names for
+   the SAME register and `TaintPropagation::liftOneRegisterMergePhi` — the thing
+   this slice links — is exercised exactly as before. The CLASSICAL branch is still
+   left byte-untouched, no flag is minted, no routing and no controlled gate is
+   emitted, and the trace still shows the gate for q1 and NO gate for q2. What
+   changed is the gate's spelling (`cqrt_ry_i32` where the golden used to say
+   `cqrt_rz_i32`), not the property. */
 /* slice_classical_if_gate.c — test_C_libtooling-5j5 e2e smoke: the
    ONE-REGISTER classical-mux lift, the only test layer that LINKS (Rule 2,
    Rule 16). The most natural classically-controlled-gate program a user can
@@ -33,10 +55,10 @@ int main(int argc, char **argv) {
     int taken    = argc > 0;       /* 1 on every real invocation */
     int nottaken = argc > 100;     /* 0 on every real invocation */
     int q1 = cq_theta(3, 0.5);     /* alloc i32(3) + ry            */
-    if (taken)    cq_phi(0.25);   /* rz FIRES this shot   */
+    if (taken)    q1 = cq_theta(q1, 0.25);   /* gate FIRES this shot   */
     int m1 = cq_measure(q1);
     int q2 = cq_theta(4, 0.5);     /* alloc i32(4) + ry            */
-    if (nottaken) cq_phi(0.75);   /* rz does NOT fire     */
+    if (nottaken) q2 = cq_theta(q2, 0.75);   /* gate does NOT fire     */
     int m2 = cq_measure(q2);
     return (m1 + m2) & 0;
 }
