@@ -1302,6 +1302,16 @@ def audit(path, rev, epic="2a"):
     old = git_show(rev, path)
     if old is None:
         return "NEW-FILE", "not present at %s" % rev, 0, 0, 0
+    if not os.path.exists(path):
+        # A golden that existed at `rev` and is GONE now. `git diff --name-only`
+        # lists a deletion like any other change, and the default changed-file
+        # set therefore contains paths that cannot be opened. Measured 2026-09-05
+        # (bd 3qlq Inc 1, prep-b2): two goldens were retired with their slices
+        # and every audit run had to pass an explicit list to avoid a
+        # FileNotFoundError here. A deletion is a REPORTED status, never a PASS:
+        # the caller counts it beside the findings so a retired golden is a
+        # visible line in the run, with the reason owed in the slice's record.
+        return "DELETED", "present at %s, absent in the tree" % rev, 0, 0, 0
     new = open(path).read().splitlines()
     if epic == "3qlq":
         return audit_pair_3qlq(old, new)
@@ -2041,6 +2051,11 @@ def dryrun_3qlq(paths, rev, verbose=False):
             tally["NEW-FILE"] += 1
             bad += 1
             continue
+        if not os.path.exists(p):
+            # Retired golden (see `audit`): reported, counted, never a PASS.
+            print("!! %-58s DELETED" % os.path.basename(p))
+            tally["DELETED"] += 1
+            continue
         red, _cnt, arec = reduce_3qlq(old)
         for idx, (a_rec, _b, _d) in arec.items():
             red[idx] = red[idx].replace(_A_TOKEN, _cfmt(a_rec))
@@ -2161,7 +2176,7 @@ def main():
         treg += nreg
         tarm += narm
         tgate += ngate
-        mark = "!!" if st in ("FINDING", "OUT-OF-SCOPE") else "  "
+        mark = "!!" if st in ("FINDING", "OUT-OF-SCOPE", "DELETED") else "  "
         extra = ""
         if st in ("COLLAPSE-ONLY", "SUBSTITUTION-ONLY",
                   "AMBIGUOUS-d", "AMBIGUOUS-ca"):
