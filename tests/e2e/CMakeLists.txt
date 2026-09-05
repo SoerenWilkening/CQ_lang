@@ -4638,6 +4638,55 @@ add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-unrolled
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
 
+# --- THE MIXED LOOP WITH A PREHEADER IN-PLACE `add` (bd 3qlq Inc 1, the SECOND
+# --- C-1 review round, finding F-C1-1). One line more than the pair above, and
+# --- it put the leak back: `invariantRegisterRoots` peels only through ops whose
+# --- DISPOSITION is `InPlace`, and a preheader `add` is `Unproven` at that stage
+# --- even though M-C lowers it in place (`cqrt_addc_i32(h0, 7)` is line 5 of the
+# --- golden). 3 mints / 0 `_unc` on 542d588 AND on the round-1 C-1 fix (32 lines
+# --- vs the twin's 38). The `cmp` gate below is the witness.
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-preadd
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-preadd-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
+
+# --- THE MIXED **ONWARD** LOOP (bd 3qlq Inc 1, the SECOND C-1 review round,
+# --- finding F-C1-2(2a)). The invariant register is a 6.5 classical-call-arm
+# --- `%out` rail, so the loop's control is CLASSICAL at round 1 and ROUND-1
+# --- `tryCaseA` collapses the carried rail itself — leaving the round-2 pass with
+# --- an empty local carried set and clause (iii) refusing on the carried root's
+# --- in-body `cq_theta`. 3 mints / 0 `_unc` on 542d588 AND on the round-1 C-1 fix
+# --- (41 lines vs the twin's 47). TWO TUs: the classical callee must be visible
+# --- and un-inlined for the 6.5 arm to exist at all.
+add_test(NAME e2e-slice-control-phase-onward-perbit-loop-mixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_perbit_mixed_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.expected.log")
+
+add_test(NAME e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_perbit_mixed_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.expected.log")
+
 # --- nest vs `&&`: byte-identical BY CONSTRUCTION (`clang -O1` folds both to one
 # --- branch on `select i1 %a, i1 %b, false` — MEASURED 2026-09-05, the two
 # --- `@slice` bodies are character-for-character equal), plus a genuine depth-2
@@ -4703,6 +4752,18 @@ add_test(NAME e2e-phase-perbit-loop-mixed-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
+
+# bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled
+# DIVERGENCE on 542d588 AND on the round-1 C-1 fix (32 vs 38, and 41 vs 47).
+add_test(NAME e2e-phase-perbit-loop-mixed-preadd-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
+
+add_test(NAME e2e-phase-onward-perbit-loop-mixed-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.expected.log")
 
 add_test(NAME e2e-phase-nest-andcond-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
