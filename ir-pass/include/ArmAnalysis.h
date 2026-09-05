@@ -281,10 +281,33 @@ enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
 bool phaseAngleTail(llvm::BasicBlock *MergeBB, const TaintSet &Taint,
                     llvm::PHINode *&Phi, llvm::CallInst *&Consumer);
 
-PhaseKickbackDisp classifyPhaseKickback(llvm::BranchInst *BI, TaintSet &Taint,
-                                        ControlRegion &Region,
-                                        const llvm::DominatorTree *DT,
-                                        const llvm::LoopInfo *LI);
+// `ClaimedSelects` (bd test_C_libtooling-3qlq Inc 1 part B, P3) collects the
+// LOGICAL `select i1` nodes of an ACCEPTED compound condition tree. Those
+// selects are part of THIS region's condition — not data muxes — so the caller's
+// tainted-`select` scan must skip them, exactly as `Claimed` makes it skip an
+// accepted nest's inner `br`. WITHOUT IT the same `select i1 %a, i1 %b, i1 false`
+// is handed to `classifySelectRegion` as an i1 DATA select, accepted, and
+// `emitSelectRegion` then dereferences a select this emitter has already erased
+// — a SIGSEGV on the flagship `if (q==5 && r==3) cq_phi(θ)` customer, MEASURED
+// before the set existed. May be null (a caller with no select scan).
+PhaseKickbackDisp classifyPhaseKickback(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
+
+// bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 register-free
+// PHASE NEST (the one `clang -O1` did NOT fold to a compound branch; the folded
+// one is P3). On ACCEPT `Region` is a single `PhaseKickbackNest`, the inner `br`
+// is added to `ClaimedBranches` (the FA0 blocker — the inner branch recovers FLAT
+// in isolation and would false-decline) and both trees' logical `select i1` nodes
+// to `ClaimedSelects`. Declines fire the precise per-shape string; NotApplicable
+// falls through to the caller's ordinary shape recovery. See the definition's
+// header for the unitary and for why this is ONE region and not the 4.3 pair.
+PhaseKickbackDisp classifyPhaseKickbackNest(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::BranchInst *> *ClaimedBranches,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects);
 
 AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,

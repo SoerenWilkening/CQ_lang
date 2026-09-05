@@ -13,6 +13,8 @@
 
 #include "SwitchClassify.h"
 
+#include "ControlShape.h"   // uncondSucc (the shared arm-shape recognizer)
+
 #include "ArmAnalysis.h"       // (per-class proofs reuse the lineage walks)
 #include "ControlPlan.h"       // diagnoseUnderControl, ControlPlan, SwitchClass
 #include "OpcodeSupport.h"     // abiWidthFromType
@@ -27,6 +29,7 @@
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
+#include "llvm/IR/CFG.h"          // llvm::predecessors
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Type.h"
 
@@ -161,6 +164,199 @@ bool resolveArm(BasicBlock *Succ, BasicBlock *SwitchBB, BasicBlock *MergeHint,
 }
 
 }  // namespace
+
+
+// ── bd test_C_libtooling-3qlq Inc 1 part B — P5, the register-free PHASE SWITCH ──
+//
+// `switch (q) { case k_i: …cq_phi(θ)…; break; … }` with an EMPTY default (PRD
+// §6.2 row P5). The lowering is N INDEPENDENT kickbacks and nothing else: for
+// each content case, mint `f_i = (q == k_i)` into a |0> ancilla, put that case's
+// phases on `f_i` with `cqrt_rz_i1`, strip `f_i` with the `_unc` twin, free it.
+//
+// THE EQ-FLAGS ARE MUTUALLY EXCLUSIVE (`q` equals at most one case literal) and
+// NOTHING IN THE REGION TOUCHES `q`, so the cases genuinely compose: branch x
+// picks up `e^{iθ_i}` exactly when `x == k_i`, every ancilla returns to |0> on
+// every branch, and the NEXT case's mint reads the same pristine `q` the first
+// one did. That last clause is what the 4.5 route had to argue from `cswap`
+// self-inverseness (`emitSwitchPhaseRegion`'s old header); here there is no
+// route to argue about — zero `cqrt_cswap`, zero work rails, and the only Rz is
+// `cqrt_rz_i1`.
+//
+// THE §5 CONST-FOLD RE-ANCHOR IS RETIRED, and this is where it went. 4.5's
+// load-bearing blocker was that `clang -O1` folds each arm gate's arg-0 handle
+// to the CASE LITERAL — `cq_phi(i32 c_i, θ_i)` — so a surviving folded gate
+// would RAUW the merge φ to a constant and produce a verify-clean wrong data
+// mux. A register-free `cq_phi(double)` HAS NO ARG-0 TO FOLD, there is no merge
+// φ to degenerate, and the whole hazard evaporates. Nothing replaces it.
+//
+// ⚠ THIS SHAPE HAS NO PLAIN-C `-O1` CUSTOMER, AND THAT IS MEASURED, NOT
+// ASSUMED (7 spellings; see the increment's progress record, finding F-0). A
+// phase arm's ONLY possible content is `call void @cq_phi(double)`, so every
+// arm's suffix is identical modulo one operand and SimplifyCFG's common-code
+// sinking ALWAYS applies: with dense case values `-O1` builds a `@switch.table`
+// of angles (or of pointers) and one shared call, with sparse ones it sinks the
+// calls into a cascade of blocks joined by `phi double` angles. Neither is this
+// shape, and both keep their existing loud declines. So P5 is exercised by
+// hand-written IR — which is the same footing the if/else kickback arm has had
+// since part A, and is not a reason to leave the construct unlowered (Rule 17).
+// A recognizer for the TABLE fold is a separate capability and needs an owner
+// ruling (prep-b OQ-4).
+SwitchPhaseKickbackDisp classifyPhaseKickbackSwitch(SwitchInst *SI,
+                                                    TaintSet &Taint,
+                                                    ControlRegion &Region) {
+  Value *Q = SI->getCondition();
+  if (!Taint.Tainted.count(Q))
+    return SwitchPhaseKickbackDisp::NotApplicable;
+  BasicBlock *SwitchBB = SI->getParent();
+  if (SI->getNumCases() == 0)
+    return SwitchPhaseKickbackDisp::NotApplicable;
+
+  // ---- 1. SHAPE. The default edge goes STRAIGHT to the merge (the empty
+  // default — C5's non-empty default keeps its decline), and every case
+  // successor is either that same merge (an empty `case k: break;`) or a
+  // single-pred arm ending in an unconditional branch to it.
+  BasicBlock *Merge = SI->getDefaultDest();
+  SmallVector<std::pair<ConstantInt *, BasicBlock *>, 4> Cases;
+  SmallPtrSet<const BasicBlock *, 4> SeenSucc;
+  for (auto C : SI->cases()) {
+    BasicBlock *Succ = C.getCaseSuccessor();
+    if (Succ == SwitchBB)
+      return SwitchPhaseKickbackDisp::NotApplicable;  // self-loop.
+    if (Succ == Merge) {
+      Cases.push_back({C.getCaseValue(), nullptr});  // empty case.
+      continue;
+    }
+    // GROUPED FALL-THROUGH (two case values on one block) is NOT admitted. It
+    // is lowerable in principle — the arm would ride the OR of its values'
+    // flags — but that is a second network per arm and a widening nobody has
+    // probed; the 4.5 G9 decline covers it today and over-declining is safe.
+    if (!SeenSucc.insert(Succ).second)
+      return SwitchPhaseKickbackDisp::NotApplicable;
+    if (Succ->getSinglePredecessor() != SwitchBB)
+      return SwitchPhaseKickbackDisp::NotApplicable;
+    if (uncondSucc(Succ) != Merge)
+      return SwitchPhaseKickbackDisp::NotApplicable;
+    Cases.push_back({C.getCaseValue(), Succ});
+  }
+  // ANY φ in the merge makes this NotApplicable — the same rule the flat and
+  // nested kickbacks follow, and for the same reason: a φ left standing in a
+  // block the flatten splices away is a BROKEN MODULE at `opt` exit 0. A
+  // phase-only region produces no value, so a φ here belongs to somebody else.
+  if (!Merge->phis().empty())
+    return SwitchPhaseKickbackDisp::NotApplicable;
+  // FOREIGN-PREDECESSOR guard (the 4.5 rule, kept): the merge's predecessors
+  // must be EXACTLY the switch block plus the resolved arms, or the flatten
+  // leaves a dangling control edge into a block it erased.
+  {
+    SmallPtrSet<const BasicBlock *, 8> Want;
+    Want.insert(SwitchBB);
+    for (auto &C : Cases)
+      if (C.second)
+        Want.insert(C.second);
+    for (const BasicBlock *PB : predecessors(Merge))
+      if (!Want.count(PB))
+        return SwitchPhaseKickbackDisp::NotApplicable;
+  }
+
+  // ---- 2. ARM CONTENT — every arm is `{ N × call void @cq_phi(double), br }`
+  // with N >= 0, and at least ONE arm carries a gate (an all-empty switch is an
+  // identity and is nobody's shape).
+  SmallVector<SmallVector<Instruction *, 4>, 4> ArmGates;
+  bool SawContent = false;
+  for (auto &C : Cases) {
+    ArmGates.emplace_back();
+    if (!C.second)
+      continue;
+    unsigned N = 0;
+    for (Instruction &I : *C.second) {
+      if (I.isTerminator())
+        break;
+      auto *CI = dyn_cast<CallInst>(&I);
+      if (!CI || !isRegisterFreePhaseCall(CI, Taint) || CI->arg_size() != 1)
+        return SwitchPhaseKickbackDisp::NotApplicable;
+      ArmGates.back().push_back(CI);
+      ++N;
+    }
+    if (C.second->size() != N + 1)
+      return SwitchPhaseKickbackDisp::NotApplicable;
+    if (N)
+      SawContent = true;
+  }
+  if (!SawContent)
+    return SwitchPhaseKickbackDisp::NotApplicable;
+
+  // ---- 3. EVERY ANGLE IS CLASSICAL (Rule 3), same dialect and string as every
+  // sibling phase path.
+  for (auto &Gates : ArmGates)
+    for (Instruction *G : Gates)
+      if (Taint.Tainted.count(cast<CallInst>(G)->getArgOperand(0))) {
+        diagnoseUnderControl(G, "rotation angle");
+        return SwitchPhaseKickbackDisp::Declined;
+      }
+
+  // ---- 4. EVERY CASE LITERAL MUST HAVE AN ABI WIDTH, because that is what
+  // `emitEqFlag` mints from. Asked here, before any emission, so an unsupported
+  // width is a clean decline and not a mid-stream bail with earlier flags
+  // already standing (the ziov.4 mutate-then-decline class). It holds for a
+  // tainted scrutinee by the taint-seed invariant (taint is seeded only from
+  // `@cq_theta_<sfx>` at a supported integer width, and the case literals share
+  // the scrutinee's type) — asked anyway, because a structural fact that is
+  // load-bearing deserves a line of code.
+  for (auto &C : Cases)
+    if (abiWidthFromType(C.first->getType()).empty()) {
+      diagnoseUnderControl(SI, "control condition has no template");
+      return SwitchPhaseKickbackDisp::Declined;
+    }
+
+  // ---- 5. THE SCRUTINEE'S WIRE AND DATA USES — the 4.5 G10 discipline
+  // verbatim (Rule 14: the same walk, the same allowlist, the same strings).
+  // A non-diagonal (Ry) gate on `q`'s wire would make the eq-flags read a
+  // different basis than the source `switch`; an unowned data use leaves a
+  // dirty entangled rail with no owner.
+  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true)) {
+    diagnoseUnderControl(SI, "condition predates a non-diagonal gate");
+    return SwitchPhaseKickbackDisp::Declined;
+  }
+  {
+    SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                           Taint.MeasureCalls.end());
+    for (User *X : Q->users()) {
+      if (X == SI)
+        continue;
+      if (isa<ReturnInst>(X))
+        continue;  // escapes via `ret` — the caller owns it.
+      if (const auto *CI = dyn_cast<CallInst>(X))
+        if (Sinks.count(CI))
+          continue;  // a recognized measurement sink owns the handle.
+      diagnoseUnderControl(
+          SI, "condition data use neither escaped nor measured");
+      return SwitchPhaseKickbackDisp::Declined;
+    }
+  }
+
+  // ACCEPT. `Merge` is NULL (there is no φ), which is what tells
+  // `emitSwitchPhaseRegion` it is looking at the register-free shape; every
+  // resolved arm BLOCK is recorded — including an EMPTY one, which carries no
+  // gate but must still be erased by `flattenSwitchRegion`.
+  Region = ControlRegion();
+  Region.Kind = ControlRegion::SwitchRegion;
+  Region.SwitchCls = SwitchClass::Phase;
+  Region.Condition = Q;
+  Region.Merge = nullptr;
+  Region.Pred = SwitchBB;
+  Region.MergeBB = Merge;
+  Region.SwitchDefaultDirect = true;
+  for (size_t I = 0; I < Cases.size(); ++I) {
+    if (!Cases[I].second)
+      continue;  // straight-to-merge case: no block to gate or to flatten.
+    SwitchArm A;
+    A.Values.push_back(Cases[I].first);
+    A.Block = Cases[I].second;
+    A.Shadow.assign(ArmGates[I].begin(), ArmGates[I].end());
+    Region.SwitchArms.push_back(A);
+  }
+  return SwitchPhaseKickbackDisp::Accept;
+}
 
 void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   // G0 — entry: only tainted-scrutinee switches are ours (caller-guarded;

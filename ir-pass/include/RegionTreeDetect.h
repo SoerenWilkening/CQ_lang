@@ -50,7 +50,14 @@ struct TaintSet;
 //     flow` — blocker FA0). WI-1: the caller fires the transitional `nested
 //     control flow` decline (no emitter yet). WI-3: the caller pushes the
 //     Outer (Depth 0) + Inner (Depth 1, ParentIdx=outer) regions onto
-//     `plan.Regions` and dispatches `NestedRouteEmit`.
+//     `plan.Regions` and dispatched `NestedRouteEmit`. ⚠ NEITHER EXISTS SINCE
+//     bd test_C_libtooling-3qlq Inc 1 part B: `NestedRouteEmit` is DELETED and
+//     this function has no ACCEPT branch left — every criterion it proves is a
+//     consequence of the RETIRED register-form arm gate (a merge φ, a `cq_phi`
+//     diagonal-alias base, an inner flag minted from the parent's work rail),
+//     so under owner decision D1/D2 the shape cannot exist. The register-FREE
+//     depth-2 nest is claimed earlier by `ArmClassify::classifyPhaseKickbackNest`
+//     and emitted by `SwapRouteEmit::emitPhaseKickbackNestRegion`.
 enum class NestDisposition { Accepted, Declined };
 
 NestDisposition recoverRegionTree(

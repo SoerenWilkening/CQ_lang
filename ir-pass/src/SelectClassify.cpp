@@ -408,14 +408,67 @@ bool operandsAlias(Value *A, Value *B) {
 // node reachable from two tree positions collects ONCE — its flag/ancilla
 // mints once, network controls are read-only) and bounds the walk (SSA is
 // acyclic through pure i1 ops — no phi is ever crossed).
-bool collectCondTree(Value *Root, CondTree &Tree) {
+bool decomposeCondNode(Value *V, Instruction::BinaryOps &Opc, Value *&L,
+                       Value *&R, bool AllowLogicalSelect) {
+  // See SelectClassify.h for the grammar and for WHY the two logical-select
+  // spellings are gated. This is the ONE place a node is taken apart: the walk
+  // below and every `CondTree` emitter (`CondTreeEmit`) call it, so a node kind
+  // cannot be admitted by the grammar and mis-read by an emitter (the bd
+  // 3c6m.67 xor lesson — one grammar, and every emitter that reads it).
+  if (auto *BO = dyn_cast<BinaryOperator>(V)) {
+    if (!BO->getType()->isIntegerTy(1))
+      return false;
+    const auto Op = BO->getOpcode();
+    if (Op != Instruction::And && Op != Instruction::Or &&
+        Op != Instruction::Xor)
+      return false;
+    Opc = Op;
+    L = BO->getOperand(0);
+    R = BO->getOperand(1);
+    return true;
+  }
+  if (!AllowLogicalSelect)
+    return false;  // off-grammar for this caller — see the header.
+  auto *Sel = dyn_cast<SelectInst>(V);
+  if (!Sel || !Sel->getType()->isIntegerTy(1))
+    return false;
+  Value *C = Sel->getCondition();
+  Value *T = Sel->getTrueValue();
+  Value *F = Sel->getFalseValue();
+  // `select %C, %T, false` is `and(C,T)`; `select %C, true, %F` is `or(C,F)`.
+  // A NON-constant condition and a NON-constant surviving arm are REQUIRED: the
+  // network gives each child its own flag rail, so a `ConstantInt` child has no
+  // rail and the emitter's `FlagOf.lookup` would hand a null control to a
+  // `cqrt_toffoli`. Refusing here is the same fence the `xor X, 1` bail is.
+  if (isa<Constant>(C))
+    return false;
+  if (auto *FC = dyn_cast<ConstantInt>(F); FC && FC->isZero() &&
+                                           !isa<Constant>(T)) {
+    Opc = Instruction::And;
+    L = C;
+    R = T;
+    return true;
+  }
+  if (auto *TC = dyn_cast<ConstantInt>(T); TC && TC->isOne() &&
+                                           !isa<Constant>(F)) {
+    Opc = Instruction::Or;
+    L = C;
+    R = F;
+    return true;
+  }
+  // Everything else is a general i1 combinator (incl. the two NOT-carrying
+  // complements `select %C, false, %F` and `select %C, %T, true`) — off-grammar.
+  return false;
+}
+
+bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
   SmallPtrSet<Value *, 8> Seen;
   SmallVector<std::pair<Value *, bool>, 8> Stack;
   Stack.push_back({Root, false});
   while (!Stack.empty()) {
     auto [V, ChildrenDone] = Stack.pop_back_val();
     if (ChildrenDone) {
-      Tree.Nodes.push_back(cast<BinaryOperator>(V));  // post-order emit slot.
+      Tree.Nodes.push_back(cast<Instruction>(V));  // post-order emit slot.
       continue;
     }
     if (!Seen.insert(V).second)
@@ -493,11 +546,10 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
       Tree.Leaves.push_back(Leaf);
       continue;
     }
-    auto *BO = dyn_cast<BinaryOperator>(V);
-    if (!BO || !BO->getType()->isIntegerTy(1) ||
-        (BO->getOpcode() != Instruction::And &&
-         BO->getOpcode() != Instruction::Or &&
-         BO->getOpcode() != Instruction::Xor))
+    Instruction::BinaryOps NodeOpc;
+    Value *NodeL = nullptr;
+    Value *NodeR = nullptr;
+    if (!decomposeCondNode(V, NodeOpc, NodeL, NodeR, AllowLogicalSelect))
       return false;  // off-grammar: freeze / i1-select / phi / trunc / …
     // *** XOR NODE — ADMITTED 2026-08-23 (bd 3c6m.67). ***
     //
@@ -542,8 +594,8 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     // asymmetry with PredMux's E6 — which DOES admit `xor X, 1`, as the no-NOT
     // invariant's own negation spelling — is unchanged and is pinned by
     // control_swap_reject_select_xor_notform.ll.
-    if (BO->getOpcode() == Instruction::Xor &&
-        (isa<Constant>(BO->getOperand(0)) || isa<Constant>(BO->getOperand(1))))
+    if (NodeOpc == Instruction::Xor &&
+        (isa<Constant>(NodeL) || isa<Constant>(NodeR)))
       return false;
     // Self-operand node fence. `or/and i1 %c, %c` emits a toffoli whose two
     // CONTROL slots resolve to ONE rail (per-Value memo).
@@ -582,11 +634,11 @@ bool collectCondTree(Value *Root, CondTree &Tree) {
     // value of `c ⊕ c`. Nothing is wrong with it; it is simply unreachable
     // (InstCombine folds `x ⊕ x` to false) and therefore unprobed.
     // Pinned by control_swap_reject_select_xor_selfdup.ll.
-    if (BO->getOperand(0) == BO->getOperand(1))
+    if (NodeL == NodeR)
       return false;
     Stack.push_back({V, true});  // node slot AFTER both children.
-    Stack.push_back({BO->getOperand(1), false});
-    Stack.push_back({BO->getOperand(0), false});  // left child visits first.
+    Stack.push_back({NodeR, false});
+    Stack.push_back({NodeL, false});  // left child visits first.
   }
   return !Tree.Leaves.empty();
 }

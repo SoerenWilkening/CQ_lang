@@ -396,44 +396,29 @@ NestDisposition recoverRegionTree(
                                 "condition predates a non-diagonal gate"),
            NestDisposition::Declined;
 
-  // ACCEPT — the proven depth-2 homogeneous-phase nest. Push the Outer (Depth 0)
-  // and Inner (Depth 1) regions, in that order, so `plan.Regions` is already
-  // outer→inner (no sort — `lowerControlRegions` takes a `const ControlPlan&`,
-  // COMPLETENESS#7). The parent/child link is the existing `ParentIdx` (the same
-  // link the MD0 pre-flight exemption + MD4 emit-loop child lookup key on — no
-  // `ChildIdx` field). Both regions share `MergeBB`/`Merge` (the 3-incoming phi)
-  // and `Outer.Arm == Inner.Pred == Mid`. All block/value identities are stable
-  // from detection to emit (no IR mutates between). Record the inner branch in
-  // `Claimed` so the detection loop does not re-visit it and false-decline
-  // `control flow` (FA0). `lowerControlRegions` dispatches `NestedRouteEmit`.
-  const unsigned OuterIdx = Plan.Regions.size();
-
-  ControlRegion OuterR;
-  OuterR.Kind = ControlRegion::BranchRegion;
-  OuterR.Condition = OuterBI->getCondition();
-  OuterR.Pred = Pred;
-  OuterR.Arm = Mid;
-  OuterR.MergeBB = Merge;
-  OuterR.Merge = MergePhi;
-  OuterR.ArmNegated = OuterNeg;
-  OuterR.Depth = 0;
-  OuterR.ParentIdx = ControlRegion::kNoParent;
-  Plan.Regions.push_back(OuterR);
-
-  ControlRegion InnerR;
-  InnerR.Kind = ControlRegion::BranchRegion;
-  InnerR.Condition = InnerCond;
-  InnerR.Pred = Mid;
-  InnerR.Arm = InnerArm;
-  InnerR.MergeBB = Merge;
-  InnerR.Merge = MergePhi;
-  InnerR.ArmNegated = InnerNeg;
-  InnerR.Depth = 1;
-  InnerR.ParentIdx = OuterIdx;
-  Plan.Regions.push_back(InnerR);
-
-  Claimed.insert(InnerBI);
-  return NestDisposition::Accepted;
+  // ⚠ THERE IS NO LONGER AN ACCEPT HERE, AND THAT IS NOT A PUNT (bd
+  // test_C_libtooling-3qlq Inc 1 part B). Everything above proves the 4.3
+  // REGISTER-FORM nest — a shape that CANNOT EXIST after owner decision D1/D2,
+  // because every criterion it turns on is a consequence of the arm gate
+  // carrying a register: criterion 3 needs exactly one merge φ (a `void
+  // @cq_phi(double)` arm produces none), criterion 4 needs all three merge
+  // incomings to bottom at one `cq_phi` DIAGONAL-ALIAS base (that chain is the
+  // retired `@cq_phi_<sfx>(x, angle)` family, which `resolveSources` no longer
+  // resolves), and criterion 5 needs the inner flag minted FROM the parent's
+  // work RAIL (there is no rail). The register-free nest is claimed EARLIER, by
+  // `ArmClassify::classifyPhaseKickbackNest`, which this function never sees.
+  //
+  // So the honest disposition of anything that still reaches this line is a LOUD
+  // DECLINE with the message this path has always used, and
+  // `NestedRouteEmit.{h,cpp}` — the swap-route emitter this used to feed, and one
+  // of the two remaining minters of a TENSORED non-`i1` `cqrt_rz` — is DELETED
+  // with this increment. Rule 17 is satisfied because the shape the increment set
+  // out to build (the GENUINE depth-2 phase nest) DOES lower; what declines here
+  // is a shape whose own preconditions the language no longer admits.
+  (void)Plan;
+  (void)Claimed;
+  diagnoseUnderControl(OuterBI, "nested control flow");
+  return NestDisposition::Declined;
 }
 
 }  // namespace cq

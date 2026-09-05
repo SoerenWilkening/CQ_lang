@@ -53,6 +53,7 @@ add_library(CQPass MODULE
   src/ChainWalk.cpp
   src/ClassicalCallArmEmit.cpp
   src/CompareLowering.cpp
+  src/CondTreeEmit.cpp
   src/ControlDetect.cpp
   src/ControlledSymbols.cpp
   src/CtlzIdiomPrepass.cpp
@@ -69,7 +70,6 @@ add_library(CQPass MODULE
   src/LoopLowering.cpp
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
-  src/NestedRouteEmit.cpp
   src/PoisonFacts.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp
