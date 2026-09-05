@@ -13,6 +13,25 @@
 ; later, not of one it refuses on principle (Rule 17 — the target shape of THIS
 ; increment is the chained rotation, and that one lowers).
 ;
+; ⚠ STILL DECLINED AFTER bd test_C_libtooling-drbq INC 4, DELIBERATELY, AND THIS
+; IS INC 4's SECOND CUSTOMER SITE (PRD §14.2e / §14.11 Q5, follow-on `drbq.13`).
+; Inc 4 shipped controlled state prep at ONE site — `inPlaceRotationArmTheta`'s
+; classical-seed path, a flat DIAMOND — and left S3 refused. The two are the same
+; source shape seen through different `-O1` outcomes: `if (c) r = cq_theta(0,A);
+; else r = cq_theta(0,B);` is merged by SimplifyCFG into the ONE theta with an
+; angle `select` that this fixture pins, while the owner's ruling on the
+; hand-IR if/else form is a separate explicit decline
+; (`control_inplace_ry_reject_stateprep_ifelse_two_preps.ll`,
+; `if/else state prep allocates two rails`).
+;
+; What S3 would need is an Inc-2b-shaped BY-DIFFERENCE lowering on a fresh rail —
+; `alloc(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, A-B)` — and it
+; inherits EVERY §12.3 arithmetic concern: exact only in real arithmetic,
+; |δ| <= ½ ulp(A-B) unbounded in ABSOLUTE radians, `fl(A-B)` non-finite from two
+; FINITE arms, and the constant-arms-only narrowing (clearance finding F-11)
+; verbatim. It also inherits S1-S10 wholesale, which is a second increment's
+; worth of surface. Not folded in.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 

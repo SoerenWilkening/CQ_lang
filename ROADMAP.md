@@ -731,6 +731,98 @@ after a statevector-checked design dialogue; see
   analytic into measured), corrected five doc-false statements, and found **no
   confirmed miscompile and no confirmed over-accept**. Notes:
   `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC3_NOTES.md`.
+  **Inc 4 (2026-09-05) makes controlled STATE PREP compile** — `int r = SEED;
+  if (COND(q)) r = cq_theta(SEED, θ);`, a flat DIAMOND whose arm theta has a
+  CLASSICAL `ConstantInt`/`ConstantFP` arg-0. The theta MINTS a rail rather than
+  rotating one, so `lowerRotations` takes its `!Chained` arm —
+  `cqrt_alloc_<W>(SEED)` at the HOISTED position — and then mints
+  `cqrt_ry_<W>_controlled(f, h, θ)`; the rail is then FROZEN by Inc 1's structural
+  freeze. R4/R6 are SKIPPED for this class (not fed an empty set: `railWireClosure`
+  inserts before its taint gate and a `ConstantInt` is module-uniqued, so R6 would
+  enumerate unrelated users across the function), and M-β is a CORRECTNESS
+  requirement rather than a convenience (M-α would RAUW the merge to the SEED and
+  make `r` classical — measured SILENT on the `ret` and tape consumers). TWO new
+  fences, not the one §7 scoped: **F1** seed identity (`state prep seed does not
+  match the merge incoming`) and **F2** the equality-fold ambiguity (`state prep
+  seed is proven equal to the condition register`), polarity-free because
+  `clang -O1` folds an equality edge on BOTH sides — `if (q==k) r=cq_theta(q,θ)`
+  and `int r=q; if (q!=k) r=cq_theta(k,θ)` compile BYTE-IDENTICAL to a genuine
+  prep whose seed is `k`, so accepting the shape would turn two loud declines into
+  silence. Its price is a real over-decline when `seed == k` (workaround: one
+  character). An if/else prep declines `if/else state prep allocates two rails`
+  (owner ruling; from plain C it is an angle select refused at S3 — follow-on
+  `drbq.13`). No new frozen symbol. **The increment's headline is an OVER-DECLINE
+  the design could not predict**: `int s = r * 3;` after the region declines,
+  because a state-prepped register's straight-through value is a compile-time
+  constant, so `-O1` SINKS the op INTO the arm and R1 refuses the two-instruction
+  arm — 48 of the 297 `--stateprep` twin-matrix cells, invisible to the chained
+  twin, which is why no probe saw it (PRD §14.13, an owner question). Witnesses: a
+  whole-corpus lowered-IR sweep vs the pre-Inc-4 oracle (**all differing files in
+  the new family, ZERO pre-existing files changed**), the `--stateprep` twin matrix
+  (297 cells, **0 MISMATCH**, pre-4 and post-4 tables both committed), and BYTE
+  IDENTITY with the manual CHAINED twin under a two-rewrite REDUCTION that is a
+  physical identity and not the transformation under test. Notes:
+  `docs/prd/phase-04-swap-route-control/CONTROL_IN_PLACE_INC4_NOTES.md`.
+  **⚠ THE FIRST ADVERSARIAL ROUND ON THAT INCREMENT FOUND A CONFIRMED SILENT
+  MISCOMPILE IN F2 ITSELF, AND THAT IS THE FACT TO CARRY (2026-09-05, 7 lenses).**
+  F2 shipped keyed on the compare's LITERAL, and its written proof enumerated TWO
+  ways a seed can be a fold of the condition register. There is a THIRD: either
+  edge can pin the condition operand to a SINGLETON **by RANGE**, to a value that
+  is not `k`. `int t = q & 1; int r = 1; if (t) r = cq_theta(t, θ);` — an in-place
+  Ry on the CONDITION register, plain `clang -O1` C — compiled into a fresh-rail
+  prep and left `t` unrotated; nine distinct spellings were in that class and the
+  pre-Inc-4 binary declined every one. The algebra was right and THE ENUMERATION
+  WAS THE DEFECT — the bd `8h7d.5` F-1/F-3 lesson one epic later. F2 is now
+  RANGE-BASED on BOTH edges (`computeConstantRange ∩ fromKnownBits ∩
+  makeExactICmpRegion(pred, k)`, predicate and inverse, decline on a singleton
+  equal to the seed), the `isEquality()` gate is dropped, and **one shipped accept
+  fixture flipped to a decline because it was itself an over-accept** (at `i1`
+  both edges of an `i1` equality pin). The RESIDUAL is named rather than hoped
+  away: F2 can only ask about registers that still EXIST, and when instcombine
+  deletes the rotated register and rewrites the compare onto an ancestor nothing
+  in the surviving IR can recover it — measured on five programs, one of which has
+  a `@slice` body byte-identical to the flagship slice's. Every alternative source
+  in that class is a data mux CQ refuses whenever the register survives, so it is
+  filed as PRD §14.11 Q3. The round also SPLIT two diagnostic strings (a TAINTED
+  pred incoming is `state prep merged with a quantum register`, a MIXED if/else is
+  `if/else state prep beside a chained or phase arm`), retracted the "F1's third
+  clause is unreachable" record (it is reachable through an UNRECOGNIZED SUFFIX and
+  load-bearing — without it the pass emits a region whose gate does not exist),
+  added THREE unpinned accept classes, and hit the Inc-3 fixture-integrity finding
+  AGAIN: a positive COUNT inside the `NOROUTE` prefix windowed every negative, so
+  an injected `_controlled_inv` after the flag's free was caught by **0 of 20**
+  accepts (now 28 of 28). Corpus 1531 → **1548**, family 59 → **76**.
+  **⚠ AND THE SECOND ADVERSARIAL ROUND FOUND THAT THE FIRST ROUND'S FIX HAD MADE
+  THE SAME MISTAKE ONE LEVEL OUT (2026-09-05, 2 lenses) — READ THAT, NOT THE
+  FEATURE.** The range rewrite widened F2's **predicate** and kept F2's **set**:
+  it asked its question of `H`, the tainted operand of the compare CQ is handed,
+  and `clang -O1` does not leave the pinned register there. IPSCCP proves the
+  theorem about a register **X**, substitutes it into the arm, and a LATER
+  InstCombine rewrites the COMPARE downward onto an **ancestor** of X — so X ends
+  up a **forward user** of `H`. **Six plain-C programs accepted with X ALIVE in
+  the emitted circuit, MEASURED by the source, and never rotated**
+  (`5+(q&1)`, `(q&1)^7`, `(q&1)-4`, `(q&1)|8`, `((unsigned)q)>>31`, `q>>31`); the
+  pre-Inc-4 binary declined all six. That is the bd `8h7d.5` F-1/F-3 lesson a
+  THIRD time — *when you widen a set, ask what OTHER set is computed over the same
+  closure* — and the second time inside this epic's own fence work. F2 now asks
+  its singleton question of a **bounded FORWARD CLOSURE** (depth 8 / 64 values,
+  the bound itself declining) over `H`'s tainted same-type integer `op constant`
+  users, evaluated with `ConstantRange::binaryOp`; casts and φ/`select` are
+  deliberately not followed, each for a written reason. **The round-1 RESIDUAL
+  paragraph was itself the defect**: it read *"instcombine deletes the register
+  AND rewrites the compare onto an ancestor"*, and those are independent events —
+  the rewrite always happens (now fenced), the deletion only sometimes does. What
+  is left is the deleted-register half, which is bounded because a register is
+  deleted only when nothing reads it, so the difference is a leaked ancilla no
+  `cq_measure`/`ret`/tape write observes — an argument that does NOT extend to the
+  six, where the register IS read. The round also recorded a second, hand-IR-only
+  over-accept (`ConstantRange::fromKnownBits` is a hull, so `and q,4`'s true `{4}`
+  pin is missed — harmless only because IPSCCP's lattice has the same weakness and
+  performs no fold either), pinned `getSwappedPredicate` for the first time
+  (deleting it had reddened NOTHING), and closed the one accept of 28 that could
+  not see a standing `@cq_theta` call — the accept twin of the fixture whose whole
+  counterfactual is a standing `@cq_theta_si32x`. Corpus 1548 → **1557**, family
+  76 → **85** (29 accept / 56 decline).
 
 **Soundness obligation (§3b).** `cqrt_free` (compiler-emitted only) is emitted on
 a rail **only after** its reverse-play returns it to `|0⟩`, via the `FreePoint`

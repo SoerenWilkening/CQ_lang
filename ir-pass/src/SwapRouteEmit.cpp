@@ -581,6 +581,16 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       diagnoseUnderControl(Cond, "control flow");
       return;
     }
+    // ⚠ FOR A CONTROLLED STATE PREP (PRD §14, bd test_C_libtooling-drbq Inc 4)
+    // `Base` IS THE SEED `Constant`, and `T->getArgOperand(0) != Base` therefore
+    // passes by UNIQUED-CONSTANT POINTER IDENTITY — LLVM uniques `ConstantInt`
+    // on type+bits and `ConstantFP` on the `APFloat` bits, so this test is
+    // *also* a seed check here, by representation. It is recorded rather than
+    // relied on: the REAL seed fence is F1 in `ArmClassify`, which has its own
+    // string (`state prep seed does not match the merge incoming`) and its own
+    // fixtures. This line keeps its own string for the shape it is about — the
+    // plan not describing the IR (§14.2a item 1: "passes for a reason nobody
+    // wrote down" is what F1 exists to retire).
     auto *T = Shadow.size() == 1 ? dyn_cast<CallInst>(Shadow.front()) : nullptr;
     if (!T || T->getParent() != A.BB || T->arg_size() < 2 ||
         T->getArgOperand(0) != Base) {
@@ -680,6 +690,22 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    from every rail the condition's derived chain lives on. So the same
   //    property holds for the same reason, by a different argument. If R4 is
   //    ever widened, THIS recording is one of the things that must be re-proved.
+  //
+  //    ⚠ AMENDED 2026-09-05 (round-1 Rule-13 review, lens L5 finding F-L5-2).
+  //    FOR A CONTROLLED STATE PREP (Inc 4) R4 IS NOT WIDENED — IT IS **SKIPPED**
+  //    (`ArmClassify`'s `if (!StatePrep)` wrapper around the two
+  //    `railWireClosure` calls), so "R4 proved" is not the ground on that path.
+  //    The licence there is STRUCTURAL and strictly stronger: the relabelled rail
+  //    is minted by the hoisted `T` ITSELF — a `cqrt_alloc_<W>` emitted inside
+  //    this region's own stream — so no pre-region SSA name for it exists and
+  //    disjointness from the condition's chain is a property of construction
+  //    rather than of a walk. MEASURED end-to-end on a derived condition that
+  //    actually exercises this discharge (`if (sqrt(q+3.) <= 3.5) r =
+  //    cq_theta(0,.9);`): the whole `sitofp/fadd/sqrt/fcmp` chain discharges in
+  //    LIFO order after the strip, strict stage 2b 8 verified / 0 violations, and
+  //    the trace reduces byte-for-byte to the chained twin's on the pre-Inc-4
+  //    binary. The sentence above still governs the CHAINED class, where R4 does
+  //    run.
   auto *Strip = dyn_cast_or_null<CallInst>(
       lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                          /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag));
@@ -693,6 +719,21 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    the `f=1` branch, which is why R6 refuses any pre-region SSA record of it
   //    that is read after the region. The hoisted thetas are NOT erased here:
   //    they are live instructions in the pred that `lowerRotations` owns.
+  //
+  //    ⚠ FOR A CONTROLLED STATE PREP (Inc 4, PRD §14.4) M-β IS A CORRECTNESS
+  //    REQUIREMENT, NOT THE LOOP-BOOKKEEPING CONVENIENCE IT IS FOR INC 3, and
+  //    the state-prep class rides it UNCHANGED because the Ry stem already does
+  //    M-β for every `InPlaceRotation` arm. There `Base` is the SEED `Constant`:
+  //    the Rz stem's M-α (`RAUW(m → Base)`) would RAUW the merge to the literal
+  //    and every consumer of `r` would become a classical `i32 0` — a SILENTLY
+  //    CLASSICAL PROGRAM, verify-clean, with the controlled gate still emitted
+  //    onto a rail nothing reads. `lowerRotations` then RAUWs `T`'s result to
+  //    the fresh alloc handle, so the merge ends up denoting the PREPPED RAIL,
+  //    which is what the source's `r` means. Pinned by
+  //    control_inplace_ry_stateprep_then_uncond_theta.ll (a post-region
+  //    `cq_theta` on `r` lands on the SAME rail under M-β and would have minted a
+  //    SECOND, unrelated rail under M-α) and it is the one mutation whose failure
+  //    mode is silent — check the lowered IR, not the exit code.
   //
   //    ⚠ TWO RAUW CONVENTIONS LIVE IN THIS FILE, ONE PER STEM, AND WHICH IS
   //    WHICH IS LOAD-BEARING (bd drbq Inc 3, PRD §13.4 + the §12.1 stem table).

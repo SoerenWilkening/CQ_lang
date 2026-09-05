@@ -390,8 +390,21 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
 // `cq_phi` as a rail HOP and not as a gate).
 //
 // SCOPE, deliberately narrow: membership in `taint.ControlledRotations` is
-// written ONLY by the two `SwapRouteEmit` in-place emitters, at emission, for a
-// gate they have already fully adjudicated. It is NOT a general "ignore this
+// written only by an in-place emitter, at emission, for a gate it has already
+// fully adjudicated.
+//
+// ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L4 finding F-L4-4, a
+// PRE-EXISTING defect — all three writers are present in the pre-Inc-4 tree).
+// This paragraph and the ⚠ block below both said "the TWO `SwapRouteEmit`
+// in-place emitters". THERE ARE THREE WRITERS: `SwapRouteEmit`'s
+// `emitInPlaceRotationRegion` (the Inc-1/Inc-4 Ry arm), `SwapRouteEmit`'s
+// `emitRegion` (the Inc-2a Rz peephole) and **`AngleSelectEmit`** (Inc 2b, the
+// by-difference angle select), which records BOTH STEMS. So an angle-select
+// **Rz** entry DOES reach `isHoistedRegionArmGate` — it passes the `cq_phi_`
+// test — under an argument written for a different emitter. No consequence for
+// Inc 4 (a state-prep entry is keyed on a `cq_theta_` call and the `cq_phi_`
+// test refuses it, measured), but the licence below must be read as covering
+// three writers, not two. It is NOT a general "ignore this
 // rotation" switch — an ordinary in-body `cq_phi`/`cq_theta` is unaffected and
 // still counts. Round 1 (`lowerLoops`) can never see a member: it runs BEFORE
 // `lowerControlRegions`, so the map is empty and the arm gate is still inside the
@@ -399,9 +412,11 @@ bool isInPlaceGateOnArg0(const CallInst *CI, const Value *H,
 // rounds cannot drift apart on the predicate (Rule 14, the OD-A discipline).
 //
 // ⚠ THE `cq_phi` (Rz) STEM ONLY, AND THE STEM TEST IS THE POINT (bd drbq Inc 2a,
-// round-1 review L2 N-2). `taint.ControlledRotations` has **TWO** writers —
-// `emitInPlaceRotationRegion` records the Inc-1 **Ry** arm (`SwapRouteEmit.cpp`,
-// the `cq_theta` spine) and `emitRegion` records the Inc-2a **Rz** arm — while
+// round-1 review L2 N-2). `taint.ControlledRotations` has **THREE** writers
+// (corrected 2026-09-05, lens L4 F-L4-4) — `emitInPlaceRotationRegion` records
+// the Inc-1/Inc-4 **Ry** arm (`SwapRouteEmit.cpp`, the `cq_theta` spine),
+// `emitRegion` records the Inc-2a **Rz** arm, and `AngleSelectEmit` records the
+// Inc-2b by-difference gate at **either** stem — while
 // the argument above is DIAGONAL and therefore true of the Rz stem alone. An Ry
 // relabels its target on the `f=1` branch: it is a real rail GATE, it CAN make a
 // record stale, and the "`collectRailGates` follows it as a HOP" half of the

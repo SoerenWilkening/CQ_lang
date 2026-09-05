@@ -195,7 +195,35 @@ duplicate of `s0`. `clang -O1` propagates equalities: on the successor where
 
 compile to the SAME MODULE — measured for this increment, whole-module `diff`,
 only `source_filename` differs. `s5` is the AMBIGUITY cell: whatever Increment 4
-does to it, it does to a program it must decline. `s0` is the control (the arm
+does to it, it does to a program it must decline.
+
+⚠ CORRECTED 2026-09-05 (round-2 Rule-13 review, lens R2 finding F-R2-3,
+DOC-FALSE). THE SAME-MODULE CLAIM HOLDS AT THE COMPARE'S OWN WIDTH — `int` —
+AND AT NO OTHER WIDTH ON THIS AXIS, because the condition register in this
+generator is ALWAYS `int cq0` (see the cond block below) regardless of the
+`width` axis. Re-measured from plain C at `-O1`, whole-module `diff` ignoring
+`ModuleID`/`source_filename`:
+
+    int          MODULES IDENTICAL
+    signed char  MODULES DIFFER   subject `cq_theta_si8(i8 5, …)`   vs the R4
+                                  spelling `cq_theta_si32(i32 5, …)` + `trunc`
+    long long    MODULES DIFFER   `cq_theta_sll(i64 5, …)`  vs `…si32` + `sext`
+    double       MODULES DIFFER   `cq_theta_f64(double 5.0, …)` vs `…si32` + `sitofp`
+
+That difference IS PRD §14.2c item 1 made visible: `cq_theta(cq0, 0.9)` at a
+non-`int` `T` selects the `si32` overload by `_Generic` and then CASTS, and every
+cast CQ can lower is OUT OF PLACE (a fresh rail), so the R4-forbidden reading
+does not even arise there. There IS a same-module partner at those widths —
+`r = cq_theta((T)cq0, 0.9)` — but it is an in-place Ry on a TRUNCATED/EXTENDED
+DERIVED rail, i.e. the §14.2c derived-temp class, NOT the R4 in-place-on-the-
+condition-register class the paragraph is about. (Measured 2026-09-05: identical
+modules at `int`, `signed char` and `long long` for THAT spelling.)
+
+CONSEQUENCE FOR READING THE TABLE, and it is why this is a correction and not a
+footnote: 6 of the 29 `s5` cells read IDENTICAL (`meas_i8`, `meas_i64`,
+`meas_f64`, `fcmp`, `ge`, `gt`), and the uncorrected paragraph made three of them
+look like unexplained accepts of an ambiguous program when they are not
+ambiguous at all. `s0` is the control (the arm
 edge proves `cq0 == 5`, and `0 != 5`, so no fold could have produced that seed).
 ⚠ And note what `s5` is NOT: here the seed and the compare literal belong to
 DIFFERENT REGISTERS — `r` is rotated, `cq0` is compared, and that separation IS

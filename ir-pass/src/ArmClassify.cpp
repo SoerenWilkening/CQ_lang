@@ -27,6 +27,8 @@
 #include "ControlPlan.h"
 #include "ControlShape.h"     // blockOnCycle (2b angle-select S7 cycle prong)
 #include "EqFoldArm.h"
+#include "IntrinsicLowering.h"  // F2 conservative half: the rail-producing
+                               // curated call set (round-4 review, F-R4-3)
 #include "LiteralIntegrity.h"  // valueCarriesUndef (2b angle-select S1 arm fence)
 #include "LoopPlan.h"          // railPhiRootMint (Inc 3 R7-loop clause (b'))
 #include "OpcodeSupport.h"
@@ -42,15 +44,21 @@
 #include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"   // F2-semantic: LVI needs one (round-3 R3)
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/ConstantFolding.h"   // F2-semantic: the EXACT fold half
+#include "llvm/Analysis/LazyValueInfo.h"     // F2-semantic: the BACKWARD edge analysis
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/ConstantRange.h"  // F2 edge-pinned-seed range test (round-1 L2)
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/IntrinsicInst.h"
+#include "llvm/Support/KnownBits.h"        // F2-semantic: the hull-repair enumeration
 
 #include <algorithm>
 #include <cassert>
@@ -706,9 +714,10 @@ bool rotationAngleIsTainted(const CallInst *CI, const TaintSet &Taint) {
 //     routed base's own lineage, never an arm gate — the same arm-block bound
 //     `walkPhaseSpine`/`walkValueChain` are built on, and for the same
 //     double-collection reason);
-//   * arg-0 TAINTED — a CHAINED Ry on a live register. A CLASSICAL arg-0 is
-//     controlled STATE PREP (PRD S5): it needs an alloc hoisted with it and a
-//     seed-identity fence on the merge phi's pred incoming, which is Inc 4;
+//   * arg-0 either TAINTED (a CHAINED Ry on a live register — Inc 1) or
+//     CLASSICAL (controlled STATE PREP, PRD §14 / Inc 4: the alloc hoists with
+//     the gate and the merge φ's pred incoming owes the F1 seed-identity fence).
+//     `StatePrep` reports which; the caller's clause owns the two fences;
 //   * SOLE USER is the merge phi (no fan-out — Rule 8 linearity: the emitter
 //     RAUWs the phi to the base, and a second consumer of the theta result
 //     would be left reading a value that no longer exists);
@@ -717,18 +726,635 @@ bool rotationAngleIsTainted(const CallInst *CI, const TaintSet &Taint) {
 //     dangles — `armBlockIsPureSpine`'s two reasons, verbatim, which is why the
 //     shape is tested the same way rather than by a second spelling.
 CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
-                                  const PHINode *MergePhi, TaintSet &Taint) {
+                                  const PHINode *MergePhi, TaintSet &Taint,
+                                  bool &StatePrep) {
+  StatePrep = false;
   auto *T = dyn_cast<CallInst>(ArmIncoming);
   if (!T || !isThetaCall(T) || T->getParent() != ArmBB || T->arg_size() < 2)
     return nullptr;
+  // A CLASSICAL arg-0 is controlled STATE PREP (PRD §14, bd
+  // test_C_libtooling-drbq Inc 4) — the theta MINTS the rail instead of rotating
+  // a live one. It is recognized HERE and adjudicated by the clause (F1/F2/the
+  // if/else clause), NOT refused here: refusing here would send every off-shape
+  // state prep back to the generic `control flow` decline, and the whole point of
+  // F1 and F2 is that the author must be told WHICH of the seed, the merge
+  // incoming and the compare literal is the problem. `StatePrep` is an OUT
+  // parameter rather than a second entry point so the three shape halves below
+  // (defined in `ArmBB`, sole user is the merge φ, nothing else in the block)
+  // are asked ONCE, of both classes, and cannot drift apart.
+  //
+  // ⚠ IT ADMITS ANY UNTAINTED arg-0, INCLUDING `undef` / a `ConstantExpr` / a
+  // function ARGUMENT — deliberately. F1 is where the `ConstantInt`/`ConstantFP`
+  // narrowing lives, and it is one clause with one string; splitting the test
+  // across two functions is how "the fence fires, but nobody can find which"
+  // happens (§14.2a item 1).
   if (!Taint.Tainted.count(T->getArgOperand(0)))
-    return nullptr;  // classical seed — controlled state prep, Inc 4.
+    StatePrep = true;
   if (!T->hasOneUse() || T->user_back() != MergePhi)
     return nullptr;  // fan-out, or it does not feed the merge.
   for (const Instruction &I : *ArmBB)
     if (!I.isTerminator() && &I != T)
       return nullptr;  // a stray op the flatten would drop.
   return T;
+}
+
+// ---- F2 — THE SEMANTIC FORM. THE QUESTION, NOT A FOURTH ENUMERATION
+//      (bd test_C_libtooling-drbq Inc 4, ROUND-3 Rule-13 review, lens R3 —
+//      findings F-R3-1 / F-R3-2 / F-R3-3, 42 plain-C programs, every one graded
+//      CONFIRMED-MISCOMPILE, every one ORACLE-decline / HEAD-accept, strict-2b
+//      clean, linked and RUN) --------------------------------------------------
+//
+// ⚠ READ THIS BEFORE WIDENING ANYTHING HERE. F2's question is SEMANTIC:
+//
+//     after `clang -O1`, could the arm's constant SEED be the FOLD of a TAINTED
+//     register that the source rotated IN PLACE and that is STILL ALIVE?
+//
+// It was answered THREE TIMES by a syntactic SET, and each generation was
+// defeated by the next InstCombine rewrite. The three generations and their
+// MEASURED defeats are recorded here deliberately — this is the memory the next
+// widener needs, and it is the REASON the shape of the answer changed:
+//
+//   gen 1  (shipped Inc 4)   the compare's LITERAL `k`, bit-identical to the
+//          seed. DEFEATED by round-1 lens L2: `int t = q & 1; if (t) r =
+//          cq_theta(t,θ);` pins `t` to 1 on the `!= 0` edge while `k` is 0 —
+//          NINE plain-C spellings, all accepted, all in-place Ry on the
+//          CONDITION register.
+//   gen 2  (round-1 fix)     `H`'s EDGE RANGE (`computeConstantRange` ∩
+//          `makeExactICmpRegion`). DEFEATED by round-2 lens R1: IPSCCP pins a
+//          register `X` and substitutes it into the arm, and a LATER InstCombine
+//          rewrites the compare DOWNWARD onto an ANCESTOR of `X` — so the `H`
+//          the pass is handed is not the register the theorem was about. SIX
+//          plain-C spellings.
+//   gen 3  (round-2 fix)     `H`'s tainted FORWARD closure through same-type
+//          integer `op constant`. DEFEATED THREE WAYS by round-3 lens R3:
+//            (i)   `-O1` also moves the compare SIDEWAYS onto a fresh SIBLING —
+//                  `q/4 == 5` becomes `icmp eq (and q,-4), 20` and `q/3 == 5`
+//                  becomes `icmp ult (add q,-15), 3`, so `H` and the rotated
+//                  register are two USERS OF THE SAME ROOT and no forward walk
+//                  from `H` can reach it (30 programs);
+//            (ii)  the SET was `BinaryOperator`-only while `IntrinsicLowering`
+//                  lowers a curated 16-strong `llvm.*` integer family to real
+//                  rails — `bswap`/`bitreverse`/`fshl`/`fshr` are the invertible
+//                  members InstCombine relocates the compare across (4 programs);
+//            (iii) the K/seed TYPE GATE one line above the walk's caller skipped
+//                  ALL of F2 the moment `-O1` narrowed the compare to the root's
+//                  width, which is what an ordinary `long long t = q;` does
+//                  (8 programs).
+//
+// SO THE SET IS GONE. What replaces it is the question itself, asked with LLVM's
+// OWN value machinery instead of a hand-picked opcode list:
+//
+//   (1) BACKWARD — `LazyValueInfo::getConstantRangeOnEdge`, asked on BOTH edges
+//       of the region's branch about EVERY TAINTED INTEGER VALUE of the
+//       function. LVI is a real EDGE analysis: it reads the branch condition
+//       itself, so it recovers the pin for a register the compare mentions only
+//       through an ancestor — `(Val & Mask) == C` yields `KnownBits` on `Val`,
+//       and `icmp ult (Val + Off), C` yields a range on `Val`. Those are exactly
+//       the two rewrites F-R3-1 measured, and they are recovered by an ANALYSIS
+//       rather than by a preimage table that the next InstCombine can miss.
+//   (2) FORWARD — from every value LVI constrains, an abstract evaluation over
+//       the TAINTED USER graph with NO opcode filter in the accept direction:
+//       `ConstantRange::binaryOp` / `castOp` / `intrinsic` / `icmp` where a range
+//       models, EXACT `ConstantFoldInstOperands` / `ConstantFoldCall` the moment
+//       every operand is pinned (which is what answers `bswap`, `bitreverse`,
+//       `fshl`, `fshr`, every cast, and `sitofp` for an fp seed), and a
+//       `KnownBits` refinement on every value learned.
+//   (3) THE TEST is `Constant *` POINTER IDENTITY against the seed. LLVM uniques
+//       `ConstantInt` on type+bits and `ConstantFP` on the `APFloat` BITS, so
+//       this is F1's bit-identity discipline reused — and it covers an fp seed
+//       (`-0.0` vs `0.0` correctly stays a non-match) at no extra cost. THERE IS
+//       NO TYPE GATE ANY MORE: a value of the SEED'S type is asked about wherever
+//       it lives and whatever width the compare ended up at (F-R3-2).
+//
+// THE ONE PLACE IT STILL SKIPS, AND THE ARGUMENT FOR IT — said plainly, because
+// "not in my set ⇒ accept" is the exact default that lost three rounds. A tainted
+// user whose value this evaluation cannot bound AND NONE of whose operands is
+// exactly pinned is SKIPPED. The argument is not "we do not handle it". It is
+// that the seed can only BE a fold if `clang` PERFORMED that fold; `clang`'s
+// folds come from IPSCCP's `ConstantRange` lattice, InstCombine's `KnownBits`
+// and `ConstantFolding` — all three of which ARE the machinery above — so a
+// value LLVM's own lattice reports overdefined is a value LLVM could not have
+// substituted a constant for. `@cq_theta` / `@cq_phi` are the everyday members:
+// opaque declarations, overdefined by construction, so a CHAINED rotation's
+// result is not a fold candidate and `..._stateprep_post_region_theta_cond.ll`
+// keeps accepting.
+//
+// AND THE CONSERVATIVE HALF, which is where the brief's rule lands: if an
+// instruction HAS a tainted operand that is EXACTLY PINNED and we still produce
+// no abstract value for it, we DECLINE (`Truncated`) — "a function of a pinned
+// register that we cannot evaluate". That over-declines only the COINCIDENCE
+// where such a function's value happens to equal the seed, and it refuses the
+// whole `load` / `extractvalue` / unmodelled-intrinsic direction rather than
+// guessing at it.
+//
+// THE RESIDUAL that argument leaves is REAL and is written down rather than
+// implied (PRD §14.2b / §14.11 Q3, notes §12): InstCombine's RELATIONSHIP folds
+// (`x - x`, `simplifyWithOpReplaced`) can mint a constant no lattice sees, and
+// every one measured DELETES the register — which is the DELETED-REGISTER
+// residual §14.11 Q3 already owns, re-measured in notes §12. That is a
+// measurement over the round-1/round-3 program corpus, not a theorem.
+//
+// MONOTONE, exactly as before: this block only ever DECLINES. A range that is
+// too WIDE loses a decline (the residual); a range that is too NARROW, or a
+// bound that trips, costs an over-decline. Neither direction can turn a decline
+// into an accept.
+constexpr unsigned kF2MaxSteps = 4096;
+// `ConstantRange::fromKnownBits` is a HULL: it cannot represent `{0,4}` and
+// answers `[0,5)` (round-2 lens R1 finding F-R1-3, the recorded over-accept).
+// When `KnownBits` leaves few enough bits unknown, ENUMERATE the consistent
+// values and intersect with the range instead — the fix F-R1-3 itself named.
+// 8 unknown bits = at most 256 candidates.
+constexpr unsigned kF2KnownBitsEnumUnknownMax = 8;
+
+// One EDGE's abstract state. `Rs` is indexed through `Idx` (rather than a
+// `DenseMap<Value*, ConstantRange>`) so the state is deterministic and
+// `ConstantRange`'s missing default constructor never has to be worked around.
+struct F2State {
+  DenseMap<Value *, unsigned> Idx;    // integer value -> index into `Rs`
+  SmallVector<ConstantRange, 32> Rs;
+  DenseMap<Value *, Constant *> Cst;  // ANY type: the EXACT constant, when known
+  SmallVector<Value *, 32> WL;
+};
+
+// The exact constant `V` is pinned to under `S`, or null. An integer singleton
+// range IS an exact constant — the two representations are kept in step here and
+// nowhere else, so a caller cannot ask the question two ways.
+Constant *f2Exact(Value *V, F2State &S) {
+  if (auto *C = dyn_cast<Constant>(V))
+    return C;
+  auto CI = S.Cst.find(V);
+  if (CI != S.Cst.end())
+    return CI->second;
+  auto It = S.Idx.find(V);
+  if (It != S.Idx.end())
+    if (const APInt *Sing = S.Rs[It->second].getSingleElement())
+      return ConstantInt::get(V->getType(), *Sing);
+  return nullptr;
+}
+
+// `V`'s range under `S`; FULL when unknown. FULL is the sound top element, so
+// every operator below returns a sound SUPERSET of the true value set.
+ConstantRange f2Range(Value *V, F2State &S) {
+  unsigned BW = V->getType()->getIntegerBitWidth();
+  if (auto *C = dyn_cast<ConstantInt>(V))
+    return ConstantRange(C->getValue());
+  auto It = S.Idx.find(V);
+  if (It != S.Idx.end())
+    return S.Rs[It->second];
+  return ConstantRange::getFull(BW);
+}
+
+// Sharpen `R` with everything ValueTracking knows about `V` STRUCTURALLY.
+// `CxtI` is deliberately null (and `AC` therefore inert for the context walk):
+// this is a question about the VALUE, asked at no program point, and the
+// `llvm.assume` direction is refused a layer up by `declineTaintEscapes`. The
+// enumeration is the `fromKnownBits`-hull repair named in F-R1-3.
+ConstantRange f2Refine(Value *V, ConstantRange R, const DataLayout &DL,
+                       AssumptionCache *AC, const DominatorTree *DT) {
+  const unsigned BW = R.getBitWidth();
+  if (R.isEmptySet())
+    return R;
+  KnownBits KB = computeKnownBits(V, DL, /*Depth=*/0, AC, /*CxtI=*/nullptr, DT);
+  R = R.intersectWith(ConstantRange::fromKnownBits(KB, /*IsSigned=*/false));
+  R = R.intersectWith(ConstantRange::fromKnownBits(KB, /*IsSigned=*/true));
+  R = R.intersectWith(computeConstantRange(V, /*ForSigned=*/false,
+                                           /*UseInstrInfo=*/true, AC,
+                                           /*CtxI=*/nullptr, DT));
+  R = R.intersectWith(computeConstantRange(V, /*ForSigned=*/true,
+                                           /*UseInstrInfo=*/true, AC,
+                                           /*CtxI=*/nullptr, DT));
+  if (R.isEmptySet())
+    return R;
+  APInt Unknown = ~(KB.Zero | KB.One);
+  const unsigned NU = Unknown.popcount();
+  if (NU >= 1 && NU <= kF2KnownBitsEnumUnknownMax) {
+    SmallVector<unsigned, 8> Bits;
+    for (unsigned b = 0; b < BW; ++b)
+      if (Unknown[b])
+        Bits.push_back(b);
+    APInt Keep(BW, 0);
+    unsigned Count = 0;
+    for (unsigned m = 0, N = 1u << NU; m < N && Count < 2; ++m) {
+      APInt Cand = KB.One;
+      for (unsigned i = 0; i < NU; ++i)
+        if (m & (1u << i))
+          Cand.setBit(Bits[i]);
+      if (!R.contains(Cand))
+        continue;
+      if (++Count == 1)
+        Keep = Cand;
+    }
+    if (Count == 1)
+      return ConstantRange(Keep);
+  }
+  return R;
+}
+
+// Record a range for `V`, INTERSECTING with anything already known (two
+// derivations of one value are both sound supersets, so their intersection is
+// too). Re-queues on a strict narrowing, which is what makes the walk a fixpoint
+// rather than a single sweep.
+void f2Note(Value *V, ConstantRange R, F2State &S) {
+  if (R.isEmptySet())
+    return;  // a contradiction on this edge: nothing to learn, nothing to fear.
+  auto It = S.Idx.find(V);
+  if (It == S.Idx.end()) {
+    if (R.isFullSet())
+      return;
+    S.Idx[V] = S.Rs.size();
+    S.Rs.push_back(R);
+    S.WL.push_back(V);
+    return;
+  }
+  ConstantRange N = S.Rs[It->second].intersectWith(R);
+  if (N == S.Rs[It->second])
+    return;
+  S.Rs[It->second] = N;
+  S.WL.push_back(V);
+}
+
+void f2NoteConst(Value *V, Constant *C, F2State &S) {
+  if (auto *CI = dyn_cast<ConstantInt>(C)) {
+    f2Note(V, ConstantRange(CI->getValue()), S);
+    return;
+  }
+  if (S.Cst.find(V) == S.Cst.end()) {
+    S.Cst[V] = C;
+    S.WL.push_back(V);
+  }
+}
+
+// Evaluate ONE tainted user `I`. Returns FALSE only in the conservative case:
+// `I` has a tainted operand that is EXACTLY PINNED and no abstract value could
+// be produced for `I` (the caller turns that into a loud F2 decline).
+bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
+             AssumptionCache *AC, const DominatorTree *DT) {
+  Type *Ty = I->getType();
+  bool AnyPinnedOperand = false;
+
+  if (auto *CB = dyn_cast<CallBase>(I)) {
+    Function *Callee = CB->getCalledFunction();
+    // ⚠ THE ORDER OF THE NEXT TWO BLOCKS IS THE FINDING, NOT A STYLE CHOICE
+    // (round-4 Rule-13 review, lens R4, F-R4-3 item 1). `AnyPinnedOperand` is
+    // computed BEFORE the not-foldable early return, because the header's own
+    // statement of the conservative rule — "a tainted operand that is EXACTLY
+    // PINNED, feeding something we cannot evaluate, DECLINES" — was FALSE for
+    // the whole `CallBase` class: the early return ran first, so the rule was
+    // never asked there. MEASURED before the fix (`$S/fix4/p/nbf.ll`, a
+    // `nobuiltin`-attributed `@llvm.bswap.i32` whose operand is pinned to 5 and
+    // whose seed is `bswap(5)` = 83886080): ACCEPT. After: DECLINE.
+    SmallVector<Constant *, 4> Ops;
+    bool AllConst = true;
+    for (Value *A : CB->args()) {
+      Constant *C = f2Exact(A, S);
+      if (!C) {
+        AllConst = false;
+        continue;
+      }
+      if (!isa<Constant>(A))
+        AnyPinnedOperand = true;
+      Ops.push_back(C);
+    }
+    // NOT constant-foldable by LLVM ⇒ for an OPAQUE callee, NOT a fold
+    // candidate: `clang`'s own lattice is overdefined here too, so it cannot
+    // have substituted the seed FROM this value. `@cq_theta` / `@cq_phi` are
+    // the everyday members, and a Phase-6 specialised clone call is the other
+    // one — for both, "LLVM cannot fold it" is a statement about the VALUE, and
+    // the skip is the same argument the header makes for the whole forward half.
+    //
+    // A CURATED REVERSIBLE INTRINSIC IS NOT IN THAT CLASS, and telling the two
+    // apart is F-R4-3's fix. Every member of that set is a pure, total function
+    // of its operands that CQ LOWERS TO A RAIL (`isCuratedReversibleIntrinsic`
+    // is the same predicate `OpcodeLowering` enqueues on, so the two cannot
+    // drift — Rule 14): for one of those, "`canConstantFoldCallTo` said no" is
+    // an artefact of LLVM's fold TABLE (a `nobuiltin` call site, a signature
+    // mismatch, a future curated id LLVM never taught itself to fold), not
+    // evidence that the value is unknowable. So a pinned operand feeding one we
+    // could not evaluate takes the conservative DECLINE.
+    //
+    // MEASURED at LLVM 19: this branch has NO live customer — all 16 integer
+    // idiom ids and the 13 curated fp ids ARE `canConstantFoldCallTo`-able
+    // (round-4 review's `h/hi01`-`hi16`, re-confirmed here by `p/fdf.ll`, whose
+    // plain `@llvm.bswap.i32` DECLINES through the exact fold). It is defence in
+    // depth with a red-green fixture, which is the point: the previous shape had
+    // neither.
+    if (!Callee || !canConstantFoldCallTo(CB, Callee)) {
+      const auto *CI = dyn_cast<CallInst>(CB);
+      if (CI && isCuratedReversibleIntrinsic(CI))
+        return !AnyPinnedOperand;
+      return true;
+    }
+    if (AllConst)
+      if (Constant *R = ConstantFoldCall(CB, Callee, Ops, /*TLI=*/nullptr)) {
+        f2NoteConst(I, R, S);
+        return true;
+      }
+    // The range model for the intrinsics `ConstantRange` supports — which is
+    // the SAME set IPSCCP's `visitIntrinsicCall` uses, so this tracks `clang`
+    // exactly rather than approximating it.
+    if (auto *II = dyn_cast<IntrinsicInst>(I))
+      if (Ty->isIntegerTy() &&
+          ConstantRange::isIntrinsicSupported(II->getIntrinsicID())) {
+        SmallVector<ConstantRange, 3> ORs;
+        bool Ok = true;
+        for (Value *A : CB->args()) {
+          if (!A->getType()->isIntegerTy()) {
+            Ok = false;
+            break;
+          }
+          ORs.push_back(f2Range(A, S));
+        }
+        if (Ok) {
+          f2Note(I,
+                 f2Refine(I,
+                          ConstantRange::intrinsic(II->getIntrinsicID(), ORs),
+                          DL, AC, DT),
+                 S);
+          return true;
+        }
+      }
+    return !AnyPinnedOperand;
+  }
+
+  // EXACT — every operand pinned. This is the uniform answer for every opcode
+  // LLVM itself can fold, and it is what closes F-R3-3 without an opcode table.
+  {
+    SmallVector<Constant *, 4> Ops;
+    bool AllConst = true;
+    for (Value *O : I->operands()) {
+      Constant *C = f2Exact(O, S);
+      if (!C) {
+        AllConst = false;
+        break;
+      }
+      if (!isa<Constant>(O))
+        AnyPinnedOperand = true;
+      Ops.push_back(C);
+    }
+    if (AllConst && !isa<PHINode>(I))
+      if (Constant *R = ConstantFoldInstOperands(I, Ops, DL)) {
+        f2NoteConst(I, R, S);
+        return true;
+      }
+  }
+  if (!AnyPinnedOperand)
+    for (Value *O : I->operands())
+      if (!isa<Constant>(O) && f2Exact(O, S))
+        AnyPinnedOperand = true;
+
+  if (Ty->isIntegerTy()) {
+    const unsigned BW = Ty->getIntegerBitWidth();
+    if (auto *BO = dyn_cast<BinaryOperator>(I)) {
+      f2Note(I,
+             f2Refine(I,
+                      f2Range(BO->getOperand(0), S)
+                          .binaryOp(BO->getOpcode(), f2Range(BO->getOperand(1), S)),
+                      DL, AC, DT),
+             S);
+      return true;
+    }
+    if (auto *CI = dyn_cast<CastInst>(I)) {
+      if (CI->getSrcTy()->isIntegerTy()) {
+        f2Note(I,
+               f2Refine(I,
+                        f2Range(CI->getOperand(0), S)
+                            .castOp(CI->getOpcode(), BW),
+                        DL, AC, DT),
+               S);
+        return true;
+      }
+      return !AnyPinnedOperand;
+    }
+    if (auto *IC = dyn_cast<ICmpInst>(I)) {
+      ConstantRange L = f2Range(IC->getOperand(0), S);
+      ConstantRange Rr = f2Range(IC->getOperand(1), S);
+      ConstantRange Res = ConstantRange::getFull(BW);
+      if (!L.isEmptySet() && !Rr.isEmptySet()) {
+        if (L.icmp(IC->getPredicate(), Rr))
+          Res = ConstantRange(APInt(BW, 1));
+        else if (L.icmp(IC->getInversePredicate(), Rr))
+          Res = ConstantRange(APInt(BW, 0));
+      }
+      f2Note(I, f2Refine(I, Res, DL, AC, DT), S);
+      return true;
+    }
+    if (auto *SI = dyn_cast<SelectInst>(I)) {
+      if (SI->getTrueValue()->getType()->isIntegerTy()) {
+        f2Note(I,
+               f2Refine(I,
+                        f2Range(SI->getTrueValue(), S)
+                            .unionWith(f2Range(SI->getFalseValue(), S)),
+                        DL, AC, DT),
+               S);
+        return true;
+      }
+      return !AnyPinnedOperand;
+    }
+    if (auto *PN = dyn_cast<PHINode>(I)) {
+      ConstantRange U = ConstantRange::getEmpty(BW);
+      for (Value *In : PN->incoming_values())
+        U = U.unionWith(f2Range(In, S));
+      f2Note(I, f2Refine(I, U, DL, AC, DT), S);
+      return true;
+    }
+    if (isa<FreezeInst>(I)) {
+      f2Note(I, f2Refine(I, f2Range(I->getOperand(0), S), DL, AC, DT), S);
+      return true;
+    }
+    return !AnyPinnedOperand;
+  }
+  return !AnyPinnedOperand;
+}
+
+// F2's question, asked semantically. TRUE ⇒ some live tainted value of the
+// SEED'S type is provably EQUAL to the seed on one of the branch's two edges,
+// i.e. the source the author wrote could have been `cq_theta(<that register>,θ)`
+// and this arm's constant is `-O1`'s fold of it. `Truncated` ⇒ the evaluation
+// could not be completed; the caller declines on that too.
+bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
+                                TaintSet &Taint, const DominatorTree *DT,
+                                bool &Truncated) {
+  BasicBlock *Pred = Region.Pred;
+  if (!Pred) {
+    Truncated = true;
+    return false;
+  }
+  auto *BI = dyn_cast<BranchInst>(Pred->getTerminator());
+  if (!BI || !BI->isConditional()) {
+    // Every state-prep region reaching here is a `br`-diamond whose `Pred`
+    // terminator IS the conditional branch (`handleBranchRegion` sets both from
+    // the same `BranchInst`). If that ever stops holding, F2 has no edge to ask
+    // about — which is a decline, not a pass-through.
+    Truncated = true;
+    return false;
+  }
+  if (!DT) {
+    // Without a `DominatorTree` the "is this value LIVE on the edge?" filter
+    // below cannot be spelled, and asking `LazyValueInfo` about a value that is
+    // not is a CRASH, not a wrong answer (measured: `solveBlockValueNonLocal`
+    // `cast<Argument>`s any non-Argument live-in of the entry block). Every
+    // caller passes one today; if that changes, DECLINE rather than narrow the
+    // question silently.
+    Truncated = true;
+    return false;
+  }
+  Function *F = Pred->getParent();
+  const DataLayout &DL = F->getParent()->getDataLayout();
+  AssumptionCache AC(*F);
+  LazyValueInfo LVI(&AC, &DL);
+
+  // The LVI ANCHORS: every tainted integer value that is LIVE ON THE EDGE, in
+  // FUNCTION ORDER rather than in `Taint.Tainted`'s pointer order so the walk
+  // (and therefore the step bound) is deterministic.
+  //
+  // ⚠ THE DOMINANCE FILTER IS A HARD API PRECONDITION, NOT AN OPTIMIZATION.
+  // `LazyValueInfoImpl::solveBlockValueNonLocal` asserts `isa<Argument>` for a
+  // live-in of the ENTRY block and then `cast<Argument>`s it — in a Release
+  // build that assert is compiled out and the cast is a WILD read. MEASURED
+  // 2026-09-05: asking about `%8 = sdiv %1, 4` (defined in the MERGE block) at
+  // `Pred` = entry SIGSEGVs `cq-opt` on the flagship. So LVI is asked ONLY about
+  // values it is contracted to answer for, and everything defined after the
+  // branch — which is where `-O1` schedules the rotated register in the whole
+  // F-R3-1 family — is reached by the FORWARD half below instead. That split is
+  // the reason the forward half exists at all and is not redundant with LVI.
+  //
+  // ⚠ AND THE `isIntegerTy()` FILTER IS A SECOND HARD API PRECONDITION, SAID
+  // OUT LOUD (round-4 Rule-13 review, lens R4, finding F-R4-1 — the half this
+  // comment used to leave undiscussed while explaining only the `DT` half).
+  // `LazyValueInfo::getConstantRangeOnEdge` is defined over `ConstantRange`,
+  // which is an INTEGER lattice: LVI has no fp edge fact to give, at any
+  // predicate, ever. So the BACKWARD direction is integer-only BY TYPE, and an
+  // fp register pinned by the region's own `fcmp` was asked NOTHING —
+  // MEASURED as an ACCEPT on `hf01_fcmp_folded.ll` (a live f64 `%t` pinned to
+  // 5.0 by `fcmp oeq %t, 5.0`, the arm's seed 5.0, `%t` measured UNROTATED),
+  // where the unconditional twin `hf04` is byte-identical on both binaries and
+  // proves CQ's own reading is an in-place Ry on `%t`'s rail. The repair is the
+  // fp ANCHOR inside the edge loop below — NOT a widening of this list.
+  SmallVector<Value *, 32> Cand;
+  for (Argument &A : F->args())
+    if (A.getType()->isIntegerTy() && Taint.Tainted.count(&A))
+      Cand.push_back(&A);
+  for (BasicBlock &BB : *F)
+    for (Instruction &In : BB)
+      if (In.getType()->isIntegerTy() && Taint.Tainted.count(&In) &&
+          DT->dominates(&In, BI))
+        Cand.push_back(&In);
+
+  // The fp ANCHOR's operands, read ONCE from the branch's own condition. It is
+  // deliberately NOT `Region.Condition`: the pin is an EDGE fact, and the edge
+  // is the branch's, so the value asked about must be the value the branch
+  // tests. (For every region reaching here the two are the same instruction;
+  // reading `BI` means a future detection change cannot silently move the pin
+  // off the edge it is about.)
+  auto *FC = dyn_cast<FCmpInst>(BI->getCondition());
+  ConstantFP *FpK = nullptr;
+  Value *FpH = nullptr;
+  if (FC) {
+    FpK = dyn_cast<ConstantFP>(FC->getOperand(1));
+    FpH = FC->getOperand(0);
+    if (!FpK) {
+      FpK = dyn_cast<ConstantFP>(FC->getOperand(0));
+      FpH = FC->getOperand(1);
+    }
+    // ±0.0 IS NOT A SINGLETON, AND THAT IS THE WHOLE REASON `clang` REFUSES THE
+    // SUBSTITUTION IN THE FIRST PLACE. `fcmp oeq %x, 0.0` is TRUE for `%x =
+    // -0.0` as well as `+0.0`, so the equality edge admits TWO distinct bit
+    // patterns and `%x` is pinned to NEITHER. Pinning it to the written zero
+    // would be a claim the edge does not support — and since the test below is
+    // BIT identity on the `APFloat` (`ConstantFP` uniques on bits), it would
+    // also be the exact `+0.0`/`-0.0` confusion `f2NoteConst`'s pointer test
+    // exists to avoid. Refuse both zeros.
+    //
+    // A NaN CONSTANT is refused for the mirror reason: `oeq` with NaN is FALSE
+    // for every `%x`, so its equality edge is unreachable and the pin would be
+    // vacuous; `ueq` with NaN is TRUE for every `%x`, so it pins nothing. There
+    // is no third case — a NaN `K` never yields a singleton edge.
+    if (!FpK || !FpH || isa<Constant>(FpH) || !Taint.Tainted.count(FpH) ||
+        FpK->getValueAPF().isNaN() || FpK->getValueAPF().isZero())
+      FpK = nullptr;
+  }
+
+  for (unsigned E = 0; E < BI->getNumSuccessors(); ++E) {
+    BasicBlock *To = BI->getSuccessor(E);
+    F2State S;
+    for (Value *V : Cand) {
+      ConstantRange Edge = LVI.getConstantRangeOnEdge(V, Pred, To, BI);
+      if (Edge.isFullSet() || Edge.isEmptySet())
+        continue;
+      f2Note(V, f2Refine(V, Edge, DL, &AC, DT), S);
+    }
+
+    // ---- THE fp ANCHOR (round-4 Rule-13 review, lens R4, finding F-R4-1).
+    //
+    // The one thing LVI structurally cannot do, done by hand and ONLY for the
+    // shape where the answer is a theorem: on the edge where an EQUALITY
+    // `fcmp` against a `ConstantFP` HOLDS, its other (tainted) operand IS that
+    // constant. That is exactly what LVI does for an `icmp eq`; there is no
+    // range lattice underneath it because a pinned fp value is a single
+    // constant, which `F2State::Cst` already carries for ANY type.
+    //
+    // NOTHING ELSE IS SEEDED HERE, and the FORWARD half does the rest: every
+    // tainted fp value derived from `FpH` is reached by `f2Model`'s EXACT
+    // `ConstantFoldInstOperands` / `ConstantFoldCall` path the moment all its
+    // operands are pinned, which is the same machinery that already answers a
+    // pinned INTEGER register's `sitofp` (`..._stateprep_fp_seed_sitofp.ll`).
+    // So an fp value that is SSA-identical to `FpH`, or an in-place alias of it
+    // through a foldable chain, is covered without a second walker — the
+    // F-1/F-3 "what OTHER set is computed over the same closure?" discipline
+    // answered by reusing the closure rather than by minting one.
+    //
+    // POLARITY IS EXPLICIT AND COMPLETE over the four equality predicates.
+    // `E == 0` is the TRUE successor of a conditional `br` (LLVM invariant):
+    //   `oeq` / `ueq` pin on the TRUE edge, `one` / `une` on the FALSE edge.
+    // `oeq`-true and `une`-false are EXACT (ordered equality: one bit pattern,
+    // zeros and NaN excluded above). `ueq`-true and `one`-false additionally
+    // admit `%x = NaN`, so the pin there is an OVER-approximation — which is
+    // the SAFE direction and only ever costs a decline, because this whole
+    // block is monotone: it can turn an accept into a decline and never the
+    // reverse. `ueq`/`one` are kept rather than dropped so the clause has no
+    // edge to get backwards, the same argument F2's integer half makes by
+    // asking both edges.
+    if (FpK) {
+      const bool TrueEdge = (E == 0);
+      bool EqHolds = false;
+      switch (FC->getPredicate()) {
+      case FCmpInst::FCMP_OEQ:
+      case FCmpInst::FCMP_UEQ:
+        EqHolds = TrueEdge;
+        break;
+      case FCmpInst::FCMP_ONE:
+      case FCmpInst::FCMP_UNE:
+        EqHolds = !TrueEdge;
+        break;
+      default:
+        break;
+      }
+      if (EqHolds)
+        f2NoteConst(FpH, FpK, S);
+    }
+    unsigned Steps = 0;
+    while (!S.WL.empty()) {
+      if (++Steps > kF2MaxSteps) {
+        Truncated = true;
+        return false;
+      }
+      Value *V = S.WL.pop_back_val();
+      if (V->getType() == Seed->getType() && f2Exact(V, S) == Seed)
+        return true;
+      for (User *U : V->users()) {
+        auto *I = dyn_cast<Instruction>(U);
+        if (!I || I->getFunction() != F || I->getType()->isVoidTy())
+          continue;
+        if (!Taint.Tainted.count(I))
+          continue;  // classical, or the measure SINK — never a live rail.
+        if (!f2Model(I, S, DL, &AC, DT)) {
+          Truncated = true;
+          return false;
+        }
+      }
+    }
+  }
+  return false;
 }
 
 }  // namespace
@@ -1510,9 +2136,19 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   bool SawValueArm = false;
   // drbq Inc 1 — a control-in-place ROTATION arm was classified. Homogeneity is
   // enforced against the other two flags in the clause itself; this one exists
-  // so the accept can be recorded and so the final P1 fence below reads it
-  // (`!SawPhaseArm` covers it: the Inc-4 position-aware stale-condition accept
-  // was cleared for PHASE arms only, and a rotation arm is not one).
+  // so the accept can be recorded and so the final P1 fence below reads it.
+  //
+  // ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L6 finding F-5, a
+  // PRE-EXISTING Inc-3 leftover). This used to say "`!SawPhaseArm` covers it:
+  // the position-aware stale-condition accept was cleared for PHASE arms only,
+  // and a rotation arm is not one" — i.e. that a rotation arm DECLINES at P1.
+  // The shipped fence reads `(SawValueArm || !(SawPhaseArm || SawRotationArm))`,
+  // which is the OPPOSITE: it DEFERS for a rotation arm, exactly as bd drbq
+  // Inc 3 widened it to (PRD §13.4b, the Grover-with-Ry-reflection customer).
+  // Inc 4 DEPENDS on the shipped reading — a state prep sets this flag, and
+  // `control_inplace_ry_stateprep_post_region_theta_cond.ll` accepts because of
+  // it — so the stale sentence was an argument for reverting a fence that is
+  // load-bearing two increments later.
   //
   // ⚠ IT MUST BE READ AT EVERY OTHER ACCEPT SITE, NOT JUST WRITTEN AT THIS ONE.
   // The rotation clause's own homogeneity test only fires when the rotation arm
@@ -1638,8 +2274,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
     // (whose D2 needs a `ConstantInt` base and cannot fire on a theta) and
     // BEFORE the if/else leaf-anchor below, which would otherwise treat the
     // theta itself as the routed leaf.
-    if (CallInst *T =
-            inPlaceRotationArmTheta(ArmIncoming, ArmBB, MergePhi, Taint)) {
+    bool StatePrep = false;
+    if (CallInst *T = inPlaceRotationArmTheta(ArmIncoming, ArmBB, MergePhi,
+                                              Taint, StatePrep)) {
       // Homogeneity (R3): a rotation arm beside a phase or value arm has no
       // single lowering method — the same region-level defect the phase/value
       // mixture has, and the same string.
@@ -1673,6 +2310,349 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         return ArmDisposition::Declined;
       }
       Value *RotBase = T->getArgOperand(0);
+
+      // ---- CONTROLLED STATE PREP (PRD §14, bd test_C_libtooling-drbq Inc 4) --
+      //
+      // The three state-prep-only clauses, asked HERE — after every clause that
+      // already existed and BEFORE R3 — for two reasons. (i) Every one of them is
+      // guarded by `StatePrep`, so a CHAINED arm's message ordering is
+      // byte-identical to the pre-Inc-4 binary by construction (witnessed by the
+      // whole-corpus lowered-IR sweep, not asserted). (ii) They run before R3 so
+      // that the diagnostic NAMES THE SEED rather than saying `control flow`:
+      // R3's `RotBase != Routed` would already refuse an F1 violation on a
+      // diamond, BY ACCIDENT OF POINTER IDENTITY ON UNIQUED CONSTANTS, with no
+      // comment saying so and no fixture pinning it (§14.2a item 1 — the
+      // "passes for a reason nobody wrote down" shape). R3 keeps its own string
+      // for the shape it is about, a cross-handle mux.
+      if (StatePrep) {
+        // ---- §14.2e — the IF/ELSE clause, an OWNER RULING spelled out.
+        //
+        // F1 below would already refuse an if/else, because an if/else merge φ
+        // has NO Pred-edge incoming at all. That is a fence that fires through
+        // ABSENCE, and a fence nobody can find is a fence a later widener
+        // removes without noticing there was one (§14.12 worry 3). It is also
+        // NOT redundant with R3: for two arms whose seeds are the SAME constant,
+        // `Routed` is anchored by the first arm to that `Constant` and the
+        // second arm's `RotBase` is the pointer-identical `Constant`, so
+        // `RotBase != Routed` is FALSE and R3 passes (measured).
+        //
+        // ⚠ AND THE OWNER RULED THIS DECLINE ON A LOWERING THAT IS PHYSICALLY
+        // CORRECT. With two prep arms M-β would chain the hoisted gates and emit
+        // ONE rail carrying `alloc(SEED); cRy(f,A); x; cRy(f,B); x` — which IS
+        // `if (c) r = Ry(SEED,A); else r = Ry(SEED,B);`. Nothing allocates two
+        // rails except a reading in which SSA names are wires. The observation is
+        // on the owner's desk as PRD §14.11 Q4; do NOT "fix" it here.
+        //
+        // From plain C this clause is unreachable: `-O1` (SimplifyCFG) merges the
+        // two arms into ONE theta with a tainted-condition ANGLE SELECT, which
+        // lands in `classifyAngleSelect` and is refused at S3 (probe `p14a`,
+        // `rotation angle`; see control_angle_select_reject_state_prep.ll and
+        // PRD §14.11 Q5 / follow-on `drbq.13`).
+        //
+        // ⚠ THE STRING IS SPLIT BY WHAT THE OTHER ARM IS, ADDED 2026-09-05
+        // (round-1 Rule-13 review, lens L7 finding F-L7-8, owner-approved in the
+        // fix brief). "…allocates two rails" is TRUE OF ONE SHAPE — two prep arms
+        // — and HEAD printed it for `..._ifelse_mixed_chained.ll` and
+        // `..._ifelse_mixed_phase.ll`, neither of which has two preps: there the
+        // defect is a MIXTURE (one arm mints a rail, the other rotates a live
+        // register or applies a phase), not a double allocation. The other arm is
+        // re-classified with the SAME predicate this clause is inside — never a
+        // second spelling of "is that a prep?" — so the two cannot drift.
+        if (Arms.size() > 1) {
+          bool OtherIsPrep = false;
+          for (BasicBlock *Other : Arms) {
+            if (Other == ArmBB)
+              continue;
+            const int OIx = MergePhi->getBasicBlockIndex(Other);
+            if (OIx < 0)
+              continue;
+            bool OSP = false;
+            if (inPlaceRotationArmTheta(
+                    MergePhi->getIncomingValue(unsigned(OIx)), Other, MergePhi,
+                    Taint, OSP) &&
+                OSP)
+              OtherIsPrep = true;
+          }
+          declineArm(declAnchor(Region),
+                     OtherIsPrep
+                         ? "if/else state prep allocates two rails"
+                         : "if/else state prep beside a chained or phase arm");
+          return ArmDisposition::Declined;
+        }
+
+        // ---- F1 — SEED IDENTITY: the merge is FAITHFUL, not a data mux.
+        //
+        // PHYSICS (§14.1): on the `f=0` component the fresh rail is never
+        // touched, so it holds |SEED>. The merge is therefore faithful IFF the
+        // source's value on the straight-through edge IS the seed. Anything else
+        // is a mux between a prepared rail and an unrelated value, which is a
+        // DATA MUX and has no rotation-arm lowering.
+        //
+        // THE SEED MUST BE A `ConstantInt` OR `ConstantFP` — and the two
+        // exclusions have DIFFERENT reasons, so neither may be dropped as
+        // "obviously covered by the other":
+        //   * a `ConstantExpr` (or a `GlobalValue` address) is a LINK-TIME
+        //     constant whose value this compiler CANNOT READ, so "the rail starts
+        //     at |SEED>" is unverifiable — the Inc-2b round-2 finding, one family
+        //     over;
+        //   * `undef`/`poison` is the bd `xy9n` literal-integrity defect
+        //     (`LiteralIntegrity.cpp`): a literal `undef` in two emitted gate
+        //     slots is read as TWO DIFFERENT VALUES at the `-O0` stage 3, so the
+        //     claim is not even well-formed. This is also the `-O1` shape of
+        //     `int r; if (…) r = cq_theta(0,θ);` (probe `p11`), i.e. reachable.
+        // A function ARGUMENT (a RUNTIME seed, probe `p16`) is refused by the
+        // same test. It is a FREE widening — the pred incoming and the seed are
+        // literally the same SSA value there, and `cqrt_alloc_<W>` takes a
+        // runtime value — and it ships DECLINED because the owner's scope says
+        // `Constant` (PRD §14.11 Q2). Note the `Constant` spelling is not
+        // redundant even if Q2 is granted: it is what makes `-0.0` a decline,
+        // because value identity on a UNIQUED constant already IS bit identity.
+        //
+        // BIT IDENTITY, SPELLED AS BIT IDENTITY. `-0.0` vs `0.0` must decline and
+        // is reachable from plain C in BOTH directions (probes `p07b`/`p07c`).
+        // Pointer equality is correct here precisely because LLVM uniques
+        // `ConstantInt` on type+bits and `ConstantFP` on the `APFloat` BITS — a
+        // hand-written `APFloat` comparison would have to use `bitwiseIsEqual`
+        // and NEVER `compare`/`==`, which calls `-0.0 == 0.0`.
+        if (!isa<ConstantInt>(RotBase) && !isa<ConstantFP>(RotBase)) {
+          declineArm(T, "state prep seed does not match the merge incoming");
+          return ArmDisposition::Declined;
+        }
+        // The Pred-edge incoming, read from the φ rather than from `Routed`, so
+        // this clause does not inherit whatever an earlier re-anchor did to
+        // `Routed`. (`straightThroughConstFoldHandle` CANNOT fire on a state-prep
+        // arm — it needs the compare's tainted operand `H` to equal the arm's
+        // spine `Base`, and `walkPhaseSpine` bottoms at the theta CALL, so
+        // `H != Base`. Measured, and `tryEqFoldArm` misses for the mirror reason:
+        // its D2 needs a `ConstantInt` base. The accept therefore rests on F2,
+        // not on those two misses.)
+        //
+        // ⚠ THE STRING IS SPLIT BY THE INCOMING'S NATURE, ADDED 2026-09-05
+        // (round-1 Rule-13 review, lens L5 finding F-L5-1). A TAINTED pred
+        // incoming is not a "seed mismatch" at all — it is a NO-CLONING MUX
+        // between a prepared rail and a LIVE QUANTUM REGISTER (Rule 8), and the
+        // author's fix is not "make the straight-through value the seed". Worse,
+        // the single string made the most ordinary R4 program a user writes
+        //
+        //     for (…) { if (a == 5) a = cq_theta(a, .9); }   // Ry ON THE
+        //                                                     // CONDITION REGISTER
+        //
+        // print `state prep seed does not match the merge incoming` for a source
+        // that contains no state prep and no seed: BOTH exist only because
+        // `clang -O1` substituted `5` for `a` on the proving edge. The verdict
+        // was right (it declines on both binaries) and the words described the
+        // IR rather than the program. Splitting costs one predicate and names the
+        // physics on the half where the physics is the defect.
+        const int PredIdx =
+            Region.Pred ? MergePhi->getBasicBlockIndex(Region.Pred) : -1;
+        if (PredIdx < 0 ||
+            MergePhi->getIncomingValue(unsigned(PredIdx)) != RotBase) {
+          Value *In =
+              PredIdx < 0 ? nullptr : MergePhi->getIncomingValue(unsigned(PredIdx));
+          declineArm(T, In && Taint.Tainted.count(In)
+                            ? "state prep merged with a quantum register"
+                            : "state prep seed does not match the merge incoming");
+          return ArmDisposition::Declined;
+        }
+        // F1's THIRD clause. `lowerRotations` derives the alloc symbol's width
+        // from the CALLEE NAME (`wd.abiWidthFor(suffixFromName(T, "cq_theta_"))`)
+        // while the argument it passes is the seed's ACTUAL LLVM type; this is
+        // where the two are reconciled.
+        //
+        // ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L1 finding
+        // F-L1-1). IT IS REACHABLE AND IT IS LOAD-BEARING — the shipped record
+        // (notes §8 F-3, PRD §14.4) called it "structurally unreachable, defence
+        // in depth, no fixture can be written". Both halves of that were wrong:
+        //
+        //   * THE STATED MECHANISM IS WRONG. "The LLVM verifier forces a call's
+        //     argument to match its callee's parameter type" is false — LLVM 19
+        //     PARSES AND VERIFIES a call whose `FunctionType` differs from its
+        //     callee's (measured, `opt -passes=verify` exit 0). What blocks THAT
+        //     route is `CallBase::getCalledFunction()`, which returns null in
+        //     exactly that case, so `isThetaCall` is false and no theta is seen.
+        //   * THE REACHABLE ROUTE IS AN UNRECOGNIZED SUFFIX, and it is the
+        //     sibling-spelling shape: `isThetaCall` is a bare NAME-PREFIX test
+        //     (`starts_with("cq_theta_")`) while `resolveSources` — and therefore
+        //     `declMatchesPrototype` — only ever visits `wd.allSuffixes()`. So
+        //     `@cq_theta_si32x(i32 0, double)` IS a theta here and has NO width:
+        //     `abiWidthFor("si32x")` is empty and `llvmWidthType("")` is null.
+        //     Without this clause that module ACCEPTS (R3 passes by
+        //     uniqued-constant identity, the `!StatePrep` taint check is skipped,
+        //     R4/R6 are skipped, and the detection width gate asks a DIFFERENT
+        //     derivation, `abiWidthFromType`, which answers `i32`), the emitter
+        //     hoists and flattens, and `lowerRotations` NEVER LOWERS IT —
+        //     `taint.ThetaCalls` is populated only from `ThetaFns` — leaving a
+        //     standing `@cq_theta_si32x` inside a flattened region wrapped in a
+        //     flag mint/strip/free around nothing.
+        //
+        // RED-GREEN: `control_inplace_ry_reject_stateprep_unrecognized_suffix.ll`
+        // and its one-token accept twin `..._stateprep_suffix_control.ll`.
+        // `WidthDispatch`'s constructor only reads the DataLayout's pointer size,
+        // so building one here costs nothing.
+        WidthDispatch WdLocal(*T->getModule());
+        Type *SeedTy = WdLocal.llvmWidthType(
+            WdLocal.abiWidthFor(suffixFromName(T, "cq_theta_")));
+        if (!SeedTy || SeedTy != RotBase->getType()) {
+          declineArm(T, "state prep seed does not match the merge incoming");
+          return ArmDisposition::Declined;
+        }
+
+        // ---- F2 — THE EDGE-PINNED-SEED FENCE. SEMANTIC, ON BOTH EDGES.
+        //
+        // ⚠ REWRITTEN 2026-09-05 (round-3 Rule-13 review, lens R3, findings
+        // F-R3-1 / F-R3-2 / F-R3-3 — 42 plain-C programs, all CONFIRMED-
+        // MISCOMPILE). THE THREE SYNTACTIC GENERATIONS AND THEIR MEASURED
+        // DEFEATS ARE IN `f2SeedPinnedByLiveRegister`'s OWN HEADER; read that
+        // before touching this. In one line: F2 asks a SEMANTIC question —
+        // "could the arm's constant seed be `-O1`'s fold of a live tainted
+        // register the source rotated in place?" — and answering it by
+        // enumerating a set of syntactic shapes lost three rounds running, each
+        // time to a different InstCombine rewrite (the literal; then `H`'s edge
+        // range, defeated by a DOWNWARD rewrite onto an ancestor; then `H`'s
+        // forward closure, defeated by a SIDEWAYS rewrite onto a sibling, by the
+        // curated `llvm.*` rail family, and by the type gate that used to stand
+        // one line below this comment).
+        //
+        // WHAT IS ASKED NOW: for BOTH edges of this region's branch, is ANY live
+        // TAINTED value of the SEED'S TYPE provably equal to the seed? — answered
+        // by `LazyValueInfo` on the edge (the BACKWARD direction, by a real edge
+        // analysis rather than a preimage table) plus an abstract evaluation
+        // forward over the tainted user graph (`ConstantRange` +
+        // `ConstantFolding` + `KnownBits`, i.e. LLVM's own constant machinery,
+        // with a conservative DECLINE wherever a pinned operand feeds something
+        // that machinery cannot evaluate).
+        //
+        // STILL POLARITY-FREE: both edges are asked and either one declines, so
+        // there is no edge to get backwards. (`tryEqFoldArm`'s D8 and
+        // `straightThroughConstFoldHandle`'s `StraightProvesEq` each DO carry a
+        // polarity test because each RE-ANCHORS onto a specific edge; F2 only
+        // REFUSES.)
+        //
+        // NO TYPE GATE. The shipped `K->getType() == SeedI->getType()`
+        // precondition skipped ALL of F2 whenever `-O1` narrowed the compare to
+        // the taint root's width — which is what an ordinary `long long t = q;`
+        // does — and F-R3-2 measured 8 plain-C accepts through it, each with the
+        // CAST RAIL live, measured and unrotated. It is gone from the semantic
+        // path; the fast path below keeps it because an `APInt` comparison needs
+        // it, not because it discriminates anything.
+        //
+        // ⚠ AND THE OLD RATIONALE FOR IT IS RETIRED WITH IT (F-R3-7 item 1).
+        // "A cast of `H` is a DIFFERENT PHYSICAL WIRE, so following casts would
+        // be a pure over-decline" is true about wires and FALSE as a licence:
+        // the cast rail being a different wire is exactly why preparing a THIRD
+        // wire is wrong when the source rotates the second one and then reads
+        // it. What actually separates the accept from the miscompile is not the
+        // type at all — it is whether that other wire EXISTS in the module.
+        // `..._stateprep_cond_cast_seed.ll` and `..._cond_bitcast_seed.ll` still
+        // ACCEPT because `-O1` folded their cast away entirely and no `sext` /
+        // `bitcast` instruction survives to be asked about; `g03_ll_eq5.c`
+        // declines because its `sext` is live and MEASURED. The fence asks about
+        // values that are IN THE FUNCTION, which is the honest form of that
+        // distinction.
+        //
+        // MONOTONE: this block only ever DECLINES, so a range that is too WIDE
+        // loses a decline (the residual, PRD §14.2b / §14.11 Q3 and notes §12)
+        // and a range that is too NARROW — or a bound that trips — costs an
+        // over-decline. Neither direction can turn a decline into an accept.
+        // That is also why `computeKnownBits`' modulo-poison guarantee
+        // (`PoisonFacts.h`) is admissible here where `QramLowering` had to refuse
+        // it: a poison-derived "singleton" costs a decline, never a gate.
+        //
+        // fp CONDITIONS DO REACH A CLAUSE HERE, and this paragraph used to say
+        // the opposite and to carry a FALSE retirement trigger — ⚠ CORRECTED
+        // 2026-09-05 (round-4 Rule-13 review, lens R4, finding F-R4-1).
+        //
+        // WHAT WAS WRONG. The old text read: "RETIREMENT TRIGGER: if LLVM ever
+        // gains an `oeq`-edge substitution, LVI gains it at the same moment and
+        // this clause needs no change." Both halves are false.
+        // `LazyValueInfo::getConstantRangeOnEdge` is defined over
+        // `ConstantRange` — an INTEGER lattice — so LVI cannot acquire an fp
+        // edge fact in a form F2 could consume, and F2's anchor list never
+        // offered it an fp value anyway (`isIntegerTy()`-gated). As written the
+        // trigger would let a future widener read "already covered" and ship.
+        // R4 MEASURED the consequence: `hf01_fcmp_folded.ll` — a live f64 `%t`
+        // pinned to 5.0 by the region's own `fcmp oeq`, seed 5.0, `%t` measured
+        // UNROTATED — ACCEPTED, against an unconditional twin (`hf04`) that is
+        // byte-identical on both binaries and rotates `%t` in place.
+        //
+        // WHAT IS TRUE NOW. The fp CONDITION side is covered by the fp ANCHOR in
+        // `f2SeedPinnedByLiveRegister`'s edge loop (an equality `fcmp` against a
+        // `ConstantFP` pins its tainted operand on the edge where the equality
+        // holds; ±0.0 and NaN constants are refused, with the reason written
+        // there), and the fp SEED side stays covered by `Constant *` identity
+        // plus the exact fold (an `sitofp` of a pinned INTEGER folds exactly —
+        // `..._reject_stateprep_fp_seed_sitofp.ll`).
+        // `..._reject_stateprep_fcmp_oeq_folded.ll` is the anchor's red-green
+        // decline; `..._reject_stateprep_fcmp_oeq_unfolded.ll` stays the control
+        // for the shape `clang -O1` ACTUALLY produces, which is unchanged: at
+        // LLVM 19 `propagateEquality` will NOT substitute across `fcmp oeq`
+        // (`+0.0 == -0.0`), and `EarlyCSE` runs before `IPSCCP` so a pre-branch
+        // fp derivation is CSE'd and `PredicateInfo` has nothing to rename (R4
+        // measured seven `-O1` IR dumps, `p/fp01`-`fp12`). So the anchor is a
+        // fence for a fold this clang does not perform — which is the correct
+        // posture for a fence, and the REAL retirement trigger is now: if LLVM
+        // gains that substitution, this clause already asks the question, but
+        // its ±0.0 and NaN refusals must be RE-MEASURED against whatever
+        // equality LLVM actually chose to propagate.
+        //
+        // ONE COMPARE, NO LEAF WALK — because a compound `&&`/`||` condition
+        // reaches NO control accept path (`classifyArms` refuses a non-`CmpInst`
+        // condition above, measured `prd/ir/q12`). RETIREMENT TRIGGER, written
+        // now rather than discovered later (the bd 8h7d.5 F-1/F-3 discipline):
+        // the day compound conditions are admitted to ANY control accept path,
+        // the LVI half already handles them (it reads the BRANCH, not the
+        // compare), but the (a) fast path below does not — delete it rather than
+        // extend it.
+        //
+        // SECOND RETIREMENT TRIGGER (L2 F-L2-6): an `__builtin_assume(q == 0)`-
+        // folded seed is refused today only by `declineTaintEscapes` treating
+        // `llvm.assume` as an unknown callee. F2 now DOES carry an
+        // `AssumptionCache` (LVI needs one), so the day `llvm.assume` is
+        // whitelisted this clause sees the fold for free — but it still owes a
+        // fresh red-green family, because "for free" is a prediction until it is
+        // measured.
+        bool Pinned = false;
+        bool Truncated = false;
+        if (auto *IC = dyn_cast<ICmpInst>(Region.Condition)) {
+          // (a) THE PLAIN LITERAL FAST PATH — kept, deliberately, although the
+          // semantic test SUBSUMES it (on an `icmp eq H, k` the true edge's
+          // exact region IS `{k}`, and LVI reports it). It is kept because it
+          // depends on NO analysis at all: if a future LLVM weakens `LazyValue
+          // Info` or `computeConstantRange`, the A1/A2 family — the two the
+          // increment shipped against — must still decline.
+          // `..._eqfold_coincidence{,_ne}.ll` pin it, and mutation M2a (delete
+          // this line) reddens exactly those two.
+          // POSITION-FREE: `icmp eq 5, %q` is `clang`-unreachable but hand-IR
+          // reachable, and the equality predicate is symmetric, so no
+          // `getSwappedPredicate` is needed for the literal question.
+          ConstantInt *K = dyn_cast<ConstantInt>(IC->getOperand(1));
+          Value *H = IC->getOperand(0);
+          if (!K) {
+            K = dyn_cast<ConstantInt>(IC->getOperand(0));
+            H = IC->getOperand(1);
+          }
+          auto *SeedI = dyn_cast<ConstantInt>(RotBase);
+          if (K && SeedI && !isa<ConstantInt>(H) && Taint.Tainted.count(H) &&
+              K->getType() == SeedI->getType() && IC->isEquality() &&
+              K->getValue() == SeedI->getValue())
+            Pinned = true;
+        }
+        // (b) THE SEMANTIC TEST. Asked of every tainted value of the function,
+        // on both edges, with no gate on the condition's own shape — `Truncated`
+        // reports an evaluation that could not be completed and declines with
+        // the same string, because a search that stopped looking is exactly the
+        // "we stopped and accepted" shape this fence exists to stop.
+        if (!Pinned)
+          Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
+                                              Taint, DT, Truncated) ||
+                   Truncated;
+        if (Pinned) {
+          declineArm(declAnchor(Region),
+                     "state prep seed is proven equal to the condition register");
+          return ArmDisposition::Declined;
+        }
+      }
+
       // R3 — ONE base. A diamond's straight-through incoming IS the base; an
       // if/else anchors it on the first arm and the second must match. A
       // mismatch is a cross-handle multiplexer, not a rotation arm.
@@ -1680,14 +2660,19 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
       }
-      // STRUCTURALLY UNREACHABLE, kept as defence in depth (round-1 review, lens
-      // L6 §4 — recorded in place so nobody tries to write a fixture nobody can
-      // write). `inPlaceRotationArmTheta` already required
-      // `Taint.Tainted.count(T->getArgOperand(0))` as R1's "chained, not state
-      // prep" half, and `RotBase` IS that operand. The same style as finding C's
-      // note on the R1 fan-out clause: the alternative to a redundant check is a
-      // silent fall-through to a controlled rotation on an untainted value.
-      if (!Taint.Tainted.count(RotBase)) {
+      // ⚠ NO LONGER STRUCTURALLY UNREACHABLE — Inc 4 MADE IT REACHABLE, and
+      // re-scoping it rather than deleting it is the whole point (PRD §14.4).
+      // Until Inc 4 `inPlaceRotationArmTheta` required a TAINTED arg-0, so this
+      // was defence in depth against a fall-through to a controlled rotation on
+      // an untainted value; the round-1 Inc-1 review recorded it in place so
+      // nobody would try to write a fixture nobody could write. A controlled
+      // STATE PREP is exactly that untainted arg-0, ARRIVING DELIBERATELY — so
+      // the check is now asked of the CHAINED class only, and the state-prep
+      // class discharges the same obligation ABOVE, with a better string
+      // (F1's `isa<ConstantInt>` / `isa<ConstantFP>` test, which is strictly
+      // stronger than "untainted"). Deleting it silently is how a decline turns
+      // into a fall-through.
+      if (!StatePrep && !Taint.Tainted.count(RotBase)) {
         declineArm(declAnchor(Region), "control flow");
         return ArmDisposition::Declined;
       }
@@ -1734,20 +2719,62 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       const BasicBlock *ArmA = Region.Arm;
       const BasicBlock *ArmB = Region.ArmFalse;
       SmallPtrSet<Value *, 16> CondRails;
-      railWireClosure(Region.Condition, Taint, WireDir::BackwardOnly, nullptr,
-                      nullptr, CondRails);
-      for (Value *P : Prov)
-        railWireClosure(P, Taint, WireDir::BackwardOnly, nullptr, nullptr,
-                        CondRails);
       SmallPtrSet<Value *, 16> BaseWire;
       SmallVector<Value *, 16> BaseWireOrder;
-      railWireClosure(RotBase, Taint, WireDir::BothWays, ArmA, ArmB, BaseWire,
-                      &BaseWireOrder, /*Exclude=*/MergePhi);
-      for (Value *B : BaseWireOrder)
-        if (CondRails.count(B)) {
-          declineArm(declAnchor(Region), "rotation arm on a condition wire");
-          return ArmDisposition::Declined;
-        }
+      // ⚠ R4 AND R6 ARE **SKIPPED** FOR A CONTROLLED STATE PREP — SKIPPED, NOT
+      // HANDED AN EMPTY CLOSURE — AND THE DIFFERENCE IS MEASURED, NOT
+      // STYLISTIC (PRD §14.5's trap; probe `q31`, pinned by
+      // control_inplace_ry_stateprep_seed_other_users.ll).
+      //
+      // WHY THEY ARE VACUOUS, structurally rather than by a proof about the
+      // program: the rotated rail is minted by the hoisted `T` ITSELF, so NO
+      // PRE-REGION SSA NAME FOR IT EXISTS. There is no wire to intersect with the
+      // condition's (R4) and no record that could be read after the region (R6);
+      // every SSA name for the rail after the region is `T`'s result, which is
+      // the POST-gate name by construction. The Inc-1 finding-K launder (a
+      // classical join φ RAUW'd to the base by `liftOneRegisterMergePhi`) cannot
+      // reach a name that does not exist. That also discharges R4's obligation
+      // for the flag strip: the strip recomputes the predicate over the
+      // condition's registers, and the prepped rail is disjoint from all of them
+      // BY CONSTRUCTION — the one place Inc 4 is easier than Inc 1, not harder.
+      //
+      // WHY "PASS IT AN EMPTY SET" IS THE WRONG SPELLING: `railWireClosure` does
+      // `Out.insert(W)` BEFORE its taint gate, so
+      // `railWireClosure(ConstantInt 0, BothWays, …)` returns
+      // `BaseWire = BaseWireOrder = { i32 0 }` — NOT empty. And an LLVM
+      // `ConstantInt` is uniqued per `LLVMContext`, so its use list spans the
+      // whole module: R6 would enumerate the literal's users, find an unrelated
+      // `cq_theta(0, ·)` sitting AFTER the region, fail `provablyBefore` on it,
+      // and decline `stale rail record read past a controlled Ry` on a program
+      // with no record at all. (Users in OTHER functions are skipped only because
+      // `DT->isReachableFromEntry` returns false for a foreign block — i.e. by
+      // accident of a guard written for a different purpose.) R4 has the mirror
+      // hazard in the harmless direction: a degenerate `cq_phi(0, θ)` on the
+      // condition's provenance can put a `Constant` into `CondRails` (see
+      // `railWireClosure`'s own comment), so R4 would decline on a literal
+      // coincidence.
+      //
+      // R7's LOOP half below is deliberately NOT skipped: it iterates
+      // `BaseWireOrder`, which is empty here, so `Rollable` stays false and every
+      // in-loop state prep declines `control flow inside a loop body` — the
+      // ITERATION-LOCAL spelling (PRD §14.3 row L-2). The LOOP-CARRIED spelling
+      // (`int r = 0;` outside the loop) never gets here at all: its merge pred
+      // incoming is the loop's header φ, so F1 killed it above as a data mux.
+      // "In-loop state prep" sounds like one thing and is two.
+      if (!StatePrep) {
+        railWireClosure(Region.Condition, Taint, WireDir::BackwardOnly, nullptr,
+                        nullptr, CondRails);
+        for (Value *P : Prov)
+          railWireClosure(P, Taint, WireDir::BackwardOnly, nullptr, nullptr,
+                          CondRails);
+        railWireClosure(RotBase, Taint, WireDir::BothWays, ArmA, ArmB, BaseWire,
+                        &BaseWireOrder, /*Exclude=*/MergePhi);
+        for (Value *B : BaseWireOrder)
+          if (CondRails.count(B)) {
+            declineArm(declAnchor(Region), "rotation arm on a condition wire");
+            return ArmDisposition::Declined;
+          }
+      }
       // R6 — NO POST-REGION READ OF THE PRE-Ry RECORD. After the region the
       // register carries `Ry(θ)` on the `f=1` branch, so every consumer must
       // read the POST-region name (the merge φ, which the emitter RAUWs to the

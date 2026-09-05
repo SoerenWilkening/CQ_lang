@@ -4454,6 +4454,49 @@ add_test(NAME e2e-inplace-ry-loop-leak-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.expected.log")
 
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-drbq Increment 4 — CONTROLLED STATE PREP (PRD §14).
+#
+# A flat diamond whose single content arm is one `cq_theta` with a CLASSICAL
+# CONSTANT arg-0: the theta MINTS a rail rather than rotating a live one, so
+# `lowerRotations` emits `cqrt_alloc_<W>(SEED)` at the HOISTED position and then
+# `cqrt_ry_<W>_controlled(f, h, θ)`. All three run stage 2b STRICT.
+#
+# ⚠ THERE IS DELIBERATELY NO `compare_files` TWIN GATE HERE, and the omission is
+# the honest choice rather than a gap. The witness for this increment is byte
+# identity between the SUBJECT golden and a REDUCTION of the TWIN golden (delete
+# the `Ry(0)`, move the fresh-rail alloc, renumber — PRD §14.8), and the two
+# files therefore differ by a reduction, not by identity: a `compare_files` gate
+# would assert something false. The twin is committed as a slice in its own right
+# so a reviewer can re-derive the reduction BY HAND from two files in the tree
+# rather than from a script nobody re-runs. (`inc4-records/reduce_twin.py`
+# implements the three rewrites and could become a fourth entry; recorded, not
+# proposed — that is an owner cost decision, the same one the Inc-1 and Inc-2b
+# instruments were given.)
+add_test(NAME e2e-slice-control-inplace-ry-stateprep
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-stateprep-negated
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_negated.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_negated.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-stateprep-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_twin.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

@@ -16,6 +16,42 @@
 ; CSWAP back, free the |0> rail, strip the boolean with `icmp_eq_inv(q)` — ZERO
 ; controlled gates, NO surviving folded `cq_phi`, NO `phi i32`.
 ;
+; ⚠ THE STEM ASYMMETRY — DO NOT "TIDY UP" THE Ry SIDE TO MATCH (bd
+; test_C_libtooling-drbq Inc 4, PRD §14.2d). Since Inc 4 the SAME IR construct is
+; read TWO WAYS by the two stems: `cq_phi_si32(i32 k, θ)` in an `if (q == k)` arm
+; ACCEPTS here and re-anchors onto q's own rail, while `cq_theta_si32(i32 k, θ)`
+; in that position DECLINES.
+;
+; ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L7 finding F-L7-3). This
+; block used to call `control_inplace_ry_reject_stateprep_eqfold_coincidence.ll`
+; "this file with the stem changed" and to name F2 as the Ry side's fence. NEITHER
+; IS TRUE, and both halves were MEASURED on HEAD:
+;
+;   * THIS FILE with `cq_phi` → `cq_theta` (and the second gate dropped, since its
+;     arg-0 is the first gate's result) declines
+;     `state prep merged with a quantum register` — i.e. at **F1**, not F2,
+;     because THIS file's merge pred incoming is the live register `%q`.
+;   * `..._eqfold_coincidence.ll` is a DIFFERENT module: its pred incoming is the
+;     CONSTANT `5`, which is what lets it reach F2 at all.
+;   * And the constant-incoming spelling has NO pair on this side: the Rz version
+;     of `..._eqfold_coincidence.ll` (pred incoming `5`, arm `cq_phi(5, θ)`)
+;     DECLINES `control flow` — `tryEqFoldArm` re-anchors `Routed` onto `%q` and
+;     the constant pred incoming then does not match it. So "the same file with
+;     the stem changed" describes no pair anywhere in the family.
+;
+; The honest pair is THIS file vs its own Ry twin, and the fences are F1 (Ry) vs
+; `tryEqFoldArm`'s accept (Rz). The physics argument below is unaffected — it was
+; always about the RE-ANCHOR, and the re-anchor is what differs.
+;
+; That is SOUND, and the reason is the stem's PHYSICS rather than a preference.
+; The re-anchor puts a gate on the CONDITION'S OWN REGISTER. `cqrt_rz_<W>` is
+; DIAGONAL, so the strip recomputes the predicate over a basis the arm did not
+; move (§3 permits it explicitly; it is why S8 accepts). The same re-anchor for
+; Ry would put a BASIS-RELABELLING gate there, which R4 forbids — the strip would
+; be computed over a register the arm moved and the flag would not return to |0>.
+; There is no correct re-anchor for that stem, so its only options were "accept as
+; a fresh rail" (WRONG whenever the source meant `q`) or "decline".
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; Independent EXACT free-count scan: two cqrt_free (work rail + flag), no third.

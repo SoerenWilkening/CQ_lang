@@ -15,6 +15,8 @@
 #include "WidthDispatch.h"
 #include "WireWalk.h"  // provablyBefore (the shared position-aware proof)
 
+#include <cassert>
+
 #include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
@@ -252,8 +254,46 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       continue;
     Builder.SetInsertPoint(Theta);
 
+    Value *Ctrl = nullptr;
+    if (auto It = taint.ControlledRotations.find(Theta);
+        It != taint.ControlledRotations.end())
+      Ctrl = It->second;
+
     Value *Handle;
     const bool Chained = taint.Tainted.count(Op) != 0;
+    // ⚠ THE SUFFIX/WIDTH BAIL IS HOISTED HERE, ABOVE THE ALLOC, AND THAT IS A
+    // FIX RATHER THAN A MOVE (PRD §14.4). It used to sit two lines below the
+    // controlled mint, i.e. AFTER the `!Chained` arm had already emitted
+    // `cqrt_alloc_<W>(Op)`, inserted `H` into `taint.Tainted`, consumed a
+    // `BirthOrder` slot and written `HandleWidth[H]` — so on `continue` the
+    // module kept an alloc with ZERO USERS, a still-standing `@cq_theta_*`, and
+    // three live side-table entries keyed on the orphan. A MID-EMISSION BAIL,
+    // survivable only because `DS_Error` exits `opt` non-zero. Rule 1: never emit
+    // half a region. Inc 4 turns the sibling `!Chained` bail into the accept
+    // path, so this one had to move or it would have inherited the same shape on
+    // a path that now allocates.
+    //
+    // Detection gated on `abiWidthHasControlledRotation` already, so this is
+    // unreachable on a plan-consistent module; it stays LOUD (never a silent
+    // fall-through to the UNCONTROLLED gate, which would fire the arm's Ry on
+    // BOTH branches — a wrong unitary).
+    //
+    // ⚠ NO FIXTURE EXISTS FOR THIS STRING AND NONE CAN BE WRITTEN — recorded in
+    // place so nobody tries (round-1 Rule-13 review, lens L4 finding F-L4-5,
+    // re-derived independently there). `resolveSources` collects only the 16
+    // `cq_theta_<sfx>` names in `WidthDispatch::kRows`; every one maps through
+    // `abiWidthFor` into `{i1,i8,i16,i32,i64,f16,f32,f64,f80}`, which is EXACTLY
+    // `abiWidthHasControlledRotation`'s set. So `Abi` is never a
+    // recognized-but-uncontrolled width, and neither this bail nor its sibling
+    // detection gate (`ArmClassify`'s `controlled rotation width`) can fire. The
+    // check is kept as the Rule-1 SHAPE — one loud bail, above every mutation —
+    // not as a live protection, and `grep` finds the string at these two code
+    // sites and in no fixture.
+    if (Ctrl && !ControlledSymbols(M, wd).controlledRotationFn(
+                    Abi, ControlledSymbols::RotStem::Ry)) {
+      diagnoseUnsupported(Theta, "controlled theta suffix/width");
+      continue;
+    }
     if (Chained) {
       // Tainted operand (chained theta) → ry only on the existing handle.
       Handle = Op;
@@ -281,33 +321,35 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     // flag it must fire under. Mint `cqrt_ry_<W>_controlled(f, handle, θ)` at
     // the hoisted position instead of the unconditional gate; everything else
     // (the handle, the RAUW, the `UserChainedRotations` recording) is unchanged.
-    Value *Ctrl = nullptr;
-    if (auto It = taint.ControlledRotations.find(Theta);
-        It != taint.ControlledRotations.end())
-      Ctrl = It->second;
     CallInst *RyCall = nullptr;
     if (Ctrl) {
-      // A CLASSICAL arg-0 under control is controlled STATE PREP (PRD S5, Inc
-      // 4): the alloc would have to hoist with the theta and the merge φ's
-      // pred incoming would need a seed-identity fence. `classifyArms` refuses
-      // it, so reaching here means the plan and the IR disagree — bail LOUDLY
-      // rather than emit a controlled rotation on a freshly-allocated rail
-      // whose |0⟩-vs-prepped disposition nothing proved (Rule 1).
-      if (!Chained) {
-        diagnoseUnsupported(Theta, "controlled theta operand");
-        continue;
-      }
+      // A CLASSICAL arg-0 under control is controlled STATE PREP (PRD §14, bd
+      // test_C_libtooling-drbq Inc 4) — and since Inc 4 it is an ACCEPT, not a
+      // bail. The `!Chained` arm above already minted `cqrt_alloc_<W>(SEED)` AT
+      // THE THETA'S HOISTED POSITION (the emitter moved the theta before `BI`,
+      // after the flag mint and INSIDE a negated arm's `cqrt_x` bracket), so
+      // `Handle` is a rail this region owns outright and the only thing left is
+      // to fire the gate under the flag.
+      //
+      // The two fences that make that sound live in `classifyArms`, not here:
+      // F1 (the merge φ's Pred incoming is a `ConstantInt`/`ConstantFP`
+      // bit-identical to the seed, so the `f=0` component's |SEED> IS the
+      // source's straight-through value) and F2 (the seed is not the compare
+      // literal of an equality, so this is not a `-O1`-folded in-place Ry on the
+      // CONDITION register). Nothing is re-derived here; this stage owns the
+      // SYMBOL, detection owns the PROOF.
+      // ⚠ NO SECOND BAIL HERE — the null-guard that used to sit on this line was
+      // HOISTED with its sibling, above the alloc (round-1 Rule-13 review, lens
+      // L3 finding F-6). It asked the SAME predicate with the SAME arguments and
+      // was genuinely unreachable, but if it had ever fired it would have
+      // reproduced exactly the mid-emission residue the hoist removed: a
+      // `cqrt_alloc_<W>` with zero users, a still-standing `@cq_theta_*`, and
+      // three live side-table entries keyed on the orphan. One bail, one
+      // position, above every mutation (Rule 1: never emit half a region).
       ControlledSymbols csyms(M, wd);
       FunctionCallee CRy = csyms.controlledRotationFn(
           Abi, ControlledSymbols::RotStem::Ry);
-      if (!CRy) {
-        // Detection gated on `abiWidthHasControlledRotation`, so this is
-        // unreachable on a plan-consistent module; keep it loud (never a silent
-        // fall-through to the UNCONTROLLED gate, which would fire the arm's Ry
-        // on both branches — a wrong unitary).
-        diagnoseUnsupported(Theta, "controlled theta suffix/width");
-        continue;
-      }
+      assert(CRy && "the hoisted suffix/width bail guarantees a callee here");
       RyCall = Builder.CreateCall(CRy, {Ctrl, Handle, Angle});
       // The register is now FROZEN — never reverse-played, never freed by the
       // whole-DAG spine (a controlled gate's adjoint needs its CONTROL, and the
@@ -398,8 +440,19 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       // plan and the IR disagree — and the fall-through below (RAUW to the
       // classical operand, erase) would DROP the arm's rotation silently, which
       // is precisely the verify-clean wrong unitary the re-anchor exists to
-      // prevent. Bail LOUDLY instead (Rule 1); the mirror of
-      // `controlled theta operand` on the theta loop above.
+      // prevent. Bail LOUDLY instead (Rule 1).
+      //
+      // ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L4 finding
+      // F-L4-1). This used to call itself "the mirror of `controlled theta
+      // operand` on the theta loop above". THAT SIBLING NO LONGER EXISTS: Inc 4
+      // turned it into the state-prep ACCEPT path, and `grep` finds the string
+      // in no other code site or fixture in the tree. The asymmetry is NOT an
+      // oversight and this bail must NOT be "tidied" to match the theta loop:
+      // there is no Rz state prep (PRD §14.7, Rule 3 — `cq_phi` on a classical
+      // operand propagates no taint and is DELETED at lowering, so it never
+      // allocates; measured on `..._reject_stateprep_rz_prep.ll`). A classical
+      // arg-0 `cq_phi` under a control therefore still means only one thing:
+      // the plan and the IR disagree.
       diagnoseUnsupported(Phi, "controlled phi operand");
       continue;
     }
@@ -1462,6 +1515,18 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
 
 }  // namespace
 
+// ⚠ THIS IS NOT A BACKSTOP FOR THE Inc-4 CONTROLLED-STATE-PREP F2 CLASS, AND IT
+// LOOKS EXACTLY LIKE ONE (bd test_C_libtooling-drbq Inc 4, ROUND-3 Rule-13
+// review, lens R3 finding F-R3-7 item 3). This diagnostic names that hazard
+// verbatim — `non-diagonal gate over a live derived record` — and a reader
+// meeting F2 for the first time will assume "M-A would have caught it anyway".
+// IT WOULD NOT, and the reason is structural rather than a bug: F2's class is a
+// controlled Ry on a rail minted INSIDE the region by `cqrt_alloc`, whose record
+// set is EMPTY by `RecordSet::push` clause 5, so no site is ever collected.
+// MEASURED across the 42 confirmed miscompiles of that review: this guard FIRES
+// on their unconditional twins (e.g. `p/u06_uncond_sdiv4.c`, where the source
+// rotates the DIVISION's own rail in place) and is SILENT on every one of the 42.
+// The only fence for that class is `ArmClassify::f2SeedPinnedByLiveRegister`.
 bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   if (taint.UserChainedRotations.empty())
     return false;  // no site in the whole module — every other cost is skipped.
