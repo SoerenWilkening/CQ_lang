@@ -36,6 +36,7 @@
 #include "TaintPropagation.h"    // TaintSet
 #include "WidthDispatch.h"       // allocFn / copyFn / rzRtFn / freeFn / abiWidthFor
 
+#include "llvm/Analysis/ValueTracking.h"  // isSafeToSpeculativelyExecute (Inc 2)
 #include "llvm/ADT/STLExtras.h"   // llvm::reverse / llvm::is_contained
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -190,73 +191,72 @@ struct ValueArmStream {
   SmallVector<CallInst *, 6> Fwd = {};  // minted forward template calls (step 4)
 };
 
-// Lower one accepted VALUE-arm region — a one-content-arm DIAMOND (§5d, WI-4)
-// or a two-arm IF/ELSE (§5e, WI-5) — by method-B B-keep (IMPLEMENTATION-4.2
-// §4), one arm-list-parameterized procedure (the value twin of the phase
-// emitRegion below). Emitted into the pred block before the conditional `br`,
-// in this exact order (symbol order IS the contract; reordering steps 5–9 is
-// trace-plausible, verify-clean, and WRONG):
+// Lower one accepted VALUE-arm region — a one-content-arm DIAMOND (§7.2 V1) or
+// a two-arm IF/ELSE (§7.2 V2) — by the CONTROLLED-COPY MERGE (bd
+// test_C_libtooling-3qlq Inc 2, retire-swap-route-PRD §7; owner decision D6).
+// The pre-3qlq swap route (`alloc w; cswap(f,p,w); chain on w; cswap; alloc out;
+// copy(p,out); cswap; chain _unc; cswap; free w; strip; free f` — 4 `cqrt_cswap`
+// = 4W Toffoli + 8W CNOT and one W-bit work rail per arm) is RETIRED here; after
+// this increment `cqrt_cswap` is minted by `AbortParkEmit` alone.
 //
-//   1 flag mint        cq_template_icmp_<pred>_<W>_hl(q, lit)
-//   2 |0> work rails   cqrt_alloc_<W>(0) per content arm — width from the
-//                      chain op's iN type
-//   3 route-ins        cqrt_cswap(flag, p, rail) per arm  [¬flag X-bracketed:
-//                      the else arm, or a FALSE-successor diamond arm]
-//   4 arm chains       VERBATIM + UNCONTROLLED, each on its OWN rail — each
-//                      link moved, base-retargeted (first link only), then
-//                      rewriteBinary
-//   5 route-backs      cqrt_cswap(flag, p, chainFinal) per arm — after ALL
-//                      route-backs p holds the muxed answer (each branch's
-//                      swap fires on a disjoint flag value)
-//   6 ONE copy-out     out = alloc(0); cqrt_copy_<W>(p, out) — AFTER the
-//                      route-backs (the answer is on p only then), BEFORE any
-//                      route-back† (R† destroys it on p) — interlock §6.4
-//   7 reverse-play R†  per arm in REVERSE emission order (LIFO): route-back† ·
-//                      chain adjoint (void `_unc` forms, emitInverseChain, BODY
-//                      CHAIN ONLY — the cswap arg-0 seam, PRD §8.5) · route-in†
-//                      on the work rail. Arm blocks commute (disjoint rails; the
-//                      route cswaps fire on complementary flag values), so the
-//                      grouped per-arm order equals the literal global adjoint.
-//   8 rail frees       on each arm's WORK RAIL `A.Rail` (the route-in†'d chain
-//                      head) — provably |0> on BOTH branches only AFTER R† +
-//                      route-in† (§3b); the `_unc`-zeroed intermediates leak
-//   9 strip+flag free  icmp_inv(q) + cqrt_free(flag) — valid outright: the
-//                      condition register is disjoint from the routed register
-//                      in every accepted region (§0 criterion 4)
-//  10 rewire           RAUW merge phi -> out; erase chain originals in
-//                      reverse; flatten. NEVER free `out` (the answer) or `p`
-//                      (the restored source) — either free is a hidden
-//                      measurement.
+// THE MECHANISM IS A REWRITE, NOT A GATE STREAM. The arm's chain is a proven
+// PURE LINEAR chain of `BinaryOperator`s whose only escape is the merge φ
+// (`valueArmIsPureChain`, ArmClassify), so the region
 //
-// Correctness rests on the §8.2 register-threading trace, NOT on `opt -verify`
-// (Rule 2). Diamond: flag=1 routes p0 into the rail, the chain computes f(p0)
-// there, the route-back parks f(p0) on p for the copy, and R† re-derives then
-// unwinds the chain so p == p0 and rail == |0> again; flag=0 leaves p
-// untouched while the chain computes f(0) garbage on the rail thread, which
-// the chain adjoint returns to |0>. If/else: the two route-ins park p0 on the
-// SELECTED rail and |0> on p in BOTH branches; the selected chain computes
-// f(p0)/g(p0) while the other computes f(0)/g(0) garbage; the two route-backs
-// (complementary controls) park the selected answer on p; each arm's R† block
-// unwinds its own rail — the selected one back through p (restoring p0), the
-// garbage one in place. Both branches end every rail == |0> (clean frees, not
-// hidden measurements) and p == p0 (so icmp_inv strips the flag). The B-keep
-// boundary (kept-source correlation, channels A/B) is documented in PRD §8.2
-// — binding, not a bug. NEVER this path for a phase arm (Rule 7): a CNOT
-// copies a basis label, not a phase (verified P0 0.585 -> 0.500, dephased).
+//     Pred: … br i1 %c, Arm, Merge      Arm: %t = R(%p)      Merge: φ[%t, %p]
+//
+// is rewritten to the straight-line form `%t = R(%p); %sel = select %c, %t, %p`
+// and handed to `emitSelectRegion` — the Rule-13-cleared 4.4 controlled-XOR copy
+// merge — VERBATIM (Rule 14). Nothing new is emitted by this function at all:
+// every gate in the resulting stream is minted either by `lowerOps` (the hoisted
+// chain, exactly as for any straight-line tainted arithmetic) or by
+// `emitSelectRegion` (mint · `alloc out` · `copy_controlled(f,t,out)` ·
+// `x(f)` · `copy_controlled(f,p,out)` · `x(f)` · strip · `free f`).
+//
+// WHY THE HOIST IS SOUND. `R` runs UNCONDITIONALLY on the ORIGINAL `p` — which
+// the swap route also did (it replayed the chain "VERBATIM + UNCONTROLLED" on a
+// routed rail; on the inactive branch it computed `R(0)` garbage there). Three
+// things make the unconditional run harmless: (i) every link is a pure total
+// template with no memory and no call (`valueArmIsPureChain` refuses a stray op
+// and `walkValueChain` accepts only `binaryStem` opcodes), (ii) each link is
+// `isSafeToSpeculativelyExecute` — the ONE new fence below, which refuses a
+// possibly-zero / possibly-overflowing tainted-context divisor (`sdiv`/`udiv`/
+// `srem`/`urem`), and (iii) the §3c clobber decline (ArmClassify) already
+// refuses an arm that rewrites a register the condition reads, so the compare
+// strip at the end of `emitSelectRegion` reads the same basis value the mint
+// did. The chain writes only FRESH rails: its head link reads `p` (which has a
+// later reader — the second controlled copy — so `lowerOps`' M-C in-place
+// conversion refuses it) and every later link reads its own predecessor.
+//
+// THE WITNESS IS BYTE IDENTITY WITH THE PRE-HOISTED SELECT TWIN — the C program
+// `int t = R(p); p = (q>5) ? t : p;`, which `clang -O1` hands to the pass in
+// exactly the post-rewrite shape and which lowers through the same
+// `emitSelectRegion`. (The `?:` spelling of the DIAMOND is NOT a twin: measured
+// 2026-09-05, `-O1` compiles `p = (q>5) ? R(p) : p` and `if (q>5) p = R(p)` to
+// byte-identical IR — SimplifyCFG's speculation cost threshold, not the source
+// spelling, decides select-vs-diamond, so a multi-op `?:` arrives as a diamond
+// too.)
+//
+// ORDER IS LOAD-BEARING: `flattenRegion` runs BEFORE `emitSelectRegion`.
+// `flattenRegion` reads `R.Condition` and erases it when use-empty;
+// `emitSelectRegion` erases the compare itself in its step 6. Emitting first
+// would hand `flattenRegion` a DANGLING `R.Condition` (a use-after-free on
+// valid input — the block-lifetime hazard's value-identity twin). With the
+// order below the compare is still live at flatten time (the new `select` uses
+// it), so `flattenRegion` leaves it and `emitSelectRegion` owns its erase.
 void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
                      PHINode *MergePhi, WidthDispatch &wd,
                      ControlledSymbols &csyms, TaintSet &taint) {
   // Arm list by FIELD identity (orientation-B diamond: R.Arm is the FALSE
-  // successor, polarity rides ArmNegated; an if/else routes R.Arm under flag
-  // and R.ArmFalse under ¬flag — the same assignment as the phase path).
-  // classifyArms accepts only the homogeneous all-value region with every
-  // chain non-empty; anything else here is a malformed plan — decline LOUDLY,
-  // lower nothing (Rule 1).
+  // successor, polarity rides ArmNegated; an if/else's R.Arm is the TRUE
+  // successor S0 and R.ArmFalse the FALSE successor S1). classifyArms accepts
+  // only the homogeneous all-value region with every chain non-empty; anything
+  // else here is a malformed plan — decline LOUDLY, lower nothing (Rule 1).
   // ziov WI-1: shared-condition-flag sharing is implemented for PHASE arms only
-  // (emitRegion). A VALUE-arm region whose condition is ALSO read as data is a
-  // later WI — decline LOUDLY here rather than mint a flag, strip+free it (step
-  // 9), and let `lowerOps` mint a second flag for the surviving data use (the
-  // very ziov duplicate-mint, now in the value path). Over-declining is safe.
+  // (emitRegion). A VALUE-arm region whose condition is ALSO read as data keeps
+  // its pre-3qlq decline: `emitSelectRegion` strips and frees the flag, so the
+  // surviving data use would make `lowerOps` mint a SECOND one (the ziov
+  // duplicate-mint). Over-declining is safe.
   if (R.ShareCondFlag) {
     diagnoseUnderControl(Cond, "condition used outside the branch");
     return;
@@ -279,12 +279,13 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
     Arms.push_back({R.ArmNegated, R.Shadow});
   }
 
-  // The routed register Q — re-derived per arm as the chain head's sole
-  // tainted operand (an if/else merge has no Pred edge to read it from; never
-  // read width/identity off Q's SSA type). Every arm must agree, and a
-  // diamond's Q must equal the straight-through (Pred-edge) incoming —
-  // classifyArms proved both (base-identity), so a mismatch is a malformed
-  // plan: decline LOUDLY, lower nothing (Rule 1).
+  // The routed register Q — re-derived per arm as the chain head's sole tainted
+  // operand (an if/else merge has no Pred edge to read it from; never read
+  // width/identity off Q's SSA type). Every arm must agree, and a diamond's Q
+  // must equal the straight-through (Pred-edge) incoming — classifyArms proved
+  // both (base-identity), so a mismatch is a malformed plan: decline LOUDLY.
+  // Q is ALSO the `select`'s straight-through operand below, so this identity
+  // is now a correctness precondition of the merge itself, not just of a route.
   Value *Q = valueChainBase(Arms.front().Chain, taint);
   for (const ValueArmStream &A : Arms)
     if (!Q || valueChainBase(A.Chain, taint) != Q) {
@@ -298,28 +299,32 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
     return;
   }
 
-  // ABI width from the chain op's INTEGER SSA type — reliable pre-RAUW (the
-  // ops still carry iN; PRD §8.1 width-source). NEVER the theta suffix (the
-  // routed base may be derived), and never a classifying signal (the f64
-  // trap) — classifyArms' positive integer fence already proved validity, so
-  // a null here is a malformed plan: decline LOUDLY, lower nothing (Rule 1).
+  // ABI width from the chain op's INTEGER SSA type — reliable pre-RAUW (the ops
+  // still carry iN; PRD §8.1 width-source). NEVER the theta suffix (the routed
+  // base may be derived), and never a classifying signal (the f64 trap) —
+  // classifyArms' positive integer fence already proved validity, so a null here
+  // is a malformed plan: decline LOUDLY, lower nothing (Rule 1). The merge
+  // primitive is now `cqrt_copy_<W>_controlled` (`ControlledSymbols`, minted for
+  // 4.4/6.5 — NO new runtime symbol, epic decision D3) rather than the
+  // uncontrolled `cqrt_copy_<W>`; `emitSelectRegion` mints it itself from the
+  // select's own type, so this check is a PRE-FLIGHT — it must agree with what
+  // the select emitter will resolve, and it declines before any mutation.
   StringRef Abi = abiWidthFromType(Arms.front().Chain.front()->getType());
-  Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
-  FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
-  FunctionCallee Copy = Abi.empty() ? FunctionCallee() : wd.copyFn(Abi);
-  if (!RailTy || !Alloc || !Copy) {
+  if (Abi.empty() || !wd.llvmWidthType(Abi) || !wd.allocFn(Abi) ||
+      !csyms.copyControlledFn(Abi)) {
     diagnoseUnderControl(Cond, "control flow");
     return;
   }
 
-  // Library-host parity (the twin-pipeline trap, IMPLEMENTATION §6.5): a
-  // chain link `declineStaleRecordOps` marked has ALREADY been diagnosed with
-  // the pledge "lower NOTHING for this op" (lowerOps honors it by skipping).
-  // In the `opt` host that DS_Error exited the process before emission ever
-  // runs; in an embedding host that does not exit, replaying the marked link
-  // onto the rail here would break the pledge. Decline pre-mutation — no lit
-  // fixture can pin this (opt exits at the stale diagnostic first); it is the
-  // Rule-1 defensive bail, never a silent skip.
+  // Library-host parity (the twin-pipeline trap, IMPLEMENTATION §6.5): a chain
+  // link `declineStaleRecordOps` marked has ALREADY been diagnosed with the
+  // pledge "lower NOTHING for this op" (lowerOps honors it by skipping). In the
+  // `opt` host that DS_Error exited the process before emission ever runs; in an
+  // embedding host that does not exit, HOISTING the marked link into the pred
+  // here would break the pledge (and, unlike the pre-3qlq replay, would leave it
+  // to `lowerOps`, which skips it — a SILENTLY DROPPED arm op, Rule 5). Decline
+  // pre-mutation — no lit fixture can pin this (opt exits at the stale
+  // diagnostic first); it is the Rule-1 defensive bail, never a silent skip.
   for (const ValueArmStream &A : Arms)
     for (Instruction *Op : A.Chain)
       if (taint.StaleDeclined.count(Op)) {
@@ -327,160 +332,115 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
         return;
       }
 
-  const DebugLoc DL = BI->getDebugLoc();
-  IRBuilder<> B(BI);  // every stream call lands before the conditional br.
-  auto stamp = [&DL](CallInst *C) {
-    if (DL)
-      C->setDebugLoc(DL);
-  };
-
-  // 1. Flag mint — cq_template_icmp_<pred>_<W>_hl(q, lit).
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
-  if (!Flag)
-    return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
-
-  // 2. One |0> work rail per content arm (allocated up front — the §5b order).
-  //    Each joins `taint.Tainted` so rewriteBinary classifies the retargeted
-  //    first link as HL/LH (handle + classical) — an untainted rail would
-  //    misclassify BOTH operands as classical and emit a wrong shape. Rail
-  //    users are only cqrt_*/template calls, so the later `uncompute` never
-  //    selects them (isTerminalHandle is false — §6.2).
-  for (ValueArmStream &A : Arms) {
-    A.Rail = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "rail");
-    stamp(A.Rail);
-    taint.Tainted.insert(A.Rail);
-    taint.ControlOwnedRails.insert(A.Rail);  // DD-4: Phase-4 owns this work rail
-  }
-
-  // 3. Route-ins (split) — p -> each arm's rail, X-bracketed for a ¬flag arm.
-  for (ValueArmStream &A : Arms)
-    emitRoute(B, csyms, Flag, Q, A.Rail, A.Negated, DL);
-
-  // 4. Arm chains VERBATIM + UNCONTROLLED, each on its OWN rail. Per link in
-  //    FORWARD (base-first) order: move to the stream position, retarget the
-  //    FIRST link's routed-base operand to the arm's rail handle (later links
-  //    already point at their predecessor, rewired by the previous RAUW),
-  //    then REUSE ArithLowering::rewriteBinary verbatim — it emits the
-  //    cq_template_<op>_<W>_hl/_lh call immediately before the moved op,
-  //    RAUWs, and bookkeeps taint (Rule 14). The minted call is collected for
-  //    the reverse-play; the original (now use-empty) op is erased in step 10.
-  for (ValueArmStream &A : Arms)
-    for (Instruction *Op : A.Chain) {
-      auto *BO = dyn_cast<BinaryOperator>(Op);
-      if (!BO) {
-        // classifyArms records only BinaryOperator links; anything else is a
-        // malformed plan — decline LOUDLY, never a silent skip (Rule 1).
-        diagnoseUnderControl(Cond, "control flow");
+  // SPECULATION TOTALITY — the ONE new fence of Inc 2 (PRD §10.3 lens 8).
+  // `binaryStem` admits `sdiv`/`udiv`/`srem`/`urem`, whose C semantics are
+  // UNDEFINED at a zero (or `INT_MIN / -1`) divisor. The divisor of an accepted
+  // link is CLASSICAL (a Q+Q link declines at classification), but classical is
+  // not the same as non-zero: `if (q>5) p = p / n;` with a run-time classical
+  // `n` is a real -O1 shape. Ask LLVM's OWN predicate — the same one SimplifyCFG
+  // consults before speculating a block (Rule 14) — rather than hand-rolling a
+  // per-opcode table that would drift from it. Shifts by >= bitwidth are POISON,
+  // not UB, and `isSafeToSpeculativelyExecute` admits them; the poison never
+  // materializes because `lowerOps` replaces every link with a runtime template
+  // call and erases the original.
+  //
+  // NOTE FOR THE RECORD: this hazard is NOT created by the hoist. The pre-3qlq
+  // route also ran the chain unconditionally (on a `|0>` work rail, i.e.
+  // `0 sdiv n`), so a possibly-zero classical divisor was equally unguarded
+  // there. This fence therefore NARROWS the accept class relative to HEAD; that
+  // direction is always safe (Prime Directive) and is the disposition the PRD
+  // asks for. `p / 3` (a non-zero constant divisor) still accepts.
+  for (const ValueArmStream &A : Arms)
+    for (Instruction *Op : A.Chain)
+      if (!isSafeToSpeculativelyExecute(Op)) {
+        diagnoseUnderControl(Op, "value arm op that cannot run unconditionally");
         return;
       }
-      BO->moveBefore(BI);
-      if (A.Fwd.empty())
-        BO->replaceUsesOfWith(Q, A.Rail);
-      if (!rewriteBinary(BO, wd, taint))
-        return;  // already diagnosed (no template) — abort the region loudly.
-      // rewriteBinary inserts exactly ONE call, immediately before BO.
-      A.Fwd.push_back(cast<CallInst>(BO->getPrevNode()));
-    }
 
-  // 5. Route-backs (join = adjoint of the split, same flag + brackets) with
-  //    each arm's chain-final handle — the physical rail register's current
-  //    SSA name. After ALL route-backs `p` holds the muxed answer: each
-  //    branch's swap fires on a disjoint flag value, so the swaps commute and
-  //    exactly one moves its answer onto p per branch.
-  for (ValueArmStream &A : Arms)
-    emitRoute(B, csyms, Flag, Q, A.Fwd.back(), A.Negated, DL);
-
-  // 6. ONE B-keep copy-out: out := the basis-valued answer. `out` joins
-  //    `taint.Tainted` (+BirthOrder) so downstream consumers of the RAUW'd
-  //    merge phi keep classifying it as a quantum handle. NEVER free `out`,
-  //    NEVER free `p` (PRD §8.5 — the answer / the restored source; a free of
-  //    either is a hidden measurement).
-  CallInst *Out = B.CreateCall(Alloc, {Constant::getNullValue(RailTy)}, "out");
-  stamp(Out);
-  CallInst *CopyCall = B.CreateCall(Copy, {Q, Out});
-  stamp(CopyCall);
-  taint.Tainted.insert(Out);
-  taint.ControlOwnedRails.insert(Out);  // DD-4: Phase-4 owns this merge out-rail
-  taint.BirthOrder[Out] = taint.NextBirth++;
-
-  // 7. Reverse-play R†, per arm in REVERSE emission order (LIFO — the grouped
-  //    blocks equal the literal global adjoint because arm streams commute:
-  //    chains act on disjoint rails and route cswaps fire on complementary
-  //    flag values). Per arm: route-back†, then the chain adjoint in exact
-  //    reverse via the void in-place `_unc` forms — the BODY CHAIN ONLY through
-  //    emitInverseChain (SCOPING §7.5): the route cswaps are bracketed by
-  //    emitRoute because emitInverseCall would thread a handle into Args[0],
-  //    which for cqrt_cswap is the FLAG slot (the seam, EmitInverse.cpp —
-  //    feeding cswaps through the chain is a verify-clean wrong unitary, PRD
-  //    §8.5) — then route-in† on the work rail (the chain head, restored to |0>).
-  for (ValueArmStream &A : reverse(Arms)) {
-    Value *ChainFinal = A.Fwd.back();
-    emitRoute(B, csyms, Flag, Q, ChainFinal, A.Negated, DL);  // route-back†
-    if (!emitInverseChain(B, A.Fwd, wd, &taint.SpineOps)) {   // R† (void `_unc`)
-      // Every link is a forward uncontrolled template (we just minted them),
-      // so this is unreachable — but an un-invertible link must decline
-      // LOUDLY, never leave a half-reversed stream (Rule 1).
-      diagnoseUnderControl(Cond, "control flow");
-      return;
-    }
-    // Route-in† on the arm's WORK RAIL (`A.Rail`): the void `_unc` chain zeroed
-    // the intermediate rails in place but never touched `A.Rail` (the chain head,
-    // read by the first link), which still holds the routed value p0. The cswap
-    // moves p0 back onto Q (Q == q0) AND returns `A.Rail` to |0> for a clean free
-    // (§3b). Under the old fresh-minting `_inv` this was the threaded `RailFinal`;
-    // the void ABI mints no handle, so the chain-head rail IS `A.Rail`.
-    emitRoute(B, csyms, Flag, Q, A.Rail, A.Negated, DL);     // route-in†
+  // Q+Q CONDITION — keep the pre-3qlq decline. `emitSelectRegion` mints its flag
+  // through `lowerCompareToFlag` with the 4.4 `qqSelectLeafWidth`, which SUPPORTS
+  // a two-handle compare; the pre-3qlq value path passed an empty width and so
+  // declined. Routing the value diamond through the select emitter would
+  // therefore WIDEN the accept class as a side effect of a mechanism change,
+  // which is exactly the kind of unintended widening the Prime Directive refuses
+  // to ship unreviewed. A Q+Q condition for value arms stays a loud decline and
+  // is filed as follow-on work, not smuggled in here.
+  if (taint.Tainted.count(Cond->getOperand(0)) &&
+      taint.Tainted.count(Cond->getOperand(1))) {
+    diagnoseUnderControl(Cond, "control flow");
+    return;
   }
 
-  // NO KEPT-CARRIER RECORD CAN REACH THE RAILS FREED IN 8-9 (bd urlv audit; the
-  // invariant is bd memory [record-freeze-invariant-2026-08-10]). Both classes —
-  // the per-arm work rail and the path-predicate flag — are minted BY THIS EMITTER
-  // at |0>, are returned to |0> by this emitter's own adjoint immediately below,
-  // and are never an operand of a gate that writes a carrier the reversal does not
-  // touch: the method-B copy-out writes the fresh `out` and READS a data rail this
-  // emitter never frees, and this module mints NO `cqrt_tape_write_*` (only
-  // `IOSinkLowering` and `AbortParkEmit` do). The 261j freeze is therefore not
-  // owed here, and is deliberately not duplicated. Re-check this if a copy
-  // destination ever becomes one of these rails, or if this emitter ever tapes.
+  // ---- From here on the region is COMMITTED: every step mutates. ----
 
-  // 8. Rail frees, same reverse order, each on its arm's WORK RAIL (`A.Rail`) —
-  //    provably |0> on both branches only AFTER its route-in† (§3b — earlier the
-  //    rail holds p0 / f(0)-vs-0 garbage entangled with the flag: a dirty free is
-  //    a hidden measurement). The intermediate forward-chain rails were zeroed by
-  //    the void `_unc` chain and are left allocated (the accepted leak until the
-  //    WI-4 whole-DAG per-rail free; NEVER freed dirty, Rule 6).
-  for (ValueArmStream &A : reverse(Arms)) {
-    CallInst *RailFree = B.CreateCall(wd.freeFn(), {A.Rail});
-    stamp(RailFree);
+  // 1. HOIST each arm's chain into the pred, in FORWARD (base-first) order, so
+  //    each link is still dominated by its operands. The links keep their SSA
+  //    identity and stay ORDINARY tainted LLVM instructions — they are lowered
+  //    later by `lowerOps` (which is what makes the emitted stream identical to
+  //    the pre-hoisted select twin's, M-C in-place conversions included) and
+  //    reversed by the whole-DAG LIFO spine. Nothing is retargeted: the head
+  //    link keeps reading `Q`, which is exactly what the merge needs.
+  for (const ValueArmStream &A : Arms)
+    for (Instruction *Op : A.Chain)
+      Op->moveBefore(BI);
+
+  // 2. BUILD THE MERGE SELECT. Polarity (Rule 9): a `select` always means "the
+  //    TRUE operand when the condition is 1", so the arm value goes in the slot
+  //    its edge selects. For a diamond that is the true operand unless
+  //    `ArmNegated` (clang -O1 made the gate arm the FALSE successor); for an
+  //    if/else `R.Arm` is S0 (true) and `R.ArmFalse` is S1 (false). Built with
+  //    `SelectInst::Create` rather than `IRBuilder::CreateSelect` deliberately:
+  //    the builder CONSTANT-FOLDS, and a folded merge would silently erase the
+  //    region's controlled copy.
+  Value *TrueVal = nullptr;
+  Value *FalseVal = nullptr;
+  if (R.ArmFalse) {
+    TrueVal = Arms[0].Chain.back();
+    FalseVal = Arms[1].Chain.back();
+  } else if (Arms[0].Negated) {
+    TrueVal = Q;
+    FalseVal = Arms[0].Chain.back();
+  } else {
+    TrueVal = Arms[0].Chain.back();
+    FalseVal = Q;
   }
+  auto *Sel = SelectInst::Create(Cond, TrueVal, FalseVal, "vmerge", BI);
+  Sel->setDebugLoc(BI->getDebugLoc());
+  // The select is a tainted data mux for exactly as long as it exists (it is
+  // RAUW'd to the out-rail and erased inside `emitSelectRegion`). Recording it
+  // keeps every "a tainted op's result is tainted" invariant true across the
+  // window and gives `scrubTaint` something to remove.
+  taint.Tainted.insert(Sel);
+  taint.BirthOrder[Sel] = taint.NextBirth++;
 
-  // 9. Flag-strip + flag free. Valid outright: the condition register is
-  //    disjoint from the routed register in every accepted region (§0
-  //    criterion 4 via the diagonal-alias closure), so q == q0 at the strip.
-  //    Reads `Cond`'s operands — MUST precede the erase of `Cond` (in
-  //    flattenRegion). Do NOT hoist above step 7/8 (strip-after-R† is the
-  //    documented order the accept class was cleared under).
-  lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                     /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag);
-  CallInst *FlagFree = B.CreateCall(wd.freeFn(), {Flag});
-  stamp(FlagFree);
-
-  // 10. Rewire + erase + scrub + flatten. The measure on the phi becomes a
-  //     measure on `out` (the copied answer). Erase each arm's chain
-  //     originals in REVERSE lineage order so each is use-empty when erased
-  //     (the chains are disjoint, so the arm order is free — keep the step-7
-  //     LIFO); scrub every erased instruction from all taint work-lists incl.
-  //     StaleDeclined (§6.1).
-  MergePhi->replaceAllUsesWith(Out);
+  // 3. REWIRE the merge φ onto the select, then drop it. The user's measure /
+  //    ret on the φ becomes one on the select and then (step 5) on the out-rail
+  //    — no measurement is added (Rule 5).
+  MergePhi->replaceAllUsesWith(Sel);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();
-  for (ValueArmStream &A : reverse(Arms))
-    for (Instruction *Op : reverse(A.Chain)) {
-      scrubTaint(Op, taint);
-      Op->eraseFromParent();
-    }
+
+  // 4. FLATTEN the dead diamond. The arm block(s) are now empty but for their
+  //    `br label %merge`; `flattenRegion` erases the conditional `br`, splices
+  //    the merge tail into `Pred`, and deletes the arms and the merge block. It
+  //    leaves `Cond` alone (the new select still uses it) — see the ORDER note
+  //    in this function's header comment.
   flattenRegion(R, taint);
+
+  // 5. THE 4.4 CONTROLLED-COPY MERGE, VERBATIM (Rule 14). A locally-built
+  //    `SelectRegion` view of the rewritten shape: `emitSelectRegion` mints the
+  //    flag from `Cond` (a bare compare is the degenerate single-leaf condition
+  //    tree), allocates the `|0>` out-rail, emits the two X-bracketed
+  //    `cqrt_copy_<W>_controlled`, strips the flag with the compare `_unc`,
+  //    frees it, RAUWs the select to the out-rail and erases the select and the
+  //    now-dead compare. `p` and the chain's final rail are left ALLOCATED and
+  //    entangled with `out` — keep-source-live, exactly as the route left them
+  //    (freeing `p` is PRD §9 follow-on work, not this increment).
+  ControlRegion S;
+  S.Kind = ControlRegion::SelectRegion;
+  S.Merge = Sel;
+  S.Condition = Cond;
+  emitSelectRegion(S, wd, csyms, taint);
 }
 
 // One content arm's routed phase stream: whether it fires on ¬flag (X-bracketed
