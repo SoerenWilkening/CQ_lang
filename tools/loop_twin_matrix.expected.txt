@@ -1,0 +1,434 @@
+# loop_twin_matrix.expected.txt — the committed disposition table for
+# tools/loop_twin_matrix.py (bd test_C_libtooling-8h7d.5, Rule-13 round 4).
+#
+# ⚠ WHICH SURFACE THIS FILE MEASURES. `--phi-surface` selects both the generated
+# `cq_phi` spelling and the table pair (`SURFACE_TABLES`), and the file it wrote
+# is named for that surface: the SHIPPED `void` surface (bd
+# test_C_libtooling-3qlq Increment 1, the register-free branch phase) owns the
+# unqualified `loop_twin_matrix.{expected,quarantine}.txt` that
+# `e2e-loop-twin-matrix` reads, and the RETIRED `register` surface owns the
+# `.register.txt` pair. Never diff two of these across surfaces and read the
+# result as a compiler change: 156 of the 274 cells generate a DIFFERENT PROGRAM
+# on each surface, because a branch phase touches no register at all.
+#
+# ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
+# segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review), plus a
+# fifth `_<rgate>` segment on the 118 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
+# plus the one bd drbq Inc-4 controlled-state-prep decline control
+# `m_ry_rprep_none_none_none`; their region token always starts `r`) — then its
+# verdict. A name longer than the 24-column pad simply runs past it and is still
+# separated from its verdict by exactly one space; the pad was deliberately NOT
+# widened, because widening it would have rewritten all 156 pre-Inc-3 rows for a
+# cosmetic reason and this file is a diff-read artifact. The gate
+# fails on ANY deviation, in either direction: a cell that starts declining, a
+# cell that starts accepting, and a cell whose decline message changes owner are
+# all reds. That is the point — a disposition drift in the loop lowering must
+# never be something a reader has to notice.
+#
+# VERDICTS
+#   ACCEPT-IDENTICAL        both sides lower, both silent, traces byte-identical.
+#   ACCEPT-IDENTICAL-WARN   as above but both sides warn, with the same message.
+#   DECLINE-BOTH            both sides decline with the SAME diagnostic.
+#   DECLINE-BOTH-DIFFERENT  both decline, different diagnostics.
+#   ROLLED-ONLY / UNROLLED-ONLY
+#                           a DISPOSITION MISMATCH: one side lowers, the other
+#                           declines with the recorded message. Every such cell
+#                           needs a written reason — today's THREE are all the
+#                           same `clang -O1` canonicalization artifact of the
+#                           UNROLLED spelling, and all three are `xor`/`none`
+#                           (prefix `a = a ^ 9;`, no suffix): flattening puts one
+#                           repetition's `xor` immediately before the next one's
+#                           region, clang folds it in, and the arm becomes a mixed
+#                           phase/value arm that does not exist in the rolled
+#                           form. Not a compiler asymmetry — the two sides stopped
+#                           being the same program shape. `m_xor_range_none` was
+#                           added with the `range` axis (bd 8h7d.5 round-5
+#                           cleanup) and is the third member of that one family,
+#                           not a new phenomenon.
+#
+# THE 18 `UNROLLED-ONLY` RECORD CELLS — every one with SUFFIX `ry` — AND WHY THEY
+# ARE THE FENCE WORKING, WRITTEN OUT BECAUSE THE TABLE DEMANDS A REASON PER
+# MISMATCH (bd drbq Inc 2a round-1 review, the record axis).
+#   ROLLED side: the record (`mark`, or `acc`'s source) is defined in the body and
+#     read either after the loop or on a later activation, and the SUFFIX
+#     `a = cq_theta(a, -0.5)` is a NON-DIAGONAL in-place gate on the same rail
+#     between the definition and the read. That is the 8h7d.5 F-1/F-2 staleness
+#     exactly, and `LoopLowering::staleRailRecordRead` declines it
+#     (`cq loop lowering: rail record read past an in-place gate on the same
+#     rail`; the three `bodyread` cells reach `declineStaleRecordOps` first and
+#     decline as `cq opcode lowering: operand predates a non-diagonal gate`).
+#     Correct, and the whole reason that fence exists.
+#   UNROLLED side: it ACCEPTS, and it emits `cqrt_measure_i32(%h)` for the
+#     record — i.e. it measures the register at its POST-Ry value. ⚠ THAT IS A
+#     PRE-EXISTING PROPERTY OF THE STRAIGHT-LINE PATH, NOT OF THE LOOP LOWERING
+#     AND NOT OF THIS INCREMENT. Measured on BOTH the pre-2a (`f92d95e`) and the
+#     post-2a binary, byte-identically, on the matrix cells and on the minimal
+#     probe `int mark = a; a = cq_theta(a, 0.25); return cq_measure(mark);`
+#     (rc 0, no warning, both binaries). The loop half of this class is fenced
+#     (8h7d.5 round 1 / round 2 F-1); the straight-line half is not, and whether
+#     it should be is an OPEN question for the owner — under Rule 8 `int mark = a`
+#     is an ALIAS of one register, so measuring the current register may be the
+#     only thing physically available, in which case the right answer is a loud
+#     decline rather than a different unitary. Filed as an observation, NOT fixed
+#     here: nothing in this increment moves it, in either direction.
+#   So these cells are recorded as `UNROLLED-ONLY`, and a change in EITHER
+#   direction is a red — the rolled side starting to accept, or the unrolled side
+#   starting to decline, both need a written decision.
+#
+# THE 117 CONTROLLED-Ry-ARM CELLS (bd test_C_libtooling-drbq Inc 3, drbq.4) AND
+# WHY HALF OF THEM ARE `UNROLLED-ONLY` TODAY — THIS IS THE POINT OF THE AXIS, NOT
+# A DEFECT IN IT. This table was regenerated at HEAD 1bdaa60, BEFORE the Inc-3
+# lowering exists. The flat (unrolled) form of an Ry arm on a second, disjoint
+# register lowers CONTROL-IN-PLACE since drbq Inc 1
+# (`cqrt_ry_<W>_controlled`); the ROLLED form declines
+# `cq controlled lowering: control flow inside a loop body under quantum control`
+# (control-in-place-PRD §4 R7, fixture
+# `ir-pass/test/control_inplace_ry_reject_in_loop.ll`). So the expected
+# disposition of a well-formed cell here is UNROLLED-ONLY with that exact
+# message, and Inc 3's job is to flip those rows to ACCEPT-IDENTICAL.
+#
+# MEASURED COMPOSITION AT 1bdaa60, so the next reader can diff a count and not
+# just rows. 77 of the 117 have the ROLLED side declining on the loop message —
+# 59 `UNROLLED-ONLY` (flat accepts: the cells Inc 3 must flip to
+# ACCEPT-IDENTICAL) and 18 `DECLINE-BOTH-DIFFERENT` (flat declines for its own
+# reason: 9 on the hoisted-condition guard below, 8 on R6's
+# `stale rail record read past a controlled Ry`, 1 on the Inc-2b
+# `rotation angle`). The remaining 40 decline on BOTH sides with the SAME
+# message, which is the reassuring direction — the two spellings agree — and they
+# are the cells Inc 3 will NOT flip by lifting R7 alone:
+#   31  `condition predates a non-diagonal gate` — 16 are the LOOP-INVARIANT
+#       CONDITION family (literal-constant compare + no a-register gate ⇒ LICM
+#       hoists it out of the loop, CSE merges the flat twin's two copies, and the
+#       kjd1 gate-2c window guard, which is not wire-aware, counts the arm's Ry on
+#       the DISJOINT rail `r` as an intervening gate). The other 15 carry an
+#       `a = cq_theta(a, …)` PREFIX or SUFFIX, i.e. a genuine non-diagonal gate on
+#       the condition's own wire. ⚠ THE FIRST FAMILY IS THE ONE TO READ: it says
+#       that lifting the R7 loop fence does not by itself make
+#       `for (…) { if (a == 5) r = cq_theta(r, .9); }` compile. The `oeq`/`one`/
+#       `oder` regions exist so that the same shape with an OPAQUE threshold is
+#       still a live witness.
+#       ⚠ AND DO NOT READ THIS STRING AS A FENCE NAME. `ArmClassify`'s
+#       `declineArm` lambda RE-SPELLS every later decline with this same text
+#       whenever the condition wire carries a provably-post-region non-diagonal
+#       gate, so for the 15 a-theta cells the printed message may be a re-spelling
+#       of a different refusal. It was verified to be the gate-2c window guard
+#       itself only for the 16 loop-invariant cells, where no gate stands on the
+#       condition wire at all and there is nothing to re-spell. Anyone reading
+#       these rows to plan Inc 3 must confirm the owning fence in the source, not
+#       from the string.
+#    8  `cq opcode lowering: operand predates a non-diagonal gate` — the
+#       `rbodyread` record shape (`acc = mark * 7`), caught by the pass-wide
+#       `declineStaleRecordOps` before either control fence sees it.
+#    1  `m_none_rcond_none_none_none`, the R4 decline control.
+#
+#   READ THE DIFF, NOT THE ROWS. When Inc 3 lands, a row that flips
+#   UNROLLED-ONLY -> ACCEPT-IDENTICAL is the increment working. A row that flips
+#   to TRACE-DIVERGENCE cannot appear here at all — it is a hard failure, and its
+#   only other home is the PINNED-SIGNATURE quarantine (see below), which is a
+#   filed defect and not a blessing — and a
+#   row that flips to DECLINE-BOTH means the FLAT lowering regressed, which is an
+#   Inc-1 regression wearing an Inc-3 row. A `DECLINE-BOTH-DIFFERENT` row whose
+#   ROLLED half is the loop message should converge to `DECLINE-BOTH` on the
+#   UNROLLED half's message — if instead it becomes `ROLLED-ONLY`, the rolled
+#   side has started accepting something its own flat twin refuses, which is an
+#   over-accept and a Prime-Directive red however green the run looks.
+#
+#   A ROLLED DIAGNOSTIC OTHER THAN THE LOOP MESSAGE IS INFORMATION, NOT NOISE: it
+#   means that cell's rolled side declines for a reason that is NOT the loop, so
+#   lifting the loop fence alone will not flip it. The four owning fences are
+#   named in the composition above.
+#
+#   The two singleton DECLINE CONTROLS are expected to stay put across Inc 3:
+#   `m_none_rcond_none_none_none` puts the Ry on the CONDITION register's own
+#   wire (PRD §4 R4 — a permanent decline; note its message is the GENERIC
+#   `control flow under quantum control`, not an R4-specific one, so a future
+#   R4 message change moves this row), and `m_none_rifelse_none_none_none` is the
+#   drbq Inc 2b angle-select shape, scoped OUT of Inc 3.
+#
+# ── bd test_C_libtooling-drbq INCREMENT 3 — 15 CELLS ARE NOT IN THIS FILE AT
+#    ALL, AND THAT IS DELIBERATE (2026-09-04) ──────────────────────────
+#
+# The Inc-3 regeneration moved 76 of the 117 Ry-axis rows and ZERO of the 156
+# pre-Inc-3 rows. FIFTEEN more cells produce `TRACE-DIVERGENCE`, which the
+# paragraph below says may never be recorded here — and it must not be, because
+# recording it would make this table claim that a rolled circuit differing from
+# its twin is an expected outcome. They were first RESTORED to their pre-Inc-3
+# `UNROLLED-ONLY` verdicts by hand, which left this file asserting a disposition
+# that was no longer true and failed each cell TWICE; they now live in
+# `tools/loop_twin_matrix.quarantine.txt` instead, each pinned to the EXACT
+# unified-diff signature of its divergence.
+#
+# READ THAT FILE'S HEADER BEFORE TOUCHING IT. A QUARANTINE IS NOT A BLESSING: a
+# quarantined cell passes ONLY if it still diverges in exactly the pinned way,
+# and fails if the signature moves, if it stops diverging ("quarantine stale —
+# remove it"), or if it appears in both files. CLASS A (6 cells, bd
+# test_C_libtooling-1m5p) the hoisted loop-invariant derived chain, ROLLED
+# deficient; CLASS B (21 cells, bd test_C_libtooling-a3z7) the M-C in-place vs
+# out-of-place decision on a constant `a`-register op, in two directions
+# depending on where the op sits — and for its suffix half the ROLLED circuit is
+# the better one; CLASS C (2 cells, NO FILED ISSUE YET, bd
+# test_C_libtooling-3qlq) a `-O1` mask fold that makes the two SPELLINGS
+# different programs, which is a GENERATOR question and not a compiler one.
+# Neither A nor B was in Increment 3's scope to fix — both are Rule-13 changes to
+# subsystems it did not touch, and both would move shipped Rz goldens — and
+# neither is in Increment 1's either. What each increment does is add CUSTOMERS:
+# on the void surface class B went 9 cells -> 21 and class C appeared, because a
+# branch phase leaves `a` loop-INVARIANT in bodies where the register spelling
+# gated it, which is exactly the precondition both classes need.
+#
+# A CELL BELONGS TO EXACTLY ONE OF THE TWO FILES, and the gate says so out loud.
+# `--regenerate` omits every quarantined cell from this table for that reason;
+# when a quarantine entry is retired, delete its block and regenerate so the cell
+# gets a real verdict here again.
+#
+# TRACE-DIVERGENCE and WARN-ASYMMETRY are NEVER recorded here. They are hard
+# failures whatever this file says — a trace that differs from its twin's is the
+# defect this gate exists to catch, and no table entry may bless it.
+#
+# REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
+# cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+m_add_der_none           ACCEPT-IDENTICAL
+m_add_der_none_bodyread  ACCEPT-IDENTICAL
+m_add_der_none_postmark  ACCEPT-IDENTICAL
+m_add_der_none_premark   ACCEPT-IDENTICAL
+m_add_der_ry             ACCEPT-IDENTICAL
+m_add_der_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_der_ry_postmark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_der_ry_premark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_der_rz             ACCEPT-IDENTICAL
+m_add_eq0_add            ACCEPT-IDENTICAL
+m_add_eq0_none           ACCEPT-IDENTICAL
+m_add_eq0_ry             ACCEPT-IDENTICAL
+m_add_eq0_rz             ACCEPT-IDENTICAL
+m_add_eq_add             ACCEPT-IDENTICAL
+m_add_eq_none            ACCEPT-IDENTICAL
+m_add_eq_none_bodyread   ACCEPT-IDENTICAL
+m_add_eq_none_postmark   ACCEPT-IDENTICAL
+m_add_eq_none_premark    ACCEPT-IDENTICAL
+m_add_eq_ry              ACCEPT-IDENTICAL
+m_add_eq_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_eq_ry_postmark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_eq_ry_premark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_add_eq_rz              ACCEPT-IDENTICAL
+m_add_gt_add             ACCEPT-IDENTICAL
+m_add_gt_none            ACCEPT-IDENTICAL
+m_add_gt_ry              ACCEPT-IDENTICAL
+m_add_gt_rz              ACCEPT-IDENTICAL
+m_add_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_ifelse_ry          DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_add_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_oder_none_none_none ACCEPT-IDENTICAL
+m_add_oeq_none_none_none ACCEPT-IDENTICAL
+m_add_one_none_none_none ACCEPT-IDENTICAL
+m_add_range_none         ACCEPT-IDENTICAL
+m_add_range_ry           ACCEPT-IDENTICAL
+m_add_range_rz           ACCEPT-IDENTICAL
+m_add_rder_none_none_none ACCEPT-IDENTICAL
+m_add_rder_ry_none_none  ACCEPT-IDENTICAL
+m_add_req0_none_none_none ACCEPT-IDENTICAL
+m_add_req_add_none_none  ACCEPT-IDENTICAL
+m_add_req_none_none_none ACCEPT-IDENTICAL
+m_add_req_ry_none_none   ACCEPT-IDENTICAL
+m_add_rne_none_none_none ACCEPT-IDENTICAL
+m_add_rrange_none_none_none ACCEPT-IDENTICAL
+m_add_ryrz_none_none_none ACCEPT-IDENTICAL
+m_add_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_none_der_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_der_none_bodyread UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_der_none_postmark UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_der_none_premark  UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_der_ry            ACCEPT-IDENTICAL
+m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_der_ry_postmark   UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_der_ry_premark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_der_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq0_add           ACCEPT-IDENTICAL
+m_none_eq0_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq0_ry            ACCEPT-IDENTICAL
+m_none_eq0_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq_add            ACCEPT-IDENTICAL
+m_none_eq_none           UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq_none_bodyread  UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq_none_postmark  UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq_none_premark   UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_eq_ry             ACCEPT-IDENTICAL
+m_none_eq_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_eq_ry_postmark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_eq_ry_premark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_eq_rz             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_gt_add            ACCEPT-IDENTICAL
+m_none_gt_none           UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_gt_ry             ACCEPT-IDENTICAL
+m_none_gt_rz             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ifelse_add        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_oder_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rpostmark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_oder_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rpostmark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_oder_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_ry_none_none ACCEPT-IDENTICAL
+m_none_oeq_add_none_addpost ACCEPT-IDENTICAL
+m_none_oeq_add_none_none ACCEPT-IDENTICAL
+m_none_oeq_add_none_rypost ACCEPT-IDENTICAL
+m_none_oeq_add_none_rypre ACCEPT-IDENTICAL
+m_none_oeq_add_none_rzpost ACCEPT-IDENTICAL
+m_none_oeq_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rpostmark_none ACCEPT-IDENTICAL
+m_none_oeq_add_rpostmark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_oeq_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_none_bodyread_none ACCEPT-IDENTICAL
+m_none_oeq_none_none_addpost ACCEPT-IDENTICAL
+m_none_oeq_none_none_none ACCEPT-IDENTICAL
+m_none_oeq_none_none_rypost ACCEPT-IDENTICAL
+m_none_oeq_none_none_rypre ACCEPT-IDENTICAL
+m_none_oeq_none_none_rzpost ACCEPT-IDENTICAL
+m_none_oeq_none_postmark_none ACCEPT-IDENTICAL
+m_none_oeq_none_premark_none ACCEPT-IDENTICAL
+m_none_oeq_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rpostmark_none ACCEPT-IDENTICAL
+m_none_oeq_none_rpostmark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_none_oeq_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_ry_none_none  ACCEPT-IDENTICAL
+m_none_one_add_none_none ACCEPT-IDENTICAL
+m_none_one_none_none_none ACCEPT-IDENTICAL
+m_none_one_none_none_rypost ACCEPT-IDENTICAL
+m_none_one_ry_none_none  ACCEPT-IDENTICAL
+m_none_range_none        UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_range_ry          ACCEPT-IDENTICAL
+m_none_range_rz          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rcond_none_none_none DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_rder_none_none_addpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rder_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rder_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rder_none_none_rypre DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rder_none_none_rzpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rder_ry_none_none ACCEPT-IDENTICAL
+m_none_req0_add_none_none ACCEPT-IDENTICAL
+m_none_req0_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req0_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req0_ry_none_none ACCEPT-IDENTICAL
+m_none_req_add_none_none ACCEPT-IDENTICAL
+m_none_req_none_none_addpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_none_none_rypre DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_none_none_rzpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_ry_none_none  ACCEPT-IDENTICAL
+m_none_rifelse_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rne_add_none_none ACCEPT-IDENTICAL
+m_none_rne_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rne_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rne_ry_none_none  ACCEPT-IDENTICAL
+m_none_rrange_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rrange_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rrange_ry_none_none ACCEPT-IDENTICAL
+m_none_ryrz_add_none_none ACCEPT-IDENTICAL
+m_none_ryrz_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ryrz_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ryrz_ry_none_none ACCEPT-IDENTICAL
+m_none_rzry_add_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_none_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rzry_none_none_rypost DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rzry_ry_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_ry_der_add             ACCEPT-IDENTICAL
+m_ry_der_none            ACCEPT-IDENTICAL
+m_ry_der_none_bodyread   ACCEPT-IDENTICAL
+m_ry_der_none_postmark   ACCEPT-IDENTICAL
+m_ry_der_none_premark    ACCEPT-IDENTICAL
+m_ry_der_ry              ACCEPT-IDENTICAL
+m_ry_der_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_der_ry_postmark     UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_der_ry_premark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_der_rz              ACCEPT-IDENTICAL
+m_ry_eq0_add             ACCEPT-IDENTICAL
+m_ry_eq0_none            ACCEPT-IDENTICAL
+m_ry_eq0_ry              ACCEPT-IDENTICAL
+m_ry_eq0_rz              ACCEPT-IDENTICAL
+m_ry_eq_add              ACCEPT-IDENTICAL
+m_ry_eq_none             ACCEPT-IDENTICAL
+m_ry_eq_none_bodyread    ACCEPT-IDENTICAL
+m_ry_eq_none_postmark    ACCEPT-IDENTICAL
+m_ry_eq_none_premark     ACCEPT-IDENTICAL
+m_ry_eq_ry               ACCEPT-IDENTICAL
+m_ry_eq_ry_bodyread      UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_eq_ry_postmark      UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_eq_ry_premark       UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_ry_eq_rz               ACCEPT-IDENTICAL
+m_ry_gt_add              ACCEPT-IDENTICAL
+m_ry_gt_none             ACCEPT-IDENTICAL
+m_ry_gt_ry               ACCEPT-IDENTICAL
+m_ry_gt_rz               ACCEPT-IDENTICAL
+m_ry_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_ry_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_oder_none_none_none ACCEPT-IDENTICAL
+m_ry_oeq_none_none_none  ACCEPT-IDENTICAL
+m_ry_one_none_none_none  ACCEPT-IDENTICAL
+m_ry_range_add           ACCEPT-IDENTICAL
+m_ry_range_none          ACCEPT-IDENTICAL
+m_ry_range_ry            ACCEPT-IDENTICAL
+m_ry_range_rz            ACCEPT-IDENTICAL
+m_ry_rder_add_none_none  ACCEPT-IDENTICAL
+m_ry_rder_none_none_none ACCEPT-IDENTICAL
+m_ry_rder_ry_none_none   ACCEPT-IDENTICAL
+m_ry_req0_none_none_none ACCEPT-IDENTICAL
+m_ry_req_add_none_none   ACCEPT-IDENTICAL
+m_ry_req_none_none_none  ACCEPT-IDENTICAL
+m_ry_req_ry_none_none    ACCEPT-IDENTICAL
+m_ry_rne_none_none_none  ACCEPT-IDENTICAL
+m_ry_rprep_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: state prep merged with a quantum register under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_rrange_none_none_none ACCEPT-IDENTICAL
+m_ry_ryrz_none_none_none ACCEPT-IDENTICAL
+m_ry_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_der_none            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_der_ry              ACCEPT-IDENTICAL
+m_rz_der_rz              DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_eq0_add             ACCEPT-IDENTICAL
+m_rz_eq0_none            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_eq0_ry              ACCEPT-IDENTICAL
+m_rz_eq0_rz              DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_eq_add              ACCEPT-IDENTICAL
+m_rz_eq_none             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_eq_ry               ACCEPT-IDENTICAL
+m_rz_eq_rz               DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_gt_add              ACCEPT-IDENTICAL
+m_rz_gt_none             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_gt_ry               ACCEPT-IDENTICAL
+m_rz_gt_rz               DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_rz_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_rz_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_rz_range_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_range_ry            ACCEPT-IDENTICAL
+m_rz_range_rz            DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_xor_der_ry             ACCEPT-IDENTICAL
+m_xor_eq0_add            UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq0_none           DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control
+m_xor_eq0_ry             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq0_rz             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_add             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_none            DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control
+m_xor_eq_ry              UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_rz              UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_gt_add             ACCEPT-IDENTICAL
+m_xor_gt_ry              ACCEPT-IDENTICAL
+m_xor_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_ry          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_range_ry           ACCEPT-IDENTICAL

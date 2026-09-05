@@ -878,10 +878,34 @@ SURFACE_CONTROL_VERDICTS = {
     # unchanged, and `None` selects that stronger rule rather than a pin.
     "register": None,
     # `void`: MEASURED on the subject build of bd 3qlq Increment 1
-    # (c4bd888 + the round-1 fixes), 2026-09-05.
+    # (c4bd888 + the round-1 fixes), 2026-09-05. A value may be a bare verdict
+    # or a (verdict, signature-digest) PAIR; the pair form is required whenever
+    # the pinned verdict is a divergence, so that a control which diverges is
+    # pinned exactly as strongly as a quarantined cell and a DIFFERENT
+    # divergence cannot pass under the same verdict string.
     "void": {
         "q_noregion": "ACCEPT-IDENTICAL",
-        "q_armoncond": "DECLINE-BOTH-DIFFERENT",
+        # ⚠ IT DIVERGES, AND IT IS A CLASS-A INSTANCE RATHER THAN A CONTROL.
+        # MEASURED, subject build, 2026-09-05: the rolled side discharges the
+        # `sitofp` and `fadd` interior rails immediately after the `sqrt` and
+        # LEAVES THE TOP RAIL `h3 = sqrt((double)a + 3.0)` ALLOCATED; the flat
+        # side discharges all three LIFO at the end. That is bd
+        # test_C_libtooling-1m5p class A verbatim — the same LIFO-inverted
+        # interior placement, in the simplest shape the wrapper can build.
+        #
+        # Why it happens HERE and not on the register surface is the whole
+        # point: class A needs `a` loop-INVARIANT so LICM can hoist the chain,
+        # and on the register surface this control's arm (`a = cq_phi(a, M_PI)`)
+        # WROTE `a`, which is exactly how it isolated its half. A branch phase
+        # writes nothing, so under `void` the control's own body satisfies class
+        # A's precondition and the control becomes an instance of the thing it
+        # was bounding.
+        #
+        # It is kept, pinned by SIGNATURE, because in that role it is still
+        # worth its milliseconds: it is the smallest class-A reproducer in the
+        # tree and it fails on any change to the class. But it does NOT bound
+        # the quarantine any more, and no run may be quoted as if it did.
+        "q_armoncond": ("TRACE-DIVERGENCE", "dbf4c162d1de5139"),
     },
 }
 
@@ -921,6 +945,22 @@ def run_boundary_controls(cfg):
         got.append((cname, v.split("\t")[0]))
         pins = SURFACE_CONTROL_VERDICTS[cfg.phi_surface]
         if pins is not None:
+            want_v = pins[cname]
+            want_sig = None
+            if isinstance(want_v, tuple):
+                want_v, want_sig = want_v
+            if want_sig is not None and v.split("\t")[0] == want_v:
+                # A pinned DIVERGENCE is pinned by its signature too — the same
+                # rule the quarantine applies to a cell, for the same reason.
+                d = divergence_signature(cr.trace, cu.trace)[0]
+                if d != want_sig:
+                    fails.append(
+                        "%s: BOUNDARY CONTROL still diverges but DIFFERENTLY "
+                        "(pinned %s, got %s).\n    A control pinned to a "
+                        "divergence is pinned to THAT divergence; this one "
+                        "moved."
+                        % (cname, want_sig, d))
+                continue
             # A PINNED verdict, not a weaker gate: the control still fails on any
             # change at all, including a change to ACCEPT-IDENTICAL. See
             # `SURFACE_CONTROL_VERDICTS` for why the void surface cannot use the
@@ -928,7 +968,7 @@ def run_boundary_controls(cfg):
             # story. `--regenerate` does NOT rewrite these — moving a control is
             # a human decision with a measurement attached, exactly like moving a
             # quarantined signature.
-            want = pins[cname]
+            want = want_v
             if v.split("\t")[0] != want:
                 fails.append(
                     "%s: BOUNDARY CONTROL moved (pinned %s, got %s).\n"
@@ -1714,6 +1754,16 @@ EXPECTED_HEADER = """\
 # loop_twin_matrix.expected.txt — the committed disposition table for
 # tools/loop_twin_matrix.py (bd test_C_libtooling-8h7d.5, Rule-13 round 4).
 #
+# ⚠ WHICH SURFACE THIS FILE MEASURES. `--phi-surface` selects both the generated
+# `cq_phi` spelling and the table pair (`SURFACE_TABLES`), and the file it wrote
+# is named for that surface: the SHIPPED `void` surface (bd
+# test_C_libtooling-3qlq Increment 1, the register-free branch phase) owns the
+# unqualified `loop_twin_matrix.{expected,quarantine}.txt` that
+# `e2e-loop-twin-matrix` reads, and the RETIRED `register` surface owns the
+# `.register.txt` pair. Never diff two of these across surfaces and read the
+# result as a compiler change: 156 of the 274 cells generate a DIFFERENT PROGRAM
+# on each surface, because a branch phase touches no register at all.
+#
 # ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
 # segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review), plus a
 # fifth `_<rgate>` segment on the 118 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
@@ -1864,15 +1914,20 @@ EXPECTED_HEADER = """\
 # READ THAT FILE'S HEADER BEFORE TOUCHING IT. A QUARANTINE IS NOT A BLESSING: a
 # quarantined cell passes ONLY if it still diverges in exactly the pinned way,
 # and fails if the signature moves, if it stops diverging ("quarantine stale —
-# remove it"), or if it appears in both files. Two classes, both root-caused and
-# both reproduced BY SIGNATURE on the pre-Inc-3 oracle binary with an `Rz` arm,
-# 15 of 15: CLASS A (6 cells, bd test_C_libtooling-1m5p) the hoisted
-# loop-invariant derived chain, ROLLED deficient; CLASS B (9 cells, bd
-# test_C_libtooling-a3z7) the M-C in-place vs out-of-place trailing `a += off`,
-# FLAT deficient — and for class B the ROLLED circuit is the better one. Neither
-# is in Increment 3's scope to fix: both are Rule-13 changes to subsystems it did
-# not touch, and both would move shipped Rz goldens. Inc 3 does not create either
-# class; it adds CUSTOMERS to them.
+# remove it"), or if it appears in both files. CLASS A (6 cells, bd
+# test_C_libtooling-1m5p) the hoisted loop-invariant derived chain, ROLLED
+# deficient; CLASS B (21 cells, bd test_C_libtooling-a3z7) the M-C in-place vs
+# out-of-place decision on a constant `a`-register op, in two directions
+# depending on where the op sits — and for its suffix half the ROLLED circuit is
+# the better one; CLASS C (2 cells, NO FILED ISSUE YET, bd
+# test_C_libtooling-3qlq) a `-O1` mask fold that makes the two SPELLINGS
+# different programs, which is a GENERATOR question and not a compiler one.
+# Neither A nor B was in Increment 3's scope to fix — both are Rule-13 changes to
+# subsystems it did not touch, and both would move shipped Rz goldens — and
+# neither is in Increment 1's either. What each increment does is add CUSTOMERS:
+# on the void surface class B went 9 cells -> 21 and class C appeared, because a
+# branch phase leaves `a` loop-INVARIANT in bodies where the register spelling
+# gated it, which is exactly the precondition both classes need.
 #
 # A CELL BELONGS TO EXACTLY ONE OF THE TWO FILES, and the gate says so out loud.
 # `--regenerate` omits every quarantined cell from this table for that reason;
@@ -1976,6 +2031,11 @@ QUARANTINE_HEADER = """\
 #
 # ── CLASS A — 6 cells, bd test_C_libtooling-1m5p. `oder` (the OPAQUE derived
 #    condition) with no a-register gate. ROLLED IS THE DEFICIENT SIDE.
+#    ⚠ ON THE VOID SURFACE THE BOUNDARY CONTROL `q_armoncond` IS AN INSTANCE OF
+#    THIS CLASS rather than a bound on it — a branch phase writes no register, so
+#    the control's own body satisfies the precondition below. See
+#    `SURFACE_CONTROL_VERDICTS`; it is pinned by signature and it is the smallest
+#    class-A reproducer in the tree.
 #    With the arm on `r`, `a` is loop-invariant, so `clang -O1` LICM-hoists the
 #    whole `sitofp; fadd; sqrt` chain into the preheader on the ROLLED side and
 #    CSEs the two repetitions' chains on the FLAT side. The rolled form then
@@ -1993,8 +2053,13 @@ QUARANTINE_HEADER = """\
 #    OWNER: `Uncomputation` / `FreePoint` interior placement for a chain the loop
 #    does not own.
 #
-# ── CLASS B — 9 cells, bd test_C_libtooling-a3z7. Any cell with `add` in the
-#    a-register SUFFIX field. FLAT IS THE DEFICIENT SIDE.
+# ── CLASS B — 21 cells, bd test_C_libtooling-a3z7. ONE DECISION, TWO
+#    DIRECTIONS: `ArithLowering`'s M-C in-place-vs-out-of-place choice for a
+#    constant op on the `a` register disagrees with the rolled form's, and WHERE
+#    that op sits decides whether the disagreement leaks.
+#
+#    (B-suffix, 17 cells) `add` in the a-register SUFFIX field, so the op feeds
+#    the MEASURE. FLAT IS THE DEFICIENT SIDE.
 #    Rolled emits `cqrt_addc_i32(h0, 3)` and measures `h0`; flat emits
 #    `cq_template_add_i32_hl(h0, 3) -> h10` and measures `h10`. Same value, same
 #    `_unc` and `cqrt_free` counts, one extra rail on the FLAT side — and `h0` is
@@ -2008,6 +2073,45 @@ QUARANTINE_HEADER = """\
 #    good one the deviation. DO NOT "fix" the roll to match the flat.
 #    OWNER: `ArithLowering` M-C G6/G7 versus `LoopLowering::collapseRailPhisIn`
 #    step (3).
+#
+#    (B-prefix, 4 cells) `xor` in the a-register PREFIX field, so the op feeds
+#    only the CONDITION and is dead by the measure. NEITHER SIDE IS DEFICIENT.
+#    Rolled emits `cqrt_xorc_i32(h0, 9)` in place; flat emits
+#    `cq_template_xor_i32_hl(h0, 9) -> h1` out of place AND THEN `_unc`s and
+#    frees it, so no rail is left allocated on either side and no which-path
+#    record survives. Same decision, same owner, one extra transient rail. It is
+#    quarantined rather than blessed because it is still a rolled != flat gate
+#    stream from one M-C disagreement, and because "harmless today" is how a
+#    class earns a customer that is not (the B-suffix half of this very class).
+#    MEASURED on the void surface 2026-09-05; on the `register` surface three of
+#    these four were ROLLED-ONLY (the flat side declined `mixed phase/value arm`)
+#    and one was ACCEPT-IDENTICAL, so this population is NEW and the void
+#    surface is what exposed it.
+#
+# ── CLASS C — 2 cells, bd test_C_libtooling-3qlq (AWAITING AN OWNER DECISION —
+#    this class has no filed issue of its own and MUST NOT be quoted as though it
+#    had). `m_xor_range_{none,rz}`, and they are here because they FIT NEITHER
+#    CLASS ABOVE: they carry the B-prefix disagreement AND, independently, a
+#    `clang -O1` fold that makes the two sides different programs.
+#    MEASURED: the rolled side emits `cqrt_xorc_i32(h0, 9)`; the flat side emits
+#    `cq_template_xor_i32_hl(h0, 8)` — MASK 8, NOT 9. The region is
+#    `if (a > 5 && a < 20)`, which `-O1` canonicalizes to `(x - 6) <u 14`, and
+#    [6,20) is closed under a bit-0 flip because both bounds are even; so on the
+#    FLAT spelling — where the second repetition's `a ^ 9` cancels the first and
+#    the xor result reaches nothing but the range test — InstCombine drops the
+#    low bit of the mask. In the rolled loop the xor is in place on the
+#    loop-carried `a` and the low bit is genuinely live, so it cannot.
+#    THE TWO SIDES HAVE STOPPED BEING THE SAME PROGRAM, which is the situation
+#    this instrument's own docstring says is answered by making the immediate
+#    OPAQUE (as `off` already is), not by a quarantine. Doing that changes the
+#    generated source of every `xor`-prefix cell, so it is an owner decision
+#    rather than a prep one, and until it is taken these two are pinned here so
+#    that neither side may drift unnoticed.
+#    The same phenomenon is already documented for these cells on the `register`
+#    surface, where it produced a DISPOSITION mismatch instead: see
+#    `loop_twin_matrix.expected.register.txt`'s note on the three `xor`/`none`
+#    ROLLED-ONLY cells.
+#    OWNER: the GENERATOR (`REGION["range"]` x `PREFIX["xor"]`), not the compiler.
 """
 
 
