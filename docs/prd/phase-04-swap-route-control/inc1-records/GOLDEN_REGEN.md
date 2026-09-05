@@ -347,3 +347,116 @@ The FIVE other `cmp` twin gates over goldens this increment regenerated are GREE
 `e2e-inplace-ry-loop{,-leading-gate,-two-regs,-leak,-grover}-twin-identical`, plus
 the two NEW ones `e2e-phase-grover-loop-twin-identical` and
 `e2e-phase-perbit-loop-twin-identical`, and `e2e-phase-nest-andcond-identical`.
+
+
+## 10. The 74-slice disposition table — MEASURED, against PRE_DISPOSITIONS.md's ANALYTIC column
+
+`expected` is `PRE_DISPOSITIONS.md` §4, written by `prep_b` BEFORE any lowering
+existed and explicitly labelled analytic. `measured` is this agent's final sweep on
+the Increment-1 binary, AFTER the source edits §5-§7 describe. Rows marked in the
+last column left the ctest registration (§6).
+
+| slice | kind | expected class (ANALYTIC) | MEASURED on the SUBJECT | note |
+|---|---|---|---|---|
+| `onward_ctl_phase_caller` | migrated | P1 | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_bitint` | migrated | P7 + PURPOSE LOST | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_classical_if_gate` | migrated | P7 ×2 | ACCEPT, 6 lines, 2b PASS |  |
+| `slice_classical_switch_gate` | migrated | P7 ×7 | ACCEPT, 6 lines, 2b PASS |  |
+| `slice_compare_qq` | migrated | P7 + PURPOSE LOST | ACCEPT, 26 lines, 2b PASS |  |
+| `slice_control_angle_select_rz` | migrated | P2 | ACCEPT, 13 lines, 2b PASS |  |
+| `slice_control_angle_select_rz_twin` | migrated | P1 + P7 | ACCEPT, 10 lines, 2b PASS |  |
+| `slice_control_cond_datause` | migrated | §6.3 DECLINE | ACCEPT, 10 lines, 2b PASS |  |
+| `slice_control_cond_onward_phase` | migrated | P7 | ACCEPT, 19 lines, 2b PASS |  |
+| `slice_control_grover_2iter` | migrated | P1 ×4 | ACCEPT, 28 lines, 2b PASS |  |
+| `slice_control_grover_derived_oracle` | migrated | P1 ×2 | ACCEPT, 19 lines, 2b PASS |  |
+| `slice_control_grover_derived_oracle_2iter` | migrated | P1 ×4 | ACCEPT, 35 lines, 2b PASS |  |
+| `slice_control_grover_derived_oracle_offset` | migrated | P1 ×2 | ACCEPT, 22 lines, 2b PASS |  |
+| `slice_control_grover_loop` | migrated | P6 ×2 | ACCEPT, 23 lines, 2b PASS |  |
+| `slice_control_grover_loop_derived` | migrated | P6 ×2 | ACCEPT, 45 lines, 2b PASS |  |
+| `slice_control_grover_loop_derived_unrolled` | migrated | P1 ×4 | ACCEPT, 45 lines, 2b PASS |  |
+| `slice_control_grover_loop_dynamic` | migrated | P6 ×2 | ACCEPT, 33 lines, 2b PASS |  |
+| `slice_control_grover_loop_leading_gate` | migrated | P6 | ACCEPT, 21 lines, 2b PASS |  |
+| `slice_control_grover_loop_leading_gate_unrolled` | migrated | P1 ×2 | ACCEPT, 21 lines, 2b PASS |  |
+| `slice_control_grover_loop_offset` | migrated | P6 | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_control_grover_loop_offset_unrolled` | migrated | P1 ×2 | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_control_grover_loop_range_oracle` | migrated | P6 / P3 | ACCEPT, 19 lines, 2b PASS |  |
+| `slice_control_grover_loop_range_oracle_unrolled` | migrated | P3 ×2 | ACCEPT, 19 lines, 2b PASS |  |
+| `slice_control_grover_loop_two_regs` | migrated | P6 ×2 | ACCEPT, 30 lines, 2b PASS |  |
+| `slice_control_grover_loop_two_regs_unrolled` | migrated | P1 ×4 | ACCEPT, 30 lines, 2b PASS |  |
+| `slice_control_grover_loop_unrolled` | migrated | P1 ×4 | ACCEPT, 23 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 16 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_grover` | migrated | P6 (phase) + drbq Inc-3 (Ry arm) | ACCEPT, 26 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_grover_unrolled` | migrated | P1 ×2 + drbq Inc-1 (Ry arms) | ACCEPT, 26 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_leading_gate` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_leading_gate_unrolled` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_leak` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 21 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_leak_unrolled` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 21 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_two_regs` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 27 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_two_regs_unrolled` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 27 lines, 2b PASS |  |
+| `slice_control_inplace_ry_loop_unrolled` | migrated | DECLINE `condition predates a non-diagonal gate` | ACCEPT, 16 lines, 2b PASS |  |
+| `slice_control_nested_phase` | migrated | P4 | ACCEPT, 15 lines, 2b PASS |  |
+| `slice_control_phase_andcond` | NEW | P3 | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_control_phase_angle_select` | NEW | P2 | ACCEPT, 10 lines, 2b PASS |  |
+| `slice_control_phase_angle_select_runtime_arms` | NEW | P2, run-time arms | ACCEPT, 10 lines, 2b PASS |  |
+| `slice_control_phase_diamond` | migrated | §6.3 DECLINE | ACCEPT, 8 lines, 2b PASS |  |
+| `slice_control_phase_grover` | NEW | P1 ×4 | ACCEPT, 22 lines, 2b PASS |  |
+| `slice_control_phase_grover_loop` | NEW | P6 | ACCEPT, 33 lines, 2b PASS |  |
+| `slice_control_phase_grover_loop_unrolled` | NEW | P1 ×6 | ACCEPT, 33 lines, 2b PASS |  |
+| `slice_control_phase_ifelse_derived` | migrated | §6.3 DECLINE + a NEW shape | ACCEPT, 11 lines, 2b PASS |  |
+| `slice_control_phase_ifne` | migrated | P1 | ACCEPT, 9 lines, 2b PASS |  |
+| `slice_control_phase_nest` | NEW | P3 | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_control_phase_nest_deep` | NEW | P4 **or** §6.3 mixed-arm DECLINE | DECLINE: cq controlled lowering: impure phase arm under quantum contr | OQ-7 DELETED |
+| `slice_control_phase_perbit_loop` | NEW | P6 | ACCEPT, 39 lines, 2b PASS |  |
+| `slice_control_phase_perbit_loop_k32` | NEW | P6 | ACCEPT, 291 lines, 2b PASS |  |
+| `slice_control_phase_perbit_loop_unrolled` | NEW | P1 ×4 | ACCEPT, 39 lines, 2b PASS |  |
+| `slice_control_seq_grover` | migrated | P1 ×2 | ACCEPT, 15 lines, 2b PASS |  |
+| `slice_control_seq_regions` | migrated | P1 ×2 | ACCEPT, 11 lines, 2b PASS |  |
+| `slice_control_switch_eqfold` | migrated | §6.3 DECLINE | ACCEPT, 8 lines, 2b PASS |  |
+| `slice_control_switch_phase` | migrated | NONE — P5 loses its only plain-C customer | DECLINE: cq QRAM access: const-global table read under tainted contro | OQ-4/11 UNREGISTERED |
+| `slice_ctlz_idiom_loop` | migrated | P7 + PURPOSE LOST | ACCEPT, 46 lines, 2b PASS |  |
+| `slice_f16` | migrated | P7 + PURPOSE LOST | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_f80` | migrated | P7 + PURPOSE LOST | ACCEPT, 20 lines, 2b PASS |  |
+| `slice_fp80_union_unc` | migrated | P7 + PURPOSE LOST | ACCEPT, 32 lines, 2b PASS |  |
+| `slice_funnel_fshl_qq` | migrated | P7 + PURPOSE LOST | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_intrinsic_bswap` | migrated | P7 + PURPOSE LOST | ACCEPT, 13 lines, 2b PASS |  |
+| `slice_intrinsic_ctlz` | migrated | P7 + PURPOSE LOST | ACCEPT, 20 lines, 2b PASS |  |
+| `slice_intrinsic_ctpop` | migrated | P7 + PURPOSE LOST | ACCEPT, 13 lines, 2b PASS |  |
+| `slice_intrinsic_fma` | migrated | P7 + PURPOSE LOST | ACCEPT, 19 lines, 2b PASS |  |
+| `slice_intrinsic_fpmath` | migrated | P7 + PURPOSE LOST | ACCEPT, 15 lines, 2b PASS |  |
+| `slice_loop_break_qq_phase` | migrated | P7 | ACCEPT 187 lines | OQ-5 DELETED |
+| `slice_loop_iter_local` | migrated | P7 + PURPOSE LOST | ACCEPT, 18 lines, 2b PASS |  |
+| `slice_loop_phase_accum` | migrated | P7 | ACCEPT, 3 lines, 2b PASS |  |
+| `slice_select_rail_alias_cond` | migrated | DECLINE `cq_measure_<sfx> operand not recognized` | ACCEPT, 17 lines, 2b PASS |  |
+| `slice_uncompute_dead_dag` | migrated | P7 + PURPOSE LOST | ACCEPT, 22 lines, 2b PASS |  |
+| `slice_uncompute_dead_shapes` | migrated | P7 + PURPOSE LOST | ACCEPT, 43 lines, 2b PASS |  |
+| `slice_uncompute_interior_region_derived_cond` | migrated | P1 | ACCEPT, 19 lines, 2b PASS |  |
+| `spec_select_caller` | migrated | P7 | ACCEPT, 12 lines, 2b PASS |  |
+| `spec_twoarm_caller` | migrated | P7 | ACCEPT, 30 lines, 2b PASS |  |
+
+### 10.1 Every row where MEASURED differs from the analytic expectation (12), and why
+
+| slice(s) | expected | measured | why |
+|---|---|---|---|
+| the four `§6.3 DECLINE` rows — `slice_control_phase_diamond`, `slice_control_cond_datause`, `slice_control_switch_eqfold`, `slice_control_phase_ifelse_derived` | DECLINE (`N>1 cq_phi` per arm) | **ACCEPT** | **OQ-6, decided before implementation.** N `cqrt_rz_i1` on ONE minted flag is exact and performs no arithmetic; PRD §6.3's stated ground ("summing angles is the 2b rounding class again") is a **Ry-stem** ground that does not survive D1. Implemented by `impl_inc1a`. `..._ifelse_derived` additionally needed **OQ-8** (an angle select spelled as a merge-tail `phi double`), also implemented. |
+| the eight `DECLINE condition predates a non-diagonal gate` rows (`slice_control_inplace_ry_loop*`) | DECLINE | **ACCEPT** | **OQ-3, executed here** (§5.2). The predicted DECLINE is exactly what this agent measured BEFORE the rewrite, on both binaries. |
+| `slice_select_rail_alias_cond` | DECLINE `cq_measure_<sfx> operand not recognized` | **ACCEPT** | **OQ-5, executed here** (§5.3). Same: the predicted DECLINE is the pre-rewrite measurement. |
+| `slice_control_phase_grover_loop` | P6 (accept) | ACCEPT after a SOURCE FIX | finding **F-B2-1**, §7. As `prep_b` wrote it, it declined `tainted value muxed by a classical-condition phi` on BOTH binaries. |
+| `slice_control_inplace_ry_loop_grover{,_unrolled}` | P6 / P1×2 + drbq | ACCEPT after a SOURCE FIX | §5.2, second bullet. `-O1` fused the phase `if` and the Ry `if` into one mixed-arm `switch`; the ORACLE declines both files with the same two strings. |
+
+**There is no row where the compiler ACCEPTED something this record expected to
+DECLINE for a CORRECTNESS reason.** Every accept above is either an orchestrator
+decision taken before implementation (OQ-6 / OQ-8) or a slice rewritten here under
+an explicit disposition (OQ-2 / OQ-3 / OQ-5); in the two F-B2 cases the pre-rewrite
+measurement reproduces on the pre-3qlq oracle byte for byte.
+
+## 11. The e2e layer after this work
+
+`ctest --test-dir build -j6 -R '^e2e-' --output-on-failure` — **99% passed, 3 failed
+of 328**, 1187.58 s. After `cmake -S . -B build` the layer is **327 entries** (the
+retired twin gate of §9). The three reds, each with its owner:
+
+| red | owner | reason (MEASURED) |
+|---|---|---|
+| `e2e-angle-select-rz-twin-identical` | **this agent — FIXED** | §9. The gate became FALSE under D2, and was retired; both its slices pass individually (re-measured 2/2 after the reconfigure). |
+| `e2e-fixture-guard-liveness` | **prep-a / the fixture re-derive** | 7 SKIPs, every one verified to carry **2** `@cq_phi_<sfx>` references (`grep -c '@cq_phi_[a-z0-9]'`): `lowering_io_tape_rz_preserving`, `lowering_live_record_mb_{router_phi,sibling_alias}_accept`, `lowering_uncompute_interior_leak_{region_wire_measured,route_in_interval}`, `lowering_uncompute_interior_region_{chain,routed_base}`. Each is in the retired family, the pass declines it (rc=1), so its anchored `NOFREE` guard cannot be checked. **0 DEAD guards.** `impl_inc1b` reported this identical failure for this identical reason. |
+| `e2e-loop-twin-matrix` | **prep-d2** (round-1 F-L5-7, OQ-18) | `274 cells — 50 ACCEPT-IDENTICAL, 33 DECLINE, 191 other; 15 quarantined`. Its GENERATOR emits programs on the RETIRED two-argument surface, so they fail at stage 1 (`clang` error). It needs `--phi-surface void` and regenerated tables. |
