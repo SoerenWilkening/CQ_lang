@@ -1,33 +1,61 @@
-// SwitchValueEmit.cpp — the mutating swap-route emitter for an accepted tainted
-// `switch` whose content arms are homogeneous VALUE chains (4.5 WI-3; PRD Part V
-// §20; IMPLEMENTATION-4.5 §4B). The N-way generalization of the 4.2 value diamond
-// (`SwapRouteEmit::emitValueRegion`) — method-B (compute → copy-out → reverse-play,
-// Rule 7), but routing the SHARED base `p` = the merge default-edge (straight-
-// through) incoming, NOT the scrutinee `q` (the C2 anchor — `p != q`, proven in
-// `proveSwitchValue`; routing `q` would clobber the eq-flags, §3c).
+// SwitchValueEmit.cpp — the mutating emitter for an accepted tainted `switch`
+// whose content arms are homogeneous VALUE chains (4.5 WI-3; PRD Part V §20;
+// IMPLEMENTATION-4.5 §4B). The N-way generalization of the value diamond
+// (`SwapRouteEmit::emitValueRegion`) over the SHARED base `p` = the merge
+// default-edge (straight-through) incoming, NOT the scrutinee `q` (the C2
+// anchor — `p != q`, proven in `proveSwitchValue`; writing `q` would clobber
+// the eq-flags, §3c).
 //
-// Per content case the eq-flags `f_i = (q == c_i)` are MUTUALLY EXCLUSIVE (q
-// equals at most one case literal), so the per-case route fires only when q == c_i
-// and the off-case routes are identities. The forward stage is therefore safely
-// INTERLEAVED per case (§4B): mint f_i → |0> rail r_i → cswap route-in (positive-
-// polarity, NO ¬-bracket) → replay the chain VERBATIM/UNCONTROLLED on r_i → cswap
-// route-back. After all route-backs `p` holds the muxed answer (exactly one case
-// settled it; the rest left p untouched). Then ONE uncontrolled `cqrt_copy_<W>(p,
-// out)` copy-out (the only basis copy, after route-back, before any R†), the LIFO
-// reverse-play (route-back† · body-chain adjoint · route-in†; the cases commute —
-// disjoint rails, complementary flag values — so the grouped LIFO equals the global
-// adjoint), clean rail frees, the `icmp_inv` flag strips (q == q0 — q is never
-// routed), and the flag frees. `p` is restored to p0 and left live; `out` is the
-// result; NEITHER is freed (either free is a hidden measurement, Rule 6/8).
+// ⚠ THE SWAP ROUTE IS RETIRED HERE (bd test_C_libtooling-3qlq Inc 2,
+// retire-swap-route-PRD §7.2 V3; owner decision D6). Until that increment this
+// emitter routed: per case `mint f_i -> |0> rail r_i -> cswap route-in ->
+// replay the chain VERBATIM/UNCONTROLLED on r_i -> cswap route-back`, then ONE
+// uncontrolled `cqrt_copy_<W>(p, out)` copy-out AFTER all route-backs, then the
+// LIFO reverse-play (route-back† · chain adjoint · route-in†) and clean rail
+// frees. None of that is emitted any more: there is no work rail, no
+// `cqrt_cswap`, and no reverse-play in this file. Do not read the sentences
+// above as a description of the shipped stream — they are the retired one, kept
+// only so a reader of an old trace can place it.
 //
-// Correctness rests on the §8.2 register-threading trace, NOT on `opt -verify`
-// (Rule 2). THE §8.5 cswap-arg0 SEAM (verify-clean-invisible): the route cswaps are
-// NEVER fed to `emitInverseChain` — `emitInverseCall` may substitute a threaded
-// handle into Args[0] (its `CurHandle` path, reserved for Phase-7), which for
-// `cqrt_cswap` is the FLAG slot (a rail handle there is a wrong unitary). The
-// reverse-play hands the inverter the BODY CHAIN ONLY (void `_unc` forms) and
-// brackets the route cswaps itself via `emitRoute` (cswap is self-inverse), exactly
-// as `emitValueRegion` does in `SwapRouteEmit.cpp`.
+// THE SHIPPED MECHANISM IS PRELOAD + XOR-DELTA (the 4.5 data-mux precedent
+// `SwitchDataMuxEmit`, with the default LITERAL replaced by the quantum
+// register `p`, which cannot be an alloc immediate — Rule 14):
+//
+//     alloc out(0); cqrt_copy_<W>(p, out)              <- the ONE uncontrolled
+//                                                         preload, FIRST gate
+//     per content case i, in source order:
+//       hoist R_i's chain onto the ORIGINAL p          (ordinary tainted IR)
+//       d_i = R_i(p) XOR p                             (a Q+Q `xor`)
+//       f_i = cq_template_icmp_eq_<Wq>_hl(q, c_i)
+//       cqrt_copy_<W>_controlled(f_i, d_i, out)        <- out ^= f_i · d_i
+//     then strip + free every f_i.
+//
+// so `out = p ⊕ Σ_i f_i·(R_i(p) ⊕ p)`. The eq-flags are MUTUALLY EXCLUSIVE (q
+// equals at most one case literal — `SwitchInst` semantics, enforced by LLVM's
+// verifier), so at most one delta lands: `out = R_i(p)` on case i and `out = p`
+// on every other branch, INCLUDING the default and any passthrough case. That
+// exclusion is why there is no conjunction flag and no `cqrt_x` bracket
+// anywhere in this emitter.
+//
+// Correctness rests on that identity and on analytic state reasoning, NOT on
+// `opt -verify` (Rule 2). The hoisted chain links and the deltas are ORDINARY
+// tainted LLVM instructions: `lowerOps` lowers them (in-place M-C conversions
+// included, but only ever on the FRESH intermediate rails — `p` always has a
+// later reader, its own delta) and the whole-DAG LIFO spine reverses them.
+// This emitter itself calls no inverter and brackets nothing, so the §8.5
+// cswap-arg0 seam that the routed form had to navigate no longer exists here.
+//
+// WHAT IS LEFT ALLOCATED, AND WHY THAT IS RULE-6 SOUND (Inc-2 round-1 review
+// finding F-V2-3/F-V1-4 — state it here because the PRD's target stream said
+// otherwise): `p` is kept live (keep-source-live; freeing it is PRD §9
+// follow-on 3qlq.5) and `out` is the live result — NEITHER is ever freed. Each
+// chain INTERMEDIATE is `_unc`'d and freed by the spine, but each case's DELTA
+// rail `d_i` and each chain FINAL are left ALLOCATED AND DIRTY (entangled with
+// `p`). Sound because `d_i` is a deterministic function of the retained `p`, so
+// tracing it out leaves the reduced state on (q, p, out) unchanged; it is NOT
+// the route's leak class, which returned every work rail to |0>. Follow-on
+// 3qlq.5 (free the source) is therefore UNSOUND BY DEFAULT until these are
+// discharged.
 
 #include "SwitchRouteEmit.h"  // emitSwitchValueRegion (declared beside the phase emit)
 
@@ -86,9 +114,12 @@ void bailLoud(const ControlRegion &R) {
     diagnoseUnderControl(R.Merge, "control flow");
 }
 
-// One content case's routed VALUE stream: the case literal (eq-flag source), the
-// ordered ORIGINAL chain links (FORWARD/base-first order — erased after rewire),
-// and the per-case state threaded through emission.
+// One content case's VALUE stream: the case literal (eq-flag source), the
+// ordered ORIGINAL chain links (FORWARD/base-first order — HOISTED into the
+// switch block and KEPT, never erased: since 3qlq Inc 2 they ARE the surviving
+// computation, lowered by `lowerOps` and reversed by the spine), and the
+// per-case state threaded through emission. Nothing here is "routed" — see the
+// file header; the merge is preload + XOR-delta.
 struct CaseStream {
   ConstantInt *Val = nullptr;
   SmallVector<Instruction *, 6> Chain;  // the arm's ORIGINAL links (HOISTED, kept)
@@ -130,8 +161,24 @@ void emitSwitchValueRegion(const ControlRegion &R, WidthDispatch &wd,
   // silent skip).
   SmallVector<CaseStream, 4> Cases;
   for (const SwitchArm &Arm : R.SwitchArms) {
-    if (!Arm.Block || Arm.Values.empty())
-      continue;  // straight-to-merge / malformed — no chain to route.
+    // A null BLOCK is a straight-to-merge case: its merge incoming IS the
+    // straight-through `p` (one phi incoming per predecessor edge), so the
+    // preload already holds the right answer on that branch and there is
+    // nothing to hoist — skip it. `SwitchClassify` never pushes such an arm
+    // (`SwitchClassify.cpp`: `if (!C.Block) continue;`), so this is belt and
+    // braces, and it is the ONLY silent skip in this loop.
+    if (!Arm.Block)
+      continue;
+    // An EMPTY value list on an arm that HAS a block is a different animal and
+    // must NOT share that `continue` (Inc-2 round-1 review, lens V2): the
+    // XOR-delta merge gates arm i on `Values.front()`, so an arm carrying a
+    // chain but no literal would have its value SILENTLY DROPPED and `out`
+    // would be `p` on that branch — a verify-clean wrong mux. Every other
+    // off-pattern check in this loop bails LOUDLY; so does this one now.
+    // UNREACHABLE at HEAD (`SwitchClassify` pushes exactly one value per arm),
+    // hence no fixture — the Rule-1 defensive bail, never a silent skip.
+    if (Arm.Values.empty())
+      return bailLoud(R);
     Value *Incoming = MergePhi->getIncomingValueForBlock(Arm.Block);
     if (!Incoming)
       return bailLoud(R);  // arm not a merge-phi pred — detection proved it is.
