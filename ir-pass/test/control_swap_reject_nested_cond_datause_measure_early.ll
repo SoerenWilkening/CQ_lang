@@ -12,10 +12,18 @@
 ; the control route"); a measure DOWNSTREAM of the route would not (but nested
 ; declines every cond-data-use regardless until sharing lands).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: condition measured before the control route under quantum control
+; NEW: cq controlled lowering: condition used outside the branch under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition measured before the control route under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition used outside the branch under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -26,15 +34,14 @@ entry:
   %mz = call i32 @cq_measure_si32(i32 %z)   ; MEASURE the flag-derived value in PRED
   br i1 %c1, label %mid, label %merge
 mid:
-  %g  = call i32 @cq_phi_si32(i32 %q, double %b)
-  %c2 = icmp slt i32 %g, 9
+  call void @cq_phi(double %b)
+  %c2 = icmp slt i32 %q, 9
   br i1 %c2, label %arm, label %merge
 arm:
-  %h  = call i32 @cq_phi_si32(i32 %g, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %h, %arm ], [ %g, %mid ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   %r  = add i32 %m, %mz
   ret i32 %r
 }

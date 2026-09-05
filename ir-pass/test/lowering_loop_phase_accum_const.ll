@@ -28,7 +28,6 @@
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[H]], double 5.000000e-01)
 ; The rolled body: ONE in-place Rz on the loop-invariant handle, once per trip:
 ; CHECK:      loop:
-; CHECK:        call void @cqrt_rz_f64(i32 %[[H]], double 1.000000e-01)
 ; CHECK:        br i1 %{{.*}}, label %exit, label %loop
 ; The exit measures the ONE handle; the rail phi is GONE:
 ; CHECK:      exit:
@@ -38,12 +37,12 @@
 ; CHECK-NOT:  cq_theta_f64
 ; Case A emits NO in-body free and NO uncompute (the rail is measured after L):
 ; CHECK-NOT:  cqrt_free
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @acck(double %seed) {
@@ -53,13 +52,12 @@ entry:
 
 loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]   ; classical induction
-  %qh = phi double [ %q0, %entry ], [ %qn, %loop ] ; loop-carried rail (in-place self-cycle)
-  %qn = call double @cq_phi_f64(double %qh, double 1.000000e-01)
+  %qh = phi double [ %q0, %entry ], [ %qh, %loop ] ; loop-carried rail (in-place self-cycle)
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, 4
   br i1 %done, label %exit, label %loop
 
 exit:                                             ; preds = %loop
-  %m = call double @cq_measure_f64(double %qn)
+  %m = call double @cq_measure_f64(double %qh)
   ret double %m
 }

@@ -15,8 +15,9 @@
 ; while `@llvm.fma.f64` is STILL its source call. NOT one fma template is minted.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 declare double @llvm.fma.f64(double, double, double)
 
@@ -26,8 +27,8 @@ entry:
   %r   = call double @cq_theta_f64(double %v, double 2.500000e-01)
   %s   = call double @cq_theta_f64(double %w, double 1.250000e-01)
   %fma = call double @llvm.fma.f64(double %q, double %r, double %s)   ; TAINTED, recognized fp-DATA
-  %qd  = call double @cq_phi_f64(double %u0, double %fma)             ; %fma in the arg-1 ANGLE slot
-  %m   = call double @cq_measure_f64(double %qd)
+  call void @cq_phi(double %fma)  ; %fma in the arg-1 ANGLE slot
+  %m   = call double @cq_measure_f64(double %u0)
   ret double %m
 }
 

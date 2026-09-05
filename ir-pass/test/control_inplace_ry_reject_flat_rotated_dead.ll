@@ -33,6 +33,7 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -49,8 +50,7 @@ define i32 @example() local_unnamed_addr #0 {
 
 6:                                                ; preds = %4, %0
   %7 = phi i32 [ %5, %4 ], [ %2, %0 ]
-  %8 = tail call i32 @cq_phi_si32(i32 noundef %1, double noundef 1.000000e-01) #2
-  %9 = icmp eq i32 %8, 5
+  %9 = icmp eq i32 %1, 5
   br i1 %9, label %10, label %12
 
 10:                                               ; preds = %6
@@ -58,14 +58,12 @@ define i32 @example() local_unnamed_addr #0 {
   br label %12
 
 12:                                               ; preds = %10, %6
-  %13 = tail call i32 @cq_phi_si32(i32 noundef %8, double noundef 1.000000e-01) #2
-  %14 = tail call i32 @cq_measure_si32(i32 noundef %13) #2
+  %14 = tail call i32 @cq_measure_si32(i32 noundef %1) #2
   ret i32 %14
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #1
 

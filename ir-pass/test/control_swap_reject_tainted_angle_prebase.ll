@@ -10,25 +10,32 @@
 ; into a clean, source-located decline. The straight-line variant of the same
 ; hole (no control flow at all) still aborts loudly and is tracked separately.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: rotation angle under quantum control
+; NEW: cq rotation lowering: unsupported quantum-derived rotation angle
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %f = sitofp i32 %q to double                    ; TAINTED angle producer
-  %qd = call i32 @cq_phi_si32(i32 %q, double %f)  ; derived base, tainted angle
-  %c = icmp sgt i32 %qd, 5
+  call void @cq_phi(double %f)  ; derived base, tainted angle
+  %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %qd, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 
-; CHECK: error{{.*}}rotation angle under quantum control
+; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle

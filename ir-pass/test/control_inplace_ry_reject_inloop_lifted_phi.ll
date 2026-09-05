@@ -39,6 +39,19 @@
 ; Guard: LoopLowering::collapseRailPhisIn step (1). It OWNS the exact `Msg`
 ; string; this CHECK mirrors it character-for-character (Rule 12).
 ;
+;
+; 3qlq(prep_a2): HAND DECISION — the register `cq_phi` here was NEVER the subject.
+; This fixture pins an uncompute / mux / measurement-ordering / specialization rule
+; and used `%r = cq_phi_<sfx>(%x, θ)` only as "a gate on a handle".  D1 removes that
+; spelling, so the gate is re-spelled `cq_theta_<sfx>` — the OTHER in-place rotation
+; on the same rail, which is what the corpus uses everywhere else for the same job.
+; MEASURED on the Inc-1 binary: the swap reproduces this fixture's ORIGINAL asserted
+; diagnostic, so the CHECK lines are UNCHANGED and the property is pinned by exactly
+; the text it was pinned by before.  (prep_a measured the same 16 files against the
+; pre-3qlq ORACLE; this is the independent re-measurement on the SUBJECT.)
+; ⚠ Note what the swap does NOT preserve: Rz is DIAGONAL and Ry is not, so a rule
+; that turned on diagonality would move.  None of these 16 do — that is what the
+; character-for-character reproduction of the diagnostic establishes.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 @OPQ = global i32 1, align 4
@@ -72,7 +85,7 @@ define i32 @slice() local_unnamed_addr {
   br i1 %17, label %20, label %18
 
 18:                                               ; preds = %14
-  %19 = tail call i32 @cq_phi_si32(i32 noundef %15, double noundef 5.000000e-01)
+  %19 = tail call i32 @cq_theta_si32(i32 noundef %15, double noundef 5.000000e-01)
   br label %20
 
 20:                                               ; preds = %18, %14
@@ -84,7 +97,6 @@ define i32 @slice() local_unnamed_addr {
 }
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
 
 ; CHECK: error{{.*}}cq loop lowering: loop-carried tainted value crosses iterations

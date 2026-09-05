@@ -8,11 +8,21 @@
 ; (`collapseFlattenedLoopRails`, `markIfRailLocal`, `staleRailRecordRead`) has to
 ; be re-asked with an angle-select gate in the body, and nothing has done that.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow inside a loop body under quantum control
+; NEW: cq controlled lowering: control flow inside a loop body under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow inside a loop body under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow inside a loop body under quantum control
+; 3qlq: migrated from register cq_phi (angle select -> void call on the select (PRD P2))
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -24,14 +34,14 @@ entry:
   br label %body
 body:
   %i = phi i32 [ 0, %entry ], [ %inext, %body ]
-  %rp = phi i32 [ %r, %entry ], [ %rt, %body ]
-  %rt = call i32 @cq_phi_si32(i32 %rp, double %ang)
+  %rp = phi i32 [ %r, %entry ], [ %rp, %body ]
+  call void @cq_phi(double %ang)
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, 3
   br i1 %done, label %exit, label %body
 exit:
   %mq = call i32 @cq_measure_si32(i32 %q)
-  %mr = call i32 @cq_measure_si32(i32 %rt)
+  %mr = call i32 @cq_measure_si32(i32 %rp)
   %s = add i32 %mq, %mr
   ret i32 %s
 }

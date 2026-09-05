@@ -1,64 +1,50 @@
-; control_swap_eqfold_diamond.ll — ACCEPT spec, equality-folded `br` diamond
-; (4.5 WI-5; additive `tryEqFoldArm` D1–D7 clause).
+; control_swap_eqfold_diamond.ll — ACCEPT.
 ;
-; `if (q == 7) { rz(q, a); rz(q, b); }`. `clang -O1` KNOWS `q == 7` inside the
-; arm, so it CONST-FOLDS the gate's arg-0 handle to the literal: the arm gate is
-; `cq_phi(i32 7, θ)`, not `cq_phi(i32 %q, θ)`. `classifyArms`'s phase spine then
-; bottoms at the `ConstantInt 7` instead of the routed handle, so the old
-; classifier declined `control flow`. `tryEqFoldArm` re-recognizes it as a pure
-; PHASE arm over the icmp's tainted operand (D1 equality predicate · D2 folded
-; const base · D3 the icmp's non-const operand IS the routed handle · D4 literal
-; == folded const · D5 routed operand tainted · D6 pure spine · D7 classical
-; angles) and re-anchors the routed handle, so the diamond lowers through
-; `emitRegion` VERBATIM (§4D): flag from the tainted `icmp eq`, CSWAP q into a
-; |0> rail, the arm Rz gates VERBATIM/UNCONTROLLED on the rail (re-anchor BY
-; PHYSICS — only arg-1/the angle is read, the folded arg-0 const is discarded),
-; CSWAP back, free the |0> rail, strip the boolean with `icmp_eq_inv(q)` — ZERO
-; controlled gates, NO surviving folded `cq_phi`, NO `phi i32`.
+; ⚠⚠ THIS FIXTURE NO LONGER PINS THE EQUALITY-FOLD RE-ANCHOR. Its old header
+; described `tryEqFoldArm`'s D1-D8 ladder and the 4.5 §5 const-fold re-anchor
+; scrub, and every word of that is now FALSE OF THIS FILE. The header is rewritten
+; rather than left standing, because a green fixture whose header claims a
+; property it does not exercise is the FALSE-GREEN class this whole migration
+; exists to stop -- and this one was found by the Rule-13 flips lens
+; ($SP/progress/review_flips.md, FINDING F1), not by the suite.
 ;
-; ⚠ THE STEM ASYMMETRY — DO NOT "TIDY UP" THE Ry SIDE TO MATCH (bd
-; test_C_libtooling-drbq Inc 4, PRD §14.2d). Since Inc 4 the SAME IR construct is
-; read TWO WAYS by the two stems: `cq_phi_si32(i32 k, θ)` in an `if (q == k)` arm
-; ACCEPTS here and re-anchors onto q's own rail, while `cq_theta_si32(i32 k, θ)`
-; in that position DECLINES.
+; WHY THE PROPERTY IS GONE. `EqFoldArm.cpp`'s D2 requires the phase spine to
+; bottom at a `ConstantInt`, and the ONLY construct that ever produced one was
+; `cq_phi_<sfx>(i32 k, theta)` -- `-O1` substituting the value the equality edge
+; pins into the gate's ARG-0. `void cq_phi(double)` HAS NO ARG-0, so no spine can
+; bottom at a constant and D2 can never fire. Measured four ways by the lens:
+;   1. the retired `cq_phi_<sfx>` spelling declines BEFORE analysis (reserved
+;      name, round-1 F-L6-1), and `opt` writes NO module at all -- so nothing that
+;      path computes can become an accepted lowering;
+;   2. the `cq_theta_si32(i32 k, theta)` spelling is intercepted EARLIER, by drbq
+;      Inc-4's F1 (`state prep merged with a quantum register`), ON BOTH BINARIES
+;      -- so it never was an eq-fold customer;
+;   3. the last conceivable route -- a `ConstantInt` MERGE INCOMING with
+;      register-free phases in the arm -- declines `control flow` in BOTH
+;      polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+;   4. the wrong unitary D8 fenced CANNOT BE EMITTED: `rzRtFn(` has 4 call sites,
+;      all `"i1"`, and `controlledRotationFn(` has 2, both `RotStem::Ry`. No
+;      minter of a controlled Rz remains anywhere in the pass.
+; `tryEqFoldArm` D1-D8 and `straightThroughConstFoldHandle` are therefore
+; STRUCTURALLY UNREACHABLE and are listed in MIGRATION_REPORT.md §13.3a as
+; freeze-time dead-code candidates. They are NOT deleted in this increment.
 ;
-; ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L7 finding F-L7-3). This
-; block used to call `control_inplace_ry_reject_stateprep_eqfold_coincidence.ll`
-; "this file with the stem changed" and to name F2 as the Ry side's fence. NEITHER
-; IS TRUE, and both halves were MEASURED on HEAD:
-;
-;   * THIS FILE with `cq_phi` → `cq_theta` (and the second gate dropped, since its
-;     arg-0 is the first gate's result) declines
-;     `state prep merged with a quantum register` — i.e. at **F1**, not F2,
-;     because THIS file's merge pred incoming is the live register `%q`.
-;   * `..._eqfold_coincidence.ll` is a DIFFERENT module: its pred incoming is the
-;     CONSTANT `5`, which is what lets it reach F2 at all.
-;   * And the constant-incoming spelling has NO pair on this side: the Rz version
-;     of `..._eqfold_coincidence.ll` (pred incoming `5`, arm `cq_phi(5, θ)`)
-;     DECLINES `control flow` — `tryEqFoldArm` re-anchors `Routed` onto `%q` and
-;     the constant pred incoming then does not match it. So "the same file with
-;     the stem changed" describes no pair anywhere in the family.
-;
-; The honest pair is THIS file vs its own Ry twin, and the fences are F1 (Ry) vs
-; `tryEqFoldArm`'s accept (Rz). The physics argument below is unaffected — it was
-; always about the RE-ANCHOR, and the re-anchor is what differs.
-;
-; That is SOUND, and the reason is the stem's PHYSICS rather than a preference.
-; The re-anchor puts a gate on the CONDITION'S OWN REGISTER. `cqrt_rz_<W>` is
-; DIAGONAL, so the strip recomputes the predicate over a basis the arm did not
-; move (§3 permits it explicitly; it is why S8 accepts). The same re-anchor for
-; Ry would put a BASIS-RELABELLING gate there, which R4 forbids — the strip would
-; be computed over a register the arm moved and the flag would not return to |0>.
-; There is no correct re-anchor for that stem, so its only options were "accept as
-; a fresh rail" (WRONG whenever the source meant `q`) or "decline".
-;
+; WHAT THIS FILE PINS NOW (measured on `build/ir-pass/cq-opt`; the CHECK lines
+; below were DERIVED from that output):
+;   an `icmp eq` DIAMOND with an N=2 phase arm on the TRUE successor and
+;   RUN-TIME `double` angles: one mint, `rz_i1(f,%a); rz_i1(f,%b)`, one strip, one
+;   free, and NO `cqrt_x` (the arm is the true successor, so there is no bracket).
+;   Unitary `e^{i(a+b)}` on `q == 7`, identity elsewhere. Its residual value is
+;   the equality PREDICATE with N=2 and run-time angles; the FOLD is gone.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; Independent EXACT free-count scan: two cqrt_free (work rail + flag), no third.
-; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %a, double %b) {
@@ -67,48 +53,74 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 7,   double %a)   ; arg-0 CONST-FOLDED to 7
-  %q2 = call i32 @cq_phi_si32(i32 %q1, double %b)
+  call void @cq_phi(double %a)  ; (was "arg-0 CONST-FOLDED to 7" — no arg-0 exists now)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %q2, %arm ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 
-; br: mint the flag from the EQUALITY compare
-; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 7)
-; arm body: one controlled Rz per gate, IN PLACE on q (§6a peephole, drbq Inc 2a).
-;
-; ⚠ AND THIS FIXTURE IS THE §5 RE-ANCHOR'S PIN, WHICH THE COLLAPSE PROMOTED FROM
-; DECORATION TO LOAD-BEARING. `clang -O1` proved `q == 7` inside the arm and
-; value-propagated it, so both `cq_phi` calls bottom at a folded `ConstantInt 7`
-; at arg 0. The ROUTE read only arg 1 (the angle) and put the rotation on its own
-; work rail, so it never noticed. Hoist-and-defer reads ARG 0: without
-; `emitRegion`'s re-anchor of the first spine gate to the region's proven routed
-; base, `lowerRotations` would see an UNTAINTED operand, emit NOTHING, and RAUW
-; the gate to the constant — the arm's Rz silently DROPPED. That the two lines
-; below name `%[[Q]]` and not a constant IS that fence firing.
-; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %a)
-; CHECK:     call void @cqrt_rz_i32_controlled(i32 %[[F]], i32 %[[Q]], double %b)
-; strip the boolean: q==q0, so icmp_eq_inv(q) returns the flag to |0>; reclaim it
-; CHECK:     call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 7)
-; CHECK:     call void @cqrt_free(i32 %[[F]])
-; q (not the phi) is measured — RAUW merge-phi -> q
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[Q]])
-; no-spurious-free: the flag free is the LAST free — no second after it
-; CHECK-NOT: call void @cqrt_free
-; re-anchor: NO surviving const-folded cq_phi (it would RAUW to the const at
-; RotationLowering -> a dropped rotation); zero copies / data mux
-; CHECK-NOT: cq_phi
-; CHECK-NOT: cqrt_copy
-; CHECK-NOT: phi i32
+; ===========================================================================
+; THE EMITTED STREAM, IN ORDER — DERIVED from this fixture's own pass output
+; (prep_a2, bd test_C_libtooling-3qlq Inc 1).  Every `%name` below is bound at
+; its DEFINITION and referenced afterwards, so the chain asserts operand
+; IDENTITY — the strip and the free name the SAME flag the mint produced
+; (bd 8txa: the golden itself must witness the pairing).  Handle names are
+; DERIVED, never typed (bd drbq Inc 4: 9 of 20 accepts named a %h1 the pass
+; never emits).  Trailing `!cq.branchphase` metadata is stripped here because
+; its NUMBER is LLVM's, not ours; its presence and count are MDCNT's job.
+; CHECK: define i32 @example(i32 %u0, double %a, double %b) {
+; CHECK-NEXT: entry:
+; CHECK-NEXT: %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double %a)
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double %b)
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[H_CMP]], i32 %[[H]], i32 7)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CMP]])
+; CHECK-NEXT: %[[M1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[H]])
+; CHECK-NEXT: ret i32 %[[M1]]
+; CHECK-NEXT: }
 
-; Exact free count — one (the flag; there is no work rail any more), no second.
-; CNT-COUNT-1: call void @cqrt_free(
-; CNT-NOT:     call void @cqrt_free(
-
-; No swap route survives: no |0> work rail, no CSWAP — window is `define` -> EOF.
-; NOROUTE:     define i32 @example
+; ---------------------------------------------------------------------------
+; WHOLE-FILE, PURE-NEGATIVE.  No positive directive may enter this prefix: a
+; positive WINDOWS every negative after it, which is how an injected gate
+; escaped 20 of 20 blocks in bd drbq Inc 3 (F-L6-1) and again in Inc 4.
 ; NOROUTE-NOT: cqrt_cswap
+;   ^ the swap route is retired — no work rail, so no Fredkin
+; NOROUTE-NOT: cqrt_copy
+;   ^ method-B copy on a phase arm dephases the answer (Rule 7)
+; NOROUTE-NOT: _controlled
+;   ^ the kickback gate is UNCONTROLLED, on the flag ancilla
+; NOROUTE-NOT: call void @cqrt_rz_{{[a-z0-9]+}}_controlled(
+;   ^ ⚠ NARROW TWIN of the blanket `_controlled` above, and it exists because the blanket one is DROPPED from any fixture that legitimately emits a controlled Ry or a controlled copy — and dropping it took the only catch for a controlled Rz with it. MEASURED: 4 of the 104 re-derived accepts were BLIND to an injected `cqrt_rz_i32_controlled` — the exact pre-Inc-1 TENSORED gate this increment removes — until this line was added. The width complement above cannot cover it either: it requires `(` immediately after the width, and `cqrt_rz_i32_controlled(` has `_controlled` in between.
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+;   ^ the TENSORED per-register Rz is the defect this increment removes (PRD §1). ONE complement pattern, not an enumeration of six — the shipped ABI has NINE widths and f16/f80 were absent from every pre-Inc-1 NOROUTE block (round-1 findings F-L6-4/F-L8-1/F-L4-2). The trailing `(` is load-bearing: `cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`.
+; NOROUTE-NOT: call void @cq_phi(
+;   ^ a surviving phase call is lowered or deleted, never left for the linker
+; NOROUTE-NOT: cq_phi_
+;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
+
+; Original negatives PRESERVED (re-measured on the Inc-1 output):
+; NOROUTE-NOT: cq_phi
+; NOROUTE-NOT: phi i32
 ; NOROUTE-NOT: call i32 @cqrt_alloc_i32(i32 0)
+
+; ---------------------------------------------------------------------------
+; COUNTS — ONE PATTERN PER PREFIX.  Two counts in one prefix silently become
+; an ORDER assertion, and a `-NOT` after a count in the same prefix is
+; windowed to the text past the count.  `-COUNT-n` then `-NOT` of the SAME
+; pattern is the only spelling that pins `exactly n`.
+; ACNT-COUNT-2: call void @cqrt_rz_i1(
+; ACNT-NOT:     call void @cqrt_rz_i1(
+; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+;
+; Every `cqrt_rz_i1` the pass emits must carry `!cq.branchphase`, or the
+; whole-DAG spine reads it as a reclaimable in-place rotation and emits
+; `cqrt_rz_i1(f, -theta)`, cancelling the user's phase EXACTLY (round-1
+; F-L7-1, a CONFIRMED silent miscompile found by three lenses).  The two
+; counts are asserted SEPARATELY and must agree: 2 and 2 here.
+; MDCNT-COUNT-2: !cq.branchphase
+; MDCNT-NOT:     !cq.branchphase

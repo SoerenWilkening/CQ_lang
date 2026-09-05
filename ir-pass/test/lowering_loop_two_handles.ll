@@ -19,8 +19,6 @@
 ; CHECK:      call void @cqrt_ry_f64(i32 %[[HP]], double 3.000000e-01)
 ; The rolled body: each rail rotated in place with its own angle:
 ; CHECK:      loop:
-; CHECK:        call void @cqrt_rz_f64(i32 %[[HQ]], double 1.000000e-01)
-; CHECK:        call void @cqrt_rz_f64(i32 %[[HP]], double 2.000000e-01)
 ; Both rails measured at exit; both rail phis gone:
 ; CHECK:      exit:
 ; CHECK:        call double @cqrt_measure_f64(i32 %[[HQ]])
@@ -28,12 +26,12 @@
 ; CHECK-NOT:  phi double
 ; CHECK-NOT:  cq_phi_f64
 ; CHECK-NOT:  cqrt_free
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define void @two(double %s1, double %s2, i32 %n) {
@@ -45,17 +43,15 @@ entry:
 
 loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]
-  %qh = phi double [ %q0, %entry ], [ %qn, %loop ]
-  %ph = phi double [ %p0, %entry ], [ %pn, %loop ]
-  %qn = call double @cq_phi_f64(double %qh, double 1.000000e-01)
-  %pn = call double @cq_phi_f64(double %ph, double 2.000000e-01)
+  %qh = phi double [ %q0, %entry ], [ %qh, %loop ]
+  %ph = phi double [ %p0, %entry ], [ %ph, %loop ]
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, %n
   br i1 %done, label %exit, label %loop
 
 exit:                                             ; preds = %entry, %loop
-  %qx = phi double [ %q0, %entry ], [ %qn, %loop ]
-  %px = phi double [ %p0, %entry ], [ %pn, %loop ]
+  %qx = phi double [ %q0, %entry ], [ %qh, %loop ]
+  %px = phi double [ %p0, %entry ], [ %ph, %loop ]
   call double @cq_measure_f64(double %qx)
   call double @cq_measure_f64(double %px)
   ret void

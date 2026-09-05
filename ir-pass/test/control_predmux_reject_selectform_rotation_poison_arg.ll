@@ -54,21 +54,20 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:  | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @probe(i32 %u) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u, double 5.000000e-01)
   %a = icmp sgt i32 %q, 3
-  ; cq_phi RAUWs its result to operand 0 — so %q2 IS `poison`.
-  %q2 = call i32 @cq_phi_si32(i32 poison, double 2.500000e-01)
-  %b = icmp slt i32 %q, %q2
+  ; cq_phi RAUWs its result to operand 0 — so poison IS `poison`.
+  %b = icmp slt i32 %q, poison
   %sc = select i1 %a, i1 %b, i1 false
   br i1 %sc, label %arm, label %merge
 

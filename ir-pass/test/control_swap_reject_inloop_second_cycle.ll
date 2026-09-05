@@ -28,8 +28,9 @@
 ; CHECK: error{{.*}}cq controlled lowering: control flow inside a loop body under quantum control
 ; CHECK-NOT: cqrt_cswap
 ; CHECK-NOT: Broken module
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %x0, double %b, i32 %n, i32 %e) {
@@ -44,11 +45,10 @@ pred:                                    ; preds = %head, %x
   %c = icmp sgt i32 %q, 5                ; TAINTED (quantum) condition
   br i1 %c, label %arm, label %merge
 arm:                                     ; preds = %pred
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:                                   ; preds = %arm, %pred
-  %qm = phi i32 [ %g, %arm ], [ %q, %pred ]
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   br label %x
 x:                                       ; preds = %head, %merge
   %d = phi i32 [ 0, %head ], [ %m, %merge ]

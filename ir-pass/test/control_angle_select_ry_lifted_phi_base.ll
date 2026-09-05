@@ -24,9 +24,9 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT     < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %c) {
@@ -36,10 +36,9 @@ entry:
   %cc = icmp eq i32 %c, 0
   br i1 %cc, label %join, label %alias
 alias:
-  %m0 = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
   br label %join
 join:
-  %m = phi i32 [ %m0, %alias ], [ %r, %entry ]
+  %m = phi i32 [ %r, %alias ], [ %r, %entry ]
   %t = icmp eq i32 %q, 5
   %ang = select i1 %t, double 9.000000e-01, double 3.000000e-01
   %rt = call i32 @cq_theta_si32(i32 %m, double %ang)
@@ -57,7 +56,6 @@ join:
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[QC]], double 5.000000e-01)
 ; CHECK:      %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.500000e-01)
-; CHECK:      call void @cqrt_rz_i32(i32 %[[R]], double 1.000000e-01)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 ; the CONDITION REGISTER: `%[[QC]]` was ANCHORED above at its own `cqrt_alloc`,
 ; so the mint and the strip must both name THAT rail — not merely the same one as

@@ -51,11 +51,21 @@
 ; identical forward read ACCEPTS (`nat_sel_rz.ll`). A future change to Case-A's
 ; collapse therefore silently NARROWS S7, and no fixture here would notice.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow inside a loop body under quantum control
+; NEW: cq controlled lowering: control flow inside a loop body under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow inside a loop body under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow inside a loop body under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1, double %b, i32 %n) {
@@ -69,11 +79,10 @@ loop:
   %c1 = icmp eq i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %g, %mid ], [ %q, %loop ]
-  %qn = call i32 @cq_theta_si32(i32 %qm, double -5.000000e-01)
+  %qn = call i32 @cq_theta_si32(i32 %q, double -5.000000e-01)
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n
   br i1 %done, label %exit, label %loop

@@ -7,14 +7,26 @@
 ; the detection pre-pass and records the site in `plan6.Diagnosed`, so the
 ; carve-out does NOT also emit the generic `kMsgUnknownCallee`.
 ;
+;
+; 3qlq(prep_a2): HAND DECISION — the register `cq_phi` here was NEVER the subject.
+; This fixture pins an uncompute / mux / measurement-ordering / specialization rule
+; and used `%r = cq_phi_<sfx>(%x, θ)` only as "a gate on a handle".  D1 removes that
+; spelling, so the gate is re-spelled `cq_theta_<sfx>` — the OTHER in-place rotation
+; on the same rail, which is what the corpus uses everywhere else for the same job.
+; MEASURED on the Inc-1 binary: the swap reproduces this fixture's ORIGINAL asserted
+; diagnostic, so the CHECK lines are UNCHANGED and the property is pinned by exactly
+; the text it was pinned by before.  (prep_a measured the same 16 files against the
+; pre-3qlq ORACLE; this is the independent re-measurement on the SUBJECT.)
+; ⚠ Note what the swap does NOT preserve: Rz is DIAGONAL and Ry is not, so a rule
+; that turned on diagonality would move.  None of these 16 do — that is what the
+; character-for-character reproduction of the diagnostic establishes.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @helper(i32 %x) {
 entry:
-  %g = call i32 @cq_phi_si32(i32 %x, double 1.000000e-01)
+  %g = call i32 @cq_theta_si32(i32 %x, double 1.000000e-01)
   ret i32 %g
 }
 

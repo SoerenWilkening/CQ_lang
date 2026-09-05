@@ -33,14 +33,24 @@
 ; (control_swap_reject_nested_loop.ll). A regression to a DT/LoopInfo-only test
 ; would crash `opt` here.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: nested control flow under quantum control
+; NEW: cq controlled lowering: nested control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}nested control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
 ; CHECK-NOT: Broken module
 ; CHECK-NOT: PHI node entries do not match predecessors
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %x, double %a, double %b, i32 %n, i32 %e) {
@@ -57,15 +67,14 @@ pred:                                          ; preds = %head   (outer diamond)
   %c1 = icmp sgt i32 %q, 5                      ; outer TAINTED condition
   br i1 %c1, label %mid, label %merge
 mid:                                           ; preds = %pred   (inner diamond)
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
-  %c2 = icmp slt i32 %g, 9                      ; inner TAINTED condition
+  call void @cq_phi(double %b)
+  %c2 = icmp slt i32 %q, 9                      ; inner TAINTED condition
   br i1 %c2, label %inner, label %merge
 inner:                                         ; preds = %mid
-  %h = call i32 @cq_phi_si32(i32 %g, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:                                         ; preds = %inner, %mid, %pred
-  %qm = phi i32 [ %h, %inner ], [ %g, %mid ], [ %q, %pred ]
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   %sum = add nsw i32 %m, %acc
   br label %latch
 latch:                                         ; preds = %entry, %merge

@@ -22,12 +22,13 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: early break preserves a phase answer
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @break_phase(double %seed, i32 %n) {
@@ -38,16 +39,16 @@ entry:
 
 loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]
-  %q = phi double [ %q0, %entry ], [ %qn, %loop ]
-  %qn = call double @cq_phi_f64(double %q, double 1.000000e-01)  ; Rz — phase
-  %brk = fcmp olt double %qn, 3.000000e+00                       ; TAINTED break flag
+  %q = phi double [ %q0, %entry ], [ %q, %loop ]
+  call void @cq_phi(double 1.000000e-01)  ; Rz — phase
+  %brk = fcmp olt double %q, 3.000000e+00                       ; TAINTED break flag
   %inext = add nuw nsw i32 %i, 1
   %bound = icmp eq i32 %inext, %n                                ; CLASSICAL bound
   %exit.cond = select i1 %brk, i1 true, i1 %bound                ; FUSED exit
   br i1 %exit.cond, label %exit, label %loop
 
 exit:                                             ; preds = %loop, %entry
-  %ans = phi double [ %q0, %entry ], [ %qn, %loop ]  ; PHASE-class incoming (%qn = Rz)
+  %ans = phi double [ %q0, %entry ], [ %q, %loop ]  ; PHASE-class incoming (%q = Rz)
   %m = call double @cq_measure_f64(double %ans)
   ret double %m
 }

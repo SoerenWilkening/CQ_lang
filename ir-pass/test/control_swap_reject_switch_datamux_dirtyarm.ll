@@ -4,10 +4,20 @@
 ; are ConstantInt and never scanned the arm blocks (the phase/value proofs do), and
 ; the G10 scrutinee-scan only sees %q's users — so a gate on %r was invisible and
 ; would be silently dropped/hoisted on flatten. The arm-purity scan now declines.
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %r0) {
 entry:
@@ -16,7 +26,7 @@ entry:
   switch i32 %q, label %merge [ i32 0, label %a0
                                 i32 1, label %a1 ]
 a0:
-  %g0 = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
+  call void @cq_phi(double 1.000000e-01)
   br label %merge
 a1:
   br label %merge

@@ -11,11 +11,12 @@
 ; detection runs, so the diamond is never emitted — a clean, source-located decline.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
+declare void @cq_phi(double)
 declare i64 @cq_theta_sll(i64, double)
-declare i64 @cq_phi_sll(i64, double)
 
 define i64 @example(i64 %u0, double %a, double %b) {
 entry:
@@ -23,12 +24,11 @@ entry:
   %c = icmp sgt i64 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i64 @cq_phi_sll(i64 %q,  double %a)
-  %q2 = call i64 @cq_phi_sll(i64 %q1, double %b)
+  call void @cq_phi(double %a)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i64 [ %q2, %arm ], [ %q, %entry ]
-  ret i64 %qm                                      ; non-i32 escape — cannot launder
+  ret i64 %q                                      ; non-i32 escape — cannot launder
 }
 
 ; CHECK: error{{.*}}cq taint escape: tainted value returned at non-i32 width

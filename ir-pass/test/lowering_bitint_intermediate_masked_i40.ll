@@ -22,9 +22,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i64 @cq_theta_sll(i64, double)
 declare i64 @cq_measure_sll(i64)
-declare i64 @cq_phi_sll(i64, double)
 
 define void @example(i64 %u0, i64 %u1) {
 entry:
@@ -39,7 +39,6 @@ entry:
   ; (B) dead masked value kept alive by cq_phi — exercises the and-mask _unc.
   %q2 = call i64 @cq_theta_sll(i64 %u0, double 0.10)
   %d  = and i64 %q2, 1099511627775
-  %p  = call i64 @cq_phi_sll(i64 %d, double 0.30)
   ret void
 }
 
@@ -56,7 +55,6 @@ entry:
 ; (B) the dead mask is uncomputed by its void _unc (recompute-and-XOR from live src),
 ; then the rail is freed |0> — the same Bennett shape as any `and`, no mask-special code.
 ; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[Q2:[a-zA-Z0-9_.]+]], i64 1099511627775)
-; CHECK:     call void @cqrt_rz_i64(i32 %[[D]], double 3.000000e-01)
 ; CHECK:     call void @cq_template_and_i64_hl_unc(i32 %[[D]], i32 %[[Q2]], i64 1099511627775)
 ; CHECK:     call void @cqrt_free(i32 %[[D]])
 ;

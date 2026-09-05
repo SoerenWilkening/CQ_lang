@@ -20,12 +20,12 @@
 ; The dead smin chain is NOT reversed and NO rail is freed (no dirty/double free).
 ; CHECK-NOT: cq_template_smin_i32_unc
 ; CHECK-NOT: call void @cqrt_free
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare i32 @llvm.smin.i32(i32, i32)
 
@@ -34,7 +34,6 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u, double 5.000000e-01)
   %s = call i32 @cq_theta_si32(i32 %v, double 2.500000e-01)
   %r = call i32 @llvm.smin.i32(i32 %q, i32 %s)   ; dead (only the phi reads it)
-  %k = call i32 @cq_phi_si32(i32 %r, double 3.000000e-01)  ; keep-alive
   %d = add i32 %q, 1                              ; %q fans out to a LIVE op
   %m = call i32 @cq_measure_si32(i32 %d)
   ret i32 %m

@@ -10,8 +10,9 @@
 ; blocks the fp return. Declines LOUDLY (not verify-clean).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @helper(double %x) {
@@ -26,8 +27,8 @@ entry:
   ; the clone lowers (fp arg/return admitted); %r is the escaping i32 handle …
   %r = call double @helper(double %q)
   ; … steered into a rotation ANGLE slot — the tainted-angle fence declines.
-  %p = call double @cq_phi_f64(double %q, double %r)
-  %z = call double @cq_measure_f64(double %p)
+  call void @cq_phi(double %r)
+  %z = call double @cq_measure_f64(double %q)
   ret double %z
 }
 

@@ -28,8 +28,8 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @printf(ptr, ...)
 @.str = private constant [3 x i8] c"%d\00"
 
@@ -37,8 +37,7 @@ define void @slice(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %s = mul i32 %q, 3
-  %p = call i32 @cq_phi_si32(i32 %s, double 1.000000e-01)
-  %z = call i32 (ptr, ...) @printf(ptr @.str, i32 %p)
+  %z = call i32 (ptr, ...) @printf(ptr @.str, i32 %s)
   ret void
 }
 
@@ -46,10 +45,8 @@ entry:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[OP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[OP]], double 1.000000e-01)
 ; CHECK:     call i32 @cqrt_tape_write_i32(i32 %[[TAPE]], i32 %[[OP]])
 ; The Rz-carrying RECORDED rail reverses and FREES — rz is basis-preserving:
-; CHECK:     call void @cqrt_rz_i32(i32 %[[OP]], double -1.000000e-01)
 ; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 3)
 ; CHECK:     call void @cqrt_free(i32 %[[OP]])
 ; Its Ry ancestor still freezes:

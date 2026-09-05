@@ -11,15 +11,14 @@
 ; CHECK-NOT: Broken module
 ; CHECK-NOT: does not match function signature
 ; CHECK-NOT: cqrt_rz_f64(double
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0) {
 entry:
   %q = call double @cq_theta_f64(double %u0, double 5.000000e-01)
   %f = freeze double %q                           ; frozen quantum wire
-  %p = call double @cq_phi_f64(double %f, double 3.000000e-01)  ; Rz on the frozen wire
   %m = call double @cq_measure_f64(double %q)      ; main wire measured (dead sibling above)
   ret double %m
 }

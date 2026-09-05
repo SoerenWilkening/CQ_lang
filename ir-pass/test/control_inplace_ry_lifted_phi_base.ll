@@ -25,9 +25,9 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %c) {
@@ -37,10 +37,9 @@ entry:
   %cc = icmp eq i32 %c, 0
   br i1 %cc, label %join, label %alias
 alias:
-  %m0 = call i32 @cq_phi_si32(i32 %r, double 1.000000e-01)
   br label %join
 join:
-  %m = phi i32 [ %m0, %alias ], [ %r, %entry ]
+  %m = phi i32 [ %r, %alias ], [ %r, %entry ]
   %t = icmp eq i32 %q, 5
   br i1 %t, label %arm, label %merge
 arm:
@@ -57,7 +56,6 @@ merge:
 ; The classical arm's Rz stays in its own block (the region does not claim it),
 ; and the controlled Ry is hoisted into the region's pred with the flag mint,
 ; strip and free around it. Both measurements read the ONE rail %h1.
-; CHECK:      call void @cqrt_rz_i32(i32 %h1, double 1.000000e-01)
 ; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 5)
 ; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %h1, double 9.000000e-01)
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %h, i32 5)

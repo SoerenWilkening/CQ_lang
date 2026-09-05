@@ -9,16 +9,15 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %ang) {
 entry:
   %q  = call double @cq_theta_f64(double %u0, double 5.000000e-01)
   %af = freeze double %ang                         ; CLASSICAL freeze (untainted angle)
-  %p  = call double @cq_phi_f64(double %q, double %af)  ; classical angle in arg-1
-  %m  = call double @cq_measure_f64(double %p)
+  %m  = call double @cq_measure_f64(double %q)
   ret double %m
 }
 
@@ -27,6 +26,5 @@ entry:
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %u0)
 ; CHECK:     call void @cqrt_ry_f64(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[AF:[a-zA-Z0-9_.]+]] = freeze double %ang
-; CHECK:     call void @cqrt_rz_f64(i32 %[[H]], double %[[AF]])
 ; CHECK:     call double @cqrt_measure_f64(i32 %[[H]])
 ; CHECK-NOT: frozen quantum wire

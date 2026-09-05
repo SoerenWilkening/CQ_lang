@@ -32,9 +32,10 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq literal integrity: address-taken block erased under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0) {
 entry:
@@ -43,17 +44,16 @@ entry:
                                 i32 1, label %a1
                                 i32 2, label %a2 ]
 a0:
-  %g0 = call i32 @cq_phi_si32(i32 0, double 1.000000e-01)
+  call void @cq_phi(double 1.000000e-01)
   br label %merge
 a1:
-  %g1 = call i32 @cq_phi_si32(i32 1, double 2.000000e-01)
+  call void @cq_phi(double 2.000000e-01)
   br label %merge
 a2:
-  %g2 = call i32 @cq_phi_si32(i32 2, double 3.000000e-01)
+  call void @cq_phi(double 3.000000e-01)
   br label %merge
 merge:
-  %qm = phi i32 [ %q, %entry ], [ %g0, %a0 ], [ %g1, %a1 ], [ %g2, %a2 ]
-  %m = call i32 @cq_measure_si32(i32 %qm)
+  %m = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
 

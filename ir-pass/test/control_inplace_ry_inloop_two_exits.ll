@@ -56,7 +56,6 @@
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the source's own diagonal reflection stays uncontrolled and in the body:
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[Q]], double 2.0
 ; the DEFERRED P1 gate is in the EARLY-EXIT block, on its own, after the branch:
 ; CHECK: call void @cqrt_ry_i32(i32 %[[Q]], double 3.0
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -67,6 +66,7 @@
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: @cq_theta_
 ; NOROUTE-NOT: cqrt_ry_i32_controlled_inv
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -86,7 +86,7 @@ define i32 @example(i32 noundef %0) local_unnamed_addr #0 {
   %9 = phi i1 [ false, %1 ], [ %6, %4 ]
   %10 = phi i32 [ 0, %1 ], [ %5, %4 ]
   %11 = phi i32 [ %3, %1 ], [ %17, %4 ]
-  %12 = phi i32 [ %2, %1 ], [ %18, %4 ]
+  %12 = phi i32 [ %2, %1 ], [ %12, %4 ]
   %13 = icmp eq i32 %12, 5
   br i1 %13, label %14, label %16
 
@@ -96,12 +96,11 @@ define i32 @example(i32 noundef %0) local_unnamed_addr #0 {
 
 16:                                               ; preds = %14, %8
   %17 = phi i32 [ %15, %14 ], [ %11, %8 ]
-  %18 = tail call i32 @cq_phi_si32(i32 noundef %12, double noundef 2.000000e-01) #2
   %19 = icmp eq i32 %10, %0
   br i1 %19, label %20, label %4
 
 20:                                               ; preds = %16
-  %21 = tail call i32 @cq_theta_si32(i32 noundef %18, double noundef 3.000000e-01) #2
+  %21 = tail call i32 @cq_theta_si32(i32 noundef %12, double noundef 3.000000e-01) #2
   %22 = tail call i32 @cq_measure_si32(i32 noundef %21) #2
   %23 = tail call i32 @cq_measure_si32(i32 noundef %17) #2
   %24 = add nsw i32 %23, %22
@@ -110,7 +109,7 @@ define i32 @example(i32 noundef %0) local_unnamed_addr #0 {
 25:                                               ; preds = %4, %20
   %26 = phi i1 [ %9, %20 ], [ %6, %4 ]
   %27 = phi i32 [ %24, %20 ], [ undef, %4 ]
-  %28 = phi i32 [ %21, %20 ], [ %18, %4 ]
+  %28 = phi i32 [ %21, %20 ], [ %12, %4 ]
   br i1 %26, label %29, label %33
 
 29:                                               ; preds = %25
@@ -126,7 +125,6 @@ define i32 @example(i32 noundef %0) local_unnamed_addr #0 {
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #1
 

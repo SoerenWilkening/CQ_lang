@@ -12,10 +12,18 @@
 ; a stray op trips the `impure phase arm` decline (over-decline is safe; Prime
 ; Directive). Detection is pure SSA-value analysis before any mutation.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: impure phase arm under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}impure phase arm under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %v0, double %a, double %b) {
@@ -25,12 +33,11 @@ entry:
   %k = icmp sgt i32 %q, 5
   br i1 %k, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q,  double %a)
-  %q2 = call i32 @cq_phi_si32(i32 %q1, double %b)
+  call void @cq_phi(double %a)
+  call void @cq_phi(double %b)
   %mp = call i32 @cq_measure_si32(i32 %p)   ; STRAY: a measurement under quantum control
   br label %merge
 merge:
-  %qm = phi i32 [ %q2, %arm ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

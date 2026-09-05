@@ -23,12 +23,12 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq uncompute: tainted handle live range crosses a loop backedge
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 
 define void @slice(i32 %x, i32 %m, i32 %n) {
 entry:
@@ -40,15 +40,13 @@ outer:                                            ; preds = %entry, %odone
   br label %inner
 
 inner:                                            ; preds = %outer, %inner  (do-while: >=1 trip)
-  %qh = phi i32 [ %q, %outer ], [ %qn, %inner ]
+  %qh = phi i32 [ %q, %outer ], [ %qh, %inner ]
   %ii = phi i32 [ 0, %outer ], [ %iin, %inner ]
-  %qn = call i32 @cq_phi_si32(i32 %qh, double 1.000000e-01) ; rotates n times per outer iter
   %iin = add i32 %ii, 1
   %idone = icmp slt i32 %iin, %n
   br i1 %idone, label %inner, label %odone
 
 odone:                                            ; preds = %inner
-  %dead = call i32 @cq_phi_si32(i32 %qn, double 0.000000e+00) ; keep-alive; q dead
   %jn = add i32 %j, 1
   %jdone = icmp slt i32 %jn, %m
   br i1 %jdone, label %outer, label %exit

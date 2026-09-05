@@ -13,6 +13,19 @@
 ; the value (add/xor) and rotation (cq_phi/rz) paths. LOUD decline; mirror
 ; CHARACTER-FOR-CHARACTER (Rule 12).
 ;
+;
+; 3qlq(prep_a2): HAND DECISION — the register `cq_phi` here was NEVER the subject.
+; This fixture pins an uncompute / mux / measurement-ordering / specialization rule
+; and used `%r = cq_phi_<sfx>(%x, θ)` only as "a gate on a handle".  D1 removes that
+; spelling, so the gate is re-spelled `cq_theta_<sfx>` — the OTHER in-place rotation
+; on the same rail, which is what the corpus uses everywhere else for the same job.
+; MEASURED on the Inc-1 binary: the swap reproduces this fixture's ORIGINAL asserted
+; diagnostic, so the CHECK lines are UNCHANGED and the property is pinned by exactly
+; the text it was pinned by before.  (prep_a measured the same 16 files against the
+; pre-3qlq ORACLE; this is the independent re-measurement on the SUBJECT.)
+; ⚠ Note what the swap does NOT preserve: Rz is DIAGONAL and Ry is not, so a rule
+; that turned on diagonality would move.  None of these 16 do — that is what the
+; character-for-character reproduction of the diagnostic establishes.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: loop-carried rail has multiple in-place consumers
 ;
@@ -23,7 +36,6 @@ target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16
 target triple = "x86_64-unknown-linux-gnu"
 
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @fanout_rot(double %seed, i32 %n) {
@@ -35,8 +47,8 @@ entry:
 loop:                                             ; preds = %entry, %loop
   %i = phi i32 [ 0, %entry ], [ %inext, %loop ]
   %qh = phi double [ %q0, %entry ], [ %qn, %loop ]
-  %qn = call double @cq_phi_f64(double %qh, double 1.000000e+00)  ; carried Rz
-  %qm = call double @cq_phi_f64(double %qh, double 2.000000e+00)  ; FAN-OUT, escapes
+  %qn = call double @cq_theta_f64(double %qh, double 1.000000e+00)  ; carried Rz
+  %qm = call double @cq_theta_f64(double %qh, double 2.000000e+00)  ; FAN-OUT, escapes
   %inext = add nuw nsw i32 %i, 1
   %done = icmp eq i32 %inext, %n
   br i1 %done, label %exit, label %loop

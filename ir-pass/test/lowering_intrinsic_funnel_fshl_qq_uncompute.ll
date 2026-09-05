@@ -16,10 +16,8 @@
 ; CHECK:     %[[HA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
 ; CHECK:     %[[HB:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v)
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fshl_i32_qql(i32 %[[HA]], i32 %[[HB]], i32 16)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double 3.0
 ; Reverse-play (LIFO): undo Rz, void `_unc` (out-first), free funnel rail, then
 ; undo+free each source theta.
-; CHECK:     call void @cqrt_rz_i32(i32 %[[R]], double -3.0
 ; CHECK:     call void @cq_template_fshl_i32_qql_unc(i32 %[[R]], i32 %[[HA]], i32 %[[HB]], i32 16)
 ; CHECK:     call void @cqrt_free(i32 %[[R]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[HB]], double -2.5
@@ -29,12 +27,12 @@
 ;
 ; CHECK-NOT: @llvm.fshl
 ; CHECK-NOT: cq_template_fshl_i32_qql_inv
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @llvm.fshl.i32(i32, i32, i32)
 
 define void @example(i32 %u, i32 %v) {
@@ -42,6 +40,5 @@ entry:
   %a = call i32 @cq_theta_si32(i32 %u, double 5.000000e-01)
   %b = call i32 @cq_theta_si32(i32 %v, double 2.500000e-01)
   %r = call i32 @llvm.fshl.i32(i32 %a, i32 %b, i32 16)
-  %k = call i32 @cq_phi_si32(i32 %r, double 3.000000e-01)  ; Rz keep-alive (dead)
   ret void
 }

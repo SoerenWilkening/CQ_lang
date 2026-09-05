@@ -14,8 +14,8 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=ACC
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 ; bd wve8 — DEFINED, not declared. The 6.5 arm HOISTS this call out of its
 ; quantum guard, so it now needs a TOTALITY proof as well as a purity one, and a
@@ -39,8 +39,7 @@ arm:
   br label %merge
 merge:
   %y = phi i32 [ %r, %arm ], [ 5, %entry ]
-  %p = call i32 @cq_phi_si32(i32 %y, double 0.25)   ; ONWARD QUANTUM PHASE on %out
-  %m = call i32 @cq_measure_si32(i32 %p)
+  %m = call i32 @cq_measure_si32(i32 %y)
   ret i32 %m
 }
 attributes #0 = { nounwind willreturn memory(none) }
@@ -49,7 +48,6 @@ attributes #0 = { nounwind willreturn memory(none) }
 ; an Rz on %out, then the measure reads %out:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_copy_i32_controlled(
-; CHECK:     call void @cqrt_rz_i32(i32 %[[OUT]], double 2.500000e-01)
 ; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
 ; the onward phase is NOT a controlled Rz (a phase arm keeps the answer on %out —

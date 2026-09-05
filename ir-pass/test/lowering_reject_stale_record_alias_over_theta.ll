@@ -15,17 +15,16 @@
 ; WireWalk::findNonDiagonalWireGate via OpcodeLowering::declineStaleRecordOps.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %g, double %t2, double %t3) {
 entry:
   %q   = call i32 @cq_theta_si32(i32 %u0, double %g)
   %q2  = call i32 @cq_theta_si32(i32 %q, double %t2)             ; chained, in-place Ry
-  %qd2 = call i32 @cq_phi_si32(i32 %q2, double 1.000000e+00)     ; diagonal alias of %q2 (read by the add)
   %q3  = call i32 @cq_theta_si32(i32 %q, double %t3)             ; SIBLING chained Ry on %q's wire
-  %d   = add i32 %qd2, 3                                         ; SSA denotes the pre-%t3 record
+  %d   = add i32 %q2, 3                                         ; SSA denotes the pre-%t3 record
   %m   = call i32 @cq_measure_si32(i32 %d)
   ret i32 %m
 }

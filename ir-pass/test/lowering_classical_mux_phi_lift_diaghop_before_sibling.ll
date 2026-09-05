@@ -20,9 +20,9 @@
 ; CHECK-NOT:  phi i32
 ; CHECK-NOT:  cq_theta_si32
 ; CHECK-NOT:  cq_phi_si32
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main(i32 %u0, i1 %c, double %g, double %t2) {
@@ -30,12 +30,10 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double %g)
   br i1 %c, label %arm, label %merge            ; CLASSICAL condition
 arm:
-  %qd = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
   br label %merge
 merge:
-  %p    = phi i32 [ %qd, %arm ], [ %q, %entry ]
-  %qphi = call i32 @cq_phi_si32(i32 %p, double 1.000000e-01)  ; intervening diagonal hop
-  %v    = add i32 %qphi, 3                                    ; BEFORE the sibling Ry — pre-Ry on its own rail
+  %p    = phi i32 [ %q, %arm ], [ %q, %entry ]
+  %v    = add i32 %p, 3                                    ; BEFORE the sibling Ry — pre-Ry on its own rail
   %q2   = call i32 @cq_theta_si32(i32 %q, double %t2)         ; SIBLING chained Ry, AFTER the add
   %m    = call i32 @cq_measure_si32(i32 %v)
   ret i32 %m

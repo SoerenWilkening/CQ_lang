@@ -13,9 +13,10 @@
 ; did NOT open the ANGLE path (the f64 silent-miscompile family stays closed).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 @tblf = internal unnamed_addr constant [4 x double] [double 1.0, double 2.0, double 3.0, double 4.0]
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @angle_from_cell(double %u0) {
@@ -25,8 +26,8 @@ entry:
   %i = sext i32 %qi to i64
   %g = getelementptr inbounds [4 x double], ptr @tblf, i64 0, i64 %i
   %v = load double, ptr %g                              ; fp cell load
-  %r = call double @cq_phi_f64(double %u0, double %v)   ; %v used as the ANGLE (arg-1)
-  %m = call double @cq_measure_f64(double %r)
+  call void @cq_phi(double %v)  ; %v used as the ANGLE (arg-1)
+  %m = call double @cq_measure_f64(double %u0)
   ret double %m
 }
 

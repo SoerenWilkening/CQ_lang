@@ -96,7 +96,6 @@
 ; cannot pass:
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
-; CHECK: call void @cqrt_rz_i32(i32 %h, double 2.500000e-01)
 ; CHECK: %h_cmp = call i32 @cq_template_icmp_slt_i32(i32 %h, i32 %h)
 ; The 4.4 controlled-XOR copy merge. ARM POLARITY IS PINNED (constants and all):
 ; the TRUE arm (11) copies on the flag, the FALSE arm (22) inside the cqrt_x
@@ -126,14 +125,13 @@
 ; NOCASEB-NOT: @cqrt_cswap(i32 %h_cmp, i32 %h_cmp
 ; NOCASEB-NOT: @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %h_cmp
 ; NOCASEB-NOT: @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %out, i32 %out)
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define void @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %r = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)  ; in-place Rz: SAME rail
-  %c = icmp slt i32 %q, %r                                 ; SSA-distinct, one rail
+  %c = icmp slt i32 %q, %q                                 ; SSA-distinct, one rail
   %s = select i1 %c, i32 11, i32 22
   %m = call i32 @cq_measure_si32(i32 %s)
   ret void

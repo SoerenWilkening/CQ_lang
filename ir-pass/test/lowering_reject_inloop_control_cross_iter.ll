@@ -21,8 +21,9 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: loop-carried tainted value crosses iterations
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %b, i32 %n) {
@@ -35,11 +36,10 @@ loop:
   %c1 = icmp sgt i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %g, %mid ], [ %q, %loop ]
-  %qn = mul i32 %qm, 3                                 ; NOT an in-place rail op
+  %qn = mul i32 %q, 3                                 ; NOT an in-place rail op
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n
   br i1 %done, label %exit, label %loop
