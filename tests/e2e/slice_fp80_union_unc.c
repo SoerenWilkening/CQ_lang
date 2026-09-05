@@ -1,3 +1,16 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
+   FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
+   `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
+   READS ITS OPERAND, which is the only reason `-O1` DCE could not drop the dead
+   arithmetic this slice exists to exercise. A register-free `cq_phi(th)` reads
+   NOTHING, so the dead lineage is deleted AT STAGE 1, before the pass runs -- the
+   loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
+   was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
+   absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
+   SINK and turns the shape into `dead chain would free a measured register`; an
+   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
+   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_fp80_union_unc.c — bd szpr (3c6m.51 Inc-3 Rule-13 critic Gap 1): the
    i80 field-insert WRITE-surface `_unc` adjoints, TRACE-VERIFIED. Every prior
    fp80-union cell is `cq_measure(fn(q))`, so FreePoint classifies the terminal
@@ -68,7 +81,7 @@ long double slice(void) {
     union IEEEl2bits u;
     u.e = q;
     u.bits.exp = u.bits.exp + 2;
-    (void) cq_phi(u.e, 0.25);
+    cq_phi(0.25);
     return m;
 }
 

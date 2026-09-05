@@ -1,3 +1,16 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
+   FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
+   `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
+   READS ITS OPERAND, which is the only reason `-O1` DCE could not drop the dead
+   arithmetic this slice exists to exercise. A register-free `cq_phi(th)` reads
+   NOTHING, so the dead lineage is deleted AT STAGE 1, before the pass runs -- the
+   loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
+   was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
+   absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
+   SINK and turns the shape into `dead chain would free a measured register`; an
+   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
+   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_loop_iter_local.c — Phase 7.3 Inc 2 (799w.2): the per-iteration in-body
    uncompute Case B e2e golden — the only layer that LINKS, so the only proof the
    in-body whole-DAG reversal (xor `_unc` + `cqrt_free`) resolves and runs ONCE
@@ -26,7 +39,7 @@ void slice(int x, int n) {
     for (int i = 0; i < n; i++) {
         int q = cq_theta(x, 0.25);   /* fresh rail, born in body            */
         int t = q ^ 9;               /* iteration-local temp (xor_hl)       */
-        (void) cq_phi(t, 0.5);       /* Rz keep-alive; result dead -> dies  */
+        cq_phi(0.5);       /* Rz keep-alive; result dead -> dies  */
     }
 }
 int main(void) { slice(2, 3); return 0; }

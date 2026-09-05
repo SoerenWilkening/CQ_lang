@@ -1,3 +1,15 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- every oracle / reflection arm's `q = cq_phi(q, PI)` -> `cq_phi(PI)`.
+
+   FINDING (PRD S1, measured 2026-09-05 at HEAD 52d7764): the PRE-3qlq golden of
+   this slice encoded a CONTROLLED TENSORED Rz, which is the IDENTITY on q --
+   `cqrt_rz_<W>` is "Rz on each qubit", so the marked phase is (-1)^popcount(target)
+   (= +1 for |5>) and a per-qubit diagonal gate FIXES |0..0>, so the |0> reflection
+   can never put -1 there. Any claim in the prose below that the oracle marks |5>,
+   or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
+   THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
+   a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
+   older prose is left verbatim rather than silently corrected; read it with this.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_seq_grover.c — bd hcrg e2e smoke: the CUSTOMER shape.
    One Grover iteration's worth of structure — state prep, an oracle, the
    inverse prep, and the reflection about |0> — i.e. TWO sequential
@@ -5,9 +17,9 @@
 
    SOURCE INTENT:
        S      q = cq_theta(q, 0.5); q += off;         state preparation
-       O      if (q == 5) q = cq_phi(q, PI);          oracle: mark |5>
+       O      if (q == 5) cq_phi(PI);          oracle: mark |5>
        S†     q -= off; q = cq_theta(q, -0.5);        un-prepare
-       R0     if (q == 0) q = cq_phi(q, PI);          reflect about |0>
+       R0     if (q == 0) cq_phi(PI);          reflect about |0>
        M      measure q
 
    WHY THIS SLICE EXISTS BESIDE slice_control_seq_regions.c: that one is two
@@ -140,12 +152,12 @@ int slice(void) {
     q = cq_theta(q, 0.5);                    /* S  */
     q += off;
     if (q == 5) {                            /* O  */
-        q = cq_phi(q, 3.14159265358979323846);
+        cq_phi(3.14159265358979323846);
     }
     q -= off;                                /* S† */
     q = cq_theta(q, -0.5);
     if (q == 0) {                            /* R0 */
-        q = cq_phi(q, 3.14159265358979323846);
+        cq_phi(3.14159265358979323846);
     }
     q += off;
     return cq_measure(q);

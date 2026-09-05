@@ -1,3 +1,15 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- the derived-condition oracle arm loses its register.
+
+   FINDING (PRD S1, measured 2026-09-05 at HEAD 52d7764): the PRE-3qlq golden of
+   this slice encoded a CONTROLLED TENSORED Rz, which is the IDENTITY on q --
+   `cqrt_rz_<W>` is "Rz on each qubit", so the marked phase is (-1)^popcount(target)
+   (= +1 for |5>) and a per-qubit diagonal gate FIXES |0..0>, so the |0> reflection
+   can never put -1 there. Any claim in the prose below that the oracle marks |5>,
+   or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
+   THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
+   a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
+   older prose is left verbatim rather than silently corrected; read it with this.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_uncompute_interior_region_derived_cond.c — bd test_C_libtooling-6uqc's
    P0, end to end, WITH the S-dagger that used to make it decline. The e2e
    customer for M-B Increment 6 (clause (d2), the emitter-recorded flag-strip
@@ -5,7 +17,7 @@
 
    SOURCE INTENT:
        a = cq_theta(a, 0.5);
-       if (sqrt((double)a + 3.0) <= 5.0) a = cq_phi(a, PI);   the oracle
+       if (sqrt((double)a + 3.0) <= 5.0) cq_phi(PI);   the oracle
        a = cq_theta(a, -0.5);                                 the S-dagger
        return cq_measure(a);
 
@@ -50,7 +62,7 @@
 int slice(int u) {
     int a = cq_theta(u, 0.5);
     if (sqrt((double) a + 3.0) <= 5.0) {
-        a = cq_phi(a, CQ_PI);
+        cq_phi(CQ_PI);
     }
     a = cq_theta(a, -0.5);
     return cq_measure(a);

@@ -1,3 +1,10 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `q = cq_phi(q, th)` -> `cq_phi(th)` at every site (branch phase by kickback).
+   FLAG (PRD S6.3): the tainted arm now holds 2 cq_phi calls, which the Inc-1
+   decline partition refuses ("an arm with N>1 cq_phi calls"). Expected
+   post-increment class is a DECLINE, not an accept -- an owner call, not this
+   migration's: the kickback needs no angle sum (two rz_i1 on the SAME flag are
+   exact), so the N>1 refusal is a scoping choice, not a physics one.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_phase_diamond.c — Phase 4.1 e2e smoke (WI-4): the RSSA
    swap-routed PHASE-arm diamond, the only test layer that LINKS and so proves
    every symbol the swap-route emitter mints resolves and signature-matches
@@ -5,7 +12,7 @@
 
    SOURCE INTENT (one-content-arm diamond, multi-gate PHASE arm — §5a):
        q : tainted quantum handle (cq_theta == Ry, the sole taint source)
-       if (q > 5) { q = cq_phi(q, a); q = cq_phi(q, b); }   // cq_phi == Rz, PHASE
+       if (q > 5) { cq_phi(a); cq_phi(b); }   // cq_phi == Rz, PHASE
        measure q
 
    The tainted `if (q > 5)` is NOT classical control over quantum state: the
@@ -24,8 +31,8 @@ int slice(void) {
     int q = 3;
     q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32) */
     if (q > 5) {                   /* tainted condition -> swap-route the arm    */
-        q = cq_phi(q, 0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
-        q = cq_phi(q, 0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */
+        cq_phi(0.25);       /* arm gate 1 (Rz) — VERBATIM on the rail     */
+        cq_phi(0.75);       /* arm gate 2 (Rz) — VERBATIM on the rail     */
     }
     return cq_measure(q);
 }

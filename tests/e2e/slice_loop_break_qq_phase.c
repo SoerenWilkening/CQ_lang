@@ -1,3 +1,10 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `int p = cq_phi(p0, 0.3)` -> `int p = p0; cq_phi(0.3);`.
+   FLAG (RENAME SITE): the rewrite preserves the DATA FLOW (p == p0) but not the
+   PHASE. This slice exists to compare a comparand that CARRIES A RELATIVE PHASE
+   against slice_loop_break_qq.c, whose comparand is a bare theta mint. After the
+   migration p IS the bare theta mint (the phase is a deleted global phase), so the
+   two slices are the same program. Purpose does NOT survive.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_loop_break_qq_phase.c — Phase 7.4 (epic y05j) coverage lock
    (test_C_libtooling-mvrb). The PHASE-CARRYING-COMPARAND value-arm `break`: the
    tainted Q==Q condition compares the rail against a loop-invariant comparand `p`
@@ -5,7 +12,7 @@
    slice_loop_break_qq.c, whose comparand is a bare cq_theta mint:
 
        int p0 = cq_theta(pseed, 0.5);
-       int p  = cq_phi(p0, 0.3);       // Rz — p now carries a relative phase
+       int p = p0; cq_phi(0.3);       // Rz — p now carries a relative phase
        int q  = cq_theta(seed, 0.25);
        for (int i = 0; i < n; i++) {
            q = q ^ 5;                  // in-place value rail
@@ -31,7 +38,7 @@
 __attribute__((noinline))
 int run(int seed, int pseed, int n) {
     int p0 = cq_theta(pseed, 0.5);
-    int p  = cq_phi(p0, 0.3);           /* Rz — phase-carrying comparand */
+    int p = p0; cq_phi(0.3);           /* Rz — phase-carrying comparand */
     int q  = cq_theta(seed, 0.25);
     for (int i = 0; i < n; i++) {
         q = q ^ 5;                      /* in-place value rail self-update */

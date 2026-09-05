@@ -1,3 +1,16 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
+   FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
+   `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
+   READS ITS OPERAND, which is the only reason `-O1` DCE could not drop the dead
+   arithmetic this slice exists to exercise. A register-free `cq_phi(th)` reads
+   NOTHING, so the dead lineage is deleted AT STAGE 1, before the pass runs -- the
+   loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
+   was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
+   absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
+   SINK and turns the shape into `dead chain would free a measured register`; an
+   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
+   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_compare_qq.c — Phase 7.1 Increment A e2e smoke: a tainted Q+Q
    (both-operands-tainted) DATA-position compare. The ONLY layer that LINKS, so
    the only proof that `cq_template_icmp_<pred>_i32(i32, i32)` (the bare-QQ
@@ -44,6 +57,6 @@ void slice(int x, int y) {
     int pi = cq_theta(x, 0.10);   /* alloc i32 + ry                       */
     int qi = cq_theta(y, 0.20);   /* alloc i32 + ry                       */
     int eq = (pi == qi);          /* icmp eq QQ -> flag (dead)            */
-    (void) cq_phi(eq, 0.30);      /* Rz keep-alive; result dropped (dead) */
+    cq_phi(0.30);      /* Rz keep-alive; result dropped (dead) */
 }
 int main(void) { slice(3, 7); return 0; }

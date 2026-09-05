@@ -1,3 +1,8 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- all seven classical switch arm gates lose their register.
+   FLAG: same as slice_classical_if_gate.c -- every one of these is classically
+   controlled, so all seven are DELETED under D2 and the golden loses every rz line.
+   Purpose does NOT survive.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_classical_switch_gate.c — test_C_libtooling-sbt1.3 e2e smoke: the
    N-ARY (N>2) one-register classical-mux lift (Phase 7.1 Increment C), the
    only test layer that LINKS (Rule 2, Rule 16). The natural classical N-way
@@ -5,9 +10,9 @@
 
        int q = cq_theta(k, t);
        switch (classical_sel) {          // classical N-way dispatch
-         case 1:  q = cq_phi(q, a);                  break;   // 1 gate
-         case 2:  q = cq_phi(q, b); q = cq_phi(q, c); break;  // 2-gate chain
-         case 3:  q = cq_phi(q, d);                  break;   // 1 gate
+         case 1:  cq_phi(a);                  break;   // 1 gate
+         case 2:  cq_phi(b); cq_phi(c); break;  // 2-gate chain
+         case 3:  cq_phi(d);                  break;   // 1 gate
          default:                                    break;   // 0 gates
        }
        cq_measure(q);
@@ -46,9 +51,9 @@ int main(int argc, char **argv) {
     int sel = (argc + 1) % 4;
     int q1 = cq_theta(3, 0.5);          /* alloc i32(3) + ry */
     switch (sel) {
-        case 1: q1 = cq_phi(q1, 0.25); break;                       /* no fire   */
-        case 2: q1 = cq_phi(q1, 0.50); q1 = cq_phi(q1, 0.55); break;/* BOTH FIRE */
-        case 3: q1 = cq_phi(q1, 0.60); break;                       /* no fire   */
+        case 1: cq_phi(0.25); break;                       /* no fire   */
+        case 2: cq_phi(0.50); cq_phi(0.55); break;/* BOTH FIRE */
+        case 3: cq_phi(0.60); break;                       /* no fire   */
         default: break;                                             /* no fire   */
     }
     int m1 = cq_measure(q1);
@@ -58,8 +63,8 @@ int main(int argc, char **argv) {
     int sel2 = argc + 7;
     int q2 = cq_theta(4, 0.5);          /* alloc i32(4) + ry */
     switch (sel2) {
-        case 2: q2 = cq_phi(q2, 0.75); break;                       /* no fire   */
-        case 3: q2 = cq_phi(q2, 0.90); q2 = cq_phi(q2, 0.95); break;/* no fire   */
+        case 2: cq_phi(0.75); break;                       /* no fire   */
+        case 3: cq_phi(0.90); cq_phi(0.95); break;/* no fire   */
         default: break;                                             /* default   */
     }
     int m2 = cq_measure(q2);

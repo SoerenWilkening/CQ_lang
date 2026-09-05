@@ -1,3 +1,8 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- the outer intervening gate and the inner arm gate lose their register.
+   FLAG: the outer arm now holds ONE cq_phi + a nested tainted region. Under the new
+   surface `-O1` may fold the nest to `select i1 %a, i1 %b, false` (PRD S6.1); if it
+   does, this stops being the 4.3 depth-2 nest it was written for and becomes P3.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_nested_phase.c — Phase 4.3 e2e smoke (WI-4,
    test_C_libtooling-s8yf.5): the RSSA swap-routed depth-2 homogeneous-PHASE
    nest, the only test layer that LINKS — and so the only proof that the nested
@@ -11,9 +16,9 @@
    one-content-arm diamond — the §0 measured accept shape):
        q : tainted quantum handle (cq_theta == Ry, the sole taint source)
        if (q > 5) {                 // OUTER tainted condition (flag f1)
-           q = cq_phi(q, 0.25);     // intervening Mid gate g (Rz, PHASE) on q
+           cq_phi(0.25);     // intervening Mid gate g (Rz, PHASE) on q
            if (q < 9) {             // INNER tainted condition — reads the GATED q
-               q = cq_phi(q, 0.75); // inner-arm gate h (Rz, PHASE)
+               cq_phi(0.75); // inner-arm gate h (Rz, PHASE)
            }
        }
        measure q
@@ -48,9 +53,9 @@ int slice(void) {
     int q = 3;
     q = cq_theta(q, 0.5);              /* taint q -> handle (alloc i32(3), ry_i32) */
     if (q > 5) {                       /* OUTER tainted cond -> swap-route (flag f1) */
-        q = cq_phi(q, 0.25);           /* intervening Mid gate (Rz) — VERBATIM on rail1 */
+        cq_phi(0.25);           /* intervening Mid gate (Rz) — VERBATIM on rail1 */
         if (q < 9) {                   /* INNER tainted cond -> route FROM rail1 (f2) */
-            q = cq_phi(q, 0.75);       /* inner-arm gate (Rz) — VERBATIM on rail2 */
+            cq_phi(0.75);       /* inner-arm gate (Rz) — VERBATIM on rail2 */
         }
     }
     return cq_measure(q);

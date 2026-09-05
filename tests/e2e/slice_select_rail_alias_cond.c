@@ -1,3 +1,11 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- four `T r = cq_phi(q, th)` -> `T r = q; cq_phi(th);` (RENAME SITES).
+   FLAG (the whole mechanism): this slice's header states that `%q` and
+   `%r = cq_phi(%q,.)` are SSA-DISTINCT yet ONE RAIL, and that this is why
+   `q < r` is NOT foldable by InstCombine. After the migration r IS q, so all four
+   compares are `x < x` / `x == x` / `x >= x` on ONE SSA value and InstCombine folds
+   them at STAGE 1. The alias the slice was written to exercise cannot be spelled
+   with a register-free cq_phi at all. Purpose does NOT survive.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_select_rail_alias_cond.c — bd big5 (2026-07-31) e2e link proof for the
    ALIASED-RAIL condition compare, the shape bd 7q3s fenced for one day on a
    premise the owner then refuted.
@@ -77,13 +85,13 @@ __attribute__((noinline))
 void slice(int x, double d) {
     /* (A) integer: %q and %r are SSA-DISTINCT, ONE RAIL after lowering. */
     int q = cq_theta(x, 0.50);
-    int r = cq_phi(q, 0.25);
+    int r = q; cq_phi(0.25);
     int s = (q < r) ? 11 : 22;           /* icmp slt h0, h0 — CASE A */
     (void) cq_measure(s);
 
     /* (B) f64: the same alias through the kjd1 fp select copy family. */
     double qf = cq_theta(d, 0.75);
-    double rf = cq_phi(qf, 0.125);
+    double rf = qf; cq_phi(0.125);
     double sf = (qf < rf) ? 1.0 : 2.0;   /* fcmp olt h?, h? — CASE A */
     (void) cq_measure(sf);
 
@@ -94,14 +102,14 @@ void slice(int x, double d) {
     /* (D) CONSTANT-TRUE integer predicate — the flag rail is |1> at the mint,
        so the strip must return it to |0> before the free (Rule 6). */
     int qe = cq_theta(x, 0.05);
-    int re = cq_phi(qe, 0.35);
+    int re = qe; cq_phi(0.35);
     int se = (qe == re) ? 11 : 22;       /* icmp eq(a,a) == constant TRUE */
     (void) cq_measure(se);
 
     /* (E) f64 ENTANGLED flag, NOT a constant: `fcmp oge(a,a)` == ord(a) ==
        !isnan(a). No ORDERED fcmp is constant on aliased operands. */
     double qg = cq_theta(d, 0.20);
-    double rg = cq_phi(qg, 0.40);
+    double rg = qg; cq_phi(0.40);
     double sg = (qg >= rg) ? 1.0 : 2.0;  /* fcmp oge(a,a) == !isnan(a) */
     (void) cq_measure(sg);
 }

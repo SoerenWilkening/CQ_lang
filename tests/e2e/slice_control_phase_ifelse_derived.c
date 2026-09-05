@@ -1,3 +1,10 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `q = cq_phi(q, th)` -> `cq_phi(th)` at every site (branch phase by kickback).
+   FLAG (PRD S6.3): the tainted arm now holds 2 cq_phi calls, which the Inc-1
+   decline partition refuses ("an arm with N>1 cq_phi calls"). Expected
+   post-increment class is a DECLINE, not an accept -- an owner call, not this
+   migration's: the kickback needs no angle sum (two rz_i1 on the SAME flag are
+   exact), so the N>1 refusal is a scoping choice, not a physics one.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_phase_ifelse_derived.c — Phase 4.1 follow-on e2e smoke
    (test_C_libtooling-9hh): a two-arm PHASE if/else routing a DERIVED base — the
    routed handle is a pre-region cq_phi result, not the bare theta. The only
@@ -7,7 +14,7 @@
    SOURCE INTENT (derived base + two-arm phase if/else — §5b over a criterion-3
    derived base):
        q : tainted quantum handle (cq_theta == Ry, the sole taint source)
-       q = cq_phi(q, 0.9);                          // UNCONDITIONAL pre-region Rz
+       cq_phi(0.9);                          // UNCONDITIONAL pre-region Rz
        if (q > 5) { rz(q, 0.25); rz(q, 0.125); }    // then arm (flag)
        else       { rz(q, 0.75); }                  // else arm (¬flag, X-bracket)
        measure q
@@ -35,12 +42,12 @@
 int slice(void) {
     int q = 3;
     q = cq_theta(q, 0.5);          /* taint q -> handle (alloc i32(3), ry_i32)  */
-    q = cq_phi(q, 0.9);            /* pre-region Rz — the DERIVED routed base   */
+    cq_phi(0.9);            /* pre-region Rz — the DERIVED routed base   */
     if (q > 5) {                   /* tainted condition -> swap-route both arms */
-        q = cq_phi(q, 0.25);       /* then gate 1 (Rz) — VERBATIM on its rail   */
-        q = cq_phi(q, 0.125);      /* then gate 2 (Rz) — VERBATIM on its rail   */
+        cq_phi(0.25);       /* then gate 1 (Rz) — VERBATIM on its rail   */
+        cq_phi(0.125);      /* then gate 2 (Rz) — VERBATIM on its rail   */
     } else {
-        q = cq_phi(q, 0.75);       /* else gate (Rz) — VERBATIM on its rail     */
+        cq_phi(0.75);       /* else gate (Rz) — VERBATIM on its rail     */
     }
     return cq_measure(q);
 }

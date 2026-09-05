@@ -1,3 +1,16 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
+   FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
+   `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
+   READS ITS OPERAND, which is the only reason `-O1` DCE could not drop the dead
+   arithmetic this slice exists to exercise. A register-free `cq_phi(th)` reads
+   NOTHING, so the dead lineage is deleted AT STAGE 1, before the pass runs -- the
+   loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
+   was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
+   absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
+   SINK and turns the shape into `dead chain would free a measured register`; an
+   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
+   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_funnel_fshl_qq.c — bd 20xt.1 e2e link-layer smoke (Rule 2 / Rule 16) for
    the general constant-amount funnel shift fshl(a,b,n) with a!=b + BOTH data
    operands quantum handles. This is the ONLY layer that LINKS and proves the new
@@ -29,7 +42,7 @@ unsigned int slice(void) {
     unsigned int c = cq_theta(3u, 0.375);
     unsigned int d = cq_theta(5u, 0.125);
     unsigned int dead = (c << 8) | (d >> 24);    /* fshl(c,d,8) -> qql, dead */
-    (void) cq_phi(dead, 0.6);                    /* Rz keep-alive -> reverse-play _unc */
+    cq_phi(0.6);                    /* Rz keep-alive -> reverse-play _unc */
     return cq_measure(r);
 }
 

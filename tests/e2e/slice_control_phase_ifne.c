@@ -1,9 +1,11 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `if (q != 0) q = cq_phi(q, .25)` -> `if (q != 0) cq_phi(.25)`.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_phase_ifne.c — Phase 4 e2e smoke (issue a8c0): the idiomatic
    conditional phase whose else edge `clang -O1` const-folds to `0`.
 
    SOURCE INTENT:
        q : tainted quantum handle (cq_theta == Ry, the sole taint source)
-       if (q != 0) q = cq_phi(q, a);     // cq_phi == Rz, a PHASE on q
+       if (q != 0) cq_phi(a);     // cq_phi == Rz, a PHASE on q
        measure q
 
    `clang -O1` reaches the else (straight-through) edge ONLY when `q == 0`, so it
@@ -24,7 +26,7 @@
 int slice(void) {
     int q = 3;
     q = cq_theta(q, 0.5);
-    if (q != 0) q = cq_phi(q, 0.25);
+    if (q != 0) cq_phi(0.25);
     return cq_measure(q);
 }
 int main(void) { (void) slice(); return 0; }

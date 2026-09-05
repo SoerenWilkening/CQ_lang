@@ -1,3 +1,16 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `(void) cq_phi(<dead value>, th)` -> `cq_phi(th)`.
+   FLAG (KEEP-ALIVE SITE -- MEASURED, and this is the migration's headline cost):
+   `(void) cq_phi(<dead>, th)` was a keep-alive. Rz is a side-effecting extern that
+   READS ITS OPERAND, which is the only reason `-O1` DCE could not drop the dead
+   arithmetic this slice exists to exercise. A register-free `cq_phi(th)` reads
+   NOTHING, so the dead lineage is deleted AT STAGE 1, before the pass runs -- the
+   loss is not one trace line, it is the whole chain and the `_unc` symbol the slice
+   was written to LINK. Measured on slice_intrinsic_bswap: the `llvm.bswap.i32` is
+   absent from stage-1 IR. There is no drop-in replacement in CQ.h (cq_measure is a
+   SINK and turns the shape into `dead chain would free a measured register`; an
+   unknown extern is declineTaintEscapes; a volatile local is erased by the fenv
+   ruling's eraseDeadVolatileScalarStores). OWNER QUESTION -- see PRE_DISPOSITIONS.md.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_uncompute_dead_shapes.c — Phase 5 (WI-7, test_C_libtooling-p2s2.7): the
    permanent LINK-COMPLETENESS guard for the `_unc` shapes that
    slice_uncompute_dead_dag does NOT exercise. WI-6 linked only the bare-QQ and
@@ -41,16 +54,16 @@ void slice(int x, int y, float z) {
     int a = cq_theta(x, 0.25);   /* taint x -> handle (alloc + ry)            */
     int s = 100 - a;             /* sub_lh  (100 literal-left, a handle)      */
     int t = 5 << s;              /* shl_lh  (5 literal-left, s shift handle)  */
-    (void) cq_phi(t, 0.5);       /* Rz keep-alive; result dropped (dead)      */
+    cq_phi(0.5);       /* Rz keep-alive; result dropped (dead)      */
 
     /* (B) tainted widening cast: i32 handle -> i64, dropped. */
     int  b  = cq_theta(y, 0.30); /* alloc + ry                                */
     long lb = (long) b;          /* sext_i32_to_i64                           */
-    (void) cq_phi(lb, 0.6);      /* Rz keep-alive (cqrt_rz_i64); dropped      */
+    cq_phi(0.6);      /* Rz keep-alive (cqrt_rz_i64); dropped      */
 
     /* (C) fneg on a tainted float, dropped. */
     float fc = cq_theta(z, 0.40);/* alloc + ry (f32)                          */
     float fn = -fc;              /* fneg_f32                                  */
-    (void) cq_phi(fn, 0.7);      /* Rz keep-alive (cqrt_rz_f32); dropped      */
+    cq_phi(0.7);      /* Rz keep-alive (cqrt_rz_f32); dropped      */
 }
 int main(void) { slice(2, 5, 3.0f); return 0; }

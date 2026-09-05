@@ -1,3 +1,7 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- the three switch PHASE arms lose their register argument.
+   NOTE: the S5 const-fold re-anchor scrub this slice's prose describes is RETIRED
+   by PRD S6.2 P5 -- a register-free cq_phi has no arg-0 to fold.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_switch_phase.c — Phase 4.5 e2e smoke (WI-6,
    test_C_libtooling-bkpz.6): the RSSA swap-routed homogeneous-PHASE switch, the
    only test layer that LINKS and so the ONLY proof that the N-way phase switch
@@ -10,8 +14,8 @@
    §4A / IMPLEMENTATION-4.5 ACCEPT shape, control_swap_switch_phase.ll is the
    pinned IR contract):
        q : tainted quantum handle (scrutinee, cq_theta == Ry, the sole source)
-       switch (q) { case 0: q=cq_phi(q,.1); case 1: q=cq_phi(q,.2);
-                    case 2: q=cq_phi(q,.3); }   // PHASE arms (cq_phi == Rz)
+       switch (q) { case 0: cq_phi(.1); case 1: cq_phi(.2);
+                    case 2: cq_phi(.3); }   // PHASE arms (cq_phi == Rz)
        measure q
 
    N>=3 deliberately: the byte-diff then exercises the N-way folded-gate scrub +
@@ -43,9 +47,9 @@ int slice(void) {
     int q = 3;
     q = cq_theta(q, 0.5);          /* taint q -> scrutinee handle (alloc, ry)   */
     switch (q) {                   /* tainted switch -> N-way swap-route phase   */
-        case 0: q = cq_phi(q, 0.1); break;   /* arm 0 (Rz) — VERBATIM on rail 0 */
-        case 1: q = cq_phi(q, 0.2); break;   /* arm 1 (Rz) — VERBATIM on rail 1 */
-        case 2: q = cq_phi(q, 0.3); break;   /* arm 2 (Rz) — VERBATIM on rail 2 */
+        case 0: cq_phi(0.1); break;   /* arm 0 (Rz) — VERBATIM on rail 0 */
+        case 1: cq_phi(0.2); break;   /* arm 1 (Rz) — VERBATIM on rail 1 */
+        case 2: cq_phi(0.3); break;   /* arm 2 (Rz) — VERBATIM on rail 2 */
     }
     return cq_measure(q);
 }

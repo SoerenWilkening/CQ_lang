@@ -1,3 +1,9 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- the ONWARD phase after the data-mux loses its register.
+   FLAG: this call is UNCONTROLLED (it sits after the switch merge, not inside an arm),
+   so under D2 it is a GLOBAL phase and is DELETED. The slice's stated purpose -- the
+   dugh re-propagation that re-taints the onward cq_phi so it lowers as a gate on %out
+   -- has NO CUSTOMER left in this program. Purpose does NOT survive.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_cond_onward_phase.c — dugh (Phase 4×6) e2e smoke: an untainted
    control-merge result feeding an ONWARD-QUANTUM PHASE (Rz), driven through the full
    clang -O1 → opt cq-lowering → link → run pipeline. The only test layer that LINKS,
@@ -9,7 +15,7 @@
        q : tainted quantum SCRUTINEE handle
        int r = 3;                                  // the default value v_d
        switch (q) { case 0: r=7; case 5: r=9; case 17: r=11; }   // all-const data-mux
-       r = cq_phi(r, 0.25);                        // ONWARD phase on the muxed answer
+       cq_phi(0.25);                        // ONWARD phase on the muxed answer
        measure(r)
 
    The switch merge is all-ConstantInt => data-untainted, so the FIRST propagation
@@ -38,7 +44,7 @@ int slice(void) {
         case 5:  r = 9;  break;    /* delta 9^3=10  (non-contiguous: defeats fold)*/
         case 17: r = 11; break;    /* delta 11^3=8                                */
     }
-    r = cq_phi(r, 0.25);           /* ONWARD phase on the muxed answer (Rz on out)*/
+    cq_phi(0.25);           /* ONWARD phase on the muxed answer (Rz on out)*/
     return cq_measure(r);          /* reads the phased muxed answer               */
 }
 int main(void) { (void) slice(); return 0; }
