@@ -52,15 +52,18 @@ The user writes plain C. `CQ.h` is a header-only intrinsic surface
 declaring three primitive families plus an inversion bracket:
 
 - `cq_theta_<sfx>(x, θ)` — Ry rotation; the only taint source.
-- `cq_phi_<sfx>(x, φ)` — Rz rotation; propagates taint, does not
-  introduce it.
+- `cq_phi(φ)` — the **branch phase**; register-free (`void cq_phi(double)`)
+  since bd `test_C_libtooling-3qlq` Increment 1, so it neither introduces
+  nor propagates taint. The retired 15-width `cq_phi_<sfx>(x, φ)` family
+  is gone from the header.
 - `cq_measure_<sfx>(x)` — measurement; the only sink.
 - `cq_invert_begin()` / `cq_invert_end()` — bracket markers.
 
-Each family has per-type specializations and a `_Generic` dispatch
-macro (see [`frontend.md`](./frontend.md) §3). The declarations are
-ordinary C `extern` functions — the IR pass identifies them later by
-name prefix.
+The two register-carrying families have per-type specializations and a
+`_Generic` dispatch macro; `cq_phi` is a single declaration with neither
+(see [`frontend.md`](./frontend.md) §3). The declarations are
+ordinary C `extern` functions — the IR pass identifies the two suffixed
+families later by name **prefix**, and `cq_phi` by **exact** name.
 
 There is no `quantum` keyword, no annotation attribute, no Clang AST
 plugin, no rewriter. Stock Clang accepts the source unchanged.
@@ -159,7 +162,7 @@ points.
 
 No. Real LLVM intrinsics (`@llvm.memcpy`, `@llvm.ctpop`) are registered
 in `Intrinsics.td` and *would* require LLVM source modifications to
-add. But `@cq_theta_*`, `@cq_phi_*`, `@cq_measure_*` are **not LLVM
+add. But `@cq_theta_*`, `@cq_phi`, `@cq_measure_*` are **not LLVM
 intrinsics in the technical sense** — they are ordinary external
 function declarations whose names happen to start with `cq_`. The IR
 pass pattern-matches by string name. Same trick Enzyme uses with

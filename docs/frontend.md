@@ -78,16 +78,26 @@ load-bearing engineering all lives in the IR pass and the runtime.
 | `cq_phi(angle)` | branch phase | None — no data operand | Multiplies the CURRENT BRANCH's amplitude by `e^{iθ}` (§3.3) |
 | `cq_measure(x)` | Measurement | **Sink** — return is classical | Reads register into a classical scalar |
 
-> **`cq_phi` is register-free as of the 3qlq epic (owner decision D1) and
-> the row above states its semantics, not today's header.** `CQ.h` still
-> declares the retired per-register family `cq_phi_<sfx>(x, φ)` until
-> Increment 1 lands (bd `test_C_libtooling-3qlq.2`); §3.1's per-type /
-> `_Generic` machinery below therefore describes `cq_phi` only for as long
-> as that is true. `cq_theta` and `cq_measure` are unaffected. See §3.3.
+> **`cq_phi` is register-free** (owner decision D1; bd
+> `test_C_libtooling-3qlq.2`, Increment 1 — see the Status note in §3.3 for
+> which branch that is on). `CQ.h` declares exactly **one**
+> `void cq_phi(double angle)`. The retired per-register `cq_phi_<sfx>(x, φ)`
+> family — the 14 widths in the suffix table below plus the
+> target-dependent `long double` / `_f80` specialization, 15 in all — is
+> **gone from the header**, with deliberately no migration shim, so
+> the old two-argument spelling is a hard compile error — measured, `clang`
+> says `too many arguments to function call, expected single argument
+> 'angle', have 2 arguments`. §3.1's per-type / `_Generic` machinery below
+> therefore covers `cq_theta` and `cq_measure` only; `cq_phi` has no per-type
+> form and no dispatch macro at all. `cq_theta` and `cq_measure` are
+> otherwise unaffected. See §3.3.
 
-Each family is declared in `CQ.h` as a set of per-type specializations
-plus a `_Generic` dispatch macro. The user-visible call site is the
-macro; the IR observes the per-type specialization after preprocessing.
+The two **register-carrying** families are declared in `CQ.h` as a set of
+per-type specializations plus a `_Generic` dispatch macro. The
+user-visible call site is the macro; the IR observes the per-type
+specialization after preprocessing. `cq_phi` is not one of them: it takes
+no register, so there is nothing to dispatch on and it is a single plain
+declaration.
 
 The fan-out covers the same 14 C scalar types the type map tracked
 under the previous design — bool, the four character/byte forms, two
@@ -112,10 +122,13 @@ table below — this is the canonical suffix-to-type map:
 | `float` | `_f32` | |
 | `double` | `_f64` | |
 
-This gives 14 specializations × 3 primitive families = 42 declarations,
-plus 3 dispatch macros. Showing `cq_theta` in full; `cq_phi` (until
-Increment 1 retires its register form, §3.3) and `cq_measure` follow the
-same shape with the same 14 widths.
+This gives 14 specializations × the **two** register-carrying families
+(`cq_theta`, `cq_measure`) = 28 declarations, plus the single
+`void cq_phi(double angle)` — **29 in all** — with 2 `_Generic` dispatch
+macros and the `cq_ry` statement macro (§3.2). Showing `cq_theta` in full;
+`cq_measure` follows the same shape with the same 14 widths. `cq_phi` does
+not, and that is the point of §3.3: a branch phase has no register to
+dispatch on.
 
 ```c
 /* CQ.h — sketch of the cq_theta family */
@@ -157,10 +170,10 @@ double              cq_theta_f64 (double             x, double angle);
     double:             cq_theta_f64               \
 )(x, angle)
 
-/* cq_phi declared the same way (same 14 widths, same return-type rule)
-   — the RETIRED register form; it becomes the single declaration
-   `void cq_phi(double angle)` in 3qlq Increment 1 (§3.3).
-   cq_measure declared the same way but takes only x (no angle arg). */
+/* cq_measure declared the same way but takes only x (no angle arg).
+   cq_phi has NO per-type family and NO _Generic macro: it is the one
+   declaration `void cq_phi(double angle)` (§3.3). The per-register
+   cq_phi_<sfx>(x, angle) family it replaced is deleted from the header. */
 ```
 
 Two notes on the dispatch:
@@ -285,11 +298,14 @@ form above (measured; PRD §4.2).
 
 > **Status.** The semantics below are the plan of record (owner decisions
 > D1–D4, 2026-09-05,
-> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §2). **The
-> lowering ships in Increment 1 (bd `test_C_libtooling-3qlq.2`); until it
-> lands, `CQ.h` still declares the OLD per-register form**
-> `cq_phi(x, φ)` → `cqrt_rz_<W>(handle, φ)`. Do not read this section as a
-> description of the compiler at HEAD.
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §2). Both
+> halves — the `CQ.h` surface and the kickback lowering — **ship in
+> Increment 1 (bd `test_C_libtooling-3qlq.2`, this branch set)**. They are
+> **not on `main`**: at `main` the header still declares the retired
+> per-register form `cq_phi(x, φ)` and the pass still lowers it to the
+> tensored `cqrt_rz_<W>(handle, φ)`, which is the defect this section
+> exists to remove (§3.2, PRD §1). Read this section as the Increment-1
+> surface, not as a description of any commit before that merge.
 
 ```c
 void cq_phi(double angle);
@@ -367,6 +383,43 @@ exactly where the source says, and the second is not a special case.
 no data operand to propagate through. It is ordered by the **block it sits
 in**, not by a data dependence, which is precisely what makes it a branch
 phase. Only `cq_theta` creates superposition; only `cq_theta` allocates.
+
+#### The one operand is an angle — and the name is reserved
+
+Two consequences of the one-argument prototype are worth stating outright,
+because the old surface's type discipline is gone with it.
+
+**Any classical expression is a legal angle, including an integer one.**
+`cq_phi(n)` with an `int n` compiles by the ordinary implicit `int → double`
+conversion and *is* a phase of `n` radians. There is no diagnostic — measured
+2026-09-05 at `-Wall -Wextra -Wconversion`,
+`volatile int g = 7; int c = g; if (q == 5) cq_phi(c);` emits
+`cqrt_rz_i1(f, 0x1.cp+2)`, i.e. a 7-radian phase, and nothing is wrong with
+that lowering. The type system no longer separates "register" from "angle",
+so **port an old call by rewriting it, never by deleting an argument**: a
+`cq_phi(x, φ)` shortened to `cq_phi(x)` is a legal program that means
+something else.
+
+The realistic version of that slip is caught, however, because the *register*
+is quantum: a **quantum-derived** angle declines loudly and lowers nothing —
+`cq rotation lowering: unsupported quantum-derived rotation angle`
+uncontrolled, and `cq controlled lowering: rotation angle under quantum
+control` inside a tainted region. Only a *classical* mis-typed angle is
+silent.
+
+**`cq_phi` is a reserved name and must not be defined by user code.** The
+pass claims the symbol by **exact** name with the prototype `void(double)`
+(a declaration with any other prototype is a loud decline,
+`cq rotation lowering: unsupported declared prototype for cq_phi`). A
+*definition* is a different matter: measured 2026-09-05 on the Increment-1
+branch tip, a module that defines `void @cq_phi(double)` with an observable
+body has both its call sites **and the definition itself** removed, exit 0,
+with no diagnostic — the pass reads the calls as branch phases and D2 deletes
+the uncontrolled ones. `cq_phi` / `void(double)` is a short, collidable C
+signature, so this is a real hazard for a TU that happens to spell it.
+Whether a defined `@cq_phi` should instead be a loud decline is an open
+question from the Increment-1 round-1 review (finding F-L6-6) and is not
+decided here.
 
 ### 3.4 `cq_measure` — explicit collapse
 
@@ -653,9 +706,9 @@ because the three classes are not interchangeable (`CLAUDE.md` Rule 7):
   on the flag `f`, **uncontrolled** (`cqrt_rz_i1(f, θ)`), and the strip
   carries the phase back onto the branch (§3.3). Nothing is applied to the
   data register at all, and there is no work rail. *This is the Increment-1
-  lowering (bd `test_C_libtooling-3qlq.2`); before it lands the phase arm is
-  a controlled per-qubit Rz on the register, which is the defect §3.3
-  documents.*
+  lowering (bd `test_C_libtooling-3qlq.2`, this branch set — see §3.3's
+  Status note); at `main` the phase arm is instead a controlled per-qubit Rz
+  on the register, which is the defect §3.3 documents.*
 - **A rotation arm** — the arm is `cq_theta` on a register the condition
   does not read — is applied **in place**, as one controlled gate
   (`cqrt_ry_<W>_controlled(f, h, θ)`). A swap route cannot carry an Ry:
