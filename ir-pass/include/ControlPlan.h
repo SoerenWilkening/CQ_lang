@@ -114,27 +114,22 @@ struct ControlRegion {
   // erases it (§1.3, keeps the `br i1` well-typed mid-pass).
   llvm::Value *Condition = nullptr;
 
-  // Compound-condition kind (WP5, PRD §2.5). `ConjNone` ⇒ `Condition` is a
-  // plain compare (the WP3 path, unchanged). `ConjAnd`/`ConjOr` ⇒ `Condition`
-  // is the flag-combination select and `CondA`/`CondB` are its two tainted
-  // sub-compares; `ControlFlag` lowers each to its own flag, then
-  // `FlagConjunction::combineFlags` ANDs/ORs them into the single
-  // `region.Flag` (§1.2). The sub-compares (and the select) are erased with
-  // the region's condition cleanup.
-  enum ConjKind { ConjNone, ConjAnd, ConjOr } Conj = ConjNone;
-  llvm::Value *CondA = nullptr;  // first sub-compare (`%fa`); a `CmpInst`.
-  llvm::Value *CondB = nullptr;  // second sub-compare (`%fb`); a `CmpInst`.
-  // The two forward sub-flags minted by `ControlFlag` from `CondA`/`CondB`
-  // (the inputs to the `combineFlags` Toffoli). Stashed so the uncompute
-  // reuses the SAME flag handles for the conjunction uncompute (rather than
-  // re-deriving them), then balances each with its own compare-uncompute.
-  llvm::Value *FlagA = nullptr;
-  llvm::Value *FlagB = nullptr;
+  // ⚠ THE WP5 COMPOUND-CONDITION FIELDS (`Conj`/`CondA`/`CondB`/`FlagA`/`FlagB`)
+  // AND THE `Flag` FIELD ARE **DELETED** (bd test_C_libtooling-3qlq Inc 1 part
+  // B). They belonged to the EXCISED controlled-op generation
+  // (`ControlFlag::lowerControlFlag` + `FlagConjunction::combineFlags`, neither
+  // of which exists), were written by nothing and read by nothing, and would
+  // have been a SECOND representation of a compound condition beside the one
+  // that is now real: the `CondTree` walk (`SelectClassify.h`), re-derived from
+  // `Condition` by every consumer and lowered by `CondTreeEmit`. Do not
+  // resurrect them — a compound condition is a TREE, not a two-compare pair, and
+  // the tree is the thing the emitter and the classifier share.
 
-  // The i32 control flag minted by `ControlFlag::lowerControlFlag`
-  // (`CompareLowering::lowerCompareToFlag`, then `FlagConjunction` for a
-  // compound/nested condition). Null until that step runs.
-  llvm::Value *Flag = nullptr;
+  // The INNER condition of a depth-2 register-free PHASE NEST
+  // (`Kind == PhaseKickbackNest`; null for every other kind). Like `Condition`
+  // it is the ROOT of a `CondTree` — a `CmpInst` or a logical `and`/`or`/`xor`
+  // tree over compares — and is re-derived, never cached as a flag.
+  llvm::Value *InnerCondition = nullptr;
 
   // SelectRegion — a tainted-condition DATA select (the WP4/4.2 mux, integer
   // handle width). BranchRegion — a `br`-diamond (WP3/WP5/WP8).
@@ -231,6 +226,24 @@ struct ControlRegion {
   // phase call; `Condition`/`Pred`/`Arm`/`ArmNegated` carry the shape as a
   // `BranchRegion` diamond does. Emitted by
   // `SwapRouteEmit::emitPhaseKickbackRegion`.
+  // PhaseKickbackNest (bd test_C_libtooling-3qlq Inc 1 part B, PRD §6.2 row P4)
+  // — the GENUINE depth-2 nest `if (a) { …cq_phi…; if (b) { …cq_phi… } }` that
+  // SimplifyCFG did NOT fold (it cannot: the outer arm holds an opaque call). It
+  // is ONE region, not the 4.3 parent/child pair, because the register-free
+  // lowering has nothing to route between levels: `Pred`/`Arm` (= the Mid block,
+  // which holds the outer arm's phase calls AND the inner condition tree) /
+  // `ArmFalse` (= the inner content arm) / `MergeBB` (the 3-predecessor join,
+  // with NO φ) carry the whole shape, `Condition` and `InnerCondition` the two
+  // condition trees, `ArmNegated` and `InnerArmNegated` the two Rule-9
+  // polarities, and `Shadow`/`ShadowFalse` the two arms' phase calls — the
+  // ordinary field convention (`ShadowFalse` is `ArmFalse`'s), which also makes
+  // `lowerControlRegions`' doomed-block set `{Arm, ArmFalse, MergeBB}` exactly
+  // right without a special case. Emitted by
+  // `SwapRouteEmit::emitPhaseKickbackNestRegion`: two condition NETWORKS, ONE
+  // `cqrt_toffoli` conjunction ancilla, `cqrt_rz_i1` on the outer root for the
+  // outer arm and on the conjunction for the inner, then the exact LIFO undo. NO
+  // `cqrt_cswap`, no work rail, no per-level route — the 4.3 swap route is what
+  // this retires.
   enum Kind {
     SelectRegion,
     BranchRegion,
@@ -239,7 +252,8 @@ struct ControlRegion {
     ClassicalCallArm,
     AbortPark,
     GuardedStoreArm,
-    PhaseKickback
+    PhaseKickback,
+    PhaseKickbackNest
   } Kind = BranchRegion;
 
   // The merge node: a `SelectInst` (select-sourced) or the merge-block
@@ -429,6 +443,12 @@ struct ControlRegion {
   // the ordinary true-successor diamond and for select/symmetric regions (whose
   // polarity is carried explicitly by the arm assignment).
   bool ArmNegated = false;
+
+  // Rule-9 polarity of the INNER level of a `PhaseKickbackNest`: true when the
+  // inner content arm is the inner branch's FALSE successor. Expressed at emit
+  // time as a `cqrt_x` bracket on the inner root inside the conjunction node
+  // (`CondNetwork::Node::NegR`), never as a second flag mint.
+  bool InnerArmNegated = false;
   // Nested-AND intermediate guard block (WP5, PRD §2.7): for the un-flattened
   // `if (a) { if (b) gate; }` shape, `Pred -[a]-> {Mid, Merge}`,
   // `Mid -[b]-> {Arm, Merge}`, `Arm -> Merge`. `Mid` holds the inner compare

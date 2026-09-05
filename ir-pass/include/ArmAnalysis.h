@@ -272,6 +272,20 @@ PhaseKickbackDisp classifyPhaseKickback(
     const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
     llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
 
+// bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 register-free
+// PHASE NEST (the one `clang -O1` did NOT fold to a compound branch; the folded
+// one is P3). On ACCEPT `Region` is a single `PhaseKickbackNest`, the inner `br`
+// is added to `ClaimedBranches` (the FA0 blocker — the inner branch recovers FLAT
+// in isolation and would false-decline) and both trees' logical `select i1` nodes
+// to `ClaimedSelects`. Declines fire the precise per-shape string; NotApplicable
+// falls through to the caller's ordinary shape recovery. See the definition's
+// header for the unitary and for why this is ONE region and not the 4.3 pair.
+PhaseKickbackDisp classifyPhaseKickbackNest(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::BranchInst *> *ClaimedBranches,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects);
+
 AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,
                                     llvm::DominatorTree *DT, llvm::LoopInfo *LI,

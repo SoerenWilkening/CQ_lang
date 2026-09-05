@@ -536,6 +536,28 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
     R = ControlRegion();
     break;
   }
+  // 3qlq Inc 1 part B (PRD §6.2 row P4) — the GENUINE depth-2 register-free
+  // PHASE NEST, the FOURTH pre-peel and for the same reason as the third: its
+  // merge carries no φ, so `recoverRegion` labels the whole thing `OffPattern`
+  // and declines generically (MEASURED on `if (q>5){cq_phi(.25); if (q<9)
+  // cq_phi(.75);}` at part A's HEAD — `control flow`, at the OUTER branch). It
+  // must run AFTER the flat kickback, and that order IS load-bearing here,
+  // unlike among the first three: a nest's outer branch has a `Mid` arm that
+  // ends in a CONDITIONAL branch, which `classifyPhaseKickback`'s
+  // `uncondSucc(arm) == merge` shape test refuses — so the flat classifier
+  // returns NotApplicable on a nest, but only because it asks that question
+  // first. Do not reorder them without re-deriving that.
+  switch (classifyPhaseKickbackNest(BI, Taint, R, DT, LI, &Claimed,
+                                    &ClaimedSelects)) {
+  case PhaseKickbackDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case PhaseKickbackDisp::Declined:
+    return;
+  case PhaseKickbackDisp::NotApplicable:
+    R = ControlRegion();
+    break;
+  }
   switch (recoverRegion(BI, Taint, R)) {
   case RegionShape::OffPattern:
     // 7.2 Inc 4 — partition the generic decline into a per-disposition, source-

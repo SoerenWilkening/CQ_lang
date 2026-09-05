@@ -3877,6 +3877,324 @@ PhaseKickbackDisp classifyPhaseKickback(
   return PhaseKickbackDisp::Accept;
 }
 
+
+// ── bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 NEST ────
+//
+// `if (COND1(q)) { …cq_phi…; if (COND2(q)) { …cq_phi… } }` that `clang -O1` did
+// NOT fold into one compound branch (PRD §6.2 row P4). The fold is the normal
+// outcome and it is P3 — SimplifyCFG turns `if(a){if(b) X;}` into
+// `br (a && b)` whenever the outer arm holds nothing but the inner branch, and
+// the two `@slice` bodies are then BYTE-IDENTICAL (measured). What keeps a nest
+// GENUINE is content in the outer arm: an opaque `call void @cq_phi(double)` is
+// not speculatable, so the two levels survive.
+//
+// WHY THIS IS ONE REGION AND NOT THE 4.3 PARENT/CHILD PAIR. The 4.3 nest exists
+// to ROUTE: it cswaps `q` onto rail1 under f1, replays the outer arm's Rz there,
+// mints f2 FROM RAIL1 (because the register `%g` is stale on the f1=1 path), and
+// tears the two levels down LIFO. Every one of those steps is a consequence of
+// the arm gate CARRYING A REGISTER. Under D1/D2 it does not: `cq_phi` is
+// `void(double)`, no register is relabelled anywhere in the nest, so the inner
+// condition reads exactly the registers it reads in the source and its flag can
+// be minted at the OUTER branch from those same registers. What is left is pure
+// boolean algebra — the inner arm fires iff `c1 ∧ c2` — which is ONE
+// `cqrt_toffoli` onto a fresh |0> ancilla, i.e. the SAME conjunction node the
+// 4.4 select network has always used and that P3 now uses for `&&`. Two rails
+// (the two condition roots) plus one ancilla, versus the route's two work rails
+// and four `cqrt_cswap`.
+//
+// THE EMITTED UNITARY, stated so it can be checked without running anything.
+// With f1 = c1(x) and f2 = c2(x) minted into |0> ancillas and
+// g = (f1 ⊕ NegOuter) ∧ (f2 ⊕ NegInner):
+//   * the OUTER arm's phases ride f1 (X-bracketed when the outer content arm is
+//     the false successor), so branch x picks up e^{iθ} exactly when x is in the
+//     outer arm — which is what the source says, since the outer arm's phase
+//     calls run whenever the outer condition holds, inner condition or not;
+//   * the INNER arm's phases ride g, i.e. exactly when BOTH hold;
+//   * every ancilla is returned to |0> on EVERY branch (the toffoli is its own
+//     inverse, each `_unc` strip is a permutation) and freed clean (Rule 6).
+// No gate anywhere in this region takes a data register as an operand, so no
+// register-side fence (R4 disjoint wires, R6 stale record, the structural
+// freeze) has a subject here — exactly as for the flat kickback.
+//
+// SCOPE, and it is deliberately narrow. The outer arm may hold phase calls and
+// the inner condition tree AND NOTHING ELSE; a `cq_theta` there is the MIXED
+// nest (prep-b's `slice_control_phase_nest_deep.c`) and stays a decline — an Ry
+// in the outer arm RELABELS a register, which would make the inner flag minted
+// at the outer branch read a different basis than the source compare, the very
+// staleness the guards below exist to refuse. Depth 3+, an if/else at either
+// level, a merge φ of any kind, a value arm, a loop, and a condition used
+// outside its own branch all decline.
+PhaseKickbackDisp classifyPhaseKickbackNest(
+    BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const DominatorTree *DT, const LoopInfo *LI,
+    SmallPtrSetImpl<BranchInst *> *ClaimedBranches,
+    SmallPtrSetImpl<Instruction *> *ClaimedSelects) {
+  if (!BI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Pred = BI->getParent();
+  BasicBlock *S0 = BI->getSuccessor(0);
+  BasicBlock *S1 = BI->getSuccessor(1);
+
+  // ---- 1. SHAPE. Exactly ONE outer successor ends in a tainted conditional
+  // branch (the inner diamond); the other is the shared merge, reached straight
+  // from `Pred`. Both or neither is not a one-content-arm nest — the same
+  // criterion-1 partition `recoverRegionTree` uses, and for the same reason.
+  const bool T0 = hasTaintedCondBranch(S0, Taint);
+  const bool T1 = hasTaintedCondBranch(S1, Taint);
+  if (T0 == T1)
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Mid = T0 ? S0 : S1;
+  BasicBlock *Merge = T0 ? S1 : S0;
+  const bool OuterNeg = !T0;
+  if (Mid->getSinglePredecessor() != Pred)
+    return PhaseKickbackDisp::NotApplicable;
+  auto *InnerBI = dyn_cast<BranchInst>(Mid->getTerminator());
+  if (!InnerBI || !InnerBI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *IS0 = InnerBI->getSuccessor(0);
+  BasicBlock *IS1 = InnerBI->getSuccessor(1);
+  BasicBlock *InnerArm = nullptr;
+  bool InnerNeg = false;
+  if (IS1 == Merge && uncondSucc(IS0) == Merge &&
+      IS0->getSinglePredecessor() == Mid) {
+    InnerArm = IS0;
+  } else if (IS0 == Merge && uncondSucc(IS1) == Merge &&
+             IS1->getSinglePredecessor() == Mid) {
+    InnerArm = IS1;
+    InnerNeg = true;
+  } else {
+    // Also the DEPTH CAP: a depth-3 inner arm ends in a tainted `br`, so
+    // `uncondSucc` is null and neither orientation matches.
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  // The merge must be the clean THREE-predecessor join {Pred, Mid, InnerArm} —
+  // the same thing the flat kickback asks of its two-predecessor merge, and for
+  // the same two reasons: `flattenRegionTree` erases all three arms and would
+  // silently destroy a fourth edge, and the block-lifetime pre-flight in
+  // `lowerControlRegions` reads this region's doomed set off these fields.
+  if (!Merge->hasNPredecessors(3))
+    return PhaseKickbackDisp::NotApplicable;
+  {
+    SmallPtrSet<const BasicBlock *, 4> Want{Pred, Mid, InnerArm};
+    for (const BasicBlock *PB : predecessors(Merge))
+      if (!Want.count(PB))
+        return PhaseKickbackDisp::NotApplicable;
+  }
+  // ANY φ in the merge makes this NotApplicable. The flat path can claim ONE
+  // 2-incoming `phi double` as a merge-tail ANGLE (`phaseAngleTail`); a 3-pred
+  // merge φ has three incomings and that predicate refuses it outright, so there
+  // is no φ this emitter knows how to account for — and a φ left standing in a
+  // block `flattenRegionTree` splices away is a BROKEN MODULE at `opt` exit 0
+  // (measured on the flat path in part A). Refuse rather than flatten over it.
+  if (!Merge->phis().empty())
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 2. THE TWO CONDITION TREES, through the shared grammar (Rule 14). A
+  // level whose condition is neither a compare nor a decomposable tree is the
+  // bare-i1 shape composed with a nest — out of scope, and NotApplicable so the
+  // ordinary `recoverRegion` fall-through owns the (loud) decline.
+  CondTree OuterTree, InnerTree;
+  if (!collectCondTree(BI->getCondition(), OuterTree,
+                       /*AllowLogicalSelect=*/true) ||
+      !collectCondTree(InnerBI->getCondition(), InnerTree,
+                       /*AllowLogicalSelect=*/true))
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 3. ARM CONTENT.
+  //   Mid       = { N × call void @cq_phi(double), the INNER condition tree, br }
+  //   InnerArm  = { M × call void @cq_phi(double), br }
+  // with N + M >= 1. Mid's membership test is by SET rather than by position, so
+  // a compare scheduled before the phase calls is admitted (nothing in the tree
+  // has an ordering requirement — the network reads the leaves' OPERANDS, not
+  // the compares). ANYTHING ELSE in either block — an Ry, a value op, a store —
+  // is off-pattern and falls through to the ordinary loud decline.
+  SmallPtrSet<const Value *, 8> InnerTreeSet;
+  for (CmpInst *L : InnerTree.Leaves)
+    InnerTreeSet.insert(L);
+  for (Instruction *N : InnerTree.Nodes)
+    InnerTreeSet.insert(N);
+  SmallVector<Instruction *, 4> MidGates, InnerGates;
+  for (Instruction &I : *Mid) {
+    if (I.isTerminator())
+      break;
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (CI && isRegisterFreePhaseCall(CI, Taint) && CI->arg_size() == 1) {
+      MidGates.push_back(CI);
+      continue;
+    }
+    if (InnerTreeSet.count(&I))
+      continue;  // part of the inner condition, consumed by the network.
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  for (Instruction &I : *InnerArm) {
+    if (I.isTerminator())
+      break;
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI || !isRegisterFreePhaseCall(CI, Taint) || CI->arg_size() != 1)
+      return PhaseKickbackDisp::NotApplicable;
+    InnerGates.push_back(CI);
+  }
+  if (InnerArm->size() != InnerGates.size() + 1)
+    return PhaseKickbackDisp::NotApplicable;
+  if (MidGates.empty() && InnerGates.empty())
+    return PhaseKickbackDisp::NotApplicable;  // an identity nest is nobody's.
+
+  // ---- 4. EVERY ANGLE IS CLASSICAL (Rule 3), same dialect and string as the
+  // flat path's.
+  for (ArrayRef<Instruction *> Gates : {ArrayRef<Instruction *>(MidGates),
+                                        ArrayRef<Instruction *>(InnerGates)})
+    for (Instruction *G : Gates)
+      if (Taint.Tainted.count(cast<CallInst>(G)->getArgOperand(0))) {
+        diagnoseUnderControl(G, "rotation angle");
+        return PhaseKickbackDisp::Declined;
+      }
+
+  // ---- 4b. POPULATE before the condition fences so every diagnostic anchors on
+  // the region exactly as the flat classifier's do.
+  Region.Kind = ControlRegion::PhaseKickbackNest;
+  Region.Condition = BI->getCondition();
+  Region.InnerCondition = InnerBI->getCondition();
+  Region.Pred = Pred;
+  Region.Arm = Mid;
+  Region.ArmFalse = InnerArm;
+  Region.MergeBB = Merge;
+  Region.Merge = nullptr;
+  Region.ArmNegated = OuterNeg;
+  Region.InnerArmNegated = InnerNeg;
+  Region.Shadow.assign(MidGates.begin(), MidGates.end());
+  Region.ShadowFalse.assign(InnerGates.begin(), InnerGates.end());
+  Region.ClassArm = ArmClass::Phase;
+  Region.ClassArmFalse = ArmClass::Phase;
+
+  // ---- 5. PER-LEVEL CONDITION LADDER. Identical in content to P3's, run twice.
+  // The `HomeBB` argument is the block the level's tree must live in: `Pred` for
+  // the outer level, `Mid` for the inner (a tree hoisted into `Pred` is admitted
+  // for the inner level too — it is still available at the outer branch, which
+  // is where BOTH networks are minted).
+  auto levelOk = [&](const CondTree &T, BasicBlock *HomeBB,
+                     BranchInst *LevelBI) -> bool {
+    constexpr size_t kMaxLeaves = 8;
+    constexpr size_t kMaxNodes = 8;
+    if (T.Leaves.size() > kMaxLeaves || T.Nodes.size() > kMaxNodes) {
+      diagnoseUnderControl(BI, "branch phase condition tree too deep");
+      return false;
+    }
+    for (CmpInst *Leaf : T.Leaves) {
+      if (!comparePredLowerable(Leaf)) {
+        diagnoseUnderControl(BI, "control condition has no template");
+        return false;
+      }
+      if (!compareFlagMintable(Leaf, Taint) || !Taint.Tainted.count(Leaf) ||
+          Leaf->getOperand(0)->getType()->isIntegerTy(1) ||
+          (Taint.Tainted.count(Leaf->getOperand(0)) &&
+           Taint.Tainted.count(Leaf->getOperand(1)))) {
+        // Un-mintable width / out-of-scope predicate, a CLASSICAL leaf (nothing
+        // to mint — the §5.2 classical-as-handle prohibition), an i1-operand
+        // leaf (a smuggled boolean NOT), or Q+Q (the network mints with
+        // `AllowQQLeaves = false`). Each would fail MID-network, which is the
+        // ziov.4 mutate-then-decline class; refuse here.
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+      if (Leaf->getParent() != HomeBB && Leaf->getParent() != Pred) {
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+      // THE DOMINANCE FACT THE WHOLE NEST RESTS ON, asked rather than assumed:
+      // BOTH networks are minted at the OUTER branch, so every leaf OPERAND must
+      // be available there. It is structural — `Mid` defines nothing but void
+      // phase calls and the tree itself, so no leaf operand can be defined in
+      // `Mid` or in `InnerArm` — but a structural fact that is load-bearing for
+      // a use-before-def is worth a line of code rather than a line of prose.
+      for (Value *Op : Leaf->operands())
+        if (auto *OpI = dyn_cast<Instruction>(Op))
+          if (OpI->getParent() == Mid || OpI->getParent() == InnerArm) {
+            diagnoseUnderControl(BI, "control flow");
+            return false;
+          }
+    }
+    for (Instruction *N : T.Nodes)
+      if (N->getParent() != HomeBB && N->getParent() != Pred) {
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+    // DATA USES, structurally: every tree instruction's users must be inside the
+    // SAME tree or be that level's own branch. There is no shared-flag path here
+    // (the roots are stripped and freed inside the region), so an outside use
+    // would read a freed rail.
+    SmallPtrSet<const Value *, 16> TreeSet;
+    for (CmpInst *Leaf : T.Leaves)
+      TreeSet.insert(Leaf);
+    for (Instruction *N : T.Nodes)
+      TreeSet.insert(N);
+    for (const Value *V : TreeSet)
+      for (const User *U : V->users())
+        if (U != LevelBI && !TreeSet.count(U)) {
+          diagnoseUnderControl(BI, "condition used outside the branch");
+          return false;
+        }
+    // STALE-CONDITION guard, the `RegionTreeDetect::staleCond` form (Rule 14 —
+    // the same two prongs, the same string): position-free, router-crossing wire
+    // walk over the level's whole leaf-union provenance, plus a bounded
+    // positional scan from each leaf to its own block's terminator. The
+    // positional prong is exact here for a reason worth stating: `Mid` contains
+    // ONLY void phase calls and the tree, so nothing between the inner compare
+    // and the outer branch can move a wire — a `cq_theta` anywhere near this
+    // region is caught by the position-free prong.
+    SmallPtrSet<Value *, 16> Prov;
+    for (CmpInst *Leaf : T.Leaves)
+      condProvenance(Leaf, Taint, Prov);
+    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true)) {
+      diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
+      return false;
+    }
+    for (CmpInst *Leaf : T.Leaves) {
+      const Instruction *Term = Leaf->getParent()->getTerminator();
+      for (const Instruction *I = Leaf->getNextNode(); I && I != Term;
+           I = I->getNextNode()) {
+        const auto *CI = dyn_cast<CallInst>(I);
+        if (!CI)
+          continue;
+        const Function *F = CI->getCalledFunction();
+        if (F && F->getName().starts_with("cq_theta_") &&
+            CI->arg_size() >= 1 && Taint.Tainted.count(CI->getArgOperand(0))) {
+          diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  if (!levelOk(OuterTree, Pred, BI) || !levelOk(InnerTree, Mid, InnerBI))
+    return PhaseKickbackDisp::Declined;
+  (void)DT;
+  (void)LI;
+
+  // ---- 6. LOOPS. A nest on a CFG cycle keeps the d8jl decline and its existing
+  // string: the 8h7d.5 rolled-in-loop narrowing was proven for the FLAT region
+  // only (`flatRegionRollableInLoop` names a single Arm and a single MergeBB),
+  // and nothing has re-derived it for a three-block region tree. Over-declining
+  // is safe; widening it is a separate increment with its own twin matrix.
+  if (regionEntryInLoop(BI)) {
+    diagnoseUnderControl(BI, "nested control flow");
+    return PhaseKickbackDisp::Declined;
+  }
+
+  // ACCEPT. Claim the INNER branch so the detection loop does not revisit it and
+  // false-decline (the FA0 blocker, verbatim from the 4.3 path), and claim every
+  // logical `select i1` node of BOTH trees so the tainted-select scan leaves
+  // them alone (see `classifyPhaseKickback`'s header for what happens otherwise).
+  if (ClaimedBranches)
+    ClaimedBranches->insert(InnerBI);
+  if (ClaimedSelects)
+    for (const CondTree *T : {&OuterTree, &InnerTree})
+      for (Instruction *N : T->Nodes)
+        if (isa<SelectInst>(N))
+          ClaimedSelects->insert(N);
+  return PhaseKickbackDisp::Accept;
+}
+
 // 6.5 — recognize the §2.13 classical-call-under-control shape (DD-7). Pure SSA
 // analysis, before any mutation (Rule 9). See ArmClassify.h for the disposition
 // contract. This runs BEFORE `classifyArms`: a positive match short-circuits the
