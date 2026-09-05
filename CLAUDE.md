@@ -180,7 +180,14 @@ dirty/entangled rail is a hidden measurement that collapses `q` (revised
 `FreePoint` post-dominator discipline; a post-measure gate, a loop-backedge live
 range, or an unrecognized user is a **loud reject**, never a silent skip.
 
-**Rule 7 — Method matches arm class.** **Phase arms** (`Rz` = `cq_phi`) keep the
+**Rule 7 — Method matches arm class.** ⚠ **From 3qlq Inc 1 (bd
+`test_C_libtooling-3qlq.2`; ruled 2026-09-05, Inc 0 landed, the lowering NOT yet
+at HEAD) the phase-arm gate is the register-free KICKBACK `cqrt_rz_i1(f, θ)` on
+the FLAG — no gate on `q` at all, no `cqrt_rz_<W>_controlled`, no route — because
+the per-qubit Rz this rule describes is not an oracle; see the ⚠ paragraph opening
+the Correctness-Risk section. Everything in this rule about the phase arm's gate
+describes the pre-3qlq generation and is kept as history, not as instruction; the
+Ry/value halves are unaffected.** **Phase arms** (`Rz` = `cq_phi`) keep the
 answer (a phase) **in place on `q`**, and the data-derived flag is stripped by the
 **uncontrolled** `icmp_inv(q)`. **The arm gate itself is now ONE
 `cqrt_rz_<W>_controlled(f, q, θ)` on the FLAT `emitRegion` path** (bd
@@ -793,6 +800,42 @@ the contract.
 ---
 
 ## CORRECTNESS RISK — Tainted control flow (the live work, the deepest hazard)
+
+⚠ **READ THIS FIRST: every shipped Grover golden is the IDENTITY on `q`, and the
+mechanism the rest of this section describes is what made it so** (finding
+2026-09-05, `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §1;
+bd memory [`grover-goldens-are-identity-tensored-rz-2026-09-05`]). `cqrt_rz_<W>`
+is **TENSORED** — Rz on EACH qubit of the register (`docs/backend.md` §11.3,
+`docs/frontend.md` §3.2) — so `if (q == 5) q = cq_phi(q, PI)` lowers to
+`cqrt_rz_i32_controlled(f, h, π)`, whose marked phase is `(−1)^popcount(target)`
+= **+1** for 5 under either Rz convention; and the reflection
+`if (q == 0) q = cq_phi(q, PI)` is worse, because a per-qubit **diagonal** gate
+FIXES `|0…0⟩` and can never put `−1` there. Nothing caught it and nothing could:
+the golden byte-diff proves every symbol resolves and signature-matches, not that
+the unitary is right (Rule 2), and there is no simulator (owner decision
+2026-06-10) — the traces are self-consistent records of the identity. The
+physically correct spelling, the explicit kickback ancilla
+`bool m = (q == 5); m = cq_phi(m, PI);` with `m` then dead, **declines** at HEAD
+in both measured spellings with `cq uncompute: dead chain would free a measured
+register`, so **Grover is not expressible at HEAD by any spelling**. The fix is bd
+`test_C_libtooling-3qlq` (PRD D1–D7): `cq_phi` becomes **register-free**,
+`void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`",
+lowered by **KICKBACK** — the ordinary flag mint, then `cqrt_rz_i1(f, θ)`
+**UNCONTROLLED** on the flag, then the ordinary `_unc` strip (which returns `f` to
+`|0⟩` on every branch) and `cqrt_free` — with an uncontrolled or
+classically-controlled `cq_phi` DELETED as a global phase (D2, a documented
+semantic and not a diagnostic), NO multi-bit Rz at all (D4 — the register-wide Z
+rotation is the classical per-bit loop `for (i…) if ((q>>i)&1) cq_phi(θ)`), and
+**no new runtime symbol** (D3 — the emitted Rz set SHRINKS to `cqrt_rz_i1`).
+Inc 0 (docs + the `cq_ry` statement macro) is the only part landed; the lowering
+is bd `3qlq.2`. **The standing lesson is a RETIREMENT: "`Rz|0⟩ = |0⟩` for free"
+must never again be quoted as a load-bearing argument.** It is cited below and in
+the ROADMAP as what makes the phase-arm route junk-free, and it is TRUE — it is
+also EXACTLY the property that makes a routed or controlled per-qubit Rz **not an
+oracle**, because a gate that fixes `|0⟩` on every wire fixes `|0…0⟩` on the
+register. A W-bit "rotation" ABI needs its multi-qubit semantics pinned BEFORE a
+control emitter is built on it. Read every "phase arm" sentence in this section,
+in Rule 7, and in `ROADMAP.md` as describing the PRE-3qlq generation.
 
 Tainted `br` / `select` / `switch` is the construct that has produced every
 verify-clean silent miscompile in this project's history. The **old controlled-op

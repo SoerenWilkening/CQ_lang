@@ -132,6 +132,15 @@ void __cq_invert_end  (void);
     _Float16:           cq_theta_f16               \
 )(x, angle)
 
+/* cq_ry(x, θ) — the documented STATEMENT surface for an in-place Ry.
+   A rotation consumes the old name (docs/frontend.md §3.2, the linear
+   rule), so the assignment IS the semantics; `cq_ry(x, θ)` is exactly
+   `x = cq_theta(x, θ)` and lowers to the identical IR at -O1
+   (tests/frontend/cq_ry_macro.c). `cq_theta` stays declared: it is the
+   expression form, and it is how state prep is written — `r = cq_theta(5, θ)`
+   rotates a FRESH register seeded with 5, which has no in-place spelling. */
+#define cq_ry(x, angle) ((x) = cq_theta((x), (angle)))
+
 /* cq_phi — Rz phase-rotation dispatch (same 15 widths as cq_theta). */
 #define cq_phi(x, angle) _Generic((x),             \
     CQ_PHI_LDBL_                                    \

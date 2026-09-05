@@ -998,6 +998,19 @@ matches the frontend's per-bit rotation semantics (see
 [`frontend.md`](./frontend.md) §3.2) and Sturm.jl's `q.θ += δ` on
 `QInt{W}`.
 
+> **Rz — emitted at `i1` only, from 3qlq Inc 1 (bd `test_C_libtooling-3qlq.2`;
+> ruled 2026-09-05, NOT yet at HEAD — Inc 0 is documentation only).** The tensored
+> reading above is the whole `cqrt_rz_<W>` semantics and it is exactly what
+> made a routed or controlled Rz useless as an oracle: the marked phase is
+> `(−1)^popcount(target)`, and a per-qubit diagonal gate fixes `|0…0⟩`, so it
+> can never mark it (`retire-swap-route-PRD.md` §1). `cq_phi` is therefore
+> register-free, and the ONLY Rz the pass emits is the kickback gate
+> `cqrt_rz_i1(flag, θ)` on a flag ancilla
+> ([`frontend.md`](./frontend.md) §3.3). The `W>1` widths and the whole
+> `cqrt_rz_<W>_controlled[_inv]` family stay **declared but unemitted** until
+> the Phase-11 freeze decides them (owner question Q1, PRD §5/§12). This adds
+> no symbol; the emitted set shrinks.
+
 ### 11.4 Gate primitives
 
 For internal use by the template library and by Phase 11

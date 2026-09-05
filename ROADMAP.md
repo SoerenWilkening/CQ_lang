@@ -658,7 +658,10 @@ after a statevector-checked design dialogue; see
   peephole default-on for every flat phase spine (diamond, if/else, hcrg
   sequential, the 8h7d.5 rolled loop, `ShareCondFlag`, multi-Rz spines, Rz on the
   condition register), replacing the route quintuple with one
-  `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate. The 4.3 depth-2 nest and the 4.5
+  `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate (*declared, unemitted since 3qlq
+  Inc 1 — `retire-swap-route-PRD.md` §5: the phase arm becomes the register-free
+  kickback `cqrt_rz_i1(f, θ)` on the flag, because a TENSORED per-qubit Rz is not
+  an oracle; PRD §1*). The 4.3 depth-2 nest and the 4.5
   switch KEEP the route. The two forms are the same unitary, and the 26 moved
   goldens' diff is exactly the collapse and nothing else
   (`tools/golden_multiset_audit.py`). The two stems get DIFFERENT uncompute
@@ -1002,7 +1005,8 @@ via the §7.6 reversible output tape.)
 > `cqrt_copy_f{16,32,64,80}_controlled` family, designated frozen at the
 > Phase-11 gate (`fp-data-select-PRD.md` §7). A SECOND frozen-designate family
 > joined on 2026-09-02: **`cqrt_ry_<W>_controlled`** (9 widths, mirroring the
-> Phase-4 `cqrt_rz_<W>_controlled`), added by the control-in-place epic
+> Phase-4 `cqrt_rz_<W>_controlled` — *declared, unemitted since 3qlq Inc 1, PRD
+> `retire-swap-route-PRD.md` §5*), added by the control-in-place epic
 > `test_C_libtooling-drbq`
 > (`docs/prd/phase-04-swap-route-control/control-in-place-PRD.md` §5). It is NOT
 > a footprint optimization: the swap route CANNOT carry an `Ry` at all

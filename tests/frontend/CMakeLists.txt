@@ -5,7 +5,17 @@
 # clang + FileCheck + lit — there is no shell fallback.
 #
 # Standalone configure must succeed even without the parent build, so this
-# CMakeLists.txt can be configured on its own as a smoke check.
+# CMakeLists.txt can be configured on its own as a smoke check. Two things are
+# needed for the STANDALONE form to actually run the suite (both measured
+# 2026-09-05, bd test_C_libtooling-3qlq.1):
+#   * pass -DLLVM_TOOLS_BINARY_DIR=<llvm>/bin, NOT -DLLVM_DIR=... . The
+#     standalone project() below declares no languages, so LLVMConfig.cmake's
+#     compiler probes hard-error ("check_source_compiles: CXX: needs to be
+#     enabled before use"). LLVM_TOOLS_BINARY_DIR skips find_package entirely.
+#   * CQ_INCLUDE_FLAG is derived from this file's location when
+#     CMAKE_SOURCE_DIR has no include/ (see below) — standalone it is this
+#     directory, and every fixture used to fail with
+#     "fatal error: 'CQ.h' file not found".
 
 cmake_minimum_required(VERSION 3.20)
 
@@ -111,7 +121,17 @@ set(CQ_LIT_RUNNER
 # Generate lit.site.cfg.py from the template. CQ_INCLUDE_FLAG carries the
 # absolute -I flag for the CQ header directory so RUN lines using
 # `-include CQ.h` resolve without spelling out the path themselves.
-set(CQ_INCLUDE_FLAG "-I${CMAKE_SOURCE_DIR}/include")
+#
+# Under the PARENT build CMAKE_SOURCE_DIR is the repo root and the first branch
+# is taken, byte-for-byte as before. Under a STANDALONE configure it is THIS
+# directory, which has no include/ — fall back to this file's own location.
+if(EXISTS "${CMAKE_SOURCE_DIR}/include/CQ.h")
+  set(CQ_INCLUDE_FLAG "-I${CMAKE_SOURCE_DIR}/include")
+else()
+  get_filename_component(CQ_REPO_INCLUDE_DIR
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../include" ABSOLUTE)
+  set(CQ_INCLUDE_FLAG "-I${CQ_REPO_INCLUDE_DIR}")
+endif()
 set(CQ_TEST_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}")
 set(CQ_TEST_BINARY_DIR "${CMAKE_CURRENT_BINARY_DIR}")
 configure_file(
