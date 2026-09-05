@@ -1,50 +1,41 @@
-; control_swap_eqfold_polarity.ll — ACCEPT spec, FALSE-successor equality-folded
-; diamond (4.5 WI-5; Rule 9 polarity probe).
+; control_swap_eqfold_polarity.ll — ACCEPT.
 ;
-; The eq-fold diamond of control_swap_eqfold_diamond.ll, but the gate arm is the
-; FALSE successor: `%c = icmp ne i32 %q, 7 ; br i1 %c, label %merge, label %arm`,
-; with the merge phi's entry-incoming listed FIRST. The arm is the `ne`-FALSE
-; successor, i.e. the `q == 7` region — so the gate genuinely CONST-FOLDS to
-; `cq_phi(i32 7, θ)` exactly as on the true-successor diamond. `tryEqFoldArm`'s D1
-; predicate covers `ICMP_NE` as well as `ICMP_EQ` (both are equality), so the arm
-; is re-anchored; ControlDetect resolves the arm by merge-phi IDENTITY (orientation
-; B, `ArmNegated`) and `emitRegion` routes on ¬flag via a self-inverse
-; `cqrt_x(flag)` bracket around BOTH the route-in and the route-back. The
-; flag-strip is polarity-independent: Rz preserves q's basis value, so
-; `icmp_ne_inv(q)` returns the flag to |0> regardless of which polarity routed it.
+; ⚠⚠ THIS FIXTURE NO LONGER PINS THE EQUALITY-FOLD RE-ANCHOR. Its old header
+; described `tryEqFoldArm`'s D1-D8 ladder and the 4.5 §5 const-fold re-anchor
+; scrub, and every word of that is now FALSE OF THIS FILE. The header is rewritten
+; rather than left standing, because a green fixture whose header claims a
+; property it does not exercise is the FALSE-GREEN class this whole migration
+; exists to stop -- and this one was found by the Rule-13 flips lens
+; ($SP/progress/review_flips.md, FINDING F1), not by the suite.
 ;
-; (clang -O1 canonicalizes a natural `if(q==k)` to `icmp eq` + TRUE-successor — the
-; const-fold requires `q==k` to dominate the arm — so this `icmp ne` + FALSE-
-; successor shape is hand-transcribed as the defensive ¬flag-bracket probe, the
-; eq-fold analog of control_swap_diamond_polarity.ll. It is a legal, coherent IR
-; shape: the arm IS the `q==7` region, so the fold is genuine.)
+; WHY THE PROPERTY IS GONE. `EqFoldArm.cpp`'s D2 requires the phase spine to
+; bottom at a `ConstantInt`, and the ONLY construct that ever produced one was
+; `cq_phi_<sfx>(i32 k, theta)` -- `-O1` substituting the value the equality edge
+; pins into the gate's ARG-0. `void cq_phi(double)` HAS NO ARG-0, so no spine can
+; bottom at a constant and D2 can never fire. Measured four ways by the lens:
+;   1. the retired `cq_phi_<sfx>` spelling declines BEFORE analysis (reserved
+;      name, round-1 F-L6-1), and `opt` writes NO module at all -- so nothing that
+;      path computes can become an accepted lowering;
+;   2. the `cq_theta_si32(i32 k, theta)` spelling is intercepted EARLIER, by drbq
+;      Inc-4's F1 (`state prep merged with a quantum register`), ON BOTH BINARIES
+;      -- so it never was an eq-fold customer;
+;   3. the last conceivable route -- a `ConstantInt` MERGE INCOMING with
+;      register-free phases in the arm -- declines `control flow` in BOTH
+;      polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+;   4. the wrong unitary D8 fenced CANNOT BE EMITTED: `rzRtFn(` has 4 call sites,
+;      all `"i1"`, and `controlledRotationFn(` has 2, both `RotStem::Ry`. No
+;      minter of a controlled Rz remains anywhere in the pass.
+; `tryEqFoldArm` D1-D8 and `straightThroughConstFoldHandle` are therefore
+; STRUCTURALLY UNREACHABLE and are listed in MIGRATION_REPORT.md §13.3a as
+; freeze-time dead-code candidates. They are NOT deleted in this increment.
 ;
-;
-; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
-; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
-; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
-; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
-; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
-;
-; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
-; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
-; that used to sit AFTER a positive of its prefix was WINDOWED to the text
-; past that positive; re-measuring it whole-file is a strictly stronger
-; question, and where the pattern is one of the counted ones the
-; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
-; window it replaces, not weaker.
-;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
-;   * call void @cqrt_free(   [superseded by the FCNT count]
-;   * call void @cqrt_x(   [superseded by the XCNT count]
-;   * !cq.branchphase
-;
-; 30 line(s) of prose that annotated the OLD CHECK block were removed with
-; it — they described the pre-Inc-1 gate stream line by line.
+; WHAT THIS FILE PINS NOW (measured on `build/ir-pass/cq-opt`; the CHECK lines
+; below were DERIVED from that output):
+;   POLARITY: an `icmp ne` whose gate arm is the FALSE successor. The whole N=2
+;   arm gets ONE `cqrt_x` bracket pair -- per ARM, not per gate, because `cqrt_x`
+;   is self-inverse (fix_r1's F-L1-3 correction). Unitary `e^{i(a+b)}` on
+;   `q == 7`. This is the file's surviving property and it is a real one: it is
+;   the negated-arm N=2 cell.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -63,7 +54,7 @@ entry:
   %c = icmp ne i32 %q, 7
   br i1 %c, label %merge, label %arm     ; SWAPPED: gate arm is the FALSE successor
 arm:
-  call void @cq_phi(double %a)  ; folded to 7 (q==7 holds here)
+  call void @cq_phi(double %a)  ; (was "folded to 7" — no arg-0 exists now)
   call void @cq_phi(double %b)
   br label %merge
 merge:

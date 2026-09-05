@@ -1,62 +1,44 @@
-; control_swap_eqfold_classical_between.ll — ACCEPT, and THE CRASH REGRESSION PIN
-; for `ControlRegion::RoutedBase` (round-1 Rule-13 review of bd
-; test_C_libtooling-drbq Inc 1, lens L4 §1).
+; control_swap_eqfold_classical_between.ll — ACCEPT.
 ;
-;     int q = cq_theta(3, .5);
-;     if (q == 5) q = cq_phi(q, .2);   /* region 1: eq-fold phase diamond      */
-;     if (cc)     g();                 /* a CLASSICAL branch between them      */
-;     if (q == 6) q = cq_phi(q, .3);   /* region 2: eq-fold, base = region 1's */
-;     return cq_measure(q);            /*           MERGE φ                    */
+; ⚠⚠ THIS FIXTURE NO LONGER PINS THE EQUALITY-FOLD RE-ANCHOR. Its old header
+; described `tryEqFoldArm`'s D1-D8 ladder and the 4.5 §5 const-fold re-anchor
+; scrub, and every word of that is now FALSE OF THIS FILE. The header is rewritten
+; rather than left standing, because a green fixture whose header claims a
+; property it does not exercise is the FALSE-GREEN class this whole migration
+; exists to stop -- and this one was found by the Rule-13 flips lens
+; ($SP/progress/review_flips.md, FINDING F1), not by the suite.
 ;
-; THE DEFECT (measured from this exact C at `clang -O1`; a SIGSEGV under
-; `DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib`, stack
-; `emitRoute` → `IRBuilder::CreateCall` → `llvm::CallInst::Create`):
+; WHY THE PROPERTY IS GONE. `EqFoldArm.cpp`'s D2 requires the phase spine to
+; bottom at a `ConstantInt`, and the ONLY construct that ever produced one was
+; `cq_phi_<sfx>(i32 k, theta)` -- `-O1` substituting the value the equality edge
+; pins into the gate's ARG-0. `void cq_phi(double)` HAS NO ARG-0, so no spine can
+; bottom at a constant and D2 can never fire. Measured four ways by the lens:
+;   1. the retired `cq_phi_<sfx>` spelling declines BEFORE analysis (reserved
+;      name, round-1 F-L6-1), and `opt` writes NO module at all -- so nothing that
+;      path computes can become an accepted lowering;
+;   2. the `cq_theta_si32(i32 k, theta)` spelling is intercepted EARLIER, by drbq
+;      Inc-4's F1 (`state prep merged with a quantum register`), ON BOTH BINARIES
+;      -- so it never was an eq-fold customer;
+;   3. the last conceivable route -- a `ConstantInt` MERGE INCOMING with
+;      register-free phases in the arm -- declines `control flow` in BOTH
+;      polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+;   4. the wrong unitary D8 fenced CANNOT BE EMITTED: `rzRtFn(` has 4 call sites,
+;      all `"i1"`, and `controlledRotationFn(` has 2, both `RotStem::Ry`. No
+;      minter of a controlled Rz remains anywhere in the pass.
+; `tryEqFoldArm` D1-D8 and `straightThroughConstFoldHandle` are therefore
+; STRUCTURALLY UNREACHABLE and are listed in MIGRATION_REPORT.md §13.3a as
+; freeze-time dead-code candidates. They are NOT deleted in this increment.
 ;
-; `EqFoldArm` records `Region.RoutedBase` AT DETECTION, and for region 2 that is
-; region 1's merge φ. `lowerControlRegions` emits region 1 first, which does
-; `MergePhi->replaceAllUsesWith(q); MergePhi->eraseFromParent()`. A raw `Value *`
-; is NOT a use, so the RAUW did not update it and the erase left it DANGLING;
-; the phase emitter then dereferenced it to read `Q->getType()`.
-;
-; WHY THE bd hcrg PRE-FLIGHT DOES NOT CATCH IT, which is the lesson: that
-; precedence graph reasons about BASIC BLOCK identities (`doomedBlocks`,
-; `sequentialChainAlias`), and the classical `if (cc) g();` makes region 2's pred
-; a THIRD block rather than region 1's merge block — so it correctly finds no
-; block alias, creates no edge, and declines nothing. The dependency it does not
-; model is a VALUE one. `RoutedBase` is now a `llvm::WeakTrackingVH`: it FOLLOWS
-; the RAUW, so after region 1 collapses its merge φ the field names region 1's
-; base — the correct routed handle. (Erased with no replacement is a separate,
-; LOUD decline; see `ControlPlan.h`.)
-;
-; DELETE THE CLASSICAL BRANCH and the same two regions chain through the hcrg
-; ordering and always lowered — that pair is the controlled experiment, and it is
-; why this fixture keeps the middle block.
-;
-;
-; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
-; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
-; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
-; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
-; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
-;
-; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
-; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
-; that used to sit AFTER a positive of its prefix was WINDOWED to the text
-; past that positive; re-measuring it whole-file is a strictly stronger
-; question, and where the pattern is one of the counted ones the
-; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
-; window it replaces, not weaker.
-;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
-;   * call void @cqrt_free(   [superseded by the FCNT count]
-;   * !cq.branchphase
-;
-; 29 line(s) of prose that annotated the OLD CHECK block were removed with
-; it — they described the pre-Inc-1 gate stream line by line.
+; WHAT THIS FILE PINS NOW (measured on `build/ir-pass/cq-opt`; the CHECK lines
+; below were DERIVED from that output):
+;   TWO SEQUENTIAL tainted regions separated by a CLASSICAL diamond that is left
+;   completely untouched. Region 1's quadruple is emitted in `entry`; the
+;   classical `br i1 %cz` / `cbody` / `cjoin` CFG SURVIVES verbatim; region 2's
+;   mint, gate, strip and free are emitted in `cjoin`, on the SAME rail `%h`.
+;   That is the surviving property and it is worth keeping: detection keys
+;   strictly on condition TAINT, so a classical branch between two quantum
+;   regions must neither be flattened nor break the second region's anchoring.
+;   Unitary `e^{i(0.2·[q==5] + 0.3·[q==6])}`.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -75,8 +57,10 @@ entry:
   %t1 = icmp eq i32 %q, 5
   br i1 %t1, label %arm1, label %merge1
 arm1:
-  ; `clang -O1` const-folds the arm's `q` to the literal 5 — the eq-fold shape
-  ; whose whole point is that the emitter must re-anchor on `RoutedBase`.
+  ; (this comment used to say `-O1` const-folds the arm's `q` to the literal 5,
+  ; "the eq-fold shape whose whole point is the re-anchor". A register-free
+  ; `cq_phi` has no arg-0 to fold, so there is nothing to re-anchor — see the
+  ; header.)
   call void @cq_phi(double 2.000000e-01)
   br label %merge1
 merge1:

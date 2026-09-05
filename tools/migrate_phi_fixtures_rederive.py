@@ -86,6 +86,15 @@ CANDIDATE_NEGATIVES = [
      "`cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`."),
     ("call void @cq_phi(", "a surviving phase call is lowered or deleted, never left for the linker"),
     ("cq_phi_", "the register form is a RESERVED NAME and declines (round-1 F-L6-1)"),
+    ("fsub double",
+     "the 2b BY-DIFFERENCE arithmetic. A kickback passes each arm's angle to its "
+     "OWN gate VERBATIM, so no `fl(A-B)` is ever computed and the whole 2b "
+     "residual (unbounded absolute-radian error, inf/NaN from two finite arms, "
+     "the 2^-40 kAngleSelectMaxRoundingRad fence) has no object. This is the "
+     "instruction a reviewer re-enabling the by-difference path would reintroduce."),
+    ("fadd double",
+     "the other half of the by-difference arithmetic (the unconditional twin's "
+     "angle recombination)."),
 ]
 
 # Symbols whose COUNT is load-bearing enough to get its own prefix.

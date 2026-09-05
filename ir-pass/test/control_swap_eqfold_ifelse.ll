@@ -1,49 +1,41 @@
-; control_swap_eqfold_ifelse.ll — ACCEPT spec, equality-folded two-arm if/else
-; (4.5 WI-5), BOTH clang arm orderings (open-Q 3: they must converge).
+; control_swap_eqfold_ifelse.ll — ACCEPT.
 ;
-; `if (q == 7) { rz(q,a); } else { rz(q,b); }`. On the `q==7` (true) arm `clang
-; -O1` CONST-FOLDS the gate base to the literal — `cq_phi(i32 7, θ)` — while the
-; other arm keeps `cq_phi(i32 %q, θ)`. An if/else has NO Pred-edge merge incoming,
-; so without WI-5's re-anchor `emitRegion`'s `phaseSpineBase` would bottom at the
-; folded constant and route a CONSTANT instead of `q` (a verify-clean wrong
-; unitary — the eq-fold analog of the §5 switch re-anchor). `tryEqFoldArm` records
-; the proven routed handle in `Region.RoutedBase`, which `emitRegion` PREFERS, so
-; both rails route `q`. The two arms route to distinct |0> rails — the flag-arm
-; unbracketed, the ¬flag-arm via a self-inverse `cqrt_x(flag)` bracket — exactly
-; as control_swap_ifelse.ll, but with `icmp eq`/`ne` and the folded base.
+; ⚠⚠ THIS FIXTURE NO LONGER PINS THE EQUALITY-FOLD RE-ANCHOR. Its old header
+; described `tryEqFoldArm`'s D1-D8 ladder and the 4.5 §5 const-fold re-anchor
+; scrub, and every word of that is now FALSE OF THIS FILE. The header is rewritten
+; rather than left standing, because a green fixture whose header claims a
+; property it does not exercise is the FALSE-GREEN class this whole migration
+; exists to stop -- and this one was found by the Rule-13 flips lens
+; ($SP/progress/review_flips.md, FINDING F1), not by the suite.
 ;
-; @ifelse_eq  — ordering 1 (`icmp eq`): the FOLDED arm is S0 (R.Arm); classifyArms
-;               processes it FIRST, so `tryEqFoldArm` anchors the routed handle.
-; @ifelse_ne  — ordering 2 (`icmp ne`): the KEPT arm is S0 (R.Arm) and the FOLDED
-;               arm is S1; classifyArms anchors via the leaf path first, then
-;               `tryEqFoldArm` accepts the folded S1 arm against the set anchor.
+; WHY THE PROPERTY IS GONE. `EqFoldArm.cpp`'s D2 requires the phase spine to
+; bottom at a `ConstantInt`, and the ONLY construct that ever produced one was
+; `cq_phi_<sfx>(i32 k, theta)` -- `-O1` substituting the value the equality edge
+; pins into the gate's ARG-0. `void cq_phi(double)` HAS NO ARG-0, so no spine can
+; bottom at a constant and D2 can never fire. Measured four ways by the lens:
+;   1. the retired `cq_phi_<sfx>` spelling declines BEFORE analysis (reserved
+;      name, round-1 F-L6-1), and `opt` writes NO module at all -- so nothing that
+;      path computes can become an accepted lowering;
+;   2. the `cq_theta_si32(i32 k, theta)` spelling is intercepted EARLIER, by drbq
+;      Inc-4's F1 (`state prep merged with a quantum register`), ON BOTH BINARIES
+;      -- so it never was an eq-fold customer;
+;   3. the last conceivable route -- a `ConstantInt` MERGE INCOMING with
+;      register-free phases in the arm -- declines `control flow` in BOTH
+;      polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+;   4. the wrong unitary D8 fenced CANNOT BE EMITTED: `rzRtFn(` has 4 call sites,
+;      all `"i1"`, and `controlledRotationFn(` has 2, both `RotStem::Ry`. No
+;      minter of a controlled Rz remains anywhere in the pass.
+; `tryEqFoldArm` D1-D8 and `straightThroughConstFoldHandle` are therefore
+; STRUCTURALLY UNREACHABLE and are listed in MIGRATION_REPORT.md §13.3a as
+; freeze-time dead-code candidates. They are NOT deleted in this increment.
 ;
-;
-; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
-; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
-; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
-; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
-; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
-;
-; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
-; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
-; that used to sit AFTER a positive of its prefix was WINDOWED to the text
-; past that positive; re-measuring it whole-file is a strictly stronger
-; question, and where the pattern is one of the counted ones the
-; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
-; window it replaces, not weaker.
-;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
-;   * call void @cqrt_free(   [superseded by the FCNT count]
-;   * call void @cqrt_x(   [superseded by the XCNT count]
-;   * !cq.branchphase
-;
-; 30 line(s) of prose that annotated the OLD CHECK block were removed with
-; it — they described the pre-Inc-1 gate stream line by line.
+; WHAT THIS FILE PINS NOW (measured on `build/ir-pass/cq-opt`; the CHECK lines
+; below were DERIVED from that output):
+;   the IF/ELSE shape in BOTH predicate polarities, as two functions in one
+;   module. Each emits `rz_i1(f,%a); x(f); rz_i1(f,%b); x(f)` -- one bracket pair
+;   on the false arm only -- so `@ifelse_eq` gives `e^{ia}` on `q == 7` and
+;   `e^{ib}` otherwise, and `@ifelse_ne` the mirror. The surviving property is the
+;   TWO-ARM bracket placement under both predicates.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -62,10 +54,10 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %then, label %else
 then:
-  call void @cq_phi(double %a)  ; folded base (q==7 here)
+  call void @cq_phi(double %a)  ; (was "folded base" — no arg-0 exists now)
   br label %merge
 else:
-  call void @cq_phi(double %b)  ; kept base
+  call void @cq_phi(double %b)  ; (was "kept base")
   br label %merge
 merge:
   %m  = call i32 @cq_measure_si32(i32 %q)
@@ -83,10 +75,10 @@ entry:
   %c = icmp ne i32 %q, 7
   br i1 %c, label %kept, label %folded
 kept:
-  call void @cq_phi(double %a)  ; kept base (S0/R.Arm)
+  call void @cq_phi(double %a)  ; (was "kept base")
   br label %merge
 folded:
-  call void @cq_phi(double %b)  ; folded base (S1, q==7 here)
+  call void @cq_phi(double %b)  ; (was "folded base" — no arg-0 exists now)
   br label %merge
 merge:
   %m  = call i32 @cq_measure_si32(i32 %q)

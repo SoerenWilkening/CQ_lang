@@ -1,82 +1,41 @@
-; control_swap_eqfold_diamond.ll — ACCEPT spec, equality-folded `br` diamond
-; (4.5 WI-5; additive `tryEqFoldArm` D1–D7 clause).
+; control_swap_eqfold_diamond.ll — ACCEPT.
 ;
-; `if (q == 7) { rz(q, a); rz(q, b); }`. `clang -O1` KNOWS `q == 7` inside the
-; arm, so it CONST-FOLDS the gate's arg-0 handle to the literal: the arm gate is
-; `cq_phi(i32 7, θ)`, not `cq_phi(i32 %q, θ)`. `classifyArms`'s phase spine then
-; bottoms at the `ConstantInt 7` instead of the routed handle, so the old
-; classifier declined `control flow`. `tryEqFoldArm` re-recognizes it as a pure
-; PHASE arm over the icmp's tainted operand (D1 equality predicate · D2 folded
-; const base · D3 the icmp's non-const operand IS the routed handle · D4 literal
-; == folded const · D5 routed operand tainted · D6 pure spine · D7 classical
-; angles) and re-anchors the routed handle, so the diamond lowers through
-; `emitRegion` VERBATIM (§4D): flag from the tainted `icmp eq`, CSWAP q into a
-; |0> rail, the arm Rz gates VERBATIM/UNCONTROLLED on the rail (re-anchor BY
-; PHYSICS — only arg-1/the angle is read, the folded arg-0 const is discarded),
-; CSWAP back, free the |0> rail, strip the boolean with `icmp_eq_inv(q)` — ZERO
-; controlled gates, NO surviving folded `cq_phi`, NO `phi i32`.
+; ⚠⚠ THIS FIXTURE NO LONGER PINS THE EQUALITY-FOLD RE-ANCHOR. Its old header
+; described `tryEqFoldArm`'s D1-D8 ladder and the 4.5 §5 const-fold re-anchor
+; scrub, and every word of that is now FALSE OF THIS FILE. The header is rewritten
+; rather than left standing, because a green fixture whose header claims a
+; property it does not exercise is the FALSE-GREEN class this whole migration
+; exists to stop -- and this one was found by the Rule-13 flips lens
+; ($SP/progress/review_flips.md, FINDING F1), not by the suite.
 ;
-; ⚠ THE STEM ASYMMETRY — DO NOT "TIDY UP" THE Ry SIDE TO MATCH (bd
-; test_C_libtooling-drbq Inc 4, PRD §14.2d). Since Inc 4 the SAME IR construct is
-; read TWO WAYS by the two stems: `cq_phi_si32(i32 k, θ)` in an `if (q == k)` arm
-; ACCEPTS here and re-anchors onto q's own rail, while `cq_theta_si32(i32 k, θ)`
-; in that position DECLINES.
+; WHY THE PROPERTY IS GONE. `EqFoldArm.cpp`'s D2 requires the phase spine to
+; bottom at a `ConstantInt`, and the ONLY construct that ever produced one was
+; `cq_phi_<sfx>(i32 k, theta)` -- `-O1` substituting the value the equality edge
+; pins into the gate's ARG-0. `void cq_phi(double)` HAS NO ARG-0, so no spine can
+; bottom at a constant and D2 can never fire. Measured four ways by the lens:
+;   1. the retired `cq_phi_<sfx>` spelling declines BEFORE analysis (reserved
+;      name, round-1 F-L6-1), and `opt` writes NO module at all -- so nothing that
+;      path computes can become an accepted lowering;
+;   2. the `cq_theta_si32(i32 k, theta)` spelling is intercepted EARLIER, by drbq
+;      Inc-4's F1 (`state prep merged with a quantum register`), ON BOTH BINARIES
+;      -- so it never was an eq-fold customer;
+;   3. the last conceivable route -- a `ConstantInt` MERGE INCOMING with
+;      register-free phases in the arm -- declines `control flow` in BOTH
+;      polarities, because D6's pure-spine walk is itself built on `isPhiCall`;
+;   4. the wrong unitary D8 fenced CANNOT BE EMITTED: `rzRtFn(` has 4 call sites,
+;      all `"i1"`, and `controlledRotationFn(` has 2, both `RotStem::Ry`. No
+;      minter of a controlled Rz remains anywhere in the pass.
+; `tryEqFoldArm` D1-D8 and `straightThroughConstFoldHandle` are therefore
+; STRUCTURALLY UNREACHABLE and are listed in MIGRATION_REPORT.md §13.3a as
+; freeze-time dead-code candidates. They are NOT deleted in this increment.
 ;
-; ⚠ CORRECTED 2026-09-05 (round-1 Rule-13 review, lens L7 finding F-L7-3). This
-; block used to call `control_inplace_ry_reject_stateprep_eqfold_coincidence.ll`
-; "this file with the stem changed" and to name F2 as the Ry side's fence. NEITHER
-; IS TRUE, and both halves were MEASURED on HEAD:
-;
-;   * THIS FILE with `cq_phi` → `cq_theta` (and the second gate dropped, since its
-;     arg-0 is the first gate's result) declines
-;     `state prep merged with a quantum register` — i.e. at **F1**, not F2,
-;     because THIS file's merge pred incoming is the live register `%q`.
-;   * `..._eqfold_coincidence.ll` is a DIFFERENT module: its pred incoming is the
-;     CONSTANT `5`, which is what lets it reach F2 at all.
-;   * And the constant-incoming spelling has NO pair on this side: the Rz version
-;     of `..._eqfold_coincidence.ll` (pred incoming `5`, arm `cq_phi(5, θ)`)
-;     DECLINES `control flow` — `tryEqFoldArm` re-anchors `Routed` onto `%q` and
-;     the constant pred incoming then does not match it. So "the same file with
-;     the stem changed" describes no pair anywhere in the family.
-;
-; The honest pair is THIS file vs its own Ry twin, and the fences are F1 (Ry) vs
-; `tryEqFoldArm`'s accept (Rz). The physics argument below is unaffected — it was
-; always about the RE-ANCHOR, and the re-anchor is what differs.
-;
-; That is SOUND, and the reason is the stem's PHYSICS rather than a preference.
-; The re-anchor puts a gate on the CONDITION'S OWN REGISTER. `cqrt_rz_<W>` is
-; DIAGONAL, so the strip recomputes the predicate over a basis the arm did not
-; move (§3 permits it explicitly; it is why S8 accepts). The same re-anchor for
-; Ry would put a BASIS-RELABELLING gate there, which R4 forbids — the strip would
-; be computed over a register the arm moved and the flag would not return to |0>.
-; There is no correct re-anchor for that stem, so its only options were "accept as
-; a fresh rail" (WRONG whenever the source meant `q`) or "decline".
-;
-;
-; 3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED from this
-; fixture's own output under the Inc-1 (register-free `void @cq_phi(double)`)
-; binary.  The pre-Inc-1 pin — a `cqrt_rz_<W>` or `cqrt_rz_<W>_controlled` on
-; the user's REGISTER — asserted the gate PRD §1 shows is the identity on the
-; marked branch (`cqrt_rz_<W>` is TENSORED, so a routed W-bit Rz applies
-; `(-1)^popcount(target)` and can never mark |0..0>).  The stream now pinned is
-; the KICKBACK: the flag is minted into a |0> ancilla, the phase lands on the
-; FLAG with an UNCONTROLLED `cqrt_rz_i1`, the ordinary compare `_unc` returns
-; the flag to |0> on every branch, and the flag is freed.  The fixture's
-; PURPOSE (its header above) is unchanged.
-;
-; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
-; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
-; that used to sit AFTER a positive of its prefix was WINDOWED to the text
-; past that positive; re-measuring it whole-file is a strictly stronger
-; question, and where the pattern is one of the counted ones the
-; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
-; window it replaces, not weaker.
-;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
-;   * call void @cqrt_free(   [superseded by the FCNT count]
-;   * !cq.branchphase
-;
-; 30 line(s) of prose that annotated the OLD CHECK block were removed with
-; it — they described the pre-Inc-1 gate stream line by line.
+; WHAT THIS FILE PINS NOW (measured on `build/ir-pass/cq-opt`; the CHECK lines
+; below were DERIVED from that output):
+;   an `icmp eq` DIAMOND with an N=2 phase arm on the TRUE successor and
+;   RUN-TIME `double` angles: one mint, `rz_i1(f,%a); rz_i1(f,%b)`, one strip, one
+;   free, and NO `cqrt_x` (the arm is the true successor, so there is no bracket).
+;   Unitary `e^{i(a+b)}` on `q == 7`, identity elsewhere. Its residual value is
+;   the equality PREDICATE with N=2 and run-time angles; the FOLD is gone.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -94,7 +53,7 @@ entry:
   %c = icmp eq i32 %q, 7
   br i1 %c, label %arm, label %merge
 arm:
-  call void @cq_phi(double %a)  ; arg-0 CONST-FOLDED to 7
+  call void @cq_phi(double %a)  ; (was "arg-0 CONST-FOLDED to 7" — no arg-0 exists now)
   call void @cq_phi(double %b)
   br label %merge
 merge:
