@@ -390,7 +390,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // AFTER the flatten it depends on. A no-op unless an in-loop region was
   // actually emitted (`taint.InLoopFlattenedPreds`), so every pre-existing
   // module is byte-identical.
-  collapseFlattenedLoopRails(M, taint);
+  collapseFlattenedLoopRails(M, wd, taint);
 
   // Issue dugh (Phase 4×6): the SECOND propagation round for control-merge
   // out-rails. The two untainted-merge emitters (6.5 classical-call arm, 4.5

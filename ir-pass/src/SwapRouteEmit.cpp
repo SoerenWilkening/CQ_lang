@@ -2308,9 +2308,12 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // branch. The in-loop `Pred` is recorded for the same reason `emitRegion`
       // records it (the round-2 rail collapse's sole trigger); a kickback leaves
       // nothing FOR that collapse to claim, but the loop may hold other regions
-      // that do.
+      // that do. INCREMENTED, not inserted (bd 3qlq Inc 1, C-1 review round 2,
+      // F-C1-2(2b)): the round-2 onward pass keys its delta on the COUNT moving,
+      // because a round-2 region routinely flattens into the very `Pred` a
+      // round-1 region already used and a set could not see that.
       if (R.InLoop)
-        taint.InLoopFlattenedPreds.insert(R.Pred);
+        ++taint.InLoopFlattenedPreds[R.Pred];
       emitPhaseKickbackRegion(R, wd, csyms, taint);
       continue;
     }
@@ -2332,9 +2335,10 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which erases
     // `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger for the
     // round-2 rail collapse (`collapseFlattenedLoopRails`); a module with no
-    // in-loop region records nothing and is byte-identical.
+    // in-loop region records nothing and is byte-identical. INCREMENTED, not
+    // inserted — see the `PhaseKickback` site above (F-C1-2(2b)).
     if (R.InLoop)
-      taint.InLoopFlattenedPreds.insert(R.Pred);
+      ++taint.InLoopFlattenedPreds[R.Pred];
     emitRegion(R, wd, csyms, taint);
   }
 }

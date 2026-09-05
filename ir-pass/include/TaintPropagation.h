@@ -400,7 +400,61 @@ struct TaintSet {
   // at emission time would be stale by round 2 — the block survives, and round 2
   // rebuilds `LoopInfo` and asks which loop now contains it (Rule 9: never cache
   // an analysis across a mutation).
-  llvm::SmallPtrSet<const llvm::BasicBlock *, 4> InLoopFlattenedPreds;
+  //
+  // A COUNT, NOT A MEMBERSHIP — bd 3qlq Inc 1, the SECOND C-1 review round's
+  // finding F-C1-2(2b). The round-2 onward pass keys "did round 2 open anything
+  // in this loop?" on the DIFFERENCE between this map and the snapshot taken at
+  // `repropagateControlMerges` entry. As a SET that difference was structurally
+  // blind to the commonest mixed shape: round 1 flattens its region into `Pred`,
+  // round 2's onward region flattens into the SAME (now larger) `Pred`, the set
+  // does not change, and the loop was NEVER RE-OFFERED — MEASURED on
+  // `p/r40_onward_r1open.c` (exactly one `[DBG] loop hdr=` line, `round2=0`),
+  // where the round-1 marking had bailed `!AnyLocal` because the round-2 values
+  // were not yet tainted, so nothing was ever marked and every per-trip
+  // which-path rail leaked. A COUNT moves whenever a region is emitted, which is
+  // exactly the event "a round-2 region opened here". Membership (`count(BB)`,
+  // `empty()`) reads identically on a `DenseMap`, so the trigger and the
+  // per-block test above are unchanged.
+  llvm::DenseMap<const llvm::BasicBlock *, unsigned> InLoopFlattenedPreds;
+
+  // bd 3qlq Inc 1, the SECOND C-1 review round's finding F-C1-2(2a) — THE RAIL
+  // ROOTS A CASE-A COLLAPSE HAS ALREADY CLAIMED, module-wide.
+  //
+  // `invariantRegisterRoots`' clause (0) must skip a candidate the collapse
+  // already owns, or clause (iii) sees that rail's in-body `cq_theta` and refuses
+  // the whole extension — taking the INVARIANT register's discharge down with it
+  // (that is finding C-1 itself). Round 1's fix passed the LOCAL `Roots` set
+  // `collapseRailPhisIn` had just filled, which is right only when the collapse
+  // happened in the SAME call. It does not for the commonest onward shape: when
+  // the in-loop region's condition reads a 6.5/4.5 `%out` rail, the loop's
+  // control is CLASSICAL at round 1, so ROUND-1 `lowerLoops`/`tryCaseA` collapses
+  // the carried rail itself; by the round-2 pass there is no header phi left,
+  // `collapseRailPhisIn` returns `NotClaimed`, and the local set is empty.
+  // MEASURED (`p/r33_onward_inv_only.c`, `p/r35_onward_diffusion.c`): 3
+  // `cq_template_and_i32_hl` mints, ZERO `_unc`, against a hand-unrolled twin
+  // that discharges all three.
+  //
+  // So the fact comes from the TREE, not from a local: filled at BOTH Case-A
+  // collapse sites (`tryCaseA`'s ACCEPT and `collapseRailPhisIn` step (4)) and
+  // read by clause (0) in UNION with the local carried roots — one fact, two
+  // writers, one reader (Rule 14).
+  //
+  // NOT INFERRED FROM THE ABSENCE OF A HEADER PHI, deliberately: an in-place gate
+  // whose result is DEAD in the body (`int t = cq_theta(r,.1);`) mints no phi and
+  // carries no claim, and admitting it would grant the marking on a rail nothing
+  // proved. Pinned by `p/x3_deadgate_body.c`, which still leaks.
+  //
+  // ENTRIES CANNOT DANGLE AT ANY READ, and the argument is the call order, not
+  // luck: every entry is the still-pre-lowering `cq_theta` root mint (or a
+  // clause-(ii-b) `cqrt_alloc` out-rail), both writers run before
+  // `lowerRotations` — the only stage that erases a root — and both readers
+  // (`collapseFlattenedLoopRails` at round 1 and at round 2) run before it too.
+  // ⚠ RETIREMENT TRIGGER: if a stage that erases a `cq_theta` is ever placed
+  // between `lowerLoops` and the round-2 collapse, this set needs a
+  // `WeakTrackingVH` or a re-validation, because a recycled address matching a
+  // live peel root would SKIP a candidate that must be judged — the over-accept
+  // direction, not the leak direction.
+  llvm::SmallPtrSet<const llvm::Value *, 4> ClaimedRailRoots;
 
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
   // two accept paths that build a DATA-untainted-yet-quantum-by-control merge

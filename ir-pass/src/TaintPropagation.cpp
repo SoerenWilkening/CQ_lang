@@ -1502,7 +1502,15 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   // by identity against a LIVE block of a LIVE loop, and the worst a recycled
   // address can do is make the onward pass SKIP a loop — the leak, i.e. the safe
   // direction.
-  SmallPtrSet<const BasicBlock *, 4> Round1FlattenedPreds(
+  //
+  // A COUNT SNAPSHOT since bd 3qlq Inc 1's SECOND C-1 review round (F-C1-2(2b)):
+  // the delta the onward pass wants is "did round 2 emit a region into this
+  // block?", and as a SET of blocks it could not see the commonest mixed shape —
+  // round 2's onward region flattens into the SAME `Pred` a round-1 region
+  // already used, so membership does not move and the loop is never re-offered
+  // (MEASURED on `p/r40_onward_r1open.c`: one `[DBG] loop hdr=` line, `round2=0`,
+  // while every per-trip which-path rail leaked).
+  DenseMap<const BasicBlock *, unsigned> Round1FlattenedPreds(
       taint.InLoopFlattenedPreds.begin(), taint.InLoopFlattenedPreds.end());
 
   // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
@@ -1638,7 +1646,7 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    `collapseFlattenedLoopRails` at all — a PRE-EXISTING twin-pipeline
   //    divergence inherited from bd 8h7d.5, recorded in the AXIS-F note there
   //    and not repaired by this increment (the shim has zero callers).
-  collapseFlattenedLoopRails(M, taint, &Round1FlattenedPreds);
+  collapseFlattenedLoopRails(M, wd, taint, &Round1FlattenedPreds);
 }
 
 // ── bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase ─────────

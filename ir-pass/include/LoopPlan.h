@@ -32,6 +32,7 @@
 #ifndef CQ_IRPASS_LOOP_PLAN_H_
 #define CQ_IRPASS_LOOP_PLAN_H_
 
+#include "llvm/ADT/DenseMap.h"  // collapseFlattenedLoopRails (count snapshot)
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
 
@@ -293,9 +294,29 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // clause (I1), so no adjoint `At` can ever be placed for it in the K-times body —
 // a property of the ROOT, not of whether some other register crosses the back
 // edge, which is why the same argument carries here verbatim.
+//
+// ⚠ ROUND 2 OF THE SAME REVIEW MOVED BOTH HALVES OF THAT DISPATCH AGAIN (bd 3qlq
+// Inc 1, the SECOND C-1 review round; findings F-C1-1 and F-C1-2). Read the two
+// paragraphs above as the SHAPE and these as the two preconditions that still
+// excluded the customer:
+//   * F-C1-2(2a) — "the collapse already owns this candidate" was asked of the
+//     LOCAL `Roots` this call had just filled, so it was false whenever the
+//     collapse happened in the OTHER call (ROUND-1 `tryCaseA`, which is what
+//     claims the carried rail when the in-loop region is an ONWARD one and the
+//     loop's control is therefore classical at round 1). The fact now lives in
+//     `taint.ClaimedRailRoots`, written at both collapse sites and read in UNION
+//     with the local set.
+//   * F-C1-2(2b) — `AlreadyProcessed` was a set of BLOCKS, and a round-2 region
+//     flattens into the very `Pred` a round-1 region already used, so the loop
+//     was never re-offered. It is a COUNT snapshot now, and "round 2 opened
+//     something here" is the count having MOVED.
+// `wd` is threaded in for F-C1-1: the peel must know whether a PREHEADER dtzb
+// `add`/`xor` on the invariant register will be lowered IN PLACE, and that
+// decision has exactly one owner — `ArithLowering::classifyInPlaceReassignment`
+// (Rule 14, never a second spelling). See `invariantRegisterRoots`.
 void collapseFlattenedLoopRails(
-    llvm::Module &M, TaintSet &taint,
-    const llvm::SmallPtrSetImpl<const llvm::BasicBlock *> *AlreadyProcessed =
+    llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+    const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =
         nullptr);
 
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
