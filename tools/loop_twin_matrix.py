@@ -1291,12 +1291,26 @@ def main():
                                              [(cfg, c) for c in cells]):
             results[name] = (rolled, unrolled)
 
-    # UNDER `void` THE QUARANTINE IS NOT LOADED AT ALL. Its 15 pinned signatures
-    # are SHA-256 digests of `register`-surface traces; against a `void` run they
-    # can only be stale, and "quarantine stale — remove it" is exactly the wrong
-    # thing for a gate to say about a table that is perfectly correct for the
-    # surface it was measured on.
-    quar = {} if cfg.phi_surface == "void" else load_quarantine(cfg.quarantine)
+    # UNDER `void` THE QUARANTINE IS READ FOR ITS CELL NAMES AND NOT FOR ITS
+    # SIGNATURES, and the split is exactly the split between what the file claims
+    # and what it measures. Its CLAIM — "this cell holds a FILED, root-caused
+    # defect (bd test_C_libtooling-1m5p class A, bd test_C_libtooling-a3z7 class
+    # B)" — is about `Uncomputation`/`FreePoint` interior placement and
+    # `ArithLowering` M-C, neither of which has anything to do with `cq_phi`; it
+    # is surface-independent. Its SIGNATURE is a SHA-256 digest of a
+    # REGISTER-surface trace and cannot mean anything about a void one.
+    #
+    # So under `void` a quarantined cell that diverges is recorded as a VERDICT
+    # carrying its bd issue, not as a hard failure; a quarantined cell that does
+    # NOT diverge is NOT "quarantine stale" (that verdict belongs to the surface
+    # the entry was measured on); and a NON-quarantined divergence is a hard
+    # failure exactly as it always was — which is the half that matters.
+    #
+    # MEASURED on the pre-3qlq oracle 52d7764, 274 cells: the 13 void divergences
+    # are a SUBSET of the 15 register-surface quarantined cells, with ZERO new
+    # ones. The 2 that drop out are `..._rzpost`, whose `r = cq_phi(r, .125)`
+    # RGATE becomes an uncontrolled void filler the oracle leaves unlowered.
+    quar = load_quarantine(cfg.quarantine)
 
     got, hard, sig = {}, {}, {}
     for name in sorted(results):
@@ -1362,8 +1376,13 @@ def main():
             for n in sorted(rows):
                 f.write("%-24s %s\n" % (n, rows[n]))
 
-    # ── the `void` run: measure, report, write; consult nothing. ─────────────
+    # ── the `void` run: measure, report, write. ─────────────────────────────
     if cfg.phi_surface == "void":
+        for n in sorted(got):
+            if n in quar and got[n] == "TRACE-DIVERGENCE":
+                got[n] = ("TRACE-DIVERGENCE(quarantined %s %s)"
+                          % (quar[n]["bd"], quar[n]["class"]))
+                hard.pop(n, None)
         for n in sorted(got):
             print("%-24s %s" % (n, got[n]))
         tal = {}
@@ -1376,10 +1395,13 @@ def main():
               "they bound is not applied):")
         for cn, cv in ctlgot:
             print("  %-16s %s" % (cn, cv))
-        print("\nthe committed expected table and quarantine were NOT consulted: "
-              "both were\nmeasured on the `register` surface (see the "
-              "--phi-surface help and the\nmodule docstring's SIXTH AXIS "
-              "section).")
+        print("\nthe committed expected table was NOT consulted (it was measured "
+              "on the\n`register` surface). The quarantine was read for its CELL "
+              "NAMES only — its\nfiled defects are surface-independent, its "
+              "SIGNATURES are not — so a\nquarantined divergence is a verdict "
+              "here and a NON-quarantined one is still a\nhard failure. See the "
+              "--phi-surface help and the module docstring's SIXTH\nAXIS "
+              "section.")
         write_out(got)
         if cfg.out:
             print("wrote %s" % cfg.out)
