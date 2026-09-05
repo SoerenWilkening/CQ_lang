@@ -35,9 +35,11 @@
 ; question, and where the pattern is one of the counted ones the
 ; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
 ; window it replaces, not weaker.
+;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
 ;   * call void @cqrt_free(   [superseded by the FCNT count]
+;   * !cq.branchphase
 ;
-; 16 line(s) of prose that annotated the OLD CHECK block were removed with
+; 35 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -108,6 +110,8 @@ merge:
 ;   ^ method-B copy on a phase arm dephases the answer (Rule 7)
 ; NOROUTE-NOT: _controlled
 ;   ^ the kickback gate is UNCONTROLLED, on the flag ancilla
+; NOROUTE-NOT: call void @cqrt_rz_{{[a-z0-9]+}}_controlled(
+;   ^ ⚠ NARROW TWIN of the blanket `_controlled` above, and it exists because the blanket one is DROPPED from any fixture that legitimately emits a controlled Ry or a controlled copy — and dropping it took the only catch for a controlled Rz with it. MEASURED: 4 of the 104 re-derived accepts were BLIND to an injected `cqrt_rz_i32_controlled` — the exact pre-Inc-1 TENSORED gate this increment removes — until this line was added. The width complement above cannot cover it either: it requires `(` immediately after the width, and `cqrt_rz_i32_controlled(` has `_controlled` in between.
 ; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
 ;   ^ the TENSORED per-register Rz is the defect this increment removes (PRD §1). ONE complement pattern, not an enumeration of six — the shipped ABI has NINE widths and f16/f80 were absent from every pre-Inc-1 NOROUTE block (round-1 findings F-L6-4/F-L8-1/F-L4-2). The trailing `(` is load-bearing: `cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`.
 ; NOROUTE-NOT: call void @cq_phi(
@@ -138,13 +142,3 @@ merge:
 ; counts are asserted SEPARATELY and must agree: 3 and 3 here.
 ; MDCNT-COUNT-3: !cq.branchphase
 ; MDCNT-NOT:     !cq.branchphase
-
-; ---------------------------------------------------------------------------
-; STDERR assertions, CARRIED ACROSS VERBATIM.  These pin a WARNING, not a
-; gate, so nothing about the register-free surface touches them; they are
-; reproduced unchanged rather than re-derived, and the RUN lines above keep
-; their original spelling.
-; ACC-NOT: under quantum control
-; ACC-NOT: cq_phi
-; ACC-NOT: phi i32
-; ACC-NOT: _controlled

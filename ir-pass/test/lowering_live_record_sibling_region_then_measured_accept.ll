@@ -48,13 +48,24 @@
 ; the flag to |0> on every branch, and the flag is freed.  The fixture's
 ; PURPOSE (its header above) is unchanged.
 ;
+; ORIGINAL negatives REMOVED.  Each was MEASURED to fire on this fixture's
+; own Inc-1 output, so keeping it would assert something false.  A `-NOT`
+; that used to sit AFTER a positive of its prefix was WINDOWED to the text
+; past that positive; re-measuring it whole-file is a strictly stronger
+; question, and where the pattern is one of the counted ones the
+; `-COUNT-n` + `-NOT` pair below pins `exactly n` — stronger than the
+; window it replaces, not weaker.
+;   * call void @cqrt_rz_i1(   [superseded by the ACNT count]
+;   * call void @cqrt_free(   [superseded by the FCNT count]
+;   * !cq.branchphase
+;
 ; NOTE — the header above still NAMES a retired symbol (`cqrt_rz_<W>`,
 ; `cqrt_cswap` or a `_controlled` twin).  That prose is kept DELIBERATELY:
 ; it is the fixture's PURPOSE and the record of what the pre-Inc-1 pass
 ; emitted here.  Read it as history; the stream this file now ASSERTS is
 ; the derived one below, and the two are meant to differ.
 ;
-; 12 line(s) of prose that annotated the OLD CHECK block were removed with
+; 35 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -126,6 +137,8 @@ merge:
 ;   ^ method-B copy on a phase arm dephases the answer (Rule 7)
 ; NOROUTE-NOT: _controlled
 ;   ^ the kickback gate is UNCONTROLLED, on the flag ancilla
+; NOROUTE-NOT: call void @cqrt_rz_{{[a-z0-9]+}}_controlled(
+;   ^ ⚠ NARROW TWIN of the blanket `_controlled` above, and it exists because the blanket one is DROPPED from any fixture that legitimately emits a controlled Ry or a controlled copy — and dropping it took the only catch for a controlled Rz with it. MEASURED: 4 of the 104 re-derived accepts were BLIND to an injected `cqrt_rz_i32_controlled` — the exact pre-Inc-1 TENSORED gate this increment removes — until this line was added. The width complement above cannot cover it either: it requires `(` immediately after the width, and `cqrt_rz_i32_controlled(` has `_controlled` in between.
 ; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
 ;   ^ the TENSORED per-register Rz is the defect this increment removes (PRD §1). ONE complement pattern, not an enumeration of six — the shipped ABI has NINE widths and f16/f80 were absent from every pre-Inc-1 NOROUTE block (round-1 findings F-L6-4/F-L8-1/F-L4-2). The trailing `(` is load-bearing: `cqrt_rz_i1` is a textual prefix of `cqrt_rz_i16`.
 ; NOROUTE-NOT: call void @cq_phi(

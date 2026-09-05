@@ -69,6 +69,15 @@ CANDIDATE_NEGATIVES = [
     ("cqrt_copy", "method-B copy on a phase arm dephases the answer (Rule 7)"),
     ("_controlled",
      "the kickback gate is UNCONTROLLED, on the flag ancilla"),
+    (r"call void @cqrt_rz_{{[a-z0-9]+}}_controlled(",
+     "⚠ NARROW TWIN of the blanket `_controlled` above, and it exists because the "
+     "blanket one is DROPPED from any fixture that legitimately emits a controlled "
+     "Ry or a controlled copy — and dropping it took the only catch for a "
+     "controlled Rz with it. MEASURED: 4 of the 104 re-derived accepts were BLIND "
+     "to an injected `cqrt_rz_i32_controlled` — the exact pre-Inc-1 TENSORED gate "
+     "this increment removes — until this line was added. The width complement "
+     "above cannot cover it either: it requires `(` immediately after the width, "
+     "and `cqrt_rz_i32_controlled(` has `_controlled` in between."),
     (r"call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(",
      "the TENSORED per-register Rz is the defect this increment removes (PRD §1). "
      "ONE complement pattern, not an enumeration of six — the shipped ABI has NINE "
@@ -369,6 +378,13 @@ def rederive_file(base, dry=False):
         and ln.lstrip().startswith(";")
         and not RUN_RE.match(ln) and not DIRECTIVE_RE.match(ln)
         and ln.strip() != ";")
+    # IDEMPOTENCE: strip a prep_a2 block emitted by a previous run, so re-deriving
+    # a file does not stack notes.  The block starts at the marker line and runs to
+    # the end of the header (the notes are always emitted last, just above RUN).
+    for i, ln in enumerate(header):
+        if "3qlq(prep_a2): the FileCheck assertions below were RE-DERIVED" in ln:
+            header = header[:max(0, i - 1)]
+            break
     while header and header[-1].strip() == "":
         header.pop()
 
