@@ -260,9 +260,16 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // a data operand. NEVER feed route cswaps through a threaded chain
   // (`emitInverseChain` passes CurHandle=nullptr, so this guard is moot for the
   // uncompute driver) — a rail handle in the flag slot is a verify-clean WRONG
-  // UNITARY. The swap-route value-arm emitter brackets its R† route cswaps
-  // itself via `emitRoute` (cswap is self-inverse) and hands this spine the
-  // BODY CHAIN only.
+  // UNITARY. Each emitter that still routes brackets its R† route cswaps itself
+  // via `emitRoute` (cswap is self-inverse) and hands this spine the BODY CHAIN
+  // only. ⚠ THE VALUE-ARM EMITTER IS NO LONGER ONE OF THEM (bd
+  // test_C_libtooling-3qlq Inc 2, round-1 fix): `emitValueRegion` emits no route
+  // at all — it hoists the chain and merges with two controlled copies — so do
+  // not read this guard as being about it. The live routing emitters are the 4.3
+  // depth-2 PHASE nest (`NestedRouteEmit`), the 4.5 PHASE switch
+  // (`SwitchRouteEmit`) and the 7.2 abort park (`AbortParkEmit`); the first two
+  // are retired by Inc 1, after which the park is the only one and this guard
+  // guards exactly it.
   //
   // The 4.4 controlled-XOR copy `cqrt_copy_<W>_controlled(ctrl, src, dst)` joins
   // this involution family (5po2): re-emitting the SAME call under the still-live
