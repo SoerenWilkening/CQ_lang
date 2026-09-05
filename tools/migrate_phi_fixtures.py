@@ -791,7 +791,7 @@ def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], li
     # --- 2. declares.  Erase a `declare @cq_phi_<sfx>` ONLY when no reference to
     # that symbol survives -- an `invoke` (or any construct the line parser does
     # not model) would otherwise leave a dangling reference and a PARSE ERROR.
-    body_now = '\n'.join(l for i, l in enumerate(lines)
+    body_now = '\n'.join(l.split(';', 1)[0] for i, l in enumerate(lines)
                          if i not in drop and not DECLARE_PHI_RE.match(l))
     for i, ln in enumerate(lines):
         m = re.search(r'@(cq_phi_[\w.$]+)', ln) if DECLARE_PHI_RE.match(ln) else None
