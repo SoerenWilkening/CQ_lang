@@ -148,6 +148,27 @@ bool declineFrozenWire(Module &M, const TaintSet &taint) {
 
 }  // namespace
 
+// ⚠ DEAD SINCE bd test_C_libtooling-3qlq Inc 1 (2026-09-05) — ZERO CALLERS,
+// MEASURED (`grep -rn "emitRz" ir-pass/` finds this definition, the declaration
+// in `RotationLowering.h`, and nothing else). Its ONLY caller was the PHI loop in
+// `lowerRotations`, which is deleted; see the block comment where that loop was.
+//
+// IT IS LEFT STANDING RATHER THAN DELETED, and the reason is a hand-off one, not
+// a technical one: the two REMAINING minters of a non-`i1` `cqrt_rz` are
+// `NestedRouteEmit.cpp:116` (the 4.3 depth-2 nest, PRD row P4) and
+// `SwitchRouteEmit.cpp:113` (the 4.5 switch phase, PRD row P5) — BOTH of which
+// call `wd.rzRtFn(Abi)` directly and neither of which is this function — and both
+// are the SECOND increment's scope. Deleting shared rotation machinery from under
+// an increment that is about to rewrite those two emitters buys nothing.
+//
+// ⚠ DO NOT REVIVE IT FOR A `cq_phi`. Both of its arms mint the retired TENSORED
+// per-register gate — `cqrt_rz_<W>` and `cqrt_rz_<W>_controlled` — which is
+// exactly the defect PRD `retire-swap-route-PRD.md` §1 records: Rz on EACH qubit
+// puts phase `(-1)^popcount(target)` on the marked branch and cannot mark
+// `|0..0>` at all, which made every shipped Grover golden the identity on `q`.
+// The register-free branch phase is UNCONTROLLED `cqrt_rz_i1` on the condition
+// FLAG (`SwapRouteEmit::emitPhaseKickbackRegion`), and it does not go through
+// here.
 bool emitRz(CallInst *Phi, Value *Handle, Value *Angle, WidthDispatch &wd,
             bool controlled, Value *Flag,
             SmallPtrSetImpl<const CallInst *> *Rec) {
