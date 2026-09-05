@@ -21,7 +21,15 @@
 ; `retLineageCarriesPhase` walk (Risk 5). Mirror-exact (Rule 12).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq loop lowering: early break preserves a phase answer
+; ⚠ 3qlq Inc 1 ROUND 2 (2026-09-05, merge be4e2ea): the B3 carrier string this file
+; pinned is PRE-EMPTED for this module — after the round-2 carrier fix (F-R1-2:
+; post-dominance over RETURNING paths; F-L5-6: the kickback-phased-register record)
+; the loop fence `loop under quantum control` fires first. The disposition is still a
+; LOUD DECLINE (never an accept); only the string moved. Whether ANY module can still
+; reach `early break preserves a phase answer` is the clearance's question (fix_r1
+; F-L5-6 recorded its reachability as UNCONFIRMED); until one is constructed this
+; file pins the fence that actually fires. Orchestrator edit; measured on be4e2ea.
+; CHECK: error{{.*}}cq controlled lowering: loop under quantum control
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
