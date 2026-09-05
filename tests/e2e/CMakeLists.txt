@@ -283,6 +283,52 @@ add_test(NAME e2e-slice-control-value-mixedops-twin
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops_twin.expected.log")
 
+# THE NEGATED-POLARITY PAIR (bd test_C_libtooling-3qlq Inc 2, Rule-13 round-1
+# review finding F-V1-7). `if (q != 5)` — `clang -O1` canonicalises it to
+# `icmp eq` with the successors SWAPPED, so the region arrives with `ArmNegated`
+# and `emitValueRegion` must put the arm value in the select's FALSE slot. The
+# fixture `control_swap_value_diamond_polarity.ll` pins the emitted SYMBOLS, but
+# symbols cannot see an operand swap — the multiset
+# {copy_controlled, x, copy_controlled, x} and the strip/free pairing stage 2b
+# checks are identical either way. Byte identity against the PRE-HOISTED SELECT
+# spelling, which reaches the same emitter with no polarity decision to make, is
+# the only measurement in the tree that does see it.
+add_test(NAME e2e-slice-control-value-polarity
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity.expected.log")
+
+add_test(NAME e2e-slice-control-value-polarity-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity_twin.expected.log")
+
+# THE ACCEPT-CLASS WIDENING THAT RIDES ON INC 2 (round-1 review finding F-V1-1;
+# owner disposition OQ-22 KEEP+PIN). `int e = (p == r);` — a Q+Q DATA compare
+# read off a value-arm merge — DECLINED on the pre-3qlq oracle 52d7764 with
+# `no template for opcode 'icmp i1' in tainted context`, because the retired
+# `emitValueRegion` recorded no `taint.HandleWidth` for the merged register and
+# `CompareLowering::rewriteCompare`'s Q+Q path needs a RECORDED logical width.
+# Routing the diamond through `emitSelectRegion` inherits that entry (bd
+# p119.6). e2e is the only layer that LINKS, so this is what proves
+# `cq_template_icmp_eq_i32` and its `_unc` twin resolve and signature-match when
+# reached from a value-arm merge. The width axis is pinned at the IR level by
+# control_swap_value_accept_{i8_merge_cast,i64_merge_cast,qq_compare_*}.ll. NO
+# twin gate: the claim here is that the symbols LINK, not a byte identity.
+add_test(NAME e2e-slice-control-value-merge-qq-compare
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_merge_qq_compare.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_merge_qq_compare.expected.log")
+
 # The DERIVED-base value diamond (a pre-region `cq_phi` on the value register;
 # the 9hh discipline). NO twin gate: the pre-hoisted select twin of this program
 # DECLINES `control flow` on BOTH the pre-3qlq oracle and this binary, because
@@ -316,6 +362,13 @@ add_test(NAME e2e-value-mixedops-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_mixedops_twin.expected.log")
+
+# The FOURTH gate (round-1 review F-V1-7): negated polarity. Added by the
+# round-1 FIX agent, not by the increment.
+add_test(NAME e2e-value-polarity-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_polarity_twin.expected.log")
 
 # 3c6m.14 L6 / bd 20xt.5 (d): PredMux tolerates `unreachable` switch-defaults.
 # The only layer that LINKS — proves the (d)-flattened nest (a tainted special-
