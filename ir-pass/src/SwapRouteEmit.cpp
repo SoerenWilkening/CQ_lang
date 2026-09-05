@@ -23,6 +23,7 @@
 #include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
+#include "ChainWalk.h"           // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
 #include "GuardedStoreArmEmit.h"  // emitGuardedStoreArmRegion (iw81.7)
@@ -1314,8 +1315,33 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
 //
 // THE ZIOV SHARED-FLAG PATH IS HONOURED (`R.ShareCondFlag`): when the condition
 // compare is ALSO read as data, the flag is minted at the COMPARE so it
-// dominates every data use, and the strip+free are SKIPPED because the data
-// lineage owns the flag — byte-for-byte the rule `emitRegion` follows.
+// dominates every data use, and the strip+free are SKIPPED here because the data
+// lineage owns the flag.
+//
+// ⚠ THAT IS THE SAME FOUR LINES `emitRegion` WRITES AND IT IS **NOT** THE SAME
+// MODULE — the earlier spelling of this paragraph said "byte-for-byte the rule
+// `emitRegion` follows", and that false equivalence is precisely where the
+// Rule-13 round-1 CONFIRMED SILENT MISCOMPILE F-L7-1 / F-L1-1 / F-L2-1 lived.
+// `emitRegion`'s arm gate is `cqrt_rz_<W>_controlled`, which
+// `ChainWalk::isInPlaceGateOn` deliberately REFUSES (Inc 2a, `ChainWalk.cpp`'s
+// stem-split note) — so handing `emitRegion`'s flag to the data lineage hands
+// over a rail carrying an UNRECOGNIZED consumer, and the spine leaves it alone.
+// THIS emitter's gate is a plain `cqrt_rz_i1`, which that predicate ADMITTED. So
+// "the data lineage owns the flag" was, for this path and not for its sibling,
+// the sentence that AUTHORISED the whole-DAG spine to emit `cqrt_rz_i1(f, -θ)`
+// and cancel the user's phase exactly. Two emitters, one sentence, opposite
+// consequences.
+//
+// WHAT MAKES IT TRUE NOW, ON BOTH PATHS AND BY THE SAME MECHANISM: every gate
+// this emitter mints is recorded with `ChainWalk::markBranchPhaseGate`, and the
+// three spine predicates refuse a member outright. On the SHARE path that turns
+// the flag into an unrecognized-consumer rail (`D.NotClosed`) — left allocated,
+// Rule-6 safe, and byte-for-byte the pre-3qlq oracle's disposition on the same
+// source. On the NON-share path the strip+free below still fire, and the record
+// is what keeps them the ONLY discharge: before it, that path was protected only
+// by its own `cqrt_free(Flag)` happening to make the flag an unrecognized-consumer
+// rail, which is an accident of this emitter's own emission order and not a fence
+// (lens L7 §F-L7-5). The protection is now the membership, on BOTH paths.
 void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
                              const ControlledSymbols &csyms, TaintSet &taint) {
   // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING.
@@ -1437,8 +1463,25 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   //
   // ONE BRACKET PAIR PER ARM, not per gate: `cqrt_x` is self-inverse, so
   // `x;g1;x;x;g2;x` and `x;g1;g2;x` are the same unitary and the second is what
-  // the flat phase path has emitted since Inc 2a (`SwapRouteEmit.cpp:1063`'s
-  // `-2 cqrt_x` audit arithmetic assumes exactly this).
+  // the flat phase path has emitted since Inc 2a.
+  //
+  // ⚠ READ THAT AS "PER ARM", NEVER AS "PER REGION" — the earlier spelling of
+  // this comment said the second and was MEASURED FALSE in four programs, two of
+  // them plain C (lens L1 §F-L1-3). The merge-tail loop at step 2b brackets EACH
+  // INCOMING by its own polarity, independently of the arm's bracket, so one
+  // source arm can carry TWO pairs: `if(q!=5){cq_phi(.9);cq_phi(.3);}else
+  // {cq_phi(.11);}` emits `x; rz(.9); x; x; rz(.3); x; rz(.11)` — FOUR `cqrt_x`,
+  // two of them adjacent and cancelling. Correct (an involution), and not what
+  // the comment claimed. The accurate rule is: one pair per ARM, plus one per
+  // BRACKETED TAIL INCOMING.
+  //
+  // ⚠ AND THE OLD CITATION OF `SwapRouteEmit.cpp:1063`'s `-2 cqrt_x` audit
+  // arithmetic WAS A FALSE DEPENDENCY, also L1 §F-L1-3. That note is the drbq
+  // Inc-2a route→control-in-place COLLAPSE arithmetic, and
+  // `tools/golden_multiset_audit.py` models `-2 cqrt_x` per COLLAPSED QUINTUPLE.
+  // The kickback path feeds neither: it collapses no quintuple and appears in no
+  // pre-3qlq golden. Nothing downstream depends on this choice — it is a shape
+  // decision, argued from the involution above and from nothing else.
   FunctionCallee X = csyms.xFn();
   auto emitArm = [&](ArrayRef<Instruction *> Gates, bool Neg) {
     if (Gates.empty())
@@ -1446,7 +1489,13 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
     if (Neg)
       stamp(B.CreateCall(X, {Flag}));
     for (Instruction *I : Gates)
-      stamp(B.CreateCall(Rz, {Flag, cast<CallInst>(I)->getArgOperand(0)}));
+      // EVERY emitted kickback gate is RECORDED (`ChainWalk::markBranchPhaseGate`)
+      // so the whole-DAG uncompute spine treats it as opaque. Without the record
+      // the spine reads `cqrt_rz_i1(f, θ)` as an ordinary in-place rotation on
+      // `f`'s chain and emits `cqrt_rz_i1(f, -θ)`, cancelling the user's phase
+      // exactly — the Rule-13 round-1 CONFIRMED miscompile F-L7-1 / F-L1-1.
+      markBranchPhaseGate(
+          stamp(B.CreateCall(Rz, {Flag, cast<CallInst>(I)->getArgOperand(0)})));
     if (Neg)
       stamp(B.CreateCall(X, {Flag}));
   };
@@ -1474,7 +1523,9 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
                                                   : R.ArmNegated;
       if (!FiresOnOne)
         stamp(B.CreateCall(X, {Flag}));
-      stamp(B.CreateCall(Rz, {Flag, TailPhi->getIncomingValue(I)}));
+      // Recorded for the same reason as the arm gates above (F-L7-1).
+      markBranchPhaseGate(
+          stamp(B.CreateCall(Rz, {Flag, TailPhi->getIncomingValue(I)})));
       if (!FiresOnOne)
         stamp(B.CreateCall(X, {Flag}));
     }

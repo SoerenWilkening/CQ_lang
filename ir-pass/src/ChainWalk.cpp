@@ -9,10 +9,27 @@
 
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Function.h"
+#include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/Metadata.h"
 
 using namespace llvm;
 
 namespace cq {
+
+// The BRANCH-PHASE (KICKBACK) GATE RECORD — see the header for the whole
+// argument (bd 3qlq Inc 1 part A, Rule-13 round-1 finding F-L7-1). ONE spelling
+// of the tag string, used by the writer and the reader, so the two cannot drift.
+static constexpr const char *kBranchPhaseTag = "cq.branchphase";
+
+void markBranchPhaseGate(CallInst *G) {
+  if (!G)
+    return;
+  G->setMetadata(kBranchPhaseTag, MDNode::get(G->getContext(), {}));
+}
+
+bool isBranchPhaseGate(const CallInst *G) {
+  return G && G->getMetadata(kBranchPhaseTag) != nullptr;
+}
 
 bool isAbiQramStore(const CallInst *G) {
   const Function *Callee = G ? G->getCalledFunction() : nullptr;
@@ -69,6 +86,31 @@ bool isAbiQramStore(const CallInst *G) {
 bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   const Function *Callee = G->getCalledFunction();
   if (!Callee)
+    return false;
+  // ---- THE BRANCH-PHASE (KICKBACK) GATE IS OPAQUE, ASKED FIRST (bd 3qlq Inc 1
+  // part A, Rule-13 round-1 F-L7-1 / F-L1-1 — a CONFIRMED silent miscompile).
+  //
+  // `cqrt_rz_i1(f, θ)` emitted by a kickback region is not a step in `f`'s
+  // reversible chain, it is THE PROGRAM'S ANSWER phase-kicked onto the control
+  // ancilla. Admitting it here made it a member of `D.Calls`, so `emitDagReversal`
+  // emitted `cqrt_rz_i1(f, -θ)` and CANCELLED it EXACTLY (both gates diagonal in
+  // the same label, the copy between them moves no label): the emitted circuit was
+  // the circuit for the same program with the `cq_phi` deleted. Refusing it here
+  // is the SAME move Inc 2a made one stem over for `cqrt_rz_<W>_controlled` —
+  // `isTerminalHandle` false, `isInteriorConsumer` false, `DagTraversal` closure
+  // `NotClosed` — so the flag rail is LEFT ALLOCATED (Rule-6 safe, and
+  // byte-for-byte the pre-3qlq oracle's disposition on the same source).
+  //
+  // ASKED BEFORE THE NAME ROWS AND BEFORE `H` IS EVEN LOOKED AT, deliberately:
+  // the gate is opaque for EVERY candidate handle, not only for the flag, so no
+  // later row can re-admit it through a different slot.
+  //
+  // WHY THIS FIXES BOTH POLARITIES BY DESIGN (F-L1-1's measurement). Before it,
+  // the NEGATED arm survived only because its `cqrt_x(f)` bracket made `f` carry
+  // an unrecognized consumer, and the un-negated arm did not — i.e. whether the
+  // user's phase survived depended on the branch polarity `clang -O1` happened to
+  // canonicalize to. That is an accident, not a fence. Membership is neither.
+  if (isBranchPhaseGate(G))
     return false;
   StringRef N = Callee->getName();
   // iw81.7 / Phase 7.5 Inc 2: a QRAM store is a VOID in-place mutation on its ARRAY
@@ -392,6 +434,20 @@ bool isTemplateProducer(const CallInst *G) {
 // this ticket's history says not to trust; the cost is a leaked rail on a shape no
 // emitter produces, and the alternative risks an under-freeze.
 bool preservesBasisUnderRecord(const CallInst *G) {
+  // ---- THE BRANCH-PHASE (KICKBACK) GATE, ASKED FIRST (bd 3qlq Inc 1 part A,
+  // F-L7-1). DEFENCE IN DEPTH, and say which kind: at HEAD this arm CANNOT FIRE,
+  // because every route into this function (`isInteriorConsumer`'s clause (a),
+  // `DagTraversal`'s `D.Calls` scan, `Uncomputation`'s interior-group adjoint
+  // gate) reaches it only for a gate `isInPlaceGateOn` already ACCEPTED, and that
+  // predicate now refuses this one. It is written anyway — rather than left to
+  // the `cqrt_rz_` row two screens down, which answers `true` — because `true`
+  // here means "basis-preserving, hence not frozen, hence FREEABLE and
+  // ADJOINTABLE", which is the one answer that must never be given about a gate
+  // carrying the program's answer. The `cqrt_rz_` row's argument ("a diagonal gate
+  // relabels nothing") is the right argument for the FREE and no argument at all
+  // for the ADJOINT; that gap is exactly what F-L7-1 fell through.
+  if (isBranchPhaseGate(G))
+    return false;
   // A reassigning producer — `cq_template_*` (out = f(parents), the embedded
   // permutation) and `cqrt_qram_load_<W>` (a cell copy conditioned on arr/idx).
   // Both are permutations of their PARENTS, so (b) holds. (d) holds because

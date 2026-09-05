@@ -15,6 +15,7 @@
 #include "AngleSelectEmit.h"
 
 #include "ArmAnalysis.h"       // angleSelectArmsAdmissible / comparePredLowerable
+#include "ChainWalk.h"         // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
 #include "ControlPlan.h"       // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (3qlq Inc 1 phase angle select bracket)
@@ -168,11 +169,16 @@ void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
     // defence in depth rather than a mid-stream bail.
     return;
 
-  // ---- 2. THE TWO GATES.
+  // ---- 2. THE TWO GATES. Both RECORDED as branch-phase (kickback) gates
+  // (`ChainWalk::markBranchPhaseGate`) so the whole-DAG uncompute spine treats
+  // them as opaque and never emits their negated twins — the Rule-13 round-1
+  // CONFIRMED miscompile F-L7-1, whose reproducer lives on the sibling flat path
+  // but whose mechanism (`isInPlaceGateOn` admitting an uncontrolled `cqrt_rz_`)
+  // is shared by every producer of this symbol.
   stamp(Bld.CreateCall(X, {Flag}));
-  stamp(Bld.CreateCall(Rz, {Flag, B}));
+  markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, B})));
   stamp(Bld.CreateCall(X, {Flag}));
-  stamp(Bld.CreateCall(Rz, {Flag, A}));
+  markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
 
   // ---- 3. STRIP + FREE, after the consumer's position. Valid unconditionally:
   // this region emits no gate on any register the compare reads, so the basis

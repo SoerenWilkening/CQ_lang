@@ -69,6 +69,70 @@ bool isAbiQramStore(const llvm::CallInst *G);
 // See the .cpp for the per-consumer list.
 bool isInPlaceGateOn(const llvm::CallInst *G, const llvm::Value *H);
 
+// ---------------------------------------------------------------------------
+// THE BRANCH-PHASE (KICKBACK) GATE RECORD — bd test_C_libtooling-3qlq Inc 1
+// part A, Rule-13 round-1 finding F-L7-1 (a CONFIRMED silent miscompile).
+//
+// WHAT THE RECORD IS FOR. After D1/D2 the register form of `cq_phi` is retired
+// and `cqrt_rz_i1(f, θ)` no longer means "the user wrote `x = cq_phi(x, θ)`, a
+// member of `x`'s reversible chain". It means THE PROGRAM'S ANSWER, kicked back
+// onto a control ancilla: `Σ a_x |x⟩|c(x)⟩ → Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`. It is
+// not a step toward a value; it IS the value. Adjointing it deletes the program.
+//
+// MEASURED, plain C, `clang -O1`, `opt` exit 0, verify-clean, STRICT stage-2b
+// clean (`$SP/progress/review_r1_L7/probes/j3_sharecond_measure_only.c`): on the
+// ziov `ShareCondFlag` path — where the compare is ALSO read as data, so the flag
+// rail is a live member of a data lineage the whole-DAG spine reverses — the
+// spine emitted `cqrt_rz_i1(h1, -θ)` right after the kickback's `cqrt_rz_i1(h1,
+// +θ)`. Both are diagonal in the same basis label and the copy between them does
+// not move it, so the product is EXACTLY the identity: the emitted circuit is
+// byte-for-byte the circuit for the same program with the `cq_phi` DELETED. The
+// pre-3qlq oracle keeps its phase gate on that source, so it is a fidelity
+// REGRESSION, not an inherited hazard.
+//
+// WHY A RECORD AND NOT A NAME TEST. `isInPlaceGateOn`'s uncontrolled-rotation row
+// admits `cqrt_rz_<W>(H, θ)` on grounds that remain CORRECT for a genuine chain
+// gate; what changed is not the symbol, it is who emitted it and what it denotes.
+// Two producers of the same symbol now want opposite answers from the spine, so
+// the discriminator has to be the emission, not the name. (A name test would also
+// become a second spelling of this set the moment part B narrows the emitted Rz
+// surface to `cqrt_rz_i1` — Rule 14, `railOf` drift.)
+//
+// WHY INSTRUCTION METADATA AND NOT A `TaintSet` POINTER SET. The Rule-13 round-1
+// plan proposed `taint.BranchPhaseGates`. Metadata is used instead, deliberately,
+// for three measured-in-this-tree reasons — and there is exactly ONE spelling of
+// the question either way:
+//   (1) `isInPlaceGateOn`, `preservesBasisUnderRecord` and
+//       `EmitInverse::isInverseEmittable` are PURE per-gate predicates with no
+//       `TaintSet` parameter, asked from 19 sites across six files, three of
+//       which (`railOf`, `railCarriesControlledRotation`,
+//       `ArithLowering::priorUseIsSettled`) have no `TaintSet` in scope at all.
+//       Threading one through all of them is a cross-cutting signature change to
+//       the Rule-13 core made in service of a fix to the Rule-13 core.
+//   (2) A `Value *` set keyed at emission time and read many stages later is the
+//       bd `drbq` Inc-1 round-1 defect VERBATIM: the set dangled because a later
+//       stage RAUW'd and erased the keyed instruction, and the freeze silently
+//       stopped applying. Metadata cannot dangle — it dies with its instruction.
+//   (3) Metadata survives `CloneFunctionInto` (Phase-6 specialization), where a
+//       pointer set silently would not: the clone's gate would fall OUT of the
+//       set and become adjointable again.
+// The record is also VISIBLE in the lowered `.ll` (`!cq.branchphase`), which is
+// the artifact `free_pairing_check.py` and every fixture read.
+//
+// STAMP IT AT EVERY EMISSION SITE. There are three today —
+// `SwapRouteEmit::emitPhaseKickbackRegion`'s arm loop and its merge-tail loop,
+// and `AngleSelectEmit`'s Rz stem. A fourth emitter that mints a kickback gate
+// and forgets this call re-opens F-L7-1 with no diagnostic anywhere.
+void markBranchPhaseGate(llvm::CallInst *G);
+
+// Is `G` a recorded branch-phase (kickback) gate? Asked by the three spine
+// predicates named above, each of which must treat it as OPAQUE: an
+// unrecognized consumer, never a DAG link. The consequence is `D.NotClosed` on
+// the flag rail, so the rail is LEFT ALLOCATED rather than reversed and freed —
+// Rule-6 safe (a leak, never a dirty free) and byte-for-byte the pre-3qlq
+// oracle's disposition on the same source.
+bool isBranchPhaseGate(const llvm::CallInst *G);
+
 // Does the rail `H` carry a `cqrt_{ry,rz}_<W>_controlled` gate — i.e. is it
 // FROZEN for the whole-DAG uncompute spine (bd test_C_libtooling-drbq Inc 1,
 // round-1 review finding L3 §1 / L5 §1)?

@@ -13,6 +13,7 @@
 #include "EmitInverse.h"
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
+                        // isBranchPhaseGate — the kickback-gate record (bd 3qlq F-L7-1)
 
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/StringRef.h"
@@ -40,6 +41,22 @@ namespace cq {
 bool isInverseEmittable(const CallInst *Forward) {
   const Function *Callee = Forward ? Forward->getCalledFunction() : nullptr;
   if (!Callee)
+    return false;
+  // ---- THE BRANCH-PHASE (KICKBACK) GATE IS NOT INVERTIBLE, ASKED FIRST (bd
+  // 3qlq Inc 1 part A, Rule-13 round-1 F-L7-1). Not "the recipe is unknown" — the
+  // recipe is obvious and that is the problem: the negated-angle re-emit below
+  // would produce `cqrt_rz_i1(f, -θ)`, which cancels the user's phase EXACTLY and
+  // compiles the program to the identity. This gate is the ANSWER, not a step
+  // toward one; nothing may adjoint it.
+  //
+  // DEFENCE IN DEPTH, stated exactly: at HEAD this arm cannot fire, because every
+  // caller (`Uncomputation`'s terminal-group and interior-group pre-scans,
+  // `BreakReversePlay`'s rail-gate pre-scan, `BennettWrap`'s forward-stream scan)
+  // only ever asks about a gate `ChainWalk::isInPlaceGateOn` accepted, and that
+  // predicate refuses this one first. It is written here because this function is
+  // the CANONICAL accept set (see the header): a set that answers `true` about a
+  // gate no caller may invert is a trap for the next caller, not a spare.
+  if (isBranchPhaseGate(Forward))
     return false;
   StringRef Name = Callee->getName();
   // Uncontrolled rotation `cqrt_ry/rz_<W>(h, θ)` (arg_size 2): negated-angle
