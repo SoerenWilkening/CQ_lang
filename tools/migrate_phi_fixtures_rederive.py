@@ -519,13 +519,37 @@ def respell_file(base, dry=False):
         changed = True
     if not changed:
         return ("ALREADY", newdiag)
-    note = [
-        ";",
-        "; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.",
-        "; The construct this fixture pins is unchanged; the CLAUSE that refuses it",
-        "; moved.  OLD: %s" % " / ".join(olds),
-        "; NEW: %s" % newdiag,
-    ]
+
+    # TWO DIFFERENT THINGS WEAR THE SAME EDIT, and saying so is the point.
+    # (a) the new text ENDS WITH the old one: the refusing CLAUSE is unchanged and
+    #     the assertion has merely been WIDENED to the whole DS_Error text (Rule 12
+    #     asks for character-for-character; a suffix-only assertion would still
+    #     match if a different subsystem grew a message with the same tail).
+    # (b) otherwise the fixture's construct is now refused by a DIFFERENT clause,
+    #     which is a real disposition change and must say so.
+    widened_only = all(newdiag.endswith(o) for o in olds)
+    if widened_only:
+        note = [
+            ";",
+            "; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error",
+            "; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new",
+            "; string ENDS WITH the old one — and this is Rule 12's",
+            "; character-for-character mirror rather than a disposition change: a",
+            "; suffix-only assertion would still match if some OTHER subsystem grew a",
+            "; message with the same tail.",
+            "; OLD: %s" % " / ".join(olds),
+            "; NEW: %s" % newdiag,
+        ]
+    else:
+        note = [
+            ";",
+            "; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.",
+            "; The construct this fixture pins is unchanged; the CLAUSE that refuses it",
+            "; MOVED — this is a real disposition change, not a widening, and the new",
+            "; string does not contain the old one.",
+            "; OLD: %s" % " / ".join(olds),
+            "; NEW: %s" % newdiag,
+        ]
     # insert the note directly above the first RUN line
     for i, ln in enumerate(lines):
         if RUN_RE.match(ln):
@@ -533,7 +557,8 @@ def respell_file(base, dry=False):
             break
     if not dry:
         open(path, "w", encoding="utf-8").write("\n".join(lines))
-    return ("RESPELLED", (olds, newdiag))
+    return ("RESPELLED-WIDENED" if widened_only else "RESPELLED-CLAUSE-MOVED",
+            (olds, newdiag))
 
 
 def main():

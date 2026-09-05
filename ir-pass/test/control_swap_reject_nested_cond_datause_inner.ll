@@ -21,8 +21,15 @@
 ; lineage is the flat path's ShareOk; the nested path declines it ("condition used
 ; outside the branch") because nested flag-SHARING is a later WI.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: condition used outside the branch under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition used outside the branch under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

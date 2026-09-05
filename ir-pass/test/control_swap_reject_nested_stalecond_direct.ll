@@ -14,8 +14,17 @@
 ; RegionTreeDetect (the flat-path mirror: position-free router-crossing wire
 ; walk over each condition's provenance + the bounded compare->branch scan).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: condition predates a non-diagonal gate under quantum control
+; NEW: cq controlled lowering: condition predates a non-diagonal gate under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition predates a non-diagonal gate under quantum control
 ; CHECK-NOT: cqrt_cswap
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)

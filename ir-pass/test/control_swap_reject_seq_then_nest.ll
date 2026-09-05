@@ -16,6 +16,13 @@
 ; future increment ever teaches the nest prover this shape, and this fixture is
 ; what will notice when it does (the message would change, never go away).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: cq controlled lowering: nested control flow under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
@@ -45,4 +52,4 @@ mn:
   ret i32 %m
 }
 
-; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control

@@ -5,8 +5,17 @@
 ; (armPureSpine) skips passthrough cases, and G10 / foreign-pred cannot see %s, so the
 ; flatten would silently DROP the user measurement (Rule 5) + dangle its taint pointer
 ; (UAF). The driver's uniform passthrough-arm-empty scan declines it.
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)

@@ -24,8 +24,17 @@
 ; ("condition data use has no template"), NOT the post-flatten "no template for
 ; opcode 'sext i256'" — proving the region is declined BEFORE it is mutated.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: condition data use has no template under quantum control
+; NEW: cq controlled lowering: condition data use has no template under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition data use has no template under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition data use has no template under quantum control
 ; The OLD (mutate-then-decline) message must NOT appear — detection declines first:
 ; CHECK-NOT: no template for opcode 'sext i256'
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)

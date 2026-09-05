@@ -13,8 +13,15 @@
 ; reason rather than the generic "condition used outside the branch". Pure
 ; detection decline (Rule 9); over-declining is always safe (Prime Directive).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: condition data use has no template under quantum control
+; NEW: cq controlled lowering: condition used outside the branch under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition data use has no template under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition used outside the branch under quantum control
 ; CHECK-NOT: no template for opcode 'sext i256'
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)
