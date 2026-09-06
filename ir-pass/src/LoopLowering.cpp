@@ -2875,20 +2875,68 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // refuses a marked site. ONE FACT, BOTH READERS — the peel and the emitter
 // cannot disagree about this op.
 //
-// THE STABILITY CONJUNCT, and it is not decoration. This runs BEFORE the round-2
+// ⚠ THE STABILITY CONJUNCT `P->hasOneUse()` IS **RETIRED** (bd
+// test_C_libtooling-3qlq Inc 1, the FOURTH C-1 round; bd 7yd0 / OQ-C2-1 /
+// review_inc2_r2 finding **F-I2-1**). What it used to say is kept below as
+// HISTORY, because the argument is still quoted; what replaces it is the (1b)
+// tripwire, which was not in the tree when the conjunct was written.
+//
+// HISTORY — the argument as shipped by round 2: "this runs BEFORE the round-2
 // control fixpoint, while M-C runs after it, so a G6/G7 answer taken here could
-// in principle go stale — and a stale "in place" is a wrong unitary (the pre-op
+// in principle go stale — and a stale 'in place' is a wrong unitary (the pre-op
 // register read after the mutation), not a leak. `P->hasOneUse()` closes that
 // window STRUCTURALLY rather than by an argument about emitters: the only use of
 // `P` is this op's operand, and no later stage invents a read of a value that has
-// none — every emitter's operands are the region's own condition, arm values and
-// merge incomings, all of which are USES that already exist in the IR. It costs
-// an over-decline (a legitimate prior read of `P` makes M-C accept and this
-// refuse, so the loop keeps today's leak), which is the Prime-Directive
-// direction, and it is pinned from both sides: `p/r2_preadd_inv.c` (one use,
-// admitted) and `p/x2_preadd_keep.c` (`int keep = q; q = q + 7; … measure(keep)`,
-// where M-C ITSELF goes out of place — `cq_template_add_i32_hl` in the trace —
-// and this must refuse, byte-identically to the round-1 binary).
+// none." ⚠ THE SECOND HALF OF THAT SENTENCE IS FALSE, and it was measured false
+// TWICE, in the OPPOSITE direction each time:
+//   * round 3's **F-C1C-1**: `hasOneUse` is a property of the **SSA VALUE**, and
+//     the window it guards is a property of the **WIRE**. `lowerRotations` RAUWs
+//     every member of a theta chain onto ONE `cqrt_alloc` handle, so a `P` with
+//     exactly one use HERE can have two at `lowerOps` — and it was a CONFIRMED
+//     silent miscompile (`int q2=cq_theta(q,.3); int a=q2+7; …; cq_measure(a)`
+//     collapsed `q` and `a` onto one register). The conjunct did not stop that;
+//     the (1b) tripwire does.
+//   * this round's **F-I2-1**: the conjunct also refuses in the other direction,
+//     for a reason that has nothing to do with a later read. A Phase-4 merge
+//     out-rail `%out` is a `cqrt_alloc_<W>` the emitters WRITE before anything
+//     reads it — two `cqrt_copy_<W>_controlled` for the 4.4 select merge and
+//     Inc 2's value merge, one `cqrt_copy_<W>` for the Phase-4 value-arm route —
+//     so `hasOneUse` is STRUCTURALLY false for EVERY merge out-rail, and it is
+//     false because of a PRIOR WRITER, never a LATER READER. `hasOneUse` cannot
+//     tell those apart; M-C's own G6/G7 pair can, and does (a prior void
+//     `cqrt_*` writer is `provablyBefore` the op and is settled by
+//     `priorUseIsSettled` arm (c)).
+//
+// SO THE COMMIT NOW ASKS EXACTLY TWO THINGS: the immediate is a `Constant`
+// ((1a), below — MONOTONE, a property of the IR class), and
+// `classifyInPlaceReassignment` — M-C's own fence, the ONE spelling (Rule 14) —
+// says in place. THE SAFETY IS (1b), NOT A NEW PREDICATE. `lowerOps` re-asks
+// that same fence under the FINAL `DominatorTree`/`LoopInfo` and the FINAL
+// taint, and a changed answer is a LOUD `DiagnosticInfoUnsupported` with nothing
+// lowered. So a commit that was true here and false at lowering — the whole
+// class `hasOneUse` was reaching for, F-C1C-1 included — is a DECLINE, never a
+// leak and never a wrong unitary. A structural stand-in for a temporal question
+// is exactly what (1b) made unnecessary; keeping both meant paying an
+// over-decline for a net the tripwire already holds.
+//
+// MEASURED, this round, on the pre-fix `main` binary (a3c1513) and on this one
+// (rolled `cq_template_and_i32_hl` mints / `_hl_unc` discharges, against the
+// hand-unrolled twin of the SAME source):
+//   * `p/q5sel_preadd_{rolled,unrolled}.c` — a 4.4 select merge, `m = m + 7`,
+//     then D4's per-bit loop: main **4/0 (44 lines) vs twin 4/4 (52)**; here
+//     **4/4 = 4/4, traces BYTE-IDENTICAL at 52 lines**.
+//   * `p/q4b_preadd_*.c` — the Phase-4 VALUE-ARM ROUTE out-rail (`cqrt_copy_i32`
+//     into `%out`): main **4/0 (57) vs 4/4 (65)**; here **IDENTICAL 65 = 65**.
+//   * `p/q7_k32_rolled.c` — the same select merge at K=32: main 32 mints / **0**
+//     `_unc`; here **32/32**. The leak was O(K).
+//   * `p/q5v_none*.c` (merge, NO preheader op) and
+//     `p/q5ctl_theta_preadd_*.c` (theta root, WITH one) are the two boundary
+//     controls: IDENTICAL on BOTH binaries, so the finding is the PRODUCT of the
+//     two axes and this change moves neither axis alone.
+// The `x2_preadd_keep.c` control (`int keep = q; q = q + 7; … measure(keep)`) is
+// UNCHANGED and must stay so: M-C ITSELF goes out of place there (G6 refuses the
+// later read), so `classifyInPlaceReassignment` returns false and this commit
+// still refuses — now for the RIGHT reason rather than by a proxy.
 //
 // ⚠ THE STABILITY CONJUNCT WAS ONLY HALF THE WINDOW, AND THE OTHER HALF WAS A
 // CONFIRMED SILENT MISCOMPILE (bd 3qlq Inc 1, the THIRD C-1 review round,
@@ -2961,8 +3009,8 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
       return;  // in-loop: M-C's G5 refuses outright, so `OutOfPlace` is the
                // TRUE disposition and the FACT-time peel is already right.
     Value *P = inPlaceValueRailOperand(BO, taint);
-    if (!P || !P->hasOneUse())
-      return;  // unproven — stop, and let the peel stop here too (today's leak).
+    if (!P)
+      return;  // not the dtzb shape — stop, and let the peel stop here too.
     // (1a) — the immediate must be a `Constant`, which can never become tainted.
     Value *Imm = BO->getOperand(0) == P ? BO->getOperand(1) : BO->getOperand(0);
     if (!isa<Constant>(Imm))
