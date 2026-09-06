@@ -4811,6 +4811,31 @@ add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-preadd-unrolled
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
 
+# --- THE MERGE-OUT-RAIL ROOT WITH A PREHEADER IN-PLACE `add` (bd 3qlq Inc 1,
+# --- the FOURTH C-1 round, finding F-I2-1). The PRODUCT of the two axes above
+# --- and `..._inloop_merge_rail`: the invariant register the per-bit condition
+# --- reads is a Phase-4 CONTROL-OWNED MERGE OUT-RAIL (the 4.4 select merge's
+# --- `%out`), and the preheader `+7` lands IN PLACE on it. A merge out-rail
+# --- structurally cannot satisfy `P->hasOneUse()` — the emitters WRITE it before
+# --- anything reads it — so `commitOutOfLoopInPlaceOps` refused and the rails
+# --- leaked: 4 mints / 0 `_unc` on `main` a3c1513 (44 lines vs the twin's 52),
+# --- 32 / 0 at K=32. The `cmp` gate below is the witness.
+add_test(NAME e2e-slice-control-phase-perbit-loop-merge-preadd
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-merge-preadd-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd_unrolled.expected.log")
+
 # --- THE MIXED **ONWARD** LOOP (bd 3qlq Inc 1, the SECOND C-1 review round,
 # --- finding F-C1-2(2a)). The invariant register is a 6.5 classical-call-arm
 # --- `%out` rail, so the loop's control is CLASSICAL at round 1 and ROUND-1
@@ -4909,6 +4934,12 @@ add_test(NAME e2e-phase-perbit-loop-mixed-preadd-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
+
+# bd 3qlq Inc 1, the FOURTH C-1 round (F-I2-1): 44 vs 52 on `main` a3c1513.
+add_test(NAME e2e-phase-perbit-loop-merge-preadd-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_merge_preadd_unrolled.expected.log")
 
 add_test(NAME e2e-phase-onward-perbit-loop-mixed-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files

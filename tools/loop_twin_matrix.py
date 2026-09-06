@@ -349,6 +349,12 @@ PREFIX = {
     # pre-existing generated source byte-identical.
     "addpre": "",
     "xorpre": "",
+    # bd 3qlq Inc 1, the FOURTH C-1 round (bd 7yd0 / OQ-C2-1 / review_inc2_r2
+    # finding **F-I2-1**). Same PRE-LOOP `a = a + 7;` as `addpre`, but the
+    # register it lands on is a Phase-4 CONTROL-OWNED MERGE OUT-RAIL rather than
+    # a `cq_theta` root mint — see `PREHEAD` below and sub-grid F4. Used ONLY by
+    # F4; `BASE_PREFIX` is unchanged, so the 120-cell product cannot see it.
+    "addpresel": "",
 }
 # The PRE-LOOP line each PREFIX key contributes (bd 3qlq Inc 1, F-C1-1). Only the
 # two `*pre` keys have one. A CONSTANT immediate, deliberately, and not the
@@ -358,6 +364,36 @@ PREFIX = {
 PRELOOP = {
     "addpre": "    a = a + 7;\n",
     "xorpre": "    a = a ^ 9;\n",
+    "addpresel": "    a = a + 7;\n",
+}
+# The text emitted between the head (`int a = ...; a = cq_theta(a, 0.5);`) and
+# `PRELOOP`, i.e. BEFORE the pre-loop in-place op — bd 3qlq Inc 1, the FOURTH
+# C-1 round (F-I2-1). Only `addpresel` has one, and every other cell takes the
+# `""` default, which is what keeps all 1144 pre-existing generated sources
+# byte-identical (PROVEN by hashing them before and after, not asserted).
+#
+# WHAT IT BUILDS AND WHY IT HAS TO BE THIS SHAPE. The finding is the PRODUCT of
+# two axes the instrument had separately: a PREHEADER in-place op (sub-grid F3)
+# and an invariant root that is a CONTROL-OWNED MERGE OUT-RAIL rather than a
+# root mint (pinned only in lit, by `control_phase_kickback_inloop_merge_rail.ll`,
+# which has no preheader op). `a = (a > 5) ? mb : mc;` is the 4.4 tainted-
+# condition SELECT merge — the ONE producer of such a rail that is expressible
+# in a SINGLE translation unit, which is what this instrument is. The other two
+# measured producers need something the matrix cannot spell: the Phase-4
+# value-arm route needs a multi-op arm (pinned by the `q4b_preadd_*` reproducer
+# pair and measured by hand), and the 6.5 classical-call arm needs a second TU.
+#
+# The ARMS ARE TWO SEPARATE `cq_theta` REGISTERS, deliberately. Constant arms
+# (`(a>5) ? 7 : 5`) make the merge an all-`ConstantInt` one, and `-O1` then folds
+# the pre-loop `+ 7` into the case constants, so the preheader op DISAPPEARS and
+# the cell would silently stop being about the finding at all (MEASURED as
+# `q5w_mux`/`q5v_add2`, both ACCEPT-IDENTICAL on every binary). A merge whose
+# `%out` holds a NON-CONSTANT value is the population.
+PREHEAD = {
+    "addpresel": ("    int mb = 0, mc = 0;\n"
+                  "    mb = cq_theta(mb, 0.25);\n"
+                  "    mc = cq_theta(mc, 0.3);\n"
+                  "    a = (a > 5) ? mb : mc;\n"),
 }
 # The five keys the 120-cell PREFIX x REGION x SUFFIX product iterates. Spelled
 # out rather than taken from `PREFIX.keys()` so that adding a key for a sub-grid
@@ -853,11 +889,12 @@ def sources(prefix, region, suffix, record="none", rgate="none",
     return _wrap(body, second, R, surface,
                  index=region in INDEXED_REGION,
                  postloop=POSTLOOP_FOR_REGION.get(region, ""),
-                 preloop=PRELOOP.get(prefix, ""))
+                 preloop=PRELOOP.get(prefix, ""),
+                 prehead=PREHEAD.get(prefix, ""))
 
 
 def _wrap(body, second, R, surface="register", index=False, postloop="",
-          preloop=""):
+          preloop="", prehead=""):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
@@ -875,6 +912,10 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     repetitions, for the SECOND C-1 review round's F-C1-1 cells; it sits OUTSIDE
     the repetition on both sides, so the two spellings cannot fold it differently
     (which is what makes its twin faithful where `addpost`'s was not).
+    `prehead` sits one step EARLIER still — between the head and `preloop` — and
+    is what lets sub-grid F4 (the FOURTH C-1 round, F-I2-1) re-point `a` at a
+    Phase-4 merge out-rail before the pre-loop op lands on it; see `PREHEAD`.
+    It too is outside the repetition on both sides.
     ALL THREE default to the pre-C-1 behaviour and every one of the 274 (then 284)
     older cells takes it — PROVEN by hashing all generated sources before and
     after each edit, not asserted.
@@ -893,6 +934,7 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     rolled = (
         HDR
         + head
+        + prehead
         + preloop
         + "    for (int i = 0; i < %d; ++i) {\n" % TRIPS
         + body
@@ -909,6 +951,7 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     unrolled = (
         HDR
         + head
+        + prehead
         + preloop
         + ("    int i = 0;\n" if index else "")
         + (flat + "    i = i + 1;\n" if index else flat) * TRIPS
@@ -1429,7 +1472,8 @@ def ry_cells():
 #   F1  polarity x post-loop-diffusion x how `r` is carried                  8
 #   F2  the RECORD axis on each register, at the diffusing region            2
 #   F3  a PREHEADER in-place `add` on `a` x 2 per-bit regions                2
-# 12 cells. Kept small deliberately: this gate is already the suite's long pole
+#   F4  the same, on a 4.4 SELECT-MERGE out-rail root x 2 per-bit regions     2
+# 14 cells. Kept small deliberately: this gate is already the suite's long pole
 # at ~400 s, and the population beyond these is measured in
 # `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 rather than paid for on every run.
 #
@@ -1526,6 +1570,42 @@ F_RGATE = ("rypost", "rypre")
 F_PRELOOP_PREFIX = ("addpre",)
 F3_REGION = ("pbit", "pbitd")
 
+# ── F4 — THE PRODUCT: A PREHEADER IN-PLACE OP ON A **MERGE OUT-RAIL** ROOT
+# (bd 3qlq Inc 1, the FOURTH C-1 round — bd 7yd0 / OQ-C2-1 / review_inc2_r2
+# finding **F-I2-1**) ─────────────────────────────────────────────────────────
+#
+# F3 above closed the PREHEADER axis on a `cq_theta` ROOT MINT. The review that
+# followed found the defect one axis over, and it is the same lesson a further
+# time: the tree had BOTH halves and never their PRODUCT. Six
+# `control_phase_kickback_mixed_preheader_*.ll` fixtures pin the preheader op
+# (all theta roots); `control_phase_kickback_inloop_merge_rail.ll` pins the merge
+# out-rail root (no preheader op); F3's two cells are theta roots. Crossing them
+# leaked: on `main` a3c1513 these two cells are **TRACE-DIVERGENCE** (rolled 2
+# per-bit mints / **0** `_unc` against a hand-unrolled twin at 2/2), and on this
+# round's build they are **ACCEPT-IDENTICAL**. Cause: `hasOneUse` is structurally
+# false for a merge out-rail (the emitters WRITE it before anything reads it), so
+# `commitOutOfLoopInPlaceOps` refused, the peel stopped at the `add`, and clause
+# (ii-b) never saw the root — while M-C converted that same op in place anyway
+# (`cqrt_addc_i32(%out, 7)` IS in the emitted stream). See that function's header.
+#
+# TWO CELLS, the diffusing and non-diffusing per-bit regions at the `rypost`
+# carry, exactly mirroring F3 so the two sub-grids differ in ONE thing: whether
+# `a` is a root mint or a merge out-rail. `pbitd`'s post-loop diffusion is what
+# turns the leaked bit rails from a Rule-6 leak into a different unitary.
+#
+# ⚠ ONLY THE 4.4 SELECT MERGE IS EXPRESSIBLE HERE. The population is "merges
+# whose `%out` holds a NON-CONSTANT value": the Phase-4 value-arm route needs a
+# multi-op arm (measured by hand on the `q4b_preadd_{rolled,unrolled}` pair —
+# `main` 4 mints/0 `_unc` at 57 lines vs 4/4 at 65, this build IDENTICAL 65=65)
+# and the 6.5 classical-call arm needs a SECOND TRANSLATION UNIT, which this
+# single-TU instrument cannot spell. The 4.5 switch data-mux is measured OUT of
+# the population entirely — its arms are all `ConstantInt` by C1, so `-O1` folds
+# any classical op on the merge into the case constants and no preheader op
+# survives (`q5w_mux`, ACCEPT-IDENTICAL on every binary). That is also why
+# `PREHEAD`'s arms are two `cq_theta` registers and not two literals.
+F4_PREFIX = ("addpresel",)
+F4_REGION = ("pbit", "pbitd")
+
 
 def f_cells():
     """The mixed-loop sub-grid (bd 3qlq Inc 1, CLEARANCE C-1, and its review
@@ -1540,6 +1620,9 @@ def f_cells():
     # F3 — the PREHEADER in-place op on the invariant register.
     out += [(p, g, "none", "none", "rypost")
             for p in F_PRELOOP_PREFIX for g in F3_REGION]
+    # F4 — the same op, on a 4.4 SELECT-MERGE out-rail root (F-I2-1).
+    out += [(p, g, "none", "none", "rypost")
+            for p in F4_PREFIX for g in F4_REGION]
     return out
 
 
@@ -1550,7 +1633,8 @@ def cells_of_matrix():
     bd drbq Inc-4 controlled-state-prep decline control), plus the 10-cell
     MIXED-LOOP sub-grid F (see `F_*` — bd 3qlq Inc 1, the Rule-13 CLEARANCE
     finding C-1, the axis 274 cells did not have, plus its review round's F3
-    PREHEADER cells for F-C1-1). 286 cells.
+    PREHEADER cells for F-C1-1 and the fourth round's F4 MERGE-OUT-RAIL cells
+    for F-I2-1). 288 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -1564,7 +1648,7 @@ def cells_of_matrix():
                                 [k for k in RECORD if k != "none"])]
     ry = ry_cells()
     f = f_cells()
-    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 12), \
+    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 14), \
         "sub-grid sizes moved: %d/%d/%d/%d" % (len(base), len(rec), len(ry),
                                                len(f))
     cells = base + rec + ry + f
