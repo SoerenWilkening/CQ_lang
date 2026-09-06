@@ -1973,7 +1973,8 @@ Read them before widening anything in `LoopLowering` or `ArithLowering`:
 
 ### 3.14 The FOURTH C-1 round (2026-09-06) — F-I2-1: `P->hasOneUse()` is RETIRED, and the safety is the round-3 tripwire
 
-Full record: `inc1-records/session-adc5590a/fix_c1d.md`. bd `7yd0`. The finding is
+Full record: `inc1-records/session-adc5590a/c1-round4/fix_c1d.md` (with its lens
+`.../c1-round4/review_c1d.md`, verdict CLEAR-WITH-ITEMS). bd `7yd0`. The finding is
 `review_inc2_r2`'s **F-I2-1** and it is the same shape the re-clearance had already filed as
 **OQ-C2-1** — so read this section as the disposition of BOTH.
 

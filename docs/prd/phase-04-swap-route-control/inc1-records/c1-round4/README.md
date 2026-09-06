@@ -49,3 +49,24 @@ separately linked binaries (the artefact `review_c1c` recorded on the same probe
 identical on both binaries by construction). STRICT stage 2b over all 332 `fix` accepts:
 **330 `0 violation(s), 0 unproven`, 2 `0 violation(s), 4 unproven`** — the two are
 `f0_break_plain` / `f3_break_global_phase_before`, the `--allow-unproven` dtzb break family.
+
+---
+
+## REBASE onto the landed Increment 2 (2026-09-06, session `82e6b530`)
+
+⚠ **EVERY `main` COLUMN ABOVE WAS MEASURED AGAINST a3c1513 AND THAT COMMIT IS NO LONGER
+`main`.** `main` is now **b99b853** (docs) on top of the CODE commit **258d974** — Inc 2, value
+arms by the CONTROLLED-COPY MERGE. The lens `review_c1d.md` (F-C1D-1) re-measured the finding on
+that landed binary and it is **still live there**: `q4b_preadd` 4/0 (52) vs 4/4 (60),
+`q5sel_preadd` 4/0 (44) vs 4/4 (52), `g1_region_then_preadd` 3/0 (36) vs 3/3 (42). So the table's
+`main` columns are correct **as of a3c1513** and the rows whose LINE COUNTS moved with Inc 2 are
+re-measured against 258d974 in the `q4b` block below.
+
+**Duplicated reproducers, deliberately.** Increment 2 committed its own copies of fourteen of
+these files at `docs/prd/phase-04-swap-route-control/inc2-records/` — `q4b_preadd_{rolled,unrolled}.c`,
+`q5sel_preadd_*`, `q5ctl_theta_preadd_*`, `q5v_{none,xor}{,_u}.c`, `q5w_mux_*`, `q7_k32_*` — and
+they are **byte-identical to the copies here** (spot-checked with `diff -q` on
+`q4b_preadd_{rolled,unrolled}`, `q5sel_preadd_rolled`, `q7_k32_rolled`). Neither copy is deleted:
+`inc2-records/` records what the Inc-2 review measured on ITS binary, `inc1-records/c1-round4/`
+records what this round measured on `main` a3c1513 and on the fix. Read them as two measurements
+of one program, not as one file in two places.
