@@ -51,8 +51,13 @@
 // follow-on 3qlq.5) and `out` is the live result — NEITHER is ever freed. Each
 // chain INTERMEDIATE is `_unc`'d and freed by the spine, but each case's DELTA
 // rail `d_i` and each chain FINAL are left ALLOCATED AND DIRTY (entangled with
-// `p`). Sound because `d_i` is a deterministic function of the retained `p`, so
-// tracing it out leaves the reduced state on (q, p, out) unchanged; it is NOT
+// `p`). Sound because `d_i` is a deterministic function of the retained `p`:
+// relative to the source's LIVE registers (q, out) the reduced state equals the
+// route's, and no CQ-expressible continuation can observe the difference (the
+// retained `out` label already records it and the ABI mints no in-place Q+Q gate
+// on `out` that could erase it). ⚠ It is NOT true that "tracing `d_i` out leaves
+// the reduced state on (q, p, out) unchanged" — off-diagonals between p, p' with
+// distinct deltas DEPHASE (Inc-2 clearance record item R-2, PRD §0 E1b). It is NOT
 // the route's leak class, which returned every work rail to |0>. Follow-on
 // 3qlq.5 (free the source) is therefore UNSOUND BY DEFAULT until these are
 // discharged.
