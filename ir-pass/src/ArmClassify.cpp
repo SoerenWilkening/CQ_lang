@@ -77,6 +77,25 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
   return F && F->getName().starts_with(Prefix);
 }
 
+// ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 (2026-09-05), AND DELIBERATELY
+// KEPT (PRD `retire-swap-route-PRD.md` §6.2 row P6: "every 'Rz is diagonal and
+// exempt' clause becomes VACUOUS rather than deleted").
+//
+// The 15-width `@cq_phi_<sfx>(x, angle)` family is RETIRED: `CQ.h` no longer
+// declares it and `resolveSources` no longer resolves it, so no call this
+// predicate can match exists in a module the pass lowers. It CANNOT accidentally
+// match the register-free replacement, and that is a fact about the strings, not
+// a hope: `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE — six characters
+// against a seven-character prefix. The new call is recognized by EXACT
+// membership instead (`TaintPropagation.h`'s `isRegisterFreePhaseCall`), which is
+// also the project's standing accept-side discipline (never a name prefix — the
+// `cq_theta_evil` hazard).
+//
+// KEEPING IT IS THE POINT: a `void(double)` call has no arg-0 WIRE and no arg-1
+// ANGLE, so every clause below that follows `getArgOperand(0)` as a rail, or
+// reads `getArgOperand(1)` as an angle, would be reading the wrong operand — or
+// out of range — if this predicate were widened to admit it. Do not "fix" this by
+// making it match `cq_phi`.
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
@@ -3341,6 +3360,925 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   return ArmDisposition::Accept;
 }
 
+// ── bd test_C_libtooling-3qlq Inc 1 — P1, the FLAT KICKBACK DIAMOND ──────────
+//
+// `if (COND(q)) cq_phi(θ);` with the REGISTER-FREE `void @cq_phi(double)`
+// (PRD `retire-swap-route-PRD.md` §6.2 row P1, owner decision D1).
+//
+// WHY THIS IS A SEPARATE CLASSIFIER AND NOT A `classifyArms` ARM CLASS. The arm
+// carries no VALUE: `cq_phi` returns nothing, so the merge block has NO φ for
+// this region at all. `recoverRegion`'s three shape recognizers each require a
+// non-null `soleMergePhi`, so the region falls through to `RegionShape::
+// OffPattern` and declines `control flow` (MEASURED on the pre-increment oracle
+// for the flagship Grover customer). This is the same seam
+// `lowerControlledIOSinks` (7.6) and `classifyAbortPark` (7.2 Inc 3) sit in, and
+// it is a PRE-PEEL in `handleBranchRegion` for the same reason they are.
+//
+// THE LOWERING IS KICKBACK, AND IT TOUCHES `q` NOT AT ALL (PRD §3). With
+// `f = COND(x)` minted into a |0⟩ ancilla the state is `Σ a_x |x⟩|c(x)⟩`;
+// `P(θ) = diag(1, e^{iθ})` ON THE FLAG gives `Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`; the
+// ordinary compare `_unc` strip (a permutation `|x, c(x)⟩ → |x, 0⟩`) returns the
+// ancilla to |0⟩ ON EVERY BRANCH, and the phase is left on the BRANCH. That is
+// why the emitted gate is `cqrt_rz_i1` on the FLAG and never a `_controlled`
+// gate on the register: the register is not an operand of anything this region
+// emits. (Under `Rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` the difference from `P(θ)`
+// is a global phase — `cqrt_rz_i1` is the gate either way.)
+//
+// WHAT THE FENCES THEREFORE ARE, AND ARE NOT. The condition register is NOT
+// relabelled by a kickback (no gate on `q`, diagonal or otherwise), so the
+// register-side fences of the drbq rotation arm — R4's disjoint-wire proof, R6's
+// stale-record read, the structural freeze — have no subject here and are not
+// asked. The CONDITION-side fences are asked in full and are exactly
+// `classifyArms`' own, in its order and with its strings: `CmpInst` +
+// `comparePredLowerable`, `condDataUseDisposition` (the ziov shared-flag path),
+// `condProvenance` + `condWireDisposition` (a non-diagonal Ry between compare
+// and branch would make the mint read a different basis than the source
+// compare), and `compareFlagMintable` (Q+Q has no mint).
+//
+// Returns `Accept` with `R` populated as a `PhaseKickback` region — `Merge` is
+// deliberately NULL (there is no φ to dissolve) while `MergeBB` is set, exactly
+// as `lowerControlledIOSinks` builds its synthetic flatten region.
+bool phaseAngleTail(BasicBlock *MergeBB, const TaintSet &Taint, PHINode *&Phi,
+                    CallInst *&Consumer) {
+  // See ArmAnalysis.h for what this is and why the classifier must ask it about
+  // EVERY merge, not only the ones it wants to widen to.
+  PHINode *Found = nullptr;
+  for (PHINode &P : MergeBB->phis()) {
+    if (Found)
+      return false;  // more than one phi — off-pattern.
+    Found = &P;
+  }
+  if (!Found || !Found->getType()->isDoubleTy() ||
+      Found->getNumIncomingValues() != 2)
+    return false;
+  // Both muxed angles must be CLASSICAL (Rule 3 — quantum data in the angle slot
+  // is the f64/angle miscompile family).
+  for (unsigned I = 0; I != 2; ++I)
+    if (Taint.Tainted.count(Found->getIncomingValue(I)))
+      return false;
+  // Its SOLE user must be the angle slot of a register-free phase call sitting in
+  // this same merge block. `hasOneUse` counts USES, so a phi feeding one call
+  // twice is refused here too.
+  if (!Found->hasOneUse())
+    return false;
+  auto *CI = dyn_cast<CallInst>(Found->user_back());
+  if (!CI || CI->getParent() != MergeBB || !isRegisterFreePhaseCall(CI, Taint) ||
+      CI->arg_size() != 1 || CI->getArgOperand(0) != Found)
+    return false;
+  Phi = Found;
+  Consumer = CI;
+  return true;
+}
+
+// ── bd test_C_libtooling-3qlq Inc 1 — P1, the FLAT KICKBACK REGION ───────────
+//
+// `if (COND(q)) cq_phi(θ);` (and its if/else and multi-gate generalizations)
+// with the REGISTER-FREE `void @cq_phi(double)` (PRD
+// `retire-swap-route-PRD.md` §6.2 row P1, owner decision D1).
+//
+// WHY THIS IS A SEPARATE CLASSIFIER AND NOT A `classifyArms` ARM CLASS. The arm
+// carries no VALUE: `cq_phi` returns nothing, so the merge block has no φ for the
+// region's gates. `recoverRegion`'s three shape recognizers each require a
+// non-null `soleMergePhi`, so the region falls through to
+// `RegionShape::OffPattern` and declines `control flow` (MEASURED on the
+// pre-increment oracle for the flagship Grover customer). This is the same seam
+// `lowerControlledIOSinks` (7.6) and `classifyAbortPark` (7.2 Inc 3) sit in, and
+// it is a PRE-PEEL in `handleBranchRegion` for the same reason they are.
+//
+// THE LOWERING IS KICKBACK, AND IT TOUCHES `q` NOT AT ALL (PRD §3). With
+// `f = COND(x)` minted into a |0⟩ ancilla the state is `Σ a_x |x⟩|c(x)⟩`;
+// `P(θ) = diag(1, e^{iθ})` ON THE FLAG gives `Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`; the
+// ordinary compare `_unc` strip (a permutation `|x, c(x)⟩ → |x, 0⟩`) returns the
+// ancilla to |0⟩ ON EVERY BRANCH, and the phase is left on the BRANCH. That is
+// why the emitted gate is `cqrt_rz_i1` on the FLAG and never a `_controlled` gate
+// on the register: the register is not an operand of anything this region emits.
+// (Under `Rz(θ) = diag(e^{−iθ/2}, e^{iθ/2})` the difference from `P(θ)` is a
+// global phase — `cqrt_rz_i1` is the gate either way.)
+//
+// N GATES PER ARM ARE ADMITTED, NOT DECLINED (orchestrator decision 2026-09-05,
+// on the prep-b measurement OQ-5). PRD §6.3's first decline row refuses "an arm
+// with N>1 `cq_phi` calls" on the ground that "summing angles is the 2b rounding
+// class again" — and that ground is a Ry-STEM ground that does not survive the
+// surface change. Under kickback there is NOTHING TO SUM: N gates on the SAME
+// minted flag are N `cqrt_rz_i1(f, θ_i)` emitted in source order, each angle
+// passed through verbatim, and they compose to `P(Σθ_i)` on the branch BY THE
+// PHYSICS of §3 — not by any floating-point arithmetic this compiler performed.
+// No `fsub`, no residual, no bound. Refusing them would also regress four SHIPPED
+// e2e accepts (`slice_control_phase_diamond`, `slice_control_cond_datause`,
+// `slice_control_switch_eqfold`, `slice_control_phase_ifelse_derived`).
+//
+// WHAT THE FENCES THEREFORE ARE, AND ARE NOT. The condition register is NOT
+// relabelled by a kickback (no gate on `q`, diagonal or otherwise), so the
+// register-side fences of the drbq rotation arm — R4's disjoint-wire proof, R6's
+// stale-record read, the structural freeze — have no subject here and are not
+// asked. The CONDITION-side fences are asked in full and are exactly
+// `classifyArms`' own, in its order and with its strings: `CmpInst` +
+// `comparePredLowerable`, `condDataUseDisposition` (the ziov shared-flag path),
+// `condProvenance` + `condWireDisposition`, and `compareFlagMintable`.
+//
+// Returns `Accept` with `R` populated as a `PhaseKickback` region — `Merge` is
+// deliberately NULL (there is no φ for the gates to merge; a MERGE-TAIL ANGLE
+// PHI, when present, is claimed through `phaseAngleTail` and ERASED by the
+// emitter before the flatten) while `MergeBB` is set, exactly as
+// `lowerControlledIOSinks` builds its synthetic flatten region.
+// THE Q+Q CONDITION REASON, ONE SPELLING FOR THE WHOLE PHASE PATH — bd
+// test_C_libtooling-3qlq Inc 1, Rule-13 ROUND-2 finding F-B2-2 (prep_b2's
+// golden-regeneration measurement).
+//
+// A kickback whose condition compares TWO tainted registers has no flag mint at
+// any width (`CompareLowering` builds `cq_template_icmp_<pred>_<W>_hl(q, lit)` —
+// a HANDLE-and-LITERAL template) and must decline. It always DID decline, but on
+// the SINGLE-COMPARE path it declined in the OPCODE layer, at
+// `no template for opcode 'icmp i1' in tainted context`, because
+// `classifyPhaseKickback` deliberately did not ask the question and the emitter's
+// `lowerCompareToFlag` returned null as its first emission. THAT IS A RULE-1
+// PROBLEM, not a message-cosmetics one: a tainted `br` must be CLAIMED OR
+// DECLINED BY THE CONTROL LAYER, and "the flag mint happens to have no template"
+// is a third path — it works only for as long as no other stage claims the
+// compare first, and it names an opcode where the user wrote a branch. The
+// pre-3qlq ORACLE declined the same shape in the control layer
+// (`control flow under quantum control`), so this also restores the layer the
+// diagnostic came from.
+//
+// Asked BEFORE any emission, for EVERY leaf, on the single-compare path and
+// inside a condition tree alike, with ONE string. The nest (P4) asks the same
+// thing at its own leaf ladder. The switch (P5) is exempt STRUCTURALLY, not by
+// omission: its flags are `scrutinee == <ConstantInt>`, so a Q+Q eq-flag cannot
+// be built. The value path carries the identical fence from Inc 2's own round-1.
+constexpr const char *kQQCondReason = "quantum-quantum compare condition";
+
+PhaseKickbackDisp classifyPhaseKickback(
+    BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const DominatorTree *DT, const LoopInfo *LI,
+    SmallPtrSetImpl<Instruction *> *ClaimedSelects) {
+  if (!BI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Pred = BI->getParent();
+  BasicBlock *S0 = BI->getSuccessor(0);
+  BasicBlock *S1 = BI->getSuccessor(1);
+
+  // ---- 1. SHAPE — a DIAMOND in either polarity (Rule 9: `clang -O1`
+  // canonicalizes `if(q!=k)` so the gate arm is the FALSE successor), or an
+  // IF/ELSE whose two single-predecessor arms reconverge at a common merge.
+  BasicBlock *Arm = nullptr;
+  BasicBlock *ArmFalse = nullptr;
+  BasicBlock *MergeBB = nullptr;
+  bool Negated = false;
+  if (uncondSucc(S0) == S1 && S0->getSinglePredecessor() == Pred) {
+    Arm = S0;
+    MergeBB = S1;
+  } else if (uncondSucc(S1) == S0 && S1->getSinglePredecessor() == Pred) {
+    Arm = S1;
+    MergeBB = S0;
+    Negated = true;
+  } else if (BasicBlock *M = uncondSucc(S0);
+             M && M == uncondSucc(S1) && M != S0 && M != S1 &&
+             S0->getSinglePredecessor() == Pred &&
+             S1->getSinglePredecessor() == Pred) {
+    // IF/ELSE. `Arm` is the TRUE successor and `ArmFalse` the FALSE one, so
+    // `Negated` stays false and the FALSE arm's gates carry the `cqrt_x` bracket
+    // — the same field convention every other emitter in the tree uses (`Shadow`
+    // is `Arm`'s content and `ShadowFalse` is `ArmFalse`'s, BY FIELD IDENTITY,
+    // not by edge truth).
+    Arm = S0;
+    ArmFalse = S1;
+    MergeBB = M;
+  } else {
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  // The merge must be the clean TWO-predecessor join.
+  //
+  // LOAD-BEARING TWICE, not a tidiness check. (i) `flattenRegion` SPLICES the
+  // arms and merge into `Pred` and ERASES them; a THIRD predecessor (a back
+  // edge, a `goto` target) would have its edge silently destroyed. (ii) it is
+  // what makes `lowerControlRegions`' STRUCTURAL LEMMA — and therefore the hcrg
+  // sequential-chain reordering this Kind is admitted to — hold here: for a
+  // `BranchRegion` the lemma reads "a merge has exactly two preds" off
+  // `soleMergePhi`'s 2-incoming φ, and a kickback merge has no φ to read it off,
+  // so the fact must be asked directly. `lowerControlledIOSinks` asks the same
+  // question of its own phi-less void diamond, for the same reason.
+  if (!MergeBB->hasNPredecessors(2))
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 2. ARM CONTENT. Each arm is exactly `{ N × call void @cq_phi(double
+  // θ); br merge }` with N ≥ 0 — block size N+1 with the phase calls FIRST, the
+  // strict spelling `lowerControlledIOSinks` uses for its void arm
+  // (`IOSinkLowering.cpp:587`), generalized from N = 1. Strictness is
+  // load-bearing twice over: it puts every ANGLE's definition OUTSIDE the arm (so
+  // each dominates the branch the gates are hoisted to), and it is what makes
+  // "this arm is a pure phase" a structural fact rather than a walk.
+  //
+  // A phase call BESIDE anything else (an Ry, a value op) is NotApplicable, and
+  // the fall-through owns it: with a merge φ present `classifyArms` declines
+  // `impure phase arm`, and without one `recoverRegion` declines `control flow`.
+  // Both are loud; neither is this shape.
+  auto collectArm = [&](BasicBlock *BB, SmallVectorImpl<Instruction *> &Out) {
+    unsigned N = 0;
+    for (Instruction &I : *BB) {
+      if (I.isTerminator())
+        break;
+      auto *CI = dyn_cast<CallInst>(&I);
+      if (!CI || !isRegisterFreePhaseCall(CI, Taint) || CI->arg_size() != 1)
+        return false;  // anything that is not a phase call → off-pattern.
+      Out.push_back(CI);
+      ++N;
+    }
+    return BB->size() == N + 1;  // N phase calls + the terminator, nothing else.
+  };
+  SmallVector<Instruction *, 4> ArmGates, ArmFalseGates;
+  if (!collectArm(Arm, ArmGates))
+    return PhaseKickbackDisp::NotApplicable;
+  if (ArmFalse && !collectArm(ArmFalse, ArmFalseGates))
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 3. THE MERGE-TAIL ANGLE PHI (optional), and the fence that makes the
+  // plain accept sound. Every φ in the merge must be accounted for: this one,
+  // which the emitter erases, or none at all. See `phaseAngleTail` and the
+  // BROKEN-MODULE note in its header.
+  PHINode *TailPhi = nullptr;
+  CallInst *TailCall = nullptr;
+  const bool HasTail = phaseAngleTail(MergeBB, Taint, TailPhi, TailCall);
+  if (!HasTail && !MergeBB->phis().empty())
+    return PhaseKickbackDisp::NotApplicable;
+  if (HasTail) {
+    // Both incomings must name blocks THIS region owns, or the polarity of a
+    // muxed angle is not decidable from the region alone.
+    for (unsigned I = 0; I != 2; ++I) {
+      BasicBlock *In = TailPhi->getIncomingBlock(I);
+      if (In != Arm && In != ArmFalse && In != Pred)
+        return PhaseKickbackDisp::NotApplicable;
+    }
+  }
+
+  // Nothing to lower is not this shape (an empty tainted diamond is somebody
+  // else's — `emitRegion`'s identity-region path, or a generic decline).
+  if (ArmGates.empty() && ArmFalseGates.empty() && !HasTail)
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 4. EVERY ANGLE IS CLASSICAL (Rule 3). A tainted angle would put quantum
+  // data in a gate's classical slot; it declines in the SAME dialect and with the
+  // SAME string the retired suffixed family used
+  // (`RotationLowering::declineTaintedAngle`), so no fixture learns a new
+  // spelling for an unchanged rule. (`phaseAngleTail` already refused a tainted
+  // tail incoming, by returning false rather than declining — a tainted merge
+  // angle is somebody else's shape, not a broken instance of this one.)
+  for (ArrayRef<Instruction *> Gates : {ArrayRef<Instruction *>(ArmGates),
+                                        ArrayRef<Instruction *>(ArmFalseGates)})
+    for (Instruction *G : Gates)
+      if (Taint.Tainted.count(cast<CallInst>(G)->getArgOperand(0))) {
+        diagnoseUnderControl(G, "rotation angle");
+        return PhaseKickbackDisp::Declined;
+      }
+
+  // ---- 4b. POPULATE THE REGION before the condition fences, so every
+  // diagnostic below can anchor on it exactly as `classifyArms`' do.
+  Region.Kind = ControlRegion::PhaseKickback;
+  Region.Condition = BI->getCondition();
+  Region.Pred = Pred;
+  Region.Arm = Arm;
+  Region.ArmFalse = ArmFalse;
+  Region.MergeBB = MergeBB;
+  Region.Merge = nullptr;  // there is no GATE φ — see the header note.
+  Region.ArmNegated = Negated;
+  Region.Shadow.assign(ArmGates.begin(), ArmGates.end());
+  Region.ShadowFalse.assign(ArmFalseGates.begin(), ArmFalseGates.end());
+  Region.ClassArm = ArmClass::Phase;
+  Region.ClassArmFalse = ArmClass::Phase;
+
+  // ---- 5. THE CONDITION MUST BE A LOWERABLE COMPARE, OR A COMPOUND TREE OVER
+  // LOWERABLE COMPARES (P3, bd test_C_libtooling-3qlq Inc 1 part B).
+  //
+  // A bare tainted `i1` (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ);`) is NOT
+  // this shape and gets its own message: the correct lowering there mints
+  // NOTHING — the gate belongs directly on `b`'s own rail — and that is filed as
+  // Inc 1b's bare-i1 row (PRD §6.3, §9, owner question Q4 assumed answer).
+  //
+  // A COMPOUND condition IS this shape since part B. `clang -O1` hands
+  // `if (q==5 && r==3) cq_phi(θ)` a `select i1 %a, i1 %b, i1 false` branch
+  // condition (MEASURED; and `if (q==5) { if (r==3) cq_phi(θ); }` folds to the
+  // BYTE-IDENTICAL function body), so the tree is not an exotic spelling — it is
+  // the ONLY spelling the language's `&&` produces. The lowering is the 4.4
+  // select's condition NETWORK, now shared through `CondTreeEmit` (Rule 14): one
+  // flag rail per leaf, one `|0>` ancilla per `and`/`or`/`xor` node, the root
+  // ancilla carrying the whole predicate, and an exact-LIFO strip. `cqrt_rz_i1`
+  // then rides the ROOT exactly as it rides a single compare's flag — the
+  // kickback argument of §3 does not care how the flag was computed, only that
+  // the ancilla is returned to |0> on every branch, which the LIFO strip does.
+  //
+  // The tree grammar is asked with `AllowLogicalSelect = TRUE`, which the 4.4
+  // DATA select deliberately does not do — see SelectClassify.h.
+  //
+  // ---- TWO MESSAGES ON THE REFUSAL PATH, NOT ONE — Rule-13 round-1 findings
+  // F-L3-7 / F-L5-5, MERGED WITH PART B'S TREE ADMISSION (this clause is the one
+  // content conflict between the two branches, resolved to keep BOTH behaviours).
+  //
+  // Part A gave EVERY condition it could not use the message
+  // `branch phase on a bare i1 condition`, deliberately ("a compound `select i1`
+  // is not a `CmpInst` either, so it takes the same partitioned message"). That
+  // was MEASURED FALSE about the two commonest programs reaching it, and a
+  // diagnostic REGRESSION against the pre-3qlq oracle, which said `control flow`
+  // and was right about both:
+  //
+  //   `if (c) { if (q==5) cq_phi(θ); }` with `c` a `volatile int`, and
+  //   `for(i<3){ if (i) { if (q==5) cq_phi(θ); } … }`
+  //
+  // Both arrive as `select i1 %classical, i1 %tainted_cmp, i1 false` — a
+  // condition TREE, one of them mixing a CLASSICAL guard with a tainted compare,
+  // and neither containing a bare `i1` from `cq_theta` anywhere. A user was being
+  // sent to look for a `_Bool` that does not exist.
+  //
+  // PART B NARROWS WHAT REACHES HERE BUT DOES NOT CLOSE THE HOLE: with
+  // `AllowLogicalSelect` on, the `&&`/`||`/folded-nest spellings are now
+  // ACCEPTED, so they no longer take any message at all — but `collectCondTree`
+  // still REFUSES a tree that is structurally off-pattern (the two NOT-carrying
+  // complements, a constant child, an over-deep or cross-block tree), and every
+  // one of those is still a TREE and still not a bare `i1`. So the split stays,
+  // asked only on the refusal:
+  //   * NOT an instruction, or a tainted `i1` VALUE (a `cq_theta` result, a
+  //     `zext`/`trunc` of one, a load — anything that is not a condition TREE)
+  //     keeps `branch phase on a bare i1 condition`. That is the bare-i1 shape,
+  //     where the correct lowering mints NOTHING.
+  //   * a condition TREE the grammar refuses takes the pre-existing
+  //     `control flow` message the oracle used.
+  // Keeping the two apart is what lets the bare-i1 fixture stay a
+  // DISCRIMINATOR: when that shape is built, its string must stop firing, and
+  // under one shared message it would go on firing for every refused tree with
+  // no fixture able to tell.
+  CondTree Tree;
+  if (!collectCondTree(Region.Condition, Tree, /*AllowLogicalSelect=*/true)) {
+    const bool IsCondTree = [&] {
+      if (isa<SelectInst>(Region.Condition))
+        return true;
+      if (const auto *BO = dyn_cast<BinaryOperator>(Region.Condition))
+        return BO->getType()->isIntegerTy(1) &&
+               (BO->getOpcode() == Instruction::And ||
+                BO->getOpcode() == Instruction::Or ||
+                BO->getOpcode() == Instruction::Xor);
+      return false;
+    }();
+    diagnoseUnderControl(BI, IsCondTree
+                                 ? "control flow"
+                                 : "branch phase on a bare i1 condition");
+    return PhaseKickbackDisp::Declined;
+  }
+  // A SINGLE-LEAF tree is the pre-part-B path and every gate below runs exactly
+  // as part A wrote it (same order, same strings, byte-identical stream). The
+  // extra per-leaf gates are for the COMPOUND path only, and each is an
+  // over-decline: with one flag per leaf the mint is no longer ATOMIC, so a leaf
+  // the emitter cannot mint must be refused HERE, before the first ancilla
+  // exists (the ziov.4 mutate-then-decline class — the same reason
+  // `classifySelectRegion` gained its per-leaf ladder).
+  const bool IsTree = !Tree.Nodes.empty();
+  // SIZE BOUND, stated rather than implied: each leaf costs one flag rail and
+  // each node one ancilla, all live simultaneously between the mint and the
+  // strip, so an unbounded tree is an unbounded live ancilla set. Eight of each
+  // is far past anything `clang -O1` builds from a C `&&`/`||` chain (the
+  // measured customers have 1 leaf / 0 nodes and 2 leaves / 1 node); the bound
+  // exists so the resource claim is a FACT and not a hope. Over-declining is
+  // safe (Prime Directive).
+  constexpr size_t kPhaseCondTreeMaxLeaves = 8;
+  constexpr size_t kPhaseCondTreeMaxNodes = 8;
+  if (Tree.Leaves.size() > kPhaseCondTreeMaxLeaves ||
+      Tree.Nodes.size() > kPhaseCondTreeMaxNodes) {
+    diagnoseUnderControl(BI, "branch phase condition tree too deep");
+    return PhaseKickbackDisp::Declined;
+  }
+  auto *Cmp = IsTree ? nullptr : Tree.Leaves.front();
+  for (CmpInst *Leaf : Tree.Leaves) {
+    if (!comparePredLowerable(Leaf)) {
+      diagnoseUnderControl(declAnchor(Region),
+                           "control condition has no template");
+      return PhaseKickbackDisp::Declined;
+    }
+    // Q+Q — EXPLICIT, IN THE CONTROL LAYER, FOR EVERY LEAF (Rule-13 round-2
+    // F-B2-2; see `kQQCondReason`). `compareFlagMintable` ADMITS a Q+Q leaf (bd
+    // adia lifted that decline for the 4.4 select, which does have a Q+Q mint),
+    // so it cannot carry this and never could: on the single-compare path the
+    // refusal used to happen in the emitter's first `lowerCompareToFlag`, whose
+    // null return left the tainted `br` neither claimed nor declined by this
+    // layer — the opcode net then reported `no template for opcode 'icmp i1'`.
+    if (Taint.Tainted.count(Leaf->getOperand(0)) &&
+        Taint.Tainted.count(Leaf->getOperand(1))) {
+      diagnoseUnderControl(declAnchor(Region), kQQCondReason);
+      return PhaseKickbackDisp::Declined;
+    }
+    // The remaining un-mintable widths / out-of-scope shapes. Asked by the SAME
+    // dry-run predicate the mint itself uses (Rule 14), so detection and
+    // emission cannot disagree.
+    if (!compareFlagMintable(Leaf, Taint)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return PhaseKickbackDisp::Declined;
+    }
+    if (!IsTree)
+      continue;
+    // A CLASSICAL leaf has no quantum flag to mint, and promoting it would put
+    // a classical runtime value in the i32 HANDLE slot (the §5.2 prohibition —
+    // a phantom rail id aliasing an unrelated qubit). The hybrid
+    // classical∧quantum conjunction is out of scope; `classifySelectRegion`
+    // gate 2 declines the same shape with the same string.
+    if (!Taint.Tainted.count(Leaf)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return PhaseKickbackDisp::Declined;
+    }
+    // (The Q+Q leaf is refused ABOVE, for tree and single-compare alike, with
+    // `kQQCondReason`. It used to be refused only HERE, and only for a tree —
+    // "keeping the two paths' DISPOSITION identical even though their message
+    // differs" — which round-2 finding F-B2-2 showed was not a message
+    // difference but a LAYER difference: the single-compare path was declining
+    // in the opcode net, not in this one. One question, one spelling, one layer.)
+    // An i1-OPERAND leaf is non-canonical (InstCombine rewrites i1 eq/ne to
+    // xor/not forms) and would smuggle a boolean NOT past the tree grammar; its
+    // mint also passes a raw i1 into the i32 handle slot. The 4.4 select fences
+    // it identically (SelectClassify gate 2). Over-decline-safe: no `-O1`
+    // canonical shape lands here.
+    if (Leaf->getOperand(0)->getType()->isIntegerTy(1)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return PhaseKickbackDisp::Declined;
+    }
+    // The positional half of the stale-condition guard below scans each leaf
+    // forward to the branch, which is only a BOUNDED window when the leaf is in
+    // `Pred`. A cross-block leaf declines conservatively — exactly what
+    // `RegionTreeDetect::staleCond` does for the same reason.
+    if (Leaf->getParent() != Region.Pred) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return PhaseKickbackDisp::Declined;
+    }
+  }
+  // Every NODE must live in `Pred` too. Two reasons, both concrete: the network
+  // is emitted at the branch, so a node defined elsewhere is either not
+  // available there or is shared with code this region does not own; and the
+  // `ClaimedSelects` hand-off below is what stops the caller's tainted-`select`
+  // scan from ALSO claiming a logical-select node as an i1 data mux — that scan
+  // is per-block and runs after the block's own terminator, so a node in another
+  // block could be visited BEFORE this region claims it.
+  if (IsTree)
+    for (Instruction *N : Tree.Nodes)
+      if (N->getParent() != Region.Pred) {
+        diagnoseUnderControl(declAnchor(Region), "control flow");
+        return PhaseKickbackDisp::Declined;
+      }
+
+  // ---- 6. THE CONDITION'S DATA USES AND ITS WIRE — `classifyArms`' fences,
+  // verbatim in content, order and string.
+  //
+  // FOR A COMPOUND TREE (P3) BOTH ARE ASKED OVER THE WHOLE TREE, and the data-use
+  // question is asked STRUCTURALLY rather than through `condDataUseDisposition`:
+  // a leaf's legitimate user IS a tree node, so "any non-`br` user" is the wrong
+  // test. Every tree instruction's users must lie inside the tree or be the
+  // branch itself. A use OUTSIDE it declines `condition used outside the branch`
+  // — the string `RegionTreeDetect` already uses for exactly this situation, and
+  // for exactly this reason: there is no shared-flag path here. The ziov
+  // `ShareCondFlag` accept is SINGLE-COMPARE ONLY and cannot be lifted to a tree
+  // by inspection: the shared object would have to be the ROOT ANCILLA, which
+  // this emitter strips and frees inside the region, so a downstream data use
+  // would read a freed rail. Sharing a tree's predicate is a real capability and
+  // a separate increment, not a side effect of this one.
+  if (IsTree) {
+    SmallPtrSet<const Value *, 16> TreeSet;
+    for (CmpInst *Leaf : Tree.Leaves)
+      TreeSet.insert(Leaf);
+    for (Instruction *N : Tree.Nodes)
+      TreeSet.insert(N);
+    for (const Value *V : TreeSet)
+      for (const User *U : V->users())
+        if (U != BI && !TreeSet.count(U)) {
+          diagnoseUnderControl(declAnchor(Region),
+                               "condition used outside the branch");
+          return PhaseKickbackDisp::Declined;
+        }
+  }
+  bool HasDataUse = false;
+  if (!IsTree)
+    for (const User *U : Region.Condition->users())
+      if (!isa<BranchInst>(U)) {
+        HasDataUse = true;
+        break;
+      }
+  if (HasDataUse) {
+    switch (condDataUseDisposition(Cmp, Region.Pred, Taint)) {
+    case CondDataDisp::ShareOk:
+      Region.ShareCondFlag = true;
+      break;
+    case CondDataDisp::MeasuredEarly:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition measured before the control route");
+      return PhaseKickbackDisp::Declined;
+    case CondDataDisp::Unowned:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use neither escaped nor measured");
+      return PhaseKickbackDisp::Declined;
+    case CondDataDisp::Unlowerable:
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition data use has no template");
+      return PhaseKickbackDisp::Declined;
+    }
+  }
+
+  // The provenance seed set. For a COMPOUND tree it is the UNION over the LEAVES
+  // (the 4.4 select's gate-2c rule, verbatim): a walk seeded from the root alone
+  // would cross the tree nodes, which carry no rotation wire of their own, and a
+  // walk seeded from ONE leaf would accept a chained theta staling the OTHER
+  // leaf's wire. The nodes need no seed — an `and`/`or` result's basis
+  // provenance IS the union of its leaves'.
+  SmallPtrSet<Value *, 16> Prov;
+  if (IsTree)
+    for (CmpInst *Leaf : Tree.Leaves)
+      condProvenance(Leaf, Taint, Prov);
+  else
+    condProvenance(Region.Condition, Taint, Prov);
+  // The flag is minted at the BRANCH. A tainted-operand `cq_theta` (a
+  // NON-DIAGONAL Ry, which genuinely moves the register) between the compare and
+  // the branch makes that mint read a different basis than the source compare —
+  // the wrong branch is marked and the strip does not return the flag to |0⟩.
+  //
+  // ⚠ P1's `ProvenPostRegion` HALF IS AN ACCEPT HERE, and the reason is exactly
+  // the argument drbq Inc 3 used to widen it from `!SawPhaseArm` to
+  // `!(SawPhaseArm || SawRotationArm)`: `ProvenPostRegion` means the offending
+  // gate is proven to execute AFTER this region, and a kickback — which copies
+  // nothing, replays nothing and allocates no work rail — leaves nothing behind
+  // for that later gate to invalidate. A kickback is strictly LESS invasive than
+  // an in-place rotation arm, which already carries the accept. So the
+  // disposition is: DeclineNow declines, ProvenPostRegion accepts.
+  if (condWireDisposition(Region, Taint, Prov, DT) ==
+      CondWireDisp::DeclineNow) {
+    diagnoseUnderControl(declAnchor(Region),
+                         "condition predates a non-diagonal gate");
+    return PhaseKickbackDisp::Declined;
+  }
+  // `condWireDisposition`'s POSITIONAL prong scans from `R.Condition` (the tree
+  // ROOT) to the branch. For a compound tree the LEAVES are defined before the
+  // root, so that window does not cover them — scan each leaf's own window too
+  // (all leaves are in `Pred`, proven above). Same predicate, same string; it
+  // only ever DECLINES more.
+  if (IsTree) {
+    const Instruction *Term = Region.Pred->getTerminator();
+    for (CmpInst *Leaf : Tree.Leaves)
+      for (const Instruction *I = Leaf->getNextNode(); I && I != Term;
+           I = I->getNextNode()) {
+        const auto *CI = dyn_cast<CallInst>(I);
+        if (!CI)
+          continue;
+        const Function *F = CI->getCalledFunction();
+        if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+            Taint.Tainted.count(CI->getArgOperand(0))) {
+          diagnoseUnderControl(declAnchor(Region),
+                               "condition predates a non-diagonal gate");
+          return PhaseKickbackDisp::Declined;
+        }
+      }
+  }
+
+  // ---- 7. LOOPS (P6). A region on a CFG cycle is admitted only when
+  // `flatRegionRollableInLoop` proves it sits wholly inside ONE reducible
+  // `LoopInfo` loop at one depth with a single latch and no second cycle through
+  // the entry — the 8h7d.5 predicate, unchanged and asked from here for the same
+  // reason `handleBranchRegion` asks it for a flat region: BEFORE anything
+  // mutates the CFG. Everything else on a cycle (irreducible, multi-latch,
+  // nested) keeps the existing decline and its existing string.
+  //
+  // A kickback needs NOTHING from the round-2 rail collapse: it emits no gate on
+  // the loop-carried register, so `collapseFlattenedLoopRails` finds nothing to
+  // collapse for it and `staleRailRecordRead` has no rail record to invalidate.
+  if (regionEntryInLoop(BI)) {
+    if (!LI || !flatRegionRollableInLoop(Region, *LI)) {
+      diagnoseUnderControl(BI, "control flow inside a loop body");
+      return PhaseKickbackDisp::Declined;
+    }
+    Region.InLoop = true;
+  }
+  // ACCEPT. Claim every LOGICAL `select i1` node of the condition tree so the
+  // caller's tainted-select scan leaves it alone — see the header note; without
+  // this the flagship `&&` customer SIGSEGVs in `emitSelectRegion`.
+  if (ClaimedSelects)
+    for (Instruction *N : Tree.Nodes)
+      if (isa<SelectInst>(N))
+        ClaimedSelects->insert(N);
+  return PhaseKickbackDisp::Accept;
+}
+
+
+// ── bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 NEST ────
+//
+// `if (COND1(q)) { …cq_phi…; if (COND2(q)) { …cq_phi… } }` that `clang -O1` did
+// NOT fold into one compound branch (PRD §6.2 row P4). The fold is the normal
+// outcome and it is P3 — SimplifyCFG turns `if(a){if(b) X;}` into
+// `br (a && b)` whenever the outer arm holds nothing but the inner branch, and
+// the two `@slice` bodies are then BYTE-IDENTICAL (measured). What keeps a nest
+// GENUINE is content in the outer arm: an opaque `call void @cq_phi(double)` is
+// not speculatable, so the two levels survive.
+//
+// WHY THIS IS ONE REGION AND NOT THE 4.3 PARENT/CHILD PAIR. The 4.3 nest exists
+// to ROUTE: it cswaps `q` onto rail1 under f1, replays the outer arm's Rz there,
+// mints f2 FROM RAIL1 (because the register `%g` is stale on the f1=1 path), and
+// tears the two levels down LIFO. Every one of those steps is a consequence of
+// the arm gate CARRYING A REGISTER. Under D1/D2 it does not: `cq_phi` is
+// `void(double)`, no register is relabelled anywhere in the nest, so the inner
+// condition reads exactly the registers it reads in the source and its flag can
+// be minted at the OUTER branch from those same registers. What is left is pure
+// boolean algebra — the inner arm fires iff `c1 ∧ c2` — which is ONE
+// `cqrt_toffoli` onto a fresh |0> ancilla, i.e. the SAME conjunction node the
+// 4.4 select network has always used and that P3 now uses for `&&`. Two rails
+// (the two condition roots) plus one ancilla, versus the route's two work rails
+// and four `cqrt_cswap`.
+//
+// THE EMITTED UNITARY, stated so it can be checked without running anything.
+// With f1 = c1(x) and f2 = c2(x) minted into |0> ancillas and
+// g = (f1 ⊕ NegOuter) ∧ (f2 ⊕ NegInner):
+//   * the OUTER arm's phases ride f1 (X-bracketed when the outer content arm is
+//     the false successor), so branch x picks up e^{iθ} exactly when x is in the
+//     outer arm — which is what the source says, since the outer arm's phase
+//     calls run whenever the outer condition holds, inner condition or not;
+//   * the INNER arm's phases ride g, i.e. exactly when BOTH hold;
+//   * every ancilla is returned to |0> on EVERY branch (the toffoli is its own
+//     inverse, each `_unc` strip is a permutation) and freed clean (Rule 6).
+// No gate anywhere in this region takes a data register as an operand, so no
+// register-side fence (R4 disjoint wires, R6 stale record, the structural
+// freeze) has a subject here — exactly as for the flat kickback.
+//
+// SCOPE, and it is deliberately narrow. The outer arm may hold phase calls and
+// the inner condition tree AND NOTHING ELSE; a `cq_theta` there is the MIXED
+// nest (prep-b's `slice_control_phase_nest_deep.c`) and stays a decline — an Ry
+// in the outer arm RELABELS a register, which would make the inner flag minted
+// at the outer branch read a different basis than the source compare, the very
+// staleness the guards below exist to refuse. Depth 3+, an if/else at either
+// level, a merge φ of any kind, a value arm, a loop, and a condition used
+// outside its own branch all decline.
+PhaseKickbackDisp classifyPhaseKickbackNest(
+    BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const DominatorTree *DT, const LoopInfo *LI,
+    SmallPtrSetImpl<BranchInst *> *ClaimedBranches,
+    SmallPtrSetImpl<Instruction *> *ClaimedSelects) {
+  if (!BI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Pred = BI->getParent();
+  BasicBlock *S0 = BI->getSuccessor(0);
+  BasicBlock *S1 = BI->getSuccessor(1);
+
+  // ---- 1. SHAPE. Exactly ONE outer successor ends in a tainted conditional
+  // branch (the inner diamond); the other is the shared merge, reached straight
+  // from `Pred`. Both or neither is not a one-content-arm nest — the same
+  // criterion-1 partition `recoverRegionTree` uses, and for the same reason.
+  const bool T0 = hasTaintedCondBranch(S0, Taint);
+  const bool T1 = hasTaintedCondBranch(S1, Taint);
+  if (T0 == T1)
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *Mid = T0 ? S0 : S1;
+  BasicBlock *Merge = T0 ? S1 : S0;
+  const bool OuterNeg = !T0;
+  if (Mid->getSinglePredecessor() != Pred)
+    return PhaseKickbackDisp::NotApplicable;
+  auto *InnerBI = dyn_cast<BranchInst>(Mid->getTerminator());
+  if (!InnerBI || !InnerBI->isConditional())
+    return PhaseKickbackDisp::NotApplicable;
+  BasicBlock *IS0 = InnerBI->getSuccessor(0);
+  BasicBlock *IS1 = InnerBI->getSuccessor(1);
+  BasicBlock *InnerArm = nullptr;
+  bool InnerNeg = false;
+  if (IS1 == Merge && uncondSucc(IS0) == Merge &&
+      IS0->getSinglePredecessor() == Mid) {
+    InnerArm = IS0;
+  } else if (IS0 == Merge && uncondSucc(IS1) == Merge &&
+             IS1->getSinglePredecessor() == Mid) {
+    InnerArm = IS1;
+    InnerNeg = true;
+  } else {
+    // Also the DEPTH CAP: a depth-3 inner arm ends in a tainted `br`, so
+    // `uncondSucc` is null and neither orientation matches.
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  // The merge must be the clean THREE-predecessor join {Pred, Mid, InnerArm} —
+  // the same thing the flat kickback asks of its two-predecessor merge, and for
+  // the same two reasons: `flattenRegionTree` erases all three arms and would
+  // silently destroy a fourth edge, and the block-lifetime pre-flight in
+  // `lowerControlRegions` reads this region's doomed set off these fields.
+  if (!Merge->hasNPredecessors(3))
+    return PhaseKickbackDisp::NotApplicable;
+  {
+    SmallPtrSet<const BasicBlock *, 4> Want{Pred, Mid, InnerArm};
+    for (const BasicBlock *PB : predecessors(Merge))
+      if (!Want.count(PB))
+        return PhaseKickbackDisp::NotApplicable;
+  }
+  // ANY φ in the merge makes this NotApplicable. The flat path can claim ONE
+  // 2-incoming `phi double` as a merge-tail ANGLE (`phaseAngleTail`); a 3-pred
+  // merge φ has three incomings and that predicate refuses it outright, so there
+  // is no φ this emitter knows how to account for — and a φ left standing in a
+  // block `flattenRegionTree` splices away is a BROKEN MODULE at `opt` exit 0
+  // (measured on the flat path in part A). Refuse rather than flatten over it.
+  if (!Merge->phis().empty())
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 2. THE TWO CONDITION TREES, through the shared grammar (Rule 14). A
+  // level whose condition is neither a compare nor a decomposable tree is the
+  // bare-i1 shape composed with a nest — out of scope, and NotApplicable so the
+  // ordinary `recoverRegion` fall-through owns the (loud) decline.
+  CondTree OuterTree, InnerTree;
+  if (!collectCondTree(BI->getCondition(), OuterTree,
+                       /*AllowLogicalSelect=*/true) ||
+      !collectCondTree(InnerBI->getCondition(), InnerTree,
+                       /*AllowLogicalSelect=*/true))
+    return PhaseKickbackDisp::NotApplicable;
+
+  // ---- 3. ARM CONTENT.
+  //   Mid       = { N × call void @cq_phi(double), the INNER condition tree, br }
+  //   InnerArm  = { M × call void @cq_phi(double), br }
+  // with N + M >= 1. Mid's membership test is by SET rather than by position, so
+  // a compare scheduled before the phase calls is admitted (nothing in the tree
+  // has an ordering requirement — the network reads the leaves' OPERANDS, not
+  // the compares). ANYTHING ELSE in either block — an Ry, a value op, a store —
+  // is off-pattern and falls through to the ordinary loud decline.
+  SmallPtrSet<const Value *, 8> InnerTreeSet;
+  for (CmpInst *L : InnerTree.Leaves)
+    InnerTreeSet.insert(L);
+  for (Instruction *N : InnerTree.Nodes)
+    InnerTreeSet.insert(N);
+  SmallVector<Instruction *, 4> MidGates, InnerGates;
+  for (Instruction &I : *Mid) {
+    if (I.isTerminator())
+      break;
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (CI && isRegisterFreePhaseCall(CI, Taint) && CI->arg_size() == 1) {
+      MidGates.push_back(CI);
+      continue;
+    }
+    if (InnerTreeSet.count(&I))
+      continue;  // part of the inner condition, consumed by the network.
+    return PhaseKickbackDisp::NotApplicable;
+  }
+  for (Instruction &I : *InnerArm) {
+    if (I.isTerminator())
+      break;
+    auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI || !isRegisterFreePhaseCall(CI, Taint) || CI->arg_size() != 1)
+      return PhaseKickbackDisp::NotApplicable;
+    InnerGates.push_back(CI);
+  }
+  if (InnerArm->size() != InnerGates.size() + 1)
+    return PhaseKickbackDisp::NotApplicable;
+  if (MidGates.empty() && InnerGates.empty())
+    return PhaseKickbackDisp::NotApplicable;  // an identity nest is nobody's.
+
+  // ---- 4. EVERY ANGLE IS CLASSICAL (Rule 3), same dialect and string as the
+  // flat path's.
+  for (ArrayRef<Instruction *> Gates : {ArrayRef<Instruction *>(MidGates),
+                                        ArrayRef<Instruction *>(InnerGates)})
+    for (Instruction *G : Gates)
+      if (Taint.Tainted.count(cast<CallInst>(G)->getArgOperand(0))) {
+        diagnoseUnderControl(G, "rotation angle");
+        return PhaseKickbackDisp::Declined;
+      }
+
+  // ---- 4b. POPULATE before the condition fences so every diagnostic anchors on
+  // the region exactly as the flat classifier's do.
+  Region.Kind = ControlRegion::PhaseKickbackNest;
+  Region.Condition = BI->getCondition();
+  Region.InnerCondition = InnerBI->getCondition();
+  Region.Pred = Pred;
+  Region.Arm = Mid;
+  Region.ArmFalse = InnerArm;
+  Region.MergeBB = Merge;
+  Region.Merge = nullptr;
+  Region.ArmNegated = OuterNeg;
+  Region.InnerArmNegated = InnerNeg;
+  Region.Shadow.assign(MidGates.begin(), MidGates.end());
+  Region.ShadowFalse.assign(InnerGates.begin(), InnerGates.end());
+  Region.ClassArm = ArmClass::Phase;
+  Region.ClassArmFalse = ArmClass::Phase;
+
+  // ---- 5. PER-LEVEL CONDITION LADDER. Identical in content to P3's, run twice.
+  // The `HomeBB` argument is the block the level's tree must live in: `Pred` for
+  // the outer level, `Mid` for the inner (a tree hoisted into `Pred` is admitted
+  // for the inner level too — it is still available at the outer branch, which
+  // is where BOTH networks are minted).
+  auto levelOk = [&](const CondTree &T, BasicBlock *HomeBB,
+                     BranchInst *LevelBI) -> bool {
+    constexpr size_t kMaxLeaves = 8;
+    constexpr size_t kMaxNodes = 8;
+    if (T.Leaves.size() > kMaxLeaves || T.Nodes.size() > kMaxNodes) {
+      diagnoseUnderControl(BI, "branch phase condition tree too deep");
+      return false;
+    }
+    for (CmpInst *Leaf : T.Leaves) {
+      if (!comparePredLowerable(Leaf)) {
+        diagnoseUnderControl(BI, "control condition has no template");
+        return false;
+      }
+      // Q+Q first, and with the PHASE PATH'S OWN STRING (Rule-13 round-2
+      // F-B2-2, `kQQCondReason`) — the same question P1 asks one classifier up,
+      // so the two cannot drift about what a Q+Q condition is called.
+      if (Taint.Tainted.count(Leaf->getOperand(0)) &&
+          Taint.Tainted.count(Leaf->getOperand(1))) {
+        diagnoseUnderControl(BI, kQQCondReason);
+        return false;
+      }
+      if (!compareFlagMintable(Leaf, Taint) || !Taint.Tainted.count(Leaf) ||
+          Leaf->getOperand(0)->getType()->isIntegerTy(1)) {
+        // Un-mintable width / out-of-scope predicate, a CLASSICAL leaf (nothing
+        // to mint — the §5.2 classical-as-handle prohibition), or an i1-operand
+        // leaf (a smuggled boolean NOT). Each would fail MID-network, which is
+        // the ziov.4 mutate-then-decline class; refuse here.
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+      if (Leaf->getParent() != HomeBB && Leaf->getParent() != Pred) {
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+      // THE DOMINANCE FACT THE WHOLE NEST RESTS ON, asked rather than assumed:
+      // BOTH networks are minted at the OUTER branch, so every leaf OPERAND must
+      // be available there. It is structural — `Mid` defines nothing but void
+      // phase calls and the tree itself, so no leaf operand can be defined in
+      // `Mid` or in `InnerArm` — but a structural fact that is load-bearing for
+      // a use-before-def is worth a line of code rather than a line of prose.
+      for (Value *Op : Leaf->operands())
+        if (auto *OpI = dyn_cast<Instruction>(Op))
+          if (OpI->getParent() == Mid || OpI->getParent() == InnerArm) {
+            diagnoseUnderControl(BI, "control flow");
+            return false;
+          }
+    }
+    for (Instruction *N : T.Nodes)
+      if (N->getParent() != HomeBB && N->getParent() != Pred) {
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+    // DATA USES, structurally: every tree instruction's users must be inside the
+    // SAME tree or be that level's own branch. There is no shared-flag path here
+    // (the roots are stripped and freed inside the region), so an outside use
+    // would read a freed rail.
+    SmallPtrSet<const Value *, 16> TreeSet;
+    for (CmpInst *Leaf : T.Leaves)
+      TreeSet.insert(Leaf);
+    for (Instruction *N : T.Nodes)
+      TreeSet.insert(N);
+    for (const Value *V : TreeSet)
+      for (const User *U : V->users())
+        if (U != LevelBI && !TreeSet.count(U)) {
+          diagnoseUnderControl(BI, "condition used outside the branch");
+          return false;
+        }
+    // STALE-CONDITION guard, the `RegionTreeDetect::staleCond` form (Rule 14 —
+    // the same two prongs, the same string): position-free, router-crossing wire
+    // walk over the level's whole leaf-union provenance, plus a bounded
+    // positional scan from each leaf to its own block's terminator. The
+    // positional prong is exact here for a reason worth stating: `Mid` contains
+    // ONLY void phase calls and the tree, so nothing between the inner compare
+    // and the outer branch can move a wire — a `cq_theta` anywhere near this
+    // region is caught by the position-free prong.
+    SmallPtrSet<Value *, 16> Prov;
+    for (CmpInst *Leaf : T.Leaves)
+      condProvenance(Leaf, Taint, Prov);
+    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true)) {
+      diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
+      return false;
+    }
+    for (CmpInst *Leaf : T.Leaves) {
+      const Instruction *Term = Leaf->getParent()->getTerminator();
+      for (const Instruction *I = Leaf->getNextNode(); I && I != Term;
+           I = I->getNextNode()) {
+        const auto *CI = dyn_cast<CallInst>(I);
+        if (!CI)
+          continue;
+        const Function *F = CI->getCalledFunction();
+        if (F && F->getName().starts_with("cq_theta_") &&
+            CI->arg_size() >= 1 && Taint.Tainted.count(CI->getArgOperand(0))) {
+          diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
+          return false;
+        }
+      }
+    }
+    return true;
+  };
+  if (!levelOk(OuterTree, Pred, BI) || !levelOk(InnerTree, Mid, InnerBI))
+    return PhaseKickbackDisp::Declined;
+  (void)DT;
+  (void)LI;
+
+  // ---- 6. LOOPS. A nest on a CFG cycle keeps the d8jl decline and its existing
+  // string: the 8h7d.5 rolled-in-loop narrowing was proven for the FLAT region
+  // only (`flatRegionRollableInLoop` names a single Arm and a single MergeBB),
+  // and nothing has re-derived it for a three-block region tree. Over-declining
+  // is safe; widening it is a separate increment with its own twin matrix.
+  if (regionEntryInLoop(BI)) {
+    diagnoseUnderControl(BI, "nested control flow");
+    return PhaseKickbackDisp::Declined;
+  }
+
+  // ACCEPT. Claim the INNER branch so the detection loop does not revisit it and
+  // false-decline (the FA0 blocker, verbatim from the 4.3 path), and claim every
+  // logical `select i1` node of BOTH trees so the tainted-select scan leaves
+  // them alone (see `classifyPhaseKickback`'s header for what happens otherwise).
+  if (ClaimedBranches)
+    ClaimedBranches->insert(InnerBI);
+  if (ClaimedSelects)
+    for (const CondTree *T : {&OuterTree, &InnerTree})
+      for (Instruction *N : T->Nodes)
+        if (isa<SelectInst>(N))
+          ClaimedSelects->insert(N);
+  return PhaseKickbackDisp::Accept;
+}
+
 // 6.5 — recognize the §2.13 classical-call-under-control shape (DD-7). Pure SSA
 // analysis, before any mutation (Rule 9). See ArmClassify.h for the disposition
 // contract. This runs BEFORE `classifyArms`: a positive match short-circuits the
@@ -4159,30 +5097,89 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // ARMS ONLY by the CLEARANCE review (finding F-11 / blocker B1, owner option
   // (2)), which found that the run-time half of that same split was a
   // reachable-from-plain-C wrong unitary the pre-2b binary declined loudly.
-  if (!angleSelectArmsAdmissible(A, B))
+  //
+  // ⚠ ASKED FOR THE Ry STEM ONLY SINCE bd test_C_libtooling-3qlq Inc 1 — see the
+  // `IsPhase` split immediately below, and PRD `retire-swap-route-PRD.md` §3
+  // ("Angle select") + owner question Q3. The whole of
+  // `angleSelectArmsAdmissible` is a fence on the BY-DIFFERENCE lowering: it
+  // exists because 2b realizes `A − B` as a `double` the source never wrote, so
+  // an undef/link-time/non-finite/badly-rounded arm lands in a gate slot. The
+  // register-free PHASE stem performs NO ARITHMETIC ON THE ANGLES AT ALL — it
+  // emits `P(B)` on `¬f` and `P(A)` on `f`, each arm's own value passed through
+  // verbatim — so every clause of that fence has no subject, INCLUDING the 2^-40
+  // rounding bound (`kAngleSelectMaxRoundingRad`) and the constant-arms-only
+  // clause (2c) the clearance review's blocker F-11 installed. A RUN-TIME arm is
+  // therefore ADMITTED for this stem and only for it. The Ry stem is BYTE-FOR-
+  // BYTE unchanged: constant arms only, F-11 intact.
+  //
+  // The `IsPhase` test has to happen before the fence, so S2's consumer lookup
+  // is split in two: the ARG INDEX differs between the stems (a suffixed
+  // rotation takes `(handle, angle)` and reads the select at arg 1; the
+  // register-free phase takes `(angle)` and reads it at arg 0), which is exactly
+  // why the two cannot share one clause.
+  if (!Sel->hasOneUse())
     return AngleSelectDisp::NotApplicable;
+  auto *T = dyn_cast<CallInst>(Sel->user_back());
+  if (!T)
+    return AngleSelectDisp::NotApplicable;
+  const bool IsPhase = isRegisterFreePhaseCall(T, Taint);
+  if (IsPhase && (T->arg_size() != 1 || T->getArgOperand(0) != Sel))
+    return AngleSelectDisp::NotApplicable;
+  if (IsPhase) {
+    // ---- THE ONE CLAUSE OF THE ARM-VALUE FENCE THAT *DOES* HAVE A SUBJECT FOR
+    // THIS STEM — Rule-13 round-1 finding F-L4-1. The paragraph above is right
+    // that the phase stem performs no arithmetic on the angles, and it was WRONG
+    // to conclude from that that the WHOLE fence has no subject: clause (1),
+    // `valueCarriesUndef`, is about a value that is not a NUMBER AT ALL, and
+    // passing it through verbatim is exactly how it reaches a gate slot.
+    // MEASURED (hand IR at this clang): an `undef`/`poison` arm reached
+    // `cqrt_rz_i1(f, double undef)` in the emitted module, where the pre-3qlq
+    // oracle declined. A `double undef` in a gate operand is the bd xy9n
+    // literal-integrity class: the `-O0` stage-3 backend may read one `undef` as
+    // two different values, so an emitted angle stops denoting the source's.
+    //
+    // WHICH CLAUSES GENUINELY HAVE NO SUBJECT HERE, named rather than waved at
+    // (the round-1 review's second half of this finding): (2a) the non-finite
+    // ARM and (2b) the non-finite DIFFERENCE and (3) the rounding bound all
+    // exist because 2b realizes `A − B` as a `double` the source never wrote —
+    // there is no subtraction on this path, so `inf` in equals `inf` out and
+    // `P(inf)` is exactly what the source asked for; and (2c), the
+    // constant-arms-only narrowing (clearance blocker F-11), fences the same
+    // subtraction and is retired for this stem by owner question Q3. Note the
+    // consequence deliberately kept: a non-finite or `ConstantExpr` arm PASSES
+    // THROUGH here, which is the SAME disposition an uncontrolled
+    // `cq_theta(q, inf)` already has on both binaries. That is a decision, not
+    // an oversight, and `control_angle_select_phase_nonfinite_arm.ll` records it.
+    if (valueCarriesUndef(A) || valueCarriesUndef(B))
+      return AngleSelectDisp::NotApplicable;
+  } else if (!angleSelectArmsAdmissible(A, B)) {
+    return AngleSelectDisp::NotApplicable;
+  }
 
   // S2 — EXACTLY ONE user, and it is a rotation reading the select ONLY as its
   // angle. `hasOneUse` counts USES, so a select feeding both arg-0 and arg-1 of
   // one call is refused here too. Anything else (an fpext/fptrunc/bitcast/
   // freeze/phi carrier, a nested select, a store, a second rotation) keeps the
   // caller's `rotation angle` decline.
-  if (!Sel->hasOneUse())
-    return AngleSelectDisp::NotApplicable;
-  auto *T = dyn_cast<CallInst>(Sel->user_back());
-  if (!T || T->arg_size() < 2 || T->getArgOperand(1) != Sel ||
-      T->getArgOperand(0) == Sel)
-    return AngleSelectDisp::NotApplicable;
-  const bool IsTheta = isThetaCall(T);
-  const bool IsPhi = isPhiCall(T);
-  if (!IsTheta && !IsPhi)
-    return AngleSelectDisp::NotApplicable;
+  const bool IsTheta = !IsPhase && isThetaCall(T);
+  const bool IsPhi = !IsPhase && isPhiCall(T);
+  if (!IsPhase) {
+    if (T->arg_size() < 2 || T->getArgOperand(1) != Sel ||
+        T->getArgOperand(0) == Sel)
+      return AngleSelectDisp::NotApplicable;
+    if (!IsTheta && !IsPhi)
+      return AngleSelectDisp::NotApplicable;
+  }
 
   // S3 — a CHAINED rotation on a live register. A classical arg-0 is controlled
   // state prep (PRD S5 / Inc 4): the alloc would have to move with the gate and
   // the "prepped vs |0⟩" disposition of the fresh rail is unproven here.
-  Value *RotBase = T->getArgOperand(0);
-  if (!Taint.Tainted.count(RotBase))
+  //
+  // NO SUBJECT for the register-free phase stem: it has no arg-0, no register
+  // and therefore no state-prep ambiguity to fence. `RotBase` stays null there
+  // and every clause below that reads it is `IsPhase`-guarded.
+  Value *RotBase = IsPhase ? nullptr : T->getArgOperand(0);
+  if (!IsPhase && !Taint.Tainted.count(RotBase))
     return AngleSelectDisp::NotApplicable;
 
   // S4 — a BARE lowerable compare, ONE tainted operand, ONE user.
@@ -4211,8 +5208,15 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // `suffixFromName`). Inc-1's R4 asks `abiWidthFromType(T->getType())`; the two
   // agree for every `CQ.h` suffix measured, and asking the mint's own expression
   // is what keeps a divergence from becoming a decline AFTER mutation.
-  if (!abiWidthHasControlledRotation(wd.abiWidthFor(
-          suffixFromName(T, IsTheta ? "cq_theta_" : "cq_phi_"))))
+  //
+  // NO SUBJECT for the register-free phase stem (3qlq Inc 1): it emits no
+  // `_controlled` gate at all — the two gates are UNCONTROLLED `cqrt_rz_i1` on
+  // the flag ancilla — so there is no per-width controlled symbol to look up,
+  // and no `cq_{theta,phi}_<sfx>` name to strip a suffix from. Asking it anyway
+  // would call `suffixFromName(T, "cq_phi_")` on a callee named exactly
+  // `cq_phi`, get the empty suffix, and decline every phase select.
+  if (!IsPhase && !abiWidthHasControlledRotation(wd.abiWidthFor(
+                      suffixFromName(T, IsTheta ? "cq_theta_" : "cq_phi_"))))
     return AngleSelectDisp::NotApplicable;
 
   // S10 — nothing else already claims this gate or this select. `plan` may
@@ -4388,10 +5392,23 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // *** in the S7 header comment above; do not re-derive it from this line.
   // Note also that the closure asked here is the ROTATED register's only; the
   // CONDITION register's rail is never asked (asymmetry 2 in the header).
+  //
+  // SKIPPED WHOLE for the register-free phase stem: `RotBase` is null because
+  // there IS no rotated register — the two gates land on the flag ancilla, which
+  // is minted, used, stripped and freed between the mint and the free, entirely
+  // inside whatever block `T` sits in. The ANCHOR prong above still runs and
+  // still declines a phase select anywhere on a cycle. (That anchor decline is a
+  // deliberate OVER-decline for this stem and a recorded follow-on: the in-loop
+  // phase select's per-iteration stream is the SAME quadruple the P1 in-loop
+  // kickback already emits, so it is very likely sound — but admitting it needs
+  // a `flatRegionRollableInLoop`-equivalent for a region that has no
+  // Pred/Arm/MergeBB at all, and the 8h7d.5 record says budget adversarial
+  // rounds for every loop widening.)
   SmallPtrSet<Value *, 16> BaseWire;
   SmallVector<Value *, 16> BaseWireOrder;
-  railWireClosure(RotBase, Taint, WireDir::BothWays, nullptr, nullptr, BaseWire,
-                  &BaseWireOrder, /*Exclude=*/T);
+  if (!IsPhase)
+    railWireClosure(RotBase, Taint, WireDir::BothWays, nullptr, nullptr,
+                    BaseWire, &BaseWireOrder, /*Exclude=*/T);
   for (Value *W : BaseWireOrder) {
     auto *WI = dyn_cast<Instruction>(W);
     if (WI && blockInAnyCycle(WI->getParent())) {
@@ -4439,7 +5456,16 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // adds is an ordinary USER Rz on a register that may be dead afterwards — bd
   // `wt3l`'s cancel/leak/keep question. 2b does not move that in either
   // direction; the twin emits the identical line.
-  if (IsPhi) {
+  //
+  // THE REGISTER-FREE PHASE STEM STOPS HERE TOO (3qlq Inc 1, PRD §6.2 row P2),
+  // and for a STRICTLY STRONGER reason than the suffixed Rz stem's: that stem's
+  // exemption is that a controlled `Rz` is DIAGONAL and so moves no basis label;
+  // this one emits nothing on the register AT ALL. S8's disjoint-wire question
+  // and S9's stale-record question are both about a gate on the rotated
+  // register, and there is no such gate — the two `cqrt_rz_i1`s land on the flag
+  // ancilla, which is minted after the compare and freed before anything else
+  // reads the register.
+  if (IsPhi || IsPhase) {
     ControlRegion R;
     R.Kind = ControlRegion::AngleSelectRegion;
     R.Merge = Sel;

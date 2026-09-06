@@ -33,9 +33,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow inside a loop body under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef)
-declare i32 @cq_phi_si32(i32 noundef, double noundef)
 declare i32 @cq_measure_si32(i32 noundef)
 
 define i32 @slice() {
@@ -45,7 +45,7 @@ define i32 @slice() {
   br label %8
 
 4:                                                ; preds = %15
-  %5 = tail call i32 @cq_measure_si32(i32 noundef %17) #2
+  %5 = tail call i32 @cq_measure_si32(i32 noundef %11) #2
   %6 = tail call i32 @cq_measure_si32(i32 noundef %16) #2
   %7 = add nsw i32 %6, %5
   ret i32 %7
@@ -53,7 +53,7 @@ define i32 @slice() {
 8:                                                ; preds = %0, %15
   %9 = phi i32 [ 0, %0 ], [ %18, %15 ]
   %10 = phi i32 [ %3, %0 ], [ %16, %15 ]
-  %11 = phi i32 [ %1, %0 ], [ %17, %15 ]
+  %11 = phi i32 [ %1, %0 ], [ %11, %15 ]
   %12 = icmp eq i32 %11, 5
   br i1 %12, label %13, label %15
 
@@ -63,7 +63,6 @@ define i32 @slice() {
 
 15:                                               ; preds = %13, %8
   %16 = phi i32 [ %14, %13 ], [ %10, %8 ]
-  %17 = tail call i32 @cq_phi_si32(i32 noundef %11, double noundef 1.000000e-01) #2
   %18 = add nuw nsw i32 %9, 1
   %19 = icmp eq i32 %9, 0
   br i1 %19, label %8, label %4, !llvm.loop !6

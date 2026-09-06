@@ -1,0 +1,91 @@
+; control_phase_kickback_negated_tail_phi.ll — ACCEPT. The tail-φ `Pred` incoming
+; under an INVERTED diamond polarity (`In == Pred` with `R.ArmNegated == true`),
+; with the `Pred` incoming FIRST in the φ's list — a branch that shipped with zero
+; coverage (Rule-13 round-1 finding F-L1-2; bd test_C_libtooling-3qlq Inc 1
+; part A, lens L1).
+;
+; ⚠ HAND-WRITTEN IR, opaque condition register so nothing folds.
+;
+; THE THING IT PINS is the polarity ternary's third leg: the straight-through
+; `Pred` edge is taken exactly when the arm is NOT, so its `FiresOnOne` is the
+; ARM's negation — `R.ArmNegated`, which is TRUE here, so the `Pred` incoming
+; (0.11) fires on f == 1 with NO bracket while the `Arm` incoming (0.3) and the
+; arm gate itself (0.9) are both bracketed. Getting that leg backwards would put
+; every tail angle on the wrong branch, and no shipped fixture would have moved.
+;
+; It also pins F-L1-3 from the other side: FOUR `cqrt_x`, one pair for the arm
+; and one for the bracketed tail incoming.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+
+; CHECK: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 5)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 9.000000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 1.100000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 3.000000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %h, i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+
+; ACNT-COUNT-3: call void @cqrt_rz_i1(
+; ACNT-NOT: call void @cqrt_rz_i1(
+
+; XCNT-COUNT-4: call void @cqrt_x(
+; XCNT-NOT: call void @cqrt_x(
+
+; NOROUTE is WHOLE-FILE and PURE-NEGATIVE.
+; NOROUTE-NOT: @cqrt_cswap
+; NOROUTE-NOT: _controlled
+; NOROUTE-NOT: @cq_phi
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; NOROUTE-NOT: phi double
+
+
+; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
+; Round 1 repaired three assertion families (the 8-width Rz negative, the
+; `cqrt_x` negative, the `cqrt_free` count) in the corpus IT could see, and the
+; merge brought in a set that had never been asked the same question. Measured by
+; injection at `c4bd888`: `cqrt_rz_f80`/`f16` NOT CAUGHT in 18 accepts, an
+; UNPAIRED `cqrt_x` (a wrong-branch phase) NOT CAUGHT in 21, an EXTRA
+; `cqrt_free` (a hidden measurement, Rule 6) NOT CAUGHT in 20. Every accept in
+; the branch now carries all three, and each is validated by injecting the line
+; into this fixture's OWN output.
+
+; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
+; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+@off = global i32 3, align 4
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr
+declare void @cq_phi(double noundef) local_unnamed_addr
+declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr
+declare double @cq_theta_f64(double noundef, double noundef) local_unnamed_addr
+declare double @cq_measure_f64(double noundef) local_unnamed_addr
+
+define i32 @slice() local_unnamed_addr {
+entry:
+  %t = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)
+  %o = load volatile i32, ptr @off, align 4
+  %q = add nsw i32 %o, %t
+  %c = icmp eq i32 %q, 5
+  br i1 %c, label %mrg, label %arm
+arm:
+  tail call void @cq_phi(double noundef 9.000000e-01)
+  br label %mrg
+mrg:
+  %a = phi double [ 1.100000e-01, %entry ], [ 3.000000e-01, %arm ]
+  tail call void @cq_phi(double noundef %a)
+  %m = tail call i32 @cq_measure_si32(i32 noundef %q)
+  ret i32 %m
+}
+define i32 @main() local_unnamed_addr { %r = call i32 @slice() ret i32 0 }

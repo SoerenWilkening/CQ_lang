@@ -26,8 +26,9 @@
 ;     cq controlled lowering: condition predates a non-diagonal gate
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice(i32 %u0, double %t2, double %a) {
@@ -38,12 +39,11 @@ entry:
   br i1 %c, label %arm, label %merge
 
 arm:
-  %g = call i32 @cq_phi_si32(i32 %q2, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 
 merge:
-  %p = phi i32 [ %g, %arm ], [ %q2, %entry ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)  ; provably POST-region
+  %w = call i32 @cq_theta_si32(i32 %q2, double 2.500000e-01)  ; provably POST-region
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }

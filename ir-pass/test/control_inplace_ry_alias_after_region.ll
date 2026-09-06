@@ -16,9 +16,9 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -32,8 +32,7 @@ arm:
   br label %merge
 merge:
   %rm   = phi i32 [ %rt, %arm ], [ %r, %entry ]
-  %mark = call i32 @cq_phi_si32(i32 %rm, double 1.000000e-01)
-  %d    = call i32 @cq_measure_si32(i32 %mark)
+  %d    = call i32 @cq_measure_si32(i32 %rm)
   ret i32 %d
 }
 
@@ -44,7 +43,6 @@ merge:
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the alias is minted AFTER the gate, on the register the gate relabelled
-; CHECK:      call void @cqrt_rz_i32(i32 %[[R]], double 1.000000e-01)
-; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK: call i32 @cqrt_measure_i32(i32 %[[R]])
 ; CHECK-NOT:  cqrt_cswap
 ; CHECK-NOT:  phi i32

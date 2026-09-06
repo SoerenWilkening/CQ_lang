@@ -35,8 +35,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: condition predates a non-diagonal gate under quantum control
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice(i32 %u0, double %a, double %t, i32 %n) {
@@ -48,10 +49,9 @@ head:
   %c = icmp sgt i32 %q, 5                            ; reads the LOOP-INVARIANT %q
   br i1 %c, label %arm, label %latch
 arm:
-  %g = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %latch
 latch:
-  %p = phi i32 [ %g, %arm ], [ %q, %head ]
   %w = call i32 @cq_theta_si32(i32 %q, double %t)    ; in-place Ry on %q's OWN wire
   %inext = add nsw i32 %i, 1
   %done = icmp eq i32 %inext, %n

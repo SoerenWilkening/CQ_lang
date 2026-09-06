@@ -8,10 +8,20 @@
 ; phase-arm accept MUST require the spine to bottom at the SAME handle threaded
 ; straight through (%q), not merely "some tainted value". Over-decline is safe.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0, double %a) {
 entry:
@@ -20,10 +30,10 @@ entry:
   %c = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %p1 = call i32 @cq_phi_si32(i32 %p, double %a)   ; rotates %p, NOT the routed %q
+  call void @cq_phi(double %a)  ; rotates %p, NOT the routed %q
   br label %merge
 merge:
-  %qm = phi i32 [ %p1, %arm ], [ %q, %entry ]      ; muxes %q vs a phase of %p
+  %qm = phi i32 [ %p, %arm ], [ %q, %entry ]      ; muxes %q vs a phase of %p
   %m  = call i32 @cq_measure_si32(i32 %qm)
   ret i32 %m
 }

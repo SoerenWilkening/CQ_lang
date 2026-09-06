@@ -24,16 +24,15 @@
 ; (OpcodeLowering::declineStaleRecordOps).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %g, double %t2) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double %g)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 1.000000e+00) ; diagonal alias of %q's wire
   %q2 = call i32 @cq_theta_si32(i32 %q, double %t2)        ; chained Ry via the SIBLING name
-  %d = add i32 %qd, 3                                      ; SSA denotes the PRE-Ry record
+  %d = add i32 %q, 3                                      ; SSA denotes the PRE-Ry record
   %m = call i32 @cq_measure_si32(i32 %d)
   ret i32 %m
 }

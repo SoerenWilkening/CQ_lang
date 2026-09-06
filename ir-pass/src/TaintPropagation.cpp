@@ -16,6 +16,7 @@
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
+#include "LoopPlan.h"          // collapseFlattenedLoopRails (F-R1-1 onward pass)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
@@ -27,14 +28,17 @@
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
+#include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
 
+#include <algorithm>
 #include <optional>
 #include <string>
 #include <vector>
@@ -84,8 +88,8 @@ void diagnoseIntrinsicInvoke(CallBase *CB, const Function *Callee) {
 // user) but never introduces it, and a phi on a classical operand must
 // still be collected so the lowering can delete it.
 void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
-                    const FnSet &MeasureFns, TaintSet &out,
-                    std::vector<Value *> &Worklist) {
+                    const FnSet &MeasureFns, const Function *PhaseFn,
+                    TaintSet &out, std::vector<Value *> &Worklist) {
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {
       // CallBase (not CallInst) so an `invoke` of a front-end intrinsic is
@@ -102,7 +106,13 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
       const bool IsTheta = ThetaFns.contains(Callee);
       const bool IsPhi = PhiFns.contains(Callee);
       const bool IsMeasure = MeasureFns.contains(Callee);
-      if (!IsTheta && !IsPhi && !IsMeasure)
+      // bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase,
+      // recognized by EXACT Function identity (`wd.phaseFn()`, i.e. the name
+      // `cq_phi` with the prototype `void(double)`; a mismatched prototype was
+      // already declined and NOT resolved, so `PhaseFn` is null there and the
+      // call falls through to the ordinary unknown-callee treatment).
+      const bool IsPhase = PhaseFn && Callee == PhaseFn;
+      if (!IsTheta && !IsPhi && !IsMeasure && !IsPhase)
         continue;
       // A front-end intrinsic reached via `invoke` (any non-`call` CallBase) is
       // an off-pattern shape the call-position lowering cannot rewrite — decline
@@ -120,7 +130,15 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
         if (out.Tainted.insert(CI).second)
           Worklist.push_back(CI);
       } else if (IsPhi) {
+        // UNREACHABLE since bd test_C_libtooling-3qlq Inc 1: `PhiFns` is
+        // always empty (`resolveSources` no longer resolves the retired
+        // `@cq_phi_<sfx>` family). Kept so the vacuity is visible here rather
+        // than only in the resolver — see TaintPropagation.h on `PhiCalls`.
         out.PhiCalls.push_back(CI);
+      } else if (IsPhase) {
+        // NOT a source (no taint seeded) and NOT a propagator (no data
+        // operand) — it is ordered by its BLOCK, not by taint (D1).
+        out.PhaseCalls.push_back(CI);
       } else {  // IsMeasure
         out.MeasureCalls.push_back(CI);
       }
@@ -234,19 +252,98 @@ void diagnoseMalformedDecl(Function *F, StringRef Concern) {
 // UNRECOGNIZED suffix (e.g. `cq_measure_xyz999`) is NOT in the 42-name
 // surface and stays out of collection — and validation — entirely.
 void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
-                    FnSet &MeasureFns) {
+                    FnSet &MeasureFns, Function *&PhaseFn) {
+  // bd test_C_libtooling-3qlq Inc 1 (owner decision D1) — the REGISTER-FREE
+  // branch phase `void @cq_phi(double)`, resolved by EXACT name.
+  //
+  // ⚠ THE RETIRED `@cq_phi_<sfx>` FAMILY IS DELIBERATELY *NOT* RESOLVED HERE
+  // ANY MORE, and that is the whole surface change on this side (PRD §4.1).
+  // `CQ.h` no longer declares it, so an old-spelling call can only come from
+  // hand-written IR or a stale header — and it must not keep lowering to the
+  // TENSORED `cqrt_rz_<W>` that made every Grover golden the identity on `q`
+  // (PRD §1). Left unresolved, `@cq_phi_si32(%q, θ)` is an ordinary unknown
+  // external consuming a tainted value and declines LOUDLY through
+  // `declineTaintEscapes` with `cq taint escape: tainted value consumed by an
+  // unknown callee` (pinned: `lowering_reject_legacy_phi_register_form.ll`).
+  // `PhiFns` stays in the signature, permanently empty — see
+  // TaintPropagation.h on `PhiCalls` for why the readers are left vacuous
+  // rather than deleted.
+  //
+  // The prototype is validated exactly as the 48 suffixed names are, in the
+  // same "cq rotation lowering" dialect and on the same
+  // RESERVED-whether-or-not-called rule: a `@cq_phi` with the wrong
+  // prototype would otherwise drive a `getArgOperand(0)` read of something
+  // that is not the angle (pinned: `lowering_reject_decl_prototype_phi.ll`).
+  PhaseFn = nullptr;
+  if (Function *F = wd.phaseFn()) {
+    FunctionType *FT = F->getFunctionType();
+    if (!FT->isVarArg() && FT->getReturnType()->isVoidTy() &&
+        FT->getNumParams() == 1 && FT->getParamType(0)->isDoubleTy())
+      PhaseFn = F;
+    else
+      diagnoseMalformedDecl(F, "cq rotation lowering");
+  }
+
   for (StringRef Sfx : wd.allSuffixes()) {
+    // ---- THE RETIRED REGISTER FORM `@cq_phi_<sfx>` IS A RESERVED NAME AND ANY
+    // USE OF IT DECLINES — bd 3qlq Inc 1 part A, Rule-13 round-1 finding F-L6-1
+    // (a CONFIRMED Rule-1 "third path" violation).
+    //
+    // The comment above says the family "declines LOUDLY through
+    // `declineTaintEscapes`". MEASURED, that is true of THREE spellings and
+    // FALSE of the fourth — and the fourth is the FLAGSHIP CUSTOMER. On a stale
+    // header, `if (q == 5) q = cq_phi(q, PI)` has its arg 0 CONST-FOLDED by
+    // `clang -O1` to `i32 5` on the equality edge (the drbq Inc-4 F2 fold
+    // class), so the operand is CLASSICAL and the escape guard structurally
+    // cannot fire. Meanwhile `ArmClassify::isPhiCall` still recognises the call
+    // by the `cq_phi_` PREFIX and CLAIMS it as an arm gate,
+    // `emitInPlaceRotationRegion` hoists it and records
+    // `taint.ControlledRotations`, and the `PhiCalls` loop in `RotationLowering`
+    // that used to lower it is DELETED. Result at HEAD: `opt` exit 0,
+    // verify-clean, STRICT stage 2b PASS, the flag minted and stripped and
+    // freed, THE PHASE GATE DROPPED (the identity on `q` — PRD §1's own defect
+    // class, through a different door), and `@cq_phi_si32` left UNLOWERED in the
+    // emitted module. Caught only by `ld`. It is one linkable body away from
+    // being silent.
+    //
+    // MONOTONE — this clause can only ADD declines. It is gated on `!use_empty`
+    // rather than on the declaration alone, and that is a DELIBERATE narrowing
+    // of the reserved-name rule the other 33 names follow (`resolveSources`'
+    // header: "even for a decl with NO call sites"): a declare-only retired
+    // symbol is provably inert (measured — with quantum in the module the dead
+    // decl is swept; with none the pass is byte-identical passthrough), while
+    // the ~490 fixtures still carrying the old family are mid-migration and a
+    // decl-only decline would redden every one of them for no correctness gain.
+    // A USE is exactly the set that can reach a wrong unitary.
+    //
+    // NOT a prototype complaint, so it does not reuse `diagnoseMalformedDecl`'s
+    // string: the declaration here is perfectly well-formed and the objection is
+    // that the SPELLING is retired. It has its own message, mirrored
+    // character-for-character by
+    // `lowering_reject_legacy_phi_register_form_eqfold.ll`.
+    if (Function *F = wd.phiFn(Sfx)) {
+      if (!F->use_empty()) {
+        std::string Msg =
+            ("cq rotation lowering: retired register-form " + F->getName() +
+             "; use the register-free void cq_phi(double)")
+                .str();
+        Function *At = F;
+        DebugLoc DL;
+        for (User *U : F->users())
+          if (auto *CB = dyn_cast<CallBase>(U))
+            if (CB->getCalledFunction() == F) {
+              At = CB->getFunction();
+              DL = CB->getDebugLoc();
+              break;
+            }
+        At->getContext().diagnose(
+            DiagnosticInfoUnsupported(*At, Msg, DL));
+      }
+    }
     if (Function *F = wd.thetaFn(Sfx)) {
       if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
                                /*HasAngle=*/true))
         ThetaFns.insert(F);
-      else
-        diagnoseMalformedDecl(F, "cq rotation lowering");
-    }
-    if (Function *F = wd.phiFn(Sfx)) {
-      if (declMatchesPrototype(F, wd.llvmTypeFor(Sfx, F->getContext()),
-                               /*HasAngle=*/true))
-        PhiFns.insert(F);
       else
         diagnoseMalformedDecl(F, "cq rotation lowering");
     }
@@ -321,20 +418,27 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   FnSet ThetaFns;
   FnSet PhiFns;
   FnSet MeasureFns;
-  resolveSources(wd, ThetaFns, PhiFns, MeasureFns);
+  Function *PhaseFn = nullptr;
+  resolveSources(wd, ThetaFns, PhiFns, MeasureFns, PhaseFn);
 
   // No front-end intrinsics anywhere in the module → nothing to do.
   // The passthrough_no_quantum LIT fixture pins this early-out path:
   // the pass must leave a purely classical module byte-identical, and
   // crucially must NOT leak `cqrt_*` / `cq_template_*` decls.
-  if (ThetaFns.empty() && PhiFns.empty() && MeasureFns.empty())
+  //
+  // `PhaseFn` joins the predicate (bd test_C_libtooling-3qlq Inc 1): a module
+  // whose ONLY quantum surface is an uncontrolled `void @cq_phi(double)` must
+  // still run, so that D2's deletion happens — otherwise the unresolved
+  // `@cq_phi` extern is a Stage-3 link error, exactly the reason the retired
+  // family was in this predicate before it.
+  if (ThetaFns.empty() && PhiFns.empty() && MeasureFns.empty() && !PhaseFn)
     return out;
 
   std::vector<Value *> Worklist;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
-    collectAndSeed(F, ThetaFns, PhiFns, MeasureFns, out, Worklist);
+    collectAndSeed(F, ThetaFns, PhiFns, MeasureFns, PhaseFn, out, Worklist);
   }
 
   // Forward taint propagation. Each tainted SSA value's user instructions
@@ -533,6 +637,17 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
   IntrinsicCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
   IntrinsicCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
   IntrinsicCalls.insert(taint.MeasureCalls.begin(), taint.MeasureCalls.end());
+  // bd test_C_libtooling-3qlq Inc 1 — the register-free `void @cq_phi(double)`.
+  // Its ONE operand is the classical ANGLE, and a TAINTED angle there is the
+  // ACCEPTED angle-select shape (`cq_phi(c ? A : B)`, PRD §6.2 P2) as often as
+  // it is an error, so it cannot be adjudicated here: like the suffixed
+  // family's arg-1 slot above, it is OWNED by a later stage — the angle-select
+  // classifier claims it, and every surviving one is declined by
+  // `deleteGlobalPhases` with the SAME `quantum-derived rotation angle` string
+  // the suffixed family used. Omitting this line makes P2 unreachable (measured
+  // on the oracle: `cq taint escape: tainted value consumed by an unknown
+  // callee`, fired before `detectControlRegions` ever runs).
+  IntrinsicCalls.insert(taint.PhaseCalls.begin(), taint.PhaseCalls.end());
 
   // BB-order walk (deterministic diagnostic order, like
   // OpcodeLowering::declineStaleRecordOps). One diagnostic per offending
@@ -1379,6 +1494,25 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   if (taint.UntaintedMergeRails.empty())
     return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
 
+  // bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1 — the SNAPSHOT the onward
+  // loop-rail pass at the end of this function needs. Taken HERE, before
+  // `detectAndLowerOnwardControl` grows the set, so the difference is exactly
+  // "the loops round 2 opened". A `BasicBlock *` in it may be dangling by the
+  // time it is read (a round-2 flatten erases blocks); it is only ever compared
+  // by identity against a LIVE block of a LIVE loop, and the worst a recycled
+  // address can do is make the onward pass SKIP a loop — the leak, i.e. the safe
+  // direction.
+  //
+  // A COUNT SNAPSHOT since bd 3qlq Inc 1's SECOND C-1 review round (F-C1-2(2b)):
+  // the delta the onward pass wants is "did round 2 emit a region into this
+  // block?", and as a SET of blocks it could not see the commonest mixed shape —
+  // round 2's onward region flattens into the SAME `Pred` a round-1 region
+  // already used, so membership does not move and the loop is never re-offered
+  // (MEASURED on `p/r40_onward_r1open.c`: one `[DBG] loop hdr=` line, `round2=0`,
+  // while every per-trip which-path rail leaked).
+  DenseMap<const BasicBlock *, unsigned> Round1FlattenedPreds(
+      taint.InLoopFlattenedPreds.begin(), taint.InLoopFlattenedPreds.end());
+
   // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
   // (needed by the shared work-list loop's angle / measure-sink rules). NOT a
   // re-`resolveSources`: that would re-run the malformed-decl prototype guard —
@@ -1477,6 +1611,296 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   detectSpecializations(M, taint, wd, plan6, &reseed);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
+
+  // 5. THE ONWARD LOOP-RAIL PASS — bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1
+  //    (a CONFIRMED rolled≠unrolled divergence, plain C through the shipped 2-TU
+  //    onward harness). `collapseFlattenedLoopRails` is the round-2 loop-rail
+  //    analysis, and until this call it ran EXACTLY ONCE, at
+  //    `CQLoweringPass.cpp`'s slot BEFORE this function. Its premise —
+  //    "`markIfRailLocal` runs after every in-loop region flatten" — is FALSE
+  //    here: `detectAndLowerOnwardControl` above is a full second round of
+  //    `detectControlRegions`/`lowerControlRegions`, so an in-loop region whose
+  //    condition reads an `%out` rail is claimed and flattened AFTER the only
+  //    caller of that marking has already run. MEASURED at HEAD before this
+  //    call: `for (i<3) if ((y>>i)&1) cq_phi(θ)` over a 6.5 classical-call-arm
+  //    `%out` emitted 3 `cq_template_and_i32_hl` mints and **0** `_unc`
+  //    discharges — three entangled which-path records leaked per activation,
+  //    while the hand-unrolled spelling of the same source discharged all three.
+  //    `opt` exit 0, verify-clean, STRICT stage 2b `0 violation(s)` on both.
+  //
+  //    IT IS THE SAME STAGE, NOT A SECOND SPELLING (Rule 14): the identical
+  //    function, given the snapshot of `taint.InLoopFlattenedPreds` taken at
+  //    entry so it processes ONLY the loops the round-2 flatten opened. Every
+  //    module with no round-2 in-loop region is therefore byte-identical.
+  //
+  //    POSITION. After the whole round-2 fixpoint (the CFG must be settled — a
+  //    `LoopInfo` built mid-fixpoint would describe a loop the next iteration
+  //    reshapes) and after the re-run escape/stale nets (both are pure analysis
+  //    and either has already exited non-zero if it declined). It is BEFORE
+  //    `deleteGlobalPhases` in both entry points for the same reason the round-1
+  //    call is: P7 is the last stage that reads the pre-lowering `cq_phi` calls,
+  //    and this marking is computed over the same work lists.
+  //
+  //    It lives HERE and not at the two `CQLoweringPass` call sites so that the
+  //    `runOnFunction` shim gets it too. ⚠ That shim does NOT call the ROUND-1
+  //    `collapseFlattenedLoopRails` at all — a PRE-EXISTING twin-pipeline
+  //    divergence inherited from bd 8h7d.5, recorded in the AXIS-F note there
+  //    and not repaired by this increment (the shim has zero callers).
+  collapseFlattenedLoopRails(M, wd, taint, &Round1FlattenedPreds);
+}
+
+// ── bd test_C_libtooling-3qlq Inc 1 — the register-free branch phase ─────────
+
+bool isRegisterFreePhaseCall(const CallInst *CI, const TaintSet &taint) {
+  // See the header for why this is EXACT MEMBERSHIP and not a name test.
+  return CI && llvm::is_contained(taint.PhaseCalls, CI);
+}
+
+namespace {
+
+// Is `BB` reachable from the function entry along a path that passes through a
+// block whose TERMINATOR branches on a TAINTED condition? Pure backward CFG
+// walk from `BB`'s predecessors; `Taint` decides tainted-ness by SSA identity.
+//
+// This is `deleteGlobalPhases`' assertion, and it is deliberately CRUDE in the
+// safe direction: it asks whether ANY tainted branch sits anywhere on ANY path
+// reaching `BB`, not whether `BB` is on a specific arm of one. An accepted
+// region has already been FLATTENED by its emitter (the tainted `br` is gone
+// with the diamond) and a declined one exited non-zero, so on every reachable
+// program state the answer is "no" — a "yes" means the Rule-1 invariant
+// ("`detectControlRegions` either claims or declines every tainted `br`; there
+// is no third path") has been broken, which is the one thing that must never be
+// answered by a silent delete.
+bool reachedThroughTaintedBranch(const BasicBlock *BB, const TaintSet &taint) {
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work(pred_begin(BB), pred_end(BB));
+  while (!Work.empty()) {
+    const BasicBlock *P = Work.pop_back_val();
+    if (!Seen.insert(P).second)
+      continue;
+    const Instruction *T = P->getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T))
+      C = BI->isConditional() ? BI->getCondition() : nullptr;
+    else if (const auto *SI = dyn_cast<SwitchInst>(T))
+      C = SI->getCondition();
+    if (C && taint.Tainted.count(const_cast<Value *>(C)))
+      return true;
+    Work.append(pred_begin(P), pred_end(P));
+  }
+  return false;
+}
+
+// ── CONTROL DEPENDENCE, for the phase carriers only ─────────────────────────
+//
+// bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-2. `reachedThroughTaintedBranch`
+// above answers "is there a tainted branch ANYWHERE on ANY path to `BB`", which
+// is the right question at `deleteGlobalPhases`' slot (a "yes" there means the
+// Rule-1 no-third-path invariant broke) and the WRONG one for the three phase
+// carriers, which run BEFORE `lowerControlRegions` while every tainted `br` is
+// still standing. Asked there it answers "reached from" where
+// `TaintPropagation.h` promises "CONTROL-DEPENDENT ON", and the difference is a
+// MEASURED plain-C over-decline: `if (q==5) abort(); cq_phi(0.75); return
+// cq_measure(q);` declined `phase-class value escaping under quantum control`
+// although its `cq_phi` is UNCONDITIONAL — a GLOBAL phase owner decision D2
+// requires the compiler to DELETE. The same program with the phase one line
+// EARLIER compiled, and the round-1 binary compiled both to the identical
+// 8-line trace.
+//
+// TWO SPELLINGS, ON PURPOSE, BECAUSE THEY ARE TWO QUESTIONS (Rule 14 is about
+// one spelling per QUESTION, not one predicate per file). The assert wants the
+// crude reachability; the carriers want control dependence. Naming them apart is
+// what stops the next reader "unifying" them.
+
+// Can `From` reach a block that RETURNS from the function? An `unreachable`
+// terminator (a `noreturn` sink — the 7.2 abort park's own arm) has no
+// successors and is a dead end, which is exactly the property the two walks
+// below need: the classical CFG says the abort arm does not continue, while the
+// EMITTED circuit runs the remainder coherently on every branch, so a phase
+// after a park is global.
+bool canReachReturn(const BasicBlock *From) {
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work{From};
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    if (isa<ReturnInst>(B->getTerminator()))
+      return true;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// Does EVERY path from `From` that reaches a `ret` pass through `Through`?
+// (i.e. `Through` post-dominates `From` in the RETURNING-paths sense.) `From ==
+// Through` is trivially true; a `From` that reaches no `ret` at all is
+// vacuously true and the callers below never rely on that case (each guards it
+// with `canReachReturn`).
+bool everyReturningPathThrough(const BasicBlock *From,
+                               const BasicBlock *Through) {
+  SmallPtrSet<const BasicBlock *, 16> Seen;
+  SmallVector<const BasicBlock *, 16> Work{From};
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (B == Through)
+      continue;  // the cut — every path through here is accounted for.
+    if (!Seen.insert(B).second)
+      continue;
+    if (isa<ReturnInst>(B->getTerminator()))
+      return false;  // a returning path that avoids `Through`.
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return true;
+}
+
+// Is `BB` CONTROL-DEPENDENT on some TAINTED branch of its function? The textbook
+// definition, with post-dominance read in the returning-paths sense above:
+//   `BB` is control-dependent on `P` iff (i) some successor `S` of `P` that can
+//   still reach a `ret` is post-dominated by `BB`, and (ii) `P` itself is not.
+// Clause (i)'s `canReachReturn` filter is the load-bearing half for the abort
+// park: without it the `unreachable` arm is VACUOUSLY post-dominated by every
+// block and (i) is true for anything.
+//
+// Conservative fallback: a function with no `ReturnInst` at all has no
+// returning-path structure to reason over, so this answers TRUE (the pre-fix
+// disposition, which is the loud-decline direction).
+bool controlDependentOnTaintedBranch(const BasicBlock *BB,
+                                     const TaintSet &taint) {
+  const Function *F = BB->getParent();
+  bool AnyReturn = false;
+  for (const BasicBlock &B : *F)
+    if (isa<ReturnInst>(B.getTerminator())) {
+      AnyReturn = true;
+      break;
+    }
+  if (!AnyReturn)
+    return true;
+
+  for (const BasicBlock &P : *F) {
+    const Instruction *T = P.getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T))
+      C = BI->isConditional() ? BI->getCondition() : nullptr;
+    else if (const auto *SI = dyn_cast<SwitchInst>(T))
+      C = SI->getCondition();
+    if (!C || !taint.Tainted.count(const_cast<Value *>(C)))
+      continue;
+    if (everyReturningPathThrough(&P, BB))
+      continue;  // (ii) fails — `BB` post-dominates `P`: a GLOBAL phase.
+    for (const BasicBlock *S : successors(&P)) {
+      if (!canReachReturn(S))
+        continue;  // a `noreturn` arm — it decides nothing about `BB`.
+      if (everyReturningPathThrough(S, BB))
+        return true;  // (i) holds: `BB` runs on this arm and not on all of them.
+    }
+  }
+  return false;
+}
+
+}  // namespace
+
+// See the header for the whole argument (bd 3qlq Inc 1 part A, F-L5-6; narrowed
+// to genuine control dependence by Rule-13 round-2 finding F-R1-2).
+bool functionCarriesBranchPhase(const Function *F, const TaintSet &taint) {
+  for (CallInst *CI : taint.PhaseCalls) {
+    if (CI->getFunction() != F)
+      continue;
+    // The crude reachability walk stays as the CHEAP PRE-FILTER (it is implied
+    // by control dependence — `BB` post-dominating a successor of `P` requires
+    // `BB` reachable from `P` — so it can only skip work, never change an
+    // answer), and the control-dependence test decides.
+    if (!reachedThroughTaintedBranch(CI->getParent(), taint))
+      continue;
+    if (controlDependentOnTaintedBranch(CI->getParent(), taint))
+      return true;
+  }
+  return false;
+}
+
+void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
+  Function *PhaseFn = wd.phaseFn();
+  if (!PhaseFn)
+    return;
+
+  // Walk the FUNCTION's own use list rather than `taint.PhaseCalls`: an emitter
+  // that claimed a region has already ERASED its phase call, and while every
+  // such emitter also scrubs the work list, deriving the survivors from the IR
+  // itself makes a missed scrub a no-op here instead of a dangling read.
+  SmallVector<CallInst *, 8> Survivors;
+  bool Declined = false;
+  for (User *U : PhaseFn->users()) {
+    auto *CI = dyn_cast<CallInst>(U);
+    if (CI && CI->getCalledFunction() == PhaseFn) {
+      Survivors.push_back(CI);
+      continue;
+    }
+    // (0) ANY OTHER USER OF `@cq_phi` IS A LOUD DECLINE — Rule-13 round-1
+    // finding F-L3-4. The earlier spelling of this loop was a `dyn_cast` FILTER,
+    // so a non-call user simply fell out of the walk: the pass lowered nothing
+    // for it, the extern SURVIVED into the lowered module, and `opt` exited 0 on
+    // a module it had not lowered. MEASURED from plain `clang -O1` C —
+    //
+    //     void (*volatile pf)(double) = cq_phi;
+    //     int slice(void){ int q = cq_theta_si32(0,0.3); pf(0.5); return cq_measure_si32(q); }
+    //
+    // — stage 2 exit 0, stage 2b exit 0, and stage 3 fails with
+    // `Undefined symbols … "_cq_phi", referenced from: _pf`. Loud at the LINKER
+    // is not loud at the compiler: Rule 1 says there is no third path, and an
+    // `opt` that exits 0 on an unlowered quantum construct IS one. It also
+    // matters that the survivor set is derived from `PhaseFn->users()` precisely
+    // so a missed scrub is a no-op — that same choice is what makes a NON-call
+    // user visible here, which is the right place to refuse it.
+    //
+    // The two other spellings already decline elsewhere and keep their own
+    // strings: an `invoke` is caught at collection (`front-end intrinsic cq_phi
+    // reached via invoke; only a direct call is supported`) and a
+    // `pf(...)` UNDER a tainted branch declines `control flow under quantum
+    // control` before this stage. This clause is the remaining one.
+    //
+    // A `CallInst` that uses `PhaseFn` as a non-callee OPERAND (an argument, say)
+    // lands here too, and correctly: passing the intrinsic's address to anything
+    // is the same escape.
+    Function *At = nullptr;
+    const Instruction *I = dyn_cast<Instruction>(U);
+    if (I)
+      At = const_cast<Function *>(I->getFunction());
+    if (!At)
+      At = PhaseFn;  // a constant expression / global initializer user.
+    At->getContext().diagnose(DiagnosticInfoUnsupported(
+        *At,
+        "cq taint propagation: front-end intrinsic cq_phi has its address taken; "
+        "only a direct call is supported",
+        I ? I->getDebugLoc() : DebugLoc()));
+    Declined = true;
+  }
+
+  for (CallInst *CI : Survivors) {
+    // (1) THE RULE-1 ASSERT FIRST, so a broken invariant is never masked by the
+    //     angle message below.
+    if (reachedThroughTaintedBranch(CI->getParent(), taint)) {
+      diagnoseUnderControl(CI, "unclaimed branch phase");
+      Declined = true;
+      continue;
+    }
+    // (2) A tainted ANGLE (Rule 3). Same dialect and same string as the retired
+    //     suffixed family's `RotationLowering::declineTaintedAngle`.
+    if (CI->arg_size() == 1 && taint.Tainted.count(CI->getArgOperand(0))) {
+      CI->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *CI->getFunction(),
+          "cq rotation lowering: unsupported quantum-derived rotation angle",
+          CI->getDebugLoc()));
+      Declined = true;
+      continue;
+    }
+    // (3) GLOBAL PHASE → delete (D2). No diagnostic, by owner decision.
+    auto &PC = taint.PhaseCalls;
+    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    taint.Tainted.erase(CI);
+    taint.BirthOrder.erase(CI);
+    CI->eraseFromParent();
+  }
+  (void)Declined;
 }
 
 }  // namespace cq

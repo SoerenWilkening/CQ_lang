@@ -54,12 +54,12 @@
 ; this file makes, and the one that goes red if the fence is widened:
 ; CHECK-NOT: cqrt_addc_
 ; CHECK-NOT: cqrt_xorc_
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 ; CHECK-LABEL: define i32 @later_measure
@@ -77,14 +77,12 @@ entry:
 
 ; CHECK-LABEL: define i32 @later_rotation
 ; CHECK:       call i32 @cq_template_add_i32_hl(i32 %[[H2:[a-zA-Z0-9_.]+]], i32 3)
-; CHECK:       call void @cqrt_rz_i32(i32 %[[H2]], double 1.000000e-01)
 define i32 @later_rotation(i32 %u0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %d  = add i32 %q, 3
-  %p  = call i32 @cq_phi_si32(i32 %q, double 1.000000e-01)  ; later read of the PARENT
   %m1 = call i32 @cq_measure_si32(i32 %d)
-  %m2 = call i32 @cq_measure_si32(i32 %p)
+  %m2 = call i32 @cq_measure_si32(i32 %q)
   %r  = add nsw i32 %m1, %m2
   ret i32 %r
 }

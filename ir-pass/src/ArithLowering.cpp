@@ -582,7 +582,8 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
                        Instruction::BinaryOps Op, StringRef W,
                        WidthDispatch &wd, const TaintSet &taint,
                        const DominatorTree &DT, const LoopInfo &LI,
-                       const InteriorDischargePlan *Plan) {
+                       const InteriorDischargePlan *Plan,
+                       bool IgnoreSelfMarking = false) {
   // G4 — THE IMMEDIATE MUST BE ONE STAGE 2b CAN PROVE CLASSICAL. `cqrt_addc_<W>`
   // declares its second parameter classical, but at W=i32 both parameters are
   // `int32_t`, so a rail handle in that slot is verify-clean AND prints as a bare
@@ -634,7 +635,13 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
   // changes disposition: only irreducible ones move, and they move from an
   // in-place mutation to the out-of-place fallback (a fresh rail per trip),
   // which is the same disposition the natural-loop spelling already had.
-  if (taint.InPlaceRailOps.count(const_cast<Instruction *>(Site)))
+  // `IgnoreSelfMarking` — see `classifyInPlaceReassignment`'s header. The ONLY
+  // caller that passes true is `lowerOps`' (1b) tripwire, re-asking this fence
+  // about an op `commitOutOfLoopInPlaceOps` itself put in the set; suppressing
+  // this disjunct there is what makes the re-ask a question about the SHAPE and
+  // the POSITION rather than about the marking (bd 3qlq Inc 1, C-1 round 3).
+  if (!IgnoreSelfMarking &&
+      taint.InPlaceRailOps.count(const_cast<Instruction *>(Site)))
     return false;
   if (LI.getLoopFor(const_cast<BasicBlock *>(Site->getParent())) ||
       blockCanRepeat(const_cast<BasicBlock *>(Site->getParent())))
@@ -722,7 +729,7 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
 
 bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint, const DominatorTree &DT,
-                                 const LoopInfo &LI) {
+                                 const LoopInfo &LI, bool IgnoreSelfMarking) {
   // G1 — BATCHES 2a+2b+2c ADMIT `add`, `sub` AND `xor`. This is the FULL
   // admission the mechanism was always written for: `inPlaceReassignRailOperand`
   // has known all three since 2a and `rewriteInPlaceValueRail` has emitted all
@@ -760,7 +767,7 @@ bool classifyInPlaceReassignment(BinaryOperator *bo, WidthDispatch &wd,
   // are not even `CallInst`s yet (arm (e) refuses them on sight). The LATE round
   // is where a plan exists; see `lowerLateReassignments`.
   return inPlaceFenceHolds(bo, P, Imm, Op, abiWidthFromType(bo->getType()), wd,
-                           taint, DT, LI, /*Plan=*/nullptr);
+                           taint, DT, LI, /*Plan=*/nullptr, IgnoreSelfMarking);
 }
 
 // ── M-C LATE ROUND (bd test_C_libtooling-x67f, Increment 7a) ─────────────────

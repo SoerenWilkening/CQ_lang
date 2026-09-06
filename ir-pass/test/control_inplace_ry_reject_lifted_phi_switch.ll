@@ -23,9 +23,9 @@
 ; RUN:   | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %c) {
@@ -40,10 +40,9 @@ case1:
   br label %case0
 case0:
   %ang = phi double [ 2.000000e-01, %case1 ], [ 1.000000e-01, %entry ]
-  %m0 = call i32 @cq_phi_si32(i32 %r, double %ang)
   br label %join
 join:
-  %m = phi i32 [ %r, %entry ], [ %m0, %case0 ]
+  %m = phi i32 [ %r, %entry ], [ %r, %case0 ]
   %t = icmp eq i32 %q, 5
   br i1 %t, label %arm, label %merge
 arm:

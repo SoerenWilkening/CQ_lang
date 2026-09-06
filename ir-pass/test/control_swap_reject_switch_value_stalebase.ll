@@ -22,21 +22,20 @@
 ; CHECK-NOT: cq opcode lowering: operand predates a non-diagonal gate
 ; CHECK-NOT: condition predates a non-diagonal gate
 ; CHECK-NOT: cqrt_copy
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %p = call i32 @cq_theta_si32(i32 %v0, double 7.500000e-01)
-  %pd = call i32 @cq_phi_si32(i32 %p, double 1.000000e+00)    ; routed base (diagonal alias of %p)
   switch i32 %q, label %merge [ i32 0, label %a0 ]
 a0:
-  %v1 = add i32 %pd, 3
+  %v1 = add i32 %p, 3
   %p2 = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)  ; in-arm chained Ry, AFTER the op
   br label %merge
 merge:
-  %pm = phi i32 [ %pd, %entry ], [ %v1, %a0 ]
+  %pm = phi i32 [ %p, %entry ], [ %v1, %a0 ]
   %m = call i32 @cq_measure_si32(i32 %pm)
   ret i32 %m
 }

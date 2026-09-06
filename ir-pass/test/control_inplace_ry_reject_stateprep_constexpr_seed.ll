@@ -27,9 +27,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed does not match the merge incoming under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (dead declare erased)
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 @G = external global i32
 

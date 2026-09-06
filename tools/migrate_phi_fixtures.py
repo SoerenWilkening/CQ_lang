@@ -1,0 +1,1201 @@
+#!/usr/bin/env python3
+"""migrate_phi_fixtures.py — bd epic test_C_libtooling-3qlq, Increment 1.
+
+Migrate the `ir-pass/test/*.ll` corpus from the REGISTER-CARRYING `cq_phi`
+surface
+
+    %r = call T @cq_phi_<sfx>(T %x, double THETA)      ; 16 widths
+
+to the REGISTER-FREE branch-phase surface (PRD
+`docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §4.1, D1/D2)
+
+    call void @cq_phi(double THETA)                    ; ONE extern
+
+There are exactly TWO cases and the tool decides them PER CALL SITE:
+
+  (U) UNCONTROLLED / classically-controlled — the call is not control-dependent
+      on a TAINTED `br`/`switch`.  Owner decision **D2**: it is a global phase
+      and is DELETED.  Rewrite: RAUW `%r -> %x`, erase the call line.  A merge
+      phi that used to join `%r` with `%x` becomes a phi of identical incomings
+      and is LEFT ALONE (the pass folds it).
+
+  (A) IN A TAINTED ARM — the call becomes `call void @cq_phi(double THETA)` and
+      the merge phi that carried `%r` against `%x` is DISSOLVED: RAUW the phi to
+      the PRED incoming (`%x`) and erase it.  The lowering is the kickback
+      triple (mint -> `cqrt_rz_i1(f, THETA)` -> strip -> free) whose handle
+      numbers CANNOT be derived without the Inc-1 binary, so the fixture's CHECK
+      lines are LEFT UNTOUCHED and the file is reported `NEEDS-REDERIVE`.
+
+  (S) ANGLE SELECT — the call sits in a STRAIGHT-LINE block but its ANGLE is a
+      `select`/`phi` on a TAINTED condition.  This is the `-O1` fold of
+      `if (c) cq_phi(A); else cq_phi(B);` (PRD §6.2 P2) and is emphatically NOT
+      a global phase: deleting it under D2 would silently remove a
+      control-carrying gate.  Rewrite: `call void @cq_phi(double %ang)` with the
+      result RAUWed to the base.  `NEEDS-REDERIVE`.
+
+  (D) DECLARE-ONLY — a dead `declare ... @cq_phi_<sfx>(...)` with no call.  The
+      declaration names a symbol the new frontend surface does not have, so it
+      is erased.  (Class (M): the file only MENTIONS `cq_phi` in prose/CHECK
+      text — nothing to do.)
+
+WHY A TEXTUAL SSA WALKER.  `llvmlite` is not installed on this machine and the
+pass itself cannot answer "is this call in a tainted arm?" for the ~2/3 of the
+corpus that DECLINES (opt exits non-zero and prints no module).  The walker
+below is deliberately conservative: anything it cannot parse or cannot prove
+UNCONTROLLED is reported as class (A) or as HAND-DECISION, never silently
+migrated as (U).  Documented limits are in `LIMITS` below and are echoed into
+the report.
+
+Usage
+    python3 tools/migrate_phi_fixtures.py --report [--only GLOB]
+    python3 tools/migrate_phi_fixtures.py --dry-run [--only GLOB]
+    python3 tools/migrate_phi_fixtures.py --apply   [--only GLOB] [--classes U,A,D]
+"""
+
+from __future__ import annotations
+
+import argparse
+import fnmatch
+import glob
+import os
+import re
+import sys
+from collections import defaultdict
+
+# --------------------------------------------------------------------------
+LIMITS = """
+Documented limits of the textual SSA walker (read before trusting a class):
+  L1 the parser is line-oriented.  The ONE multi-line construct in this corpus is
+     a `switch` case list (36 of the 540 files, flagged `unparsed_multiline`);
+     CFG edges are collected from the terminator line THROUGH the end of the
+     block so no case successor is lost.  Any OTHER multi-line instruction would
+     also raise that flag, and none exists at dfb8e83.
+  L2 memory is NOT modelled: taint through `store`/`load` of a tainted value
+     is not tracked.  Every fixture that stores a tainted value is listed as
+     `mem-taint` in the report and forced to class (A)/HAND-DECISION.
+  L3 interprocedural taint is a fixpoint over (arg -> param) and
+     (return -> call result) for DEFINED callees only; an indirect call, a
+     varargs call or a call to a declaration taints its result if any argument
+     is tainted (conservative).
+  L4 control dependence uses post-dominators over the textual CFG with a single
+     virtual exit; blocks with no path to a `ret`/`unreachable` (infinite
+     loops) post-dominate nothing, which OVER-approximates control dependence,
+     i.e. pushes calls INTO class (A) -- the safe direction.
+  L5 `cq_measure_*` is a taint SINK: its result is classical.  The arg-1 angle
+     operand of `cq_theta_*`/`cq_phi_*` never carries taint (Rule 3).
+  L6 control dependence is TRANSITIVE (a block under a classical branch nested
+     inside a tainted arm counts as in-arm -- the §6.3 multi-block-arm decline
+     shape) and INTERPROCEDURAL (a callee whose call site is under tainted
+     control has all its `cq_phi` sites classified (A), noted `callsite-ctl`).
+  L7 an angle operand that is TAINTED is never class (U): a `select`/`phi` on a
+     tainted condition is class (S); anything else tainted is HAND-DECISION
+     (that is the `tainted angle under quantum control` decline family).
+  L8 a region MERGE PHI is treated as TAINTED whenever any incoming block is under
+     tainted control, because the pass RE-SEEDS it as a fresh quantum register
+     (4.4 select merge / 4.5 switch data mux / 6.5 classical-call arm).  Taint and
+     control dependence are therefore computed as ONE fixpoint, not in sequence.
+"""
+
+CALL_RE = re.compile(
+    r'^(?P<indent>\s*)(?:(?P<lhs>%[\w.$]+)\s*=\s*)?'
+    r'(?:tail\s+|musttail\s+|notail\s+)?call\s+(?P<rest>.*)$'
+)
+FN_RE = re.compile(r'@(?P<fn>[\w.$]+)\s*\(')
+DEFINE_RE = re.compile(r'^define\b.*?@(?P<name>[\w.$"]+)\s*\(')
+MIGRATE_TAINTED_ANGLE = False
+KEEP_MERGE_PHI = False
+DECLARE_PHI_RE = re.compile(r'^declare\b[^;]*@cq_phi_[\w.$]+\s*\(')
+LABEL_RE = re.compile(r'^(?P<name>[-\w.$]+):')
+OPERAND_RE = re.compile(r'%[\w.$]+')
+TERM_BR_COND_RE = re.compile(r'^\s*br\s+i1\s+(?P<cond>[%\w.$]+)\s*,\s*label\s+%(?P<t>[-\w.$]+)\s*,\s*label\s+%(?P<f>[-\w.$]+)')
+TERM_BR_UNCOND_RE = re.compile(r'^\s*br\s+label\s+%(?P<t>[-\w.$]+)')
+TERM_SWITCH_RE = re.compile(r'^\s*switch\s+\S+\s+(?P<val>[%\w.$-]+)\s*,\s*label\s+%(?P<def>[-\w.$]+)')
+LABEL_REF_RE = re.compile(r'label\s+%([-\w.$]+)')
+
+THETA_RE = re.compile(r'@cq_theta_[\w.$]+')
+PHI_CALL_RE = re.compile(r'@(cq_phi_[\w.$]+)')
+MEASURE_RE = re.compile(r'@cq_measure_[\w.$]+')
+
+
+def word_sub(text: str, old: str, new: str) -> str:
+    """Replace SSA name `old` (with its leading %) by `new`, whole-token only."""
+    assert old.startswith('%')
+    return re.sub(re.escape(old) + r'(?![\w.$])', new.replace('\\', '\\\\'), text)
+
+
+def split_args(s: str) -> list[str]:
+    """Split a call argument list on top-level commas."""
+    out, depth, cur = [], 0, []
+    for ch in s:
+        if ch in '([{<':
+            depth += 1
+        elif ch in ')]}>':
+            depth -= 1
+        if ch == ',' and depth == 0:
+            out.append(''.join(cur).strip())
+            cur = []
+        else:
+            cur.append(ch)
+    if ''.join(cur).strip():
+        out.append(''.join(cur).strip())
+    return out
+
+
+def call_arglist(rest: str) -> str | None:
+    """Given the text after `call `, return the raw argument text."""
+    m = FN_RE.search(rest)
+    if not m:
+        return None
+    i = rest.index('(', m.end() - 1)
+    depth, j = 0, i
+    while j < len(rest):
+        if rest[j] == '(':
+            depth += 1
+        elif rest[j] == ')':
+            depth -= 1
+            if depth == 0:
+                return rest[i + 1:j]
+        j += 1
+    return None
+
+
+# --------------------------------------------------------------------------
+class Instr:
+    __slots__ = ('idx', 'text', 'lhs', 'callee', 'args', 'is_term', 'is_phi')
+
+    def __init__(self, idx, text):
+        self.idx = idx
+        self.text = text
+        self.lhs = None
+        self.callee = None
+        self.args = None
+        self.is_term = False
+        self.is_phi = False
+
+
+class Func:
+    def __init__(self, name, start, end):
+        self.name = name
+        self.start = start          # index of the `define` line
+        self.end = end              # index of the closing `}` line
+        self.params: list[str] = []
+        self.blocks: list[str] = []
+        self.block_of: dict[int, str] = {}     # line idx -> block name
+        self.block_lines: dict[str, list[int]] = defaultdict(list)
+        self.succs: dict[str, list[str]] = defaultdict(list)
+        self.preds: dict[str, list[str]] = defaultdict(list)
+        self.term: dict[str, int] = {}         # block -> line idx of terminator
+        self.instrs: dict[int, Instr] = {}
+        self.entry: str | None = None
+
+
+class Module:
+    def __init__(self, path: str, lines: list[str]):
+        self.path = path
+        self.lines = lines
+        self.funcs: list[Func] = []
+        self.parse_error: str | None = None
+        self.multiline_suspect = False
+        self._parse()
+
+    # -- parsing ---------------------------------------------------------
+    def _parse(self):
+        lines = self.lines
+        i = 0
+        n = len(lines)
+        while i < n:
+            m = DEFINE_RE.match(lines[i])
+            if not m:
+                i += 1
+                continue
+            start = i
+            # the closing brace of a function is a bare `}` at column 0
+            j = i + 1
+            while j < n and lines[j].rstrip() != '}':
+                j += 1
+            if j >= n:
+                self.parse_error = f'unterminated define at line {start+1}'
+                return
+            f = Func(m.group('name'), start, j)
+            self._parse_params(f, lines[start])
+            self._parse_body(f)
+            self.funcs.append(f)
+            i = j + 1
+
+    def _parse_params(self, f: Func, define_line: str):
+        raw = call_arglist(define_line[define_line.index('define'):])
+        if raw is None:
+            return
+        for a in split_args(raw):
+            names = OPERAND_RE.findall(a)
+            if names:
+                f.params.append(names[-1])
+
+    def _parse_body(self, f: Func):
+        cur = None
+        for idx in range(f.start + 1, f.end):
+            raw = self.lines[idx]
+            stripped = raw.strip()
+            if not stripped or stripped.startswith(';'):
+                continue
+            code = stripped.split(';', 1)[0].rstrip()
+            if not code:
+                continue
+            lm = LABEL_RE.match(code)
+            if lm and not code.startswith('%'):
+                cur = lm.group('name')
+                if f.entry is None:
+                    f.entry = cur
+                if cur not in f.blocks:
+                    f.blocks.append(cur)
+                continue
+            if cur is None:
+                cur = '%__entry__'
+                f.entry = cur
+                f.blocks.append(cur)
+            f.block_of[idx] = cur
+            f.block_lines[cur].append(idx)
+            ins = Instr(idx, code)
+            eq = code.find('=')
+            if code.startswith('%') and eq > 0:
+                ins.lhs = code[:eq].strip()
+            m = CALL_RE.match(raw.split(';', 1)[0])
+            if m:
+                fm = FN_RE.search(m.group('rest'))
+                if fm:
+                    ins.callee = fm.group('fn')
+                    ins.args = split_args(call_arglist(m.group('rest')) or '')
+            if re.search(r'=\s*phi\b', code):
+                ins.is_phi = True
+            if re.match(r'^(ret|br|switch|unreachable|resume|indirectbr|invoke|callbr|cleanupret|catchret|catchswitch)\b', code):
+                ins.is_term = True
+                f.term[cur] = idx
+            f.instrs[idx] = ins
+            # multi-line instruction heuristic: unbalanced parens/brackets
+            if code.count('(') != code.count(')') or code.count('[') != code.count(']'):
+                self.multiline_suspect = True
+        # CFG edges.  A `switch` case list is routinely spread over SEVERAL lines in
+        # this corpus (36 of the 540 files), and reading label refs from the
+        # terminator LINE alone silently drops every case but the first -- which
+        # would make a `cq_phi` in a dropped case block look UNCONTROLLED.  Collect
+        # from the terminator line THROUGH the end of the block.
+        for b in f.blocks:
+            t = f.term.get(b)
+            if t is None:
+                continue
+            for idx in f.block_lines[b]:
+                if idx < t:
+                    continue
+                for tgt in LABEL_REF_RE.findall(f.instrs[idx].text):
+                    if tgt not in f.succs[b]:
+                        f.succs[b].append(tgt)
+        for b in f.blocks:
+            for s in f.succs[b]:
+                f.preds[s].append(b)
+
+
+# --------------------------------------------------------------------------
+def compute_taint(mods_funcs: list[Func], mod: Module,
+                  extra_seeds: set[str] | None = None) -> tuple[set[str], set[str]]:
+    """Return (tainted SSA names qualified `fn::%name`, set of fns w/ mem taint).
+
+    Interprocedural fixpoint over defined callees (limit L3).  `extra_seeds` are
+    values the PASS makes quantum without any SSA data flow from a `cq_theta` --
+    a region merge phi that the 4.4/4.5/6.5 controlled-copy merges re-seed as a
+    fresh quantum register (limit L8).
+    """
+    tainted: set[str] = set(extra_seeds or ())
+    mem_taint_fns: set[str] = set()
+    defined = {f.name: f for f in mods_funcs}
+    ret_tainted: set[str] = set()
+    changed = True
+    guard = 0
+    while changed and guard < 200:
+        changed = False
+        guard += 1
+        for f in mods_funcs:
+            for idx in sorted(f.instrs):
+                ins = f.instrs[idx]
+                code = ins.text
+                q = lambda nm: f'{f.name}::{nm}'
+                # -- taint SOURCE
+                if ins.callee and ins.callee.startswith('cq_theta_'):
+                    if ins.lhs and q(ins.lhs) not in tainted:
+                        tainted.add(q(ins.lhs)); changed = True
+                    continue
+                # -- taint SINK
+                if ins.callee and ins.callee.startswith('cq_measure_'):
+                    continue
+                if ins.callee and ins.callee.startswith('cq_phi_'):
+                    a0 = OPERAND_RE.findall(ins.args[0]) if ins.args else []
+                    if a0 and q(a0[-1]) in tainted and ins.lhs and q(ins.lhs) not in tainted:
+                        tainted.add(q(ins.lhs)); changed = True
+                    continue
+                if ins.callee and ins.callee.startswith('cq_invert_'):
+                    # escape; result (if any) conservatively tainted
+                    if ins.lhs and q(ins.lhs) not in tainted:
+                        tainted.add(q(ins.lhs)); changed = True
+                    continue
+                # -- store of a tainted value (limit L2)
+                if code.startswith('store'):
+                    ops = OPERAND_RE.findall(code)
+                    if any(q(o) in tainted for o in ops):
+                        if f.name not in mem_taint_fns:
+                            mem_taint_fns.add(f.name); changed = True
+                    continue
+                if ins.callee and ins.callee in defined:
+                    callee = defined[ins.callee]
+                    for i, a in enumerate(ins.args or []):
+                        names = OPERAND_RE.findall(a)
+                        if names and q(names[-1]) in tainted and i < len(callee.params):
+                            k = f'{callee.name}::{callee.params[i]}'
+                            if k not in tainted:
+                                tainted.add(k); changed = True
+                    if ins.lhs and ins.callee in ret_tainted and q(ins.lhs) not in tainted:
+                        tainted.add(q(ins.lhs)); changed = True
+                    continue
+                # -- generic forward propagation
+                ops = OPERAND_RE.findall(code[code.find('=') + 1:] if ins.lhs else code)
+                if ins.lhs and any(q(o) in tainted for o in ops):
+                    if q(ins.lhs) not in tainted:
+                        tainted.add(q(ins.lhs)); changed = True
+                if code.startswith('ret') and any(q(o) in tainted for o in ops):
+                    if f.name not in ret_tainted:
+                        ret_tainted.add(f.name); changed = True
+    return tainted, mem_taint_fns
+
+
+# --------------------------------------------------------------------------
+def post_dominators(f: Func) -> dict[str, set[str]]:
+    """Post-dominator sets over the textual CFG with one virtual exit (L4)."""
+    EXIT = '\0exit'
+    blocks = list(f.blocks)
+    succs = {b: list(f.succs[b]) for b in blocks}
+    for b in blocks:
+        t = f.term.get(b)
+        if t is None or not succs[b]:
+            succs[b] = [EXIT]
+        else:
+            code = f.instrs[t].text
+            if re.match(r'^(ret|unreachable|resume)\b', code):
+                succs[b] = [EXIT]
+    universe = set(blocks) | {EXIT}
+    pd = {b: set(universe) for b in blocks}
+    pd[EXIT] = {EXIT}
+    changed = True
+    guard = 0
+    while changed and guard < 10000:
+        changed = False
+        guard += 1
+        for b in blocks:
+            new = set(universe)
+            for s in succs[b]:
+                new &= pd.get(s, {s})
+            new.add(b)
+            if new != pd[b]:
+                pd[b] = new
+                changed = True
+    return pd
+
+
+def ipdom_map(f: Func, pd: dict[str, set[str]]) -> dict[str, str | None]:
+    """Immediate post-dominator = the CLOSEST post-dominator.
+
+    The post-dominators of B form a chain B, ipdom(B), ..., EXIT, so ipdom(B) is
+    the unique candidate whose OWN post-dominator set contains every other
+    candidate.  (Testing it the other way round -- "c post-dominates every
+    candidate" -- selects EXIT, the FARTHEST one, which makes every block from a
+    branch down to the exit read as control-dependent on it.)
+    """
+    ip: dict[str, str | None] = {}
+    for b in f.blocks:
+        cands = pd[b] - {b}
+        best = None
+        for c in cands:
+            if all(o in pd.get(c, set()) for o in cands):
+                if best is None or len(pd.get(c, set())) > len(pd.get(best, set())):
+                    best = c
+        ip[b] = best
+    return ip
+
+
+def dominators(f: Func) -> dict[str, set[str]]:
+    """Forward dominator sets (used to prove a phi-dissolution target is legal)."""
+    blocks = list(f.blocks)
+    entry = f.entry or (blocks[0] if blocks else None)
+    dom = {b: set(blocks) for b in blocks}
+    if entry is None:
+        return dom
+    dom[entry] = {entry}
+    changed, guard = True, 0
+    while changed and guard < 10000:
+        changed, guard = False, guard + 1
+        for b in blocks:
+            if b == entry:
+                continue
+            preds = [p for p in f.preds[b] if p in dom]
+            new = set(blocks)
+            if preds:
+                for p in preds:
+                    new &= dom[p]
+            else:
+                new = set()
+            new.add(b)
+            if new != dom[b]:
+                dom[b] = new
+                changed = True
+    return dom
+
+
+def branch_cond(f: Func, b: str) -> str | None:
+    t = f.term.get(b)
+    if t is None:
+        return None
+    code = f.instrs[t].text
+    m = TERM_BR_COND_RE.match(' ' + code)
+    if m:
+        return m.group('cond')
+    m = TERM_SWITCH_RE.match(' ' + code)
+    if m:
+        return m.group('val')
+    return None
+
+
+def control_deps(f: Func, tainted: set[str], seed_all: bool = False) -> set[str]:
+    """Blocks TRANSITIVELY control-dependent on a TAINTED branch (limit L6).
+
+    `seed_all=True` means the whole function runs under tainted control (its
+    call site is in a tainted arm), so every block counts.
+    """
+    if seed_all:
+        return set(f.blocks)
+    pd = post_dominators(f)
+    ip = ipdom_map(f, pd)
+    # cd[B] = set of blocks whose terminator B is control-dependent on
+    cd: dict[str, set[str]] = defaultdict(set)
+    for b in f.blocks:
+        if len(f.succs[b]) < 2:
+            continue
+        stop = ip.get(b)
+        for s in f.succs[b]:
+            cur, seen = s, set()
+            while cur is not None and cur != stop and cur not in seen and cur != '\0exit':
+                seen.add(cur)
+                cd[cur].add(b)
+                cur = ip.get(cur)
+    tainted_branch: set[str] = set()
+    for b in f.blocks:
+        c = branch_cond(f, b)
+        if c and c.startswith('%') and f'{f.name}::{c}' in tainted:
+            tainted_branch.add(b)
+    under: set[str] = set()
+    changed = True
+    while changed:
+        changed = False
+        for b in f.blocks:
+            if b in under:
+                continue
+            if any(p in tainted_branch or p in under for p in cd.get(b, ())):
+                under.add(b)
+                changed = True
+    return under
+
+
+# --------------------------------------------------------------------------
+class Site:
+    def __init__(self, func, block, idx, lhs, base, angle, sfx, cls, why):
+        self.func, self.block, self.idx = func, block, idx
+        self.lhs, self.base, self.angle, self.sfx = lhs, base, angle, sfx
+        self.cls, self.why = cls, why
+
+
+class FileAnalysis:
+    def __init__(self, path):
+        self.path = path
+        self.sites: list[Site] = []
+        self.decl_lines: list[int] = []
+        self.cls = 'M'
+        self.notes: list[str] = []
+        self.needs_rederive = False
+        self.hand_decision: str | None = None
+
+
+def analyze(path: str) -> FileAnalysis:
+    fa = FileAnalysis(path)
+    with open(path, 'r') as fh:
+        lines = fh.read().split('\n')
+    mod = Module(path, lines)
+    if mod.parse_error:
+        fa.notes.append(f'parse-error: {mod.parse_error}')
+        fa.hand_decision = 'parse error'
+        fa.cls = 'X'
+        return fa
+    if mod.multiline_suspect:
+        fa.notes.append('unparsed_multiline')
+    for i, ln in enumerate(lines):
+        if DECLARE_PHI_RE.match(ln):
+            fa.decl_lines.append(i)
+    # an `invoke` of a cq_phi is a CALL SITE the line parser does not model; it has
+    # its own decline (`reached via invoke; only a direct call is supported`).
+    for i, ln in enumerate(lines):
+        if re.search(r'\binvoke\b[^;]*@cq_phi', ln.split(';')[0]):
+            fa.notes.append(f'invoke-callsite line {i+1}')
+            fa.hand_decision = 'cq_phi reached via `invoke`, not a direct call'
+    byname = {f.name: f for f in mod.funcs}
+    # TAINT and CONTROL DEPENDENCE are MUTUALLY RECURSIVE here and the fixpoint is
+    # not optional: a region MERGE PHI is re-seeded by the pass as a fresh QUANTUM
+    # register (the 6.5 classical-call arm, the 4.5 switch data mux, the 4.4 select
+    # merge), so a compare on it is a TAINTED compare even though no `cq_theta`
+    # reaches it by SSA data flow -- and a `cq_phi` under THAT branch is controlled.
+    seeds: set[str] = set()
+    tainted: set[str] = set()
+    mem_fns: set[str] = set()
+    under_of: dict[str, set[str]] = {}
+    fn_under: set[str] = set()
+    for _round in range(12):
+        tainted, mem_fns = compute_taint(mod.funcs, mod, seeds)
+        under_of = {f.name: control_deps(f, tainted) for f in mod.funcs}
+        fn_under = set()
+        changed = True
+        while changed:
+            changed = False
+            for f in mod.funcs:
+                for idx in sorted(f.instrs):
+                    ins = f.instrs[idx]
+                    if not ins.callee or ins.callee not in byname:
+                        continue
+                    site_under = (f.block_of[idx] in under_of[f.name]) or (f.name in fn_under)
+                    if site_under and ins.callee not in fn_under:
+                        fn_under.add(ins.callee)
+                        under_of[ins.callee] = set(byname[ins.callee].blocks)
+                        changed = True
+        new_seeds = set(seeds)
+        for f in mod.funcs:
+            for idx, ins in f.instrs.items():
+                if not ins.is_phi or not ins.lhs:
+                    continue
+                blks = [b for (_v, b) in
+                        re.findall(r'\[\s*([^,\]]+)\s*,\s*%([-\w.$]+)\s*\]', ins.text)]
+                if any(b in under_of[f.name] for b in blks):
+                    new_seeds.add(f'{f.name}::{ins.lhs}')
+        if new_seeds == seeds:
+            break
+        seeds = new_seeds
+    if mem_fns:
+        fa.notes.append('mem-taint:' + ','.join(sorted(mem_fns)))
+    if fn_under:
+        fa.notes.append('callsite-ctl:' + ','.join(sorted(fn_under)))
+    # -- pass 3: classify each site
+    for f in mod.funcs:
+        under = under_of[f.name]
+        defs = {ins.lhs: ins for ins in f.instrs.values() if ins.lhs}
+        for idx in sorted(f.instrs):
+            ins = f.instrs[idx]
+            if not (ins.callee and ins.callee.startswith('cq_phi_')):
+                continue
+            blk = f.block_of[idx]
+            args = ins.args or []
+            a0 = OPERAND_RE.findall(args[0]) if args else []
+            base = a0[-1] if a0 else (args[0].split()[-1] if args else None)
+            angle_raw = args[1].strip() if len(args) > 1 else None
+            angle = (OPERAND_RE.findall(angle_raw)[-1]
+                     if angle_raw and OPERAND_RE.findall(angle_raw)
+                     else (angle_raw.split()[-1] if angle_raw else None))
+            angle_tainted = bool(angle and angle.startswith('%')
+                                 and f'{f.name}::{angle}' in tainted)
+            cls, why = ('U', 'not control-dependent on a tainted branch')
+            if blk in under:
+                cls, why = ('A', 'control-dependent on a tainted branch')
+                if f.name in fn_under:
+                    why += ' (via call site)'
+            elif angle_tainted:
+                d = defs.get(angle)
+                sel = d is not None and re.search(r'=\s*(select|phi)\b', d.text)
+                if sel:
+                    cls, why = ('S', 'angle is a select/phi on a tainted condition (PRD P2)')
+                else:
+                    cls, why = ('H', 'angle operand is TAINTED and not a select/phi')
+                    fa.hand_decision = (fa.hand_decision
+                                        or f'tainted angle operand {angle} at line {idx+1}')
+            elif f.name in mem_fns:
+                cls, why = ('A', 'memory taint in this function (limit L2) -> conservative')
+            fa.sites.append(Site(f.name, blk, idx, ins.lhs, base, angle_raw, ins.callee, cls, why))
+    # PRD §6.3 row 1: an arm with N>1 cq_phi calls declines (angle sum, follow-on)
+    per_block: dict[tuple[str, str], int] = defaultdict(int)
+    for s in fa.sites:
+        if s.cls in ('A', 'S'):
+            per_block[(s.func, s.block)] += 1
+    if any(v > 1 for v in per_block.values()):
+        fa.notes.append('arm-N>1')
+    # --migrate-tainted-angle (prep_a2): an H site is, BY CONSTRUCTION of the branch
+    # above, an UNCONTROLLED site (`blk not in under`) whose ANGLE is tainted.  The
+    # naive D2 reading would DELETE it as a global phase and take the fixture's whole
+    # subject with it.  MEASURED on the Inc-1 binary (probe hs_flat.ll): an
+    # uncontrolled `call void @cq_phi(double %tainted)` declines
+    # `cq rotation lowering: unsupported quantum-derived rotation angle` — the pass
+    # refuses the call before it ever decides whether it is a global phase, so the
+    # tainted-angle rule survives the surface change verbatim.  Rewriting the site as
+    # the void call (the class-A rewrite: dissolve any merge phi, RAUW lhs->base,
+    # replace the call) therefore PRESERVES the property; deleting it would not.
+    if MIGRATE_TAINTED_ANGLE:
+        for s_ in fa.sites:
+            if s_.cls == 'H':
+                s_.cls = 'A'
+                s_.why = ('tainted angle, kept as a void call (prep_a2: the '
+                          'uncontrolled tainted-angle decline survives D2)')
+        if fa.hand_decision and fa.hand_decision.startswith('tainted angle operand'):
+            fa.hand_decision = None
+            fa.notes.append('h-as-void')
+    if not fa.sites:
+        fa.cls = 'D' if fa.decl_lines else 'M'
+    else:
+        kinds = {s.cls for s in fa.sites}
+        if kinds == {'U'}:
+            fa.cls = 'U'
+        elif kinds == {'A'}:
+            fa.cls = 'A'
+        elif kinds == {'S'}:
+            fa.cls = 'S'
+        elif 'H' in kinds:
+            fa.cls = 'H'
+        else:
+            fa.cls = 'MIX'
+    return fa
+
+
+# --------------------------------------------------------------------------
+CHECK_RE = re.compile(r'^\s*;\s*(RUN|CHECK[-\w]*)\s*:')
+RZ_POSITIVE_RE = re.compile(r'^\s*;\s*CHECK(?!-NOT)[-\w]*\s*:.*cqrt_rz_')
+RZ_CONTROLLED_RE = re.compile(r'cqrt_rz_\w+_controlled')
+
+
+def rewrite(path: str, fa: FileAnalysis, do_checks: bool) -> tuple[list[str], list[str]]:
+    """Return (new_lines, actions).  Pure; caller writes."""
+    with open(path, 'r') as fh:
+        lines = fh.read().split('\n')
+    actions: list[str] = []
+    drop: set[int] = set()
+    # --- 1. per-call-site body rewrite (bottom-up so indices stay valid)
+    mod = Module(path, lines)
+    funcs = {f.name: f for f in mod.funcs}
+    added_void_decl = False
+    # `%r = cq_phi(%x, t)` chains: the register-free call returns NOTHING, so every
+    # site's result resolves to the first NON-cq_phi ancestor.
+    root_of: dict[tuple[str, str], str] = {}
+    site_base = {(s.func, s.lhs): s.base for s in fa.sites if s.lhs}
+    for (fn, lhs), b in site_base.items():
+        cur, seen = b, {lhs}
+        while cur is not None and (fn, cur) in site_base and cur not in seen:
+            seen.add(cur)
+            cur = site_base[(fn, cur)]
+        root_of[(fn, lhs)] = cur
+    doms = {f.name: dominators(f) for f in mod.funcs}
+    defblock: dict[tuple[str, str], str] = {}
+    for f in mod.funcs:
+        for idx, ins in f.instrs.items():
+            if ins.lhs:
+                defblock[(f.name, ins.lhs)] = f.block_of[idx]
+
+    def dominates_block(fn: str, val: str, blk: str) -> bool:
+        """Is `val` usable at the top of `blk`?  Params/constants always are."""
+        if not val.startswith('%'):
+            return True
+        f = funcs[fn]
+        if val in f.params:
+            return True
+        db = defblock.get((fn, val))
+        if db is None:
+            return False
+        return db != blk and db in doms[fn].get(blk, set())
+    for s in sorted(fa.sites, key=lambda s: -s.idx):
+        f = funcs[s.func]
+        if s.cls == 'U':
+            if s.lhs and s.base:
+                for idx in range(f.start + 1, f.end):
+                    if idx == s.idx:
+                        continue
+                    lines[idx] = word_sub(lines[idx], s.lhs, s.base)
+            drop.add(s.idx)
+            actions.append(f'U delete {s.func}:{s.block} {s.lhs} -> {s.base}')
+        elif s.cls in ('A', 'S'):
+            # dissolve a merge phi that carried this result FIRST (class A only:
+            # the -O1 output for a void arm has no merge phi at all, PRD §6.1)
+            if s.cls == 'A' and s.lhs:
+                for idx in range(f.start + 1, f.end):
+                    ins = f.instrs.get(idx)
+                    if not ins or not ins.is_phi:
+                        continue
+                    if not re.search(re.escape(s.lhs) + r'(?![\w.$])', ins.text):
+                        continue
+                    phi_blk = f.block_of[idx]
+                    incs = re.findall(r'\[\s*([^,\]]+)\s*,\s*%([-\w.$]+)\s*\]', ins.text)
+                    # resolve every incoming through the cq_phi chain to its root
+                    roots = {root_of.get((f.name, v.strip()), v.strip())
+                             for (v, _b) in incs}
+                    keep = roots.pop() if len(roots) == 1 else None
+                    if keep is None:
+                        # THE CONST-FOLD RE-ANCHOR (4.5 §5).  `if (q == 5) q =
+                        # cq_phi(q, t)` reaches the pass as `cq_phi(i32 5, t)`:
+                        # `-O1` substituted the value the EDGE pins, so the arm's
+                        # constant root is a LABEL for the same register as the SSA
+                        # root.  Dissolve to the SSA root -- but ONLY after proving
+                        # the constant really is that edge's pinned value, i.e. the
+                        # function has a TAINTED equality/switch on that register
+                        # against exactly that constant.  Without the proof this is
+                        # a data mux and the dissolution would be wrong.
+                        ssa = {r for r in roots if r.startswith('%')}
+                        consts = {r for r in roots if not r.startswith('%')}
+                        if len(ssa) == 1 and consts:
+                            R = next(iter(ssa))
+                            chain = {R}
+                            for (fn2, l2), rt in root_of.items():
+                                if fn2 == f.name and rt == R:
+                                    chain.add(l2)
+                            proved = True
+                            for K in consts:
+                                pat = (r'icmp\s+(?:eq|ne)\s+\S+\s+(' +
+                                       '|'.join(re.escape(c) for c in chain) +
+                                       r')\s*,\s*' + re.escape(K) + r'\b')
+                                sw = (r'switch\s+\S+\s+(' +
+                                      '|'.join(re.escape(c) for c in chain) +
+                                      r')\s*,')
+                                body = '\n'.join(i.text for i in f.instrs.values())
+                                if not (re.search(pat, body) or
+                                        (re.search(sw, body) and
+                                         re.search(r'\b\S+\s+' + re.escape(K) +
+                                                   r'\s*,\s*label\b', body))):
+                                    proved = False
+                            if proved:
+                                keep = R
+                                actions.append(f'{s.cls} const-fold re-anchor: '
+                                               f'phi roots {sorted(roots)} -> {R}')
+                    if keep is None and KEEP_MERGE_PHI:
+                        # --keep-merge-phi (prep_a2): the phi's incomings really do
+                        # carry DIFFERENT registers, so there is no single value to
+                        # dissolve to -- and dissolving was never the right move for
+                        # this shape.  These are the MIXED-arm / CROSS-HANDLE /
+                        # DISTINCT-BASE DECLINE fixtures: the phi is a GENUINE data
+                        # mux and it is the thing being declined.  Under the
+                        # register-free surface the phase arm simply stops producing
+                        # a value, so the only edit the site needs is the RAUW of the
+                        # call's result to its base (performed below, unconditionally)
+                        # -- the phi SURVIVES, one of its incomings now naming the
+                        # base directly.  The module stays well-formed and the mux
+                        # the fixture exists to refuse is still there to refuse.
+                        fa.notes.append(f'phi-kept at line {idx+1}')
+                        actions.append(f"{s.cls} phi KEPT (genuine mux) at line {idx+1}")
+                        continue
+                    if keep is None:
+                        fa.notes.append(f'phi-incomings-disagree at line {idx+1}')
+                        fa.hand_decision = (fa.hand_decision or
+                                            'merge phi incomings do not resolve to one base')
+                        continue
+                    if not dominates_block(f.name, keep, phi_blk):
+                        # e.g. an if/else whose arms both rotate an ARM-LOCAL value,
+                        # or a LOOP-HEADER phi.  Erasing the phi would leave a use
+                        # its definition does not dominate -- a broken module.
+                        fa.notes.append(f'phi-target-does-not-dominate at line {idx+1}')
+                        fa.hand_decision = (fa.hand_decision or
+                                            f'phi at line {idx+1} would dissolve to {keep}, '
+                                            'which does not dominate the phi block')
+                        continue
+                    phi_lhs = ins.lhs
+                    drop.add(idx)
+                    if phi_lhs:
+                        for k in range(f.start + 1, f.end):
+                            if k == idx:
+                                continue
+                            lines[k] = word_sub(lines[k], phi_lhs, keep)
+                    actions.append(f'{s.cls} dissolve phi {phi_lhs} -> {keep}')
+            # the register-free call returns NOTHING: every surviving use of the
+            # old result becomes the base (a phi already dissolved above is gone).
+            if s.lhs and s.base:
+                for idx in range(f.start + 1, f.end):
+                    if idx == s.idx or idx in drop:
+                        continue
+                    lines[idx] = word_sub(lines[idx], s.lhs, s.base)
+            elif s.lhs and not s.base:
+                fa.hand_decision = (fa.hand_decision or
+                                    f'{s.lhs} has a non-SSA base operand; cannot RAUW')
+            indent = re.match(r'^(\s*)', lines[s.idx]).group(1)
+            trailing = ''
+            if ';' in lines[s.idx]:
+                trailing = '  ;' + lines[s.idx].split(';', 1)[1]
+            ang = s.angle.split()[-1] if s.angle else '0.000000e+00'
+            lines[s.idx] = f'{indent}call void @cq_phi(double {ang}){trailing}'
+            added_void_decl = True
+            actions.append(f'{s.cls} void-call {s.func}:{s.block} (was {s.lhs})')
+    # --- 2. declares.  Erase a `declare @cq_phi_<sfx>` ONLY when no reference to
+    # that symbol survives -- an `invoke` (or any construct the line parser does
+    # not model) would otherwise leave a dangling reference and a PARSE ERROR.
+    body_now = '\n'.join(l.split(';', 1)[0] for i, l in enumerate(lines)
+                         if i not in drop and not DECLARE_PHI_RE.match(l))
+    for i, ln in enumerate(lines):
+        m = re.search(r'@(cq_phi_[\w.$]+)', ln) if DECLARE_PHI_RE.match(ln) else None
+        if not m:
+            continue
+        if re.search(r'@' + re.escape(m.group(1)) + r'(?![\w.$])', body_now):
+            fa.hand_decision = (fa.hand_decision or
+                                f'@{m.group(1)} still referenced after the rewrite; declare kept')
+            actions.append(f'declare KEPT (still referenced): {ln.strip()}')
+            continue
+        drop.add(i)
+        actions.append(f'declare erased: {ln.strip()}')
+    if added_void_decl and not any(re.match(r'^declare\s+void\s+@cq_phi\s*\(', l) for l in lines):
+        anchor = None
+        for i, ln in enumerate(lines):
+            if re.match(r'^declare\b', ln):
+                anchor = i
+                break
+        if anchor is None:
+            for i, ln in enumerate(lines):
+                if ln.startswith('define '):
+                    anchor = i
+                    break
+        if anchor is None:
+            anchor = len(lines)
+        lines.insert(anchor, 'declare void @cq_phi(double)')
+        drop = {d + 1 if d >= anchor else d for d in drop}
+        actions.append('declare void @cq_phi(double) added')
+    # --- 3. CHECK lines (only where the rewrite is CERTAIN)
+    if do_checks:
+        rz_checks: list[int] = []
+        for i, ln in enumerate(lines):
+            if i in drop:
+                continue
+            if RZ_CONTROLLED_RE.search(ln) and CHECK_RE.match(ln):
+                fa.needs_rederive = True
+                continue
+            if RZ_POSITIVE_RE.match(ln):
+                rz_checks.append(i)
+        # (a) A deleted CHECK line that BINDS a FileCheck variable still used by a
+        # surviving line would leave `undefined variable: X`.  Refuse the whole file:
+        # a fixture whose Rz line is the BINDER is a fixture whose SUBJECT is the Rz.
+        for i in rz_checks:
+            for v in re.findall(r'\[\[([A-Za-z_][\w]*)\s*:', lines[i]):
+                used = any(re.search(r'\[\[' + re.escape(v) + r'\]\]', l)
+                           for j, l in enumerate(lines)
+                           if j != i and j not in drop and j not in rz_checks)
+                if used:
+                    fa.hand_decision = (fa.hand_decision or
+                                        f'the deleted `cqrt_rz` CHECK at line {i+1} BINDS '
+                                        f'FileCheck variable [[{v}]], which surviving CHECK '
+                                        f'lines still use: the Rz IS this fixture\'s subject')
+                    return lines, actions
+        for i in rz_checks:
+            drop.add(i)
+            actions.append(f'CHECK deleted (uncontrolled Rz gone): {lines[i].strip()}')
+        # (b) A `CHECK-NEXT` whose ANCHOR was a deleted plain `CHECK` must be promoted
+        # back to a plain `CHECK`: the deleted CHECK was a re-anchor point, so the
+        # surviving `-NEXT` would now demand adjacency to a line it never followed.
+        for i in sorted(rz_checks):
+            if re.match(r'^\s*;\s*CHECK[-\w]*-NEXT\s*:', lines[i]):
+                continue                       # the run started ON a -NEXT: adjacency holds
+            j = i + 1
+            while j < len(lines) and (j in drop or not CHECK_RE.match(lines[j])):
+                if CHECK_RE.match(lines[j]) and j not in drop:
+                    break
+                j += 1
+            if j < len(lines):
+                m = re.match(r'^(\s*;\s*)(CHECK[-\w]*?)-NEXT(\s*:)', lines[j])
+                if m:
+                    lines[j] = (m.group(1) + m.group(2) + m.group(3)
+                                + lines[j][m.end():])
+                    actions.append(f'CHECK-NEXT promoted to CHECK (anchor deleted): '
+                                   f'{lines[j].strip()}')
+    # --- 4. header note
+    out = [l for i, l in enumerate(lines) if i not in drop]
+    case = {'U': 'uncontrolled -> deleted (D2)',
+            'A': 'tainted arm -> void call, merge phi dissolved',
+            'S': 'angle select -> void call on the select (PRD P2)',
+            'MIX': 'mixed sites: see the migration report',
+            'H': 'hand decision',
+            'D': 'dead declare erased',
+            'M': 'no IR change'}[fa.cls]
+    note = f'; 3qlq: migrated from register cq_phi ({case})'
+    ins_at = 0
+    for i, l in enumerate(out):
+        if l.startswith(';'):
+            ins_at = i + 1
+        elif l.strip() == '':
+            continue
+        else:
+            break
+    out.insert(ins_at, note)
+    return out, actions
+
+
+# --------------------------------------------------------------------------
+# Oracle equivalence check (run BEFORE --apply; the on-disk file is the original)
+RZ_UNCTL_RE = re.compile(r'call void @cqrt_rz_(i1|i8|i16|i32|i64|f16|f32|f64|f80)\(')
+RZ_DECL_RE = re.compile(r'^declare\s+void\s+@cqrt_rz_')
+PHI_DECL_ANY_RE = re.compile(r'^declare\b.*@cq_phi')
+
+
+def _norm(out: str) -> list[str]:
+    keep = []
+    for l in out.split('\n'):
+        if RZ_UNCTL_RE.search(l) and '_controlled' not in l:
+            continue
+        if RZ_DECL_RE.match(l) or PHI_DECL_ANY_RE.match(l):
+            continue
+        if l.startswith("; ModuleID = ") or l.startswith('source_filename = '):
+            continue
+        l = l.rstrip()
+        if not l:
+            continue          # blank-line count is not part of the contract
+        keep.append(l)
+    return keep
+
+
+def run_oracle(cq_opt: str, cq_pass: str, path: str):
+    import subprocess
+    p = subprocess.run([cq_opt, '-load-pass-plugin', cq_pass,
+                        '-passes=cq-lowering', '-S', path],
+                       capture_output=True, text=True)
+    return p.returncode, p.stdout, p.stderr
+
+
+def verify_oracle(path: str, fa: FileAnalysis, cq_opt: str, cq_pass: str, tmpdir: str,
+                  opt_bin: str | None = None):
+    """Return (verdict, detail).
+
+    For class U/D the ORACLE is a real equivalence oracle: the migrated module
+    contains no `cq_phi` at all, so the pre-3qlq binary answers it exactly as the
+    Inc-1 binary will.  Verdicts OK / EXIT / STDERR / EXTRA-DIFF / RZ-LEFT.
+
+    For class A/S/MIX the migrated module contains `call void @cq_phi(double)`,
+    which the ORACLE cannot lower -- there is nothing to compare.  The check
+    degrades to WELL-FORMEDNESS (`opt -passes=verify`): PARSE-OK / PARSE-FAIL.
+    """
+    new_lines, _ = rewrite(path, fa, do_checks=False)
+    tmp = os.path.join(tmpdir, os.path.basename(path))
+    with open(tmp, 'w') as fh:
+        fh.write('\n'.join(new_lines))
+    if fa.cls not in ('U', 'D'):
+        if not opt_bin:
+            return 'PARSE-SKIP', 'no --opt binary given'
+        import subprocess
+        p = subprocess.run([opt_bin, '-passes=verify', '-disable-output', tmp],
+                           capture_output=True, text=True)
+        if p.returncode != 0:
+            return 'PARSE-FAIL', p.stderr.strip().split('\n')[0][:200]
+        return 'PARSE-OK', 'module verifies'
+    rc0, o0, e0 = run_oracle(cq_opt, cq_pass, path)
+    rc1, o1, e1 = run_oracle(cq_opt, cq_pass, tmp)
+    if (rc0 == 0) != (rc1 == 0):
+        return 'EXIT', f'oracle exit {rc0} -> {rc1}'
+    if rc0 != 0:
+        s0 = [l for l in e0.split('\n') if 'error' in l]
+        s1 = [l for l in e1.split('\n') if 'error' in l]
+        if s0 != s1:
+            return 'STDERR', f'{s0} -> {s1}'
+        return 'OK', 'decline unchanged'
+    n0, n1 = _norm(o0), _norm(o1)
+    if n0 != n1:
+        import difflib
+        d = list(difflib.unified_diff(n0, n1, 'orig', 'migrated', n=1, lineterm=''))
+        return 'EXTRA-DIFF', '\\n'.join(d[:24])
+    if fa.cls in ('U', 'D'):
+        left = [l for l in o1.split('\n')
+                if RZ_UNCTL_RE.search(l) and '_controlled' not in l]
+        if left:
+            return 'RZ-LEFT', left[0].strip()
+    return 'OK', f'{len(o0.split(chr(10))) - len(n0)} rz/decl line(s) removed'
+
+
+def probe_theta_swap(path: str, fa: FileAnalysis, cq_opt: str, cq_pass: str, tmpdir: str):
+    """Proposed disposition probe for a HELD fixture.
+
+    Many held fixtures use an UNCONTROLLED `cq_phi` merely as "a gate on a
+    handle" -- the subject is uncompute / mux / measurement ordering, not Rz.
+    Substituting the OTHER rotation (`cq_theta`, which keeps its register under
+    D5) is then a semantics-preserving rewrite for the fixture's PURPOSE.  This
+    probe MEASURES that on the oracle: same exit code AND the same `error` lines
+    as the ORIGINAL means the swap is a safe proposal, not a guess.
+    """
+    with open(path) as fh:
+        txt = fh.read()
+    new = txt
+    for s in fa.sites:
+        new = re.sub(r'@' + re.escape(s.sfx) + r'(?![\w.$])',
+                     '@cq_theta_' + s.sfx[len('cq_phi_'):], new)
+    new = re.sub(r'^declare\s+(\S+)\s+@cq_theta_([\w.$]+)\((.*)\)\s*$',
+                 lambda m: f'declare {m.group(1)} @cq_theta_{m.group(2)}({m.group(3)})',
+                 new, flags=re.M)
+    # collapse the now-duplicated cq_theta declares
+    seen = set()
+    out = []
+    for l in new.split('\n'):
+        m = re.match(r'^declare\s+\S+\s+@(cq_theta_[\w.$]+)\(', l)
+        if m:
+            if m.group(1) in seen:
+                continue
+            seen.add(m.group(1))
+        out.append(l)
+    tmp = os.path.join(tmpdir, 'theta_' + os.path.basename(path))
+    with open(tmp, 'w') as fh:
+        fh.write('\n'.join(out))
+    rc0, o0, e0 = run_oracle(cq_opt, cq_pass, path)
+    rc1, o1, e1 = run_oracle(cq_opt, cq_pass, tmp)
+    s0 = [l for l in e0.split('\n') if 'error' in l]
+    s1 = [l for l in e1.split('\n') if 'error' in l]
+    if (rc0 == 0) != (rc1 == 0):
+        return 'THETA-NO', f'exit {rc0} -> {rc1}'
+    if rc0 != 0:
+        return ('THETA-OK', 'same diagnostic') if s0 == s1 else ('THETA-NO', f'{s1}')
+    return 'THETA-ACCEPTS-BOTH', 'both accept; compare the streams by hand'
+
+
+# --------------------------------------------------------------------------
+def main(argv=None):
+    ap = argparse.ArgumentParser(description=__doc__,
+                                 formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument('--root', default=None, help='repo root (default: parent of tools/)')
+    ap.add_argument('--only', default='*', help='glob over fixture BASENAMES')
+    ap.add_argument('--classes', default='U,A,S,MIX,D',
+                    help='comma list of classes to APPLY (default U,A,S,MIX,D)')
+    ap.add_argument('--no-checks', action='store_true',
+                    help='never touch CHECK lines (IR body only)')
+    g = ap.add_mutually_exclusive_group(required='--limits' not in (argv or sys.argv[1:]))
+    g.add_argument('--report', action='store_true')
+    g.add_argument('--dry-run', action='store_true')
+    g.add_argument('--apply', action='store_true')
+    g.add_argument('--verify-oracle', action='store_true',
+                   help='run the ORACLE cq-opt on the file AND on its in-memory '
+                        'migration and compare (run BEFORE --apply)')
+    g.add_argument('--probe-theta', action='store_true',
+                   help='for each selected file, MEASURE whether swapping every '
+                        'cq_phi_<sfx> for cq_theta_<sfx> preserves the oracle '
+                        'disposition (a proposed disposition for HELD fixtures)')
+    ap.add_argument('--cq-opt', default=os.environ.get('CQ_OPT'))
+    ap.add_argument('--cq-pass', default=os.environ.get('CQ_PASS'))
+    ap.add_argument('--opt', default=os.environ.get('LLVM_OPT'),
+                    help='stock LLVM 19 opt, for the -passes=verify well-formedness check')
+    ap.add_argument('--hold-file', default=None,
+                    help='newline list of BASENAMES the mechanical migration must NOT '
+                         'touch (default tools/migrate_phi_fixtures.hold.txt)')
+    ap.add_argument('--write-hold', default=None,
+                    help='--verify-oracle: write the files whose ORACLE disposition '
+                         'CHANGED to this path (they become HAND-DECISION)')
+    ap.add_argument('--limits', action='store_true', help='print the walker limits and exit')
+    ap.add_argument('--migrate-tainted-angle', action='store_true',
+                    help="treat a class-H site (UNCONTROLLED, tainted angle) as a "
+                         "class-A rewrite -- the void call, NOT the D2 deletion. "
+                         "MEASURED: the uncontrolled tainted-angle decline survives "
+                         "the surface change, so deleting the call would discard the "
+                         "fixture's whole subject.")
+    ap.add_argument('--keep-merge-phi', action='store_true',
+                    help="when a merge phi's incomings carry DIFFERENT registers, "
+                         "KEEP the phi (it is a genuine data mux and usually the very "
+                         "thing the fixture declines) and only RAUW each cq_phi result "
+                         "to its base.  Without this the file is a hand decision.")
+    args = ap.parse_args(argv)
+    global MIGRATE_TAINTED_ANGLE, KEEP_MERGE_PHI
+    MIGRATE_TAINTED_ANGLE = bool(args.migrate_tainted_angle)
+    KEEP_MERGE_PHI = bool(args.keep_merge_phi)
+    if args.limits:
+        print(LIMITS)
+        return 0
+    root = args.root or os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    files = sorted(glob.glob(os.path.join(root, 'ir-pass', 'test', '*.ll')))
+    files = [f for f in files if fnmatch.fnmatch(os.path.basename(f), args.only)]
+    want = set(x.strip() for x in args.classes.split(',') if x.strip())
+
+    hold_path = args.hold_file or os.path.join(root, 'tools', 'migrate_phi_fixtures.hold.txt')
+    hold: dict[str, str] = {}
+    if os.path.exists(hold_path):
+        for l in open(hold_path):
+            l = l.split('#', 1)[0].strip()
+            if not l:
+                continue
+            parts = l.split(None, 1)
+            hold[parts[0]] = parts[1] if len(parts) > 1 else 'held'
+
+    counts = defaultdict(int)
+    verdicts = defaultdict(int)
+    held_out: list[tuple[str, str]] = []
+    rows = []
+    tmpdir = None
+    if args.verify_oracle or args.probe_theta:
+        import tempfile
+        if not args.cq_opt or not args.cq_pass:
+            print('this mode needs CQ_OPT and CQ_PASS (env or flags)', file=sys.stderr)
+            return 2
+        tmpdir = tempfile.mkdtemp(prefix='phi_migrate_')
+    for path in files:
+        with open(path) as fh:
+            txt = fh.read()
+        if 'cq_phi' not in txt:
+            continue
+        fa = analyze(path)
+        base = os.path.basename(path)
+        if base in hold and not args.write_hold:
+            fa.hand_decision = fa.hand_decision or ('HOLD: ' + hold[base])
+        if args.report and fa.sites:
+            # rewrite IN MEMORY so the rewrite-time HAND-DECISIONS (an undissolvable
+            # merge phi, a dominance failure, a surviving symbol reference, a deleted
+            # CHECK that BINDS a FileCheck variable) appear in the report rather than
+            # only at --apply time.  `do_checks` must match what --apply would pass,
+            # or the CHECK-side hand decisions stay invisible here.
+            rewrite(path, fa, do_checks=(fa.cls in ('U', 'D')) and not args.no_checks)
+        counts[fa.cls] += 1
+        per = {k: sum(1 for s in fa.sites if s.cls == k) for k in 'UASH'}
+        rows.append((os.path.basename(path), fa.cls, per['U'], per['A'], per['S'],
+                     per['H'], len(fa.decl_lines),
+                     ';'.join(fa.notes), fa.hand_decision or ''))
+        if args.report:
+            continue
+        if args.probe_theta:
+            if not fa.sites:
+                continue
+            v, detail = probe_theta_swap(path, fa, args.cq_opt, args.cq_pass, tmpdir)
+            verdicts[(fa.cls, v)] += 1
+            print(f'{v}\t{base}\t[{fa.cls}]\t{detail}')
+            continue
+        if fa.cls not in want or fa.cls in ('M',):
+            continue
+        if args.verify_oracle:
+            if fa.hand_decision and not args.write_hold:
+                verdicts[(fa.cls, 'HAND-SKIP')] += 1
+                continue
+            v, detail = verify_oracle(path, fa, args.cq_opt, args.cq_pass, tmpdir, args.opt)
+            verdicts[(fa.cls, v)] += 1
+            if v not in ('OK', 'PARSE-OK'):
+                print(f'{v}\t{base}\t[{fa.cls}]\t{detail}')
+                if v in ('EXIT', 'STDERR', 'EXTRA-DIFF', 'RZ-LEFT', 'PARSE-FAIL'):
+                    held_out.append((base, f'{v}: {detail[:150]}'))
+            continue
+        do_checks = (fa.cls in ('U', 'D')) and not args.no_checks
+        new_lines, actions = rewrite(path, fa, do_checks)
+        if args.apply and not fa.hand_decision:
+            with open(path, 'w') as fh:
+                fh.write('\n'.join(new_lines))
+        if args.dry_run:
+            print(f'--- {os.path.basename(path)} [{fa.cls}]'
+                  + (f'  HAND-DECISION: {fa.hand_decision}' if fa.hand_decision else ''))
+            for a in actions:
+                print(f'    {a}')
+
+    print('class counts:', dict(sorted(counts.items())))
+    if args.probe_theta:
+        print('theta-swap verdicts:',
+              dict(sorted((f'{c}/{v}', n) for (c, v), n in verdicts.items())))
+    if args.verify_oracle:
+        print('oracle verdicts:', dict(sorted((f'{c}/{v}', n) for (c, v), n in verdicts.items())))
+        if args.write_hold:
+            with open(args.write_hold, 'w') as fh:
+                fh.write('# generated by migrate_phi_fixtures.py --verify-oracle '
+                         '--write-hold\n# BASENAME  reason\n')
+                for b, r in sorted(held_out):
+                    fh.write(f'{b}  {r}\n')
+            print(f'wrote {len(held_out)} hold entries to {args.write_hold}')
+    if args.report:
+        print('file\tclass\tU\tA\tS\tH\tdeclares\tnotes\thand_decision')
+        for r in rows:
+            print('\t'.join(str(x) for x in r))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

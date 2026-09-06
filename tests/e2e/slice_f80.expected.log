@@ -12,11 +12,9 @@ cqrt_ry_f80(h4, 0x1.999999999999ap-4)
 cqrt_alloc_f80(0xap-2) -> h5
 cqrt_ry_f80(h5, 0x1.999999999999ap-3)
 cq_template_fadd_f80(h4, h5) -> h6
-cqrt_rz_f80(h6, 0x1.3333333333333p-2)
-cqrt_rz_f80(h6, -0x1.3333333333333p-2)
+cq_template_fcmp_oeq_f80_hl(h6, 0x8p-1) -> h7
+cqrt_rz_i1(h7, 0x1.3333333333333p-2)
+cq_template_fcmp_oeq_f80_hl_unc(h7, h6, 0x8p-1)
 cq_template_fadd_f80_unc(h6, h4, h5)
 cqrt_free(h6)
-cqrt_ry_f80(h5, -0x1.999999999999ap-3)
-cqrt_free(h5)
-cqrt_ry_f80(h4, -0x1.999999999999ap-4)
-cqrt_free(h4)
+cqrt_free(h7)

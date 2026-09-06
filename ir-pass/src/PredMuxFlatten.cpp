@@ -630,6 +630,11 @@ ConeNode classifyConeNode(const Value *V) {
     // classifies exactly as before.
     const Function *CF = Call->getCalledFunction();
     if (CF && (CF->getName().starts_with("cq_theta_") ||
+               // ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 — the `@cq_phi_<sfx>` family is
+               // RETIRED and `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE, so the
+               // register-free `void @cq_phi(double)` never reaches here. Kept, not deleted
+               // (PRD §6.2 row P6); see the note at `ArmClassify.cpp`'s `isPhiCall` for why
+               // widening it would read the wrong operand.
                CF->getName().starts_with("cq_phi_"))) {
       // The ANGLE (arg 1) never becomes the result, but a poison angle is still
       // a garbage `cqrt_ry`/`cqrt_rz` parameter, so refuse it for both families.

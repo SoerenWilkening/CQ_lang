@@ -29,8 +29,9 @@
 ; the nest over-declines, which is the safe direction (Prime Directive).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @slice(i32 %u0, double %a) {
@@ -44,12 +45,11 @@ mid:
   br i1 %c2, label %inner, label %merge
 
 inner:
-  %g1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 
 merge:
-  %p = phi i32 [ %q, %entry ], [ %q, %mid ], [ %g1, %inner ]
-  %w = call i32 @cq_theta_si32(i32 %p, double 2.500000e-01)   ; POST-region Ry
+  %w = call i32 @cq_theta_si32(i32 %q, double 2.500000e-01)   ; POST-region Ry
   %m = call i32 @cq_measure_si32(i32 %w)
   ret i32 %m
 }

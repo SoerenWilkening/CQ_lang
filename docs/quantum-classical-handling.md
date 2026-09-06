@@ -239,13 +239,24 @@ boundary with the physical-level boundary.
 Two operations that look like they should introduce taint but
 deliberately do not:
 
-- **`cq_phi` (Rz).** A phase rotation on a computational-basis
-  state adds only global phase — a physical no-op. Adding taint
-  here would force allocation of a qubit register for a value
-  that will never be observed in superposition. The pass treats
-  `cq_phi` on a classical operand as a deletion candidate, and
-  `cq_phi` on a tainted operand as taint-propagating only — no
-  new source (see [`backend.md`](./backend.md) §6).
+- **`cq_phi` (the branch phase).** Since Increment 1 of bd
+  `test_C_libtooling-3qlq` the surface is `void cq_phi(double φ)`:
+  it has **no data operand at all**. So it introduces no taint and
+  **propagates none** — there is nothing for taint to flow through.
+  It multiplies the amplitude of the branch it sits in by `e^{iφ}`,
+  and is ordered by the block it sits in rather than by a data
+  dependence. Its **one** operand is the **angle**, which is
+  classical; a quantum-derived angle is a loud decline
+  (`cq rotation lowering: unsupported quantum-derived rotation
+  angle`, or `cq controlled lowering: rotation angle under quantum
+  control` inside a tainted region), never a new source. Under a
+  tainted condition it lowers by **kickback** onto the condition
+  flag; uncontrolled or classically controlled it is a global phase
+  and is deleted (see [`backend.md`](./backend.md) §6.1a and
+  [`frontend.md`](./frontend.md) §3.3). *Before that increment
+  `cq_phi` took a register and was taint-propagating-but-not-a-source
+  for the reason the rest of this bullet used to give; that reading
+  is history.*
 - **Plain declarations.** A `int a = 3` is classical. There is no
   surface form that declares a variable "intended quantum" without
   invoking a gate. This is the deliberate replacement of the

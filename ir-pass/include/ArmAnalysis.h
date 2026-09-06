@@ -25,6 +25,8 @@
 
 namespace llvm {
 class BasicBlock;
+class BranchInst;
+class PHINode;
 class CallInst;
 class CmpInst;
 class DominatorTree;
@@ -37,6 +39,7 @@ class Value;
 namespace cq {
 
 class WidthDispatch;
+struct ControlRegion;
 struct CondTree;
 struct ControlPlan;
 struct TaintSet;
@@ -201,6 +204,110 @@ enum class AngleSelectDisp { Accepted, Declined, NotApplicable };
 // bad arm). Pure analysis; the derivation is at the definition in
 // `ArmClassify.cpp`.
 bool angleSelectArmsAdmissible(const llvm::Value *A, const llvm::Value *B);
+
+// bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row P1) —
+// the FLAT KICKBACK DIAMOND classifier. Same three-way disposition contract as
+// `classifyAbortPark` / `classifyGuardedStoreArm` / `classifyClassicalCallArm`,
+// and for the same reason: it is a PRE-PEEL in `handleBranchRegion`, tried
+// BEFORE `recoverRegion`, because a void arm produces no merge φ and every one
+// of `recoverRegion`'s recognizers requires a non-null `soleMergePhi`.
+//
+//   Accept        — `Region` is populated as a `PhaseKickback` region (Merge
+//                   NULL, MergeBB set) and the caller pushes it onto the plan.
+//   Declined      — a precise diagnostic has ALREADY been fired; the caller
+//                   returns and lowers nothing.
+//   NotApplicable — `Region` may have been written and MUST be treated as
+//                   scratch by the caller (`handleBranchRegion` reuses one
+//                   `ControlRegion` across its pre-peels, exactly as it does for
+//                   the two existing ones); the shape is someone else's.
+//
+// Pure analysis (Rule 9): recognition is by SSA-value identity and nothing is
+// mutated.
+enum class PhaseKickbackDisp { Accept, Declined, NotApplicable };
+
+// The MERGE-TAIL ANGLE PHI of a kickback region, or false (bd
+// test_C_libtooling-3qlq Inc 1, orchestrator refinement (1), 2026-09-05).
+//
+// `clang -O1` does NOT always fold `if (c) cq_phi(A); else cq_phi(B);` into one
+// call on a `select` over the angle. When the two arms differ by more than the
+// angle — the MEASURED customer is `tests/e2e/slice_control_phase_ifelse_
+// derived.c`, whose true arm carries TWO phases and its false arm one — it
+// leaves a DIAMOND plus, in the merge block:
+//
+//     %a = phi double [ 1.250000e-01, %arm ], [ 7.500000e-01, %pred ]
+//     call void @cq_phi(double %a)
+//
+// i.e. the LAST phase of each arm sunk into the merge with its angle muxed. That
+// is the same P2 lowering as the `select` spelling — one `cqrt_rz_i1` per
+// incoming, on the region's own flag, bracketed by that incoming's polarity —
+// and it needs no arithmetic, so a run-time incoming would be admissible too
+// (they are `ConstantFP` in every measured case).
+//
+// ⚠ THIS PREDICATE IS ALSO A CORRECTNESS FENCE FOR THE PLAIN P1 ACCEPT, not only
+// the entry to a widening. `flattenRegion` splices the arm and merge blocks into
+// `Pred` and erases them; a PHINode left standing in that merge becomes a phi
+// with the wrong predecessor count in a block that no longer branches — MEASURED
+// as `PHI nodes not grouped at top of basic block!` — a BROKEN MODULE, on
+// exactly the customer above.
+//
+// ⚠ AND SAY WHAT `opt` DOES WITH IT, because the first spelling of this sentence
+// said "at `opt` exit 0" and that is MEASURED FALSE (Rule-13 round-1 finding
+// F-L3-5, re-measured here). `cq-opt` builds the pipeline
+// `CQLoweringPass -> VerifierPass -> print` (`ir-pass/tools/cq_opt_main.cpp`),
+// and `VerifierPass`'s default `FatalErrors=true` makes a failure a
+// `report_fatal_error`: the process ABORTS with
+// `LLVM ERROR: Broken module found, compilation aborted!`, **exit 134
+// (SIGABRT)**, and NO module is written (measured:
+// `opt -disable-verify -passes=verify` on a dominance-violating module,
+// rc=134). Stock `opt` is the same. So a broken module is loud, not silent, and
+// nothing in this tree relies on the false claim.
+//
+// The claim mattered enough to correct rather than delete: a false "exit 0 on a
+// verifier failure" in the Rule-13 core would tell the next reader that every
+// fixture relying on verify-clean-implies-exit-0 is weaker than documented,
+// which is not true and would license the wrong kind of caution. What IS true and
+// worth carrying: `cq-opt` exits at the FIRST `DS_Error`
+// (`LLVMContext::diagnose`'s default handler `exit(1)`) and never writes `-o`, so
+// two independent declines in one module print ONE line — which is why a decline
+// can never be masked by a later stage's abort.
+//
+// The FENCE itself is unaffected and stays exactly as it was: the classifier must
+// decide about EVERY phi in the merge -- this one it claims and the emitter
+// erases, and any other one makes the whole region `NotApplicable`.
+//
+// ONE SPELLING, asked by BOTH the classifier (to accept) and the emitter (to
+// re-validate before mutating) — never two (Rule 14). On true, `Phi` and
+// `Consumer` are set; on false they are untouched.
+bool phaseAngleTail(llvm::BasicBlock *MergeBB, const TaintSet &Taint,
+                    llvm::PHINode *&Phi, llvm::CallInst *&Consumer);
+
+// `ClaimedSelects` (bd test_C_libtooling-3qlq Inc 1 part B, P3) collects the
+// LOGICAL `select i1` nodes of an ACCEPTED compound condition tree. Those
+// selects are part of THIS region's condition — not data muxes — so the caller's
+// tainted-`select` scan must skip them, exactly as `Claimed` makes it skip an
+// accepted nest's inner `br`. WITHOUT IT the same `select i1 %a, i1 %b, i1 false`
+// is handed to `classifySelectRegion` as an i1 DATA select, accepted, and
+// `emitSelectRegion` then dereferences a select this emitter has already erased
+// — a SIGSEGV on the flagship `if (q==5 && r==3) cq_phi(θ)` customer, MEASURED
+// before the set existed. May be null (a caller with no select scan).
+PhaseKickbackDisp classifyPhaseKickback(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
+
+// bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 register-free
+// PHASE NEST (the one `clang -O1` did NOT fold to a compound branch; the folded
+// one is P3). On ACCEPT `Region` is a single `PhaseKickbackNest`, the inner `br`
+// is added to `ClaimedBranches` (the FA0 blocker — the inner branch recovers FLAT
+// in isolation and would false-decline) and both trees' logical `select i1` nodes
+// to `ClaimedSelects`. Declines fire the precise per-shape string; NotApplicable
+// falls through to the caller's ordinary shape recovery. See the definition's
+// header for the unitary and for why this is ONE region and not the 4.3 pair.
+PhaseKickbackDisp classifyPhaseKickbackNest(
+    llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
+    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    llvm::SmallPtrSetImpl<llvm::BranchInst *> *ClaimedBranches,
+    llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects);
 
 AngleSelectDisp classifyAngleSelect(llvm::SelectInst *Sel, const CondTree &Tree,
                                     TaintSet &Taint, WidthDispatch &wd,

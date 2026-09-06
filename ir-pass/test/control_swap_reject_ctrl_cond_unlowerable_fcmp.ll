@@ -14,25 +14,33 @@
 ; ordered/unordered comparison family, `true`/`false` are the only out-of-set
 ; fcmp predicates left — so `false` is the standing residual for this call site.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control condition has no template under quantum control
+; NEW: cq controlled lowering: control condition has no template under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control condition has no template under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control condition has no template under quantum control
 ; CHECK-NOT: cqrt_cswap
 ; CHECK-NOT: cq_template_fcmp_false
+; 3qlq: migrated from register cq_phi (mixed sites: see the migration report)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %a) {
 entry:
   %q  = call double @cq_theta_f64(double %u0, double 5.000000e-01)
-  %qd = call double @cq_phi_f64(double %q, double 9.000000e-01)
-  %c  = fcmp false double %qd, 5.0       ; OUT-OF-SCOPE control predicate (`false`)
+  %c  = fcmp false double %q, 5.0       ; OUT-OF-SCOPE control predicate (`false`)
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call double @cq_phi_f64(double %qd, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi double [ %q1, %arm ], [ %qd, %entry ]
-  %m  = call double @cq_measure_f64(double %qm)
+  %m  = call double @cq_measure_f64(double %q)
   ret double %m
 }

@@ -1,14 +1,367 @@
 # PRD — Retire the swap route: register-free `cq_phi` (branch phase by kickback) + value arms by controlled-copy merge
 
-> **Status:** proposed and owner-scoped 2026-09-05 (seven decisions, §2, settled in
-> one owner conversation and recorded here verbatim in substance). Extends Phase 4
-> (`ArmClassify` / `SwapRouteEmit` / `NestedRouteEmit` / `SwitchRouteEmit` /
+> **Status:** owner-scoped 2026-09-05 (seven decisions, §2, settled in
+> one owner conversation and recorded here verbatim in substance). **Increments 0
+> and 1 are IMPLEMENTED, Rule-13-reviewed, and are now
+> LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the
+> orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded in
+> the landing commit message; `git log main -1` shows the hash) **after the
+> re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is implemented
+> + round-1 reviewed on branch `3qlq-inc2`, NOT landed — a rebase onto the landed
+> Inc 1 is owed.**
+> **HISTORY (dated, kept — do not delete it).** The first clearance
+> (2026-09-05, `inc1-records/session-0a61aa31/clearance.md`) returned **BLOCK** on
+> finding C-1 (a mixed loop — invariant root register with D4's per-bit condition
+> PLUS a second loop-carried register — leaked its `and` rails per activation where
+> the hand-unrolled twin and the pre-3qlq oracle both discharge them), and Inc 0/1
+> sat off `main` on branch `3qlq-inc1` until that was disposed of.
+> **2026-09-06: C-1 was FIXED on branch `3qlq-inc1-fix-c1`** — `LoopLowering`'s
+> `Collapsed` branch now ALSO collects the loop-invariant root mints beside the
+> carried roots (a separate set unioned into `Roots` only on success, with a
+> `CarriedRoots` skip so the collapse's own rail is not judged by clause (iii)), on
+> clause (ii)'s UNCHANGED (I1) proof; witnessed by
+> `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
+> pinned by `control_phase_kickback_mixed_invariant_carried_inloop.ll`.
+> **⚠ THAT FIX TOOK THREE ROUNDS ON BRANCH `3qlq-inc1-fix-c1`, ALL 2026-09-06:**
+> round 1 = the CAPABILITY (the clearance BLOCK's fix, above); **round 2** = TWO MORE
+> CONFIRMED MEMBERS of the same class in the fix's own neighbourhood (F-C1-1 /
+> F-C1-2) — and it introduced a confirmed silent miscompile of its OWN; **round 3** =
+> the NARROWING that closes that one and a second found while building its tripwire
+> (F-C1B-1 / F-C1C-1 / F-C1B-2, notes §3.11), every change in the refuse direction.
+> **The independent lens on round 3 graded it CLEAR-WITH-ITEMS** (two DOC findings,
+> applied; one CONFIRMED miscompile it found is PRE-EXISTING on the pre-3qlq oracle
+> and is filed OUT of this epic as bd `test_C_libtooling-eqpx` — F-C1C-B, notes
+> §3.12). **The RE-CLEARANCE then ran on that tree (2026-09-06,
+> `inc1-records/session-adc5590a/clearance2.md`) and returned
+> `CLEAR-WITH-OWNER-QUESTIONS` — the BLOCK is CLOSED and Inc 0 + Inc 1 LANDED on
+> `main` the same day. What the verdict leaves open is four owner questions and one
+> record item, all of them DISCLOSED leak/over-decline classes that pre-date this
+> branch (OQ-C2-1 `hasOneUse`, OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
+> OQ-C2-4 the over-decline list) — see E10 below.** ⚠ READ
+> **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
+> implementation can be diffed, and where they disagree the errata block wins.
+> Extends Phase 4
+> (`ArmClassify` / `SwapRouteEmit` / `NestedRouteEmit` — since DELETED by Inc 1 —
+> / `SwitchRouteEmit` /
 > `SwitchValueEmit` / `AngleSelectEmit`), the 8h7d.5 rolled in-loop path and the
 > drbq control-in-place epic. **A Rule-13 core change** in every increment.
 > **Adds NO runtime symbol** (§5) — the emitted set SHRINKS. **Changes the
 > frontend surface** (`CQ.h`: `cq_phi` loses its register argument and its 15-width
 > family, §4). Implementing epic: bd `test_C_libtooling-3qlq` (children `.1`–`.3`
 > = Inc 0–2, plus filed follow-ons).
+
+## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing)
+
+> **This block is dated and additive. The sections below are left as WRITTEN, so
+> that what was designed and what was built can be diffed; where they disagree,
+> THIS BLOCK WINS.** Reproducers and full arguments:
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1 (adversarial round 1, eight lenses), §2
+> (round 2, two lenses + the "what else runs once before round 2" stage table) and
+> §3 (the clearance, the three C-1 fix rounds and their lenses — E10).
+>
+> **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
+> register-free `cq_phi` by kickback, parts A and B) are **LANDED on `main`
+> 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of
+> branch `3qlq-inc1-fix-c1`, whose tip is recorded in the landing commit message;
+> `git log main -1` shows the hash) **after the re-clearance verdict
+> `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `inc1-records/session-adc5590a/clearance2.md`). HISTORY, dated: they were
+> implemented on branch `3qlq-inc1` and held OFF `main` from 2026-09-05 by the first
+> clearance's BLOCK on C-1 (see the Status header); C-1 was FIXED on
+> `3qlq-inc1-fix-c1` over THREE rounds on 2026-09-06 — capability, then two more
+> members plus a miscompile of round 2's own, then the narrowing — the round-3 lens
+> graded CLEAR-WITH-ITEMS, and the re-clearance on that tree cleared it (E10).
+> **Increment
+> 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
+> plan, `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
+> 7.2 `AbortParkEmit`, and its branch `3qlq-inc2` owes a rebase onto the landed
+> Inc 1.
+
+**E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
+F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
+**not** `_unc`-reversed and **not** freed: it is left ALLOCATED and ENTANGLED with
+`out`. That is physically sound while `p` is retained — nothing is freed dirty, so
+Rule 6 holds — but it is not what the sentence says, and the difference matters to
+anyone reasoning about ancilla cost or about a later `cq_invert`. Read §3's value-arm
+paragraph and §7.1 as "`f` freed clean; `t` left allocated". A consequence worth
+carrying: bd `3qlq.5` (freeing the value-arm SOURCE) is **unsound by default** under
+this leak class.
+
+**E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
+The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →
+2 _unc → 2 free`. At the Increment-1a hand-back that held at **K = 1 only**: from
+K = 2 upward the `and` rail was never uncomputed and never freed (measured: 32 mints,
+**0** `_unc`, at K = 32), so each activation stranded one BIT of `q` — a which-path
+record — and the diffusion that makes a phase useful ran over K live records. Rolled
+and hand-unrolled were different unitaries. That was graded a **CONFIRMED miscompile**
+(F-L7-2 / F-L5-1 / F-L2-1b) and fixed by `LoopLowering::invariantRegisterRoots`; the
+row is now correct, MEASURED in the committed goldens —
+`slice_control_phase_perbit_loop.expected.log`: 4 `and_i32_hl` / 4 `and_i32_hl_unc` /
+8 `cqrt_free` at K = 4, and the K = 32 golden 32 / 32 / 64 — with
+`e2e-phase-perbit-loop-twin-identical` gating rolled == hand-unrolled.
+
+⚠ **AT THE RULE-13 CLEARANCE (2026-09-05) THIS PARAGRAPH SAID "TWO THINGS THE FIX DOES
+NOT COVER". THERE WERE THREE, AND THE THIRD WAS THE BLOCK.** Finding **C-1**: add ONE
+ancilla rotation to the body — `for (i…) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }`
+— and the SAME loop returns `Collapsed` from `collapseRailPhisIn` instead of
+`NotClaimed`, so `invariantRegisterRoots` was never asked and `markIfRailLocal` refused
+on `q` at its "accumulating loop-invariant tainted input" clause. Nothing was marked and
+all K bit rails leaked again: MEASURED at 542d588 **3 mints / 0 `_unc`** against **3/3**
+hand-unrolled and **3/3** on the pre-3qlq oracle's register-surface twin, at `opt` exit
+0, verify-clean and STRICT stage 2b `0 violation(s)`. Same defect as F-L5-1, one
+dispatch precondition over, inside D4's own idiom — a wrong unitary, not a leak, because
+the post-loop diffusion interferes branches carrying distinct which-path labels (Rule 8).
+**FIXED in the C-1 fix round (2026-09-06):** on the `Collapsed` branch
+`collapseFlattenedLoopRails` now ALSO collects the loop-invariant roots — into a
+SEPARATE set, unioned into the carried `Roots` only on success — and
+`invariantRegisterRoots` SKIPS any candidate the collapse already owns (its
+`CarriedRoots` parameter; without that skip the body's own `r = cq_theta(r,.1)` trips
+clause (iii) and takes the whole extension down). **The proof is clause (ii)'s own (I1)
+argument, unwidened**: a root mint lowers to `cqrt_alloc_<W>` and fails
+`ChainWalk::isInteriorTerminalHandle` clause (I1), so no adjoint `At` can ever be placed
+for it in the K-times body — a property of the ROOT, not of whether some other register
+crosses the back edge. WITNESS: the rolled trace is BYTE-IDENTICAL to the hand-unrolled
+twin's (37 = 37, gated by `e2e-phase-perbit-loop-mixed-twin-identical`), pinned in lit by
+`control_phase_kickback_mixed_invariant_carried_inloop.ll`, and the matrix gained its
+first second-CARRIED-register axis (`loop_twin_matrix.py` sub-grid F).
+
+⚠⚠ **AND THE SECOND C-1 REVIEW ROUND (2026-09-06) FOUND TWO MORE OF THE SAME CLASS IN THE
+FIX ITSELF, both CONFIRMED MISCOMPILES, both now FIXED** (notes §3.10). Read the count as
+*five* things this row did not cover, found over three rounds, not two. **F-C1-1**: one
+added line, `q = q + 7;` in the loop's PREHEADER, put the leak straight back (3 mints /
+**0** `_unc` rolled against 3/3 hand-unrolled, on 542d588 AND on the round-1 C-1 fix, with
+the pre-3qlq oracle at 3/3 rolled == unrolled) — because `invariantRegisterRoots` peels only
+through ops whose DISPOSITION is `InPlace` and a preheader `add` is `Unproven` there, while
+`lowerOps`' M-C lowers that very op IN PLACE. It is PRE-EXISTING and F-L5-1-era, not the C-1
+fix's: the same program with NO carried register leaks identically on both binaries. Fixed
+by asking the ONE owner of that decision, `ArithLowering::classifyInPlaceReassignment`, and
+COMMITTING to its answer via `taint.InPlaceRailOps` (with a `hasOneUse` stability conjunct
+and a rollback on failure). **F-C1-2**: the same mixed loop with an ONWARD (round-2) in-loop
+region leaked for two independent reasons — the "already claimed" fact was a caller LOCAL
+while the collapse happens in the ROUND-1 call (fixed by `taint.ClaimedRailRoots`, written
+at both collapse sites), and the round-2 delta was keyed on block MEMBERSHIP while a round-2
+region flattens into the very `Pred` a round-1 region already used (fixed by making
+`taint.InLoopFlattenedPreds` a per-block COUNT). WITNESSES: `e2e-phase-perbit-loop-mixed-preadd-twin-identical`
+(38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical` (47 = 47,
+was 41 vs 47), plus three lit accepts and two accept-and-leak controls.
+
+⚠⚠⚠ **AND THE THIRD C-1 REVIEW ROUND (2026-09-06) FOUND THAT THE SECOND ROUND'S OWN FIX HAD
+INTRODUCED A CONFIRMED MISCOMPILE, then found a SECOND one while building the tripwire for the
+first** (notes §3.11). Read the count as *seven* things this row did not cover, found over
+FOUR rounds on one function, and budget a fifth. **F-C1B-1**: the F-C1-1 commit asks
+`classifyInPlaceReassignment` at ROUND 1 and `lowerOps` honours the marking unconditionally,
+so a "classical immediate" that becomes TAINTED at round 2 (anything derived from a 6.5/4.5
+`%out`) was emitted as the classical operand of an in-place gate —
+`cqrt_addc_i32(%h4, %h_op)`, a QUANTUM RAIL HANDLE IN THE ABI'S CLASSICAL-IMMEDIATE SLOT,
+printed as the bare decimal `6`; the commuted spelling MUTATES THE WRONG RAIL. Four plain-C
+programs, `opt` exit 0, verify-clean, STRICT 2b clean, all correct on 542d588 and on the
+round-1 fix. The `hasOneUse` conjunct guarded G6/G7 and NOTHING guarded G2 — the 8h7d.5 lesson
+a fifth time. **F-C1C-1**: `hasOneUse` does not bound the post-RAUW user set either, because
+`lowerRotations` merges a whole theta chain onto ONE handle — `int q2=cq_theta(q,.3); int
+a=q2+7; … cq_measure(q)` made `q` and `a` the SAME register on the round-2 binary (measures
+`h0`,`h1`,**`h0`** where 542d588 and the hand-unrolled twin give `h0`,`h1`,**`h2`**). FIXED by
+(1a) a MONOTONE `isa<Constant>(Imm)` fence at the commit and (1b) a LOUD RE-VERIFICATION of
+the ONE fence at `lowerOps` for exactly the ops this path marked
+(`cq loop lowering: pre-loop in-place op no longer provable at lowering`; a silent fallback to
+out-of-place is not sound, because the body marking the commit licensed already stands). The
+same round narrowed `taint.ClaimedRailRoots` from a module-wide set of ROOTS to
+`(root, the CLAIMING loop's header)` — **F-C1B-2** — after measuring a program where loop A's
+claim marked loop B's body on a rail loop B never proved.
+⚠ **THE LENS ON ROUND 3 GRADED IT CLEAR-WITH-ITEMS AND FOUND A FURTHER MEMBER OF THE CLASS
+THAT IS *NOT* THIS EPIC'S — do NOT fold it into the seven above; the seven are this epic's,
+this one pre-dates it** — **F-C1C-B**, notes §3.12, bd `test_C_libtooling-eqpx`: the same
+"classical immediate turns tainted at round 2" defect reached through the LOOP writers
+(`tryCaseA`, `collapseRailPhisIn` step (3)) for the **`xor` stem, from plain C** —
+`cqrt_xorc_i32(h1, 6)` where the bare `6` is a template rail's HANDLE ID — reproducing
+byte-for-byte on the **pre-3qlq ORACLE 52d7764** and on every binary of this epic. It is
+PRE-EXISTING, so it neither blocks nor is charged to this branch; what it does retire is the
+sentence round 3 used to bound its own scope (*"the other three `InPlaceRailOps` writers mark
+a rail they PROVED with their own fences"*) — **their fences prove the RAIL; none of them
+proves the IMMEDIATE stays classical.** Round 3's own bound over its 262-program corpus is
+likewise corrected: **6 movers in scope plus `w3` by design**, and the lens's 299-program
+re-run reads **286 unchanged / 13 moved, 0 in the accept direction** (F-C1C-E).
+⚠ **TWO THINGS THE ROUND-3 FIX DOES NOT COVER, and both are NEW ENTRIES ON THIS LIST rather
+than inherited ones.** (a) A **`volatile`-load immediate** on the preheader op
+(`q = q + off;`) is no longer committed, so that loop returns to the pre-round-2 leak — 3
+mints / 0 `_unc`, byte-identical to 542d588 and to the round-1 fix. M-C itself still lowers
+the op in place; only the PREDICTION of that answer is refused (owner question OQ-C1-8).
+(b) A **chained-theta wire whose PRE-op SSA name is read after the loop** now DECLINES loudly
+where 542d588 accepted-and-leaked — F-C1C-1's own program, and the one-token workaround
+(dropping that read) still compiles and still discharges every per-trip rail (OQ-C1-7).
+
+⚠ **The other two are UNCHANGED and both remain Prime-Directive refusals rather than
+proofs.** (i) A hoisted loop-invariant **TEMPLATE** rail read by the body's condition is
+still refused and still leaks — **and the disclosure is now "ANY loop-invariant TEMPLATE
+rail", not only `q * 3`**: the clearance re-measured the class over a `sext` rail
+(`long long p = q;`), a Q+Q rail (`p = q + r`) and an ONWARD hoisted `mul`, and all three
+leak identically (Q-R1-1). **The second review round widened the disclosure again, and the
+new members are not casts the user wrote**: a bare `short q` makes `-O1` hoist a `sext` of
+its own (F-C1-3, `p/r5_short_inv.c` — a TYPE, not a cast, and the same 3/0 vs 3/3), and a
+preheader dtzb `add`/`xor` whose PRE-op value is read later (`int keep = q; q = q + 7; …
+cq_measure(keep)`) makes M-C itself go out of place and mint one (F-C1-1's own leak control,
+`control_phase_kickback_mixed_preheader_add_outofplace_leak_control.ll`, byte-unchanged on
+all three binaries). Its rolled trace is BYTE-UNCHANGED across the C-1 fix, pinned
+by `control_phase_kickback_mixed_hoisted_template_leak_control.ll`. (ii) A loop whose
+CONDITION REGISTER is loop-INVARIANT **and compared DIRECTLY** — `for (…) if (q == k)
+cq_phi(θ);` with `q` untouched in the body — **declines** `condition predates a
+non-diagonal gate`, because `-O1` LICM-hoists the compare out of the loop (bd `drbq.12`,
+arm-class-independent; the workaround is a body gate on `q` or an opaque threshold).
+Note (ii) is why D4's idiom uses a DERIVED per-bit condition: `(q>>i)&1` is loop-VARIANT
+even when `q` is not.
+
+**E3 — §6.3's "an arm with N>1 `cq_phi` calls" decline is NARROWED: the DIAMOND
+spelling ACCEPTS.** N calls in one arm emit **N `cqrt_rz_i1` gates on the one flag**,
+in source order, with one mint / strip / free and one `cqrt_x` bracket pair. Nothing
+is summed at compile time — each angle passes through verbatim and
+`P(φ₁)·P(φ₂) = P(φ₁+φ₂)` happens in the hardware — so §6.3's stated rationale ("summing
+angles is the 2b rounding class again") **has no subject on the Rz stem**; it is a
+Ry-stem reason, and declining would also have regressed four shipped accepts. Pinned by
+`control_phase_kickback_two_calls.ll` (2 `cqrt_rz_i1`, 0 `cqrt_x`, 1 `cqrt_free`).
+⚠ **Both `if/else` spellings still DECLINE** with ≥2 calls per arm (`-O1` emits either
+two angle selects on one compare, or a diamond with two merge-tail phis). So N-per-arm
+is a property of the DIAMOND spelling, not of the construct — loud and safe; widening
+means accepting multiple selects / tail phis on one flag, which is the same mechanism.
+
+**E4 — §6.2 row P5 (homogeneous phase `switch`) has NO plain-C `-O1` customer, and it
+ships hand-IR only.** Measured over seven spellings: a phase arm's entire body is one
+`call void @cq_phi(double)`, so every arm's suffix is identical modulo one operand and
+SimplifyCFG's common-code sinking ALWAYS applies — dense case values become a
+`@switch.table` of angles with ONE shared call, sparse ones a cascade joined by a
+`phi double`. N-gate arms sink too (measured at 1/2/3 and 4/3/2 gates). The table's
+tainted-index load makes the angle tainted, so both `-O1` outcomes are pinned as loud
+declines (including `control_phase_switch_reject_table_fold.ll`, which carries the
+verbatim `-O1` module). P5 therefore lowers on the IR `switch` only (3 accept + 7
+decline fixtures), `tests/e2e/slice_control_switch_phase.c` is kept in the tree
+**UNREGISTERED** with the measurement in its header, and its ctest entry was removed.
+Owner choice: accept P5 as hand-IR-only (the footing the `if/else` kickback arm has had
+since part A), or commission a TABLE-FOLD RECOGNIZER as its own increment — the table
+is `private unnamed_addr constant` with `ConstantFP` entries, so the N angles are
+statically known and the lowering is P5 with the case values read from the table. That
+recognizer is what would give P5 a real customer.
+
+**E5 — §6.2 row P6 does not reach P2: an ANGLE SELECT inside a rolled loop DECLINES**
+(`condition predates a non-diagonal gate`), although P6 lists P1–P3 as in-loop accepts.
+Pinned by `control_angle_select_phase_reject_in_loop.ll` and filed rather than fixed
+(Q-R1-2 / OQ-19). P1 and P3 in-loop are unaffected and are gated by
+`e2e-phase-grover-loop-twin-identical` and `e2e-phase-perbit-loop-twin-identical`.
+
+**E6 — three §6.3 rows moved, and one moved LAYER.** The **bare tainted `i1` condition**
+(Q4, filed as "Inc 1b") stayed a decline in Increment 1. The **Q+Q compare condition**
+was declining in the OPCODE layer (`no template for opcode 'icmp i1' in tainted context`)
+rather than the control layer — a Rule-1 "wrong layer" finding, since a fence that holds
+because a template is absent downstream is the weakest kind; it now declines in the
+CONTROL layer, per leaf, for P1 and P4 (P5 is structurally exempt). The **compound
+condition** row gained a recorded asymmetry: `collectCondTree`'s `AllowLogicalSelect` is
+ON for the branch phase and OFF for the 4.4 data select, so `if (q==5 && r==3) cq_phi(θ)`
+lowers while `int x = (q==5 && r==3) ? a : b;` declines — one grammar, two verdicts,
+decided by a flag. Safe direction, recorded rather than left implicit; the emitter
+already handles the widened case.
+
+**E7 — §6.4's migration estimate, re-measured against the tree.** The design figure was
+"540 of 1582 lit fixtures reference `cq_phi`". What actually happened, MEASURED with
+`git diff --name-status 52d7764 HEAD -- ir-pass/test`: **473 MODIFIED, 91 ADDED, 17
+REMOVED** (corpus 1582 → 1656), of which 104 were re-derived from the pass output, 143
+re-spelled, 16 swapped to `cq_theta` and 6 retired. **12 fixtures flipped DECLINE →
+ACCEPT** and were sent to their own adversarial lens (0 over-accepts: 8 legitimate, 4
+retired). ⚠ THREE fixtures LOST THEIR SUBJECT — they were built on
+`cq_phi(i32 CLASSICAL, θ)`, which is an ill-formed CQ program but a well-formed LLVM
+module, so no oracle comparison could see it; a mechanical re-spell would have left them
+green while pinning nothing. On the slice side: 66 `.c` files touched, every changed slice run
+through the full pipeline with **STRICT** stage 2b, and **30 `.c` REWRITTEN under an
+explicit disposition** (each with a `⚠ REWRITTEN PROGRAM` header naming the measurement).
+The ctest layer moved **+15 / −3** — MEASURED by `comm` over the two `ctest -N` name
+lists, this tree against the pre-3qlq oracle build — so 327 → 339 entries, `^e2e-` 317 →
+329, `^e2e-slice-` 293 → 302, over 304 committed goldens. The `--epic 3qlq` golden audit
+classified the 72 changed goldens as **29 substitution-only · 1 ambiguous-d · 1
+ambiguous-ca · 11 new-file · 30 FINDING**, and the 30 FINDINGs are exactly the 30
+rewritten programs (`comm` empty both ways; `--selftest` PASS, 0 survivors). *(The audit
+figures are prep-b2's final run; the ctest and golden counts are re-measured here.)*
+*(The C-1 fix round of 2026-09-06 then took the corpus **1656 → 1660**, the ctest layer
+**339 → 342** and `^e2e-` **329 → 332** — `^e2e-slice-` 302 → 304, the twin matrix 274 →
+284 cells, the goldens 304 → 306 — all MEASURED in `3qlq-inc1-fix-c1` with `ls
+ir-pass/test/*.ll | wc -l` and `ctest --test-dir build -N`, name-diffed against the
+542d588 build's list. Everything in the paragraph above is the INC-1 measurement and
+stands as written; note only that re-running its `git diff --name-status 52d7764 HEAD`
+census at the fix-round HEAD reads **95 A / 17 D / 473 M**, the 4 new fixtures being the
+difference. See E2 and notes §3.)*
+
+**E8 — the §12 owner questions were proceeded on as ASSUMED, and two of the assumptions
+were exercised.** Q3 (run-time angle arms admitted for the Rz stem) is load-bearing for
+one shipped accept fixture and is sound for the reason §3 gives — the Rz stem performs no
+subtraction, so the Ry stem's IEEE-rounding fence has no subject. Q1 (delete the unemitted
+`cqrt_rz_<W>` / `_controlled` declarations at the freeze, not now) is why those symbols are
+still declared; the freeze-gate decision is in `ROADMAP.md` Phase 11. Q4 (bare `i1`
+condition is Inc 1b) held. Q2 (no remark on deleting an uncontrolled `cq_phi`) held.
+
+**E9 — three CONFIRMED silent miscompiles were found IN Increment 1 by adversarial review
+and none by the 1656-fixture suite**, all `opt` exit 0, verify-clean and STRICT-stage-2b
+clean: the uncompute spine adjointing the kickback gate on a shared flag and cancelling
+the user's phase exactly (fixed by the `!cq.branchphase` membership record, refused by
+three spine predicates, recorded at all six emission sites); P7's D2 deletion running
+BEFORE the second round of control detection, so a branch phase under an onward tainted
+branch was deleted and its orphaned angle then lowered as quantum fp DATA (fixed by moving
+the stage after the round-2 fixpoint); and a stale-header retired `@cq_phi_<sfx>` call that
+was neither lowered nor declined (fixed by a reserved-name decline on any USE plus a loud
+end-of-pass survivor postcondition). Round 2 added a fourth of the same family — a
+once-running rail-collapse stage whose premise the second round falsifies. **Budget a
+third round on any successor increment**, and read the §2 stage table as a method.
+⚠ **THE HEADING'S "THREE" IS THE ROUND-1 COUNT AND IS NO LONGER THE TOTAL: it is FIVE,
+and the fifth was found by the CLEARANCE, after two adversarial rounds had already run
+over this exact code and handed it on.** The fifth is **C-1** (E2 above, notes §3.2): the in-loop
+entangled-rail leak's THIRD instance, one dispatch precondition over from round 1's
+F-L5-1 and round 2's F-R1-1, inside D4's own designated idiom, reached from four lines of
+plain C, at `opt` exit 0, verify-clean and STRICT stage 2b `0 violation(s)`. **Still none
+by the fixture suite** — 1656 fixtures were green at the clearance's own measured gate.
+Note what this does NOT say: the clearance ran 12 probes for a third ONCE-ONLY-STAGE
+instance and found none in the accept direction, so that family stands at two and C-1
+belongs to the other one. Two families, two counters. **The number to quote when scoping
+a successor is five confirmed silent miscompiles over three adversarial passes on ONE
+increment, one of them after the increment was already reviewed twice** — budget a round
+AFTER the round you think is last. ⚠ **E10 supersedes that number: it is SEVEN over FIVE
+rounds, and two of the seven were introduced by a fix.**
+
+**E10 — the C-1 disposition (2026-09-06), in five lines; reproducers and full arguments in
+`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12).**
+1. **Round 1 — the CAPABILITY.** The clearance BLOCK (C-1) was fixed by having
+   `LoopLowering`'s `Collapsed` branch ALSO collect the loop-invariant root mints beside
+   the carried roots, on clause (ii)'s UNCHANGED (I1) proof; witnessed by
+   `e2e-phase-perbit-loop-mixed-twin-identical` (37 = 37) and pinned by
+   `control_phase_kickback_mixed_invariant_carried_inloop.ll` (notes §3.3–§3.9).
+2. **Round 2 — TWO MORE CONFIRMED MEMBERS of the same class in the fix's own
+   neighbourhood** (F-C1-1, one added `q = q + 7;` in the PREHEADER; F-C1-2, the ONWARD
+   round-2 in-loop region), fixed by committing to `classifyInPlaceReassignment`'s answer
+   via `taint.InPlaceRailOps`, by `taint.ClaimedRailRoots` at both collapse sites, and by
+   making `taint.InLoopFlattenedPreds` a per-block COUNT (notes §3.10).
+3. **Round 3 — the NARROWING, because round 2 had INTRODUCED a confirmed silent miscompile
+   of its own** (F-C1B-1: a quantum rail handle in `cqrt_addc`'s classical-immediate slot),
+   plus a second found while building its tripwire (F-C1C-1) and a module-wide claim key
+   narrowed to per-loop (F-C1B-2): a monotone `isa<Constant>(Imm)` fence at the commit and a
+   LOUD re-verification of it at `lowerOps` — every change in the refuse direction
+   (notes §3.11).
+4. **The count, said as it is: SEVEN findings of one defect class over FIVE adversarial
+   rounds on ONE function (`markIfRailLocal` and its dispatch precondition), TWO OF THEM
+   INTRODUCED BY A FIX, plus ONE PRE-EXISTING member of the same class found in passing by
+   the round-3 lens** — F-C1C-B, reproducing byte-for-byte on the pre-3qlq oracle `52d7764`,
+   filed OUT of this epic as bd `test_C_libtooling-eqpx` (notes §3.12). **Zero** of the
+   seven were found by the fixture suite. Budget a round AFTER the round you think is last.
+5. **The re-clearance (2026-09-06, `inc1-records/session-adc5590a/clearance2.md`) returned
+   `CLEAR-WITH-OWNER-QUESTIONS`** and Inc 0 + Inc 1 LANDED on `main` the same day. It
+   measured the subject a strict improvement over `542d588` at every layer it could reach
+   (0 DECLINE→ACCEPT flips over 404 programs; 1667/1673 fixtures and 305/308 slices
+   byte-identical between the two binaries, every mover a discharge or a loud decline; 0
+   stage-2b violations; 1328 injection cells 0 MISSED / 0 DIRTY; the golden audit unmoved
+   beyond NEW-FILEs). What it leaves open are **four owner questions and one record item**,
+   every one a DISCLOSED class that PRE-DATES this branch: **OQ-C2-1** (the `hasOneUse`
+   stability conjunct refuses a commit M-C makes and the pre-3qlq oracle discharges —
+   `m11d`, a two-loop spelling with a diffusion after; E2's residual list does not name it
+   and no fixture pins it), **OQ-C2-2** (`short`/`sext` — F-C1-3 — is the one Q-R1-1 member
+   the oracle got RIGHT, so `r5` is an oracle regression), **OQ-C2-3** (widen the Q-R1-1
+   disclosure to a QROM-read invariant root and to `-O1`'s SIDEWAYS compare rewrite after a
+   preadd; both oracle twins decline), **OQ-C2-4** (the over-decline list gains `s20`, a
+   pre-op name measured BEFORE the op), and the record item that notes §3.12's "identical on
+   `542d588`" is true of the DEFECT and not of the TRACE for the four in-region `eqpx`
+   members. None is a wrong unitary this tree introduced.
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 

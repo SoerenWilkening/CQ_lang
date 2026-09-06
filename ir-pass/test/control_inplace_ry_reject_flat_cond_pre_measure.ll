@@ -34,9 +34,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (dead declare erased)
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1, i1 %cc) {

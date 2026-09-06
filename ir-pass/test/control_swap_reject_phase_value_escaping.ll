@@ -13,19 +13,50 @@
 ; is why control_swap_reject_nested_switch.ll's `ret`-of-measure arm stays generic.
 ; %p below is a raw `cq_phi` result (tainted, never measured), so it does.
 ;
+;
+; ===========================================================================
+; 3qlq(prep_a2): HAND DECISION — RE-SPELLED. This fixture's construct was built
+; on `%p = cq_phi_<sfx>(%q, θ)`: a value that CARRIES A RELATIVE PHASE. D1
+; retires that idea outright — under the register-free surface a phase attaches
+; to a BRANCH, never to a value — so the old module cannot be migrated, only
+; re-spelled onto whatever of the property survives, or retired.
+;
+; WHAT SURVIVES, AND IT IS MORE THAN PREP_A EXPECTED. The phase-carrier fence is
+; NOT vacuous: round-1 finding F-L5-6 widened it to
+; `functionCarriesBranchPhase(F, taint)` — "is there a branch phase in F that is
+; CONTROL-DEPENDENT on a tainted branch" — rather than scanning for a `cq_phi` in
+; the value's own lineage, which the register-free surface had made unanswerable
+; (the gate lands on a flag ancilla the register does not derive from).
+;
+; ⚠ SAY THE REACHABILITY CLAIM EXACTLY. fix_r1's table recorded this fence as
+; "pinned by: none reachable" and its notes as "LATENT at this HEAD — no plain-C
+; program reaches any of the three (each is held shut by an earlier shape
+; fence)". This file corrects the FIRST of those and NOT the second: the fence is
+; now PINNED, by the hand-written IR below, measured on `build/ir-pass/cq-opt`.
+; It says NOTHING about plain-C reachability, which was not re-measured here and
+; must not be inferred from a lit fixture.
+;
+; ⚠ DISCRIMINATOR, measured both ways ($SP/progress/prep_a2_work/pv/):
+;   * with the kickback (`pret.ll`, this module):  `phase-class value escaping`
+;   * without it (`pret_ctl.ll`, the SAME module minus the one `cq_phi` line):
+;     `non-reconverging value exit` — a DIFFERENT clause. The phase is what
+;     selects this message, not the non-reconverging exit it rides on.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}phase-class value escaping under quantum control
-; CHECK-NOT: cqrt_copy
+; CHECK: error{{.*}}cq controlled lowering: phase-class value escaping under quantum control
+
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
-define i32 @example(i32 %u0, double %a) {
+declare i32 @cq_measure_si32(i32)
+
+define i32 @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %p = call i32 @cq_phi_si32(i32 %q, double %a)   ; Rz — a relative-phase carrier
   %c = icmp sgt i32 %q, 5
-  br i1 %c, label %ph, label %cont
-ph:
-  ret i32 %p                                       ; phase-class value escaping
-cont:
-  ret i32 %q
+  br i1 %c, label %arm, label %merge
+arm:
+  call void @cq_phi(double 7.000000e-01)   ; the branch phase — %q is now PHASED
+  ret i32 %q                               ; ... and escapes down a value exit
+merge:
+  %m = call i32 @cq_measure_si32(i32 %q)
+  ret i32 %m
 }

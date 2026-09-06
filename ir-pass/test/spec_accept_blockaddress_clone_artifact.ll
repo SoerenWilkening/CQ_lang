@@ -37,6 +37,7 @@
 ;
 ; RUN: %filecheck %s --check-prefix=NOCORRUPT < %t.cqd0.ll
 ; NOCORRUPT-NOT: inttoptr (i32 1 to ptr)
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:o-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx"
@@ -44,7 +45,6 @@ target triple = "x86_64-apple-macosx"
 @slot = global ptr null
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @helper(i32 %b) {
@@ -70,8 +70,7 @@ define i32 @example(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %r = call i32 @helper(i32 %q)
-  %p = call i32 @cq_phi_si32(i32 %r, double 3.140000e+00)
-  %m = call i32 @cq_measure_si32(i32 %p)
+  %m = call i32 @cq_measure_si32(i32 %r)
   ret i32 %m
 }
 

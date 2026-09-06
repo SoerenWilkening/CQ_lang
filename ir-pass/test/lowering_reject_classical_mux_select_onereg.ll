@@ -26,16 +26,15 @@
 ; character-for-character (Rule 12).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main(i32 %u0, i1 %c) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %q2 = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)  ; fires regardless of %c
-  %s = select i1 %c, i32 %q2, i32 %q          ; false arm claims the pre-gate record
+  %s = select i1 %c, i32 %q, i32 %q          ; false arm claims the pre-gate record
   %m = call i32 @cq_measure_si32(i32 %s)
   ret i32 %m
 }

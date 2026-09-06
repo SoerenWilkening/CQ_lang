@@ -1,11 +1,22 @@
 /* CQ.h — user-facing intrinsic surface (taint-driven design).
  *
- * Three primitive families (cq_theta, cq_phi, cq_measure) and one
- * inversion bracket (cq_invert_begin/_end). Parsed by stock Clang;
- * lowered by the cq-lowering IR pass. See docs/frontend.md §3.
+ * TWO per-type primitive families — cq_theta (Ry, the sole taint source)
+ * and cq_measure (the sole sink) — each declared at 14 standard C scalar
+ * types plus the conditional _Float16/long-double rows, dispatched by two
+ * C11 _Generic macros; PLUS the single register-free `void cq_phi(double)`
+ * (the BRANCH PHASE: no per-type family, no _Generic arm, no data
+ * operand), the `cq_ry` statement macro, and one inversion bracket
+ * (cq_invert_begin/_end). Parsed by stock Clang; lowered by the
+ * cq-lowering IR pass. See docs/frontend.md §3.
  *
- * This slice (M03) lands the cq_theta family; cq_phi (M05),
- * cq_measure (M07), and the inversion markers (M10) follow.
+ * !! The header comment used to say "THREE primitive families
+ * (cq_theta, cq_phi, cq_measure)". That was true until bd
+ * test_C_libtooling-3qlq Increment 1 (2026-09-05) deleted the 15-width
+ * cq_phi_<sfx>(x, angle) family outright — see the block at cq_phi below
+ * for why, and docs/frontend.md §3.1 for the counted surface. The old
+ * two-argument spelling is now a hard COMPILE ERROR here (no shim), which
+ * is deliberate: a program written against it must be rewritten, never
+ * silently re-read.
  */
 #ifndef CQ_H_
 #define CQ_H_
@@ -34,22 +45,32 @@ float               cq_theta_f32 (float              x, double angle);
 double              cq_theta_f64 (double             x, double angle);
 _Float16            cq_theta_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
 
-/* cq_phi — Rz(φ) phase rotation; propagates taint, never a source. */
-bool                cq_phi_i1  (bool               x, double angle);
-char                cq_phi_c   (char               x, double angle);
-signed char         cq_phi_si8 (signed char        x, double angle);
-unsigned char       cq_phi_ui8 (unsigned char      x, double angle);
-short               cq_phi_si16(short              x, double angle);
-unsigned short      cq_phi_ui16(unsigned short     x, double angle);
-int                 cq_phi_si32(int                x, double angle);
-unsigned int        cq_phi_ui32(unsigned int       x, double angle);
-long                cq_phi_sl  (long               x, double angle);
-unsigned long       cq_phi_ul  (unsigned long      x, double angle);
-long long           cq_phi_sll (long long          x, double angle);
-unsigned long long  cq_phi_ull (unsigned long long x, double angle);
-float               cq_phi_f32 (float              x, double angle);
-double              cq_phi_f64 (double             x, double angle);
-_Float16            cq_phi_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
+/* cq_phi — BRANCH PHASE (bd test_C_libtooling-3qlq Inc 1, PRD
+   `retire-swap-route-PRD.md` §4.1, owner decision D1, 2026-09-05).
+
+   `cq_phi(θ)` means "multiply the amplitude of the CURRENT BRANCH by
+   e^{iθ}". It takes NO register: it is ordered by the block it sits in,
+   not by taint, and it is neither a taint source nor a propagator.
+
+     * Under a tainted condition it lowers by KICKBACK — the condition flag
+       is minted into a |0> ancilla by the ordinary compare mint, the phase
+       goes on the FLAG (`cqrt_rz_i1(f, θ)`, UNCONTROLLED), the ordinary
+       compare `_unc` returns the flag to |0> on every branch, and the flag
+       is freed. Nothing on the data register is touched.
+     * Uncontrolled or classically-controlled, it is a GLOBAL phase and is
+       DELETED (D2) — a documented semantic, not a diagnostic.
+
+   The 15-width `cq_phi_<sfx>(x, angle)` family it REPLACES emitted a
+   TENSORED `cqrt_rz_<W>` (Rz on each qubit of the register), which puts
+   phase (-1)^popcount(target) on the marked branch and can NEVER mark
+   |0..0> — so every Grover golden built on it was the identity on q
+   (PRD §1, bd `grover-goldens-are-identity-tensored-rz-2026-09-05`). A
+   program using the old spelling now fails to COMPILE against this header;
+   there is deliberately no migration shim.
+
+   A register-wide Z rotation is the classical per-bit loop (D4):
+       for (int i = 0; i < W; i++) if ((q >> i) & 1) cq_phi(θ);   */
+void                cq_phi     (double angle);
 
 /* cq_measure — measurement; the sole sink. Return is classical
    (operand only, no angle). */
@@ -88,16 +109,13 @@ _Float16            cq_measure_f16 (_Float16           x);  /* Phase 7.1 Inc D *
    The angle operand stays `double` at every width (Rule 3). */
 #if __LDBL_MANT_DIG__ == 64
 long double         cq_theta_f80 (long double         x, double angle);
-long double         cq_phi_f80   (long double         x, double angle);
 long double         cq_measure_f80 (long double        x);
 #  define CQ_THETA_LDBL_   long double: cq_theta_f80,
-#  define CQ_PHI_LDBL_     long double: cq_phi_f80,
 #  define CQ_MEASURE_LDBL_ long double: cq_measure_f80,
 #else  /* long double == double (dispatched by the double: arm) OR fp128
           (AArch64, deferred — no association → compile error, not a wrong
           lowering). */
 #  define CQ_THETA_LDBL_
-#  define CQ_PHI_LDBL_
 #  define CQ_MEASURE_LDBL_
 #endif
 
@@ -132,25 +150,14 @@ void __cq_invert_end  (void);
     _Float16:           cq_theta_f16               \
 )(x, angle)
 
-/* cq_phi — Rz phase-rotation dispatch (same 15 widths as cq_theta). */
-#define cq_phi(x, angle) _Generic((x),             \
-    CQ_PHI_LDBL_                                    \
-    bool:               cq_phi_i1,                 \
-    char:               cq_phi_c,                  \
-    signed char:        cq_phi_si8,                \
-    unsigned char:      cq_phi_ui8,                \
-    short:              cq_phi_si16,               \
-    unsigned short:     cq_phi_ui16,               \
-    int:                cq_phi_si32,               \
-    unsigned int:       cq_phi_ui32,               \
-    long:               cq_phi_sl,                 \
-    unsigned long:      cq_phi_ul,                 \
-    long long:          cq_phi_sll,                \
-    unsigned long long: cq_phi_ull,                \
-    float:              cq_phi_f32,                \
-    double:             cq_phi_f64,                \
-    _Float16:           cq_phi_f16                 \
-)(x, angle)
+/* cq_ry(x, θ) — the documented STATEMENT surface for an in-place Ry.
+   A rotation consumes the old name (docs/frontend.md §3.2, the linear
+   rule), so the assignment IS the semantics; `cq_ry(x, θ)` is exactly
+   `x = cq_theta(x, θ)` and lowers to the identical IR at -O1
+   (tests/frontend/cq_ry_macro.c). `cq_theta` stays declared: it is the
+   expression form, and it is how state prep is written — `r = cq_theta(5, θ)`
+   rotates a FRESH register seeded with 5, which has no in-place spelling. */
+#define cq_ry(x, angle) ((x) = cq_theta((x), (angle)))
 
 /* cq_measure — measurement dispatch (operand only; no angle). */
 #define cq_measure(x) _Generic((x),                \

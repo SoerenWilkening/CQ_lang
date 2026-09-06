@@ -122,10 +122,10 @@ What the backend receives from the frontend after `clang -O1
   (`float`/`double`) SSA values throughout. **No `qint_mid_t` or
   related struct chains** — the retired mid-level type surface is not
   present in the new design.
-- `@cq_theta_<sfx>`, `@cq_phi_<sfx>`, `@cq_measure_<sfx>` calls
-  preserved as opaque external calls. Their declarations are
-  side-effecting (no `readnone`, no `readonly`) so LLVM does not
-  CSE / DCE them.
+- `@cq_theta_<sfx>`, `@cq_measure_<sfx>` and the register-free
+  `@cq_phi(double)` calls preserved as opaque external calls. Their
+  declarations are side-effecting (no `readnone`, no `readonly`) so LLVM
+  does not CSE / DCE them.
 - `@cq_invert_begin` / `@cq_invert_end` bracket-marker calls at
   module-level call sites where the user explicitly bracketed a
   region.
@@ -138,12 +138,21 @@ What the backend receives from the frontend after `clang -O1
 | Call | Pattern-matched as | What the pass does |
 |---|---|---|
 | `@cq_theta_<sfx>(x, θ)` | Ry rotation; taint **source** | §5 allocation dispatch + lowering to `cqrt_ry_<W>` |
-| `@cq_phi_<sfx>(x, φ)` | Rz rotation; **propagates** taint, does not introduce | §6.3 lowering to `cqrt_rz_<W>` on tainted operand; deletion on classical |
+| `@cq_phi(φ)` | **Branch phase**; introduces and propagates **nothing** (no data operand) | **Kickback** under a tainted condition: flag mint + `cqrt_rz_i1(f, φ)` + strip + free; **deleted** when uncontrolled or classically controlled (§6.1a) |
 | `@cq_measure_<sfx>(x)` | Measurement; taint **sink** | §6.5 lowering to `cqrt_measure_<W>` |
 | `@cq_invert_begin()` / `@cq_invert_end()` | Manual inversion bracket | §10 substitute the bracketed gate sequence with its adjoint |
 
-Identification is by symbol-prefix string match on
-`CallInst::getCalledFunction()->getName()`. The fan-out of suffixes
+> **`@cq_phi` is matched by EXACT name, not by prefix** (bd
+> `test_C_libtooling-3qlq.2`, Increment 1, SHIPPED 2026-09-05). The
+> required prototype is `void(double)`; any other prototype on that name
+> declines loudly with
+> `cq rotation lowering: unsupported declared prototype for cq_phi`, whether
+> or not it is called. The retired 15-width `@cq_phi_<sfx>(x, φ)` family is
+> **no longer resolved by the pass at all** — see §6.1a for what actually
+> happens to a module that still contains one.
+
+Identification for the two suffixed families is by symbol-prefix string
+match on `CallInst::getCalledFunction()->getName()`. The fan-out of suffixes
 covers the 14 standard C scalar types the frontend enumerates (see
 [`frontend.md`](./frontend.md) §3.1); the pass normalizes
 signedness-bearing suffixes (`_si32` vs `_ui32`) to width-only
@@ -188,13 +197,17 @@ taint_sinks = {
 }
 ```
 
-`cq_phi_<sfx>` is excluded from the source set on purpose. An Rz
-rotation on a classical computational-basis state adds only global
-phase, with no observable effect — promoting a non-tainted variable
-to a qubit register because of a `cq_phi` call would produce
-unnecessary allocation. The pass treats `cq_phi` as taint-propagating
-only: lowered to `cqrt_rz_<W>` when its operand is tainted, deleted
-when the operand is classical.
+`cq_phi` is excluded from the source set, and since Increment 1 it is
+excluded from the **propagation** relation too — it has no data operand
+to propagate through. `void cq_phi(double φ)` is a *branch phase*: it
+multiplies the amplitude of the branch it sits in by `e^{iφ}`, so it is
+ordered by the **block it sits in**, not by any data dependence. It
+introduces no taint (a phase is not superposition), propagates none, and
+allocates nothing. Its one operand is the **angle**, which is classical;
+a quantum-derived angle declines loudly
+(`cq rotation lowering: unsupported quantum-derived rotation angle`, and
+`cq controlled lowering: rotation angle under quantum control` inside a
+tainted region).
 
 `cq_measure_<sfx>` is the sole sink: every measure call's return value
 is classical regardless of input. Downstream uses of the returned
@@ -333,8 +346,8 @@ based on opcode + width + operand shape.
 |---|---|
 | `call @cq_theta_<sfx>` (classical operand) | `cqrt_alloc_<W>(value)` + `cqrt_ry_<W>(handle, θ)` (§5.1) |
 | `call @cq_theta_<sfx>` (tainted operand) | `cqrt_ry_<W>(handle, θ)` (§5.1) |
-| `call @cq_phi_<sfx>` (tainted operand) | `cqrt_rz_<W>(handle, φ)` |
-| `call @cq_phi_<sfx>` (classical operand) | deleted (no-op on basis state) |
+| `call @cq_phi` inside a **tainted-condition** arm | **kickback** — flag mint, `cqrt_rz_i1(f, φ)` *uncontrolled* on the flag, compare `_unc` strip, `cqrt_free(f)` (§6.1a) |
+| `call @cq_phi` uncontrolled, or under a **classical** condition | **deleted** — a global phase, unobservable (owner decision D2; a documented semantic, no diagnostic) |
 | `call @cq_measure_<sfx>` | `cqrt_measure_<W>(handle) → value` |
 | tainted `add i<W> %a, %b` (H+H) | `cq_template_add_i<W>(%h_a, %h_b)` |
 | tainted `add i<W> %a, C` (H+C) | `cq_template_add_i<W>_hl(%h_a, C)` |
@@ -347,10 +360,181 @@ based on opcode + width + operand shape.
 | tainted `fneg f<W>` | `cq_template_fneg_f<W>` |
 | `@cq_invert_begin` … `@cq_invert_end` brackets | inner gate sequence reversed + adjointed per §10 |
 
-After lowering, the IR contains no `@cq_<theta|phi|measure>_*` calls
-and no tainted stock opcodes — only `cqrt_*` runtime calls and
-`cq_template_*` template calls, with classical control flow threading
-them.
+After lowering, the IR contains no `@cq_theta_*` / `@cq_measure_*` calls,
+no `@cq_phi` call and no tainted stock opcodes — only `cqrt_*` runtime
+calls and `cq_template_*` template calls, with classical control flow
+threading them.
+
+### 6.1a `@cq_phi` — the branch phase by kickback
+
+> **Increment 1 of bd `test_C_libtooling-3qlq`, SHIPPED 2026-09-05.** What it
+> REPLACED, for readers of older traces and older docs: the retired
+> `@cq_phi_<sfx>(x, φ)` lowered to a routed or controlled `cqrt_rz_<W>`, which
+> is TENSORED and therefore not an oracle — every Grover golden in this tree
+> before that date is the identity on `q`. See §11.3 and
+> `retire-swap-route-PRD.md` §1.
+
+`void @cq_phi(double φ)` carries **no register**. It is recognized by
+**exact symbol name** (never by prefix) and its prototype must be
+`void(double)`; anything else on that name is a loud decline
+(`cq rotation lowering: unsupported declared prototype for cq_phi`), fired
+whether or not the declaration is called, on the same reserved-name rule
+the suffixed families use.
+
+**Under a tainted condition it lowers by kickback**, on the flag the
+control path already mints for the compare — no work rail, no
+`cqrt_cswap` route, and no `_controlled` gate:
+
+```
+mint     cq_template_icmp_<pred>_i<W>_hl(h, k)   -> f    ; f = c(q) on a |0> ancilla
+gate     cqrt_rz_i1(f, φ)                                ; UNCONTROLLED, one qubit
+strip    cq_template_icmp_<pred>_i<W>_hl_unc(f, h, k)    ; f back to |0> on EVERY branch
+free     cqrt_free(f)
+```
+
+Three shapes follow from that, and each is a distinct accept. Counts below
+are MEASURED from the accept fixtures named beside them.
+
+- **A `¬flag` arm** — the gate arm is the *false* successor, which is what
+  `clang -O1` usually produces (Rule 9) — keeps the self-inverse `cqrt_x(f)`
+  bracket around the gate, exactly as every other `¬flag` arm does. The
+  bracket is **one pair per arm**, never per gate. ⚠ *Per arm, not per
+  region*: a merge-tail angle φ contributes its own arm-polarity groups, so
+  one region can legitimately emit more than one pair (measured, 4 `cqrt_x`
+  from plain C). `control_phase_kickback_negated.ll`: 1 `cqrt_rz_i1`, 2
+  `cqrt_x`, 1 `cqrt_free`.
+- **`if/else`** puts **one gate per arm** on the **one** minted flag — the
+  true arm's `cqrt_rz_i1(f, φ_T)` as-is, the false arm's inside the `cqrt_x`
+  bracket — with one mint, one strip and one free for the pair.
+  `control_phase_kickback_ifelse_tail_phi.ll`, whose arm also carries its own
+  `cq_phi`: 3 `cqrt_rz_i1`, 2 `cqrt_x`, **1** `cqrt_free`.
+- **N `cq_phi` calls in one arm** emit **N** `cqrt_rz_i1` gates on that one
+  flag, in source order, still with one mint / strip / free and one bracket
+  pair. Nothing is summed at compile time: each angle is passed through
+  verbatim and `P(φ₁)·P(φ₂) = P(φ₁+φ₂)` happens in the hardware, so the
+  IEEE-rounding hazard that constrains the *Ry* angle-select path does not
+  arise here. `control_phase_kickback_two_calls.ll`: 2 `cqrt_rz_i1`, 0
+  `cqrt_x`, 1 `cqrt_free`.
+
+**Beyond the single compare, the shape of the CONDITION changes only what
+the flag is MADE OF, never the gate.** A compound condition
+(`if (q == 5 && r == 3) cq_phi(θ)`) mints one leaf flag per tainted compare
+and combines them into a root ancilla — `cqrt_toffoli` for AND, the OR and
+XOR node emissions the 4.4 select merge already had — puts the ONE
+`cqrt_rz_i1` on that root, and tears the network down LIFO. A genuine
+depth-2 **nest** (`if (a) { if (b) { cq_phi(θ); } }`) is the same thing
+reached by a different syntax: the outer arm's phases ride the outer root,
+the inner arm's ride the conjunction ancilla. A **`switch`** puts one
+per-case eq-flag under each arm's gate. There is no route and no work rail
+anywhere in that list.
+
+**The real traces, from committed goldens.** The gate stream above is not a
+sketch — read it off `tests/e2e/*.expected.log`:
+
+```
+# slice_control_seq_grover — the flat diamond, un-negated arm (P1)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h1
+cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+cqrt_free(h1)
+
+# slice_control_phase_angle_select — the folded if/else (P2): TWO gates,
+# ONE flag, the false arm's inside the cqrt_x bracket, NO subtraction
+cq_template_icmp_eq_i32_hl(h0, 5) -> h1
+cqrt_x(h1)
+cqrt_rz_i1(h1, 0x1.3333333333333p-2)
+cqrt_x(h1)
+cqrt_rz_i1(h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+cqrt_free(h1)
+
+# slice_control_phase_nest — the depth-2 nest (P4): leaf flags, a toffoli
+# conjunction ancilla, ONE gate on it, LIFO teardown
+cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+cq_template_icmp_eq_i32_hl(h1, 3) -> h3
+cqrt_alloc_i1(0) -> h4
+cqrt_toffoli(h2, h3, h4)
+cqrt_rz_i1(h4, 0x1.3333333333333p-2)
+cqrt_toffoli(h2, h3, h4)
+cqrt_free(h4)
+cq_template_icmp_eq_i32_hl_unc(h3, h1, 3)
+cqrt_free(h3)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+cqrt_free(h2)
+```
+
+⚠ That last stream is worth one more sentence, because it is a committed
+`compare_files` gate and not a coincidence: `slice_control_phase_nest.c`
+(the nest) and `slice_control_phase_andcond.c` (`if (a == 5 && b == 3)`)
+produce **byte-identical goldens** — ONE trace, two sources
+(`e2e-phase-nest-andcond-identical`). The nest is not a separate mechanism;
+it is the condition tree reached by a different syntax.
+
+**Uncontrolled — or classically controlled — `@cq_phi` is deleted.** It
+multiplies the whole state vector by a scalar, which no measurement can
+observe. This is a documented semantic and **not** a diagnostic (owner
+decision D2): the program is fine, and nothing is printed.
+
+**The emitted gate is not adjointable.** The uncompute spine must never
+reverse-play a kickback gate: its inverse would cancel the very phase that
+is the answer, and the flag it sits on is stripped and freed inside the
+region. Emitted kickback gates therefore carry an instruction-metadata
+membership record (`!cq.branchphase`) that the spine's in-place-gate,
+basis-preservation and `EmitInverse` predicates refuse first. Read the
+`cqrt_rz(q, φ) → cqrt_rz(q, −φ)` row in §10's adjoint table with that
+exception. The record is deliberately *instruction metadata* rather than a
+`Value *` set built at emission time: it dies with its instruction (so it
+cannot dangle when a later stage RAUWs or erases), it survives
+`CloneFunctionInto` (Phase-6 specialization), and it is visible in the
+lowered `.ll` that fixtures and `free_pairing_check.py` actually read. It is
+also asked as **membership of the emitted instruction**, never by name —
+`cqrt_rz_i1` alone does not identify a kickback gate. Every emitted kickback
+gate carries it (measured: the `!cq.branchphase` count equals the
+`cqrt_rz_i1` count in `control_phase_kickback_{diamond,negated,two_calls,
+ifelse_tail_phi}.ll` — 1, 1, 2 and 3 respectively).
+
+**The retired `@cq_phi_<sfx>` family is a RESERVED NAME — measured 2026-09-05
+on the merged Increment-1 tree.** `CQ.h` no longer declares it, so it can only
+reach the pass from hand-written IR or a **stale header**. Any **USE** of it
+is a loud decline, whatever the prototype and whatever the operands:
+
+| module contains | disposition |
+|---|---|
+| `@cq_phi_<sfx>(%tainted, φ)` — arg-0 stays tainted | **loud decline**, `cq rotation lowering: retired register-form cq_phi_si32; use the register-free void cq_phi(double)` |
+| `if (q == k) q = cq_phi(q, φ)` on a stale header, where `clang -O1` **const-folds** arg-0 to the classical `k` — so nothing about the call is tainted | **loud decline**, the SAME string |
+| a **wrong-prototype** declaration of `@cq_phi_<sfx>` that is CALLED | **loud decline**, the SAME string (it precedes prototype validation) |
+| a declaration of `@cq_phi_<sfx>` with **no call site**, right or wrong prototype | **silent, exit 0** — swept. See the narrowing below |
+
+⚠ **The second row is the one that matters, and it was a CONFIRMED silent
+miscompile until the Increment-1 round-1 review** (finding F-L6-1). The
+boundary is one character wide and the flagship customer was on the wrong
+side of it: the other spellings used to decline through
+`declineTaintEscapes`, which fires only on a TAINTED OPERAND, and for the
+Grover oracle `if (q == 5) q = cq_phi(q, PI)` `clang -O1` const-folds arg-0
+to a classical `i32 5` on the equality edge, so that guard structurally
+could not fire. The retired call was still CLAIMED as an arm gate by prefix
+and never lowered: `opt` exited 0, verify-clean and STRICT stage-2b clean,
+the flag was minted / stripped / freed, **the phase gate was DROPPED**, and
+an unresolved call was left in the module for `ld` to find. That is Rule 1's
+"no third path", violated. Two things fix it: `resolveSources` declines any
+USE under the reserved-name string above, and `declineSurvivingIntrinsicCalls`
+runs at the END of both pipeline entry points and turns this document's own
+postcondition — *no `@cq_theta_<sfx>` / `@cq_phi_<sfx>` / `@cq_measure_<sfx>`
+remains in the IR after this pass* — from a comment into a **checked, LOUD**
+property. Loud and not `assert`: a Release build has assertions off, and
+Release is the build every gate in this tree runs.
+
+⚠ **The decl-only row is a DELIBERATE narrowing of the reserved-name rule the
+other front-end names follow** ("even for a decl with NO call sites"), and it
+is argued rather than accidental: a declare-only retired symbol is provably
+inert (measured — swept when quantum is present, byte-identical passthrough
+when it is not), the set that can reach a wrong unitary is exactly the set
+with a USE, and a decl-only decline would have reddened ~490 fixtures
+mid-migration. What is LOST is the family's prototype validation for an
+uncalled declaration; `lowering_legacy_phi_decl_prototype_family.ll` records
+that. Now that the corpus is migrated the second reason is spent, so
+tightening this to the plain reserved-name rule is an open owner question
+(one clause; ~5 fixtures to re-point).
 
 ### 6.2 Mixed-operand dispatch: the `_hl` variant
 
@@ -811,7 +995,7 @@ The realized adjoint relations:
 | `cqrt_x(q)` | `cqrt_x(q)` (self-adjoint, as-is) |
 | `cqrt_cswap(f, a, b)` | `cqrt_cswap(f, a, b)` (self-adjoint, as-is) |
 | `cqrt_ry(q, θ)` | `cqrt_ry(q, -θ)` |
-| `cqrt_rz(q, φ)` | `cqrt_rz(q, -φ)` |
+| `cqrt_rz(q, φ)` | `cqrt_rz(q, -φ)` — **except** a `cqrt_rz_i1` carrying `!cq.branchphase` (§6.1a), which is **refused**: adjointing a kickback gate cancels the answer |
 | uncontrolled data `cq_template_<op>_<W>…` | its void `_unc` (§9.2) |
 | anything else (`cqrt_cnot`, `cqrt_toffoli`, a controlled form, a **compare**) | **un-invertible → loud decline** |
 
@@ -997,6 +1181,38 @@ applies `Ry(θ)` to each of the 32 qubits in the register. This
 matches the frontend's per-bit rotation semantics (see
 [`frontend.md`](./frontend.md) §3.2) and Sturm.jl's `q.θ += δ` on
 `QInt{W}`.
+
+> **Rz — emitted at `i1` only, from 3qlq Inc 1 (bd `test_C_libtooling-3qlq.2`,
+> SHIPPED 2026-09-05, parts A and B both landed).** The tensored
+> reading above is the whole `cqrt_rz_<W>` semantics and it is exactly what
+> made a routed or controlled Rz useless as an oracle: the marked phase is
+> `(−1)^popcount(target)`, and a per-qubit diagonal gate fixes `|0…0⟩`, so it
+> can never mark it (`retire-swap-route-PRD.md` §1). `cq_phi` is therefore
+> register-free, and the ONLY Rz the pass emits is the kickback gate
+> `cqrt_rz_i1(flag, θ)` on a flag ancilla — §6.1a here,
+> [`frontend.md`](./frontend.md) §3.3 for the source surface. The `W>1`
+> widths and the whole `cqrt_rz_<W>_controlled[_inv]` family stay **declared
+> but unemitted** until the Phase-11 freeze decides them (owner question Q1,
+> PRD §5/§12); the *declarations* are unchanged, so this adds **no** runtime
+> symbol and the emitted set strictly shrinks (owner decision D3).
+>
+> ⚠ **"Emitted at `i1` only" ARRIVED IN STAGES, and the intermediate state is
+> recorded because it is what a half-read claim looks like.** Increment 1 part
+> A converted the flat diamond, the angle select and the in-loop region and
+> left **three** tensored minters standing — `NestedRouteEmit` (the depth-2
+> nest), `SwitchRouteEmit`'s routed phase path, and the then-callerless
+> `RotationLowering::emitRz` — measured at the part-A hand-back as exactly 3
+> of 1602 fixtures still making the pass emit a non-`i1` `cqrt_rz`. **Part B
+> removed all three** (`NestedRouteEmit.cpp` and `emitRz` are DELETED;
+> `SwitchRouteEmit` is a per-case eq-flag kickback), and both parts are merged.
+> **MEASURED after the merge:** the round-2 review swept 1661 fixture outputs
+> and found 35 emitting an Rz and **0** at any width other than `i1`, with
+> `#cqrt_rz_i1 == #!cq.branchphase` in every one; tree-wide, `grep -h
+> 'cqrt_rz_' tests/e2e/*.expected.log | grep -v 'cqrt_rz_i1('` returns **0**
+> across 304 committed goldens, and `cqrt_rz_<W>_controlled` returns **0** as
+> well. Still measure rather than assume when you quote it: sweep the corpus
+> and grep the pass output for a `cqrt_rz` that is not `cqrt_rz_i1`, because a
+> new emitter is all it takes.
 
 ### 11.4 Gate primitives
 

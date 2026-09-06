@@ -17,17 +17,15 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}control flow under quantum control
 ; CHECK-NOT: cqrt_copy
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0) {
 entry:
   %q   = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qa  = call i32 @cq_phi_si32(i32 %q, double 3.000000e-01)   ; phi of %q
-  %qb  = call i32 @cq_phi_si32(i32 %q, double 5.000000e-01)   ; ALSO phi of %q — same wire
   %c   = icmp sgt i32 %q, 5
-  %sel = select i1 %c, i32 %qa, i32 %qb     ; both operands alias %q's register
+  %sel = select i1 %c, i32 %q, i32 %q     ; both operands alias %q's register
   %m   = call i32 @cq_measure_si32(i32 %sel)
   ret i32 %m
 }

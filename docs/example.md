@@ -36,8 +36,11 @@ Read alongside:
 What this example does **not** exercise (deferred to future walkthroughs;
 mechanism described in the cited sections of the other docs):
 
-- `cq_phi` (Rz) on a tainted operand
-  ([`backend.md`](./backend.md) §6)
+- `cq_phi` — the **branch phase**, `void cq_phi(double φ)`, which has no
+  operand but the angle: under a tainted condition it lowers by kickback
+  onto the condition flag, and uncontrolled it is a global phase and is
+  deleted ([`backend.md`](./backend.md) §6.1a,
+  [`frontend.md`](./frontend.md) §3.3)
 - Chained `cq_theta` on an already-tainted handle
   ([`backend.md`](./backend.md) §5.1)
 - Quantum control flow — tainted `br i1`, post-dominator-driven
@@ -381,7 +384,7 @@ pass (see [`backend.md`](./backend.md) §13.2).
 | Allocation lowering on classical operand | [`backend.md`](./backend.md) §5.1 | yes (Step 1) |
 | Allocation skipped on tainted operand (chained rotation) | [`backend.md`](./backend.md) §5.1 | no |
 | H+C `_hl` template dispatch | [`backend.md`](./backend.md) §6.2 | yes (Step 2) |
-| `cq_phi` deletion / propagation | [`backend.md`](./backend.md) §6 | no |
+| `cq_phi` branch phase — kickback under control, deletion uncontrolled | [`backend.md`](./backend.md) §6.1a | no |
 | Function lifting (curated symbol substitution) | [`backend.md`](./backend.md) §7.1 | no |
 | Function lifting (clone-on-taint) | [`backend.md`](./backend.md) §7.2 | no |
 | Controlled-form lowering for tainted branches | [`backend.md`](./backend.md) §8 | no |

@@ -10,9 +10,9 @@ cqrt_measure_i64(h3) -> 0
 cqrt_alloc_i64(1099511627775) -> h4
 cqrt_ry_i64(h4, 0x1.999999999999ap-4)
 cq_template_and_i64_hl(h4, 1099511627775) -> h5
-cqrt_rz_i64(h5, 0x1.3333333333333p-2)
-cqrt_rz_i64(h5, -0x1.3333333333333p-2)
+cq_template_icmp_eq_i64_hl(h5, 5) -> h6
+cqrt_rz_i1(h6, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i64_hl_unc(h6, h5, 5)
 cq_template_and_i64_hl_unc(h5, h4, 1099511627775)
 cqrt_free(h5)
-cqrt_ry_i64(h4, -0x1.999999999999ap-4)
-cqrt_free(h4)
+cqrt_free(h6)

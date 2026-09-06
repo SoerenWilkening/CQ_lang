@@ -283,6 +283,94 @@ WHAT IT CANNOT WITNESS — read this before quoting a green run
   * It says nothing about anything outside the generated axis set: nested
     regions, `switch`, loops, QRAM, the 6.5 classical-call arm.
 
+─────────────────────────────────────────────────────────────────────────────────
+THE `cq_phi` SURFACE (`--phi-surface {register,void}`, bd
+test_C_libtooling-3qlq Increment 1 — "retire the swap route")
+
+THIS FILE'S WHOLE PREMISE IS "CONTROLLED-Ry EQUALS ROUTED-Rz", AND INCREMENT 1
+RETIRES THE ROUTE. `cq_phi` becomes `void cq_phi(double)` — a BRANCH PHASE — so
+the Rz side of a cell is no longer a route around the register at all:
+
+    register (DEFAULT)   Rz side : if (cond) { r = cq_phi(r, 0.9); }
+                                   -> alloc(0)->w; cswap(f,r,w); rz_W(w,.9);
+                                      cswap(f,r,w); free w        (the ROUTE)
+    void                 Rz side : if (cond) { cq_phi(0.9); }
+                                   -> mint f; [x(f);] rz_i1(f,.9); [x(f);]
+                                      strip; free f               (the KICKBACK)
+
+The Ry side is untouched by the surface change (PRD D5 keeps
+`r = cq_theta(r, 0.9)`), so under `void` a cell's two sides are
+
+    Rz : mint ; [x] ; cqrt_rz_i1(f, T)                ; [x] ; strip ; free
+    Ry : mint ; [x] ; cqrt_ry_<W>_controlled(f, r, T) ; [x] ; strip ; free
+
+and THE QUESTION BECOMES "the same stream except the ONE gate line". That is
+what `reduce_kickback` implements: it canonicalises BOTH stems' arm gate to
+`cq_arm_gate(<flag>, <angle>)` and leaves everything else alone. `reduce_route`
+— the `register` reducer — is KEPT INTACT and untouched; the two are selected by
+the flag, never merged.
+
+⚠ WHAT THE VOID REDUCER GIVES UP, SAID PLAINLY BECAUSE IT IS A REAL WEAKENING.
+The kickback line names NO register: there is nothing on the Rz side for the Ry
+side's `r` to be compared against. So under `void` the PREFIX comparison no
+longer witnesses that the controlled Ry names the ROTATED RAIL — only that it
+fires once, on the same flag, at the same position, with the same angle. The
+rail identity is still policed, but by the INVARIANTS on the raw Ry trace (I1
+count, I3 no free of a rotated rail, I6 no adjoint across the rotation) and by
+the lit family, NOT by this comparison. Do not quote a green `void` prefix as
+"the controlled Ry named the right wire".
+
+⚠ AND `cfg=ifelse` / `ifelse2` STOP BEING ONE-GATE-LINE CELLS UNDER `void`.
+`-O1` folds both arms into ONE call on an angle `select`; PRD §3 lowers the Rz
+stem to the EXACT two-gate form `x(f); rz_i1(f,B); x(f); rz_i1(f,A)` (no
+subtraction, run-time arms admitted) while the Ry stem keeps the drbq Inc-2b
+BY-DIFFERENCE form (`R(h,B)` unconditional + one `R_controlled(f,h,A-B)`,
+constant arms only). Those are DIFFERENT LOWERINGS BY DESIGN, so a `void`
+`ifelse` cell is expected to differ by more than one gate line and must not be
+read as a finding. It is left in the pool rather than excluded, because the
+DISPOSITION half of the cell is still worth recording.
+
+⚠ THE AXIS VALUES THAT SPELL A NON-ARM `cq_phi` CHANGE MEANING, AND THREE OF
+THEM DEGENERATE. `base=phial` (`T r = cq_phi(p, .05)`), `cond=aliaseq`
+(`int cqa = cq_phi(cq0, .07)`) and `cons=aliasmeas` (`T ra = cq_phi(r, .09)`)
+are ALIAS spellings whose whole content was the per-register Rz. Under `void`
+the rewriter turns each into `<alias> = <source>; cq_phi(T);` — a plain alias
+plus an UNCONTROLLED branch phase, which PRD D2 DELETES. So `phial` degenerates
+to `src`, `aliaseq` to `eq`, and `aliasmeas` to a second measure of the same
+register. They are KEPT: a `void` run in which one of them differs from its
+degenerate sibling means the D2 deletion did not happen, which is the only cheap
+witness for D2 this file carries. `cons=route2` and `cons=phi_after` become
+genuine KICKBACK regions in BOTH spellings (their angles are outside `ARM_HEX`,
+so the reducer leaves them alone on both sides — the control still works).
+
+⚠ `--route-oracle` IS REFUSED UNDER `void`, and the reason is the epic: the
+pre-2a binary the flag wants is a binary in which the Rz spelling ROUTES, and
+under this surface there IS no route to compare against. A `void` run's oracle
+is the SAME BINARY's Rz side, which is what the flagless mode already does.
+
+⚠ AND A PRE-INCREMENT-1 BINARY LEAVES THE CALL BEHIND. It has no concept of
+`void @cq_phi(double)`: it neither lowers nor deletes it, so the call SURVIVES
+into the lowered IR and the module cannot link (no such runtime symbol, and this
+epic adds none — PRD D3). MEASURED on the pre-3qlq oracle 52d7764. That side is
+reported `PHI-UNLOWERED`, stages 2b/3/4 skipped — a DISPOSITION, not a harness
+error. After Increment 1 the verdict must not appear.
+
+⚠ HOW TO READ A PRE-INCREMENT-1 `void` TABLE. Nearly every in-scope cell comes
+out `RY-ONLY(suspicious)`: the Ry side lowers (drbq Inc 1 shipped it) and the Rz
+kickback declines, because the kickback IS the capability Increment 1 adds. The
+verdict VOCABULARY is deliberately NOT renamed for the surface — the word
+"suspicious" is the register-surface reading and is simply not the right reading
+here, exactly as `UNROLLED-ONLY` was the EXPECTED pre-Inc-3 verdict in
+`tools/loop_twin_matrix.expected.txt`. What Increment 1 must do to that table is
+move those rows to `PREFIX-IDENTICAL`.
+
+The `void` surface needs a header whose `cq_phi` is the ONE register-free extern
+(`include/CQ.h` still declares the 15-width family), so `--include-dir` must
+point at one and the mode REFUSES TO RUN otherwise: a `register` header would
+take `cq_phi(T)` as a one-argument call to a two-argument macro and the whole run
+would read like a wall of compiler declines.
+
+─────────────────────────────────────────────────────────────────────────────────
 RUN (legacy spelling, still accepted):
   python3 inplace_twin_matrix.py --root /path/to/CQ_lang [--jobs 6]
       [--only <substr>] [--list] [--keep <dir>]
@@ -521,13 +609,19 @@ def name(c):
 # `ARM(` is the substitution point: cq_theta on the Ry side, cq_phi on the Rz
 # side. NOTHING ELSE in the program changes between the two sides.
 
-def gen(c, arm):
+def gen(c, arm, surface="register"):
     """One side of one cell.
 
     `arm` is the ARM-GATE spelling for a five-axis cell (`cq_theta` = the Ry side
     under test, `cq_phi` = the routed Rz oracle) and the SIDE NAME for a
     state-prep cell (`prep` = the Increment-4 subject, `twin` = the Increment-1
-    chained reference). See `PREP_SEEDS` for what the two prep sides are."""
+    chained reference). See `PREP_SEEDS` for what the two prep sides are.
+
+    `surface` is the bd 3qlq `cq_phi` frontend surface (see the docstring's
+    `--phi-surface` section). It is applied to the FINISHED text, at the very
+    end and in ONE place, so both sides of a cell are rewritten by the same
+    function and a surface artefact can never look like a stem difference.
+    `register` returns the text byte-unchanged."""
     T, LIT, CT, _ = WIDTH[c["width"]]
     fp = c["width"] == "f64"
     one = "1.0" if fp else "1"
@@ -702,7 +796,8 @@ def gen(c, arm):
     src.append("    return %s;" % ret)
     src.append("}")
     src.append("int main(void){ (void)slice(1); return 0; }")
-    return ("\n".join(src) + "\n").replace("ARM(", arm + "(")
+    out = ("\n".join(src) + "\n").replace("ARM(", arm + "(")
+    return phi_void_source(out) if surface == "void" else out
 
 
 # ─────────────────────────── TRACE MACHINERY ─────────────────────────────────
@@ -714,6 +809,13 @@ def gen(c, arm):
 # project's predicates come to disagree (bd uow0 / 1fim), so import it.
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import golden_multiset_audit as gma  # noqa: E402
+# THE `cq_phi` SURFACE REWRITER IS IMPORTED, NOT RE-SPELT (Rule 14, bd 3qlq
+# Inc 1). It lives in `loop_twin_matrix.py` because that is the dependency-free
+# instrument — importing in the other direction would give the
+# `e2e-loop-twin-matrix` ctest gate a `golden_multiset_audit` dependency it does
+# not need. `tools/angle_select_twin_matrix.py` reaches it through THIS import.
+from loop_twin_matrix import (PHI_SURFACES, phi_surface_of_header,
+                              phi_void_source)  # noqa: E402
 
 CALL = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\((.*?)\)(?: -> (.*))?$")
 HANDLE = re.compile(r"\bh(\d+)\b")
@@ -794,6 +896,54 @@ def reduce_route(lines, arm_hex):
                 out.append(lines[i]); i += 1
             continue
         out.append(lines[i]); i += 1
+    return out, n
+
+
+# ── THE `void`-SURFACE REDUCER (bd test_C_libtooling-3qlq Increment 1) ───────
+# `reduce_route` above is the `register` reducer and is UNTOUCHED. Under the void
+# surface there is no route to collapse: the Rz side is a KICKBACK, one
+# uncontrolled `cqrt_rz_i1(f, T)` on the flag (PRD §3), and the Ry side is the
+# one `cqrt_ry_<W>_controlled(f, r, T)`. The claim under test is therefore "the
+# same stream except the ONE gate line", and this function is that sentence:
+# canonicalise BOTH stems' arm gate to `cq_arm_gate(<flag>, <angle>)` and touch
+# nothing else.
+#
+# IT IS ONE FUNCTION APPLIED TO BOTH SIDES, DELIBERATELY. Two spellings of one
+# rewrite is how this project's predicates come to disagree (bd uow0 / 1fim), and
+# a cell in which the "wrong" stem emitted the other stem's gate is not a shape
+# any lowering can produce.
+#
+# THE ANGLE GATE IS THE SAME `arm_hex` DISCRIMINATOR `reduce_route` USES, and for
+# the same reason: a `route2` / `phi_after` consumer is a GENUINE phase region in
+# both spellings, its angle is outside the substitutable set, and canonicalising
+# it would destroy the control that tells a region-under-test from one of those.
+#
+# ⚠ THE RAIL ARGUMENT IS DROPPED FROM THE Ry LINE and there is nothing on the Rz
+# side to compare it against — the kickback names no register at all. See the
+# docstring's "WHAT THE VOID REDUCER GIVES UP": the rail identity is policed by
+# the invariants on the RAW Ry trace and by the lit family, not here.
+ARM_GATE = "cq_arm_gate"
+
+
+def reduce_kickback(lines, arm_hex):
+    """Canonicalise the region-under-test's ONE arm gate, either stem.
+
+    Returns (reduced_lines, n_canonicalised).
+    """
+    out, n = [], 0
+    for l in lines:
+        p = parse(l)
+        if (p and p[0] == "cqrt_rz_i1" and len(p[1]) == 2
+                and p[1][1] in arm_hex):
+            out.append("%s(%s, %s)" % (ARM_GATE, p[1][0], p[1][1]))
+            n += 1
+            continue
+        if (p and re.fullmatch(r"cqrt_ry_\w+_controlled", p[0])
+                and len(p[1]) == 3 and p[1][2] in arm_hex):
+            out.append("%s(%s, %s)" % (ARM_GATE, p[1][0], p[1][2]))
+            n += 1
+            continue
+        out.append(l)
     return out, n
 
 
@@ -902,6 +1052,14 @@ def classify_prep(nm, subj, twin, seed_is):
     R = dict(verdict="", notes=[], inv=[], pdiff="", nred=0,
              subj_diag=subj.diag, twin_diag=twin.diag,
              subj_pair=subj.pair, subj_warn=subj.warn)
+    if subj.phi_unlowered or twin.phi_unlowered:
+        R["verdict"] = "PHI-UNLOWERED"
+        R["notes"].append("residual `call void @cq_phi` in the LOWERED IR: "
+                          "subject %s, twin %s — a PRE-Increment-1 binary neither "
+                          "lowers nor deletes the void surface, so the module "
+                          "cannot link. A disposition, not a harness error."
+                          % (_resid(subj), _resid(twin)))
+        return R
     if subj.error or twin.error:
         R["verdict"] = "HARNESS-ERROR"
         R["notes"].append((subj.error or "") + " | " + (twin.error or ""))
@@ -955,11 +1113,23 @@ def normalise(lines):
 
 
 def flags_and_rails(lines):
+    """(region flags, rotated rails).
+
+    It is asked TWO different questions and both callers matter: `invariants`
+    asks it about the RAW Ry trace (so it sees `cqrt_ry_<W>_controlled` and its
+    RAIL, which is what I3 needs), while `prefix_end` asks it about the REDUCED,
+    normalised traces. Under `--phi-surface void` those carry `reduce_kickback`'s
+    canonical `cq_arm_gate(<flag>, <angle>)` instead, on BOTH sides — so without
+    the second clause `prefix_end` would find no flag, return None, and every
+    void cell would report `PREFIX-UNBOUNDED`. The canonical form names no rail,
+    which is exactly the weakening the docstring records."""
     f, r = set(), set()
     for l in lines:
         p = parse(l)
         if p and re.fullmatch(r"cqrt_ry_\w+_controlled", p[0]) and len(p[1]) == 3:
             f.add(p[1][0]); r.add(p[1][1])
+        elif p and p[0] == ARM_GATE and len(p[1]) == 2:
+            f.add(p[1][0])
     return f, r
 
 
@@ -988,6 +1158,25 @@ class Side:
         self.pair = ""
         self.error = None
         self.ll = None
+        # bd 3qlq Inc 1, `--phi-surface void` ONLY: the count of `void @cq_phi`
+        # calls left in the LOWERED IR. A pre-Increment-1 binary neither lowers
+        # nor deletes that call, so the module names a symbol nothing defines and
+        # cannot link. That is the PRE-increment DISPOSITION, not a harness break.
+        #
+        # `phi_asked` is NOT redundant with `phi_unlowered == 0`: a side that
+        # DECLINED never reaches the check, so a bare `0` would read as "this
+        # side lowered the void surface cleanly" when it was never asked.
+        self.phi_unlowered = 0
+        self.phi_asked = False
+
+
+def _resid(side):
+    """How to read one side's residual-`cq_phi` state, in words. A side that
+    DECLINED was never asked — reporting `0` there would say "this side lowered
+    the void surface cleanly", which is the opposite of what happened."""
+    if not getattr(side, "phi_asked", False):
+        return "not asked (%s)" % ("declined" if side.exit else "harness error")
+    return "%d residual" % side.phi_unlowered
 
 
 def _first(text, tok):
@@ -1020,6 +1209,13 @@ def build(cfg, work, nm, src, cqopt=None):
     if r.returncode != 0:
         return s
     s.ll = open(s2).read()
+    if getattr(cfg, "phi_surface", "register") == "void":
+        # Read the LOWERED IR, never the trace: an unlowered `cq_phi` never
+        # reaches a trace, because the module does not link.
+        s.phi_unlowered = s.ll.count("call void @cq_phi(")
+        s.phi_asked = True
+        if s.phi_unlowered:
+            return s
     r = subprocess.run([sys.executable, cfg.pairchk, s2],
                        capture_output=True, text=True, cwd=cfg.root)
     s.pair = (r.stdout + r.stderr).strip()
@@ -1076,34 +1272,37 @@ def run_cell(cfg, c):
         # the TWIN with the PRE-Increment-4 binary, so an Increment-4 change to
         # the chained path cannot flatter its own witness.
         try:
-            subj = build(cfg, work, nm + "_prep", gen(c, "prep"))
-            twin = build(cfg, work, nm + "_twin", gen(c, "twin"),
+            subj = build(cfg, work, nm + "_prep",
+                         gen(c, "prep", cfg.phi_surface))
+            twin = build(cfg, work, nm + "_twin",
+                         gen(c, "twin", cfg.phi_surface),
                          cfg.prep_oracle or None)
         finally:
             if not cfg.keep:
                 shutil.rmtree(work, ignore_errors=True)
         return nm, c, classify_prep(nm, subj, twin, seed_matcher(c))
     try:
-        ry = build(cfg, work, nm + "_ry", gen(c, "cq_theta"))
-        rz = build(cfg, work, nm + "_rz", gen(c, "cq_phi"))
+        ry = build(cfg, work, nm + "_ry", gen(c, "cq_theta", cfg.phi_surface))
+        rz = build(cfg, work, nm + "_rz", gen(c, "cq_phi", cfg.phi_surface))
         # THE ORACLE INVERSION (bd drbq Inc 2a, PRD §12.2(iii)). Before 2a the Rz
         # spelling ROUTED, so the same binary supplied both the subject and the
         # oracle. 2a lowers the Rz twin control-in-place too, so the routed oracle
         # now has to come from a PRE-2a binary — one built from `f92d95e` in a
         # scratch worktree. With `--route-oracle` set, `rzo` is that binary's Rz
         # trace and it is the ONLY route in the picture.
-        rzo = (build(cfg, work, nm + "_rzo", gen(c, "cq_phi"), cfg.route_oracle)
+        rzo = (build(cfg, work, nm + "_rzo", gen(c, "cq_phi", cfg.phi_surface),
+                     cfg.route_oracle)
                if cfg.route_oracle else None)
     finally:
         if not cfg.keep:
             shutil.rmtree(work, ignore_errors=True)
-    return nm, c, classify(nm, ry, rz, rzo)
+    return nm, c, classify(nm, ry, rz, rzo, cfg.phi_surface == "void")
 
 
 ARM_HEX = set(float(a).hex() for a in ARM_ANGLES)
 
 
-def classify(nm, ry, rz, rzo=None):
+def classify(nm, ry, rz, rzo=None, void=False):
     """-> dict(verdict, notes[], prefix_diff, suffix, inv[], rzv)
 
     `rzo` is the PRE-2a (routing) binary's Rz side, present only under
@@ -1121,6 +1320,18 @@ def classify(nm, ry, rz, rzo=None):
     # The ROUTED oracle is `rzo` when one was supplied; `rz` otherwise (the
     # pre-2a behaviour, kept so the script still runs against an old build).
     oracle = rzo if rzo is not None else rz
+    # bd 3qlq Inc 1 — asked FIRST, because a side in this state has no trace to
+    # compare and no diagnostic to report: it lowered cleanly and simply still
+    # names a symbol nothing defines. Both counts are printed, because WHICH side
+    # left the call behind is the information.
+    if ry.phi_unlowered or oracle.phi_unlowered:
+        R["verdict"] = "PHI-UNLOWERED"
+        R["notes"].append("residual `call void @cq_phi` in the LOWERED IR: "
+                          "ry %s, rz %s — a PRE-Increment-1 binary neither lowers "
+                          "nor deletes the void surface, so the module cannot "
+                          "link. A disposition, not a harness error."
+                          % (_resid(ry), _resid(oracle)))
+        return R
     if ry.error or oracle.error:
         R["verdict"] = "HARNESS-ERROR"
         R["notes"].append((ry.error or "") + " | " + (oracle.error or ""))
@@ -1139,8 +1350,18 @@ def classify(nm, ry, rz, rzo=None):
         return R
 
     # both accept
-    red, ncoll = reduce_route(oracle.trace, ARM_HEX)
-    ryn, rzn = normalise(ry.trace), normalise(red)
+    #
+    # THE REDUCER IS SELECTED BY THE SURFACE, NEVER MERGED (bd 3qlq Inc 1).
+    # `register` collapses the ROUTE on the Rz side only; `void` canonicalises
+    # the ONE arm gate on BOTH sides, because the two stems now emit different
+    # single gates and neither is a route. See `reduce_kickback`.
+    if void:
+        red, ncoll = reduce_kickback(oracle.trace, ARM_HEX)
+        ryred, _ = reduce_kickback(ry.trace, ARM_HEX)
+    else:
+        red, ncoll = reduce_route(oracle.trace, ARM_HEX)
+        ryred = ry.trace
+    ryn, rzn = normalise(ryred), normalise(red)
     ncry = len(re.findall(r"cqrt_ry_\w+_controlled\(", "\n".join(ry.trace)))
     if ncry == 0:
         R["verdict"] = "ACCEPT-NO-CRY"
@@ -1362,6 +1583,20 @@ def _star(a):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--root", default=os.getcwd())
+    ap.add_argument("--include-dir", default="",
+                    help="the directory holding CQ.h. Default `<root>/include`. "
+                         "Under --phi-surface void it MUST point at a header "
+                         "whose cq_phi is the ONE register-free extern "
+                         "`void cq_phi(double)` (bd 3qlq Inc 1, PRD §4.1).")
+    ap.add_argument("--phi-surface", choices=PHI_SURFACES, default="register",
+                    help="the `cq_phi` FRONTEND surface the cells are generated "
+                         "against (bd test_C_libtooling-3qlq Increment 1). "
+                         "`register` (DEFAULT) is the shipped 15-width "
+                         "`r = cq_phi(r, T)` whose Rz side ROUTES; `void` is the "
+                         "register-free branch phase `cq_phi(T)` whose Rz side is "
+                         "a KICKBACK. See the module docstring's `cq_phi` SURFACE "
+                         "section for what each axis then means, what the void "
+                         "reducer gives up, and how to read a pre-Inc-1 table.")
     ap.add_argument("--llvm", default="/usr/local/opt/llvm@19/bin")
     ap.add_argument("--jobs", type=int, default=6)
     ap.add_argument("--only", default="")
@@ -1393,6 +1628,51 @@ def main():
                          "WHOLE trace (prefix AND suffix — the Rz stem is "
                          "transparent to uncomputation, PRD §12.1)")
     cfg = ap.parse_args()
+    # ── bd 3qlq Increment 1 — the `void` cq_phi surface. Two refusals. ───────
+    if cfg.phi_surface == "void":
+        hdr = os.path.join(cfg.include_dir or os.path.join(cfg.root, "include"),
+                           "CQ.h")
+        try:
+            text = open(hdr).read()
+        except OSError as e:
+            sys.stderr.write("--phi-surface void: cannot read %s (%s)\n"
+                             % (hdr, e))
+            return 2
+        # A `register` header would take `cq_phi(T)` as a ONE-argument call to a
+        # TWO-argument _Generic macro; clang would reject every cell at stage 1
+        # and the run would read like a wall of compiler declines.
+        #
+        # ASKED BY `phi_surface_of_header`, THE ONE SPELLING IN THE TREE (Rule
+        # 14, and the same import that already brings `phi_void_source` here).
+        # It was a LITERAL substring test `"void cq_phi(double" not in text`,
+        # duplicated in all three instruments, and the SHIPPED include/CQ.h
+        # spells the declaration column-aligned — `void                cq_phi
+        # (double angle);` — so all three REFUSED the very header they require
+        # and said it was a `register`-surface one (bd 3qlq Inc 1, round-1 review
+        # finding F-L5-7(b); MEASURED here on 2026-09-05, where it stopped the
+        # POST run of this instrument dead). The classifier strips C comments
+        # first, so the shipped header's own prose about the retired
+        # `cq_phi_<sfx>(x, angle)` family cannot flip the answer, and
+        # `loop_twin_matrix_quarantine_test.py` exercises it against the REAL
+        # include/CQ.h.
+        hdr_surface = phi_surface_of_header(text)
+        if hdr_surface != "void":
+            sys.stderr.write(
+                "--phi-surface void: %s declares the `%s` cq_phi surface, not "
+                "`void`.\n  Every cell would fail at STAGE 1 and the wall of "
+                "clang errors would read like\n  a wall of lowering declines. "
+                "Point --include-dir at a header whose cq_phi is\n  the ONE "
+                "register-free extern `void cq_phi(double)` (PRD §4.1) — the "
+                "shipped\n  include/CQ.h is one.\n" % (hdr, hdr_surface))
+            return 2
+        if cfg.route_oracle:
+            sys.stderr.write(
+                "--phi-surface void: --route-oracle is REFUSED. That flag wants a "
+                "PRE-2a\n  binary in which the Rz spelling still ROUTES, and this "
+                "surface has no route\n  to compare against — retiring it is the "
+                "whole of bd test_C_libtooling-3qlq.\n  Run without it; the "
+                "oracle is then the same binary's Rz side.\n")
+            return 2
     if cfg.route_oracle and not os.access(cfg.route_oracle, os.X_OK):
         sys.stderr.write("route-oracle not executable: %s\n" % cfg.route_oracle)
         return 2
@@ -1410,7 +1690,7 @@ def main():
             "oracle and pass it. See the PREP_SEEDS block.\n\n")
     cfg.clang = os.path.join(cfg.llvm, "clang")
     cfg.cqopt = os.path.join(cfg.root, "build/ir-pass/cq-opt")
-    cfg.include = os.path.join(cfg.root, "include")
+    cfg.include = cfg.include_dir or os.path.join(cfg.root, "include")
     cfg.pairchk = os.path.join(cfg.root, "tools/free_pairing_check.py")
     cfg.templates = os.path.join(cfg.root, "build/runtime/libcq_templates.a")
     cfg.runtime = os.path.join(cfg.root, "build/runtime/libcq_runtime.a")
@@ -1476,6 +1756,8 @@ def main():
     print(out)
     mode = ("STATE-PREP" if cfg.stateprep else "QUICK" if cfg.quick
             else "TRIPLES" if cfg.triples else "ALL-PAIRS")
+    if cfg.phi_surface == "void":
+        mode += ", --phi-surface void"
     print("\n=== TALLY (%s, %d cells) ===" % (mode, len(res)))
     for k in sorted(tally):
         print("  %-26s %d" % (k, tally[k]))

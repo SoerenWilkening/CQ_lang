@@ -1,3 +1,15 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- every oracle / reflection arm's `q = cq_phi(q, PI)` -> `cq_phi(PI)`.
+
+   FINDING (PRD S1, measured 2026-09-05 at HEAD 52d7764): the PRE-3qlq golden of
+   this slice encoded a CONTROLLED TENSORED Rz, which is the IDENTITY on q --
+   `cqrt_rz_<W>` is "Rz on each qubit", so the marked phase is (-1)^popcount(target)
+   (= +1 for |5>) and a per-qubit diagonal gate FIXES |0..0>, so the |0> reflection
+   can never put -1 there. Any claim in the prose below that the oracle marks |5>,
+   or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
+   THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
+   a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
+   older prose is left verbatim rather than silently corrected; read it with this.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_loop_leading_gate.c — bd test_C_libtooling-8h7d.5,
    Rule-13 ROUND 4, finding F-4. The rolled loop whose body puts a
    BASIS-RELABELLING GATE BEFORE the tainted region.
@@ -9,7 +21,7 @@
 
        for (i < 2) {
            a = cq_theta(a, 0.25);        <-- the LEADING Ry: the whole finding
-           if ((a & 3) == 1) { a = cq_phi(a, PI); }
+           if ((a & 3) == 1) { cq_phi(PI); }
            a = cq_theta(a, -0.5);
        }
 
@@ -47,7 +59,7 @@ int slice(void) {
     for (int i = 0; i < 2; ++i) {
         a = cq_theta(a, 0.25);                           /* the LEADING gate */
         if ((a & 3) == 1) {                              /* derived oracle */
-            a = cq_phi(a, 3.14159265358979323846);
+            cq_phi(3.14159265358979323846);
         }
         a = cq_theta(a, -0.5);                           /* S-dagger */
     }

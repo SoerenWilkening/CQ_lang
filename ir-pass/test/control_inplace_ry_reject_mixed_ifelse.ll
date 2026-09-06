@@ -18,12 +18,22 @@
 ; Correct outcome, wrong reason, and luck rather than a fence. The companion
 ; fixture control_inplace_ry_reject_mixed_ifelse_rz_first.ll pins the other order.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: mixed phase/value arm under quantum control
+; NEW: cq controlled lowering: mixed phase/value arm under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}mixed phase/value arm under quantum control
+; CHECK: error{{.*}}cq controlled lowering: mixed phase/value arm under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -36,10 +46,10 @@ armt:
   %rt = call i32 @cq_theta_si32(i32 %r, double 9.000000e-01)
   br label %merge
 armf:
-  %rf = call i32 @cq_phi_si32(i32 %r, double 2.000000e-01)
+  call void @cq_phi(double 2.000000e-01)
   br label %merge
 merge:
-  %rm = phi i32 [ %rt, %armt ], [ %rf, %armf ]
+  %rm = phi i32 [ %rt, %armt ], [ %r, %armf ]
   %m  = call i32 @cq_measure_si32(i32 %rm)
   ret i32 %m
 }

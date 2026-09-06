@@ -126,11 +126,18 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   BasicBlock *Mid = Outer.Arm;         // doomed (= Inner.Pred)
   BasicBlock *InnerArm = Inner.Arm;    // doomed
   BasicBlock *Merge = Outer.MergeBB;   // doomed (shared — erased EXACTLY ONCE)
-  if (!MergePhi || !Pred || !Mid || !InnerArm || !Merge)
+  // bd test_C_libtooling-3qlq Inc 1 part B — `MergePhi` MAY NOW BE NULL. The
+  // register-free depth-2 PHASE NEST (`PhaseKickbackNest`) has no merge φ at all:
+  // its arm gates are `void @cq_phi(double)`, so nothing flows out of either arm
+  // and step 1 below has nothing to collapse. Every other step is unchanged and
+  // is exactly what that nest needs (drop both branches, erase both dead
+  // condition roots, splice the shared merge into `Pred` EXACTLY ONCE, erase
+  // InnerArm → Mid → Merge in that order). A null φ is therefore a legitimate
+  // plan, not a malformed one — but the OTHER anchors are still required.
+  if (!Pred || !Mid || !InnerArm || !Merge)
     return;  // malformed plan — leave the IR for the verifier rather than crash.
-  if (MergePhi->getBasicBlockIndex(Pred) < 0)
+  if (MergePhi && MergePhi->getBasicBlockIndex(Pred) < 0)
     return;
-  Value *Q = MergePhi->getIncomingValueForBlock(Pred);
   auto *OuterBI = dyn_cast<BranchInst>(Pred->getTerminator());
   auto *InnerBI = dyn_cast<BranchInst>(Mid->getTerminator());
   auto *OuterCond = dyn_cast_or_null<Instruction>(Outer.Condition);
@@ -147,9 +154,12 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    nest is the SOLE owner of this phi (§6.1) — erasing it here, before
   //    `declineClassicalMuxes`, is what keeps the live 3-incoming tainted phi from
   //    false-declining `classical phi` on a half-mutated module.
-  MergePhi->replaceAllUsesWith(Q);
-  scrubTaint(MergePhi, taint);
-  MergePhi->eraseFromParent();
+  if (MergePhi) {
+    Value *Q = MergePhi->getIncomingValueForBlock(Pred);
+    MergePhi->replaceAllUsesWith(Q);
+    scrubTaint(MergePhi, taint);
+    MergePhi->eraseFromParent();
+  }
 
   // 2. Branch-first: drop BOTH conditional branches (the inner `br` in `Mid`, then
   //    the outer `Pred`-tail). This leaves `Mid`/`Pred` terminator-less for the

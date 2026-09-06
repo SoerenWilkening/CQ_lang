@@ -20,17 +20,20 @@
 #include "SwapRouteEmit.h"
 
 #include "AbortParkEmit.h"       // emitAbortParkRegion (the 7.2 Inc 3 park cascade)
+#include "ArmAnalysis.h"         // phaseAngleTail (3qlq Inc 1 merge-tail angle phi)
+#include "CondTreeEmit.h"        // emitCondNetwork / stripCondNetwork (3qlq P3)
+#include "SelectClassify.h"      // CondTree / collectCondTree (the shared grammar)
 #include "ArithLowering.h"       // rewriteBinary (the value-arm chain body, §4)
 #include "AngleSelectEmit.h"     // emitAngleSelectRegion (drbq Inc 2b)
+#include "ChainWalk.h"           // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"     // lowerCompareToFlag
 #include "ClassicalCallArmEmit.h" // emitClassicalCallArmRegion (the 6.5 merge)
 #include "GuardedStoreArmEmit.h"  // emitGuardedStoreArmRegion (iw81.7)
 #include "ControlPlan.h"         // ControlRegion / ControlPlan
 #include "ControlledSymbols.h"   // cswapFn / xFn
 #include "EmitInverse.h"         // emitInverseChain (the value-arm reverse-play)
-#include "NestedRouteEmit.h"     // lowerNestedRegion (the depth-2 nest dispatch)
 #include "OpcodeSupport.h"       // abiWidthFromType · abiWidthHasControlledRotation
-#include "RegionFlatten.h"       // flattenRegion
+#include "RegionFlatten.h"   // flattenRegion / flattenRegionTree       // flattenRegion
 #include "SelectMergeEmit.h"     // emitSelectRegion (the 4.4 select merge)
 #include "SwitchRouteEmit.h"     // emitSwitchPhaseRegion (the 4.5 switch phase)
 #include "TaintPropagation.h"    // TaintSet
@@ -129,6 +132,25 @@ StringRef intrinsicSuffix(const Value *V, StringRef Prefix) {
   return F->getName().substr(Prefix.size());
 }
 
+// ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 (2026-09-05), AND DELIBERATELY
+// KEPT (PRD `retire-swap-route-PRD.md` §6.2 row P6: "every 'Rz is diagonal and
+// exempt' clause becomes VACUOUS rather than deleted").
+//
+// The 15-width `@cq_phi_<sfx>(x, angle)` family is RETIRED: `CQ.h` no longer
+// declares it and `resolveSources` no longer resolves it, so no call this
+// predicate can match exists in a module the pass lowers. It CANNOT accidentally
+// match the register-free replacement, and that is a fact about the strings, not
+// a hope: `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE — six characters
+// against a seven-character prefix. The new call is recognized by EXACT
+// membership instead (`TaintPropagation.h`'s `isRegisterFreePhaseCall`), which is
+// also the project's standing accept-side discipline (never a name prefix — the
+// `cq_theta_evil` hazard).
+//
+// KEEPING IT IS THE POINT: a `void(double)` call has no arg-0 WIRE and no arg-1
+// ANGLE, so every clause below that follows `getArgOperand(0)` as a rail, or
+// reads `getArgOperand(1)` as an angle, would be reading the wrong operand — or
+// out of range — if this predicate were widened to admit it. Do not "fix" this by
+// making it match `cq_phi`.
 bool isPhiCall(const Value *V) { return !intrinsicSuffix(V, "cq_phi_").empty(); }
 
 // `collectArmPhis` and `emitRoute` are DE-ANONYMIZED into the named `cq`
@@ -1249,6 +1271,659 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
   return Swap;
 }
 
+
+// ── bd test_C_libtooling-3qlq Inc 1 — P1, the FLAT KICKBACK EMITTER ─────────
+//
+// The whole emitted stream, for `if (q == 5) cq_phi(PI);` (PRD §1's target):
+//
+//     cq_template_icmp_eq_i32_hl(h0, 5) -> h1        ; flag mint
+//     cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)           ; P(θ) ON THE FLAG
+//     cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)      ; flag strip → |0>
+//     cqrt_free(h1)                                  ; clean free (Rule 6)
+//
+// FOUR LINES, AND `q` IS NOT AN OPERAND OF ANY OF THEM except as the compare's
+// input. That is the entire point of the increment (PRD §1): the shipped
+// `cqrt_rz_<W>_controlled(f, h, θ)` this REPLACES was TENSORED — Rz on each
+// qubit of the register — so the marked branch got `(−1)^popcount(target)` and
+// `|0…0⟩` could not be marked at all, making every Grover golden a
+// self-consistent trace of the IDENTITY on `q`.
+//
+// WHY THERE IS NO ROUTE, NO WORK RAIL AND NO `_controlled` GATE (PRD §3). With
+// `f = c(x)` in a |0⟩ ancilla the state is `Σ a_x |x⟩|c(x)⟩`; a diagonal
+// `P(θ)` on the ANCILLA gives `Σ a_x e^{iθ c(x)} |x⟩|c(x)⟩`; the compare `_unc`
+// is the permutation `|x, c(x)⟩ → |x, 0⟩`, so the ancilla comes back |0⟩ ON
+// EVERY BRANCH and the phase is left on the branch. One single-qubit gate. The
+// `cqrt_cswap` route and the controlled-copy route are both junk-free for a
+// diagonal gate too, at `2W` Fredkin / `2W` Toffoli respectively — the kickback
+// needs neither.
+//
+// WHAT THIS SHARES WITH ITS SIBLINGS, VERBATIM (Rule 14). The mint, the `cqrt_x`
+// negation bracket, the `_unc` strip and the free are the SAME four calls
+// `emitRegion` (§B1) and `emitInPlaceRotationRegion` make, in the same order,
+// through the same `lowerCompareToFlag` / `csyms.xFn()` / `wd.freeFn()`
+// spellings. Only the gate between the brackets differs, and the merge handling:
+//
+//   * there is NO RAUW AT ALL. `emitRegion`'s M-α (`MergePhi → Q`) and
+//     `emitInPlaceRotationRegion`'s M-β (`MergePhi → last hoisted gate`) both
+//     answer "what does the merged name denote"; a kickback merges no name, so
+//     the question does not arise and neither convention is instantiated here.
+//     `R.Merge` is null by construction (`classifyPhaseKickback` sets it so) and
+//     `flattenRegion` therefore never touches a φ — the same shape
+//     `lowerControlledIOSinks` flattens for the void-I/O diamond.
+//   * the gate is NOT recorded in `taint.ControlledRotations`. That map is the
+//     hoist-and-defer channel to `lowerRotations` for a gate that must become
+//     `_controlled`; this gate is UNCONTROLLED and is emitted here, finished.
+//
+// THE ZIOV SHARED-FLAG PATH IS HONOURED (`R.ShareCondFlag`): when the condition
+// compare is ALSO read as data, the flag is minted at the COMPARE so it
+// dominates every data use, and the strip+free are SKIPPED here because the data
+// lineage owns the flag.
+//
+// ⚠ THAT IS THE SAME FOUR LINES `emitRegion` WRITES AND IT IS **NOT** THE SAME
+// MODULE — the earlier spelling of this paragraph said "byte-for-byte the rule
+// `emitRegion` follows", and that false equivalence is precisely where the
+// Rule-13 round-1 CONFIRMED SILENT MISCOMPILE F-L7-1 / F-L1-1 / F-L2-1 lived.
+// `emitRegion`'s arm gate is `cqrt_rz_<W>_controlled`, which
+// `ChainWalk::isInPlaceGateOn` deliberately REFUSES (Inc 2a, `ChainWalk.cpp`'s
+// stem-split note) — so handing `emitRegion`'s flag to the data lineage hands
+// over a rail carrying an UNRECOGNIZED consumer, and the spine leaves it alone.
+// THIS emitter's gate is a plain `cqrt_rz_i1`, which that predicate ADMITTED. So
+// "the data lineage owns the flag" was, for this path and not for its sibling,
+// the sentence that AUTHORISED the whole-DAG spine to emit `cqrt_rz_i1(f, -θ)`
+// and cancel the user's phase exactly. Two emitters, one sentence, opposite
+// consequences.
+//
+// WHAT MAKES IT TRUE NOW, ON BOTH PATHS AND BY THE SAME MECHANISM: every gate
+// this emitter mints is recorded with `ChainWalk::markBranchPhaseGate`, and the
+// three spine predicates refuse a member outright. On the SHARE path that turns
+// the flag into an unrecognized-consumer rail (`D.NotClosed`) — left allocated,
+// Rule-6 safe, and byte-for-byte the pre-3qlq oracle's disposition on the same
+// source. On the NON-share path the strip+free below still fire, and the record
+// is what keeps them the ONLY discharge: before it, that path was protected only
+// by its own `cqrt_free(Flag)` happening to make the flag an unrecognized-consumer
+// rail, which is an accident of this emitter's own emission order and not a fence
+// (lens L7 §F-L7-5). The protection is now the membership, on BOTH paths.
+void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
+                             const ControlledSymbols &csyms, TaintSet &taint) {
+  // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING.
+  // Every decline below precedes the FIRST emitted instruction, for the reason
+  // the sibling emitters state: a region that declines MID-STREAM leaves a
+  // minted flag and a half-lowered arm behind (the Inc-2a round-1 F-5 finding).
+  auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
+  auto anchor = [&]() -> Instruction * {
+    if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+      return A;
+    return BI;
+  };
+  // The condition is re-derived through the SAME `collectCondTree` grammar the
+  // classifier accepted with (Rule 14 — the walk cannot drift). A bare compare
+  // is the degenerate single-leaf tree and takes the pre-part-B code below,
+  // byte-for-byte; a COMPOUND tree (P3) takes the shared `CondTreeEmit` network.
+  CondTree Tree;
+  if (!BI || !BI->isConditional() || !R.Arm || !R.MergeBB || !R.Condition ||
+      BI->getCondition() != R.Condition ||
+      !collectCondTree(R.Condition, Tree, /*AllowLogicalSelect=*/true)) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  const bool IsTree = !Tree.Nodes.empty();
+  auto *Cond = IsTree ? nullptr : Tree.Leaves.front();
+  // Each recorded gate must still be a one-operand phase call in the arm the
+  // plan says it is in, with an angle defined OUTSIDE that arm (the classifier's
+  // `Arm->size() == N + 1` makes the latter structural, but it is an EMISSION
+  // fact — the angle has to dominate `BI`, where the gate is hoisted to — so it
+  // is re-asked here rather than inherited).
+  auto validGates = [&](ArrayRef<Instruction *> Gates, BasicBlock *BB) {
+    for (Instruction *I : Gates) {
+      auto *CI = dyn_cast<CallInst>(I);
+      if (!CI || CI->getParent() != BB || CI->arg_size() != 1)
+        return false;
+      if (auto *AngI = dyn_cast<Instruction>(CI->getArgOperand(0)))
+        if (AngI->getParent() == BB)
+          return false;
+    }
+    return true;
+  };
+  if (!validGates(R.Shadow, R.Arm) ||
+      (R.ArmFalse && !validGates(R.ShadowFalse, R.ArmFalse)) ||
+      (!R.ArmFalse && !R.ShadowFalse.empty())) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  // The MERGE-TAIL ANGLE PHI, re-asked through the SAME predicate detection used
+  // (Rule 14 — never a second spelling). Its ABSENCE is as load-bearing as its
+  // presence: a φ left standing in a merge `flattenRegion` splices away is a
+  // BROKEN MODULE (`PHI nodes not grouped at top of basic block!`, MEASURED on
+  // `slice_control_phase_ifelse_derived`), so if the merge carries a φ that is
+  // not this one, decline rather than flatten over it.
+  //
+  // ⚠ NOT "at `opt` exit 0" — that half of the original sentence is MEASURED
+  // FALSE (Rule-13 round-1 F-L3-5). `cq-opt` runs `VerifierPass` after this pass
+  // with `FatalErrors=true`, so a broken module ABORTS with
+  // `LLVM ERROR: Broken module found, compilation aborted!`, exit **134**, and no
+  // `-o` is written. See `ArmAnalysis.h`'s note on `phaseAngleTail` for the
+  // measurement and for what IS true about `cq-opt`'s exit behaviour.
+  PHINode *TailPhi = nullptr;
+  CallInst *TailCall = nullptr;
+  const bool HasTail = phaseAngleTail(R.MergeBB, taint, TailPhi, TailCall);
+  if (!HasTail && !R.MergeBB->phis().empty()) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  if (R.Shadow.empty() && R.ShadowFalse.empty() && !HasTail) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  // `cqrt_rz_i1` is the ONLY Rz this pass emits after 3qlq (PRD §5). Resolve it
+  // BEFORE any mutation so a resolution failure is a decline, not a half-stream.
+  FunctionCallee Rz = wd.rzRtFn("i1");
+  if (!Rz) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+
+  // ---- EMISSION STARTS HERE. Nothing below may decline.
+  const DebugLoc DL = R.Shadow.empty()
+                          ? (HasTail ? TailCall->getDebugLoc() : BI->getDebugLoc())
+                          : R.Shadow.front()->getDebugLoc();
+  IRBuilder<> B(BI);
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+
+  // ---- 1. FLAG MINT — `cq_template_icmp_<pred>_<W>_hl(q, lit)`. Position rule
+  // copied from `emitRegion` step 1: at the COMPARE on the ziov share path (so
+  // the one physical flag dominates every data use), at the branch otherwise.
+  //
+  // COMPOUND TREE (P3): the network is the 4.4 select's, shared through
+  // `CondTreeEmit` — one flag per leaf, one `|0>` ancilla per and/or/xor node,
+  // the ROOT ancilla carrying the whole predicate. `ShareCondFlag` is FALSE for
+  // a tree by construction (the classifier declines every out-of-tree use), so
+  // the position rule degenerates to "at the branch".
+  CondNetwork Net;
+  SmallVector<CallInst *, 4> LeafStrips;
+  if (IsTree) {
+    switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/BI,
+                            DL, /*AllowQQLeaves=*/false, Net)) {
+    case CondNetDisp::Ok:
+      break;
+    case CondNetDisp::MintDiagnosed:
+      // `lowerCompareToFlag` was already LOUD; a second message here would only
+      // change what a decline fixture reads. The classifier proved every leaf
+      // mintable, so this is drift — but it is still a decline, not a skip.
+      return;
+    case CondNetDisp::Malformed:
+      if (Instruction *A = anchor())
+        diagnoseUnderControl(A, "control flow");
+      return;
+    }
+  }
+  Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
+  Value *Flag = IsTree ? Net.Root
+                       : lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                            /*inverse=*/false,
+                                            /*before=*/FlagAt);
+  if (!Flag)
+    // REACHABLE, and say so plainly rather than calling it unreachable — an
+    // overstated justification is how a real bail later gets deleted as dead.
+    // `classifyPhaseKickback` asks `compareFlagMintable` (a dry run of the
+    // template lookup) but deliberately does NOT ask whether the compare is
+    // Q+Q, so a `q == p` condition reaches here and `lowerCompareToFlag` fails.
+    //
+    // THAT IS SAFE AND IT IS THE PRE-EXISTING DISPOSITION, both MEASURED. Safe:
+    // the mint is the FIRST emission, so returning leaves the module exactly as
+    // it was — this is not a mid-stream bail (contrast `AngleSelectEmit`, whose
+    // `fsub` and unconditional twin precede its mint, which is why IT re-asks
+    // the semantic half at step 0b). Pre-existing: `lowerCompareToFlag` has
+    // already diagnosed `no template for opcode 'icmp i1' in tainted context`,
+    // which is CHARACTER-FOR-CHARACTER what the pre-3qlq oracle emits for the
+    // same Q+Q phase diamond in the retired register form (measured on
+    // `$SP/wt/pre-3qlq` 2026-09-05) — so this shape's message did not churn.
+    // `emitRegion`'s flat phase path has the identical structure and comment.
+    // Q+Q flag minting is a filed follow-on (PRD §9), not a defect here.
+    return;
+  if (R.ShareCondFlag)
+    taint.SharedCondFlags[Cond] = Flag;
+
+  // ---- 2. THE GATES — `cqrt_rz_i1(f, θ)` each, UNCONTROLLED, in SOURCE ORDER,
+  // `cqrt_x`-bracketed per arm-polarity.
+  //
+  // N GATES ARE EXACT AND NEED NO ARITHMETIC (orchestrator decision 2026-09-05,
+  // PRD §6.3 row 1 superseded — see `classifyPhaseKickback`'s header). Each
+  // angle is passed through VERBATIM; the composition `P(θ₁)·P(θ₂) = P(θ₁+θ₂)`
+  // happens in the hardware, not in this compiler, so there is no `fsub`, no
+  // rounding residual and no bound to fence — unlike the 2b by-difference Ry
+  // form, whose whole arm-value fence exists because it realizes `A − B`.
+  //
+  // ONE BRACKET PAIR PER ARM, not per gate: `cqrt_x` is self-inverse, so
+  // `x;g1;x;x;g2;x` and `x;g1;g2;x` are the same unitary and the second is what
+  // the flat phase path has emitted since Inc 2a.
+  //
+  // ⚠ READ THAT AS "PER ARM", NEVER AS "PER REGION" — the earlier spelling of
+  // this comment said the second and was MEASURED FALSE in four programs, two of
+  // them plain C (lens L1 §F-L1-3). The merge-tail loop at step 2b brackets EACH
+  // INCOMING by its own polarity, independently of the arm's bracket, so one
+  // source arm can carry TWO pairs: `if(q!=5){cq_phi(.9);cq_phi(.3);}else
+  // {cq_phi(.11);}` emits `x; rz(.9); x; x; rz(.3); x; rz(.11)` — FOUR `cqrt_x`,
+  // two of them adjacent and cancelling. Correct (an involution), and not what
+  // the comment claimed. The accurate rule is: one pair per ARM, plus one per
+  // BRACKETED TAIL INCOMING.
+  //
+  // ⚠ AND THE OLD CITATION OF `SwapRouteEmit.cpp:1063`'s `-2 cqrt_x` audit
+  // arithmetic WAS A FALSE DEPENDENCY, also L1 §F-L1-3. That note is the drbq
+  // Inc-2a route→control-in-place COLLAPSE arithmetic, and
+  // `tools/golden_multiset_audit.py` models `-2 cqrt_x` per COLLAPSED QUINTUPLE.
+  // The kickback path feeds neither: it collapses no quintuple and appears in no
+  // pre-3qlq golden. Nothing downstream depends on this choice — it is a shape
+  // decision, argued from the involution above and from nothing else.
+  FunctionCallee X = csyms.xFn();
+  auto emitArm = [&](ArrayRef<Instruction *> Gates, bool Neg) {
+    if (Gates.empty())
+      return;
+    if (Neg)
+      stamp(B.CreateCall(X, {Flag}));
+    for (Instruction *I : Gates)
+      // EVERY emitted kickback gate is RECORDED (`ChainWalk::markBranchPhaseGate`)
+      // so the whole-DAG uncompute spine treats it as opaque. Without the record
+      // the spine reads `cqrt_rz_i1(f, θ)` as an ordinary in-place rotation on
+      // `f`'s chain and emits `cqrt_rz_i1(f, -θ)`, cancelling the user's phase
+      // exactly — the Rule-13 round-1 CONFIRMED miscompile F-L7-1 / F-L1-1.
+      markBranchPhaseGate(
+          stamp(B.CreateCall(Rz, {Flag, cast<CallInst>(I)->getArgOperand(0)})));
+    if (Neg)
+      stamp(B.CreateCall(X, {Flag}));
+  };
+  emitArm(R.Shadow, R.ArmNegated);
+  // The FALSE arm of an if/else always fires on ¬f — `ArmNegated` is the
+  // DIAMOND's polarity and is false for an if/else, so the bracket here is
+  // unconditional (the field convention: `Shadow` is `Arm`'s, `ShadowFalse` is
+  // `ArmFalse`'s, by field identity and not by edge truth).
+  emitArm(R.ShadowFalse, /*Neg=*/true);
+
+  // ---- 2b. THE MERGE-TAIL ANGLE PHI: one gate per incoming, each bracketed by
+  // THAT incoming's own polarity. `%a = phi double [A, %arm], [B, %pred]` means
+  // "A when the arm ran, B otherwise", so the gate for the `%arm` incoming fires
+  // on the arm's polarity and the `%pred` incoming's fires on its negation. Walk
+  // the incoming list in index order so the emitted stream is a deterministic
+  // function of the IR.
+  if (HasTail)
+    for (unsigned I = 0; I != 2; ++I) {
+      BasicBlock *In = TailPhi->getIncomingBlock(I);
+      // `Arm` fires on f == 1 unless the diamond polarity is inverted; `ArmFalse`
+      // always fires on f == 0; the straight-through `Pred` edge is taken exactly
+      // when `Arm` is not, so its polarity is `Arm`'s negation.
+      const bool FiresOnOne = In == R.Arm         ? !R.ArmNegated
+                              : In == R.ArmFalse  ? false
+                                                  : R.ArmNegated;
+      if (!FiresOnOne)
+        stamp(B.CreateCall(X, {Flag}));
+      // Recorded for the same reason as the arm gates above (F-L7-1).
+      markBranchPhaseGate(
+          stamp(B.CreateCall(Rz, {Flag, TailPhi->getIncomingValue(I)})));
+      if (!FiresOnOne)
+        stamp(B.CreateCall(X, {Flag}));
+    }
+
+  // ---- 3. STRIP + FREE. The strip recomputes the predicate on the CONDITION's
+  // OWN registers and XORs it back onto the flag, returning it to |0⟩ so the free
+  // is clean (Rule 6). Its validity here is unconditional in a way no other arm
+  // class can claim: this region emits NO gate on any condition register at all,
+  // so the basis the strip reads is identically the basis the mint read.
+  // (`emitRegion` needs §3c for the same conclusion; the Ry path needs S8's
+  // disjoint-wire proof.)
+  //
+  // SKIPPED WHOLE on the ziov share path: the data lineage owns the flag and
+  // discharges it downstream — freeing it here would be a use-after-free.
+  if (IsTree) {
+    // The exact LIFO mirror of the network: every node's self-inverse undo (then
+    // its ancilla's proven-|0> free) in reverse post-order, then every leaf's
+    // `_unc` strip against its OWN rail (then that rail's free) in reverse mint
+    // order. `ShareCondFlag` cannot be set for a tree, so there is no skip case.
+    // Each leaf strip is recorded in `DischargedFlagGates` for the same reason
+    // the single-compare one is: it is the point past which a DERIVED
+    // condition's chain may be discharged by the whole-DAG spine
+    // (`ChainWalk::isInteriorConsumer`).
+    stripCondNetwork(Net, wd, csyms, taint, /*Before=*/BI, DL,
+                     /*AllowQQLeaves=*/false, &LeafStrips);
+    for (CallInst *S : LeafStrips)
+      taint.DischargedFlagGates.insert(S);
+  } else if (!R.ShareCondFlag) {
+    auto *Strip = dyn_cast_or_null<CallInst>(
+        lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                           /*before=*/BI, /*negate=*/false,
+                           /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
+    stamp(B.CreateCall(wd.freeFn(), {Flag}));
+  }
+
+  // ---- 4. ERASE THE ARM CALLS AND THE TAIL, THEN FLATTEN. Each call is erased
+  // rather than hoisted: its whole content is now a `cqrt_rz_i1` above. Scrub
+  // from `PhaseCalls` first so `deleteGlobalPhases` (which derives its survivors
+  // from the IR) and any later module walk cannot dereference freed memory.
+  auto erasePhase = [&](CallInst *CI) {
+    auto &PC = taint.PhaseCalls;
+    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    CI->eraseFromParent();
+  };
+  for (Instruction *I : R.Shadow)
+    erasePhase(cast<CallInst>(I));
+  for (Instruction *I : R.ShadowFalse)
+    erasePhase(cast<CallInst>(I));
+  if (HasTail) {
+    // Consumer first (it is the φ's only user), then the φ — which MUST go
+    // before `flattenRegion` splices its block away.
+    erasePhase(TailCall);
+    scrubTaint(TailPhi, taint);
+    TailPhi->eraseFromParent();
+  }
+  // `R.Merge` is null, so `flattenRegion` dissolves no φ — it splices the arm(s)
+  // and merge blocks into `Pred` and rewires the branch, exactly as it does for
+  // the void-I/O diamond. It also erases `R.Condition` — the tree ROOT — once
+  // the branch is gone and the root is use-empty.
+  Value *const Root = R.Condition;
+  flattenRegion(R, taint);
+  // A COMPOUND tree's INTERIOR is not `flattenRegion`'s to erase, and leaving it
+  // is not harmless: the mint and strip built FRESH templates from the leaves'
+  // operands, so with the root gone every node and leaf is dead — and a dead
+  // TAINTED compare is exactly what `lowerOps` would lower into a spurious
+  // template plus a leaked flag rail a few steps later. Cascade ROOT-FIRST
+  // (nodes in reverse post-order, then leaves in reverse) so each child's use
+  // count has already dropped when it is tested — the discipline
+  // `SelectMergeEmit` step 6 follows. `Root` is compared by POINTER only (it may
+  // already be freed memory); nothing is dereferenced through it, and no
+  // instruction is created between the flatten and here, so no address can have
+  // been recycled. A leaf or node with a SURVIVING user is left alone (the
+  // classifier declines every out-of-tree use, so that is defence in depth).
+  for (Instruction *N : llvm::reverse(Tree.Nodes))
+    if (N != Root && N->use_empty()) {
+      scrubTaint(N, taint);
+      N->eraseFromParent();
+    }
+  for (CmpInst *Leaf : llvm::reverse(Tree.Leaves))
+    if (Leaf != Root && Leaf->use_empty()) {
+      scrubTaint(Leaf, taint);
+      Leaf->eraseFromParent();
+    }
+}
+
+
+// ── bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 NEST ────
+//
+// The register-free replacement for `NestedRouteEmit::lowerNestedRegion` (which
+// is DELETED with this increment). See `classifyPhaseKickbackNest` for the
+// shape, the unitary and the scope; the whole emission is:
+//
+//   1  the OUTER condition network            -> rootA           (CondTreeEmit)
+//   2  [x(rootA)] rz_i1(rootA, θ_i) …  [x(rootA)]   the outer arm's phases
+//   3  the INNER condition network            -> rootB           (CondTreeEmit)
+//   4  g = alloc_i1(0);  toffoli(rootA, rootB, g)   X-bracketed per polarity
+//   5  rz_i1(g, θ_j) …                              the inner arm's phases
+//   6  the same bracketed toffoli again; free(g)    (self-inverse, g back to |0>)
+//   7  strip the INNER network, then the OUTER one  (exact LIFO)
+//   8  erase both arms' phase calls, flatten the region tree, cascade-erase the
+//      two condition trees' interiors
+//
+// ZERO `cqrt_cswap`, ZERO work rails, ZERO `_controlled` gates, and the only Rz
+// is `cqrt_rz_i1` — which is the whole point of the epic. Compare the 4.3 route
+// this replaces: two `cqrt_alloc_<W>` work rails, FOUR `cqrt_cswap`, an inner
+// flag minted FROM rail1, and a TENSORED `cqrt_rz_<W>` that could never mark
+// |0..0> (PRD §1/§3).
+//
+// WHY THE ORDER IN 1-3 IS WHAT IT IS. The outer arm's phases ride `rootA` alone,
+// so they may be emitted as soon as the outer network exists; the inner
+// network's leaves read registers no gate in this region touches, so minting it
+// after those phases reads exactly the same basis it would read before them.
+// Emitting the inner network SECOND keeps the LIFO strip in step 7 the literal
+// reverse of the mint order, which is what makes each free a proven-|0> free.
+void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
+                                 const ControlledSymbols &csyms,
+                                 TaintSet &taint) {
+  // ---- 0. RE-VALIDATE BY SSA IDENTITY BEFORE MUTATING ANYTHING. Every decline
+  // below precedes the FIRST emitted instruction (the Inc-2a round-1 F-5
+  // finding: a mid-stream decline leaves a half-built network behind).
+  auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
+  auto *InnerBI = R.Arm ? dyn_cast<BranchInst>(R.Arm->getTerminator()) : nullptr;
+  auto anchor = [&]() -> Instruction * {
+    if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+      return A;
+    return BI;
+  };
+  CondTree OuterTree, InnerTree;
+  if (!BI || !InnerBI || !BI->isConditional() || !InnerBI->isConditional() ||
+      !R.Arm || !R.ArmFalse || !R.MergeBB || !R.Condition ||
+      !R.InnerCondition || BI->getCondition() != R.Condition ||
+      InnerBI->getCondition() != R.InnerCondition ||
+      !collectCondTree(R.Condition, OuterTree, /*AllowLogicalSelect=*/true) ||
+      !collectCondTree(R.InnerCondition, InnerTree,
+                       /*AllowLogicalSelect=*/true) ||
+      !R.MergeBB->phis().empty()) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  // Each recorded gate must still be a one-operand phase call in the block the
+  // plan says, with its ANGLE defined OUTSIDE that block — an EMISSION fact (the
+  // gate is hoisted to `BI`, so the angle has to dominate it), re-asked rather
+  // than inherited.
+  auto validGates = [&](ArrayRef<Instruction *> Gates, BasicBlock *BB) {
+    for (Instruction *I : Gates) {
+      auto *CI = dyn_cast<CallInst>(I);
+      if (!CI || CI->getParent() != BB || CI->arg_size() != 1)
+        return false;
+      if (auto *AngI = dyn_cast<Instruction>(CI->getArgOperand(0)))
+        if (AngI->getParent() == R.Arm || AngI->getParent() == R.ArmFalse)
+          return false;
+    }
+    return true;
+  };
+  if (!validGates(R.Shadow, R.Arm) || !validGates(R.ShadowFalse, R.ArmFalse) ||
+      (R.Shadow.empty() && R.ShadowFalse.empty())) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  // `cqrt_rz_i1` is the ONLY Rz this pass emits after 3qlq (PRD §5), and the
+  // conjunction needs an i1 ancilla allocator. Resolve BOTH before any mutation
+  // so a resolution failure is a decline and not a half-stream.
+  FunctionCallee Rz = wd.rzRtFn("i1");
+  FunctionCallee AllocI1 = wd.allocFn("i1");
+  if (!Rz || !AllocI1) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+
+  // ---- EMISSION STARTS HERE. Nothing below may decline.
+  const DebugLoc DL = !R.Shadow.empty()      ? R.Shadow.front()->getDebugLoc()
+                      : !R.ShadowFalse.empty() ? R.ShadowFalse.front()->getDebugLoc()
+                                               : BI->getDebugLoc();
+  IRBuilder<> B(BI);
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+  FunctionCallee X = csyms.xFn();
+  auto emitArm = [&](ArrayRef<Instruction *> Gates, Value *Ctl, bool Neg) {
+    if (Gates.empty())
+      return;
+    // ONE bracket pair per ARM, not per gate: `cqrt_x` is self-inverse, so
+    // `x;g1;x;x;g2;x` and `x;g1;g2;x` are the same unitary and the second is
+    // what every sibling phase emitter has emitted since drbq Inc 2a.
+    if (Neg)
+      stamp(B.CreateCall(X, {Ctl}));
+    for (Instruction *I : Gates)
+      // RECORDED, exactly as the flat emitter records its arm gates (bd 3qlq
+      // Inc 1, Rule-13 round-1 F-L7-1). `Ctl` is the OUTER root flag for the
+      // outer arm and the CONJUNCTION ancilla for the inner one; both are
+      // ancillas the region owns, and both would otherwise be read by
+      // `ChainWalk::isInPlaceGateOn` as ordinary in-place rotations on a
+      // reclaimable rail — which is how the whole-DAG spine came to emit
+      // `cqrt_rz_i1(f, -θ)` and cancel a user's phase EXACTLY. The record is
+      // what makes the gate opaque; a NEW emission site that omits it re-opens
+      // that miscompile with no diagnostic anywhere.
+      markBranchPhaseGate(
+          stamp(B.CreateCall(Rz, {Ctl, cast<CallInst>(I)->getArgOperand(0)})));
+    if (Neg)
+      stamp(B.CreateCall(X, {Ctl}));
+  };
+
+  // 1-2. OUTER network, then the outer arm's phases on its root.
+  CondNetwork OuterNet;
+  switch (emitCondNetwork(R.Condition, OuterTree, wd, csyms, taint,
+                          /*Before=*/BI, DL, /*AllowQQLeaves=*/false,
+                          OuterNet)) {
+  case CondNetDisp::Ok:
+    break;
+  case CondNetDisp::MintDiagnosed:
+    return;  // `lowerCompareToFlag` was already LOUD; do not double-diagnose.
+  case CondNetDisp::Malformed:
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+  emitArm(R.Shadow, OuterNet.Root, R.ArmNegated);
+
+  // 3. INNER network. Its leaves read registers NO gate in this region touches
+  // (the classifier proved `Mid` holds nothing but void phase calls and the
+  // tree), so minting it here — at the OUTER branch, after the outer arm's
+  // phases — reads exactly the basis the source compare reads.
+  CondNetwork InnerNet;
+  switch (emitCondNetwork(R.InnerCondition, InnerTree, wd, csyms, taint,
+                          /*Before=*/BI, DL, /*AllowQQLeaves=*/false,
+                          InnerNet)) {
+  case CondNetDisp::Ok:
+    break;
+  case CondNetDisp::MintDiagnosed:
+  case CondNetDisp::Malformed:
+    // ⚠ A MID-STREAM BAIL, and the ONLY one in this emitter — the outer network
+    // and the outer arm's phases are already emitted. It is REACHABLE only
+    // through detection/emission drift (the classifier ran the identical
+    // per-leaf ladder over this identical tree), and the outcome is a LOUD
+    // `DS_Error`, so `opt` exits non-zero and nothing downstream consumes the
+    // half-stream. Say that plainly rather than calling it unreachable.
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;
+  }
+
+  // 4-6. THE CONJUNCTION. `g = (rootA ⊕ OuterNeg) ∧ (rootB ⊕ InnerNeg)` on a
+  // fresh |0> ancilla, the inner arm's phases on `g`, then the SAME node again —
+  // `cqrt_toffoli` and `cqrt_x` are each self-inverse and the controls are
+  // read-only, so `g` returns to |0> EXACTLY and its free is clean (Rule 6).
+  CondNetwork::Node Conj;
+  Conj.Opc = Instruction::And;
+  Conj.L = OuterNet.Root;
+  Conj.R = InnerNet.Root;
+  Conj.NegL = R.ArmNegated;
+  Conj.NegR = R.InnerArmNegated;
+  Conj.G = stamp(B.CreateCall(
+      AllocI1, {Constant::getNullValue(Type::getInt1Ty(BI->getContext()))},
+      "g"));
+  emitCondNode(Conj, csyms, B, DL, /*Inverse=*/false);
+  emitArm(R.ShadowFalse, Conj.G, /*Neg=*/false);
+  emitCondNode(Conj, csyms, B, DL, /*Inverse=*/true);
+  stamp(B.CreateCall(wd.freeFn(), {Conj.G}));
+
+  // 7. STRIP, exact LIFO: the inner network (minted last) first, then the outer.
+  // Each leaf strip is recorded in `DischargedFlagGates` for the same reason the
+  // flat path records its one strip — it is the point past which a DERIVED
+  // condition's chain may be discharged by the whole-DAG spine
+  // (`ChainWalk::isInteriorConsumer`).
+  SmallVector<CallInst *, 4> LeafStrips;
+  stripCondNetwork(InnerNet, wd, csyms, taint, /*Before=*/BI, DL,
+                   /*AllowQQLeaves=*/false, &LeafStrips);
+  stripCondNetwork(OuterNet, wd, csyms, taint, /*Before=*/BI, DL,
+                   /*AllowQQLeaves=*/false, &LeafStrips);
+  for (CallInst *S : LeafStrips)
+    taint.DischargedFlagGates.insert(S);
+
+  // 8. ERASE THE ARM CALLS, THEN FLATTEN, THEN THE TREE INTERIORS. Each phase
+  // call is erased rather than hoisted: its whole content is a `cqrt_rz_i1`
+  // above. Scrub from `PhaseCalls` first so `deleteGlobalPhases` — which derives
+  // its survivors from the IR — and any later module walk cannot dereference
+  // freed memory.
+  auto erasePhase = [&](CallInst *CI) {
+    auto &PC = taint.PhaseCalls;
+    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    CI->eraseFromParent();
+  };
+  for (Instruction *I : R.Shadow)
+    erasePhase(cast<CallInst>(I));
+  for (Instruction *I : R.ShadowFalse)
+    erasePhase(cast<CallInst>(I));
+  // `flattenRegionTree` is the SHARED three-block teardown (Rule 14): drop both
+  // branches, erase both dead condition ROOTS, splice the shared merge into
+  // `Pred` EXACTLY ONCE, erase InnerArm → Mid → Merge in that order. It takes a
+  // NULL merge φ since this increment — this nest has none — and an EMPTY arm-gate
+  // list, because the phase calls are already gone.
+  //
+  // ⚠ `Inner.Condition` MUST BE RE-POINTED AT THE INNER ROOT. `flattenRegionTree`
+  // erases `Outer.Condition` and `Inner.Condition` as two separate dead values;
+  // leaving the copy's inherited `Condition` in place makes it erase the OUTER
+  // root TWICE — a double free, MEASURED as a SIGSEGV inside the flatten on the
+  // very first P4 run.
+  ControlRegion Outer = R, Inner = R;
+  Outer.Merge = nullptr;
+  Outer.Arm = R.Arm;
+  Inner.Merge = nullptr;
+  Inner.Condition = R.InnerCondition;
+  Inner.Arm = R.ArmFalse;
+  Inner.Pred = R.Arm;
+  // The tree INTERIORS are not the flatten's to erase (it owns only the two
+  // ROOTS), and leaving one behind is not harmless: with its root gone every
+  // node and leaf is dead, and a dead TAINTED compare is exactly what `lowerOps`
+  // would turn into a spurious template plus a leaked flag rail a few steps
+  // later.
+  //
+  // ⚠ ONLY `Pred`-RESIDENT TREE INSTRUCTIONS SURVIVE THE FLATTEN, AND THE LIST
+  // MUST BE SNAPSHOTTED BEFORE IT RUNS. `flattenRegionTree` erases `Mid` and
+  // `InnerArm` WHOLESALE, and the inner condition tree normally lives in `Mid`
+  // — so a post-flatten walk over `InnerTree` would call `use_empty()` on
+  // instructions the block destructor already freed. MEASURED: SIGSEGV inside
+  // `ValueSymbolTable::reinsertValue` on the very first compound-inner nest
+  // (`if (q>5) { cq_phi; if (q<9 && r==3) cq_phi; }`); the single-compare nests
+  // were silently fine only because their inner tree is JUST the root, which is
+  // skipped. Capture the survivors first, then erase after.
+  //
+  // That the destroyed instructions are safe to destroy is the classifier's data-use
+  // fence, not luck: every tree instruction's users must lie inside its own tree or be
+  // its level's branch, and the flatten erases both branches and both roots before
+  // either block goes — so nothing in `Mid`/`InnerArm` still has a use when its
+  // block is deleted. Relax that fence and this becomes a dangling-use UB, not a
+  // decline.
+  Value *const OuterRoot = R.Condition;
+  Value *const InnerRoot = R.InnerCondition;
+  BasicBlock *const Survivor = R.Pred;
+  SmallVector<Instruction *, 8> Cascade;
+  for (const CondTree *T : {&InnerTree, &OuterTree}) {
+    for (Instruction *N : llvm::reverse(T->Nodes))
+      if (N != OuterRoot && N != InnerRoot && N->getParent() == Survivor)
+        Cascade.push_back(N);
+    for (CmpInst *Leaf : llvm::reverse(T->Leaves))
+      if (Leaf != OuterRoot && Leaf != InnerRoot && Leaf->getParent() == Survivor)
+        Cascade.push_back(Leaf);
+  }
+  flattenRegionTree(Outer, Inner, /*armPhis=*/{}, taint);
+  // ROOT-FIRST within each tree (the snapshot above is already in that order), so
+  // a child's use count has dropped before it is tested. The roots are compared
+  // by POINTER only — they may already be freed memory; nothing is dereferenced
+  // through them, and no instruction is created between the flatten and here.
+  for (Instruction *I : Cascade)
+    if (I->use_empty()) {
+      scrubTaint(I, taint);
+      I->eraseFromParent();
+    }
+}
+
 void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
                          const ControlPlan &plan) {
   if (plan.Regions.empty())
@@ -1356,10 +2031,29 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // it was capped at one, because chained value arms used to decline outright.
   // Qubits are not scarce in this regime (PRD §8.2); if that ever changes, this
   // is the shape to revisit first.
+  //
+  // WIDENED to `PhaseKickback` (bd test_C_libtooling-3qlq Inc 1). The hcrg
+  // argument above transfers WORD FOR WORD to a kickback region: its flatten
+  // erases exactly `{Arm, MergeBB}` (`ArmFalse` is null), its `Pred` survives by
+  // construction, and its emitter inserts positionally into that `Pred` — so
+  // emitting the LATER region first is sound for the identical reason. The
+  // STRUCTURAL LEMMA transfers too, but only because `classifyPhaseKickback`
+  // asks `MergeBB->hasNPredecessors(2)` explicitly: point 2 (an arm has one
+  // pred, a merge two, so they are never the same block) and point 3 (two
+  // distinct regions cannot share a merge) are read off `soleMergePhi`'s
+  // 2-incoming φ for a `BranchRegion`, and a kickback merge has no φ to read.
+  // That is why the check is in the classifier and not left to the flatten.
+  //
+  // MEASURED: without this widening the flagship two-diamond Grover customer
+  // (`if (q==5) cq_phi(π); … if (q==0) cq_phi(π);` — PRD §1's own program)
+  // declines `control flow`, because region 2's `Pred` IS region 1's `MergeBB`.
   auto sequentialChainAlias = [&](size_t ai, size_t bi) {
+    auto reorderable = [](const ControlRegion &R) {
+      return R.Kind == ControlRegion::BranchRegion ||
+             R.Kind == ControlRegion::PhaseKickback;
+    };
     const ControlRegion &A = Regions[ai], &B = Regions[bi];
-    if (A.Kind != ControlRegion::BranchRegion ||
-        B.Kind != ControlRegion::BranchRegion)
+    if (!reorderable(A) || !reorderable(B))
       return false;
     if (A.Depth != 0 || B.Depth != 0 || hasChild(ai) || hasChild(bi))
       return false;
@@ -1594,26 +2288,58 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       emitClassicalCallArmRegion(R, wd, csyms, taint);
       continue;
     }
+    if (R.Kind == ControlRegion::PhaseKickbackNest) {
+      // 3qlq Inc 1 (P4) — the GENUINE depth-2 register-free PHASE NEST: two
+      // condition networks, ONE `cqrt_toffoli` conjunction ancilla, `cqrt_rz_i1`
+      // on the outer root and on the conjunction, exact LIFO undo. ONE region
+      // (no `ParentIdx` link), its doomed blocks `{Arm, ArmFalse, MergeBB}` =
+      // `{Mid, InnerArm, Merge}` already covered by the cross-region pre-flight
+      // above. Dispatch + continue BEFORE the Depth / child-lookup branch.
+      emitPhaseKickbackNestRegion(R, wd, csyms, taint);
+      continue;
+    }
+    if (R.Kind == ControlRegion::PhaseKickback) {
+      // 3qlq Inc 1 (P1) — the register-free BRANCH PHASE by kickback: mint the
+      // flag, ONE UNCONTROLLED `cqrt_rz_i1(f, θ)` on it, strip, free, flatten.
+      // Its Pred/Arm/MergeBB are set (a real diamond) so the cross-region
+      // pre-flight above covered the block-lifetime hazard; `Merge` is NULL (a
+      // void arm has no φ), which is exactly why detection had to PRE-PEEL it.
+      // No nest link — dispatch + continue BEFORE the Depth / child-lookup
+      // branch. The in-loop `Pred` is recorded for the same reason `emitRegion`
+      // records it (the round-2 rail collapse's sole trigger); a kickback leaves
+      // nothing FOR that collapse to claim, but the loop may hold other regions
+      // that do. INCREMENTED, not inserted (bd 3qlq Inc 1, C-1 review round 2,
+      // F-C1-2(2b)): the round-2 onward pass keys its delta on the COUNT moving,
+      // because a round-2 region routinely flattens into the very `Pred` a
+      // round-1 region already used and a set could not see that.
+      if (R.InLoop)
+        ++taint.InLoopFlattenedPreds[R.Pred];
+      emitPhaseKickbackRegion(R, wd, csyms, taint);
+      continue;
+    }
     if (R.Depth > 0)
       continue;  // a nested child — owned by its parent's dispatch.
-    const ControlRegion *Child = nullptr;
-    for (size_t j = 0; j < Regions.size(); ++j)
-      if (Regions[j].Depth == R.Depth + 1 && Regions[j].ParentIdx == i) {
-        Child = &Regions[j];
-        break;
-      }
-    if (Child)
-      lowerNestedRegion(R, *Child, wd, csyms, taint);
-    else {
-      // bd test_C_libtooling-8h7d.5 — record the SURVIVING `Pred` of an in-loop
-      // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which
-      // erases `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger
-      // for the round-2 rail collapse (`collapseFlattenedLoopRails`); a module
-      // with no in-loop region records nothing and is byte-identical.
-      if (R.InLoop)
-        taint.InLoopFlattenedPreds.insert(R.Pred);
-      emitRegion(R, wd, csyms, taint);
-    }
+    // ⚠ THE PARENT/CHILD NEST DISPATCH IS GONE (bd test_C_libtooling-3qlq Inc 1
+    // part B). It called `NestedRouteEmit::lowerNestedRegion`, which is DELETED
+    // along with the 4.3 swap-routed nest it emitted: that emitter's per-level
+    // `cqrt_cswap` route existed only to carry a REGISTER-form arm gate, and one
+    // of its two work-rail replays was the TENSORED `cqrt_rz_<W>` this epic
+    // exists to retire. Its detector (`recoverRegionTree`) now declines instead
+    // of accepting — every criterion it proves is a consequence of the register
+    // form — so NOTHING pushes a Depth-1 region any more, and the
+    // `Depth > 0`/`ParentIdx` machinery above is the vestige that makes that
+    // fact checkable rather than assumed. The REGISTER-FREE depth-2 nest is a
+    // SINGLE `PhaseKickbackNest` region dispatched a few lines above.
+    //
+    // bd test_C_libtooling-8h7d.5 — record the SURVIVING `Pred` of an in-loop
+    // region BEFORE `emitRegion` runs (it ends in `flattenRegion`, which erases
+    // `Arm`/`MergeBB` but never a `Pred`). This is the sole trigger for the
+    // round-2 rail collapse (`collapseFlattenedLoopRails`); a module with no
+    // in-loop region records nothing and is byte-identical. INCREMENTED, not
+    // inserted — see the `PhaseKickback` site above (F-C1-2(2b)).
+    if (R.InLoop)
+      ++taint.InLoopFlattenedPreds[R.Pred];
+    emitRegion(R, wd, csyms, taint);
   }
 }
 

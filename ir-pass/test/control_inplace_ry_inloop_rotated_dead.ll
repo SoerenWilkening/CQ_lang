@@ -44,7 +44,6 @@
 ; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 9.0
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[Q]], double 1.0
 ; only the CONDITION register is measured; `r` is dead:
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[Q]])
 ;
@@ -55,6 +54,7 @@
 ; NOROUTE-NOT: call void @cqrt_cswap
 ; NOROUTE-NOT: @cq_theta_
 ; NOROUTE-NOT: cqrt_ry_i32_controlled_inv
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -65,13 +65,13 @@ define i32 @example() local_unnamed_addr #0 {
   br label %5
 
 3:                                                ; preds = %12
-  %4 = tail call i32 @cq_measure_si32(i32 noundef %14) #2
+  %4 = tail call i32 @cq_measure_si32(i32 noundef %8) #2
   ret i32 %4
 
 5:                                                ; preds = %0, %12
   %6 = phi i32 [ 0, %0 ], [ %15, %12 ]
   %7 = phi i32 [ %2, %0 ], [ %13, %12 ]
-  %8 = phi i32 [ %1, %0 ], [ %14, %12 ]
+  %8 = phi i32 [ %1, %0 ], [ %8, %12 ]
   %9 = icmp eq i32 %8, 5
   br i1 %9, label %10, label %12
 
@@ -81,7 +81,6 @@ define i32 @example() local_unnamed_addr #0 {
 
 12:                                               ; preds = %10, %5
   %13 = phi i32 [ %11, %10 ], [ %7, %5 ]
-  %14 = tail call i32 @cq_phi_si32(i32 noundef %8, double noundef 1.000000e-01) #2
   %15 = add nuw nsw i32 %6, 1
   %16 = icmp eq i32 %6, 0
   br i1 %16, label %5, label %3, !llvm.loop !6
@@ -89,7 +88,6 @@ define i32 @example() local_unnamed_addr #0 {
 
 declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
-declare i32 @cq_phi_si32(i32 noundef, double noundef) local_unnamed_addr #1
 
 declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #1
 
@@ -102,7 +100,7 @@ define noundef i32 @main() local_unnamed_addr #0 {
 3:                                                ; preds = %10, %0
   %4 = phi i32 [ 0, %0 ], [ %13, %10 ]
   %5 = phi i32 [ %2, %0 ], [ %11, %10 ]
-  %6 = phi i32 [ %1, %0 ], [ %12, %10 ]
+  %6 = phi i32 [ %1, %0 ], [ %6, %10 ]
   %7 = icmp eq i32 %6, 5
   br i1 %7, label %8, label %10
 
@@ -112,13 +110,12 @@ define noundef i32 @main() local_unnamed_addr #0 {
 
 10:                                               ; preds = %8, %3
   %11 = phi i32 [ %9, %8 ], [ %5, %3 ]
-  %12 = tail call i32 @cq_phi_si32(i32 noundef %6, double noundef 1.000000e-01) #2
   %13 = add nuw nsw i32 %4, 1
   %14 = icmp eq i32 %4, 0
   br i1 %14, label %3, label %15, !llvm.loop !6
 
 15:                                               ; preds = %10
-  %16 = tail call i32 @cq_measure_si32(i32 noundef %12) #2
+  %16 = tail call i32 @cq_measure_si32(i32 noundef %6) #2
   ret i32 0
 }
 

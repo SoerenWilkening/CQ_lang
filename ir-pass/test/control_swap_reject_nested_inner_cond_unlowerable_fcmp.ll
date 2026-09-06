@@ -18,12 +18,22 @@
 ; ADVERSARIAL POSTCONDITION: loud decline AND no route (`cqrt_cswap`) nor bogus
 ; symbol emitted — proving the decline is pre-mutation.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control condition has no template under quantum control
+; NEW: cq controlled lowering: control condition has no template under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control condition has no template under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control condition has no template under quantum control
 ; CHECK-NOT: cqrt_cswap
 ; CHECK-NOT: cq_template_fcmp_false
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u0, double %a, double %b) {
@@ -32,14 +42,13 @@ entry:
   %c1 = fcmp ogt double %q, 5.000000e+00   ; OUTER: in scope
   br i1 %c1, label %mid, label %merge
 mid:
-  %g  = call double @cq_phi_f64(double %q, double %b)
-  %c2 = fcmp false double %g, 9.000000e+00 ; INNER: OUT-OF-SCOPE (`false`, no template)
+  call void @cq_phi(double %b)
+  %c2 = fcmp false double %q, 9.000000e+00 ; INNER: OUT-OF-SCOPE (`false`, no template)
   br i1 %c2, label %arm, label %merge
 arm:
-  %h  = call double @cq_phi_f64(double %g, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi double [ %q, %entry ], [ %g, %mid ], [ %h, %arm ]
-  %m  = call double @cq_measure_f64(double %qm)
+  %m  = call double @cq_measure_f64(double %q)
   ret double %m
 }

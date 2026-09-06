@@ -14,8 +14,8 @@
 ; CHECK: error{{.*}}cq rotation lowering: unsupported frozen quantum wire
 ; CHECK-NOT: Broken module
 ; CHECK-NOT: does not match function signature
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example(double %u, double %v) {
@@ -25,7 +25,6 @@ entry:
   %c   = fcmp ogt double %q1, 5.000000e-01
   %sel = select i1 %c, double %q1, double %q2     ; accepted fp-data select (kjd1)
   %f   = freeze double %sel                        ; freeze the merged wire
-  %p   = call double @cq_phi_f64(double %f, double 3.000000e-01)  ; Rz on the frozen merge wire
   %m   = call double @cq_measure_f64(double %sel)  ; merge wire measured (dead sibling above)
   ret double %m
 }

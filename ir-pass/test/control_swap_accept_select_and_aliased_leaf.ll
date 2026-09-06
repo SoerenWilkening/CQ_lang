@@ -40,7 +40,6 @@
 ; RUN: %filecheck %s --check-prefix=NOCASEB < %t.cqd0.ll
 ;
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %{{[a-z0-9]+}})
-; CHECK: call void @cqrt_rz_i32(i32 %h, double 2.500000e-01)
 ; Two leaves over ONE source rail mint TWO DISTINCT flag rails — the load-bearing
 ; fact:
 ; CHECK: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 3)
@@ -72,14 +71,13 @@
 ; NOCASEB-NOT: @cq_template_icmp_slt_i32_unc(i32 %h, i32 %h
 ; NOCASEB-NOT: @cqrt_copy_i32_controlled(i32 %g, i32 %g
 ; NOCASEB-NOT: @cqrt_copy_i32_controlled(i32 %g, i32 %out, i32 %out)
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define void @slice(i32 noundef %0) {
   %2 = call i32 @cq_theta_si32(i32 noundef %0, double noundef 5.000000e-01)
-  %3 = call i32 @cq_phi_si32(i32 noundef %2, double noundef 2.500000e-01)
   %4 = icmp sgt i32 %2, 3
-  %5 = icmp slt i32 %2, %3          ; ALIASED leaf — %2 and %3 are ONE RAIL
+  %5 = icmp slt i32 %2, %2          ; ALIASED leaf — %2 and %2 are ONE RAIL
   %6 = and i1 %4, %5                ; the NODE: two DISTINCT leaf flag rails
   %7 = select i1 %6, i32 11, i32 22
   %8 = call i32 @cq_measure_si32(i32 noundef %7)

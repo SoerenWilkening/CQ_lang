@@ -18,23 +18,22 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; Independent EXACT free-count scan (§8.3 probe): two cqrt_free, no third anywhere.
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %v0) {
 entry:
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
   %p  = call i32 @cq_theta_si32(i32 %v0, double 2.500000e-01)
-  %pd = call i32 @cq_phi_si32(i32 %p, double 9.000000e-01)   ; derived base, DISJOINT from cond
   %c  = icmp sgt i32 %q, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %v1 = mul i32 %pd, 5
+  %v1 = mul i32 %p, 5
   %v2 = add i32 %v1, 15
   br label %merge
 merge:
-  %pm = phi i32 [ %v2, %arm ], [ %pd, %entry ]   ; straight-through = the DERIVED %pd
+  %pm = phi i32 [ %v2, %arm ], [ %p, %entry ]   ; straight-through = the DERIVED %p
   %m  = call i32 @cq_measure_si32(i32 %pm)
   ret i32 %m
 }
@@ -42,7 +41,6 @@ merge:
 ; pre-region Rz on the routed register's wire, strictly BEFORE the flag mint
 ; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
-; CHECK:     call void @cqrt_rz_i32(i32 %[[P]], double 9.000000e-01)
 ; 1: mint the flag from the (cross-register) tainted compare
 ; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
 ; 2: |0> work rail

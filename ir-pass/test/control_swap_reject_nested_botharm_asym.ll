@@ -7,9 +7,19 @@
 ; diamond → criterion 1 declines `nested control flow` before the 4-incoming
 ; merge is ever examined (§12.7 depth cap is incidental here).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: nested control flow under quantum control
+; NEW: cq controlled lowering: nested control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, double %a, double %b) {
 entry:
@@ -20,17 +30,16 @@ then:
   %ct = icmp slt i32 %q, 20
   br i1 %ct, label %tarm, label %merge
 tarm:
-  %tg = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 else:
   %ce = icmp sgt i32 %q, 2
   br i1 %ce, label %earm, label %merge
 earm:
-  %eg = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %q, %then ], [ %tg, %tarm ], [ %q, %else ], [ %eg, %earm ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }
-; CHECK: error{{.*}}nested control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: nested control flow under quantum control

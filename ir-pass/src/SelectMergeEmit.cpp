@@ -22,6 +22,7 @@
 #include "ControlPlan.h"        // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // copyControlledFn / xFn / cnotFn / toffoliFn
 #include "OpcodeSupport.h"      // abiWidthFromType
+#include "CondTreeEmit.h"       // emitCondNetwork / stripCondNetwork (3qlq P3)
 #include "SelectClassify.h"     // CondTree / collectCondTree (the shared walk)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"      // allocFn / freeFn / llvmWidthType
@@ -152,71 +153,38 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //    never selects them (the same treatment as the pre-L4 single flag). A
   //    bare-compare tree mints exactly the pre-L4 single flag — no ancilla,
   //    byte-identical stream.
-  DenseMap<Value *, Value *> FlagOf;                       // tree value → rail
-  SmallVector<std::pair<CmpInst *, Value *>, 4> MintedLeaves;  // mint order
-  struct NodeRec {
-    BinaryOperator *N;
-    Value *L;
-    Value *R;
-    Value *G;
-  };
-  SmallVector<NodeRec, 4> NodeRecs;  // post-order = emission order
-  FunctionCallee AllocI1;
-  if (!Tree.Nodes.empty()) {
-    AllocI1 = wd.allocFn("i1");
-    if (!AllocI1) {
-      diagnoseUnderControl(Sel, "control flow");
-      return;  // no i1 ancilla allocator — decline, lower nothing (Rule 1).
-    }
+  //
+  // bd test_C_libtooling-3qlq Inc 1 part B — THE NETWORK ITSELF NOW LIVES IN
+  // `CondTreeEmit` (one forward emitter, one exact-LIFO strip), because the
+  // register-free BRANCH PHASE (PRD §6.2 row P3) needs the identical network on
+  // a `br` condition and copying it a third time is the duplicated-lowering
+  // prohibition (Rule 14). THIS CALL IS THE PRE-LIFT CODE, MOVED:
+  // `AllowQQLeaves = true` keeps the bd adia Q+Q leaf policy and every `Neg*`
+  // stays false (a data select has no polarity — it always means "the true value
+  // when the flag is 1"), so the traversal, the emitted symbols, the operand
+  // order, the `!dbg` stamping and the ancilla NAME (`g`) are unchanged. The 4.4
+  // fixtures and goldens are the witness that the lift is a refactor.
+  CondNetwork Net;
+  switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel,
+                          DL, /*AllowQQLeaves=*/true, Net)) {
+  case CondNetDisp::Ok:
+    break;
+  case CondNetDisp::MintDiagnosed:
+    // A leaf mint failed and `lowerCompareToFlag` was ALREADY loud — return
+    // SILENTLY, exactly as the pre-lift `if (!F) return;` did. Adding a second
+    // `control flow under quantum control` here would change what every existing
+    // select decline fixture reads on stderr.
+    return;
+  case CondNetDisp::Malformed:
+    // No i1 ancilla allocator, or a node the grammar admitted that the emitter
+    // cannot decompose. The pre-lift code declined loudly for the first of those
+    // in exactly this place; the second is detection/emission drift and gets the
+    // same treatment (Rule 1 — never silently skip an accepted region).
+    diagnoseUnderControl(Sel, "control flow");
+    return;
   }
-  Type *I1Ty = Type::getInt1Ty(Sel->getContext());
-  {
-    SmallVector<std::pair<Value *, bool>, 8> Stack;
-    Stack.push_back({R.Condition, false});
-    while (!Stack.empty()) {
-      auto [V, ChildrenDone] = Stack.pop_back_val();
-      if (ChildrenDone) {
-        auto *BO = cast<BinaryOperator>(V);
-        Value *L = FlagOf.lookup(BO->getOperand(0));
-        Value *Rv = FlagOf.lookup(BO->getOperand(1));
-        CallInst *G =
-            B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "g");
-        stamp(G);
-        // bd 3c6m.67 — XOR is the OR network MINUS its toffoli. Emitting OR's
-        // toffoli on an xor node would compute `L ∨ Rv` and still verify, still
-        // pair every free, and still print a plausible trace: the textbook
-        // verify-clean silent miscompile. Pinned by the whole-file
-        // `WHOLE-NOT: cqrt_toffoli` in control_swap_select_xor2.ll.
-        const auto Opc = BO->getOpcode();
-        if (Opc == Instruction::Or || Opc == Instruction::Xor) {
-          stamp(B.CreateCall(csyms.cnotFn(), {L, G}));
-          stamp(B.CreateCall(csyms.cnotFn(), {Rv, G}));
-        }
-        if (Opc != Instruction::Xor)
-          stamp(B.CreateCall(csyms.toffoliFn(), {L, Rv, G}));
-        FlagOf[V] = G;
-        NodeRecs.push_back({BO, L, Rv, G});
-        continue;
-      }
-      if (FlagOf.count(V))
-        continue;  // shared subtree — its rail is minted once and reused.
-      if (auto *Leaf = dyn_cast<CmpInst>(V)) {
-        Value *F = lowerCompareToFlag(Leaf, wd, taint,
-                                      /*qqWidth=*/qqSelectLeafWidth(Leaf, taint),
-                                      /*inverse=*/false, /*before=*/Sel);
-        if (!F)
-          return;  // already diagnosed (unsupported width / predicate) — loud.
-        FlagOf[V] = F;
-        MintedLeaves.push_back({Leaf, F});
-        continue;
-      }
-      auto *BO = cast<BinaryOperator>(V);  // grammar proven by collectCondTree
-      Stack.push_back({V, true});
-      Stack.push_back({BO->getOperand(1), false});
-      Stack.push_back({BO->getOperand(0), false});
-    }
-  }
-  Value *Flag = FlagOf.lookup(R.Condition);  // the ROOT rail gates the copies.
+
+  Value *Flag = Net.Root;  // the ROOT rail gates the copies.
 
   // 2. ALLOC the |0> result rail (Wd). It joins `taint.Tainted` (+BirthOrder) so
   //    downstream consumers of the RAUW'd select keep classifying it as a quantum
@@ -269,28 +237,13 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // and this module mints NO `cqrt_tape_write_*` (only `IOSinkLowering` and
   // `AbortParkEmit` do). The bd 261j(a) freeze is not owed here and is deliberately
   // not duplicated (bd memory [record-freeze-invariant-2026-08-10]).
-  for (NodeRec &NR : llvm::reverse(NodeRecs)) {
-    // bd 3c6m.67 — the XOR strip is the exact LIFO mirror of its two-CNOT
-    // forward and, like it, carries no toffoli. Both CNOTs are self-inverse and
-    // the controls are read-only, so G returns to |0⟩ EXACTLY and the free below
-    // is a proven-|0⟩ free (Rule 6) by the same argument as OR.
-    const auto Opc = NR.N->getOpcode();
-    if (Opc != Instruction::Xor)
-      stamp(B.CreateCall(csyms.toffoliFn(), {NR.L, NR.R, NR.G}));
-    if (Opc == Instruction::Or || Opc == Instruction::Xor) {
-      stamp(B.CreateCall(csyms.cnotFn(), {NR.R, NR.G}));
-      stamp(B.CreateCall(csyms.cnotFn(), {NR.L, NR.G}));
-    }
-    stamp(B.CreateCall(wd.freeFn(), {NR.G}));
-  }
-  for (auto &LF : llvm::reverse(MintedLeaves)) {
-    lowerCompareToFlag(LF.first, wd, taint,
-                       /*qqWidth=*/qqSelectLeafWidth(LF.first, taint),
-                       /*inverse=*/true,
-                       /*before=*/Sel, /*negate=*/false,
-                       /*railToStrip=*/LF.second);
-    stamp(B.CreateCall(wd.freeFn(), {LF.second}));
-  }
+  //
+  // bd test_C_libtooling-3qlq Inc 1 part B — the strip is `CondTreeEmit`'s
+  // `stripCondNetwork`, the exact-LIFO mirror of the mint above, lifted with it
+  // so the forward and its adjoint cannot drift apart in two files. Same
+  // `AllowQQLeaves = true`, same insert point, same stream.
+  stripCondNetwork(Net, wd, csyms, taint, /*Before=*/Sel, DL,
+                   /*AllowQQLeaves=*/true);
 
   // 6. REWIRE — RAUW %sel -> %out, scrub, erase. NO flatten (there is no CFG).
   //    The user's measure/ret on the select becomes one on %out (no measurement
@@ -309,7 +262,7 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // `int f=(q>5)` with the select condition — or feeding a second select)
   // keeps its other users; leave it for `lowerOps`/the sibling region (the
   // shared-compare discipline verbatim).
-  for (BinaryOperator *N : llvm::reverse(Tree.Nodes))
+  for (Instruction *N : llvm::reverse(Tree.Nodes))
     if (N->use_empty()) {
       scrubTaint(N, taint);
       N->eraseFromParent();

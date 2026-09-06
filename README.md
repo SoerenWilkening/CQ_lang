@@ -24,7 +24,8 @@ int main(void) {
 ```
 
 The intrinsic surface is small: `cq_theta` (the only taint source),
-`cq_phi` (phase rotation), `cq_measure` (the only sink), and a manual
+`cq_phi(θ)` (the branch phase — register-free, no data operand),
+`cq_measure` (the only sink), and a manual
 inversion bracket `cq_invert_begin` / `cq_invert_end`. No quantum
 arithmetic intrinsics — stock LLVM opcodes on tainted operands are
 lowered to reversible template calls by the IR pass.

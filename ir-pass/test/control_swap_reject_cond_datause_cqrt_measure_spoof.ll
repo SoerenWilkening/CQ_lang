@@ -17,10 +17,20 @@
 ; Regression-locks that a hand-authored runtime-symbol measure cannot confer false
 ; ownership of a live control-condition lineage.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: condition data use neither escaped nor measured under quantum control
+; NEW: cq controlled lowering: condition data use neither escaped nor measured under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition data use neither escaped nor measured under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition data use neither escaped nor measured under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare i32 @cqrt_measure_i32(i32)
 define i32 @example(i32 %u0, double %a) {
@@ -30,11 +40,10 @@ entry:
   %d = zext i1 %c to i32                  ; DATA use of the condition compare
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %q, %entry ]
   %md = call i32 @cqrt_measure_i32(i32 %d) ; runtime-ABI measure name (off-pattern)
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

@@ -1,3 +1,7 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- the ONWARD controlled phase arm loses its register.
+   NOTE: the phase now lands on the R2 FLAG, not on the merge %out handle, so the
+   6.5 classical-call arm's %out is no longer an operand of anything in R2.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* onward_ctl_phase_caller.c — the CQ translation unit for the yn71 (Phase 4×6, the
    CONTROL case) e2e golden: a 6.5 classical-call arm whose UNTAINTED merge `%out`
    feeds an ONWARD TAINTED-CONTROL phase arm. The only test layer that LINKS, so the
@@ -9,7 +13,7 @@
        q : theta-tainted condition handle
        int y = 5;
        if (q > 5)  y = ext_f(7);        // R1: 6.5 classical-call arm -> %out = (q>5)?107:5
-       if (y > 50) y = cq_phi(y, 0.25); // R2: ONWARD CONTROLLED phase on the merge %out
+       if (y > 50) cq_phi(0.25); // R2: ONWARD CONTROLLED phase on the merge %out
        measure y
 
    `y = (q>5)?ext_f(7):5` = (q>5)?107:5, entangled with q (its VALUE is
@@ -41,7 +45,7 @@ int slice(void) {
     if (q > 5)                     /* R1: tainted-condition classical-call arm     */
         y = ext_f(7);              /* pure classical call -> route-merged %out      */
     if (y > 50)                    /* R2: ONWARD tainted control on the merge %out  */
-        y = cq_phi(y, 0.25);       /* controlled phase arm (routed cswap+rz on out) */
+        cq_phi(0.25);       /* controlled phase arm (routed cswap+rz on out) */
     return cq_measure(y);          /* reads the (conditionally) phased answer        */
 }
 

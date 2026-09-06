@@ -342,7 +342,148 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is RETIRED FOR PHASE ARMS**, 2026-09-05, LANDED on `main` 2026-09-06]
+
+> ⚠ **STATUS, 2026-09-05; LANDED on `main` 2026-09-06 — READ THIS BEFORE THE
+> INCREMENT LIST BELOW (bd
+> `test_C_libtooling-3qlq`, "retire the swap route").** Everything in this Phase-4
+> block about how a **phase arm** is lowered describes a generation that has been
+> **retired**, and it is kept as history because its arguments are still quoted.
+>
+> **What changed and why.** `cqrt_rz_<W>` is **TENSORED** — an Rz on each of the W
+> qubits — so a routed or controlled W-bit Rz puts phase `(−1)^popcount(target)` on
+> the marked branch and, being diagonal per qubit, **can never mark `|0…0⟩` at
+> all**. Every shipped Grover golden was therefore the identity on `q`. Nothing
+> caught it and nothing could: a golden byte-diff proves every symbol resolves, not
+> that the unitary is right (Rule 2), and there is no simulator. See
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §1.
+>
+> **Increments 0 and 1 are LANDED on `main` 2026-09-06 as ONE squash commit** (hash
+> filled by the orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is
+> recorded in the landing commit message; `git log main -1` shows the hash) **after
+> the re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `docs/prd/phase-04-swap-route-control/inc1-records/session-adc5590a/clearance2.md`).
+> ⚠ **HISTORY, DATED — kept because the arguments are still quoted.** Increment 1
+> was first merged to branch `3qlq-inc1` (`be4e2ea`, 2026-09-05) and held OFF `main`:
+> the independent Rule-13 clearance of 2026-09-05 returned **BLOCK** on
+> finding **C-1** — a mixed loop (D4's per-bit condition on a loop-INVARIANT
+> register PLUS a second loop-CARRIED register) leaked its `and` rails per
+> activation, 3 mints / **0** `_unc` against 3/3 hand-unrolled and 3/3 on the
+> pre-3qlq oracle, at `opt` exit 0, verify-clean and STRICT stage 2b `0
+> violation(s)`; that record is
+> `inc1-records/session-0a61aa31/clearance.md`. **2026-09-06: C-1 was FIXED on branch
+> `3qlq-inc1-fix-c1`** — `LoopLowering`'s `Collapsed` branch now ALSO collects the
+> loop-invariant root mints beside the carried roots (a separate set unioned only on
+> success, with a `CarriedRoots` skip so the collapse's own rail is not judged), on
+> clause (ii)'s UNCHANGED (I1) proof; witnessed by
+> `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
+> pinned in lit by `control_phase_kickback_mixed_invariant_carried_inloop.ll`.
+> **⚠ THE INDEPENDENT LENS ON THAT FIX THEN FOUND TWO MORE CONFIRMED MISCOMPILES OF
+> THE SAME CLASS IN ITS OWN NEIGHBOURHOOD, both fixed in a SECOND round on the same
+> branch (2026-09-06, findings F-C1-1 / F-C1-2 — `RETIRE_SWAP_ROUTE_INC1_NOTES.md`
+> §3.10):** one added line, `q = q + 7;` in the loop's PREHEADER, restored the leak
+> verbatim on 542d588 AND on the round-1 fix (3 mints / **0** `_unc` against 3/3
+> hand-unrolled; PRE-EXISTING and F-L5-1-era, since the same program with no carried
+> register leaks identically) — fixed by asking the ONE owner of the in-place
+> decision, `ArithLowering::classifyInPlaceReassignment`, and COMMITTING to its
+> answer via `taint.InPlaceRailOps`; and the same mixed loop with an ONWARD
+> (round-2) in-loop region leaked for two further reasons — the "already claimed"
+> fact was a caller LOCAL while the collapse happens in the ROUND-1 call, and the
+> round-2 delta was keyed on block MEMBERSHIP while a round-2 region flattens into
+> the very `Pred` a round-1 region already used — fixed by `taint.ClaimedRailRoots`
+> (written at both collapse sites) and by making `taint.InLoopFlattenedPreds` a
+> per-block COUNT. Witnessed by `e2e-phase-perbit-loop-mixed-preadd-twin-identical`
+> (38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical`
+> (47 = 47, was 41 vs 47).
+> **⚠⚠ AND THE LENS ON *THAT* ROUND FOUND THAT THE SECOND FIX HAD INTRODUCED A
+> CONFIRMED SILENT MISCOMPILE OF ITS OWN, fixed in a THIRD, NARROWING-ONLY round on
+> the same branch (2026-09-06, findings F-C1B-1 / F-C1C-1 / F-C1B-2 —
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3.11):** the round-2 commit asks
+> `classifyInPlaceReassignment` at ROUND 1 and `lowerOps` honours the marking without
+> re-asking, so an immediate that becomes TAINTED at round 2 was emitted as
+> `cqrt_addc_i32(%h4, %h_op)` — a quantum rail handle in the ABI's classical-immediate
+> slot (the commuted spelling mutates the WRONG rail); and its `hasOneUse` stability
+> conjunct is true of the SSA VALUE but false of the WIRE, because `lowerRotations`
+> RAUWs a whole theta chain onto ONE handle. Fixed by a MONOTONE `isa<Constant>(Imm)`
+> fence at the commit plus a LOUD re-verification of the same fence at `lowerOps`
+> (`cq loop lowering: pre-loop in-place op no longer provable at lowering`), and by
+> narrowing `taint.ClaimedRailRoots` to `(root, the CLAIMING loop's header)`. Over the
+> whole 262-program reproducer corpus the round-2 binary and this one differ on **6
+> programs in the F-C1B-1 / (1a) / F-C1C-1 scope, plus `w3` by design (the F-C1B-2
+> revert)** — the round's own "6 and no others" was a bound taken over a corpus that
+> did not yet contain its seventh mover, corrected by the round-3 lens (F-C1C-E); its
+> independent re-run over **299** programs gives **286 unchanged / 13 moved**, one of
+> them a harness artefact of its own probe and the other 12 all in the REFUSE
+> direction, with **0 programs going decline → accept and no decline string changed**.
+> `e2e-loop-twin-matrix` **Passed, 181.66 s** with no cell moved. That makes it
+> **seven instances of one defect class over five adversarial rounds on one
+> function** — two of them INTRODUCED BY A FIX — **plus one PRE-EXISTING member of
+> the same class found in passing by the round-3 lens** (F-C1C-B, bd
+> `test_C_libtooling-eqpx`, notes §3.12: the same defect through the LOOP writers for
+> the `xor` stem, reproducing on the pre-3qlq oracle 52d7764, so NOT this epic's and
+> NOT a blocker for it).
+> **STATUS: LANDED.** Three C-1 rounds ran on branch `3qlq-inc1-fix-c1` — round 1
+> the CAPABILITY, round 2 two more members of the class plus a confirmed miscompile
+> of its own, round 3 the NARROWING — the round-3 lens graded **CLEAR-WITH-ITEMS**
+> (both DOC findings applied), and the **RE-CLEARANCE on that tree returned
+> `CLEAR-WITH-OWNER-QUESTIONS`** (2026-09-06,
+> `docs/prd/phase-04-swap-route-control/inc1-records/session-adc5590a/clearance2.md`):
+> the BLOCK is CLOSED and **Increments 0 + 1 LANDED on `main` 2026-09-06 as ONE
+> squash commit** (hash filled by the orchestrator: the squash of
+> `3qlq-inc1-fix-c1`, whose tip is recorded in the landing commit message; `git log
+> main -1` shows the hash). What the verdict leaves open is four owner questions and
+> one record item — all DISCLOSED leak / over-decline classes that PRE-DATE the
+> branch and none of them a wrong unitary this tree introduced (PRD §0 **E10**).
+> `cq_phi` is
+> **register-free** —
+> `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
+> — and under a tainted condition it lowers by **KICKBACK**: the ordinary compare
+> mint, `cqrt_rz_i1(f, θ)` **UNCONTROLLED** on the flag, the ordinary `_unc` strip
+> (which returns `f` to `|0⟩` on every branch), `cqrt_free(f)`; a `¬flag` arm keeps
+> its `cqrt_x` bracket. **Uncontrolled or classically-controlled `cq_phi` is a
+> GLOBAL phase and is DELETED** — a documented semantic, not a diagnostic (owner
+> decision D2). This is the lowering at EVERY phase site: the flat diamond and
+> `if/else`, the folded angle select, the compound condition tree, the depth-2
+> NEST and the `switch`. `ir-pass/src/NestedRouteEmit.cpp` and
+> `RotationLowering::emitRz` are **DELETED**.
+>
+> **VALUE arms still route, and are Increment 2 — on branch `3qlq-inc2`, NOT
+> landed, and a rebase onto the landed Inc 1 is owed.** So
+> `cqrt_cswap` still has minters at HEAD: the value-arm path in `SwapRouteEmit`
+> and the 7.2 `AbortParkEmit`. Increment 2 replaces the value arm's
+> compute→route→merge with a controlled-copy merge (PRD §7); until it lands, every
+> value-arm sentence below is current.
+>
+> **Do not quote these as phase-arm invariants any more:** "zero controlled
+> gates", "`Rz|0⟩ = |0⟩`, so the inactive work rail is clean and freed as a no-op
+> reset", and "the nest and the switch keep the route". The first two are TRUE
+> statements that are also *exactly* why a per-qubit Rz is not an oracle; the
+> third is now false. The standing lesson is a RETIREMENT: a W-bit "rotation" ABI
+> needs its multi-qubit semantics pinned BEFORE a control emitter is built on it.
+>
+> **Two adversarial rounds found three CONFIRMED silent miscompiles in Increment 1
+> itself**, all `opt` exit 0, verify-clean and STRICT-stage-2b clean: the uncompute
+> spine adjointing the kickback gate and cancelling the user's phase exactly; the
+> D2 deletion running BEFORE the second round of control detection, so a branch
+> phase under an onward tainted branch was deleted and its orphaned angle then
+> lowered as quantum fp DATA; and a stale-header retired `@cq_phi_<sfx>` call that
+> was neither lowered nor declined (Rule 1's "no third path"). `CLAUDE.md`'s
+> CORRECTNESS-RISK section carries the record and the two standing lessons;
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1/§2 carry the reproducers. ⚠ **That count is
+> the ROUND-1 three and is not the total**: round 2 added a fourth of the same
+> family (the once-running rail-collapse stage whose premise the second round
+> falsifies, PRD errata E9), and the CLEARANCE then added a fifth, **C-1** above —
+> so **five confirmed silent miscompiles across three adversarial passes over ONE
+> increment**, every one `opt` exit 0, verify-clean and STRICT-stage-2b clean, and
+> **zero** of them found by the fixture suite. ⚠ **"FIVE" IS THE PRE-FIX-ROUND
+> FIGURE and it moved again**: the two lenses on the three C-1 rounds added FOUR
+> more confirmed members of the in-loop entangled-rail class — F-C1-1 and F-C1-2
+> found in round 1's neighbourhood, and F-C1B-1 / F-C1C-1 **INTRODUCED BY round 2's
+> own fix** — which is what makes the standing count *seven instances of one defect
+> class over five adversarial rounds on one function, two of them introduced by a
+> fix, plus one PRE-EXISTING member found in passing (bd `test_C_libtooling-eqpx`)*.
+> PRD §0 **E10** is the five-line summary. Budget a further round on any
+> successor increment; that is the number to quote when scoping one.
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)
 + [`OVERVIEW.md`](docs/design/rssa-swap-control/OVERVIEW.md);
@@ -658,7 +799,10 @@ after a statevector-checked design dialogue; see
   peephole default-on for every flat phase spine (diamond, if/else, hcrg
   sequential, the 8h7d.5 rolled loop, `ShareCondFlag`, multi-Rz spines, Rz on the
   condition register), replacing the route quintuple with one
-  `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate. The 4.3 depth-2 nest and the 4.5
+  `cqrt_rz_<W>_controlled(f, q, θ)` per arm gate (*declared, unemitted since 3qlq
+  Inc 1 — `retire-swap-route-PRD.md` §5: the phase arm becomes the register-free
+  kickback `cqrt_rz_i1(f, θ)` on the flag, because a TENSORED per-qubit Rz is not
+  an oracle; PRD §1*). The 4.3 depth-2 nest and the 4.5
   switch KEEP the route. The two forms are the same unitary, and the 26 moved
   goldens' diff is exactly the collapse and nothing else
   (`tools/golden_multiset_audit.py`). The two stems get DIFFERENT uncompute
@@ -726,7 +870,43 @@ after a statevector-checked design dialogue; see
   equally if a cell STOPS diverging — bd `test_C_libtooling-1m5p` (class A,
   `Uncomputation`/`FreePoint`, ROLLED deficient) and `test_C_libtooling-a3z7`
   (class B, `ArithLowering` M-C, FLAT deficient), both awaiting an owner
-  disposition. The same review added 14 fixtures and one e2e pair (the O(K)
+  disposition. ⚠ **"15 cells" and "273 cells" are 2026-09-04 figures — re-measure.**
+  bd `test_C_libtooling-3qlq` Inc 1 made the register-free `cq_phi` the matrix's
+  SHIPPED surface (`--phi-surface void`), which changes what the generator emits,
+  so both tables were re-measured end to end: the expected table holds **245 rows**
+  and the quarantine **29 cells in THREE classes — 6 A, 21 B, and 2 C** (the new
+  class C is `m_xor_range_{none,rz}`, where `-O1` drops the mask's low bit on the
+  FLAT side only, so the two spellings are different PROGRAMS: a generator
+  question, not a compiler defect, filed under `test_C_libtooling-3qlq` and not
+  blessed). 245 + 29 = the 274 cells the gate runs. **Re-measured 2026-09-06 after
+  the C-1 fix round (branch `3qlq-inc1-fix-c1`): 255 expected rows + 29 quarantined
+  = 284 cells** — the quarantine is untouched at 29 in the same three classes, and
+  the +10 is **sub-grid F, the second-CARRIED-register axis**: the first cells in
+  the instrument to put a loop-INVARIANT condition register and a loop-CARRIED
+  register in one body, which is the only shape that can see the clearance's C-1.
+  Every one of the 245 earlier rows is byte-unchanged (`comm -23` over the `^m_`
+  rows, empty) and all 1104 pre-existing generated sources hash identically; 9 of
+  the 10 new cells would have been hard failures on 542d588 (4 sampled by hand) and
+  are `ACCEPT-IDENTICAL` on the fix. **And re-measured again after the SECOND C-1
+  round on the same branch: 257 expected rows + 29 quarantined = 286 cells** — the
+  +2 is **sub-grid F3**, a PREHEADER in-place `add` on the invariant register at the
+  diffusing and non-diffusing per-bit regions, which is the position finding F-C1-1
+  lived in and which `PREFIX` (body text) structurally could not reach. Both cells
+  were TRACE-DIVERGENCE on 542d588 AND on the round-1 fix and are ACCEPT-IDENTICAL
+  now, measured by hand on all three binaries; all **1136** pre-existing generated
+  sources hash identically (twice — once after the `preloop` slot, once after the
+  cells) and the quarantine file is byte-unchanged. **The THIRD C-1 round (narrowing
+  only) added NO cell and moved NONE: 257 + 29 = 286, `e2e-loop-twin-matrix`
+  Passed, 181.66 s.** The `xor` spelling of the same
+  axis is DROPPED with its measurement in the code: `xor` distributes over a bit
+  test, so `-O1` rewrites the FLAT side's `((a^9)>>i)&1` onto the PRE-xor register
+  and the two spellings stop being the same program — the `addpost` precedent, not a
+  quarantine. The old register-surface
+  tables are kept byte-unchanged as `*.register.txt` — frozen history, not a live
+  mode, since the register surface is unreachable from the shipped `CQ.h`. The
+  second boundary control (arm ON the condition register ⇒ identical) is now
+  itself an INSTANCE of class A and bounds nothing, because a branch phase writes
+  nothing; `q_noregion` alone bounds the class story. The same review added 14 fixtures and one e2e pair (the O(K)
   freeze-leak reproducer, which turns PRD §13.5's "K rails at run time" from
   analytic into measured), corrected five doc-false statements, and found **no
   confirmed miscompile and no confirmed over-accept**. Notes:
@@ -1002,7 +1182,8 @@ via the §7.6 reversible output tape.)
 > `cqrt_copy_f{16,32,64,80}_controlled` family, designated frozen at the
 > Phase-11 gate (`fp-data-select-PRD.md` §7). A SECOND frozen-designate family
 > joined on 2026-09-02: **`cqrt_ry_<W>_controlled`** (9 widths, mirroring the
-> Phase-4 `cqrt_rz_<W>_controlled`), added by the control-in-place epic
+> Phase-4 `cqrt_rz_<W>_controlled` — *declared, unemitted since 3qlq Inc 1, PRD
+> `retire-swap-route-PRD.md` §5*), added by the control-in-place epic
 > `test_C_libtooling-drbq`
 > (`docs/prd/phase-04-swap-route-control/control-in-place-PRD.md` §5). It is NOT
 > a footprint optimization: the swap route CANNOT carry an `Ry` at all
@@ -1410,10 +1591,42 @@ rotation family (`cqrt_ry_<W>_controlled` ×9, epic `drbq` —
 that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 `cq_template_*`).
 
+> ⚠ **THE FREEZE LIST NOW HAS A SUBTRACTION SIDE (bd `test_C_libtooling-3qlq`
+> Inc 1, 2026-09-05).** The register-free `cq_phi` adds **no** symbol — owner
+> decision D3 is explicitly "no new runtime ABI; the emitted set SHRINKS" — and
+> `tools/opcode_table.yaml` and `runtime/` were not touched. What it changes is
+> which declared symbols are still MINTED, and that is a freeze-gate decision the
+> owner owes, not a fait accompli:
+> * **`cqrt_rz_<W>` for W > 1** — DECLARED, **UNEMITTED**. The only Rz this pass
+>   emits is the kickback `cqrt_rz_i1(f, θ)` (measured over 1661 fixture outputs:
+>   35 emit an Rz, **0** at any other width; and `0` non-`i1` `cqrt_rz` across all
+>   304 committed goldens).
+> * **`cqrt_rz_<W>_controlled` and `cqrt_rz_<W>_controlled_inv`** — DECLARED,
+>   **UNEMITTED, and with no minter left in the pass** (`RotationLowering::emitRz`
+>   is deleted). They were a frozen-designate family for the drbq Inc-2a
+>   control-in-place peephole; that peephole's Rz half is retired. `0` occurrences
+>   in the goldens.
+> * **`cqrt_cswap`** — still MINTED, by the VALUE-arm path in `SwapRouteEmit` and
+>   by the 7.2 `AbortParkEmit`. Increment 2 (value arms by controlled-copy merge,
+>   PRD §7) is the increment that would take the first of those away; until it
+>   lands, `cqrt_cswap` is live.
+> * **`cqrt_ry_<W>_controlled` ×9** — UNAFFECTED and still minted. The Ry stem is
+>   untouched by this epic, and the swap route cannot carry an `Ry` at all.
+>
+> Freeze-gate question for the owner: **delete the unemitted Rz symbols from the
+> ABI, or freeze them declared-but-unemitted?** (PRD §12 Q1 assumes "at the
+> freeze, not now", which is why they are still declared today.) Deleting them is
+> the honest surface; keeping them is a reserve for a future controlled-Rz
+> customer that would have to pin the multi-qubit semantics FIRST — the retirement
+> lesson of this whole epic.
+
 **Deliverables.**
 - **CQ.h freeze.** Semver pinned; future additions versioned per the
-  freeze policy. The 14 × 3 = 42 specializations plus the 3 `_Generic`
-  macros plus the `cq_invert_*` pair are the v1.0 frontend surface.
+  freeze policy. ⚠ The surface is **no longer 14 × 3**: since 3qlq Inc 1 it is
+  14 × **2** register-carrying specializations (`cq_theta`, `cq_measure`) behind
+  **2** `_Generic` macros, **plus the single register-free `void cq_phi(double)`**
+  (no per-type family, no `_Generic`), plus the `cq_ry` statement macro and the
+  `cq_invert_*` pair — `docs/frontend.md` §3.1 carries the counted list.
 - **`libcq_runtime` + `libcq_templates` ABI freeze.** Symbol versioning
   per [`docs/backend.md`](docs/backend.md) §11.6; `cqrt_abi_version()`
   query function; documented deprecation policy. The core `cqrt_*`

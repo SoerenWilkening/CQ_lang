@@ -20,6 +20,7 @@
 #include "ControlPlan.h"
 
 #include "AbortParkEmit.h"
+#include "ArmAnalysis.h"   // classifyPhaseKickback (3qlq Inc 1 P1 pre-peel)
 #include "ArmClassify.h"
 #include "ControlShape.h"
 #include "GuardedStoreArmEmit.h"  // classifyGuardedStoreArm (iw81.7)
@@ -389,6 +390,22 @@ bool isSelfLoopArm(BasicBlock *Arm) {
 // operand (the taint sink — phase already collapsed to a basis outcome) is never
 // walked into (the `cq_measure` result is untainted).
 bool retLineageCarriesPhase(Value *Op, const TaintSet &Taint) {
+  // ---- THE REGISTER-FREE BRANCH PHASE (bd 3qlq Inc 1 part A, Rule-13 round-1
+  // finding F-L5-6 — a latent WIDENING). The `cq_phi_` prefix row below went
+  // VACUOUS with the surface change, and the property it protected became
+  // UNREPRESENTABLE in the SSA lineage: a register whose branches carry a
+  // kickback phase has no `cq_phi` in its operand graph at all, because the gate
+  // lands on a flag ancilla the register does not derive from. Without this
+  // clause this fence silently answered "no phase" for a value that carries one.
+  // Asked FIRST and COARSELY (any tainted-control branch phase in the same
+  // function) — see `TaintPropagation.h` for why a precise, per-register answer
+  // is a control-dependence question this backward operand walk cannot ask, and
+  // why over-declining is safe here (every consumer turns `true` into a loud
+  // decline).
+  if (auto *OpI = dyn_cast<Instruction>(Op))
+    if (functionCarriesBranchPhase(OpI->getFunction(), Taint))
+      return true;
+
   SmallVector<Value *, 8> Work;
   SmallPtrSet<Value *, 16> Visited;
   Work.push_back(Op);
@@ -397,6 +414,11 @@ bool retLineageCarriesPhase(Value *Op, const TaintSet &Taint) {
     Value *V = Work.pop_back_val();
     if (auto *CI = dyn_cast<CallInst>(V)) {
       const Function *F = CI->getCalledFunction();
+      // ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 — the `@cq_phi_<sfx>` family is
+      // RETIRED and `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE, so the
+      // register-free `void @cq_phi(double)` never reaches here. Kept, not deleted
+      // (PRD §6.2 row P6); see the note at `ArmClassify.cpp`'s `isPhiCall` for why
+      // widening it would read the wrong operand.
       if (F && F->getName().starts_with("cq_phi_"))
         return true;  // an Rz (cq_phi) in the lineage — a relative-phase carrier.
     }
@@ -469,6 +491,7 @@ StringRef offPatternDisposition(BranchInst *BI, TaintSet &Taint) {
 // decline or PUSHING an accepted region onto `Plan` for `SwapRouteEmit`.
 void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
                         SmallPtrSetImpl<BranchInst *> &Claimed,
+                        SmallPtrSetImpl<Instruction *> &ClaimedSelects,
                         const DominatorTree *DT, const LoopInfo *LI) {
   ControlRegion R;
   // 7.2 Inc 3 — abort/exit park FIRST: a recognized noreturn-sink arm ends in
@@ -499,6 +522,56 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
   case GuardedStoreDisp::Declined:
     return;
   case GuardedStoreDisp::NotApplicable:
+    break;
+  }
+  // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §6.2 row
+  // P1) — the register-free BRANCH PHASE, tried BEFORE `recoverRegion` for the
+  // THIRD time in this function and for the identical reason: its arm is
+  // `call void @cq_phi(double θ)`, a VOID call, so the merge block carries no φ
+  // for the region and all three of `recoverRegion`'s recognizers — each of
+  // which requires a non-null `soleMergePhi` — fall through to `OffPattern`.
+  // MEASURED on the pre-increment oracle: the flagship Grover customer declined
+  // `control flow` (via `offPatternDisposition`'s catch-all) with no lowering at
+  // all.
+  //
+  // ORDER WITHIN THE PRE-PEELS IS NOT LOAD-BEARING and that is a checked
+  // property, not luck: an abort/exit arm ends in `unreachable` (this
+  // classifier's `uncondSucc(arm) == merge` shape test fails), and a guarded
+  // Shadow store arm holds a `store` beside nothing this classifier recognizes
+  // (its `NumPhase == 0` early-out). The three accept classes are disjoint by
+  // arm CONTENT, so each pre-peel returns `NotApplicable` on the other two.
+  switch (classifyPhaseKickback(BI, Taint, R, DT, LI, &ClaimedSelects)) {
+  case PhaseKickbackDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case PhaseKickbackDisp::Declined:
+    return;
+  case PhaseKickbackDisp::NotApplicable:
+    // `R` was used as scratch by the classifier (as it is by the two above);
+    // reset it so `recoverRegion` starts from a clean region.
+    R = ControlRegion();
+    break;
+  }
+  // 3qlq Inc 1 part B (PRD §6.2 row P4) — the GENUINE depth-2 register-free
+  // PHASE NEST, the FOURTH pre-peel and for the same reason as the third: its
+  // merge carries no φ, so `recoverRegion` labels the whole thing `OffPattern`
+  // and declines generically (MEASURED on `if (q>5){cq_phi(.25); if (q<9)
+  // cq_phi(.75);}` at part A's HEAD — `control flow`, at the OUTER branch). It
+  // must run AFTER the flat kickback, and that order IS load-bearing here,
+  // unlike among the first three: a nest's outer branch has a `Mid` arm that
+  // ends in a CONDITIONAL branch, which `classifyPhaseKickback`'s
+  // `uncondSucc(arm) == merge` shape test refuses — so the flat classifier
+  // returns NotApplicable on a nest, but only because it asks that question
+  // first. Do not reorder them without re-deriving that.
+  switch (classifyPhaseKickbackNest(BI, Taint, R, DT, LI, &Claimed,
+                                    &ClaimedSelects)) {
+  case PhaseKickbackDisp::Accept:
+    Plan.Regions.push_back(R);
+    return;
+  case PhaseKickbackDisp::Declined:
+    return;
+  case PhaseKickbackDisp::NotApplicable:
+    R = ControlRegion();
     break;
   }
   switch (recoverRegion(BI, Taint, R)) {
@@ -658,6 +731,28 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
   // and would false-decline `control flow`, killing the accept. `-O1` visits the
   // outer Pred before the inner Mid, so the outer's claim lands first.
   SmallPtrSet<BranchInst *, 4> Claimed;
+  // 3qlq Inc 1 part B (P3) — the LOGICAL `select i1` nodes of an ACCEPTED
+  // compound BRANCH-PHASE condition tree. They are that region's CONDITION, not
+  // data muxes, and `emitPhaseKickbackRegion` erases them; letting the select
+  // scan below also classify one produces a `SelectRegion` whose `Merge` is
+  // freed memory by the time `emitSelectRegion` runs (a SIGSEGV, measured on
+  // `if (q==5 && r==3) cq_phi(θ)`). Function-local like `Claimed`: it is
+  // rebuilt per function because both sets only ever name instructions of the
+  // function being scanned.
+  //
+  // ⚠ IT INHERITS `Claimed`'s BLOCK-ORDER ASSUMPTION, and the inheritance is
+  // exact: both sets are filled when a region's OUTER construct is dispatched,
+  // and both are read when a block that construct OWNS is reached — so both rely
+  // on the owner being visited first. That is the same assumption the 4.3 nest
+  // recorded as "`-O1` visits the outer Pred before the inner Mid, so the outer's
+  // claim lands first". WHEN IT FAILS THE OUTCOME IS A LOUD DECLINE, NOT A
+  // MISCOMPILE: the inner `br` recovers `OffPattern` on its own and fires
+  // `control flow`, so `opt` exits non-zero before any output is written —
+  // MEASURED, and clean under Guard Malloc
+  // (control_phase_nest_reject_block_order.ll). Nothing `clang -O1` produces has
+  // that layout; the fix if it ever becomes reachable is to dispatch terminators
+  // in reverse post-order, NOT to widen a classifier.
+  SmallPtrSet<Instruction *, 4> ClaimedSelects;
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -683,6 +778,7 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
     // and is never cached across an erasure (Rule 9) — every flatten happens
     // later, in `lowerControlRegions`.
     std::optional<LoopInfo> LI;
+    ClaimedSelects.clear();
     for (BasicBlock &BB : F) {
       Instruction *Term = BB.getTerminator();
       if (auto *BI = dyn_cast<BranchInst>(Term)) {
@@ -692,7 +788,8 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
             DT.emplace(F);
             LI.emplace(*DT);
           }
-          handleBranchRegion(BI, taint, plan, Claimed, &*DT, &*LI);
+          handleBranchRegion(BI, taint, plan, Claimed, ClaimedSelects, &*DT,
+                             &*LI);
         }
       } else if (auto *SI = dyn_cast<SwitchInst>(Term)) {
         // 4.5 — prove-or-decline a tainted-scrutinee `switch` instead of the
@@ -710,10 +807,28 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
           // generic `control flow`; no in-loop switch is ever soundly ACCEPTED
           // (the N-way route + merge would flatten across the backedge), so this
           // only sharpens an already-declining path.
-          if (regionEntryInLoop(SI))
+          if (regionEntryInLoop(SI)) {
             diagnoseUnderControl(SI, "control flow inside a loop body");
-          else
-            classifySwitchRegion(SI, taint, plan);
+          } else {
+            // 3qlq Inc 1 part B (PRD §6.2 row P5) — the register-free PHASE
+            // switch is PRE-PEELED, the fifth pre-peel and for the same reason
+            // as the third and fourth: with `void @cq_phi(double)` arms the
+            // merge carries no φ, so the G0-G11 ladder's G1
+            // (`soleSwitchMergePhi`) refuses it and declines generically. The
+            // ladder still owns the VALUE and DATA-MUX classes, which DO have a
+            // merge φ.
+            ControlRegion SR;
+            switch (classifyPhaseKickbackSwitch(SI, taint, SR)) {
+            case SwitchPhaseKickbackDisp::Accept:
+              plan.Regions.push_back(SR);
+              break;
+            case SwitchPhaseKickbackDisp::Declined:
+              break;
+            case SwitchPhaseKickbackDisp::NotApplicable:
+              classifySwitchRegion(SI, taint, plan);
+              break;
+            }
+          }
         }
       }
       // 4.4 — prove-or-decline a tainted-condition `select` instead of the
@@ -746,7 +861,8 @@ ControlPlan detectControlRegions(Module &M, WidthDispatch &wd,
       // has neither (`std::optional` — nothing is built).
       for (Instruction &I : BB)
         if (auto *Sel = dyn_cast<SelectInst>(&I))
-          if (taint.Tainted.count(Sel->getCondition())) {
+          if (taint.Tainted.count(Sel->getCondition()) &&
+              !ClaimedSelects.count(Sel)) {
             if (!DT) {
               DT.emplace(F);
               LI.emplace(*DT);

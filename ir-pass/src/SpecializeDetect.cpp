@@ -32,6 +32,15 @@ SmallPtrSet<const CallInst *, 16> intrinsicSites(const TaintSet &taint) {
   SmallPtrSet<const CallInst *, 16> S;
   S.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
   S.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  // The register-free branch phase (bd 3qlq Inc 1 part A, round-1 F-L3-3).
+  // `PhiCalls` above is the retired register family and is permanently empty;
+  // `PhaseCalls` is where a `call void @cq_phi(double)` lives now. It matters
+  // MORE at this site after the P7 re-ordering: `deleteGlobalPhases` now runs
+  // AFTER `repropagateControlMerges`, so the ROUND-2 `detectSpecializations` sees
+  // surviving `cq_phi` calls, and one with a TAINTED ANGLE satisfies
+  // `readsTainted` — i.e. it would be a tainted-arg CANDIDATE rather than a
+  // skipped intrinsic site.
+  S.insert(taint.PhaseCalls.begin(), taint.PhaseCalls.end());
   S.insert(taint.MeasureCalls.begin(), taint.MeasureCalls.end());
   return S;
 }

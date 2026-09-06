@@ -36,8 +36,9 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: rail record read past an in-place gate on the same rail
 ; CHECK-NOT: cqrt_measure_i32
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %b, i32 %n) {
@@ -51,13 +52,12 @@ loop:
   %c1 = icmp eq i32 %q, 5
   br i1 %c1, label %mid, label %merge
 mid:
-  %g = call i32 @cq_phi_si32(i32 %q, double %b)
+  call void @cq_phi(double %b)
   br label %merge
 merge:
-  %qm = phi i32 [ %g, %mid ], [ %q, %loop ]
   %z  = call i32 @cq_theta_si32(i32 %rec, double 2.500000e-01)  ; a GATE on the frozen record
   %mz = call i32 @cq_measure_si32(i32 %z)
-  %qn = call i32 @cq_theta_si32(i32 %qm, double -5.000000e-01)
+  %qn = call i32 @cq_theta_si32(i32 %q, double -5.000000e-01)
   %inext = add i32 %i, 1
   %done = icmp sgt i32 %inext, %n
   br i1 %done, label %exit, label %loop

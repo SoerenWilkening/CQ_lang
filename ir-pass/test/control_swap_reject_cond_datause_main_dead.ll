@@ -12,10 +12,20 @@
 ; takes the SAME loud decline. (An earlier `main`-name short-circuit silently
 ; accepted this; that was the WI-1 silent-miscompile-class regression.)
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: condition data use neither escaped nor measured under quantum control
+; NEW: cq controlled lowering: condition data use neither escaped nor measured under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}condition data use neither escaped nor measured under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition data use neither escaped nor measured under quantum control
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main() {
@@ -26,10 +36,9 @@ entry:
   %dead = add i32 %d, 7            ; DEAD: never measured, returned, or inverted
   br i1 %c, label %arm, label %merge
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
+  call void @cq_phi(double 2.500000e-01)
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ %q, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q)
   ret i32 %m
 }

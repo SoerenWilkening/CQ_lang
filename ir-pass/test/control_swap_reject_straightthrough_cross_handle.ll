@@ -12,11 +12,21 @@
 ; the region declines loudly. The re-anchor does not weaken the cross-handle gate
 ; (Prime Directive; mirrors the eq-fold D3 cross-handle decline).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: control flow under quantum control
+; NEW: cq controlled lowering: control flow under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}cq controlled lowering: control flow under quantum control
 ; CHECK-NOT: cqrt_cswap
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %v0, double %a) {
@@ -26,10 +36,10 @@ entry:
   %c = icmp eq i32 %p, 0                  ; condition constrains %p ...
   br i1 %c, label %merge, label %arm
 arm:
-  %q1 = call i32 @cq_phi_si32(i32 %q, double %a)   ; ... but the arm rotates %q
+  call void @cq_phi(double %a)  ; ... but the arm rotates %q
   br label %merge
 merge:
-  %qm = phi i32 [ %q1, %arm ], [ 0, %entry ]       ; straight-through folded from p==0
+  %qm = phi i32 [ %q, %arm ], [ 0, %entry ]       ; straight-through folded from p==0
   %m  = call i32 @cq_measure_si32(i32 %qm)
   ret i32 %m
 }

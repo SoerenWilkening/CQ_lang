@@ -1,3 +1,15 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- every oracle / reflection arm's `q = cq_phi(q, PI)` -> `cq_phi(PI)`.
+
+   FINDING (PRD S1, measured 2026-09-05 at HEAD 52d7764): the PRE-3qlq golden of
+   this slice encoded a CONTROLLED TENSORED Rz, which is the IDENTITY on q --
+   `cqrt_rz_<W>` is "Rz on each qubit", so the marked phase is (-1)^popcount(target)
+   (= +1 for |5>) and a per-qubit diagonal gate FIXES |0..0>, so the |0> reflection
+   can never put -1 there. Any claim in the prose below that the oracle marks |5>,
+   or that the reflection reflects about |0>, was TRUE OF THE SOURCE and FALSE OF
+   THE EMITTED CIRCUIT. It becomes true only from 3qlq Inc 1 on, where the phase is
+   a BRANCH phase by kickback (rz_i1 on the minted flag), not a register Rz. The
+   older prose is left verbatim rather than silently corrected; read it with this.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* slice_control_grover_derived_oracle_2iter.c — TWO COMPLETE GROVER ITERATIONS
    WITH A NON-TRIVIAL ORACLE. The slice that needs BOTH halves of M-B Increment
    6 at once, and the one that would not lower with either half alone.
@@ -5,13 +17,13 @@
    SOURCE INTENT — the body of slice_control_grover_derived_oracle.c, twice,
    plus the final re-prep:
        S    q = cq_theta(q, 0.5);
-       O    if (((q * 5) >> 2) == 5) q = cq_phi(q, PI);     the DERIVED oracle (marks q == 4)
+       O    if (((q * 5) >> 2) == 5) cq_phi(PI);     the DERIVED oracle (marks q == 4)
        S-   q = cq_theta(q, -0.5);
-       R0   if (q == 0) q = cq_phi(q, PI);
+       R0   if (q == 0) cq_phi(PI);
        S    q = cq_theta(q, 0.5);
-       O    if (((q * 5) >> 2) == 5) q = cq_phi(q, PI);
+       O    if (((q * 5) >> 2) == 5) cq_phi(PI);
        S-   q = cq_theta(q, -0.5);
-       R0   if (q == 0) q = cq_phi(q, PI);
+       R0   if (q == 0) cq_phi(PI);
        S    q = cq_theta(q, 0.5);
        M    measure q
 
@@ -60,20 +72,20 @@ int slice(void) {
 
     q = cq_theta(q, 0.5);                       /* S  — iteration 1 */
     if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
-        q = cq_phi(q, CQ_PI);
+        cq_phi(CQ_PI);
     }
     q = cq_theta(q, -0.5);                      /* S- */
     if (q == 0) {                               /* R0 */
-        q = cq_phi(q, CQ_PI);
+        cq_phi(CQ_PI);
     }
 
     q = cq_theta(q, 0.5);                       /* S  — iteration 2 */
     if (((q * 5) >> 2) == 5) {                  /* O  — marks q == 4 */
-        q = cq_phi(q, CQ_PI);
+        cq_phi(CQ_PI);
     }
     q = cq_theta(q, -0.5);                      /* S- */
     if (q == 0) {                               /* R0 */
-        q = cq_phi(q, CQ_PI);
+        cq_phi(CQ_PI);
     }
 
     q = cq_theta(q, 0.5);                       /* final re-prep */

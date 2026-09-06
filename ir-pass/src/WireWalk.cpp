@@ -69,6 +69,11 @@ void collectWireValues(Value *Seed, bool CrossValueRouting,
     if (!CI || CI->arg_size() < 1)
       break;
     Value *Arg0 = CI->getArgOperand(0);
+    // ⚠ VACUOUS SINCE bd test_C_libtooling-3qlq Inc 1 — the `@cq_phi_<sfx>` family is
+    // RETIRED and `StringRef("cq_phi").starts_with("cq_phi_")` is FALSE, so the
+    // register-free `void @cq_phi(double)` never reaches here. Kept, not deleted
+    // (PRD §6.2 row P6); see the note at `ArmClassify.cpp`'s `isPhiCall` for why
+    // widening it would read the wrong operand.
     if (isCallToPrefix(CI, "cq_phi_")) {
       V = Arg0;
       continue;

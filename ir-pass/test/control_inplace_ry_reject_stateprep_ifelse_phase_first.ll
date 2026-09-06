@@ -24,12 +24,20 @@
 ; which is true of `..._ifelse_two_preps.ll` and of no other file that carried
 ; them. They live there.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was RE-SPELLED on the Inc-1 binary.
+; The construct this fixture pins is unchanged; the CLAUSE that refuses it
+; MOVED — this is a real disposition change, not a widening, and the new
+; string does not contain the old one.
+; OLD: mixed phase/value arm under quantum control
+; NEW: cq controlled lowering: impure phase arm under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}mixed phase/value arm under quantum control
+; CHECK: error{{.*}}cq controlled lowering: impure phase arm under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %u1) {
@@ -39,13 +47,13 @@ entry:
   %c = icmp eq i32 %q, 5
   br i1 %c, label %armt, label %armf
 armt:
-  %rt = call i32 @cq_phi_si32(i32 %p, double 4.000000e-01)
+  call void @cq_phi(double 4.000000e-01)
   br label %merge
 armf:
   %rf = call i32 @cq_theta_si32(i32 0, double 9.000000e-01)
   br label %merge
 merge:
-  %rm = phi i32 [ %rt, %armt ], [ %rf, %armf ]
+  %rm = phi i32 [ %p, %armt ], [ %rf, %armf ]
   %mq = call i32 @cq_measure_si32(i32 %q)
   %mr = call i32 @cq_measure_si32(i32 %rm)
   %s = add i32 %mq, %mr

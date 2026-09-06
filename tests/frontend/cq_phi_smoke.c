@@ -1,48 +1,47 @@
-// RUN: %clang %cq_include -O1 -emit-llvm -include CQ.h -S %s -o - | %filecheck %s
+// RUN: %clang %cq_include -O1 -emit-llvm -include CQ.h -S %s -o - > %t.ll
+// RUN: %filecheck %s < %t.ll
+// RUN: %filecheck %s --check-prefix=NOFAM < %t.ll
 
 // Smoke fixture for the cq_phi intrinsic surface.
 //
-// Exercises the full 14-type generic-selection table from docs/frontend.md
-// §3.1: one call of cq_phi(<var>, 0.1) per C type, asserting that the
-// _Generic dispatch lowers to the type-suffixed extern @cq_phi_<sfx>.
-// The (void) casts suppress -Wall -Wextra unused-result warnings; the 14
-// CHECK directives match in source order (extern returns survive -O1, so
-// no CHECK-DAG is needed). This is a TEST-FIRST (RED) fixture: until the
-// matching header slice declares cq_phi, clang-19 errors with
-// "call to undeclared function 'cq_phi'", which is the expected failure.
+// REWRITTEN 2026-09-05 for the REGISTER-FREE surface (bd
+// test_C_libtooling-3qlq Inc 1, PRD `retire-swap-route-PRD.md` §4.1, owner
+// decision D1). `cq_phi` is no longer a 15-width `_Generic` family over a
+// register — it is ONE extern `void cq_phi(double)` meaning "multiply the
+// amplitude of the CURRENT BRANCH by e^{i.theta}". The 14 per-type CHECK
+// lines this file used to carry are GONE with the family they pinned; what
+// survives -O1 to be pinned is the single void call.
+//
+// The two properties asserted here:
+//   (1) `cq_phi(theta)` compiles as a REAL CALL to `@cq_phi(double)` — it is
+//       an opaque extern, so -O1 cannot speculate, sink or delete it; the
+//       IR pass is what deletes an uncontrolled one (D2), never clang.
+//   (2) NO `@cq_phi_<sfx>` symbol is minted at any type. The old family is
+//       removed from the header, so an old-spelling program is a COMPILE
+//       error rather than a silently different lowering (there is no
+//       migration shim, by design).
 
 #include <stdbool.h>
 
 void use(void) {
-    bool                v_i1  = 0;
-    char                v_c   = 0;
-    signed char         v_si8 = 0;
-    unsigned char       v_ui8 = 0;
-    short               v_si16 = 0;
-    unsigned short      v_ui16 = 0;
-    int                 v_si32 = 0;
-    unsigned int        v_ui32 = 0;
-    long                v_sl  = 0;
-    unsigned long       v_ul  = 0;
-    long long           v_sll = 0;
-    unsigned long long  v_ull = 0;
-    float               v_f32 = 0;
-    double              v_f64 = 0;
-    _Float16            v_f16 = 0;   // Phase 7.1 Increment D
-
-    (void) cq_phi(v_i1,   0.1);   // CHECK: call {{.*}} @cq_phi_i1(
-    (void) cq_phi(v_c,    0.1);   // CHECK: call {{.*}} @cq_phi_c(
-    (void) cq_phi(v_si8,  0.1);   // CHECK: call {{.*}} @cq_phi_si8(
-    (void) cq_phi(v_ui8,  0.1);   // CHECK: call {{.*}} @cq_phi_ui8(
-    (void) cq_phi(v_si16, 0.1);   // CHECK: call {{.*}} @cq_phi_si16(
-    (void) cq_phi(v_ui16, 0.1);   // CHECK: call {{.*}} @cq_phi_ui16(
-    (void) cq_phi(v_si32, 0.1);   // CHECK: call {{.*}} @cq_phi_si32(
-    (void) cq_phi(v_ui32, 0.1);   // CHECK: call {{.*}} @cq_phi_ui32(
-    (void) cq_phi(v_sl,   0.1);   // CHECK: call {{.*}} @cq_phi_sl(
-    (void) cq_phi(v_ul,   0.1);   // CHECK: call {{.*}} @cq_phi_ul(
-    (void) cq_phi(v_sll,  0.1);   // CHECK: call {{.*}} @cq_phi_sll(
-    (void) cq_phi(v_ull,  0.1);   // CHECK: call {{.*}} @cq_phi_ull(
-    (void) cq_phi(v_f32,  0.1);   // CHECK: call {{.*}} @cq_phi_f32(
-    (void) cq_phi(v_f64,  0.1);   // CHECK: call {{.*}} @cq_phi_f64(
-    (void) cq_phi(v_f16,  0.1);   // CHECK: call {{.*}} @cq_phi_f16(
+    cq_phi(0.1);           // CHECK: call void @cq_phi(double
+    cq_phi(0.25);          // CHECK: call void @cq_phi(double
 }
+
+// The declaration itself is void(double) — not T(T, double).
+// CHECK: declare void @cq_phi(double
+
+// No per-type family survives anywhere in the module.
+//
+// ITS OWN WHOLE-FILE PURE-NEGATIVE PREFIX, and that is the finding, not a style
+// choice (Rule-13 round-1 F-L6-3 — the Inc-3 F-L6-1 windowing lesson recurring
+// in the file this increment rewrote). Spelled as a TRAILING negative directive
+// after the positive one for the declaration above, it windowed from that match
+// to EOF — and in every clang-emitted module the declare block sits AFTER the
+// function bodies, so the window excluded exactly the place an old-family CALL
+// appears. MEASURED with four injections into this fixture's own -O1 output: an
+// injected `declare i32 @cq_phi_si32(...)` was caught, a whole-surface rename was
+// caught, a deleted `cq_phi` call was caught by the positive directive — and an
+// injected `%zz = call i32 @cq_phi_si32(...)` INSIDE @use() was NOT. In its own
+// prefix, with no positive directive to window it, it catches all four.
+// NOFAM-NOT: @cq_phi_

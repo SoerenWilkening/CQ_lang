@@ -1,0 +1,16 @@
+== orch_full_ctest_c1
+100% tests passed, 0 tests failed out of 342
+Total Test time (real) = 343.91 sec
+EXIT=0
+== orch_full_ctest_c1b
+100% tests passed, 0 tests failed out of 348
+Total Test time (real) = 352.89 sec
+EXIT=0
+== orch_full_ctest_c1c
+100% tests passed, 0 tests failed out of 348
+Total Test time (real) = 344.81 sec
+EXIT=0
+== orch_full_ctest_final
+100% tests passed, 0 tests failed out of 348
+Total Test time (real) = 357.52 sec
+EXIT=0

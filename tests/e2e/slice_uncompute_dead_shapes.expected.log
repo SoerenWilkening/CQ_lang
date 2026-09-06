@@ -2,29 +2,42 @@ cqrt_alloc_i32(2) -> h0
 cqrt_ry_i32(h0, 0x1p-2)
 cq_template_sub_i32_lh(100, h0) -> h1
 cq_template_shl_i32_lh(5, h1) -> h2
-cqrt_rz_i32(h2, 0x1p-1)
-cqrt_alloc_i32(5) -> h3
-cqrt_ry_i32(h3, 0x1.3333333333333p-2)
-cq_template_sext_i32_to_i64(h3) -> h4
-cqrt_rz_i64(h4, 0x1.3333333333333p-1)
-cqrt_alloc_f32(0x1.8p+1) -> h5
-cqrt_ry_f32(h5, 0x1.999999999999ap-2)
-cq_template_fneg_f32(h5) -> h6
-cqrt_rz_f32(h6, 0x1.6666666666666p-1)
-cqrt_rz_f32(h6, -0x1.6666666666666p-1)
-cq_template_fneg_f32_unc(h6, h5)
-cqrt_free(h6)
-cqrt_ry_f32(h5, -0x1.999999999999ap-2)
-cqrt_free(h5)
-cqrt_rz_i64(h4, -0x1.3333333333333p-1)
-cq_template_sext_i32_to_i64_unc(h4, h3)
-cqrt_free(h4)
-cqrt_ry_i32(h3, -0x1.3333333333333p-2)
-cqrt_free(h3)
-cqrt_rz_i32(h2, -0x1p-1)
+cq_template_icmp_sgt_i32_hl(h2, 100) -> h3
+cqrt_rz_i1(h3, 0x1p-1)
+cq_template_icmp_sgt_i32_hl_unc(h3, h2, 100)
 cq_template_shl_i32_lh_unc(h2, 5, h1)
 cqrt_free(h2)
 cq_template_sub_i32_lh_unc(h1, 100, h0)
 cqrt_free(h1)
-cqrt_ry_i32(h0, -0x1p-2)
-cqrt_free(h0)
+cqrt_free(h3)
+cqrt_alloc_i32(5) -> h4
+cqrt_ry_i32(h4, 0x1.3333333333333p-2)
+cq_template_sext_i32_to_i64(h4) -> h5
+cqrt_alloc_i32(5) -> h6
+cqrt_ry_i32(h6, 0x1.6666666666666p-2)
+cq_template_sext_i32_to_i64(h6) -> h7
+cq_template_mul_i64(h5, h7) -> h8
+cq_template_icmp_eq_i64_hl(h8, 15) -> h9
+cqrt_rz_i1(h9, 0x1.3333333333333p-1)
+cq_template_icmp_eq_i64_hl_unc(h9, h8, 15)
+cq_template_mul_i64_unc(h8, h5, h7)
+cqrt_free(h8)
+cq_template_sext_i32_to_i64_unc(h7, h6)
+cqrt_free(h7)
+cq_template_sext_i32_to_i64_unc(h5, h4)
+cqrt_free(h5)
+cqrt_free(h9)
+cqrt_alloc_f32(0x1.8p+1) -> h10
+cqrt_ry_f32(h10, 0x1.999999999999ap-2)
+cq_template_fneg_f32(h10) -> h11
+cqrt_alloc_f32(0x1.8p+1) -> h12
+cqrt_ry_f32(h12, 0x1.ccccccccccccdp-2)
+cq_template_fmul_f32(h12, h11) -> h13
+cq_template_fcmp_oeq_f32_hl(h13, -0x1.2p+3) -> h14
+cqrt_rz_i1(h14, 0x1.6666666666666p-1)
+cq_template_fcmp_oeq_f32_hl_unc(h14, h13, -0x1.2p+3)
+cq_template_fmul_f32_unc(h13, h12, h11)
+cqrt_free(h13)
+cq_template_fneg_f32_unc(h11, h10)
+cqrt_free(h11)
+cqrt_free(h14)

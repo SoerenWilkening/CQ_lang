@@ -57,8 +57,8 @@
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOCONV < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define void @late_terminal_dag(i32 noundef %0, ptr noundef %1) {
@@ -67,9 +67,7 @@ define void @late_terminal_dag(i32 noundef %0, ptr noundef %1) {
   %5 = mul nsw i32 %4, 3
   %6 = mul nsw i32 %5, 5
   %7 = mul nsw i32 %6, 7
-  %8 = call i32 @cq_phi_si32(i32 noundef %7, double noundef 2.000000e+00)
   %9 = sub nsw i32 %4, %3
-  %10 = call i32 @cq_phi_si32(i32 noundef %9, double noundef 4.000000e+00)
   ret void
 }
 
@@ -79,17 +77,13 @@ define void @late_terminal_dag(i32 noundef %0, ptr noundef %1) {
 ; CHECK-NEXT: %[[X:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 3)
 ; CHECK-NEXT: %[[Y:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[X]], i32 5)
 ; CHECK-NEXT: %[[Z:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[Y]], i32 7)
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[Z]], double 2.000000e+00)
 ; THE SITE, out of place: `%[[X]]`'s producer reads `%[[H]]` and is withheld
 ; from the plan because the dead-terminal spine can reach it from `%[[Z]]`.
 ; CHECK-NEXT: %[[SUB:.*]] = call i32 @cq_template_sub_i32_hl(i32 %[[H]], i32 %3)
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[SUB]], double 4.000000e+00)
 ; the dead-terminal spine then reverses the whole thing in LIFO order, the
 ; subtraction rail included — which is what it is for.
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[SUB]], double -4.000000e+00)
 ; CHECK-NEXT: call void @cq_template_sub_i32_hl_unc(i32 %[[SUB]], i32 %[[H]], i32 %3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SUB]])
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[Z]], double -2.000000e+00)
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[Z]], i32 %[[Y]], i32 7)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[Z]])
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[Y]], i32 %[[X]], i32 5)

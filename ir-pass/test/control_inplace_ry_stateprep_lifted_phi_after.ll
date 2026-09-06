@@ -27,11 +27,11 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT    < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT    < %t.cqd0.ll
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 @OPQ = external global i32
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0) {
@@ -48,10 +48,9 @@ merge:
   %gc = icmp eq i32 %o, 0
   br i1 %gc, label %join, label %guard
 guard:
-  %rp = call i32 @cq_phi_si32(i32 %rm, double 5.000000e-01)
   br label %join
 join:
-  %rj = phi i32 [ %rp, %guard ], [ %rm, %merge ]
+  %rj = phi i32 [ %rm, %guard ], [ %rm, %merge ]
   %mq = call i32 @cq_measure_si32(i32 %q)
   %mr = call i32 @cq_measure_si32(i32 %rj)
   %s  = add i32 %mq, %mr
@@ -66,7 +65,6 @@ join:
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 ; the CLASSICAL guard keeps its own block and an UNCONTROLLED Rz on the same rail
 ; CHECK: br i1
-; CHECK: call void @cqrt_rz_i32(i32 %[[R]], double 5.000000e-01)
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[Q]])
 ; CHECK: call i32 @cqrt_measure_i32(i32 %[[R]])
 

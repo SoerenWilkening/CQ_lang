@@ -29,6 +29,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
@@ -55,6 +56,55 @@ void eraseDeadDecls(Module &M, WidthDispatch &wd) {
   }
 }
 
+// THE POSTCONDITION, ASSERTED — bd 3qlq Inc 1 part A, Rule-13 round-1 finding
+// F-L6-1 (a CONFIRMED Rule-1 "no third path" violation).
+//
+// `eraseDeadDecls` above states the architecture's promise — "no
+// `@cq_theta_<sfx>` / `@cq_phi_<sfx>` / `@cq_measure_<sfx>` remains in the IR
+// after this pass" — and then only ERASES the declarations that happen to be
+// unused. It cannot see a SURVIVING CALL, and a surviving call is exactly what
+// F-L6-1 found: on a stale header the flagship `if (q == 5) q = cq_phi(q, PI)`
+// had its arg 0 const-folded to a classical `i32 5`, so the taint-escape guard
+// could not fire; `ArmClassify` still CLAIMED the call by the `cq_phi_` prefix
+// and the deleted `PhiCalls` lowering loop never consumed it. `opt` exited 0,
+// verify-clean, STRICT stage 2b clean, with the phase gate dropped and
+// `@cq_phi_si32` standing in the emitted module. The only thing that noticed was
+// `ld`.
+//
+// The `resolveSources` clause (`TaintPropagation.cpp`) closes that specific
+// door. THIS is the backstop that makes the postcondition a CHECKED property
+// rather than a comment: whatever else changes upstream, a front-end intrinsic
+// CALL that reaches the end of the pipeline is a decline, not an exit-0 module.
+// It fires after every lowering stage and before `eraseDeadDecls`, so a stage
+// that forgets to consume its own construct is caught by the pass rather than by
+// the linker.
+//
+// LOUD, NOT AN `assert` (Rule 1): a Release build has assertions off, which is
+// the build every gate in this tree runs.
+bool declineSurvivingIntrinsicCalls(Module &M, WidthDispatch &wd) {
+  bool Declined = false;
+  for (StringRef Name : wd.frontEndIntrinsicNames()) {
+    Function *FE = M.getFunction(Name);
+    if (!FE)
+      continue;
+    for (User *U : FE->users()) {
+      auto *CB = dyn_cast<CallBase>(U);
+      if (!CB || CB->getCalledFunction() != FE)
+        continue;
+      Function *At = CB->getFunction();
+      At->getContext().diagnose(DiagnosticInfoUnsupported(
+          *At,
+          ("cq lowering: front-end intrinsic " + Name +
+           " survived lowering; the pass lowered nothing for it")
+              .str(),
+          CB->getDebugLoc()));
+      Declined = true;
+      break;  // one message per symbol is enough to fail the pass.
+    }
+  }
+  return Declined;
+}
+
 }  // namespace
 
 PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
@@ -63,11 +113,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
 
   // No quantum work anywhere in the module: leave the IR byte-identical
   // and (crucially) emit no runtime/template decls. The
-  // passthrough_no_quantum LIT fixture pins this path. PhiCalls is in the
-  // predicate so a classical-only-phi module still runs (and deletes the
-  // phi) — else an unresolved @cq_phi_* extern is a Stage-3 link error.
+  // passthrough_no_quantum LIT fixture pins this path. `PhaseCalls` is in the
+  // predicate so a module whose ONLY quantum surface is an uncontrolled
+  // `void @cq_phi(double)` still runs (and DELETES it, D2) — else the
+  // unresolved `@cq_phi` extern is a Stage-3 link error. (`PhiCalls` is
+  // permanently empty since 3qlq Inc 1 and is kept in the predicate as the
+  // vacuous term it now is; see TaintPropagation.h.)
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
@@ -337,7 +390,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // AFTER the flatten it depends on. A no-op unless an in-loop region was
   // actually emitted (`taint.InLoopFlattenedPreds`), so every pre-existing
   // module is byte-identical.
-  collapseFlattenedLoopRails(M, taint);
+  collapseFlattenedLoopRails(M, wd, taint);
 
   // Issue dugh (Phase 4×6): the SECOND propagation round for control-merge
   // out-rails. The two untainted-merge emitters (6.5 classical-call arm, 4.5
@@ -354,6 +407,66 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // tainted-angle guard + the newly-tainted onward `cq_phi`). A no-op when no
   // untainted-merge region was emitted.
   repropagateControlMerges(M, wd, taint, plan6);
+
+  // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
+  // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
+  // classically-controlled branch phase is a GLOBAL phase, unobservable, and
+  // deleting it is a documented semantic rather than a diagnostic.
+  //
+  // POSITION IS THE WHOLE SOUNDNESS ARGUMENT, AND IT IS **AFTER**
+  // `repropagateControlMerges`, NOT immediately after `lowerControlRegions`.
+  // The premise is "every tainted `br`/`switch` has been CLAIMED or DECLINED
+  // loudly — Rule 1's no-third-path — so a survivor sits under CLASSICAL control
+  // only". At the OLD position that premise was FALSE, and the Rule-13 round-1
+  // lens L3 measured the consequence as a CONFIRMED SILENT MISCOMPILE (F-L3-1):
+  //
+  //   `repropagateControlMerges` (the dugh/yn71 round) is not a taint touch-up —
+  //   its `detectAndLowerOnwardControl` is a SECOND, FULL round of
+  //   `detectControlRegions` + `lowerControlRegions`. A `cq_phi` under an ONWARD
+  //   tainted branch — one whose condition reads a 6.5 classical-call-arm or 4.5
+  //   switch-data-mux `%out` rail, and is therefore CLASSICAL at round 1 — was
+  //   deleted as a "global phase" BEFORE its region had ever been looked at.
+  //   `int y=5; if (q>5) y=ext_f(7); if (y>50) cq_phi(0.9); else cq_phi(0.3);`
+  //   then compiled at exit 0 with the phase gone AND — its only consumer having
+  //   been deleted — with the ANGLE `select` re-classified at round 2 as plain
+  //   fp DATA and lowered through the 4.4/kjd1 `cqrt_copy_f64_controlled` merge:
+  //   a rotation angle materialised on a quantum f64 rail, the Rule-3
+  //   wire-crossing `CLAUDE.md` names outright. A second reproducer (a phase
+  //   BESIDE a value op in an onward arm) became an over-accept of a shape the
+  //   pre-3qlq oracle declines `mixed phase/value arm under quantum control`.
+  //
+  // NEITHER of the two fences could see it, and both failures are STRUCTURAL
+  // rather than accidental: (i) at the old position the onward branch's condition
+  // is not yet in `taint.Tainted`, so the Rule-1 assert's
+  // `reachedThroughTaintedBranch` walk had nothing to find; and (ii) the ROUND-1
+  // tainted `br` that the same walk would otherwise have found on the predecessor
+  // path had ALREADY BEEN ERASED by its own region's flatten.
+  //
+  // AT THIS POSITION the premise is true rather than aspirational: round 2 has
+  // run to a fixpoint, so its `detectControlRegions` — including the new
+  // `classifyPhaseKickback` pre-peel — has claimed or declined every onward
+  // tainted `br` too, and `reachedThroughTaintedBranch` is asked with ROUND-2
+  // taint on the ROUND-2 CFG, which is its correct position. A survivor
+  // reachable through a tainted branch condition declines `unclaimed branch
+  // phase under quantum control` instead of vanishing (PRD §10.3 lens 4), and a
+  // survivor with a TAINTED ANGLE declines with the retired family's own
+  // `quantum-derived rotation angle` string.
+  //
+  // WHAT IS DOWNSTREAM OF THE NEW SLOT AND WAS RE-CHECKED (the 8h7d.5 F-1/F-3
+  // discipline — a stage that MOVES must be re-asked against every stage it
+  // crossed):
+  //   * `repropagateControlMerges` itself re-runs `declineTaintEscapes`, which
+  //     already CARVES OUT `taint.PhaseCalls` (`TaintPropagation.cpp`), so a
+  //     surviving `cq_phi` crossing that stage adds no new escape decline —
+  //     MEASURED, no fixture changes disposition.
+  //   * `detectSpecializations` runs at BOTH rounds and reads
+  //     `taint.PhaseCalls` since F-L3-3 below, so a survivor inside a
+  //     specialization candidate declines as a `quantum primitive (cq_*)` at
+  //     round 2 as well as at round 1.
+  //   * `collapseFlattenedLoopRails` (round-2 rail collapse) sees the same
+  //     survivors it saw before; it keys on `taint.InLoopFlattenedPreds` and on
+  //     rotation/`addc` rail gates, and a register-free phase call is neither.
+  deleteGlobalPhases(M, wd, taint);
 
   // Reversible I/O output tape (Phase 7.6): a tainted `printf`/`putchar` lowers
   // to `cqrt_tape_alloc` + `cqrt_tape_write_<W>` append sequences instead of
@@ -510,6 +623,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Every WRONG-VALUE and DIRTY-FREE owner above stays loud; the ruling reverses
   // this guard's decline half and nothing else.
   warnLiveRecordRotations(M, taint);
+  // THE POSTCONDITION BACKSTOP (bd 3qlq Inc 1 part A, round-1 F-L6-1) — see the
+  // function's own header. Runs BEFORE `eraseDeadDecls`, which only erases the
+  // declarations that are already unused and is therefore blind to a surviving
+  // CALL.
+  if (declineSurvivingIntrinsicCalls(M, wd))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -525,7 +644,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   WidthDispatch wd(M);
   TaintSet taint = propagate(M, wd);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
   // Restrict the work lists to the requested function. Callers of
@@ -540,6 +659,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // calls in functions OTHER than F — DIVERGING from the per-F intent. Harmless
   // while unreachable; a future reviver MUST either restrict `plan6` to sites in
   // F or accept (and document) module-wide specialization here.
+  //
+  // ⚠ `deleteGlobalPhases` (bd 3qlq Inc 1, P7) IS A FOURTH MODULE-WIDE STAGE and
+  // belongs in that list — Rule-13 round-1 finding F-L3-6. `onlyInF` scopes the
+  // WORK LISTS, but `deleteGlobalPhases` deliberately derives its survivors from
+  // `wd.phaseFn()->users()` rather than from `taint.PhaseCalls` (so a missed
+  // emitter scrub is a no-op instead of a dangling read), and that use list is
+  // module-wide. So this shim would DELETE `cq_phi` calls in functions other than
+  // `F`, and — since F-L3-4 — would DECLINE on an address-take anywhere in `M`.
+  // Same disposition as the three above: harmless while this entry point has zero
+  // callers, and a reviver must scope it to `F` or accept it as module-wide.
   auto onlyInF = [&F](auto &Calls) {
     Calls.erase(std::remove_if(Calls.begin(), Calls.end(),
                                [&F](CallInst *CI) {
@@ -549,9 +678,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   };
   onlyInF(taint.ThetaCalls);
   onlyInF(taint.PhiCalls);
+  onlyInF(taint.PhaseCalls);
   onlyInF(taint.MeasureCalls);
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
-      taint.MeasureCalls.empty())
+      taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
   // p119: by-ref math canonicalization removed (library functions, source-injected
@@ -692,6 +822,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // pre-`lowerIOSinks`/`lowerQramReads`/`declineClassicalMuxes`/`lowerRotations`
   // ordering rationale.
   repropagateControlMerges(M, wd, taint, plan6);
+  // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
+  // sound slot is AFTER `repropagateControlMerges` and not immediately after
+  // `lowerControlRegions` (Rule-13 round-1 finding F-L3-1: round 2 is a full
+  // second round of control detection, so at the earlier slot P7 deleted branch
+  // phases whose regions had never been looked at).
+  deleteGlobalPhases(M, wd, taint);
   // Reversible I/O output tape (Phase 7.6) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY — a stage wired in run() but not here
   // silently diverges, WI-1.12). See run() for the pre-`lowerRotations`
@@ -735,6 +872,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // report. See run() for the late-slot + emitter-keyed rationale and for why
   // the bool is not branched on (owner ruling 2026-08-29, bd lyyf).
   warnLiveRecordRotations(M, taint);
+  // The postcondition backstop, mirrored in this entry point too (twin-pipeline
+  // parity is MANDATORY, WI-1.12) — see run() for the F-L6-1 rationale.
+  if (declineSurvivingIntrinsicCalls(M, wd))
+    return true;
   eraseDeadDecls(M, wd);
   return true;
 }

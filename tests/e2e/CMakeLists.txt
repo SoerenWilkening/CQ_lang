@@ -585,10 +585,25 @@ add_test(NAME e2e-angle-select-ry-ne-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
 
-add_test(NAME e2e-angle-select-rz-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_rz_twin.expected.log")
+# REMOVED 2026-09-05 (3qlq Inc 1, prep-b2): `e2e-angle-select-rz-twin-identical`.
+# It asserted `compare_files` between the Rz angle select and its BY-DIFFERENCE
+# manual twin, and under owner decision D2 that assertion is FALSE — not because
+# either side is wrong, but because the twin's leading gate is an UNCONTROLLED
+# `cq_phi(0.3)`, i.e. a GLOBAL PHASE, which the pass DELETES. MEASURED:
+#     subject  cqrt_x(f); rz_i1(f, 0x1.3333333333333p-2);            <- P(0.3) on !f
+#              cqrt_x(f); rz_i1(f, 0x1.ccccccccccccdp-1)             <- P(0.9) on  f
+#     twin                 rz_i1(f, 0x1.3333333333334p-1)            <- P(fl(0.9-0.3)) on f
+# The two are the SAME STATE up to the global factor e^{i0.3} that D2 removes, so
+# a byte gate would be asserting that a deleted global phase is observable. Both
+# slices KEEP their own registration and their own golden; the RELATION between
+# the two goldens is stated in both headers and is checkable by hand (the twin's
+# single angle is `fl(A - B)` of the subject's two). The drbq Inc-4 state-prep
+# group set the precedent for exactly this: "the two goldens differ by a
+# reduction and a `compare_files` gate would assert something FALSE".
+# NOTE also (prep-d, OQ-15): NO byte-identity twin exists for this stem at all —
+# the obvious candidate `if (q==5) cq_phi(A); if (q!=5) cq_phi(B);` is BYTE-
+# IDENTICAL at `-O1` to the if/else itself, so it is the same module and witnesses
+# nothing. The audit's substitution (d) is P2's witness for the Rz stem.
 
 # bd test_C_libtooling-lom0 Increment 4 — TWO COMPLETE GROVER ITERATIONS: four
 # chained `cq_theta`s and four sequential tainted-condition phase regions, i.e.
@@ -1992,13 +2007,21 @@ add_test(NAME e2e-slice-classical-switch-gate
 # free -> icmp_eq_inv strip + flag free; the N>=3 byte-diff exercises the N-way
 # folded-gate scrub + N-way flatten (the §5 const-fold re-anchor BLOCKER's only
 # downstream backstop). control_swap_switch_phase.ll is the pinned IR contract.
-add_test(NAME e2e-slice-control-switch-phase
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_switch_phase.expected.log")
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-4/OQ-11 / prep-b2): `e2e-slice-control-switch-phase`
+# and `slice_control_switch_phase.expected.log`. PRD §6.2 P5 (the homogeneous-phase
+# switch) LOWERS — Increment 1b implements it on the IR `switch` and ships 3 accept +
+# 7 decline fixtures — but it has NO plain-C customer at the `-O1` ship floor. A phase
+# arm's whole content is `call void @cq_phi(double)`, so every arm's suffix is identical
+# modulo one operand and SimplifyCFG's common-code sinking ALWAYS applies: dense case
+# values become a `[N x double] @switch.table` of ANGLES with ONE shared call, sparse
+# ones a cascade joined by `phi double` (Inc 1b measured SEVEN spellings, N-gate arms
+# included). The tainted-index table read is then a loud QRAM decline —
+# `cq QRAM access: const-global table read under tainted control: index not provably
+# in-bounds ...` — on the SUBJECT and on the pre-3qlq ORACLE alike. Both `-O1` outcomes
+# are pinned in lit, `control_phase_switch_reject_table_fold.ll` carrying the verbatim
+# `-O1` module. `slice_control_switch_phase.c` is KEPT in the tree, unregistered, with
+# that record in its header; giving P5 a real e2e customer needs the table-fold
+# recognizer, which is an owner decision (OQ-11), not something this increment may take.
 
 # Phase 4.5 (WI-6): VALUE switch (N-way method-B on a shared routed base p != q):
 # per-case route-in -> verbatim add chain -> route back, then ONE cqrt_copy_i32
@@ -3041,6 +3064,24 @@ add_test(NAME e2e-slice-loop-phase-accum
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log")
 
+# 3qlq Inc 1, finding F-B2-3 (prep-b2): the HAND-UNROLLED twin of the phase
+# accumulator above, and the `cmp` gate over the two committed goldens. The rolled
+# slice's header has claimed byte-identity with a manual unroll since Phase 7.3
+# Inc 1 and there was no twin in the tree to check it against; there is now.
+# `cmp` only — no clang, no opt, no plugin, milliseconds.
+add_test(NAME e2e-slice-loop-phase-accum-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.expected.log")
+
+add_test(NAME e2e-loop-phase-accum-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_phase_accum_unrolled.expected.log")
+
 # Issue dtzb (the in-place reversible arithmetic strategy): the VALUE twin of the
 # phase accumulator above. A classically-bounded loop over an in-place-mutated
 # value rail `q = q ^ 9` lowers ROLLED — `cqrt_xorc_i32(h0, 9)` rolled in place,
@@ -3109,24 +3150,15 @@ add_test(NAME e2e-slice-loop-break-qq
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq.expected.log"
     "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
-# Phase 7.4 coverage lock (test_C_libtooling-mvrb): a Q==Q value-arm break whose
-# loop-invariant comparand `p` carries a RELATIVE PHASE (an Rz / cq_phi in p's
-# lineage). The accept is CLEARED by a 5-lens adversarial Rule-13 sign-off
-# (2026-06-30, 0 concrete holes): the break construct emits ONLY basis-permutation
-# gates (no Ry/Rz/H inside — the only cqrt_rz is PRE-LOOP, preparing p), so it is a
-# fixed permutation and p's phase rides inert; p is consumed only as a QQ-compare
-# control (+matched _unc), never copied into out / measured / freed, and is restored
-# exactly + left allocated (Rule-6 safe leak). The golden shows the pre-loop
-# cqrt_rz_i32(h0, 0.3) and NO cqrt_free(h0). Distinct from the B3 phase fence (which
-# declines a phase ESCAPING ANSWER, where copy-out would dephase, Rule 7). No new ABI.
-add_test(NAME e2e-slice-loop-break-qq-phase
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_phase.expected.log"
-    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-5 / prep-b2): `e2e-slice-loop-break-qq-phase`
+# and `slice_loop_break_qq_phase.{c,expected.log}`. The slice existed to exercise a
+# loop-invariant comparand `p` carrying a RELATIVE PHASE (`p = cq_phi(p0, 0.3)`).
+# Under owner decision D1 `cq_phi` takes no register, so `p` IS `p0` and the source
+# becomes the same program as `slice_loop_break_qq.c` — MEASURED: the two stage-1
+# modules differ ONLY by the uncontrolled `call void @cq_phi(double 0.3)` and its
+# `declare`, which D2 deletes, so the LOWERED IR is identical. Keeping it would be
+# a second copy of `e2e-slice-loop-break-qq` wearing a claim it no longer tests.
+# The B3 phase fence it sat beside is unchanged and is pinned in lit.
 
 # Phase 7.4 coverage lock (test_C_libtooling-1784): a Q==Q value-arm break whose
 # comparand is a DERIVED (non-mint) loop-invariant tainted value — `p = p0 + 5`
@@ -4260,11 +4292,24 @@ add_test(NAME e2e-grover-loop-range-oracle-twin-identical
 # ctest's scheduler to overlap it with the slice layer. It uses `cq-opt` and the
 # bd dgn5 link wrapper for the same reasons the slices do; without them it is ~2x
 # slower and still correct.
+#
+# ⚠ `--phi-surface void` IS NOT OPTIONAL AND IS NOT A TUNING KNOB (bd
+# test_C_libtooling-3qlq Increment 1, round-1 review finding F-L5-7(a)). Every
+# REGION cell generates the `cq_phi` call, and Increment 1 replaced the 15-width
+# `a = cq_phi(a, T)` family with the register-free `void cq_phi(double)`. Without
+# this flag the generator emits the RETIRED spelling, `include/CQ.h` rejects it
+# with `too many arguments to function call`, and the run reports 175
+# HARNESS-ERROR + 172 "verdict changed" — a wall of STAGE-1 failures that reads
+# exactly like a wall of lowering declines. It fails loud, which is the safe
+# direction, but it measures NOTHING while it does so, and this is the only
+# instrument in the tree that can see a leaked TEMPLATE-minted rail. The tool's
+# header guard now refuses the mismatch in one line instead, in both directions.
 add_test(NAME e2e-loop-twin-matrix
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/loop_twin_matrix.py"
     --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
     --include "${CMAKE_SOURCE_DIR}/include"
     --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
+    --phi-surface void
     --jobs 6)
 
 # ── bd test_C_libtooling-drbq Increment 3 — THE CONTROL-IN-PLACE Ry ARM IN A
@@ -4496,6 +4541,242 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-twin
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_twin.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_twin.expected.log")
+
+
+# ============================================================================
+# bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).
+#
+# THIRTEEN LIVE ENTRIES (ten slices + three `cmp` twin gates). prep-b registered
+# FOURTEEN as `DISABLED TRUE` because the lowering did not exist yet and no
+# `.expected.log` did either; prep-b2 generated every golden on the Increment-1
+# binary through the full pipeline (stage 1 -> 2 -> STRICT 2b -> 3 -> 4), audited
+# them with `tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764`, and
+# DELETED the `set_tests_properties(... DISABLED TRUE)` call. One of the fourteen,
+# `e2e-slice-control-phase-nest-deep`, was REMOVED instead of enabled: it is a
+# MIXED nest and declines `impure phase arm` on BOTH binaries (OQ-7; the note is
+# at that registration's old site).
+#
+# Every one of these programs DECLINED on the pre-3qlq oracle; the measured exit
+# code and diagnostic string for each is in
+# docs/prd/phase-04-swap-route-control/inc1-records/PRE_DISPOSITIONS.md, and the
+# post-increment disposition of all 71 migrated + new slices is in
+# .../inc1-records/GOLDEN_REGEN.md.
+# ============================================================================
+
+# --- the correct Grover oracle (PRD S1: every PRE-3qlq grover golden is the
+# --- identity on q, because `cqrt_rz_<W>` is TENSORED). Flat, and the rolled /
+# --- hand-unrolled twin pair.
+add_test(NAME e2e-slice-control-phase-grover
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover.expected.log")
+
+add_test(NAME e2e-slice-control-phase-grover-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop.expected.log")
+
+add_test(NAME e2e-slice-control-phase-grover-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop_unrolled.expected.log")
+
+# --- D4's per-bit idiom: the REPLACEMENT for the deleted multi-bit `cqrt_rz_<W>`.
+# --- K=4 rolled + its hand-unrolled twin, and K=32 rolled ONLY (the
+# --- K-independence witness; a 32-times hand expansion would prove nothing more).
+add_test(NAME e2e-slice-control-phase-perbit-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-k32
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_k32.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_k32.expected.log")
+
+# --- THE MIXED LOOP (bd 3qlq Inc 1, the Rule-13 CLEARANCE finding C-1, the BLOCK).
+# --- D4's per-bit idiom on a loop-INVARIANT register in a loop that ALSO CARRIES
+# --- one. At 542d588 the rolled form leaked all three bit rails (3 mints, 0 `_unc`)
+# --- while this pair's twin discharged them — the two goldens were 31 vs 37 lines.
+# --- The `cmp` gate below is the witness; the rolled slice alone cannot be one.
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
+
+# --- THE MIXED LOOP WITH A PREHEADER IN-PLACE `add` (bd 3qlq Inc 1, the SECOND
+# --- C-1 review round, finding F-C1-1). One line more than the pair above, and
+# --- it put the leak back: `invariantRegisterRoots` peels only through ops whose
+# --- DISPOSITION is `InPlace`, and a preheader `add` is `Unproven` at that stage
+# --- even though M-C lowers it in place (`cqrt_addc_i32(h0, 7)` is line 5 of the
+# --- golden). 3 mints / 0 `_unc` on 542d588 AND on the round-1 C-1 fix (32 lines
+# --- vs the twin's 38). The `cmp` gate below is the witness.
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-preadd
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.expected.log")
+
+add_test(NAME e2e-slice-control-phase-perbit-loop-mixed-preadd-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
+
+# --- THE MIXED **ONWARD** LOOP (bd 3qlq Inc 1, the SECOND C-1 review round,
+# --- finding F-C1-2(2a)). The invariant register is a 6.5 classical-call-arm
+# --- `%out` rail, so the loop's control is CLASSICAL at round 1 and ROUND-1
+# --- `tryCaseA` collapses the carried rail itself — leaving the round-2 pass with
+# --- an empty local carried set and clause (iii) refusing on the carried root's
+# --- in-body `cq_theta`. 3 mints / 0 `_unc` on 542d588 AND on the round-1 C-1 fix
+# --- (41 lines vs the twin's 47). TWO TUs: the classical callee must be visible
+# --- and un-inlined for the 6.5 arm to exist at all.
+add_test(NAME e2e-slice-control-phase-onward-perbit-loop-mixed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_perbit_mixed_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.expected.log")
+
+add_test(NAME e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/onward_perbit_mixed_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.expected.log")
+
+# --- nest vs `&&`: byte-identical BY CONSTRUCTION (`clang -O1` folds both to one
+# --- branch on `select i1 %a, i1 %b, false` — MEASURED 2026-09-05, the two
+# --- `@slice` bodies are character-for-character equal), plus a genuine depth-2
+# --- nest that survives SimplifyCFG's fold threshold.
+add_test(NAME e2e-slice-control-phase-nest
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest.expected.log")
+
+add_test(NAME e2e-slice-control-phase-andcond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_andcond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_andcond.expected.log")
+
+# REMOVED 2026-09-05 (3qlq Inc 1, OQ-7 / prep-b2): `e2e-slice-control-phase-nest-deep`
+# and `slice_control_phase_nest_deep.c`. Its inner block carries a `cq_theta` on a
+# third register, which makes it a MIXED nest (an Ry in the outer arm, a phase in
+# the inner) — PRD §6.3's mixed-arm DECLINE row, not P4. MEASURED on the Increment-1
+# SUBJECT and on the pre-3qlq ORACLE alike: exit 1,
+# `cq controlled lowering: impure phase arm under quantum control`. A declining
+# program has no e2e form; the decline is pinned in lit. The HOMOGENEOUS genuine
+# depth-2 nest (P4) keeps its e2e customer in `slice_control_nested_phase.c`.
+
+# --- the angle select. CONSTANT arms and RUN-TIME arms: the Rz kickback computes
+# --- NOTHING from the angles (no `fl(A-B)`), so run-time arms are admissible for
+# --- this stem where the Ry stem declines them (2b clearance blocker F-11).
+add_test(NAME e2e-slice-control-phase-angle-select
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_angle_select.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_angle_select.expected.log")
+
+add_test(NAME e2e-slice-control-phase-angle-select-runtime-arms
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_angle_select_runtime_arms.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_angle_select_runtime_arms.expected.log")
+
+# --- THE THREE TWIN GATES. `cmp` over committed goldens — no clang, no opt, no
+# --- plugin, milliseconds. Same construction as the 8h7d.5 rolled-loop and the
+# --- drbq 2b angle-select twin gates.
+add_test(NAME e2e-phase-grover-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_grover_loop_unrolled.expected.log")
+
+add_test(NAME e2e-phase-perbit-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_unrolled.expected.log")
+
+add_test(NAME e2e-phase-perbit-loop-mixed-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
+
+# bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled
+# DIVERGENCE on 542d588 AND on the round-1 C-1 fix (32 vs 38, and 41 vs 47).
+add_test(NAME e2e-phase-perbit-loop-mixed-preadd-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_preadd_unrolled.expected.log")
+
+add_test(NAME e2e-phase-onward-perbit-loop-mixed-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_onward_perbit_loop_mixed_unrolled.expected.log")
+
+add_test(NAME e2e-phase-nest-andcond-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_nest.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_andcond.expected.log")
+
+# ENABLED 2026-09-05 (3qlq Inc 1, prep-b2): the `set_tests_properties(... DISABLED
+# TRUE)` call that stood here is DELETED. All THIRTEEN goldens now exist and were
+# generated on the Increment-1 binary through the full pipeline (stage 1 -> 2 ->
+# STRICT 2b -> 3 -> 4) and audited with
+# `python3 tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764`.
+# (Fourteen entries were registered by prep-b; `e2e-slice-control-phase-nest-deep`
+# was REMOVED — see the OQ-7 note above — leaving thirteen.)
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

@@ -32,6 +32,7 @@
 #ifndef CQ_IRPASS_LOOP_PLAN_H_
 #define CQ_IRPASS_LOOP_PLAN_H_
 
+#include "llvm/ADT/DenseMap.h"  // collapseFlattenedLoopRails (count snapshot)
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
 
@@ -229,7 +230,94 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // rail is `kMsgRailRecordStale`. A phi this round cannot classify either way is
 // LEFT STANDING, and `declineClassicalMuxes` — which runs after it — declines it
 // loudly. Nothing is silently accepted.
-void collapseFlattenedLoopRails(llvm::Module &M, TaintSet &taint);
+// CALLED TWICE, AND THE SECOND CALL IS NOT A BELT-AND-BRACES RE-RUN — bd 3qlq
+// Inc 1, Rule-13 ROUND-2 finding F-R1-1 (a CONFIRMED rolled≠unrolled divergence).
+// The stage above is the SECOND round of loop-rail analysis relative to
+// `lowerLoops`, and for four increments it was also the LAST — it ran once, at
+// `CQLoweringPass.cpp`'s slot right after `lowerControlRegions`. But
+// `repropagateControlMerges` runs AFTER it and contains
+// `detectAndLowerOnwardControl`, a full SECOND round of
+// `detectControlRegions` + `lowerControlRegions` (issue yn71). A region whose
+// condition reads a 6.5 classical-call-arm / 4.5 switch-data-mux `%out` rail is
+// CLASSICAL at round 1 and tainted only at round 2, so an in-loop one is claimed
+// and flattened by a stage that runs after the only caller of
+// `invariantRegisterRoots`/`markIfRailLocal`. MEASURED: `for (i<3) if ((y>>i)&1)
+// cq_phi(θ)` over an onward `%out` compiled at `opt` exit 0 with THREE
+// `cq_template_and_i32_hl` mints and ZERO `_unc` discharges while the
+// hand-unrolled twin discharged all three — one entangled which-path record
+// leaked per activation, STRICT stage 2b `0 violation(s)` on both (the checker is
+// structurally blind to a leaked TEMPLATE-minted rail, as its own header says).
+// This is F-L3-1's shape one level up: a stage standing where a one-round
+// pipeline put it, whose premise ("the marking stage will run after this
+// flatten") is FALSE at round 2.
+//
+// `AlreadyProcessed` is the caller's snapshot of `taint.InLoopFlattenedPreds`
+// taken BEFORE the round-2 fixpoint. Pass it (and only it) on the onward call:
+// a loop opened by round 1 was already offered to this stage and is skipped, so
+// the onward pass is exactly the DELTA and every pre-round-2 module is
+// byte-identical. Pass nullptr (the default) on the round-1 call.
+//
+// ⚠ THE ONWARD CALL CAN ALSO DECLINE, and that is deliberate rather than a side
+// effect: it runs the SAME `collapseRailPhisIn`, whose `Declined` outcomes (the
+// X1 cross-iteration dirty rail, the Rule-8 rail fan-out, the stale rail-record
+// read) are LOUD. A round-2-opened loop therefore gets exactly the treatment a
+// round-1-opened one gets, including its refusals. No fixture in the 1666-file
+// corpus changed disposition when this call was added (the red set is the same
+// 396 files, file for file), so nothing shipped relies on such a loop having
+// been silently unexamined.
+//
+// ⚠ WHAT THE DELTA DOES NOT DO, stated because it is the honest limit. A loop
+// that round 1 processed is NOT re-examined under round-2 taint, so a marking
+// GRANTED at round 1 stands even if a value that becomes tainted at round 2
+// would have made `markIfRailLocal` refuse. Marking is additive and this stage
+// never unmarks. That residual is bounded by construction — round 2 taints only
+// `%out` rails and their derivations, an `%out` rail is itself an admitted Root
+// (clause (ii-b)), and a DERIVED one is a template rail whose in-loop region
+// round 2 would have to claim — see `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §2 for the
+// probe and its measured disposition.
+//
+// TWO ROOT SOURCES PER LOOP, NOT ONE — bd 3qlq Inc 1, the Rule-13 CLEARANCE
+// finding **C-1** (the BLOCK verdict). The dispatch used to be exclusive: a loop
+// that `collapseRailPhisIn` CLAIMED was marked with the carried roots alone, and
+// only a `NotClaimed` loop was offered to `invariantRegisterRoots`. A loop can be
+// both — `for (i<K) { if ((q>>i)&1) cq_phi(θ); r = cq_theta(r,.1); }` carries `r`
+// and reads the INVARIANT `q` — and that loop was served by neither: the carried
+// branch handed `markIfRailLocal` a `Roots` not containing `q`, whose
+// "accumulating loop-invariant tainted input" clause then refused, so the body's
+// per-bit `and` rails leaked (3 mints / 0 `_unc` at 542d588, against 3/3 both
+// hand-unrolled and on the pre-3qlq oracle — a rolled≠unrolled DIFFERENT UNITARY,
+// `opt` exit 0 and STRICT stage-2b clean, exactly the F-L7-2 / F-R1-1 signature).
+// So the `Collapsed` branch now ALSO asks `invariantRegisterRoots`, handing it the
+// carried set as `CarriedRoots` and unioning its result only on success. The
+// proof is UNCHANGED: a root mint (and a clause-(ii-b) control-owned out-rail)
+// lowers to `cqrt_alloc_<W>` and fails `ChainWalk::isInteriorTerminalHandle`
+// clause (I1), so no adjoint `At` can ever be placed for it in the K-times body —
+// a property of the ROOT, not of whether some other register crosses the back
+// edge, which is why the same argument carries here verbatim.
+//
+// ⚠ ROUND 2 OF THE SAME REVIEW MOVED BOTH HALVES OF THAT DISPATCH AGAIN (bd 3qlq
+// Inc 1, the SECOND C-1 review round; findings F-C1-1 and F-C1-2). Read the two
+// paragraphs above as the SHAPE and these as the two preconditions that still
+// excluded the customer:
+//   * F-C1-2(2a) — "the collapse already owns this candidate" was asked of the
+//     LOCAL `Roots` this call had just filled, so it was false whenever the
+//     collapse happened in the OTHER call (ROUND-1 `tryCaseA`, which is what
+//     claims the carried rail when the in-loop region is an ONWARD one and the
+//     loop's control is therefore classical at round 1). The fact now lives in
+//     `taint.ClaimedRailRoots`, written at both collapse sites and read in UNION
+//     with the local set.
+//   * F-C1-2(2b) — `AlreadyProcessed` was a set of BLOCKS, and a round-2 region
+//     flattens into the very `Pred` a round-1 region already used, so the loop
+//     was never re-offered. It is a COUNT snapshot now, and "round 2 opened
+//     something here" is the count having MOVED.
+// `wd` is threaded in for F-C1-1: the peel must know whether a PREHEADER dtzb
+// `add`/`xor` on the invariant register will be lowered IN PLACE, and that
+// decision has exactly one owner — `ArithLowering::classifyInPlaceReassignment`
+// (Rule 14, never a second spelling). See `invariantRegisterRoots`.
+void collapseFlattenedLoopRails(
+    llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+    const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =
+        nullptr);
 
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
 // c`, OP in {add, xor}, EXACTLY ONE tainted operand, integer width <= 64, the

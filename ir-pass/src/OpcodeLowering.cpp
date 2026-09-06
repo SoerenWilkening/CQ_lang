@@ -68,6 +68,20 @@ void diagnoseStaleRecord(Instruction *I) {
       I->getDebugLoc()));
 }
 
+// (1b) Loud decline for a PRE-LOOP in-place commitment whose fence no longer
+// holds at lowering time — bd 3qlq Inc 1, C-1 review round 3, finding F-C1B-1.
+// The message is owned by `cq loop lowering` because the DECISION is
+// `LoopLowering::commitOutOfLoopInPlaceOps`'; only the re-verification lives
+// here, where the final CFG and the final taint exist. Same
+// `DiagnosticInfoUnsupported(DS_Error)` + `!dbg` surface as the rest of the pass,
+// mirrored character-for-character by a negative fixture (Rule 12).
+void diagnosePreLoopCommitStale(Instruction *I) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(),
+      "cq loop lowering: pre-loop in-place op no longer provable at lowering",
+      I->getDebugLoc()));
+}
+
 // Is `I` an instruction `lowerOps` would collect? Mirrors the Phase-1
 // collection below exactly: the four tainted classes, with branch/select-
 // condition compares excluded (Phase 4's — ArmClassify owns their stale
@@ -254,6 +268,70 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
         if (taint.StaleDeclined.count(&I))
           continue;
         if (isa<BinaryOperator>(&I) || isa<UnaryOperator>(&I)) {
+          // (1b) THE PRE-LOOP COMMIT TRIPWIRE — bd 3qlq Inc 1, the THIRD C-1
+          // review round, finding F-C1B-1. `LoopLowering`'s
+          // `commitOutOfLoopInPlaceOps` runs at `lowerLoops`, i.e. BEFORE
+          // `repropagateControlMerges` grows `taint.Tainted` and before the
+          // round-2 flatten moves a block; the marking it writes is honoured
+          // UNCONDITIONALLY twenty lines below (`InPlaceRailOps` skips M-C and
+          // routes to `rewriteInPlaceValueRail`, which never re-asks the shape).
+          // That is a PREDICTION consumed as a fact, and when it went stale the
+          // emitted gate was `cqrt_addc_i32(%h4, %h_op)` — a quantum rail handle
+          // in the ABI's classical-immediate slot, `opt` exit 0, verify-clean,
+          // STRICT stage-2b clean, from four plain-C programs.
+          //
+          // Round 3 closes the measured half MONOTONELY at the commit
+          // (`isa<Constant>(Imm)`), so this is the RESIDUAL net for every OTHER
+          // input of the fence that a later stage could in principle move — a
+          // taint change on the PARENT, a CFG change that puts the site in a
+          // cycle, a use-list change that adds a read of the parent. Re-ask the
+          // ONE fence, under the FINAL `DominatorTree`/`LoopInfo` this driver
+          // builds and the FINAL taint, and DECLINE LOUDLY on a changed answer.
+          //
+          // NEVER A SILENT FALLBACK TO OUT-OF-PLACE, and that is the whole
+          // reason it is a diagnostic (Rule 1 — no third path). The commit is
+          // what licensed `markIfRailLocal` to mark the loop body, and that
+          // permission is already in `taint.IterationLocalBlocks`; lowering this
+          // one op out of place would leave the body marked on a premise that no
+          // longer holds. Lowering NOTHING and exiting non-zero is the only
+          // disposition that keeps the two consistent.
+          //
+          // ONLY the ops THIS path committed are re-asked
+          // (`PreLoopCommittedInPlaceOps`, not `InPlaceRailOps`), because
+          // re-asking M-C's WHOLE fence about the other three writers' ops would
+          // put a second recognizer over G5's loop clause — a question those
+          // writers deliberately answer differently, being in-loop by
+          // construction. That is a statement about THIS FENCE BODY.
+          //
+          // ⚠ IT IS **NOT** A CLEAN BILL OF HEALTH FOR THE OTHER THREE, and the
+          // sentence that used to stand here — "the other three writers mark a
+          // rail they PROVED with their own fences" — was MEASURED FALSE as a
+          // bound on this defect class (bd 3qlq Inc 1, round-3 lens finding
+          // F-C1C-B; notes §3.12). Their fences prove the RAIL (a closed
+          // self-cycle, its fan-out, its record reads); NOT ONE OF THEM PROVES
+          // THE IMMEDIATE STAYS CLASSICAL, which is the input F-C1B-1 turned on.
+          // Through `tryCaseA` / `collapseRailPhisIn` step (3) the identical
+          // defect is reachable for the `xor` stem from plain C —
+          // `cqrt_xorc_i32(h1, 6)` where the bare `6` is a template rail's HANDLE
+          // ID — and it is PRE-EXISTING (it reproduces on the pre-3qlq oracle
+          // 52d7764 and on every binary of this epic), so it is out of this
+          // round's scope but NOT out of the class. Filed as bd
+          // `test_C_libtooling-eqpx`; the proposed fix is this same shape with
+          // **G2 alone** re-asked for every `InPlaceRailOps` member (G2 alone
+          // because G5 would always refuse an in-loop site), declining loudly.
+          if (auto *BO = dyn_cast<BinaryOperator>(&I);
+              BO && !inBennettClone &&
+              taint.PreLoopCommittedInPlaceOps.count(BO)) {
+            if (!MCDT) {
+              MCDT.emplace(F);
+              MCLI.emplace(*MCDT);
+            }
+            if (!classifyInPlaceReassignment(BO, wd, taint, *MCDT, *MCLI,
+                                             /*IgnoreSelfMarking=*/true)) {
+              diagnosePreLoopCommitStale(BO);
+              continue;  // never enqueued ⇒ never rewritten ⇒ never erased.
+            }
+          }
           // M-C (bd 6uqc Inc 2a): decide the in-place reassignment here, on
           // pre-rewrite SSA. NEVER a decline — `classifyInPlaceReassignment`
           // returning false just means this op keeps today's out-of-place

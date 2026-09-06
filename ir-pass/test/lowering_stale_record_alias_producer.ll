@@ -23,19 +23,17 @@
 ;
 ; CHECK:      %[[H:.*]] = call i32 @cqrt_alloc_i32(i32 %u0)
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double %g)
-; CHECK-NEXT: call void @cqrt_rz_i32(i32 %[[H]], double %t)
 ; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 3)
 ; CHECK:      call i32 @cqrt_measure_i32(i32 %[[H]])
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %g, double %t) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double %g)
-  %qd = call i32 @cq_phi_si32(i32 %q, double %t) ; diagonal alias — same wire, same record
-  %d = add i32 %qd, 3                            ; reads the alias, not the parent
+  %d = add i32 %q, 3                            ; reads the alias, not the parent
   %m = call i32 @cq_measure_si32(i32 %d)
   ret i32 %m
 }

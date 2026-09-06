@@ -1,0 +1,240 @@
+# loop_twin_matrix.quarantine.txt — PINNED-SIGNATURE QUARANTINE.
+#
+# A QUARANTINE IS NOT A BLESSING. `loop_twin_matrix.expected.txt` says, and goes
+# on saying, that `TRACE-DIVERGENCE` may NEVER be recorded there as an expected
+# verdict — a table entry that says "this pair may differ" retires the one gate
+# in the tree that can see the F-4 class. This file does not relax that by one
+# inch. It records a FILED DEFECT together with the EXACT way it manifests today,
+# and it FAILS IN BOTH DIRECTIONS:
+#
+#   * the cell stops diverging        -> FAIL, "quarantine stale — remove it"
+#   * the cell diverges DIFFERENTLY   -> FAIL, the pinned signature moved
+#   * the cell is in BOTH files       -> FAIL, two contradictory claims
+#   * any NON-quarantined divergence  -> FAIL, exactly as before
+#
+# So the only thing that passes is "these cells, diverging in exactly these
+# ways". Nothing here licenses a rolled circuit to differ from its twin; it
+# licenses THIS defect, in THIS shape, until its bd issue is closed.
+#
+# WHY THE FILE EXISTS (bd test_C_libtooling-drbq Inc 3, round-1 lens L7). The
+# Inc-3 Ry-arm axis is the first place in this matrix where the ARM ROTATES A
+# REGISTER THE CONDITION DOES NOT READ. That one property makes `a`
+# loop-invariant in a body with no a-register gate, and `clang -O1` then treats
+# the rolled and flat spellings differently in two ways that have nothing to do
+# with the arm class. Both classes were reproduced BY SIGNATURE on the pre-Inc-3
+# oracle binary with an `Rz` arm — 15 of 15, character for character — so Inc 3
+# does not create them. It adds CUSTOMERS to them: all 15 shapes declined before
+# Inc 3 and compile now. "Pre-existing" is true of the defect and false of its
+# population, and both halves belong in the bd issues.
+#
+# The alternatives were all worse, and the reasons are worth keeping:
+#   * blessing the verdict in expected.txt — retires the gate (its own charter).
+#   * deleting the 15 cells — removes the only cells that can see this class on
+#     the day they first saw it; the `165/174` move, making a number green by
+#     changing what it measures.
+#   * fixing `Uncomputation` / `ArithLowering` inside Inc 3 — two Rule-13
+#     subsystems the increment did not touch, both moving shipped Rz goldens.
+#   * leaving the gate permanently red — Rule 19 verbatim: a gate expected to be
+#     red is a gate people stop reading, and the 16th divergence lands in a run
+#     everybody already knows is red. The 8h7d.5 F-4 class was found BECAUSE the
+#     gate was green and one cell went red.
+#
+# THE SIGNATURE is a SHA-256 digest (16 hex) of the FULL unified diff of the two
+# traces, hunk headers included — not a line count, not a verdict. A divergence
+# that grows, shrinks, moves position or changes opcode is a different signature
+# and a RED. The `rolled`/`unrolled` lines beside it are the FIRST DIFFERING LINE
+# PAIR, stored unhashed so a reader can see the defect without running anything;
+# `<end>` means that side had no such line.
+#
+# `owner` names the subsystem AND THE DIRECTION — which side is deficient. The
+# direction is the part people get wrong: for class B the ROLLED side is the
+# BETTER circuit (one fewer rail, no residual entanglement), so "make the roll
+# match the flat" would make the emitted circuit worse.
+#
+# THE TWO BOUNDARY CONTROLS ARE IN THE SCRIPT, NOT HERE (`QUARANTINE_CONTROLS`),
+# and they run on EVERY invocation — plain, `--regenerate` and
+# `--refresh-quarantine` alike, each of the latter two REFUSING TO WRITE while a
+# control has moved: with NO REGION AT ALL the two spellings
+# agree, and with the arm back ON the condition register at the same opaque
+# derived threshold they agree. Those two measurements are what makes the class
+# story above a claim about the compiler rather than a paragraph. If either
+# control starts diverging, the entries below stop meaning what they say.
+#
+# THIS HEADER IS SCRIPT-OWNED. `--refresh-quarantine` rewrites the whole file
+# from `QUARANTINE_HEADER` in `tools/loop_twin_matrix.py` and re-sorts the
+# blocks, so ANY text hand-added up here is silently lost on the next refresh
+# (round-2 review F-R2-3). A new class paragraph therefore goes in that
+# constant, never in this file; the two are byte-identical by construction and
+# `--refresh-quarantine` is what keeps them so.
+#
+# TO ADD A CELL: file a bd issue naming the owning subsystem and the direction,
+# add the block by hand, then `--refresh-quarantine` to write its digest. The
+# tool can neither add nor remove a cell — that is a human decision (a `cell`
+# the run does not know is a hard failure, and a quarantined cell that has
+# stopped diverging is "quarantine stale"; the selftest pins both).
+# TO RE-PIN A CHANGED SIGNATURE: `--refresh-quarantine`, and say in the commit
+# message what moved and why (Rule 12). It is exactly as deliberate as
+# `--regenerate`.
+# TO RETIRE ONE: when the bd issue closes, DELETE the block and `--regenerate`
+# the expected table so the cell gets a real verdict again.
+#
+# FORMAT: blank-line-separated blocks, `#` comments, keys
+#   cell / class / bd / owner / digest / rolled / unrolled — all six required.
+#   `owner` is one line and deliberately short; the full root cause of each class
+#   is written ONCE, here, rather than repeated 15 times.
+#
+# ── CLASS A — 6 cells, bd test_C_libtooling-1m5p. `oder` (the OPAQUE derived
+#    condition) with no a-register gate. ROLLED IS THE DEFICIENT SIDE.
+#    With the arm on `r`, `a` is loop-invariant, so `clang -O1` LICM-hoists the
+#    whole `sitofp; fadd; sqrt` chain into the preheader on the ROLLED side and
+#    CSEs the two repetitions' chains on the FLAT side. The rolled form then
+#    discharges the two INTERIOR rails immediately after the `sqrt` and LEAVES
+#    THE TOP RAIL (`h4 = sqrt((double)a + 3.0)`) ALLOCATED. `h4` is a
+#    deterministic injective function of `a`'s basis label, so the rolled circuit
+#    ends in a perfect WHICH-PATH RECORD entangled with the condition register —
+#    `a` is dephased for anything downstream (Rule 8's last sentence). The flat
+#    form discharges all three LIFO at the end.
+#    Rule-6 FORMALLY SAFE (left allocated, never freed dirty) and invisible to
+#    STRICT stage 2b, whose census counts `cqrt_alloc` mints and these rails are
+#    TEMPLATE-minted. Note the discharge ORDER is LIFO-INVERTED — `h3`, the
+#    `sqrt`'s operand, is uncomputed and freed while `h4`, derived from it, is
+#    still live — which is exactly what makes `h4` permanently undischargeable.
+#    OWNER: `Uncomputation` / `FreePoint` interior placement for a chain the loop
+#    does not own.
+#
+# ── CLASS B — 9 cells, bd test_C_libtooling-a3z7. Any cell with `add` in the
+#    a-register SUFFIX field. FLAT IS THE DEFICIENT SIDE.
+#    Rolled emits `cqrt_addc_i32(h0, 3)` and measures `h0`; flat emits
+#    `cq_template_add_i32_hl(h0, 3) -> h10` and measures `h10`. Same value, same
+#    `_unc` and `cqrt_free` counts, one extra rail on the FLAT side — and `h0` is
+#    then left allocated and entangled with `h10` (`h10 = h0+3` is a bijection,
+#    so again a which-path record). The rolled form's add is a chain member that
+#    `collapseRailPhisIn` step (3) MARKS in place; the flat form's is
+#    straight-line and `ArithLowering`'s M-C G6/G7 decide.
+#    ⚠ THE ROLLED CIRCUIT IS THE BETTER ONE HERE: one fewer rail, no residual
+#    entanglement. The matrix's oracle is the flat twin, so for this class the
+#    gate is comparing the good circuit against the worse one and calling the
+#    good one the deviation. DO NOT "fix" the roll to match the flat.
+#    OWNER: `ArithLowering` M-C G6/G7 versus `LoopLowering::collapseRailPhisIn`
+#    step (3).
+
+cell     m_add_rder_add_none_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   ab3da2e60e22f26c
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_none_addpost
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   76165e7295dab8c7
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_none_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   b116e741a03c8b71
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_none_rypost
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   721036edc0211f59
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_none_rypre
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   ab3da2e60e22f26c
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_none_rzpost
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   7f6ab3e402ed801a
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_add_rpostmark_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   8dd686865a88c16c
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_oder_none_none_addpost
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   7552cd99e0393129
+rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
+unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_oder_none_none_none
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   23e11d73657198da
+rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
+unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_oder_none_none_rypost
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   11842cbce6a00e18
+rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
+unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_oder_none_none_rypre
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   bc142bbbe0faac7a
+rolled   cq_template_sitofp_i32_to_f64(h0) -> h2
+unrolled cqrt_ry_i32(h1, 0x1p-2)
+
+cell     m_none_oder_none_none_rzpost
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   22d3c49762fbfc12
+rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
+unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_oder_none_rpostmark_none
+class    A
+bd       test_C_libtooling-1m5p
+owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
+digest   23e11d73657198da
+rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
+unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+
+cell     m_none_rder_add_none_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   b116e741a03c8b71
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_rrange_add_none_none
+class    B
+bd       test_C_libtooling-a3z7
+owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (leaves h0 after the out-of-place add)
+digest   3cab7f1fd3f74d82
+rolled   cqrt_addc_i32(h0, 3)
+unrolled cq_template_add_i32_hl(h0, 3) -> h6
+

@@ -1,3 +1,8 @@
+/* 3qlq Inc 1: migrated to register-free cq_phi -- `a = cq_phi(a, 3.14)` -> `cq_phi(3.14)` after the specialised call.
+   FLAG: uncontrolled -> DELETED under D2. The call's returned handle now flows
+   straight into cq_measure with no gate between. The specialisation itself (the
+   clone + Bennett wrap) is unaffected; only the onward phase line leaves the golden.
+   (PRD docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md S4.1, D1/D2.) */
 /* spec_twoarm_caller.c — the CQ translation unit for the Phase 6 / issue 5po2 I1
    golden: a plain C if/else with two DERIVED arms lifted into a reversible
    quantum clone. Mirrors spec_select_caller's quantum core (theta -> helper ->
@@ -20,7 +25,7 @@ int slice(void) {
     int b = 3;
     b = cq_theta(b, 0.5);
     int a = helper(b);
-    a = cq_phi(a, 3.14);
+    cq_phi(3.14);
     int z = cq_measure(a);
     return z;
 }

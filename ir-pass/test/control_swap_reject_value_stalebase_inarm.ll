@@ -26,23 +26,22 @@
 ; the decline and its message, not the only thing standing before emission.)
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, i32 %v0) {
 entry:
   %p  = call i32 @cq_theta_si32(i32 %v0, double 7.500000e-01) ; condition qubit — separate wire
   %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %qd = call i32 @cq_phi_si32(i32 %q, double 1.000000e+00)    ; routed base (diagonal alias of %q)
   %c  = icmp sgt i32 %p, 5
   br i1 %c, label %arm, label %merge
 arm:
-  %v1 = add i32 %qd, 3
+  %v1 = add i32 %q, 3
   %q2 = call i32 @cq_theta_si32(i32 %q, double 2.500000e-01)  ; in-arm chained Ry, AFTER the op
   br label %merge
 merge:
-  %pm = phi i32 [ %v1, %arm ], [ %qd, %entry ]
+  %pm = phi i32 [ %v1, %arm ], [ %q, %entry ]
   %m  = call i32 @cq_measure_si32(i32 %pm)
   ret i32 %m
 }

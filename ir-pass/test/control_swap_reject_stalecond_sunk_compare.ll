@@ -21,9 +21,19 @@
 ; docs/design/rssa-swap-control/MINT_AT_COMPARE.md §4 (the decline is
 ; permanent — no flag-freeing compilation of this shape is source-exact).
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: condition predates a non-diagonal gate under quantum control
+; NEW: cq controlled lowering: condition predates a non-diagonal gate under quantum control
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+declare void @cq_phi(double)
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @example(i32 %u0, double %t2, double %a) {
@@ -33,12 +43,11 @@ entry:
   %c = icmp sgt i32 %q, 5                             ; SUNK compare, STALE operand %q
   br i1 %c, label %arm, label %merge
 arm:
-  %q3 = call i32 @cq_phi_si32(i32 %q2, double %a)
+  call void @cq_phi(double %a)
   br label %merge
 merge:
-  %qm = phi i32 [ %q3, %arm ], [ %q2, %entry ]
-  %m  = call i32 @cq_measure_si32(i32 %qm)
+  %m  = call i32 @cq_measure_si32(i32 %q2)
   ret i32 %m
 }
 
-; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
+; CHECK: error{{.*}}cq controlled lowering: condition predates a non-diagonal gate under quantum control

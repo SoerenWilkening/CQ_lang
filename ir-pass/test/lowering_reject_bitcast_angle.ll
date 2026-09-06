@@ -9,14 +9,24 @@
 ; `lowering_reject_bitcast_int_to_fp.ll` used a MEASURED float (data, now lowers);
 ; THIS fixture exercises the actual hazard the exclusion protected.
 ;
+;
+; 3qlq(prep_a2): the asserted diagnostic was WIDENED to the whole DS_Error
+; text on the Inc-1 binary.  The refusing CLAUSE is UNCHANGED — the new
+; string ENDS WITH the old one — and this is Rule 12's
+; character-for-character mirror rather than a disposition change: a
+; suffix-only assertion would still match if some OTHER subsystem grew a
+; message with the same tail.
+; OLD: quantum-derived rotation angle
+; NEW: cq rotation lowering: unsupported quantum-derived rotation angle
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 
 target datalayout = "e-m:e-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-unknown-linux-gnu"
 
+declare void @cq_phi(double)
 declare i64 @cq_theta_sll(i64, double)
 declare double @cq_theta_f64(double, double)
-declare double @cq_phi_f64(double, double)
 declare double @cq_measure_f64(double)
 
 define double @example() {
@@ -24,10 +34,10 @@ entry:
   %qi  = call i64 @cq_theta_sll(i64 7, double 5.000000e-01)   ; tainted i64
   %ang = bitcast i64 %qi to double                            ; int -> fp reinterpret
   %q   = call double @cq_theta_f64(double 5.000000e-01, double 5.000000e-01)
-  %r   = call double @cq_phi_f64(double %q, double %ang)       ; tainted %ang in ARG-1 ANGLE slot
-  %m   = call double @cq_measure_f64(double %r)
+  call void @cq_phi(double %ang)  ; tainted %ang in ARG-1 ANGLE slot
+  %m   = call double @cq_measure_f64(double %q)
   ret double %m
 }
 
-; CHECK: error{{.*}}quantum-derived rotation angle
+; CHECK: error{{.*}}cq rotation lowering: unsupported quantum-derived rotation angle
 ; CHECK-NOT: cq_template_bitcast

@@ -16,8 +16,8 @@
 ; closure) to the origin and flags `%q2`.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_phi_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @main(i32 %u0, i1 %c, double %g, double %tc, double %t2) {
@@ -25,10 +25,9 @@ entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double %g)
   br i1 %c, label %arm, label %merge            ; CLASSICAL condition
 arm:
-  %qd = call i32 @cq_phi_si32(i32 %q, double 2.500000e-01)
   br label %merge
 merge:
-  %p  = phi i32 [ %qd, %arm ], [ %q, %entry ]          ; one register, two SSA names
+  %p  = phi i32 [ %q, %arm ], [ %q, %entry ]          ; one register, two SSA names
   %qc = call i32 @cq_theta_si32(i32 %p, double %tc)    ; intervening chained Ry (direct phi user)
   %q2 = call i32 @cq_theta_si32(i32 %q, double %t2)    ; SIBLING chained Ry on %q's wire
   %v  = add i32 %qc, 3                                 ; stale arithmetic op — TRANSITIVE consumer

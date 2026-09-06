@@ -72,27 +72,12 @@ llvm::StringRef suffixFromName(const llvm::CallInst *CI, llvm::StringRef Prefix)
 void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
                     const ControlPlan *plan = nullptr);
 
-// Emit the `cq_phi` gate body as a runtime Rz on the i32 `handle`, controlled
-// or uncontrolled (IMPLEMENTATION §5.1/§5.4). Uncontrolled →
-// `cqrt_rz_<W>(handle, angle)`; controlled → `cqrt_rz_<W>_controlled(flag,
-// handle, angle)` with the flag prepended as arg 0 (PRD §1.2, via
-// `ControlledSymbols::controlledRotationFn`). `phi` supplies the width suffix,
-// debug loc, and insertion point; the Rz is inserted before it. Returns true
-// iff the Rz was emitted (false ⇒ unsupported width, diagnosed loudly, `phi`
-// left standing for the verifier). Today only `lowerRotations` calls it
-// (uncontrolled); the controlled form is retained solely for the optional §6a
-// control-in-place peephole (`ControlledSymbols::controlledRotationFn` reserve
-// — `ControlledSubstitution` was excised in 7cde677). PRECONDITION: the caller has
-// verified `angle` is classical (untainted) — `lowerRotations` declines a
-// tainted angle before calling (test_C_libtooling-659).
-// `rec` (M-A Inc 1, bd test_C_libtooling-6uqc), when non-null, receives the
-// UNCONTROLLED Rz this call mints — `lowerRotations` passes
-// `&taint.UserPhaseRotations` so the late live-record guard can tell a USER
-// `cq_phi` gate from the spine's negated-angle adjoint Rz (the two are the same
-// call textually).
-bool emitRz(llvm::CallInst *phi, llvm::Value *handle, llvm::Value *angle,
-            WidthDispatch &wd, bool controlled, llvm::Value *flag,
-            llvm::SmallPtrSetImpl<const llvm::CallInst *> *rec = nullptr);
+// ⚠ `emitRz` IS **DELETED** (bd test_C_libtooling-3qlq Inc 1 part B) — the
+// `cq_phi` gate-body emitter of the retired REGISTER form, whose two arms minted
+// the TENSORED `cqrt_rz_<W>` / `cqrt_rz_<W>_controlled`. See the note at the top
+// of RotationLowering.cpp for why that gate was wrong and what replaced it
+// (kickback: an UNCONTROLLED `cqrt_rz_i1` on the condition FLAG). Do not
+// reintroduce a per-register Rz for a `cq_phi`.
 
 // ── M-A — the LATE live-record WARNING (bd test_C_libtooling-6uqc / lyyf) ────
 //
