@@ -33,6 +33,9 @@
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The root mint, the volatile load, and M-C's OWN in-place gate on it.
 ; CHECK: %[[Q:.*]] = call i32 @cqrt_alloc_i32(
@@ -57,6 +60,20 @@
 ; (Rule 6's safe direction), never freed dirty.
 ; PCNT-COUNT-1: call void @cqrt_free(
 ; PCNT-NOT: call void @cqrt_free(
+
+; Exactly ONE kickback gate in the module (the rolled body's).
+; ACNT-COUNT-1: call void @cqrt_rz_i1(
+; ACNT-NOT: call void @cqrt_rz_i1(
+
+; `#cqrt_rz_i1 == #!cq.branchphase` — an unmarked kickback gate is one the
+; uncompute spine would adjoint, cancelling the user's phase exactly (F-L7-1).
+; MDCNT-COUNT-1: !cq.branchphase
+; MDCNT-NOT: !cq.branchphase
+
+; The `cqrt_x` census: the kickback's polarity bracket(s) and the arm brackets.
+; An UNPAIRED one is a wrong-branch phase.
+; XCNT-COUNT-2: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

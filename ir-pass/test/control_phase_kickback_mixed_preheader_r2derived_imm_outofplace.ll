@@ -68,6 +68,8 @@
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The 6.5 classical-call arm's out-rail, then the ROUND-2-derived `y*3` rail.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
@@ -105,6 +107,16 @@
 ; `#cqrt_rz_i1 == #!cq.branchphase`.
 ; MDCNT-COUNT-1: !cq.branchphase
 ; MDCNT-NOT: !cq.branchphase
+
+; The `cqrt_free` census — a dropped or an extra free is a Rule-6 defect the
+; positive CHECKs cannot see.
+; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+; The `cqrt_x` census: the kickback's polarity bracket(s) and the arm brackets.
+; An UNPAIRED one is a wrong-branch phase.
+; XCNT-COUNT-4: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

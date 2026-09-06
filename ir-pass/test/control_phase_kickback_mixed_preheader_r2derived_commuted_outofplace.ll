@@ -25,6 +25,11 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 
 ; The derived rail is `y + 1` this time, and the Q+Q add still lowers OUT of place
 ; onto a FRESH rail whose operands are BOTH handles.
@@ -43,10 +48,38 @@
 ; PCNT-NOT: call void @cqrt_addc_i32(
 ; PCNT-NOT: call void @cqrt_xorc_i32(
 
+; Exactly ONE kickback gate in the module (the rolled body's).
+; ACNT-COUNT-1: call void @cqrt_rz_i1(
+; ACNT-NOT: call void @cqrt_rz_i1(
+
+; `#cqrt_rz_i1 == #!cq.branchphase` — an unmarked kickback gate is one the
+; uncompute spine would adjoint, cancelling the user's phase exactly (F-L7-1).
+; MDCNT-COUNT-1: !cq.branchphase
+; MDCNT-NOT: !cq.branchphase
+
+; The `cqrt_free` census — a dropped or an extra free is a Rule-6 defect the
+; positive CHECKs cannot see.
+; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+
+; The `cqrt_x` census: the kickback's polarity bracket(s) and the arm brackets.
+; An UNPAIRED one is a wrong-branch phase.
+; XCNT-COUNT-4: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
+
+; The Q-R1-1 residual, pinned exactly as in the sibling fixture: the per-trip
+; `and` rail is minted once and NEVER discharged (the invariant register is a
+; template rail, so clause (ii) refuses it).
+; UCNT-COUNT-1: call i32 @cq_template_and_i32_hl(
+; UCNT-NOT: call i32 @cq_template_and_i32_hl(
+; UCNT-NOT: call void @cq_template_and_i32_hl_unc(
+
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: @cq_phi
 ; NOROUTE-NOT: @cq_theta
+; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
 ; NOROUTE-NOT: call void @cqrt_addc_i32(i32 %{{[A-Za-z0-9_.]+}}, i32 %
 ; NOROUTE-NOT: call void @cqrt_xorc_i32(i32 %{{[A-Za-z0-9_.]+}}, i32 %
 

@@ -26,6 +26,9 @@
 ; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The 6.5 out-rail, then LOOP B's fully-discharging body.
 ; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
@@ -47,6 +50,20 @@
 ; and the kickback flag.
 ; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
+
+; Exactly ONE kickback gate in the module (the rolled body's).
+; ACNT-COUNT-1: call void @cqrt_rz_i1(
+; ACNT-NOT: call void @cqrt_rz_i1(
+
+; `#cqrt_rz_i1 == #!cq.branchphase` — an unmarked kickback gate is one the
+; uncompute spine would adjoint, cancelling the user's phase exactly (F-L7-1).
+; MDCNT-COUNT-1: !cq.branchphase
+; MDCNT-NOT: !cq.branchphase
+
+; The `cqrt_x` census: the kickback's polarity bracket(s) and the arm brackets.
+; An UNPAIRED one is a wrong-branch phase.
+; XCNT-COUNT-4: call void @cqrt_x(i32
+; XCNT-NOT: call void @cqrt_x(i32
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap
