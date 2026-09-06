@@ -2044,6 +2044,28 @@ round-2 wrong unitary verbatim — `cqrt_addc_i32` in place, measures **`h0`, `h
 lines — while this branch DECLINES every one. The net is the tripwire; `hasOneUse` never was it
 (it is TRUE for `y1`).
 
+#### The 8h7d.5 question, asked of THIS widening: what OTHER set is computed over the same closure?
+
+The widening is "more ops enter `taint.InPlaceRailOps` (and, in lockstep,
+`taint.PreLoopCommittedInPlaceOps`)". Every reader of those two sets, enumerated by
+`grep -rn 'InPlaceRailOps' ir-pass/src ir-pass/include`, with the direction the widening moves it:
+
+| reader | what it does with membership | effect of the widening | direction |
+|---|---|---|---|
+| `OpcodeLowering:341` / `:428` | skips M-C's own classification and routes the op to `rewriteInPlaceValueRail` | the op is emitted in place — **this is the subject** | — |
+| `inPlaceFenceHolds` G5's self-test | refuses a site already in the set (so the commitment has one owner) | same, by construction; suppressed only for the (1b) re-ask | — |
+| `railValueConsumerDisposition` → the **Rule-8 FAN-OUT guard** (`LoopLowering:2187`, `:2617`, `> RailValueUse::OutOfPlace`) | counts a second in-place mutator of one rail and DECLINES loudly | `Unproven` and `InPlace` are **both** `> OutOfPlace`, so the count is arithmetically unchanged | **none** |
+| `railValueConsumerDisposition` → `collectRailGates` (`LoopLowering:928`, `== InPlace`) | builds the gate set `staleRailRecordRead` reasons over — and its own comment says **a MISSING gate is the OVER-ACCEPT** | the gate set only GROWS | **strictly safer** |
+| `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree (`grep -n 'AsLowered=\*/true'`): clause (ii)'s peel at `:3176` and `markIfRailLocal`'s `onRail` at `:3375` | the FACT-time peel crosses an op only when it is really emitted as `cqrt_{addc,xorc}` | crosses more ops — **this is the capability**, and the two sites are the SAME spelling, so they cannot disagree about one value (the F-1/F-3 fix) | — |
+| every OTHER `peelInPlaceBase`/`peelInPlaceStep` caller | uses the default `AsLowered=false`, the SHAPE reading | membership is not consulted | **none** |
+| `WireWalk` (`declineStaleRecordOps`) | its own comment: the stage runs BEFORE `lowerLoops`, so the set is EMPTY there | unreachable | **none** |
+| `taint.PreLoopCommittedInPlaceOps` → the (1b) tripwire | re-asks the fence at `lowerOps` and declines loudly on a changed answer | more ops re-asked ⇒ more POSSIBLE loud declines | **decline direction; 0 measured over 485 programs** |
+
+Two of those rows are the ones a future round should re-derive if anything moves: the fan-out
+guard's arithmetic (it holds only because the enum orders `Unproven` and `InPlace` on the same
+side of `OutOfPlace`), and `collectRailGates`' `InPlace`-only cell (whose safety rests on M-C's
+G6/G7 pair, exactly as its own comment says).
+
 #### Mutation validation — one half at a time, on a `git archive HEAD` copy
 
 | mutant | what goes RED | result |
