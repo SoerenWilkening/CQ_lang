@@ -91,3 +91,51 @@ Pinned by `ir-pass/test/control_phase_kickback_mixed_value_merge_preadd_inloop.l
 e2e pair `tests/e2e/slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c` +
 `e2e-phase-perbit-loop-value-merge-preadd-twin-identical`. Narrative:
 `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.15**.
+
+---
+
+## The lens on the REBASED tree (`review_c1e`, 2026-09-06) — the `c1e_a*.c` reproducers
+
+The independent Rule-13 lens on the rebased branch (`aa9d702`) returned **CLEAR-WITH-ITEMS**
+(`inc1-records/session-82e6b530/review_c1e.md`). Its finding **F-C1E-2** is a **LEAK class that is
+PRE-EXISTING and byte-identical to `main` 258d974**: a preheader in-place op whose PARENT has a
+second *unlowered tainted* user is correctly refused by `classifyInPlaceReassignment` (G7 arm (e),
+or G6 when the merge's copies are emitted after the pre-op), so the commit never marks it, the
+preheader op lowers OUT of place onto a fresh rail, and the loop body's per-activation which-path
+ancillas keep leaking. **Round 4 neither introduced nor widened it**; on one member it strictly
+improves it. Sixteen files, eight rolled/unrolled pairs, copied here verbatim from the lens's
+attack battery so the class has reproducers in the tree rather than only in a scratchpad.
+
+RE-MEASURED for this record by `docs_c1e` (full pipeline, STRICT stage 2b, `main` 258d974 and the
+rebased branch), counting `cq_template_{and,lshr}_i32_hl` MINTS / `_hl_unc` DISCHARGES in the trace:
+
+| file (`c1e_…_{rolled,unrolled}.c`) | the shape | `main` rolled | this branch rolled | unrolled twin | rolled trace, main vs branch |
+|---|---|---|---|---|---|
+| `a1_head_add_read_by_loop` | a dtzb-shaped chain head `c = p + 3` that the LOOP reads (`t = c + 7`) | 4/0, 44 | 4/0, 44 | 4/4, 52 | **byte-IDENTICAL** |
+| `a2_source_p_preadd` | the preadd is on the value arm's SOURCE `p`, not on `%out` | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a3_chainfinal_preadd` | the preadd is on the arm's CHAIN-FINAL, which the merge also reads | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a9_out_prevalue_measured` | `int keep = p;` before the preadd, `keep` measured after — a CORRECT G6 refusal, the `x2_preadd_keep.c` control one shape over | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a11_select_head_add` | the same as `a1` over a 4.4 `select` merge | 4/0, 44 | 4/0, 44 | 4/4, 52 | **byte-IDENTICAL** |
+| `a4_out_two_loops` | merge `%out`, `+7`, loop, `+5`, second loop | 8/0, 73 | 8/0, 73 | 8/8, 91 | **byte-IDENTICAL** |
+| `a17_out_two_loops_nofold` | the same with `^5` between the loops | 8/0, 73 | **8/4, 81** — the FIRST loop discharges | **DECLINES on BOTH binaries** (`cq controlled lowering: condition predates a non-diagonal gate under quantum control`), so there is no byte-identity witness | main ≠ branch — a strict IMPROVEMENT |
+| `a16_source_p_preadd_diffusion` | `a2` plus a post-loop diffusion `t = cq_theta(t, .11)` | **DECLINES** `cq controlled lowering: control flow under quantum control` | same decline | same decline | — |
+
+⚠ **ONE REFINEMENT TO THE LENS'S OWN WORDING, measured separately here.** F-C1E-2 groups
+"`a4`/`a17` … 8/0 on main, 8/4 on the subject". That is **`a17` alone**: `a4` is 8/0 on BOTH
+binaries with byte-identical rolled traces. The two sources differ by one token (`p = p + 5` vs
+`p = p ^ 5`).
+
+**Why this is a leak and not a wrong unitary, stated as measured.** `a16` is the diffusion variant
+— the shape that would turn a leaked which-path record into interference between branches carrying
+distinct ancilla labels — and it **DECLINES loudly on every binary**. STRICT stage 2b reports
+`0 violation(s), 0 unproven` on every accepting row above, which is the epic's standing point: a
+TEMPLATE-minted rail has no `cqrt_alloc` for the checker to count. The class is the disclosed
+OQ-C1D-1 / PRD §0 **E2** residual, one shape over; tracked on bd `test_C_libtooling-3qlq.13`.
+Narrative: `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.15**.
+
+⚠ Four of the lens's OTHER attack twins are **UNFAITHFUL, not defects** (finding F-C1E-3) and are
+deliberately NOT copied here — `a8` (`^6`), `a10` (`+7; ^6`), `a15` (`+7; +5`) and `a17`: when the
+constant's low bits are clear, `-O1` DISTRIBUTES the per-bit test onto the PRE-op register on the
+UNROLLED side only, so the two spellings stop being the same program. That is the documented OQ-27 /
+`m_xor_range` quarantine class and CLAUDE.md's own `addpost` precedent. `q4b`'s `+7` is immune
+because 7 has all its low bits set.
