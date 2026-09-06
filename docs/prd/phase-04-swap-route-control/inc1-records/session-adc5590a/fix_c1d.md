@@ -286,3 +286,13 @@ it CANNOT be measured from this branch. Re-measure after the orchestrator's reba
   the count on this one function is now **eight findings over six adversarial rounds**, and the
   eighth was found by a round that was reviewing a different increment, AFTER the code had landed.
 * Branch committed, NOT pushed. No bd issue closed or edited.
+
+---
+### POST-HAND-BACK ADDENDUM (build currency, self-caught)
+`find ir-pass/{src,include,tools} -newer build/ir-pass/cq-opt` reported `LoopLowering.cpp`:
+the ~56-line in-source ARGUMENT was written AFTER the build that every gate above ran on, so
+that binary carried the behaviour but not the comment. REBUILT (`c1d_build3.log`, BOTH targets)
+and RE-RAN: both new fixtures still GREEN on all 8 prefixes; `ctest -R ir-pass-lit`
+**Passed, 33.58 s, 0 failed**; `ctest -j6 -R 'quarantine-selftest|free-pairing-selftest|
+twin-identical|perbit|onward-perbit|merge-preadd'` **34/34 passed**. `find … -newer` now EMPTY.
+Recorded rather than silently fixed: a stale binary is how this project measures FALSE GREEN.
