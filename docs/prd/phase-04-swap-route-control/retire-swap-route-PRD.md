@@ -47,7 +47,9 @@
 > `CLEAR-WITH-OWNER-QUESTIONS` — the BLOCK is CLOSED and Inc 0 + Inc 1 LANDED on
 > `main` the same day. What the verdict leaves open is four owner questions and one
 > record item, all of them DISCLOSED leak/over-decline classes that pre-date this
-> branch (OQ-C2-1 `hasOneUse`, OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
+> branch (OQ-C2-1 `hasOneUse` — **ANSWERED by the FOURTH C-1 round, bd `7yd0`: the conjunct
+> is RETIRED, and OQ-C2-1's own `m11d` is NOT bought back by retiring it; see E2 and notes
+> §3.14** — OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
 > OQ-C2-4 the over-decline list) — see E10 below.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
@@ -197,8 +199,11 @@ the ROOT set (clause (ii-b)) and did not re-ask the question computed over the s
 closure.
 
 **WHERE THE FIX LIVES: not here.** It touches `LoopLowering.cpp`, Rule-13 core on
-landed `main`, and is scheduled as a separate **C-1 round 4 on `main` AFTER Inc 2
-lands** (bd `test_C_libtooling-7yd0`). This branch deliberately adds **no fixture
+landed `main`, and was scheduled as a separate **C-1 round 4 on `main` AFTER Inc 2
+lands** (bd `test_C_libtooling-7yd0`) — which is what happened: round 4 shipped on
+branch `c1-round4` off a3c1513, was REBASED onto 258d974 on 2026-09-06, and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash).
+On the rebased binary this leak's Inc-2 spelling is GONE: `q4b_preadd` rolled ==
+unrolled byte-identically at 60 lines, against 4/0 at 52 on `main` 258d974. This branch deliberately adds **no fixture
 that pins the leak as an accept** — that would bless it; the round-4 fix pins the
 discharge. The 18 reproducers and the full discrimination table are committed at
 `inc1-records/`'s sibling `inc2-records/README.md`. Note the overlap with **OQ-C2-1**
@@ -252,10 +257,19 @@ baseline, so every round-2 measurement transferred).
   stream and the landing does not change that — see **E1**/**E1b**. It must
   discharge the chain finals (and each switch delta `d_i`) before it frees `p`.
 * **bd `test_C_libtooling-7yd0` (C-1 round 4)** — the PRE-EXISTING in-loop leak of
-  **E11**, of which Inc 2's merge is a FOURTH producer — is **in flight on branch
-  `c1-round4`** at the time of this landing (a one-line `LoopLowering` change: the
-  `hasOneUse` conjunct retired under the round-3 tripwire), **NOT landed**. It is
-  not Inc 2's defect and was never Inc 2's to fix on its own branch.
+  **E11**, of which Inc 2's merge is a FOURTH producer — was **in flight on branch
+  `c1-round4`** at the time of THIS landing (a one-line `LoopLowering` change: the
+  `hasOneUse` conjunct retired under the round-3 tripwire) and is **NOW LANDED
+  TOO**: the branch was REBASED onto 258d974 on 2026-09-06 (five docs-only
+  conflicts, of which two needed hand resolution — both CLAUDE.md count
+  paragraphs; `LoopLowering.cpp`, `tools/loop_twin_matrix.*` and the notes did not
+  conflict) and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash). It is
+  not Inc 2's defect and was never Inc 2's to fix on its own branch. ⭐ **The rebase
+  MEASURED the row round 4 could only argue** — `q4b_preadd` on the Inc-2 value-arm
+  merge: `main` 258d974 rolled **4/0, 52 lines** vs its twin 4/4, 60 (`cmp` DIVERGE
+  8), rebased **4/4 = 4/4, byte-identical at 60**, pinned by
+  `control_phase_kickback_mixed_value_merge_preadd_inloop.ll` and
+  `e2e-phase-perbit-loop-value-merge-preadd-twin-identical`.
 * **What the clearance left open** is two new owner questions, both PRE-EXISTING
   and both measured identical on all three binaries (oracle 52d7764, `main`
   a3c1513, subject): **OQ-C3-1** — a value DIAMOND followed by a rotation on its
@@ -361,6 +375,39 @@ a rail they PROVED with their own fences"*) — **their fences prove the RAIL; n
 proves the IMMEDIATE stays classical.** Round 3's own bound over its 262-program corpus is
 likewise corrected: **6 movers in scope plus `w3` by design**, and the lens's 299-program
 re-run reads **286 unchanged / 13 moved, 0 in the accept direction** (F-C1C-E).
+⚠⚠⚠ **AND A FOURTH C-1 ROUND (2026-09-06, bd `7yd0` — notes §3.14) RETIRED THE `hasOneUse`
+CONJUNCT ITSELF, on a LEAK the Rule-13 round on INCREMENT 2 found in the LANDED `main`
+a3c1513** (`review_inc2_r2` **F-I2-1**; the same conjunct the re-clearance had already filed as
+**OQ-C2-1**). Read the count as *eight* things this row did not cover, found over SIX rounds on
+one function — and note that the eighth was found by a round reviewing something else. THE
+PROGRAM: a 4.4 select merge, one `m = m + 7` on its `%out`, then D4's per-bit loop — thirteen
+lines of plain C, **4 mints / 0 `_unc` rolled (44 lines) against a hand-unrolled twin at 4/4
+(52)**, 32 / 0 at K=32, `opt` exit 0, verify-clean, STRICT 2b `0 violation(s)`. CAUSE: a
+Phase-4 merge out-rail STRUCTURALLY cannot satisfy `P->hasOneUse()` — the emitters **WRITE**
+`%out` (two `cqrt_copy_<W>_controlled` for the 4.4 merge and Inc 2's value merge, one
+`cqrt_copy_<W>` for the Phase-4 value-arm route) before anything reads it — and `hasOneUse`
+cannot tell a prior WRITER from a later READER, while `classifyInPlaceReassignment`'s own
+G6/G7 pair can. FIXED by dropping the conjunct: the commit now asks (1a) `isa<Constant>(Imm)`
+and M-C's own fence, and **the temporal net is round 3's (1b) tripwire**, which re-asks that
+fence at `lowerOps` and declines loudly — measured, not argued: with (1b) deleted all NINE
+F-C1C-1-class programs accept and `y1` reproduces the round-2 wrong unitary verbatim, while
+this tree declines every one. WITNESSES: `e2e-phase-perbit-loop-merge-preadd-twin-identical`
+(**52 = 52**, was 44 vs 52), one lit accept
+(`control_phase_kickback_mixed_merge_out_rail_preadd_inloop.ll`, RED on `main` at CHECK/FCNT/
+UCNT) and twin-matrix sub-grid **F4** (2 cells, TRACE-DIVERGENCE on `main` → ACCEPT-IDENTICAL;
+286 → 288). **STATUS: **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash)**, after the branch was REBASED onto the landed Inc 2
+(258d974) — the rebase RE-MEASURED the one row round 4 could only argue, the
+**Inc-2 controlled-copy VALUE merge** as a FOURTH producer of the same `%out` rail:
+`q4b_preadd` is **4/0, 52 lines vs 4/4, 60 on `main` 258d974** and **4/4 = 4/4,
+byte-identical at 60** on the rebased binary, now pinned by the lit accept
+`control_phase_kickback_mixed_value_merge_preadd_inloop.ll` and the `cmp` gate
+`e2e-phase-perbit-loop-value-merge-preadd-twin-identical`.
+⚠ **AND IT CORRECTS OQ-C2-1's OWN ATTRIBUTION**: `m11d` is **NOT** bought back —
+measured on an instrumented build, its candidate is refused by the M-C fence itself (G7 arm
+(e): loop 1's `(q>>i)&1` is a still-UNLOWERED tainted `and i32` at the commit's program point),
+so its trace is byte-unchanged. The `hasOneUse` line below therefore LEAVES this list; `m11d`
+stays on it, re-attributed.
+
 ⚠ **TWO THINGS THE ROUND-3 FIX DOES NOT COVER, and both are NEW ENTRIES ON THIS LIST rather
 than inherited ones.** (a) A **`volatile`-load immediate** on the preheader op
 (`q = q + off;`) is no longer committed, so that loop returns to the pre-round-2 leak — 3
@@ -389,6 +436,24 @@ non-diagonal gate`, because `-O1` LICM-hoists the compare out of the loop (bd `d
 arm-class-independent; the workaround is a body gate on `q` or an opaque threshold).
 Note (ii) is why D4's idiom uses a DERIVED per-bit condition: `(q>>i)&1` is loop-VARIANT
 even when `q` is not.
+
+⚠ **AND THE LENS ON THE REBASED ROUND-4 TREE ADDED A THIRD (2026-09-06, `review_c1e`
+finding F-C1E-2, verdict CLEAR-WITH-ITEMS): a preheader in-place op whose PARENT has a
+SECOND *unlowered tainted* user is refused by the M-C fence itself — G7 arm (e), or G6
+when the merge's copies are emitted after the pre-op — so the commit never marks it and
+the O(K) which-path leak stays.** SEVEN measured spellings, all `clang -O1` plain C, all
+ACCEPT, and **byte-identical to `main` 258d974 on six of them** (`a1` a dtzb head read by
+the loop 4/0 44 vs twin 4/4 52 · `a2` the preadd on the value arm's SOURCE `p` 4/0 45 vs
+4/4 53 · `a3` the preadd on the CHAIN-FINAL 4/0 45 · `a9` the pre-op value measured later,
+a CORRECT G6 refusal · `a11` the same over a 4.4 select · `a4` a merge `%out` feeding TWO
+loops 8/0 73 vs 8/8 91); on the seventh, `a17`, round 4 strictly IMPROVES it (8/0 → **8/4**,
+the first loop discharges). **Round 4 neither introduced nor widened this class**, and the
+diffusion variant that would make it a wrong unitary (`a16`) **DECLINES loudly** on every
+binary (`cq controlled lowering: control flow under quantum control`), so it is a LEAK —
+Rule-6 safe, structurally invisible to STRICT stage 2b (a TEMPLATE-minted rail has no
+`cqrt_alloc` to count). It is **OQ-C1D-1's class one shape over**, disclosed not fixed;
+reproducers `inc1-records/c1-round4/c1e_a{1,2,3,4,9,11,16,17}_*.c`, narrative notes §3.15,
+tracked on bd `test_C_libtooling-3qlq.13`.
 
 **E3 — §6.3's "an arm with N>1 `cq_phi` calls" decline is NARROWED: the DIAMOND
 spelling ACCEPTS.** N calls in one arm emit **N `cqrt_rz_i1` gates on the one flag**,
@@ -502,7 +567,7 @@ AFTER the round you think is last. ⚠ **E10 supersedes that number: it is SEVEN
 rounds, and two of the seven were introduced by a fix.**
 
 **E10 — the C-1 disposition (2026-09-06), in five lines; reproducers and full arguments in
-`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12).**
+`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.14).**
 1. **Round 1 — the CAPABILITY.** The clearance BLOCK (C-1) was fixed by having
    `LoopLowering`'s `Collapsed` branch ALSO collect the loop-invariant root mints beside
    the carried roots, on clause (ii)'s UNCHANGED (I1) proof; witnessed by
@@ -519,12 +584,30 @@ rounds, and two of the seven were introduced by a fix.**
    narrowed to per-loop (F-C1B-2): a monotone `isa<Constant>(Imm)` fence at the commit and a
    LOUD re-verification of it at `lowerOps` — every change in the refuse direction
    (notes §3.11).
-4. **The count, said as it is: SEVEN findings of one defect class over FIVE adversarial
+3b. **Round 4 — the CONJUNCT RETIRED** (bd `7yd0`, notes §3.14). The Rule-13 round on
+   **Increment 2** measured a rolled ≠ unrolled leak in the LANDED `main` (F-I2-1): a
+   Phase-4 MERGE OUT-RAIL structurally cannot satisfy `P->hasOneUse()`, because the emitters
+   WRITE `%out` before anything reads it, so the commit refused and D4's per-bit loop leaked
+   O(K) entangled which-path rails (4/0 vs 4/4 at K=4; 32/0 at K=32). The conjunct guarded
+   NOTHING G6/G7 does not — measured, with programs — and is dropped; round 3's (1b) tripwire
+   is the temporal net, and deleting it makes all nine F-C1C-1-class programs miscompile
+   again, which is the proof that it is. Witnessed by
+   `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52) and sub-grid F4.
+   ****LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash)**, after a rebase onto 258d974 that turned the round's one ANALYTIC row —
+   Inc 2's value merge as a FOURTH producer — into a measured one (60 = 60 against
+   52 vs 60 on `main`), and that folded in the round-4 lens items F-C1D-2 (the
+   in-source "the commit cannot reach an Inc-2 chain head" argument, pinned by the
+   new fixture's `HCNT` prefix), F-C1D-3 (three verified refinements to notes
+   §3.14's 8h7d.5 closure table, including the F-3 row it lacked) and F-C1D-4 (the
+   injection matrix's `extra_ry` row: 25 MISSED first, then 0 MISSED / 0 DIRTY over
+   44 accepts × 17 mutations once each gained a `RYCNT` prefix).
+4. **The count, said as it is: EIGHT findings of one defect class over SIX adversarial
    rounds on ONE function (`markIfRailLocal` and its dispatch precondition), TWO OF THEM
-   INTRODUCED BY A FIX, plus ONE PRE-EXISTING member of the same class found in passing by
+   INTRODUCED BY A FIX and the EIGHTH found by a round REVIEWING A DIFFERENT INCREMENT, plus
+   ONE PRE-EXISTING member of the same class found in passing by
    the round-3 lens** — F-C1C-B, reproducing byte-for-byte on the pre-3qlq oracle `52d7764`,
    filed OUT of this epic as bd `test_C_libtooling-eqpx` (notes §3.12). **Zero** of the
-   seven were found by the fixture suite. Budget a round AFTER the round you think is last.
+   eight were found by the fixture suite. Budget a round AFTER the round you think is last.
 5. **The re-clearance (2026-09-06, `inc1-records/session-adc5590a/clearance2.md`) returned
    `CLEAR-WITH-OWNER-QUESTIONS`** and Inc 0 + Inc 1 LANDED on `main` the same day. It
    measured the subject a strict improvement over `542d588` at every layer it could reach
@@ -776,9 +859,10 @@ nest (SimplifyCFG's fold threshold); both forms are in scope.
 > minted by the 7.2 `AbortParkEmit` alone (`emitRoute` = ONE call site,
 > `AbortParkEmit.cpp:396`; 1 of 319 goldens). Round 2's one LEAK (F-I2-1) is
 > PRE-EXISTING on `main`, is not introduced here, and is filed out of this epic as
-> bd `test_C_libtooling-7yd0` (C-1 round 4, in flight on branch `c1-round4` at the
-> landing, NOT landed); Inc 2's only relationship to it is that its value-arm merge
-> is a FOURTH producer of the rail shape (E11). The sections below are the
+> bd `test_C_libtooling-7yd0` (C-1 round 4, in flight on branch `c1-round4` at THIS
+> landing and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash)); Inc 2's only relationship to it is that its value-arm merge
+> is a FOURTH producer of the rail shape (E11) — and the round-4 rebase MEASURED
+> that fourth producer rather than arguing it (E12's `7yd0` bullet). The sections below are the
 > DESIGN as written; where they and the errata disagree, §0 wins.
 
 ### 7.1 The shipped stream, and the replacement

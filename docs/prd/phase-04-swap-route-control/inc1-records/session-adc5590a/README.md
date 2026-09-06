@@ -44,9 +44,26 @@ each, the re-clearance, and the landing:
 The narrative record is `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12) and the PRD §0 ERRATA (E2 rewritten
 twice; **E10** is the five-line summary of the three rounds, the count and the landing).
 
-## C-1 round 4 (bd `7yd0`) — NOT LANDED at session end (owner: "stop after this agent finished")
+## C-1 round 4 (bd `7yd0`) — NOT LANDED at THIS session's end (owner: "stop after this agent finished"); LANDED in session `82e6b530`
 * `c1-round4/fix_c1d.md` / `c1-round4/review_c1d.md` — the round (one non-comment line: the `hasOneUse` conjunct of
   `commitOutOfLoopInPlaceOps` retired under the round-3 tripwire) and its lens (**CLEAR-WITH-ITEMS**). Branch
-  `c1-round4` at 59f6a95 (base a3c1513, PUSHED, full ctest 351/351 on its tree). The leak it fixes is LIVE on
-  landed `main` 258d974 (F-C1D-1), so the next session's first step is the rebase + landing per
-  `briefs/BRIEF_rebase_c1d.md`. `NEXT_SESSION_PROMPT.md` carries the state.
+  `c1-round4` at 59f6a95 (base a3c1513, PUSHED, full ctest 351/351 on its tree). The leak it fixes was LIVE on
+  landed `main` 258d974 (F-C1D-1), so the next session's first step was the rebase + landing per
+  `briefs/BRIEF_rebase_c1d.md`. `NEXT_SESSION_PROMPT.md` carries the state AS OF THIS SESSION'S END.
+* ⭐ **STATUS NOW: rebased onto 258d974 in session `82e6b530` (2026-09-06) and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash).** That rebase MEASURED the one
+  row this round could only argue — Inc 2's controlled-copy VALUE merge as a FOURTH producer of the `%out` rail:
+  `q4b_preadd` is 4 mints / 0 `_unc` at 52 trace lines vs its twin's 4/4 at 60 on `main` 258d974, and **60 = 60
+  byte-identical** on the rebased binary — and folded in the lens items F-C1D-2/3/4. Record:
+  `inc1-records/session-82e6b530/rebase_c1d.md`, narrative `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.15**.
+* ⭐ **AND A SECOND INDEPENDENT LENS RAN ON THE REBASED TREE** (`review_c1e`, 2026-09-06, branch tip
+  **aa9d702**) — budgeted because the rebase adds a NEW customer class to an already-cleared fix (the
+  Inc-2 controlled-copy merge) plus 25 edited fixtures. **Verdict CLEAR-WITH-ITEMS**, items
+  **F-C1E-1..4, all APPLIED** by `docs_c1e` before the landing: 0 DECLINE→ACCEPT over 610 comparable
+  programs on three binaries and over all 1690 lit fixtures, 0 ACCEPT→DECLINE, 0 decline-message
+  changes, STRICT 2b clean on all 26 movers, injection matrix 0 MISSED / 0 DIRTY. The **full `ctest`
+  on `aa9d702` was 367/367** (0 failed, 385.89 s). F-C1E-1 corrected two in-source citations and
+  added the discriminating lit accept
+  `control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll`; F-C1E-2 recorded a
+  PRE-EXISTING leak class byte-identical to `main` (reproducers `inc1-records/c1-round4/c1e_a*.c`);
+  F-C1E-3 and F-C1E-4 are doc corrections. Records: `inc1-records/session-82e6b530/review_c1e.md`
+  and `.../docs_c1e.md`.

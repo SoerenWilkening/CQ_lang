@@ -550,7 +550,7 @@ everything this round could reach.
 
 | # | grade | disposition |
 |---|---|---|
-| F-I2-1 | **LEAK** (rolled != unrolled, O(K)) — **PRE-EXISTING on `main`**; Inc 2 adds a FOURTH producer of the rail | **RECORDED, NOT FIXED HERE**: bd `test_C_libtooling-7yd0`, fixed as a separate C-1 round 4 on `main` AFTER Inc 2 lands. 18 reproducers + the discrimination table under `inc2-records/`; PRD §0 **E11**. §4.1 |
+| F-I2-1 | **LEAK** (rolled != unrolled, O(K)) — **PRE-EXISTING on `main`**; Inc 2 adds a FOURTH producer of the rail | **RECORDED, NOT FIXED HERE**: bd `test_C_libtooling-7yd0`, fixed as a separate C-1 round 4 on `main` AFTER Inc 2 lands — **which it was: round 4 landed on 2026-09-06 after a rebase onto 258d974, and the Inc-2 producer this row names is measured there (`q4b_preadd` 52 vs 60 on `main`, 60 = 60 rebased).** 18 reproducers + the discrimination table under `inc2-records/`; PRD §0 **E11**. §4.1 |
 | F-I2-2 | CLEAR (the increment's own REVIEWER FLAG) + one doc item | **RESOLVED IN THE INCREMENT'S FAVOUR**, with the mechanism named. §4.2 |
 | F-I2-3 | fixture truth (the F-V2-1 class, a sixth site) | fixture **RE-DERIVED** + header rewritten + the p119.8 discriminator MEASURED by mutation. §4.3 |
 | F-I2-4 | doc / latent (an Inc-1 LANDED consequence) | ONE comment at each of the two vacuous gates; **no code deleted**. §4.4 |
@@ -880,8 +880,14 @@ three model limitations recorded: `sext` modelled as identity, non-commutative
 
 **bd `test_C_libtooling-7yd0` (C-1 round 4)** — the PRE-EXISTING in-loop leak of
 §4.1 / PRD **E11** — was **in flight on branch `c1-round4` and NOT landed** at the
-time of the Inc-2 landing. It is not Inc 2's defect; Inc 2's only relationship to
-it is being a FOURTH producer of the rail shape. **bd `3qlq.8`** (the phase half of
+time of the Inc-2 landing, and is **NOW LANDED**: the branch was REBASED onto
+258d974 on 2026-09-06 and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash). It is not Inc 2's defect; Inc 2's only relationship to
+it is being a FOURTH producer of the rail shape — and **that fourth producer is now
+MEASURED rather than analytic**: `q4b_preadd`, the value-arm spelling of F-I2-1's
+own reproducer, is 4 mints / 0 `_unc` at 52 trace lines on `main` 258d974 against a
+hand-unrolled twin at 4/4 / 60, and is **byte-identical to that twin at 60 = 60** on
+the rebased binary. Pinned by `control_phase_kickback_mixed_value_merge_preadd_inloop.ll`
+and `e2e-phase-perbit-loop-value-merge-preadd-twin-identical`. **bd `3qlq.8`** (the phase half of
 the i128 gap) is likewise unmoved.
 
 **Record items R-1 and R-2 are APPLIED**, as PRD §0 **E1a** (the "5 `_unc`" count

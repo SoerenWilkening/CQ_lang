@@ -704,6 +704,28 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // show): the diamond needs ONE conversion to break, the if/else two. The
     // `At == bo` widening contemplated in `priorUseIsSettled` would move the
     // if/else case, so re-derive that fixture before taking it.
+    // ⚠ AND THIS PAIR IS NOW THE SOLE NET ON THE COMMIT PATH TOO (bd 3qlq, the
+    // FOURTH C-1 round, lens finding F-C1D-2): `LoopLowering`'s
+    // `commitOutOfLoopInPlaceOps` used to carry `P->hasOneUse()`, a second and
+    // independent refusal of anything whose parent has two users, and that round
+    // retired it. Read the argument at that function for why the commit still
+    // cannot reach a chain head — its peel runs BACKWARD and stops at the merge's
+    // own `cqrt_alloc`.
+    // ⚠ AND CITE THE RIGHT FIXTURE FOR THE RIGHT CLAIM. The first version of this
+    // sentence named `control_phase_kickback_mixed_value_merge_preadd_inloop.ll`
+    // as the pin, and the lens on the rebased tree measured otherwise
+    // (finding **F-C1E-1**): in THAT module `clang -O1` reassociates `(p+3)*5`
+    // into `p*5 + 15`, so `p`'s only chain user is a `mul`, and G2's SHAPE half
+    // (`inPlaceValueRailOperand`, add/xor only) refuses the head WHATEVER this
+    // pair answers — the fixture is GREEN on a G6/G7-disabled binary and its
+    // emitted copies are byte-unchanged. It pins the head-out-of-place PROPERTY
+    // on the shape that made the commit fire; it does not pin THIS NET.
+    // The net is pinned, as this comment already says three paragraphs up, by
+    // `control_swap_value_ifelse_head_out_of_place.ll` (RED on that mutant), and
+    // on the COMMIT path by
+    // `control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll`,
+    // whose chain head IS a dtzb-shaped `add` and whose `CSRC` prefix pins the two
+    // controlled copies reading DISTINCT rails.
     //
     // SAY "PAIR", NOT "G6", AND SAY WHY IT IS A WEAK TRIPWIRE. Measured by
     // mutation on that fixture: disabling G6 ALONE leaves it green (G7 refuses the

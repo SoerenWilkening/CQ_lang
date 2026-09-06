@@ -2875,20 +2875,132 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // refuses a marked site. ONE FACT, BOTH READERS — the peel and the emitter
 // cannot disagree about this op.
 //
-// THE STABILITY CONJUNCT, and it is not decoration. This runs BEFORE the round-2
+// ⚠ THE STABILITY CONJUNCT `P->hasOneUse()` IS **RETIRED** (bd
+// test_C_libtooling-3qlq Inc 1, the FOURTH C-1 round; bd 7yd0 / OQ-C2-1 /
+// review_inc2_r2 finding **F-I2-1**). What it used to say is kept below as
+// HISTORY, because the argument is still quoted; what replaces it is the (1b)
+// tripwire, which was not in the tree when the conjunct was written.
+//
+// HISTORY — the argument as shipped by round 2: "this runs BEFORE the round-2
 // control fixpoint, while M-C runs after it, so a G6/G7 answer taken here could
-// in principle go stale — and a stale "in place" is a wrong unitary (the pre-op
+// in principle go stale — and a stale 'in place' is a wrong unitary (the pre-op
 // register read after the mutation), not a leak. `P->hasOneUse()` closes that
 // window STRUCTURALLY rather than by an argument about emitters: the only use of
 // `P` is this op's operand, and no later stage invents a read of a value that has
-// none — every emitter's operands are the region's own condition, arm values and
-// merge incomings, all of which are USES that already exist in the IR. It costs
-// an over-decline (a legitimate prior read of `P` makes M-C accept and this
-// refuse, so the loop keeps today's leak), which is the Prime-Directive
-// direction, and it is pinned from both sides: `p/r2_preadd_inv.c` (one use,
-// admitted) and `p/x2_preadd_keep.c` (`int keep = q; q = q + 7; … measure(keep)`,
-// where M-C ITSELF goes out of place — `cq_template_add_i32_hl` in the trace —
-// and this must refuse, byte-identically to the round-1 binary).
+// none." ⚠ THE SECOND HALF OF THAT SENTENCE IS FALSE, and it was measured false
+// TWICE, in the OPPOSITE direction each time:
+//   * round 3's **F-C1C-1**: `hasOneUse` is a property of the **SSA VALUE**, and
+//     the window it guards is a property of the **WIRE**. `lowerRotations` RAUWs
+//     every member of a theta chain onto ONE `cqrt_alloc` handle, so a `P` with
+//     exactly one use HERE can have two at `lowerOps` — and it was a CONFIRMED
+//     silent miscompile (`int q2=cq_theta(q,.3); int a=q2+7; …; cq_measure(a)`
+//     collapsed `q` and `a` onto one register). The conjunct did not stop that;
+//     the (1b) tripwire does.
+//   * this round's **F-I2-1**: the conjunct also refuses in the other direction,
+//     for a reason that has nothing to do with a later read. A Phase-4 merge
+//     out-rail `%out` is a `cqrt_alloc_<W>` the emitters WRITE before anything
+//     reads it — two `cqrt_copy_<W>_controlled` for the 4.4 select merge and
+//     Inc 2's value merge, one `cqrt_copy_<W>` for the Phase-4 value-arm route —
+//     so `hasOneUse` is STRUCTURALLY false for EVERY merge out-rail, and it is
+//     false because of a PRIOR WRITER, never a LATER READER. `hasOneUse` cannot
+//     tell those apart; M-C's own G6/G7 pair can, and does (a prior void
+//     `cqrt_*` writer is `provablyBefore` the op and is settled by
+//     `priorUseIsSettled` arm (c)).
+//
+// ⭐ AND THE OBLIGATION THAT ARRIVED WITH THE REBASE ONTO INCREMENT 2: WHY THIS
+// COMMIT CANNOT REACH AN INC-2 CHAIN HEAD (bd 3qlq, the round-4 lens finding
+// **F-C1D-2**). Inc 2's value-arm merge is sound only because
+// `classifyInPlaceReassignment`'s G6/G7 pair ALWAYS refuses M-C on a hoisted
+// chain HEAD — the head reads the arm's input `Q`, and `Q` always has a second
+// user (the second controlled copy, or the sibling arm's head), so the earlier
+// head is refused by G6 and the later by G7. Read that function's "CONSUMER 2"
+// comment; it is the whole argument, and until this round `P->hasOneUse()` was a
+// SECOND, independent refusal of the same thing on THIS path. Removing it makes
+// G6/G7 the sole net here, so the question "can this commit reach a chain head?"
+// stops being academic. IT CANNOT, BY CONSTRUCTION, FOR TWO INDEPENDENT REASONS:
+//
+//   (A) DIRECTION. The walk below is `peelInPlaceStep`, which returns an
+//       OPERAND — a rotation gate's arg 0, or `inPlaceValueRailOperand`'s tainted
+//       side. It walks BACKWARD, from the loop-invariant candidate toward its
+//       base. A chain head is a USER of `Q`, i.e. FORWARD of it, and lives on the
+//       arm's side of the merge; it is never `Cur` on a backward walk from a
+//       value the loop READS.
+//
+//   (B) THE PEEL STOPS AT THE `cqrt_alloc`. The merge-out-rail candidate reaches
+//       this path from `collapseFlattenedLoopRails` (`CQLoweringPass.cpp`, the
+//       ROUND-2 slot), i.e. AFTER `lowerControlRegions` has already emitted
+//       `%out = call i32 @cqrt_alloc_<W>(i32 0)` and RAUW'd the merge to it. So
+//       the chain is `%13 = add nsw %out, 7` → `%out`, and `peelInPlaceStep`'s
+//       FIRST clause refuses a `CallInst` that is not in `GateCalls` (an alloc
+//       never is) and returns null. The peel visits exactly {the preheader op,
+//       `%out`} and stops; there is no edge from `%out` back to the copies that
+//       wrote it, let alone to the chain that fed them.
+//
+// MEASURED rather than argued, on the rebased tree — AND SAY WHICH FIXTURE
+// MEASURES WHAT, because the first version of this paragraph cited the wrong one
+// and an independent lens caught it (bd 3qlq, the lens on the REBASED round-4
+// tree, finding **F-C1E-1**; it built a binary with BOTH G6 and G7 made
+// unreachable and re-ran the family against it).
+//
+//   * THE G6/G7 NET ITSELF is pinned by
+//     `ir-pass/test/control_swap_value_ifelse_head_out_of_place.ll` — the fixture
+//     `ArithLowering.cpp`'s own CONSUMER-2 comment names — which goes **RED
+//     (CHECK, NOROUTE)** on that mutant, with its two controlled copies collapsing
+//     onto ONE register. That is the artefact to re-derive before relaxing either
+//     clause.
+//   * `control_phase_kickback_mixed_value_merge_preadd_inloop.ll`'s `HCNT` prefix
+//     asserts that the Inc-2 chain HEAD of the `q4b` shape is emitted OUT of place
+//     onto a fresh rail (`cq_template_mul_i32_hl(%p, 5)` — `clang -O1`
+//     reassociates `(p+3)*5` into `p*5 + 15`, so it is a `mul`, not an `add`) and
+//     that `p`'s own rail carries NO in-place `cqrt_addc`/`cqrt_xorc` anywhere in
+//     the module, while the SAME module's `%out` rail carries exactly one. ⚠ READ
+//     THAT FOR WHAT IT IS: in THAT module the head is out of place because
+//     `inPlaceValueRailOperand` admits `add`/`xor` only, so **G2's SHAPE half
+//     refuses a `mul` whatever G6/G7 answer** — the fixture stays GREEN on the
+//     G6/G7-disabled mutant, with its emitted copies byte-unchanged, so its
+//     `HCNT-NOT` lines cannot falsify a relaxation of the pair. It pins the
+//     *property* (head out of place, `%out` mutated in place beside it) on the
+//     shape that made the commit fire; it does not pin the *net*. Its e2e pair is
+//     `slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c`, which the
+//     lens measured is blind to the same mutation (both goldens still match).
+//   * `control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll` is the
+//     one that DOES discriminate on this path: same idiom, but its chain head is a
+//     dtzb-shaped `add` (`p + 3`), inside `inPlaceValueRailOperand`'s shape, so
+//     nothing but G6/G7 stands between it and an in-place `cqrt_addc_i32` on `p`'s
+//     rail. Its `HCNT` pins the head out of place and its `CSRC` pins the two
+//     `cqrt_copy_i32_controlled` reading DISTINCT rails — the property the lens
+//     measured collapsing on the mutant.
+//
+// SO THE COMMIT NOW ASKS EXACTLY TWO THINGS: the immediate is a `Constant`
+// ((1a), below — MONOTONE, a property of the IR class), and
+// `classifyInPlaceReassignment` — M-C's own fence, the ONE spelling (Rule 14) —
+// says in place. THE SAFETY IS (1b), NOT A NEW PREDICATE. `lowerOps` re-asks
+// that same fence under the FINAL `DominatorTree`/`LoopInfo` and the FINAL
+// taint, and a changed answer is a LOUD `DiagnosticInfoUnsupported` with nothing
+// lowered. So a commit that was true here and false at lowering — the whole
+// class `hasOneUse` was reaching for, F-C1C-1 included — is a DECLINE, never a
+// leak and never a wrong unitary. A structural stand-in for a temporal question
+// is exactly what (1b) made unnecessary; keeping both meant paying an
+// over-decline for a net the tripwire already holds.
+//
+// MEASURED, this round, on the pre-fix `main` binary (a3c1513) and on this one
+// (rolled `cq_template_and_i32_hl` mints / `_hl_unc` discharges, against the
+// hand-unrolled twin of the SAME source):
+//   * `p/q5sel_preadd_{rolled,unrolled}.c` — a 4.4 select merge, `m = m + 7`,
+//     then D4's per-bit loop: main **4/0 (44 lines) vs twin 4/4 (52)**; here
+//     **4/4 = 4/4, traces BYTE-IDENTICAL at 52 lines**.
+//   * `p/q4b_preadd_*.c` — the Phase-4 VALUE-ARM ROUTE out-rail (`cqrt_copy_i32`
+//     into `%out`): main **4/0 (57) vs 4/4 (65)**; here **IDENTICAL 65 = 65**.
+//   * `p/q7_k32_rolled.c` — the same select merge at K=32: main 32 mints / **0**
+//     `_unc`; here **32/32**. The leak was O(K).
+//   * `p/q5v_none*.c` (merge, NO preheader op) and
+//     `p/q5ctl_theta_preadd_*.c` (theta root, WITH one) are the two boundary
+//     controls: IDENTICAL on BOTH binaries, so the finding is the PRODUCT of the
+//     two axes and this change moves neither axis alone.
+// The `x2_preadd_keep.c` control (`int keep = q; q = q + 7; … measure(keep)`) is
+// UNCHANGED and must stay so: M-C ITSELF goes out of place there (G6 refuses the
+// later read), so `classifyInPlaceReassignment` returns false and this commit
+// still refuses — now for the RIGHT reason rather than by a proxy.
 //
 // ⚠ THE STABILITY CONJUNCT WAS ONLY HALF THE WINDOW, AND THE OTHER HALF WAS A
 // CONFIRMED SILENT MISCOMPILE (bd 3qlq Inc 1, the THIRD C-1 review round,
@@ -2961,8 +3073,8 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
       return;  // in-loop: M-C's G5 refuses outright, so `OutOfPlace` is the
                // TRUE disposition and the FACT-time peel is already right.
     Value *P = inPlaceValueRailOperand(BO, taint);
-    if (!P || !P->hasOneUse())
-      return;  // unproven — stop, and let the peel stop here too (today's leak).
+    if (!P)
+      return;  // not the dtzb shape — stop, and let the peel stop here too.
     // (1a) — the immediate must be a `Constant`, which can never become tainted.
     Value *Imm = BO->getOperand(0) == P ? BO->getOperand(1) : BO->getOperand(0);
     if (!isa<Constant>(Imm))
