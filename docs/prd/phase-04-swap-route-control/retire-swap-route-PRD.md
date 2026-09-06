@@ -51,7 +51,7 @@
 > family, §4). Implementing epic: bd `test_C_libtooling-3qlq` (children `.1`–`.3`
 > = Inc 0–2, plus filed follow-ons).
 
-## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing)
+## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing, E11 the same day by the Inc-2 Rule-13 round 2)
 
 > **This block is dated and additive. The sections below are left as WRITTEN, so
 > that what was designed and what was built can be diffed; where they disagree,
@@ -94,6 +94,47 @@ anyone reasoning about ancilla cost or about a later `cq_invert`. Read §3's val
 paragraph and §7.1 as "`f` freed clean; `t` left allocated". A consequence worth
 carrying: bd `3qlq.5` (freeing the value-arm SOURCE) is **unsound by default** under
 this leak class.
+
+**E11 — Inc 2's value-arm merge is a FOURTH producer of the rail shape that leaks
+under a rolled per-bit kickback loop; the DEFECT is pre-existing on the landed
+`main` and the FIX is not on this branch** (2026-09-06, Inc-2 Rule-13 round-2
+finding F-I2-1 → bd `test_C_libtooling-7yd0`). *Placed here, out of numeric order,
+because it continues E1's subject: the value-arm merge out-rail.*
+
+The shape is **a control-owned merge whose `%out` holds a NON-constant value, then
+a classical op that M-C converts IN PLACE on that out-rail, then a ROLLED in-loop
+kickback region reading it.** The rolled loop mints one per-bit template rail per
+trip and discharges NONE; the hand-unrolled twin discharges all K. Each leaked rail
+is an entangled which-path record of one bit of the merged register, and the idiom
+is the one **D4** designates for a register-wide Z. Nothing in the tree sees it:
+`opt` exits 0, the module verifies, and STRICT stage 2b is **structurally blind** (a
+template-minted rail has no `cqrt_alloc` to count) and reports `0 violation(s)`; the
+full `ctest -j6` on the rebased tree was 361/361 green.
+
+MEASURED: the 13-line headline reproducer contains **no Inc-2 feature at all** (a
+4.4 select merge, `m = m + 7`, then D4's per-bit loop) and behaves **identically on
+`main` a3c1513 and on this branch** — rolled 44 trace lines / 4 mints / **0**
+`_unc`, unrolled 52 / 4 / **4**; at K=32 it is 240/32/**0** against 301/31/31, i.e.
+**O(K)**. Inc 2's own value-arm merge reproduces it (52 vs 60 here, 57 vs 65 on
+`main`), which is exactly what "adds a fourth producer" means: **more customers, no
+new defect.** The 4.4 select merge and Inc 2's value merge are MEASURED members; the
+6.5 classical-call arm is analytic; the 4.5 data-mux is measured OUT (its
+all-`ConstantInt` arms let `-O1` fold any preheader op into the case constants).
+
+Root cause (analytic from source): `LoopLowering.cpp`'s `commitOutOfLoopInPlaceOps`
+refuses at `!P->hasOneUse()`, and a merge out-rail structurally cannot have one use
+— the emitters write it with two `cqrt_copy_<W>_controlled` before anything reads
+it. **It is the 8h7d.5 lesson in the file that documents it:** C-1 round 2 widened
+the ROOT set (clause (ii-b)) and did not re-ask the question computed over the same
+closure.
+
+**WHERE THE FIX LIVES: not here.** It touches `LoopLowering.cpp`, Rule-13 core on
+landed `main`, and is scheduled as a separate **C-1 round 4 on `main` AFTER Inc 2
+lands** (bd `test_C_libtooling-7yd0`). This branch deliberately adds **no fixture
+that pins the leak as an accept** — that would bless it; the round-4 fix pins the
+discharge. The 18 reproducers and the full discrimination table are committed at
+`inc1-records/`'s sibling `inc2-records/README.md`. Note the overlap with **OQ-C2-1**
+(E10 item 5), which names the same `hasOneUse` conjunct from the other side.
 
 **E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
 The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →

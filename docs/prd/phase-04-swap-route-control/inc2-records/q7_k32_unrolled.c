@@ -1,0 +1,37 @@
+int slice(void){ int q=3,p=7,r=9; q=cq_theta(q,0.5); p=cq_theta(p,0.25); r=cq_theta(r,0.3);
+  int m = (q>5) ? p : r;
+  m = m + 7;
+  if ((m>>0)&1) cq_phi(0.7);
+  if ((m>>1)&1) cq_phi(0.7);
+  if ((m>>2)&1) cq_phi(0.7);
+  if ((m>>3)&1) cq_phi(0.7);
+  if ((m>>4)&1) cq_phi(0.7);
+  if ((m>>5)&1) cq_phi(0.7);
+  if ((m>>6)&1) cq_phi(0.7);
+  if ((m>>7)&1) cq_phi(0.7);
+  if ((m>>8)&1) cq_phi(0.7);
+  if ((m>>9)&1) cq_phi(0.7);
+  if ((m>>10)&1) cq_phi(0.7);
+  if ((m>>11)&1) cq_phi(0.7);
+  if ((m>>12)&1) cq_phi(0.7);
+  if ((m>>13)&1) cq_phi(0.7);
+  if ((m>>14)&1) cq_phi(0.7);
+  if ((m>>15)&1) cq_phi(0.7);
+  if ((m>>16)&1) cq_phi(0.7);
+  if ((m>>17)&1) cq_phi(0.7);
+  if ((m>>18)&1) cq_phi(0.7);
+  if ((m>>19)&1) cq_phi(0.7);
+  if ((m>>20)&1) cq_phi(0.7);
+  if ((m>>21)&1) cq_phi(0.7);
+  if ((m>>22)&1) cq_phi(0.7);
+  if ((m>>23)&1) cq_phi(0.7);
+  if ((m>>24)&1) cq_phi(0.7);
+  if ((m>>25)&1) cq_phi(0.7);
+  if ((m>>26)&1) cq_phi(0.7);
+  if ((m>>27)&1) cq_phi(0.7);
+  if ((m>>28)&1) cq_phi(0.7);
+  if ((m>>29)&1) cq_phi(0.7);
+  if ((m>>30)&1) cq_phi(0.7);
+  if ((m>>31)&1) cq_phi(0.7);
+  return cq_measure(m); }
+int main(void){ (void)slice(); return 0; }
