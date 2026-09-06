@@ -42,6 +42,10 @@
 ; ARE LIVE: they name STDERR text, and stderr IS piped into FileCheck by `2>&1`,
 ; so a second diagnostic emitted after ours by `lowerBreakReversePlay` would be
 ; caught. Only the stdout-directed (IR-text) negatives are vacuous.
+; ⚠ CLEARANCE CORRECTION (F-CL-1): under THIS driver they are unreachable too —
+; cq-opt (and stock opt) EXIT AT THE FIRST DS_Error (measured: a two-function
+; module prints ONE error line, rc 1), so `lowerBreakReversePlay` never runs after
+; our decline. They stay as a tripwire for a driver that continues past it.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: in-place rail op no longer provable at lowering

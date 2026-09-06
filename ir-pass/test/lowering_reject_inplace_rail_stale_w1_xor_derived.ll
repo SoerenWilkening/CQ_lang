@@ -38,6 +38,12 @@
 ; `continue` leaves the marked `xor` un-lowered in exactly that module. MEASURED
 ; disposition after the fix: EXACTLY ONE diagnostic — ours — and `opt` rc 1; no
 ; second diagnostic, no crash, no `LLVM ERROR` (pinned by the CHECK-NOTs below).
+; ⚠ CLEARANCE CORRECTION (F-CL-1): that is true because the DRIVER EXITS AT THE
+; FIRST DS_Error (cq-opt and stock opt alike — measured with a two-function
+; module: ONE error line, rc 1), so `lowerBreakReversePlay` is NEVER REACHED after
+; our decline. The three `break reverse-play` negatives below are therefore a
+; tripwire for a driver that continues past the first error, not a witness of
+; that stage's behaviour.
 ;
 ; ⚠ WHICH MECHANISM PINS WHAT — round-1 lens finding F-E1-2, MEASURED, and read
 ; it before touching the RUN line. On a `DiagnosticInfoUnsupported(DS_Error)`

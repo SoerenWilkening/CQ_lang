@@ -2561,6 +2561,18 @@ and the Phase-1 `continue` leaves the marked `xor` un-lowered in exactly that mo
 diagnostic, no crash, no `LLVM ERROR`.** Pinned by three `CHECK-NOT`s in both W1 fixtures, so a
 future change that starts firing one tells a human instead of passing as green.
 
+> ⚠ **CORRECTED BY THE CLEARANCE (finding F-CL-1, 2026-09-06): that disposition is TRUE FOR A
+> DIFFERENT REASON than the paragraph above gives.** The driver EXITS AT THE FIRST `DS_Error`
+> (`cq_opt_main.cpp` installs no diagnostic handler and the `LLVMContext` default exits; stock
+> `opt` behaves identically — MEASURED: a two-member module with `@slice` duplicated as `@slice2`
+> prints exactly ONE `error:` line and exits rc 1 on BOTH drivers, while the M1 mutant accepts it
+> with `railInImm=2`; and 866/866 declining fixtures in the clearance's sweep carry exactly one
+> `error:` line). So after the tripwire's `diagnose` the pass NEVER REACHES `lowerBreakReversePlay`
+> — the stage does not "behave"; it does not run. The three `break reverse-play` negatives in the
+> two W1 fixtures are live for FileCheck but UNREACHABLE under this driver, the same status as the
+> vacuous IR-text pair: a tripwire for a driver that continues past the first error, not a
+> witness of the stage. The observable contract (rc ≠ 0, 0 bytes emitted) holds on both drivers.
+
 #### WHAT IS NOT COVERED, and what the decline COSTS
 
 * **The alternative — re-asking G2 at the WRITERS after `repropagateControlMerges` — is
@@ -2930,3 +2942,27 @@ so that nothing else in the record — including `session-82e6b530/rebase_c1d.md
 **Rule 13 is still NOT satisfied for this fix.** Two lenses on a docs pass are not a clearance, the
 binary has not changed since round 1, and this function's history is **nine findings over seven
 adversarial rounds, two of them INTRODUCED BY A FIX**. A clearance on the tripwire itself is owed.
+
+#### The CLEARANCE (2026-09-06, Fable, `inc1-records/session-7bbdb89e/clearance_eqpx.md`) — verdict **CLEAR-WITH-OWNER-QUESTIONS**
+
+Re-derived, not re-read: the ruling matched clause by clause against the diff; the 1691 pre-existing
+fixtures **0 RCDIFF · 0 DIAGDIFF · 0 OUTDIFF** (main vs fix), the 16 new = exactly 8 accept→decline;
+`immcheck` 0 rail producers over all 841 fix accepts; the 42-reproducer census on main/fix/orac
+(18 MOVED, all members → the mirrored decline; 24 UNCHANGED; 17 both-accept traces byte-identical;
+orac reproduces all 14 members it compiles); the lenses' 47 attacks (13 MOVED + `x09`/`x10` rc 134 →
+decline, 25 both-accept identical); its OWN M1 mutant built from `git archive` (baseline `cmp`-identical;
+the 8 declines go RED and nothing else moves: identical 1699 / RCDIFF 8); m23 vs fix **1707/1707
+identical** and ME **24 move** (the index form: argued-inert, not decoration, not pinned); the
+80-injection matrix 0 MISSED. **F-CL-2 — TWO MORE plain-C members, both declined by the fix**
+(`clearance_probes/p_k_cmp_zext_imm.c`: the immediate is `(y > 6)`, a compare of the 6.5 `%out`
+zext'd — a FLAG rail in the immediate slot; `clearance_probes/p_n_variant_plus_out.c`: `r ^= (w + i)`,
+a LOOP-VARIANT classical immediate mixed with `%out`; each main ACCEPT 24 lines imm=1 → fix the
+mirrored decline), beside 6 controls (`p_a` in-loop `cq_measure` immediate, `p_s` arm after the loop,
+`p_t` Argument immediate beside an unused arm: ACCEPT/ACCEPT byte-identical; `p_c`, `p_m`, `p_q`:
+the same pre-existing decline on both). **F-CL-1** is the correction boxed under "THE W1 CRASH-RISK
+CELL" above. Two OWNER QUESTIONS stand, neither gating the landing: OQ-1 keep or drop the
+operand-INDEX form (recommendation KEEP; either answer is a 0-behaviour change on the corpus);
+OQ-2 a docs-only header note on the pre-existing (1b) template fixture
+`control_phase_kickback_reject_preloop_commit_stale.ll`, whose IR-text `CHECK-NOT` pair is equally
+vacuous on a `RUN: not` line.
+

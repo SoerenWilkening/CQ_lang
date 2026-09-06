@@ -313,6 +313,15 @@ found`, rc 134) where i32 is silent — and **the commuted `add` IS plain-C reac
 in its wrong-IMMEDIATE face, retiring half of the "commuted is hand-IR-only" reading
 (the wrong-REGISTER face stays hand IR). Programs committed at
 `inc1-records/session-7bbdb89e/eqpx_reproducers_r1/`.
+**LANDED on `main` 2026-09-06 as ONE squash commit of branch `eqpx-fix`** (`git log main -1`)
+after two opus lenses (round 1 CLEAR-WITH-ITEMS, round 2 CLEAR-WITH-ITEMS, every item closed) and the
+Fable clearance **CLEAR-WITH-OWNER-QUESTIONS** (`inc1-records/session-7bbdb89e/clearance_eqpx.md`:
+the ruling matched clause by clause, corpus diff 0/0/0 re-derived, its own M1 mutant reddens exactly
+the 8 declines, two MORE plain-C members found and declined; F-CL-1 corrected the W1 "no second
+diagnostic" attribution — the driver exits at the first `DS_Error`, so `lowerBreakReversePlay` is
+never reached). Full `ctest -j6` 367/367 (350.23 s). The two standing owner questions are
+docs-level: keep/drop the operand-INDEX form (inert on the corpus, live when wrong — kept, argued
+in-source), and a header note on the pre-existing (1b) template fixture.
 
 **E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
 The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →

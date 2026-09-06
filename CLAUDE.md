@@ -1088,7 +1088,11 @@ and Rule-13 reviewed twice there.)*
   writers (`tryCaseA`, `collapseRailPhisIn` step (3)) for the `xor` stem, from plain
   C, reproducing byte-for-byte on the pre-3qlq oracle 52d7764, so NOT this epic's and
   NOT a blocker for it, but the same class one writer over. ⭐ **FIXED 2026-09-06
-  (this session; notes §3.16, PRD §0 E13): G2 alone (`inPlaceValueRailOperand`)
+  (this session; notes §3.16, PRD §0 E13; two opus lenses CLEAR-WITH-ITEMS, one Fable
+  clearance CLEAR-WITH-OWNER-QUESTIONS — the two questions are docs-level, keep/drop the
+  operand-INDEX form and a header note on the (1b) template fixture — full `ctest -j6`
+  367/367, LANDED on `main` 2026-09-06 as ONE squash commit of branch `eqpx-fix`;
+  `git log main -1` shows the hash): G2 alone (`inPlaceValueRailOperand`)
   re-asked at `lowerOps` Phase 1 under FINAL taint for every `taint.InPlaceRailOps`
   member NOT in `PreLoopCommittedInPlaceOps`, declining
   `cq loop lowering: in-place rail op no longer provable at lowering` — G2 ALONE
