@@ -1137,7 +1137,13 @@ and Rule-13 reviewed twice there.)*
   bought back — its candidate is refused by the M-C fence itself (arm (e)), so its
   trace is byte-unchanged. Gated by
   `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52), one lit accept and
-  twin-matrix sub-grid **F4** (286 → 288 cells).
+  twin-matrix sub-grid **F4** (286 → 288 cells). ⚠ **The population is not "merge
+  out-rails"** — the whole-corpus sweep (485 programs, **477 unchanged / 8 moved, 0
+  class flips, 0 decline strings changed**) moved a program with NO MERGE IN IT:
+  `if (q>5) cq_phi(.4); q = q + 7;` then D4's loop, where `P`'s other use is the
+  PRECEDING REGION's compare, already `_unc`'d and freed by the commit's program
+  point (3/0 vs 3/3 on `main`; 3/3 = 3/3, byte-identical, here). It is **every `P`
+  whose other users are all SETTLED PRIOR CONSUMERS**.
 * **A HOISTED loop-invariant TEMPLATE rail read by the body's condition is STILL
   refused, and still leaks** (Q-R1-1). A deliberate mutation admitting any
   loop-invariant tainted value made those rails discharge and did NOT exhibit the

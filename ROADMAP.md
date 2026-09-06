@@ -442,9 +442,16 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > refused by G6, a still-unlowered tainted opcode by arm (e)), and the temporal net is
 > round 3's (1b) tripwire — **deleting (1b) makes all nine F-C1C-1-class programs
 > miscompile again, which is the measurement that makes the safety claim a fact**.
-> Witnessed by `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52), one lit
-> accept and twin-matrix sub-grid **F4** (2 cells, TRACE-DIVERGENCE on `main` →
-> ACCEPT-IDENTICAL; 286 → **288**). ⚠ It also CORRECTS OQ-C2-1's attribution: `m11d`
+> Witnessed by `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52), TWO lit
+> accepts and twin-matrix sub-grid **F4** (2 cells, TRACE-DIVERGENCE on `main` →
+> ACCEPT-IDENTICAL; 286 → **288**). ⚠ **The population is NOT "merge out-rails"**:
+> the whole-corpus sweep (**485 programs, 477 unchanged / 8 moved, 0 class flips in
+> either direction, 0 decline strings changed**) moved a program with no merge in it
+> at all — `if (q>5) cq_phi(.4); q = q + 7;` then D4's loop, where `P`'s other use is
+> the PRECEDING REGION's compare, already `_unc`'d and freed by the commit's program
+> point (3/0 vs 3/3 on `main`, 3/3 = 3/3 byte-identical here). It is **every `P`
+> whose other users are all SETTLED PRIOR CONSUMERS**, of which a merge's
+> `cqrt_copy_*` writers and a region's discharged compare rail are two spellings. ⚠ It also CORRECTS OQ-C2-1's attribution: `m11d`
 > is **not** bought back — its candidate is refused by the M-C fence itself, so its
 > trace is byte-unchanged. That makes it
 > **eight instances of one defect class over six adversarial rounds on one

@@ -2074,14 +2074,66 @@ with its own `q5o_call_*` probe. The 4.5 switch data-mux is measured OUT of the 
 entirely (all-`ConstantInt` arms fold the preheader op into the case constants — `q5w_mux`,
 identical on every binary).
 
+#### ⭐ A THIRD population member, found by SWEEPING and not by the finding — and it has NO MERGE IN IT
+
+The whole-corpus sweep (below) moved one program nobody had predicted:
+`c2_m04_onward_then_preadd`, 3 mints / **0** `_unc` on `main` (43 lines) → **3/3** here (49).
+Its `P` is an ordinary `cq_theta` ROOT MINT, and the extra use that made `hasOneUse` false is
+**the PRECEDING REGION'S OWN COMPARE**. By the commit's program point
+(`collapseFlattenedLoopRails`, i.e. after `lowerControlRegions`) that compare is
+`cq_template_icmp_sgt_i32_hl`, whose rail is `_unc`'d **and** `cqrt_free`d before the `add` —
+so `priorUseIsSettled` arm (d) settles it and M-C lowers the op in place. `hasOneUse` could
+see none of that.
+
+Distilled to a SINGLE TU as `g1_region_then_preadd_{rolled,unrolled}.c`
+(`if (q > 5) cq_phi(0.4); q = q + 7;` then D4's per-bit loop with a carried `r`): `main`
+**3/0 (36 lines) vs its twin 3/3 (42) — DIVERGE**; here **3/3 = 3/3, traces BYTE-IDENTICAL at
+42 = 42**. So the population is not "merge out-rails": it is **every `P` whose other users are
+all SETTLED PRIOR CONSUMERS**, of which a merge's `cqrt_copy_*` writers (arm (c)) and a
+region's discharged compare rail (arm (d)) are two spellings.
+
+#### The whole C-1 population, `main` vs this branch
+
+**485 programs** — the union of every `p/` directory of session `adc5590a` (`fix_c1_work`,
+`review_c1_work`, `fix_c1b_work`, `review_c1b_work`, `fix_c1c_work`, `review_c1c_work`,
+`clearance2_work` `p`+`p2`+`p3`, `review_inc2_r2_work`) plus this round's own — each run
+through the full pipeline on both binaries and compared by normalised STATUS **and** by
+byte-diff of the trace.
+
+**477 UNCHANGED, 8 MOVED**, and every mover is named: the six that gain `_unc` + `cqrt_free`
+pairs (`q5sel_preadd_rolled`, `q4b_preadd_rolled`, `q7_k32_rolled`, `q5v_xor`,
+`c2_m04_onward_then_preadd`, and the two new matrix cells count as two of the six with
+`m_addpresel_pbit{,d}`), plus `c1c_a1_constexpr_imm`, whose lowered IR is BYTE-IDENTICAL and
+whose only difference is the printed value of a `ptrtoint (@g_tab+12)` load address in two
+separately linked binaries — the artefact `review_c1c` recorded on the same probe.
+
+**CLASS-FLIP CENSUS: `ACCEPT→ACCEPT 332 · DECLINE→DECLINE 122 · LINKFAIL 2 · S1FAIL 29`;
+0 ACCEPT→DECLINE, 0 DECLINE→ACCEPT, 0 decline strings changed.** (Run as a `bash` script, not
+under `zsh` — `review_c1c`'s own methodology note about a scan that answers "0 flips" for the
+wrong reason.) STRICT stage 2b over all **332** accepts: **330 `0 violation(s), 0 unproven`,
+2 `0 violation(s), 4 unproven`** — `f0_break_plain` and `f3_break_global_phase_before`, the
+`--allow-unproven` dtzb break family — **0 violations**.
+
+Two rows of that sweep are worth reading as controls rather than as movers:
+* `x2_preadd_keep` (`int keep = q; q = q + 7; … cq_measure(keep)`) is **byte-unchanged** — M-C
+  itself goes out of place there (G6 refuses the later read), so the commit still refuses, now
+  for the right reason instead of by a proxy.
+* `y1_preadd_chained_prerecord` still **declines** with the (1b) string on both binaries.
+
 #### Pinning
 
-* **lit**, corpus 1673 → **1674**: `control_phase_kickback_mixed_merge_out_rail_preadd_inloop.ll`
-  — ACCEPT, 8 prefixes. `main`: `OPT_RC=0 CHECK=1 FCNT=1 UCNT=1` — **RED**; here all 8 are 0.
-  The ⭐ discriminators are `UCNT` (the per-trip `and_i32_hl_unc`, ZERO on `main`) and `FCNT`
-  (3 frees here, 2 there); `PCNT` is the other half of the subject in its own prefix (the
-  preheader op really is `cqrt_addc_i32` IN PLACE, exactly once, with no adjoint).
-  Injection matrix 1 × 16: **`clean` PASS, 0 MISSED, 0 DIRTY**.
+* **lit**, corpus 1673 → **1675** (+2):
+  `control_phase_kickback_mixed_merge_out_rail_preadd_inloop.ll` (the merge out-rail × the
+  preheader op) and `control_phase_kickback_mixed_preheader_addc_after_region_inloop.ll` (the
+  third class: a preceding region's settled compare, no merge). Both ACCEPT, 8 prefixes each,
+  both `OPT_RC=0 CHECK=1 FCNT=1 UCNT=1` — **RED** — on `main` and all-zero here.
+  The ⭐ discriminators are `UCNT` (the per-trip `and_i32_hl_unc`, ZERO on `main`) and `FCNT`;
+  `PCNT` is the other half of the subject in its own prefix (the preheader op really is
+  `cqrt_addc_i32` IN PLACE, exactly once, with no adjoint).
+  Injection matrix 2 × 16: **`clean` PASS, 0 MISSED, 0 DIRTY** on both.
+  `ctest -R ir-pass-lit` on this build: **Passed, 41.02 s, 0 failed**.
+  The reproducers are committed at `inc1-records/c1-round4/` (23 files + a two-binary README),
+  the `c1-round3/` precedent.
 * **e2e**, `ctest -N` 348 → **351** (`^e2e-` 338 → **341**, `^e2e-slice-` 308 → **310**):
   `slice_control_phase_perbit_loop_merge_preadd{,_unrolled}.c` + goldens by the full pipeline,
   STRICT 2b `0 violation(s), 0 unproven` on both, gated by
