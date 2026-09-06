@@ -260,9 +260,20 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // a data operand. NEVER feed route cswaps through a threaded chain
   // (`emitInverseChain` passes CurHandle=nullptr, so this guard is moot for the
   // uncompute driver) — a rail handle in the flag slot is a verify-clean WRONG
-  // UNITARY. The swap-route value-arm emitter brackets its R† route cswaps
-  // itself via `emitRoute` (cswap is self-inverse) and hands this spine the
-  // BODY CHAIN only.
+  // UNITARY. The emitter that routes brackets its R† route cswaps itself via
+  // `emitRoute` (cswap is self-inverse) and hands this spine the BODY CHAIN
+  // only. ⚠ THE VALUE-ARM EMITTER IS NOT IT (bd test_C_libtooling-3qlq Inc 2,
+  // round-1 fix): `emitValueRegion` emits no route at all — it hoists the chain
+  // and merges with two controlled copies — so do not read this guard as being
+  // about it. ⚠ AND AS OF THE INC-2 REBASE ONTO THE LANDED INC 1 (2026-09-06)
+  // THERE IS EXACTLY ONE ROUTING EMITTER LEFT, so read this sentence in the
+  // singular: Inc 1 DELETED `NestedRouteEmit` (the 4.3 depth-2 PHASE nest) and
+  // took the 4.5 PHASE switch (`SwitchRouteEmit`) off the route onto the
+  // kickback, and Inc 2 took the value path off it, leaving the 7.2 abort park
+  // (`AbortParkEmit`) as the sole `emitRoute` caller — MEASURED,
+  // `grep -rn 'emitRoute(' ir-pass/src ir-pass/include` = the definition, the
+  // declaration and ONE call site, `AbortParkEmit.cpp:396`. So this guard now
+  // guards exactly the park.
   //
   // The 4.4 controlled-XOR copy `cqrt_copy_<W>_controlled(ctrl, src, dst)` joins
   // this involution family (5po2): re-emitting the SAME call under the still-live

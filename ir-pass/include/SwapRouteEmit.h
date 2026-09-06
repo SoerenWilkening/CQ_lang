@@ -35,17 +35,29 @@
 // `ControlRegion::ArmNegated`.
 //
 // A VALUE-class region (ClassArm/ClassArmFalse == Value, the ordered chain in
-// Shadow/ShadowFalse) instead takes the method-B B-keep path (see
-// emitValueRegion in the .cpp): per-arm |0> rails, the chain replayed VERBATIM
-// + UNCONTROLLED on each rail via `rewriteBinary`, ONE `cqrt_copy_<W>`-out of
-// the settled register, then per-arm reverse-play R† via `emitInverseChain`
-// before the clean rail frees and the same flag strip.
+// Shadow/ShadowFalse) takes the CONTROLLED-COPY MERGE (bd
+// test_C_libtooling-3qlq Inc 2, retire-swap-route-PRD §7; see emitValueRegion in
+// the .cpp). ⚠ IT NO LONGER ROUTES. The pre-3qlq method-B B-keep path — per-arm
+// |0> work rails, the chain replayed VERBATIM + UNCONTROLLED on each rail via
+// `rewriteBinary`, ONE `cqrt_copy_<W>`-out of the settled register, then per-arm
+// reverse-play R† via `emitInverseChain` before the clean rail frees — is
+// RETIRED. `emitValueRegion` is now a REWRITE: it HOISTS each arm's proven pure
+// linear chain into the pred (where `lowerOps` lowers it and the whole-DAG spine
+// reverses it, exactly as for any straight-line tainted arithmetic), builds a
+// `select` for the merge, flattens, and hands the result to the 4.4
+// `emitSelectRegion` — two `cqrt_copy_<W>_controlled` into a fresh |0> rail, the
+// same flag strip, ONE `cqrt_free`. No work rail, no `cqrt_cswap`, no
+// reverse-play, and no new runtime symbol. The X-bracket note above therefore
+// applies to the PHASE paths and to the merge's second controlled copy; a value
+// arm's polarity now rides the `select`'s operand SLOT, not a bracket count.
 //
 // Runs AFTER `detectControlRegions` and BEFORE `lowerRotations` (§4): it
 // references the still-present `@cq_theta` result `%q`; when `lowerRotations`
 // later RAUWs `%q` to its `i32` alloc handle every emitter call updates
 // automatically (the SSA-identity discipline, Rule 9). The only post-4.1 ABI
-// addition is the `cqrt_copy_<W>` family (PRD Part II §8.1).
+// addition is the `cqrt_copy_<W>` family (PRD Part II §8.1) — still emitted, by
+// the 4.5 switch-value PRELOAD (SwitchValueEmit) though no longer by the
+// retired diamond copy-out.
 
 #ifndef CQ_IRPASS_SWAP_ROUTE_EMIT_H_
 #define CQ_IRPASS_SWAP_ROUTE_EMIT_H_

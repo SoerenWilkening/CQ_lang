@@ -1,7 +1,6 @@
 ; control_swap_value_accept_nonclobber.ll — ACCEPT: single-link value arm on a
-; NON-condition register (the §3c contrast witness; IMPLEMENTATION-4.2 §5f).
-; Graduated at WI-4 from the 4.1/WI-3 defer (control_swap_defer_valuearm.ll) —
-; same shape, now lowered by the method-B value path.
+; NON-condition register (the §3c contrast witness), lowered by the
+; CONTROLLED-COPY MERGE (bd test_C_libtooling-3qlq Inc 2).
 ;
 ; Contrast partner of control_swap_reject_clobber.ll and
 ; control_swap_value_reject_clobber_active.ll: the arm value-changes a quantum
@@ -9,13 +8,23 @@
 ; diamond's straight-through (Pred-edge) incoming is %p, which is NOT in the
 ; condition's taint provenance — `if(q>5){p=p+3}` ACCEPTS while the §3c clobber
 ; `if(q>5){q=q+3}` permanently rejects. A wrong §3c reject here would be a
-; false positive conflating "rewrites a NON-condition var" with the §3c bind;
-; a decline of any kind here would silently regress the WI-4 flip.
+; false positive conflating "rewrites a NON-condition var" with the §3c bind.
+;
+; ⚠ THE §3c DECLINE IS UNCHANGED BY Inc 2 AND IS STILL LOAD-BEARING. Under the
+; retired route the clobber hazard was that the route swapped the condition's
+; own register; under the hoist it is that the chain runs UNCONDITIONALLY on the
+; original register, so an arm that rewrote a condition operand would make the
+; `icmp_inv` strip read a different basis value than the mint did. Same decline,
+; different mechanism — see retire-swap-route-PRD §7.3.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; Independent EXACT free-count scan (§8.3 probe): two cqrt_free, no third anywhere.
-; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; CCNT added by the Inc-2 round-1 review (finding F-V2-6): without it a
+; DUPLICATED merge copy — `out` XORed twice, i.e. the identity on that branch —
+; passed this file.
+; RUN: %filecheck %s --check-prefix=CCNT < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -34,31 +43,40 @@ merge:
   ret i32 %m
 }
 
-; the §5d B-keep stream, single-link chain
-; CHECK:     %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 5)
-; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P:[a-zA-Z0-9_.]+]], i32 %[[T]])
-; CHECK:     %[[V1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[T]], i32 3)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[V1]])
-; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK:     call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[V1]])
-; reverse-play via void `_unc` (out=forward result %[[V1]], src=live rail %[[T]]);
-; route-in-dagger + free on the WORK RAIL %[[T]] (chain head, restored to |0>)
-; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[V1]], i32 %[[T]], i32 3)
-; CHECK:     call void @cqrt_cswap(i32 %[[F]], i32 %[[P]], i32 %[[T]])
-; CHECK:     call void @cqrt_free(i32 %[[T]])
-; CHECK:     call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
-; CHECK:     call void @cqrt_free(i32 %[[F]])
-; CHECK:     call i32 @cqrt_measure_i32(i32 %[[OUT]])
-; no third free (neither %out nor the restored source %p — hidden measurement)
-; CHECK-NOT: call void @cqrt_free
-; the §3c string must never fire on a non-condition-register write
-; CHECK-NOT: arm rewrites a condition operand
-; dephasing/shape guards
-; CHECK-NOT: _controlled
-; CHECK-NOT: phi i32
+; THE WHOLE REGION STREAM, CONTIGUOUS. `CHECK-NEXT` adjacency from the first
+; alloc to the measure is the contract here, not decoration (bd
+; test_C_libtooling-3qlq Inc 2, Rule-13 round-1 review finding F-V2-5): the
+; re-derivation that first shipped this file used bare positional directives
+; throughout, and a stray gate spliced between two pinned lines — a
+; `cqrt_ry_i32` immediately before the first controlled copy — then passed
+; EVERY prefix. Symbol ORDER cannot see an insertion; adjacency can.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
+; the hoisted single-link chain on the NON-condition register %p
+; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[P]], i32 3)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[V]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: %[[M:[a-zA-Z0-9_.]+]] = call i32 @cqrt_measure_i32(i32 %[[OUT]])
 
-; Exact free count — two (work rail + flag), no third anywhere.
-; CNT-COUNT-2: call void @cqrt_free(
-; CNT-NOT:     call void @cqrt_free(
+; the §3c string must never fire on a non-condition-register write, and no route
+; survives anywhere.
+; NOROUTE-NOT: arm rewrites a condition operand
+; NOROUTE-NOT: under quantum control
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call void @cqrt_copy_i32(
+; NOROUTE-NOT: phi i32
+
+; EXACTLY ONE free — the flag. %out and the source %p are never freed.
+; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-NOT:     call void @cqrt_free(
+; EXACTLY TWO controlled copies — the whole merge.
+; CCNT-COUNT-2: call void @cqrt_copy_i32_controlled(
+; CCNT-NOT:     call void @cqrt_copy_i32_controlled(

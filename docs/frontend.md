@@ -730,7 +730,15 @@ because the three classes are not interchangeable (`CLAUDE.md` Rule 7):
   compute → copy-out → uncompute: the arm's chain runs on the original
   register and the answer is merged into a fresh rail under the flag. A
   value arm that rewrites a register the condition reads is a **loud
-  reject**.
+  reject**. *This is the Increment-2 lowering (bd `test_C_libtooling-3qlq.3`,
+  LANDED on `main` 2026-09-06) — the CONTROLLED-COPY MERGE: the chain is
+  HOISTED into the pred so it runs unconditionally, the flag is minted, and
+  the answer is merged by two X-bracketed `cqrt_copy_<W>_controlled` into a
+  fresh `|0⟩` rail. It replaced a `cqrt_cswap` route with a per-arm work
+  rail; with Increment 1 that retires the swap route for every arm class, and
+  `cqrt_cswap` is now minted by the 7.2 abort-park alone. What the user can
+  observe: the source register stays live (keep-source-live) and the chain's
+  final rail is left allocated — `retire-swap-route-PRD.md` §0 E1.*
 
 Mixing classes in one arm is a loud reject, and so is anything the pass
 cannot prove: over-declining is safe, and a silently wrong unitary is the

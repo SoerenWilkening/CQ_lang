@@ -7,9 +7,19 @@
 > orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded in
 > the landing commit message; `git log main -1` shows the hash) **after the
 > re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
-> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is implemented
-> + round-1 reviewed on branch `3qlq-inc2`, NOT landed — a rebase onto the landed
-> Inc 1 is owed.**
+> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is ALSO
+> LANDED — on `main` 2026-09-06 as ONE squash commit** (the squash of branch
+> `3qlq-inc2`, whose tip is recorded in the landing commit message; `git log main
+> -1` shows the hash) **after the clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`**
+> (record: `inc1-records/session-adc5590a/inc2/clearance_inc2.md`). HISTORY, dated:
+> it was written on branch `3qlq-inc2` against the pre-Inc-1 `main`, REBASED onto
+> the landed `a3c1513` on 2026-09-06, and Rule-13 reviewed TWICE there — round 2
+> CLEAR ON THE MECHANISM. **With both increments landed the SWAP ROUTE IS FULLY
+> RETIRED: `cqrt_cswap` is minted by the 7.2 `AbortParkEmit` alone** (MEASURED —
+> `emitRoute` has ONE call site, `AbortParkEmit.cpp:396`, and 1 of 319 goldens
+> contains a `cqrt_cswap`). Round 2's one LEAK finding (F-I2-1) is PRE-EXISTING on
+> `main` and is filed OUT of Inc 2 as bd `test_C_libtooling-7yd0` — see **E11** and
+> **E12** below and `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §4/§5.
 > **HISTORY (dated, kept — do not delete it).** The first clearance
 > (2026-09-05, `inc1-records/session-0a61aa31/clearance.md`) returned **BLOCK** on
 > finding C-1 (a mixed loop — invariant root register with D4's per-bit condition
@@ -51,7 +61,7 @@
 > family, §4). Implementing epic: bd `test_C_libtooling-3qlq` (children `.1`–`.3`
 > = Inc 0–2, plus filed follow-ons).
 
-## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing)
+## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing, E11 the same day by the Inc-2 Rule-13 round 2)
 
 > **This block is dated and additive. The sections below are left as WRITTEN, so
 > that what was designed and what was built can be diffed; where they disagree,
@@ -72,11 +82,23 @@
 > `3qlq-inc1-fix-c1` over THREE rounds on 2026-09-06 — capability, then two more
 > members plus a miscompile of round 2's own, then the narrowing — the round-3 lens
 > graded CLEAR-WITH-ITEMS, and the re-clearance on that tree cleared it (E10).
-> **Increment
-> 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
-> plan, `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
-> 7.2 `AbortParkEmit`, and its branch `3qlq-inc2` owes a rebase onto the landed
-> Inc 1.
+> **Increment 2 (value arms by controlled-copy merge, §7) IS LANDED TOO** — on
+> `main` 2026-09-06 as its own ONE squash commit (the squash of branch
+> `3qlq-inc2`, whose tip is recorded in the landing commit message; `git log main
+> -1` shows the hash) after the clearance verdict **`CLEAR-WITH-OWNER-QUESTIONS`**
+> (record: `inc1-records/session-adc5590a/inc2/clearance_inc2.md`). **So §7 is no
+> longer a plan on `main`, and `cqrt_cswap` has exactly ONE minter there: the 7.2
+> `AbortParkEmit`.** The epic's cswap goal is MET. Full landing summary: **E12**.
+> ⚠ **HISTORY, dated 2026-09-06 — kept because the branch names are still quoted.**
+> Until that day this block said Increment 2 was NOT landed and that a reader on
+> branch `3qlq-inc2` was reading a file whose `main`-facing sentence was false
+> there. The branch was written against the pre-Inc-1 `main` and REBASED onto the
+> landed a3c1513 (`git rebase a3c1513`, 15 commits, 2 conflicts of 7 overlapping
+> files — `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §3); Rule-13 round 2 then ran there
+> (notes §4): ten findings, CLEAR on Inc 2's own mechanism, one LEAK that is
+> PRE-EXISTING on `main` (**E11** / bd `test_C_libtooling-7yd0`) plus one
+> fixture-truth repair and three record items. The clearance (notes §5) then
+> cleared it and it landed.
 
 **E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
 F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
@@ -87,6 +109,164 @@ anyone reasoning about ancilla cost or about a later `cq_invert`. Read §3's val
 paragraph and §7.1 as "`f` freed clean; `t` left allocated". A consequence worth
 carrying: bd `3qlq.5` (freeing the value-arm SOURCE) is **unsound by default** under
 this leak class.
+
+> **E1a — the errata's own "`5 _unc` — the interior links" is not the count of
+> anything in the trace either** (clearance record item **R-1**, 2026-09-06,
+> `inc1-records/session-adc5590a/inc2/clearance_inc2.md` §3). Read the shipped
+> golden instead of any number in this file:
+> `tests/e2e/slice_control_value_diamond.expected.log` discharges the chain's
+> INTERIOR rail `h2` with **ONE** `cq_template_mul_i32_hl_unc(h2, h1, 5)` plus
+> **TWO IN-PLACE ADJOINTS** (`cqrt_xorc_i32(h2, 9)`, `cqrt_addc_i32(h2, -15)` —
+> the M-C in-place links reversed on the rail itself, which is why they are not
+> `_unc` calls) and **ONE** `cqrt_free(h2)`; the chain's FINAL rail `h3` (links 4–6:
+> `mul_i32_hl → h3`, `addc(h3, 7)`, `xorc(h3, 2)`) is **left allocated and dirty**.
+> So the emitted stream has 1 `_unc` for the chain, not 5 and not 6 — and the
+> number 5 came from counting design "links", a unit the lowering does not emit
+> one-for-one once M-C converts a link in place. **Do not re-derive a count from
+> this PRD; count it in the golden.** The same correction applies to
+> `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §1.4 and to §7.1's inline errata below.
+
+> **E1b — the SOUNDNESS SENTENCE was over-stated, and the true one is narrower**
+> (clearance record item **R-2**, 2026-09-06, same record §3). Three sites said, of
+> the retained chain-final rail: *"`R(p)` is a deterministic function of the
+> RETAINED `p`, so tracing it out leaves the reduced state on (q, p, out)
+> unchanged."* **That is FALSE as a density-matrix statement.** Writing `R(p)` into
+> a fresh `|0⟩` ancilla and then tracing the ancilla out DOES change the state: the
+> off-diagonals between `p` and `p′` with `R(p) ≠ R(p′)` are **dephased**. A reader
+> who tests the sentence as written will find it wrong.
+>
+> **What is true, and what the increment actually rests on:**
+> **(a)** relative to the SOURCE PROGRAM's live registers — `(q, out)` — the reduced
+> state equals the ROUTE's, because the retained `p_old` already determines
+> `R(p_old)`, so the ancilla records nothing the surviving registers do not already
+> record; and
+> **(b)** on `(q, p_old, out)` **no CQ-expressible continuation can observe the
+> difference**, because `out`'s own retained label already records `R(p_old)` on the
+> arm branch and `p_old` on the other, and the ABI mints **no in-place Q+Q gate on
+> `out`** that could erase it (`cqrt_copy_<W>_controlled` is minted only with a
+> FRESH `|0⟩` destination).
+>
+> Clause (b) is a statement about the shipped ABI, not a law of physics, and it is
+> **exactly why bd `3qlq.5` is unsound by default**: 3qlq.5 is the continuation that
+> WOULD erase it, so it must discharge the finals (and each switch delta `d_i`)
+> before it frees the source. State it this way — never as "tracing it out leaves
+> the reduced state unchanged".
+>
+> ⚠ **The sentence appears at FOUR sites, and this pass corrected THREE.** Fixed:
+> `ir-pass/src/SwapRouteEmit.cpp` step 5 (comment text only — no code, no rebuild
+> needed), `tests/e2e/slice_control_value_diamond.c`'s header (comment only; the
+> golden does not change), and `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §1.4. **STILL
+> CARRYING THE FALSE SENTENCE: `ir-pass/src/SwitchValueEmit.cpp:55`** — a FOURTH
+> site the clearance's R-2 did not enumerate, found while applying it, and left
+> untouched only because this docs pass was scoped to two named comment edits. It
+> is a one-line comment repair with no behaviour, and it is the
+> `fixture-repairs-propagate-to-every-family` lesson: a correction is not applied
+> until every family that carries the sentence has it.
+
+**E11 — Inc 2's value-arm merge is a FOURTH producer of the rail shape that leaks
+under a rolled per-bit kickback loop; the DEFECT is pre-existing on the landed
+`main` and the FIX is not on this branch** (2026-09-06, Inc-2 Rule-13 round-2
+finding F-I2-1 → bd `test_C_libtooling-7yd0`). *Placed here, out of numeric order,
+because it continues E1's subject: the value-arm merge out-rail.*
+
+The shape is **a control-owned merge whose `%out` holds a NON-constant value, then
+a classical op that M-C converts IN PLACE on that out-rail, then a ROLLED in-loop
+kickback region reading it.** The rolled loop mints one per-bit template rail per
+trip and discharges NONE; the hand-unrolled twin discharges all K. Each leaked rail
+is an entangled which-path record of one bit of the merged register, and the idiom
+is the one **D4** designates for a register-wide Z. Nothing in the tree sees it:
+`opt` exits 0, the module verifies, and STRICT stage 2b is **structurally blind** (a
+template-minted rail has no `cqrt_alloc` to count) and reports `0 violation(s)`; the
+full `ctest -j6` on the rebased tree was 361/361 green.
+
+MEASURED: the 13-line headline reproducer contains **no Inc-2 feature at all** (a
+4.4 select merge, `m = m + 7`, then D4's per-bit loop) and behaves **identically on
+`main` a3c1513 and on this branch** — rolled 44 trace lines / 4 mints / **0**
+`_unc`, unrolled 52 / 4 / **4**; at K=32 it is 240/32/**0** against 301/31/31, i.e.
+**O(K)**. Inc 2's own value-arm merge reproduces it (52 vs 60 here, 57 vs 65 on
+`main`), which is exactly what "adds a fourth producer" means: **more customers, no
+new defect.** The 4.4 select merge and Inc 2's value merge are MEASURED members; the
+6.5 classical-call arm is analytic; the 4.5 data-mux is measured OUT (its
+all-`ConstantInt` arms let `-O1` fold any preheader op into the case constants).
+
+Root cause (analytic from source): `LoopLowering.cpp`'s `commitOutOfLoopInPlaceOps`
+refuses at `!P->hasOneUse()`, and a merge out-rail structurally cannot have one use
+— the emitters write it with two `cqrt_copy_<W>_controlled` before anything reads
+it. **It is the 8h7d.5 lesson in the file that documents it:** C-1 round 2 widened
+the ROOT set (clause (ii-b)) and did not re-ask the question computed over the same
+closure.
+
+**WHERE THE FIX LIVES: not here.** It touches `LoopLowering.cpp`, Rule-13 core on
+landed `main`, and is scheduled as a separate **C-1 round 4 on `main` AFTER Inc 2
+lands** (bd `test_C_libtooling-7yd0`). This branch deliberately adds **no fixture
+that pins the leak as an accept** — that would bless it; the round-4 fix pins the
+discharge. The 18 reproducers and the full discrimination table are committed at
+`inc1-records/`'s sibling `inc2-records/README.md`. Note the overlap with **OQ-C2-1**
+(E10 item 5), which names the same `hasOneUse` conjunct from the other side.
+
+**E12 — the Increment-2 LANDING (2026-09-06), in one block.** *Placed here, out of
+numeric order, because it closes E1's and E11's subject.*
+
+**Inc 2 (bd `test_C_libtooling-3qlq.3`, value arms by the controlled-copy merge)
+LANDED on `main` 2026-09-06 as ONE squash commit** — the squash of branch
+`3qlq-inc2`, whose tip is recorded in the landing commit message (`git log main -1`
+shows the hash) — **after the independent Rule-13 clearance returned
+`CLEAR-WITH-OWNER-QUESTIONS`** (record:
+`inc1-records/session-adc5590a/inc2/clearance_inc2.md`; the clearance was READ-ONLY
+on every checkout and its subject binary was byte-identical by `cmp` to the round-2
+baseline, so every round-2 measurement transferred).
+
+*What landed, measured, not asserted:*
+
+* **The swap route is FULLY RETIRED.** `emitRoute` has the definition, the
+  declaration and **ONE call site — `AbortParkEmit.cpp:396`** (`grep -rn
+  'emitRoute(' ir-pass/src ir-pass/include`); **1 of 319 goldens** contains a
+  `cqrt_cswap` (`slice_control_abort`, the 7.2 abort park); the whole-corpus census
+  over 1687 fixtures finds `@cqrt_cswap` in 6 outputs — 5 abort-park and one whose
+  cswaps are hand-written INPUT.
+* **The witness is BYTE IDENTITY with the manually pre-hoisted `select` twin**, on
+  **four** `cmp` gates —
+  `e2e-value-{diamond,ifelse,mixedops,polarity}-twin-identical`. That comparison is
+  load-bearing precisely because the twin spelling already lowered through the
+  Rule-13-cleared 4.4 `SelectMergeEmit` on the PRE-Inc-2 binary, so it compares the
+  new stream against the OLD COMPILER's, not against itself. The clearance
+  independently reproduced 10 further diamond/twin pairs byte-identical on the
+  subject, with every twin byte-identical across all three binaries.
+* **Scope of the diff:** 8 source files (all `ir-pass/`), 22 fixtures (14 A / 8 M),
+  goldens 2 M + 9 A; **`tools/`, `runtime/` and `include/` UNTOUCHED** — owner
+  decision **D3** honoured, no new ABI symbol. Counts after: ctest **361** (`^e2e-`
+  351, `^e2e-slice-` 317), lit **1687**, goldens **319**. Full run at the landing:
+  **361/361 passed**.
+* **`0 RCDIFF · 0 DIAGDIFF · 8 OUTDIFF`** over the 1673 fixtures common to `main`
+  (the 8 are 7 Inc-2 re-derived accepts + `lowering_switch_value_nonI32_cast`);
+  injection matrix 17 accepts × 7 mutations with **0 NOT CAUGHT**; STRICT stage 2b
+  rc=0 on every accepting lowering, and a free audit over 71 subject traces found
+  232 frees, **every one preceded by a `*_unc` of that rail on an Inc-2 path**, and
+  **0** frees of a chain final, a source `p`, a delta or a merge out-rail.
+* **The OQ-22 widening is KEPT and PINNED, deliberately** (round-1 finding F-V1-1,
+  owner question): an unreviewed accept-class widening at every width, retained
+  with fixtures rather than narrowed away — it fires equally through the if/else
+  merge and through a cast off an i8 if-merge feeding a SECOND value arm. It is on
+  the owner's desk, not closed by the landing.
+* **bd `3qlq.5` (free the value-arm SOURCE) is UNSOUND BY DEFAULT** under this
+  stream and the landing does not change that — see **E1**/**E1b**. It must
+  discharge the chain finals (and each switch delta `d_i`) before it frees `p`.
+* **bd `test_C_libtooling-7yd0` (C-1 round 4)** — the PRE-EXISTING in-loop leak of
+  **E11**, of which Inc 2's merge is a FOURTH producer — is **in flight on branch
+  `c1-round4`** at the time of this landing (a one-line `LoopLowering` change: the
+  `hasOneUse` conjunct retired under the round-3 tripwire), **NOT landed**. It is
+  not Inc 2's defect and was never Inc 2's to fix on its own branch.
+* **What the clearance left open** is two new owner questions, both PRE-EXISTING
+  and both measured identical on all three binaries (oracle 52d7764, `main`
+  a3c1513, subject): **OQ-C3-1** — a value DIAMOND followed by a rotation on its
+  result declines `cq opcode lowering: operand predates a non-diagonal gate` while
+  the pre-hoisted `select` twin accepts, i.e. "value arm, then diffuse" is not
+  writable as a diamond today; and **OQ-C3-2** — `int p = q * 3; if (q>5) R6(p);`
+  declines `non-routable value multiplexer` because instcombine reassociates the
+  derivation into the chain head. Both are folded into bd
+  `test_C_libtooling-3qlq.14` (the base-from-cond asymmetry), together with the
+  standing OQ-11/12/13/22/23. Record items **R-1**/**R-2** are applied as **E1a**
+  and **E1b** above.
 
 **E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
 The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →
@@ -443,6 +623,28 @@ angles). The Ry stem is untouched (constant arms only, 2b clearance F-11).
 `out ^= f ? t : 0`; `out ^= ¬f ? p : 0`; `t` uncomputed by `_unc` (a function of
 the unchanged `p`); strip `f`. `out = f ? R(p) : p`; `t`, `f` freed clean; `p`
 stays allocated and entangled with `out` — exactly as the swap route leaves it.
+
+> ⚠ **ERRATA (Inc-2 Rule-13 round 1, findings F-V1-4 / F-V2-3 — measured, not a
+> design change).** The two sentences above are true of `f` and of `p` and FALSE
+> of `t`. As shipped, the chain's INTERMEDIATES are `_unc`'d and freed by the
+> whole-DAG spine, but the chain's FINAL rail `t = R(p)` — whose live consumer is
+> the controlled copy — is left **allocated and DIRTY**, never `_unc`'d and never
+> freed (an if/else leaks two; the §7.2 V3 switch also leaks each delta `d_i`).
+> Rule-6 sound while `p` is retained, and `free_pairing_check.py` STRICT is clean
+> — it is a leak, never a dirty free — but the LEAK CLASS is not the route's: the
+> route returned every rail it minted to |0⟩. Consequence for §9 follow-on
+> **3qlq.5 (free the value-arm SOURCE): it is UNSOUND BY DEFAULT under this
+> stream** and must discharge the finals/deltas first, because they still record
+> `p`. Full account and the measured allocated/dirty counts:
+> `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §1. ⚠ **And do not restate the soundness of
+> that leak as "tracing the ancilla out leaves the reduced state unchanged" — that
+> is FALSE as a density-matrix claim** (it dephases the off-diagonals between `p`
+> and `p′` with `R(p) ≠ R(p′)`). The true and sufficient statement is §0 **E1b**:
+> relative to the source's live registers the reduced state equals the ROUTE's
+> because the retained `p_old` already determines `R(p_old)`, and no
+> CQ-expressible continuation can observe the difference because `out`'s own
+> retained label records it and the ABI mints no in-place Q+Q gate on `out` —
+> which is exactly why 3qlq.5 is the continuation that breaks it.
 Speculating `R` is sound because every arm op is a pure TOTAL template and the
 §3c clobber decline already refuses an arm that rewrites a register the
 condition reads; the 6.5 classical-call arm hoisted on the same argument.
@@ -559,6 +761,26 @@ nest (SimplifyCFG's fold threshold); both forms are in scope.
 
 ## 7. Increment 2 — value arms by controlled-copy merge
 
+> **STATUS (2026-09-06). LANDED on `main`** as ONE squash commit — the squash of
+> branch `3qlq-inc2`, whose tip is recorded in the landing commit message (`git log
+> main -1` shows the hash) — **after the independent Rule-13 clearance returned
+> `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `inc1-records/session-adc5590a/inc2/clearance_inc2.md`). Full landing summary and
+> every measured figure: **§0 E12**. History: implemented on branch `3qlq-inc2`,
+> **rebased onto the landed `a3c1513`** (notes §3), Rule-13 reviewed **twice** —
+> round 1 (notes §1) and round 2 (notes §4) — with round 2 CLEAR on the mechanism
+> (0 RCDIFF / 0 DIAGDIFF over the 1673 fixtures common to `main`, zero value-path
+> `cqrt_cswap`, per-fixture `cqrt_rz_i1` / `!cq.branchphase` parity, four `cmp` twin
+> gates, and a 15 × 7 injection matrix with 0 NOT CAUGHT), then cleared (notes §5)
+> and landed. **With Inc 1 this fully retires the swap route:** `cqrt_cswap` is
+> minted by the 7.2 `AbortParkEmit` alone (`emitRoute` = ONE call site,
+> `AbortParkEmit.cpp:396`; 1 of 319 goldens). Round 2's one LEAK (F-I2-1) is
+> PRE-EXISTING on `main`, is not introduced here, and is filed out of this epic as
+> bd `test_C_libtooling-7yd0` (C-1 round 4, in flight on branch `c1-round4` at the
+> landing, NOT landed); Inc 2's only relationship to it is that its value-arm merge
+> is a FOURTH producer of the rail shape (E11). The sections below are the
+> DESIGN as written; where they and the errata disagree, §0 wins.
+
 ### 7.1 The shipped stream, and the replacement
 
 `slice_control_value_diamond` (`if (q > 5) { p = p+3; p = p*5; p = p^9; p = p+1;
@@ -569,6 +791,25 @@ cswap(f,p,h9); alloc out; copy(p,out); cswap; 6 _unc; cswap; free w; strip; free
 After: `6 ops on p → h9; alloc out; copy_controlled(f, h9, out); x(f);
 copy_controlled(f, p, out); x(f); 6 _unc; strip; free f` — **2 `copy_controlled_W`
 (2W Toffoli), no work rail**. The arm's ops run twice in both.
+
+> ⚠ **ERRATA (same finding as §3's).** "`6 _unc`" is the design intent and not
+> what ships: the chain final `h9` is left allocated and dirty, and the interior
+> links are reversed but **not as five `_unc` calls** — see §0 **E1a** for the
+> shipped count, taken from the golden. *(This sentence read "it is **5** here —
+> the interior links" until 2026-09-06; the clearance's record item R-1 measured
+> that 5 is not the count of anything in the trace. The flagship golden's interior
+> rail is discharged by ONE `cq_template_mul_i32_hl_unc` + TWO in-place adjoints +
+> ONE free, because M-C converts the `add`/`xor` links IN PLACE on the fresh
+> intermediate rails, and an in-place link is reversed by an in-place adjoint, not
+> by an `_unc` call. Count it in the golden, never here.)* Two further deltas from this sentence, both measured and
+> both `lowerOps` consequences of hoisting the links as ordinary instructions
+> rather than emitting a gate stream: (i) the hoisted chain is NOT all
+> out-of-place, because M-C converts `add`/`xor` links IN PLACE on the FRESH
+> intermediate rails (never on `p`, which always has a later reader — that
+> disposition is now pinned by `control_swap_value_ifelse_head_out_of_place.ll`);
+> and (ii) the emitted stream is byte-identical to the manually pre-hoisted
+> `select` twin BECAUSE of (i), so forcing the chain out of place would break the
+> increment's own witness.
 
 The tree already does this INCONSISTENTLY: `-O1` speculates a short pure arm into
 a `select` itself, so a one-op arm takes `SelectMergeEmit` and a six-op arm takes

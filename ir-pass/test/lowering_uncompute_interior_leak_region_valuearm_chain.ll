@@ -24,42 +24,40 @@
 ; inert. The licence MOVED TO THE GATE and got stronger there
 ; (`preservesBorrowedParent` clause (1b): a controlled Rz is `diag(1,e^{iθ})` on
 ; `f=1` and `I` on `f=0`, so the base's label is never moved, not
-; moved-and-restored). Nothing about THIS fixture's verdict changes — the value
-; arm's route is what leaks, and it was never recorded either. Corrected in the
-; Inc-2a round-1 review (L3 F3).
+; moved-and-restored). Corrected in the Inc-2a round-1 review (L3 F3).
 ;
-; `emitValueRegion` records NEITHER, and the reason is
-; visible three lines apart in the stream below: its second `cqrt_cswap` swaps
-; the ARM'S ANSWER (`%h_op5`) onto the base, and the third swaps the rail back —
-; the group is not label-restoring, so clause (d2) has nothing true to say about
-; it. Its strip is read-only on its own, but admitting the strip WITHOUT the
-; route would move the discharge past a swap the scan cannot exempt (that is
-; bd test_C_libtooling-6uqc.2's "needs its own argument").
-;
-; SO: `%h_op8` (the QQ `add` rail the compare reads) is LEFT ALLOCATED — never
-; `_unc`'d, never freed, Rule 6's fallback. `%h_op7` (the `ashr`) DOES discharge,
-; and that discrimination is the point of the fixture: the partition is alive in
-; this module and is refusing exactly one rail, for exactly one reason. If a
-; later increment records the value-arm strip, this fixture must be
-; re-dispositioned deliberately with the route argument written down.
+; ⚠⚠ THE VALUE ARM'S ROUTE IS GONE TOO, SINCE bd test_C_libtooling-3qlq Inc 2
+; (2026-09-05). `emitValueRegion` now HOISTS the arm chain into the pred and hands
+; the region to the 4.4 `emitSelectRegion` controlled-copy merge — there is no
+; `cqrt_cswap`, no work rail and no reverse-play anywhere in this module any more.
+; THE VERDICT IS UNCHANGED AND THE REASON IS NOT: the leak used to be attributed to
+; the non-label-restoring cswap group, which no longer exists. The live reason is
+; the OTHER half of the same sentence — `emitSelectRegion` (like `emitValueRegion`
+; before it) records NOTHING in `DischargedFlagGates`, so clause (c) refuses to
+; move a discharge past the flag strip and `%h_op2` (the QQ `add` rail the compare
+; reads) is LEFT ALLOCATED: never `_unc`'d, never freed, Rule 6's fallback.
+; `%h_op` (the `ashr`) DOES discharge, and that discrimination is still the point
+; of the fixture: the partition is alive in this module and is refusing exactly one
+; rail, for exactly one reason. If a later increment records the select/value
+; strip, this fixture must be re-dispositioned deliberately.
 ;
 ; NOTHING NON-DIAGONAL FOLLOWS, so the leak dephases nothing here; if it did, the
 ; late M-A guard owns the loud decline (that is the `a8` spelling — add an
 ; S-dagger and this program declines at ArmClassify before it ever gets here).
 ;
-; NO RED STATE EXISTS on any earlier plugin (it leaks on `439dae3` and `f27c7fd`
-; too). Its discriminator is a MUTATION, MEASURED: replacing clause (c)'s
-; `taint.DischargedFlagGates.count(C)` membership test with a NAME test
-; (`getName().ends_with("_unc")`) reddens this fixture together with
+; Its discriminator is a MUTATION, MEASURED (on the pre-3qlq tree): replacing
+; clause (c)'s `taint.DischargedFlagGates.count(C)` membership test with a NAME
+; test (`getName().ends_with("_unc")`) reddens this fixture together with
 ; lowering_uncompute_interior_leak_unrecorded_strip.ll,
 ; lowering_uncompute_interior_leak_select_cond_chain.ll AND the COMP prefix of
-; lowering_fp80_union_multiblock.ll (four fixtures, re-measured by the Inc-6
-; fix-round re-review), while every recorded-strip accept stays green. That is exactly the "membership, never a name test"
-; fence the header of `TaintSet::DischargedFlagGates` claims.
+; lowering_fp80_union_multiblock.ll, while every recorded-strip accept stays
+; green. That is exactly the "membership, never a name test" fence the header of
+; `TaintSet::DischargedFlagGates` claims.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOCHAIN < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -88,29 +86,35 @@ define i32 @valuearm_derived(i32 noundef %0) {
   ret i32 %18
 }
 
-; The region LOWERS as a method-B value arm — route in, arm ops verbatim on the
-; work rail, route the answer onto the base, copy out, route back, reverse-play,
-; route the rail back, free, strip:
+; The region LOWERS as a hoisted value arm merged by two controlled copies:
 ; CHECK-LABEL: define i32 @valuearm_derived(
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
 ; CHECK:      %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %0)
-; The FIRST chain rail discharges normally (all its consumers are to its left):
+; The FIRST condition-chain rail discharges normally (all its consumers are to
+; its left); the SECOND (%[[ADD]], read by the compare) does not — see NOCHAIN.
 ; CHECK:      %[[SH:[a-zA-Z0-9_.]+]] = call i32 @cq_template_ashr_i32_hl(i32 %[[Q]], i32 2)
 ; CHECK-NEXT: %[[ADD:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32(i32 %[[Q]], i32 %[[SH]])
 ; CHECK-NEXT: call void @cq_template_ashr_i32_hl_unc(i32 %[[SH]], i32 %[[Q]], i32 2)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[SH]])
+; the HOISTED arm chain on the original %p (M-C converts the in-place links on
+; the FRESH intermediate rails, never on %p — %p has a later reader)
+; CHECK:      %[[C1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[P]], i32 5)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[C1]], i32 15)
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[C1]], i32 9)
+; CHECK-NEXT: %[[ANS:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[C1]], i32 7)
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[C1]], i32 9)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[C1]], i32 -15)
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[C1]], i32 %[[P]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[C1]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[ANS]], i32 7)
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[ANS]], i32 2)
+; the controlled-copy merge
 ; CHECK-NEXT: %[[FLAG:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[ADD]], i32 5)
-; CHECK-NEXT: %[[RAIL:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[FLAG]], i32 %[[P]], i32 %[[RAIL]])
-; This is the swap that is NOT label-restoring — the ARM'S ANSWER goes onto the
-; base, the copy-out reads it, and only then is the rail swapped back:
-; CHECK:      %[[ANS:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 {{.*}}, i32 2)
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[FLAG]], i32 %[[P]], i32 %[[ANS]])
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
-; CHECK-NEXT: call void @cqrt_copy_i32(i32 %[[P]], i32 %[[OUT]])
-; CHECK-NEXT: call void @cqrt_cswap(i32 %[[FLAG]], i32 %[[P]], i32 %[[ANS]])
-; CHECK:      call void @cqrt_cswap(i32 %[[FLAG]], i32 %[[P]], i32 %[[RAIL]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[RAIL]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[ANS]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[FLAG]])
+; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[FLAG]], i32 %[[P]], i32 %[[OUT]])
+; CHECK-NEXT: call void @cqrt_x(i32 %[[FLAG]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[FLAG]], i32 %[[ADD]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[FLAG]])
 ; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Q]])
@@ -124,3 +128,8 @@ define i32 @valuearm_derived(i32 noundef %0) {
 ; NOCHAIN-NEXT: call void @cqrt_free(i32 %[[FLAG2]])
 ; NOCHAIN-NOT:  call void @cq_template_add_i32_unc(i32 %[[ADD2]],
 ; NOCHAIN-NOT:  call void @cqrt_free(i32 %[[ADD2]])
+
+; Whole-file PURE-NEGATIVE: the value-arm route is retired (3qlq Inc 2).
+; NOROUTE-NOT: cqrt_cswap
+; NOROUTE-NOT: call void @cqrt_copy_i32(
+; NOROUTE-NOT: phi i32
