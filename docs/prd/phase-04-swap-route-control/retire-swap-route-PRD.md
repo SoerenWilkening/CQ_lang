@@ -115,6 +115,37 @@ region flattens into the very `Pred` a round-1 region already used (fixed by mak
 (38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical` (47 = 47,
 was 41 vs 47), plus three lit accepts and two accept-and-leak controls.
 
+⚠⚠⚠ **AND THE THIRD C-1 REVIEW ROUND (2026-09-06) FOUND THAT THE SECOND ROUND'S OWN FIX HAD
+INTRODUCED A CONFIRMED MISCOMPILE, then found a SECOND one while building the tripwire for the
+first** (notes §3.11). Read the count as *seven* things this row did not cover, found over
+FOUR rounds on one function, and budget a fifth. **F-C1B-1**: the F-C1-1 commit asks
+`classifyInPlaceReassignment` at ROUND 1 and `lowerOps` honours the marking unconditionally,
+so a "classical immediate" that becomes TAINTED at round 2 (anything derived from a 6.5/4.5
+`%out`) was emitted as the classical operand of an in-place gate —
+`cqrt_addc_i32(%h4, %h_op)`, a QUANTUM RAIL HANDLE IN THE ABI'S CLASSICAL-IMMEDIATE SLOT,
+printed as the bare decimal `6`; the commuted spelling MUTATES THE WRONG RAIL. Four plain-C
+programs, `opt` exit 0, verify-clean, STRICT 2b clean, all correct on 542d588 and on the
+round-1 fix. The `hasOneUse` conjunct guarded G6/G7 and NOTHING guarded G2 — the 8h7d.5 lesson
+a fifth time. **F-C1C-1**: `hasOneUse` does not bound the post-RAUW user set either, because
+`lowerRotations` merges a whole theta chain onto ONE handle — `int q2=cq_theta(q,.3); int
+a=q2+7; … cq_measure(q)` made `q` and `a` the SAME register on the round-2 binary (measures
+`h0`,`h1`,**`h0`** where 542d588 and the hand-unrolled twin give `h0`,`h1`,**`h2`**). FIXED by
+(1a) a MONOTONE `isa<Constant>(Imm)` fence at the commit and (1b) a LOUD RE-VERIFICATION of
+the ONE fence at `lowerOps` for exactly the ops this path marked
+(`cq loop lowering: pre-loop in-place op no longer provable at lowering`; a silent fallback to
+out-of-place is not sound, because the body marking the commit licensed already stands). The
+same round narrowed `taint.ClaimedRailRoots` from a module-wide set of ROOTS to
+`(root, the CLAIMING loop's header)` — **F-C1B-2** — after measuring a program where loop A's
+claim marked loop B's body on a rail loop B never proved.
+⚠ **TWO THINGS THE ROUND-3 FIX DOES NOT COVER, and both are NEW ENTRIES ON THIS LIST rather
+than inherited ones.** (a) A **`volatile`-load immediate** on the preheader op
+(`q = q + off;`) is no longer committed, so that loop returns to the pre-round-2 leak — 3
+mints / 0 `_unc`, byte-identical to 542d588 and to the round-1 fix. M-C itself still lowers
+the op in place; only the PREDICTION of that answer is refused (owner question OQ-C1-8).
+(b) A **chained-theta wire whose PRE-op SSA name is read after the loop** now DECLINES loudly
+where 542d588 accepted-and-leaked — F-C1C-1's own program, and the one-token workaround
+(dropping that read) still compiles and still discharges every per-trip rail (OQ-C1-7).
+
 ⚠ **The other two are UNCHANGED and both remain Prime-Directive refusals rather than
 proofs.** (i) A hoisted loop-invariant **TEMPLATE** rail read by the body's condition is
 still refused and still leaks — **and the disclosure is now "ANY loop-invariant TEMPLATE

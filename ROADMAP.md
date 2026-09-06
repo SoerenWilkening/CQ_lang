@@ -389,7 +389,25 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > (written at both collapse sites) and by making `taint.InLoopFlattenedPreds` a
 > per-block COUNT. Witnessed by `e2e-phase-perbit-loop-mixed-preadd-twin-identical`
 > (38 = 38, was 32 vs 38) and `e2e-phase-onward-perbit-loop-mixed-twin-identical`
-> (47 = 47, was 41 vs 47). **A re-clearance is pending; landing on `main` follows the
+> (47 = 47, was 41 vs 47).
+> **⚠⚠ AND THE LENS ON *THAT* ROUND FOUND THAT THE SECOND FIX HAD INTRODUCED A
+> CONFIRMED SILENT MISCOMPILE OF ITS OWN, fixed in a THIRD, NARROWING-ONLY round on
+> the same branch (2026-09-06, findings F-C1B-1 / F-C1C-1 / F-C1B-2 —
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3.11):** the round-2 commit asks
+> `classifyInPlaceReassignment` at ROUND 1 and `lowerOps` honours the marking without
+> re-asking, so an immediate that becomes TAINTED at round 2 was emitted as
+> `cqrt_addc_i32(%h4, %h_op)` — a quantum rail handle in the ABI's classical-immediate
+> slot (the commuted spelling mutates the WRONG rail); and its `hasOneUse` stability
+> conjunct is true of the SSA VALUE but false of the WIRE, because `lowerRotations`
+> RAUWs a whole theta chain onto ONE handle. Fixed by a MONOTONE `isa<Constant>(Imm)`
+> fence at the commit plus a LOUD re-verification of the same fence at `lowerOps`
+> (`cq loop lowering: pre-loop in-place op no longer provable at lowering`), and by
+> narrowing `taint.ClaimedRailRoots` to `(root, the CLAIMING loop's header)`. Over the
+> whole 262-program reproducer corpus the round-2 binary and this one differ on **6
+> programs and no others**, every one in the refuse direction; `e2e-loop-twin-matrix`
+> **Passed, 181.66 s** with no cell moved. That makes it **seven instances of one
+> defect class over five adversarial rounds on one function.**
+> **A re-clearance is pending; landing on `main` follows the
 > re-clearance verdict — do not read this block as landed.** `cq_phi` is
 > **register-free** —
 > `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
@@ -843,7 +861,9 @@ after a statevector-checked design dialogue; see
   were TRACE-DIVERGENCE on 542d588 AND on the round-1 fix and are ACCEPT-IDENTICAL
   now, measured by hand on all three binaries; all **1136** pre-existing generated
   sources hash identically (twice — once after the `preloop` slot, once after the
-  cells) and the quarantine file is byte-unchanged. The `xor` spelling of the same
+  cells) and the quarantine file is byte-unchanged. **The THIRD C-1 round (narrowing
+  only) added NO cell and moved NONE: 257 + 29 = 286, `e2e-loop-twin-matrix`
+  Passed, 181.66 s.** The `xor` spelling of the same
   axis is DROPPED with its measurement in the code: `xor` distributes over a bit
   test, so `-O1` rewrites the FLAT side's `((a^9)>>i)&1` onto the PRE-xor register
   and the two spellings stop being the same program — the `addpost` precedent, not a
