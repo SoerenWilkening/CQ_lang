@@ -269,9 +269,12 @@ the `inc2-records/` duplication cross-referenced) and the `q4b` re-measurement t
 vs 4/4 at 60 — `cmp` DIVERGE 8 — on `main` 258d974. NO FINDING: nothing moved that should not
 have, and no twin-matrix cell moved.**
 
-## 1 — what shipped (branch `c1-round4`, now **15 commits** on `main` b99b853; tip `cc0399b`)
+## 1 — what shipped (branch `c1-round4`, on `main` b99b853)
 
-Round 4's own ten commits, rebased unchanged, plus **five new**:
+Round 4's own **ten** commits, rebased unchanged, plus the **five** below, plus the record commits
+that carry this very file (which is why no hash is quoted for the tip: it moves each time this
+file is corrected — `git log --oneline main..HEAD | wc -l` and `git rev-parse HEAD` on the handed-
+off branch are authoritative, and the hand-back message reports both as measured at hand-off):
 
 | commit | contents |
 |---|---|
@@ -350,3 +353,12 @@ denominator does not, so §3.14 now carries the census with the command that pro
   and `q5v_xor` have no faithful twin), and everything on the epic's standing list.
 * Branch committed, **NOT pushed**. No bd issue closed or edited. The main checkout was never
   edited, rebuilt, or `git`-mutated.
+
+---
+### Hand-off state (measured at hand-off)
+* branch `c1-round4`, `git log --oneline main..HEAD | wc -l` = **17** (`main` = b99b853).
+  ⚠ The TIP HASH is deliberately not written here: this file is committed ON that branch, so
+  quoting its own tip is self-referential and goes stale on the next amend — `git rev-parse
+  c1-round4` is the answer, and the agent's final message reports it as measured at hand-off.
+  `git status --porcelain` EMPTY; `find ir-pass/{src,include,tools} -newer build/ir-pass/cq-opt`
+  EMPTY. NOT pushed. The main checkout is untouched at b99b853 and was never built this session.
