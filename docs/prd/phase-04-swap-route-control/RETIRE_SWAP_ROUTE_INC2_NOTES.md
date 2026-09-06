@@ -1,8 +1,19 @@
 # Increment 2 implementation notes — value arms by controlled-copy merge
 
+> **STATUS: LANDED on `main` 2026-09-06 as ONE squash commit** — the squash of
+> branch `3qlq-inc2`, whose tip is recorded in the landing commit message (`git log
+> main -1` shows the hash) — **after the independent Rule-13 clearance returned
+> `CLEAR-WITH-OWNER-QUESTIONS`** (§5 below; record
+> `inc1-records/session-adc5590a/inc2/clearance_inc2.md`). With Increment 1 this
+> **fully retires the swap route**: `cqrt_cswap` is minted by the 7.2
+> `AbortParkEmit` ALONE (`emitRoute` = the definition, the declaration and ONE call
+> site, `AbortParkEmit.cpp:396`; 1 of 319 goldens contains a `cqrt_cswap`). The
+> landing summary with every measured figure is PRD §0 **E12**.
+>
 > bd `test_C_libtooling-3qlq` child `3qlq.3`, implementing PRD §7. The increment
 > itself is recorded in `$SP/progress/impl_inc2.md`; **this file is the round-1
-> record.** Written on branch `3qlq-inc2` against the pre-3qlq **oracle**
+> record** (§1–§2), joined by the rebase (§3), round 2 (§4) and the clearance (§5).
+> §1 was written on branch `3qlq-inc2` against the pre-3qlq **oracle**
 > `52d7764` and the increment's own **subject-before** binary `8c526d9`, both
 > named explicitly wherever a number is quoted.
 >
@@ -149,7 +160,22 @@ with "`t`, `f` freed clean". **As shipped that is true of `f` and of `p`, and
 false of `t`.** The chain's INTERMEDIATES are `_unc`'d and freed by the whole-DAG
 spine; the chain's **FINAL** rail `t = R(p)`, whose live consumer is the
 controlled copy, is left **allocated and DIRTY**. An if/else leaks two; the V3
-switch leaks each delta `d_i` as well. V2's basis-state evaluator quantified it —
+switch leaks each delta `d_i` as well.
+
+> ⚠ **AND THE ERRATA'S OWN REPLACEMENT COUNT WAS WRONG TOO — corrected 2026-09-06
+> (clearance record item R-1 — PRD §0 E1a).** The PRD errata this section produced
+> said the shipped stream has "**5** `_unc` — the interior links". **5 is not the
+> count of anything in the trace.** MEASURED in the flagship golden
+> `tests/e2e/slice_control_value_diamond.expected.log`: the interior rail `h2` is
+> discharged by **ONE** `cq_template_mul_i32_hl_unc(h2, h1, 5)`, **TWO IN-PLACE
+> ADJOINTS** (`cqrt_xorc_i32(h2, 9)`, `cqrt_addc_i32(h2, -15)`) and **ONE**
+> `cqrt_free(h2)`; the final rail `h3` (`mul_i32_hl → h3`, `addc(h3, 7)`,
+> `xorc(h3, 2)`) is left allocated and dirty. The count came from treating design
+> "links" as emitted `_unc` calls, which stops being one-for-one the moment M-C
+> converts a link IN PLACE on a fresh intermediate rail — an in-place link is
+> reversed by an in-place adjoint, not by an `_unc`. **Count it in the golden.**
+
+V2's basis-state evaluator quantified it —
 registers still allocated at program end / how many hold a non-|0⟩ label:
 
 | program | route (`main`) | Inc 2 |
@@ -159,11 +185,31 @@ registers still allocated at program end / how many hold a non-|0⟩ label:
 | 3-content-case switch | 6 / **3** | 6 / **6** |
 
 Total allocation goes DOWN; the count of permanently-dirty rails goes **up by one
-per arm/case**. It is Rule-6 sound — `R(p)` is a deterministic function of the
-RETAINED `p`, so writing it into a fresh |0⟩ ancilla is a unitary on
-(p, ancilla) and tracing the ancilla out leaves the reduced state on (q, p, out)
-unchanged — and it is a **leak, never a dirty free**: `free_pairing_check.py`
-STRICT is rc=0 everywhere, and V2's evaluator reports zero dirty frees.
+per arm/case**. It is Rule-6 sound, and it is a **leak, never a dirty free**:
+`free_pairing_check.py` STRICT is rc=0 everywhere, and V2's evaluator reports zero
+dirty frees.
+
+> ⚠ **CORRECTED 2026-09-06 (clearance record item R-2 — PRD §0 E1b).** This
+> paragraph used to justify the soundness as: *"`R(p)` is a deterministic function
+> of the RETAINED `p`, so writing it into a fresh |0⟩ ancilla is a unitary on
+> (p, ancilla) and tracing the ancilla out leaves the reduced state on (q, p, out)
+> unchanged."* **The last clause is FALSE as a density-matrix statement** — tracing
+> the ancilla out DOES dephase the off-diagonals between `p` and `p′` whenever
+> `R(p) ≠ R(p′)`. A reader who tests the sentence as written finds it wrong, which
+> is precisely the failure mode this file family exists to catch. **The true and
+> sufficient statement, in two clauses:** (a) relative to the SOURCE PROGRAM's live
+> registers `(q, out)` the reduced state equals the ROUTE's, because the retained
+> `p_old` already determines `R(p_old)`; and (b) on `(q, p_old, out)` **no
+> CQ-expressible continuation can observe the difference**, because `out`'s own
+> retained label already records `R(p_old)` on the arm branch and `p_old` on the
+> other, and the ABI mints **no in-place Q+Q gate on `out`** that could erase it
+> (`cqrt_copy_<W>_controlled` is minted only with a FRESH `|0⟩` destination).
+> Clause (b) is a fact about the shipped ABI, not a law of physics — and it is
+> exactly why **3qlq.5 is unsound by default**: 3qlq.5 IS the continuation that
+> would erase it. Sites: `SwapRouteEmit.cpp` step 5 and
+> `slice_control_value_diamond.c`'s header corrected with this note;
+> **`SwitchValueEmit.cpp:55` still carries the old sentence** — a fourth site R-2
+> did not enumerate, owed a one-line comment repair.
 
 **But the leak class is not the route's**, which returned every rail it minted to
 |0⟩, and that difference is load-bearing for PRD §9 follow-on **3qlq.5 (free the
@@ -493,7 +539,8 @@ body with `int t = R(p); p = (q>5) ? t : p;`.
 > ⚠ **NUMBERED §4, not "§2 — round 2".** The `fix_inc2_r2` brief calls this
 > section "§2"; §2 was already taken by round 1's re-measure ledger and §3 by the
 > rebase, so round 2's record is §4 and nothing was renumbered. Read §1 (round 1),
-> §2 (what round 1 measured), §3 (the rebase) and §4 (round 2) in that order.
+> §2 (what round 1 measured), §3 (the rebase), §4 (round 2) and **§5 (the
+> clearance and the landing)** in that order.
 
 One READ-ONLY lens (`review_inc2_r2`, subject `3qlq-inc2` @ `6ee3ea3`, controls
 `main` a3c1513 = INC-1-ONLY and the pre-3qlq oracle 52d7764) and one fix agent
@@ -740,3 +787,120 @@ after the replay (identical for six of seven; the fixture 116 → 115, exactly t
 * **A mutation build and its revert** (§4.3), with `cmp` proving the tree restored.
 * It did **NOT** run the full `ctest`, the loop-twin matrix, `frontend-lit`, the
   runtime entries, or the e2e suite beyond the 15 entries named above.
+
+---
+
+## §5 — The Rule-13 CLEARANCE, and the landing (2026-09-06)
+
+> Record: `inc1-records/session-adc5590a/inc2/clearance_inc2.md` (the full report,
+> the 83-program probe table `clearance_inc2_table.txt`, the census, the injection
+> matrix and the free audit). Agent `clearance_inc2`, **READ-ONLY on every
+> checkout** — nothing on this branch was written by it. Subject `3qlq-inc2` at the
+> round-2 tip, MEASURED **byte-identical by `cmp`** to the round-2 baseline
+> binaries, so every §4 measurement transferred; controls were `main` a3c1513
+> (INC-1-ONLY) and the pre-3qlq oracle 52d7764.
+
+### VERDICT: `CLEAR-WITH-OWNER-QUESTIONS`
+
+**On that verdict Increment 2 LANDED on `main` 2026-09-06 as ONE squash commit** —
+the squash of branch `3qlq-inc2`, whose tip is recorded in the landing commit
+message (`git log main -1` shows the hash). PRD §0 **E12** is the landing summary.
+
+**The three clearance questions, as answered.**
+
+* **Q1 — a different unitary at `opt` exit 0?** Not found. 83 plain-C programs
+  through the full pipeline on the subject and on INC-1-ONLY (and on the oracle for
+  the 71 the pre-3qlq header compiles); STRICT 2b rc=0 on every accept; **10
+  diamond/twin pairs byte-identical on the subject**, with every twin also
+  byte-identical across all three binaries — so the witness is the PRE-Inc-2
+  compiler's own stream for the manually hoisted program, not a self-comparison;
+  rolled == unrolled byte-identical for a value merge feeding a per-bit kickback
+  loop; the basis-state evaluator OK on all 27 subject traces that changed
+  mechanism (3000–3360 inputs each, 0 dirty frees); two GENUINE round-2 value
+  diamonds (condition read off a 4.5 data-mux out-rail, and off a 6.5
+  classical-call arm with a non-foldable argument) lower by the merge and evaluate
+  correctly. Every accept is FLAT — in-loop value arms decline on all three
+  binaries.
+* **Q2 — a dirty free, or a rail left dirty where the oracle discharged it?** No
+  dirty free anywhere: the free audit over 71 subject traces found **232 frees,
+  every one preceded by a `*_unc` of that rail on an Inc-2 path, and 0 frees of a
+  chain final, a source `p`, a delta or a merge out-rail**. What Inc 2 leaves dirty
+  that the route zeroed is the chain final (§1.4 / PRD **E1**) — and that is not
+  Q2's class: the oracle left `p` and `out` equally entangled.
+* **Q3 — pinned, mirrored, truthful?** Injection matrix 17 accepts × 7 mutations,
+  **0 NOT CAUGHT** (the one CONTROL FAILED is the known `INPUT`-prefix tool
+  artefact, that prefix being checked against `%s`); every decline fixture mirrors
+  its source string character-for-character; whole-corpus census over 1687
+  fixtures = 829 accept / 858 decline with `#cqrt_rz_i1 == #!cq.branchphase` in
+  every accepting output (263 = 263) and **0** non-`i1` Rz calls; fxdiff over the
+  1673 fixtures common to `main` = **0 RCDIFF / 0 DIAGDIFF / 8 OUTDIFF**.
+
+### What the verdict leaves open
+
+**Two new owner questions, both PRE-EXISTING and both measured IDENTICAL on all
+three binaries** (oracle 52d7764, `main` a3c1513, subject) — neither is a defect
+this increment introduced, and both are in the SAFE (over-decline) direction:
+
+* **OQ-C3-1 — a value DIAMOND followed by a rotation on its result declines; the
+  pre-hoisted `select` spelling accepts.** `if (q>5) R6(p); p = cq_theta(p, 0.9);`
+  declines `cq opcode lowering: operand predates a non-diagonal gate` on all three
+  binaries, while `int t = R(p); p = (q>5) ? t : p; p = cq_theta(p, 0.9);` ACCEPTS
+  at 24 trace lines, byte-identical on all three (reproducers
+  `p/b27_ry_on_merge{,_twin}.c` in the clearance work dir). Same disposition for an
+  angle select on the merge (`b26`) and an Ry on the SOURCE alias after the region
+  (`b28`). It is reached through `declineStaleRecordOps`, which runs BEFORE
+  `detectControlRegions` and reads the merge φ as an SSA alias of `p` on the
+  straight-through edge — not through the classifier. **What it costs: "value arm,
+  then diffuse" is not writable as a diamond today.**
+* **OQ-C3-2 — another member of the base-from-cond asymmetry (F-I2-7).**
+  `int p = q * 3; if (q>5) R6(p);` declines `non-routable value multiplexer` on all
+  three while the pre-hoisted twin ACCEPTS (22 lines, byte-identical on all three;
+  `p/b46_base_mul_of_cond{,_twin}.c`) — instcombine reassociates `(q*3)+3 →
+  (q+1)*3`, moving the chain base onto `q`. `b4`/`b4b` (`p = p + 7` before the
+  diamond) are the same mechanism with the `+3` head. **The class is "any
+  preheader/derivation op that instcombine can fold into the chain head", not only
+  `q + 11`.**
+
+**Both are folded into bd `test_C_libtooling-3qlq.14`** — the base-from-cond
+asymmetry issue — together with F-I2-7 (§4.5), which is the same family from the
+other side.
+
+**Standing owner questions, re-measured by the clearance and unchanged:** OQ-11
+(Q+Q condition — fenced and pinned), OQ-12 (run-time shift amount), **OQ-13** (the
+`value-arm swap-route` diagnostic string names a RETIRED mechanism; all 6 emission
+sites still route through `diagnoseUnderControl` and 28 fixtures pin the string, so
+renaming it is an owner decision, not a free edit), **OQ-22** (the round-1 F-V1-1
+accept-class widening — **KEPT and PINNED** by owner question rather than narrowed
+away; the clearance notes it fires equally through the if/else merge, `b6b`, 39
+lines, and through a cast off an i8 if-merge feeding a SECOND value arm, `b6d`, 44
+lines), OQ-23 (the basis-state evaluator as a possible `tools/` instrument, with
+three model limitations recorded: `sext` modelled as identity, non-commutative
+`_lh` stems evaluated as handle-op-literal, and the trace runtime's `cq_measure →
+0` baked into later literals).
+
+**bd `test_C_libtooling-7yd0` (C-1 round 4)** — the PRE-EXISTING in-loop leak of
+§4.1 / PRD **E11** — was **in flight on branch `c1-round4` and NOT landed** at the
+time of the Inc-2 landing. It is not Inc 2's defect; Inc 2's only relationship to
+it is being a FOURTH producer of the rail shape. **bd `3qlq.8`** (the phase half of
+the i128 gap) is likewise unmoved.
+
+**Record items R-1 and R-2 are APPLIED**, as PRD §0 **E1a** (the "5 `_unc`" count
+that matched no golden) and **E1b** (the density-matrix sentence that was false as
+written), and in §1.4 above. R-2's fourth site, `SwitchValueEmit.cpp:55`, still
+carries the old sentence and is owed a one-line comment repair — recorded rather
+than silently left, because a correction applied to three of four families is the
+`fixture-repairs-propagate-to-every-family` failure mode.
+
+### What the clearance ran, and what it did not
+
+Ran: an 83-program probe sweep on three binaries (stage 1 → 2 → STRICT 2b → 3 → 4),
+all 12 committed Inc-2 slices re-derived byte-for-byte, a byte-diff of the two
+MOVED goldens against a3c1513, the whole-corpus census (1687), the fixture-level
+fxdiff (1673 common), the 17 × 7 injection matrix, the free audit over 71 traces,
+and the evaluator over every trace whose mechanism changed. **Did NOT run:** `lit`,
+`ctest`, `frontend-lit` or the runtime entries — the orchestrator's full run is the
+gate for those, and it was **`100% tests passed, 0 tests failed out of 361`,
+531.88 s**, including `ir-pass-lit` (49.94 s), the four `e2e-value-*-twin-identical`
+gates, the 12 value slices, `e2e-loop-twin-matrix` (no cell moved; `tools/` is
+untouched vs a3c1513, so no new quarantine cell), `e2e-free-pairing-selftest` and
+`e2e-loop-twin-quarantine-selftest`.

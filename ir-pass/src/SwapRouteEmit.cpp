@@ -563,13 +563,28 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   //        route DID do for every rail it minted. The chain's INTERMEDIATES are
   //        still `_unc`'d and freed by the whole-DAG spine; only the final,
   //        whose live consumer is the controlled copy, survives.
-  //    Rule-6 sound: `R(p)` is a deterministic function of the RETAINED `p`, so
-  //    writing it into a fresh |0> ancilla is a unitary on (p, ancilla) and
+  //    Rule-6 sound, and STATE THE REASON PRECISELY — the obvious version is
+  //    false (clearance record item R-2, 2026-09-06; PRD §0 E1b). What is NOT
+  //    true: "`R(p)` is a deterministic function of the retained `p`, so
   //    tracing the ancilla out leaves the reduced state on (q, p, out)
-  //    unchanged. It is a leak, never a dirty FREE (`free_pairing_check.py`
-  //    STRICT is clean). ⚠ CONSEQUENCE FOR 3qlq.5: because these finals record
-  //    `p`, an increment that frees `p` while they are live performs a hidden
-  //    measurement of a register they still record — 3qlq.5 is UNSOUND BY
+  //    unchanged." Tracing it out DOES dephase the off-diagonals between `p`
+  //    and `p'` whenever `R(p) != R(p')`; a reader who tests that sentence
+  //    finds it wrong. What IS true, and is what this emitter rests on:
+  //      (a) relative to the SOURCE's live registers (q, out) the reduced
+  //          state equals the ROUTE's, because the retained `p_old` already
+  //          determines `R(p_old)` — the ancilla records nothing the surviving
+  //          registers do not already record; and
+  //      (b) on (q, p_old, out) NO CQ-EXPRESSIBLE CONTINUATION can observe the
+  //          difference, because `out`'s own retained label already records
+  //          `R(p_old)` on the arm branch and `p_old` on the other, and the ABI
+  //          mints no in-place Q+Q gate on `out` that could erase it
+  //          (`cqrt_copy_<W>_controlled` is minted only with a FRESH |0>
+  //          destination).
+  //    Clause (b) is a fact about the shipped ABI, not a law of physics. It is
+  //    a leak, never a dirty FREE (`free_pairing_check.py` STRICT is clean).
+  //    ⚠ CONSEQUENCE FOR 3qlq.5: it is exactly the continuation clause (b)
+  //    rules out — freeing `p` while these finals are live is a hidden
+  //    measurement of a register they still record — so 3qlq.5 is UNSOUND BY
   //    DEFAULT under this stream and must discharge the finals first.
   ControlRegion S;
   S.Kind = ControlRegion::SelectRegion;

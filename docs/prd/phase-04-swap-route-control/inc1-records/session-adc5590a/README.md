@@ -29,8 +29,15 @@ each, the re-clearance, and the landing:
   members. **Every one is a DISCLOSED class that pre-dates this branch; none is a wrong unitary this tree
   introduced.** On that verdict **Inc 0 + Inc 1 LANDED on `main` 2026-09-06 as ONE squash commit** (hash
   filled by the orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded in the landing
-  commit message; `git log main -1` shows the hash). **Inc 2 stays on `3qlq-inc2`, NOT landed, and owes a
-  rebase onto the landed Inc 1.**
+  commit message; `git log main -1` shows the hash). ⚠ **The sentence that followed — "Inc 2 stays
+  on `3qlq-inc2`, NOT landed, and owes a rebase onto the landed Inc 1" — is HISTORY, dated
+  2026-09-06: Inc 2 was rebased onto that landing the same day, Rule-13 round-2 reviewed,
+  cleared `CLEAR-WITH-OWNER-QUESTIONS` and LANDED on `main` as its own ONE squash commit** (see
+  `inc2/` below and `inc2/clearance_inc2.md`). With it the SWAP ROUTE IS FULLY RETIRED —
+  `cqrt_cswap` is minted by the 7.2 `AbortParkEmit` alone.
+* `inc2/` — **Inc 2's session-2 record** (the rebase onto the landed Inc 1, the round-2 lens, the
+  round-2 fix, the clearance and its verdict, briefs, commit message, ctest summaries). Its
+  narrative record is `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §3/§4/§5 and PRD §0 **E1a/E1b/E11/E12**.
 * `briefs/` — every brief of the session; `c1_reproducers/` — the load-bearing plain-C reproducers (second TU
   `tu_extf.c` for the onward ones); `full_ctest_summaries.txt`; `COMMIT_MSG_inc1.md`.
 

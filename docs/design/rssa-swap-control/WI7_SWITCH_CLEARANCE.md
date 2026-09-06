@@ -1,5 +1,46 @@
 # WI7_SWITCH_CLEARANCE — Phase 4.5 tainted-`switch` swap-route clearance
 
+> ⚠⚠ **THE SWAP ROUTE IS RETIRED (dated 2026-09-06, bd `test_C_libtooling-3qlq`,
+> Increments 1 + 2, both LANDED on `main`).** This directory is the swap-route
+> **design record** and is deliberately left as written — its arguments and its
+> statevector reasoning are still quoted, and the route remains the correctness
+> ORACLE the replacements were checked against. **What ships instead:**
+> a **PHASE** arm is the register-free **KICKBACK** — `void cq_phi(double θ)`, the
+> ordinary compare mint, `cqrt_rz_i1(f, θ)` **UNCONTROLLED** on the flag, the
+> ordinary `_unc` strip, `cqrt_free(f)`, **no gate on the data register at all**
+> (the motivating defect: `cqrt_rz_<W>` is TENSORED, so a routed or controlled
+> W-bit Rz marks `(−1)^popcount(target)` and can never mark `|0…0⟩` — every shipped
+> Grover golden was the identity on `q`; **`Rz|0⟩ = |0⟩` is RETIRED as a
+> load-bearing argument**, and every "zero controlled gates" here is a statement
+> about the ROUTE). A **VALUE** arm is the **CONTROLLED-COPY MERGE** — hoist the
+> arm's pure chain into the pred so it runs unconditionally on the ORIGINAL
+> register, mint the flag, two X-bracketed `cqrt_copy_<W>_controlled` into a fresh
+> `|0⟩` rail, the chain's `_unc` by the ordinary whole-DAG spine, strip, ONE free —
+> **no work rail, no route, no reverse-play in the emitter**, with the chain-final
+> rail left ALLOCATED and ENTANGLED (a leak, never a dirty free — PRD §0 E1, and
+> why bd `3qlq.5` is unsound by default). **`cqrt_cswap` therefore has exactly ONE
+> minter left: the 7.2 `AbortParkEmit`** (MEASURED — `grep -rn 'emitRoute('
+> ir-pass/src ir-pass/include` = the definition, the declaration and one call site,
+> `AbortParkEmit.cpp:396`; 1 of 319 committed goldens contains one). What SURVIVES
+> is the principle, not the primitive: split and join share one live condition and
+> the join must be the split's undo; arm bodies still run verbatim and
+> uncontrolled; adjoints are still DERIVED; and the §3c clobber decline is
+> unchanged. Design of record:
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` (§0 ERRATA first)
+> + `RETIRE_SWAP_ROUTE_INC{1,2}_NOTES.md`.
+>
+> **For THIS file, per accept shape:** (A) homogeneous **phase** no longer routes —
+> `SwitchRouteEmit`'s phase path mints a kickback gate on the eq-flag (3qlq Inc 1);
+> (B) homogeneous **value** no longer routes either — since 3qlq Inc 2 it is shape
+> (C)'s own preload + XOR-delta over a NON-constant base (`cqrt_copy_<W>(p, out)`
+> preloaded, then per case a hoisted chain, a Q+Q `xor` delta, an eq-flag mint and
+> one `cqrt_copy_<W>_controlled`, each chain uncomputed after; each delta and each
+> chain final left allocated and entangled), so the §8.5 cswap-arg0 seam this
+> document navigates HAS NO SUBJECT there any more; (C) the all-`ConstantInt`
+> **data-mux** and (D) the **eq-folded diamond** clause are UNCHANGED. The G0–G11
+> prove-or-decline ladder, the §5 const-fold re-anchor and the whole decline matrix
+> are UNCHANGED and still load-bearing.
+
 Rule-13 adversarial clearance trace for the shipped 4.5 tainted-`switch` lowering
 (`SwitchClassify.cpp` + `SwitchArmProve.cpp` + `SwitchRouteEmit.cpp` (phase) +
 `SwitchValueEmit.cpp` (value) + `SwitchDataMuxEmit.cpp` (data-mux) +

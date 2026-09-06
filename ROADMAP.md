@@ -80,6 +80,18 @@ phase, not in advance.
    variants are retained only for the optional §6a control-in-place
    peephole, not as the control mechanism — superseding the prior
    "forward + controlled-forward only" framing.)
+   > ⚠ **PRINCIPLE 7's MECHANISM IS RETIRED, dated 2026-09-06** (bd
+   > `test_C_libtooling-3qlq`, Increments 1 + 2, both landed on `main`). Tainted
+   > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
+   > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
+   > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),
+   > with `cqrt_cswap` minted by the 7.2 `AbortParkEmit` alone and the emitter
+   > replaying nothing — the chain is reversed by the ordinary Phase-5 whole-DAG
+   > `_unc` spine. **What survives is the half of the principle that was load-
+   > bearing**: arm bodies still run **verbatim and uncontrolled** (the pass still
+   > needs no `_controlled` twin per gate — the one controlled gate it emits is a
+   > basis COPY, not a controlled arm gate), and adjoints are still DERIVED, never
+   > hand-authored. See Phase 4's status banner.
 
 8. **Width-only runtime ABI.** Signedness is implicit in the LLVM opcode
    (`add nsw` vs `add nuw`, `icmp slt` vs `icmp ult`); the frontend
@@ -342,7 +354,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is RETIRED FOR PHASE ARMS**, 2026-09-05, LANDED on `main` 2026-09-06]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is FULLY RETIRED** — phase arms 2026-09-05, value arms 2026-09-06, both LANDED on `main` 2026-09-06]
 
 > ⚠ **STATUS, 2026-09-05; LANDED on `main` 2026-09-06 — READ THIS BEFORE THE
 > INCREMENT LIST BELOW (bd
@@ -447,12 +459,35 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > NEST and the `switch`. `ir-pass/src/NestedRouteEmit.cpp` and
 > `RotationLowering::emitRz` are **DELETED**.
 >
-> **VALUE arms still route, and are Increment 2 — on branch `3qlq-inc2`, NOT
-> landed, and a rebase onto the landed Inc 1 is owed.** So
-> `cqrt_cswap` still has minters at HEAD: the value-arm path in `SwapRouteEmit`
-> and the 7.2 `AbortParkEmit`. Increment 2 replaces the value arm's
-> compute→route→merge with a controlled-copy merge (PRD §7); until it lands, every
-> value-arm sentence below is current.
+> **VALUE arms do NOT route any more either — Increment 2 is LANDED on `main`
+> 2026-09-06 as ONE squash commit** (the squash of branch `3qlq-inc2`, tip recorded
+> in the landing commit message; `git log main -1`) **after the clearance verdict
+> `CLEAR-WITH-OWNER-QUESTIONS`** (record
+> `docs/prd/phase-04-swap-route-control/inc1-records/session-adc5590a/inc2/clearance_inc2.md`).
+> **THE SWAP ROUTE IS THEREFORE FULLY RETIRED: `cqrt_cswap` has exactly ONE minter,
+> the 7.2 `AbortParkEmit`** — MEASURED, `grep -rn 'emitRoute(' ir-pass/src
+> ir-pass/include` = the definition, the declaration and ONE call site
+> (`AbortParkEmit.cpp:396`), and `grep -l 'cqrt_cswap' tests/e2e/*.expected.log`
+> returns **1** golden (`slice_control_abort`) of 319.
+> A **value arm** is now the **CONTROLLED-COPY MERGE** (PRD §7): `emitValueRegion`
+> HOISTS the arm's pure chain into the pred so it runs unconditionally on the
+> ORIGINAL register, builds a `select`, and hands the region to the Rule-13-cleared
+> 4.4 `SelectMergeEmit` — flag mint → `|0⟩` out-rail → two X-bracketed
+> `cqrt_copy_<W>_controlled` → the chain's `_unc` by the ordinary whole-DAG spine →
+> compare `_unc` strip → ONE `cqrt_free`. No work rail, no route, no reverse-play in
+> the emitter. The V3 `switch` half is the data-mux's own preload + XOR-delta shape
+> over a non-constant base. **What it LEAVES:** the chain-final rail `R(p)` (and each
+> switch delta `d_i`) is left **ALLOCATED and ENTANGLED** — a leak, never a dirty
+> free (PRD §0 **E1**), and the reason follow-on bd `3qlq.5` (freeing the value-arm
+> SOURCE) is **unsound by default**. Witness: BYTE IDENTITY with the manually
+> pre-hoisted `select` twin on four `cmp` gates
+> (`e2e-value-{diamond,ifelse,mixedops,polarity}-twin-identical`), i.e. against the
+> PRE-Inc-2 compiler's own stream for the twin spelling, not against itself.
+> ⚠ **So every value-arm sentence BELOW that describes a route is HISTORY, dated
+> 2026-09-06.** It is kept, not deleted, because its arguments are still quoted.
+> Round 2's one LEAK finding (F-I2-1) is **PRE-EXISTING on `main`**, is not Inc 2's,
+> and is filed out of the epic as bd `test_C_libtooling-7yd0` (C-1 round 4; PRD §0
+> **E11**).
 >
 > **Do not quote these as phase-arm invariants any more:** "zero controlled
 > gates", "`Rz|0⟩ = |0⟩`, so the inactive work rail is clean and freed as a no-op
@@ -507,7 +542,20 @@ and `cqrt_cswap` the active result back — the tainted `phi` is the **adjoint o
 the split**, sharing the same live condition (the quantum reading of Mogensen
 RSSA). Classical (untainted) control flow is left exactly as `clang -O1` emits it.
 
-| construct | lowering |
+> ⚠ **HISTORY, dated 2026-09-06 — the GOAL paragraph and the table below describe
+> the RETIRED generation** (bd `test_C_libtooling-3qlq`, Inc 1 + Inc 2, both landed
+> on `main` that day). They are kept because their arguments are still quoted and
+> because the 4.x sub-items below are written against them. **What actually ships:**
+> a tainted `br`/`select`/`switch` whose arms are PHASES lowers by **KICKBACK**
+> (mint the flag, `cqrt_rz_i1(f, θ)` UNCONTROLLED on it, strip, free — no gate on
+> the data register at all), and one whose arms are VALUES lowers by the
+> **CONTROLLED-COPY MERGE** (hoist the pure chain, mint the flag, two X-bracketed
+> `cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail, `_unc` the chain, strip,
+> free). **`cqrt_cswap` is minted by the 7.2 `AbortParkEmit` alone.** What SURVIVES
+> from the paragraph above is the PRINCIPLE, not the primitive: split and join share
+> one live condition, and the join must be the split's undo.
+
+| construct | lowering (⚠ RETIRED 2026-09-06 — see the banner above) |
 |-----------|----------|
 | tainted `br c` | `cqrt_cswap` the operand(s) into a per-arm work rail |
 | arm body | arm gates copied **verbatim, uncontrolled** onto the rail |
@@ -608,8 +656,16 @@ after a statevector-checked design dialogue; see
   > `cqrt_cswap`, no rail free**, and therefore **not** "zero controlled gates". The
   > flag mint, the `cqrt_x` bracket, the `icmp_inv` strip and the flag free are
   > byte-identical and in the same order (a NEGATED arm carries **two** `cqrt_x`, not
-  > the route's four). The **4.3 depth-2 nest and the 4.5 switch keep the route**, so
-  > the recipe below is still literally what they emit. The two forms are the SAME
+  > the route's four). ~~The **4.3 depth-2 nest and the 4.5 switch keep the route**, so
+  > the recipe below is still literally what they emit.~~ ⚠ **THAT CLAUSE IS FALSE
+  > SINCE 3qlq Inc 1 (2026-09-05, landed 2026-09-06) — corrected here 2026-09-06 by
+  > the Inc-2 landing pass.** The nest and the switch do **not** keep the route:
+  > `NestedRouteEmit.cpp` is DELETED, `SwitchRouteEmit`'s phase path mints a
+  > kickback gate on the eq-flag, and **the recipe below is emitted NOWHERE**. Nor
+  > is the Inc-2a controlled gate this banner announces still emitted — since Inc 1
+  > `cqrt_rz_<W>_controlled` is DECLARED-BUT-UNEMITTED and every phase arm is the
+  > kickback. Read the whole banner as the middle generation of three.
+  > The two forms are the SAME
   > unitary — with `w = |0⟩`, `cswap(f,q,w)·Rz_w(θ)·cswap(f,q,w)` **equals**
   > `cRz(f,q,θ)` with no global-phase residue — which is why the route remains the
   > correctness ORACLE for the peephole. See
@@ -618,6 +674,18 @@ after a statevector-checked design dialogue; see
 - **4.2 — Classical-permutation / value arms (method-B) [DONE 2026-06-11,
   branch `swap-route-control`, WI-1..WI-7 — `docs/prd/phase-04-swap-route-control/PRD.md`
   Part II + `IMPLEMENTATION-4.2.md`].**
+  > ⚠ **SUPERSEDED 2026-09-06 by bd `test_C_libtooling-3qlq` Increment 2, LANDED
+  > on `main` that day — the ROUTE and the emitter's reverse-play are GONE; the
+  > `cqrt_copy_<W>` ABI this item added is NOT** (it is joined by the 4.4
+  > `_controlled` twins, which are now the merge primitive). A value arm is the
+  > CONTROLLED-COPY MERGE: hoist the pure chain into the pred, mint the flag, two
+  > X-bracketed `cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail, the chain's
+  > `_unc` by the whole-DAG spine, strip, one free — no work rail, no `cqrt_cswap`,
+  > no `R†` replay in the emitter, and the chain-final rail left ALLOCATED and
+  > ENTANGLED (PRD §0 E1). The **§3c clobber reject below is UNCHANGED and still
+  > active.** Read the rest of this item as the design and the arguments of the
+  > retired generation; PRD `retire-swap-route-PRD.md` §7 is the current one.
+
   `add`/`mul`/`x`/`toffoli`-class bodies (linear chains of supported tainted
   integer opcodes): run `R` → CNOT-copy the basis-valued result into a fresh
   register → reverse-play `R†` to restore `q0` and zero the rail (§3a-B),
@@ -746,13 +814,26 @@ after a statevector-checked design dialogue; see
   case mint an `icmp eq`-flag → `|0⟩` rail → `cqrt_cswap` route the scrutinee in →
   replay the folded gate's **arg-1 angle only** (`cqrt_rz`) → route back → free
   rail → `icmp_inv` strip + free flag; **zero** controlled gates beyond the route
-  cswaps, `q` never freed, RAUW merge→`q`. **(B) homogeneous value**
+  cswaps, `q` never freed, RAUW merge→`q`. ⚠ **(A) IS SUPERSEDED, dated
+  2026-09-05/06** (3qlq Inc 1, landed): the phase path mints a **KICKBACK** gate on
+  the eq-flag — `cqrt_rz_i1(f_i, θ_i)` UNCONTROLLED — with no rail, no route and no
+  gate on the scrutinee at all; the eq-flag mint, the `icmp_inv` strip and the flag
+  free are unchanged. The G0–G11 ladder and the §5 const-fold re-anchor are
+  unchanged. **(B) homogeneous value**
   (`SwitchValueEmit`) — N-way method-B over the **shared routed base** `p` = the
   merge default-edge incoming (`p != q`, the C2 anchor; routing `q` would clobber
   the eq-flags): route-in → verbatim chain replay → route-back → **one**
   `cqrt_copy_<W>(p,out)` → LIFO reverse-play `R†` (body chain only — the §8.5
   cswap-arg0 seam: route cswaps are bracketed by `emitRoute`, never fed to
-  `emitInverseChain`). **(C) all-`ConstantInt` data-mux** (`SwitchDataMuxEmit`) —
+  `emitInverseChain`). ⚠ **(B) IS SUPERSEDED, dated 2026-09-06** (3qlq Inc 2,
+  landed): the value `switch` is now shape **(C)'s own preload + XOR-delta** over a
+  NON-constant base — `cqrt_copy_<W>(p, out)` preloaded once at the top, then per
+  case a hoisted chain `R_i(p)`, a Q+Q `xor` delta `d_i = R_i(p) ^ p`, an eq-flag
+  mint and one `cqrt_copy_<W>_controlled(f_i, d_i, out)`, with each chain
+  uncomputed after. **No route, no reverse-play in the emitter, no conjunction
+  flag, and the §8.5 cswap-arg0 seam has no subject here any more**; each `d_i` and
+  each chain final is left ALLOCATED and ENTANGLED (PRD §0 E1). The base anchor
+  `p != q` and every G0–G11 decline below are UNCHANGED. **(C) all-`ConstantInt` data-mux** (`SwitchDataMuxEmit`) —
   the N-way 4.4 `select` merge: preload `%out = cqrt_alloc(v_d)` + per content
   case `cqrt_alloc(v_i⊕v_d)` XOR-delta + `cqrt_copy_<W>_controlled`; no route, no
   ¬-bracket. **(D) equality-folded `br` diamond** (`EqFoldArm::tryEqFoldArm`,
@@ -1600,16 +1681,23 @@ that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 > * **`cqrt_rz_<W>` for W > 1** — DECLARED, **UNEMITTED**. The only Rz this pass
 >   emits is the kickback `cqrt_rz_i1(f, θ)` (measured over 1661 fixture outputs:
 >   35 emit an Rz, **0** at any other width; and `0` non-`i1` `cqrt_rz` across all
->   304 committed goldens).
+>   304 committed goldens — **re-measured 2026-09-06 after the Inc-2 landing: still
+>   `0`, now across 319 goldens**, `grep -h 'cqrt_rz_' tests/e2e/*.expected.log |
+>   grep -v 'cqrt_rz_i1(' | wc -l`, and the Inc-2 clearance's own whole-corpus
+>   census over 1687 fixtures found **0** non-`i1` Rz calls in any output).
 > * **`cqrt_rz_<W>_controlled` and `cqrt_rz_<W>_controlled_inv`** — DECLARED,
 >   **UNEMITTED, and with no minter left in the pass** (`RotationLowering::emitRz`
 >   is deleted). They were a frozen-designate family for the drbq Inc-2a
 >   control-in-place peephole; that peephole's Rz half is retired. `0` occurrences
 >   in the goldens.
-> * **`cqrt_cswap`** — still MINTED, by the VALUE-arm path in `SwapRouteEmit` and
->   by the 7.2 `AbortParkEmit`. Increment 2 (value arms by controlled-copy merge,
->   PRD §7) is the increment that would take the first of those away; until it
->   lands, `cqrt_cswap` is live.
+> * **`cqrt_cswap`** — still MINTED, but by the 7.2 `AbortParkEmit` **ALONE** since
+>   Increment 2 (value arms by controlled-copy merge, PRD §7) LANDED on `main`
+>   2026-09-06. MEASURED: `grep -rn 'emitRoute(' ir-pass/src ir-pass/include` = the
+>   definition, the declaration and ONE call site (`AbortParkEmit.cpp:396`); `grep -l
+>   'cqrt_cswap' tests/e2e/*.expected.log` = **1** of 319 goldens
+>   (`slice_control_abort`). So the symbol stays in the frozen surface on the
+>   abort-park's account, not the control path's. ⚠ HISTORY, dated: until that day
+>   the VALUE-arm path in `SwapRouteEmit` was its second minter.
 > * **`cqrt_ry_<W>_controlled` ×9** — UNAFFECTED and still minted. The Ry stem is
 >   untouched by this epic, and the swap route cannot carry an `Ry` at all.
 >

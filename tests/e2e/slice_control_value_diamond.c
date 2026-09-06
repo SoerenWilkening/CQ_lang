@@ -40,12 +40,35 @@
    EXACTLY TWO frees here — the chain's INTERMEDIATE rail (`_unc`'d by the
    whole-DAG spine) and the flag (stripped by its compare `_unc`). `p`, the merge
    out-rail AND the chain's FINAL rail `R(p)` are left ALLOCATED; the final is
-   also left DIRTY, which the route never did. Rule-6 sound because `R(p)` is a
-   deterministic function of the RETAINED `p`, so tracing it out leaves the
-   reduced state on (q, p, out) unchanged — a leak, never a dirty free
-   (`free_pairing_check.py` STRICT is clean). ⚠ Follow-on 3qlq.5 (free the
-   value-arm SOURCE) is UNSOUND BY DEFAULT under this stream: those finals still
+   also left DIRTY, which the route never did.
+
+   WHY THAT IS RULE-6 SOUND, STATED PRECISELY — the obvious version is FALSE
+   (clearance record item R-2, 2026-09-06; retire-swap-route-PRD §0 E1b). This
+   header used to say "`R(p)` is a deterministic function of the RETAINED `p`, so
+   tracing it out leaves the reduced state on (q, p, out) unchanged". Tracing it
+   out DOES dephase the off-diagonals between p and p' whenever R(p) != R(p'), so
+   a reader who tests that sentence finds it wrong. What IS true, and sufficient:
+     (a) relative to the SOURCE's live registers (q, out) the reduced state equals
+         the ROUTE's, because the retained p_old already determines R(p_old); and
+     (b) on (q, p_old, out) NO CQ-EXPRESSIBLE CONTINUATION can observe the
+         difference, because `out`'s own retained label already records R(p_old)
+         on the arm branch and p_old on the other, and the ABI mints no in-place
+         Q+Q gate on `out` that could erase it (`cqrt_copy_<W>_controlled` is
+         minted only with a FRESH |0> destination).
+   Clause (b) is a fact about the shipped ABI, not a law of physics. It is a leak,
+   never a dirty free (`free_pairing_check.py` STRICT is clean). ⚠ Follow-on
+   3qlq.5 (free the value-arm SOURCE) is UNSOUND BY DEFAULT under this stream —
+   it is precisely the continuation clause (b) rules out, and those finals still
    record `p`.
+
+   THE DISCHARGE, COUNTED IN THIS FILE'S OWN GOLDEN (clearance record item R-1;
+   the PRD errata had said "5 _unc — the interior links", which is the count of
+   nothing in the trace): the INTERIOR rail h2 is discharged by ONE
+   `cq_template_mul_i32_hl_unc(h2, h1, 5)` + TWO IN-PLACE ADJOINTS
+   (`cqrt_xorc_i32(h2, 9)`, `cqrt_addc_i32(h2, -15)`) + ONE `cqrt_free(h2)` — the
+   M-C in-place links are reversed in place, not by `_unc` calls — and the FINAL
+   rail h3 (`mul_i32_hl -> h3`, `addc(h3, 7)`, `xorc(h3, 2)`) is left allocated
+   and dirty. Count it here, never from the PRD.
 
    WHY THE TRACE IS DETERMINISTIC: the runtime is trace-only and the diamond is
    flattened to straight-line code, so every emitted gate fires unconditionally
