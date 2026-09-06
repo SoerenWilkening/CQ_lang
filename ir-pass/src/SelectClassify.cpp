@@ -342,6 +342,31 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
   // precedes the record and cannot observe the copy — it is walked THROUGH,
   // not flagged, keeping the sanctioned chained-prep accept
   // (`select(c, theta(theta(q)), x)`).
+  //
+  // ⚠ THAT LAST CLAUSE IS EXACT ONLY WHEN `Op` **IS** THE ROTATION CALL, and the
+  // sentence above is what a future reader would use to decide this gate is
+  // exact, so read this first (bd test_C_libtooling-3qlq Inc 2, Rule-13 round-2
+  // finding F-I2-2). `rotationAncestry` is seeded AT `Op` and stops immediately
+  // unless `Op` is itself a rotation call — so for a DERIVED operand (the result
+  // of `theta(q)` plus one arithmetic hop) `Ancestry` is the singleton `{Op}`,
+  // the exemption is EMPTY, and the LINEAGE-WIDE seeding above then reaches the
+  // base's own producing theta and flags it as "off-ancestry". MEASURED on all
+  // three binaries (pre-3qlq oracle 52d7764, `main` a3c1513, branch
+  // `3qlq-inc2`): `p = cq_theta(p,0.9)` before a 6-op arm ACCEPTS as a `br`
+  // diamond and DECLINES `control flow` as the pre-hoisted select, while the
+  // UNCHAINED spelling accepts both ways.
+  //
+  // It is a SEEDING ARTIFACT, not a proven hazard, and the round-2 review could
+  // not construct a counterexample: the merge is two controlled-XOR copies into a
+  // FRESH |0⟩ ancilla with the flag minted and stripped by an exact inverse pair
+  // — a PERMUTATION, hence linear, hence correct for an arbitrary input
+  // superposition. The genuine hazard this seeding was built for (the kjd1 fork,
+  // `int a = p; int p1 = cq_theta(p,·); if (c) a = R(a);`) is caught on the `br`
+  // path by the pass-wide `declineStaleRecordOps` — `cq opcode lowering: operand
+  // predates a non-diagonal gate`, measured on all three binaries in all three
+  // orderings. So this gate is CONSERVATIVE, as §16.7 says, and widening the
+  // seeding is an OWNER item (a Rule-13-core accept-class change needing its own
+  // red-green and lens), not a bug to fix in passing.
   SmallPtrSet<Value *, 8> Ancestry;
   rotationAncestry(Op, Ancestry);
   SmallVector<Value *, 8> Work;

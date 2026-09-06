@@ -571,10 +571,16 @@ different, later fence.
 
 **Disposition: the 4.4 refusal is an OVER-DECLINE that COULD be widened, and that
 is an owner item, not this round's.** Widening `rotationAncestry`'s seeding is a
-Rule-13-core accept-class change and needs its own red-green plus a lens. The DOC
-half is done: gate 5's ancestry-exemption sentence is what a future reader would
-use to conclude the gate is exact, and it is only exact when the operand IS the
-rotation call.
+Rule-13-core accept-class change and needs its own red-green plus a lens.
+
+**The DOC half IS done, in source.** `hasCoherentDownstreamUse`'s ancestry-exemption
+comment ("keeping the sanctioned chained-prep accept `select(c, theta(theta(q)), x)`")
+is the sentence a future reader would use to conclude the gate is exact, and it is
+exact only when the operand IS the rotation call. A paragraph now sits directly
+under it recording the singleton-`Ancestry` mechanism, the three-binary
+measurement, the permutation/linearity argument, the `declineStaleRecordOps`
+backstop, and that widening the seeding is an owner item rather than a bug to fix
+in passing. Comment only — `cq-opt` rebuilds **byte-identical**.
 
 ### §4.3 — F-I2-3: `lowering_switch_value_nonI32_cast.ll` re-derived
 
