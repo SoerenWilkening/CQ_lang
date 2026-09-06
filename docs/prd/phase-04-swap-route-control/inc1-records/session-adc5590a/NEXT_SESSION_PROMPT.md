@@ -22,6 +22,16 @@ increment.
 - ⚠ **THIS FILE IS SESSION adc5590a's HAND-OFF AND IS NOW HISTORY for its step 1**: C-1 round 4 was rebased onto
   258d974 and LANDED in session `82e6b530` on 2026-09-06 (record `inc1-records/session-82e6b530/rebase_c1d.md`,
   narrative notes **§3.15**). Everything below is left AS WRITTEN so the hand-off can be diffed against what happened.
+- ⚠ **AND STEP 1'S "fold in any lens items" HAPPENED TWICE.** A SECOND independent Rule-13 lens ran on the REBASED
+  tree (`review_c1e`, branch tip **aa9d702**) and returned **CLEAR-WITH-ITEMS** — items **F-C1E-1..4, ALL APPLIED**
+  before the landing (`inc1-records/session-82e6b530/{review_c1e,docs_c1e}.md`): 0 DECLINE→ACCEPT over 610
+  comparable programs on three binaries and over all 1690 lit fixtures, 0 ACCEPT→DECLINE, 0 decline-message
+  changes, injection matrix 0 MISSED / 0 DIRTY, and the **full `ctest` at aa9d702 was 367/367** (0 failed,
+  385.89 s). F-C1E-1 corrected two in-source citations (the q4b fixture pins the head-out-of-place PROPERTY, not
+  the G6/G7 NET) and added the discriminating accept
+  `control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll`; F-C1E-2 recorded a PRE-EXISTING leak
+  class byte-identical to `main`; F-C1E-3/4 are doc corrections. No CONFIRMED miscompile was found, so step 1's
+  "do NOT land" branch was not taken.
 - **C-1 round 4** (bd `7yd0`, the `hasOneUse` retirement under the tripwire): branch `c1-round4` at 59f6a95 (base
   a3c1513, PUSHED, NOT rebased onto 258d974, NOT landed — **both done since; see the line above**). Full ctest 351/351 on its tree. Lens `review_c1d` verdict:
   CLEAR-WITH-ITEMS — the hasOneUse retirement is a narrowing of a proxy onto the real predicate; the tripwire is the ONLY net (deleting it on a mutant reproduces the round-2 wrong unitary byte-identically); 0 class flips over 615 programs, all 20 movers gain discharges; F-C1D-1 the leak (bd 7yd0) is LIVE on landed main 258d974 in D4's own idiom (q4b/q5sel/g1/k3 rolled 4/0 vs twin 4/4) so the rebase+landing is a CORRECTNESS OBLIGATION and mechanical (Inc 2 did not touch LoopLowering/matrix); F-C1D-2 re-run control_swap_value_ifelse_head_out_of_place.ll + the value twin gates on the rebased tree (Inc 2's ArithLowering CONSUMER-2 comment); F-C1D-3 three closure-table refinements incl. the F-3 row (staleRailRecordRead's SKIP set is the chain, AsLowered=false, cannot shrink); F-C1D-4 add an extra_ry row to the injection matrix.
