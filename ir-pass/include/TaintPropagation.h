@@ -25,6 +25,7 @@
 #include "LoopPlan.h"  // LoopBreakRegion (by-value in BreakRegions, Phase 7.4 y05j.2)
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/DenseSet.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
@@ -369,6 +370,27 @@ struct TaintSet {
   // recognized value-accumulator loop.
   llvm::SmallPtrSet<llvm::Instruction *, 4> InPlaceRailOps;
 
+  // bd 3qlq Inc 1, the THIRD C-1 review round's finding F-C1B-1 — THE SUBSET OF
+  // `InPlaceRailOps` THAT `commitOutOfLoopInPlaceOps` PREDICTED, and therefore the
+  // exact set `lowerOps` must RE-ASK.
+  //
+  // The other three writers of `InPlaceRailOps` (round 1's `railRoot` marking,
+  // `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)) mark ops on a rail they
+  // have just PROVED — a closed self-cycle with its own fan-out and record
+  // fences — so their marking is a conclusion. `commitOutOfLoopInPlaceOps` is the
+  // one writer whose marking is a PREDICTION of what `ArithLowering`'s M-C fence
+  // will answer at `lowerOps`, taken BEFORE `repropagateControlMerges` has grown
+  // `taint.Tainted` and before the round-2 flatten has moved a block. Keeping the
+  // two apart is what lets the tripwire re-verify exactly the predictions and
+  // leave the proofs alone (re-verifying a proof would re-ask a question under a
+  // fence — `inPlaceFenceHolds`' G5 loop clause — that the proof's owner
+  // deliberately answers differently).
+  //
+  // Written and rolled back in lockstep with `InPlaceRailOps` by
+  // `invariantRegisterRoots`; read ONCE, by `lowerOps` Phase 1. Empty for a module
+  // with no committed pre-loop in-place op.
+  llvm::SmallPtrSet<llvm::Instruction *, 4> PreLoopCommittedInPlaceOps;
+
   // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
   // stream→tape registry (v1 has a single stdout stream). SHARED across the two
   // I/O-lowering steps so a function with BOTH a controlled `if(q)printf`
@@ -454,7 +476,36 @@ struct TaintSet {
   // `WeakTrackingVH` or a re-validation, because a recycled address matching a
   // live peel root would SKIP a candidate that must be judged — the over-accept
   // direction, not the leak direction.
-  llvm::SmallPtrSet<const llvm::Value *, 4> ClaimedRailRoots;
+  //
+  // ⭐ KEYED ON `(root, the CLAIMING LOOP's header)`, NOT ON THE ROOT ALONE — bd
+  // 3qlq Inc 1, the THIRD C-1 review round's finding **F-C1B-2**. Round 2 shipped
+  // this as a module-wide set of ROOT VALUES, while the property clause (0) skips
+  // on is PER-LOOP: "*this* loop's collapse already proved *this* rail". A claim
+  // made for loop A therefore satisfied clause (0) for loop B, where clause
+  // (iii)'s per-loop question — is there an in-loop in-place gate on this root? —
+  // was then never asked. MEASURED (`p/z32_claim_across_loops_nomeas.c`: loop A
+  // carries `r` and is claimed by `tryCaseA`; loop B has an onward per-bit region
+  // and a DEAD `cq_theta(r,0.2)` in its body) — `claimed=1` from LOOP A, `IRR
+  // TRUE`, `markIfRailLocal MARKED 1 blocks`, i.e. loop B marked on a rail loop B
+  // never proved. That is exactly the grant the "NOT INFERRED FROM THE ABSENCE OF
+  // A HEADER PHI" paragraph above says must not happen, and the control that
+  // pins it (`p/x3_deadgate_body.c`) structurally cannot see it: a ONE-LOOP
+  // module cannot bound a MODULE-WIDE set. No wrong circuit was reachable — every
+  // spelling declines at a later loud fence — so the finding is a soundness-
+  // argument gap, and the key is narrowed rather than the pin re-argued.
+  //
+  // THE KEY IS THE HEADER BLOCK, and a mis-key can only ever REFUSE. If a header
+  // pointer ever failed to survive to the read (RegionFlatten erases MERGE and
+  // ARM blocks; a loop the round-2 collapse re-offers is looked up in a FRESHLY
+  // BUILT `LoopInfo`), the claim simply would not match, clause (0) would judge
+  // the candidate, clause (iii) would refuse it, and the module would keep
+  // today's leak — the Prime-Directive direction, never an over-accept. That
+  // asymmetry is why a block pointer is an acceptable key here at all, and it is
+  // measured rather than assumed: `r33`/`r35`/`r40`/`z9`/`z10` — every shipped
+  // customer whose claim is written in a DIFFERENT call from the read — stay
+  // 3/3 rolled-vs-unrolled IDENTICAL after the re-key.
+  llvm::DenseSet<std::pair<const llvm::Value *, const llvm::BasicBlock *>>
+      ClaimedRailRoots;
 
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
   // two accept paths that build a DATA-untainted-yet-quantum-by-control merge

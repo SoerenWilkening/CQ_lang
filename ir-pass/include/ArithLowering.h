@@ -195,10 +195,24 @@ bool rewriteInPlaceValueRail(llvm::BinaryOperator *bo, WidthDispatch &wd,
 // admit a chained `q += a; q += b`, and it excludes nothing the corpus contains.
 //
 // `DT`/`LI` are `bo`'s own function's, built by the driver.
+//
+// `IgnoreSelfMarking` — the ONE clause `lowerOps`' (1b) TRIPWIRE must suppress,
+// and ONLY that one (bd 3qlq Inc 1, C-1 review round 3, finding F-C1B-1). G5's
+// first disjunct refuses a site already in `taint.InPlaceRailOps`, because that
+// site has an OWNER and a second recognizer must not adjudicate it. The tripwire
+// re-asks this fence about an op `commitOutOfLoopInPlaceOps` PUT there, so that
+// disjunct would answer `false` for a reason that has nothing to do with the
+// question being asked ("does M-C's own answer still hold under FINAL taint and a
+// FINAL CFG?"). Everything else — G1/G2 the shape, G3 the width grid, G4 the
+// provable immediate, G5's LOOP disjunct, G6/G7 the position fence — is asked
+// verbatim, from ONE fence body, so the prediction and its re-verification cannot
+// drift (Rule 14). Never pass `true` from anywhere else: for any op this pass did
+// not itself commit, the self-marking clause is the correct answer.
 bool classifyInPlaceReassignment(llvm::BinaryOperator *bo, WidthDispatch &wd,
                                  const TaintSet &taint,
                                  const llvm::DominatorTree &DT,
-                                 const llvm::LoopInfo &LI);
+                                 const llvm::LoopInfo &LI,
+                                 bool IgnoreSelfMarking = false);
 
 // ── M-C LATE ROUND (bd test_C_libtooling-x67f, Increment 7a) ─────────────────
 //

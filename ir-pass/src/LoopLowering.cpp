@@ -2293,8 +2293,12 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // its rails belong to `lowerBreakReversePlay`, which has its own capture and
   // reversal discipline, and admitting them here would skip a judgement on a
   // proof this set does not carry.
+  // ⭐ PER-LOOP KEY (C-1 round 3, F-C1B-2): the pair `(root, L's header)`, so a
+  // claim this loop made cannot satisfy clause (0) for a DIFFERENT loop that
+  // reads the same rail — the property being recorded is "*this* loop's collapse
+  // proved this rail", not "somebody's did".
   for (auto &KV : railRoot)
-    taint.ClaimedRailRoots.insert(KV.second);
+    taint.ClaimedRailRoots.insert({KV.second, L->getHeader()});
 
   // Collapse every rail PHINode to its root. RAUW to the root mint (the
   // still-pre-lowering `cq_theta` SSA value, SAME type as the phi — no ill-typed
@@ -2698,7 +2702,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     the record means and why it must come from the tree rather than from the
   //     caller's local set (bd 3qlq Inc 1, C-1 review round 2, F-C1-2(2a)).
   for (auto &KV : Collapse)
-    taint.ClaimedRailRoots.insert(KV.second);
+    taint.ClaimedRailRoots.insert({KV.second, L->getHeader()});
   for (auto &KV : Collapse)
     KV.first->replaceAllUsesWith(KV.second);
   for (auto &KV : Collapse) {
@@ -2886,9 +2890,60 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // where M-C ITSELF goes out of place — `cq_template_add_i32_hl` in the trace —
 // and this must refuse, byte-identically to the round-1 binary).
 //
+// ⚠ THE STABILITY CONJUNCT WAS ONLY HALF THE WINDOW, AND THE OTHER HALF WAS A
+// CONFIRMED SILENT MISCOMPILE (bd 3qlq Inc 1, the THIRD C-1 review round,
+// finding **F-C1B-1**). The paragraph above reasons about **G6/G7** — a later
+// READ of the parent — and `hasOneUse` is asked of `P`. The commit ALSO predicts
+// **G2**, the SHAPE ("the other operand is CLASSICAL"), and nothing guarded that:
+// `taint.Tainted` GROWS at `repropagateControlMerges`, because everything DERIVED
+// from a 6.5/4.5 `%out` becomes tainted only at ROUND 2. So
+//
+//     int y=5; if (q>5) y=ext_f(7);   /* %out, tainted at emission        */
+//     int w = y * 3;                  /* DERIVED: untainted until round 2 */
+//     a = a + w;                      /* ONE tainted operand AT ROUND 1   */
+//
+// committed at round 1, and `lowerOps` then honoured the commitment
+// unconditionally (`OpcodeLowering:263` skips M-C for a marked op, `:350` routes
+// it to `rewriteInPlaceValueRail`, which never re-asks the shape) and emitted
+// `call void @cqrt_addc_i32(i32 %h4, i32 %h_op)` — a QUANTUM RAIL HANDLE IN THE
+// ABI's CLASSICAL-IMMEDIATE SLOT, printed by the runtime as the bare decimal `6`
+// (`h6`'s id). The circuit computes `a + 6` where the source says `a + 3*y`, the
+// `3*y` rail is never uncomputed and never freed, and with the operands commuted
+// (`int w = y + 1;`) `rewriteInPlaceValueRail`'s `TL = Tainted.count(L)` picks the
+// LEFT operand as the rail and MUTATES THE WRONG REGISTER. Four plain-C programs,
+// both stems, `opt` exit 0, verify-clean, STRICT stage-2b `0 violation(s)`, all
+// correct on 542d588 and on the round-1 fix. This is the 8h7d.5 lesson verbatim:
+// **`hasOneUse` was asked of `P`, and the answer that went stale was about `Imm`.**
+//
+// (1a) THE MONOTONE FENCE: `isa<Constant>(Imm)`. A `Constant` CAN NEVER BECOME
+// TAINTED — that is the whole argument, and it is a property of the IR class, not
+// a prediction about a later stage. It is CHECKED rather than assumed, and the
+// check already exists in the tree: `IOSinkLowering.cpp:295` enumerates every
+// `taint.Tainted.insert(` site in `ir-pass/src` and finds a `CallInst`, an
+// `Instruction`, or (in the clone-LOCAL taint sets only) an `Argument` — never a
+// `Constant`. RE-MEASURED at this HEAD (`grep -rn 'Tainted\.insert(' ir-pass/src`,
+// 35 sites, the file's own count of 30 being older): the property still holds at
+// every one. So G2's "exactly one tainted operand" cannot change answer for a
+// constant-immediate op between here and `lowerOps`.
+// MEASURED to keep every shipped customer of this path (`r2`'s `7`, `r71`'s `9`,
+// `x1`'s `7`, `z7`'s `-7`; `r33`/`r35`/`r40` have no preheader op at all) and to
+// refuse all four reproducers. Its ONE cost is `p/z21_preadd_volatile_imm.c` — a
+// `volatile` load as the immediate, which M-C itself still accepts at `lowerOps`
+// — which returns to the pre-round-2 leak. That is the Prime-Directive direction
+// and it is recorded (PRD §0 E2), not regretted.
+//
+// (1b) AND A LOUD TRIPWIRE AT `lowerOps`, because a fence nobody re-asks is a
+// prediction. Every op committed here is recorded in
+// `taint.PreLoopCommittedInPlaceOps`, and `lowerOps` re-asks THIS SAME
+// `classifyInPlaceReassignment` under FINAL taint and a FINAL `DominatorTree` /
+// `LoopInfo`; a changed answer is `DiagnosticInfoUnsupported` and nothing is
+// lowered. A silent fallback to out-of-place is NOT sound there — the BODY
+// marking this commit licensed (`markIfRailLocal` on the loop) already stands.
+//
 // Marks into `Marked` so the caller can ROLL BACK when the extension fails, which
 // is what keeps this change a strict no-op for every module the extension does
-// not serve.
+// not serve. The rollback erases from BOTH sets (a stale entry in the tripwire
+// set would re-ask a question about an op this path never committed).
 void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
                                WidthDispatch &wd, const DominatorTree &DT,
                                const LoopInfo &LI,
@@ -2903,10 +2958,16 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
       return;  // in-loop: M-C's G5 refuses outright, so `OutOfPlace` is the
                // TRUE disposition and the FACT-time peel is already right.
     Value *P = inPlaceValueRailOperand(BO, taint);
-    if (!P || !P->hasOneUse() ||
-        !classifyInPlaceReassignment(BO, wd, taint, DT, LI))
+    if (!P || !P->hasOneUse())
       return;  // unproven — stop, and let the peel stop here too (today's leak).
+    // (1a) — the immediate must be a `Constant`, which can never become tainted.
+    Value *Imm = BO->getOperand(0) == P ? BO->getOperand(1) : BO->getOperand(0);
+    if (!isa<Constant>(Imm))
+      return;
+    if (!classifyInPlaceReassignment(BO, wd, taint, DT, LI))
+      return;
     taint.InPlaceRailOps.insert(BO);
+    taint.PreLoopCommittedInPlaceOps.insert(BO);
     Marked.push_back(BO);
   }
 }
@@ -3107,8 +3168,14 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //     and it rests on the SAME fences, asked by whichever collapse claimed
     //     the rail: `tryCaseA`'s Risk-2 self-cycle + clean mint + Rule-8 fan-out
     //     + `staleRailRecordRead`, or `collapseRailPhisIn`'s (1)/(2)/(2b).
+    //     ⭐ AND THE CLAIM MUST NAME **THIS** LOOP (C-1 round 3, F-C1B-2).
+    //     Round 2 keyed this set on the ROOT VALUE alone, module-wide, while the
+    //     property being skipped on is PER-LOOP; a claim made for loop A then
+    //     satisfied clause (0) for loop B, whose own clause (iii) question was
+    //     never asked (MEASURED, `p/z32_claim_across_loops_nomeas.c`). See the
+    //     set's own header for why a header-block key can only ever REFUSE.
     if ((CarriedRoots && CarriedRoots->count(Root)) ||
-        taint.ClaimedRailRoots.count(Root)) {
+        taint.ClaimedRailRoots.count({Root, L->getHeader()})) {
       RootsOut.insert(Root);
       continue;
     }
@@ -3225,8 +3292,14 @@ bool invariantRegisterRoots(Loop *L, TaintSet &taint, WidthDispatch &wd,
   if (invariantRegisterRootsImpl(L, taint, wd, DT, LI, GateCalls, RootsOut,
                                  CarriedRoots, Marked))
     return true;
-  for (Instruction *I : Marked)
+  for (Instruction *I : Marked) {
     taint.InPlaceRailOps.erase(I);
+    // BOTH sets, or `lowerOps`' (1b) tripwire would re-ask its question about an
+    // op this path did not commit — and answer it under a fence (`inPlaceFence
+    // Holds`' own `InPlaceRailOps` self-test, suppressed only for a committed op)
+    // that no longer describes the site (bd 3qlq Inc 1, C-1 round 3, F-C1B-1).
+    taint.PreLoopCommittedInPlaceOps.erase(I);
+  }
   return false;
 }
 
