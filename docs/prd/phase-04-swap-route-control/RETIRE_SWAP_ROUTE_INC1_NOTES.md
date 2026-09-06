@@ -2888,15 +2888,27 @@ docs/comments/one new one-line TU only; `cq-opt` again `cmp`-BYTE-IDENTICAL to
   `LoopLowering.cpp:156`**. FIXED by naming the FUNCTION at all of them. Round 3 also **widened the
   sweep to all three edited sources and to the bare `` `:<n>` `` CONTINUATIONS these docs write**
   (`| OpcodeLowering:341 / :428 |`, `(LoopLowering:2187, :2617)`) — a file-qualified-only regex
-  misses 4 of the 10 — and found **TWO MORE the lens could not see**: `OpcodeLowering:341` / `:428`
-  in this section's own reader table, both correct on `main` and moved to `:469` / `:556`.
-  MEASURED by `$SP/progress/fix_eqpx_c_work/citation_sweep.py` + a hand-adjudicated verdict file:
-  **62 citations scanned, 43 OK, 10 MISS-INTRODUCED, 9 MISS-PREEXISTING → 0 MISS-INTRODUCED after**.
+  misses 4 of the 10 — and found **TWO MORE the lens could not see**, in §3.14's own reader table:
+  the citations then reading `OpcodeLowering:341` / `:428`, which on `main` were `lowerOps` Phase
+  1's M-C guard conjunct and its Phase-2 `rewriteInPlaceValueRail` dispatch, and now name a comment
+  and a different comment. Both are FIXED by naming those two, so this paragraph is the only place
+  the old numbers survive — **as quotations of a retired citation, not as claims about this tree**.
+  MEASURED by `inc1-records/session-7bbdb89e/citation_sweep/` (the script, the 61-row
+  hand-adjudicated verdict file, and BOTH raw runs — committed, so this number is re-derivable):
+  **BEFORE (tree at `beb34e0`) 62 citations scanned — 43 OK, 10 MISS-INTRODUCED, 9
+  MISS-PREEXISTING; AFTER 61 scanned — 43 OK, 0 MISS-INTRODUCED, 9 MISS-PREEXISTING, 9 QUOTED**
+  (the QUOTED are this subsection's own retellings of retired numbers, classified so the next
+  sweep does not re-raise them, and 0 UNADJUDICATED in both runs).
   ⚠ **The 9 PRE-EXISTING are LEFT UNTOUCHED and named here so the next reader does not re-find
-  them**: `OpcodeLowering:263` (×4) and `:350` (×2) — on `main` the two real `InPlaceRailOps`
-  readers in that file were `:341`/`:428`, so those citations were already wrong before this branch
-  — and §3.14's `LoopLowering.cpp:3214` / `:3412-3413` for the two `AsLowered=true` sites (real on
-  this tree: `:3280` / `:3483`). None sits in a paragraph this branch edited.
+  them** — the numbers below are QUOTED so they can be FOUND, and none of them is a claim about
+  this tree: `OpcodeLowering:263` (×4 — §3.10's F-C1-1 subsection, §3.10's 8h7d.5 table, §3.11's
+  F-C1B-1 subsection, and one `LoopLowering.cpp` comment block) and `:350` (×2 — the table and that
+  comment block), whose subject on `main` was already NEITHER of that file's two real
+  `InPlaceRailOps` readers; and §3.14's `LoopLowering.cpp:3214` / `:3412-3413` for
+  the two `peelInPlaceBase(…, AsLowered=true)` call sites, which are really in
+  `invariantRegisterRootsImpl` and in `markIfRailLocal`. None sits in a paragraph this branch
+  edited, and each was wrong on `main` too — so fixing them here would be a claim this round did
+  not measure the history of. The verdict file `citation_verdicts.txt` carries all 62 rows.
 * **F-E2-3** — the `strictimm` partition above said `15 add` and counted the `@g` load as a sixth
   class. RE-COUNTED independently from the lens's own artefact: **42 `sub` · 19 `load volatile`
   (the `@g` load among them) · 16 `add` · 3 `cqrt_measure_i32` · 2 Argument = 82**. Self-cancelling;
