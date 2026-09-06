@@ -36,3 +36,5 @@ MEASURED: 4 mints / 0 `_unc` at 52 trace lines vs a hand-unrolled twin's 4/4 at 
   the rebased tree); status flips in PRD §0 **E2/E10/E11/E12**, `CLAUDE.md`'s C-1 bullet and
   `ROADMAP.md`. The round itself is `session-adc5590a/c1-round4/`; the F-C1E-2 reproducers are
   `inc1-records/c1-round4/c1e_a*.c`.
+
+* `NEXT_SESSION_PROMPT.md` + `eqpx_reproducers/` (43 programs + `immcheck.py`, copied from the investigation's scratchpad) — owner ruling 2026-09-06: bd `eqpx` is FIXED NEXT SESSION as a decline-only G2 re-ask at `lowerOps` (the investigation's spec); the prompt carries the whole state after the round-4 landing (`main` 16b15b3).
