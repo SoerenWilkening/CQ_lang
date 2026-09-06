@@ -2237,7 +2237,9 @@ oracle has no rolled/unrolled pair for this shape at all, and its unrolled membe
 this epic retired.
 
 **Pinned**, in the §3.14 style:
-* **lit**, corpus 1687 → **1690** (round 4's two accepts plus)
+* **lit**, corpus 1687 → **1690** at the rebase, and → **1691** after the lens on this tree
+  (the F-C1E-1 fixture below; `ls ir-pass/test/*.ll | wc -l`, re-measured). The rebase's own
+  addition is (round 4's two accepts plus)
   `control_phase_kickback_mixed_value_merge_preadd_inloop.ll` — 10 prefixes, one `%cq-opt`
   spawn, `OPT_RC=0 CHECK=1 FCNT=1 UCNT=1` (**RED**) on `main` 258d974 and **all ten zero**
   here. Its `UCNT` is the ⭐ discriminator (`cq_template_and_i32_hl_unc` = 1 here, **0** on
