@@ -27,6 +27,17 @@
 ; CHECK-NOT: cqrt_xorc_i32
 ; CHECK-NOT: cq_template_xor_i32
 
+; ⭐ MEASURED, AND THIS IS THE CELL'S POINT: EXACTLY ONE diagnostic — ours — and
+; `opt` rc 1. `lowerBreakReversePlay` (`CQLoweringPass.cpp:543`) still walks this
+; module AFTER our Phase-1 `continue` left the marked `xor` un-lowered, and it
+; prints NOTHING; there is no crash and no `LLVM ERROR`. A second diagnostic after
+; ours would be acceptable (the module lowers nothing either way); these three
+; negatives exist so that if one ever starts firing, a human is told rather than
+; the change passing as green.
+; CHECK-NOT: break reverse-play could not re-derive the lowered body
+; CHECK-NOT: break reverse-play cannot invert a lowered body gate
+; CHECK-NOT: break reverse-play cannot re-emit an uncollected body value
+
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

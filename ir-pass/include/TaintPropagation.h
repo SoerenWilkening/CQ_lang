@@ -370,6 +370,31 @@ struct TaintSet {
   // recognized value-accumulator loop.
   llvm::SmallPtrSet<llvm::Instruction *, 4> InPlaceRailOps;
 
+  // bd test_C_libtooling-eqpx — THE OPERAND INDEX OF THE PROVEN RAIL OPERAND,
+  // for every `InPlaceRailOps` member. `0` or `1`; an INDEX, never a `Value *`
+  // (a pointer keyed at one stage and read at another is the bd drbq Inc-1
+  // dangling defect, and RAUW replaces operands in place without reordering
+  // them, so an index survives every rewrite the pipeline performs).
+  //
+  // WHY IT EXISTS. G2's operand pick used to be computed TWICE — once by the
+  // writer, and again by `ArithLowering::rewriteInPlaceValueRail` (`:328`,
+  // `bool TL = taint.Tainted.count(L)`) at Phase 2, from a `Tainted` that
+  // `promote()` is mutating as Phase 2 runs. Two computations of one predicate at
+  // two program points is the shape of the bd 8h7d.5 F-1/F-3 findings, and it is
+  // what made the eqpx defect's COMMUTED form mutate the WRONG REGISTER. The
+  // writer's answer is now RECORDED here, RE-VERIFIED once at `lowerOps` Phase 1
+  // (against a fresh `inPlaceValueRailOperand` under final taint — a disagreement
+  // is the loud `cq loop lowering: in-place rail op no longer provable at
+  // lowering`), and CONSUMED by the emitter.
+  //
+  // Written by every `InPlaceRailOps` writer, at the same statement, and erased
+  // by the same rollback (`LoopLowering::invariantRegisterRoots`). The M-C
+  // straight-line route (`InPlaceReassign`) records NOTHING here on purpose: its
+  // `sub` widening picks the rail with a DIFFERENT predicate
+  // (`inPlaceReassignRailOperand`, handle-LHS only), so the emitter keeps its own
+  // `TL` pick for that route and M-C's stream is byte-for-byte untouched.
+  llvm::DenseMap<llvm::Instruction *, unsigned> InPlaceRailIdx;
+
   // bd 3qlq Inc 1, the THIRD C-1 review round's finding F-C1B-1 — THE SUBSET OF
   // `InPlaceRailOps` THAT `commitOutOfLoopInPlaceOps` PREDICTED, and therefore the
   // exact set `lowerOps` must RE-ASK.

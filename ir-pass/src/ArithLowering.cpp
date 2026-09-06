@@ -325,7 +325,22 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   // rail's logical width. The recognizer proved this (one tainted operand), so
   // the selection is unambiguous. The driver erases `bo`.
   Value *L = bo->getOperand(0), *R = bo->getOperand(1);
+  // bd test_C_libtooling-eqpx — CONSUME the writer's recorded operand index for a
+  // `lowerLoops`-marked rail op; do not re-derive it. Until eqpx this line re-ran
+  // G2's pick a SECOND time here, from a `Tainted` that `promote()` (`:49-57`) is
+  // mutating as Phase 2 runs, and that second answer is what put a quantum rail
+  // in the classical-immediate slot — and, with the operands commuted, mutated
+  // the WRONG REGISTER. `lowerOps` Phase 1 has already re-verified this index
+  // against a fresh `inPlaceValueRailOperand` under FINAL taint and declined
+  // loudly on a disagreement, so by here it is a checked fact, not a prediction.
+  //
+  // The M-C straight-line route (`InPlaceReassign`) records NO index and keeps
+  // the `TL` pick: its `sub` widening selects the rail with a DIFFERENT predicate
+  // (`inPlaceReassignRailOperand`, handle-LHS only), so M-C's emitted stream is
+  // byte-for-byte what it was.
   bool TL = taint.Tainted.count(L) != 0;
+  if (auto It = taint.InPlaceRailIdx.find(bo); It != taint.InPlaceRailIdx.end())
+    TL = It->second == 0;
   return emitInPlaceReassign(bo, Op, TL ? L : R, TL ? R : L, /*HandleIsLhs=*/TL,
                              AbiWidth, wd);
 }

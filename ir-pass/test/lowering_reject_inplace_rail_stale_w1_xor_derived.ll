@@ -36,15 +36,25 @@
 ; (`CQLoweringPass.cpp:543`) walks the LOWERED body and has its own declines
 ; (`kMsgBreakRederive` / `kMsgBreakUncovered`) for an un-lowered op. Our Phase-1
 ; `continue` leaves the marked `xor` un-lowered in exactly that module. MEASURED
-; disposition after the fix: `opt` exits non-zero with OUR diagnostic FIRST; no
-; crash, no `LLVM ERROR`. A second diagnostic after ours would be acceptable; a
-; crash would not.
+; disposition after the fix: EXACTLY ONE diagnostic — ours — and `opt` rc 1; no
+; second diagnostic, no crash, no `LLVM ERROR` (pinned by the CHECK-NOTs below).
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: in-place rail op no longer provable at lowering
 
 ; CHECK-NOT: cqrt_xorc_i32
 ; CHECK-NOT: cq_template_xor_i32
+
+; ⭐ MEASURED, AND THIS IS THE CELL'S POINT: EXACTLY ONE diagnostic — ours — and
+; `opt` rc 1. `lowerBreakReversePlay` (`CQLoweringPass.cpp:543`) still walks this
+; module AFTER our Phase-1 `continue` left the marked `xor` un-lowered, and it
+; prints NOTHING; there is no crash and no `LLVM ERROR`. A second diagnostic after
+; ours would be acceptable (the module lowers nothing either way); these three
+; negatives exist so that if one ever starts firing, a human is told rather than
+; the change passing as green.
+; CHECK-NOT: break reverse-play could not re-derive the lowered body
+; CHECK-NOT: break reverse-play cannot invert a lowered body gate
+; CHECK-NOT: break reverse-play cannot re-emit an uncollected body value
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
