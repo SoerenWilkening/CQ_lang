@@ -2055,17 +2055,26 @@ The widening is "more ops enter `taint.InPlaceRailOps` (and, in lockstep,
 |---|---|---|---|
 | `OpcodeLowering:341` / `:428` | skips M-C's own classification and routes the op to `rewriteInPlaceValueRail` | the op is emitted in place — **this is the subject** | — |
 | `inPlaceFenceHolds` G5's self-test | refuses a site already in the set (so the commitment has one owner) | same, by construction; suppressed only for the (1b) re-ask | — |
-| `railValueConsumerDisposition` → the **Rule-8 FAN-OUT guard** (`LoopLowering:2187`, `:2617`, `> RailValueUse::OutOfPlace`) | counts a second in-place mutator of one rail and DECLINES loudly | `Unproven` and `InPlace` are **both** `> OutOfPlace`, so the count is arithmetically unchanged | **none** |
+| `railValueConsumerDisposition` → the **Rule-8 FAN-OUT guard** (`LoopLowering:2187`, `:2617`, `> RailValueUse::OutOfPlace`) | counts a second in-place mutator of one rail and DECLINES loudly | `Unproven` and `InPlace` are **both** `> OutOfPlace`, so the count is arithmetically unchanged — and that is complete ONLY because **a committed op can never have been `OutOfPlace`** (F-C1D-3.1): `railValueConsumerDisposition` returns `OutOfPlace` **exactly** when `blockCanRepeat(BO->getParent())` (`LoopLowering.cpp:212-213`, the one `OutOfPlace` return in the function), and `inPlaceFenceHolds`' **G5** refuses precisely that (`ArithLowering.cpp:646-648`, `LI.getLoopFor(...) \|\| blockCanRepeat(...)` → `false`), so the commit cannot mark a repeatable-block op. Strike G5 and the widening WOULD add an `InPlaceUser` and could mint a NEW `kMsgRailFanout` decline | **none** |
 | `railValueConsumerDisposition` → `collectRailGates` (`LoopLowering:928`, `== InPlace`) | builds the gate set `staleRailRecordRead` reasons over — and its own comment says **a MISSING gate is the OVER-ACCEPT** | the gate set only GROWS | **strictly safer** |
-| `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree (`grep -n 'AsLowered=\*/true'`): clause (ii)'s peel at `:3176` and `markIfRailLocal`'s `onRail` at `:3375` | the FACT-time peel crosses an op only when it is really emitted as `cqrt_{addc,xorc}` | crosses more ops — **this is the capability**, and the two sites are the SAME spelling, so they cannot disagree about one value (the F-1/F-3 fix) | — |
+| `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree: clause (ii)'s peel and `markIfRailLocal`'s `onRail`. RE-MEASURED on the rebased tree with `grep -rn 'peelInPlaceStep(\|peelInPlaceBase(' ir-pass/src ir-pass/include` → **24 hits**, of which **4 are prose** and **2 are the declaration and the definition**, i.e. **18 code call sites**, and only these two pass `true` (`LoopLowering.cpp:3214` and `:3412-3413`, the latter wrapped across two lines, which is why a single-line `grep -c 'AsLowered=\*/ *true'` reports 1) | the FACT-time peel crosses an op only when it is really emitted as `cqrt_{addc,xorc}` | crosses more ops — **this is the capability**, and the two sites are the SAME spelling, so they cannot disagree about one value (the F-1/F-3 fix) | — |
 | every OTHER `peelInPlaceBase`/`peelInPlaceStep` caller | uses the default `AsLowered=false`, the SHAPE reading | membership is not consulted | **none** |
-| `WireWalk` (`declineStaleRecordOps`) | its own comment: the stage runs BEFORE `lowerLoops`, so the set is EMPTY there | unreachable | **none** |
+| `WireWalk` (`declineStaleRecordOps`) | ⚠ **NOT for the reason its own comment gives** (F-C1D-3.2). `WireWalk.cpp:457` says "`declineStaleRecordOps` runs BEFORE `lowerLoops`, so `InPlaceRailOps` …" — which is FALSE for the SECOND call, `declineLiftedStaleRecordOps` at `CQLoweringPass.cpp:522` (and `:848` in the second entry point), both of which run AFTER the commit at `:363`/`:393`. The row survives for a STRONGER reason: `WireWalk` has **no code read of either set at all** — `grep -n 'InPlaceRailOps\|PreLoopCommittedInPlaceOps' ir-pass/src/WireWalk.cpp ir-pass/include/WireWalk.h` returns exactly ONE line, `:457`, and it is PROSE | unreachable, by absence rather than by ordering | **none** |
 | `taint.PreLoopCommittedInPlaceOps` → the (1b) tripwire | re-asks the fence at `lowerOps` and declines loudly on a changed answer | more ops re-asked ⇒ more POSSIBLE loud declines | **decline direction; 0 measured over 485 programs** |
+| ⭐ **THE ROW THE TABLE DID NOT HAVE — the F-3 question itself** (F-C1D-3.3): when the GATE set widens, what OTHER set was computed over the SAME closure? | `staleRailRecordRead`'s **SKIP** set — the CHAIN — is that set | it is built with `peelInPlaceStep(…, AsLowered=false)`, the SHAPE reading, which crosses a dtzb-shaped `BinaryOperator` **regardless of membership**. So the widening grows the GATE set and the RECORD set (both decline-ward) and **cannot shrink the skip set** | **none — structurally** |
 
-Two of those rows are the ones a future round should re-derive if anything moves: the fan-out
+Three of those rows are the ones a future round should re-derive if anything moves: the fan-out
 guard's arithmetic (it holds only because the enum orders `Unproven` and `InPlace` on the same
-side of `OutOfPlace`), and `collectRailGates`' `InPlace`-only cell (whose safety rests on M-C's
-G6/G7 pair, exactly as its own comment says).
+side of `OutOfPlace` **and** because G5 keeps a repeatable-block op out of the set entirely),
+`collectRailGates`' `InPlace`-only cell (whose safety rests on M-C's G6/G7 pair, exactly as its own
+comment says), and the new skip-set row (whose safety rests on the peel's DEFAULT argument — change
+that default and the F-3 hole opens).
+
+⚠ **WHY THE LAST ROW IS THE ONE THAT MATTERS.** It is literally the omission that cost the 8h7d.5
+epic a round: F-1 widened the gate set and not the record set, and F-3 was that omission, found one
+round later by an adversarial reviewer and not by the fixture corpus. The table above had asked
+"who READS this set?" of every reader and had never asked "what OTHER set is derived from the same
+closure?" — which is a different question with a different answer.
 
 #### Mutation validation — one half at a time, on a `git archive HEAD` copy
 

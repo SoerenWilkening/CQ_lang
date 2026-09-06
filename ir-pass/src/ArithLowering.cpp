@@ -704,6 +704,16 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     // show): the diamond needs ONE conversion to break, the if/else two. The
     // `At == bo` widening contemplated in `priorUseIsSettled` would move the
     // if/else case, so re-derive that fixture before taking it.
+    // ⚠ AND THIS PAIR IS NOW THE SOLE NET ON THE COMMIT PATH TOO (bd 3qlq, the
+    // FOURTH C-1 round, lens finding F-C1D-2): `LoopLowering`'s
+    // `commitOutOfLoopInPlaceOps` used to carry `P->hasOneUse()`, a second and
+    // independent refusal of anything whose parent has two users, and that round
+    // retired it. Read the argument at that function for why the commit still
+    // cannot reach a chain head — its peel runs BACKWARD and stops at the merge's
+    // own `cqrt_alloc` — and see
+    // `control_phase_kickback_mixed_value_merge_preadd_inloop.ll`, whose `HCNT`
+    // prefix pins the head OUT of place on the very shape that made the commit
+    // fire on the `%out` rail beside it.
     //
     // SAY "PAIR", NOT "G6", AND SAY WHY IT IS A WEAK TRIPWIRE. Measured by
     // mutation on that fixture: disabling G6 ALONE leaves it green (G7 refuses the

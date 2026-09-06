@@ -2907,6 +2907,44 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 //     `cqrt_*` writer is `provablyBefore` the op and is settled by
 //     `priorUseIsSettled` arm (c)).
 //
+// ⭐ AND THE OBLIGATION THAT ARRIVED WITH THE REBASE ONTO INCREMENT 2: WHY THIS
+// COMMIT CANNOT REACH AN INC-2 CHAIN HEAD (bd 3qlq, the round-4 lens finding
+// **F-C1D-2**). Inc 2's value-arm merge is sound only because
+// `classifyInPlaceReassignment`'s G6/G7 pair ALWAYS refuses M-C on a hoisted
+// chain HEAD — the head reads the arm's input `Q`, and `Q` always has a second
+// user (the second controlled copy, or the sibling arm's head), so the earlier
+// head is refused by G6 and the later by G7. Read that function's "CONSUMER 2"
+// comment; it is the whole argument, and until this round `P->hasOneUse()` was a
+// SECOND, independent refusal of the same thing on THIS path. Removing it makes
+// G6/G7 the sole net here, so the question "can this commit reach a chain head?"
+// stops being academic. IT CANNOT, BY CONSTRUCTION, FOR TWO INDEPENDENT REASONS:
+//
+//   (A) DIRECTION. The walk below is `peelInPlaceStep`, which returns an
+//       OPERAND — a rotation gate's arg 0, or `inPlaceValueRailOperand`'s tainted
+//       side. It walks BACKWARD, from the loop-invariant candidate toward its
+//       base. A chain head is a USER of `Q`, i.e. FORWARD of it, and lives on the
+//       arm's side of the merge; it is never `Cur` on a backward walk from a
+//       value the loop READS.
+//
+//   (B) THE PEEL STOPS AT THE `cqrt_alloc`. The merge-out-rail candidate reaches
+//       this path from `collapseFlattenedLoopRails` (`CQLoweringPass.cpp`, the
+//       ROUND-2 slot), i.e. AFTER `lowerControlRegions` has already emitted
+//       `%out = call i32 @cqrt_alloc_<W>(i32 0)` and RAUW'd the merge to it. So
+//       the chain is `%13 = add nsw %out, 7` → `%out`, and `peelInPlaceStep`'s
+//       FIRST clause refuses a `CallInst` that is not in `GateCalls` (an alloc
+//       never is) and returns null. The peel visits exactly {the preheader op,
+//       `%out`} and stops; there is no edge from `%out` back to the copies that
+//       wrote it, let alone to the chain that fed them.
+//
+// MEASURED rather than argued, on the rebased tree:
+// `ir-pass/test/control_phase_kickback_mixed_value_merge_preadd_inloop.ll`'s
+// `HCNT` prefix asserts that the Inc-2 chain HEAD is emitted OUT of place onto a
+// fresh rail (`cq_template_mul_i32_hl(%p, 5)` — `clang -O1` reassociates
+// `(p+3)*5` into `p*5 + 15`, so it is a `mul`, not an `add`) and that `p`'s own
+// rail carries NO in-place `cqrt_addc`/`cqrt_xorc` anywhere in the module, while
+// the SAME module's `%out` rail carries exactly one. Its e2e pair is
+// `slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c`.
+//
 // SO THE COMMIT NOW ASKS EXACTLY TWO THINGS: the immediate is a `Constant`
 // ((1a), below — MONOTONE, a property of the IR class), and
 // `classifyInPlaceReassignment` — M-C's own fence, the ONE spelling (Rule 14) —
