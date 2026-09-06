@@ -981,6 +981,7 @@ stages** (`declineTaintEscapes`, `declineStaleRecordOps`, `detectSpecializations
 | `lowerControlledIOSinks` | yes | **YES in principle** — an onward `if (%out > k) printf(...)` is a round-2 I/O-under-control shape | **NOT re-run. Over-DECLINES, MEASURED** (`$SP/progress/fix_r2_work/p/z1_onward_io.c`, 2 TU): rc 1, `cq controlled lowering: control flow under quantum control` — the round-2 `detectControlRegions` sees a void-arm diamond with no merge φ and refuses it. The identical program with a ROUND-1 condition ACCEPTS (`p/z3_io_flat.c`, 8 trace lines), so the difference really is the round. Safe direction, no customer. **Q-R2-3** |
 | `lowerLoops` (Q1 / Case A / Case B) | yes | **YES in principle** — a loop whose EXIT condition becomes tainted at round 2 | **NOT re-run. Over-DECLINES, MEASURED** (`p/z2_onward_loopexit.c`: `while (%out > 0) { cq_phi(.25); y = y-1; }`): rc 1, `cq controlled lowering: nested control flow under quantum control`. Q1's own message would have been `loop under quantum control`; the CONTROL layer refuses first, so the decline is loud and in the right layer even though it is not Q1's. Recorded as a residual, **Q-R2-3** |
 | **`commitOutOfLoopInPlaceOps`** (inside `collapseFlattenedLoopRails`, added by the SECOND C-1 round) | yes | **YES — THIS IS F-C1B-1 / F-C1C-1**, and it is the archetype the table is for: a stage whose output is a **PERMISSION** (an entry in `taint.InPlaceRailOps`, i.e. a COMMITMENT that `lowerOps` honours without re-asking), computed over `taint.Tainted` and over `P`'s use list, both of which `repropagateControlMerges` and `lowerRotations` then change | **FENCED AND RE-VERIFIED (round 3, §3.11).** The taint half is closed MONOTONICALLY at the commit (`isa<Constant>(Imm)` — a `Constant` is in no `Tainted.insert` site, so its G2 answer cannot move); every other input is RE-ASKED at `lowerOps` for exactly the ops this stage marked (`taint.PreLoopCommittedInPlaceOps`), under a fresh `DominatorTree`/`LoopInfo` and final taint, declining `cq loop lowering: pre-loop in-place op no longer provable at lowering`. **A silent fallback to out-of-place is NOT sound** — the body marking this stage licensed already stands. The full input table is §3.11 |
+| **the OTHER THREE `InPlaceRailOps` writers** — round 1's `railRoot` marking, `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3) | yes | **YES — THIS IS bd `test_C_libtooling-eqpx` (F-C1C-B, §3.12)**, and it is the row round 3 argued it did not need. Their marking is also a PERMISSION `lowerOps` honours without re-asking; their own fences prove the RAIL (self-cycle, fan-out, record reads) and **none of them proves the IMMEDIATE stays classical**, which is exactly the input `repropagateControlMerges` moves | **UNFIXED, and NOT this epic's**: MEASURED reachable from plain C for the `xor` stem (`cqrt_xorc_i32(h1, 6)`, the bare `6` being a template rail's handle id) and reproducing byte-for-byte on the **pre-3qlq ORACLE 52d7764**, so it pre-dates the whole epic. Filed as bd `test_C_libtooling-eqpx`; the proposed fix is round 3's shape with **G2 alone** re-asked for every `InPlaceRailOps` member (G2 alone because G5 would always refuse an in-loop site), declining loudly |
 | **`collapseFlattenedLoopRails`** | yes | **YES — THIS IS F-R1-1** | **FIXED TWICE**: re-run at the end of `repropagateControlMerges` over the DELTA of `InLoopFlattenedPreds` (round 2) — and the DELTA ITSELF was wrong until the SECOND C-1 review round (F-C1-2(2b), §3.10): as a SET of blocks it could not see a round-2 region flattened into the very `Pred` a round-1 region already used, so a mixed loop holding BOTH was never re-offered. It is a per-block COUNT now, and "round 2 opened something here" is the count having MOVED |
 | `deleteGlobalPhases` (P7) | — | — | **already moved AFTER `repropagateControlMerges`** by round-1 F-L3-1 |
 | `lowerIOSinks`, `lowerQramReads`, `lowerShadowMemory`, `declineClassicalMuxes`, `declineLiftedStaleRecordOps`, `specialize`, `lowerRotations`, `lowerOps`, `lowerMeasures`, `lowerBreakReversePlay`, `uncompute` | **NO** — all run AFTER | n/a | no action; they see the round-2 CFG and round-2 taint by construction |
@@ -992,9 +993,12 @@ granted on a round-1 premise — is F-R1-1, and it is fixed.
 
 **READ THIS TABLE AS A METHOD, NOT A RESULT.** The question it answers is not "is this stage
 correct?" but "**does this stage compute something that a LATER stage consumes, over a
-premise round 2 falsifies?**" ⚠ **FOUR defects now answer yes** — F-L3-1 (round 1), F-R1-1
+premise round 2 falsifies?**" ⚠ **FOUR defects INSIDE THIS EPIC now answer yes** — F-L3-1 (round 1), F-R1-1
 (round 2), and F-C1B-1 + F-C1C-1 (the THIRD C-1 round, §3.11), the last two in a stage the
-SECOND C-1 round ADDED to this pipeline WITHOUT giving it a row here. Adding a stage between
+SECOND C-1 round ADDED to this pipeline WITHOUT giving it a row here — **and a FIFTH answers
+yes from BEFORE the epic**: bd `test_C_libtooling-eqpx` (F-C1C-B, §3.12), the same class through
+the three OTHER `InPlaceRailOps` writers, reproducing on the pre-3qlq oracle. Those writers had no
+row here either until this line; they have one now. Adding a stage between
 `lowerControlRegions` and `repropagateControlMerges` means adding its row. All four answer yes
 on a MARKING or a DELETION — a stage whose output is a permission or an erasure, consumed much later, where
 being asked at the wrong time is invisible to `opt -verify`, invisible to the golden diff,
@@ -1508,10 +1512,23 @@ rounds and 3 findings-per-round on ONE function; budget a fourth.
 
 **THIS ROUND IS NARROWING ONLY.** Every change is in the refuse direction. Over the whole
 262-program reproducer corpus (round 1's §3.5 population + review_c1's 60 + fix_c1b's +
-review_c1b's 51 + this round's 3) the round-2 binary and this one differ on **6 programs and
-no others** — status normalised and every trace byte-compared: the four F-C1B-1 reproducers
-(back to 542d588's stream), `z21` (the disclosed (1a) cost, back to 542d588's stream) and
-`y1` (the new loud decline). **256 unchanged.**
+review_c1b's 51 + this round's 3) the round-2 binary and this one differ on **6 programs in
+the F-C1B-1 / (1a) / F-C1C-1 scope, plus `w3` by design (the F-C1B-2 revert)** — status
+normalised and every trace byte-compared: the four F-C1B-1 reproducers (back to 542d588's
+stream), `z21` (the disclosed (1a) cost, back to 542d588's stream), `y1` (the new loud
+decline) and `w3` (the per-loop `ClaimedRailRoots` key, 3/3 → 3/0, back to 542d588's and the
+round-1 fix's stream). **256 unchanged of the 262.**
+⚠ **THE "6 AND NO OTHERS" THIS SENTENCE ORIGINALLY CARRIED WAS A BOUND OVER A CORPUS THAT DID
+NOT YET CONTAIN ITS OWN SEVENTH MOVER** (round-3 lens finding F-C1C-E): `w3`/`w4` were
+authored at 02:59, six minutes after the sweep that produced the number finished at 02:53, so
+`popdiff` never saw them — even though the round's OWN step 6b reports `w3` moving, by
+design, as the F-C1B-2 pin. Nothing about the FIX changes; the BOUND does. **The lens's
+independent re-run over a 299-program corpus that DOES contain them: 286 unchanged / 13
+moved**, of which one (`c1c_a1`) is a harness artefact of its own probe (byte-identical
+lowered IR modulo `ModuleID`; only a `ptrtoint (ptr @g_tab+12 to i32)` load address differs
+between two separately linked binaries), the other 12 all in the REFUSE direction, **0
+programs FIX2-DECLINE → SUBJECT-ACCEPT, and no decline string changed**. Quote the 299-corpus
+figures, with that command, rather than the 262 one.
 
 #### F-C1B-1 — a commitment taken under ROUND-1 taint and honoured unconditionally at `lowerOps`
 
@@ -1568,7 +1585,11 @@ a NEW such stage without giving it a row. It has one now.
   later stage, and CHECKED rather than assumed: `IOSinkLowering.cpp:295` already enumerates
   every `taint.Tainted.insert(` site as a `CallInst`/`Instruction`/(clone-local) `Argument`,
   never a `Constant`, and it re-measures at this HEAD (`grep -rn 'Tainted\.insert('
-  ir-pass/src` → **35** sites; the file's own "30" is older). Measured to keep every shipped
+  ir-pass/src` → **37 lines, of which 2 are PROSE** — a comment in `DagTraversal.cpp:127` and
+  this fence's own comment at `LoopLowering.cpp:2922` — i.e. **35 CODE sites**; the file's own
+  "30" is older. The count travels with its command, and the command's raw output is 37: the
+  round-3 lens re-measured it and found the figure right and the quoted command's output
+  mis-stated, F-C1C-E). Measured to keep every shipped
   customer (`r2`'s `7`, `r71`'s `9`, `x1`'s `7`, `z7`'s `-7`; `r33`/`r35`/`r40` have no
   preheader op) and to refuse all four reproducers.
 * **(1b) a LOUD TRIPWIRE at `lowerOps` (Rule 1 — never a third path):** every committed op is
@@ -1581,9 +1602,22 @@ a NEW such stage without giving it a row. It has one now.
   `inPlaceFenceHolds` (ONE fence body; no second spelling). **A silent fallback to
   out-of-place would NOT be sound**: the commit is what licensed `markIfRailLocal` to mark the
   loop body, and that permission already stands in `taint.IterationLocalBlocks`.
-  ⚠ **ONLY the ops THIS path committed are re-asked.** The other three `InPlaceRailOps`
-  writers mark a rail they PROVED with their own fences; re-asking M-C's about those would be
-  a second recognizer adjudicating their shape.
+  ⚠ **ONLY the ops THIS path committed are re-asked** — a SCOPE decision, and it is not a
+  clean bill of health for the other three. ⚠⚠ **THE SENTENCE THAT USED TO STAND HERE —
+  *"the other three `InPlaceRailOps` writers mark a rail they PROVED with their own fences"*
+  — IS FALSE AS A BOUND ON THIS DEFECT CLASS, and the round-3 lens measured it false
+  (F-C1C-B, §3.12).** Their fences prove the **RAIL** (a closed self-cycle, its fan-out, its
+  record reads); **not one of them proves the IMMEDIATE stays classical**, which is the input
+  F-C1B-1 turned on. The identical defect is reachable through the LOOP writers — `tryCaseA`
+  at `lowerLoops` and `collapseRailPhisIn` step (3) — for the **`xor` stem, from plain C**,
+  and it is **PRE-EXISTING**: it reproduces byte-for-byte on the pre-3qlq ORACLE 52d7764, on
+  542d588 and on every binary of this epic, so it is neither introduced by round 3 nor
+  chargeable to it. Filed as bd **`test_C_libtooling-eqpx`**; §3.12 carries the reproducer,
+  the population and the proposed fix. The real reason the re-ask is scoped to this path is
+  the one recorded at `TaintSet::PreLoopCommittedInPlaceOps` — re-asking M-C's WHOLE fence
+  about another writer's op would put a second recognizer over
+  G5's loop clause, which the proof's owner deliberately answers differently — and that
+  argument is about the FENCE BODY, not about the other writers being immune.
 
 **THE TWO NETS ARE INDEPENDENT, AND THE MUTATION SHOWS IT.** With (1a) removed, the two
 reproducer fixtures do not go silently wrong — they fail with
@@ -1691,7 +1725,7 @@ the round-2 `collapseFlattenedLoopRails`), then `deleteGlobalPhases`, `lowerIOSi
 
 | input of the fence | read by | can it change between `:393` and `:536`? | disposition |
 |---|---|---|---|
-| `taint.Tainted` — for **`Imm`** | G2 (`inPlaceReassignRailOperand`) | **YES, and this was F-C1B-1.** `repropagateControlMerges` taints every value derived from a 6.5/4.5 `%out` | **FENCED at the commit by (1a)**: a `Constant` is never inserted into `Tainted` (35 sites, all `CallInst`/`Instruction`/`Argument`), so for a constant immediate G2's answer is FIXED. Re-asked anyway by (1b) |
+| `taint.Tainted` — for **`Imm`** | G2 (`inPlaceReassignRailOperand`) | **YES, and this was F-C1B-1.** `repropagateControlMerges` taints every value derived from a 6.5/4.5 `%out` | **FENCED at the commit by (1a)**: a `Constant` is never inserted into `Tainted` (**35 code sites; the grep returns 37 lines, 2 of them prose**, all `CallInst`/`Instruction`/`Argument`), so for a constant immediate G2's answer is FIXED. Re-asked anyway by (1b) |
 | `taint.Tainted` — for **`P`** | G2 | It cannot GAIN taint (it is tainted at commit, and `P` is required tainted); it CAN LOSE it — 30 `taint.Tainted.erase(` sites exist, mostly emitter scrub helpers for a REPLACED instruction | **RE-ASKED by (1b)**: G2 then returns null and the module declines loudly |
 | `taint.InPlaceRailOps` — self-membership | G5 first disjunct | YES, by our own write | **SUPPRESSED for the re-ask only** (`IgnoreSelfMarking`), because it is an ownership arbitration and not the question being asked |
 | the **CFG** (`LI`, `blockCanRepeat`) | G5 second disjunct | The round-2 flatten only SPLICES a diamond into its `Pred` and ERASES the arm/merge blocks; it adds no edge, so it cannot make an acyclic block reachable from itself, and no stage between the two points creates a loop. **No measured customer.** | **RE-ASKED by (1b)** under a FRESH `LoopInfo` the driver builds per function — so the argument does not have to be trusted |
@@ -1763,3 +1797,101 @@ Both findings of this round are the same shape: an emitter's decision predicted 
 stage. The structural alternative is to move the whole in-place question to `lowerOps` and
 have `lowerLoops` ask a CONSERVATIVE version (would M-C possibly fire?) that only ever
 over-declines. That is a re-plumbing of the Rule-13 core, not a review round's call.
+
+### 3.12 What the round-3 LENS found OUTSIDE the round's scope — F-C1C-B, a PRE-EXISTING confirmed miscompile of the same class through the LOOP writers (bd `test_C_libtooling-eqpx`)
+
+The independent lens on round 3 graded the round itself **CLEAR-WITH-ITEMS** (F-C1C-A/C/D/G
+CLEAR, F-C1C-E/F DOC). It also probed the ONE sentence round 3 used to bound its own scope —
+*"the other three `InPlaceRailOps` writers mark a rail they PROVED with their own fences"* —
+and **measured it false**. The finding is **NOT round 3's, NOT this epic's, and cannot block
+either**: it reproduces byte-for-byte on the **pre-3qlq ORACLE 52d7764**, on 542d588, on the
+round-1 fix, on the round-2 fix and on this branch. It is recorded here because §3.11's
+sentence and `OpcodeLowering.cpp`'s comment would otherwise be read by the next round as a
+BOUND, which is exactly how the F-C1B-1 class got its second and third instance.
+
+**THE REPRODUCER — plain C, 2 TU, no hand-IR** (lens `p/c1c_m_xor_and_noregion.c`; the second
+TU is `int ext_f(int a){ return a + 100; }`):
+
+```c
+int ext_f(int a);
+int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
+  int y=5; if (q>5) y=ext_f(7);      /* a 6.5 classical-call arm -> %out           */
+  int w = y & 7;                     /* DERIVED from %out: tainted only at ROUND 2 */
+  for(int i=0;i<3;i++){ r = r ^ w; } /* an in-BODY rail op, marked by tryCaseA     */
+  return cq_measure(r)+cq_measure(y)+cq_measure(q); }
+```
+
+MEASURED, identical on all five binaries — 21 trace lines, `opt` exit 0, verify-clean, STRICT
+stage 2b **`5 rail mint(s) of which 5 left allocated … 0 violation(s), 0 unproven`**:
+
+```
+cq_template_and_i32_hl(h3, 7) -> h6      <- w = y & 7 : a QUANTUM rail off the 6.5 out-rail
+cqrt_xorc_i32(h1, 6)                     <- r ^= 6 : the bare decimal 6 IS h6's HANDLE ID
+cqrt_xorc_i32(h1, 6)
+cqrt_xorc_i32(h1, 6)
+cqrt_measure_i32(h1) -> 0                <- measures a register never entangled with y
+```
+
+Lowered IR: `call void @cqrt_xorc_i32(i32 %h2, i32 %h_op)` with
+`%h_op = call i32 @cq_template_and_i32_hl(i32 %out, i32 7)`. `h6` is never `_unc`'d and never
+freed. **This is F-C1B-1's defect verbatim, one writer over.** Stage 2b is blind for the
+reason it is always blind to this family: its immediate check runs per rail at a `cqrt_free`,
+and `h1` is MEASURED rather than freed, so its write set is never looked at.
+
+**POPULATION, measured by the lens on the subject (and identical on 542d588 and, where the
+surface allows, on the oracle):**
+
+| probe | in-body op | derived immediate | region in the body? | handle in the immediate slot |
+|---|---|---|---|---|
+| `c1c_m_xor_and_noregion` | `r ^= w` | `y & 7` | no (round-1 `tryCaseA` is the writer) | **YES** |
+| `c1c_m_xor_and` / `c1c_w2_bodyxor_r2derived` | `r ^= w` | `y & 7` | yes (round-2 `collapseRailPhisIn` step (3)) | **YES** |
+| `c1c_m_xor_mul` | `r ^= w` | `y * 3` | yes | **YES** |
+| `c1c_m_xor_add1` | `r ^= w` | `y + 1` | yes | **YES** |
+| `c1c_w2o_..._oldsurface` | `r ^= w` | `y & 7` | yes, register-form `cq_phi` | **YES on the pre-3qlq ORACLE** |
+| `c1c_m_add_{and,mul,add1}`, `c1c_m_add_and_noregion`, `z36`, `c1c_w1` | `r += w` | any | either | no — the correct out-of-place Q+Q `cq_template_add_i32(h3, h_op)` |
+
+So it is an **`xor`-stem-only asymmetry as measured**, and `z36` — the one negative probe
+review_c1b's scope paragraph rested on — happens to be an `add`. ⚠ The CAUSE of the stem
+asymmetry is **not located**; do not read "add is safe" out of this table, read "no `add`
+spelling we tried reaches it".
+
+**ROOT CAUSE, and it is the same words as F-C1B-1's.** `rewriteInPlaceValueRail`
+(`ArithLowering.cpp`) picks the rail with `bool TL = taint.Tainted.count(L)` and passes the
+OTHER operand through as the classical immediate, under a comment saying the recognizer proved
+exactly one tainted operand. By `lowerOps` BOTH operands are tainted: the loop writers ran at
+`lowerLoops` (`CQLoweringPass.cpp:363`) and at `collapseFlattenedLoopRails` (`:393`), and
+`repropagateControlMerges` (`:409`) taints the `%out` derivation afterwards. **Their fences
+prove the RAIL — the self-cycle, its fan-out, its record reads. None of them proves the
+IMMEDIATE stays classical**, and that is the input this defect turns on. It is the ⭐
+once-only-stage class of §2's table (a value computed before `repropagateControlMerges` and
+consumed after it), reaching the three writers §3.11 left alone.
+
+**PROPOSED FIX (bd `test_C_libtooling-eqpx`, NOT built here).** The shape round 3 shipped for
+the preheader writer, applied to the rest: at `lowerOps`, for **every** `InPlaceRailOps`
+member, re-ask **G2 alone** ("exactly one tainted operand") under FINAL taint and DECLINE
+LOUDLY on a changed answer — G2 alone, not the whole fence, because G5 would always refuse an
+in-loop site — with a mirrored decline fixture per stem plus the three reproducer spellings,
+and then the 8h7d.5 question asked of all four writers together. **Never a silent fallback to
+out-of-place**: the body marking those writers licensed already stands in
+`taint.IterationLocalBlocks` (Rule 1, the §3.11 (1b) argument verbatim).
+
+**Reproducers** live in the session-2 scratchpad
+(`.../adc5590a-.../scratchpad/progress/review_c1c_work/p/c1c_m_xor*.c`, `c1c_w2*.c`, plus
+`tu_extf.c`); bd `test_C_libtooling-eqpx` carries the full description, and the round-3
+plain-C corpus that IS committed is `inc1-records/c1-round3/`.
+
+#### The two DOC findings of the same lens, applied above rather than only listed here
+
+* **F-C1C-E** — §3.11's population headline bounded the round over a corpus that did not yet
+  contain its own seventh mover (`w3`, created six minutes after the sweep). Corrected in
+  place, with the lens's 299-program re-run (286 unchanged / 13 moved, 0 in the accept
+  direction) as the figure to quote. And the `35` `Tainted.insert` sites is right while the
+  command quoted beside it returns **37 lines, 2 of them prose** — corrected in §3.11, in the
+  `LoopLowering.cpp` fence comment, and in the input table.
+* **F-C1C-F** — `TaintPropagation.h`'s `ClaimedRailRoots` paragraph argued "a mis-key can only
+  ever REFUSE", which covers the **MISS** direction only; the **RECYCLE** direction (root
+  address AND header address both recycled to matching live values) is the retirement trigger,
+  and the paragraph directly above it records exactly that direction for the root half. One
+  sentence added to the header. Not a defect: no spurious match is constructible today, and
+  `RegionFlatten` erases ARM/MERGE/COND blocks between the writers and the round-2 reader,
+  never a loop HEADER in any measured shape.

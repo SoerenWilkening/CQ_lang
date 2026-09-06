@@ -404,10 +404,23 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > (`cq loop lowering: pre-loop in-place op no longer provable at lowering`), and by
 > narrowing `taint.ClaimedRailRoots` to `(root, the CLAIMING loop's header)`. Over the
 > whole 262-program reproducer corpus the round-2 binary and this one differ on **6
-> programs and no others**, every one in the refuse direction; `e2e-loop-twin-matrix`
-> **Passed, 181.66 s** with no cell moved. That makes it **seven instances of one
-> defect class over five adversarial rounds on one function.**
-> **A re-clearance is pending; landing on `main` follows the
+> programs in the F-C1B-1 / (1a) / F-C1C-1 scope, plus `w3` by design (the F-C1B-2
+> revert)** — the round's own "6 and no others" was a bound taken over a corpus that
+> did not yet contain its seventh mover, corrected by the round-3 lens (F-C1C-E); its
+> independent re-run over **299** programs gives **286 unchanged / 13 moved**, one of
+> them a harness artefact of its own probe and the other 12 all in the REFUSE
+> direction, with **0 programs going decline → accept and no decline string changed**.
+> `e2e-loop-twin-matrix` **Passed, 181.66 s** with no cell moved. That makes it
+> **seven instances of one defect class over five adversarial rounds on one
+> function** — two of them INTRODUCED BY A FIX — **plus one PRE-EXISTING member of
+> the same class found in passing by the round-3 lens** (F-C1C-B, bd
+> `test_C_libtooling-eqpx`, notes §3.12: the same defect through the LOOP writers for
+> the `xor` stem, reproducing on the pre-3qlq oracle 52d7764, so NOT this epic's and
+> NOT a blocker for it).
+> **STATUS: three C-1 rounds on branch `3qlq-inc1-fix-c1`** — round 1 the CAPABILITY,
+> round 2 two more members of the class plus a confirmed miscompile of its own,
+> round 3 the NARROWING — **the round-3 lens graded CLEAR-WITH-ITEMS (both DOC
+> findings applied). A re-clearance is pending; landing on `main` follows the
 > re-clearance verdict — do not read this block as landed.** `cq_phi` is
 > **register-free** —
 > `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"

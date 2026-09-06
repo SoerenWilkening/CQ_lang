@@ -377,14 +377,28 @@ struct TaintSet {
   // The other three writers of `InPlaceRailOps` (round 1's `railRoot` marking,
   // `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)) mark ops on a rail they
   // have just PROVED — a closed self-cycle with its own fan-out and record
-  // fences — so their marking is a conclusion. `commitOutOfLoopInPlaceOps` is the
-  // one writer whose marking is a PREDICTION of what `ArithLowering`'s M-C fence
-  // will answer at `lowerOps`, taken BEFORE `repropagateControlMerges` has grown
-  // `taint.Tainted` and before the round-2 flatten has moved a block. Keeping the
-  // two apart is what lets the tripwire re-verify exactly the predictions and
-  // leave the proofs alone (re-verifying a proof would re-ask a question under a
-  // fence — `inPlaceFenceHolds`' G5 loop clause — that the proof's owner
-  // deliberately answers differently).
+  // fences — so their marking is a conclusion ABOUT THE RAIL.
+  // `commitOutOfLoopInPlaceOps` is the one writer whose marking is a PREDICTION
+  // of what `ArithLowering`'s M-C fence will answer at `lowerOps`, taken BEFORE
+  // `repropagateControlMerges` has grown `taint.Tainted` and before the round-2
+  // flatten has moved a block. Keeping the two apart is what lets the tripwire
+  // re-verify exactly the predictions and leave the proofs alone (re-verifying a
+  // proof would re-ask a question under a fence — `inPlaceFenceHolds`' G5 loop
+  // clause — that the proof's owner deliberately answers differently).
+  //
+  // ⚠ THAT SEPARATION IS A SCOPE DECISION, NOT AN IMMUNITY CLAIM, and this
+  // paragraph used to over-state it. A rail proof says NOTHING about whether the
+  // op's OTHER operand — the "classical immediate" — is still classical at
+  // `lowerOps`, and that is precisely the input F-C1B-1 turned on. MEASURED
+  // (round-3 lens finding F-C1C-B, notes §3.12): through `tryCaseA` and
+  // `collapseRailPhisIn` step (3) the identical defect is reachable for the `xor`
+  // stem from plain C — an immediate DERIVED from a 6.5/4.5 `%out`, tainted only
+  // at `repropagateControlMerges`, emitted as `cqrt_xorc_i32(h1, 6)` where the
+  // bare `6` is a template rail's HANDLE ID. PRE-EXISTING (it reproduces on the
+  // pre-3qlq oracle 52d7764), hence out of this round's scope and filed as bd
+  // `test_C_libtooling-eqpx`, whose proposed fix re-asks **G2 alone** for every
+  // `InPlaceRailOps` member. Do not read this set's narrowness as a proof that
+  // the other three writers are safe.
   //
   // Written and rolled back in lockstep with `InPlaceRailOps` by
   // `invariantRegisterRoots`; read ONCE, by `lowerOps` Phase 1. Empty for a module
@@ -504,6 +518,17 @@ struct TaintSet {
   // measured rather than assumed: `r33`/`r35`/`r40`/`z9`/`z10` — every shipped
   // customer whose claim is written in a DIFFERENT call from the read — stay
   // 3/3 rolled-vs-unrolled IDENTICAL after the re-key.
+  // ⚠ "CAN ONLY EVER REFUSE" IS THE **MISS** DIRECTION ONLY (round-3 lens finding
+  // F-C1C-F): the **RECYCLE** direction is the retirement trigger the paragraph
+  // above records for the root half, and it now needs BOTH addresses — the root
+  // AND the header — recycled to matching LIVE values before a claim could match
+  // spuriously and SKIP a candidate that must be judged, which is the over-accept
+  // direction. That is strictly narrower than the module-wide set it replaces and
+  // no spurious match is constructible today (`RegionFlatten` erases a region's
+  // ARM/MERGE/COND blocks between the writers and the round-2 reader — never a
+  // loop HEADER in any measured shape, and every measured customer keeps
+  // `claimedHERE=1`), but a stage that ever erases a loop header here wants a
+  // `WeakTrackingVH` or a re-validation on BOTH halves of the key.
   llvm::DenseSet<std::pair<const llvm::Value *, const llvm::BasicBlock *>>
       ClaimedRailRoots;
 

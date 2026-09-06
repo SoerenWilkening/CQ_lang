@@ -15,9 +15,18 @@
 > `CarriedRoots` skip so the collapse's own rail is not judged by clause (iii)), on
 > clause (ii)'s UNCHANGED (I1) proof; witnessed by
 > `e2e-phase-perbit-loop-mixed-twin-identical` (rolled == hand-unrolled, 37 = 37) and
-> pinned by `control_phase_kickback_mixed_invariant_carried_inloop.ll`. **One
-> independent lens and a RE-CLEARANCE are pending; landing on `main` follows the
-> re-clearance verdict. Nothing here says Inc 0/1 have landed.** ⚠ READ
+> pinned by `control_phase_kickback_mixed_invariant_carried_inloop.ll`.
+> **⚠ THAT FIX TOOK THREE ROUNDS ON BRANCH `3qlq-inc1-fix-c1`, ALL 2026-09-06:**
+> round 1 = the CAPABILITY (the clearance BLOCK's fix, above); **round 2** = TWO MORE
+> CONFIRMED MEMBERS of the same class in the fix's own neighbourhood (F-C1-1 /
+> F-C1-2) — and it introduced a confirmed silent miscompile of its OWN; **round 3** =
+> the NARROWING that closes that one and a second found while building its tripwire
+> (F-C1B-1 / F-C1C-1 / F-C1B-2, notes §3.11), every change in the refuse direction.
+> **The independent lens on round 3 graded it CLEAR-WITH-ITEMS** (two DOC findings,
+> applied; one CONFIRMED miscompile it found is PRE-EXISTING on the pre-3qlq oracle
+> and is filed OUT of this epic as bd `test_C_libtooling-eqpx` — F-C1C-B, notes
+> §3.12). **A RE-CLEARANCE IS PENDING; landing on `main` follows the re-clearance
+> verdict. Nothing here says Inc 0/1 have landed.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
 > Extends Phase 4
@@ -41,8 +50,10 @@
 > **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
 > register-free `cq_phi` by kickback, parts A and B) are implemented on branch
 > `3qlq-inc1` — **NOT on main** (clearance BLOCK on C-1, see the Status header;
-> **2026-09-06 C-1 is FIXED on `3qlq-inc1-fix-c1`, one lens + a re-clearance pending,
-> and landing follows that verdict**). **Increment
+> **2026-09-06 C-1 is FIXED on `3qlq-inc1-fix-c1` over THREE rounds — capability,
+> then two more members plus a miscompile of round 2's own, then the narrowing —
+> with the round-3 lens CLEAR-WITH-ITEMS and a RE-CLEARANCE PENDING; landing follows
+> that verdict**). **Increment
 > 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
 > plan, and `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
 > 7.2 `AbortParkEmit`.
@@ -137,6 +148,19 @@ out-of-place is not sound, because the body marking the commit licensed already 
 same round narrowed `taint.ClaimedRailRoots` from a module-wide set of ROOTS to
 `(root, the CLAIMING loop's header)` — **F-C1B-2** — after measuring a program where loop A's
 claim marked loop B's body on a rail loop B never proved.
+⚠ **THE LENS ON ROUND 3 GRADED IT CLEAR-WITH-ITEMS AND FOUND A FURTHER MEMBER OF THE CLASS
+THAT IS *NOT* THIS EPIC'S — do NOT fold it into the seven above; the seven are this epic's,
+this one pre-dates it** — **F-C1C-B**, notes §3.12, bd `test_C_libtooling-eqpx`: the same
+"classical immediate turns tainted at round 2" defect reached through the LOOP writers
+(`tryCaseA`, `collapseRailPhisIn` step (3)) for the **`xor` stem, from plain C** —
+`cqrt_xorc_i32(h1, 6)` where the bare `6` is a template rail's HANDLE ID — reproducing
+byte-for-byte on the **pre-3qlq ORACLE 52d7764** and on every binary of this epic. It is
+PRE-EXISTING, so it neither blocks nor is charged to this branch; what it does retire is the
+sentence round 3 used to bound its own scope (*"the other three `InPlaceRailOps` writers mark
+a rail they PROVED with their own fences"*) — **their fences prove the RAIL; none of them
+proves the IMMEDIATE stays classical.** Round 3's own bound over its 262-program corpus is
+likewise corrected: **6 movers in scope plus `w3` by design**, and the lens's 299-program
+re-run reads **286 unchanged / 13 moved, 0 in the accept direction** (F-C1C-E).
 ⚠ **TWO THINGS THE ROUND-3 FIX DOES NOT COVER, and both are NEW ENTRIES ON THIS LIST rather
 than inherited ones.** (a) A **`volatile`-load immediate** on the preheader op
 (`q = q + off;`) is no longer committed, so that loop returns to the pre-round-2 leak — 3

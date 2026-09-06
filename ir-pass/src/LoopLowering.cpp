@@ -2921,9 +2921,12 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 // check already exists in the tree: `IOSinkLowering.cpp:295` enumerates every
 // `taint.Tainted.insert(` site in `ir-pass/src` and finds a `CallInst`, an
 // `Instruction`, or (in the clone-LOCAL taint sets only) an `Argument` — never a
-// `Constant`. RE-MEASURED at this HEAD (`grep -rn 'Tainted\.insert(' ir-pass/src`,
-// 35 sites, the file's own count of 30 being older): the property still holds at
-// every one. So G2's "exactly one tainted operand" cannot change answer for a
+// `Constant`. RE-MEASURED at this HEAD (`grep -rn 'Tainted\.insert(' ir-pass/src`
+// → 37 LINES, of which 2 are PROSE — `DagTraversal.cpp:127` and this very comment
+// — i.e. **35 CODE sites**, the file's own count of 30 being older; the round-3
+// lens re-measured it and found the figure right and the command's output
+// mis-quoted beside it, F-C1C-E): the property still holds at every one. So
+// G2's "exactly one tainted operand" cannot change answer for a
 // constant-immediate op between here and `lowerOps`.
 // MEASURED to keep every shipped customer of this path (`r2`'s `7`, `r71`'s `9`,
 // `x1`'s `7`, `z7`'s `-7`; `r33`/`r35`/`r40` have no preheader op at all) and to
