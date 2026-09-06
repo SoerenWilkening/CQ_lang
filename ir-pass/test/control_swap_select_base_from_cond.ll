@@ -47,11 +47,35 @@ entry:
   ret i32 %m
 }
 
-; THE MERGE, CONTIGUOUS from the flag mint to the measure. Adjacency is the
-; contract (the F-V2-5 lesson: symbol order cannot see a gate spliced between two
-; pinned lines). Everything above the mint is ordinary tainted arithmetic and is
-; deliberately left to the counts below.
-; CHECK:      %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 3)
+; THE WHOLE REGION STREAM, CONTIGUOUS from the first alloc to the measure.
+; Adjacency is the contract (the F-V2-5 lesson: symbol order cannot see a gate
+; spliced between two pinned lines) — and it is what makes a DROPPED line visible:
+; measured with the round-2 injection harness, a block that started at the flag
+; mint and left the arithmetic to the counts below was caught by 6 of 7 mutations
+; and MISSED `drop the chain's _unc`, because the free count does not move. The
+; block below catches all seven.
+;
+; Read the arithmetic prologue for what `-O1` handed the pass: `%p = q+11` is an
+; OUT-of-place template rail; the true operand's chain opens with an out-of-place
+; `mul_i32_hl` and then converts IN PLACE (`cqrt_addc`/`cqrt_xorc`) on that fresh
+; rail; the intermediate is reverse-played and freed mid-stream, and the surviving
+; rail takes the last two in-place ops. None of that is the select's doing.
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 3)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[P:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q]], i32 11)
+; CHECK-NEXT: %[[I:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[I]], i32 70)
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[I]], i32 9)
+; CHECK-NEXT: %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[I]], i32 7)
+; --- the intermediate rail is reverse-played and freed right where it dies ---
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[I]], i32 9)
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[I]], i32 -70)
+; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[I]], i32 %[[Q]], i32 5)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[I]])
+; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[T]], i32 7)
+; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[T]], i32 2)
+; --- THE MERGE ---
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q]], i32 3)
 ; CHECK-NEXT: %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; --- true operand under the flag, then false operand under the ¬-bracket ---
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[F]], i32 %[[T:[a-zA-Z0-9_.]+]], i32 %[[OUT]])
