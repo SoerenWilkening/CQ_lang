@@ -1,0 +1,741 @@
+TIP=beb34e0 START=So.  6 Sep. 2026 15:45:23 CEST
+Test project /private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/wt/eqpx/build
+        Start 318: e2e-loop-twin-matrix
+        Start   8: ir-pass-lit
+        Start 296: e2e-fixture-guard-liveness
+        Start 355: e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled
+        Start 354: e2e-slice-control-phase-onward-perbit-loop-mixed
+        Start 338: e2e-slice-control-inplace-ry-stateprep-negated
+  1/367 Test #338: e2e-slice-control-inplace-ry-stateprep-negated ....................   Passed    3.04 sec
+        Start 342: e2e-slice-control-phase-grover-loop-unrolled
+  2/367 Test #354: e2e-slice-control-phase-onward-perbit-loop-mixed ..................   Passed    7.07 sec
+        Start 329: e2e-slice-control-inplace-ry-loop-leak
+  3/367 Test #355: e2e-slice-control-phase-onward-perbit-loop-mixed-unrolled .........   Passed    7.99 sec
+        Start 340: e2e-slice-control-phase-grover
+  4/367 Test #342: e2e-slice-control-phase-grover-loop-unrolled ......................   Passed    9.39 sec
+        Start 339: e2e-slice-control-inplace-ry-stateprep-twin
+  5/367 Test #329: e2e-slice-control-inplace-ry-loop-leak ............................   Passed    9.65 sec
+        Start 356: e2e-slice-control-phase-nest
+  6/367 Test #340: e2e-slice-control-phase-grover ....................................   Passed    9.72 sec
+        Start 341: e2e-slice-control-phase-grover-loop
+  7/367 Test #296: e2e-fixture-guard-liveness ........................................   Passed   19.56 sec
+        Start 337: e2e-slice-control-inplace-ry-stateprep
+  8/367 Test #339: e2e-slice-control-inplace-ry-stateprep-twin .......................   Passed    8.43 sec
+        Start 328: e2e-slice-control-inplace-ry-loop-grover-unrolled
+  9/367 Test #356: e2e-slice-control-phase-nest ......................................   Passed    8.75 sec
+        Start 327: e2e-slice-control-inplace-ry-loop-grover
+ 10/367 Test #341: e2e-slice-control-phase-grover-loop ...............................   Passed   10.27 sec
+        Start 325: e2e-slice-control-inplace-ry-loop-derived
+ 11/367 Test #337: e2e-slice-control-inplace-ry-stateprep ............................   Passed   10.69 sec
+        Start 326: e2e-slice-control-inplace-ry-loop-derived-unrolled
+ 12/367 Test #328: e2e-slice-control-inplace-ry-loop-grover-unrolled .................   Passed   10.46 sec
+        Start 324: e2e-slice-control-inplace-ry-loop-two-regs-unrolled
+ 13/367 Test #327: e2e-slice-control-inplace-ry-loop-grover ..........................   Passed    9.39 sec
+        Start 357: e2e-slice-control-phase-andcond
+ 14/367 Test #325: e2e-slice-control-inplace-ry-loop-derived .........................   Passed   11.28 sec
+        Start 323: e2e-slice-control-inplace-ry-loop-two-regs
+ 15/367 Test #326: e2e-slice-control-inplace-ry-loop-derived-unrolled ................   Passed   10.01 sec
+        Start 358: e2e-slice-control-phase-angle-select
+ 16/367 Test #324: e2e-slice-control-inplace-ry-loop-two-regs-unrolled ...............   Passed   11.30 sec
+        Start 359: e2e-slice-control-phase-angle-select-runtime-arms
+ 17/367 Test #357: e2e-slice-control-phase-andcond ...................................   Passed   10.10 sec
+        Start 320: e2e-slice-control-inplace-ry-loop-unrolled
+ 18/367 Test   #8: ir-pass-lit .......................................................   Passed   45.19 sec
+        Start 321: e2e-slice-control-inplace-ry-loop-leading-gate
+ 19/367 Test #323: e2e-slice-control-inplace-ry-loop-two-regs ........................   Passed    7.65 sec
+        Start 322: e2e-slice-control-inplace-ry-loop-leading-gate-unrolled
+ 20/367 Test #358: e2e-slice-control-phase-angle-select ..............................   Passed    7.56 sec
+        Start  12: e2e-slice-qq-hl-arith
+ 21/367 Test #359: e2e-slice-control-phase-angle-select-runtime-arms .................   Passed    6.10 sec
+        Start 330: e2e-slice-control-inplace-ry-loop-leak-unrolled
+ 22/367 Test #320: e2e-slice-control-inplace-ry-loop-unrolled ........................   Passed    4.59 sec
+        Start  15: e2e-slice-control-phase-diamond
+ 23/367 Test #321: e2e-slice-control-inplace-ry-loop-leading-gate ....................   Passed    4.83 sec
+        Start 275: e2e-slice-libm-real-lgammaf
+ 24/367 Test #322: e2e-slice-control-inplace-ry-loop-leading-gate-unrolled ...........   Passed    4.79 sec
+        Start  14: e2e-slice-fcmp-unordered
+ 25/367 Test  #12: e2e-slice-qq-hl-arith .............................................   Passed    4.74 sec
+        Start 319: e2e-slice-control-inplace-ry-loop
+ 26/367 Test #330: e2e-slice-control-inplace-ry-loop-leak-unrolled ...................   Passed    4.72 sec
+        Start  89: e2e-slice-hybrid-lgammal
+ 27/367 Test  #15: e2e-slice-control-phase-diamond ...................................   Passed    4.75 sec
+        Start 274: e2e-slice-libm-real-lgamma
+ 28/367 Test #275: e2e-slice-libm-real-lgammaf .......................................   Passed    5.58 sec
+        Start 121: e2e-slice-libm-real-erfc
+ 29/367 Test  #14: e2e-slice-fcmp-unordered ..........................................   Passed    5.02 sec
+        Start 118: e2e-slice-libm-real-erf
+ 30/367 Test #319: e2e-slice-control-inplace-ry-loop .................................   Passed    4.99 sec
+        Start  16: e2e-slice-control-phase-ifne
+ 31/367 Test  #89: e2e-slice-hybrid-lgammal ..........................................   Passed    5.38 sec
+        Start 283: e2e-slice-libm-real-asinhf
+ 32/367 Test #274: e2e-slice-libm-real-lgamma ........................................   Passed    5.76 sec
+        Start 115: e2e-slice-libm-real-tanh
+ 33/367 Test #121: e2e-slice-libm-real-erfc ..........................................   Passed    4.92 sec
+        Start 138: e2e-slice-libm-real-erff
+ 34/367 Test #118: e2e-slice-libm-real-erf ...........................................   Passed    4.60 sec
+        Start 217: e2e-slice-control-spec-chained-ctl
+ 35/367 Test  #16: e2e-slice-control-phase-ifne ......................................   Passed    4.64 sec
+        Start 154: e2e-slice-libm-real-tanhf
+ 36/367 Test #283: e2e-slice-libm-real-asinhf ........................................   Passed    4.72 sec
+        Start 108: e2e-slice-fp80-union-unc
+ 37/367 Test #115: e2e-slice-libm-real-tanh ..........................................   Passed    4.70 sec
+        Start 272: e2e-slice-libm-real-pow
+ 38/367 Test #138: e2e-slice-libm-real-erff ..........................................   Passed    5.12 sec
+        Start 107: e2e-slice-libm-real-erfcl
+ 39/367 Test #217: e2e-slice-control-spec-chained-ctl ................................   Passed    5.15 sec
+        Start 179: e2e-slice-control-switch-datamux
+ 40/367 Test #154: e2e-slice-libm-real-tanhf .........................................   Passed    4.71 sec
+        Start 271: e2e-slice-libm-real-hypot
+ 41/367 Test #108: e2e-slice-fp80-union-unc ..........................................   Passed    4.62 sec
+        Start 177: e2e-slice-classical-switch-gate
+ 42/367 Test #272: e2e-slice-libm-real-pow ...........................................   Passed    4.29 sec
+        Start 175: e2e-slice-control-abort
+ 43/367 Test #107: e2e-slice-libm-real-erfcl .........................................   Passed    4.20 sec
+        Start 109: e2e-spec-fp80-union
+ 44/367 Test #179: e2e-slice-control-switch-datamux ..................................   Passed    4.59 sec
+        Start 282: e2e-slice-libm-real-asinh
+ 45/367 Test #271: e2e-slice-libm-real-hypot .........................................   Passed    4.62 sec
+        Start 178: e2e-slice-control-switch-value
+ 46/367 Test #177: e2e-slice-classical-switch-gate ...................................   Passed    4.59 sec
+        Start 176: e2e-slice-classical-if-gate
+ 47/367 Test #175: e2e-slice-control-abort ...........................................   Passed    4.55 sec
+        Start 281: e2e-slice-libm-real-acoshf
+ 48/367 Test #109: e2e-spec-fp80-union ...............................................   Passed    4.96 sec
+        Start 273: e2e-slice-libm-real-powf
+ 49/367 Test #178: e2e-slice-control-switch-value ....................................   Passed    4.08 sec
+        Start 144: e2e-slice-libm-real-llroundf
+ 50/367 Test #282: e2e-slice-libm-real-asinh .........................................   Passed    5.06 sec
+        Start 120: e2e-slice-libm-real-cosh
+ 51/367 Test #176: e2e-slice-classical-if-gate .......................................   Passed    4.56 sec
+        Start 123: e2e-slice-libm-real-expm1
+ 52/367 Test #281: e2e-slice-libm-real-acoshf ........................................   Passed    4.67 sec
+        Start 111: e2e-predmux-purecallee-i80cmp
+ 53/367 Test #273: e2e-slice-libm-real-powf ..........................................   Passed    4.75 sec
+        Start 106: e2e-slice-libm-real-erfl
+ 54/367 Test #144: e2e-slice-libm-real-llroundf ......................................   Passed    4.82 sec
+        Start 124: e2e-slice-libm-real-ilogb
+ 55/367 Test #120: e2e-slice-libm-real-cosh ..........................................   Passed    4.72 sec
+        Start  13: e2e-slice-compare-measure
+ 56/367 Test #123: e2e-slice-libm-real-expm1 .........................................   Passed    4.73 sec
+        Start 280: e2e-slice-libm-real-acosh
+ 57/367 Test #111: e2e-predmux-purecallee-i80cmp .....................................   Passed    4.65 sec
+        Start 110: e2e-spec-fp-arg
+ 58/367 Test #106: e2e-slice-libm-real-erfl ..........................................   Passed    4.64 sec
+        Start 117: e2e-slice-libm-real-atan
+ 59/367 Test #124: e2e-slice-libm-real-ilogb .........................................   Passed    4.62 sec
+        Start 292: e2e-slice-libm-real-expl
+ 60/367 Test  #13: e2e-slice-compare-measure .........................................   Passed    4.60 sec
+        Start 143: e2e-slice-libm-real-ldexpf
+ 61/367 Test #280: e2e-slice-libm-real-acosh .........................................   Passed    4.71 sec
+        Start 293: e2e-slice-libm-real-log10l
+ 62/367 Test #110: e2e-spec-fp-arg ...................................................   Passed    4.72 sec
+        Start 180: e2e-slice-control-cond-onward-phase
+ 63/367 Test #117: e2e-slice-libm-real-atan ..........................................   Passed    4.66 sec
+        Start 279: e2e-slice-libm-real-atanhf
+ 64/367 Test #292: e2e-slice-libm-real-expl ..........................................   Passed    4.30 sec
+        Start 270: e2e-slice-libm-real-asinl
+ 65/367 Test #143: e2e-slice-libm-real-ldexpf ........................................   Passed    4.75 sec
+        Start 192: e2e-slice-ctlz-idiom-loop
+ 66/367 Test #293: e2e-slice-libm-real-log10l ........................................   Passed    4.74 sec
+        Start 291: e2e-slice-libm-real-log2l
+ 67/367 Test #180: e2e-slice-control-cond-onward-phase ...............................   Passed    4.33 sec
+        Start 204: e2e-slice-specialize-fp-select
+ 68/367 Test #270: e2e-slice-libm-real-asinl .........................................   Passed    3.87 sec
+        Start 278: e2e-slice-libm-real-atanh
+ 69/367 Test #279: e2e-slice-libm-real-atanhf ........................................   Passed    4.81 sec
+        Start 147: e2e-slice-libm-real-logbf
+ 70/367 Test #192: e2e-slice-ctlz-idiom-loop .........................................   Passed    3.87 sec
+        Start 269: e2e-slice-libm-real-asinf
+ 71/367 Test #291: e2e-slice-libm-real-log2l .........................................   Passed    4.87 sec
+        Start 146: e2e-slice-libm-real-log2f
+ 72/367 Test #204: e2e-slice-specialize-fp-select ....................................   Passed    5.27 sec
+        Start 193: e2e-slice-intrinsic-fpmath
+ 73/367 Test #147: e2e-slice-libm-real-logbf .........................................   Passed    4.14 sec
+        Start 173: e2e-slice-branchless-nextafter-cq
+ 74/367 Test #278: e2e-slice-libm-real-atanh .........................................   Passed    5.68 sec
+        Start 145: e2e-slice-libm-real-log10f
+ 75/367 Test #269: e2e-slice-libm-real-asinf .........................................   Passed    5.24 sec
+        Start 174: e2e-slice-branchless-nextafter-qq
+ 76/367 Test #146: e2e-slice-libm-real-log2f .........................................   Passed    4.81 sec
+        Start 285: e2e-slice-libm-real-hypotf
+ 77/367 Test #193: e2e-slice-intrinsic-fpmath ........................................   Passed    5.19 sec
+        Start 185: e2e-slice-uncompute-dead-shapes
+ 78/367 Test #173: e2e-slice-branchless-nextafter-cq .................................   Passed    5.06 sec
+        Start 148: e2e-slice-libm-real-logf
+ 79/367 Test #145: e2e-slice-libm-real-log10f ........................................   Passed    4.82 sec
+        Start 229: e2e-slice-qram-guarded-store-swapped
+ 80/367 Test #174: e2e-slice-branchless-nextafter-qq .................................   Passed    4.83 sec
+        Start 181: e2e-slice-control-switch-eqfold
+ 81/367 Test #285: e2e-slice-libm-real-hypotf ........................................   Passed    4.83 sec
+        Start 206: e2e-slice-specialize-fp-select-fcmp
+ 82/367 Test #185: e2e-slice-uncompute-dead-shapes ...................................   Passed    4.76 sec
+        Start 140: e2e-slice-libm-real-expf
+ 83/367 Test #148: e2e-slice-libm-real-logf ..........................................   Passed    4.84 sec
+        Start 207: e2e-slice-specialize-intrinsic
+ 84/367 Test #229: e2e-slice-qram-guarded-store-swapped ..............................   Passed    4.76 sec
+        Start 205: e2e-slice-specialize-fp-select-const
+ 85/367 Test #181: e2e-slice-control-switch-eqfold ...................................   Passed    4.75 sec
+        Start 195: e2e-slice-bitint
+ 86/367 Test #206: e2e-slice-specialize-fp-select-fcmp ...............................   Passed    5.05 sec
+        Start 230: e2e-slice-qram-guarded-store-multi
+ 87/367 Test #140: e2e-slice-libm-real-expf ..........................................   Passed    4.74 sec
+        Start 183: e2e-slice-uncompute-interior-chain
+ 88/367 Test #207: e2e-slice-specialize-intrinsic ....................................   Passed    5.15 sec
+        Start 208: e2e-slice-spec-qram-read
+ 89/367 Test #195: e2e-slice-bitint ..................................................   Passed    4.43 sec
+        Start 290: e2e-slice-libm-real-logl
+ 90/367 Test #205: e2e-slice-specialize-fp-select-const ..............................   Passed    5.28 sec
+        Start 162: e2e-slice-branchless-fmod-qq
+ 91/367 Test #230: e2e-slice-qram-guarded-store-multi ................................   Passed    4.80 sec
+        Start 158: e2e-slice-branchless-fdim-cq
+ 92/367 Test #183: e2e-slice-uncompute-interior-chain ................................   Passed    4.70 sec
+        Start 186: e2e-slice-compare-qq
+ 93/367 Test #208: e2e-slice-spec-qram-read ..........................................   Passed    4.57 sec
+        Start 219: e2e-slice-io-chained-theta
+ 94/367 Test #290: e2e-slice-libm-real-logl ..........................................   Passed    4.50 sec
+        Start 231: e2e-slice-qram-guarded-store-fp
+ 95/367 Test #162: e2e-slice-branchless-fmod-qq ......................................   Passed    4.45 sec
+        Start 194: e2e-slice-intrinsic-fma
+ 96/367 Test #158: e2e-slice-branchless-fdim-cq ......................................   Passed    4.43 sec
+        Start 105: e2e-slice-funnel-fshl-qq
+ 97/367 Test #186: e2e-slice-compare-qq ..............................................   Passed    4.02 sec
+        Start 112: e2e-slice-libm-real-lround
+ 98/367 Test #219: e2e-slice-io-chained-theta ........................................   Passed    4.43 sec
+        Start 289: e2e-slice-libm-real-log1pl
+ 99/367 Test #231: e2e-slice-qram-guarded-store-fp ...................................   Passed    4.42 sec
+        Start 215: e2e-slice-control-spec-replan
+100/367 Test #194: e2e-slice-intrinsic-fma ...........................................   Passed    4.44 sec
+        Start 142: e2e-slice-libm-real-ilogbf
+101/367 Test #105: e2e-slice-funnel-fshl-qq ..........................................   Passed    4.52 sec
+        Start 197: e2e-slice-byref-inline
+102/367 Test #112: e2e-slice-libm-real-lround ........................................   Passed    4.59 sec
+        Start 286: e2e-slice-libm-real-acoshl
+103/367 Test #289: e2e-slice-libm-real-log1pl ........................................   Passed    4.71 sec
+        Start 222: e2e-slice-mixed-value-io
+104/367 Test #142: e2e-slice-libm-real-ilogbf ........................................   Passed    4.32 sec
+        Start 267: e2e-slice-libm-real-acosl
+105/367 Test #215: e2e-slice-control-spec-replan .....................................   Passed    5.13 sec
+        Start 114: e2e-slice-libm-real-cbrt
+106/367 Test #197: e2e-slice-byref-inline ............................................   Passed    4.67 sec
+        Start 182: e2e-slice-uncompute-dead-dag
+107/367 Test #286: e2e-slice-libm-real-acoshl ........................................   Passed    4.61 sec
+        Start 214: e2e-slice-control-cond-onward-ctl-phase
+108/367 Test #222: e2e-slice-mixed-value-io ..........................................   Passed    4.59 sec
+        Start 244: e2e-slice-libm-keep-truncl
+109/367 Test #267: e2e-slice-libm-real-acosl .........................................   Passed    4.58 sec
+        Start 288: e2e-slice-libm-real-atanhl
+110/367 Test #114: e2e-slice-libm-real-cbrt ..........................................   Passed    4.57 sec
+        Start 184: e2e-slice-uncompute-interior-chained-theta
+111/367 Test #182: e2e-slice-uncompute-dead-dag ......................................   Passed    4.48 sec
+        Start 141: e2e-slice-libm-real-expm1f
+112/367 Test #214: e2e-slice-control-cond-onward-ctl-phase ...........................   Passed    4.97 sec
+        Start 190: e2e-slice-intrinsic-ctpop
+113/367 Test #244: e2e-slice-libm-keep-truncl ........................................   Passed    4.51 sec
+        Start 227: e2e-slice-qram-local-uncompute-fp
+114/367 Test #288: e2e-slice-libm-real-atanhl ........................................   Passed    4.55 sec
+        Start 216: e2e-slice-control-spec-newcand
+115/367 Test #184: e2e-slice-uncompute-interior-chained-theta ........................   Passed    4.60 sec
+        Start 113: e2e-slice-libm-real-log
+116/367 Test #141: e2e-slice-libm-real-expm1f ........................................   Passed    4.35 sec
+        Start 235: e2e-slice-loop-value-accum
+117/367 Test #190: e2e-slice-intrinsic-ctpop .........................................   Passed    4.73 sec
+        Start 220: e2e-slice-io-controlled
+118/367 Test #227: e2e-slice-qram-local-uncompute-fp .................................   Passed    4.83 sec
+        Start 211: e2e-slice-specialize-multiarg
+119/367 Test #113: e2e-slice-libm-real-log ...........................................   Passed    4.45 sec
+        Start 249: e2e-slice-libm-real-frexpl
+120/367 Test #216: e2e-slice-control-spec-newcand ....................................   Passed    5.31 sec
+        Start 242: e2e-slice-libm-keep-rintl
+121/367 Test #235: e2e-slice-loop-value-accum ........................................   Passed    4.80 sec
+        Start 243: e2e-slice-libm-keep-nearbyintl
+122/367 Test #220: e2e-slice-io-controlled ...........................................   Passed    4.70 sec
+        Start 166: e2e-slice-branchless-hypot
+123/367 Test #249: e2e-slice-libm-real-frexpl ........................................   Passed    4.16 sec
+        Start 213: e2e-slice-classical-call-under-control
+124/367 Test #211: e2e-slice-specialize-multiarg .....................................   Passed    5.05 sec
+        Start 241: e2e-slice-control-select-compound
+125/367 Test #242: e2e-slice-libm-keep-rintl .........................................   Passed    4.64 sec
+        Start 157: e2e-slice-branchless-fdim
+126/367 Test #243: e2e-slice-libm-keep-nearbyintl ....................................   Passed    4.62 sec
+        Start 262: e2e-slice-libm-real-expm1l
+127/367 Test #166: e2e-slice-branchless-hypot ........................................   Passed    4.70 sec
+        Start  22: e2e-slice-control-value-mixedops
+128/367 Test #241: e2e-slice-control-select-compound .................................   Passed    4.22 sec
+        Start 137: e2e-slice-libm-real-erfcf
+129/367 Test #213: e2e-slice-classical-call-under-control ............................   Passed    5.01 sec
+        Start 221: e2e-slice-io-both-arm
+130/367 Test #157: e2e-slice-branchless-fdim .........................................   Passed    4.50 sec
+        Start 188: e2e-slice-f80
+131/367 Test #262: e2e-slice-libm-real-expm1l ........................................   Passed    4.57 sec
+        Start 191: e2e-slice-intrinsic-ctlz
+132/367 Test  #22: e2e-slice-control-value-mixedops ..................................   Passed    4.62 sec
+        Start 172: e2e-slice-branchless-nextafter
+133/367 Test #221: e2e-slice-io-both-arm .............................................   Passed    4.23 sec
+        Start 212: e2e-slice-specialize-transitive
+134/367 Test #137: e2e-slice-libm-real-erfcf .........................................   Passed    5.13 sec
+        Start 196: e2e-slice-i128-mulhi
+135/367 Test #188: e2e-slice-f80 .....................................................   Passed    4.71 sec
+        Start 228: e2e-slice-qram-guarded-store
+136/367 Test #191: e2e-slice-intrinsic-ctlz ..........................................   Passed    4.57 sec
+        Start 268: e2e-slice-libm-real-asin
+137/367 Test #172: e2e-slice-branchless-nextafter ....................................   Passed    4.56 sec
+        Start  70: e2e-slice-branchless-tanh
+138/367 Test #196: e2e-slice-i128-mulhi ..............................................   Passed    4.06 sec
+        Start 132: e2e-slice-libm-real-sinh
+139/367 Test #228: e2e-slice-qram-guarded-store ......................................   Passed    4.09 sec
+        Start 266: e2e-slice-libm-real-acosf
+140/367 Test #212: e2e-slice-specialize-transitive ...................................   Passed    5.35 sec
+        Start 170: e2e-slice-branchless-pow-cq
+141/367 Test #268: e2e-slice-libm-real-asin ..........................................   Passed    4.58 sec
+        Start  71: e2e-slice-branchless-log2
+142/367 Test  #70: e2e-slice-branchless-tanh .........................................   Passed    4.14 sec
+        Start 171: e2e-slice-branchless-pow-qq
+143/367 Test #132: e2e-slice-libm-real-sinh ..........................................   Passed    4.61 sec
+        Start 287: e2e-slice-libm-real-asinhl
+144/367 Test #266: e2e-slice-libm-real-acosf .........................................   Passed    4.62 sec
+        Start 164: e2e-slice-branchless-remainder-cq
+145/367 Test #170: e2e-slice-branchless-pow-cq .......................................   Passed    4.65 sec
+        Start 264: e2e-slice-libm-real-sinhl
+146/367 Test  #71: e2e-slice-branchless-log2 .........................................   Passed    4.70 sec
+        Start 210: e2e-slice-spec-qrom-read-arm-escape
+147/367 Test #171: e2e-slice-branchless-pow-qq .......................................   Passed    4.70 sec
+        Start 209: e2e-slice-spec-qram-read-under-control
+148/367 Test #287: e2e-slice-libm-real-asinhl ........................................   Passed    4.74 sec
+        Start 165: e2e-slice-branchless-remainder-qq
+149/367 Test #164: e2e-slice-branchless-remainder-cq .................................   Passed    4.75 sec
+        Start 187: e2e-slice-f16
+150/367 Test #264: e2e-slice-libm-real-sinhl .........................................   Passed    4.75 sec
+        Start 169: e2e-slice-branchless-pow
+151/367 Test #210: e2e-slice-spec-qrom-read-arm-escape ...............................   Passed    4.33 sec
+        Start 265: e2e-slice-libm-real-acos
+152/367 Test #209: e2e-slice-spec-qram-read-under-control ............................   Passed    4.28 sec
+        Start 240: e2e-slice-loop-iter-local
+153/367 Test #165: e2e-slice-branchless-remainder-qq .................................   Passed    4.26 sec
+        Start 159: e2e-slice-branchless-fdim-qq
+154/367 Test #187: e2e-slice-f16 .....................................................   Passed    4.64 sec
+        Start 263: e2e-slice-libm-real-tanhl
+155/367 Test #169: e2e-slice-branchless-pow ..........................................   Passed    4.60 sec
+        Start 203: e2e-slice-specialize-multiexit-fp80
+156/367 Test #265: e2e-slice-libm-real-acos ..........................................   Passed    4.50 sec
+        Start 250: e2e-slice-libm-real-modfl
+157/367 Test #240: e2e-slice-loop-iter-local .........................................   Passed    4.55 sec
+        Start 168: e2e-slice-branchless-hypot-qq
+158/367 Test #159: e2e-slice-branchless-fdim-qq ......................................   Passed    4.08 sec
+        Start 223: e2e-slice-qram-read
+159/367 Test #263: e2e-slice-libm-real-tanhl .........................................   Passed    4.63 sec
+        Start 202: e2e-slice-specialize-twoarm-select
+160/367 Test #203: e2e-slice-specialize-multiexit-fp80 ...............................   Passed    5.00 sec
+        Start 189: e2e-slice-intrinsic-bswap
+161/367 Test #250: e2e-slice-libm-real-modfl .........................................   Passed    4.57 sec
+        Start 245: e2e-slice-libm-real-fdim
+162/367 Test #168: e2e-slice-branchless-hypot-qq .....................................   Passed    4.60 sec
+        Start 134: e2e-slice-libm-real-atanf
+163/367 Test #223: e2e-slice-qram-read ...............................................   Passed    4.57 sec
+        Start 163: e2e-slice-branchless-remainder
+164/367 Test #202: e2e-slice-specialize-twoarm-select ................................   Passed    4.45 sec
+        Start 225: e2e-slice-qram-store-fp
+165/367 Test #189: e2e-slice-intrinsic-bswap .........................................   Passed    4.17 sec
+        Start 224: e2e-slice-qram-store
+166/367 Test #245: e2e-slice-libm-real-fdim ..........................................   Passed    4.20 sec
+        Start 251: e2e-slice-libm-real-lroundl
+167/367 Test #134: e2e-slice-libm-real-atanf .........................................   Passed    4.25 sec
+        Start  83: e2e-slice-branchless-sin
+168/367 Test #163: e2e-slice-branchless-remainder ....................................   Passed    4.75 sec
+        Start 125: e2e-slice-libm-real-ldexp
+169/367 Test #225: e2e-slice-qram-store-fp ...........................................   Passed    4.80 sec
+        Start  88: e2e-slice-branchless-logl
+170/367 Test #224: e2e-slice-qram-store ..............................................   Passed    4.70 sec
+        Start 246: e2e-slice-libm-real-fdimf
+171/367 Test #251: e2e-slice-libm-real-lroundl .......................................   Passed    4.71 sec
+        Start  92: e2e-slice-branchless-asin
+172/367 Test  #83: e2e-slice-branchless-sin ..........................................   Passed    4.67 sec
+        Start 133: e2e-slice-libm-real-atan2f
+173/367 Test #125: e2e-slice-libm-real-ldexp .........................................   Passed    4.20 sec
+        Start  69: e2e-slice-branchless-atan
+174/367 Test  #88: e2e-slice-branchless-logl .........................................   Passed    4.60 sec
+        Start  25: e2e-slice-control-value-polarity-twin
+175/367 Test #246: e2e-slice-libm-real-fdimf .........................................   Passed    4.60 sec
+        Start 226: e2e-slice-qram-local-uncompute
+176/367 Test  #92: e2e-slice-branchless-asin .........................................   Passed    4.59 sec
+        Start  93: e2e-slice-branchless-acos
+177/367 Test #133: e2e-slice-libm-real-atan2f ........................................   Passed    4.55 sec
+        Start  72: e2e-slice-branchless-log10
+178/367 Test  #69: e2e-slice-branchless-atan .........................................   Passed    4.59 sec
+        Start 247: e2e-slice-libm-real-frexp
+179/367 Test  #25: e2e-slice-control-value-polarity-twin .............................   Passed    4.73 sec
+        Start 160: e2e-slice-branchless-fmod
+180/367 Test #226: e2e-slice-qram-local-uncompute ....................................   Passed    4.78 sec
+        Start  96: e2e-slice-libm-real-fdiml
+181/367 Test  #93: e2e-slice-branchless-acos .........................................   Passed    4.40 sec
+        Start  24: e2e-slice-control-value-polarity
+182/367 Test  #72: e2e-slice-branchless-log10 ........................................   Passed    4.45 sec
+        Start 254: e2e-slice-libm-real-nextafterf
+183/367 Test #247: e2e-slice-libm-real-frexp .........................................   Passed    4.50 sec
+        Start 201: e2e-slice-specialize-select
+184/367 Test #160: e2e-slice-branchless-fmod .........................................   Passed    4.99 sec
+        Start 200: e2e-slice-specialize-2file
+185/367 Test  #96: e2e-slice-libm-real-fdiml .........................................   Passed    5.01 sec
+        Start  23: e2e-slice-control-value-mixedops-twin
+186/367 Test  #24: e2e-slice-control-value-polarity ..................................   Passed    4.90 sec
+        Start 248: e2e-slice-libm-real-frexpf
+187/367 Test #254: e2e-slice-libm-real-nextafterf ....................................   Passed    4.45 sec
+        Start  79: e2e-slice-branchless-sinh
+188/367 Test #201: e2e-slice-specialize-select .......................................   Passed    4.85 sec
+        Start  82: e2e-slice-branchless-erfc
+189/367 Test  #23: e2e-slice-control-value-mixedops-twin .............................   Passed    4.14 sec
+        Start 149: e2e-slice-libm-real-lroundf
+190/367 Test #200: e2e-slice-specialize-2file ........................................   Passed    5.08 sec
+        Start  97: e2e-slice-libm-real-scalbnl
+191/367 Test #248: e2e-slice-libm-real-frexpf ........................................   Passed    4.70 sec
+        Start  84: e2e-slice-branchless-cos
+192/367 Test  #79: e2e-slice-branchless-sinh .........................................   Passed    5.00 sec
+        Start 258: e2e-slice-libm-real-nexttowardf
+193/367 Test  #82: e2e-slice-branchless-erfc .........................................   Passed    5.05 sec
+        Start  80: e2e-slice-branchless-cosh
+194/367 Test #149: e2e-slice-libm-real-lroundf .......................................   Passed    4.89 sec
+        Start  81: e2e-slice-branchless-erf
+195/367 Test  #97: e2e-slice-libm-real-scalbnl .......................................   Passed    4.85 sec
+        Start 104: e2e-slice-libm-real-exp2l
+196/367 Test  #84: e2e-slice-branchless-cos ..........................................   Passed    4.85 sec
+        Start 167: e2e-slice-branchless-hypot-cq
+197/367 Test #258: e2e-slice-libm-real-nexttowardf ...................................   Passed    4.50 sec
+        Start  46: e2e-slice-control-angle-select-ry
+198/367 Test  #80: e2e-slice-branchless-cosh .........................................   Passed    4.35 sec
+        Start 199: e2e-slice-multi-2file
+199/367 Test  #81: e2e-slice-branchless-erf ..........................................   Passed    4.62 sec
+        Start 259: e2e-slice-libm-ld80-nextafterl
+200/367 Test #104: e2e-slice-libm-real-exp2l .........................................   Passed    4.58 sec
+        Start  26: e2e-slice-control-value-merge-qq-compare
+201/367 Test #167: e2e-slice-branchless-hypot-cq .....................................   Passed    4.48 sec
+        Start  35: e2e-slice-control-nested-phase
+202/367 Test  #46: e2e-slice-control-angle-select-ry .................................   Passed    4.47 sec
+        Start  27: e2e-slice-control-value-derived
+203/367 Test #199: e2e-slice-multi-2file .............................................   Passed    4.95 sec
+        Start  74: e2e-slice-branchless-acosh
+204/367 Test #259: e2e-slice-libm-ld80-nextafterl ....................................   Passed    4.50 sec
+        Start 161: e2e-slice-branchless-fmod-cq
+205/367 Test  #26: e2e-slice-control-value-merge-qq-compare ..........................   Passed    4.79 sec
+        Start  67: e2e-slice-branchless-log1p
+206/367 Test  #35: e2e-slice-control-nested-phase ....................................   Passed    5.14 sec
+        Start  48: e2e-slice-control-angle-select-ry-ne
+207/367 Test  #27: e2e-slice-control-value-derived ...................................   Passed    5.23 sec
+        Start 131: e2e-slice-libm-real-scalbln
+208/367 Test  #74: e2e-slice-branchless-acosh ........................................   Passed    5.55 sec
+        Start  17: e2e-slice-control-phase-ifelse-derived
+209/367 Test #161: e2e-slice-branchless-fmod-cq ......................................   Passed    5.76 sec
+        Start  68: e2e-slice-branchless-expm1
+210/367 Test  #67: e2e-slice-branchless-log1p ........................................   Passed    5.48 sec
+        Start 130: e2e-slice-libm-real-modf
+211/367 Test  #48: e2e-slice-control-angle-select-ry-ne ..............................   Passed    5.24 sec
+        Start  73: e2e-slice-branchless-atanh
+212/367 Test #131: e2e-slice-libm-real-scalbln .......................................   Passed    5.12 sec
+        Start 150: e2e-slice-libm-real-modff
+213/367 Test  #17: e2e-slice-control-phase-ifelse-derived ............................   Passed    4.81 sec
+        Start  51: e2e-slice-control-angle-select-rz-twin
+214/367 Test  #68: e2e-slice-branchless-expm1 ........................................   Passed    4.59 sec
+        Start 129: e2e-slice-libm-real-logb
+215/367 Test #130: e2e-slice-libm-real-modf ..........................................   Passed    4.56 sec
+        Start  18: e2e-slice-control-value-diamond
+216/367 Test  #73: e2e-slice-branchless-atanh ........................................   Passed    4.55 sec
+        Start 135: e2e-slice-libm-real-cbrtf
+217/367 Test #150: e2e-slice-libm-real-modff .........................................   Passed    4.58 sec
+        Start 255: e2e-slice-libm-real-nextafterl
+218/367 Test  #51: e2e-slice-control-angle-select-rz-twin ............................   Passed    4.11 sec
+        Start  50: e2e-slice-control-angle-select-rz
+219/367 Test #129: e2e-slice-libm-real-logb ..........................................   Passed    4.48 sec
+        Start  44: e2e-slice-control-inplace-ry-negated
+220/367 Test  #18: e2e-slice-control-value-diamond ...................................   Passed    4.48 sec
+        Start  47: e2e-slice-control-angle-select-ry-twin
+221/367 Test #135: e2e-slice-libm-real-cbrtf .........................................   Passed    4.49 sec
+        Start  75: e2e-slice-branchless-asinh
+222/367 Test #255: e2e-slice-libm-real-nextafterl ....................................   Passed    4.50 sec
+        Start  57: e2e-slice-control-grover-derived-oracle
+223/367 Test  #50: e2e-slice-control-angle-select-rz .................................   Passed    4.55 sec
+        Start  49: e2e-slice-control-angle-select-ry-ne-twin
+224/367 Test  #44: e2e-slice-control-inplace-ry-negated ..............................   Passed    4.55 sec
+        Start  95: e2e-slice-libm-real-scalbn
+225/367 Test  #47: e2e-slice-control-angle-select-ry-twin ............................   Passed    4.45 sec
+        Start  87: e2e-slice-branchless-tanl
+226/367 Test  #75: e2e-slice-branchless-asinh ........................................   Passed    4.57 sec
+        Start  78: e2e-slice-branchless-atan2-qq
+227/367 Test  #57: e2e-slice-control-grover-derived-oracle ...........................   Passed    4.66 sec
+        Start  98: e2e-slice-libm-real-ldexpl
+228/367 Test  #49: e2e-slice-control-angle-select-ry-ne-twin .........................   Passed    4.24 sec
+        Start  45: e2e-slice-control-inplace-ry-derived-base
+229/367 Test  #95: e2e-slice-libm-real-scalbn ........................................   Passed    3.85 sec
+        Start  66: e2e-slice-branchless-cbrt
+230/367 Test  #87: e2e-slice-branchless-tanl .........................................   Passed    4.05 sec
+        Start 198: e2e-slice-multi-zerolib
+231/367 Test  #78: e2e-slice-branchless-atan2-qq .....................................   Passed    3.98 sec
+        Start  40: e2e-slice-control-select-loop
+232/367 Test  #98: e2e-slice-libm-real-ldexpl ........................................   Passed    3.80 sec
+        Start 136: e2e-slice-libm-real-coshf
+233/367 Test  #45: e2e-slice-control-inplace-ry-derived-base .........................   Passed    4.80 sec
+        Start  42: e2e-slice-control-seq-grover
+234/367 Test  #66: e2e-slice-branchless-cbrt .........................................   Passed    4.81 sec
+        Start  43: e2e-slice-control-inplace-ry
+235/367 Test #198: e2e-slice-multi-zerolib ...........................................   Passed    4.70 sec
+        Start  86: e2e-slice-branchless-cosl
+236/367 Test  #40: e2e-slice-control-select-loop .....................................   Passed    4.65 sec
+        Start  85: e2e-slice-branchless-sinl
+237/367 Test #136: e2e-slice-libm-real-coshf .........................................   Passed    4.74 sec
+        Start  94: e2e-slice-branchless-logb
+238/367 Test  #42: e2e-slice-control-seq-grover ......................................   Passed    4.59 sec
+        Start  39: e2e-slice-select-rail-alias-cond
+239/367 Test  #43: e2e-slice-control-inplace-ry ......................................   Passed    4.46 sec
+        Start  20: e2e-slice-control-value-ifelse
+240/367 Test  #86: e2e-slice-branchless-cosl .........................................   Passed    4.47 sec
+        Start  76: e2e-slice-branchless-atan2
+241/367 Test  #85: e2e-slice-branchless-sinl .........................................   Passed    4.45 sec
+        Start  41: e2e-slice-control-seq-regions
+242/367 Test  #94: e2e-slice-branchless-logb .........................................   Passed    4.45 sec
+        Start 252: e2e-slice-libm-real-llroundl
+243/367 Test  #39: e2e-slice-select-rail-alias-cond ..................................   Passed    4.33 sec
+        Start 253: e2e-slice-libm-real-nextafter
+244/367 Test  #20: e2e-slice-control-value-ifelse ....................................   Passed    4.44 sec
+        Start  77: e2e-slice-branchless-atan2-cq
+245/367 Test  #76: e2e-slice-branchless-atan2 ........................................   Passed    4.44 sec
+        Start  61: e2e-slice-cast-int-to-f80
+246/367 Test  #41: e2e-slice-control-seq-regions .....................................   Passed    4.44 sec
+        Start  21: e2e-slice-control-value-ifelse-twin
+247/367 Test #252: e2e-slice-libm-real-llroundl ......................................   Passed    4.35 sec
+        Start  58: e2e-slice-control-grover-derived-oracle-2iter
+248/367 Test #253: e2e-slice-libm-real-nextafter .....................................   Passed    4.35 sec
+        Start 126: e2e-slice-libm-real-llround
+249/367 Test  #77: e2e-slice-branchless-atan2-cq .....................................   Passed    4.37 sec
+        Start  56: e2e-slice-uncompute-interior-region-derived-cond
+250/367 Test  #61: e2e-slice-cast-int-to-f80 .........................................   Passed    4.41 sec
+        Start  36: e2e-slice-control-cond-datause
+251/367 Test  #21: e2e-slice-control-value-ifelse-twin ...............................   Passed    4.37 sec
+        Start  38: e2e-slice-control-select-fp
+252/367 Test  #58: e2e-slice-control-grover-derived-oracle-2iter .....................   Passed    4.46 sec
+        Start  62: e2e-slice-cast-f80-to-int
+253/367 Test #126: e2e-slice-libm-real-llround .......................................   Passed    4.45 sec
+        Start 261: e2e-slice-libm-ld80-nexttowardf
+254/367 Test  #56: e2e-slice-uncompute-interior-region-derived-cond ..................   Passed    4.55 sec
+        Start  37: e2e-slice-control-select
+255/367 Test  #36: e2e-slice-control-cond-datause ....................................   Passed    4.54 sec
+        Start 127: e2e-slice-libm-real-log10
+256/367 Test  #38: e2e-slice-control-select-fp .......................................   Passed    4.58 sec
+        Start  59: e2e-slice-control-grover-derived-oracle-offset
+257/367 Test  #62: e2e-slice-cast-f80-to-int .........................................   Passed    4.61 sec
+        Start 260: e2e-slice-libm-ld80-nexttoward
+258/367 Test #261: e2e-slice-libm-ld80-nexttowardf ...................................   Passed    4.72 sec
+        Start  60: e2e-slice-live-record-source-rail-warn
+259/367 Test  #37: e2e-slice-control-select ..........................................   Passed    4.58 sec
+        Start  65: e2e-slice-branchless-log
+260/367 Test #127: e2e-slice-libm-real-log10 .........................................   Passed    4.56 sec
+        Start  55: e2e-slice-control-grover-2iter
+261/367 Test  #59: e2e-slice-control-grover-derived-oracle-offset ....................   Passed    4.56 sec
+        Start 257: e2e-slice-libm-real-nexttoward
+262/367 Test #260: e2e-slice-libm-ld80-nexttoward ....................................   Passed    4.54 sec
+        Start  52: e2e-slice-control-angle-select-ry-derived-base
+263/367 Test  #60: e2e-slice-live-record-source-rail-warn ............................   Passed    4.55 sec
+        Start  63: e2e-slice-bitcast-words
+264/367 Test  #65: e2e-slice-branchless-log ..........................................   Passed    4.49 sec
+        Start 153: e2e-slice-libm-real-sinhf
+265/367 Test  #55: e2e-slice-control-grover-2iter ....................................   Passed    4.48 sec
+        Start 156: e2e-slice-branchless-scalbln
+266/367 Test #257: e2e-slice-libm-real-nexttoward ....................................   Passed    4.59 sec
+        Start  64: e2e-slice-branchless-exp
+267/367 Test  #52: e2e-slice-control-angle-select-ry-derived-base ....................   Passed    4.57 sec
+        Start  33: e2e-slice-predmux-selectchain-foldresidue
+268/367 Test  #63: e2e-slice-bitcast-words ...........................................   Passed    4.56 sec
+        Start  34: e2e-slice-predmux-fp-diamond-volatile
+269/367 Test #153: e2e-slice-libm-real-sinhf .........................................   Passed    4.65 sec
+        Start 100: e2e-slice-libm-real-cbrtl
+270/367 Test #156: e2e-slice-branchless-scalbln ......................................   Passed    4.70 sec
+        Start 128: e2e-slice-libm-real-log2
+271/367 Test  #64: e2e-slice-branchless-exp ..........................................   Passed    4.61 sec
+        Start 101: e2e-slice-libm-real-coshl
+272/367 Test  #33: e2e-slice-predmux-selectchain-foldresidue .........................   Passed    4.74 sec
+        Start 256: e2e-slice-libm-real-nexttowardl
+273/367 Test  #34: e2e-slice-predmux-fp-diamond-volatile .............................   Passed    4.81 sec
+        Start 151: e2e-slice-libm-real-scalblnf
+274/367 Test #100: e2e-slice-libm-real-cbrtl .........................................   Passed    5.20 sec
+        Start 103: e2e-slice-libm-real-atan2l
+275/367 Test #128: e2e-slice-libm-real-log2 ..........................................   Passed    5.27 sec
+        Start  99: e2e-slice-libm-real-scalblnl
+276/367 Test #101: e2e-slice-libm-real-coshl .........................................   Passed    5.39 sec
+        Start 122: e2e-slice-libm-real-exp2
+277/367 Test #256: e2e-slice-libm-real-nexttowardl ...................................   Passed    5.28 sec
+        Start  19: e2e-slice-control-value-diamond-twin
+278/367 Test #151: e2e-slice-libm-real-scalblnf ......................................   Passed    5.27 sec
+        Start  11: e2e-slice-theta-add-measure
+279/367 Test #103: e2e-slice-libm-real-atan2l ........................................   Passed    4.92 sec
+        Start 102: e2e-slice-libm-real-atanl
+280/367 Test  #99: e2e-slice-libm-real-scalblnl ......................................   Passed    4.71 sec
+        Start 152: e2e-slice-libm-real-scalbnf
+281/367 Test #122: e2e-slice-libm-real-exp2 ..........................................   Passed    5.70 sec
+        Start 116: e2e-slice-libm-real-exp
+282/367 Test  #19: e2e-slice-control-value-diamond-twin ..............................   Passed    5.62 sec
+        Start 284: e2e-slice-libm-real-hypotl
+283/367 Test  #11: e2e-slice-theta-add-measure .......................................   Passed    5.45 sec
+        Start 119: e2e-slice-libm-real-atan2
+284/367 Test #102: e2e-slice-libm-real-atanl .........................................   Passed    5.53 sec
+        Start 218: e2e-slice-io
+285/367 Test #152: e2e-slice-libm-real-scalbnf .......................................   Passed    5.52 sec
+        Start  32: e2e-slice-predmux-unreachable-switch
+286/367 Test #116: e2e-slice-libm-real-exp ...........................................   Passed    4.50 sec
+        Start 277: e2e-slice-libm-real-log1pf
+287/367 Test #284: e2e-slice-libm-real-hypotl ........................................   Passed    4.58 sec
+        Start 139: e2e-slice-libm-real-exp2f
+288/367 Test #119: e2e-slice-libm-real-atan2 .........................................   Passed    4.85 sec
+        Start  91: e2e-slice-branchless-exp2
+289/367 Test #218: e2e-slice-io ......................................................   Passed    4.63 sec
+        Start  90: e2e-slice-branchless-tan
+290/367 Test  #32: e2e-slice-predmux-unreachable-switch ..............................   Passed    4.87 sec
+        Start 155: e2e-slice-branchless-scalbn
+291/367 Test #277: e2e-slice-libm-real-log1pf ........................................   Passed    4.90 sec
+        Start 276: e2e-slice-libm-real-log1p
+292/367 Test #139: e2e-slice-libm-real-exp2f .........................................   Passed    5.01 sec
+        Start 297: e2e-keepset-vendor-check
+293/367 Test #297: e2e-keepset-vendor-check ..........................................   Passed    0.86 sec
+        Start 294: e2e-free-pairing-selftest
+294/367 Test  #91: e2e-slice-branchless-exp2 .........................................   Passed    4.20 sec
+        Start 301: e2e-slice-control-grover-loop-derived
+295/367 Test #294: e2e-free-pairing-selftest .........................................   Passed    0.62 sec
+        Start 304: e2e-slice-control-grover-loop-offset
+296/367 Test  #90: e2e-slice-branchless-tan ..........................................   Passed    4.70 sec
+        Start 313: e2e-slice-control-grover-loop-leading-gate-unrolled
+297/367 Test #155: e2e-slice-branchless-scalbn .......................................   Passed    4.51 sec
+        Start 233: e2e-slice-loop-phase-accum-unrolled
+298/367 Test #276: e2e-slice-libm-real-log1p .........................................   Passed    4.41 sec
+        Start 346: e2e-slice-control-phase-perbit-loop-mixed
+299/367 Test #301: e2e-slice-control-grover-loop-derived .............................   Passed    4.27 sec
+        Start 352: e2e-slice-control-phase-perbit-loop-value-merge-preadd
+300/367 Test #304: e2e-slice-control-grover-loop-offset ..............................   Passed    4.25 sec
+        Start 351: e2e-slice-control-phase-perbit-loop-merge-preadd-unrolled
+301/367 Test #313: e2e-slice-control-grover-loop-leading-gate-unrolled ...............   Passed    4.37 sec
+        Start 236: e2e-slice-loop-break
+302/367 Test #233: e2e-slice-loop-phase-accum-unrolled ...............................   Passed    4.47 sec
+        Start 305: e2e-slice-control-grover-loop-offset-unrolled
+303/367 Test #346: e2e-slice-control-phase-perbit-loop-mixed .........................   Passed    4.44 sec
+        Start 312: e2e-slice-control-grover-loop-leading-gate
+304/367 Test #352: e2e-slice-control-phase-perbit-loop-value-merge-preadd ............   Passed    3.93 sec
+        Start 237: e2e-slice-loop-break-qq
+305/367 Test #351: e2e-slice-control-phase-perbit-loop-merge-preadd-unrolled .........   Passed    4.36 sec
+        Start 345: e2e-slice-control-phase-perbit-loop-k32
+306/367 Test #236: e2e-slice-loop-break ..............................................   Passed    4.00 sec
+        Start 302: e2e-slice-control-grover-loop-derived-unrolled
+307/367 Test #305: e2e-slice-control-grover-loop-offset-unrolled .....................   Passed    3.98 sec
+        Start 232: e2e-slice-loop-phase-accum
+308/367 Test #312: e2e-slice-control-grover-loop-leading-gate ........................   Passed    4.46 sec
+        Start 303: e2e-slice-control-grover-loop-dynamic
+309/367 Test #237: e2e-slice-loop-break-qq ...........................................   Passed    4.44 sec
+        Start 347: e2e-slice-control-phase-perbit-loop-mixed-unrolled
+310/367 Test #345: e2e-slice-control-phase-perbit-loop-k32 ...........................   Passed    4.39 sec
+        Start 238: e2e-slice-loop-break-qq-derived
+311/367 Test #302: e2e-slice-control-grover-loop-derived-unrolled ....................   Passed    4.69 sec
+        Start 239: e2e-slice-loop-break-qq-i64
+312/367 Test #232: e2e-slice-loop-phase-accum ........................................   Passed    4.67 sec
+        Start 353: e2e-slice-control-phase-perbit-loop-value-merge-preadd-unrolled
+313/367 Test #303: e2e-slice-control-grover-loop-dynamic .............................   Passed    4.60 sec
+        Start 315: e2e-slice-control-grover-loop-range-oracle
+314/367 Test #347: e2e-slice-control-phase-perbit-loop-mixed-unrolled ................   Passed    4.22 sec
+        Start 344: e2e-slice-control-phase-perbit-loop-unrolled
+315/367 Test #238: e2e-slice-loop-break-qq-derived ...................................   Passed    3.82 sec
+        Start 310: e2e-slice-control-grover-loop-two-regs-unrolled
+316/367 Test #239: e2e-slice-loop-break-qq-i64 .......................................   Passed    4.60 sec
+        Start 316: e2e-slice-control-grover-loop-range-oracle-unrolled
+317/367 Test #353: e2e-slice-control-phase-perbit-loop-value-merge-preadd-unrolled ...   Passed    4.63 sec
+        Start 300: e2e-slice-control-grover-loop-unrolled
+318/367 Test #315: e2e-slice-control-grover-loop-range-oracle ........................   Passed    4.76 sec
+        Start 309: e2e-slice-control-grover-loop-two-regs
+319/367 Test #344: e2e-slice-control-phase-perbit-loop-unrolled ......................   Passed    4.69 sec
+        Start 350: e2e-slice-control-phase-perbit-loop-merge-preadd
+320/367 Test #310: e2e-slice-control-grover-loop-two-regs-unrolled ...................   Passed    4.68 sec
+        Start 343: e2e-slice-control-phase-perbit-loop
+321/367 Test #316: e2e-slice-control-grover-loop-range-oracle-unrolled ...............   Passed    4.61 sec
+        Start 348: e2e-slice-control-phase-perbit-loop-mixed-preadd
+322/367 Test #300: e2e-slice-control-grover-loop-unrolled ............................   Passed    4.57 sec
+        Start 349: e2e-slice-control-phase-perbit-loop-mixed-preadd-unrolled
+323/367 Test #309: e2e-slice-control-grover-loop-two-regs ............................   Passed    4.50 sec
+        Start 299: e2e-slice-control-grover-loop
+324/367 Test #350: e2e-slice-control-phase-perbit-loop-merge-preadd ..................   Passed    4.46 sec
+        Start 295: e2e-loop-twin-quarantine-selftest
+325/367 Test #295: e2e-loop-twin-quarantine-selftest .................................   Passed    0.26 sec
+        Start 298: e2e-census-slice-sync
+326/367 Test #298: e2e-census-slice-sync .............................................   Passed    0.09 sec
+        Start  28: e2e-value-diamond-twin-identical
+327/367 Test  #28: e2e-value-diamond-twin-identical ..................................   Passed    0.02 sec
+        Start 336: e2e-inplace-ry-loop-leak-twin-identical
+328/367 Test #343: e2e-slice-control-phase-perbit-loop ...............................   Passed    4.46 sec
+        Start 307: e2e-grover-loop-derived-twin-identical
+329/367 Test #336: e2e-inplace-ry-loop-leak-twin-identical ...........................   Passed    0.02 sec
+        Start  30: e2e-value-mixedops-twin-identical
+330/367 Test #307: e2e-grover-loop-derived-twin-identical ............................   Passed    0.02 sec
+        Start 367: e2e-phase-nest-andcond-identical
+331/367 Test  #30: e2e-value-mixedops-twin-identical .................................   Passed    0.02 sec
+        Start 333: e2e-inplace-ry-loop-two-regs-twin-identical
+332/367 Test #367: e2e-phase-nest-andcond-identical ..................................   Passed    0.02 sec
+        Start 306: e2e-grover-loop-twin-identical
+333/367 Test #333: e2e-inplace-ry-loop-two-regs-twin-identical .......................   Passed    0.02 sec
+        Start 331: e2e-inplace-ry-loop-twin-identical
+334/367 Test #331: e2e-inplace-ry-loop-twin-identical ................................   Passed    0.02 sec
+        Start 332: e2e-inplace-ry-loop-leading-gate-twin-identical
+335/367 Test #306: e2e-grover-loop-twin-identical ....................................   Passed    0.03 sec
+        Start 308: e2e-grover-loop-offset-twin-identical
+336/367 Test #332: e2e-inplace-ry-loop-leading-gate-twin-identical ...................   Passed    0.02 sec
+        Start 317: e2e-grover-loop-range-oracle-twin-identical
+337/367 Test #308: e2e-grover-loop-offset-twin-identical .............................   Passed    0.02 sec
+        Start 314: e2e-grover-loop-leading-gate-twin-identical
+338/367 Test #317: e2e-grover-loop-range-oracle-twin-identical .......................   Passed    0.02 sec
+        Start 366: e2e-phase-onward-perbit-loop-mixed-twin-identical
+339/367 Test #314: e2e-grover-loop-leading-gate-twin-identical .......................   Passed    0.02 sec
+        Start 334: e2e-inplace-ry-loop-derived-twin-identical
+340/367 Test #366: e2e-phase-onward-perbit-loop-mixed-twin-identical .................   Passed    0.02 sec
+        Start 360: e2e-phase-grover-loop-twin-identical
+341/367 Test #334: e2e-inplace-ry-loop-derived-twin-identical ........................   Passed    0.02 sec
+        Start 234: e2e-loop-phase-accum-twin-identical
+342/367 Test #360: e2e-phase-grover-loop-twin-identical ..............................   Passed    0.02 sec
+        Start  54: e2e-angle-select-ry-ne-twin-identical
+343/367 Test #234: e2e-loop-phase-accum-twin-identical ...............................   Passed    0.02 sec
+        Start 311: e2e-grover-loop-two-regs-twin-identical
+344/367 Test  #54: e2e-angle-select-ry-ne-twin-identical .............................   Passed    0.02 sec
+        Start 335: e2e-inplace-ry-loop-grover-twin-identical
+345/367 Test #311: e2e-grover-loop-two-regs-twin-identical ...........................   Passed    0.02 sec
+        Start  29: e2e-value-ifelse-twin-identical
+346/367 Test #335: e2e-inplace-ry-loop-grover-twin-identical .........................   Passed    0.02 sec
+        Start  31: e2e-value-polarity-twin-identical
+347/367 Test  #29: e2e-value-ifelse-twin-identical ...................................   Passed    0.02 sec
+        Start  53: e2e-angle-select-ry-twin-identical
+348/367 Test  #31: e2e-value-polarity-twin-identical .................................   Passed    0.02 sec
+        Start 363: e2e-phase-perbit-loop-mixed-preadd-twin-identical
+349/367 Test  #53: e2e-angle-select-ry-twin-identical ................................   Passed    0.02 sec
+        Start 362: e2e-phase-perbit-loop-mixed-twin-identical
+350/367 Test #363: e2e-phase-perbit-loop-mixed-preadd-twin-identical .................   Passed    0.02 sec
+        Start 364: e2e-phase-perbit-loop-merge-preadd-twin-identical
+351/367 Test #362: e2e-phase-perbit-loop-mixed-twin-identical ........................   Passed    0.02 sec
+        Start 365: e2e-phase-perbit-loop-value-merge-preadd-twin-identical
+352/367 Test #364: e2e-phase-perbit-loop-merge-preadd-twin-identical .................   Passed    0.02 sec
+        Start 361: e2e-phase-perbit-loop-twin-identical
+353/367 Test #365: e2e-phase-perbit-loop-value-merge-preadd-twin-identical ...........   Passed    0.02 sec
+        Start   1: runtime_trace_test
+354/367 Test #361: e2e-phase-perbit-loop-twin-identical ..............................   Passed    0.02 sec
+        Start   2: runtime_header_compile
+355/367 Test   #2: runtime_header_compile ............................................   Passed    0.22 sec
+        Start   3: runtime_link_smoke
+356/367 Test #348: e2e-slice-control-phase-perbit-loop-mixed-preadd ..................   Passed    4.57 sec
+        Start   4: runtime_link_smoke_selftest
+357/367 Test #349: e2e-slice-control-phase-perbit-loop-mixed-preadd-unrolled .........   Passed    4.58 sec
+        Start   5: runtime_generated_drift
+358/367 Test   #5: runtime_generated_drift ...........................................   Passed    0.44 sec
+        Start   6: runtime_core_abi_link
+359/367 Test #299: e2e-slice-control-grover-loop .....................................   Passed    4.60 sec
+        Start   7: runtime_core_abi_link_selftest
+360/367 Test   #6: runtime_core_abi_link .............................................   Passed    0.48 sec
+        Start   9: cq-opt-equivalence
+361/367 Test   #7: runtime_core_abi_link_selftest ....................................   Passed    0.32 sec
+        Start  10: frontend-lit
+362/367 Test   #1: runtime_trace_test ................................................   Passed    4.06 sec
+363/367 Test   #3: runtime_link_smoke ................................................   Passed    4.30 sec
+364/367 Test   #4: runtime_link_smoke_selftest .......................................   Passed    2.97 sec
+365/367 Test  #10: frontend-lit ......................................................   Passed    5.13 sec
+366/367 Test   #9: cq-opt-equivalence ................................................   Passed   15.87 sec
+367/367 Test #318: e2e-loop-twin-matrix ..............................................   Passed  350.21 sec
+
+100% tests passed, 0 tests failed out of 367
+
+Total Test time (real) = 350.23 sec
+EXIT=0 END=So.  6 Sep. 2026 15:51:14 CEST

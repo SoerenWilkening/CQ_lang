@@ -156,6 +156,46 @@ Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
 
 namespace {
 
+// bd test_C_libtooling-eqpx — THE ONE WAY TO JOIN `taint.InPlaceRailOps`, for all
+// FOUR writers. ⚠ SINCE THIS HELPER EXISTS, `InPlaceRailOps.insert(` HAS EXACTLY
+// ONE SITE (the line below), so the command that enumerates the writers is
+// `grep -n 'markInPlaceRailOp(' ir-pass/src/LoopLowering.cpp` — MEASURED, four
+// callers (the round-1 lens's finding F-E1-1 corrected the stale `insert` grep and
+// the four pre-helper line numbers that stood here):
+//     W1 `emitBreakForward`            `:1738`  (7.4 break)
+//     W2 `tryCaseA`'s ACCEPT           `:2321`  (round 1)
+//     W3 `collapseRailPhisIn` step (3) `:2719`  (round 2)
+//     W4 `commitOutOfLoopInPlaceOps`   `:3124`  (the predicted set)
+// Cite the four FUNCTION NAMES in preference to the numbers: the numbers are true
+// as of this edit and a comment edit above any of them moves all four.
+//
+// Membership and the proven rail's OPERAND INDEX are written in ONE statement so
+// they cannot drift: `lowerOps` Phase 1 re-verifies the index against a fresh
+// `inPlaceValueRailOperand` under FINAL taint and `rewriteInPlaceValueRail`
+// CONSUMES it, which is what retires the third independent computation of one
+// predicate (`ArithLowering.cpp:375`'s `TL = taint.Tainted.count(L)`, taken from
+// a `Tainted` that Phase 2's `promote()` mutates as Phase 2 runs — the shape of
+// the bd 8h7d.5 F-1/F-3 findings, and what made the eqpx defect's COMMUTED form
+// mutate the WRONG REGISTER).
+//
+// `ProvenRail` is the value the CALLER proved, passed where the caller holds it
+// AT THE MARKING STATEMENT (`commitOutOfLoopInPlaceOps`' `P`, one line above its
+// own insert). The other three mark from a member LIST built earlier, so they let
+// this ask G2 instead — which is not a second opinion: the predicate is pure over
+// `(BO, taint)`, none of the three mutates `taint.Tainted` between proving and
+// marking, so the answer IS the one they proved. (A parallel rail vector would be
+// the drift risk this avoids.) An INDEX, never a `Value *`: RAUW replaces operands in
+// place without reordering them, so an index survives every rewrite downstream,
+// while a pointer keyed at one stage and read at another is the bd drbq Inc-1
+// dangling defect. Erased in lockstep by `invariantRegisterRoots`' rollback.
+void markInPlaceRailOp(BinaryOperator *BO, TaintSet &taint,
+                       Value *ProvenRail = nullptr) {
+  taint.InPlaceRailOps.insert(BO);
+  Value *Rail = ProvenRail ? ProvenRail : inPlaceValueRailOperand(BO, taint);
+  if (Rail)
+    taint.InPlaceRailIdx[BO] = BO->getOperand(0) == Rail ? 0 : 1;
+}
+
 // ONE SPELLING of "will this `BinaryOperator` be lowered as an IN-PLACE mutation
 // of rail value `V`'s handle?" (bd test_C_libtooling-8h7d.5, Rule-13 round 4,
 // finding OD-A). Two independent halves, and conflating them is the defect this
@@ -1695,7 +1735,7 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
   //     `cqrt_{addc,xorc}_<W>` in-place gate (one rail handle) rather than the
   //     out-of-place template (the X1 fresh-rail-per-iteration dirty rail).
   for (BinaryOperator *BO : RailOps)
-    taint.InPlaceRailOps.insert(BO);
+    markInPlaceRailOp(BO, taint);  // + the proven rail's operand INDEX (eqpx).
 
   // (2) Mint R / idx / out = |0> before the loop (in the rail phi's external
   //     predecessor, which dominates both the loop and the exit).
@@ -2278,7 +2318,7 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // membership (not use-count) and emits the side-effecting in-place gate.
   for (auto &KV : railRoot)
     if (auto *BO = dyn_cast<BinaryOperator>(KV.first))
-      taint.InPlaceRailOps.insert(BO);
+      markInPlaceRailOp(BO, taint);  // + the proven rail's operand INDEX (eqpx).
 
   // WRITER 1 OF `taint.ClaimedRailRoots` (bd 3qlq Inc 1, the SECOND C-1 review
   // round, finding F-C1-2(2a)). The round-2 `invariantRegisterRoots` must be able
@@ -2676,7 +2716,7 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
   //     Rotation gates need no marking (`lowerRotations` already lowers in place).
   for (Value *V : RailMembers)
     if (auto *BO = dyn_cast<BinaryOperator>(V))
-      taint.InPlaceRailOps.insert(BO);
+      markInPlaceRailOp(BO, taint);  // + the proven rail's operand INDEX (eqpx).
 
   // Snapshot each rail's GATES and SURVIVING members before step (4) erases the
   // header phis — step (5) needs both and the phis will be gone. Gates are
@@ -3081,7 +3121,7 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
       return;
     if (!classifyInPlaceReassignment(BO, wd, taint, DT, LI))
       return;
-    taint.InPlaceRailOps.insert(BO);
+    markInPlaceRailOp(BO, taint, /*ProvenRail=*/P);  // + the INDEX (eqpx).
     taint.PreLoopCommittedInPlaceOps.insert(BO);
     Marked.push_back(BO);
   }
@@ -3409,6 +3449,10 @@ bool invariantRegisterRoots(Loop *L, TaintSet &taint, WidthDispatch &wd,
     return true;
   for (Instruction *I : Marked) {
     taint.InPlaceRailOps.erase(I);
+    // bd eqpx: the proven-rail INDEX is written in lockstep with membership
+    // (`markInPlaceRailOp`) and must be erased in lockstep too — a stale index
+    // would outlive its set and be re-verified for an op this path never marked.
+    taint.InPlaceRailIdx.erase(I);
     // BOTH sets, or `lowerOps`' (1b) tripwire would re-ask its question about an
     // op this path did not commit — and answer it under a fence (`inPlaceFence
     // Holds`' own `InPlaceRailOps` self-test, suppressed only for a committed op)

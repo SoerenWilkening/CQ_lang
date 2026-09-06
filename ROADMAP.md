@@ -465,7 +465,22 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > the same class found in passing by the round-3 lens** (F-C1C-B, bd
 > `test_C_libtooling-eqpx`, notes §3.12: the same defect through the LOOP writers for
 > the `xor` stem, reproducing on the pre-3qlq oracle 52d7764, so NOT this epic's and
-> NOT a blocker for it).
+> NOT a blocker for it). ⭐ **That last one is FIXED (2026-09-06, notes §3.16 / PRD §0
+> E13)**: a DECLINE-ONLY consumer tripwire — `lowerOps` Phase 1 re-asks G2 alone
+> (`inPlaceValueRailOperand`) under FINAL taint for every `taint.InPlaceRailOps`
+> member W4 did not commit, declining `cq loop lowering: in-place rail op no longer
+> provable at lowering`. The investigation first grew the class three ways: FOUR
+> writers not three (`emitBreakForward` was unlisted and is a member), the `add` stem
+> reachable (correct until then only by `-O1`'s exit-value rewrite), and the BARE
+> `%out` reaching it one pipeline stage earlier than `repropagateControlMerges`. 16
+> lit fixtures, 0 new goldens, 0 golden churn, no new frozen symbol. The round-1
+> adversarial lens on that fix returned **`CLEAR-WITH-ITEMS`** (2026-09-06): no
+> over-accept, no introduced miscompile, 0 over-declines over 20 boundary programs
+> and 0 rail producers over all 841 `fix` accepts, with **15 MORE measured members**
+> of the class — two of which change its description, since **at i8/i16 the defect
+> was a BROKEN MODULE and a hard abort, never verify-clean**, and the commuted `add`
+> IS plain-C reachable in its wrong-immediate face. Its three DOC/FIXTURE items are
+> closed (`eqpx_reproducers_r1/`, notes §3.16). **One lens is not a clearance.**
 > **STATUS: LANDED.** Three C-1 rounds ran on branch `3qlq-inc1-fix-c1` — round 1
 > the CAPABILITY, round 2 two more members of the class plus a confirmed miscompile
 > of its own, round 3 the NARROWING — the round-3 lens graded **CLEAR-WITH-ITEMS**

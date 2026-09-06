@@ -33,6 +33,11 @@
 #include "CastLowering.h"
 #include "CompareLowering.h"
 #include "IntrinsicLowering.h"
+// bd test_C_libtooling-eqpx — `inPlaceValueRailOperand` (G2), the ONE spelling of
+// the dtzb shape test that every `taint.InPlaceRailOps` writer proved with. The
+// consumer tripwire below re-asks THAT predicate under final taint; Rule 14 says
+// ask it, never re-spell it.
+#include "LoopPlan.h"
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -79,6 +84,22 @@ void diagnosePreLoopCommitStale(Instruction *I) {
   I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
       *I->getFunction(),
       "cq loop lowering: pre-loop in-place op no longer provable at lowering",
+      I->getDebugLoc()));
+}
+
+// THE eqpx TRIPWIRE — loud decline for an IN-LOOP in-place rail marking whose G2
+// shape no longer holds at lowering time (bd test_C_libtooling-eqpx, P1). The
+// (1b) sibling above owns `commitOutOfLoopInPlaceOps`' PREDICTION; this one owns
+// the three LOOP writers' PROOF, whose stale input is a different one — the
+// "classical immediate" that stopped being classical. The message is likewise
+// owned by `cq loop lowering` because the DECISION is `LoopLowering`'s; only the
+// re-verification lives here, where the final taint exists. Same
+// `DiagnosticInfoUnsupported(DS_Error)` + `!dbg` surface, mirrored
+// character-for-character by eight negative fixtures (Rule 12).
+void diagnoseRailOpStale(Instruction *I) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(),
+      "cq loop lowering: in-place rail op no longer provable at lowering",
       I->getDebugLoc()));
 }
 
@@ -303,22 +324,23 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           // writers deliberately answer differently, being in-loop by
           // construction. That is a statement about THIS FENCE BODY.
           //
-          // ⚠ IT IS **NOT** A CLEAN BILL OF HEALTH FOR THE OTHER THREE, and the
-          // sentence that used to stand here — "the other three writers mark a
-          // rail they PROVED with their own fences" — was MEASURED FALSE as a
+          // ⚠ IT IS **NOT** A CLEAN BILL OF HEALTH FOR THE OTHER WRITERS, and
+          // the sentence that used to stand here — "the other three writers mark
+          // a rail they PROVED with their own fences" — was MEASURED FALSE as a
           // bound on this defect class (bd 3qlq Inc 1, round-3 lens finding
           // F-C1C-B; notes §3.12). Their fences prove the RAIL (a closed
           // self-cycle, its fan-out, its record reads); NOT ONE OF THEM PROVES
           // THE IMMEDIATE STAYS CLASSICAL, which is the input F-C1B-1 turned on.
-          // Through `tryCaseA` / `collapseRailPhisIn` step (3) the identical
-          // defect is reachable for the `xor` stem from plain C —
+          // Through `emitBreakForward` / `tryCaseA` / `collapseRailPhisIn` step
+          // (3) the identical defect is reachable for BOTH stems from plain C —
           // `cqrt_xorc_i32(h1, 6)` where the bare `6` is a template rail's HANDLE
           // ID — and it is PRE-EXISTING (it reproduces on the pre-3qlq oracle
-          // 52d7764 and on every binary of this epic), so it is out of this
-          // round's scope but NOT out of the class. Filed as bd
-          // `test_C_libtooling-eqpx`; the proposed fix is this same shape with
-          // **G2 alone** re-asked for every `InPlaceRailOps` member (G2 alone
-          // because G5 would always refuse an in-loop site), declining loudly.
+          // 52d7764 and on every binary of this epic), so it was out of THAT
+          // round's scope but never out of the class. Filed as bd
+          // `test_C_libtooling-eqpx` and **FIXED (2026-09-06) BY THE BLOCK
+          // IMMEDIATELY BELOW**: the same shape with **G2 alone** re-asked for
+          // every `InPlaceRailOps` member W4 did not commit (G2 alone because G5
+          // would always refuse an in-loop site), declining loudly.
           if (auto *BO = dyn_cast<BinaryOperator>(&I);
               BO && !inBennettClone &&
               taint.PreLoopCommittedInPlaceOps.count(BO)) {
@@ -329,6 +351,112 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
             if (!classifyInPlaceReassignment(BO, wd, taint, *MCDT, *MCLI,
                                              /*IgnoreSelfMarking=*/true)) {
               diagnosePreLoopCommitStale(BO);
+              continue;  // never enqueued ⇒ never rewritten ⇒ never erased.
+            }
+          }
+          // ── THE eqpx TRIPWIRE — bd test_C_libtooling-eqpx (P1), the SAME
+          // once-only-stage class as (1b) above, through the OTHER THREE writers
+          // of `taint.InPlaceRailOps`. PRE-EXISTING: it reproduces on the
+          // pre-3qlq oracle 52d7764 and on every binary of the 3qlq epic.
+          //
+          // WHAT IT RE-ASKS: **G2 ALONE** — `inPlaceValueRailOperand(BO, taint)`,
+          // the ONE exported spelling of the dtzb shape test every writer proved
+          // with (`LoopLowering.cpp:143`; add/xor, <=64-bit integer, and EXACTLY
+          // ONE tainted operand) — under the FINAL taint.
+          //
+          // WHY NOT THE WHOLE FENCE, i.e. why this is a SECOND predicate at this
+          // site rather than (1b) widened: `inPlaceFenceHolds`' G5 second
+          // disjunct (`ArithLowering.cpp:695-696`,
+          // `LI.getLoopFor(Site->getParent()) || blockCanRepeat(...)`) is NOT
+          // gated by `IgnoreSelfMarking` — only the `InPlaceRailOps` self-marking
+          // disjunct is — and every W1/W2/W3 member is inside a loop BY
+          // CONSTRUCTION. Re-asking the whole fence would decline 100% of them,
+          // shipped ones included. G5 answers a question those writers
+          // deliberately answer differently; G2 is the one they actually asked.
+          //
+          // FOR WHOM, by name — and the command is
+          // `grep -n 'markInPlaceRailOp(' ir-pass/src/LoopLowering.cpp` (FOUR
+          // callers, not three). ⚠ NOT `InPlaceRailOps.insert(`: since the four
+          // writers were folded into the one `markInPlaceRailOp` helper that
+          // grep returns a SINGLE site, inside the helper itself — the round-1
+          // lens's finding F-E1-1, which is also why the numbers below are
+          // written as "true at this edit" and the NAMES are the durable key:
+          //   W1 `emitBreakForward`      `LoopLowering.cpp:1738` (7.4 break)
+          //   W2 `tryCaseA`'s ACCEPT     `LoopLowering.cpp:2321` (round 1)
+          //   W3 `collapseRailPhisIn`(3) `LoopLowering.cpp:2719` (round 2)
+          //   W4 `commitOutOfLoopInPlaceOps` `:3124` — EXCLUDED here, it has its
+          //      own stronger re-ask twenty lines above and being adjudicated by
+          //      two different fences is how one op gets two answers.
+          // Each of W1-W3 proves THE RAIL (a closed self-cycle, its fan-out, its
+          // record reads). NOT ONE OF THEM PROVES THE IMMEDIATE STAYS CLASSICAL,
+          // and W1's own immediate test (`:1586-1588`) is a DOMINANCE test for
+          // the reverse-play, never a classicality test.
+          //
+          // WHAT MOVES THE ANSWER — TWO taint-growth events in the window, not
+          // the one the bd issue names:
+          //   E1 `lowerControlRegions` (`CQLoweringPass.cpp:376`) —
+          //      `ClassicalCallArmEmit.cpp:209` / `SwitchDataMuxEmit.cpp:144` do
+          //      `taint.Tainted.insert(Out)` AT EMISSION, so the BARE 6.5 / 4.5
+          //      merge value is a quantum handle from that moment. AFTER W1/W2
+          //      (`:363`), BEFORE W3/W4 (`:393`).
+          //   E2 `repropagateControlMerges` (`:409`) — everything DERIVED from
+          //      that `%out`.
+          // The emitted defect was `cqrt_xorc_i32(%h2, %h_op)` — a quantum rail
+          // handle in the ABI's classical-immediate slot, printed by the trace
+          // runtime as a bare decimal handle id — at `opt` exit 0, verify-clean
+          // and STRICT stage-2b `0 violation(s)`, from six lines of plain C; and
+          // with the operands COMMUTED the same re-pick mutates the WRONG
+          // REGISTER (`rewriteInPlaceValueRail`'s `TL = Tainted.count(L)`,
+          // `ArithLowering.cpp:375`, answering about a value that changed class).
+          //
+          // NEVER A SILENT FALLBACK TO OUT-OF-PLACE (Rule 1 — no third path).
+          // FOUR permissions the marking already bought are standing in the
+          // module by now and cannot be withdrawn: `markIfRailLocal`'s
+          // `taint.IterationLocalBlocks`, the IRREVERSIBLY COLLAPSED rail phi,
+          // `taint.ClaimedRailRoots`, and — for W1 — the whole forward break
+          // transform plus the post-`lowerOps` `lowerBreakReversePlay` stage that
+          // re-emits this op's adjoint. Lowering this one op into a fresh
+          // per-iteration rail leaves every one of them on a premise that no
+          // longer holds: the X1 cross-iteration dirty rail the marking exists to
+          // prevent. Lowering NOTHING and exiting non-zero is the only
+          // disposition that keeps them consistent.
+          //
+          // THE 8h7d.5 QUESTION — "when you widen a set, ask what OTHER set was
+          // computed over the same closure". `taint.InPlaceRailOps` is read by
+          // `railValueConsumerDisposition` (`LoopLowering.cpp`, by NAME), whose
+          // `InPlace` cell feeds the Rule-8 fan-out guard and `collectRailGates`'
+          // forward extension. This widening is DECLINE-ONLY: it never REMOVES a
+          // member, so that cell is byte-unchanged for every module that still
+          // lowers. A silent removal would make `collectRailGates` stop following
+          // the op and judge a rail record read past it FRESH when it is STALE —
+          // reopening 8h7d.5 F-1. That is a second, independent reason the
+          // disposition must be a decline.
+          //
+          // NOT GATED ON `!inBennettClone`, unlike (1b) above: the Phase-2
+          // dispatch (`taint.InPlaceRailOps.count(BO) || InPlaceReassign.count(BO)`)
+          // honours the marking UNCONDITIONALLY, so gating here would leave a hole
+          // exactly where the dispatch has none. It is INERT either way —
+          // `seedClone` builds a FRESH `TaintSet` (`SpecializeSeed.h`) and clones
+          // are built long after `lowerLoops`, so no clone instruction can be in
+          // `taint.InPlaceRailOps` — and that inertness was MEASURED (the whole
+          // fixture corpus and all 43 eqpx reproducers move only the members).
+          if (auto *BO = dyn_cast<BinaryOperator>(&I);
+              BO && taint.InPlaceRailOps.count(BO) &&
+              !taint.PreLoopCommittedInPlaceOps.count(BO)) {
+            Value *Rail = inPlaceValueRailOperand(BO, taint);
+            // The INDEX half (`taint.InPlaceRailIdx`): the writer recorded WHICH
+            // operand it proved was the rail, so the emitter can CONSUME that
+            // answer instead of re-deriving it a third time from a `Tainted` that
+            // Phase 2's `promote()` mutates as Phase 2 runs. Here we check the
+            // two answers still AGREE; `rewriteInPlaceValueRail` consumes the
+            // recorded index. An index, never a `Value *` — a pointer keyed at
+            // one stage and read at another is the bd drbq Inc-1 dangling defect,
+            // and RAUW replaces operands in place without reordering them.
+            auto It = taint.InPlaceRailIdx.find(BO);
+            bool IdxDisagrees = It != taint.InPlaceRailIdx.end() &&
+                                BO->getOperand(It->second) != Rail;
+            if (!Rail || IdxDisagrees) {
+              diagnoseRailOpStale(BO);
               continue;  // never enqueued ⇒ never rewritten ⇒ never erased.
             }
           }

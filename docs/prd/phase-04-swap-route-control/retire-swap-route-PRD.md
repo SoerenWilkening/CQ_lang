@@ -282,6 +282,47 @@ baseline, so every round-2 measurement transferred).
   standing OQ-11/12/13/22/23. Record items **R-1**/**R-2** are applied as **E1a**
   and **E1b** above.
 
+**E13 — bd `test_C_libtooling-eqpx` (P1) is FIXED (2026-09-06).** The PRE-EXISTING
+in-place-immediate miscompile through the LOOP writers — a quantum rail handle emitted
+into the `cqrt_{addc,xorc}_<W>` ABI's CLASSICAL-IMMEDIATE slot, `opt` exit 0,
+verify-clean, STRICT stage-2b `0 violation(s)`, and byte-identical on the pre-3qlq
+oracle 52d7764 — is closed by a DECLINE-ONLY consumer tripwire: `lowerOps` Phase 1
+re-asks **G2 ALONE** (`inPlaceValueRailOperand`, under FINAL taint) for every
+`taint.InPlaceRailOps` member NOT in `PreLoopCommittedInPlaceOps`, and declines loudly
+with `cq loop lowering: in-place rail op no longer provable at lowering`.
+**FOUR writers, not three** — the record enumerated a site that is not separate
+(`tryCaseA`'s ACCEPT == "round 1's `railRoot` marking") and omitted one that is
+(`emitBreakForward`, the 7.4 break path, a measured member) — and **TWO** taint-growth
+events, not one (`lowerControlRegions` taints the BARE `%out`, one stage before
+`repropagateControlMerges` taints its derivations). The **`add` stem** was reachable
+all along and correct only by `-O1`'s exit-value rewrite. 16 lit fixtures (8 decline,
+8 accept control), **0 new goldens and 0 golden churn**, `0 RCDIFF · 0 DIAGDIFF ·
+0 OUTDIFF` over the 1691 pre-existing fixtures, and no new frozen symbol (D3). Full
+record: `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.16**.
+⚠ **THE ROUND-1 ADVERSARIAL LENS (2026-09-06, `CLEAR-WITH-ITEMS`) FOUND 15 MORE MEASURED
+MEMBERS** of the class — casts (`(short)`/`(long long)`/`(unsigned char)`), a curated
+`llvm.bswap` intrinsic, a classical `phi` of two derived immediates, a 4-hop derived
+chain, `%out` mixed with an Argument, two rail ops on one immediate, a break loop whose
+immediate is also in the break condition — every one accepting on `main` with a rail in
+the immediate slot and declining on the fix, against **0 over-declines over 20
+purpose-built boundary programs** and `strictimm.py`'s **0 rail producers over all 841
+`fix` accepts**. Two of the fifteen change the class's own description: **at i8/i16 the
+defect was never verify-clean at all** — `cqrt_xorc_i8(i32 %h2, i32 %h_op)` does not
+type-check against the i8 immediate ABI, so `main` ABORTS (`LLVM ERROR: Broken module
+found`, rc 134) where i32 is silent — and **the commuted `add` IS plain-C reachable**
+in its wrong-IMMEDIATE face, retiring half of the "commuted is hand-IR-only" reading
+(the wrong-REGISTER face stays hand IR). Programs committed at
+`inc1-records/session-7bbdb89e/eqpx_reproducers_r1/`.
+**LANDED on `main` 2026-09-06 as ONE squash commit of branch `eqpx-fix`** (`git log main -1`)
+after two opus lenses (round 1 CLEAR-WITH-ITEMS, round 2 CLEAR-WITH-ITEMS, every item closed) and the
+Fable clearance **CLEAR-WITH-OWNER-QUESTIONS** (`inc1-records/session-7bbdb89e/clearance_eqpx.md`:
+the ruling matched clause by clause, corpus diff 0/0/0 re-derived, its own M1 mutant reddens exactly
+the 8 declines, two MORE plain-C members found and declined; F-CL-1 corrected the W1 "no second
+diagnostic" attribution — the driver exits at the first `DS_Error`, so `lowerBreakReversePlay` is
+never reached). Full `ctest -j6` 367/367 (350.23 s). The two standing owner questions are
+docs-level: keep/drop the operand-INDEX form (inert on the corpus, live when wrong — kept, argued
+in-source), and a header note on the pre-existing (1b) template fixture.
+
 **E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
 The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →
 2 _unc → 2 free`. At the Increment-1a hand-back that held at **K = 1 only**: from

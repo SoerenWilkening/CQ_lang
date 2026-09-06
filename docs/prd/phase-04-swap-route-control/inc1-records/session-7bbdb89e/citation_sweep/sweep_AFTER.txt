@@ -1,0 +1,61 @@
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:1320 OpcodeLowering:263   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:263 = // Phase-1 collection loop"; this is that loop, and it is also the earliest
+    main    OpcodeLowering:263 = // already fired in `declineStaleRecordOps` (which ran before any
+    main's 263 now lives at SUBJECT:284
+    sentence: which is a **COMMITMENT rather than a hint** — `OpcodeLowering:263` skips M-C classification
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:1413 OpcodeLowering:263   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:263 = // Phase-1 collection loop"; this is that loop, and it is also the earliest
+    main    OpcodeLowering:263 = // already fired in `declineStaleRecordOps` (which ran before any
+    main's 263 now lives at SUBJECT:284
+    sentence: | `taint.InPlaceRailOps` — read by `railValueConsumerDisposition` (hence `peelInPlaceStep(AsLowered)`, the Rule-8 fan-out guard and `collectRailGates`), by M-C's G5, and by `OpcodeLowering:263/:350` |
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:1413 OpcodeLowering:350   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:350 = }
+    main    OpcodeLowering:350 = } else if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
+    main's 350 now lives at SUBJECT:478
+    sentence: | `taint.InPlaceRailOps` — read by `railValueConsumerDisposition` (hence `peelInPlaceStep(AsLowered)`, the Rule-8 fan-out guard and `collectRailGates`), by M-C's G5, and by `OpcodeLowering:263/:350` |
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:1572 OpcodeLowering:263   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:263 = // Phase-1 collection loop"; this is that loop, and it is also the earliest
+    main    OpcodeLowering:263 = // already fired in `declineStaleRecordOps` (which ran before any
+    main's 263 now lives at SUBJECT:284
+    sentence: `%out` is tainted only at round 2); at `lowerOps` (`:536`) `OpcodeLowering:263` skips M-C for
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:2075 LoopLowering:3214   (citing line pre-exists on main: True)
+    SUBJECT LoopLowering:3214 = // Returns true (and fills `RootsOut`) only when EVERY tainted value defined
+    main    LoopLowering:3214 = 
+    main's 3214 now lives at SUBJECT:3254
+    sentence: | `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree: clause (ii)'s peel and `markIfRailLocal`'s `onRail`. RE-MEASURED on the rebased tree with `grep -rn 'peelInPlaceStep(\|
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:2075 LoopLowering:3412   (citing line pre-exists on main: True)
+    SUBJECT LoopLowering:3412 = //         emitters mutate through VOID calls that are in no work list
+    main    LoopLowering:3412 = // BOTH sets, or `lowerOps`' (1b) tripwire would re-ask its question about an
+    main's 3412 now lives at SUBJECT:3456
+    sentence: | `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree: clause (ii)'s peel and `markIfRailLocal`'s `onRail`. RE-MEASURED on the rebased tree with `grep -rn 'peelInPlaceStep(\|
+
+[MISS-PREEXISTING] docs/prd/phase-04-swap-route-control/RETIRE_SWAP_ROUTE_INC1_NOTES.md:2075 LoopLowering:3413   (citing line pre-exists on main: True)
+    SUBJECT LoopLowering:3413 = //         (`cqrt_copy_<W>_controlled`, `cqrt_x`, `cqrt_cnot`, a
+    main    LoopLowering:3413 = // op this path did not commit — and answer it under a fence (`inPlaceFence
+    main's 3413 now lives at SUBJECT:3457
+    sentence: | `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree: clause (ii)'s peel and `markIfRailLocal`'s `onRail`. RE-MEASURED on the rebased tree with `grep -rn 'peelInPlaceStep(\|
+
+[MISS-PREEXISTING] ir-pass/src/LoopLowering.cpp:3058 OpcodeLowering:263   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:263 = // Phase-1 collection loop"; this is that loop, and it is also the earliest
+    main    OpcodeLowering:263 = // already fired in `declineStaleRecordOps` (which ran before any
+    main's 263 now lives at SUBJECT:284
+    sentence: // unconditionally (`OpcodeLowering:263` skips M-C for a marked op, `:350` routes
+
+[MISS-PREEXISTING] ir-pass/src/LoopLowering.cpp:3058 OpcodeLowering:350   (citing line pre-exists on main: True)
+    SUBJECT OpcodeLowering:350 = }
+    main    OpcodeLowering:350 = } else if (auto *Cmp = dyn_cast<CmpInst>(&I)) {
+    main's 350 now lives at SUBJECT:478
+    sentence: // unconditionally (`OpcodeLowering:263` skips M-C for a marked op, `:350` routes
+
+=== SUMMARY ===
+citations scanned    61
+OK                   43
+MISS-INTRODUCED      0
+MISS-PREEXISTING     9
+QUOTED               9
+UNADJUDICATED        0
