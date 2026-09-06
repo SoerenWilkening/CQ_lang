@@ -427,9 +427,29 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > independent re-run over **299** programs gives **286 unchanged / 13 moved**, one of
 > them a harness artefact of its own probe and the other 12 all in the REFUSE
 > direction, with **0 programs going decline → accept and no decline string changed**.
-> `e2e-loop-twin-matrix` **Passed, 181.66 s** with no cell moved. That makes it
-> **seven instances of one defect class over five adversarial rounds on one
-> function** — two of them INTRODUCED BY A FIX — **plus one PRE-EXISTING member of
+> `e2e-loop-twin-matrix` **Passed, 181.66 s** with no cell moved.
+> **⚠⚠⚠ AND A FOURTH ROUND (2026-09-06, bd `7yd0` — notes §3.14) RETIRED THE
+> `hasOneUse` STABILITY CONJUNCT ITSELF**, on a leak the Rule-13 round on
+> **Increment 2** found in the ALREADY-LANDED `main` a3c1513 (`review_inc2_r2`
+> **F-I2-1**; the same conjunct the re-clearance had filed as OQ-C2-1). A Phase-4
+> MERGE OUT-RAIL structurally cannot satisfy `P->hasOneUse()` — the emitters WRITE
+> `%out` before anything reads it — so the commit refused, the peel stopped at the
+> `add`, clause (ii-b) never saw the root, and D4's per-bit loop leaked **4 mints /
+> 0 `_unc` rolled (44 lines) against a hand-unrolled twin at 4/4 (52)**, 32 / 0 at
+> K=32, from thirteen lines of plain C with no Inc-2 feature in them. The conjunct
+> guarded NOTHING M-C's own G6/G7 pair does not (measured with programs: a prior void
+> `cqrt_*` writer is settled by `priorUseIsSettled` arm (c), a later `cq_measure` is
+> refused by G6, a still-unlowered tainted opcode by arm (e)), and the temporal net is
+> round 3's (1b) tripwire — **deleting (1b) makes all nine F-C1C-1-class programs
+> miscompile again, which is the measurement that makes the safety claim a fact**.
+> Witnessed by `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52), one lit
+> accept and twin-matrix sub-grid **F4** (2 cells, TRACE-DIVERGENCE on `main` →
+> ACCEPT-IDENTICAL; 286 → **288**). ⚠ It also CORRECTS OQ-C2-1's attribution: `m11d`
+> is **not** bought back — its candidate is refused by the M-C fence itself, so its
+> trace is byte-unchanged. That makes it
+> **eight instances of one defect class over six adversarial rounds on one
+> function** — two of them INTRODUCED BY A FIX and the eighth found AFTER LANDING by
+> a round reviewing a different increment — **plus one PRE-EXISTING member of
 > the same class found in passing by the round-3 lens** (F-C1C-B, bd
 > `test_C_libtooling-eqpx`, notes §3.12: the same defect through the LOOP writers for
 > the `xor` stem, reproducing on the pre-3qlq oracle 52d7764, so NOT this epic's and
@@ -978,7 +998,15 @@ after a statevector-checked design dialogue; see
   sources hash identically (twice — once after the `preloop` slot, once after the
   cells) and the quarantine file is byte-unchanged. **The THIRD C-1 round (narrowing
   only) added NO cell and moved NONE: 257 + 29 = 286, `e2e-loop-twin-matrix`
-  Passed, 181.66 s.** The `xor` spelling of the same
+  Passed, 181.66 s.** **And the FOURTH round added sub-grid F4 — the PRODUCT of F3's
+  preheader axis with a 4.4 SELECT-MERGE out-rail root (a `PREHEAD` slot on `_wrap`
+  plus one new PREFIX key `addpresel`), 2 cells, 259 + 29 = 288 cells**: both were
+  TRACE-DIVERGENCE on `main` a3c1513 and are ACCEPT-IDENTICAL now (one of them the
+  table's first `ACCEPT-IDENTICAL-WARN` row, the same warning on both spellings and
+  on both binaries); all **1144** pre-existing generated sources hash identically and
+  the quarantine file is byte-unchanged. `e2e-loop-twin-matrix` **Passed, 229.18 s**.
+  Only the 4.4 select merge is expressible here — the Phase-4 value-arm route needs a
+  multi-op arm and the 6.5 classical-call arm a second TU. The `xor` spelling of the same
   axis is DROPPED with its measurement in the code: `xor` distributes over a bit
   test, so `-O1` rewrites the FLAT side's `((a^9)>>i)&1` onto the PRE-xor register
   and the two spellings stop being the same program — the `addpost` precedent, not a
