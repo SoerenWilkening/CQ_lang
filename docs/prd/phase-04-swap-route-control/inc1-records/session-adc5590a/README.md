@@ -43,3 +43,10 @@ each, the re-clearance, and the landing:
 
 The narrative record is `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12) and the PRD §0 ERRATA (E2 rewritten
 twice; **E10** is the five-line summary of the three rounds, the count and the landing).
+
+## C-1 round 4 (bd `7yd0`) — NOT LANDED at session end (owner: "stop after this agent finished")
+* `c1-round4/fix_c1d.md` / `c1-round4/review_c1d.md` — the round (one non-comment line: the `hasOneUse` conjunct of
+  `commitOutOfLoopInPlaceOps` retired under the round-3 tripwire) and its lens (**CLEAR-WITH-ITEMS**). Branch
+  `c1-round4` at 59f6a95 (base a3c1513, PUSHED, full ctest 351/351 on its tree). The leak it fixes is LIVE on
+  landed `main` 258d974 (F-C1D-1), so the next session's first step is the rebase + landing per
+  `briefs/BRIEF_rebase_c1d.md`. `NEXT_SESSION_PROMPT.md` carries the state.

@@ -14,3 +14,7 @@ EXIT=0
 100% tests passed, 0 tests failed out of 348
 Total Test time (real) = 357.52 sec
 EXIT=0
+== orch_full_ctest_c1d (branch c1-round4 @ 59f6a95, base a3c1513)
+100% tests passed, 0 tests failed out of 351
+Total Test time (real) = 374.32 sec
+EXIT=0
