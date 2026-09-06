@@ -2,14 +2,21 @@
 
 > **Status:** owner-scoped 2026-09-05 (seven decisions, §2, settled in
 > one owner conversation and recorded here verbatim in substance). **Increments 0
-> and 1 are IMPLEMENTED and Rule-13-reviewed on branch `3qlq-inc1` (2026-09-05) but
-> NOT ON MAIN: the clearance review's verdict was BLOCK on finding C-1 (a mixed loop —
-> invariant root register with D4's per-bit condition PLUS a second loop-carried
-> register — leaks its `and` rails per activation where the hand-unrolled twin and the
-> pre-3qlq oracle both discharge them; `inc1-records/session-0a61aa31/clearance.md`).
-> One bounded fix round + re-clearance is owed before landing. Increment 2 (§7) is
-> implemented + round-1 reviewed on branch `3qlq-inc2`, not landed.**
-> **2026-09-06: C-1 is FIXED on branch `3qlq-inc1-fix-c1`** — `LoopLowering`'s
+> and 1 are IMPLEMENTED, Rule-13-reviewed, and are now
+> LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the
+> orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded in
+> the landing commit message; `git log main -1` shows the hash) **after the
+> re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is implemented
+> + round-1 reviewed on branch `3qlq-inc2`, NOT landed — a rebase onto the landed
+> Inc 1 is owed.**
+> **HISTORY (dated, kept — do not delete it).** The first clearance
+> (2026-09-05, `inc1-records/session-0a61aa31/clearance.md`) returned **BLOCK** on
+> finding C-1 (a mixed loop — invariant root register with D4's per-bit condition
+> PLUS a second loop-carried register — leaked its `and` rails per activation where
+> the hand-unrolled twin and the pre-3qlq oracle both discharge them), and Inc 0/1
+> sat off `main` on branch `3qlq-inc1` until that was disposed of.
+> **2026-09-06: C-1 was FIXED on branch `3qlq-inc1-fix-c1`** — `LoopLowering`'s
 > `Collapsed` branch now ALSO collects the loop-invariant root mints beside the
 > carried roots (a separate set unioned into `Roots` only on success, with a
 > `CarriedRoots` skip so the collapse's own rail is not judged by clause (iii)), on
@@ -25,8 +32,13 @@
 > **The independent lens on round 3 graded it CLEAR-WITH-ITEMS** (two DOC findings,
 > applied; one CONFIRMED miscompile it found is PRE-EXISTING on the pre-3qlq oracle
 > and is filed OUT of this epic as bd `test_C_libtooling-eqpx` — F-C1C-B, notes
-> §3.12). **A RE-CLEARANCE IS PENDING; landing on `main` follows the re-clearance
-> verdict. Nothing here says Inc 0/1 have landed.** ⚠ READ
+> §3.12). **The RE-CLEARANCE then ran on that tree (2026-09-06,
+> `inc1-records/session-adc5590a/clearance2.md`) and returned
+> `CLEAR-WITH-OWNER-QUESTIONS` — the BLOCK is CLOSED and Inc 0 + Inc 1 LANDED on
+> `main` the same day. What the verdict leaves open is four owner questions and one
+> record item, all of them DISCLOSED leak/over-decline classes that pre-date this
+> branch (OQ-C2-1 `hasOneUse`, OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
+> OQ-C2-4 the over-decline list) — see E10 below.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
 > Extends Phase 4
@@ -39,24 +51,32 @@
 > family, §4). Implementing epic: bd `test_C_libtooling-3qlq` (children `.1`–`.3`
 > = Inc 0–2, plus filed follow-ons).
 
-## 0. ERRATA — what implementation and review measured differently (2026-09-05)
+## 0. ERRATA — what implementation and review measured differently (2026-09-05; E10 added 2026-09-06 at the landing)
 
 > **This block is dated and additive. The sections below are left as WRITTEN, so
 > that what was designed and what was built can be diffed; where they disagree,
 > THIS BLOCK WINS.** Reproducers and full arguments:
-> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1 (adversarial round 1, eight lenses) and §2
-> (round 2, two lenses + the "what else runs once before round 2" stage table).
+> `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §1 (adversarial round 1, eight lenses), §2
+> (round 2, two lenses + the "what else runs once before round 2" stage table) and
+> §3 (the clearance, the three C-1 fix rounds and their lenses — E10).
 >
 > **Shipping status.** Increment 0 (docs + `cq_ry`) and **Increment 1** (the
-> register-free `cq_phi` by kickback, parts A and B) are implemented on branch
-> `3qlq-inc1` — **NOT on main** (clearance BLOCK on C-1, see the Status header;
-> **2026-09-06 C-1 is FIXED on `3qlq-inc1-fix-c1` over THREE rounds — capability,
-> then two more members plus a miscompile of round 2's own, then the narrowing —
-> with the round-3 lens CLEAR-WITH-ITEMS and a RE-CLEARANCE PENDING; landing follows
-> that verdict**). **Increment
+> register-free `cq_phi` by kickback, parts A and B) are **LANDED on `main`
+> 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of
+> branch `3qlq-inc1-fix-c1`, whose tip is recorded in the landing commit message;
+> `git log main -1` shows the hash) **after the re-clearance verdict
+> `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `inc1-records/session-adc5590a/clearance2.md`). HISTORY, dated: they were
+> implemented on branch `3qlq-inc1` and held OFF `main` from 2026-09-05 by the first
+> clearance's BLOCK on C-1 (see the Status header); C-1 was FIXED on
+> `3qlq-inc1-fix-c1` over THREE rounds on 2026-09-06 — capability, then two more
+> members plus a miscompile of round 2's own, then the narrowing — the round-3 lens
+> graded CLEAR-WITH-ITEMS, and the re-clearance on that tree cleared it (E10).
+> **Increment
 > 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
-> plan, and `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
-> 7.2 `AbortParkEmit`.
+> plan, `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
+> 7.2 `AbortParkEmit`, and its branch `3qlq-inc2` owes a rebase onto the landed
+> Inc 1.
 
 **E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
 F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
@@ -298,7 +318,50 @@ instance and found none in the accept direction, so that family stands at two an
 belongs to the other one. Two families, two counters. **The number to quote when scoping
 a successor is five confirmed silent miscompiles over three adversarial passes on ONE
 increment, one of them after the increment was already reviewed twice** — budget a round
-AFTER the round you think is last.
+AFTER the round you think is last. ⚠ **E10 supersedes that number: it is SEVEN over FIVE
+rounds, and two of the seven were introduced by a fix.**
+
+**E10 — the C-1 disposition (2026-09-06), in five lines; reproducers and full arguments in
+`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12).**
+1. **Round 1 — the CAPABILITY.** The clearance BLOCK (C-1) was fixed by having
+   `LoopLowering`'s `Collapsed` branch ALSO collect the loop-invariant root mints beside
+   the carried roots, on clause (ii)'s UNCHANGED (I1) proof; witnessed by
+   `e2e-phase-perbit-loop-mixed-twin-identical` (37 = 37) and pinned by
+   `control_phase_kickback_mixed_invariant_carried_inloop.ll` (notes §3.3–§3.9).
+2. **Round 2 — TWO MORE CONFIRMED MEMBERS of the same class in the fix's own
+   neighbourhood** (F-C1-1, one added `q = q + 7;` in the PREHEADER; F-C1-2, the ONWARD
+   round-2 in-loop region), fixed by committing to `classifyInPlaceReassignment`'s answer
+   via `taint.InPlaceRailOps`, by `taint.ClaimedRailRoots` at both collapse sites, and by
+   making `taint.InLoopFlattenedPreds` a per-block COUNT (notes §3.10).
+3. **Round 3 — the NARROWING, because round 2 had INTRODUCED a confirmed silent miscompile
+   of its own** (F-C1B-1: a quantum rail handle in `cqrt_addc`'s classical-immediate slot),
+   plus a second found while building its tripwire (F-C1C-1) and a module-wide claim key
+   narrowed to per-loop (F-C1B-2): a monotone `isa<Constant>(Imm)` fence at the commit and a
+   LOUD re-verification of it at `lowerOps` — every change in the refuse direction
+   (notes §3.11).
+4. **The count, said as it is: SEVEN findings of one defect class over FIVE adversarial
+   rounds on ONE function (`markIfRailLocal` and its dispatch precondition), TWO OF THEM
+   INTRODUCED BY A FIX, plus ONE PRE-EXISTING member of the same class found in passing by
+   the round-3 lens** — F-C1C-B, reproducing byte-for-byte on the pre-3qlq oracle `52d7764`,
+   filed OUT of this epic as bd `test_C_libtooling-eqpx` (notes §3.12). **Zero** of the
+   seven were found by the fixture suite. Budget a round AFTER the round you think is last.
+5. **The re-clearance (2026-09-06, `inc1-records/session-adc5590a/clearance2.md`) returned
+   `CLEAR-WITH-OWNER-QUESTIONS`** and Inc 0 + Inc 1 LANDED on `main` the same day. It
+   measured the subject a strict improvement over `542d588` at every layer it could reach
+   (0 DECLINE→ACCEPT flips over 404 programs; 1667/1673 fixtures and 305/308 slices
+   byte-identical between the two binaries, every mover a discharge or a loud decline; 0
+   stage-2b violations; 1328 injection cells 0 MISSED / 0 DIRTY; the golden audit unmoved
+   beyond NEW-FILEs). What it leaves open are **four owner questions and one record item**,
+   every one a DISCLOSED class that PRE-DATES this branch: **OQ-C2-1** (the `hasOneUse`
+   stability conjunct refuses a commit M-C makes and the pre-3qlq oracle discharges —
+   `m11d`, a two-loop spelling with a diffusion after; E2's residual list does not name it
+   and no fixture pins it), **OQ-C2-2** (`short`/`sext` — F-C1-3 — is the one Q-R1-1 member
+   the oracle got RIGHT, so `r5` is an oracle regression), **OQ-C2-3** (widen the Q-R1-1
+   disclosure to a QROM-read invariant root and to `-O1`'s SIDEWAYS compare rewrite after a
+   preadd; both oracle twins decline), **OQ-C2-4** (the over-decline list gains `s20`, a
+   pre-op name measured BEFORE the op), and the record item that notes §3.12's "identical on
+   `542d588`" is true of the DEFECT and not of the TRACE for the four in-region `eqpx`
+   members. None is a wrong unitary this tree introduced.
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 

@@ -342,9 +342,10 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is RETIRED FOR PHASE ARMS**, 2026-09-05]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is RETIRED FOR PHASE ARMS**, 2026-09-05, LANDED on `main` 2026-09-06]
 
-> ⚠ **STATUS, 2026-09-05 — READ THIS BEFORE THE INCREMENT LIST BELOW (bd
+> ⚠ **STATUS, 2026-09-05; LANDED on `main` 2026-09-06 — READ THIS BEFORE THE
+> INCREMENT LIST BELOW (bd
 > `test_C_libtooling-3qlq`, "retire the swap route").** Everything in this Phase-4
 > block about how a **phase arm** is lowered describes a generation that has been
 > **retired**, and it is kept as history because its arguments are still quoted.
@@ -357,16 +358,20 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > that the unitary is right (Rule 2), and there is no simulator. See
 > `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §1.
 >
-> **Increment 1 SHIPPED** (branch `3qlq-inc1`, merge `be4e2ea`; ⚠ re-point this
-> line at the commit that lands it on `main`). ⚠ **"SHIPPED" HERE MEANS
-> IMPLEMENTED + REVIEWED ON A BRANCH, NOT LANDED.** Increments 0 and 1 are **NOT on
-> `main`**: the independent Rule-13 clearance of 2026-09-05 returned **BLOCK** on
+> **Increments 0 and 1 are LANDED on `main` 2026-09-06 as ONE squash commit** (hash
+> filled by the orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is
+> recorded in the landing commit message; `git log main -1` shows the hash) **after
+> the re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
+> `docs/prd/phase-04-swap-route-control/inc1-records/session-adc5590a/clearance2.md`).
+> ⚠ **HISTORY, DATED — kept because the arguments are still quoted.** Increment 1
+> was first merged to branch `3qlq-inc1` (`be4e2ea`, 2026-09-05) and held OFF `main`:
+> the independent Rule-13 clearance of 2026-09-05 returned **BLOCK** on
 > finding **C-1** — a mixed loop (D4's per-bit condition on a loop-INVARIANT
 > register PLUS a second loop-CARRIED register) leaked its `and` rails per
 > activation, 3 mints / **0** `_unc` against 3/3 hand-unrolled and 3/3 on the
 > pre-3qlq oracle, at `opt` exit 0, verify-clean and STRICT stage 2b `0
-> violation(s)`; the branch's own record is
-> `inc1-records/session-0a61aa31/clearance.md`. **2026-09-06: C-1 is FIXED on branch
+> violation(s)`; that record is
+> `inc1-records/session-0a61aa31/clearance.md`. **2026-09-06: C-1 was FIXED on branch
 > `3qlq-inc1-fix-c1`** — `LoopLowering`'s `Collapsed` branch now ALSO collects the
 > loop-invariant root mints beside the carried roots (a separate set unioned only on
 > success, with a `CarriedRoots` skip so the collapse's own rail is not judged), on
@@ -417,11 +422,19 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > `test_C_libtooling-eqpx`, notes §3.12: the same defect through the LOOP writers for
 > the `xor` stem, reproducing on the pre-3qlq oracle 52d7764, so NOT this epic's and
 > NOT a blocker for it).
-> **STATUS: three C-1 rounds on branch `3qlq-inc1-fix-c1`** — round 1 the CAPABILITY,
-> round 2 two more members of the class plus a confirmed miscompile of its own,
-> round 3 the NARROWING — **the round-3 lens graded CLEAR-WITH-ITEMS (both DOC
-> findings applied). A re-clearance is pending; landing on `main` follows the
-> re-clearance verdict — do not read this block as landed.** `cq_phi` is
+> **STATUS: LANDED.** Three C-1 rounds ran on branch `3qlq-inc1-fix-c1` — round 1
+> the CAPABILITY, round 2 two more members of the class plus a confirmed miscompile
+> of its own, round 3 the NARROWING — the round-3 lens graded **CLEAR-WITH-ITEMS**
+> (both DOC findings applied), and the **RE-CLEARANCE on that tree returned
+> `CLEAR-WITH-OWNER-QUESTIONS`** (2026-09-06,
+> `docs/prd/phase-04-swap-route-control/inc1-records/session-adc5590a/clearance2.md`):
+> the BLOCK is CLOSED and **Increments 0 + 1 LANDED on `main` 2026-09-06 as ONE
+> squash commit** (hash filled by the orchestrator: the squash of
+> `3qlq-inc1-fix-c1`, whose tip is recorded in the landing commit message; `git log
+> main -1` shows the hash). What the verdict leaves open is four owner questions and
+> one record item — all DISCLOSED leak / over-decline classes that PRE-DATE the
+> branch and none of them a wrong unitary this tree introduced (PRD §0 **E10**).
+> `cq_phi` is
 > **register-free** —
 > `void cq_phi(double θ)` = "multiply the CURRENT BRANCH's amplitude by `e^{iθ}`"
 > — and under a tainted condition it lowers by **KICKBACK**: the ordinary compare
@@ -434,7 +447,8 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > NEST and the `switch`. `ir-pass/src/NestedRouteEmit.cpp` and
 > `RotationLowering::emitRz` are **DELETED**.
 >
-> **VALUE arms still route, and are Increment 2 — NOT in this branch.** So
+> **VALUE arms still route, and are Increment 2 — on branch `3qlq-inc2`, NOT
+> landed, and a rebase onto the landed Inc 1 is owed.** So
 > `cqrt_cswap` still has minters at HEAD: the value-arm path in `SwapRouteEmit`
 > and the 7.2 `AbortParkEmit`. Increment 2 replaces the value arm's
 > compute→route→merge with a controlled-copy merge (PRD §7); until it lands, every
@@ -461,7 +475,14 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > falsifies, PRD errata E9), and the CLEARANCE then added a fifth, **C-1** above —
 > so **five confirmed silent miscompiles across three adversarial passes over ONE
 > increment**, every one `opt` exit 0, verify-clean and STRICT-stage-2b clean, and
-> **zero** of them found by the fixture suite. Budget a further round on any
+> **zero** of them found by the fixture suite. ⚠ **"FIVE" IS THE PRE-FIX-ROUND
+> FIGURE and it moved again**: the two lenses on the three C-1 rounds added FOUR
+> more confirmed members of the in-loop entangled-rail class — F-C1-1 and F-C1-2
+> found in round 1's neighbourhood, and F-C1B-1 / F-C1C-1 **INTRODUCED BY round 2's
+> own fix** — which is what makes the standing count *seven instances of one defect
+> class over five adversarial rounds on one function, two of them introduced by a
+> fix, plus one PRE-EXISTING member found in passing (bd `test_C_libtooling-eqpx`)*.
+> PRD §0 **E10** is the five-line summary. Budget a further round on any
 > successor increment; that is the number to quote when scoping one.
 
 **Design:** [`docs/design/rssa-swap-control/SCOPING.md`](docs/design/rssa-swap-control/SCOPING.md)

@@ -1045,7 +1045,7 @@ exists today. Are they owed the same treatment `collapseFlattenedLoopRails` just
 
 ---
 
-## §3 — the Rule-13 CLEARANCE (2026-09-05) and the C-1 FIX ROUND (2026-09-06)
+## §3 — the Rule-13 CLEARANCE (2026-09-05), the THREE C-1 FIX ROUNDS, the RE-CLEARANCE and the LANDING (all 2026-09-06)
 
 ### 3.1 The verdict, in one paragraph
 
@@ -1841,6 +1841,17 @@ and `h1` is MEASURED rather than freed, so its write set is never looked at.
 **POPULATION, measured by the lens on the subject (and identical on 542d588 and, where the
 surface allows, on the oracle):**
 
+> ⚠ **PRECISION, added at the landing (2026-09-06, re-clearance record item 5 —
+> `inc1-records/session-adc5590a/clearance2.md` §2.5/§5; PRD §0 E10 line 5): "identical on
+> 542d588" is true of the DEFECT and NOT of the TRACE for the four IN-REGION members**
+> (`c1c_m_xor_and`, `c1c_m_xor_mul`, `c1c_m_xor_add1`, `c1c_w2_bodyxor_r2derived`). Those four
+> are ALSO mixed-population programs, so their traces MOVE pre-fix → subject (44 → 50 lines:
+> exactly the three `and_i32_hl_unc` + `free` pairs of the C-1 discharge) while
+> `railInImmSlot` stays 1 on every binary. `c1c_m_xor_and_noregion` — the reproducer printed
+> above — IS byte-identical ORACLE == PRE-FIX == SUBJECT (21 lines, `cmp`), which is the row
+> that carries the "pre-existing, not this epic's" claim. Read the table's "identical" column
+> as being about the defect.
+
 | probe | in-body op | derived immediate | region in the body? | handle in the immediate slot |
 |---|---|---|---|---|
 | `c1c_m_xor_and_noregion` | `r ^= w` | `y & 7` | no (round-1 `tryCaseA` is the writer) | **YES** |
@@ -1895,3 +1906,57 @@ plain-C corpus that IS committed is `inc1-records/c1-round3/`.
   sentence added to the header. Not a defect: no spurious match is constructible today, and
   `RegionFlatten` erases ARM/MERGE/COND blocks between the writers and the round-2 reader,
   never a loop HEADER in any measured shape.
+
+### 3.13 The RE-CLEARANCE (2026-09-06) and the LANDING
+
+Full report: `inc1-records/session-adc5590a/clearance2.md`. Five-line summary of the whole C-1
+disposition: PRD §0 **E10**.
+
+**VERDICT `CLEAR-WITH-OWNER-QUESTIONS`.** The BLOCK is closed: C-1's population — the flagship
+per-bit idiom with a carried register, plus the preheader-in-place and onward spellings rounds
+2 and 3 found — is rolled == hand-unrolled byte-identically on the subject (60 pairs, 3 new
+`cmp`-gated goldens, the matrix sub-grid F/F3 with no new quarantine cell); the two miscompiles
+round 2 introduced are gone (the four F-C1B-1 programs byte-identical to the round-1 fix and to
+542d588; the F-C1C-1 class declines loudly); `w3` is back to 542d588's stream. **The tree is a
+strict improvement over 542d588 at every layer the review could measure**, and these are its
+figures, each with the pair it was measured over: **0 DECLINE→ACCEPT flips over 404 programs**
+(PRE-FIX → SUBJECT, 301 unchanged / 103 moved, every mover a discharge or a loud decline);
+**1667 of 1673 fixtures byte-identical** between the two binaries on stdout + stderr + exit
+code, the 6 movers all in scope; **305 of 308 e2e slices** producing the committed golden on
+the PRE-FIX binary too, the 3 exceptions being exactly the three ROLLED mixed goldens PRE-FIX
+leaks; **0 stage-2b violations** over 284 accepts (the 2 `unproven` are the `--allow-unproven`
+break family, checker output byte-identical to PRE-FIX's); **1328 injection cells (83 × 16) 0
+MISSED / 0 DIRTY**; the golden audit unmoved beyond NEW-FILEs; the twin matrix green at 286
+cells with `quarantine.txt` **byte-unchanged**; bd `eqpx` byte-identical ORACLE == PRE-FIX ==
+SUBJECT. On that verdict **Increments 0 and 1 LANDED on `main` 2026-09-06 as ONE squash commit**
+(hash filled by the orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded
+in the landing commit message; `git log main -1` shows the hash).
+
+**WHAT THE VERDICT LEAVES OPEN — four owner questions and one record item, every one a
+DISCLOSED class that PRE-DATES this branch, none of them a wrong unitary this tree introduced.**
+Read them before widening anything in `LoopLowering` or `ArithLowering`:
+
+* **OQ-C2-1 — the `hasOneUse` over-decline has an ORACLE-DISCHARGED customer, and E2's residual
+  list does not name it.** `m11d` (two per-bit loops, no preadd, a diffusion after): loop 2's
+  candidate `q+3` has a parent with TWO uses, so `commitOutOfLoopInPlaceOps` refuses on
+  `P->hasOneUse()` although M-C lowers that very op IN PLACE — 6 mints / 3 `_unc` rolled, while
+  the flat twin on the SUBJECT and the pre-3qlq ORACLE on the old-surface twin both discharge
+  all six (oracle rolled == unrolled, 68 = 68). A strict improvement over PRE-FIX (6/0 → 6/3)
+  and disclosed as a leak, which is why it is an owner question and not a second BLOCK. The
+  question: now that (1b) re-verifies the whole fence at `lowerOps`, is the stability conjunct
+  still needed, or can the commit ask M-C alone? If it is kept, name it in E2 and pin it —
+  `m11d` is fixture-ready.
+* **OQ-C2-2 — `short` (F-C1-3) is the one Q-R1-1 member the ORACLE got RIGHT**, so `r5` is an
+  oracle regression rather than an inherited leak: the oracle's peel walks through the `sext`
+  the register-form arm forced it to see (3/3 rolled, its flat twin 3/3), while every 3qlq
+  binary is 3/0. The other Q-R1-1 members measured (`n9o`, `d2o`, `d3o`, `b01o`) leak on the
+  oracle too. Either peel through a hoisted `sext` of a root mint, or record `short` as the
+  exception.
+* **OQ-C2-3 — widen the Q-R1-1 disclosure by two spellings**: a `switch` lookup table whose
+  invariant root is a `cqrt_qram_load` rail, and `-O1`'s SIDEWAYS compare rewrite after a
+  preadd (`q=q+7; if(q>5)…` → `icmp sgt %q0, -2`, so `q0` gains a later read and M-C goes out
+  of place). Both byte-identical PRE-FIX == SUBJECT; both oracle twins decline.
+* **OQ-C2-4 — the OQ-C1-7 over-decline list gains `s20`**, a pre-op name MEASURED before the
+  op, where the flat twin is out of place on every binary and correct.
+* **Record item — §3.12's "identical on 542d588" is true of the DEFECT and not of the TRACE**
+  for the four IN-REGION `eqpx` members. Applied in place, at the §3.12 population table.
