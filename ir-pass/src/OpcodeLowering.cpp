@@ -366,7 +366,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           //
           // WHY NOT THE WHOLE FENCE, i.e. why this is a SECOND predicate at this
           // site rather than (1b) widened: `inPlaceFenceHolds`' G5 second
-          // disjunct (`ArithLowering.cpp:646-648`,
+          // disjunct (`ArithLowering.cpp:695-696`,
           // `LI.getLoopFor(Site->getParent()) || blockCanRepeat(...)`) is NOT
           // gated by `IgnoreSelfMarking` — only the `InPlaceRailOps` self-marking
           // disjunct is — and every W1/W2/W3 member is inside a loop BY
@@ -389,7 +389,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           //      two different fences is how one op gets two answers.
           // Each of W1-W3 proves THE RAIL (a closed self-cycle, its fan-out, its
           // record reads). NOT ONE OF THEM PROVES THE IMMEDIATE STAYS CLASSICAL,
-          // and W1's own immediate test (`:1547-1549`) is a DOMINANCE test for
+          // and W1's own immediate test (`:1586-1588`) is a DOMINANCE test for
           // the reverse-play, never a classicality test.
           //
           // WHAT MOVES THE ANSWER — TWO taint-growth events in the window, not
@@ -407,7 +407,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           // and STRICT stage-2b `0 violation(s)`, from six lines of plain C; and
           // with the operands COMMUTED the same re-pick mutates the WRONG
           // REGISTER (`rewriteInPlaceValueRail`'s `TL = Tainted.count(L)`,
-          // `ArithLowering.cpp:328`, answering about a value that changed class).
+          // `ArithLowering.cpp:375`, answering about a value that changed class).
           //
           // NEVER A SILENT FALLBACK TO OUT-OF-PLACE (Rule 1 — no third path).
           // FOUR permissions the marking already bought are standing in the

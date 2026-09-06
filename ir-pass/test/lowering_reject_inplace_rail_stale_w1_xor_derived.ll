@@ -17,7 +17,7 @@
 ; `clang -O1`, two TUs `llvm-link`ed, `@main` dropped. `!llvm.loop` VERBATIM.
 ;
 ; W1's OWN immediate test is a POSITION test, never a classicality test.
-; `LoopLowering.cpp:1547-1549` asks `DT.dominates(ImmI, Rgn.ExitMerge)` so the
+; `LoopLowering.cpp:1586-1588` asks `DT.dominates(ImmI, Rgn.ExitMerge)` so the
 ; whole-loop reverse-play can re-use the FORWARD immediate in the post-loop
 ; companion block; `dtzb` DELIBERATELY accepts any untainted immediate including a
 ; function argument and a volatile load (see the `k01`/`k03` accept controls).

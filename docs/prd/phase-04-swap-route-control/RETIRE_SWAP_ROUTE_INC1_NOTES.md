@@ -981,7 +981,7 @@ stages** (`declineTaintEscapes`, `declineStaleRecordOps`, `detectSpecializations
 | `lowerControlledIOSinks` | yes | **YES in principle** — an onward `if (%out > k) printf(...)` is a round-2 I/O-under-control shape | **NOT re-run. Over-DECLINES, MEASURED** (`$SP/progress/fix_r2_work/p/z1_onward_io.c`, 2 TU): rc 1, `cq controlled lowering: control flow under quantum control` — the round-2 `detectControlRegions` sees a void-arm diamond with no merge φ and refuses it. The identical program with a ROUND-1 condition ACCEPTS (`p/z3_io_flat.c`, 8 trace lines), so the difference really is the round. Safe direction, no customer. **Q-R2-3** |
 | `lowerLoops` (Q1 / Case A / Case B) | yes | **YES in principle** — a loop whose EXIT condition becomes tainted at round 2 | **NOT re-run. Over-DECLINES, MEASURED** (`p/z2_onward_loopexit.c`: `while (%out > 0) { cq_phi(.25); y = y-1; }`): rc 1, `cq controlled lowering: nested control flow under quantum control`. Q1's own message would have been `loop under quantum control`; the CONTROL layer refuses first, so the decline is loud and in the right layer even though it is not Q1's. Recorded as a residual, **Q-R2-3** |
 | **`commitOutOfLoopInPlaceOps`** (inside `collapseFlattenedLoopRails`, added by the SECOND C-1 round) | yes | **YES — THIS IS F-C1B-1 / F-C1C-1**, and it is the archetype the table is for: a stage whose output is a **PERMISSION** (an entry in `taint.InPlaceRailOps`, i.e. a COMMITMENT that `lowerOps` honours without re-asking), computed over `taint.Tainted` and over `P`'s use list, both of which `repropagateControlMerges` and `lowerRotations` then change | **FENCED AND RE-VERIFIED (round 3, §3.11).** The taint half is closed MONOTONICALLY at the commit (`isa<Constant>(Imm)` — a `Constant` is in no `Tainted.insert` site, so its G2 answer cannot move); every other input is RE-ASKED at `lowerOps` for exactly the ops this stage marked (`taint.PreLoopCommittedInPlaceOps`), under a fresh `DominatorTree`/`LoopInfo` and final taint, declining `cq loop lowering: pre-loop in-place op no longer provable at lowering`. **A silent fallback to out-of-place is NOT sound** — the body marking this stage licensed already stands. The full input table is §3.11 — **and its `P` row was re-done with PROGRAMS by the FOURTH round (§3.14), which RETIRED the `hasOneUse` stability conjunct: it guarded nothing G6/G7 does not, and it refused every Phase-4 MERGE OUT-RAIL structurally (the emitters WRITE `%out` before anything reads it), which was F-I2-1** |
-| **the OTHER THREE `InPlaceRailOps` writers** — ⚠ **FOUR sites, not three, and this cell's own enumeration was wrong in BOTH directions (eqpx investigation, §3.16): W1 `emitBreakForward` `:1729` (UNLISTED, and a measured member), W2 `tryCaseA`'s ACCEPT `:2312` (= "round 1's `railRoot` marking", ONE site, not two), W3 `collapseRailPhisIn` step (3) `:2710`, W4 `commitOutOfLoopInPlaceOps` `:3115`** | yes | **YES — THIS IS bd `test_C_libtooling-eqpx` (F-C1C-B, §3.12)**, and it is the row round 3 argued it did not need. Their marking is also a PERMISSION `lowerOps` honours without re-asking; their own fences prove the RAIL (self-cycle, fan-out, record reads) and **none of them proves the IMMEDIATE stays classical**, which is exactly the input `repropagateControlMerges` moves | **FIXED 2026-09-06 (§3.16)** — `lowerOps` Phase 1 re-asks **G2 ALONE** (`inPlaceValueRailOperand`) under FINAL taint for every `InPlaceRailOps` member NOT in `PreLoopCommittedInPlaceOps`, declining loudly with `cq loop lowering: in-place rail op no longer provable at lowering`. It was PRE-EXISTING (byte-identical on the pre-3qlq ORACLE 52d7764) and reachable from plain C for BOTH stems. 16 lit fixtures (8 decline + 8 accept control), 0 new goldens, **0 golden churn** |
+| **the OTHER THREE `InPlaceRailOps` writers** — ⚠ **FOUR sites, not three, and this cell's own enumeration was wrong in BOTH directions (eqpx investigation, §3.16): W1 `emitBreakForward` `:1738` (UNLISTED, and a measured member), W2 `tryCaseA`'s ACCEPT `:2321` (= "round 1's `railRoot` marking", ONE site, not two), W3 `collapseRailPhisIn` step (3) `:2719`, W4 `commitOutOfLoopInPlaceOps` `:3124`** | yes | **YES — THIS IS bd `test_C_libtooling-eqpx` (F-C1C-B, §3.12)**, and it is the row round 3 argued it did not need. Their marking is also a PERMISSION `lowerOps` honours without re-asking; their own fences prove the RAIL (self-cycle, fan-out, record reads) and **none of them proves the IMMEDIATE stays classical**, which is exactly the input `repropagateControlMerges` moves | **FIXED 2026-09-06 (§3.16)** — `lowerOps` Phase 1 re-asks **G2 ALONE** (`inPlaceValueRailOperand`) under FINAL taint for every `InPlaceRailOps` member NOT in `PreLoopCommittedInPlaceOps`, declining loudly with `cq loop lowering: in-place rail op no longer provable at lowering`. It was PRE-EXISTING (byte-identical on the pre-3qlq ORACLE 52d7764) and reachable from plain C for BOTH stems. 16 lit fixtures (8 decline + 8 accept control), 0 new goldens, **0 golden churn** |
 | **`collapseFlattenedLoopRails`** | yes | **YES — THIS IS F-R1-1** | **FIXED TWICE**: re-run at the end of `repropagateControlMerges` over the DELTA of `InLoopFlattenedPreds` (round 2) — and the DELTA ITSELF was wrong until the SECOND C-1 review round (F-C1-2(2b), §3.10): as a SET of blocks it could not see a round-2 region flattened into the very `Pred` a round-1 region already used, so a mixed loop holding BOTH was never re-offered. It is a per-block COUNT now, and "round 2 opened something here" is the count having MOVED |
 | `deleteGlobalPhases` (P7) | — | — | **already moved AFTER `repropagateControlMerges`** by round-1 F-L3-1 |
 | `lowerIOSinks`, `lowerQramReads`, `lowerShadowMemory`, `declineClassicalMuxes`, `declineLiftedStaleRecordOps`, `specialize`, `lowerRotations`, `lowerOps`, `lowerMeasures`, `lowerBreakReversePlay`, `uncompute` | **NO** — all run AFTER | n/a | no action; they see the round-2 CFG and round-2 taint by construction |
@@ -2070,7 +2070,7 @@ The widening is "more ops enter `taint.InPlaceRailOps` (and, in lockstep,
 |---|---|---|---|
 | `OpcodeLowering:341` / `:428` | skips M-C's own classification and routes the op to `rewriteInPlaceValueRail` | the op is emitted in place — **this is the subject** | — |
 | `inPlaceFenceHolds` G5's self-test | refuses a site already in the set (so the commitment has one owner) | same, by construction; suppressed only for the (1b) re-ask | — |
-| `railValueConsumerDisposition` → the **Rule-8 FAN-OUT guard** (`LoopLowering:2187`, `:2617`, `> RailValueUse::OutOfPlace`) | counts a second in-place mutator of one rail and DECLINES loudly | `Unproven` and `InPlace` are **both** `> OutOfPlace`, so the count is arithmetically unchanged — and that is complete ONLY because **a committed op can never have been `OutOfPlace`** (F-C1D-3.1): `railValueConsumerDisposition` returns `OutOfPlace` **exactly** when `blockCanRepeat(BO->getParent())` (`LoopLowering.cpp:212-213`, the one `OutOfPlace` return in the function), and `inPlaceFenceHolds`' **G5** refuses precisely that (`ArithLowering.cpp:646-648`, `LI.getLoopFor(...) \|\| blockCanRepeat(...)` → `false`), so the commit cannot mark a repeatable-block op. Strike G5 and the widening WOULD add an `InPlaceUser` and could mint a NEW `kMsgRailFanout` decline | **none** |
+| `railValueConsumerDisposition` → the **Rule-8 FAN-OUT guard** (`LoopLowering:2187`, `:2617`, `> RailValueUse::OutOfPlace`) | counts a second in-place mutator of one rail and DECLINES loudly | `Unproven` and `InPlace` are **both** `> OutOfPlace`, so the count is arithmetically unchanged — and that is complete ONLY because **a committed op can never have been `OutOfPlace`** (F-C1D-3.1): `railValueConsumerDisposition` returns `OutOfPlace` **exactly** when `blockCanRepeat(BO->getParent())` (`LoopLowering.cpp:212-213`, the one `OutOfPlace` return in the function), and `inPlaceFenceHolds`' **G5** refuses precisely that (`ArithLowering.cpp:695-696`, `LI.getLoopFor(...) \|\| blockCanRepeat(...)` → `false`), so the commit cannot mark a repeatable-block op. Strike G5 and the widening WOULD add an `InPlaceUser` and could mint a NEW `kMsgRailFanout` decline | **none** |
 | `railValueConsumerDisposition` → `collectRailGates` (`LoopLowering:928`, `== InPlace`) | builds the gate set `staleRailRecordRead` reasons over — and its own comment says **a MISSING gate is the OVER-ACCEPT** | the gate set only GROWS | **strictly safer** |
 | `peelInPlaceStep(…, AsLowered=true)` — exactly **two** call sites in the tree: clause (ii)'s peel and `markIfRailLocal`'s `onRail`. RE-MEASURED on the rebased tree with `grep -rn 'peelInPlaceStep(\|peelInPlaceBase(' ir-pass/src ir-pass/include` → **24 hits**, of which **4 are prose** and **2 are the declaration and the definition**, i.e. **18 code call sites**, and only these two pass `true` (`LoopLowering.cpp:3214` and `:3412-3413`, the latter wrapped across two lines, which is why a single-line `grep -c 'AsLowered=\*/ *true'` reports 1) | the FACT-time peel crosses an op only when it is really emitted as `cqrt_{addc,xorc}` | crosses more ops — **this is the capability**, and the two sites are the SAME spelling, so they cannot disagree about one value (the F-1/F-3 fix) | — |
 | every OTHER `peelInPlaceBase`/`peelInPlaceStep` caller | uses the default `AsLowered=false`, the SHAPE reading | membership is not consulted | **none** |
@@ -2433,14 +2433,19 @@ once-only-stage class in this file and the SECOND to be closed by a consumer tri
 #### The four writers (MEASURED, and the record named the wrong set)
 
 `grep -n 'InPlaceRailOps.insert(' ir-pass/src/LoopLowering.cpp` returned **four** sites before
-this increment; today the four call ONE helper, `markInPlaceRailOp`:
+this increment. ⚠ IT NO LONGER DOES, AND THAT IS THE ROUND-1 LENS'S FINDING F-E1-1: today the
+four writers all call ONE helper, `markInPlaceRailOp`, so that grep returns a SINGLE site
+inside the helper and the enumerating command is `grep -n 'markInPlaceRailOp('
+ir-pass/src/LoopLowering.cpp`. The line numbers below are true as of the round-2 doc pass; the
+four FUNCTION NAMES are the durable key, because a comment edit anywhere above them moves all
+four (this table has already been re-synced once for exactly that reason).
 
 | # | writer | line | runs at | its own immediate test |
 |---|---|---|---|---|
-| W1 | `emitBreakForward` (7.4 break) | `:1729` | `lowerLoops`, `CQLoweringPass.cpp:363` | `DT.dominates(ImmI, Rgn.ExitMerge)` — a POSITION test for the reverse-play, never classicality |
-| W2 | `tryCaseA`'s ACCEPT | `:2312` | `lowerLoops`, `:363` | none |
-| W3 | `collapseRailPhisIn` step (3) | `:2710` | `collapseFlattenedLoopRails`, `:393` | none |
-| W4 | `commitOutOfLoopInPlaceOps` | `:3115` | via `invariantRegisterRoots`, `:393` | round 3's MONOTONE `isa<Constant>(Imm)` + the (1b) tripwire — **already fenced, and EXCLUDED here** |
+| W1 | `emitBreakForward` (7.4 break) | `:1738` | `lowerLoops`, `CQLoweringPass.cpp:363` | `DT.dominates(ImmI, Rgn.ExitMerge)` (`:1588`) — a POSITION test for the reverse-play, never classicality |
+| W2 | `tryCaseA`'s ACCEPT | `:2321` | `lowerLoops`, `:363` | none |
+| W3 | `collapseRailPhisIn` step (3) | `:2719` | `collapseFlattenedLoopRails`, `:393` | none |
+| W4 | `commitOutOfLoopInPlaceOps` | `:3124` | via `invariantRegisterRoots`, `:393` | round 3's MONOTONE `isa<Constant>(Imm)` + the (1b) tripwire — **already fenced, and EXCLUDED here** |
 
 `TaintPropagation.h` and §2's ⭐ row both enumerated *"round 1's `railRoot` marking,
 `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)"*. The first two are **ONE site**, and the
@@ -2483,7 +2488,7 @@ all four binaries.
 rewritten ⇒ never erased).
 
 * **G2 ALONE, NOT THE (1b) TRIPWIRE WIDENED.** `inPlaceFenceHolds`' G5 second disjunct
-  (`ArithLowering.cpp:646-648`) is NOT gated by `IgnoreSelfMarking` — only the
+  (`ArithLowering.cpp:695-696`) is NOT gated by `IgnoreSelfMarking` — only the
   `InPlaceRailOps` self-marking disjunct is — and every W1/W2/W3 member is inside a loop by
   construction, so re-asking the whole fence would decline **100 %** of them, shipped ones
   included.
@@ -2600,3 +2605,232 @@ adversarial rounds, two of them introduced by a fix and one — this one — fou
 reviewing a different increment. Nothing about a green 1707/357 says the tenth is not here;
 the shape to hunt is the one all nine share, a dispatch precondition or a PREDICTION that
 excludes (or wrongly admits) a customer the underlying proof already settles.
+
+---
+
+#### THE ROUND-1 ADVERSARIAL LENS on this fix (2026-09-06, session `7bbdb89e`) — verdict `CLEAR-WITH-ITEMS`
+
+Full report `inc1-records/session-7bbdb89e/` (`review_eqpx_r1.md`); the lens's own corpus is
+committed at `inc1-records/session-7bbdb89e/eqpx_reproducers_r1/` with a per-file README.
+
+**No over-accept. No introduced miscompile. No crash. No golden moved.** Three DOC/FIXTURE
+items (F-E1-1/2/3, all closed by the round-2 doc pass below), two CLEAR record findings
+(F-E1-4/5), and the two hand-back OWNER QUESTIONS adjudicated. ⚠ Read the verdict as what it
+is: this function's own history is **nine findings over seven rounds, two of them introduced by
+a fix**, and one adversarial round is not a clearance.
+
+##### F-E1-4 (CLEAR, record growth) — the class has 15 MORE measured members, and two of them were never silent
+
+Beyond the investigation's 43-program census the lens built 43 new programs; **15 are new
+`main` members**, every one declined by the fix with the mirrored string, none accepting on it.
+Re-measured independently for this record by the round-2 doc pass on the same two binaries
+(`$W/attack_{main,fix}.txt`); the two runs agree on all 15.
+
+| probe | the immediate | `main` | `fix` |
+|---|---|---|---|
+| `x01_cast_short` | `(int)(short)y` — a CAST off `%out` | A 24, **imm=1** | DECLINE |
+| `x02_cast_long` | `(int)((long long)y & 7)` | A 21, **imm=1** | DECLINE |
+| `x03_cast_uchar` | `(unsigned char)y` | A 21, **imm=1** | DECLINE |
+| `x04_bswap` | `__builtin_bswap32(y)` — a CURATED intrinsic, i.e. a real rail | A 21, **imm=1** | DECLINE |
+| `x08_break_imm_in_cond` | W1 break, derived imm ALSO in the break condition | A 223, **imm=2** | DECLINE |
+| `x11_phi_imm` | a classical `phi` of `y&7` / `y&3` | A 21, **imm=1** | DECLINE |
+| `x12_two_ops_same_imm` | TWO rail ops sharing one immediate | A 24, **imm=2** | DECLINE |
+| `x14_shift_imm` | `(y>>1)&7` | A 24, **imm=1** | DECLINE |
+| `x15_deep_derived` | a 4-hop `((y*3+1)^2)&7` | A 29, **imm=1** | DECLINE |
+| `y05_arm_then_two_loops` | one member loop beside one clean loop | A 27, **imm=1** | DECLINE |
+| `y06_imm_arg_and_out` | `(y&7) ^ n` — `%out` MIXED with an Argument | A 24, **imm=1** | DECLINE |
+| `y07_add_commuted_derived` | **the commuted `add`, from PLAIN C** | A 24, **imm=1** | DECLINE |
+| `y08_nested_region_loop` | in-body region + 2 rail ops | A 53, **imm=1** | DECLINE |
+| `x09_i8` | i8 rail, `(signed char)(y&7)` | **rc 134 `LLVM ERROR: Broken module found`** | DECLINE rc 1 |
+| `x10_i16` | i16 rail | **rc 134, same** | DECLINE rc 1 |
+
+**⭐ THE i8/i16 BROKEN-MODULE FACE is new to the record and it changes the class's
+description.** MEASURED on `main`@16b15b3, first lines of stderr:
+
+    Call parameter type does not match function signature!
+      %h_op = call i32 @cq_template_and_i8_hl(i32 %h_cast, i8 7)
+     i8  call void @cqrt_xorc_i8(i32 %h2, i32 %h_op)
+    LLVM ERROR: Broken module found, compilation aborted!
+
+The in-place ABI's immediate parameter carries the RAIL's LOGICAL width, so at i8/i16
+substituting an `i32` handle for it does not even type-check. **At those widths the defect was
+a loud abort, not a verify-clean silent miscompile** — the i32 flagship is silent only because
+handle and immediate happen to share a width there. Nothing in `investigate_eqpx.md` or §3.12
+records this, and it is worth carrying for the general reason: "verify-clean" was a property of
+ONE width, not of the class.
+
+**⭐ `y07` RETIRES HALF of §3.12's and `investigate_eqpx.md` §2's "the commuted spelling is
+HAND-IR-ONLY".** True of the **wrong-REGISTER** face — `clang -O1` really does canonicalise the
+operand order back, which is why fixture 8 of the red-green table is hand IR and says so.
+FALSE of the **wrong-IMMEDIATE** face: `r = w + r` in plain C canonicalises to `r + w`, the op
+is still marked, and the now-quantum `w` still lands in the immediate slot. So the commuted
+`add` IS plain-C reachable; only its register-swap face needs hand IR. Both claims are corrected
+in place rather than deleted.
+
+##### F-E1-5 (CLEAR) — ZERO over-declines over 20 purpose-built boundary programs
+
+`d01`..`d20` (Argument imm, `volatile` load, global, `select` of two constants, classical `phi`,
+classical call result, `zext`ed classical, `switch`-folded classical, LOOP-VARIANT `r ^= i`,
+i8/i16/i64 constants, W1 break with a constant AND with an Argument immediate, two independent
+rails, in-region constant AND Argument immediate, the hand-unrolled twin, `add` then `xor`,
+preheader-W4 constant): **all 20 ACCEPT on BOTH binaries with identical `lines`/`imm` and trace
+`cmp` 20/20 BYTE-IDENTICAL.** Five of them (`d01`, `d05`, `d10`/`d18`, `d11`/`d12`, `d15`) are
+precisely the non-Constant classical immediates a writer-side `isa<Constant>(Imm)` fence would
+have refused, so their survival is the MEASURED cost argument for re-asking G2 alone at the
+CONSUMER rather than fencing at the writer.
+
+##### The lens's independent whole-corpus sweep and its stricter immediate detector
+
+* **Both binaries over all 1707 lit fixtures** (`sweep2.sh`): `fix` **accepts=841 declines=866
+  nonstd-rc=0**; `main` **accepts=849 declines=858 nonstd-rc=0**. Accept-set `comm`: **exactly
+  the 8 new decline fixtures move accept → decline; ZERO move decline → accept**; **OUTDIFF=0
+  over all 841 common accepts** (module byte-identical modulo `ModuleID`). An independent
+  reproduction of the hand-back's `RCDIFF=0 · DIAGDIFF=0 · OUTDIFF=0`.
+* **`strictimm.py`** — stricter than `immcheck.py`: it reports EVERY non-`Constant` immediate
+  WITH ITS DEFINITION, so a rail arriving via `phi`/Argument/`select` cannot hide. Over all
+  **841** `fix` accepts: **82 non-constant immediates, ZERO rail producers** (42 `sub i32 0, %k`
+  break-counter negations, 15 `add` counter steps, 19 `load volatile`, 3 `cqrt_measure_i32`
+  results, 2 Arguments, 1 `@g` load). On `main` the same sweep reports the 8 rail-producer
+  sites. This is the measurement that says the tripwire leaves nothing behind, rather than
+  saying the 43 known programs are fixed.
+
+##### MUTANTS — a fence nobody tried to fool is a fence nobody should trust
+
+Built in the lens's own detached worktree at `1333278`, whose baseline `cq-opt` is
+`cmp`-BYTE-IDENTICAL to the subject's, so the environment reproduces it exactly.
+
+| mutant | change | result |
+|---|---|---|
+| **M-A** | the whole eqpx tripwire disabled | `lit --filter inplace_rail` **8 Passed / 8 Failed**, the 8 Failed EXACTLY the 8 declines, each emitting `railInImm` 1 or 2. The decline fixtures pin THIS predicate and nothing else |
+| **M-B** | a SILENT out-of-place fallback instead of the decline (`InPlaceRailOps.erase(BO)` + fall-through) | the same **8 go RED** (`lit -s` 1698 Passed / 8 Failed); nothing else moves. The "no third path" property IS pinned — by the `not` wrapper on the RUN line, NOT by the `CHECK-NOT`s (F-E1-2) |
+| **M-E** | the recorded operand index FLIPPED **+** the Phase-1 re-verify disabled | **23 fixtures RED**, incl. 4 of the 8 new accept controls. The index plumbing is LIVE and observable when WRONG |
+| **M-F** | `unrollConstTripLoops` disabled at BOTH entry points | `n01`/`n02`/`n03` DECLINE `cq loop lowering: loop-carried tainted value crosses iterations`. Adjudication (B) confirmed |
+
+##### Adjudication (A) — the STRONGER form (`InPlaceRailIdx`): **DOC, keep. The lens could not break it.**
+
+The implementer's OWNER QUESTION 1 was that the index plumbing is observationally INERT
+(M2+M3: with both halves disabled, 0 of 1707 fixtures move). The lens tried and failed to
+construct a Phase-2 event that flips which operand of a marked op is tainted, and the argument
+is now written IN SOURCE at `ArithLowering.cpp` (the `InPlaceRailIdx.find` consume), where the
+comment previously asserted "a checked fact, not a prediction" without saying why:
+
+1. `rewriteInPlaceValueRail` has **exactly one call site** (`OpcodeLowering.cpp:557`), reached
+   only from `Work`, every member of which passed the Phase-1 tripwire. No second route.
+2. Every Phase-2 `Tainted` mutation is `promote(repl, orig)` (`ArithLowering.cpp:49`, mirrored
+   at `CastLowering.cpp:38`, `CompareLowering.cpp:44`, `IntrinsicLowering.cpp:204`; the body is
+   `Tainted.insert(repl); Tainted.erase(orig);`). It INSERTS a freshly created instruction and
+   ERASES a value that was ALREADY tainted and has just been RAUW'd to it. So an operand
+   UNTAINTED at Phase 1 is neither RAUW'd nor inserted and cannot JOIN `Tainted`; one TAINTED at
+   Phase 1 is only ever replaced by another tainted value. Neither direction moves WHICH operand
+   is the rail.
+3. The one non-`promote` Phase-2 RAUW is `emitInPlaceReassign`'s
+   `Site->replaceAllUsesWith(Handle)` (`ArithLowering.cpp:162`), substituting the rail handle
+   G2 proved tainted.
+
+**Stated honestly: argued defence-in-depth, not a fence with a red-green of its own** — it
+agrees with `TL` on every program in the corpus. It is not decoration either: M-E reddens 23
+fixtures, so it is consumed and observable when wrong. Kept because (1)-(3) is a CHAIN a future
+stage can break silently, and because retiring the third independent computation of one
+predicate is literally the 8h7d.5 F-1/F-3 lesson. **A reviewer who wants to delete it should
+break (2) with a program, not with an argument.**
+
+##### Adjudication (B) — the `n02`/`n03` loop collapse is `unrollConstTripLoops`, and it can NEVER claim an eqpx member
+
+The implementer's OWNER QUESTION 2 (a 3-trip loop present in stage-1 and absent from the lowered
+module) is **CLEAR — named and measured**. The stage is the Lever-B static-K force-unroll
+pre-pass `ir-pass/src/LoopUnrollPrepass.cpp` (`unrollConstTripLoops`, wired at
+`CQLoweringPass.cpp:271` and mirrored in the second entry point), confirmed by mutant M-F.
+
+**Why it is not a fifth writer and not an escape past the tripwire — and the reason is
+ORDERING, which is the one argument this file trusts.** Gate **U4** is
+`loopHasInPlaceRailStructure` (`LoopLowering.cpp:2452`), whose clause (a) asks
+`inPlaceValueRailOperand` — **G2 itself** — over every `BinaryOperator` in the loop, and whose
+clause (b) asks the header-phi in-place peel. The prepass runs at `:271`, **before** `lowerLoops`
+at `:363`, under the SAME ROUND-1 taint the writers read. Therefore:
+
+* whenever a writer WOULD mark (G2 non-null at round 1) U4 clause (a) is TRUE and the prepass
+  **REFUSES the unroll**; and
+* whenever it DOES unroll, G2 was null at round 1, no writer marks, and the straight-line ops
+  reach `lowerOps` as ORDINARY out-of-place Q+Q ops — MEASURED: `n01`/`n02`/`n03` emit
+  `cq_template_xor_i32` with `imm=0` on `main`, on `fix` AND on the pre-3qlq oracle.
+
+The two claim sets are disjoint **in both directions**, and taint only GROWS, so growth can only
+turn G2 from non-null to NULL, never the reverse. `grep` confirms one `InPlaceRailOps.insert(`
+site and four `markInPlaceRailOp(` callers — the prepass is neither.
+
+The collapse itself is **parity-correct and PRE-EXISTING** (byte-identical on the oracle, on
+`main` and on `fix`). Re-measured for this record on the `fix` binary, counting
+`cq_template_xor_i32(` inside `@slice`: K=2 → **0**, K=3 (the shipped `n02`) → **1**, K=4 → **0**,
+K=5 → **1**, i.e. the circuit realises `r ^ (K odd ? w : 0)`, the right value for an xor
+involution at every K; and `n02`'s trace is `cmp` **BYTE-IDENTICAL** to its hand-unrolled twin's.
+The direction of the difference is FEWER leaked ancillas, never a dirty free. Programs:
+`eqpx_reproducers_r1/b_n02_{k2,k4,k5,unrolled}.c`.
+
+##### F-E1-1 / F-E1-2 / F-E1-3 — the three DOC/FIXTURE items, and what closing them measured
+
+**F-E1-1 (closed).** The fix's own load-bearing comments cited
+`grep -n 'InPlaceRailOps.insert('` → four sites at `:1698 :2281 :2679 :3084`. Since the four
+writers were folded into `markInPlaceRailOp`, that grep returns **ONE** site (inside the
+helper), and the four writers are the `markInPlaceRailOp(` callers. `TaintPropagation.h` had the
+command right and the numbers stale. All three blocks, the `.ll` fixture headers, §2's ⭐ row and
+§3.16's writer table now name the helper as the command, give the four FUNCTION NAMES as the
+durable key, and say the numbers move. Dated historical records (`investigate_eqpx.md`,
+`NEXT_SESSION_PROMPT.md`, `review_c1b.md`) are left BYTE-UNCHANGED — they are true statements
+about the pre-fix tree.
+
+**F-E1-2 (closed).** MEASURED: on a `DiagnosticInfoUnsupported(DS_Error)` decline `cq-opt` writes
+**0 bytes to stdout** (`>out 2>err` → rc 1, `wc -c out` = 0, one diagnostic line on stderr), and
+the decline RUN line pipes `2>&1`. So FileCheck sees the diagnostic and nothing else, and the
+8 fixtures' IR-text `CHECK-NOT`s are STRUCTURALLY UNABLE TO FIRE. The "no silent out-of-place
+fallback" property IS pinned — by the `not` inversion, measured with mutant M-B (8 RED, nothing
+else moves). Each of the 8 now carries a header block saying which mechanism does the work, and
+the pair is kept, LABELLED as documentation of the forbidden output. **The two W1 fixtures'
+three `break reverse-play` negatives are a DIFFERENT case and ARE live** — they name STDERR
+text, which `2>&1` does pipe. ⚠ This is PRE-EXISTING HOUSE STYLE, not something this increment
+introduced: the (1b) template `control_phase_kickback_reject_preloop_commit_stale.ll` carries the
+identical vacuous pair and is deliberately left untouched (out of scope). A future reader
+weakening a `RUN: not` because "the CHECK-NOTs cover it" would be wrong in every one of these
+files.
+
+**F-E1-3 (closed), and the number is the point.** The lens's injection matrix over the 8 NEW
+ACCEPT fixtures — 3 injections (a rail-immediate `cqrt_xorc_i32(i32 %h, i32 %rail)`, an extra
+out-of-place `cq_template_xor_i32`, an extra `cqrt_free`) × 2 positions (head, tail) × 8
+fixtures = 48 — caught **20 of 48**. Position-independent gaps: **an extra `cqrt_free` was
+MISSED by ALL EIGHT (16 of 16)**, because no accept fixture carried a free count at all, so a
+Rule-6 dirty free inside an accept was invisible. The round-2 doc pass gave every fixture a
+whole-file `FCNT` free count (or a pure `FCNT-NOT` where the count is 0) and the missing
+rail-immediate / out-of-place negatives: **48 injections, 0 MISSED**, clean control green
+(`lit --filter inplace_rail` 16/16). The BEFORE figure was re-measured independently by running
+the same script against the pre-edit fixtures restored with `git show 1333278:<path>` — 28
+MISSED, reproducing the lens exactly.
+
+⚠ **ONE CORRECTION TO THE PRESCRIPTION, and it is the kind that matters.** The natural
+strengthening — "give every accept the whole-file negative
+`call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})`, since a Constant immediate prints
+as `i32 7` and never as `i32 %…`" — is TRUE of `ctlA` and **FALSE of `k01`/`k02`/`k03`**, whose
+own legitimate gate is `cqrt_{xorc,addc}_i32(i32 %h, i32 %1)` with an Argument / volatile-load
+immediate: the non-Constant classical immediate dtzb deliberately accepts
+(G2 itself constrains the immediate ONLY by "not tainted" —
+`inPlaceValueRailOperand`, `LoopLowering.cpp:143`; W1's break lane says it outright at (E10),
+`LoopLowering.cpp:1568-1570`: *"`dtzb` accepts ANY untainted immediate"*) and the very reason this fix is G2-alone rather than a
+writer-side `isa<Constant>(Imm)`. Adding it there would have reddened three shipped accept
+controls. Those three get a whole-file EXACT-COUNT `XCNT` prefix for their own stem instead —
+the COUNT is the prefix's FIRST directive, so its window is the whole file and an injection is
+caught at head AND tail — plus the OTHER stem's rail-immediate negative. No positive count is
+inside `NOROUTE` (Inc-3 F-L6-1).
+
+⚠ **A LIT/FILECHECK TRAP, paid for once and worth writing down.** The first draft of the F-E1-2
+header quoted the literal tokens `` `CHECK-NOT: cqrt_xorc_i32` `` and `` `RUN: not` `` inside
+ENGLISH PROSE in the fixture. lit and FileCheck parse a fixture by SUBSTRING, so those became
+REAL directives: all 8 decline fixtures went red with
+`.script: line 3: syntax error near unexpected token ')'` — lit had built a RUN line out of a
+sentence. **Never write `RUN:`, `CHECK:`, `CHECK-NOT:` or `<PREFIX>-NOT:` inside fixture prose**;
+write the token without its colon. (Cheap to hit, and it looks nothing like what it is.)
+
+##### What the round-2 doc pass changed, and what it did NOT
+
+**COMMENTS, FIXTURES AND DOCS ONLY.** Verified two ways: `git diff 1333278 -- ir-pass/src
+ir-pass/include | grep '^[+-]' | grep -v '^[+-]\s*//' | grep -v '^+++\|^---'` is **EMPTY**, and
+the rebuilt `cq-opt` **and** `libCQPass.so` are both `cmp`-**BYTE-IDENTICAL** to the pre-pass
+binaries. So every number the lens measured on `1333278` still stands for the shipped tree — the
+doc pass is a statement that behaviour did not move, not a new measurement of it.

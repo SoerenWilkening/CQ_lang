@@ -49,7 +49,9 @@
 ; are DERIVED from this fixture's own pass output, not guessed.
 ; (No `xorc` rail-immediate negative: THIS fixture's own legitimate gate is
 ; `cqrt_xorc_i32(i32 %h, i32 %2)` with that operand a `load volatile i32, ptr @g` — the non-Constant
-; classical immediate dtzb deliberately accepts (`LoopLowering.cpp:1528-1537`)
+; classical immediate dtzb deliberately accepts (`inPlaceValueRailOperand`, `LoopLowering.cpp:143` — G2 constrains the
+; immediate ONLY by "not tainted"; W1's break lane says it outright at (E10),
+; `LoopLowering.cpp:1568-1570`)
 ; and the reason the fix is G2-alone and NOT a writer-side `isa<Constant>(Imm)`
 ; — so `i32 %…, i32 %…` would fire on the very gate this control keeps. The
 ; XCNT block below pins the COUNT instead, whole-file, which is what catches an

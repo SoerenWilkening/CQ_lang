@@ -299,6 +299,20 @@ all along and correct only by `-O1`'s exit-value rewrite. 16 lit fixtures (8 dec
 8 accept control), **0 new goldens and 0 golden churn**, `0 RCDIFF · 0 DIAGDIFF ·
 0 OUTDIFF` over the 1691 pre-existing fixtures, and no new frozen symbol (D3). Full
 record: `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.16**.
+⚠ **THE ROUND-1 ADVERSARIAL LENS (2026-09-06, `CLEAR-WITH-ITEMS`) FOUND 15 MORE MEASURED
+MEMBERS** of the class — casts (`(short)`/`(long long)`/`(unsigned char)`), a curated
+`llvm.bswap` intrinsic, a classical `phi` of two derived immediates, a 4-hop derived
+chain, `%out` mixed with an Argument, two rail ops on one immediate, a break loop whose
+immediate is also in the break condition — every one accepting on `main` with a rail in
+the immediate slot and declining on the fix, against **0 over-declines over 20
+purpose-built boundary programs** and `strictimm.py`'s **0 rail producers over all 841
+`fix` accepts**. Two of the fifteen change the class's own description: **at i8/i16 the
+defect was never verify-clean at all** — `cqrt_xorc_i8(i32 %h2, i32 %h_op)` does not
+type-check against the i8 immediate ABI, so `main` ABORTS (`LLVM ERROR: Broken module
+found`, rc 134) where i32 is silent — and **the commuted `add` IS plain-C reachable**
+in its wrong-IMMEDIATE face, retiring half of the "commuted is hand-IR-only" reading
+(the wrong-REGISTER face stays hand IR). Programs committed at
+`inc1-records/session-7bbdb89e/eqpx_reproducers_r1/`.
 
 **E2 — §9's per-bit idiom row was measured FALSE, then FIXED, and is TRUE again.**
 The row pins D4's register-wide Z as `and(h,1<<i) → icmp eq 0 → x → rz_i1 → x →

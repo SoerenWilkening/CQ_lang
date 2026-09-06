@@ -377,7 +377,7 @@ struct TaintSet {
   // them, so an index survives every rewrite the pipeline performs).
   //
   // WHY IT EXISTS. G2's operand pick used to be computed TWICE — once by the
-  // writer, and again by `ArithLowering::rewriteInPlaceValueRail` (`:328`,
+  // writer, and again by `ArithLowering::rewriteInPlaceValueRail` (`:375`,
   // `bool TL = taint.Tainted.count(L)`) at Phase 2, from a `Tainted` that
   // `promote()` is mutating as Phase 2 runs. Two computations of one predicate at
   // two program points is the shape of the bd 8h7d.5 F-1/F-3 findings, and it is

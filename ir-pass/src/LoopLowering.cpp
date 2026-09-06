@@ -173,7 +173,7 @@ namespace {
 // they cannot drift: `lowerOps` Phase 1 re-verifies the index against a fresh
 // `inPlaceValueRailOperand` under FINAL taint and `rewriteInPlaceValueRail`
 // CONSUMES it, which is what retires the third independent computation of one
-// predicate (`ArithLowering.cpp:328`'s `TL = taint.Tainted.count(L)`, taken from
+// predicate (`ArithLowering.cpp:375`'s `TL = taint.Tainted.count(L)`, taken from
 // a `Tainted` that Phase 2's `promote()` mutates as Phase 2 runs — the shape of
 // the bd 8h7d.5 F-1/F-3 findings, and what made the eqpx defect's COMMUTED form
 // mutate the WRONG REGISTER).

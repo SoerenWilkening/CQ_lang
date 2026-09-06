@@ -334,6 +334,40 @@ bool rewriteInPlaceValueRail(BinaryOperator *bo, WidthDispatch &wd,
   // against a fresh `inPlaceValueRailOperand` under FINAL taint and declined
   // loudly on a disagreement, so by here it is a checked fact, not a prediction.
   //
+  // WHY THE INDEX AND `TL` CANNOT DISAGREE (the round-1 lens's adjudication (A),
+  // written down here because the sentence above asserted "a checked fact" without
+  // saying WHY the check cannot go stale in the window between Phase 1 and this
+  // line). Three facts, each MEASURED by command:
+  //   (1) THIS FUNCTION HAS EXACTLY ONE CALL SITE — `OpcodeLowering.cpp:557`
+  //       (`grep -rn 'rewriteInPlaceValueRail' ir-pass/src ir-pass/include`: one
+  //       definition, one declaration, one call, the rest comments) — and it is
+  //       reached only from `Work`, every member of which passed the Phase-1
+  //       tripwire. There is no second route into the emitter.
+  //   (2) EVERY Phase-2 MUTATION OF `taint.Tainted` IS `promote(repl, orig)`
+  //       (`:49` here, mirrored at `CastLowering.cpp:38`, `CompareLowering.cpp:44`,
+  //       `IntrinsicLowering.cpp:204`; the body is `Tainted.insert(repl);
+  //       Tainted.erase(orig);`). It INSERTS a freshly created instruction and
+  //       ERASES a value that was ALREADY tainted and has just been RAUW'd to it.
+  //       So an operand that was UNTAINTED at Phase 1 is neither RAUW'd (RAUW only
+  //       replaces uses of the tainted `orig`) nor inserted — it cannot JOIN
+  //       `Tainted`; and an operand that was TAINTED at Phase 1 is only ever
+  //       replaced by another tainted value. Neither direction can move WHICH of
+  //       the two operands is the rail.
+  //   (3) THE ONE NON-`promote` PHASE-2 RAUW is `emitInPlaceReassign`'s
+  //       `Site->replaceAllUsesWith(Handle)` (`:162`), and the value it
+  //       substitutes IS the rail handle G2 proved tainted.
+  //
+  // STATUS, STATED HONESTLY: this index AGREES with `TL` on every program in the
+  // corpus — mutant M2+M3 (the Phase-1 index re-verify AND this consume both
+  // disabled) moves ZERO of 1707 fixtures — so it is ARGUED DEFENCE-IN-DEPTH, not
+  // a fence with a red-green of its own. It is NOT decoration: mutant M-E (the
+  // recorded index FLIPPED with the re-verify off) reddens 23 fixtures, so the
+  // plumbing is live and observable when WRONG. It is kept because (1)-(3) are a
+  // CHAIN a future stage can break silently, and because retiring the third
+  // independent computation of one predicate is literally the bd 8h7d.5 F-1/F-3
+  // lesson. A reviewer who wants to delete it should first break (2) with a
+  // program, not with an argument.
+  //
   // The M-C straight-line route (`InPlaceReassign`) records NO index and keeps
   // the `TL` pick: its `sub` widening selects the rail with a DIFFERENT predicate
   // (`inPlaceReassignRailOperand`, handle-LHS only), so M-C's emitted stream is
