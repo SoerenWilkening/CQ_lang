@@ -47,7 +47,9 @@
 > `CLEAR-WITH-OWNER-QUESTIONS` — the BLOCK is CLOSED and Inc 0 + Inc 1 LANDED on
 > `main` the same day. What the verdict leaves open is four owner questions and one
 > record item, all of them DISCLOSED leak/over-decline classes that pre-date this
-> branch (OQ-C2-1 `hasOneUse`, OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
+> branch (OQ-C2-1 `hasOneUse` — **ANSWERED by the FOURTH C-1 round, bd `7yd0`: the conjunct
+> is RETIRED, and OQ-C2-1's own `m11d` is NOT bought back by retiring it; see E2 and notes
+> §3.14** — OQ-C2-2 `short`, OQ-C2-3 the Q-R1-1 disclosure,
 > OQ-C2-4 the over-decline list) — see E10 below.** ⚠ READ
 > **§0 ERRATA FIRST** — the sections below are left as WRITTEN so design and
 > implementation can be diffed, and where they disagree the errata block wins.
@@ -361,6 +363,32 @@ a rail they PROVED with their own fences"*) — **their fences prove the RAIL; n
 proves the IMMEDIATE stays classical.** Round 3's own bound over its 262-program corpus is
 likewise corrected: **6 movers in scope plus `w3` by design**, and the lens's 299-program
 re-run reads **286 unchanged / 13 moved, 0 in the accept direction** (F-C1C-E).
+⚠⚠⚠ **AND A FOURTH C-1 ROUND (2026-09-06, bd `7yd0` — notes §3.14) RETIRED THE `hasOneUse`
+CONJUNCT ITSELF, on a LEAK the Rule-13 round on INCREMENT 2 found in the LANDED `main`
+a3c1513** (`review_inc2_r2` **F-I2-1**; the same conjunct the re-clearance had already filed as
+**OQ-C2-1**). Read the count as *eight* things this row did not cover, found over SIX rounds on
+one function — and note that the eighth was found by a round reviewing something else. THE
+PROGRAM: a 4.4 select merge, one `m = m + 7` on its `%out`, then D4's per-bit loop — thirteen
+lines of plain C, **4 mints / 0 `_unc` rolled (44 lines) against a hand-unrolled twin at 4/4
+(52)**, 32 / 0 at K=32, `opt` exit 0, verify-clean, STRICT 2b `0 violation(s)`. CAUSE: a
+Phase-4 merge out-rail STRUCTURALLY cannot satisfy `P->hasOneUse()` — the emitters **WRITE**
+`%out` (two `cqrt_copy_<W>_controlled` for the 4.4 merge and Inc 2's value merge, one
+`cqrt_copy_<W>` for the Phase-4 value-arm route) before anything reads it — and `hasOneUse`
+cannot tell a prior WRITER from a later READER, while `classifyInPlaceReassignment`'s own
+G6/G7 pair can. FIXED by dropping the conjunct: the commit now asks (1a) `isa<Constant>(Imm)`
+and M-C's own fence, and **the temporal net is round 3's (1b) tripwire**, which re-asks that
+fence at `lowerOps` and declines loudly — measured, not argued: with (1b) deleted all NINE
+F-C1C-1-class programs accept and `y1` reproduces the round-2 wrong unitary verbatim, while
+this tree declines every one. WITNESSES: `e2e-phase-perbit-loop-merge-preadd-twin-identical`
+(**52 = 52**, was 44 vs 52), one lit accept
+(`control_phase_kickback_mixed_merge_out_rail_preadd_inloop.ll`, RED on `main` at CHECK/FCNT/
+UCNT) and twin-matrix sub-grid **F4** (2 cells, TRACE-DIVERGENCE on `main` → ACCEPT-IDENTICAL;
+286 → 288). ⚠ **AND IT CORRECTS OQ-C2-1's OWN ATTRIBUTION**: `m11d` is **NOT** bought back —
+measured on an instrumented build, its candidate is refused by the M-C fence itself (G7 arm
+(e): loop 1's `(q>>i)&1` is a still-UNLOWERED tainted `and i32` at the commit's program point),
+so its trace is byte-unchanged. The `hasOneUse` line below therefore LEAVES this list; `m11d`
+stays on it, re-attributed.
+
 ⚠ **TWO THINGS THE ROUND-3 FIX DOES NOT COVER, and both are NEW ENTRIES ON THIS LIST rather
 than inherited ones.** (a) A **`volatile`-load immediate** on the preheader op
 (`q = q + off;`) is no longer committed, so that loop returns to the pre-round-2 leak — 3
@@ -502,7 +530,7 @@ AFTER the round you think is last. ⚠ **E10 supersedes that number: it is SEVEN
 rounds, and two of the seven were introduced by a fix.**
 
 **E10 — the C-1 disposition (2026-09-06), in five lines; reproducers and full arguments in
-`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12).**
+`RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.14).**
 1. **Round 1 — the CAPABILITY.** The clearance BLOCK (C-1) was fixed by having
    `LoopLowering`'s `Collapsed` branch ALSO collect the loop-invariant root mints beside
    the carried roots, on clause (ii)'s UNCHANGED (I1) proof; witnessed by
@@ -519,12 +547,22 @@ rounds, and two of the seven were introduced by a fix.**
    narrowed to per-loop (F-C1B-2): a monotone `isa<Constant>(Imm)` fence at the commit and a
    LOUD re-verification of it at `lowerOps` — every change in the refuse direction
    (notes §3.11).
-4. **The count, said as it is: SEVEN findings of one defect class over FIVE adversarial
+3b. **Round 4 — the CONJUNCT RETIRED** (bd `7yd0`, notes §3.14). The Rule-13 round on
+   **Increment 2** measured a rolled ≠ unrolled leak in the LANDED `main` (F-I2-1): a
+   Phase-4 MERGE OUT-RAIL structurally cannot satisfy `P->hasOneUse()`, because the emitters
+   WRITE `%out` before anything reads it, so the commit refused and D4's per-bit loop leaked
+   O(K) entangled which-path rails (4/0 vs 4/4 at K=4; 32/0 at K=32). The conjunct guarded
+   NOTHING G6/G7 does not — measured, with programs — and is dropped; round 3's (1b) tripwire
+   is the temporal net, and deleting it makes all nine F-C1C-1-class programs miscompile
+   again, which is the proof that it is. Witnessed by
+   `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52) and sub-grid F4.
+4. **The count, said as it is: EIGHT findings of one defect class over SIX adversarial
    rounds on ONE function (`markIfRailLocal` and its dispatch precondition), TWO OF THEM
-   INTRODUCED BY A FIX, plus ONE PRE-EXISTING member of the same class found in passing by
+   INTRODUCED BY A FIX and the EIGHTH found by a round REVIEWING A DIFFERENT INCREMENT, plus
+   ONE PRE-EXISTING member of the same class found in passing by
    the round-3 lens** — F-C1C-B, reproducing byte-for-byte on the pre-3qlq oracle `52d7764`,
    filed OUT of this epic as bd `test_C_libtooling-eqpx` (notes §3.12). **Zero** of the
-   seven were found by the fixture suite. Budget a round AFTER the round you think is last.
+   eight were found by the fixture suite. Budget a round AFTER the round you think is last.
 5. **The re-clearance (2026-09-06, `inc1-records/session-adc5590a/clearance2.md`) returned
    `CLEAR-WITH-OWNER-QUESTIONS`** and Inc 0 + Inc 1 LANDED on `main` the same day. It
    measured the subject a strict improvement over `542d588` at every layer it could reach

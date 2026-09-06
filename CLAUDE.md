@@ -1073,14 +1073,16 @@ and Rule-13 reviewed twice there.)*
   commit licensed already stands). The same round narrowed `taint.ClaimedRailRoots`
   from a module-wide set of ROOTS to `(root, the CLAIMING loop's header)` (F-C1B-2),
   after measuring a program where loop A's claim marked loop B's body on a rail loop
-  B never proved. ⚠ **SEVEN INSTANCES ACROSS FIVE SUCCESSIVE ADVERSARIAL ROUNDS ON
+  B never proved. ⚠ **EIGHT INSTANCES ACROSS SIX SUCCESSIVE ADVERSARIAL ROUNDS ON
   ONE FUNCTION — the third found by the CLEARANCE, the fourth and fifth by the round
-  on its fix, and the sixth and seventh INTRODUCED BY that fix and found by the round
-  on IT** — budget the next round on the assumption that an eighth is there, and note
-  the shape all seven share: a dispatch precondition or a PREDICTION that excludes (or
+  on its fix, the sixth and seventh INTRODUCED BY that fix and found by the round
+  on IT, and the EIGHTH (F-I2-1, below) found by a round REVIEWING A DIFFERENT
+  INCREMENT after Inc 0+1 had already LANDED** — budget the next round on the
+  assumption that a ninth is there, and note the shape all eight share: a dispatch precondition or a PREDICTION that excludes (or
   wrongly admits) a customer the underlying proof already settles. **Say the count as
-  it is: seven findings over five adversarial rounds on one function, TWO OF THEM
-  INTRODUCED BY A FIX, plus ONE PRE-EXISTING member of the same class found in
+  it is: eight findings over six adversarial rounds on one function, TWO OF THEM
+  INTRODUCED BY A FIX and the EIGHTH found after landing by a round on another
+  increment, plus ONE PRE-EXISTING member of the same class found in
   passing by the round-3 lens — bd `test_C_libtooling-eqpx` (F-C1C-B, notes §3.12):
   the same "classical immediate turns tainted at round 2" defect through the LOOP
   writers (`tryCaseA`, `collapseRailPhisIn` step (3)) for the `xor` stem, from plain
@@ -1103,7 +1105,9 @@ and Rule-13 reviewed twice there.)*
   conjunct refusing an in-place commit that `classifyInPlaceReassignment` (M-C)
   itself makes and that the pre-3qlq oracle DISCHARGES, in a two-loop spelling with
   a diffusion after (`m11d`; unnamed in PRD E2's residual list and pinned by no
-  fixture); OQ-C2-2, `short`/`sext` (F-C1-3) is the one Q-R1-1 member the ORACLE got
+  fixture) — ⚠ **the conjunct half is ANSWERED by the fourth round below (retired);
+  `m11d` itself is NOT, and its attribution here is CORRECTED there: it is refused
+  by the M-C fence, not by the conjunct**; OQ-C2-2, `short`/`sext` (F-C1-3) is the one Q-R1-1 member the ORACLE got
   right, so that one IS an oracle regression; OQ-C2-3, two more Q-R1-1 spellings for
   the disclosure (a QROM-read invariant root, and `-O1`'s SIDEWAYS compare rewrite
   after a preadd); OQ-C2-4, the over-decline list gains `s20`. **None is a wrong
@@ -1112,6 +1116,28 @@ and Rule-13 reviewed twice there.)*
   pre-fix binary with every mover a discharge or a loud decline, 0 stage-2b
   violations and 1328 injection cells 0 MISSED / 0 DIRTY. PRD §0 **E10** is the
   five-line summary of the whole disposition.
+  ⚠⚠⚠ **AND A FOURTH ROUND (2026-09-06, bd `7yd0` — notes §3.14) RETIRED THE
+  `hasOneUse` CONJUNCT, on a LEAK found by the Rule-13 round on INCREMENT 2 in the
+  LANDED `main` (`review_inc2_r2` F-I2-1) — the EIGHTH instance, and the first one
+  found by a round that was reviewing something else.** Thirteen lines of plain C:
+  a 4.4 select merge, `m = m + 7` on its `%out`, then D4's per-bit loop — **4 mints
+  / 0 `_unc` rolled (44 lines) against a hand-unrolled twin at 4/4 (52)**, 32 / 0 at
+  K=32, at `opt` exit 0, verify-clean and STRICT-2b clean. A Phase-4 merge out-rail
+  STRUCTURALLY cannot satisfy `P->hasOneUse()` — the emitters **WRITE** `%out` (two
+  `cqrt_copy_<W>_controlled` for the 4.4 merge and Inc 2's value merge, one
+  `cqrt_copy_<W>` for the Phase-4 value-arm route) before anything reads it — and
+  `hasOneUse` cannot tell a prior WRITER from a later READER, while M-C's own G6/G7
+  pair can. **The conjunct guarded nothing G6/G7 does not** (measured with programs:
+  a prior void `cqrt_*` writer is settled by `priorUseIsSettled` arm (c); a later
+  `cq_measure` is refused by G6; a still-unlowered tainted opcode is refused by arm
+  (e)), and **the temporal net is round 3's (1b) tripwire** — with (1b) deleted, all
+  NINE F-C1C-1-class programs accept and `y1` reproduces the round-2 wrong unitary
+  verbatim, which is the measurement that makes "the tripwire is the safety" a fact
+  rather than a hope. ⚠ It also CORRECTS OQ-C2-1's attribution: `m11d` is **not**
+  bought back — its candidate is refused by the M-C fence itself (arm (e)), so its
+  trace is byte-unchanged. Gated by
+  `e2e-phase-perbit-loop-merge-preadd-twin-identical` (52 = 52), one lit accept and
+  twin-matrix sub-grid **F4** (286 → 288 cells).
 * **A HOISTED loop-invariant TEMPLATE rail read by the body's condition is STILL
   refused, and still leaks** (Q-R1-1). A deliberate mutation admitting any
   loop-invariant tainted value made those rails discharge and did NOT exhibit the
