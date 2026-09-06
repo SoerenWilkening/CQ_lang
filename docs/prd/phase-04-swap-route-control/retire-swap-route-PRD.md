@@ -7,9 +7,12 @@
 > orchestrator: the squash of branch `3qlq-inc1-fix-c1`, whose tip is recorded in
 > the landing commit message; `git log main -1` shows the hash) **after the
 > re-clearance verdict `CLEAR-WITH-OWNER-QUESTIONS`** (record:
-> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is implemented
-> + round-1 reviewed on branch `3qlq-inc2`, NOT landed — a rebase onto the landed
-> Inc 1 is owed.**
+> `inc1-records/session-adc5590a/clearance2.md`). **Increment 2 (§7) is implemented on branch
+> `3qlq-inc2`, REBASED onto the landed `a3c1513`, and Rule-13 reviewed TWICE —
+> round 2 (2026-09-06) is CLEAR ON THE MECHANISM. It is NOT landed: a clearance is
+> pending.** Round 2's one LEAK finding (F-I2-1) is PRE-EXISTING on `main` and is
+> filed OUT of Inc 2 as bd `test_C_libtooling-7yd0` — see **E11** below and
+> `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §4.
 > **HISTORY (dated, kept — do not delete it).** The first clearance
 > (2026-09-05, `inc1-records/session-0a61aa31/clearance.md`) returned **BLOCK** on
 > finding C-1 (a mixed loop — invariant root register with D4's per-bit condition
@@ -82,8 +85,11 @@
 > (`git rebase a3c1513`, 15 commits, 2 conflicts of 7 overlapping files —
 > `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §3). On that branch `emitRoute` has exactly
 > ONE call site, `AbortParkEmit.cpp:396`, so the epic's cswap goal is met and the
-> rebase is no longer owed; what is still owed is Rule-13 round 2, a clearance,
-> and the landing. Re-read this paragraph after Inc 2 lands.
+> rebase is no longer owed. **Rule-13 round 2 has since run there too
+> (2026-09-06, notes §4): ten findings, CLEAR on Inc 2's own mechanism, one LEAK
+> that is PRE-EXISTING on `main` (E11 / bd `test_C_libtooling-7yd0`) plus one
+> fixture-truth repair and three record items.** What is still owed is the
+> clearance and the landing. Re-read this paragraph after Inc 2 lands.
 
 **E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
 F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
@@ -620,6 +626,18 @@ nest (SimplifyCFG's fold threshold); both forms are in scope.
   committed as a PAIR (the Inc-4 precedent).
 
 ## 7. Increment 2 — value arms by controlled-copy merge
+
+> **STATUS (2026-09-06).** Implemented on branch `3qlq-inc2`, **rebased onto the
+> landed `a3c1513`** (notes §3), and Rule-13 reviewed **twice** — round 1
+> (notes §1) and round 2 (notes §4). **Round 2 is CLEAR on the mechanism**: 0
+> RCDIFF / 0 DIAGDIFF over the 1673 fixtures common to `main`, zero value-path
+> `cqrt_cswap`, per-fixture `cqrt_rz_i1` / `!cq.branchphase` parity, four `cmp`
+> twin gates, and a 15 × 7 injection matrix with 0 NOT CAUGHT. **NOT LANDED — the
+> clearance is pending.** Round 2's one LEAK (F-I2-1) is PRE-EXISTING on `main`,
+> is not introduced here, and is filed out of this epic as bd
+> `test_C_libtooling-7yd0`; Inc 2's only relationship to it is that its value-arm
+> merge is a FOURTH producer of the rail shape (E11). The sections below are the
+> DESIGN as written; where they and the errata disagree, §0 wins.
 
 ### 7.1 The shipped stream, and the replacement
 

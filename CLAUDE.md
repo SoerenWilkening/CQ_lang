@@ -202,8 +202,13 @@ folded angle select, the compound condition tree, the depth-2 NEST and the `swit
 DELETED; `SwitchRouteEmit`'s phase path mints a kickback gate). Everything below
 about the phase arm's gate describes the pre-3qlq generation and is kept as
 HISTORY, not as instruction; the Ry and value halves are unaffected, and the route
-survives only for VALUE arms (Increment 2 — on branch `3qlq-inc2`, NOT landed, a
-rebase onto the landed Inc 1 owed).** **Phase arms** (`Rz` =
+survives only for VALUE arms (Increment 2 — on branch `3qlq-inc2`, **REBASED onto
+this landed Inc 1 (a3c1513) on 2026-09-06 and Rule-13 round-2 reviewed there,
+CLEAR ON THE MECHANISM; still NOT landed, clearance pending**. ⚠ On THAT branch
+the clause "the route survives for value arms" is FALSE: the value path emits the
+controlled-copy merge and `emitRoute` has ONE call site, `AbortParkEmit.cpp:396`.
+Round 2's one LEAK finding is PRE-EXISTING HERE on `main` and is filed out of the
+epic as bd `test_C_libtooling-7yd0`).** **Phase arms** (`Rz` =
 `cq_phi`) keep the
 answer (a phase) **in place on `q`**, and the data-derived flag is stripped by the
 **uncontrolled** `icmp_inv(q)`. **The arm gate itself is now ONE
@@ -879,7 +884,10 @@ GONE for phase arms at every one of those sites: `NestedRouteEmit.cpp` is DELETE
 `RotationLowering::emitRz` is DELETED, and the emitted Rz set is `cqrt_rz_i1` alone
 (measured — see the `ir-pass-lit` note in Build & Test). **Value arms are Increment
 2 and are NOT in this commit**, so `cqrt_cswap` still has minters (the value path
-and `AbortParkEmit`).
+and `AbortParkEmit`). *(Increment 2 lives on branch `3qlq-inc2`, rebased onto this
+commit 2026-09-06 and Rule-13 round-2 reviewed there — CLEAR on the mechanism,
+clearance pending, NOT landed. There `cqrt_cswap` has ONE minter,
+`AbortParkEmit`.)*
 
 *The three confirmed classes, each with the mechanism that now fences it:*
 
@@ -1132,8 +1140,11 @@ for a phase arm, and do not quote "zero controlled gates" or "`Rz|0⟩ = |0⟩` 
 free" as a phase-arm invariant. `SwapRouteEmit` lowers **value/permutation arms** by
 method-B (`R` → `cqrt_copy_<W>` copy-out → reverse-play `R†`; a value arm that
 clobbers a register the condition reads declines loudly — §3c) — **this is the ONLY
-arm class that still routes**, and it is Increment 2's subject; `RegionFlatten`
-erases the CFG diamond. `RegionTreeDetect` + `SwapRouteEmit::
+arm class that still routes**, and it is Increment 2's subject — ⚠ true of `main`
+and FALSE on branch `3qlq-inc2` (rebased onto a3c1513 2026-09-06, Rule-13 round-2
+reviewed there and CLEAR on the mechanism, clearance pending, NOT landed), where
+the value path is the controlled-copy merge and nothing but `AbortParkEmit` routes;
+`RegionFlatten` erases the CFG diamond. `RegionTreeDetect` + `SwapRouteEmit::
 emitPhaseKickbackNestRegion` lower the **depth-2 homogeneous-phase nest**
 (`if(a){…if(b){…}}` — 4.3 DONE; ⚠ the flag-per-level ROUTE and
 `NestedRouteEmit.cpp` are DELETED. Each level's condition becomes a root flag

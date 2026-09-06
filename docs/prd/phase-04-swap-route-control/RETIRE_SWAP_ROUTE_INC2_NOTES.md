@@ -485,3 +485,252 @@ pre-rebase branch. So `emitSelectRegion` is STILL reachable through the
 the rebase and is still the first thing a round 2 should aim at.
 Reproducers: `slice_control_value_derived.c` (accept) and, for the twin, the same
 body with `int t = R(p); p = (q>5) ? t : p;`.
+
+---
+
+## §4 — Rule-13 ROUND 2 (2026-09-06), post-rebase
+
+> ⚠ **NUMBERED §4, not "§2 — round 2".** The `fix_inc2_r2` brief calls this
+> section "§2"; §2 was already taken by round 1's re-measure ledger and §3 by the
+> rebase, so round 2's record is §4 and nothing was renumbered. Read §1 (round 1),
+> §2 (what round 1 measured), §3 (the rebase) and §4 (round 2) in that order.
+
+One READ-ONLY lens (`review_inc2_r2`, subject `3qlq-inc2` @ `6ee3ea3`, controls
+`main` a3c1513 = INC-1-ONLY and the pre-3qlq oracle 52d7764) and one fix agent
+(`fix_inc2_r2`). **Ten findings, ONE of them a leak — and that one is PRE-EXISTING
+on the landed `main` and not Inc 2's.** Inc 2's own mechanism is CLEAR on
+everything this round could reach.
+
+| # | grade | disposition |
+|---|---|---|
+| F-I2-1 | **LEAK** (rolled != unrolled, O(K)) — **PRE-EXISTING on `main`**; Inc 2 adds a FOURTH producer of the rail | **RECORDED, NOT FIXED HERE**: bd `test_C_libtooling-7yd0`, fixed as a separate C-1 round 4 on `main` AFTER Inc 2 lands. 18 reproducers + the discrimination table under `inc2-records/`; PRD §0 **E11**. §4.1 |
+| F-I2-2 | CLEAR (the increment's own REVIEWER FLAG) + one doc item | **RESOLVED IN THE INCREMENT'S FAVOUR**, with the mechanism named. §4.2 |
+| F-I2-3 | fixture truth (the F-V2-1 class, a sixth site) | fixture **RE-DERIVED** + header rewritten + the p119.8 discriminator MEASURED by mutation. §4.3 |
+| F-I2-4 | doc / latent (an Inc-1 LANDED consequence) | ONE comment at each of the two vacuous gates; **no code deleted**. §4.4 |
+| F-I2-5 | CLEAR (kickback-phased register through a controlled copy) | recorded, and cited in the gate-5 comment as the reason the retired fence has no successor hazard. §4.4 |
+| F-I2-6 | NOTE (the `&&` byte-identity item) | **NO SUBJECT** — both spellings decline on all three binaries. §4.5 |
+| F-I2-7 | OVER-DECLINE, pre-existing, identical on all three | **PINNED AS A PAIR** of fixtures + named as an owner item ("the base-from-cond asymmetry"). §4.5 |
+| F-I2-8 | CLEAR (the rebase itself) | nothing owed. §4.6 |
+| F-I2-9 | CLEAR (the `ArithLowering` G6/G7 tripwire under C-1's new `InPlaceRailOps` writers) | nothing owed. |
+| F-I2-10 | CLEAR (mixed shapes + the loop fence) | nothing owed. |
+
+### §4.1 — F-I2-1: recorded, deliberately not fixed on this branch
+
+Full account in `inc2-records/README.md` (round-2 section) and PRD §0 **E11**.
+Two sentences that must travel with it:
+
+* **It is pre-existing on the landed `main`**, and that is a MEASUREMENT, not an
+  inference: the 13-line headline reproducer `q5sel_preadd_{rolled,unrolled}.c`
+  contains no Inc-2 feature and behaves identically on `main` a3c1513 and on this
+  branch (rolled 44 trace lines / 4 `and_hl` mints / **0** `_unc`; unrolled 52 / 4
+  / **4**; at K=32, 240/32/**0** against 301/31/31 — **O(K)**).
+* **Inc 2 adds a fourth producer of the rail shape**, i.e. more customers
+  (`q4b_preadd_*`: 52 vs 60 here, 57 vs 65 on `main`). That is the whole of Inc 2's
+  relationship to it.
+
+**No fixture on this branch pins the leak as an accept** — pinning it would bless
+it. The round-4 fix on `main` pins the discharge. The 18 records are committed so
+that fix has a red-green to start from.
+
+### §4.2 — F-I2-2: the increment's own reviewer flag, RESOLVED
+
+§1.11 item 1 and §3.6 left this open: the `br`-value classifier accepts a derived
+base that `SelectClassify` refuses at its own front door. **The asymmetry is real
+and survives Inc 1** (re-measured here on all three binaries, with `cq_theta` as
+the derivation): `q1_derived` ACCEPTS — subj **24** trace lines, INC-1-ONLY **29**,
+oracle **29** — while its pre-hoisted select twin `q1_derived_twin` DECLINES
+`cq controlled lowering: control flow under quantum control` on **all three**. The
+unchained control `q1_plain`/`q1_plain_twin` both accept everywhere (23 lines on
+the subject for both). So the refusal is specific to the CHAINED theta, not to the
+select.
+
+**WHICH gate, and why it is an ARTIFACT.** The refusal is gate 5's
+`hasCoherentDownstreamUse`, and the flagged rotation is the base's OWN producing
+theta. `rotationAncestry(Op)` is seeded at `Op` and only walks when `Op` **is
+itself** a rotation call; for a derived operand (the chain RESULT) the ancestry is
+the singleton `{Op}` and the exemption is empty, while the lineage-wide seeding
+added by the kjd1 clearance reaches the base's ancestor whose rotation user is then
+"off-ancestry". The gate's own comment says the exemption exists to keep
+`select(c, theta(theta(q)), x)` — that shape does accept; the same base one
+arithmetic hop away does not. **This is a SEEDING artifact, not a proven hazard.**
+
+**The diamond's ACCEPT is SOUND on this evidence.** After the flatten the region is
+`|q,p,t=R(p),0⟩ → |q,p,t, c(q)?t:p⟩`: two controlled-XOR copies into a FRESH |0⟩
+ancilla, with the flag minted and stripped by an exact inverse pair that touches
+nothing between. That is a PERMUTATION, hence LINEAR, hence correct for an
+arbitrary input superposition — amplitudes and relative phases ride the branch they
+belong to. Nothing in it reads the operands' rotation lineage.
+
+**And the genuine hazard the seeding WAS built for is caught on the diamond path
+too.** The kjd1 fork shape (`int a = p; int p1 = cq_theta(p,0.9); if (c) a = R(a);`
+— a SUPERSEDED record) DECLINES `cq opcode lowering: operand predates a
+non-diagonal gate` on **all three binaries** in all three orderings measured
+(`q1f_fork_diamond`, `q1f_fork_twin`, `q1f_fork_after`), through the pass-wide
+`declineStaleRecordOps`. So the `br` path is not unprotected; it is protected by a
+different, later fence.
+
+**Disposition: the 4.4 refusal is an OVER-DECLINE that COULD be widened, and that
+is an owner item, not this round's.** Widening `rotationAncestry`'s seeding is a
+Rule-13-core accept-class change and needs its own red-green plus a lens. The DOC
+half is done: gate 5's ancestry-exemption sentence is what a future reader would
+use to conclude the gate is exact, and it is only exact when the operand IS the
+rotation call.
+
+### §4.3 — F-I2-3: `lowering_switch_value_nonI32_cast.ll` re-derived
+
+The eighth OUTDIFF of the lens's 1673-fixture sweep, and the only one Inc 2 had
+not re-derived: its output moved from the route (`icmp mint; alloc i64; cswap;
+add_i64_hl; cswap; …; copy_i64; cswap; add_unc; cswap; cswap; free`) to the
+preload + XOR-delta recipe, and **nothing went red**, because its three directives
+(one positive `trunc` line and two negatives) are about the bd p119.8 width record
+alone and are blind to the mechanism. Its header still described the route in the
+present tense.
+
+Re-derived from the rebased binary's own output: the whole region stream,
+`CHECK-NEXT`-adjacent from the first alloc to the measure, with `NOROUTE` (a
+whole-file PURE-negative block — no count inside it, the drbq Inc-4 windowing
+lesson) and `FCNT`/`CCNT`/`PCNT` each in its own prefix. Header rewritten with the
+retired route marked as history and with the reason nothing caught the move.
+
+**The p119.8 property is pinned by ONE positive directive and that is MEASURED, not
+asserted:** commenting out `SwitchValueEmit.cpp`'s `taint.HandleWidth[Out] = Abi;`
+and rebuilding makes the pass OVER-DECLINE — `no template for opcode 'trunc i32' in
+tainted context`, `opt` exit 1 — so the failure lands on the FIRST RUN line. The
+mutation was reverted and the rebuilt `cq-opt` is **byte-identical** to the pre-fix
+one (`cmp`).
+
+**RED-GREEN vs INC-1-ONLY: three of the six prefixes discriminate** — the default
+adjacency block, `NOROUTE` (on `cqrt_cswap`) and `CCNT` (the route emits zero
+`cqrt_copy_i64_controlled`). `FCNT` and `PCNT` do NOT: the route also frees exactly
+four rails and also emits exactly one uncontrolled preload copy. That is written
+into the header, because a prefix that cannot tell the two mechanisms apart must
+not be quoted as if it could.
+
+### §4.4 — F-I2-4 / F-I2-5: two 4.4 gates are VACUOUS since a3c1513
+
+`isPhiCall` is `isCallToPrefix(V, "cq_phi_")` in **seven identical definitions
+across seven files** (`grep -rn 'bool isPhiCall' ir-pass/src`), and the shipped
+intrinsic is `void cq_phi(double)` with NO suffix (`include/CQ.h:73`). So in
+`SelectClassify`: gate 5's PHASE half (`operandCarriesPhase`) can never return
+true, and gate 6's `operandsAlias` closure degenerates to `{A}`, i.e. the gate to
+pointer equality `A == B`.
+
+**No code was deleted** (the predicate already carries a "vacuous, deliberately
+kept" block, and the freeze-time dead-code list owns that decision). What was
+missing is the note AT THE TWO GATES, which a reader would otherwise take at face
+value; one comment was added above each, saying why the vacuity is safe:
+
+* gate 5 — the WI-3 class is **structurally gone**: a branch phase has no register
+  operand (D1) and an uncontrolled one is deleted (D2), so no value can have a
+  `cq_phi` in its lineage. The successor shape (a register carrying relative phases
+  IMPARTED by a kickback) is **not** that hazard: **F-I2-5** measured
+  `q1k_disjoint_phase_then_value` ACCEPT at 27 lines on the subject (32 on
+  INC-1-ONLY) and **byte-identical to its pre-hoisted select twin**, and the
+  argument is linearity — a basis copy loses a phase only when the phase sits
+  BETWEEN two branches carrying the SAME label, which a per-branch kickback never
+  produces.
+* gate 6 — the nearest LIVE analogue never reaches it. **MEASURED on all three
+  binaries**, `int t = cq_theta(q,0.9); p = (q>5) ? t : q;` declines
+  `cq controlled lowering: condition predates a non-diagonal gate under quantum
+  control` at gate **2c** (reproducer
+  `$SP/progress/fix_inc2_r2_work/p/g6_theta_alias.c`). The gate-5 channel-B
+  fallback is labelled ANALYTIC in the comment, not measured, with the ancestry
+  argument spelled out — because 2c fires first and the shape cannot be observed
+  past it.
+
+Both comments say what a future re-arming would have to do, and both say **not** to
+teach `isPhiCall` the new spelling (a `void(double)` call has no arg-0 wire and no
+arg-1 angle; every clause downstream would read the wrong operand).
+
+### §4.5 — F-I2-6 (no subject) and F-I2-7 (the base-from-cond asymmetry)
+
+**F-I2-6 has no subject.** `if (q>3 && r<12) { 6-op chain }` and its `?:` twin BOTH
+decline `cq controlled lowering: control flow under quantum control` on subj,
+INC-1-ONLY **and** the oracle (`-O1` short-circuits `&&` into two branches, which
+the value path refuses), so the byte-identity comparison round 1's brief asked for
+cannot be run. Recorded, not pinned: a fixture asserting "both spellings decline"
+would duplicate two existing compound-condition declines and pin nothing new.
+
+**F-I2-7 is the OPPOSITE asymmetry to the reviewer flag, and it is now pinned.**
+`int p = q + 11; if (q>3) { 6-op chain }` DECLINES `cq controlled lowering:
+non-routable value multiplexer under quantum control` while its pre-hoisted select
+twin ACCEPTS (22 trace lines) — **identically on all three binaries**, with the
+twin's lowered `@slice` **byte-identical across all three** (`cmp`). Two new
+fixtures:
+
+* `ir-pass/test/control_swap_value_reject_base_from_cond.ll` — the decline, string
+  mirrored in full, plus `CHECK-NOT` on the §3c string and on any lowering.
+* `ir-pass/test/control_swap_select_base_from_cond.ll` — the accept, the WHOLE
+  region stream `CHECK-NEXT`-adjacent, plus `NOROUTE`/`CCNT`/`FCNT`.
+
+Both are captured from real `clang -O1` (SSA renamed only), and **their headers
+record what `-O1` did**: reassociation moved the arm chain onto `%q`, so
+`ChainBase != Routed` — the two bases the decline is about are the OPTIMISER's, not
+the source's. **There is deliberately no red-green here and both headers say so**:
+the pair records a PRE-EXISTING over-decline and passes on INC-1-ONLY and on the
+oracle too. It must not be quoted as a witness of an Inc-2 change.
+
+**Owner item name: "the base-from-cond asymmetry."** A bd issue for it is the
+orchestrator's to file. Note it points the OPPOSITE way to §4.2's reviewer flag —
+there the diamond accepts where the select refuses; here the select accepts where
+the diamond refuses. Only one of the two had been written down.
+
+⚠ **The accept fixture was STRENGTHENED after the injection matrix caught a hole in
+it.** As first written its `CHECK` block started at the flag mint and left the
+arithmetic prologue to the counts; the harness then reported `M5_drop_chain_unc`
+**NOT CAUGHT** (deleting the chain's `mul_i32_hl_unc` does not move the free
+count). Extending the block to the whole region catches all seven mutations. This
+is the F-V2-5 lesson arriving from a third direction and is why the injection
+matrix is run on NEW accepts and not only on re-derived ones.
+
+### §4.6 — F-I2-8: the rebase, independently re-verified by the lens
+
+The lens re-derived §3's claims from scratch rather than reading them: **0 RCDIFF /
+0 DIAGDIFF over the 1673 fixtures common to `main` and this branch**, 8 OUTDIFF (7
+re-derived by Inc 2 + F-I2-3); **ZERO value-path `cqrt_cswap`** in the output of any
+of the 1685 subject fixtures (the 6 that carry one are the 5 AbortParkEmit fixtures
+plus `lowering_uncompute_interior_leak_unrecorded_route`, whose cswaps are
+HAND-WRITTEN in its INPUT), `emitRoute` with ONE call site (`AbortParkEmit.cpp:396`);
+`#cqrt_rz_i1 == #!cq.branchphase` in every accepting fixture, totals **263 = 263**,
+and 0 of 135 marked fixtures carrying a mark off a `cqrt_rz_i1` call; all 16
+value/switch-value fixtures `bp=0`; four twin gates re-derived BY HAND and PASSing;
+11 Inc-2 slices reproducing their goldens byte-for-byte at STRICT 2b rc=0;
+**injection matrix 15 accepts × 7 mutations = 15/15 controls clean, 0 NOT CAUGHT**;
+and the red-green of the 12 subject-only fixtures against INC-1-ONLY holding (with
+the two i128/qq declines discriminating by STRING, not by rc).
+
+**The rebase's conflict table, in one paragraph** (§3.1 has the rows): the two
+increments overlap in SEVEN files, of which only TWO conflicted — one include line
+in `SwapRouteEmit.cpp` (both sides kept) and `control_swap_value_diamond_derived.ll`
+(Inc-2 structure + Inc-1's migration note, then re-derived from the rebased binary).
+The other five auto-merged and were verified BY INTENT, which caught two things a
+clean merge cannot: `EmitInverse.cpp`'s cswap-seam prose named a retired emitter as
+live, and `tests/e2e/slice_control_value_derived.c` **did not compile** under the
+Inc-1 header. Faithfulness was checked by comparing changed-line counts before and
+after the replay (identical for six of seven; the fixture 116 → 115, exactly the Rz
+`CHECK` line whose source Inc 1 had already deleted).
+
+### §4.7 — What `fix_inc2_r2` ran (only what it ran)
+
+* Every measurement quoted in §4.1, §4.2, §4.4 and §4.5 was **re-run by the fix
+  agent** on the three binaries through the full pipeline (stage 1 → 2 → **STRICT
+  2b** → 3 → 4), not copied from the review. STRICT `free_pairing_check.py` rc=0 on
+  every accepting lowering; no `--allow-unproven` anywhere.
+* `ctest -R ir-pass-lit`: **PASS** (39.6 s). Direct `lit ir-pass/test`: **1687
+  discovered, 1686 passed, 1 expectedly failed** (the standing
+  `lowering_invert_add_i32.ll` XFAIL). Corpus 1685 → **1687** (the F-I2-7 pair).
+* `ctest -j6 -R 'e2e-value-.*twin-identical|e2e-slice-control-switch-value|e2e-slice-control-value'`:
+  **15/15 PASSED**, 26.5 s — the four `cmp` twin gates
+  (`e2e-value-{diamond,ifelse,mixedops,polarity}-twin-identical`), the ten value
+  slices, and `e2e-slice-control-switch-value`.
+* **Injection matrix on the two fixtures this round wrote/re-derived** (7 mutations
+  each, `$SP/progress/fix_inc2_r2_work/inject.py` — the lens's tool with `INPUT`
+  skipped, since that prefix is checked against `%s` and not the lowered output):
+  `lowering_switch_value_nonI32_cast.ll` **7/7 CAUGHT**;
+  `control_swap_select_base_from_cond.ll` **6/7 → strengthened → 7/7 CAUGHT**.
+* **Census over the three fixtures it touched** (the full-corpus census is the
+  lens's, on a binary this round leaves byte-identical): `cqrt_cswap` **0**,
+  non-i1 `cqrt_rz` **0**, `!cq.branchphase` **0** in all three outputs.
+* **A mutation build and its revert** (§4.3), with `cmp` proving the tree restored.
+* It did **NOT** run the full `ctest`, the loop-twin matrix, `frontend-lit`, the
+  runtime entries, or the e2e suite beyond the 15 entries named above.
