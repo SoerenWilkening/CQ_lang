@@ -1116,7 +1116,7 @@ and Rule-13 reviewed twice there.)*
   `cqrt_xorc_i8(i32 %h2, i32 %h_op)` does not type-check against the i8 immediate ABI,
   so at those widths `main` ABORTS rather than miscompiling silently — and the commuted
   `add` from PLAIN C, which retires half of "commuted is hand-IR-only"; 0 over-declines
-  over 20 boundary programs and 0 rail producers over all 841 `fix` accepts).** That last one also
+  over 20 boundary programs and 0 rail producers over all 841 `fix` accepts).** **THE eqpx MEMBER** — not the ⭐ clause just above it, which is its fix — also
   RETIRES a sentence that had been doing bounding work in three places (§3.11,
   `OpcodeLowering.cpp`, `TaintPropagation.h`): *"the other three `InPlaceRailOps`
   writers mark a rail they PROVED with their own fences"* — **their fences prove the

@@ -16,9 +16,20 @@ Read the whole lens report in `../review_eqpx_r1.md`; this file is the index.
 
     W=<your work dir> <harness>/run.sh <this dir>/x01_cast_short.c <main|fix> [<...>/tu_extf.c]
 
-Every program whose source mentions `ext_f` is a TWO-TU program and needs
-`../../session-82e6b530/eqpx_reproducers/tu_extf.c` as the extra TU (the harness `llvm-link`s
-them). `main` = the pre-fix baseline `main`@16b15b3; `fix` = branch `eqpx-fix`.
+Every program that calls an `ext_*` function is a TWO-TU program and needs that function's
+one-line definition as the extra TU (the harness `llvm-link`s them). **There are exactly two
+such symbols in this directory** (MEASURED, `grep -oh 'ext_[a-z_0-9]*' *.c | sort -u`), and
+they live in different places:
+
+| symbol | extra TU | which programs |
+|---|---|---|
+| `ext_f` | `../../session-82e6b530/eqpx_reproducers/tu_extf.c` | 15 programs — `x01`–`x04`, `x08`–`x12`, `x14`, `x15`, `y05`–`y08` |
+| `ext_h` | `tu_exth.c` — **here, beside the programs** | 2 programs — `d03_classical_phi_imm.c`, `d05_classical_call_imm.c` |
+
+⚠ `tu_exth.c` was missing from the first publication of this directory, so `d03`/`d05` were not
+reproducible from the record (`Undefined symbols … "_ext_h"` at link); found by the round-2 lens
+(F-E2-1, `../review_eqpx_r2.md`) and fixed here. `main` = the pre-fix baseline `main`@16b15b3;
+`fix` = branch `eqpx-fix`.
 
 ## THE 15 NEW MEMBERS — accept on `main` with a rail in the immediate slot, decline on `fix`
 

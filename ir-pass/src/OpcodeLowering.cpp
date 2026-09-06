@@ -423,7 +423,7 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           //
           // THE 8h7d.5 QUESTION — "when you widen a set, ask what OTHER set was
           // computed over the same closure". `taint.InPlaceRailOps` is read by
-          // `railValueConsumerDisposition` (`LoopLowering.cpp:206`), whose
+          // `railValueConsumerDisposition` (`LoopLowering.cpp`, by NAME), whose
           // `InPlace` cell feeds the Rule-8 fan-out guard and `collectRailGates`'
           // forward extension. This widening is DECLINE-ONLY: it never REMOVES a
           // member, so that cell is byte-unchanged for every module that still
