@@ -70,3 +70,24 @@ they are **byte-identical to the copies here** (spot-checked with `diff -q` on
 `inc2-records/` records what the Inc-2 review measured on ITS binary, `inc1-records/c1-round4/`
 records what this round measured on `main` a3c1513 and on the fix. Read them as two measurements
 of one program, not as one file in two places.
+
+### `q4b` re-measured on the landed Inc 2 — the row this round could only ARGUE
+
+`q4b_preadd_{rolled,unrolled}.c` is the same source in both directories. Its `%out` producer
+CHANGED with Increment 2: on a3c1513 it was the **Phase-4 value-arm ROUTE** (one `cqrt_copy_i32`
+into `%out` after a `cqrt_cswap` route); on 258d974 it is the **CONTROLLED-COPY MERGE** (two
+`cqrt_copy_i32_controlled`, no route at all). The trace LINE COUNTS move with that, which is why
+the table above (57 / 65) and this block (52 / 60) disagree and both are right.
+
+| binary | rolled (`and|lshr _hl` mints / `_hl_unc`, lines) | hand-unrolled twin | `cmp` |
+|---|---|---|---|
+| `main` **a3c1513** (the table above) | 4 / 0, 57 | 4 / 4, 65 | DIVERGE |
+| `main` **258d974** (Inc 2 landed) | **4 / 0, 52** | 4 / 4, 60 | **DIVERGE, 8 lines** |
+| REBASED `c1-round4` | **4 / 4, 60** | 4 / 4, 60 | **IDENTICAL** — and byte-identical to `main` 258d974's OWN unrolled twin |
+| ORACLE **52d7764** | *unexpressible* — stage 1 fails, the shipped `void cq_phi(double)` does not exist there. Its register-form transliteration (`p = cq_phi(p, 0.7)`) is a DIFFERENT program: the ROLLED spelling DECLINES (`cq taint escape: tainted value muxed by a classical-condition phi`) and the UNROLLED one accepts at 4/4, 65 lines, emitting 4 `cqrt_cswap` + 4 `cqrt_rz_i32_controlled` — the routed TENSORED Rz this epic retired | — | — |
+
+STRICT stage 2b is `0 violation(s), 0 unproven` on every row that lowers, on both binaries.
+Pinned by `ir-pass/test/control_phase_kickback_mixed_value_merge_preadd_inloop.ll` and the
+e2e pair `tests/e2e/slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c` +
+`e2e-phase-perbit-loop-value-merge-preadd-twin-identical`. Narrative:
+`RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.15**.

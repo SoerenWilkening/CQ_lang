@@ -2175,3 +2175,111 @@ Two rows of that sweep are worth reading as controls rather than as movers:
   **TRACE-DIVERGENCE on `main`** and **ACCEPT-IDENTICAL** here. **PROVEN byte-unchanged, not
   asserted**: all **1144** pre-existing generated sources hash-identical across both surfaces,
   8 new rows.
+
+---
+
+### 3.15 The round-4 REBASE onto the landed Increment 2 (2026-09-06, session `82e6b530`)
+
+**STATUS: LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator:
+the squash of branch `c1-round4`, whose tip is recorded in the landing commit message;
+`git log main -1` shows the hash). Full record:
+`inc1-records/session-82e6b530/rebase_c1d.md`.
+
+**⚠ EVERY `main` FIGURE IN §3.14 IS AGAINST a3c1513.** Round 4 was written on that base;
+`main` is now **b99b853** (docs) on top of **258d974** (Inc 2, value arms by the
+CONTROLLED-COPY MERGE). The round-4 lens (F-C1D-1) re-measured the finding on the landed
+binary and it was still live there — `q4b_preadd` 4/0 (52) vs 4/4 (60), `q5sel_preadd` 4/0
+(44) vs 4/4 (52), `g1_region_then_preadd` 3/0 (36) vs 3/3 (42) — so the rebase was a
+correctness obligation, not housekeeping.
+
+#### The rebase itself
+
+`git rebase main` in the round-4 worktree. MEASURED overlap
+(`git diff --name-only a3c1513 c1-round4` ∩ `… a3c1513 main`) = **exactly five files**:
+`CLAUDE.md`, `ROADMAP.md`, `retire-swap-route-PRD.md`, `tests/e2e/CMakeLists.txt` and
+`inc1-records/session-adc5590a/briefs/BRIEF_fix_c1d.md`. Only **two hunks in `CLAUDE.md`**
+needed hand resolution, both the ctest/lit COUNT paragraphs, both resolved to `main`'s Inc-2
+text and then RE-MEASURED on the rebased tree (below); `tests/e2e/CMakeLists.txt` auto-merged
+with **both** blocks intact (Inc 2's nine value slices and four `e2e-value-*-twin-identical`
+gates AND round 4's merge-preadd pair + gate), the two `BRIEF_fix_c1d.md` copies are
+byte-identical, and **`ir-pass/src/LoopLowering.cpp`, `tools/loop_twin_matrix.{py,expected.txt}`
+and this file did not conflict at all** — Inc 2 never touched them. `git diff main HEAD --stat
+-- ir-pass/src ir-pass/include` is `LoopLowering.cpp` alone until step 4's comment additions.
+The branch's duplicate `session-adc5590a/fix_c1d.md` (byte-identical to `main`'s
+`session-adc5590a/c1-round4/fix_c1d.md`) is `git rm`'d, with the one cross-reference re-pointed.
+
+#### ⭐ `q4b` — the row §3.14 could only ARGUE, now MEASURED
+
+§3.14's step 17 and its RECORD ITEM say the Inc-2 producer of the merge rail "CANNOT be
+measured until the orchestrator rebases this branch onto the landed Inc 2". It is measured now,
+on `inc1-records/c1-round4/q4b_preadd_{rolled,unrolled}.c` — the value-arm spelling, whose
+`%out` is written by two `cqrt_copy_i32_controlled`:
+
+| binary | rolled (mints / `_unc`, lines) | hand-unrolled twin | `cmp` |
+|---|---|---|---|
+| `main` **258d974** | **4 / 0, 52** | 4 / 4, 60 | **DIVERGE, 8 lines** |
+| REBASED `c1-round4` | **4 / 4, 60** | 4 / 4, 60 | **IDENTICAL** |
+| ORACLE **52d7764** | *unexpressible* (stage 1 fails: the shipped `void cq_phi(double)` does not exist there) | — | — |
+
+The rebased ROLLED trace is **byte-identical to `main`'s OWN unrolled twin**, so the comparison
+is against the landed compiler's stream rather than against itself; the whole difference from
+`main`'s rolled trace is the four missing
+`cq_template_and_i32_hl_unc(h{6,8,10,12}, h5, …)` + `cqrt_free(h{6,8,10,12})` pairs — one
+leaked which-path ancilla per activation. STRICT 2b is `0 violation(s), 0 unproven` on BOTH
+binaries, as the class always is.
+
+**The ORACLE row, stated honestly.** Transliterating to 52d7764's register form
+(`p = cq_phi(p, 0.7)`) is a DIFFERENT program, and it is recorded as such: the ROLLED spelling
+DECLINES there (`cq taint escape: tainted value muxed by a classical-condition phi`) and the
+UNROLLED one accepts at 4/4, 65 lines, emitting **4 `cqrt_cswap` + 4 `cqrt_rz_i32_controlled`**
+— the routed, TENSORED per-qubit Rz that §1 shows is the identity on the marked branch. So the
+oracle has no rolled/unrolled pair for this shape at all, and its unrolled member is the defect
+this epic retired.
+
+**Pinned**, in the §3.14 style:
+* **lit**, corpus 1687 → **1690** (round 4's two accepts plus)
+  `control_phase_kickback_mixed_value_merge_preadd_inloop.ll` — 10 prefixes, one `%cq-opt`
+  spawn, `OPT_RC=0 CHECK=1 FCNT=1 UCNT=1` (**RED**) on `main` 258d974 and **all ten zero**
+  here. Its `UCNT` is the ⭐ discriminator (`cq_template_and_i32_hl_unc` = 1 here, **0** on
+  `main`) and its `FCNT` the other half (4 frees here, 3 on `main` — the chain FINAL is left
+  allocated on purpose, PRD §0 E1). ⚠ Also measured on the PRE-rebase round-4 binary 59f6a95
+  (a3c1513 + the fix, no Inc 2): `CHECK=1 HCNT=1 NOROUTE=1 PCNT=1 XCNT=1` — red, because the
+  value arm still ROUTES there. That is the discriminator showing the fixture is specific to
+  the Inc-2 mechanism, not a defect.
+* **e2e**, `ctest -N` 361 → **367** (`^e2e-` 351 → **357**, `^e2e-slice-` 317 → **321**,
+  `twin-identical` 24 → **26**, goldens 319 → **323**):
+  `slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c` + goldens by the full
+  pipeline, STRICT 2b `0 violation(s), 0 unproven` on both, gated by
+  `e2e-phase-perbit-loop-value-merge-preadd-twin-identical` (**60 = 60**, was 52 vs 60).
+* **the twin matrix is UNTOUCHED** — 259 expected rows + 29 quarantined = **288 cells**,
+  `ctest -R e2e-loop-twin-matrix` **Passed, 292.00 s, NO cell moved**.
+
+#### The round-4 lens items, disposed
+
+| item | disposition |
+|---|---|
+| **F-C1D-1** (the baseline moved; the defect is live on the landed `main`) | **the rebase itself**, plus the `q4b` measurement above |
+| **F-C1D-2** (Inc 2's `ArithLowering` CONSUMER-2 comment names a second consumer of the G6/G7 pair whose second net this round removed — sound but unpinned) | **PINNED and ARGUED.** The new fixture's `HCNT` prefix asserts the Inc-2 chain HEAD is emitted OUT of place onto a fresh rail and that `p`'s own rail carries no in-place `cqrt_addc`/`cqrt_xorc` anywhere in the module. The argument is written at `commitOutOfLoopInPlaceOps` in two independent halves — **(A) DIRECTION**: `peelInPlaceStep` returns an OPERAND, so the walk is BACKWARD, and a chain head is a USER of the arm's input `Q`; **(B) THE PEEL STOPS AT THE `cqrt_alloc`**: the merge candidate arrives from `collapseFlattenedLoopRails` (round 2), AFTER `lowerControlRegions` emitted `%out = cqrt_alloc_<W>(0)`, and `peelInPlaceStep`'s first clause returns null for a `CallInst` not in `GateCalls`. Cross-referenced from `ArithLowering.cpp`'s CONSUMER-2 comment (**comments only** — 0 non-comment added lines and 0 removed lines in `ir-pass/src`). Gates re-run on the rebased tree: `control_swap_value_ifelse_head_out_of_place.ll` **1/1**, `control_swap_value` **19/19**, the four `e2e-value-*-twin-identical` gates and all nine Inc-2 value slices **green** (48/48 in the gate group) |
+| **F-C1D-3** (three doc-level refinements to §3.14's 8h7d.5 closure table) | **APPLIED, each verified on this tree first** — see that table: the fan-out row now names **G5** as what makes "arithmetically unchanged" complete; the `WireWalk` row's stated reason is corrected (it is FALSE for `declineLiftedStaleRecordOps` at `CQLoweringPass.cpp:522`/`:848`, and the row survives because `WireWalk` has NO code read of either set — one grep hit, prose); and the table gains **the F-3 row it lacked**, the SKIP set. Peel census re-measured: 24 grep hits, 4 prose, 2 decl/defn = **18 code call sites**, **2** at `AsLowered=true` |
+| **F-C1D-4** (no `extra_ry` row in the injection matrix; 0 of 25 accepts pinned an Ry count) | **BUILT and CLOSED** — see the table below |
+
+#### F-C1D-4 — the `extra_ry` injection row
+
+Mutation: insert `call void @cqrt_ry_i32(i32 <rail>, double 5.000000e-01)` immediately after the
+last `cqrt_free`, `<rail>` = arg-0 of the first `and`/`lshr` `_hl` template call (the register
+the condition reads), falling back to the first `cqrt_alloc_*` result. An uncontrolled
+non-diagonal gate on the wire the kickback branched on is a different unitary. Accept set =
+`grep -L 'RUN: not' ir-pass/test/control_phase_kickback_*.ll` = **44 files** of 62.
+
+| run | `extra_ry` | the other 16 mutations |
+|---|---|---|
+| first | **25 MISSED**, 0 DIRTY | **0 MISSED / 0 DIRTY**; `clean` PASS on all 44 |
+| after each of the 25 gained a `RYCNT` prefix | ⭐ **0 MISSED / 0 DIRTY** | unchanged, 0 / 0 |
+
+Caught by **RYCNT on 26** fixtures and by **CHECK on 18** (whose `CHECK-NEXT` chains the
+injected line already broke). Each of the 25 gains ONE extra `%filecheck … --check-prefix=RYCNT
+< %t.cqd0.ll` RUN line against the EXISTING `%t.cqd0.ll` — **no second `%cq-opt` spawn** — plus
+its own `RYCNT-COUNT-n` / `RYCNT-NOT` block, `n` read from the pass output (1–4 per fixture).
+**`RYCNT` is its own prefix and is never folded into `NOROUTE`**: a `COUNT` inside `NOROUTE`
+windows every `NOT` after it, which is the Inc-3/Inc-4 recurrence. No decline fixture touched;
+`lit --filter 'control_phase_kickback'` **62/62**, `ctest -R ir-pass-lit` **Passed, 53.62 s**.

@@ -453,7 +453,12 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > whose other users are all SETTLED PRIOR CONSUMERS**, of which a merge's
 > `cqrt_copy_*` writers and a region's discharged compare rail are two spellings. ⚠ It also CORRECTS OQ-C2-1's attribution: `m11d`
 > is **not** bought back — its candidate is refused by the M-C fence itself, so its
-> trace is byte-unchanged. That makes it
+> trace is byte-unchanged. **STATUS: **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash)**, after a rebase onto 258d974 that turned the
+> round's one ANALYTIC row into a measured one — Inc 2's controlled-copy VALUE merge
+> is a FOURTH producer of the same `%out` rail, and `q4b_preadd` there is 4/0 at 52
+> lines vs its twin's 4/4 at 60 on `main` and **60 = 60 byte-identical** on the
+> rebased binary (`control_phase_kickback_mixed_value_merge_preadd_inloop.ll`,
+> `e2e-phase-perbit-loop-value-merge-preadd-twin-identical`). That makes it
 > **eight instances of one defect class over six adversarial rounds on one
 > function** — two of them INTRODUCED BY A FIX and the eighth found AFTER LANDING by
 > a round reviewing a different increment — **plus one PRE-EXISTING member of
@@ -514,7 +519,9 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 > 2026-09-06.** It is kept, not deleted, because its arguments are still quoted.
 > Round 2's one LEAK finding (F-I2-1) is **PRE-EXISTING on `main`**, is not Inc 2's,
 > and is filed out of the epic as bd `test_C_libtooling-7yd0` (C-1 round 4; PRD §0
-> **E11**).
+> **E11**) — which then REBASED onto this landing and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash). On the rebased binary the
+> Inc-2 spelling of that leak is gone: `q4b_preadd` rolled == unrolled BYTE-IDENTICAL
+> at 60 lines, against 4 mints / 0 `_unc` at 52 on `main` 258d974.
 >
 > **Do not quote these as phase-arm invariants any more:** "zero controlled
 > gates", "`Rz|0⟩ = |0⟩`, so the inactive work rail is clean and freed as a no-op
@@ -1007,7 +1014,9 @@ after a statevector-checked design dialogue; see
   only) added NO cell and moved NONE: 257 + 29 = 286, `e2e-loop-twin-matrix`
   Passed, 181.66 s.** **And the FOURTH round added sub-grid F4 — the PRODUCT of F3's
   preheader axis with a 4.4 SELECT-MERGE out-rail root (a `PREHEAD` slot on `_wrap`
-  plus one new PREFIX key `addpresel`), 2 cells, 259 + 29 = 288 cells**: both were
+  plus one new PREFIX key `addpresel`), 2 cells, 259 + 29 = 288 cells** — **RE-MEASURED
+  2026-09-06 after the round-4 rebase onto the landed Inc 2: UNCHANGED at 259 + 29 =
+  288, `ctest -R e2e-loop-twin-matrix` Passed, 292.00 s, NO cell moved** —: both were
   TRACE-DIVERGENCE on `main` a3c1513 and are ACCEPT-IDENTICAL now (one of them the
   table's first `ACCEPT-IDENTICAL-WARN` row, the same warning on both spellings and
   on both binaries); all **1144** pre-existing generated sources hash identically and
@@ -1719,7 +1728,9 @@ that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 >   304 committed goldens — **re-measured 2026-09-06 after the Inc-2 landing: still
 >   `0`, now across 319 goldens**, `grep -h 'cqrt_rz_' tests/e2e/*.expected.log |
 >   grep -v 'cqrt_rz_i1(' | wc -l`, and the Inc-2 clearance's own whole-corpus
->   census over 1687 fixtures found **0** non-`i1` Rz calls in any output).
+>   census over 1687 fixtures found **0** non-`i1` Rz calls in any output;
+>   **re-measured again 2026-09-06 after the round-4 rebase: still `0`, now across
+>   323 goldens**).
 > * **`cqrt_rz_<W>_controlled` and `cqrt_rz_<W>_controlled_inv`** — DECLARED,
 >   **UNEMITTED, and with no minter left in the pass** (`RotationLowering::emitRz`
 >   is deleted). They were a frozen-designate family for the drbq Inc-2a
@@ -1730,7 +1741,8 @@ that add new frozen symbols (the 7.2/7.4 control work reuses existing `cqrt_*` /
 >   2026-09-06. MEASURED: `grep -rn 'emitRoute(' ir-pass/src ir-pass/include` = the
 >   definition, the declaration and ONE call site (`AbortParkEmit.cpp:396`); `grep -l
 >   'cqrt_cswap' tests/e2e/*.expected.log` = **1** of 319 goldens
->   (`slice_control_abort`). So the symbol stays in the frozen surface on the
+>   (`slice_control_abort`) — **re-measured 2026-09-06 after the round-4 rebase: still
+>   1, now of 323 goldens**. So the symbol stays in the frozen surface on the
 >   abort-park's account, not the control path's. ⚠ HISTORY, dated: until that day
 >   the VALUE-arm path in `SwapRouteEmit` was its second minter.
 > * **`cqrt_ry_<W>_controlled` ×9** — UNAFFECTED and still minted. The Ry stem is

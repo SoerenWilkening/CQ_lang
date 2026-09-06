@@ -44,9 +44,14 @@ each, the re-clearance, and the landing:
 The narrative record is `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §3 (§3.1–§3.12) and the PRD §0 ERRATA (E2 rewritten
 twice; **E10** is the five-line summary of the three rounds, the count and the landing).
 
-## C-1 round 4 (bd `7yd0`) — NOT LANDED at session end (owner: "stop after this agent finished")
+## C-1 round 4 (bd `7yd0`) — NOT LANDED at THIS session's end (owner: "stop after this agent finished"); LANDED in session `82e6b530`
 * `c1-round4/fix_c1d.md` / `c1-round4/review_c1d.md` — the round (one non-comment line: the `hasOneUse` conjunct of
   `commitOutOfLoopInPlaceOps` retired under the round-3 tripwire) and its lens (**CLEAR-WITH-ITEMS**). Branch
-  `c1-round4` at 59f6a95 (base a3c1513, PUSHED, full ctest 351/351 on its tree). The leak it fixes is LIVE on
-  landed `main` 258d974 (F-C1D-1), so the next session's first step is the rebase + landing per
-  `briefs/BRIEF_rebase_c1d.md`. `NEXT_SESSION_PROMPT.md` carries the state.
+  `c1-round4` at 59f6a95 (base a3c1513, PUSHED, full ctest 351/351 on its tree). The leak it fixes was LIVE on
+  landed `main` 258d974 (F-C1D-1), so the next session's first step was the rebase + landing per
+  `briefs/BRIEF_rebase_c1d.md`. `NEXT_SESSION_PROMPT.md` carries the state AS OF THIS SESSION'S END.
+* ⭐ **STATUS NOW: rebased onto 258d974 in session `82e6b530` (2026-09-06) and **LANDED on `main` 2026-09-06 as ONE squash commit** (hash filled by the orchestrator: the squash of branch `c1-round4`, whose tip is recorded in the landing commit message; `git log main -1` shows the hash).** That rebase MEASURED the one
+  row this round could only argue — Inc 2's controlled-copy VALUE merge as a FOURTH producer of the `%out` rail:
+  `q4b_preadd` is 4 mints / 0 `_unc` at 52 trace lines vs its twin's 4/4 at 60 on `main` 258d974, and **60 = 60
+  byte-identical** on the rebased binary — and folded in the lens items F-C1D-2/3/4. Record:
+  `inc1-records/session-82e6b530/rebase_c1d.md`, narrative `RETIRE_SWAP_ROUTE_INC1_NOTES.md` **§3.15**.
