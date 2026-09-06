@@ -49,6 +49,7 @@
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; THE ROUND-1 6.5 CLASSICAL-CALL ARM, ASSERTED FIRST — Rule-13 round-2 finding
 ; F-R2-8. This chain used to start at the SECOND region, leaving the round-1
@@ -84,6 +85,13 @@
 ; program twice (`@slice` and `@main`), hence four.
 ; ACNT-COUNT-4: call void @cqrt_rz_i1(
 ; ACNT-NOT: call void @cqrt_rz_i1(
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-2: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; NOROUTE is WHOLE-FILE and PURE-NEGATIVE. The f64 assertions are the sharp end:
 ; they are what the pre-fix binary emitted instead of a phase.

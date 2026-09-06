@@ -57,6 +57,7 @@
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; The region lowers; the condition chain's rails do NOT discharge.
 ; CHECK: %[[P:.*]] = call i32 @cq_template_mul_i32_hl(i32 %h, i32 3)
@@ -67,6 +68,13 @@
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-1: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; WHOLE-FILE PURE-NEGATIVE: no discharge of the derived chain anywhere. These are
 ; the lines that FIRE if `invariantRegisterRoots` is ever widened to admit a

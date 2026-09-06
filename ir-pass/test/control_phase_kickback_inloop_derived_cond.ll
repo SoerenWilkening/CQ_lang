@@ -50,6 +50,7 @@
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; ROLLED — the whole region plus the in-body discharge sits inside ONE block that
 ; the back edge re-enters, so IR size is independent of K.
@@ -76,6 +77,13 @@
 ; of them (it is measured, and it is alloc-minted — clause I1).
 ; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-1: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; NOROUTE is WHOLE-FILE and PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

@@ -27,6 +27,7 @@
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; CHECK: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %h, i32 5)
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 9.000000e-01), !cq.branchphase
@@ -42,6 +43,13 @@
 ; ONE bracket PAIR — the false arm's, not one per gate.
 ; XCNT-COUNT-2: call void @cqrt_x(
 ; XCNT-NOT: call void @cqrt_x(
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-1: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; NOROUTE is WHOLE-FILE and PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

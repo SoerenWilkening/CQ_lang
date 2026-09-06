@@ -43,7 +43,15 @@
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDTAG < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-2: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; ── Rule-13 ROUND-2 finding F-R2-1, the assertion repair ────────────────────
 ; Round 1 repaired three assertion families (the 8-width Rz negative, the

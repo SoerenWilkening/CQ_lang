@@ -55,6 +55,7 @@
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; The 4.4 select merge lowers first and mints `%out`; then the PREHEADER `+7`
 ; lands IN PLACE on that rail.
@@ -108,6 +109,13 @@
 ; The kickback gate is recorded, so the spine cannot adjoint the user's phase.
 ; MDCNT-COUNT-1: !cq.branchphase
 ; MDCNT-NOT: !cq.branchphase
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-3: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ; NOROUTE-NOT: @cqrt_cswap

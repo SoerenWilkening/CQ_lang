@@ -55,6 +55,7 @@
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 
 ; The kickback gate lands on the FLAG, uncontrolled, and is recorded.
 ; CHECK: %[[F:.*]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %{{.*}}, i32 5)
@@ -69,6 +70,13 @@
 ; The flag rail is LEFT ALLOCATED on this path — the data lineage owned it and the
 ; spine can no longer close it, which is the oracle's disposition. Zero frees.
 ; FCNT-NOT: call void @cqrt_free(
+
+; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
+; NOTHING may add an uncontrolled `cqrt_ry` on a register under quantum
+; control — a non-diagonal gate there is a different unitary, and before this
+; prefix an injected one was caught by 0 of this file's prefixes.
+; RYCNT-COUNT-1: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; NOROUTE is WHOLE-FILE and PURE-NEGATIVE.
 ; NOROUTE-NOT: double -
