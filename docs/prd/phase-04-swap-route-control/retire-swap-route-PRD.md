@@ -73,10 +73,17 @@
 > members plus a miscompile of round 2's own, then the narrowing — the round-3 lens
 > graded CLEAR-WITH-ITEMS, and the re-clearance on that tree cleared it (E10).
 > **Increment
-> 2 (value arms by controlled-copy merge, §7) is NOT** — every §7 sentence is a
-> plan, `cqrt_cswap` is still minted at HEAD by the value-arm path and by the
-> 7.2 `AbortParkEmit`, and its branch `3qlq-inc2` owes a rebase onto the landed
-> Inc 1.
+> 2 (value arms by controlled-copy merge, §7) is NOT** — on `main` every §7
+> sentence is a plan, `cqrt_cswap` is still minted there by the value-arm path and
+> by the 7.2 `AbortParkEmit`.
+> ⚠ **THE SENTENCE ABOVE IS ABOUT `main`. YOU MAY BE READING THIS FILE ON BRANCH
+> `3qlq-inc2`, WHERE IT IS FALSE** (2026-09-06): §7 IS implemented + round-1
+> reviewed there, and the branch was REBASED onto this landed Inc 1 the same day
+> (`git rebase a3c1513`, 15 commits, 2 conflicts of 7 overlapping files —
+> `RETIRE_SWAP_ROUTE_INC2_NOTES.md` §3). On that branch `emitRoute` has exactly
+> ONE call site, `AbortParkEmit.cpp:396`, so the epic's cswap goal is met and the
+> rebase is no longer owed; what is still owed is Rule-13 round 2, a clearance,
+> and the landing. Re-read this paragraph after Inc 2 lands.
 
 **E1 — §3's and §7.1's "`t`, `f` freed clean" is FALSE for `t`** (Inc-2 lens
 F-V1-4). In the value-arm controlled-copy merge the chain-final rail `t = R(p)` is
