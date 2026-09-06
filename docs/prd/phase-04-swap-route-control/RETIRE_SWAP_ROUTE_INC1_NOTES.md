@@ -2283,3 +2283,120 @@ its own `RYCNT-COUNT-n` / `RYCNT-NOT` block, `n` read from the pass output (1–
 **`RYCNT` is its own prefix and is never folded into `NOROUTE`**: a `COUNT` inside `NOROUTE`
 windows every `NOT` after it, which is the Inc-3/Inc-4 recurrence. No decline fixture touched;
 `lit --filter 'control_phase_kickback'` **62/62**, `ctest -R ir-pass-lit` **Passed, 53.62 s**.
+
+#### The independent lens ON THE REBASED TREE (`review_c1e`, 2026-09-06) — verdict CLEAR-WITH-ITEMS
+
+The rebase added a NEW customer class to an already-cleared fix (the Inc-2 controlled-copy merge as
+a fourth producer of the `%out` rail) plus 25 edited fixtures, so a second lens was budgeted on the
+rebased branch `aa9d702` rather than on the pre-rebase round-4 tree. Full record:
+`inc1-records/session-82e6b530/review_c1e.md`. What it cleared, in its own measurements: **0
+DECLINE → ACCEPT** over **610** comparable programs of a 640-program deduplicated population on
+three binaries and over all **1690** lit fixtures (`0 RCDIFF · 0 DIAGDIFF · 3 OUTDIFF`, the three
+being round 4's own accepts, each gaining exactly one `_unc` and one `cqrt_free` with the
+`addc`/`xorc` count unchanged); **0 ACCEPT → DECLINE**; **0** decline-message changes; STRICT stage
+2b clean on all 26 movers; the injection matrix reproduced at **0 MISSED / 0 DIRTY**; and the four
+new goldens re-derived GOLDEN-MATCH with both pairs byte-identical. The full `ctest` on that tree
+was **367/367** (`$SP/progress/orch_full_ctest_c1e.log`, the orchestrator's run, 385.89 s).
+
+| item | disposition |
+|---|---|
+| **F-C1E-1** (`DOC`, coverage): the fixture cited in TWO source comments as MEASURING "the commit cannot reach an Inc-2 chain head" cannot discriminate the pair it is cited for | **CORRECTED, and a discriminating fixture ADDED.** See below. |
+| **F-C1E-2** (`LEAK`, PRE-EXISTING, byte-identical to `main`) | **RECORDED, not fixed** — PRD §0 **E2**'s residual list, the table below, and the eight reproducer pairs `inc1-records/c1-round4/c1e_a*.c`. |
+| **F-C1E-3** (`DOC`, methodology): four of the lens's own attack twins are UNFAITHFUL | **RECORDED** — the sentence below. |
+| **F-C1E-4** (`DOC`): the rebase record's "0 hits" grep is self-invalidated | **CORRECTED** in `inc1-records/session-82e6b530/rebase_c1d.md`. |
+
+##### F-C1E-1 — which fixture measures WHAT
+
+`ArithLowering.cpp`'s CONSUMER-2 comment and `LoopLowering.cpp`'s `commitOutOfLoopInPlaceOps`
+argument both cited `control_phase_kickback_mixed_value_merge_preadd_inloop.ll` (the `q4b` shape) as
+the MEASUREMENT behind "G6/G7 is now the sole net on the commit path". The lens built the mutant the
+comment implies — a `git archive` of the subject with `inPlaceFenceHolds`' G6 and G7 `return false`
+made unreachable, fresh `cmake`, build RC 0, currency EMPTY — and measured that **the q4b fixture
+stays GREEN on it with its emitted copies byte-unchanged**, as do BOTH round-4 e2e goldens. CAUSE,
+measured: in that module `clang -O1` reassociates `(p+3)*5` into `p*5 + 15`, so `p`'s only chain
+user is a `mul`, and `inPlaceValueRailOperand` admits `add`/`xor` only — **G2's SHAPE half refuses
+the head whatever G6/G7 answer**, and the `HCNT-NOT` lines are unfalsifiable by a relaxation of the
+pair they were cited for. The property they assert HOLDS; the citation was wrong.
+
+Applied, three things:
+1. **Both comments rewritten** (COMMENTS ONLY — `git diff -- ir-pass/src` adds and removes **0**
+   non-comment lines) to say that the G6/G7 NET is pinned by
+   `control_swap_value_ifelse_head_out_of_place.ll` — the fixture the CONSUMER-2 comment already
+   named, which goes **RED (CHECK, NOROUTE)** on that mutant with its two copies collapsing onto ONE
+   register — and that the `q4b` fixture's `HCNT` pins the head-out-of-place PROPERTY on the shape
+   that made the commit fire, not the net.
+2. **A discriminating lit accept added**:
+   `ir-pass/test/control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll`, from the
+   lens's attack program `a22` — `if (q>3){ r = p+3; r = r^9; }`, a preadd on the merge out-rail,
+   then D4's per-bit loop. Its chain head IS a dtzb-shaped `add`, inside
+   `inPlaceValueRailOperand`'s shape, so nothing but G6/G7 stands between it and an in-place
+   `cqrt_addc_i32` on `p`'s rail; the lens measured a22 (with a23/a24) collapsing BOTH controlled
+   copies onto one register on the mutant. ⚠ MEASURED and worth knowing: `clang -O1` **folds that
+   diamond into a `select`**, so the merge is the 4.4 `SelectMergeEmit` — the same emitter Inc 2's
+   `emitValueRegion` delegates to (Rule 14), so the emitted shape is the sibling's. Twelve prefixes,
+   one `%cq-opt` spawn; two are new to the family — **`CSRC`** (the two `cqrt_copy_i32_controlled`
+   read DISTINCT rails under ONE flag into ONE out-rail: the exact property the mutant breaks) and
+   **`QCNT`** (the in-place `xor` budget, its own prefix because a positive `COUNT` after a `NOT`
+   WINDOWS that `NOT` and the `xorc` precedes the `addc` here — the Inc-3/Inc-4 recurrence).
+   RED/GREEN: on `main` **258d974** `OPT_RC=0` with **CHECK, FCNT, UCNT** red (the leak: 0
+   `and_i32_hl_unc` and 2 `cqrt_free` against 1 and 3 here) and the other nine prefixes green; on
+   this tree **all twelve green**. The whole IR difference between the two binaries on that module is
+   the two lines the subject GAINS — `cq_template_and_i32_hl_unc(%h_op3, %out, %4)` and
+   `cqrt_free(%h_op3)`. Injection matrix over it: **`clean` PASS, 0 MISSED, 0 DIRTY** across all 17
+   mutations, and re-run over the whole accept set (**45** files after the addition) **0 MISSED /
+   0 DIRTY**, `extra_ry` caught by **RYCNT on 27** and **CHECK on 18**.
+3. **No e2e slice added** — the lens measured that the e2e layer is blind to this mutation (both
+   round-4 goldens still match on the mutant), so a slice would pin nothing the lit fixture does not.
+   ⚠ The mutant itself is the LENS's measurement and is NOT in the tree; nothing here rebuilds it.
+   What is in the tree is the property it breaks, asserted two ways.
+
+##### F-C1E-2 — the preheader op whose PARENT has a second unlowered tainted user still leaks
+
+RE-MEASURED for this record (full pipeline, STRICT 2b, `main` 258d974 vs this branch; trace counts
+are `cq_template_{and,lshr}_i32_hl` MINTS / `_hl_unc` DISCHARGES):
+
+| reproducer (`inc1-records/c1-round4/c1e_…`) | `main` rolled | this branch rolled | unrolled twin | rolled trace |
+|---|---|---|---|---|
+| `a1_head_add_read_by_loop` | 4/0, 44 | 4/0, 44 | 4/4, 52 | **byte-IDENTICAL** |
+| `a2_source_p_preadd` | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a3_chainfinal_preadd` | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a9_out_prevalue_measured` | 4/0, 45 | 4/0, 45 | 4/4, 53 | **byte-IDENTICAL** |
+| `a11_select_head_add` | 4/0, 44 | 4/0, 44 | 4/4, 52 | **byte-IDENTICAL** |
+| `a4_out_two_loops` | 8/0, 73 | 8/0, 73 | 8/8, 91 | **byte-IDENTICAL** |
+| `a17_out_two_loops_nofold` | 8/0, 73 | **8/4, 81** | DECLINES on both binaries | main ≠ branch — a strict IMPROVEMENT |
+| `a16_source_p_preadd_diffusion` | DECLINES | DECLINES | DECLINES | — |
+
+MECHANISM: `classifyInPlaceReassignment` refuses the preheader op at **G7 arm (e)** (an unlowered
+tainted `mul`/`and` user of `P`) or at **G6** (the merge's copies are emitted AFTER the pre-op, so
+`provablyBefore` fails), so the commit never marks it, the op lowers OUT of place onto a fresh rail,
+and `invariantRegisterRoots`' peel — which walks only `InPlace` ops — stops short. **Not a wrong
+unitary**: `a16`, the diffusion variant of `a2`, declines loudly (`cq controlled lowering: control
+flow under quantum control`) on `main`, on the pre-rebase round-4 binary and here. STRICT 2b is
+`0 violation(s), 0 unproven` on every accepting row, which is the class's whole hazard — a
+TEMPLATE-minted rail has no `cqrt_alloc` for the checker to count.
+
+⚠ **ONE REFINEMENT TO THE LENS'S OWN WORDING**, measured separately here: F-C1E-2 groups
+"`a4`/`a17` — 8/0 on main, 8/4 on the subject". That is **`a17` alone**; `a4` is 8/0 on BOTH with
+byte-identical rolled traces, and the two sources differ by one token (`p = p + 5` vs `p = p ^ 5`).
+`a17` additionally has **no faithful twin** — its unrolled spelling DECLINES `cq controlled
+lowering: condition predates a non-diagonal gate under quantum control` on every binary.
+
+##### F-C1E-3 — four of the lens's attack twins are UNFAITHFUL, not defects
+
+`p ^ c` and `p + c` with `c`'s low bits clear let `-O1` DISTRIBUTE the per-bit test onto the PRE-op
+register in the UNROLLED spelling ONLY, so the two sources stop being the same program (measured in
+the traces: `cq_template_and_i32_hl(h4, 1)` reads the PRE-op rail on the unrolled side and the
+post-op rail on the rolled side). Members: `a8` (`^6`), `a10` (`+7; ^6`), `a15` (`+7; +5` folded to
+`add %out, 12`) and `a17`. This is the documented OQ-27 / `m_xor_range` quarantine class and
+CLAUDE.md's own `addpost` precedent — **recorded here so a later round does not file them as
+compiler defects**. `q4b`'s `+7` is immune because 7 has all its low bits set.
+
+##### F-C1E-4 — the rebase record's own grep
+
+`inc1-records/session-82e6b530/rebase_c1d.md` asserted
+`grep -rn 'session-adc5590a/fix_c1d.md' --include='*.md' .` → **0 hits**. MEASURED on the subject:
+**5**, all prose — the notes' §3.15 paragraph, `BRIEF_rebase_c1d.md`, and three lines of the
+committed record itself, INCLUDING the sentence asserting 0. The DELETION is correct
+(`ls …/session-adc5590a/fix_c1d.md` → no such file) and **no live cross-reference points at the
+missing path**; only the claim was stale, because the file that makes it is itself committed under
+`.md`. Corrected in place.

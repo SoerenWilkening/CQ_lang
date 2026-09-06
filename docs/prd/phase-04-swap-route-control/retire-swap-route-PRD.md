@@ -437,6 +437,24 @@ arm-class-independent; the workaround is a body gate on `q` or an opaque thresho
 Note (ii) is why D4's idiom uses a DERIVED per-bit condition: `(q>>i)&1` is loop-VARIANT
 even when `q` is not.
 
+⚠ **AND THE LENS ON THE REBASED ROUND-4 TREE ADDED A THIRD (2026-09-06, `review_c1e`
+finding F-C1E-2, verdict CLEAR-WITH-ITEMS): a preheader in-place op whose PARENT has a
+SECOND *unlowered tainted* user is refused by the M-C fence itself — G7 arm (e), or G6
+when the merge's copies are emitted after the pre-op — so the commit never marks it and
+the O(K) which-path leak stays.** SEVEN measured spellings, all `clang -O1` plain C, all
+ACCEPT, and **byte-identical to `main` 258d974 on six of them** (`a1` a dtzb head read by
+the loop 4/0 44 vs twin 4/4 52 · `a2` the preadd on the value arm's SOURCE `p` 4/0 45 vs
+4/4 53 · `a3` the preadd on the CHAIN-FINAL 4/0 45 · `a9` the pre-op value measured later,
+a CORRECT G6 refusal · `a11` the same over a 4.4 select · `a4` a merge `%out` feeding TWO
+loops 8/0 73 vs 8/8 91); on the seventh, `a17`, round 4 strictly IMPROVES it (8/0 → **8/4**,
+the first loop discharges). **Round 4 neither introduced nor widened this class**, and the
+diffusion variant that would make it a wrong unitary (`a16`) **DECLINES loudly** on every
+binary (`cq controlled lowering: control flow under quantum control`), so it is a LEAK —
+Rule-6 safe, structurally invisible to STRICT stage 2b (a TEMPLATE-minted rail has no
+`cqrt_alloc` to count). It is **OQ-C1D-1's class one shape over**, disclosed not fixed;
+reproducers `inc1-records/c1-round4/c1e_a{1,2,3,4,9,11,16,17}_*.c`, narrative notes §3.15,
+tracked on bd `test_C_libtooling-3qlq.13`.
+
 **E3 — §6.3's "an arm with N>1 `cq_phi` calls" decline is NARROWED: the DIAMOND
 spelling ACCEPTS.** N calls in one arm emit **N `cqrt_rz_i1` gates on the one flag**,
 in source order, with one mint / strip / free and one `cqrt_x` bracket pair. Nothing
