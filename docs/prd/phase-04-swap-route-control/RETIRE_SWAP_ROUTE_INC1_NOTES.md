@@ -2394,9 +2394,11 @@ compiler defects**. `q4b`'s `+7` is immune because 7 has all its low bits set.
 ##### F-C1E-4 — the rebase record's own grep
 
 `inc1-records/session-82e6b530/rebase_c1d.md` asserted
-`grep -rn 'session-adc5590a/fix_c1d.md' --include='*.md' .` → **0 hits**. MEASURED on the subject:
-**5**, all prose — the notes' §3.15 paragraph, `BRIEF_rebase_c1d.md`, and three lines of the
-committed record itself, INCLUDING the sentence asserting 0. The DELETION is correct
+`grep -rn 'session-adc5590a/fix_c1d.md' --include='*.md' .` → **0 hits**. MEASURED by the lens on
+the subject: **5**, all prose — the notes' §3.15 paragraph, `BRIEF_rebase_c1d.md`, and three lines
+of the committed record itself, INCLUDING the sentence asserting 0. Re-measured after THIS
+paragraph was written: **7**, for the same reason — a `.md` file cannot assert its own absence
+from a `--include='*.md'` grep, and each retelling adds hits. The DELETION is correct
 (`ls …/session-adc5590a/fix_c1d.md` → no such file) and **no live cross-reference points at the
 missing path**; only the claim was stale, because the file that makes it is itself committed under
 `.md`. Corrected in place.

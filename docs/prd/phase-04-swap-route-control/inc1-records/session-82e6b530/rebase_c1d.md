@@ -41,7 +41,17 @@ MEASURED state before the rebase:
 `diff …/session-adc5590a/fix_c1d.md …/session-adc5590a/c1-round4/fix_c1d.md` → **no output, both 298
 lines, IDENTICAL** (both carry the build-currency addendum). `git rm`'d the branch's copy; the ONE
 cross-reference (`RETIRE_SWAP_ROUTE_INC1_NOTES.md:1976`) now points at `…/c1-round4/fix_c1d.md` and
-names the lens beside it. `grep -rn 'session-adc5590a/fix_c1d.md' --include='*.md' .` → **0 hits**.
+names the lens beside it.
+⚠ **CORRECTED by the lens on this tree (`review_c1e` F-C1E-4, applied by `docs_c1e`).** This line
+said `grep -rn 'session-adc5590a/fix_c1d.md' --include='*.md' .` → **0 hits**. It is not 0 and
+cannot be: the lens measured **5** and, after §3.15 gained the paragraph recording this very
+finding, `docs_c1e` re-measured **7** — every one of them PROSE (the notes' §3.15 text,
+`BRIEF_rebase_c1d.md`, and lines of this record itself, including the sentence that asserted 0).
+What the grep was reaching for is TRUE and is now stated directly: the file is gone
+(`ls …/session-adc5590a/fix_c1d.md` → No such file or directory) and **no live cross-reference
+points at the missing path** — the one that did, `RETIRE_SWAP_ROUTE_INC1_NOTES.md:1976`, was
+re-pointed at `…/c1-round4/fix_c1d.md` in this same commit. A `.md` file cannot assert its own
+absence from a `--include='*.md'` grep.
 
 ### Reproducer duplication (kept, cross-referenced)
 `inc2-records/` carries 14 of the same basenames; `diff -q` on `q4b_preadd_{rolled,unrolled}.c`,
