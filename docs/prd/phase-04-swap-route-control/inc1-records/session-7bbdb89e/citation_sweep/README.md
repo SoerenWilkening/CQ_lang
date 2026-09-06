@@ -9,7 +9,7 @@ asserted — the same complaint the round-2 lens raised about `tu_exth.c` (F-E2-
 | file | what it is |
 |---|---|
 | `citation_sweep.py` | every `(LoopLowering\|ArithLowering\|OpcodeLowering)(.cpp)?:<n>` citation **plus the bare `` `:<n>` `` CONTINUATIONS these docs write** (attributed to the last file named on the same line), across the notes, the PRD, `CLAUDE.md`, `ROADMAP.md`, the three edited sources and the 16 new fixtures. Prints the SUBJECT text at line `n`, the `main` text at line `n`, and where `main`'s line `n` MOVED to (a `difflib` line map) |
-| `citation_verdicts.txt` | the HAND adjudication, one row per citation: `OK` / `MISS-INTRODUCED` / `MISS-PREEXISTING` / `QUOTED`. The script only COUNTS; it never decides |
+| `citation_verdicts.txt` | the HAND adjudication (71 rows), one row per citation: `OK` / `MISS-INTRODUCED` / `MISS-PREEXISTING` / `QUOTED`. The script only COUNTS; it never decides |
 | `sweep_BEFORE_beb34e0.txt` | the run on the pre-edit tree (`beb34e0`, edits `git stash`ed): **62 scanned — 43 OK, 10 MISS-INTRODUCED, 9 MISS-PREEXISTING, 0 UNADJUDICATED** |
 | `sweep_AFTER.txt` | the run on this commit: **61 scanned — 43 OK, 0 MISS-INTRODUCED, 9 MISS-PREEXISTING, 9 QUOTED, 0 UNADJUDICATED** |
 

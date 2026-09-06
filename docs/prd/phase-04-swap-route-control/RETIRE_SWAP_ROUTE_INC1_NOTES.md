@@ -2888,12 +2888,13 @@ docs/comments/one new one-line TU only; `cq-opt` again `cmp`-BYTE-IDENTICAL to
   `LoopLowering.cpp:156`**. FIXED by naming the FUNCTION at all of them. Round 3 also **widened the
   sweep to all three edited sources and to the bare `` `:<n>` `` CONTINUATIONS these docs write**
   (`| OpcodeLowering:341 / :428 |`, `(LoopLowering:2187, :2617)`) — a file-qualified-only regex
-  misses 4 of the 10 — and found **TWO MORE the lens could not see**, in §3.14's own reader table:
+  finds 8 of the 10 and MISSES 2 (MEASURED by re-running that regex over `beb34e0`) — and found
+  **TWO MORE the lens could not see**, in §3.14's own reader table:
   the citations then reading `OpcodeLowering:341` / `:428`, which on `main` were `lowerOps` Phase
   1's M-C guard conjunct and its Phase-2 `rewriteInPlaceValueRail` dispatch, and now name a comment
   and a different comment. Both are FIXED by naming those two, so this paragraph is the only place
   the old numbers survive — **as quotations of a retired citation, not as claims about this tree**.
-  MEASURED by `inc1-records/session-7bbdb89e/citation_sweep/` (the script, the 61-row
+  MEASURED by `inc1-records/session-7bbdb89e/citation_sweep/` (the script, the 71-row
   hand-adjudicated verdict file, and BOTH raw runs — committed, so this number is re-derivable):
   **BEFORE (tree at `beb34e0`) 62 citations scanned — 43 OK, 10 MISS-INTRODUCED, 9
   MISS-PREEXISTING; AFTER 61 scanned — 43 OK, 0 MISS-INTRODUCED, 9 MISS-PREEXISTING, 9 QUOTED**
@@ -2908,7 +2909,8 @@ docs/comments/one new one-line TU only; `cq-opt` again `cmp`-BYTE-IDENTICAL to
   the two `peelInPlaceBase(…, AsLowered=true)` call sites, which are really in
   `invariantRegisterRootsImpl` and in `markIfRailLocal`. None sits in a paragraph this branch
   edited, and each was wrong on `main` too — so fixing them here would be a claim this round did
-  not measure the history of. The verdict file `citation_verdicts.txt` carries all 62 rows.
+  not measure the history of. The verdict file `citation_verdicts.txt` carries all 71 rows — the
+  62 of the BEFORE run plus the 9 `QUOTED` this subsection itself mints.
 * **F-E2-3** — the `strictimm` partition above said `15 add` and counted the `@g` load as a sixth
   class. RE-COUNTED independently from the lens's own artefact: **42 `sub` · 19 `load volatile`
   (the `@g` load among them) · 16 `add` · 3 `cqrt_measure_i32` · 2 Argument = 82**. Self-cancelling;
