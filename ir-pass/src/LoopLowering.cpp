@@ -2936,14 +2936,40 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
 //       `%out`} and stops; there is no edge from `%out` back to the copies that
 //       wrote it, let alone to the chain that fed them.
 //
-// MEASURED rather than argued, on the rebased tree:
-// `ir-pass/test/control_phase_kickback_mixed_value_merge_preadd_inloop.ll`'s
-// `HCNT` prefix asserts that the Inc-2 chain HEAD is emitted OUT of place onto a
-// fresh rail (`cq_template_mul_i32_hl(%p, 5)` — `clang -O1` reassociates
-// `(p+3)*5` into `p*5 + 15`, so it is a `mul`, not an `add`) and that `p`'s own
-// rail carries NO in-place `cqrt_addc`/`cqrt_xorc` anywhere in the module, while
-// the SAME module's `%out` rail carries exactly one. Its e2e pair is
-// `slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c`.
+// MEASURED rather than argued, on the rebased tree — AND SAY WHICH FIXTURE
+// MEASURES WHAT, because the first version of this paragraph cited the wrong one
+// and an independent lens caught it (bd 3qlq, the lens on the REBASED round-4
+// tree, finding **F-C1E-1**; it built a binary with BOTH G6 and G7 made
+// unreachable and re-ran the family against it).
+//
+//   * THE G6/G7 NET ITSELF is pinned by
+//     `ir-pass/test/control_swap_value_ifelse_head_out_of_place.ll` — the fixture
+//     `ArithLowering.cpp`'s own CONSUMER-2 comment names — which goes **RED
+//     (CHECK, NOROUTE)** on that mutant, with its two controlled copies collapsing
+//     onto ONE register. That is the artefact to re-derive before relaxing either
+//     clause.
+//   * `control_phase_kickback_mixed_value_merge_preadd_inloop.ll`'s `HCNT` prefix
+//     asserts that the Inc-2 chain HEAD of the `q4b` shape is emitted OUT of place
+//     onto a fresh rail (`cq_template_mul_i32_hl(%p, 5)` — `clang -O1`
+//     reassociates `(p+3)*5` into `p*5 + 15`, so it is a `mul`, not an `add`) and
+//     that `p`'s own rail carries NO in-place `cqrt_addc`/`cqrt_xorc` anywhere in
+//     the module, while the SAME module's `%out` rail carries exactly one. ⚠ READ
+//     THAT FOR WHAT IT IS: in THAT module the head is out of place because
+//     `inPlaceValueRailOperand` admits `add`/`xor` only, so **G2's SHAPE half
+//     refuses a `mul` whatever G6/G7 answer** — the fixture stays GREEN on the
+//     G6/G7-disabled mutant, with its emitted copies byte-unchanged, so its
+//     `HCNT-NOT` lines cannot falsify a relaxation of the pair. It pins the
+//     *property* (head out of place, `%out` mutated in place beside it) on the
+//     shape that made the commit fire; it does not pin the *net*. Its e2e pair is
+//     `slice_control_phase_perbit_loop_value_merge_preadd{,_unrolled}.c`, which the
+//     lens measured is blind to the same mutation (both goldens still match).
+//   * `control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll` is the
+//     one that DOES discriminate on this path: same idiom, but its chain head is a
+//     dtzb-shaped `add` (`p + 3`), inside `inPlaceValueRailOperand`'s shape, so
+//     nothing but G6/G7 stands between it and an in-place `cqrt_addc_i32` on `p`'s
+//     rail. Its `HCNT` pins the head out of place and its `CSRC` pins the two
+//     `cqrt_copy_i32_controlled` reading DISTINCT rails — the property the lens
+//     measured collapsing on the mutant.
 //
 // SO THE COMMIT NOW ASKS EXACTLY TWO THINGS: the immediate is a `Constant`
 // ((1a), below — MONOTONE, a property of the IR class), and
