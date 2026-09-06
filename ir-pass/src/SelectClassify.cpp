@@ -230,6 +230,33 @@ bool taintedLineageHasFreeze(Value *Op, const TaintSet &Taint) {
   return false;
 }
 
+// ⚠ VACUOUS SINCE `main` a3c1513 (bd test_C_libtooling-3qlq Inc 1), MEASURED —
+// and KEPT, per the predicate note above. Both `return true` sites below are
+// `isPhiCall`, which tests the prefix `"cq_phi_"` that no shipped call carries
+// (the register form is retired; `CQ.h` declares `void cq_phi(double)`), so this
+// function now always returns false and gate 5's PHASE half has no subject.
+// Recorded by the Inc-2 Rule-13 round-2 review as F-I2-4.
+//
+// WHY THAT IS SAFE — the guarded class is structurally gone, not merely
+// unrepresented. The WI-3 hazard was "a select OPERAND whose backward lineage
+// contains an Rz, CNOT-copied by the merge, which copies a basis LABEL and not a
+// phase". A branch phase has NO REGISTER OPERAND (owner decision D1), so no
+// value can have a `cq_phi` in its lineage at all; and an uncontrolled or
+// classically-controlled one is DELETED as a global phase (D2).
+//
+// The successor shape — a register carrying relative phases IMPARTED by a
+// kickback (`if (c(q)) cq_phi(θ)` leaves `q` in `Σ_x a_x e^{iθ[c(x)]}|x⟩`) — is
+// NOT this hazard, and the round-2 review measured it: `q1k_disjoint_phase_then_value`
+// (a kickback region followed by a value merge) ACCEPTS and is BYTE-IDENTICAL to
+// its pre-hoisted select twin (finding F-I2-5). The argument is linearity — the
+// merge is a permutation into a FRESH |0⟩ ancilla, so amplitudes AND relative
+// phases ride the branch they belong to; a basis copy loses a phase only when the
+// phase sits BETWEEN two branches carrying the SAME label, which a per-branch
+// kickback never produces.
+//
+// So: do not delete this (freeze-time dead-code list), and do not RE-ARM it by
+// teaching `isPhiCall` the new spelling — see the predicate note above for why
+// that would read the wrong operand.
 bool operandCarriesPhase(Value *Op, const TaintSet &Taint) {
   // WIRE-ANCHORED since the kjd1 Rule-13 implementation clearance (coherence-
   // lens blocker; FP_SELECT_CLEARANCE.md): the original walk was SSA-anchored
@@ -386,6 +413,33 @@ bool hasCoherentDownstreamUse(Value *Op, SelectInst *Sel, TaintSet &Taint) {
 // new `cq_template_add` handle distinct from `q`) has a disjoint closure →
 // `(q>5)?q:q+1` accepts; the hoisted-in-place family (two `cq_phi`s of one base)
 // intersects → decline.
+// ⚠ ITS CLOSURE IS VACUOUS SINCE `main` a3c1513 (bd test_C_libtooling-3qlq
+// Inc 1), MEASURED — and KEPT, per the predicate note above. The loop below
+// extends `Closure` only through `isPhiCall` arg-0 links, and `diagonalAliasHit`
+// (`ArmClassify.cpp`) walks `B`'s own `cq_phi` arg-0 chain; neither prefix
+// matches any shipped call, so `Closure` degenerates to `{A}` and the whole gate
+// degenerates to POINTER EQUALITY `A == B`. Recorded by the Inc-2 Rule-13
+// round-2 review as F-I2-4.
+//
+// WHY THAT IS SAFE. The alias this closure was built for is "two `cq_phi`s of one
+// base, RAUW'd to ONE i32 handle by rotation lowering" — a spelling that no
+// longer exists (D1: `cq_phi` carries no register). The nearest LIVE analogue is
+// the `cq_theta`-shaped alias, and it does not reach this gate: MEASURED on all
+// three binaries (pre-3qlq oracle 52d7764, `main` a3c1513, this branch),
+// `int t = cq_theta(q,0.9); p = (q>5) ? t : q;` DECLINES
+// `cq controlled lowering: condition predates a non-diagonal gate under quantum
+// control` at gate 2c — earlier than here, and identically before and after
+// Inc 1/Inc 2 (round-2 review F-I2-4; re-measured by `fix_inc2_r2`, reproducer
+// `$SP/progress/fix_inc2_r2_work/p/g6_theta_alias.c`). ANALYTIC, not measured
+// (2c fires first, so the shape cannot be observed past it): a theta alias that
+// survived 2c would be refused by gate 5's channel-B walk, which is NOT vacuous —
+// asked of the `q` operand, `rotationAncestry(q)` is `{q, seed}` while the
+// sibling `t = cq_theta(q,·)` is a rotation user of `q` OUTSIDE it, so
+// `hasCoherentDownstreamUse` returns true.
+//
+// Read this as a gate whose subject was retired, not as a gate that was proven
+// unnecessary: if a register-carrying diagonal rotation is ever reintroduced, the
+// closure must be re-armed against ITS spelling, exactly as written here.
 bool operandsAlias(Value *A, Value *B) {
   if (isa<Constant>(A) || isa<Constant>(B))
     return false;  // a classical literal never aliases a quantum handle.
