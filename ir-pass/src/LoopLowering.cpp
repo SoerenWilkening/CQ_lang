@@ -157,8 +157,17 @@ Value *inPlaceValueRailOperand(BinaryOperator *BO, const TaintSet &taint) {
 namespace {
 
 // bd test_C_libtooling-eqpx — THE ONE WAY TO JOIN `taint.InPlaceRailOps`, for all
-// FOUR writers (`emitBreakForward` :1698, `tryCaseA`'s ACCEPT :2281,
-// `collapseRailPhisIn` step (3) :2679, `commitOutOfLoopInPlaceOps` :3084).
+// FOUR writers. ⚠ SINCE THIS HELPER EXISTS, `InPlaceRailOps.insert(` HAS EXACTLY
+// ONE SITE (the line below), so the command that enumerates the writers is
+// `grep -n 'markInPlaceRailOp(' ir-pass/src/LoopLowering.cpp` — MEASURED, four
+// callers (the round-1 lens's finding F-E1-1 corrected the stale `insert` grep and
+// the four pre-helper line numbers that stood here):
+//     W1 `emitBreakForward`            `:1738`  (7.4 break)
+//     W2 `tryCaseA`'s ACCEPT           `:2321`  (round 1)
+//     W3 `collapseRailPhisIn` step (3) `:2719`  (round 2)
+//     W4 `commitOutOfLoopInPlaceOps`   `:3124`  (the predicted set)
+// Cite the four FUNCTION NAMES in preference to the numbers: the numbers are true
+// as of this edit and a comment edit above any of them moves all four.
 //
 // Membership and the proven rail's OPERAND INDEX are written in ONE statement so
 // they cannot drift: `lowerOps` Phase 1 re-verifies the index against a fresh

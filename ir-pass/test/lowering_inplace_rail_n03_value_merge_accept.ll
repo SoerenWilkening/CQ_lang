@@ -26,6 +26,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=IMMCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 
 ; The hoisted arm chain, the Inc-2 controlled-copy merge, then the Q+Q xor.
 ; CHECK: %[[M:.*]] = call i32 @cq_template_mul_i32_hl(i32 %{{.*}}, i32 3)
@@ -42,6 +43,22 @@
 ; NOROUTE-NOT: in-place rail op no longer provable at lowering
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering
 ; NOROUTE-NOT: @cq_theta
+
+; ── round-1 lens F-E1-3: the accept controls under-asserted. 48 injections
+; over these 8 fixtures (a rail-immediate `cqrt_xorc_i32(i32 %h, i32 %rail)`,
+; an extra out-of-place `cq_template_xor_i32`, an extra `cqrt_free`, each at
+; head and tail) were caught 20/48 — every free MISSED by all 8, because no
+; accept fixture carried a free count. The blocks below close that; the counts
+; are DERIVED from this fixture's own pass output, not guessed.
+; NOROUTE-NOT: call void @cqrt_xorc_i
+; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call void @cqrt_addc_i
+; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call i32 @cq_template_add_i32(
+;
+; FCNT — whole-file EXACT free count, MEASURED 2 (`grep -c 'call void @cqrt_free(' <pass output>`).
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/n03_valuemerge_xor_noregion.c'
 source_filename = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/n03_valuemerge_xor_noregion.c"

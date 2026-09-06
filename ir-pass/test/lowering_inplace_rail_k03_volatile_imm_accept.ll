@@ -22,6 +22,8 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=IMMCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The volatile load stays, and its result is the classical immediate.
 ; CHECK: %[[R:.*]] = call i32 @cqrt_alloc_i32(i32 %0)
@@ -38,6 +40,35 @@
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering
 ; NOROUTE-NOT: @cq_theta
 ; NOROUTE-NOT: call i32 @cq_template_
+
+; ── round-1 lens F-E1-3: the accept controls under-asserted. 48 injections
+; over these 8 fixtures (a rail-immediate `cqrt_xorc_i32(i32 %h, i32 %rail)`,
+; an extra out-of-place `cq_template_xor_i32`, an extra `cqrt_free`, each at
+; head and tail) were caught 20/48 — every free MISSED by all 8, because no
+; accept fixture carried a free count. The blocks below close that; the counts
+; are DERIVED from this fixture's own pass output, not guessed.
+; (No `xorc` rail-immediate negative: THIS fixture's own legitimate gate is
+; `cqrt_xorc_i32(i32 %h, i32 %2)` with that operand a `load volatile i32, ptr @g` — the non-Constant
+; classical immediate dtzb deliberately accepts (`LoopLowering.cpp:1528-1537`)
+; and the reason the fix is G2-alone and NOT a writer-side `isa<Constant>(Imm)`
+; — so `i32 %…, i32 %…` would fire on the very gate this control keeps. The
+; XCNT block below pins the COUNT instead, whole-file, which is what catches an
+; injected extra gate at either end. `ctlA`, whose immediate is the literal 7,
+; is the one fixture of the eight that CAN carry both rail-immediate negatives.)
+; NOROUTE-NOT: call void @cqrt_addc_i
+; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call i32 @cq_template_xor_i32(
+; NOROUTE-NOT: call i32 @cq_template_add_i32(
+;
+; FCNT — whole-file, MEASURED: this module frees NOTHING.
+; FCNT-NOT: call void @cqrt_free(
+;
+; XCNT — whole-file EXACT in-place-gate count, MEASURED 1. The COUNT is the
+; prefix's FIRST directive, so it matches the first occurrence in the file and
+; the trailing NOT covers everything after it: an injected gate is caught at
+; head AND at tail. NEVER put this positive count in NOROUTE (Inc-3 F-L6-1).
+; XCNT-COUNT-1: call void @cqrt_xorc_i32(
+; XCNT-NOT: call void @cqrt_xorc_i32(
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/k03_xor_volatile_imm.c'
 source_filename = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/k03_xor_volatile_imm.c"

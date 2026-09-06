@@ -28,6 +28,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=IMMCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 
 ; The sunk recurrence: one mul rail off the merge, one out-of-place Q+Q add, and
 ; the mul rail discharged and freed.
@@ -45,6 +46,22 @@
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering
 ; NOROUTE-NOT: @cq_theta
 ; NOROUTE-NOT: @cq_phi
+
+; ── round-1 lens F-E1-3: the accept controls under-asserted. 48 injections
+; over these 8 fixtures (a rail-immediate `cqrt_xorc_i32(i32 %h, i32 %rail)`,
+; an extra out-of-place `cq_template_xor_i32`, an extra `cqrt_free`, each at
+; head and tail) were caught 20/48 — every free MISSED by all 8, because no
+; accept fixture carried a free count. The blocks below close that; the counts
+; are DERIVED from this fixture's own pass output, not guessed.
+; NOROUTE-NOT: call void @cqrt_xorc_i
+; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call void @cqrt_addc_i
+; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call i32 @cq_template_xor_i32(
+;
+; FCNT — whole-file EXACT free count, MEASURED 4 (`grep -c 'call void @cqrt_free(' <pass output>`).
+; FCNT-COUNT-4: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

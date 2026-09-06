@@ -1,5 +1,5 @@
 ; lowering_reject_inplace_rail_stale_w1_xor_bareout.ll — DECLINE. bd
-; test_C_libtooling-eqpx (P1). W1 (`emitBreakForward`, `LoopLowering.cpp:1698`) x
+; test_C_libtooling-eqpx (P1). W1 (`emitBreakForward`, `LoopLowering.cpp:1738`) x
 ; the BARE 6.5 `%out` — the (writer x immediate-class) cell that shows the E1
 ; growth event (`lowerControlRegions`, `CQLoweringPass.cpp:376`) reaches the break
 ; path too, with no derivation anywhere in the program.
@@ -21,9 +21,33 @@
 ;     call void @cqrt_xorc_i32(i32 %h2, i32 %out)   ; reverse-play <- RAIL IN IMM
 ; `opt` exit 0, verify-clean, 222 trace lines.
 ;
+; ⚠ WHICH MECHANISM PINS WHAT — round-1 lens finding F-E1-2, MEASURED, and read
+; it before touching the RUN line. On a `DiagnosticInfoUnsupported(DS_Error)`
+; decline `cq-opt` writes **0 BYTES TO STDOUT** (measured:
+; `cq-opt -load-pass-plugin … -passes=cq-lowering -S %s >out 2>err` -> rc 1,
+; `wc -c out` = 0, `err` = the one diagnostic line below plus a blank), and this
+; RUN line pipes `2>&1`. So FileCheck sees the diagnostic and NOTHING ELSE:
+; the `CHECK-NOT` pair below (`cqrt_xorc_i32`, `cq_template_xor_i32`) is
+; STRUCTURALLY UNABLE TO FIRE and is NOT what pins "no silent out-of-place
+; fallback". **THE `not` WRAPPER ON THE RUN LINE IS.** MEASURED with mutant M-B (the
+; decline replaced by `taint.InPlaceRailOps.erase(BO)` + fall-through to the
+; ordinary out-of-place lowering): all EIGHT of these decline fixtures go RED
+; (`lit -s` 1698 Passed / 8 Failed) and nothing else in the corpus moves. The
+; pair is KEPT as documentation of the forbidden output — the same house style
+; as the pre-existing (1b) fixture
+; `control_phase_kickback_reject_preloop_commit_stale.ll`, which carries the
+; identical vacuous pair — but it is documentation, not an assertion.
+;
+; ⚠ THE THREE `break reverse-play` NEGATIVES BELOW ARE A DIFFERENT CASE AND THEY
+; ARE LIVE: they name STDERR text, and stderr IS piped into FileCheck by `2>&1`,
+; so a second diagnostic emitted after ours by `lowerBreakReversePlay` would be
+; caught. Only the stdout-directed (IR-text) negatives are vacuous.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: in-place rail op no longer provable at lowering
 
+; (DOCUMENTATION OF THE FORBIDDEN OUTPUT, not a live assertion — F-E1-2 above:
+; stdout is empty on a decline, so these two can never fire. The `not` wrapper does it.)
 ; CHECK-NOT: cqrt_xorc_i32
 ; CHECK-NOT: cq_template_xor_i32
 

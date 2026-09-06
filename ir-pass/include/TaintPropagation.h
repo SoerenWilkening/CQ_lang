@@ -401,17 +401,19 @@ struct TaintSet {
   //
   // ⚠ THE WRITER ENUMERATION THAT USED TO STAND HERE WAS WRONG IN BOTH
   // DIRECTIONS, and the correction is MEASURED (bd `test_C_libtooling-eqpx`,
-  // `grep -n 'InPlaceRailOps.insert(' ir-pass/src/LoopLowering.cpp` — and today
-  // `markInPlaceRailOp(`, the one helper they all call): it read *"round 1's
+  // the command is `grep -n 'markInPlaceRailOp(' ir-pass/src/LoopLowering.cpp`,
+  // the ONE helper they all call — NOT `InPlaceRailOps.insert(`, which since that
+  // helper exists returns a single site inside it, the round-1 lens's F-E1-1):
+  // it read *"round 1's
   // `railRoot` marking, `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)"*, of
-  // which the first two are ONE SITE (`:2312`, whose loop body iterates
+  // which the first two are ONE SITE (`:2321`, whose loop body iterates
   // `railRoot`), and it omitted a FOURTH writer that is a measured member of this
-  // defect class — `emitBreakForward` (`:1729`, the 7.4 early-break path). The
-  // four are:
-  //     W1 `emitBreakForward`          `LoopLowering.cpp:1729`  (7.4 break)
-  //     W2 `tryCaseA`'s ACCEPT         `LoopLowering.cpp:2312`  (round 1)
-  //     W3 `collapseRailPhisIn` step (3) `LoopLowering.cpp:2710` (round 2)
-  //     W4 `commitOutOfLoopInPlaceOps` `LoopLowering.cpp:3115`  (this set)
+  // defect class — `emitBreakForward` (`:1738`, the 7.4 early-break path). The
+  // four are (line numbers true at this edit; the NAMES are the durable key):
+  //     W1 `emitBreakForward`          `LoopLowering.cpp:1738`  (7.4 break)
+  //     W2 `tryCaseA`'s ACCEPT         `LoopLowering.cpp:2321`  (round 1)
+  //     W3 `collapseRailPhisIn` step (3) `LoopLowering.cpp:2719` (round 2)
+  //     W4 `commitOutOfLoopInPlaceOps` `LoopLowering.cpp:3124`  (this set)
   //
   // The other THREE writers mark ops on a rail they have just PROVED — a closed
   // self-cycle with its own fan-out and record fences — so their marking is a

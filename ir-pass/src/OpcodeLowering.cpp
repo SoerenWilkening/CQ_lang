@@ -374,12 +374,17 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           // shipped ones included. G5 answers a question those writers
           // deliberately answer differently; G2 is the one they actually asked.
           //
-          // FOR WHOM, by name and line (`grep -n 'InPlaceRailOps.insert('
-          // ir-pass/src/LoopLowering.cpp` — FOUR sites, not three):
-          //   W1 `emitBreakForward`      `LoopLowering.cpp:1698` (7.4 break)
-          //   W2 `tryCaseA`'s ACCEPT     `LoopLowering.cpp:2281` (round 1)
-          //   W3 `collapseRailPhisIn`(3) `LoopLowering.cpp:2679` (round 2)
-          //   W4 `commitOutOfLoopInPlaceOps` `:3084` — EXCLUDED here, it has its
+          // FOR WHOM, by name — and the command is
+          // `grep -n 'markInPlaceRailOp(' ir-pass/src/LoopLowering.cpp` (FOUR
+          // callers, not three). ⚠ NOT `InPlaceRailOps.insert(`: since the four
+          // writers were folded into the one `markInPlaceRailOp` helper that
+          // grep returns a SINGLE site, inside the helper itself — the round-1
+          // lens's finding F-E1-1, which is also why the numbers below are
+          // written as "true at this edit" and the NAMES are the durable key:
+          //   W1 `emitBreakForward`      `LoopLowering.cpp:1738` (7.4 break)
+          //   W2 `tryCaseA`'s ACCEPT     `LoopLowering.cpp:2321` (round 1)
+          //   W3 `collapseRailPhisIn`(3) `LoopLowering.cpp:2719` (round 2)
+          //   W4 `commitOutOfLoopInPlaceOps` `:3124` — EXCLUDED here, it has its
           //      own stronger re-ask twenty lines above and being adjudicated by
           //      two different fences is how one op gets two answers.
           // Each of W1-W3 proves THE RAIL (a closed self-cycle, its fan-out, its

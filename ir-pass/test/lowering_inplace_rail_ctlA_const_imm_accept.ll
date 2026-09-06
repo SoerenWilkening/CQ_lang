@@ -18,6 +18,8 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=IMMCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The rolled body's in-place gate, with a REAL constant in the immediate slot.
 ; CHECK: %[[Q:.*]] = call i32 @cqrt_alloc_i32(
@@ -37,8 +39,36 @@
 ; NOROUTE-NOT: pre-loop in-place op no longer provable at lowering
 ; NOROUTE-NOT: @cq_theta
 ; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: call void @cqrt_xorc_i32(i32 %{{.*}}, i32 %{{.*}})
-; NOROUTE-NOT: call void @cqrt_addc_i32(i32 %{{.*}}, i32 %{{.*}})
+
+; ── round-1 lens F-E1-3: the accept controls under-asserted. 48 injections
+; over these 8 fixtures (a rail-immediate `cqrt_xorc_i32(i32 %h, i32 %rail)`,
+; an extra out-of-place `cq_template_xor_i32`, an extra `cqrt_free`, each at
+; head and tail) were caught 20/48 — every free MISSED by all 8, because no
+; accept fixture carried a free count. The blocks below close that; the counts
+; are DERIVED from this fixture's own pass output, not guessed.
+; ⭐ THIS fixture — alone among the eight — can carry BOTH stems' rail-immediate
+; negative, because its own legitimate gate's immediate is the LITERAL `i32 7`:
+; a `ConstantInt` prints without a `%`, so `i32 %…, i32 %…` cannot match it and
+; the negative says exactly "no rail in the immediate slot", whole-file, for
+; either stem. (`k01`/`k02`/`k03` cannot — their immediate is an Argument or a
+; volatile load, i.e. the non-Constant classical immediate dtzb deliberately
+; accepts, so the same pattern would fire on the gate the control exists to keep.
+; They pin the count instead — see their XCNT blocks.)
+; NOROUTE-NOT: call void @cqrt_xorc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call void @cqrt_addc_i
+; NOROUTE-NOT: call void @cqrt_addc_i{{[0-9]+}}(i32 %{{.*}}, i32 %{{.*}})
+; NOROUTE-NOT: call i32 @cq_template_xor_i32(
+; NOROUTE-NOT: call i32 @cq_template_add_i32(
+;
+; FCNT — whole-file, MEASURED: this module frees NOTHING.
+; FCNT-NOT: call void @cqrt_free(
+;
+; XCNT — whole-file EXACT in-place-gate count, MEASURED 1. The COUNT is the
+; prefix's FIRST directive, so it matches the first occurrence in the file and
+; the trailing NOT covers everything after it: an injected gate is caught at
+; head AND at tail. NEVER put this positive count in NOROUTE (Inc-3 F-L6-1).
+; XCNT-COUNT-1: call void @cqrt_xorc_i32(
+; XCNT-NOT: call void @cqrt_xorc_i32(
 
 ; ModuleID = '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/ctlA_clean_xor_const.c'
 source_filename = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/7bbdb89e-f7ed-43f7-80e1-bda20ba33640/scratchpad/progress/fix_eqpx_work/p/ctlA_clean_xor_const.c"
