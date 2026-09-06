@@ -399,10 +399,23 @@ struct TaintSet {
   // `InPlaceRailOps` THAT `commitOutOfLoopInPlaceOps` PREDICTED, and therefore the
   // exact set `lowerOps` must RE-ASK.
   //
-  // The other three writers of `InPlaceRailOps` (round 1's `railRoot` marking,
-  // `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)) mark ops on a rail they
-  // have just PROVED — a closed self-cycle with its own fan-out and record
-  // fences — so their marking is a conclusion ABOUT THE RAIL.
+  // ⚠ THE WRITER ENUMERATION THAT USED TO STAND HERE WAS WRONG IN BOTH
+  // DIRECTIONS, and the correction is MEASURED (bd `test_C_libtooling-eqpx`,
+  // `grep -n 'InPlaceRailOps.insert(' ir-pass/src/LoopLowering.cpp` — and today
+  // `markInPlaceRailOp(`, the one helper they all call): it read *"round 1's
+  // `railRoot` marking, `tryCaseA`'s ACCEPT, `collapseRailPhisIn` step (3)"*, of
+  // which the first two are ONE SITE (`:2312`, whose loop body iterates
+  // `railRoot`), and it omitted a FOURTH writer that is a measured member of this
+  // defect class — `emitBreakForward` (`:1729`, the 7.4 early-break path). The
+  // four are:
+  //     W1 `emitBreakForward`          `LoopLowering.cpp:1729`  (7.4 break)
+  //     W2 `tryCaseA`'s ACCEPT         `LoopLowering.cpp:2312`  (round 1)
+  //     W3 `collapseRailPhisIn` step (3) `LoopLowering.cpp:2710` (round 2)
+  //     W4 `commitOutOfLoopInPlaceOps` `LoopLowering.cpp:3115`  (this set)
+  //
+  // The other THREE writers mark ops on a rail they have just PROVED — a closed
+  // self-cycle with its own fan-out and record fences — so their marking is a
+  // conclusion ABOUT THE RAIL.
   // `commitOutOfLoopInPlaceOps` is the one writer whose marking is a PREDICTION
   // of what `ArithLowering`'s M-C fence will answer at `lowerOps`, taken BEFORE
   // `repropagateControlMerges` has grown `taint.Tainted` and before the round-2
@@ -420,10 +433,19 @@ struct TaintSet {
   // stem from plain C — an immediate DERIVED from a 6.5/4.5 `%out`, tainted only
   // at `repropagateControlMerges`, emitted as `cqrt_xorc_i32(h1, 6)` where the
   // bare `6` is a template rail's HANDLE ID. PRE-EXISTING (it reproduces on the
-  // pre-3qlq oracle 52d7764), hence out of this round's scope and filed as bd
-  // `test_C_libtooling-eqpx`, whose proposed fix re-asks **G2 alone** for every
-  // `InPlaceRailOps` member. Do not read this set's narrowness as a proof that
-  // the other three writers are safe.
+  // pre-3qlq oracle 52d7764), hence out of that round's scope and filed as bd
+  // `test_C_libtooling-eqpx` — **FIXED (2026-09-06): `lowerOps` Phase 1 re-asks
+  // G2 ALONE (`inPlaceValueRailOperand`) under FINAL taint for every
+  // `InPlaceRailOps` member NOT in this set, and declines loudly with `cq loop
+  // lowering: in-place rail op no longer provable at lowering`.** The eqpx
+  // investigation also grew the disclosed class three ways: a FOURTH writer
+  // (above), the whole `add` stem (correct until then only because `-O1`'s
+  // exit-value rewrite closed-forms an affine add-recurrence out of the loop —
+  // four plain-C spellings and a one-opcode hand-IR mutation reach it), and a
+  // producer path needing no derivation at all (the BARE `%out`, tainted at
+  // `lowerControlRegions`, one pipeline stage EARLIER than
+  // `repropagateControlMerges`). Do not read this set's narrowness as a proof
+  // that the other three writers are safe — it never was one.
   //
   // Written and rolled back in lockstep with `InPlaceRailOps` by
   // `invariantRegisterRoots`; read ONCE, by `lowerOps` Phase 1. Empty for a module

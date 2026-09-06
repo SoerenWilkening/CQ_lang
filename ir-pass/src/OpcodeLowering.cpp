@@ -324,22 +324,23 @@ void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,
           // writers deliberately answer differently, being in-loop by
           // construction. That is a statement about THIS FENCE BODY.
           //
-          // ⚠ IT IS **NOT** A CLEAN BILL OF HEALTH FOR THE OTHER THREE, and the
-          // sentence that used to stand here — "the other three writers mark a
-          // rail they PROVED with their own fences" — was MEASURED FALSE as a
+          // ⚠ IT IS **NOT** A CLEAN BILL OF HEALTH FOR THE OTHER WRITERS, and
+          // the sentence that used to stand here — "the other three writers mark
+          // a rail they PROVED with their own fences" — was MEASURED FALSE as a
           // bound on this defect class (bd 3qlq Inc 1, round-3 lens finding
           // F-C1C-B; notes §3.12). Their fences prove the RAIL (a closed
           // self-cycle, its fan-out, its record reads); NOT ONE OF THEM PROVES
           // THE IMMEDIATE STAYS CLASSICAL, which is the input F-C1B-1 turned on.
-          // Through `tryCaseA` / `collapseRailPhisIn` step (3) the identical
-          // defect is reachable for the `xor` stem from plain C —
+          // Through `emitBreakForward` / `tryCaseA` / `collapseRailPhisIn` step
+          // (3) the identical defect is reachable for BOTH stems from plain C —
           // `cqrt_xorc_i32(h1, 6)` where the bare `6` is a template rail's HANDLE
           // ID — and it is PRE-EXISTING (it reproduces on the pre-3qlq oracle
-          // 52d7764 and on every binary of this epic), so it is out of this
-          // round's scope but NOT out of the class. Filed as bd
-          // `test_C_libtooling-eqpx`; the proposed fix is this same shape with
-          // **G2 alone** re-asked for every `InPlaceRailOps` member (G2 alone
-          // because G5 would always refuse an in-loop site), declining loudly.
+          // 52d7764 and on every binary of this epic), so it was out of THAT
+          // round's scope but never out of the class. Filed as bd
+          // `test_C_libtooling-eqpx` and **FIXED (2026-09-06) BY THE BLOCK
+          // IMMEDIATELY BELOW**: the same shape with **G2 alone** re-asked for
+          // every `InPlaceRailOps` member W4 did not commit (G2 alone because G5
+          // would always refuse an in-loop site), declining loudly.
           if (auto *BO = dyn_cast<BinaryOperator>(&I);
               BO && !inBennettClone &&
               taint.PreLoopCommittedInPlaceOps.count(BO)) {
