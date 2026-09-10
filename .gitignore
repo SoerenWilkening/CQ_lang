@@ -46,3 +46,7 @@ demo/
 
 # bd embedded-dolt gate lock — runtime artifact, never versioned
 .beads.gate.lock
+
+# Lab report: sources are committed, the PDF is built locally (owner 2026-09-10)
+docs/labreport/build/
+docs/labreport/labreport.pdf

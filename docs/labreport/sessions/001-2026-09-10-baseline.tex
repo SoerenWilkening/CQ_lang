@@ -1,0 +1,249 @@
+\labsessionheader{2026-09-10}{Baseline: the state of the art when the lab report was started}%
+  {5a26204}{cd85f679}{docs/prd/phase-04-swap-route-control/HANDOFF\_controlled\_cascade\_2026-09-10.md}
+
+\subsection*{Goal}
+The owner asked for an owner-facing, append-only, at-most-five-pages-per-session record so
+progress and the state of the art can be read without reading the operating manual's dated
+history blocks. This entry is the one-time baseline: it summarises where the project stands at
+\commit{5a26204} (the tip of \texttt{main} on 2026-09-10) so later entries can be short and
+incremental. Nothing in the compiler changed in this session; the session added the report,
+its build script (\fpath{tools/labreport/build.py}) and its rules (\fpath{docs/labreport/README.md},
+\fpath{CLAUDE.md} ``Lab report'' + Session Completion step).
+
+\subsection*{What CQ is}
+CQ is plain C plus one header, \fpath{include/CQ.h}. A value becomes quantum by passing through
+\texttt{cq\_theta} (an \(R_y\) rotation, the \emph{sole} taint source); \texttt{cq\_measure} is the
+sole sink; \texttt{cq\_phi} is a \emph{register-free} branch phase, \texttt{void cq\_phi(double)},
+since 2026-09-06. Stock \texttt{clang -O1} compiles the source; one out-of-tree LLVM~19 module pass,
+\texttt{cq-lowering}, propagates taint forward through ordinary arithmetic, control flow and calls
+and lowers every tainted opcode to a reversible runtime template. The runtime is trace-only: each
+gate prints one line, and the golden trace is the contract (Figure~\ref{fig:001:pipeline}). There is
+no LLVM fork, no MLIR dialect, no parser, no \texttt{quantum} keyword, no simulator and no backend
+yet: correctness is established by golden end-to-end diffs plus independent adversarial review
+with analytic reasoning (\fpath{CLAUDE.md} Rules~2 and~13).
+
+\begin{figure}[h]\centering
+\resizebox{\textwidth}{!}{%
+\begin{tikzpicture}[node distance=4mm and 6mm, font=\small,
+  box/.style={draw, rounded corners=2pt, fill=cqblue!8, minimum height=7mm, align=center, inner sep=4pt},
+  stage/.style={draw, fill=white, minimum height=7mm, align=center, inner sep=3pt, font=\footnotesize\ttfamily},
+  arr/.style={-{Latex[length=2mm]}, thick, color=cqgray}]
+  \node[box] (src) {plain C + \texttt{CQ.h}};
+  \node[box, right=of src] (ll) {LLVM 19 IR\\\footnotesize\texttt{clang -O1}, stock};
+  \node[box, right=of ll, fill=cqblue!20] (pass) {\textbf{cq-lowering}\\\footnotesize one \texttt{opt} pass};
+  \node[box, right=of pass] (low) {lowered IR\\\footnotesize only \texttt{cqrt\_*} / \texttt{cq\_template\_*}};
+  \node[box, right=of low] (exe) {trace\\\footnotesize byte-diff vs golden};
+  \draw[arr] (src) -- (ll); \draw[arr] (ll) -- (pass); \draw[arr] (pass) -- (low); \draw[arr] (low) -- (exe);
+  \node[stage, below=6mm of pass.south west, anchor=north west, xshift=-22mm] (s1) {propagate()\\taint};
+  \node[stage, right=2mm of s1] (s2) {guards\\decline};
+  \node[stage, right=2mm of s2] (s3) {detectControl()\\kickback / copy-merge};
+  \node[stage, right=2mm of s3] (s4) {lowerRotations()\\lowerOps()};
+  \node[stage, right=2mm of s4] (s5) {lowerMeasures()};
+  \node[stage, right=2mm of s5] (s6) {uncompute()\\whole-DAG LIFO};
+  \draw[arr, dashed] (pass.south) -- ++(0,-3mm) -| (s1.north);
+  \draw[arr] (s1) -- (s2); \draw[arr] (s2) -- (s3); \draw[arr] (s3) -- (s4); \draw[arr] (s4) -- (s5); \draw[arr] (s5) -- (s6);
+\end{tikzpicture}}
+\caption{The pipeline at \commit{5a26204}. Stage 2b (\fpath{tools/free_pairing_check.py}, the Rule-6
+free-pairing gate over the lowered IR) runs beside the link in every e2e slice. A module with no
+\texttt{cq\_*} call is passed through byte-identical.}
+\label{fig:001:pipeline}
+\end{figure}
+
+\subsection*{Where the roadmap stands}
+Table~\ref{tab:001:phases} is the phase table as \fpath{ROADMAP.md} states it. ``Done'' means the
+scoped core increments shipped and were Rule-13 cleared; everything outside the shipped accept
+shape declines loudly (the Prime Directive), so open follow-ons are coverage, not correctness debt.
+
+\begin{table}[h]\centering\small
+\begin{tabularx}{\textwidth}{@{}lXl@{}}\toprule
+Phase & Content & Status \\ \midrule
+0--3 & Inherited foundation; \texttt{CQ.h} intrinsic surface; taint sources and gate-triggered allocation; full opcode lowering & \status{DONE} \\
+4 & Tainted control flow (\texttt{if}/\texttt{select}/\texttt{switch}, depth-2 nests, sequential regions). Sub-items 4.0--4.5 are \emph{historical labels}: the swap route they named is fully retired (\bd{3qlq}, 2026-09-05/06) & \status{DONE}, 3rd generation \\
+5 & Whole-DAG LIFO uncomputation over the void \texttt{\_unc} ABI & \status{DONE} \\
+6 & Call-graph specialisation (clone-on-taint, transitive worklist, classical call under quantum control, 6.0--6.5) & \status{DONE} \\
+7 & Pre-freeze expressiveness: 7.1 opcode surface + wide ints, 7.2 controlled \texttt{return}/\texttt{abort}, 7.3 bounded loops, 7.4 value-arm \texttt{break}, 7.5 QRAM Shadow model, 7.6 output tape & \status{core DONE}; widenings under \bd{8h7d} \\
+8 & Manual inversion (\texttt{cq\_invert\_begin}/\texttt{\_end}) over the shared adjoint spine & \statusopen{remaining} \\
+9 & Runtime template library completion & \statusopen{remaining} \\
+10 & Integration test harness & \statusopen{remaining} \\
+11 & Frontend + ABI freeze; gated on the 7.5 QRAM ABI, 7.1 widths, 7.6 tape ABI, the fp select copy family and the controlled-\(R_y\) family & \statusopen{remaining} \\
+\bottomrule\end{tabularx}
+\caption{Roadmap status at \commit{5a26204}, from \fpath{ROADMAP.md} headers.}
+\label{tab:001:phases}
+\end{table}
+
+\subsection*{What a user can write today}
+\begin{itemize}
+  \item \textbf{Straight-line quantum arithmetic.} Any stock integer/fp opcode, compare or cast on
+    a tainted value, mixed with classical operands, at every C width the ABI names; the whole DAG of
+    dead intermediates is uncomputed LIFO and freed only where provably \(|0\rangle\).
+  \item \textbf{Tainted \texttt{if}.} A \emph{phase arm} (\texttt{if (q==5) cq\_phi(}\(\pi\)\texttt{)})
+    lowers by \emph{kickback}: flag mint, one uncontrolled \texttt{cqrt\_rz\_i1} on the flag, strip,
+    free. A \emph{value arm} (\texttt{if (c) q = q*3+1}) lowers by the \emph{controlled-copy merge}:
+    the arm's pure chain is hoisted and run unconditionally, then merged into a fresh rail by two
+    X-bracketed \texttt{cqrt\_copy\_<W>\_controlled}. A controlled \(R_y\) arm on a disjoint register,
+    a controlled \emph{state prep} with a constant seed, the C \texttt{if/else} with one constant-angle
+    rotation per arm (angle-select by difference), compound \texttt{\&\&}/\texttt{||}/\texttt{\^{}}
+    conditions, the depth-2 homogeneous phase nest, sequential regions, a pure classical call under
+    control, tainted \texttt{select} (integer and scalar fp data) and tainted \texttt{switch} in four
+    shapes all lower. No arm class routes through \texttt{cqrt\_cswap} any more; its single minter is
+    the 7.2 abort park (measured: one call site of \texttt{emitRoute}, one golden containing a cswap).
+  \item \textbf{Loops.} Classically bounded loops lower \emph{rolled} (Case A in-place rail collapse,
+    Case B per-iteration uncompute), including a non-exiting tainted phase region inside the body
+    (Grover as a \texttt{for} loop) and an in-loop controlled \(R_y\) arm; a value-arm \texttt{break}
+    lowers by capture and whole-loop reverse-play; the shift-count idiom is recognised as
+    \texttt{llvm.ctlz}. A quantum-dependent trip count declines (Rule 18, narrowed to a derivation
+    on 2026-08-21, unbuilt).
+  \item \textbf{Functions and memory.} Plain C functions lift by clone-on-taint; const-global QROM
+    reads and \texttt{alloca} Shadow store/load lower; controlled \texttt{return}/\texttt{abort} and
+    the output tape exist. \texttt{math.h} headline coverage is 159/183 cells (87\%), composed of
+    101/120 injection + 6/6 CQ-provided + 42/42 recognition keep-set + 10/12 macros + 0/3 by-design
+    \texttt{nan} --- \emph{as published 2026-08-23 by the generator; not re-measured this session.}
+\end{itemize}
+
+\subsection*{How correctness is established}
+The defining hazard is the \emph{verify-clean silent miscompile}: IR that passes \texttt{opt -verify}
+and prints a plausible trace but computes the wrong unitary. Four layers stand against it, and the
+project's history says the fourth is the one that finds things:
+\begin{enumerate}
+  \item \textbf{lit fixtures} (\fpath{ir-pass/test}), red-green with a decline fixture mirroring
+    every diagnostic string character-for-character;
+  \item \textbf{e2e golden traces} (\fpath{tests/e2e}), the only layer that links, plus stage 2b's
+    rail-pairing check;
+  \item \textbf{twin matrices} asserting byte-identity between two spellings of one program
+    (rolled vs hand-unrolled, diamond vs pre-hoisted \texttt{select}, angle select vs by-difference);
+  \item \textbf{independent adversarial Rule-13 review} with analytic reasoning. Every confirmed
+    silent miscompile in the record was found here or by an e2e diff, never by the verifier.
+\end{enumerate}
+The rate is the fact to carry: the loop work hid over-accepts four increments in a row; the
+register-free \texttt{cq\_phi} increment took eight findings over six adversarial rounds on one
+function, two of them introduced by a fix; and the strongest single finding of the year is that
+\emph{every shipped Grover golden before 2026-09-05 was the identity on \(q\)}, because the
+per-qubit tensored \(R_z\) that controlled phase arms used is diagonal and fixes \(|0\ldots0\rangle\)
+(\bd{3qlq}, PRD \S1). Nothing in layers 1--3 could see it; the traces were self-consistent records
+of the identity.
+
+\subsection*{Measurements at \commit{5a26204}}
+All counts below were taken in this session on the checked-out tree (Table~\ref{tab:001:counts}).
+The full suite was rebuilt and run once at \texttt{-j6}; its result is in the verification run
+below.
+
+\begin{table}[h]\centering\small
+\begin{tabularx}{\textwidth}{@{}lr>{\raggedright\arraybackslash}X@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries & 367 & \measured{ctest --test-dir build -N | tail -1} \\
+\quad of which e2e / e2e slices & 357 / 321 & \measured{ctest -N -R '\^{}e2e-' ; -R '\^{}e2e-slice-'} \\
+\quad of which byte-identity twin gates & 26 & \measured{ctest -N -R 'twin-identical'} \\
+lit fixtures (\texttt{.ll}) & 1707 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 323 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+loop twin matrix: expected + quarantined cells & 259 + 29 & \measured{grep -c '\^{}m\_' tools/loop\_twin\_matrix.expected.txt ; grep -c '\^{}cell ' tools/loop\_twin\_matrix.quarantine.txt} \\
+goldens containing \texttt{cqrt\_cswap} & 1 & \measured{grep -l cqrt\_cswap tests/e2e/*.expected.log | wc -l} \\
+non-\texttt{i1} \texttt{cqrt\_rz} lines in goldens & 0 & \measured{grep -h cqrt\_rz\_ tests/e2e/*.expected.log | grep -v 'cqrt\_rz\_i1(' | wc -l} \\
+\texttt{emitRoute} call sites & 1 & \measured{grep -rn 'emitRoute(' ir-pass/src ir-pass/include} \\
+e2e slices run with \texttt{--allow-unproven} & 4 & \measured{grep -c 'allow-unproven")' tests/e2e/CMakeLists.txt} \\
+pass sources (\texttt{.cpp} files / lines incl.\ headers) & 56 / 54\,532 & \measured{ls ir-pass/src/*.cpp | wc -l ; cat ir-pass/src/*.cpp ir-pass/include/*.h | wc -l} \\
+\texttt{bd} memories / open issues / open P1 & 433 / 134 / 6 & \measured{bd memories ; bd list --status open --json} \\
+commits / distinct commit dates & 807 / 84 & \measured{git log --oneline | wc -l ; git log --format=\%ad --date=short | sort -u | wc -l} \\
+\bottomrule\end{tabularx}
+\caption{Corpus and tracker counts at \commit{5a26204}, measured 2026-09-10.}
+\label{tab:001:counts}
+\end{table}
+
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.48\textwidth, height=4.6cm, date coordinates in=x, xticklabel={\month/\day},
+  xticklabel style={font=\scriptsize, rotate=45, anchor=north east}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize lit fixtures}, grid=major, grid style={cqgray!20}, xtick distance=30,
+  title={\footnotesize \texttt{ir-pass/test/*.ll} per commit date}]
+  \addplot[cqblue, thick, mark=none] table[x=date, y=fixtures, col sep=space] {figures/001/corpus_growth.dat};
+\end{axis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.48\textwidth, height=4.6cm, date coordinates in=x, xticklabel={\month/\day},
+  xticklabel style={font=\scriptsize, rotate=45, anchor=north east}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize e2e goldens}, grid=major, grid style={cqgray!20}, xtick distance=30,
+  title={\footnotesize \texttt{tests/e2e/*.expected.log} per commit date}]
+  \addplot[cqgreen, thick, mark=none] table[x=date, y=goldens, col sep=space] {figures/001/corpus_growth.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Test-corpus growth over the project's 84 commit dates (2026-05-20 to 2026-09-10), measured from
+\texttt{git ls-tree} at the last commit of each date by
+\fpath{tools/labreport/figures/corpus_growth.py} (data: \fpath{figures/001/corpus_growth.dat}). The
+steep final segment is the control-flow work of 2026-08-27 to 2026-09-06.}
+\label{fig:001:growth}
+\end{figure}
+
+\subsection*{The two weeks before this entry}
+Figure~\ref{fig:001:timeline} places the increments of 2026-08-27 to 2026-09-10; every one landed on
+\texttt{main} with its Rule-13 record under \fpath{docs/prd/phase-04-swap-route-control/}.
+
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}[font=\footnotesize, y=-0.84cm,
+  ev/.style={circle, fill=cqblue, inner sep=1.6pt},
+  d/.style={anchor=east, font=\footnotesize\ttfamily\color{cqgray}},
+  t/.style={anchor=west, text width=13.4cm, align=left, inner sep=1pt}]
+  \draw[thick, cqgray] (0,-0.4) -- (0,9.4);
+  \foreach \y/\date/\txt in {
+    0/08-27/{\bd{hcrg}: sequential tainted regions lower (a structural guard, fixed by emission order); record-family Inc 0 census},
+    1/08-28/{record-family Inc 1--4: live-record guards, M-C in-place \texttt{add}/\texttt{sub}/\texttt{xor} reassignment, the M-A ancestor half},
+    2/08-29/{record-family Inc 5--7 (M-B interior-rail uncompute, derived-condition oracles); \bd{8h7d.5}: a tainted \texttt{if} inside a bounded loop lowers ROLLED (Grover as a \texttt{for} loop)},
+    3/08-30/{\bd{8h7d.5} Rule-13 rounds 1--5: the rail-record liveness fence and its own holes (gate set, record set, barrier vacuity, per-wire staleness)},
+    4/09-02/{\bd{drbq} Inc 0+1: controlled \(R_y\) arms in place (\texttt{cqrt\_ry\_<W>\_controlled}), structural freeze of the rotated rail},
+    5/09-03/{\bd{drbq} Inc 2a (\(R_z\) control-in-place peephole) and 2b (the C \texttt{if/else} with one constant-angle rotation per arm, by difference); \bd{ogw2} polarity clause},
+    6/09-04/{\bd{drbq} Inc 3: the controlled \(R_y\) arm inside the rolled loop; the loop twin matrix gains a controlled-arm axis and a pinned-signature quarantine},
+    7/09-05/{\bd{drbq} Inc 4: controlled state prep; F2 became a semantic fence after four adversarial rounds. \bd{3qlq} PRD: retire the swap route},
+    8/09-06/{\bd{3qlq} Inc 0+1 (register-free \texttt{cq\_phi}, kickback) and Inc 2 (value arms by controlled-copy merge) land; C-1 round 4 (\bd{7yd0}); \bd{eqpx} in-place-rail consumer tripwire},
+    9/09-10/{HANDOFF: the owner's quantum-controlled cascade hit four declines in a row; 12 reproducers, questions Q1--Q6}}
+  { \node[ev] at (0,\y) {}; \node[d] at (-0.3,\y) {\date}; \node[t] at (0.3,\y) {\txt}; }
+\end{tikzpicture}
+\caption{Landings on \texttt{main}, 2026-08-27 to 2026-09-10, from \texttt{git log}. The 09-06 row is the
+retirement of the swap route, the third generation of Phase 4.}
+\label{fig:001:timeline}
+\end{figure}
+
+\subsection*{Standing lessons the record keeps repeating}
+\begin{itemize}
+  \item \textbf{Over-declining is safe; over-accepting is a silent miscompile.} A loud decline is a
+    feature. Rule 17 adds the development posture: a decline is not the escape hatch when the task is
+    to build the shape.
+  \item \textbf{A stage that runs once has a round-2-false premise.} \texttt{repropagateControlMerges}
+    is a second full round of control detection; two stages standing where a one-round pipeline put
+    them were found wrong by review and by zero fixtures.
+  \item \textbf{When you widen a set, ask what other set was computed over the same closure.} The
+    rail-record fence widened its gates and not its records; the omission was found one round later.
+  \item \textbf{A syntactic enumeration loses to InstCombine.} The state-prep seed fence F2 lost three
+    rounds as a set of spellings and held once it became a semantic question (LVI over every live
+    value, then forward abstract evaluation).
+  \item \textbf{A number can measure the wrong program.} The retired 165/174 libm claim counted
+    recognition as injection; the census later scored bodies openlibm does not build. Totals are now
+    generated, printed with their composition, never hand-copied.
+\end{itemize}
+
+\subsection*{Verification run}
+Counts in Table~\ref{tab:001:counts} were measured by the commands shown. The full suite was rebuilt
+(\measured{cmake --build build -j8}) and run (\measured{ctest --test-dir build -j6}) at
+\commit{5a26204} in this session: \textbf{100\% tests passed, 0 failed out of 367}, total wall 467.43\,s at \texttt{-j6} on a loaded box (\texttt{e2e-loop-twin-matrix} alone 467.41\,s, the long pole). That run includes \texttt{ir-pass-lit} (all 1707 fixtures, one expected failure) and every e2e slice with its stage-2b check. No compiler source, fixture or
+golden was changed in this session.
+
+\subsection*{Open at \commit{5a26204}}
+\begin{itemize}
+  \item \textbf{The cascade handoff.} The owner's natural spelling of a quantum-controlled
+    cascade (prepare under a condition, branch on it, prepare the next register) hit four declines in
+    a row on the landed binary: a dead state-prep arm, F2's seed equal to the compare constant, a
+    \texttt{bool} condition arriving as a bare \texttt{i1} (\bd{3qlq.4}), and \texttt{-O1} fusing a
+    two-step cascade into one multi-phi region because the driver was the classical constant 5. The
+    same cascade compiles as written once the driving register is quantum (33 trace lines, two onward
+    regions). Twelve reproducers and questions Q1--Q6 are in the handoff document named in the header.
+  \item \textbf{Six open P1 issues.} \bd{3c6m} (\texttt{math.h} demonstrator epic), \bd{drln}
+    (a Rule-13 round's prose blockers), \bd{0njv} (a straight-line rail record consumed past an
+    in-place non-diagonal gate is silently accepted), \bd{drbq} and \bd{3qlq} (epics with follow-ons
+    open), \bd{wt3l} (owner decision: a user \(R_z\) on a rail the spine later uncomputes has three
+    inconsistent treatments).
+  \item \textbf{Owner rulings pending}: \bd{drbq.14} (F2's residual, the seed-equals-literal
+    over-decline, the \texttt{i1} width, the fp precautionary decline), the 3qlq owner questions
+    (\texttt{InPlaceRailIdx} keep/drop, the (1b) fixture header note, OQ-13 renaming the
+    \texttt{value-arm swap-route} diagnostic string), and the two loop-twin quarantine classes
+    (\bd{1m5p}, \bd{a3z7}).
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None (first entry).

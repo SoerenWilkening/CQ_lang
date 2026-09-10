@@ -1,0 +1,106 @@
+% CQ Lab Report -- master file. Build with tools/labreport/build.py (never edit
+% sessions.tex by hand; it is regenerated). Sealed entries under sessions/ are
+% append-only: see README.md.
+\documentclass[11pt,a4paper]{article}
+\usepackage[T1]{fontenc}
+\usepackage[utf8]{inputenc}
+\usepackage{lmodern}
+\usepackage{microtype}
+\usepackage[margin=2.2cm]{geometry}
+\usepackage{booktabs,array,longtable,tabularx}
+\usepackage{xcolor}
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta,positioning,shapes.geometric,calc,fit}
+\usepackage{pgfplots}
+\pgfplotsset{compat=1.18}
+\usepgfplotslibrary{dateplot}
+\usepackage{listings}
+\usepackage{caption}
+\usepackage{enumitem}
+\usepackage{parskip}
+\usepackage{placeins}
+\usepackage[hidelinks]{hyperref}
+
+\setlist{nosep}
+\captionsetup{font=small,labelfont=bf}
+
+\definecolor{cqblue}{HTML}{1F4E79}
+\definecolor{cqred}{HTML}{A61C1C}
+\definecolor{cqgreen}{HTML}{2E7D32}
+\definecolor{cqgray}{HTML}{6B6B6B}
+\definecolor{cqamber}{HTML}{B26A00}
+
+\lstset{basicstyle=\ttfamily\footnotesize,breaklines=true,columns=fullflexible,
+  keepspaces=true,frame=single,framerule=0.2pt,rulecolor=\color{cqgray},
+  xleftmargin=0.5em,aboveskip=0.5em,belowskip=0.5em}
+
+% ---- per-session scaffolding ----------------------------------------------
+% \labsession{<stem>}: called from the generated sessions.tex. The two labels are
+% what tools/labreport/build.py reads to measure the entry's page count.
+\newcommand{\labsession}[1]{%
+  \clearpage
+  \phantomsection\label{labsess:#1:start}%
+  \input{sessions/#1}%
+  \FloatBarrier% flush this entry's floats so the end label counts them
+  \label{labsess:#1:end}%
+}
+% \labsessionheader{date}{title}{HEAD at close}{session id}{handoff/record path}
+\newcommand{\labsessionheader}[5]{%
+  \section{#2}%
+  \begin{tabular}{@{}>{\color{cqgray}\footnotesize}l@{\hspace{1em}}>{\footnotesize}l@{}}
+    Date & #1 \\
+    HEAD at close & \texttt{#3} \\
+    Session & \texttt{#4} \\
+    Record / handoff & \texttt{#5} \\
+  \end{tabular}\par\medskip}
+% Finding classes. Use the SAME labels the Rule-13 records use.
+\newcommand{\ftag}[1]{\textcolor{cqred}{\textbf{\small[#1]}}}
+\newcommand{\fconfirmed}{\ftag{CONFIRMED MISCOMPILE}}
+\newcommand{\foverdecline}{\textcolor{cqamber}{\textbf{\small[OVER-DECLINE]}}}
+\newcommand{\fpreexisting}{\textcolor{cqamber}{\textbf{\small[PRE-EXISTING]}}}
+\newcommand{\fdoc}{\textcolor{cqgray}{\textbf{\small[DOC]}}}
+\newcommand{\fleak}{\textcolor{cqamber}{\textbf{\small[LEAK]}}}
+% A number the entry MEASURED this session, with the command that produced it.
+\newcommand{\measured}[1]{{\footnotesize\ttfamily\textcolor{cqgray}{#1}}}
+% Cross-references into the tree / tracker.
+% File paths: \detokenize makes underscores safe, including inside captions (a moving
+% argument, where url's \path cannot be used).
+\newcommand{\fpath}[1]{\texttt{\detokenize{#1}}}
+\newcommand{\bd}[1]{\texttt{bd #1}}
+\newcommand{\commit}[1]{\texttt{#1}}
+\newcommand{\status}[1]{\textcolor{cqgreen}{\textbf{#1}}}
+\newcommand{\statusopen}[1]{\textcolor{cqamber}{\textbf{#1}}}
+
+\title{\textcolor{cqblue}{\Huge CQ Lab Report}\\[0.6em]
+  \large Append-only session record of the taint-driven quantum-C compiler}
+\author{}
+\date{Built \today\ from \fpath{docs/labreport/sessions/}}
+
+\begin{document}
+\maketitle
+\thispagestyle{empty}
+
+\section*{How to read this report}
+\begin{itemize}
+  \item \textbf{It is a record, not a rule.} Every entry says what happened in one
+    working session: what landed, what was found, what was measured, what is open.
+    Rules of record live in \fpath{CLAUDE.md}, \fpath{ROADMAP.md}, the per-phase PRDs
+    and the \texttt{bd} tracker; an entry cites them and never replaces them.
+  \item \textbf{It is append-only.} A sealed entry is byte-immutable
+    (\fpath{MANIFEST.sha256}, checked on every build). A correction to an earlier
+    entry is a dated \emph{erratum} in a later one.
+  \item \textbf{Every number is measured in its own session}, with the command
+    that produced it shown in \measured{grey monospace}. An entry that did not run a
+    layer says so rather than inheriting a colour.
+  \item \textbf{Findings carry their class}: \fconfirmed, \fleak, \foverdecline,
+    \fpreexisting, \fdoc\ --- the same labels the Rule-13 review records use.
+  \item \textbf{Budget: at most five pages per session}, measured from the built PDF.
+\end{itemize}
+
+\tableofcontents
+
+\input{sessions}
+
+\end{document}
