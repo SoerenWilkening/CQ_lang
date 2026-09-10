@@ -27,7 +27,7 @@ compare-flag mint.
     chained, alone or as a child of any \texttt{and}/\texttt{or}/\texttt{xor} node); the network
     emitter maps it to \emph{itself}; the flat kickback, the depth-2 nest and the \(R_z\)-stem angle
     select put \texttt{cqrt\_rz\_i1} directly on the register's own rail --- no mint, no strip, no
-    free. 17 accept + 13 decline fixtures, 9 e2e slices (all strict stage 2b) and one rolled\,=\,unrolled
+    free. 18 accept + 14 decline fixtures, 9 e2e slices (all strict stage 2b) and one rolled\,=\,unrolled
     twin gate. Exactly two pre-existing fixtures moved: the old decline discriminator, renamed and
     rewritten as the accept its header promised, and a drbq-era decline whose string became
     the new specific one (disposition unchanged).
@@ -80,7 +80,13 @@ into the sign of the angle.}
     same wrong stream. Fixed in the walker (the parent edge is crossed whenever the parent is
     tainted --- the relation the lowering itself uses), threaded to all nine callers; four decline
     fixtures pin it; the whole lit corpus stayed green with zero pre-existing flips.
-  \item \fdoc\ Three secondary items from the same round, all fixed: the measured-before-branch fence
+  \item \fpreexisting\ Found by the second round (verdict CLEAR-WITH-ITEMS, the fix proven
+    decline-monotone with zero movement over all pre-existing fixtures): the pass-wide stale-record
+    guard sweeps pure operations only, so a rotation or a measurement that READS a stale name is never
+    asked --- \texttt{int b = cq\_theta(q,.5); int c = cq\_theta(q,.9); return cq\_measure(b) + cq\_measure(c);}
+    lowers as a chain on \texttt{main} too. Filed as \bd{3d8q} (P1) with the reviewer's fix sketch; it is a
+    separate core widening with its own review round.
+  \item \fdoc\ Three secondary items from the first round, all fixed: the measured-before-branch fence
     was dominance-based and missed a classically-guarded side path (now reachability); one erase
     site lacked the never-erase-a-user's-rotation guard; two in-source justifications were false
     and are rewritten --- one of them was the recorded reason a fence prong had been dropped.
@@ -107,7 +113,7 @@ into the sign of the angle.}
 \subsection*{Measurements}
 \begin{tabular}{@{}lrl@{}}\toprule
 Quantity & Value & Command \\ \midrule
-lit fixtures & 1736 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1707) \\
+lit fixtures & 1738 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1707) \\
 ctest entries & 377 & \measured{ctest --test-dir build -N | tail -1} (was 367) \\
 e2e entries / slices & 367 / 330 & \measured{ctest -N -R '\string^e2e-' ; -R '\string^e2e-slice-'} (was 357 / 321) \\
 twin-identical gates & 27 & \measured{ctest -N -R twin-identical} (was 26) \\

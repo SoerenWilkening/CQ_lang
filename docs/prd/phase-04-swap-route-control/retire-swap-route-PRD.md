@@ -1217,7 +1217,7 @@ needs instead, each asked for the flat path, the nest (both levels) and the angl
   nest at either level, invariant-register loop rolled, one-qubit Grover flat) and the
   select / value / Ry / state-prep / loop-carried / negated-nest shapes decline with the
   strings above. Every accept is STRICT stage-2b clean.
-* `ir-pass-lit`: 1707 → **1736** fixtures (+30: 17 accept, 13 decline incl. the round-1 four; the old
+* `ir-pass-lit`: 1707 → **1738** fixtures (+31: 18 accept, 14 decline incl. the round-1 four and the round-2 pair; the old
   `reject_bare_i1` `git mv`'d and rewritten), exactly TWO pre-existing fixtures moved: that
   discriminator, and `control_inplace_ry_reject_raw_i1_cond.ll`'s string (`control flow` →
   `bare i1 register condition`, disposition unchanged) — found by the full `ctest -j6`
@@ -1276,3 +1276,45 @@ documented. Four fixtures pin the round: `control_phase_kickback_reject_rail_sib
 {,_crossblock}.ll`, `..._reject_sibling_theta_template_parent_cmp.ll` (the pre-existing half,
 declining in the opcode layer on the stale `zext`), `..._reject_rail_measured_sidepath.ll`.
 Reproducers: `inc1-records/session-3qlq4/review_1b_r1_probes/`.
+
+### 13.7 Rule-13 round 2 on the fix (`review_1b_r2.md`) — CLEAR-WITH-ITEMS
+
+The widening is **decline-monotone**: analytically (the new crossing adds only NON-theta
+values to the per-seed exempt set, so no previously-flagged gate can become exempt; `Work`
+only grows; `gateIsHarmless` is untouched) and measured (**0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF
+over all 1732 pre-existing fixtures; 19 movers over 124 plain-C programs, every one
+accept → decline; Rule 1 clean, 65 accept / 59 decline, no surviving `@cq_*` call or tainted
+`br`**). It closes a CLASS: compare, cast, 4.4 select-merge, in-place-`xor`, 4.5 switch-mux
+and QROM parents all accepted a sibling theta pre-fix and decline now; the accept boundary
+is pinned by 11 pre-existing fixtures (a blanket-refusal mutant reddens them). Four items:
+
+* **F-1b2-1 — CONFIRMED, PRE-EXISTING (identical on `main`), filed as bd `test_C_libtooling-3d8q` (P1).**
+  `int b = cq_theta(q,.5); int c = cq_theta(q,.9); return cq_measure(b) + cq_measure(c);`
+  — one line, no control flow — lowers as the well-formed chain (byte-identical). The
+  pass-wide stale-record guard sweeps PURE ops only (`inLowerOpsScope`); a `cq_theta` or
+  `cq_measure` READER of a stale name is never asked, so the (now correct) walker is never
+  called for it. CLAUDE.md's own 8h7d.5 F-3 shape accepts out of loop. Fix sketch in the
+  issue; it is a Rule-13-core widening of `declineStaleRecordOps` and gets its own round.
+  **F-1b2-2** is its in-loop member: the rolled spelling accepts (the condition IS fresh per
+  trip) while the hand-unrolled twin now declines on the stale condition — a disposition
+  split that closes with that fix.
+* **F-1b2-3 — fixed.** `collectWireValues`' new `Taint` parameter had NO caller supplying
+  it (file-local, one 3-arg caller), so "the mirror" half of §13.6's fix was inert — the
+  parameter is DELETED and the prose restated: `thetaOnPathTo`'s closure keeps the narrow
+  ancestry on purpose, because its only consumer `phiTracksWire` GRANTS on it (an
+  accept-direction predicate; the parity gap stays on bd `r903` with its own round).
+* **F-1b2-4 — fixed.** The rewritten `railCondWireDisposition` header covered the
+  same-wire half only; the compare path's positional prong also targets a theta on
+  ANOTHER wire aliasing the rail through a dtzb in-place `add`/`xor`, which no walk
+  crosses. The rail path drops the prong on a STRUCTURAL ground now stated in the header
+  and pinned: a condition rail is always read later by its own branch, so M-C's G6 refuses
+  the in-place conversion and the `xor` lowers OUT of place onto a fresh rail
+  (`control_phase_kickback_rail_inplace_xor_bridge.ll`, accept, with the lyyf
+  warn-and-lower on stderr); the compare spelling over-declines
+  (`..._reject_cmp_inplace_xor_bridge.ll`, pre-existing, pinned as the asymmetry).
+* **F-1b2-5 / OQ-1b-R2-4:** the stricter reachability fence stays; `p20` (the side-path
+  measure) is the documented over-decline, pinned by `..._reject_rail_measured_sidepath.ll`.
+
+Fixture count after both rounds: **1738** (+31 over 1707: 18 accepts, one of them the
+rewritten discriminator, and 14 declines, one duplicate dropped). Probes:
+`inc1-records/session-3qlq4/review_1b_r2_probes/` (57 files + harnesses).
