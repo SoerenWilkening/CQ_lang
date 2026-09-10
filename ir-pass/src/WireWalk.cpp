@@ -7,6 +7,8 @@
 
 #include "WireWalk.h"
 
+#include "TaintPropagation.h"  // TaintSet (the chained-theta ancestry crossing, F-1b-1)
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
@@ -60,7 +62,8 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 // over-decline straight-line programs the M-C fence already proves sound. Shape
 // test only, no `TaintSet`: over-inclusion is free in this direction.
 void collectWireValues(Value *Seed, bool CrossValueRouting,
-                       SmallPtrSetImpl<Value *> &Out) {
+                       SmallPtrSetImpl<Value *> &Out,
+                       const TaintSet *Taint = nullptr) {
   SmallVector<Value *, 16> Work;
   for (Value *V = Seed;;) {
     Work.push_back(V);
@@ -78,8 +81,13 @@ void collectWireValues(Value *Seed, bool CrossValueRouting,
       V = Arg0;
       continue;
     }
+    // A CHAINED theta is in place on its parent's rail. The parent is a theta
+    // or (retired) phi call, OR — with `Taint`, F-1b-1 — ANY tainted value: a
+    // template/compare/cast result, a phi, a merge out-rail. Same relation as
+    // `lowerRotations`' `Chained`.
     if (isCallToPrefix(CI, "cq_theta_") &&
-        (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
+        (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_") ||
+         (Taint && Taint->Tainted.count(Arg0)))) {
       V = Arg0;
       continue;
     }
@@ -369,7 +377,8 @@ bool phiTracksWire(const PHINode *P) {
 CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
                                   bool CrossValueRouting,
                                   const Instruction *EmitPoint,
-                                  const DominatorTree *DT) {
+                                  const DominatorTree *DT,
+                                  const TaintSet *Taint) {
   // Seed closure + forward wire walk, PER SEED (test_C_libtooling-6j1, extended
   // for test_C_libtooling-6vk). A seed names a basis RECORD; the physical wire
   // carrying it is shared with the seed's whole ANCESTRY — rotation lowering
@@ -420,8 +429,12 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
       // A CHAINED theta (arg-0 is itself a `cq_theta`/`cq_phi` quantum wire) is
       // an in-place Ry whose arg-0 shares the wire; cross it to reach the parent
       // record. A SOURCE theta (arg-0 is the classical init) is the wire origin.
+      // F-1b-1 (bd 3qlq.4): with `Taint`, cross the arg-0 edge of ANY chained
+      // theta — the relation `lowerRotations` builds the rail from — so a
+      // SIBLING in-place Ry on a template/compare/phi parent is on the closure.
       if (isCallToPrefix(CI, "cq_theta_") &&
-          (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
+          (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_") ||
+           (Taint && Taint->Tainted.count(Arg0)))) {
         V = Arg0;
         continue;
       }

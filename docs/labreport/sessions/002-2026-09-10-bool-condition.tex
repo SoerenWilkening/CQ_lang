@@ -1,10 +1,10 @@
 \labsessionheader{2026-09-10}{The bare \texttt{bool} condition (bd 3qlq.4, Inc 1b)}%
-  {HEADHASH}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md \S13}
+  {HEADHASH}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md, section 13}
 
 \subsection*{Goal}
 The owner's scratch program \fpath{example/grover/grover_oracle_uncompute.c} drives a branch phase
 from a \texttt{bool} register and declined at the first \texttt{if} (\texttt{branch phase on a bare
-i1 condition}); wall~3 of the 2026-09-10 handoff, filed as \bd{test_C_libtooling-3qlq.4}. The
+i1 condition}); wall~3 of the 2026-09-10 handoff, filed as \bd{3qlq.4}. The
 owner's instruction was explicit: no \texttt{int} workaround --- \texttt{bool} and every other type
 must work. This session built that increment for the register-free branch phase and measured,
 with a probe family, exactly which \texttt{bool}-conditioned shapes now lower and which still decline.
@@ -27,7 +27,7 @@ compare-flag mint.
     chained, alone or as a child of any \texttt{and}/\texttt{or}/\texttt{xor} node); the network
     emitter maps it to \emph{itself}; the flat kickback, the depth-2 nest and the \(R_z\)-stem angle
     select put \texttt{cqrt\_rz\_i1} directly on the register's own rail --- no mint, no strip, no
-    free. 17 accept + 9 decline fixtures, 9 e2e slices (all strict stage 2b) and one rolled\,=\,unrolled
+    free. 17 accept + 13 decline fixtures, 9 e2e slices (all strict stage 2b) and one rolled\,=\,unrolled
     twin gate. Exactly two pre-existing fixtures moved: the old decline discriminator, renamed and
     rewritten as the accept its header promised, and a drbq-era decline whose string became
     the new specific one (disposition unchanged).
@@ -70,6 +70,20 @@ into the sign of the angle.}
 
 \subsection*{Findings}
 \begin{itemize}
+  \item \fconfirmed\ Found by the independent Rule-13 round on the first build (verdict BLOCK):
+    \texttt{bool t = (bool)(q \& 1); bool b = cq\_theta(t,.5); bool c = cq\_theta(t,.9); if (b) cq\_phi(.7);}
+    --- two \emph{sibling} in-place rotations on one physical rail, the branch reading the stale
+    name --- lowered as \texttt{if (c)}, at \texttt{opt} exit 0, verify-clean, stage-2b clean. The
+    cause is pre-existing and shared: the wire walker's backward ancestry crossed a chained
+    rotation's parent edge only when the parent was itself a rotation, so a template parent hid
+    the sibling from every condition fence; the \texttt{int} twin accepted on \texttt{main} with the
+    same wrong stream. Fixed in the walker (the parent edge is crossed whenever the parent is
+    tainted --- the relation the lowering itself uses), threaded to all nine callers; four decline
+    fixtures pin it; the whole lit corpus stayed green with zero pre-existing flips.
+  \item \fdoc\ Three secondary items from the same round, all fixed: the measured-before-branch fence
+    was dominance-based and missed a classically-guarded side path (now reachability); one erase
+    site lacked the never-erase-a-user's-rotation guard; two in-source justifications were false
+    and are rewritten --- one of them was the recorded reason a fence prong had been dropped.
   \item \fdoc\ The owner's example changed shape during the session (it is a git-excluded scratch
     file): the version read at session start now compiles (it is the diamond slice above); the
     version on disk at close is the handoff's wall~1, a \emph{dead} \texttt{b1} state-prep arm,
@@ -77,11 +91,11 @@ into the sign of the angle.}
   \item \foverdecline\ (by design, filed) A \texttt{bool} that drives a \emph{data} select or value
     arm (\texttt{if (b) a -= 3;}), an in-place \(R_y\) or state prep (\texttt{if (b) r = cq\_theta(r, }\(\theta\)\texttt{)}),
     or an \(R_y\) angle select declines with one new string, \texttt{bare i1 register condition}:
-    \bd{test_C_libtooling-r9e5} (1b-B) and \bd{test_C_libtooling-l4x4} (1b-C).
+    \bd{r9e5} (1b-B) and \bd{l4x4} (1b-C).
   \item \foverdecline\ (by design, filed) A loop-\emph{carried} \texttt{bool} (the header phi as the
     condition) and a \texttt{bool} that reaches the next region as a preceding region's merge phi:
-    \bd{test_C_libtooling-boi6} (1b-D). A negated rail level in a nest, a NOT inside a tree, and a
-    \texttt{trunc}-derived \texttt{i1}: \bd{test_C_libtooling-r903}. All keep the old discriminator string.
+    \bd{boi6} (1b-D). A negated rail level in a nest, a NOT inside a tree, and a
+    \texttt{trunc}-derived \texttt{i1}: \bd{r903}. All keep the old discriminator string.
   \item \fpreexisting\ A \texttt{bool} \emph{state prep} under control (\texttt{if (c) b = cq\_theta(false, }\(\theta\)\texttt{)})
     still declines at fence F2, because an \texttt{i1} seed always collides with the branch's own
     compare pinned to \texttt{true}/\texttt{false} on its edges --- handoff question Q6, unchanged.
@@ -93,13 +107,13 @@ into the sign of the angle.}
 \subsection*{Measurements}
 \begin{tabular}{@{}lrl@{}}\toprule
 Quantity & Value & Command \\ \midrule
-lit fixtures & 1732 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1707) \\
+lit fixtures & 1736 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1707) \\
 ctest entries & 377 & \measured{ctest --test-dir build -N | tail -1} (was 367) \\
-e2e entries / slices & 367 / 330 & \measured{ctest -N -R '^e2e-' ; -R '^e2e-slice-'} (was 357 / 321) \\
+e2e entries / slices & 367 / 330 & \measured{ctest -N -R '\string^e2e-' ; -R '\string^e2e-slice-'} (was 357 / 321) \\
 twin-identical gates & 27 & \measured{ctest -N -R twin-identical} (was 26) \\
 goldens & 332 & \measured{ls tests/e2e/*.expected.log | wc -l} (was 323) \\
 probe programs & 39 & \measured{ls inc1-records/session-3qlq4/probes/*.c} \\
-rolled vs unrolled bool loop & 12 = 12 lines & \measured{cmp slice_control_phase_bool_loop{,_unrolled}.expected.log} \\
+rolled vs unrolled bool loop & 12 = 12 lines & \measured{cmp slice\_control\_phase\_bool\_loop\{,\_unrolled\}.expected.log} \\
 \bottomrule\end{tabular}
 
 \subsection*{Verification run}
@@ -107,7 +121,7 @@ VERIFICATIONRUN
 
 \subsection*{Open questions and next steps}
 \begin{itemize}
-  \item Land \bd{3qlq.4} on \texttt{main} once the Rule-13 round is clear; then 1b-B (\bd{test_C_libtooling-r9e5}) for the
+  \item Land \bd{3qlq.4} on \texttt{main} once the Rule-13 round is clear; then 1b-B (\bd{r9e5}) for the
     data select and value arm, which is what the owner's cascade needs next.
   \item Handoff questions Q4 (dead state-prep arm) and Q6 (F2 on an \texttt{i1} seed) remain the owner's; both
     block the cascade written with \texttt{bool} preps, independently of this increment.

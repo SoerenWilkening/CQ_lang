@@ -1567,7 +1567,8 @@ namespace {
 // `condWireDisposition` below for which one decides what.
 CallInst *wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov,
                                    const Instruction *EmitPoint,
-                                   const DominatorTree *DT) {
+                                   const DominatorTree *DT,
+                                   const TaintSet *Taint) {
   // CrossValueRouting=TRUE since bd tayx (2026-07-03): the router-blind walk
   // was EVADED by a chained theta whose arg-0 reaches the condition's
   // provenance wire only through a one-register value-routing phi positioned
@@ -1586,7 +1587,7 @@ CallInst *wireGainsNonDiagonalGate(const SmallPtrSetImpl<Value *> &Prov,
   // regression; no shipped accept fixture routes a theta through a phi).
   SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
   return findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, EmitPoint,
-                                 DT);
+                                 DT, Taint);
 }
 
 // Disposition of the condition's non-diagonal-gate exposure (bd
@@ -1741,13 +1742,14 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
   }
   // Position-FREE first: no gate at all is the ordinary accept path, and it
   // must not pay for a dominator query.
-  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr))
+  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                &Taint))
     return CondWireDisp::None;
   if (R.ShareCondFlag)
     return CondWireDisp::DeclineNow;  // P2 — the flag outlives the region.
   if (!DT)
     return CondWireDisp::DeclineNow;  // no tree, no proof (Prime Directive).
-  if (wireGainsNonDiagonalGate(Prov, BI, DT))
+  if (wireGainsNonDiagonalGate(Prov, BI, DT, &Taint))
     return CondWireDisp::DeclineNow;  // some gate is NOT provably post-stream.
   return CondWireDisp::ProvenPostRegion;
 }
@@ -1758,28 +1760,38 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // def and the branch; the kickback gate is emitted AT the branch and is
 // diagonal, so — exactly as `condWireDisposition` argues for a compare — a
 // gate proven to execute AFTER the branch (`ProvenPostRegion`) invalidates
-// nothing this region leaves behind. Two prongs of the compare version have NO
-// SUBJECT here and are deliberately absent: the same-block/positional scan (it
-// bounds the window between a COMPARE and its branch, which for a rail is the
-// whole wire and is already what the position-free walk asks), and the
-// `ShareCondFlag` clause (a rail is the user's register and is shared with its
-// data users by construction — nothing is minted, nothing outlives the region).
-// Reuses `wireGainsNonDiagonalGate` — the SAME walker, seeded with the SAME
-// `condProvenance` set (Rule 14) — so a chained `cq_theta(b, …)` between the
-// def and the branch, in this block or another, is refused by the DT prong
+// nothing this region leaves behind. Two prongs of the compare version are
+// deliberately absent: the same-block/positional scan and the `ShareCondFlag`
+// clause (a rail is the user's register, shared with its data users by
+// construction — nothing is minted, nothing outlives the region).
+//
+// ⚠ THE POSITIONAL PRONG IS NOT REDUNDANT WITH THE WIRE WALK, AND THE FIRST
+// SPELLING OF THIS HEADER SAID IT WAS (Rule-13 round-1 finding F-1b-1, a
+// CONFIRMED silent miscompile). The prong scans the block window for ANY
+// tainted-operand theta; the walk asks the seed's USER graph — and until F-1b-1
+// the walk's ancestry stopped at a TEMPLATE parent, so a SIBLING in-place Ry on
+// the same physical rail (`bool t = q & 1; b = cq_theta(t,.5); c = cq_theta(t,.9);
+// if (b) …`) was on neither side, and the kickback rode the register `c` moved.
+// The fix is in the walker, not here: `findNonDiagonalWireGate` now crosses a
+// chained theta's arg-0 edge whenever the parent is TAINTED (the relation
+// `lowerRotations` builds the rail from), which also closes the compare twin
+// that accepted on `main`. The prong stays absent because the walk with `Taint`
+// asks the rail's whole wire, in this block or another, with the DT prong: a
+// chained or sibling `cq_theta` between the def and the branch is refused
 // (not provably post-branch), and a rotation on the register AFTER the region
-// is admitted, which is the `p15` accept.
+// is admitted (`control_phase_kickback_rail_post_ry.ll`).
 CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
                                      const SmallPtrSetImpl<Value *> &Prov,
                                      const DominatorTree *DT) {
   if (!R.Pred || !isCondRailLeaf(R.Condition))
     return CondWireDisp::DeclineNow;
   const Instruction *BI = R.Pred->getTerminator();
-  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr))
+  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                &Taint))
     return CondWireDisp::None;
   if (!DT)
     return CondWireDisp::DeclineNow;  // no tree, no proof (Prime Directive).
-  if (wireGainsNonDiagonalGate(Prov, BI, DT))
+  if (wireGainsNonDiagonalGate(Prov, BI, DT, &Taint))
     return CondWireDisp::DeclineNow;  // some gate is NOT provably post-branch.
   return CondWireDisp::ProvenPostRegion;
 }
@@ -1789,21 +1801,32 @@ CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // kickback on it would be a post-measure gate (Rule 6's loud-reject class).
 // The mirror of `condDataUseDisposition`'s `MeasuredEarly` for a compare: a
 // `cq_measure` user of the rail in `Pred` (every non-terminator in `Pred`
-// precedes the branch) or in a block that DOMINATES `Pred` executes first; a
-// measurement anywhere else is downstream of the region and owns the register
-// from there on, exactly as it does for a compare's shared flag. Without a
-// dominator tree, any measurement outside `Pred` is refused (over-decline).
+// precedes the branch), or one from which the branch is REACHABLE on some
+// path (a dominating block, a classically-guarded side path — F-1b-2), executes
+// first and refuses; only a measurement the branch can never follow is
+// downstream of the region and owns the register from there on. Strictly
+// stricter than the compare path, which (measured, F-1b-2) mints a flag from a
+// register measured UNCONDITIONALLY before the branch — a pre-existing gap
+// recorded with bd test_C_libtooling-r903, not widened here.
 bool railMeasuredBeforeBranch(const CallInst *Rail, const BasicBlock *Pred,
                               const TaintSet &Taint, const DominatorTree *DT) {
   SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
                                          Taint.MeasureCalls.end());
+  const Instruction *BI = Pred->getTerminator();
   for (const User *U : Rail->users()) {
     const auto *M = dyn_cast<CallInst>(U);
     if (!M || !Sinks.count(M))
       continue;
     if (M->getParent() == Pred)
       return true;
-    if (!DT || DT->dominates(M->getParent(), Pred))
+    // REACHABILITY, not dominance (Rule-13 round-1 finding F-1b-2): a measure on
+    // a classically-guarded SIDE PATH neither is `Pred` nor dominates it, yet
+    // executes before the branch on that path. "Can the branch execute after
+    // this measurement on SOME path?" is the question; `isPotentiallyReachable`
+    // answers it conservatively (a null tree only makes it more conservative).
+    // A measurement the branch can never follow is downstream of the region and
+    // owns the register from there on, exactly as for a compare.
+    if (isPotentiallyReachable(M, BI, /*ExclusionSet=*/nullptr, DT))
       return true;
   }
   return false;
@@ -3258,7 +3281,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // detection must not depend on that backstop coincidence (the same
         // principle the SwitchArmProve twin records).
         if (CallInst *Gate = findNonDiagonalWireGate(
-                Routed, /*CrossValueRouting=*/true)) {
+                Routed, /*CrossValueRouting=*/true, /*EmitPoint=*/nullptr,
+                /*DT=*/nullptr, &Taint)) {
           declineArm(Gate,
                                "routed base predates a non-diagonal gate");
           return ArmDisposition::Declined;
@@ -4354,7 +4378,9 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
     for (CallInst *Rail : T.RailLeaves)
       condProvenance(Rail, Taint, Prov);  // bd 3qlq.4: the register's own wire.
     SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
-    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true)) {
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                &Taint)) {
       diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
       return false;
     }

@@ -894,7 +894,8 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
       if (isa<FreezeInst>(P))
         return diagnoseUnderControl(Sel, "control flow");
     SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
-    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/nullptr, /*DT=*/nullptr, &taint))
       return diagnoseUnderControl(Sel,
                                   "condition predates a non-diagonal gate");
     for (CmpInst *Leaf : Tree.Leaves) {

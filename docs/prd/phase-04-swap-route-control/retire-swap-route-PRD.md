@@ -682,8 +682,9 @@ declines a rail leaf loudly with ONE new string, `bare i1 register condition` �
 the follow-ons 1b-B/1b-C, not omissions. Residuals keep `branch phase on a bare i1
 condition`: a loop-CARRIED `_Bool` (a header-phi condition), a `trunc`/`zext`/phi/argument
 `i1`, and a NEGATED rail level in the nest. **17 accept + 9 decline fixtures, 9 e2e
-slices (all STRICT stage 2b) + 1 rolled == unrolled `cmp` gate; exactly TWO pre-existing
-fixtures moved**: the discriminator itself (`control_phase_kickback_reject_bare_i1.ll`,
+slices (all STRICT stage 2b) + 1 rolled == unrolled `cmp` gate — **plus 4 declines from the
+Rule-13 round (§13.6: a CONFIRMED sibling-theta miscompile, fixed in the shared wire walker)**;
+exactly TWO pre-existing fixtures moved**: the discriminator itself (`control_phase_kickback_reject_bare_i1.ll`,
 `git mv`'d to `..._rail_diamond.ll` and rewritten as the accept its header promised) and
 the drbq-era `control_inplace_ry_reject_raw_i1_cond.ll`, which keeps its decline and takes
 the new string (it IS 1b-C's flip target; a duplicate pin of it was dropped).
@@ -1216,7 +1217,7 @@ needs instead, each asked for the flat path, the nest (both levels) and the angl
   nest at either level, invariant-register loop rolled, one-qubit Grover flat) and the
   select / value / Ry / state-prep / loop-carried / negated-nest shapes decline with the
   strings above. Every accept is STRICT stage-2b clean.
-* `ir-pass-lit`: 1707 → **1732** fixtures (+26: 17 accept, 9 decline; the old
+* `ir-pass-lit`: 1707 → **1736** fixtures (+30: 17 accept, 13 decline incl. the round-1 four; the old
   `reject_bare_i1` `git mv`'d and rewritten), exactly TWO pre-existing fixtures moved: that
   discriminator, and `control_inplace_ry_reject_raw_i1_cond.ll`'s string (`control flow` →
   `bare i1 register condition`, disposition unchanged) — found by the full `ctest -j6`
@@ -1224,3 +1225,52 @@ needs instead, each asked for the flat path, the nest (both levels) and the angl
   earlier full `lit` run. ctest **367 → 377** (`^e2e-` 357 → 367, `^e2e-slice-` 321 → 330,
   `twin-identical` 26 → 27), goldens 323 → 332.
 * No new runtime symbol, no ABI change, `tools/`, `runtime/`, `include/` untouched (D3).
+
+### 13.6 Rule-13 round 1 (2026-09-10, `inc1-records/session-3qlq4/review_1b_r1.md`) — BLOCK, fixed
+
+The independent lens returned **BLOCK on one CONFIRMED silent miscompile, F-1b-1**, plus
+one SUSPECTED, two DOC items and an over-decline list; the probe families that found
+nothing (the polarity identity on 14 shapes incl. every merge-tail polarity and three rolled
+loops; the spine on 12 borrowed-rail shapes; 5/5 rolled == unrolled pairs; Rule 1's no-third-
+path over every arm class; `main`-vs-branch over all 1707 pre-existing fixtures = 1 RCDIFF /
+2 DIAGDIFF / 1 OUTDIFF, both intended) are its negative space.
+
+**F-1b-1 (CONFIRMED, plain C, `opt` exit 0, verify-clean, stage-2b clean; `main` declined).**
+`int q = cq_theta(0,.3); bool t = (bool)(q & 1); bool b = cq_theta(t,.5); bool c =
+cq_theta(t,.9); if (b) cq_phi(.7); return cq_measure(c);` — `b` and `c` are SIBLING in-place
+Ry on ONE physical rail (both chained on the template result `t`), the branch reads the
+STALE name `b`, and the first build emitted `ry(h,.5); ry(h,.9); rz(h,.7)`: byte-identical to
+the stream for `if (c)` and for the well-formed chain `c0 = θ(t,.5); c = θ(c0,.9); if (c)`.
+**Root cause, PRE-EXISTING for the compare path:** `WireWalk::findNonDiagonalWireGate`'s
+backward ancestry crossed a chained theta's arg-0 edge only when the parent was spelled
+`cq_theta_`/`cq_phi_`, so a TEMPLATE parent stopped the closure at `b` and the sibling `c` —
+a user of the PARENT, never of the seed — was invisible to every fence that asks the walker.
+The `int`/compare twin (`if (zext(b) == 1)`) ACCEPTED on `main` with the same wrong stream
+(the compare's positional prong starts at the compare, after the sibling). The header of
+`railCondWireDisposition` had recorded "the positional prong is already what the
+position-free walk asks" as the reason for dropping the prong — **measurably false**
+(F-1b-4), and the sentence this record replaces.
+
+**Fix (in the walker, not in the rail fence):** `findNonDiagonalWireGate` (and its
+`collectWireValues` mirror) take an optional `const TaintSet *` and cross a chained theta's
+arg-0 edge whenever the parent is TAINTED — the one relation `lowerRotations` decides
+in-place-ness by (`Chained = taint.Tainted.count(arg0)`) — so the closure reasons about the
+rail the lowering will build. Threaded to every condition-wire caller (the two flat
+dispositions, `classifyArms`' routed base, the nest, `RegionTreeDetect`, both switch fences,
+the 4.4 select's gate 2c, `declineStaleRecordOps`, `SwitchArmProve`); a null `Taint` keeps
+the old ancestry for the per-activation `thetaOnPathTo` caller (parity recorded with bd
+`test_C_libtooling-r903`). Monotone toward DECLINE. **Measured:** the rail (same-block and
+cross-block) and the compare twin decline; 13 accept controls (chained-after, dead, loops,
+two regions, tail phi…) unchanged; **the whole lit corpus 1735 pass / 1 XFAIL of 1736 —
+zero pre-existing fixtures flipped; the e2e layer 367/367 with ZERO golden churn**
+(`git status --porcelain tests/e2e/*.expected.log` empty after the run).
+
+**F-1b-2 (SUSPECTED → fixed):** `railMeasuredBeforeBranch` was dominance-based, so a measure
+on a classically-guarded side path accepted; now `isPotentiallyReachable(measure, branch)`.
+**F-1b-3 (DOC → fixed):** the phase-stem angle-select erase site gained the
+`!isCondRailLeaf` guard the three flatten sites have. **F-1b-4 (DOC → fixed):** both
+false justifications rewritten in place. **F-1b-5:** the over-decline list, all as
+documented. Four fixtures pin the round: `control_phase_kickback_reject_rail_sibling_theta
+{,_crossblock}.ll`, `..._reject_sibling_theta_template_parent_cmp.ll` (the pre-existing half,
+declining in the opcode layer on the stale `zext`), `..._reject_rail_measured_sidepath.ll`.
+Reproducers: `inc1-records/session-3qlq4/review_1b_r1_probes/`.

@@ -145,7 +145,8 @@ bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
   for (Value *Op : I.operands()) {
     if (!taint.Tainted.count(Op))
       continue;  // classical operand — no wire.
-    if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I, &DT)) {
+    if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I, &DT,
+                                &taint)) {
       diagnoseStaleRecord(&I);
       taint.StaleDeclined.insert(&I);
       return true;  // one diagnostic per op; lowerOps will skip it.

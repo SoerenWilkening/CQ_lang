@@ -238,7 +238,11 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
   T->eraseFromParent();
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();
-  if (Cond->use_empty()) {
+  // A RAIL condition is the user's `cq_theta_i1` — never this emitter's to
+  // erase. The two kickback gates keep it live today, but that is an
+  // emission-order accident, not a fence (Rule-13 round-1 F-1b-3); the guard is
+  // the same one the three `RegionFlatten` sites carry.
+  if (!isCondRailLeaf(Cond) && Cond->use_empty()) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }

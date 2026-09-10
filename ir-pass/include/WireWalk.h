@@ -58,6 +58,23 @@ class Value;
 
 namespace cq {
 
+struct TaintSet;
+
+// `Taint` (bd test_C_libtooling-3qlq.4, Rule-13 round-1 finding F-1b-1 — a
+// CONFIRMED silent miscompile, PRE-EXISTING for the compare path): the backward
+// ancestry closure below crosses a chained `cq_theta`'s arg-0 edge only when the
+// parent is spelled `cq_theta_`/`cq_phi_`, so a theta whose parent is a TEMPLATE
+// result (`bool t = q & 1; b = cq_theta(t, .5); c = cq_theta(t, .9);`) stopped
+// the closure at `b`, and the SIBLING `c` — an in-place Ry on the SAME physical
+// rail, a user of the PARENT and never of the seed — was invisible to every
+// fence that asks this walker. `lowerRotations` decides in-place-ness by exactly
+// one relation, `Chained = taint.Tainted.count(arg0)`; when `Taint` is given the
+// closure crosses the edge on that same relation, so it reasons about the rail
+// the lowering will actually build. A null `Taint` keeps the old ancestry (the
+// per-activation `thetaOnPathTo` caller, whose parity gap is recorded with bd
+// test_C_libtooling-r903). Widening the ancestry can only find MORE gates —
+// monotone toward DECLINE.
+//
 // Walk the forward in-place-gate wire of every value in `Seeds` and return
 // the first `cq_theta_*` user found whose Ry is NOT provably after every
 // execution of `EmitPoint` (see header comment for the exact proof
@@ -86,7 +103,8 @@ llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
                                         const llvm::Instruction *EmitPoint =
                                             nullptr,
                                         const llvm::DominatorTree *DT =
-                                            nullptr);
+                                            nullptr,
+                                        const TaintSet *Taint = nullptr);
 
 // "IF `B` executes, `A` has already executed, and `A` never runs again after
 // it." THE ONE SPELLING of this project's position-aware proof obligation, and

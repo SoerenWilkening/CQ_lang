@@ -373,7 +373,8 @@ NestDisposition recoverRegionTree(
     SmallPtrSet<Value *, 16> Prov;
     condProvenance(CondV, Taint, Prov);
     SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
-    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true))
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/nullptr, /*DT=*/nullptr, &Taint))
       return true;  // theta on the condition's wire — the mint would be stale.
     auto *Cond = dyn_cast<Instruction>(CondV);
     if (!Cond || Cond->getParent() != BI->getParent())
