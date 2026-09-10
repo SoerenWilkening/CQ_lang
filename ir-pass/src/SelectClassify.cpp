@@ -820,9 +820,33 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // Rz-stem ANGLE select lowers a rail condition; the 4.4 DATA select declines
   // it after the angle-select hand-off with `kBareRailCondReason` (follow-on
   // 1b-B — the copy merge controlled on the register itself).
-  for (CallInst *Rail : Tree.RailLeaves)
+  //
+  // bd test_C_libtooling-r9e5 (1b-B.1) — THAT FOLLOW-ON IS THIS: the 4.4 DATA
+  // select now LOWERS a rail-leaf condition, so the ladder a rail owes is asked
+  // HERE and the trailing `kBareRailCondReason` decline is gone (see below).
+  // PRD §14.3, mirroring §13.3's kickback ladder with the SELECT as the read
+  // point (`SelectMergeEmit` inserts every gate immediately before it):
+  //   (i)   tainted — by construction (`cq_theta_i1` IS the taint source),
+  //         re-asked as defence in depth;
+  //   (ii)  NOT measured before the SELECT — the mirror of the compare's
+  //         `MeasuredEarly`. `railMeasuredBeforeReadPoint` (`ArmClassify`, the
+  //         ONE spelling — Rule 14) is asked with `Sel` rather than a block
+  //         terminator, which is the whole reason it takes a read point: the
+  //         kickback's gate lands AT the branch so a same-block measure always
+  //         precedes it, while this stream lands MID-BLOCK and a same-block
+  //         measure AFTER the select is the ordinary downstream case
+  //         (`control_swap_select_rail_measure_after.ll`, plain `-O1` C);
+  //   (iii) the WIRE question — gate 2c below, with the DT prong for RAIL seeds.
+  // Its OTHER users are ordinary (it is the user's register): no `hasOneUse`, no
+  // `ShareCondFlag`, no "used outside the branch" fence — nothing is minted from
+  // it that could outlive the region, and the merge writes only `%out`.
+  for (CallInst *Rail : Tree.RailLeaves) {
     if (!taint.Tainted.count(Rail))
       return diagnoseUnderControl(Sel, "control flow");
+    if (railMeasuredBeforeReadPoint(Rail, Sel, taint, DT))
+      return diagnoseUnderControl(Sel,
+                                  "condition measured before the control route");
+  }
 
   // GATE 2c — STALE-CONDITION wire guard (kjd1 Rule-13 implementation
   // clearance, fcmp-lens BLOCKER; FP_SELECT_CLEARANCE.md). SelectMergeEmit
@@ -884,20 +908,52 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // (c) scans per leaf. The tree NODES need no seeding of their own: an
   // `and`/`or` result carries no rotation wire, and its basis provenance is
   // exactly the union of its leaves'.
+  //
+  // bd test_C_libtooling-r9e5 (1b-B.1) — TWO SEED SETS, TWO QUESTIONS, and the
+  // split is the whole widening. A COMPARE's seeds keep the POSITION-FREE walk
+  // verbatim (prong (a) above: the mint point is unrelated to the compare's own
+  // schedule, so no positional accept is possible), while a RAIL's seeds get the
+  // DT PRONG that `railCondWireDisposition` gives the kickback (`ArmClassify`,
+  // PRD §13.3 item 3): position-free CLEAN ⇒ accept; else no `DT` ⇒ decline
+  // (Prime Directive — no tree, no proof); else re-ask with `EmitPoint = Sel`,
+  // so a gate NOT provably after every execution of the select declines and one
+  // PROVEN after it accepts. The P1 argument transfers exactly: the copies read
+  // `b`'s basis label AT the select, the flag is minted and stripped and freed
+  // inside the stream, and nothing of the region survives on `b` for a later
+  // gate to invalidate — so `if (b) a -= 3; b = cq_theta(b, -0.5);` (the S†
+  // spelling, probe `s04`) lowers, while a theta BETWEEN the rail's def and the
+  // select, a SIBLING theta on the same physical rail (the F-1b-1 class, which
+  // the walker's tainted-parent ancestry now sees), and any in-LOOP body theta
+  // (the back edge defeats `provablyBefore`'s reachability half — probe `s18`)
+  // all keep declining. With NO rail leaves `RailProv` is empty and `CmpProv` is
+  // the pre-1b-B `Prov` insertion-for-insertion, so every compare-conditioned
+  // select is byte-unchanged.
   {
-    SmallPtrSet<Value *, 16> Prov;
+    SmallPtrSet<Value *, 16> CmpProv;
+    SmallPtrSet<Value *, 16> RailProv;
     for (CmpInst *Leaf : Tree.Leaves)
-      condProvenance(Leaf, taint, Prov);
+      condProvenance(Leaf, taint, CmpProv);
     for (CallInst *Rail : Tree.RailLeaves)
-      condProvenance(Rail, taint, Prov);  // bd 3qlq.4: the register's own wire.
-    for (Value *P : Prov)
-      if (isa<FreezeInst>(P))
-        return diagnoseUnderControl(Sel, "control flow");
-    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+      condProvenance(Rail, taint, RailProv);  // bd 3qlq.4: the register's wire.
+    for (const SmallPtrSet<Value *, 16> *S : {&CmpProv, &RailProv})
+      for (Value *P : *S)
+        if (isa<FreezeInst>(P))
+          return diagnoseUnderControl(Sel, "control flow");
+    SmallVector<Value *, 16> Seeds(CmpProv.begin(), CmpProv.end());
     if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
                                 /*EmitPoint=*/nullptr, /*DT=*/nullptr, &taint))
       return diagnoseUnderControl(Sel,
                                   "condition predates a non-diagonal gate");
+    if (!RailProv.empty()) {
+      SmallVector<Value *, 16> RailSeeds(RailProv.begin(), RailProv.end());
+      if (findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
+                                  /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                  &taint) &&
+          (!DT || findNonDiagonalWireGate(RailSeeds, /*CrossValueRouting=*/true,
+                                          /*EmitPoint=*/Sel, DT, &taint)))
+        return diagnoseUnderControl(Sel,
+                                    "condition predates a non-diagonal gate");
+    }
     for (CmpInst *Leaf : Tree.Leaves) {
       if (Leaf->getParent() != Sel->getParent())
         continue;
@@ -960,12 +1016,25 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     }
     return diagnoseUnderControl(Sel, "rotation angle");
   }
-  // bd 3qlq.4 — the 4.4 DATA select with a rail-leaf condition is follow-on
-  // 1b-B (the copy merge controlled on the register itself: no mint, no strip,
-  // no free). Declined HERE, after the angle-select hand-off, so the Rz-stem
-  // angle select above — which this increment DOES lower — is not caught.
-  if (!Tree.RailLeaves.empty())
-    return diagnoseUnderControl(Sel, kBareRailCondReason);
+  // bd 3qlq.4 / bd test_C_libtooling-r9e5 (1b-B.1) — THE `kBareRailCondReason`
+  // DECLINE THAT STOOD HERE IS GONE: the 4.4 DATA select with a rail-leaf
+  // condition LOWERS (the rail ladder is above, the copy flag is
+  // `CondTreeEmit`'s `CopyRailRoot`). Its position mattered and the successor
+  // inherits it — the rail rungs are asked BEFORE the angle hand-off, so the
+  // Rz-stem angle select on a rail still reaches `classifyAngleSelect` exactly
+  // as it did (`control_angle_select_phase_rail.ll`), and the Ry stem still
+  // declines `kBareRailCondReason` INSIDE that classifier (1b-C, bd
+  // `test_C_libtooling-l4x4` — `control_angle_select_reject_rail_ry.ll`). The
+  // string survives at every other consumer and is still a discriminator: the
+  // value arm and the in-place-Ry/state-prep arms (`ArmClassify`, 1b-B.2 — bd
+  // `test_C_libtooling-r9e5`, `control_swap_reject_value_rail_cond.ll`), and
+  // `SelectMergeEmit`'s own drift guard is now the OPPOSITE assertion.
+  //
+  // Gates 4/5/6 below apply to a rail-conditioned select UNCHANGED: they ask
+  // about the select's RESULT TYPE and its two ARM OPERANDS, never about the
+  // condition. A rail CONDITION with a downstream rotation is fine, exactly as a
+  // compare's register is — gate 5's coherence question is an OPERAND question
+  // (bd memory [select-merge-phase-operand-dephasing]).
 
   // GATE 4 — ABI-width scalar result with a controlled copy (§16.9), AFTER the
   // FP-use fence. Accepts scalar integer {i1..i64} (`widthHasReversibleCopy`)
@@ -1021,6 +1090,9 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   R.Kind = ControlRegion::SelectRegion;
   R.Merge = Sel;  // a SelectInst fits the Instruction* Merge slot.
   R.Condition = Sel->getCondition();
+  // bd r9e5 F-B1R1-2: a rail-carrying tree reached here through the §14.3 rail
+  // ladder above; the emitter refuses one that arrives without this flag.
+  R.RailLadderProven = !Tree.RailLeaves.empty();
   plan.Regions.push_back(R);
 }
 

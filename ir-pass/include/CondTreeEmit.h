@@ -109,29 +109,71 @@ struct CondNetwork {
   // non-diagonal gate on a user register) — the phase emitters use the diagonal
   // form `rz(root, −θ)` instead (`SwapRouteEmit`'s `emitKickbackGates`).
   bool RootIsRail = false;
+  // bd test_C_libtooling-r9e5 (1b-B.1) — THE RAIL-ROOT COPY FLAG, minted only
+  // when the caller asks (`CopyRailRoot`). `RailRoot` is the user's register
+  // (the `cq_theta_i1` call) and `RailRootFlag` the fresh |0> i1 ancilla that
+  // `cqrt_cnot(RailRoot, RailRootFlag)` copies its basis label into; `Root` is
+  // then that ANCILLA and `RootIsRail` is FALSE, so a caller that must fire a
+  // gate on `¬Root` may `cqrt_x`-bracket it exactly as for a compare flag.
+  // Both null when no such flag was minted (every phase caller — they gate
+  // DIAGONALLY on the register itself and must keep reading `RootIsRail`).
+  llvm::Value *RailRoot = nullptr;
+  llvm::Value *RailRootFlag = nullptr;
 };
 
 // Emit ONE interior node's gates onto `N.G`, forward (`Inverse=false`) or as its
 // exact adjoint (`Inverse=true` — the same gates in reverse order; every gate is
 // self-inverse). `Neg*` bracket the corresponding control with `cqrt_x`.
+//
+// `taint` (bd test_C_libtooling-r9e5, 1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1)
+// — pass it on every FORWARD emission. When a control (`N.L`/`N.R`) is a bare
+// RAIL LEAF — a non-root rail inside a tree, or a level ROOT that is one at the
+// 4.3 nest's conjunction — this node's gate is a CONTROL READ OF THE USER'S
+// REGISTER, and `markRailCondRead` records it so `reverifyRailCondReads` can
+// re-ask the §14.3 rail ladder against it once the taint is final. Both callers
+// need it, which is why it lives here rather than at each call site. Null (the
+// default) records nothing: the strip passes null, and its `Inverse=true`
+// emission is refused a second time inside.
 void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
-                  llvm::IRBuilder<> &B, const llvm::DebugLoc &DL, bool Inverse);
+                  llvm::IRBuilder<> &B, const llvm::DebugLoc &DL, bool Inverse,
+                  TaintSet *taint = nullptr);
 
 // Emit the forward network for the already-collected `Tree` (whose root is
 // `Root`) immediately before `Before`, recording it in `Out`. `AllowQQLeaves`
 // selects the leaf-mint width policy: TRUE passes `qqSelectLeafWidth` (the 4.4
 // select's shipped behaviour, bd adia), FALSE passes an empty width so a Q+Q
 // leaf has no mint — the caller must then have declined it already.
+//
+// `CopyRailRoot` (bd test_C_libtooling-r9e5, 1b-B.1) — ASK FOR A BRACKET-ABLE
+// FLAG WHEN THE ROOT IS A BARE RAIL. A rail root is the USER'S REGISTER, and a
+// caller whose stream needs a gate on `¬root` cannot get it the way the phase
+// emitters do (the diagonal identity `X·P(θ)·X = e^{iθ}·P(−θ)` exists only for a
+// DIAGONAL gate; a controlled basis COPY has no diagonal form for its ¬-half)
+// and must not `cqrt_x` the register (bd memory
+// [diagonal-only-on-user-registers-3qlq4]: `Uncomputation::
+// preservesBorrowedParent` fails CLOSED on anything it does not name, so a
+// bracket freezes and leaks every chain that borrows the register, and
+// `ChainWalk::isInPlaceGateOn` never recovers a `cqrt_x`). With this flag set
+// and the root a rail leaf, the network mints ONE fresh |0> i1 ancilla and
+// `cqrt_cnot(rail, f)` — a READ-ONLY control on the register, the SAME gate
+// class the node emissions already put on a rail — hands `f` back as `Out.Root`
+// (`RootIsRail` FALSE, `RailRoot`/`RailRootFlag` recorded), and
+// `stripCondNetwork` un-copies and frees it. `Σ α_x |x⟩_b |x⟩_f` after the
+// copy; the second `cqrt_cnot` returns `f` to `x ⊕ x = 0` on EVERY basis
+// branch, so its `cqrt_free` is a proven-|0> free (Rule 6) and the register is
+// left exactly as found. DEFAULT FALSE: every phase caller is byte-unchanged.
 CondNetDisp emitCondNetwork(llvm::Value *Root, const CondTree &Tree,
                             WidthDispatch &wd,
                             const ControlledSymbols &csyms,
                             TaintSet &taint, llvm::Instruction *Before,
                             const llvm::DebugLoc &DL, bool AllowQQLeaves,
-                            CondNetwork &Out);
+                            CondNetwork &Out, bool CopyRailRoot = false);
 
-// The exact LIFO strip of a network emitted above, before `Before`: every node
-// in reverse post-order (inverse network, then `cqrt_free` of its ancilla), then
-// every leaf in reverse mint order (`_unc` strip against its own rail, then
+// The exact LIFO strip of a network emitted above, before `Before`: the
+// `CopyRailRoot` ancilla FIRST when there is one (it was minted LAST — the
+// second `cqrt_cnot(rail, f)` returns it to |0> and it is freed there), then
+// every node in reverse post-order (inverse network, then `cqrt_free` of its
+// ancilla), then every leaf in reverse mint order (`_unc` strip against its own rail, then
 // `cqrt_free`). Leaves the tree's IR untouched — erasing it is the caller's
 // (the strip READS each leaf's original operands, so it must precede any erase).
 // `StripsOut`, when non-null, collects each emitted LEAF `_unc` strip call so a

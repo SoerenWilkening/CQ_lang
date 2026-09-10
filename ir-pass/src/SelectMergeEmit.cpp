@@ -103,12 +103,31 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
       diagnoseUnderControl(R.Merge, "control flow");
     return;
   }
-  // bd 3qlq.4 — a RAIL LEAF never reaches this emitter: `classifySelectRegion`
-  // declines it on the data path (`kBareRailCondReason`) and the value-arm /
-  // 6.5 callers hand over only classifier-accepted plans. Re-asked here as the
-  // detection/emission drift guard every emitter carries, BEFORE the first
-  // emission.
-  if (!Tree.RailLeaves.empty()) {
+  // bd test_C_libtooling-r9e5 (1b-B.1) — A RAIL LEAF NOW LOWERS HERE, and the
+  // guard this replaces was its `kBareRailCondReason` decline. The stream below
+  // is UNCHANGED, instruction for instruction: what changes is where the FLAG
+  // comes from. A NON-ROOT rail (a rail inside an `and`/`or`/`xor` tree) needs
+  // nothing at all — the root is a node ancilla and the rails are read-only
+  // controls of its cnots/toffoli — while a BARE RAIL ROOT is the user's
+  // REGISTER, which step 4 would `cqrt_x`-bracket. So the network is asked for a
+  // bracket-able ancilla instead (`CopyRailRoot`, below), and the guard is
+  // INVERTED: if a rail root ever reaches step 3 still being the register, bail
+  // LOUDLY (Rule 1 — never silently), because the only alternative is a
+  // non-diagonal gate on a user register (bd memory
+  // [diagonal-only-on-user-registers-3qlq4]). See after the mint.
+  //
+  // Rule-13 round-1 item F-B1R1-2 — THE CALLER-INDEPENDENT BACKSTOP, RESTORED.
+  // The guard this file used to carry refused a rail tree for ALL THREE callers
+  // of this emitter; its `RootIsRail` re-ask below is dead code (with
+  // `CopyRailRoot` the network never hands a rail root back). What is
+  // load-bearing is that ONLY `classifySelectRegion` asks the §14.3 rail ladder,
+  // while `SwapRouteEmit::emitValueRegion` builds its own `SelectRegion` and
+  // calls here directly — safe today only because `classifyArms` is
+  // `CmpInst`-only, and bd `fg9k` is the increment that widens it. So the plan
+  // must SAY the ladder was asked (`ControlRegion::RailLadderProven`, set at the
+  // classifier's accept), and a rail-carrying tree without it is refused with
+  // the original string, before anything is emitted (detect-before-mutate).
+  if (!Tree.RailLeaves.empty() && !R.RailLadderProven) {
     diagnoseUnderControl(Sel, kBareRailCondReason);
     return;
   }
@@ -173,9 +192,23 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // when the flag is 1"), so the traversal, the emitted symbols, the operand
   // order, the `!dbg` stamping and the ancilla NAME (`g`) are unchanged. The 4.4
   // fixtures and goldens are the witness that the lift is a refactor.
+  //
+  // bd test_C_libtooling-r9e5 (1b-B.1) — `CopyRailRoot = true`, THE ONLY CHANGE
+  // AT THIS CALL. It is inert unless the root is a bare rail leaf, in which case
+  // the network mints `f = cqrt_alloc_i1(0); cqrt_cnot(h_rail, f)` and hands `f`
+  // back as `Net.Root` (the strip un-copies and frees it, LIFO-first). Analytic
+  // argument, NOT `opt -verify` (Rule 2): after the copy the pair is
+  // `Σ α_x |x⟩_b |x⟩_f`; `copy_c(f, T, out)` writes T iff x=1, the X-bracketed
+  // `copy_c(f, F, out)` writes F iff x=0, and `b` is untouched throughout (the
+  // copies write `out`; the brackets act on `f`), so `out = b ? T : F` with one
+  // write per basis branch and the second cnot returns `f` to |0> on every
+  // branch. That is the SAME unitary the compare stream realizes with
+  // `c(x) = b`, which is why every §5a invariant below — the bracket SCOPE, the
+  // `cqrt_x` COUNT, the single free — carries over unchanged.
   CondNetwork Net;
   switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel,
-                          DL, /*AllowQQLeaves=*/true, Net)) {
+                          DL, /*AllowQQLeaves=*/true, Net,
+                          /*CopyRailRoot=*/true)) {
   case CondNetDisp::Ok:
     break;
   case CondNetDisp::MintDiagnosed:
@@ -193,6 +226,17 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
 
+  // bd test_C_libtooling-r9e5 (1b-B.1) — THE INVERTED DRIFT GUARD. `Net.Root` is
+  // about to be `cqrt_x`-bracketed in step 4, so it MUST be an ancilla this
+  // emitter owns. `RootIsRail` still true here means the `CopyRailRoot` request
+  // did not fire (emission drift): bail LOUDLY rather than bracket the user's
+  // register. Nothing of this emitter's has been emitted yet — for a bare rail
+  // root the copy IS the network's only emission and it did not happen — so this
+  // is still a detect-before-mutate bail (the ziov.4 discipline).
+  if (Net.RootIsRail) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
   Value *Flag = Net.Root;  // the ROOT rail gates the copies.
 
   // 2. ALLOC the |0> result rail (Wd). It joins `taint.Tainted` (+BirthOrder) so

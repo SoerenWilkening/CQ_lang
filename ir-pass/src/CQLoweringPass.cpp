@@ -7,6 +7,7 @@
 #include "CQLoweringPass.h"
 
 #include "ArithLowering.h"
+#include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
@@ -407,6 +408,27 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // tainted-angle guard + the newly-tainted onward `cq_phi`). A no-op when no
   // untainted-merge region was emitted.
   repropagateControlMerges(M, wd, taint, plan6);
+
+  // bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — the
+  // RAIL-LADDER RE-VERIFICATION, and its slot is the whole soundness argument,
+  // exactly as it is for P7 immediately below. `classifySelectRegion`'s §14.3
+  // ladder (rung (ii) measured-before, rung (iii) the wire question) and
+  // `classifyPhaseKickback`'s step 5b run inside `detectControlRegions`, i.e.
+  // with ROUND-1 taint — while `lowerRotations` decides chained-vs-source with
+  // FINAL taint (`Chained = taint.Tainted.count(arg0)`). `repropagateControlMerges`
+  // re-seeds taint from the 6.5/4.5 `%out` rails, so in that window a
+  // `cq_theta_i1` on an `%out`-derived seed is a SOURCE theta to both of the
+  // ladder's closures and a CHAINED one to the lowering: its SIBLING then rides
+  // the same physical rail and the emitted control read fires on a register the
+  // sibling moved (a CONFIRMED silent miscompile, plain C through the two-TU 6.5
+  // recipe, `opt` exit 0 / verify-clean / STRICT-stage-2b clean). Every emitter
+  // that reads a rail as a control RECORDS `(rail, first read)` at its emission
+  // site; this stage re-asks the SAME two rungs here, where the taint is final,
+  // and declines LOUDLY. It must run AFTER the round-2 fixpoint (nothing else
+  // makes the answer final) and BEFORE `lowerRotations` (which erases the
+  // `cq_theta_i1` calls the record names). A no-op for every module that never
+  // read a bare `_Bool` register as a control.
+  reverifyRailCondReads(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -822,6 +844,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // pre-`lowerIOSinks`/`lowerQramReads`/`declineClassicalMuxes`/`lowerRotations`
   // ordering rationale.
   repropagateControlMerges(M, wd, taint, plan6);
+  // bd test_C_libtooling-r9e5 (1b-B.1) mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
+  // sound slot is AFTER `repropagateControlMerges` (the round-2 fixpoint is what
+  // makes the taint final) and BEFORE `lowerRotations` (which erases the
+  // `cq_theta_i1` calls the record names).
+  reverifyRailCondReads(M, taint);
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after

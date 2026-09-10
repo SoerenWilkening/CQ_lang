@@ -202,7 +202,13 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
     // bd 3qlq.4 — on the USER'S register: `B` fires on `b == 0` in the diagonal
     // form `rz(b, −B)` (no `cqrt_x` on a register — `emitKickbackGroup`'s
     // invariant), then `rz(b, A)`. Two gates, no subtraction, no ancilla.
-    markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, Bld.CreateFNeg(B)})));
+    CallInst *G0 = stamp(Bld.CreateCall(Rz, {Flag, Bld.CreateFNeg(B)}));
+    markBranchPhaseGate(G0);
+    // bd test_C_libtooling-r9e5 (1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1) —
+    // the FIRST gate is this region's control read of the user's register;
+    // `reverifyRailCondReads` re-asks the §14.3 ladder against it once the taint
+    // is final. The select is not a candidate anchor: step 4 below erases it.
+    markRailCondRead(taint, Flag, G0);
     markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
   } else {
     stamp(Bld.CreateCall(X, {Flag}));

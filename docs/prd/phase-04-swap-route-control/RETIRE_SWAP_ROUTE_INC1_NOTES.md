@@ -1045,6 +1045,22 @@ exists today. Are they owed the same treatment `collapseFlattenedLoopRails` just
 
 ---
 
+### §2 addendum (2026-09-10, bd `r9e5` round 2 — the table needs a row SPECIES for PREDICATES)
+
+The "what else runs once before round 2" table above enumerates STAGES between `lowerControlRegions`
+and `repropagateControlMerges` and asks of each whether it computes something a later stage consumes
+over a premise round 2 falsifies. The third instance of the family (F-B1R2-1, PRD §14.7) is not a
+stage: it is a PREDICATE — the condition-wire closures (`railWireNamesBackward`,
+`findNonDiagonalWireGate`'s F-1b-1 ancestry crossing), both keyed on `taint.Tainted`, asked inside
+`detectControlRegions` at round-1 taint, while `RotationLowering`'s `Chained = taint.Tainted.count(Op)`
+— the SAME relation — is decided at final taint. The question the table must also ask, per predicate:
+*"does this predicate read `taint.Tainted` inside `detectControlRegions`, and is its ANSWER consumed
+(an emitted gate, a recorded fact) after `repropagateControlMerges`?"* Two members found this round;
+the cure that shipped is the eqpx tripwire pattern (record the read, re-verify with FINAL taint after
+the fixpoint, decline loudly — `reverifyRailCondReads`, §14.8), and the compare select's copy of the
+same window is bd `test_C_libtooling-9pum`. The next reviewer of a control-emitter change owes the
+predicate rows, not only the stage rows.
+
 ## §3 — the Rule-13 CLEARANCE (2026-09-05), the THREE C-1 FIX ROUNDS, the RE-CLEARANCE and the LANDING (all 2026-09-06)
 
 ### 3.1 The verdict, in one paragraph

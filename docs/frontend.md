@@ -117,9 +117,16 @@ table below — this is the canonical suffix-to-type map:
 > ever touches a user register), `if (b) cq_phi(A); else cq_phi(B);` is the pair
 > `rz(b, −B); rz(b, A)`, and `b && q == 5`, `b || …`, `b == c`, the depth-2 nest and a loop
 > over an INVARIANT `bool` all lower (rolled, in the loop case). What still declines, and
-> with which string: a `bool` that drives a DATA select or value arm (`if (b) a -= 3;`), an
-> in-place Ry or state prep (`if (b) r = cq_theta(r, θ)`) or a Ry angle select — `bare i1
-> register condition` (follow-ons); a loop-CARRIED `bool` (`for (…) { if (b) …; b =
+> with which string: **since bd `test_C_libtooling-r9e5` (1b-B.1, 2026-09-10) a `bool` that
+> drives a DATA select LOWERS** — `int a = 5; if (b) a -= 3;`, `b ? q : 9`, `b ? q + 1 : q`,
+> `b ? 1.5 : 2.5`, `(b != c) ? 2 : 5`, and `if (b) a = a + 3` on a quantum `a` (which `-O1`
+> folds to a select) — as the 4.4 copy merge controlled on a CNOT copy of the register (an
+> ancilla flag: `alloc_i1; cnot(b, f)` … `cnot(b, f); free(f)`; still nothing non-diagonal on
+> `b`), including after it a chained `b = cq_theta(b, −θ)` (the S†); what still declines with
+> `bare i1 register condition` is a `bool` driving an UNFOLDED value diamond (a ≥5-op arm, or
+> hand IR — bd `fg9k`), a classical-call arm (`if (b) y = f(n)` with a `noinline` pure `f` — bd
+> `54ur`), an in-place Ry or state prep (`if (b) r = cq_theta(r, θ)`) or a Ry angle select
+> (follow-ons); a loop-CARRIED `bool` (`for (…) { if (b) …; b =
 > cq_theta(b, φ); }`), a NOT inside a tree (`!b && …` where `-O1` keeps the NOT) and a
 > negated level of a nest — `branch phase on a bare i1 condition`. A `bool` measured before
 > its branch, or rotated in place between its definition and its branch while the branch

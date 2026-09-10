@@ -32,6 +32,7 @@ class CmpInst;
 class DominatorTree;
 class Instruction;
 class LoopInfo;
+class Module;
 class SelectInst;
 class Value;
 }  // namespace llvm
@@ -140,6 +141,65 @@ enum class CondDataDisp { ShareOk, MeasuredEarly, Unowned, Unlowerable };
 CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
                                     const llvm::BasicBlock *RouteBlock,
                                     const TaintSet &Taint);
+
+// bd 3qlq.4 / bd test_C_libtooling-r9e5 (1b-B.1) — has the RAIL-LEAF condition
+// `Rail` (a `cq_theta_i1` result, `isCondRailLeaf`) been MEASURED before
+// `ReadPoint`? A measured register is classical from there on, so a gate
+// controlled on it after the measurement is a post-measure gate (Rule 6's
+// loud-reject class) — the rail mirror of `condDataUseDisposition`'s
+// `MeasuredEarly`. True (refuse) when a `cq_measure` user of the rail precedes
+// `ReadPoint` in its own block, or when `ReadPoint` is potentially REACHABLE
+// from that measurement (a dominating block, or a classically-guarded side
+// path — round-1 finding F-1b-2). `DT` may be null (only more conservative).
+//
+// ONE spelling, THREE callers (Rule 14): `classifyPhaseKickback` step 5b and
+// `classifyPhaseKickbackNest`, both passing `Pred->getTerminator()` (the gate is
+// emitted AT the branch, so every non-terminator of `Pred` precedes it), and —
+// since 1b-B.1 — `classifySelectRegion`'s rail rung 2, passing the SELECT
+// itself, because the 4.4 copy-merge stream is emitted mid-block immediately
+// before it and a same-block measurement AFTER the select is the ordinary
+// downstream case. De-anonymized from `ArmClassify.cpp`; the definition still
+// lives there, only its linkage and its read-point parameter changed.
+bool railMeasuredBeforeReadPoint(const llvm::CallInst *Rail,
+                                 const llvm::Instruction *ReadPoint,
+                                 const TaintSet &Taint,
+                                 const llvm::DominatorTree *DT);
+
+// bd test_C_libtooling-r9e5, Rule-13 round-1 item F-B1R1-1 — every SSA NAME of
+// the physical register `Rail` sits on, walking BACKWARD over the relation
+// `lowerRotations` lowers in place by (a chained `cq_theta`'s TAINTED arg-0 is
+// the same rail): `Rail` itself, each chained ancestor theta, and the first
+// non-theta tainted parent (collected, not entered — its operands are other
+// rails). `railMeasuredBeforeReadPoint` asks its measure question over this
+// closure so that rung (ii) and rung (iii) of the rail ladder are computed over
+// the SAME wire (the 8h7d.5 F-1/F-3 lesson).
+void railWireNamesBackward(const llvm::CallInst *Rail, const TaintSet &Taint,
+                           llvm::SmallVectorImpl<const llvm::Value *> &Out);
+
+// bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — RECORD
+// one emitted RAIL CONTROL READ: `Rail` is the user's `cq_theta_i1` result read
+// as a control and `FirstRead` the FIRST `cqrt_*` call this region fires on it
+// (the 4.4 select's copy-flag `cqrt_cnot`, a rail leaf's first node gate, a
+// kickback's first `cqrt_rz_i1`). Called at the EMISSION SITE, so a fifth
+// emitter that reads a rail and forgets this call silently re-opens F-B1R2-1
+// with no diagnostic anywhere — the same "record at every emission site"
+// obligation `ChainWalk::markBranchPhaseGate` carries for F-L7-1. Idempotent for
+// an identical `(Rail, FirstRead)` pair; a rail read at two different points
+// records both (`reverifyRailCondReads` diagnoses once per rail). Null arguments
+// are ignored.
+void markRailCondRead(TaintSet &Taint, llvm::Value *Rail,
+                      llvm::Instruction *FirstRead);
+
+// bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — THE
+// RE-VERIFICATION STAGE. Re-asks rungs (ii) and (iii) of the §14.3 rail ladder,
+// at each recorded read point, with FINAL taint; declines LOUDLY on failure
+// (`condition measured before the control route` / `condition predates a
+// non-diagonal gate`, anchored on the read point, which carries the region's
+// `!dbg`) and lowers nothing further for that rail. Returns true iff it
+// declined. MUST run after the round-2 fixpoint (`repropagateControlMerges`) and
+// before `lowerRotations` — see the definition's header for the placement
+// argument and for why re-asking AFTER emission is sound.
+bool reverifyRailCondReads(llvm::Module &M, TaintSet &Taint);
 
 // Whether a control/data `CmpInst`'s predicate has a lowering template — the
 // predicate axis of `compareInScope`, with the icmp/fcmp family derived from the

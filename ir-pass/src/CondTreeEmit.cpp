@@ -20,6 +20,7 @@
 
 #include "CondTreeEmit.h"
 
+#include "ArmAnalysis.h"       // markRailCondRead (bd r9e5 1b-B.1 round 2)
 #include "CompareLowering.h"     // lowerCompareToFlag / qqSelectLeafWidth
 #include "ControlledSymbols.h"   // cnotFn / toffoliFn / xFn
 #include "SelectClassify.h"      // CondTree / decomposeCondNode (the grammar)
@@ -64,10 +65,27 @@ void bracket(const CondNetwork::Node &N, const ControlledSymbols &csyms,
 }  // namespace
 
 void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
-                  IRBuilder<> &B, const DebugLoc &DL, bool Inverse) {
-  auto stamp = [&DL](CallInst *C) {
+                  IRBuilder<> &B, const DebugLoc &DL, bool Inverse,
+                  TaintSet *taint) {
+  // bd test_C_libtooling-r9e5 (1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1) — THE
+  // ONE PLACE A NODE'S CONTROL READ OF A USER REGISTER IS RECORDED. `N.L`/`N.R`
+  // may be a RAIL LEAF (the register is its own flag: `FlagOf[rail] = rail`,
+  // nothing minted) or a level ROOT that is one (the 4.3 nest's conjunction), so
+  // both callers of this function need the record and neither can be trusted to
+  // remember it separately — the `markBranchPhaseGate` lesson, one epic later.
+  // FORWARD only: the inverse network re-reads the same register at the strip,
+  // which proves nothing new and would double the entries.
+  auto record = [&](CallInst *C) {
+    if (!taint || Inverse)
+      return;
+    for (Value *Ctl : {N.L, N.R})
+      if (Ctl && isCondRailLeaf(Ctl) && C->hasArgument(Ctl))
+        markRailCondRead(*taint, Ctl, C);
+  };
+  auto stamp = [&DL, &record](CallInst *C) {
     if (DL)
       C->setDebugLoc(DL);
+    record(C);
   };
   bracket(N, csyms, B, DL);
   // bd 3c6m.67 — XOR is the OR network MINUS its toffoli. Emitting OR's toffoli
@@ -101,7 +119,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
                             const ControlledSymbols &csyms,
                             TaintSet &taint, Instruction *Before,
                             const DebugLoc &DL, bool AllowQQLeaves,
-                            CondNetwork &Out) {
+                            CondNetwork &Out, bool CopyRailRoot) {
   if (!Root || !Before)
     return CondNetDisp::Malformed;
   IRBuilder<> B(Before);
@@ -110,10 +128,16 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
       C->setDebugLoc(DL);
     return C;
   };
+  // bd test_C_libtooling-r9e5 (1b-B.1) — a BARE RAIL ROOT the caller asked to
+  // COPY. Decided here, before anything is emitted, because it changes what the
+  // i1 allocator is needed for: such a tree has NO nodes and NO compare leaves
+  // (`collectCondTree` records the rail and returns), so the copy flag is the
+  // only thing this network mints.
+  const bool CopyRoot = CopyRailRoot && isCondRailLeaf(Root);
   // The i1 ancilla allocator is resolved BEFORE the walk, so a resolution
   // failure is a clean "emitted nothing" rather than a half-built network.
   FunctionCallee AllocI1;
-  if (!Tree.Nodes.empty()) {
+  if (!Tree.Nodes.empty() || CopyRoot) {
     AllocI1 = wd.allocFn("i1");
     if (!AllocI1)
       return CondNetDisp::Malformed;
@@ -150,7 +174,14 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
       if (!N.L || !N.R)
         return CondNetDisp::Malformed;  // a child with no rail.
       N.G = stamp(B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "g"));
-      emitCondNode(N, csyms, B, DL, /*Inverse=*/false);
+      // bd test_C_libtooling-r9e5 (1b-B.1, F-B1R2-1) — `&taint` makes the node
+      // emission RECORD its control read of a RAIL leaf (a non-root rail is read
+      // by this node's cnots/toffoli and nothing is minted for it), for the
+      // round-2 re-verification. The recording lives in `emitCondNode` and not
+      // here so that the 4.3 nest's CONJUNCTION node — which calls it directly,
+      // with a level ROOT that may itself be a rail — is covered by the same
+      // line rather than by a second one that can be forgotten.
+      emitCondNode(N, csyms, B, DL, /*Inverse=*/false, &taint);
       FlagOf[V] = N.G;
       Out.Nodes.push_back(N);
       continue;
@@ -186,6 +217,33 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   }
   Out.Root = FlagOf.lookup(Root);
   Out.RootIsRail = isCondRailLeaf(Root);
+  // bd test_C_libtooling-r9e5 (1b-B.1) — THE RAIL-ROOT COPY, minted LAST (so the
+  // LIFO strip un-copies it FIRST) and only on the caller's explicit request.
+  //
+  // `f = |0>` then `cqrt_cnot(rail, f)` leaves the pair in `Σ α_x |x⟩_b |x⟩_f`
+  // — a basis-label copy of a register that STAYS LIVE, not a move, so Rule 8's
+  // no-cloning prohibition (which forbids FREEING a superposed source by
+  // copy+uncompute) has no subject here: nothing about the register is freed or
+  // disturbed. `rail` sits in the CONTROL slot of both cnots, exactly the
+  // read-only position the node emissions already put a rail in, so no
+  // non-diagonal gate is ever emitted ON the user's register (bd memory
+  // [diagonal-only-on-user-registers-3qlq4]). The caller may then bracket `f`
+  // with `cqrt_x` freely — it is an ancilla this network owns.
+  if (CopyRoot && Out.Root) {
+    Value *Rail = Out.Root;
+    CallInst *F =
+        stamp(B.CreateCall(AllocI1, {Constant::getNullValue(I1Ty)}, "bf"));
+    CallInst *Cn = stamp(B.CreateCall(csyms.cnotFn(), {Rail, F}));
+    // bd test_C_libtooling-r9e5 (1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1) —
+    // THIS cnot is the 4.4 select's control read of the user's register, and it
+    // is what the round-2 re-verification re-asks the §14.3 ladder against. The
+    // select itself cannot be the anchor: `emitSelectRegion` step 6 erases it.
+    markRailCondRead(taint, Rail, Cn);
+    Out.RailRoot = Rail;
+    Out.RailRootFlag = F;
+    Out.Root = F;
+    Out.RootIsRail = false;  // the root handed back is an ANCILLA now.
+  }
   return Out.Root ? CondNetDisp::Ok : CondNetDisp::Malformed;
 }
 
@@ -199,6 +257,17 @@ void stripCondNetwork(const CondNetwork &Net, WidthDispatch &wd,
     if (DL)
       C->setDebugLoc(DL);
   };
+  // bd test_C_libtooling-r9e5 (1b-B.1) — THE RAIL-ROOT COPY FLAG FIRST, because
+  // it was minted LAST (exact LIFO). `cqrt_cnot` is an involution, so re-emitting
+  // it returns `f` to `x ⊕ x = 0` on EVERY basis branch — a proven-|0> free
+  // (Rule 6), and the register it reads is left exactly as the forward found it
+  // (the merge's controlled copies write `%out`, never the condition rail; the
+  // `cqrt_x` brackets act on `f`). Vacuous for every other caller: `RailRootFlag`
+  // is null unless `CopyRailRoot` was asked for and the root was a rail.
+  if (Net.RailRootFlag) {
+    stamp(B.CreateCall(csyms.cnotFn(), {Net.RailRoot, Net.RailRootFlag}));
+    stamp(B.CreateCall(wd.freeFn(), {Net.RailRootFlag}));
+  }
   // NODES first, in REVERSE post-order — a parent un-computes while its
   // children's rails are STILL ALLOCATED, which is the whole reason the order is
   // load-bearing: the inverse network READS L and R, so freeing a child before

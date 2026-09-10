@@ -689,6 +689,31 @@ exactly TWO pre-existing fixtures moved**: the discriminator itself (`control_ph
 the drbq-era `control_inplace_ry_reject_raw_i1_cond.ll`, which keeps its decline and takes
 the new string (it IS 1b-C's flip target; a duplicate pin of it was dropped).
 
+**E15 — Increment 1b-B.1, the 4.4 DATA SELECT on a bare `_Bool`, is BUILT (bd
+`test_C_libtooling-r9e5`, 2026-09-10; §14).** `int a = 5; _Bool b = cq_theta(b0, θ); if (b) a -= 3;`
+— the owner's own program, which `clang -O1` folds to `select i1 %b, i32 2, i32 5` — lowers. The
+merge stream is the Rule-13-cleared 4.4 one VERBATIM; what changes is where the FLAG comes from: a
+CNOT COPY of the rail (`bf = cqrt_alloc_i1(0); cqrt_cnot(h_b, bf)` … `cqrt_cnot(h_b, bf);
+cqrt_free(bf)`), minted and stripped by `CondTreeEmit` under a trailing `CopyRailRoot` parameter
+(every phase caller byte-unchanged), so **no `cqrt_x` ever lands on a user register** and the only
+gates touching it are read-only controls — the gate class §13's nest already emits. Classifier: the
+§13.3 ladder with the SELECT as the read point (measured-before asked positionally and by
+reachability; the wire question with the DT prong for RAIL seeds only, so the S† `b = cq_theta(b,
+−θ)` after the select accepts and in-loop stale names decline). **The VALUE arm and the 6.5 arm on a
+rail are NOT this increment** — measured, the short value arm IS a select at `-O1` and lowers now;
+the unfolded diamond (≥5-op chain, hand IR) and the 6.5 arm are bd `test_C_libtooling-fg9k` /
+`test_C_libtooling-54ur` (`inc1-records/session-r9e5/SCOPE_B2.md`). One CONFIRMED plain-C
+over-accept was found by the orchestrator on the first build and fixed before the independent round
+(F-B1-1, §14.7: the same-block measure-after-select in a loop); its COMPARE twin is PRE-EXISTING on
+`main` (bd `test_C_libtooling-r10v`). 13 accept + 9 decline fixtures, 7 STRICT e2e slices + 1
+rolled == unrolled `cmp` gate (39 = 39); exactly ONE pre-existing fixture moved (the discriminator
+`control_swap_reject_select_rail_cond.ll`, `git mv`'d to `control_swap_select_rail_const.ll`). **Its Rule-13
+round 2 then BLOCKED on the ROUND-2 TAINT WINDOW (§14.7 F-B1R2-1, a PREDICATE asked at round-1 taint whose
+relation `lowerRotations` decides at final taint — plain C, two TUs, pre-existing for the compare select,
+bd `test_C_libtooling-9pum`) and the fix is `reverifyRailCondReads` (§14.8): every emitted rail read is
+recorded at four sites (the fourth, the nest's conjunction toffoli, found by the fix itself) and re-verified
+under FINAL taint after the fixpoint, in both entry points, declining loudly.**
+
 ## 1. Motivation — the shipped Grover goldens are the identity
 
 Measured 2026-09-05 at HEAD `52d7764`. The runtime ABI pins `cqrt_rz_<W>` as
@@ -1318,3 +1343,384 @@ is pinned by 11 pre-existing fixtures (a blanket-refusal mutant reddens them). F
 Fixture count after both rounds: **1738** (+31 over 1707: 18 accepts, one of them the
 rewritten discriminator, and 14 declines, one duplicate dropped). Probes:
 `inc1-records/session-3qlq4/review_1b_r2_probes/` (57 files + harnesses).
+
+## 14. Increment 1b-B.1 — the 4.4 DATA select on a bare `_Bool` (bd `test_C_libtooling-r9e5`, 2026-09-10)
+
+### 14.1 The shape, and why §13 left it declining
+
+`_Bool b = cq_theta(b0, θ); if (b) a -= 3;` reaches the pass as `select i1 %b, i32 2, i32 5` — the
+register ITSELF as the select's condition, with no compare anywhere in the module. `clang -O1` produces
+it from every `bool`-guarded straight-line assignment: `if (b) a -= 3`, `b ? q : 9`, `b ? q : p`,
+`b ? 1.5 : 2.5`, `b ? c : d` over three `_Bool`s, `(b != c) ? 2 : 5` (an `xor i1` root over two rails),
+and the owner's own cascade `int a = 5; bool b0 = 0; if (a >= 3) b0 = cq_theta(b0,.5); if (b0 == 1)
+a -= 3;`, which IPSCCP collapses to exactly that select.
+
+§13 admitted the rail as a LEAF of the condition grammar (`CondTree::RailLeaves`, `isCondRailLeaf`) and
+lowered it at the three REGISTER-FREE PHASE emitters only; every other consumer declined
+`bare i1 register condition` (`kBareRailCondReason`), the 4.4 data select among them, as filed follow-on
+1b-B. **This increment is the DATA-SELECT half of that follow-on.** The value arm (`classifyArms` →
+`emitValueRegion`) and the 6.5 classical-call arm are 1b-B.2 and still decline —
+`control_swap_reject_value_rail_cond.ll` is unchanged and green.
+
+### 14.2 The lowering — the merge stream is the shipped one; only the FLAG changes
+
+The §5a controlled-XOR copy merge (`SelectMergeEmit` steps 1–6, Rule-13-cleared, byte-pinned by the
+`control_swap_select_*` fixtures and the `slice_control_select*` goldens) is emitted **instruction for
+instruction unchanged**. What changes is where the flag comes from:
+
+```
+   bf = cqrt_alloc_i1(0)                    the copy flag, |0>
+   cqrt_cnot(h_b, bf)                       Σ_x α_x |x⟩_b |x⟩_bf
+   out = cqrt_alloc_<W>(0)                  the |0> result rail          ┐
+   cqrt_copy_<W>_controlled(bf, T, out)     writes T iff x = 1           │ the shipped
+   cqrt_x(bf)                                                           │ §5a stream,
+   cqrt_copy_<W>_controlled(bf, F, out)     writes F iff x = 0           │ verbatim
+   cqrt_x(bf)                                                           ┘
+   cqrt_cnot(h_b, bf)                       bf back to x ⊕ x = 0
+   cqrt_free(bf)                            a proven-|0> free (Rule 6)
+```
+
+**WHY A COPIED ANCILLA AND NOT THE REGISTER, and it is the whole design decision.** Step 4 must fire the
+second copy on `¬flag`, and the project's only spelling of that is a self-inverse `cqrt_x` bracket. A
+rail root is the USER'S REGISTER and may never carry a `cqrt_x` — bd memory
+`diagonal-only-on-user-registers-3qlq4` names the three lowered-stream predicates that go wrong or
+over-freeze: `Uncomputation::preservesBorrowedParent` admits an uncontrolled `cqrt_rz_` on a borrowed
+parent BY NAME and FAILS CLOSED on anything it does not name (a bracket would freeze and leak every
+chain that borrows the register — a `zext`, a compare, an `add`), `ChainWalk::isInPlaceGateOn`
+deliberately never recovers a `cqrt_x`, and every `ArmClassify` wire fence argues from "this region emits
+no non-diagonal gate on any condition register". §13.2's escape — the diagonal identity
+`X·P(θ)·X = e^{iθ}·P(−θ)` — exists only for a DIAGONAL gate; a controlled basis COPY has no diagonal form
+for its ¬-half. So the flag is copied out of the register instead, and the two gates that touch the
+register are `cqrt_cnot(h_b, ·)` with it at ARG 0 — a READ-ONLY control, the SAME gate class §13's nest
+already emits on a rail (`cnot(h_b, g)` / `toffoli(h_b, f, g)`, cleared in §13.6/§13.7). **No new gate
+class on a user register, no new gate class in the merge, and no new frozen symbol** (owner D3:
+`cqrt_alloc_i1`, `cqrt_cnot`, `cqrt_free` and `cqrt_copy_<W>_controlled` all already ship).
+
+**The unitary (analytic — Rule 2).** `bf` is minted `|0⟩`; `cnot(b, bf)` gives `Σ_x α_x |x⟩_b |x⟩_bf`, a
+basis-label COPY of a register that STAYS LIVE, so Rule 8 (which forbids freeing a superposed source by
+copy+uncompute) has no subject. One copy fires per basis branch, `b` is untouched throughout (the copies
+write `out`, the brackets act on `bf`), the second `cnot` returns `bf` to `x ⊕ x = 0` on EVERY branch,
+and the free is clean. Net `|b⟩ ⊗ |out = b ? T : F⟩` — the SAME unitary the compare stream realizes with
+`c(x) = b`, which is why every §5a invariant (the bracket SCOPE, the `cqrt_x` COUNT, the single free —
+bd memory `swap-route-select-merge-invariants`) carries over untouched.
+
+**A NON-ROOT rail leaf needs nothing new.** `(b != c) ? 2 : 5` is `xor i1 %b, %c`, whose tree ROOT is the
+xor NODE: `CondTreeEmit` allocates its ordinary ancilla `%g`, writes it with two `cqrt_cnot` whose
+CONTROLS are the registers, and the merge brackets `%g`. `RootIsRail` is false, no copy flag is minted.
+
+**Where it lives.** `CondTreeEmit::emitCondNetwork` gains a trailing `bool CopyRailRoot = false` and
+`CondNetwork` gains `RailRoot`/`RailRootFlag`, so the ONE network implementation serves 1b-B.2's
+emitters too (Rule 14) and every phase caller — which must keep reading `RootIsRail` — is byte-unchanged.
+With `CopyRailRoot && RootIsRail` the ancilla is minted AFTER the walk (a bare rail root has no nodes and
+no compare leaves, so it is the only thing minted), `Out.Root` becomes the ancilla and `RootIsRail` goes
+FALSE; `stripCondNetwork` strips it FIRST (it was minted LAST — exact LIFO).
+`SelectMergeEmit`'s pre-emission `kBareRailCondReason` guard is INVERTED: if a rail root ever reaches
+step 3 still being the register, bail LOUDLY with `control flow` (Rule 1 — never silently), because the
+only alternative is a `cqrt_x` on a user register.
+
+### 14.3 The classifier ladder for a rail leaf (`classifySelectRegion`)
+
+Asked PER RAIL LEAF, root or not, with the **SELECT** as the read point (`SelectMergeEmit` inserts every
+gate immediately before it). §13.3's ladder with one substitution, and that substitution is the increment:
+
+1. **tainted** — by construction (`cq_theta_i1` IS the taint source); re-asked as defence in depth.
+2. **not measured before the SELECT** — `railMeasuredBeforeReadPoint` (`ArmClassify`, generalised from
+   §13.3's `railMeasuredBeforeBranch`; ONE spelling, three callers). String:
+   `condition measured before the control route`. **THE READ POINT IS THE SUBSTITUTION.** The kickback's
+   gate is emitted AT the branch, so §13 could treat any same-block measurement as "before"; this stream
+   is emitted MID-BLOCK, so a same-block measurement must be tested POSITIONALLY. A measure AFTER the
+   select is the ordinary downstream case and ACCEPTS (`control_swap_select_rail_measure_after.ll`,
+   plain `-O1` C); one line earlier it declines (`..._reject_select_rail_measured_before.ll`). The two
+   kickback callers pass `Pred->getTerminator()` and are byte-unchanged by construction — a
+   `cq_measure` user is never a terminator, so a same-block one always `comesBefore` it. A measurement
+   elsewhere is refused on REACHABILITY, not dominance (§13's F-1b-2 fix, inherited).
+3. **the wire question, with the DT prong for RAIL seeds.** Gate 2c now builds TWO seed sets. COMPARE
+   seeds keep the POSITION-FREE walk verbatim (the mint point is unrelated to the compare's own
+   schedule, so no positional accept is possible), and with no rail leaves the set is the pre-1b-B `Prov`
+   insertion-for-insertion — every compare-conditioned select is byte-unchanged. RAIL seeds get
+   `railCondWireDisposition`'s spelling: position-free CLEAN ⇒ accept; else no `DT` ⇒ decline (Prime
+   Directive — no tree, no proof); else re-ask `findNonDiagonalWireGate` with `EmitPoint = Sel`, so a
+   gate not provably after every execution of the select declines and one PROVEN after it is
+   `ProvenPostRegion` and ACCEPTS. The P1 argument transfers exactly: the copies read `b`'s basis label
+   AT the select, the flag is minted, stripped and freed inside the stream, and nothing of the region
+   survives on `b` for a later gate to invalidate. The same-block positional prong stays COMPARE-only,
+   and the freeze fence runs over both sets.
+   **What this buys, measured:** `if (b) a -= 3; b = cq_theta(b, -0.5);` — the S† the owner's Grover
+   cascade writes — declined `condition predates a non-diagonal gate` on `main` and lowers now
+   (`control_swap_select_rail_post_ry.ll`, `slice_control_select_bool_sdagger`). It is the same
+   over-decline bd `lom0` Inc 4 removed for the flat PHASE region, one construct later.
+   **What it does NOT buy:** a theta BETWEEN the rail's def and the select, a SIBLING theta on the same
+   physical rail (the §13.6 F-1b-1 class, which the walker's tainted-parent ancestry sees), and any
+   in-LOOP body theta (the back edge defeats `provablyBefore`'s reachability half) all keep declining.
+4. **its other users are ordinary** — it is the user's register. No `hasOneUse`, no `ShareCondFlag`, no
+   "used outside the branch" fence: nothing is minted from it that could outlive the region, and the
+   merge writes only `%out`. Two regions may share one register
+   (`control_swap_select_rail_{two_regions,then_select}.ll`).
+5. **Gates 4 (width), 5 (coherent operand, both halves) and 6 (operand alias) apply UNCHANGED.** They ask
+   about the select's RESULT TYPE and its ARM OPERANDS, never about the condition; a rail CONDITION with
+   a downstream rotation is fine, exactly as a compare's register is. No "arm operand aliases the
+   condition rail" fence was added and none is owed: with the ancilla form the control `f` and any source
+   are distinct rails, and `copy_c(f, h_b, out)` is CASE A of the aliased-operand ruling (bd `big5`).
+6. **The angle hand-off ORDERING is preserved.** The rail rungs run BEFORE gate 3, so the Rz-stem angle
+   select on a rail still reaches `classifyAngleSelect` and lowers (`control_angle_select_phase_rail.ll`)
+   and the Ry stem still declines `kBareRailCondReason` INSIDE that classifier (1b-C, bd
+   `test_C_libtooling-l4x4` — `control_angle_select_reject_rail_ry.ll`).
+7. **`AllowLogicalSelect` stays FALSE for the data select**, so `b && q == 5` as a DATA-select condition
+   keeps declining `control flow` (`control_swap_reject_select_i1sel_combinator.ll`). Filed, not built.
+8. **In a loop:** an INVARIANT rail lowers ROLLED with the whole merge inside the intact body — a FRESH
+   copy ancilla, a FRESH `|0⟩` out rail, and its own free per activation, so nothing accumulates across
+   the back edge and the C-1 in-loop entangled-rail family (bd `7yd0`) has no subject. Rolled ==
+   hand-unrolled, **39 = 39 lines** (`e2e-select-bool-loop-twin-identical`).
+
+### 14.4 The decline partition
+
+* `kBareRailCondReason` (`bare i1 register condition`) SURVIVES and stays a discriminator: the VALUE arm
+  and the in-place-Ry / state-prep arms (1b-B.2, bd `test_C_libtooling-r9e5`) and the Ry-stem angle
+  select (1b-C, bd `test_C_libtooling-l4x4`). It no longer fires for the data select — that fixture is
+  `git mv`'d to `control_swap_select_rail_const.ll` and rewritten as the accept its header anticipated.
+* `condition measured before the control route` — rung 2 (same-block-before, or reachable side path).
+* `condition predates a non-diagonal gate` — rung 3 (a stale sibling or chained theta, or any in-loop
+  body theta on the condition rail).
+* `control flow` — a condition that is NOT a rail leaf: a `trunc`/`zext`/`sext`, a `phi` (loop-carried,
+  bd `test_C_libtooling-boi6`; or a region merge), a template result, a clone `Argument`, a QRAM load.
+  `isCondRailLeaf` is `cq_theta_i1`-only on purpose (§13.4), and MEASURED: admitting an i1 `trunc`/`phi`
+  reddens SIX fixtures across all four consumers of the shared predicate.
+* The emitter's drift guard is now the OPPOSITE assertion and declines `control flow` if a rail root
+  reaches step 3 unwrapped — never silently (Rule 1).
+
+### 14.5 Measured (2026-09-10, branch `3qlq-inc1b-b-rail-select`)
+
+* **The owner's program compiles.** `example/grover/grover_oracle_uncompute.c`'s `main()` as of the
+  session-3qlq4 close declined `bare i1 register condition` on `main` 87d0699 and now lowers to 15 trace
+  lines, stage 2b `1 verified, 0 violation(s), 0 unproven`. Committed verbatim as
+  `tests/e2e/slice_control_select_bool.c`.
+* Probe family: **33 plain-C programs** (29 from the build + the F-B1-1 family `m1`–`m4`) (`inc1-records/session-r9e5/probes/`, with a PRE/POST table).
+  13 accept shapes move DECLINE → ACCEPT, 5 decline shapes keep or sharpen their string, and the
+  orchestrator's `k1`/`k2`/`k4` controls do NOT move. Every ACCEPT is STRICT stage-2b clean.
+* `ir-pass-lit`: 1738 → **1759** fixtures (+21 net: 13 accepts and 9 declines, one of the accepts being
+  the `git mv`'d discriminator; two of the declines are F-B1-1's, §14.7). `lit -s ir-pass/test` → 1759
+  discovered · 1758 passed · 1 expectedly failed · 0 unexpected. **Exactly ONE pre-existing fixture moved** — the `git mv` target — measured by a
+  full corpus diff of return code + stdout + stderr over all 1738 pre-existing fixtures:
+  **RCDIFF 1 · DIAGDIFF 1 · OUTDIFF 1, the same file all three times.**
+  Re-run after the F-B1-1 fix over the 1759 files on disk: every differing file is a NEW fixture
+  (13 accepts, 4 declines whose string sharpened) and **0 / 0 / 0 over the pre-existing set** (the
+  `git mv`'d discriminator is no longer on disk to differ).
+* ctest **377 → 385** (`^e2e-` 367 → 375, `^e2e-slice-` 330 → 337, `twin-identical` 27 → 28); goldens
+  332 → **339**; **ZERO pre-existing golden churn** (`git status --porcelain tests/` lists only new
+  files and `CMakeLists.txt`). `ctest -j6 -R '^e2e-'` **375/375**; `ir-pass-lit` Passed;
+  the other 9 entries Passed; the full `ctest -j6` after the F-B1-1 fix **385/385, 458.8 s** (under
+  concurrent review load — not a quiet-box figure).
+* Injection matrix over the 13 accepts × 11 mutations = **143, 0 MISSED / 0 DIRTY** — after the first run
+  read 1 MISSED: on the two-select fixture a BRACKET SLIDE in region 1 slid into region 2 and satisfied a
+  seven-entry `ORD` block. Fixed by pinning the full fourteen-entry stream. *An `ORD` block is only as
+  strong as the number of regions it covers.*
+* `cq-opt` vs stock `opt` full equivalence sweep (required after a diagnostic-surface change):
+  **1757 fixtures, 0 mismatches** before the F-B1-1 fix and **1759 fixtures, 0 mismatches** after it
+  (`cmake --build build --target cq-opt-equivalence-full`).
+* No new runtime symbol, no ABI change; `runtime/`, `tools/opcode_table.yaml` and `include/` untouched.
+
+### 14.6 Owner questions
+
+1. **`p09`'s reclassification.** The brief scoped `if (b) a = a + 3` on a quantum `a` as 1b-B.2's value
+   arm. MEASURED, `-O1` HOISTS the add and folds it to a DATA select with two tainted operands — this
+   sub-increment's shape — and its COMPARE twin has accepted through that path since 4.4 shipped. B.2's
+   real population is the shapes `-O1` leaves as diamonds with a merge φ; worth re-scoping against
+   measured `-O1` output rather than source syntax.
+2. **The side-path measure over-declines.** Rung 2 refuses on REACHABILITY, so a program whose classical
+   guard is never taken declines anyway. Inherited from §13 (OQ-1b-R2-4), not widened here.
+3. **The borrowed-parent freeze.** `Uncomputation::preservesBorrowedParent` refuses `cqrt_cnot` (it fails
+   closed), so a chain borrowing the condition register now sees two unrecognized users where a
+   compare-conditioned select left none. That is the LEAK direction (Rule 6 safe) and matches §13's
+   disposition for a rail under a kickback, but it is a real cost; widening the row to an uncontrolled
+   `cqrt_cnot` whose TARGET is not the parent is a Rule-13 change and was NOT made.
+4. **`AllowLogicalSelect`** stays off for the data select (`b && q == 5` as a data condition keeps
+   declining) — the shipped decline fixture is untouched and widening it is a separate increment.
+
+### 14.7 Rule-13 rounds
+
+**F-B1-1 (orchestrator, on the first B.1 build, 2026-09-10 — plain-C reachable, CONFIRMED, fixed
+before the independent round).** Rung 2's read-point helper returned `M->comesBefore(ReadPoint)` for
+a same-block measure and never asked reachability, so `for (i…) { int a = b ? i : 5; acc +=
+cq_measure(a) + cq_measure(b); }` — the select stays in the loop body because its arm is
+loop-VARIANT — ACCEPTED (exit 0, verify-clean, STRICT 2b `0 violation(s)`), with every activation
+after the first controlling its copies on a register the previous trip had COLLAPSED: a post-measure
+gate, Rule 6's loud-reject class, which the kickback's block-terminator read point refuses on the same
+program. Fix: the same-block shortcut is deleted and `isPotentiallyReachable(M, ReadPoint, nullptr,
+DT)` is asked for every measure (LLVM answers the same-block case itself — before ⇒ true; after ⇒ true
+iff the block can reach itself, false in the entry block or an acyclic one); the kickback callers are
+unaffected by construction. Pinned by `control_swap_reject_select_rail_inloop_measure_after.ll` (the
+plain-C module) and `..._constarm.ll` (hand IR — `-O1` LICM-hoists a constant-arm select out of the
+loop, where the measures are genuinely downstream and `..._rail_measure_after.ll` accepts). **The
+COMPARE twin of that program accepts on `main`**: the 4.4 compare-select classifier has NO
+measured-before rung at all — PRE-EXISTING, filed as bd `test_C_libtooling-r10v` (P1), not this
+increment's. The lesson is 8h7d.5's once more: the read POINT was parameterised (a widening), and the
+same-block clause was a second predicate over the same closure that was not re-derived with it.
+Record: `inc1-records/session-r9e5/IMPL_B1.md` §8, `probes/m1`–`m4`.
+
+**Round 1 (independent, opus; `inc1-records/session-r9e5/review_b1_r1.md`) — CLEAR-WITH-ITEMS.**
+108 adversarial programs (65 plain C at `-O1`, 43 hand IR) on both binaries: 63 movers, ALL
+DECLINE → ACCEPT, 0 accept → decline; the 13 that accept on both byte-identical below the module
+header; an independent whole-corpus differential over the 1737 pre-existing fixtures 0/0/0; a
+mechanical scan of all 58 accepted lowered modules found zero `cqrt_x`/`cqrt_free`/`cqrt_cswap`/
+target-slot `cnot`/`_unc` on any rail carrying a `cqrt_ry`, every `cnot` control use evenly paired.
+The DT prong was attacked from six directions and held. Four items, every one acted on in the fix
+round (uncommitted at the time of the round-2 review; landed with the increment):
+
+* **F-B1R1-1 — OVER-ACCEPT-ARGUED, PRE-EXISTING and shared with §13's kickback (plain-C reachable).**
+  The 8h7d.5 question asked of this increment's own widening: rung (ii)'s measure set was the rail's
+  SSA NAME (`Rail->users()`) while rung (iii)'s gate set is the rail's WIRE (the walker closes each
+  seed backward through chained-theta arg-0 hops). So `bool b0 = 0; b0 = cq_theta(b0,.5); bool b =
+  cq_theta(b0,.3); int m = cq_measure(b0); int a = b ? 2 : 5;` — `b` and `b0` are ONE register
+  after `lowerRotations` — accepted, emitting `cqrt_measure_i1(h0)` immediately followed by the
+  merge's `cqrt_cnot(h0, …)`; the kickback twin gave the identical trace on `main` (the helper is
+  shared; bd `3d8q`/`r903` are the neighbouring classes). Graded ARGUED rather than CONFIRMED
+  because the emitted order is faithful to the source and the defect is in the FENCE the project uses
+  to refuse the whole class. **Fixed in the shared helper, both callers at once:**
+  `railWireNamesBackward` (the rail, each chained ancestor theta while its arg-0 is TAINTED —
+  `lowerRotations`' own `Chained` relation — and the first non-theta tainted parent, collected and
+  not entered, since its operands are other rails; forward names are rung (iii)'s subject) and
+  `railMeasuredBeforeReadPoint` asks its question over that closure. Re-running the reviewer's
+  108-program corpus moves exactly `r02`, `r22`, `h14` (select) and `r21`, `r41` (kickback), all to
+  `condition measured before the control route`; nothing else moves. Pinned by
+  `control_swap_reject_select_rail_measured_{parent_name,parent_before_chain,template_parent}.ll`,
+  `control_phase_kickback_reject_rail_measured_parent_name.ll` (an ACCEPT on `main` b00fdc2) and the
+  STOP pin `control_swap_select_rail_other_register_measured.ll` (a measurement of the cast's SOURCE,
+  a different rail, still accepts). Probes `n01`–`n05`.
+* **F-B1R1-2 — ITEM (forward-looking, unreachable today).** The emitter's old rail decline was a
+  caller-independent backstop for THREE callers; its `RootIsRail` replacement is dead code, and
+  `SwapRouteEmit::emitValueRegion` builds its own `SelectRegion` and calls the emitter directly,
+  bypassing the rail ladder — safe today only because `classifyArms` is `CmpInst`-only, which bd
+  `fg9k` is defined to widen. **Fixed with a real tripwire:** `ControlRegion::RailLadderProven`, set
+  by `classifySelectRegion` on ACCEPT iff the tree carries a rail leaf; `emitSelectRegion` refuses a
+  rail-carrying tree without it, with the original `bare i1 register condition` string, before any
+  emission. B.2's brief carries it as a stated precondition.
+* **F-B1R1-3 — DOC.** The F-1b2-4 structural ground ("a condition rail is always read later by its
+  own branch") is inherited by the select, holds (the xor bridge lowers out of place, the second Ry
+  moves the fresh rail), and had one pin. Now named for both consumers in
+  `railCondWireDisposition`'s header and pinned at the select by
+  `control_swap_select_rail_inplace_xor_bridge.ll`.
+* **F-B1R1-4 — DOC.** `IMPL_B1.md`'s table said 1757 where the tree had 1759; annotated.
+
+Lit corpus after the fix round: **1765** (+6: 4 declines, 2 accepts).
+
+**Round 2 (independent, opus; `review_b1_r2.md`) — BLOCK.** The round-1 fix itself was re-derived
+and attacked and held: `railWireNamesBackward` follows exactly `RotationLowering`'s `Chained` edge
+(compared clause by clause with `WireWalk::collectWireValues`), its stop is right in both directions,
+a whole-corpus differential over all 1765 fixtures moves exactly the 23 new B.1 files and 0 others,
+`lit --filter rail` 118/118, all 17 pre-existing kickback/nest rail accepts unaffected, 76 fresh
+programs (26 C, 47 hand IR, 3 two-TU) with 0 accept → decline. Then the "fifth thing":
+
+* **F-B1R2-1 — CONFIRMED SILENT MISCOMPILE, plain C (two TUs), the round-2 TAINT WINDOW.** Two
+  predicates ask "same physical rail?" about the same edge at two different times: the fence's
+  closures (`railWireNamesBackward`; `findNonDiagonalWireGate`'s F-1b-1 crossing, both
+  `Taint.Tainted.count(arg0)`) inside `detectControlRegions` at ROUND-1 taint, and `lowerRotations`'
+  `Chained = taint.Tainted.count(Op)` at FINAL taint. `repropagateControlMerges` re-seeds from the
+  6.5/4.5 `%out` rails (the emitters taint `%out` ITSELF, so a `%out` ARM is a handle — measured — but
+  everything DERIVED from it becomes tainted only in the later round). In that window `int y = 5; if
+  (q > 5) y = ext_f(7); int keep = cq_measure(y); bool x = (y != 0); bool b = cq_theta(x, .25); bool
+  b3 = cq_theta(x, .9); int a = b ? 2 : 5;` is a SOURCE theta to the fence (sibling off the closure,
+  rung (iii) clean) and a CHAINED theta to the lowering (both siblings on ONE rail). PRE: `bare i1
+  register condition`. POST: exit 0, STRICT 2b clean, `ry(h5,.25); ry(h5,.9); cnot(h5,bf)` — the copies
+  controlled on `Ry(.9)Ry(.25)|x⟩` while the condition names `Ry(.25)|x⟩`. Discriminators: `e05` (`x =
+  trunc %q`, tainted at round 1) DECLINES on both; `e11` (an opaque classical seed that STAYS
+  classical) accepts CORRECTLY as two separate registers; `e06`/`c/e02` are the rung-(ii) form
+  (measure) of the same window. **PRE-EXISTING for the COMPARE select**: `e08` (hand IR) and `e13`
+  (plain C, two TUs) accept on BOTH binaries with byte-identical modules — `main` b00fdc2 miscompiles
+  that class today through the 4.4 compare select; filed as bd `test_C_libtooling-9pum` (P1), not this
+  increment's. Nothing catches it: `declineStaleRecordOps` excludes select-condition compares and by
+  its round-2 re-sweep the compare is erased; for the rail the stale consumer is the emitter's own
+  `cqrt_cnot`; stage 2b sees perfect pairing; the golden would record a self-consistent stream. It is
+  the standing lesson "a stage that runs ONCE has a round-2-FALSE premise" (F-L3-1, F-R1-1) one species
+  over — a PREDICATE — and the third instance of the family. **Fix decided: option 1, re-verify, do not
+  re-derive** (the bd `eqpx` (1b) tripwire pattern; option 2 is a PREDICTION of what round 2 will
+  taint, option 3 costs `e11`): record every emitted rail READ (`TaintSet::RailCondReads` — the rail and
+  the first emitted `cqrt_*` call reading it, at `CondTreeEmit`'s `CopyRailRoot` cnot / first node gate,
+  `SwapRouteEmit::emitKickbackGroup` and `AngleSelectEmit`), and a stage after the round-2 fixpoint in
+  BOTH entry points re-asks rungs (ii) and (iii) with FINAL taint and a fresh dominator tree, declining
+  loudly with the same two strings. The kickback and nest inherit it from the shared sites. Measurements
+  of the fix: §14.8.
+* **F-B1R2-2 — DOC.** The helper's "no forward names" justification is right for `gateIsHarmless`
+  leg 1 (if leg 1 accepted, no measure of the forward theta's result can precede the read); leg 2's
+  barrier accept needs its own argument — every path from the forward theta to the read executes the
+  seed's definition (a barrier), so the barrier sits between any such measurement and the control read
+  (the reviewer's derivation; `a11`/`a17`/`j01`). Written at the helper.
+* **F-B1R2-3 — DOC.** The closure's stop at a non-theta parent rests on M-C's G6/G7 in another file
+  (a measured parent is always lowered out of place — `a09`), so it carries a written retirement trigger
+  now, the F-B1R1-3 species.
+* **F-B1R2-4 — LEAK, pre-existing.** A dead chain off `%out` or off a borrowed condition register is
+  emitted forward and left allocated (`b07`, `d01`); the compare twins are byte-identical. Rule-6 safe.
+* **F-B1R2-5 — DOC.** `RailLadderProven` is right and measurably unreachable from all three callers
+  (`b01`–`b04`); it cannot go stale across `repropagateControlMerges` (a fresh plan per round; a
+  round-1 select is erased by its own emitter). A sentence at `emitValueRegion`'s region build carries
+  the precondition to bd `fg9k`.
+
+### 14.8 The round-2 fix (re-verification under final taint) — measured
+
+Built 2026-09-10/11 (`inc1-records/session-r9e5/FIX_B1_R2.md`; checkpoint a1e6d62). Eight files
+under `ir-pass/`, +313/−12 lines, no new runtime symbol:
+
+* `TaintSet::RailCondReads` — `(WeakTrackingVH Rail, WeakTrackingVH FirstRead)` per emitted rail read;
+  `markRailCondRead` records at FOUR sites, and the fourth was found by the fix itself: inside
+  `emitCondNode` (ANY node control — the 4.4 select's non-root rail leaf AND the 4.3 nest's conjunction
+  toffoli, which `emitPhaseKickbackNestRegion` emits by calling `emitCondNode` directly and which, for
+  an inner rail, is that rail's ONLY read: probe `w5`, `if (b) { if (c) cq_phi(θ); }` with `c` off a
+  `%out`-derived seed, ACCEPTED on f8d29e8 with `ry(h,.5); ry(h,.9); toffoli(h,…,g)`), the
+  `CopyRailRoot` cnot, `emitKickbackGroup` (flat and nest root), `AngleSelectEmit`. The
+  `markBranchPhaseGate` lesson again: every emission site, or none.
+* `reverifyRailCondReads(M, taint)` (`ArmClassify.cpp`) — after `repropagateControlMerges` in BOTH
+  entry points of `CQLoweringPass.cpp` (the `deleteGlobalPhases`/P7 slot), before `lowerRotations`;
+  per-function cached `DominatorTree`; a nulled or cross-function entry is skipped; once per rail:
+  rung (ii) `railMeasuredBeforeReadPoint(Rail, Read, …)`, rung (iii) position-free ∧ position-aware
+  `findNonDiagonalWireGate({Rail}, …, &taint)` under FINAL taint. Loud, final, anchored on the read
+  point; no silent fallback. Sound after emission because the walker looks only for `cq_theta_`-prefixed
+  users and `MeasureCalls` still holds the `@cq_measure_*` calls.
+
+Measured: the whole lit corpus f8d29e8 → fix, `SCANNED=1773 MOVERS=5` — all five the NEW decline
+fixtures (`0 → 1`), the **1765 pre-existing fixtures 0 RCDIFF · 0 DIAGDIFF · 0 OUTDIFF**, the three new
+accepts byte-identical on both. Round 2's corpus (73 + 3 two-TU): `e04` (rung iii) and `e06` (rung ii)
+ACCEPT → DECLINE, **`multi/e16` — the plain-C two-TU CONFIRMED MISCOMPILE — ACCEPT (29 lines, 2b
+clean) → DECLINE**, `e13` (the compare twin, bd `9pum`) byte-identical, `e11` (the opaque seed) unmoved.
+Three probes the brief expected to move did not, each measured: `e07` accepts and is CORRECT (the
+sibling is AFTER the select; the emitted stream is source order — now the e2e accept slice
+`slice_control_select_bool_round2_window`), `c/e02` already declined on f8d29e8 (`-O1` inlines its
+`static f`, so the seed is a round-1 compare), `e11` is the intended accept. Round 1's 108: 0 movers;
+`probes/`: 0 movers. Fixtures **1765 → 1773**: 5 declines each RED on f8d29e8 —
+`control_swap_reject_select_rail_round2_{sibling_theta,measured_parent,plainc_twotu}` (the last is the
+`clang -O1` + `llvm-link` stage-1 module of `e16`, because the e2e harness has NO decline mode),
+`control_phase_kickback_reject_rail_round2_sibling_theta`, `control_phase_nest_reject_rail_round2_sibling_theta`
+— and 3 accepts `control_swap_select_rail_round2_opaque_seed_accept`,
+`control_phase_kickback_rail_round2_window_accept`, `control_phase_nest_rail_round2_window_accept`
+(injection matrix 16 mutations, 0 MISSED). e2e +2 slices (`…_round2_window` two-TU accept,
+`…_round2_opaque_seed`), goldens 339 → **341**, 0 pre-existing changed; ctest 385 → **387** (`^e2e-`
+377, `^e2e-slice-` 339); `ir-pass-lit` Passed, `lit -s` 1773 discovered · 1772 passed · 1 XFAIL;
+`ctest -j6 -R '^e2e-'` 377/377; full `ctest -j6` **387/387, 357.2 s**. Open (fix report §4): `e07`'s
+accept re-derived by round 3; "one diagnostic per rail" (the reader stops at a rail's first decline —
+true while every emitter reads a rail at contiguous positions); the compare select (bd `9pum`), for
+which the record's shape was chosen so the extension is compare SEEDS, not a second stage.
+
+**Round 3 (independent, opus; `review_b1_r3.md`) — CLEAR-WITH-ITEMS; the BLOCK is closed.** 54 fresh
+programs (40 hand IR, 4 plain C, 10 two-TU); no new silent miscompile, no over-accept; the fix is
+decline-monotone over the whole 1773-fixture corpus (`MOVERS=5`, its own declines, the other 1768
+0/0/0); rounds 1 and 2's corpora reproduce line for line. It found ELEVEN more programs the fix closes
+that nobody had written down — each exit 0 / verify-clean / STRICT-2b clean on f8d29e8 and declining
+now, each with a byte-identical control — reaching all four recording sites and all four consumers:
+a rail as condition AND arm, a non-root rail leaf in an `or`/`xor` tree, the nest's INNER level, the
+Rz-stem angle select (two-TU plain C `m10` — the program the fix report had looked for and not found),
+rung (ii) through kickback / nest / angle select, two rails in one node, one rail in two nodes, `e07`'s
+shape inside a loop, a read whose block a round-2 flatten folds away. Three of them are now pinned:
+`control_phase_nest_reject_rail_round2_inner_sibling_theta.ll`,
+`control_angle_select_reject_phase_rail_round2_sibling_theta.ll`,
+`control_phase_kickback_reject_rail_round2_measured_parent.ll` (corpus 1773 → **1776**). `e07`'s accept
+was re-derived independently and is correct (the chained theta is in place, so `%b`/`%x` name one
+register and the cnot lands before the sibling's Ry). One over-decline, intended: two selects on two
+sibling rails of one round-2 wire (`r29`) now declines — its round-1 twin declines on all three
+binaries, so the window is made consistent with the shipped disposition. Three DOC items, all written
+at the stage header: **F-B1R3-1** the placement argument is not the soundness argument (four
+`taint.Tainted` mutations run after the stage — `lowerIOSinks`, `lowerQramReads`, `lowerShadowMemory`,
+`specialize`'s scrub — none re-opens the window, for reasons in other files: `propagateWorklist` taints
+every user of a tainted value so a QROM/Shadow load at a tainted index is tainted at round 1, and a
+classical-index Shadow access declines; a written retirement trigger); **F-B1R3-2** "loud and final"
+is a property of the host tool's default diagnostic handler, not of the stage (`exit(1)` inside
+`diagnose`; the `Diagnosed`/`bool` machinery is dead under `opt`); **F-B1R3-3** the re-ask seeds
+`{Rail}` while the classifiers seed a `condProvenance` union — equal for a rail leaf, and the mixed-tree
+gap is bd `9pum`'s half (0 reachable programs found).

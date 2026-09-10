@@ -5043,6 +5043,113 @@ add_test(NAME e2e-phase-bool-loop-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_unrolled.expected.log")
 
+# --- bd test_C_libtooling-r9e5 (Inc 1b-B.1) — the 4.4 DATA SELECT on a bare
+# --- `_Bool` (rail-root) condition. `if (b) a -= 3;` is `select i1 %b, …` with
+# --- the register itself as the condition; the §5a controlled-XOR copy merge is
+# --- unchanged instruction for instruction, and only the FLAG changes: a fresh
+# --- |0> i1 ancilla CNOT-copied from the register (never a `cqrt_x` on a user
+# --- register — bd memory [diagonal-only-on-user-registers-3qlq4]), un-copied
+# --- and freed by the LIFO strip. SEVEN slices — the owner's own `main()`, its
+# --- `int` reduction twin, the quantum-operand shape, the S† (the DT prong),
+# --- select + kickback on one register, and the rolled/unrolled invariant-rail
+# --- loop pair — plus ONE `cmp` twin gate (rolled == unrolled). ALL STRICT
+# --- stage 2b. There is deliberately NO cmp gate between the bool slice and its
+# --- int twin: the witness is a stated REDUCTION (the Inc-4 state-prep
+# --- precedent), and a compare_files gate would assert something false.
+add_test(NAME e2e-slice-control-select-bool
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-int-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_int_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_int_twin.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-quantum-arm
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_quantum_arm.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_quantum_arm.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-sdagger
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_sdagger.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_sdagger.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-two-regions
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_two_regions.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_two_regions.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop_unrolled.expected.log")
+
+add_test(NAME e2e-select-bool-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop_unrolled.expected.log")
+
+# --- bd test_C_libtooling-r9e5 (Inc 1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 —
+# --- the TWO ACCEPTS that make `reverifyRailCondReads` a RE-VERIFICATION rather
+# --- than a refusal of the round-2 taint window. The DECLINE half of the pair
+# --- has no e2e home and is pinned in lit instead: `run_slice_multi.sh` runs
+# --- under `set -euo pipefail` and byte-diffs a golden, so a program whose `opt`
+# --- exits non-zero cannot be a passing slice at all (there is no WILL_FAIL and
+# --- no decline runner in this file) — the reproducer is committed as its
+# --- linked stage-1 module, `ir-pass/test/
+# --- control_swap_reject_select_rail_round2_plainc_twotu.ll`.
+# ---
+# --- The WINDOW slice is TWO TUs, and that is structural: the window needs a 6.5
+# --- classical-call arm, i.e. a callee `clang -O1` cannot inline. Its sibling
+# --- theta runs AFTER the merge, so the register the copies read really is the
+# --- one the select's condition names, and the DT prong proves it — the same
+# --- program with the sibling BEFORE the select is the confirmed miscompile.
+add_test(NAME e2e-slice-control-select-bool-round2-window
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window.expected.log")
+
+add_test(NAME e2e-slice-control-select-bool-round2-opaque-seed
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_opaque_seed.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_opaque_seed.expected.log")
+
+
 
 # bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled
 # DIVERGENCE on 542d588 AND on the round-1 C-1 fix (32 vs 38, and 41 vs 47).

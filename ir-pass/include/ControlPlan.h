@@ -504,6 +504,20 @@ struct ControlRegion {
   // `emitValueRegion` declines a `ShareCondFlag` region (WI-later).
   bool ShareCondFlag = false;
 
+  // bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 round-1 item F-B1R1-2 — set by
+  // `classifySelectRegion` on ACCEPT iff the condition tree carries a RAIL LEAF,
+  // i.e. PRD §14.3's rail ladder (tainted · not measured before the SELECT · the
+  // wire question with the DT prong) was asked and passed. `emitSelectRegion`
+  // REFUSES a rail-carrying tree whose region does not carry this flag, with the
+  // original `bare i1 register condition` string: that emitter has THREE callers
+  // and only the classifier asks the ladder — `SwapRouteEmit::emitValueRegion`
+  // builds its own `SelectRegion` and calls the emitter directly (structurally
+  // `CmpInst`-only today; bd `fg9k` widens that and MUST route a rail through the
+  // ladder and set this before handing over). The old pre-1b-B.1 guard was the
+  // caller-independent backstop for all three; this is its replacement, and
+  // unlike the `RootIsRail` re-ask it is not dead code.
+  bool RailLadderProven = false;
+
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by

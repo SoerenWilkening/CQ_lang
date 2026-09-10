@@ -30,8 +30,10 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ValueHandle.h"  // WeakTrackingVH (RailCondReads, bd r9e5 1b-B.1)
 
 #include <set>
+#include <utility>
 
 namespace cq {
 
@@ -263,6 +265,54 @@ struct TaintSet {
   // 7.6 controlled tape write — deliberately stays OUT and its condition chain
   // keeps leaking, each pinned by a leak fixture.
   llvm::SmallPtrSet<const llvm::CallInst *, 4> DischargedFlagGates;
+
+  // ── THE EMITTED RAIL CONTROL READS (bd test_C_libtooling-r9e5 1b-B.1,
+  //    Rule-13 ROUND-2 finding F-B1R2-1) ─────────────────────────────────────
+  //
+  // `(Rail, FirstRead)` for every gate a control emitter fired on a BARE `_Bool`
+  // REGISTER — the user's `cq_theta_i1` result read as a control (the 4.4
+  // select's `cqrt_cnot(rail, bf)` copy mint, a rail leaf's first node gate
+  // inside a condition network, the flat/nest kickback's first `cqrt_rz_i1`, the
+  // Rz-stem angle select's first `cqrt_rz_i1`). Written at the EMISSION SITE by
+  // `markRailCondRead` (`ArmClassify`), read once by `reverifyRailCondReads` in
+  // both entry points immediately after the round-2 fixpoint.
+  //
+  // WHY A RECORD AND NOT A CLASSIFIER CLAUSE. The §14.3 rail ladder's rungs (ii)
+  // and (iii) are asked inside `detectControlRegions`, i.e. with ROUND-1 taint,
+  // while `lowerRotations` decides chained-vs-source with FINAL taint
+  // (`Chained = taint.Tainted.count(arg0)`). `repropagateControlMerges` re-seeds
+  // taint from the 6.5/4.5 `%out` rails, so a `cq_theta_i1` whose arg-0 is
+  // DERIVED from `%out` is a SOURCE theta to both of the ladder's closures and a
+  // CHAINED one to the lowering — its sibling then rides the SAME physical rail,
+  // invisibly to a fence that already ran. That is the "a stage that runs ONCE
+  // has a round-2-FALSE premise" class (CLAUDE.md's CORRECTNESS-RISK section,
+  // where `deleteGlobalPhases`' move is the placement precedent), and the answer
+  // is the bd `eqpx` (1b) tripwire pattern: do not PREDICT what round 2 will
+  // taint — record what was emitted and RE-ASK the same two rungs once the taint
+  // is final, declining LOUDLY (never a silent fallback — the emitted stream is
+  // discarded with the module when `opt` exits non-zero).
+  //
+  // `WeakTrackingVH` on BOTH halves because later stages erase instructions; a
+  // NULLED entry is SKIPPED rather than treated as a failure, and the reason is
+  // directional: an erased control read is not a live control read, so there is
+  // no wrong unitary left to refuse. Entries are appended, never removed, and a
+  // rail read more than once (two arms of a kickback, two node slots of a tree)
+  // may appear more than once — the re-verification diagnoses ONCE PER RAIL.
+  //
+  // `WeakTrackingVH` also FOLLOWS a RAUW, which is the right behaviour for the
+  // one thing that would otherwise dangle: nothing between the emission and the
+  // read point RAUWs a condition rail today (`lowerRotations`, which RAUWs every
+  // `cq_theta` result to its i32 handle, runs AFTER the read), and the reader
+  // re-checks that both halves are still an instruction of ONE function before
+  // asking anything. ⚠ RETIREMENT TRIGGER: a stage placed between
+  // `lowerControlRegions` and `reverifyRailCondReads` that RAUWs a `cq_theta_i1`
+  // result to a NON-theta value would make the record name a value whose wire is
+  // not the rail's; the reader would then ask a well-formed question about the
+  // wrong register (an over-decline, not an over-accept — but re-derive it).
+  llvm::SmallVector<std::pair<llvm::WeakTrackingVH /*Rail: the cq_theta_i1*/,
+                              llvm::WeakTrackingVH /*FirstRead: the cqrt_* gate*/>,
+                    4>
+      RailCondReads;
 
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS

@@ -62,6 +62,8 @@
 
 #include <algorithm>
 #include <cassert>
+#include <memory>  // unique_ptr (the per-function DominatorTree cache, bd r9e5 1b-B.1)
+#include <utility>
 
 using namespace llvm;
 
@@ -1788,12 +1790,16 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // condition's rail (`x = b ^ 1; c = cq_theta(x, θ); if (b) …`), which the
 // forward walk deliberately does not cross. The rail path drops the prong on a
 // STRUCTURAL ground, measured: a condition rail is always read later by its own
-// branch in `R.Pred`, so M-C's G6 ("no data use AFTER the site") refuses the
-// in-place conversion on it — the `xor` lowers OUT of place onto a fresh rail
-// and cannot alias (`control_phase_kickback_rail_inplace_xor_bridge.ll`, the
-// ACCEPT; the compare spelling is the documented over-decline
+// branch in `R.Pred` — or, at the 4.4 select (bd r9e5, 1b-B.1, which inherits
+// this ground), by the two mid-block `cqrt_cnot` reads that mint and strip its
+// copy flag — so M-C's G6 ("no data use AFTER the site") refuses the in-place
+// conversion on it — the `xor` lowers OUT of place onto a fresh rail and cannot
+// alias (`control_phase_kickback_rail_inplace_xor_bridge.ll` for the kickback
+// and `control_swap_select_rail_inplace_xor_bridge.ll` for the select, the two
+// ACCEPT pins; the compare spelling is the documented over-decline
 // `..._reject_cmp_inplace_xor_bridge.ll`). If M-C's G6 ever admits an in-place
-// op on a rail with a later read, this ground is gone and the prong must return.
+// op on a rail with a later read, this ground is gone and the prong must return
+// at BOTH consumers (round-1 item F-B1R1-3: one retirement trigger, two pins).
 CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
                                      const SmallPtrSetImpl<Value *> &Prov,
                                      const DominatorTree *DT) {
@@ -1810,43 +1816,302 @@ CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
   return CondWireDisp::ProvenPostRegion;
 }
 
+}  // namespace
+
 // bd 3qlq.4 — a RAIL-LEAF condition must not have been MEASURED before the
-// branch reads it: a measured register is classical there, and firing the
-// kickback on it would be a post-measure gate (Rule 6's loud-reject class).
-// The mirror of `condDataUseDisposition`'s `MeasuredEarly` for a compare: a
-// `cq_measure` user of the rail in `Pred` (every non-terminator in `Pred`
-// precedes the branch), or one from which the branch is REACHABLE on some
-// path (a dominating block, a classically-guarded side path — F-1b-2), executes
-// first and refuses; only a measurement the branch can never follow is
-// downstream of the region and owns the register from there on. Strictly
-// stricter than the compare path, which (measured, F-1b-2) mints a flag from a
-// register measured UNCONDITIONALLY before the branch — a pre-existing gap
-// recorded with bd test_C_libtooling-r903, not widened here.
-bool railMeasuredBeforeBranch(const CallInst *Rail, const BasicBlock *Pred,
-                              const TaintSet &Taint, const DominatorTree *DT) {
+// consumer that reads it: a measured register is classical there, and firing a
+// gate controlled on it after the measurement would be a post-measure gate
+// (Rule 6's loud-reject class). The mirror of `condDataUseDisposition`'s
+// `MeasuredEarly` for a compare — ⚠ with one qualification that the first two
+// spellings lacked (F-B1R1-1): the register is a WIRE with several SSA NAMES
+// (a chained theta's result and its arg-0 denote one handle after
+// `lowerRotations`), and the measurement may name any of them, so the question
+// is asked over `railWireNamesBackward`'s closure and not over `Rail->users()`
+// alone. A `cq_measure` user of any wire name that precedes `ReadPoint`,
+// or one from which `ReadPoint` is REACHABLE on some path (a dominating block, a
+// classically-guarded side path — F-1b-2), executes first and refuses; only a
+// measurement the read point can never follow is downstream of the region and
+// owns the register from there on. Strictly stricter than the compare path,
+// which (measured, F-1b-2) mints a flag from a register measured
+// UNCONDITIONALLY before the branch — a pre-existing gap recorded with bd
+// test_C_libtooling-r903, not widened here.
+//
+// bd test_C_libtooling-r9e5 (1b-B.1) — THE READ POINT IS A PARAMETER, NOT THE
+// BLOCK'S TERMINATOR, and the difference is a live accept. The kickback's gate
+// is emitted AT the branch, so every non-terminator of `Pred` precedes it and
+// "same block" IS "before"; the 4.4 select's stream is emitted immediately
+// BEFORE THE SELECT, mid-block, so a same-block measurement must be tested
+// POSITIONALLY — `bool b = θ(…); int a = b ? 2 : 5; int m = cq_measure(b);`
+// (plain `clang -O1`, probe `s05`) measures AFTER the select and is the ordinary
+// downstream case. ONE spelling, two read points (Rule 14): the two kickback
+// callers pass `Pred->getTerminator()` and are byte-unchanged by construction —
+// a `cq_measure` user is never a terminator, so a same-block one always
+// precedes it, which is exactly what the old `return true` said.
+//
+// ⚠ THE SAME-BLOCK CASE IS ONE QUESTION, NOT A SHORTCUT (orchestrator finding
+// F-B1-1, 2026-09-10, plain-C reachable and CONFIRMED on the first B.1 build).
+// The first spelling returned `M->comesBefore(ReadPoint)` for a same-block
+// measure and never asked reachability — so `for (i…) { int a = b ? i : 5;
+// acc += cq_measure(a) + cq_measure(b); }` (the select stays in the body because
+// its arm is loop-VARIANT; `-O1` LICM-hoists the constant-arm form) ACCEPTED,
+// and every activation after the first controlled its copies on a register the
+// previous trip had COLLAPSED — a post-measure gate, Rule 6's loud-reject class,
+// which the kickback's terminator read point refuses on the same program.
+// `isPotentiallyReachable` already answers the same-block case correctly on its
+// own (`M` before `ReadPoint` ⇒ true; `M` after it ⇒ true iff the block can
+// reach itself through a back edge, false in the entry block or any acyclic
+// one), so the ONLY correct spelling is to ask it for every measure, wherever
+// it sits. Pinned by `control_swap_reject_select_rail_inloop_measure_after.ll`
+// (the plain-C module) and `…_inloop_measure_after_constarm.ll` (hand IR: the
+// constant-arm select kept inside the body); `…_rail_measure_after.ll` (`s05`,
+// flat) stays the accept that keeps this a discriminator.
+void railWireNamesBackward(const CallInst *Rail, const TaintSet &Taint,
+                           SmallVectorImpl<const Value *> &Out) {
+  // THE ONE RELATION: `lowerRotations` lowers a `cq_theta` IN PLACE on its
+  // arg-0's rail iff that arg-0 is TAINTED (`Chained = taint.Tainted.count(Op)`,
+  // RotationLowering.cpp) and RAUWs the whole chain onto ONE handle — so every
+  // name on that chain denotes the same physical register. The walk follows
+  // exactly that edge: a chained theta steps to its parent; a SOURCE theta (a
+  // classical seed) stops; a NON-theta tainted parent (a template / cast / phi
+  // result the theta rotates in place) is COLLECTED and not entered — its own
+  // operands are OTHER rails (an out-of-place template mints a fresh rail), so
+  // entering them would over-decline a measurement of a different register
+  // (`control_swap_select_rail_other_register_measured.ll` pins the stop).
+  // ⚠ THAT STOP RESTS ON ANOTHER FILE'S FENCE (round-2 item F-B1R2-3): "its
+  // operands are other rails" is a statement about M-C — a measured or
+  // later-read parent is always lowered OUT of place because
+  // `ArithLowering::classifyInPlaceReassignment`'s G6 refuses a later data use
+  // and G7's `priorUseIsSettled` refuses a prior `cq_measure` (measured:
+  // `cq_measure(b0)` before `x = b0 ^ 1` emits `cq_template_xor_i1_hl(h0,1)`, a
+  // fresh rail). RETIREMENT TRIGGER: if M-C ever admits an in-place op on a rail
+  // with a measured or later-read parent, this closure must ENTER the parent.
+  // FORWARD names (a later chained theta on this wire) are not collected here,
+  // and the argument has TWO legs, one per accept leg of `gateIsHarmless`
+  // (round-2 item F-B1R2-2): leg 1 — if the forward theta T is provably after
+  // every execution of the read, no measurement of T's result can precede the
+  // read (it is dominated by T, so a path M → read would give T → M → read);
+  // leg 2 — the BARRIER accept admits T only when every path T → read executes
+  // the seed's own definition (or a superseding wire-tracking phi), so any
+  // measurement of T's result lies on such a path and the barrier — the seed
+  // theta re-executing — sits between it and the control read. A forward
+  // theta that precedes the read WITHOUT either leg is rung (iii)'s own decline.
+  SmallPtrSet<const Value *, 8> Seen;
+  const Value *V = Rail;
+  while (V && Seen.insert(V).second) {
+    Out.push_back(V);
+    const auto *CI = dyn_cast<CallInst>(V);
+    if (!CI)
+      break;
+    const Function *F = CI->getCalledFunction();
+    if (!F || !F->getName().starts_with("cq_theta_") || CI->arg_size() < 1)
+      break;
+    const Value *Op = CI->getArgOperand(0);
+    if (!Taint.Tainted.count(const_cast<Value *>(Op)))
+      break;  // a SOURCE theta: arg-0 is the classical seed, not a rail.
+    V = Op;   // CHAINED: in place on the parent's rail — same register.
+  }
+}
+
+bool railMeasuredBeforeReadPoint(const CallInst *Rail,
+                                 const Instruction *ReadPoint,
+                                 const TaintSet &Taint,
+                                 const DominatorTree *DT) {
   SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
                                          Taint.MeasureCalls.end());
-  const Instruction *BI = Pred->getTerminator();
-  for (const User *U : Rail->users()) {
+  // Rule-13 round-1 item F-B1R1-1 (bd r9e5): the measure set is the rail's
+  // WIRE, not its SSA name. `lowerRotations` RAUWs a chained-theta chain onto
+  // ONE handle, so `bool b = θ(b0, ·); m = cq_measure(b0); a = b ? 2 : 5;`
+  // collapses the very register the merge then controls on, while `b0` is no
+  // user of `b`. Rung (iii)'s gate walk already closes each seed backward over
+  // that chain; this rung asked the SSA name — two rungs of one ladder over
+  // two closures, the 8h7d.5 F-1/F-3 shape, and the widening the parameterised
+  // read point (§14.3) added customers to. Now both rungs ask the wire
+  // (`railWireNamesBackward`); the kickback callers get the same widening
+  // (`control_phase_kickback_reject_rail_measured_parent_name.ll` — an ACCEPT on
+  // `main` b00fdc2, a decline now: monotone toward decline).
+  SmallVector<const Value *, 4> Names;
+  railWireNamesBackward(Rail, Taint, Names);
+  for (const Value *N : Names)
+  for (const User *U : N->users()) {
     const auto *M = dyn_cast<CallInst>(U);
     if (!M || !Sinks.count(M))
       continue;
-    if (M->getParent() == Pred)
-      return true;
-    // REACHABILITY, not dominance (Rule-13 round-1 finding F-1b-2): a measure on
-    // a classically-guarded SIDE PATH neither is `Pred` nor dominates it, yet
-    // executes before the branch on that path. "Can the branch execute after
-    // this measurement on SOME path?" is the question; `isPotentiallyReachable`
-    // answers it conservatively (a null tree only makes it more conservative).
-    // A measurement the branch can never follow is downstream of the region and
-    // owns the register from there on, exactly as for a compare.
-    if (isPotentiallyReachable(M, BI, /*ExclusionSet=*/nullptr, DT))
+    // REACHABILITY, not dominance and not position (Rule-13 round-1 finding
+    // F-1b-2, and F-B1-1 above): a measure on a classically-guarded SIDE PATH
+    // neither is the read point's block nor dominates it, yet executes before
+    // it on that path; a same-block measure AFTER the read point still precedes
+    // its NEXT execution when the block sits on a cycle. "Can the read point
+    // execute after this measurement on SOME path?" is the one question;
+    // `isPotentiallyReachable` answers it conservatively for every placement (a
+    // null tree only makes it more conservative). A measurement the read point
+    // can never follow is downstream of the region and owns the register from
+    // there on, exactly as for a compare.
+    if (isPotentiallyReachable(M, ReadPoint, /*ExclusionSet=*/nullptr, DT))
       return true;
   }
   return false;
 }
 
-}  // namespace
+// bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — see the
+// header. The write half of the record; the read half is `reverifyRailCondReads`
+// below.
+void markRailCondRead(TaintSet &Taint, Value *Rail, Instruction *FirstRead) {
+  if (!Rail || !FirstRead)
+    return;
+  for (const auto &E : Taint.RailCondReads)
+    if (E.first == Rail && E.second == FirstRead)
+      return;  // idempotent for an identical pair; a SECOND read point is kept.
+  Taint.RailCondReads.emplace_back(Rail, FirstRead);
+}
+
+// bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — THE
+// RE-VERIFICATION TRIPWIRE. A CONFIRMED silent miscompile, plain C through the
+// shipped two-TU 6.5 recipe, `opt` exit 0, verify-clean, STRICT-stage-2b clean.
+//
+// THE DEFECT IN ONE PARAGRAPH. The §14.3 rail ladder's rungs (ii) (measured
+// before the read point) and (iii) (the wire question) are asked inside
+// `detectControlRegions`, i.e. with ROUND-1 taint. `repropagateControlMerges`
+// then re-seeds taint from the 6.5 classical-call-arm / 4.5 data-mux `%out`
+// rails, and `lowerRotations` decides chained-vs-source with FINAL taint —
+// `Chained = taint.Tainted.count(arg0)` (`RotationLowering.cpp`), the ONE
+// relation that makes a whole chain RAUW onto one handle. In the window between
+// those two points a `cq_theta_i1(%x, θ)` whose `%x` is DERIVED from `%out` is a
+// SOURCE theta to BOTH of the ladder's closures (`railWireNamesBackward` stops
+// at it; `findNonDiagonalWireGate`'s F-1b-1 tainted-parent ancestry does not
+// cross) and a CHAINED theta to the lowering, which puts it and its SIBLING
+// `cq_theta_i1(%x, θ')` on ONE rail. The emitted control read — a `cqrt_cnot`
+// copy mint, a node gate, a kickback `cqrt_rz_i1` — then fires on
+// `Ry(θ')Ry(θ)|x⟩` while the SSA condition names `Ry(θ)|x⟩`. A different
+// unitary, with no diagnostic anywhere.
+//
+// THE FIX IS A RE-VERIFICATION, NOT A PREDICTION (the bd `eqpx` (1b) tripwire
+// pattern this project already ships). Predicting what round 2 will taint is the
+// exact shape of the eight findings CLAUDE.md's CORRECTNESS-RISK section
+// records; and the blunt alternative (treat any non-`Constant` arg-0 as chained)
+// costs a CORRECT accept — the opaque-classical-seed program pinned by
+// `control_swap_select_rail_round2_opaque_seed_accept.ll`, where the two thetas
+// really are two registers. So every emitter that reads a rail as a control
+// RECORDS `(Rail, FirstRead)` at its emission site, and this stage re-asks the
+// SAME two rungs — the same two functions, not a second spelling — once the
+// taint is final.
+//
+// POSITION: after the round-2 fixpoint (`repropagateControlMerges`, whose
+// `detectAndLowerOnwardControl` is itself a full second round of control
+// detection and lowering) and before `lowerRotations`, in BOTH entry points.
+// This is the slot `deleteGlobalPhases` was MOVED to for the same reason (the
+// round-1 lens L3 finding F-L3-1) — "a stage that runs ONCE has a round-2-FALSE
+// premise" — and it is also the last point at which the record's two halves are
+// still the values the ladder reasoned about: `lowerRotations` erases the
+// `cq_theta_i1` calls.
+//
+// ⚠ WHY RE-ASKING **AFTER** THE EMISSION IS SOUND, and it is not obvious.
+// `findNonDiagonalWireGate` looks for `cq_theta_`-prefixed users on the wire and
+// crosses `cq_phi_`/tainted arg-0 edges; the gates this region has already
+// emitted are `cqrt_*` runtime calls, which are NOT thetas and match no prefix
+// the walker tests, so they are invisible to it. `railMeasuredBeforeReadPoint`
+// asks `taint.MeasureCalls`, which holds `@cq_measure_*` calls only
+// (`lowerMeasures` has not run). The answer this stage computes is therefore the
+// answer the classifier WOULD have computed with final taint, not an answer
+// perturbed by the emission — the only thing that changed is the taint set and
+// the availability of a concrete read POINT.
+//
+// ⚠ THE POSITION-FREE WALK IS ASKED WITH `Taint`, deliberately: that crossing IS
+// the point (F-1b-1's tainted-parent ancestry), and at final taint it reaches
+// the sibling the round-1 ask could not see.
+//
+// LOUD AND FINAL — AS AN ASSUMPTION ABOUT THE HOST TOOL, NOT A PROPERTY OF THIS
+// STAGE (round-3 item F-B1R3-2). `diagnoseUnderControl` is `DS_Error`; neither
+// `opt` nor `cq_opt_main.cpp` installs a diagnostic handler, so the default
+// `LLVMContext::diagnose` printer `exit(1)`s INSIDE the call and no module is
+// ever printed — the already-emitted stream is discarded with it. That is the
+// house style of every decline in the pass. It means everything below the first
+// `diagnoseUnderControl` — the `Diagnosed` set, the `continue`, the `bool` — is
+// DEAD under `opt` (measured: two failing rails print exactly ONE line) and is
+// kept only so the stage reads correctly under a driver whose handler returns;
+// under such a driver the pipeline WOULD continue over a refused region, and a
+// new host must install a handler that stops. There is deliberately NO silent
+// fallback and no attempt to un-emit — a region whose ladder no longer holds has
+// no correct lowering to fall back TO (Rule 1, Prime Directive). One diagnostic
+// per RAIL, not per recorded read: a kickback records one read per arm and they
+// are emitted contiguously, so a second message would only repeat the first.
+//
+// ⚠ THE PLACEMENT ARGUMENT ABOVE IS NOT THE SOUNDNESS ARGUMENT (round-3 item
+// F-B1R3-1). FOUR `taint.Tainted` mutations run AFTER this slot — `lowerIOSinks`,
+// `lowerQramReads`, `lowerShadowMemory` (the last two RAUW a `load` onto a
+// tainted value, the exact `Chained` input) and `specialize` (which also SHRINKS
+// taint through `scrubForwardCone`). None re-opens the window, for reasons that
+// live in OTHER files: `propagateWorklist` taints EVERY user of a tainted value,
+// so a QROM/Shadow load at a tainted index is already tainted at round 1
+// (measured: the QROM sibling program declines on both binaries, and the
+// sibling-free one lowers CHAINED onto `cqrt_qram_load_i1`), and a
+// classical-index Shadow access declines `alloca array mixes a tainted-index and
+// a classical access`; a scrub can only turn an assumed-chained theta into a
+// SOURCE, i.e. split one wire into two rails — the safe direction for both
+// rungs. RETIREMENT TRIGGER: if `propagate` ever stops taking the address edge
+// into a `load`, or the Shadow mixed-access decline is narrowed, this stage must
+// move BELOW `lowerShadowMemory` (and re-argue `specialize`'s scrub).
+//
+// SEEDS (round-3 item F-B1R3-3): this re-ask seeds `{Rail}`; the classifiers seed
+// a `condProvenance` UNION over the tree's leaves. For a rail leaf the two
+// coincide exactly (`condProvenance` stops at a theta call), so nothing is lost
+// today; for a MIXED tree the COMPARE leaves' wires are asked at round 1 only —
+// that is the compare half of the window, bd `test_C_libtooling-9pum`, and the
+// record's extension to compare seeds is where it closes.
+bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
+  if (Taint.RailCondReads.empty())
+    return false;  // no rail was ever read as a control — every module until 1b.
+  // `M` is unused: the record is already module-wide (every emitter writes into
+  // the one `TaintSet`), and each entry names its own function. It is kept in
+  // the signature so the stage reads like its neighbours at both call sites, and
+  // it is `(void)`-d rather than left to warn.
+  (void)M;
+  DenseMap<Function *, std::unique_ptr<DominatorTree>> Trees;
+  SmallPtrSet<const Value *, 4> Diagnosed;
+  bool Declined = false;
+  for (const auto &E : Taint.RailCondReads) {
+    // A NULLED handle is SKIPPED, and the direction is the argument: a read that
+    // no longer exists is not a live control read, so there is no wrong unitary
+    // left to refuse (and a rail whose def was erased has no wire to ask about).
+    auto *Rail = dyn_cast_or_null<CallInst>(E.first);
+    auto *Read = dyn_cast_or_null<Instruction>(E.second);
+    if (!Rail || !Read || !Read->getFunction() ||
+        Read->getFunction() != Rail->getFunction())
+      continue;
+    if (Diagnosed.count(Rail))
+      continue;
+    Function *F = Read->getFunction();
+    auto &Slot = Trees[F];
+    if (!Slot)
+      Slot = std::make_unique<DominatorTree>(*F);
+    DominatorTree *DT = Slot.get();
+    // RUNG (ii) — the register must not be MEASURED before this read point. The
+    // ONE spelling (Rule 14), asked over the rail's WIRE (`railWireNamesBackward`,
+    // round-1 item F-B1R1-1), which at FINAL taint crosses to the `%out`-derived
+    // parent the round-1 ask stopped at.
+    if (railMeasuredBeforeReadPoint(Rail, Read, Taint, DT)) {
+      diagnoseUnderControl(Read, "condition measured before the control route");
+      Diagnosed.insert(Rail);
+      Declined = true;
+      continue;
+    }
+    // RUNG (iii) — the WIRE question, both prongs, exactly as
+    // `railCondWireDisposition` asks them at classification time: position-free
+    // CLEAN ⇒ nothing to prove; otherwise the gate must be PROVABLY after every
+    // execution of the read point (`EmitPoint = Read`), else decline. The DT is
+    // non-null by construction here, so the classifier's "no tree, no proof"
+    // decline has no counterpart.
+    SmallVector<Value *, 1> Seeds{Rail};
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/nullptr, /*DT=*/nullptr, &Taint) &&
+        findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/Read, DT, &Taint)) {
+      diagnoseUnderControl(Read, "condition predates a non-diagonal gate");
+      Diagnosed.insert(Rail);
+      Declined = true;
+    }
+  }
+  return Declined;
+}
 
 // ziov WI-1: disposition of the condition compare's NON-branch (data) uses. The
 // condition `q>5` IS the control flag; when it is ALSO read as data (`int f =
@@ -3916,7 +4181,8 @@ PhaseKickbackDisp classifyPhaseKickback(
   // has a subject. What it needs instead:
   //   (i)   tainted — by construction (`cq_theta_i1` is the taint source),
   //         re-asked as defence in depth;
-  //   (ii)  NOT measured before the branch (`railMeasuredBeforeBranch`) —
+  //   (ii)  NOT measured before the branch (`railMeasuredBeforeReadPoint`,
+  //         read point = the branch) —
   //         the mirror of the compare's `MeasuredEarly`;
   //   (iii) the WIRE question, asked below over `Prov` (a rail seeds its own
   //         wire): a non-diagonal gate on the register between its def and
@@ -3931,7 +4197,8 @@ PhaseKickbackDisp classifyPhaseKickback(
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return PhaseKickbackDisp::Declined;
     }
-    if (railMeasuredBeforeBranch(Rail, Region.Pred, Taint, DT)) {
+    if (railMeasuredBeforeReadPoint(Rail, Region.Pred->getTerminator(),
+                                    Taint, DT)) {
       diagnoseUnderControl(declAnchor(Region),
                            "condition measured before the control route");
       return PhaseKickbackDisp::Declined;
@@ -4353,7 +4620,8 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
         diagnoseUnderControl(BI, "control flow");
         return false;
       }
-      if (railMeasuredBeforeBranch(Rail, Pred, Taint, DT)) {
+      if (railMeasuredBeforeReadPoint(Rail, Pred->getTerminator(), Taint,
+                                      DT)) {
         diagnoseUnderControl(BI, "condition measured before the control route");
         return false;
       }

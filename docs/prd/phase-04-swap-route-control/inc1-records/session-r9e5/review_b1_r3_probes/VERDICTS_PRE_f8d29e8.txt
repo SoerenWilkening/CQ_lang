@@ -1,0 +1,49 @@
+p01 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+p02 rc=1 DECLINE: cq specialization: callee contains a quantum primitive (cq_*)
+p03 rc=0 ACCEPT trace=24 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+p04 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+r01 rc=0 ACCEPT trace=30 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r02 rc=0 ACCEPT trace=29 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r03 rc=0 ACCEPT trace=30 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r04 rc=0 ACCEPT trace=29 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r05 rc=0 ACCEPT trace=28 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r06 rc=0 ACCEPT trace=27 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r07 rc=0 ACCEPT trace=26 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r08 rc=0 ACCEPT trace=25 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r09 rc=0 ACCEPT trace=19 link/run=0 2b=1 verified, 0 violation(s), 0 unproven
+r10 rc=0 ACCEPT trace=18 link/run=0 2b=1 verified, 0 violation(s), 0 unproven
+r11 rc=0 ACCEPT trace=45 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r12 rc=1 DECLINE: 
+r13 rc=1 DECLINE: 
+r14 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+r15 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+r16 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+r17 rc=0 ACCEPT trace=54 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r18 rc=0 ACCEPT trace=18 link/run=0 2b=1 verified, 0 violation(s), 0 unproven
+r19 rc=0 ACCEPT trace=30 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r20 rc=1 DECLINE: cq controlled lowering: rotation angle under quantum control
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/r21.trace: No such file or directory
+r21 rc=0 ACCEPT trace= link/run=1 2b=0 verified, 0 violation(s), 0 unproven
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/r22.trace: No such file or directory
+r22 rc=0 ACCEPT trace= link/run=1 2b=1 verified, 0 violation(s), 0 unproven
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/r23.trace: No such file or directory
+r23 rc=0 ACCEPT trace= link/run=1 2b=1 verified, 0 violation(s), 0 unproven
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/r24.trace: No such file or directory
+r24 rc=0 ACCEPT trace= link/run=1 2b=1 verified, 0 violation(s), 0 unproven
+r25 rc=0 ACCEPT trace=17 link/run=0 2b=1 verified, 0 violation(s), 0 unproven
+r26 rc=0 ACCEPT trace=25 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r27 rc=0 ACCEPT trace=18 link/run=0 2b=1 verified, 0 violation(s), 0 unproven
+r29 rc=0 ACCEPT trace=40 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r30 rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+r31 rc=0 ACCEPT trace=28 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r32 rc=0 ACCEPT trace=33 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r33 rc=0 ACCEPT trace=32 link/run=0 2b=3 verified, 0 violation(s), 0 unproven
+r34 rc=0 ACCEPT trace=24 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r35 rc=0 ACCEPT trace=23 link/run=0 2b=2 verified, 0 violation(s), 0 unproven
+r36 rc=0 ACCEPT trace=42 link/run=0 2b=6 verified, 0 violation(s), 0 unproven
+r37 rc=0 ACCEPT trace=41 link/run=0 2b=6 verified, 0 violation(s), 0 unproven
+x01 rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/x02.trace: No such file or directory
+x02 rc=0 ACCEPT trace= link/run=1 2b=1 verified, 0 violation(s), 0 unproven
+./run.sh: line 34: /Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/PRE/x03.trace: No such file or directory
+x03 rc=0 ACCEPT trace= link/run=1 2b=0 verified, 0 violation(s), 0 unproven

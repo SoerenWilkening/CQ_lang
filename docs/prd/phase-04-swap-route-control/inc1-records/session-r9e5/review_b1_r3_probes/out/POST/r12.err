@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function main i32 (): cq QRAM store: alloca array mixes a tainted-index and a classical access
+

@@ -1464,7 +1464,7 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
 static void emitKickbackGroup(IRBuilder<> &B, FunctionCallee Rz,
                               FunctionCallee X, Value *Ctl, bool CtlIsRail,
                               ArrayRef<Value *> Angles, bool Neg,
-                              const DebugLoc &DL) {
+                              const DebugLoc &DL, TaintSet &taint) {
   if (Angles.empty())
     return;
   auto stamp = [&](CallInst *C) {
@@ -1475,9 +1475,22 @@ static void emitKickbackGroup(IRBuilder<> &B, FunctionCallee Rz,
   const bool Bracket = Neg && !CtlIsRail;
   if (Bracket)
     stamp(B.CreateCall(X, {Ctl}));
+  bool Recorded = false;
   for (Value *Angle : Angles) {
     Value *A = Neg && CtlIsRail ? B.CreateFNeg(Angle) : Angle;
-    markBranchPhaseGate(stamp(B.CreateCall(Rz, {Ctl, A})));
+    CallInst *G = stamp(B.CreateCall(Rz, {Ctl, A}));
+    markBranchPhaseGate(G);
+    // bd test_C_libtooling-r9e5 (1b-B.1, Rule-13 ROUND-2 finding F-B1R2-1) — on
+    // the USER'S REGISTER this gate is a control READ of a rail, so the FIRST
+    // one of each group is recorded for the round-2 re-verification of the
+    // §14.3 ladder. A region emits one group per arm plus one per bracketed tail
+    // incoming, all into the same contiguous window before the branch, so the
+    // extra entries a multi-arm region records answer identically to the first —
+    // and `reverifyRailCondReads` diagnoses once per rail either way.
+    if (CtlIsRail && !Recorded) {
+      markRailCondRead(taint, Ctl, G);
+      Recorded = true;
+    }
   }
   if (Bracket)
     stamp(B.CreateCall(X, {Ctl}));
@@ -1696,7 +1709,8 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // (an ancilla: the `cqrt_x` bracket; the user's register: `rz(−θ)`) — see
   // the helper's header (bd 3qlq.4).
   auto emitArm = [&](ArrayRef<Instruction *> Gates, bool Neg) {
-    emitKickbackGroup(B, Rz, X, Flag, FlagIsRail, phaseAngles(Gates), Neg, DL);
+    emitKickbackGroup(B, Rz, X, Flag, FlagIsRail, phaseAngles(Gates), Neg, DL,
+                      taint);
   };
   emitArm(R.Shadow, R.ArmNegated);
   // The FALSE arm of an if/else always fires on ¬f — `ArmNegated` is the
@@ -1723,7 +1737,8 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
       // Recorded for the same reason as the arm gates above (F-L7-1); the
       // `¬flag` form is the helper's (ancilla: bracket; rail: `rz(−θ)`).
       emitKickbackGroup(B, Rz, X, Flag, FlagIsRail,
-                        {TailPhi->getIncomingValue(I)}, /*Neg=*/!FiresOnOne, DL);
+                        {TailPhi->getIncomingValue(I)}, /*Neg=*/!FiresOnOne, DL,
+                        taint);
     }
 
   // ---- 3. STRIP + FREE. The strip recomputes the predicate on the CONDITION's
@@ -1940,7 +1955,8 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
     // `cqrt_rz_i1(f, -θ)` and cancel a user's phase EXACTLY. The record is
     // what makes the gate opaque; a NEW emission site that omits it re-opens
     // that miscompile with no diagnostic anywhere.
-    emitKickbackGroup(B, Rz, X, Ctl, CtlIsRail, phaseAngles(Gates), Neg, DL);
+    emitKickbackGroup(B, Rz, X, Ctl, CtlIsRail, phaseAngles(Gates), Neg, DL,
+                      taint);
   };
 
   // 1-2. OUTER network, then the outer arm's phases on its root.
@@ -1995,7 +2011,13 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
   Conj.G = stamp(B.CreateCall(
       AllocI1, {Constant::getNullValue(Type::getInt1Ty(BI->getContext()))},
       "g"));
-  emitCondNode(Conj, csyms, B, DL, /*Inverse=*/false);
+  // bd test_C_libtooling-r9e5 (1b-B.1, F-B1R2-1) — `&taint` because EITHER level
+  // root may be the user's own `_Bool` register (`OuterRootIsRail` /
+  // `InnerRootIsRail` above), in which case this toffoli is a control read of it
+  // — and for an inner rail it is the ONLY one, since the inner arm's phases
+  // ride the conjunction ancilla. `emitCondNode` owns the recording so this call
+  // and `emitCondNetwork`'s cannot drift apart.
+  emitCondNode(Conj, csyms, B, DL, /*Inverse=*/false, &taint);
   emitArm(R.ShadowFalse, Conj.G, /*CtlIsRail=*/false, /*Neg=*/false);
   emitCondNode(Conj, csyms, B, DL, /*Inverse=*/true);
   stamp(B.CreateCall(wd.freeFn(), {Conj.G}));

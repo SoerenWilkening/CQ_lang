@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function example i32 (i1): cq controlled lowering: bare i1 register condition under quantum control
+

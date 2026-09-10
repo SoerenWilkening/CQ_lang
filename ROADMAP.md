@@ -87,6 +87,15 @@ phase, not in advance.
    > no mint/strip/free; `¬rail` as the diagonal `rz(−θ)`), lowered by the flat kickback,
    > the nest and the Rz-stem angle select; every other consumer declines it with `bare i1
    > register condition` (follow-ons 1b-B/C/D). PRD §13.**
+   > **Inc 1b-B.1 (bd `r9e5`, 2026-09-10, branch `3qlq-inc1b-b-rail-select`): the 4.4 DATA
+   > SELECT on a bare `_Bool` — the owner's `if (b0 == 1) a -= 3;` — lowers: the flag is a
+   > CNOT COPY of the rail (`alloc_i1; cnot(h_b, bf)` … the cleared 4.4 stream on `bf` …
+   > `cnot(h_b, bf); free(bf)`), minted/stripped by `CondTreeEmit` under `CopyRailRoot`;
+   > still no `cqrt_x` on a user register. The 6.5 arm (bd `54ur`, 1b-B.2a) and the unfolded
+   > value diamond (bd `fg9k`, 1b-B.2b) on a rail are filed, not built. Its round 2 found the
+   > ROUND-2 TAINT WINDOW (a fence asked at round-1 taint, `Chained` decided at final taint) —
+   > fixed by recording every emitted rail read and re-verifying after the fixpoint
+   > (`reverifyRailCondReads`); the compare select's copy of it is bd `9pum`. PRD §14 / E15.**
    > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
    > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
    > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),

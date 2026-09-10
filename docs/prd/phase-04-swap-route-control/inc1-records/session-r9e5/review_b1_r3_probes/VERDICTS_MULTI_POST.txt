@@ -1,0 +1,12 @@
+m01 rc=0 ACCEPT trace=18 2b=1 verified, 0 violation(s), 0 unproven
+m02 rc=1 DECLINE: cq taint escape: tainted value reaches an unsupported instruction
+m03 rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+m04 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+m05 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+m06 rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m07 rc=0 ACCEPT trace=19 2b=1 verified, 0 violation(s), 0 unproven
+m08 rc=1 DECLINE: cq controlled lowering: control flow inside a loop body under quantum control
+/usr/local/opt/llvm@19/bin/llvm-link: No such file or directory: '/Users/sorenwilkening/Desktop/CQ_lang/docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/out/multi-POST/m09.c.ll'
+m09 rc=1 DECLINE: 
+m10 rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m11 rc=0 ACCEPT trace=18 2b=1 verified, 0 violation(s), 0 unproven

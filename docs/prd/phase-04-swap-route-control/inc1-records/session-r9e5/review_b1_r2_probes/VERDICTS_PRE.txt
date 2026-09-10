@@ -1,0 +1,73 @@
+a01_baseline_owner rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a02_measure_parent_chained rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a03_measure_grandparent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a04_measure_xor_parent_result rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a05_measure_xor_source rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a06_measure_trunc_parent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a07_measure_trunc_source rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a08_depth2_cast_middle_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a09_inplace_xor_parent_measure_before rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a10_forward_theta_measure_after rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+a11_forward_theta_loop_remint rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+a12_forward_theta_loop_invariant rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+a13_measure_parent_after_select rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a14_measure_parent_guarded_sidepath rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a15_int_twin_measure_parent rc=0 ACCEPT trace=15 link/run=0 2b=1 verified, 0 violation(s), 0 unproven 2brc=0
+a16_loop_remint_measure_parent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+a17_loop_remint_forward_only rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+e01_round2_taint_sibling_theta rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+e02_round2_taint_measure_parent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e03_round1_taint_sibling_control rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+h01_io_sink_under_rail rc=1 DECLINE: 
+h02_invert_around_rail_select rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+h03_loop_rail_select_k32 rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+h04_out_escapes_ret rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+h05_rail_select_guarded_block rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+h06_borrow_chain_and_select rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b01_value_arm_bare_rail rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b02_value_arm_compound_rail rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+b03_datamux_bare_rail rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b04_classicalcall_arm_bare_rail rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b05_dead_out rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b06_out_chain_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b07_out_chain_dead rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+b08_out_chain_dead_cmp_twin rc=0 ACCEPT trace=17 link/run=0 2b=2 verified, 0 violation(s), 0 unproven 2brc=0
+c01_mixed_tree_post_rail_theta rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+c02_mixed_tree_post_cmp_theta rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+c03_mixed_tree_shared_register rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+c04_mixed_tree_rail_parent_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+c05_two_rails_one_parent_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+c06_fp_rail_post_theta rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+d01_borrow_chain_dead rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+d02_two_selects_chained_between rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+d03_two_selects_theta_after rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+d04_select_then_kickback_then_theta rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+e04_round2_window_sibling_theta rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e05_round1_window_sibling_control rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+e06_round2_window_measure_parent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e07_round2_window_sibling_after rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e08_round2_window_sibling_cmp_twin rc=0 ACCEPT trace=26 link/run=0 2b=2 verified, 0 violation(s), 0 unproven 2brc=0
+e09_round2_window_sibling_kickback rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+e10_round2_window_sibling_cmp_i1 rc=1 DECLINE: cq controlled lowering: control flow under quantum control
+e11_classical_seed_sibling_accept_control rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e14_rail_select_arm_is_out rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+e15_cmp_select_arm_is_out rc=0 ACCEPT trace=24 link/run=0 2b=2 verified, 0 violation(s), 0 unproven 2brc=0
+f01_out_parent_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+f02_qrom_parent_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+f04_loop_phi_parent_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+f06_measure_unreachable_block rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+f12_two_rails_other_measured rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+f13_parent_measured_unreachable_from_select rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+g05_i64_rail_select rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+g06_logical_and_rail_cmp rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+g08_rail_is_cond_and_arm rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+i01_borrow_chain_dead_cmp_twin rc=0 ACCEPT trace=15 link/run=0 2b=1 verified, 0 violation(s), 0 unproven 2brc=0
+i02_kickback_parent_measured_after rc=0 ACCEPT trace=5 link/run=0 2b=0 verified, 0 violation(s), 0 unproven 2brc=0
+i03_select_of_rails_parent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+i04_measure_after_unreachable_abort rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+i05_two_chained_rails_shared_grandparent rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+i06_clone_rail_select rc=1 DECLINE: cq specialization: floating-point quantum argument or return has no reversible copy
+i07_clone_rail_theta_inside rc=1 DECLINE: cq specialization: callee contains a quantum primitive (cq_*)
+i08_rail_select_out_feeds_second_rail_select rc=1 DECLINE: cq controlled lowering: bare i1 register condition under quantum control
+j01_loop_carried_forward_measure rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
+j02_forward_name_measured_before_select rc=1 DECLINE: cq controlled lowering: condition predates a non-diagonal gate under quantum control
