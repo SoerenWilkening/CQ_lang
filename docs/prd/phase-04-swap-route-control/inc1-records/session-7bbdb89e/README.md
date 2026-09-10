@@ -60,3 +60,11 @@ argument in-source at the consume; (2) a one-line header note on the pre-existin
 out-of-place — a later increment, never the fence; (4) the pre-existing stale `AsLowered=true` citations in notes §3.14
 (`:3214`/`:3412-3413`, wrong on `main` too). Then the queue from session 82e6b530: 3qlq.13, .14, .9, .10, .11, .12, 67n5,
 OQ-11/12/13/22/23; increments 3qlq.4, 3qlq.8; follow-ons .5 (UNSOUND BY DEFAULT), .6, .7.
+
+**ADDED 2026-09-10 — `cascade_reproducers/` + `../../HANDOFF_controlled_cascade_2026-09-10.md`.** After the landing the
+owner tried to write a quantum-controlled cascade in `example/grover/grover_oracle_uncompute.c` (a git-excluded scratch
+file) and hit four declines in a row (a dead state-prep arm; F2's seed == compare constant; a `bool` condition = bare
+`i1`, bd 3qlq.4; and `-O1` fusing the two-step cascade into one multi-phi region because the driving register was the
+classical constant 5). MEASURED: the cascade compiles as written once `a` is a quantum register (`c4b`/`c4c`, 33 lines,
+two onward regions). The handoff is the basis for the next session's discussion (Q1–Q6: the idiom, the fused shape,
+3qlq.4's priority, the dead arm, the generic diagnostic, F2).

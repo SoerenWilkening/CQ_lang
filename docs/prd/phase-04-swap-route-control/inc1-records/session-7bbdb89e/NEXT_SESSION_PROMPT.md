@@ -19,6 +19,10 @@ runtime symbol, ever (owner D3). Stop and ask the owner on any contradiction of 
   reproducers `$SP/harness/p/` (= `session-82e6b530/eqpx_reproducers/`) and `session-7bbdb89e/eqpx_reproducers_r1/`.
 
 ## Open items in this order (owner's call)
+0. **DISCUSS FIRST: `docs/prd/phase-04-swap-route-control/HANDOFF_controlled_cascade_2026-09-10.md`** — the owner's controlled
+   cascade hit four declines in a row on the landed binary (reproducers + verdicts in `session-7bbdb89e/cascade_reproducers/`);
+   the cascade compiles once the driving register is quantum. Owner questions Q1–Q6 there (the idiom, the `-O1`-fused shape,
+   moving bd 3qlq.4 up, the dead prep arm, a specific `ControlDetect` diagnostic, F2). Proposed new items (a)/(b) in its §5.
 1. OWNER QUESTIONS from the eqpx session (all docs-level, none a wrong unitary): (a) keep `InPlaceRailIdx`? — kept,
    argued in-source; (b) a header note on the pre-existing (1b) template fixture
    `control_phase_kickback_reject_preloop_commit_stale.ll` (its `CHECK-NOT`s are vacuous on a `RUN: not` line, the `not`
