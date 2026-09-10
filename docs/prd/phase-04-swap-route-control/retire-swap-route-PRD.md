@@ -681,10 +681,12 @@ value arm, the in-place Ry arm / state prep, the Ry-stem angle select, the clone
 declines a rail leaf loudly with ONE new string, `bare i1 register condition` — those are
 the follow-ons 1b-B/1b-C, not omissions. Residuals keep `branch phase on a bare i1
 condition`: a loop-CARRIED `_Bool` (a header-phi condition), a `trunc`/`zext`/phi/argument
-`i1`, and a NEGATED rail level in the nest. **17 accept + 10 decline fixtures, 9 e2e
-slices (all STRICT stage 2b) + 1 rolled == unrolled `cmp` gate; 0 pre-existing fixtures
-moved except the discriminator itself** (`control_phase_kickback_reject_bare_i1.ll`,
-`git mv`'d to `..._rail_diamond.ll` and rewritten as the accept its header promised).
+`i1`, and a NEGATED rail level in the nest. **17 accept + 9 decline fixtures, 9 e2e
+slices (all STRICT stage 2b) + 1 rolled == unrolled `cmp` gate; exactly TWO pre-existing
+fixtures moved**: the discriminator itself (`control_phase_kickback_reject_bare_i1.ll`,
+`git mv`'d to `..._rail_diamond.ll` and rewritten as the accept its header promised) and
+the drbq-era `control_inplace_ry_reject_raw_i1_cond.ll`, which keeps its decline and takes
+the new string (it IS 1b-C's flip target; a duplicate pin of it was dropped).
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 
@@ -1214,8 +1216,11 @@ needs instead, each asked for the flat path, the nest (both levels) and the angl
   nest at either level, invariant-register loop rolled, one-qubit Grover flat) and the
   select / value / Ry / state-prep / loop-carried / negated-nest shapes decline with the
   strings above. Every accept is STRICT stage-2b clean.
-* `ir-pass-lit`: 1707 → **1733** fixtures (+27: 17 accept, 10 decline; the old
-  `reject_bare_i1` `git mv`'d and rewritten), exactly ONE pre-existing fixture moved and it
-  is that discriminator. ctest **367 → 377** (`^e2e-` 357 → 367, `^e2e-slice-` 321 → 330,
+* `ir-pass-lit`: 1707 → **1732** fixtures (+26: 17 accept, 9 decline; the old
+  `reject_bare_i1` `git mv`'d and rewritten), exactly TWO pre-existing fixtures moved: that
+  discriminator, and `control_inplace_ry_reject_raw_i1_cond.ll`'s string (`control flow` →
+  `bare i1 register condition`, disposition unchanged) — found by the full `ctest -j6`
+  (376/377, that one entry), because the `classifyArms` message change post-dated the
+  earlier full `lit` run. ctest **367 → 377** (`^e2e-` 357 → 367, `^e2e-slice-` 321 → 330,
   `twin-identical` 26 → 27), goldens 323 → 332.
 * No new runtime symbol, no ABI change, `tools/`, `runtime/`, `include/` untouched (D3).

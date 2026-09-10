@@ -1,0 +1,117 @@
+\labsessionheader{2026-09-10}{The bare \texttt{bool} condition (bd 3qlq.4, Inc 1b)}%
+  {HEADHASH}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md \S13}
+
+\subsection*{Goal}
+The owner's scratch program \fpath{example/grover/grover_oracle_uncompute.c} drives a branch phase
+from a \texttt{bool} register and declined at the first \texttt{if} (\texttt{branch phase on a bare
+i1 condition}); wall~3 of the 2026-09-10 handoff, filed as \bd{test_C_libtooling-3qlq.4}. The
+owner's instruction was explicit: no \texttt{int} workaround --- \texttt{bool} and every other type
+must work. This session built that increment for the register-free branch phase and measured,
+with a probe family, exactly which \texttt{bool}-conditioned shapes now lower and which still decline.
+
+\subsection*{What the shape is}
+\texttt{\_Bool b = cq\_theta(b0, }\(\theta\)\texttt{); if (b) cq\_phi(}\(\varphi\)\texttt{);} reaches
+the pass as \texttt{br i1 \%b} where \texttt{\%b} \emph{is} the \texttt{cq\_theta\_i1} call: a
+one-qubit register, with no compare to mint a flag from. \texttt{clang -O1} produces that from every
+natural spelling --- \texttt{if (b)}, \texttt{if (!b)}, \texttt{if (b == 1)} (by successor polarity,
+never an \texttt{icmp}), the folded \texttt{if (b) cq\_phi(A); else cq\_phi(B);} (one call whose angle
+is a \texttt{select}), \texttt{b \&\& q == 5}, \texttt{b == c} (\texttt{xor i1}), and the owner's
+cascade, which IPSCCP collapses to \texttt{br i1 \%b0} outright. On \texttt{main} (\commit{170ede1})
+every one of these declined; with \texttt{int b} the same programs compiled through the ordinary
+compare-flag mint.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{aee9212} --- \bd{3qlq.4} --- the condition grammar gains a \emph{rail leaf}
+    (\texttt{CondTree::RailLeaves}, \texttt{isCondRailLeaf}: a \texttt{cq\_theta\_i1} result, root or
+    chained, alone or as a child of any \texttt{and}/\texttt{or}/\texttt{xor} node); the network
+    emitter maps it to \emph{itself}; the flat kickback, the depth-2 nest and the \(R_z\)-stem angle
+    select put \texttt{cqrt\_rz\_i1} directly on the register's own rail --- no mint, no strip, no
+    free. 17 accept + 9 decline fixtures, 9 e2e slices (all strict stage 2b) and one rolled\,=\,unrolled
+    twin gate. Exactly two pre-existing fixtures moved: the old decline discriminator, renamed and
+    rewritten as the accept its header promised, and a drbq-era decline whose string became
+    the new specific one (disposition unchanged).
+  \item \commit{a34cd22} --- the records: PRD \S13 and E14, \fpath{CLAUDE.md}, \fpath{docs/frontend.md},
+    \fpath{ROADMAP.md}, and the 39-program probe record under
+    \fpath{docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/}.
+\end{itemize}
+
+\subsection*{The one design decision worth reading}
+A gate that must fire on \texttt{b == 0} is emitted as the \emph{diagonal} \texttt{rz(h\_b, }\(-\theta\)\texttt{)},
+never as a \texttt{cqrt\_x} bracket on the register, on
+\(X\,P(\theta)\,X = \mathrm{diag}(e^{i\theta},1) = e^{i\theta}P(-\theta)\): the same unitary up to a
+global phase (which owner decision D2 already discards), with \texttt{fneg} exact in IEEE. The reason
+is not elegance. Three predicates that read the lowered stream depend on ``no non-diagonal gate on a
+user register'': the uncompute spine admits an uncontrolled \texttt{cqrt\_rz\_} on a borrowed parent
+by name and fails closed on anything else (a bracket would freeze every chain that borrows the
+register --- measured discharged instead, \fpath{control_phase_kickback_rail_data_use.ll}); the
+chain walk never recovers \texttt{cqrt\_x}; and every wire fence in the classifier argues from that
+sentence. Where the emitter's control is an ancilla it minted (a compare flag, a tree node), the
+bracket stays exactly as before.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}ll@{}}\toprule
+\texttt{bool b0} (\fpath{slice_control_phase_bool_diamond}) & \texttt{int b0} (\fpath{..._int_twin}) \\ \midrule
+\texttt{cqrt\_alloc\_i1(0) -> h0}          & \texttt{cqrt\_alloc\_i32(0) -> h0} \\
+\texttt{cqrt\_ry\_i1(h0, 0x1p-1)}          & \texttt{cqrt\_ry\_i32(h0, 0x1p-1)} \\
+                                           & \texttt{cq\_template\_icmp\_eq\_i32\_hl(h0, 1) -> h1} \\
+                                           & \texttt{cqrt\_x(h1)} \\
+\texttt{cqrt\_rz\_i1(h0, -0x1p-1)}         & \texttt{cqrt\_rz\_i1(h1, 0x1p-1)} \\
+                                           & \texttt{cqrt\_x(h1)} \\
+                                           & \texttt{cq\_template\_icmp\_eq\_i32\_hl\_unc(h1, h0, 1)} \\
+                                           & \texttt{cqrt\_free(h1)} \\
+\texttt{cqrt\_measure\_i1(h0) -> 0}        & \texttt{cqrt\_measure\_i32(h0) -> 0} \\
+\bottomrule\end{tabular}
+\caption{The owner's program, both goldens (committed, \fpath{tests/e2e/}). The \texttt{int} twin
+pays a flag copy of a register that is already a flag; the \texttt{bool} stream is that stream
+with the mint, strip and free removed, the flag renamed to the register, and the bracket folded
+into the sign of the angle.}
+\end{table}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ The owner's example changed shape during the session (it is a git-excluded scratch
+    file): the version read at session start now compiles (it is the diamond slice above); the
+    version on disk at close is the handoff's wall~1, a \emph{dead} \texttt{b1} state-prep arm,
+    which is owner question Q4 of the handoff and not a \texttt{bool} issue.
+  \item \foverdecline\ (by design, filed) A \texttt{bool} that drives a \emph{data} select or value
+    arm (\texttt{if (b) a -= 3;}), an in-place \(R_y\) or state prep (\texttt{if (b) r = cq\_theta(r, }\(\theta\)\texttt{)}),
+    or an \(R_y\) angle select declines with one new string, \texttt{bare i1 register condition}:
+    \bd{test_C_libtooling-r9e5} (1b-B) and \bd{test_C_libtooling-l4x4} (1b-C).
+  \item \foverdecline\ (by design, filed) A loop-\emph{carried} \texttt{bool} (the header phi as the
+    condition) and a \texttt{bool} that reaches the next region as a preceding region's merge phi:
+    \bd{test_C_libtooling-boi6} (1b-D). A negated rail level in a nest, a NOT inside a tree, and a
+    \texttt{trunc}-derived \texttt{i1}: \bd{test_C_libtooling-r903}. All keep the old discriminator string.
+  \item \fpreexisting\ A \texttt{bool} \emph{state prep} under control (\texttt{if (c) b = cq\_theta(false, }\(\theta\)\texttt{)})
+    still declines at fence F2, because an \texttt{i1} seed always collides with the branch's own
+    compare pinned to \texttt{true}/\texttt{false} on its edges --- handoff question Q6, unchanged.
+  \item \fpreexisting\ An angle computed \emph{inside} the arm (\texttt{cq\_phi(0.1 * i)} in a loop)
+    declines identically for \texttt{int} and \texttt{bool}: the strict one-call arm spelling, not
+    this increment.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+lit fixtures & 1732 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1707) \\
+ctest entries & 377 & \measured{ctest --test-dir build -N | tail -1} (was 367) \\
+e2e entries / slices & 367 / 330 & \measured{ctest -N -R '^e2e-' ; -R '^e2e-slice-'} (was 357 / 321) \\
+twin-identical gates & 27 & \measured{ctest -N -R twin-identical} (was 26) \\
+goldens & 332 & \measured{ls tests/e2e/*.expected.log | wc -l} (was 323) \\
+probe programs & 39 & \measured{ls inc1-records/session-3qlq4/probes/*.c} \\
+rolled vs unrolled bool loop & 12 = 12 lines & \measured{cmp slice_control_phase_bool_loop{,_unrolled}.expected.log} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+VERIFICATIONRUN
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Land \bd{3qlq.4} on \texttt{main} once the Rule-13 round is clear; then 1b-B (\bd{test_C_libtooling-r9e5}) for the
+    data select and value arm, which is what the owner's cascade needs next.
+  \item Handoff questions Q4 (dead state-prep arm) and Q6 (F2 on an \texttt{i1} seed) remain the owner's; both
+    block the cascade written with \texttt{bool} preps, independently of this increment.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
