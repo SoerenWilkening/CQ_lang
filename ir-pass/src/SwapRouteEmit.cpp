@@ -1431,6 +1431,65 @@ CallInst *emitRoute(IRBuilder<> &B, const ControlledSymbols &csyms, Value *Flag,
 // by its own `cqrt_free(Flag)` happening to make the flag an unrecognized-consumer
 // rail, which is an accident of this emitter's own emission order and not a fence
 // (lens L7 §F-L7-5). The protection is now the membership, on BOTH paths.
+// bd test_C_libtooling-3qlq.4 (Inc 1b) — ONE spelling of "fire P(θ) for each
+// angle when `Ctl == FiresOnOne`", shared by the flat kickback (arms and the
+// merge-tail incomings) and the nest (outer arm on its root, inner arm on the
+// conjunction). Two forms, chosen by WHAT `Ctl` IS:
+//
+//   * an ANCILLA this region minted (a compare flag or a network node): the
+//     pre-1b stream, verbatim — `x; rz(θ₁) … rz(θₙ); x` for a `¬Ctl` group,
+//     ONE bracket pair per group (`cqrt_x` is self-inverse).
+//   * the USER'S REGISTER (`CtlIsRail` — a bare `_Bool` condition): NO `cqrt_x`
+//     ever touches it. A `¬rail` gate is emitted as `rz(rail, −θ)`, on the
+//     identity `X·P(θ)·X = diag(e^{iθ}, 1) = e^{iθ}·P(−θ)`: the same unitary up
+//     to the GLOBAL phase e^{iθ}, which owner decision D2 already declares
+//     unobservable (an uncontrolled `cq_phi` is deleted on that ground). `−θ`
+//     is `fneg`, exact in IEEE for every double and constant-folded for a
+//     `ConstantFP`, so no rounding class is introduced (unlike 2b's `A−B`).
+//
+// WHY the diagonal form and not the bracket on a register — three predicates
+// that read the lowered stream would each turn a `cqrt_x(rail)` into a wrong
+// or over-conservative answer: `Uncomputation::preservesBorrowedParent` fails
+// CLOSED on any gate it does not name (a chain BORROWING the register as a
+// parent would freeze — a leak), `ChainWalk::isInPlaceGateOn` deliberately
+// never recovers `cqrt_x`, and the region-level invariant every fence in this
+// file rests on ("this region emits NO non-diagonal gate on any condition
+// register") would be false. With `rz` alone the register carries exactly one
+// new consumer per gate, diagonal, membership-recorded, and the whole-DAG spine
+// reads it the way it already reads the flag's gate.
+//
+// EVERY gate is RECORDED (`markBranchPhaseGate`) for the F-L7-1 reason the
+// callers state; a seventh emission site that omits it re-opens that
+// miscompile with no diagnostic anywhere.
+static void emitKickbackGroup(IRBuilder<> &B, FunctionCallee Rz,
+                              FunctionCallee X, Value *Ctl, bool CtlIsRail,
+                              ArrayRef<Value *> Angles, bool Neg,
+                              const DebugLoc &DL) {
+  if (Angles.empty())
+    return;
+  auto stamp = [&](CallInst *C) {
+    if (DL)
+      C->setDebugLoc(DL);
+    return C;
+  };
+  const bool Bracket = Neg && !CtlIsRail;
+  if (Bracket)
+    stamp(B.CreateCall(X, {Ctl}));
+  for (Value *Angle : Angles) {
+    Value *A = Neg && CtlIsRail ? B.CreateFNeg(Angle) : Angle;
+    markBranchPhaseGate(stamp(B.CreateCall(Rz, {Ctl, A})));
+  }
+  if (Bracket)
+    stamp(B.CreateCall(X, {Ctl}));
+}
+
+static SmallVector<Value *, 4> phaseAngles(ArrayRef<Instruction *> Gates) {
+  SmallVector<Value *, 4> Out;
+  for (Instruction *I : Gates)
+    Out.push_back(cast<CallInst>(I)->getArgOperand(0));
+  return Out;
+}
+
 void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
                              const ControlledSymbols &csyms, TaintSet &taint) {
   // ---- 0. RE-VALIDATE THE PLAN BY SSA IDENTITY, BEFORE MUTATING ANYTHING.
@@ -1456,7 +1515,16 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
   const bool IsTree = !Tree.Nodes.empty();
-  auto *Cond = IsTree ? nullptr : Tree.Leaves.front();
+  // bd 3qlq.4: a node-less tree has ONE leaf, a COMPARE (`Cond`, the pre-1b
+  // path) or a RAIL (`RailCond`, the `_Bool` register itself — its own flag).
+  auto *Cond = IsTree || Tree.Leaves.empty() ? nullptr : Tree.Leaves.front();
+  CallInst *RailCond =
+      !IsTree && !Tree.RailLeaves.empty() ? Tree.RailLeaves.front() : nullptr;
+  if ((!IsTree && !Cond && !RailCond) || (R.ShareCondFlag && !Cond)) {
+    if (Instruction *A = anchor())
+      diagnoseUnderControl(A, "control flow");
+    return;  // detection/emission drift — before the first emission.
+  }
   // Each recorded gate must still be a one-operand phase call in the arm the
   // plan says it is in, with an angle defined OUTSIDE that arm (the classifier's
   // `Arm->size() == N + 1` makes the latter structural, but it is an EMISSION
@@ -1554,10 +1622,17 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
     }
   }
   Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
-  Value *Flag = IsTree ? Net.Root
-                       : lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                            /*inverse=*/false,
-                                            /*before=*/FlagAt);
+  // bd 3qlq.4: for a RAIL condition the flag IS the register (no mint), and
+  // `FlagIsRail` selects the diagonal polarity form in `emitKickbackGroup` and
+  // skips the strip+free below. A tree's root is an ancilla unless the tree IS
+  // a rail (`Net.RootIsRail`, the node-less case — unreachable here since a
+  // node-less tree takes the `RailCond` path, but asked rather than assumed).
+  Value *Flag = IsTree     ? Net.Root
+                : RailCond ? static_cast<Value *>(RailCond)
+                           : lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
+                                                /*inverse=*/false,
+                                                /*before=*/FlagAt);
+  const bool FlagIsRail = IsTree ? Net.RootIsRail : RailCond != nullptr;
   if (!Flag)
     // REACHABLE, and say so plainly rather than calling it unreachable — an
     // overstated justification is how a real bail later gets deleted as dead.
@@ -1612,21 +1687,16 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // pre-3qlq golden. Nothing downstream depends on this choice — it is a shape
   // decision, argued from the involution above and from nothing else.
   FunctionCallee X = csyms.xFn();
+  // EVERY emitted kickback gate is RECORDED (`ChainWalk::markBranchPhaseGate`,
+  // inside `emitKickbackGroup`) so the whole-DAG uncompute spine treats it as
+  // opaque. Without the record the spine reads `cqrt_rz_i1(f, θ)` as an
+  // ordinary in-place rotation on `f`'s chain and emits `cqrt_rz_i1(f, -θ)`,
+  // cancelling the user's phase exactly — the Rule-13 round-1 CONFIRMED
+  // miscompile F-L7-1 / F-L1-1. The `¬flag` form depends on what the flag IS
+  // (an ancilla: the `cqrt_x` bracket; the user's register: `rz(−θ)`) — see
+  // the helper's header (bd 3qlq.4).
   auto emitArm = [&](ArrayRef<Instruction *> Gates, bool Neg) {
-    if (Gates.empty())
-      return;
-    if (Neg)
-      stamp(B.CreateCall(X, {Flag}));
-    for (Instruction *I : Gates)
-      // EVERY emitted kickback gate is RECORDED (`ChainWalk::markBranchPhaseGate`)
-      // so the whole-DAG uncompute spine treats it as opaque. Without the record
-      // the spine reads `cqrt_rz_i1(f, θ)` as an ordinary in-place rotation on
-      // `f`'s chain and emits `cqrt_rz_i1(f, -θ)`, cancelling the user's phase
-      // exactly — the Rule-13 round-1 CONFIRMED miscompile F-L7-1 / F-L1-1.
-      markBranchPhaseGate(
-          stamp(B.CreateCall(Rz, {Flag, cast<CallInst>(I)->getArgOperand(0)})));
-    if (Neg)
-      stamp(B.CreateCall(X, {Flag}));
+    emitKickbackGroup(B, Rz, X, Flag, FlagIsRail, phaseAngles(Gates), Neg, DL);
   };
   emitArm(R.Shadow, R.ArmNegated);
   // The FALSE arm of an if/else always fires on ¬f — `ArmNegated` is the
@@ -1650,13 +1720,10 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
       const bool FiresOnOne = In == R.Arm         ? !R.ArmNegated
                               : In == R.ArmFalse  ? false
                                                   : R.ArmNegated;
-      if (!FiresOnOne)
-        stamp(B.CreateCall(X, {Flag}));
-      // Recorded for the same reason as the arm gates above (F-L7-1).
-      markBranchPhaseGate(
-          stamp(B.CreateCall(Rz, {Flag, TailPhi->getIncomingValue(I)})));
-      if (!FiresOnOne)
-        stamp(B.CreateCall(X, {Flag}));
+      // Recorded for the same reason as the arm gates above (F-L7-1); the
+      // `¬flag` form is the helper's (ancilla: bracket; rail: `rz(−θ)`).
+      emitKickbackGroup(B, Rz, X, Flag, FlagIsRail,
+                        {TailPhi->getIncomingValue(I)}, /*Neg=*/!FiresOnOne, DL);
     }
 
   // ---- 3. STRIP + FREE. The strip recomputes the predicate on the CONDITION's
@@ -1682,7 +1749,10 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
                      /*AllowQQLeaves=*/false, &LeafStrips);
     for (CallInst *S : LeafStrips)
       taint.DischargedFlagGates.insert(S);
-  } else if (!R.ShareCondFlag) {
+  } else if (!R.ShareCondFlag && !FlagIsRail) {
+    // (bd 3qlq.4: a RAIL flag is the user's register — nothing was minted, so
+    // there is nothing to strip and NOTHING TO FREE; the register stays the
+    // user's, carrying one diagonal, membership-recorded consumer.)
     auto *Strip = dyn_cast_or_null<CallInst>(
         lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
                            /*before=*/BI, /*negate=*/false,
@@ -1840,28 +1910,37 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
     return C;
   };
   FunctionCallee X = csyms.xFn();
-  auto emitArm = [&](ArrayRef<Instruction *> Gates, Value *Ctl, bool Neg) {
-    if (Gates.empty())
-      return;
+  // bd 3qlq.4 — a NEGATED level whose root is a bare RAIL is refused by the
+  // classifier (its conjunction control would need a `cqrt_x` bracket on the
+  // user's register); re-asked HERE, before the first emission, as the drift
+  // guard every emitter carries.
+  const bool OuterRootIsRail =
+      OuterTree.Nodes.empty() && !OuterTree.RailLeaves.empty();
+  const bool InnerRootIsRail =
+      InnerTree.Nodes.empty() && !InnerTree.RailLeaves.empty();
+  if ((OuterRootIsRail && R.ArmNegated) ||
+      (InnerRootIsRail && R.InnerArmNegated)) {
+    diagnoseUnderControl(BI, "branch phase on a bare i1 condition");
+    return;
+  }
+  auto emitArm = [&](ArrayRef<Instruction *> Gates, Value *Ctl, bool CtlIsRail,
+                     bool Neg) {
     // ONE bracket pair per ARM, not per gate: `cqrt_x` is self-inverse, so
     // `x;g1;x;x;g2;x` and `x;g1;g2;x` are the same unitary and the second is
-    // what every sibling phase emitter has emitted since drbq Inc 2a.
-    if (Neg)
-      stamp(B.CreateCall(X, {Ctl}));
-    for (Instruction *I : Gates)
-      // RECORDED, exactly as the flat emitter records its arm gates (bd 3qlq
-      // Inc 1, Rule-13 round-1 F-L7-1). `Ctl` is the OUTER root flag for the
-      // outer arm and the CONJUNCTION ancilla for the inner one; both are
-      // ancillas the region owns, and both would otherwise be read by
-      // `ChainWalk::isInPlaceGateOn` as ordinary in-place rotations on a
-      // reclaimable rail — which is how the whole-DAG spine came to emit
-      // `cqrt_rz_i1(f, -θ)` and cancel a user's phase EXACTLY. The record is
-      // what makes the gate opaque; a NEW emission site that omits it re-opens
-      // that miscompile with no diagnostic anywhere.
-      markBranchPhaseGate(
-          stamp(B.CreateCall(Rz, {Ctl, cast<CallInst>(I)->getArgOperand(0)})));
-    if (Neg)
-      stamp(B.CreateCall(X, {Ctl}));
+    // what every sibling phase emitter has emitted since drbq Inc 2a. On a RAIL
+    // root (bd 3qlq.4) the group helper uses `rz(−θ)` instead of any bracket.
+    //
+    // RECORDED (inside `emitKickbackGroup`), exactly as the flat emitter
+    // records its arm gates (bd 3qlq Inc 1, Rule-13 round-1 F-L7-1). `Ctl` is
+    // the OUTER root for the outer arm — a minted flag/node ancilla, or since
+    // 1b the user's own `_Bool` register — and the CONJUNCTION ancilla for the
+    // inner one. An ancilla the region owns would otherwise be read by
+    // `ChainWalk::isInPlaceGateOn` as an ordinary in-place rotation on a
+    // reclaimable rail — which is how the whole-DAG spine came to emit
+    // `cqrt_rz_i1(f, -θ)` and cancel a user's phase EXACTLY. The record is
+    // what makes the gate opaque; a NEW emission site that omits it re-opens
+    // that miscompile with no diagnostic anywhere.
+    emitKickbackGroup(B, Rz, X, Ctl, CtlIsRail, phaseAngles(Gates), Neg, DL);
   };
 
   // 1-2. OUTER network, then the outer arm's phases on its root.
@@ -1878,7 +1957,7 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
       diagnoseUnderControl(A, "control flow");
     return;
   }
-  emitArm(R.Shadow, OuterNet.Root, R.ArmNegated);
+  emitArm(R.Shadow, OuterNet.Root, OuterNet.RootIsRail, R.ArmNegated);
 
   // 3. INNER network. Its leaves read registers NO gate in this region touches
   // (the classifier proved `Mid` holds nothing but void phase calls and the
@@ -1917,7 +1996,7 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
       AllocI1, {Constant::getNullValue(Type::getInt1Ty(BI->getContext()))},
       "g"));
   emitCondNode(Conj, csyms, B, DL, /*Inverse=*/false);
-  emitArm(R.ShadowFalse, Conj.G, /*Neg=*/false);
+  emitArm(R.ShadowFalse, Conj.G, /*CtlIsRail=*/false, /*Neg=*/false);
   emitCondNode(Conj, csyms, B, DL, /*Inverse=*/true);
   stamp(B.CreateCall(wd.freeFn(), {Conj.G}));
 

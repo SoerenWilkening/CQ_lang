@@ -69,8 +69,46 @@ struct ControlPlan;
 // what would crash, or silently mis-read, on the logical-select spelling).
 struct CondTree {
   llvm::SmallVector<llvm::CmpInst *, 4> Leaves;
+  // bd test_C_libtooling-3qlq.4 (Inc 1b) — RAIL LEAVES. A leaf that is not a
+  // compare but a tainted `i1` REGISTER: the result of a `cq_theta_i1` call
+  // (root mint or chained), i.e. `_Bool b = cq_theta(b0, θ); if (b) …`. Such a
+  // leaf mints NO flag — the register IS its own flag (`isCondRailLeaf`), so
+  // `CondTreeEmit` maps it to itself and strips/frees NOTHING for it.
+  //
+  // ⚠ EVERY CONSUMER THAT READS `Leaves` MUST DECIDE ON `RailLeaves` EXPLICITLY.
+  // A consumer that iterates `Leaves` alone and treats the tree as compare-only
+  // would silently mint a network with a missing child (the emitter reports
+  // `Malformed`) or, worse, accept a shape it never proved. The shipped
+  // dispositions: the register-free branch phase (flat kickback, the depth-2
+  // nest, the Rz-stem angle select) ACCEPT rail leaves; the 4.4 data select, the
+  // Ry-stem angle select and the 6.x clone lift DECLINE them loudly with
+  // `kBareRailCondReason` — those are the filed follow-on increments, not
+  // omissions. `collectCondTree` returns true iff at least one leaf of EITHER
+  // kind was collected.
+  llvm::SmallVector<llvm::CallInst *, 2> RailLeaves;
   llvm::SmallVector<llvm::Instruction *, 4> Nodes;
 };
+
+// bd 3qlq.4 — THE ONE SPELLING of "this condition value is a bare i1 REGISTER".
+// True iff `V` is a call to `@cq_theta_i1` (the frozen `_Bool` spelling of the
+// taint source, `include/CQ.h`), whose result is the register's own rail after
+// `lowerRotations` RAUWs it to its `i32` handle. Deliberately NARROW: a `trunc`,
+// a `zext`/`sext`, a `phi` (a loop-carried or region-merge rail), a template
+// result, a clone `Argument` or a QRAM load are tainted `i1` values too, but
+// each is a DIFFERENT rail story (a derived rail needs a mint+discharge; a merge
+// phi is dissolved by a preceding emitter; an argument is a clone's) and none is
+// admitted here — they keep the pre-existing `branch phase on a bare i1
+// condition` decline, which is exactly what makes that string a discriminator.
+bool isCondRailLeaf(const llvm::Value *V);
+
+// bd 3qlq.4 — the ONE decline string for a rail-leaf condition reaching a
+// consumer that does not lower it yet (the 4.4 data select, the Ry-stem angle
+// select, and — through `ControlDetect`'s off-pattern fall-through — the value /
+// in-place-Ry / state-prep / abort / tape / guarded-store arms). Mirrored
+// character-for-character by the `control_*_reject_rail_*.ll` fixtures, so each
+// follow-on increment that lowers one of those flips its own fixture and no
+// other.
+constexpr const char *kBareRailCondReason = "bare i1 register condition";
 
 // THE GRAMMAR'S NODE DECOMPOSITION — one spelling, asked by the walk below AND
 // by every emitter that reads a `CondTree` (`CondTreeEmit`). True iff `V` is an

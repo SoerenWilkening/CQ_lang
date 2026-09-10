@@ -17,6 +17,7 @@
 #include "ArmAnalysis.h"       // angleSelectArmsAdmissible / comparePredLowerable
 #include "ChainWalk.h"         // markBranchPhaseGate (3qlq Inc 1 F-L7-1)
 #include "CompareLowering.h"   // lowerCompareToFlag + compareFlagMintable (step 0b)
+#include "SelectClassify.h"    // isCondRailLeaf / kBareRailCondReason (bd 3qlq.4)
 #include "ControlPlan.h"       // ControlRegion / diagnoseUnderControl
 #include "ControlledSymbols.h"  // xFn (3qlq Inc 1 phase angle select bracket)
 #include "TaintPropagation.h"  // TaintSet
@@ -104,11 +105,24 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
 // successor (Rule 9). The `cqrt_x` bracket here is not a polarity fix: it is how
 // the `f = 0` branch's gate is expressed at all, and it is the same self-inverse
 // pair every "fires on ¬f" emission in this tree uses.
-void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
+void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
                           WidthDispatch &wd, TaintSet &taint) {
   // ---- 0. RE-VALIDATE, before mutating anything (the step-0 discipline of the
   // by-difference emitter: a mid-stream decline leaves a minted flag and a
   // half-rewired consumer behind).
+  //
+  // bd 3qlq.4: the condition is a COMPARE (the pre-1b stream, verbatim) or the
+  // `_Bool` REGISTER itself (`RailCond`): then the register is the flag — no
+  // mint, no strip, no free — and the `¬b` gate is the diagonal `rz(b, −B)`
+  // (`X·P(B)·X = e^{iB}·P(−B)`, a global phase D2 already discards; `fneg` is
+  // exact) rather than a `cqrt_x` bracket on a user register — the invariant
+  // `SwapRouteEmit`'s `emitKickbackGroup` states.
+  const bool RailCond = isCondRailLeaf(Cond);
+  auto *Cmp = RailCond ? nullptr : dyn_cast<CmpInst>(Cond);
+  if (!RailCond && !Cmp) {
+    diagnoseUnderControl(Sel, "control flow");
+    return;
+  }
   Value *A = Sel->getTrueValue();
   Value *B = Sel->getFalseValue();
   if (T->arg_size() != 1 || T->getArgOperand(0) != Sel || !Sel->hasOneUse() ||
@@ -128,12 +142,19 @@ void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
   // applies here for the identical reason: a PRECEDING region's RAUW in this
   // same `lowerControlRegions` loop can turn the compare Q+Q between detection
   // and now, and this emitter has no Q+Q mint either).
-  const bool LTainted = taint.Tainted.count(Cond->getOperand(0)) != 0;
-  const bool RTainted = taint.Tainted.count(Cond->getOperand(1)) != 0;
-  if (LTainted == RTainted || !comparePredLowerable(Cond) ||
-      !compareFlagMintable(Cond, taint)) {
-    diagnoseUnderControl(Sel, "control flow");
-    return;
+  if (RailCond) {
+    if (!taint.Tainted.count(Cond)) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
+  } else {
+    const bool LTainted = taint.Tainted.count(Cmp->getOperand(0)) != 0;
+    const bool RTainted = taint.Tainted.count(Cmp->getOperand(1)) != 0;
+    if (LTainted == RTainted || !comparePredLowerable(Cmp) ||
+        !compareFlagMintable(Cmp, taint)) {
+      diagnoseUnderControl(Sel, "control flow");
+      return;
+    }
   }
   FunctionCallee Rz = wd.rzRtFn("i1");
   // `cqrt_x` through `ControlledSymbols` — the ONE spelling of the negation
@@ -160,8 +181,10 @@ void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
   // ---- 1. FLAG MINT, at the consumer — byte-identical to every other path's
   // step 1 (`lowerCompareToFlag` classifies the operands by taint and applies
   // the classical-on-left predicate flip itself).
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/T);
+  // bd 3qlq.4: for a RAIL condition the flag IS the register — nothing minted.
+  Value *Flag = RailCond ? static_cast<Value *>(Cond)
+                         : lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{},
+                                              /*inverse=*/false, /*before=*/T);
   if (!Flag)
     // UNREACHABLE for the two reasons the sibling records — the lockstep re-ask
     // above, and `DS_Error` → `exit(1)` inside `lowerCompareToFlag`'s own
@@ -175,22 +198,34 @@ void emitPhaseAngleSelect(SelectInst *Sel, CmpInst *Cond, CallInst *T,
   // CONFIRMED miscompile F-L7-1, whose reproducer lives on the sibling flat path
   // but whose mechanism (`isInPlaceGateOn` admitting an uncontrolled `cqrt_rz_`)
   // is shared by every producer of this symbol.
-  stamp(Bld.CreateCall(X, {Flag}));
-  markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, B})));
-  stamp(Bld.CreateCall(X, {Flag}));
-  markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
+  if (RailCond) {
+    // bd 3qlq.4 — on the USER'S register: `B` fires on `b == 0` in the diagonal
+    // form `rz(b, −B)` (no `cqrt_x` on a register — `emitKickbackGroup`'s
+    // invariant), then `rz(b, A)`. Two gates, no subtraction, no ancilla.
+    markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, Bld.CreateFNeg(B)})));
+    markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
+  } else {
+    stamp(Bld.CreateCall(X, {Flag}));
+    markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, B})));
+    stamp(Bld.CreateCall(X, {Flag}));
+    markBranchPhaseGate(stamp(Bld.CreateCall(Rz, {Flag, A})));
+  }
 
   // ---- 3. STRIP + FREE, after the consumer's position. Valid unconditionally:
   // this region emits no gate on any register the compare reads, so the basis
-  // the strip recomputes is identically the basis the mint read.
-  auto *Strip = dyn_cast_or_null<CallInst>(
-      lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                         /*before=*/After, /*negate=*/false,
-                         /*railToStrip=*/Flag));
-  if (Strip)
-    taint.DischargedFlagGates.insert(Strip);
-  IRBuilder<> Post(After);
-  stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+  // the strip recomputes is identically the basis the mint read. SKIPPED WHOLE
+  // for a RAIL flag (bd 3qlq.4): nothing was minted, the register is the
+  // user's, and freeing it would be the Rule-6 dirty free.
+  if (!RailCond) {
+    auto *Strip = dyn_cast_or_null<CallInst>(
+        lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+                           /*before=*/After, /*negate=*/false,
+                           /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
+    IRBuilder<> Post(After);
+    stamp(Post.CreateCall(wd.freeFn(), {Flag}));
+  }
 
   // ---- 4. ERASE the consumer, then the select, then the compare if it is now
   // dead. The order is forced by the use lists (the call uses the select, the
@@ -229,8 +264,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // invalidate. Read the two together — identity alone is not "the plan describes
   // the IR".
   auto *Sel = dyn_cast_or_null<SelectInst>(R.Merge);
-  auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
-  if (!Sel || !Cond) {
+  // bd 3qlq.4: the condition is a compare, or — for the PHASE stem only — the
+  // bare `_Bool` register (`isCondRailLeaf`). The Ry/Phi stems below keep
+  // their `CmpInst` and decline a rail with `kBareRailCondReason` (1b-C).
+  auto *CondI = dyn_cast_or_null<Instruction>(R.Condition);
+  const bool RailCond = isCondRailLeaf(CondI);
+  if (!Sel || !CondI || (!RailCond && !isa<CmpInst>(CondI))) {
     if (R.Merge)
       diagnoseUnderControl(R.Merge, "control flow");
     else if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
@@ -261,9 +300,14 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // RUN-TIME arm is admissible for this stem (owner question Q3) and remains
   // refused for the Ry one.
   if (isRegisterFreePhaseCall(T, taint)) {
-    emitPhaseAngleSelect(Sel, Cond, T, wd, taint);
+    emitPhaseAngleSelect(Sel, CondI, T, wd, taint);
     return;
   }
+  if (RailCond) {
+    diagnoseUnderControl(Sel, kBareRailCondReason);
+    return;
+  }
+  auto *Cond = cast<CmpInst>(CondI);
   const StringRef CalleeName = Callee->getName();
   const bool IsTheta = CalleeName.starts_with("cq_theta_");
   const bool IsPhi = CalleeName.starts_with("cq_phi_");

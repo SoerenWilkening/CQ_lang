@@ -540,6 +540,14 @@ bool decomposeCondNode(Value *V, Instruction::BinaryOps &Opc, Value *&L,
   return false;
 }
 
+bool isCondRailLeaf(const Value *V) {
+  const auto *CI = dyn_cast_or_null<CallInst>(V);
+  if (!CI || !CI->getType()->isIntegerTy(1))
+    return false;
+  const Function *F = CI->getCalledFunction();
+  return F && F->getName() == "cq_theta_i1";
+}
+
 bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
   SmallPtrSet<Value *, 8> Seen;
   SmallVector<std::pair<Value *, bool>, 8> Stack;
@@ -552,6 +560,15 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
     }
     if (!Seen.insert(V).second)
       continue;  // shared subtree — already collected once.
+    // bd 3qlq.4 — a RAIL LEAF: the `_Bool` register itself as the condition, or
+    // as a child of a logical node (`b && q == 5` → `select i1 %b, i1 %cmp,
+    // i1 false`; `b == c` → `xor i1 %b, %c`). Disjoint from the compare test
+    // below (a `CmpInst` is never a call). See the header's `RailLeaves` note
+    // for the obligation this places on every consumer of the tree.
+    if (isCondRailLeaf(V)) {
+      Tree.RailLeaves.push_back(cast<CallInst>(V));
+      continue;
+    }
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
       // NO ALIASED-OPERAND LEAF FENCE HERE, DELIBERATELY (bd big5, 2026-07-31 —
       // the revert of bd 7q3s / dd2c103). DO NOT RE-ADD ONE.
@@ -719,7 +736,7 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
     Stack.push_back({NodeR, false});
     Stack.push_back({NodeL, false});  // left child visits first.
   }
-  return !Tree.Leaves.empty();
+  return !Tree.Leaves.empty() || !Tree.RailLeaves.empty();
 }
 
 void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
@@ -792,6 +809,20 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     if (Leaf->getOperand(0)->getType()->isIntegerTy(1))
       return diagnoseUnderControl(Sel, "control flow");
   }
+  // bd 3qlq.4 — RAIL LEAVES (a `_Bool` register as the condition, or as a
+  // child of the tree). Tainted by construction (`cq_theta_i1` IS the taint
+  // source); re-asked as the same defence-in-depth the compare leaves get. A
+  // rail leaf has no predicate, no template and no mint, so no other gate-2
+  // clause applies to it. What DOES apply is gate 2c below (the rail is seeded
+  // into `Prov` exactly like a compare's operands — a chained Ry on the
+  // register between its def and the select would make the emitted control
+  // read a moved basis) and the CONSUMER question: in this increment only the
+  // Rz-stem ANGLE select lowers a rail condition; the 4.4 DATA select declines
+  // it after the angle-select hand-off with `kBareRailCondReason` (follow-on
+  // 1b-B — the copy merge controlled on the register itself).
+  for (CallInst *Rail : Tree.RailLeaves)
+    if (!taint.Tainted.count(Rail))
+      return diagnoseUnderControl(Sel, "control flow");
 
   // GATE 2c — STALE-CONDITION wire guard (kjd1 Rule-13 implementation
   // clearance, fcmp-lens BLOCKER; FP_SELECT_CLEARANCE.md). SelectMergeEmit
@@ -857,6 +888,8 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     SmallPtrSet<Value *, 16> Prov;
     for (CmpInst *Leaf : Tree.Leaves)
       condProvenance(Leaf, taint, Prov);
+    for (CallInst *Rail : Tree.RailLeaves)
+      condProvenance(Rail, taint, Prov);  // bd 3qlq.4: the register's own wire.
     for (Value *P : Prov)
       if (isa<FreezeInst>(P))
         return diagnoseUnderControl(Sel, "control flow");
@@ -926,6 +959,12 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     }
     return diagnoseUnderControl(Sel, "rotation angle");
   }
+  // bd 3qlq.4 — the 4.4 DATA select with a rail-leaf condition is follow-on
+  // 1b-B (the copy merge controlled on the register itself: no mint, no strip,
+  // no free). Declined HERE, after the angle-select hand-off, so the Rz-stem
+  // angle select above — which this increment DOES lower — is not caught.
+  if (!Tree.RailLeaves.empty())
+    return diagnoseUnderControl(Sel, kBareRailCondReason);
 
   // GATE 4 — ABI-width scalar result with a controlled copy (§16.9), AFTER the
   // FP-use fence. Accepts scalar integer {i1..i64} (`widthHasReversibleCopy`)

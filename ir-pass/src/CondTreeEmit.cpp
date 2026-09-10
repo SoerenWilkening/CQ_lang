@@ -157,6 +157,15 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     }
     if (FlagOf.count(V))
       continue;  // shared subtree — its rail is minted once and reused.
+    // bd 3qlq.4 — a RAIL LEAF is its own flag: the register's rail is READ as
+    // a control by the node gates and NOTHING is minted for it, so it is not
+    // recorded in `Out.Leaves` and `stripCondNetwork` never strips or frees it
+    // (the register is the user's). Same predicate the grammar used
+    // (`isCondRailLeaf`, Rule 14), so detection and emission cannot drift.
+    if (isCondRailLeaf(V)) {
+      FlagOf[V] = V;
+      continue;
+    }
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
       Value *F = lowerCompareToFlag(
           Leaf, wd, taint,
@@ -176,6 +185,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     Stack.push_back({L, false});  // left child visits first.
   }
   Out.Root = FlagOf.lookup(Root);
+  Out.RootIsRail = isCondRailLeaf(Root);
   return Out.Root ? CondNetDisp::Ok : CondNetDisp::Malformed;
 }
 

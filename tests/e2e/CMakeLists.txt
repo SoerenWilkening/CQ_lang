@@ -4956,6 +4956,94 @@ add_test(NAME e2e-phase-perbit-loop-mixed-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_perbit_loop_mixed_unrolled.expected.log")
 
+# --- bd test_C_libtooling-3qlq.4 (Inc 1b) — the BARE `_Bool` CONDITION: a
+# --- `cq_theta_i1` result as a branch/select condition is its own flag (no mint,
+# --- no strip, no free; a `¬rail` gate is the diagonal `rz(−θ)`, never a cqrt_x
+# --- on a user register). Nine slices — the owner's program (diamond), its `int`
+# --- reduction twin, the folded if/else (angle select), `&&` and `==` trees, the
+# --- depth-2 nest, the rolled/unrolled invariant-register loop pair, and the flat
+# --- one-qubit Grover — plus ONE `cmp` twin gate (rolled == unrolled). ALL STRICT
+# --- stage 2b. There is deliberately NO cmp gate between the bool diamond and its
+# --- int twin: the witness is a stated three-line REDUCTION (the Inc-4 state-prep
+# --- precedent), and a compare_files gate would assert something false.
+add_test(NAME e2e-slice-control-phase-bool-diamond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_diamond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_diamond.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-int-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_int_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_int_twin.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-ifelse
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_ifelse.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_ifelse.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-and
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_and.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_and.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-eq
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_eq.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_eq.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-nest
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_nest.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_nest.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-grover
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_grover.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_grover.expected.log")
+
+add_test(NAME e2e-phase-bool-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_unrolled.expected.log")
+
+
 # bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled
 # DIVERGENCE on 542d588 AND on the round-1 C-1 fix (32 vs 38, and 41 vs 47).
 add_test(NAME e2e-phase-perbit-loop-mixed-preadd-twin-identical

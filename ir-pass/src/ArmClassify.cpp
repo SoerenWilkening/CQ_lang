@@ -1752,6 +1752,63 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
   return CondWireDisp::ProvenPostRegion;
 }
 
+// bd test_C_libtooling-3qlq.4 (Inc 1b) — the wire question for a RAIL-LEAF
+// condition (`_Bool b = cq_theta(b0, θ); if (b) …`). The SSA name `b` read by
+// the branch is STALE iff a non-diagonal gate fires on `b`'s wire between its
+// def and the branch; the kickback gate is emitted AT the branch and is
+// diagonal, so — exactly as `condWireDisposition` argues for a compare — a
+// gate proven to execute AFTER the branch (`ProvenPostRegion`) invalidates
+// nothing this region leaves behind. Two prongs of the compare version have NO
+// SUBJECT here and are deliberately absent: the same-block/positional scan (it
+// bounds the window between a COMPARE and its branch, which for a rail is the
+// whole wire and is already what the position-free walk asks), and the
+// `ShareCondFlag` clause (a rail is the user's register and is shared with its
+// data users by construction — nothing is minted, nothing outlives the region).
+// Reuses `wireGainsNonDiagonalGate` — the SAME walker, seeded with the SAME
+// `condProvenance` set (Rule 14) — so a chained `cq_theta(b, …)` between the
+// def and the branch, in this block or another, is refused by the DT prong
+// (not provably post-branch), and a rotation on the register AFTER the region
+// is admitted, which is the `p15` accept.
+CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
+                                     const SmallPtrSetImpl<Value *> &Prov,
+                                     const DominatorTree *DT) {
+  if (!R.Pred || !isCondRailLeaf(R.Condition))
+    return CondWireDisp::DeclineNow;
+  const Instruction *BI = R.Pred->getTerminator();
+  if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr))
+    return CondWireDisp::None;
+  if (!DT)
+    return CondWireDisp::DeclineNow;  // no tree, no proof (Prime Directive).
+  if (wireGainsNonDiagonalGate(Prov, BI, DT))
+    return CondWireDisp::DeclineNow;  // some gate is NOT provably post-branch.
+  return CondWireDisp::ProvenPostRegion;
+}
+
+// bd 3qlq.4 — a RAIL-LEAF condition must not have been MEASURED before the
+// branch reads it: a measured register is classical there, and firing the
+// kickback on it would be a post-measure gate (Rule 6's loud-reject class).
+// The mirror of `condDataUseDisposition`'s `MeasuredEarly` for a compare: a
+// `cq_measure` user of the rail in `Pred` (every non-terminator in `Pred`
+// precedes the branch) or in a block that DOMINATES `Pred` executes first; a
+// measurement anywhere else is downstream of the region and owns the register
+// from there on, exactly as it does for a compare's shared flag. Without a
+// dominator tree, any measurement outside `Pred` is refused (over-decline).
+bool railMeasuredBeforeBranch(const CallInst *Rail, const BasicBlock *Pred,
+                              const TaintSet &Taint, const DominatorTree *DT) {
+  SmallPtrSet<const CallInst *, 8> Sinks(Taint.MeasureCalls.begin(),
+                                         Taint.MeasureCalls.end());
+  for (const User *U : Rail->users()) {
+    const auto *M = dyn_cast<CallInst>(U);
+    if (!M || !Sinks.count(M))
+      continue;
+    if (M->getParent() == Pred)
+      return true;
+    if (!DT || DT->dominates(M->getParent(), Pred))
+      return true;
+  }
+  return false;
+}
+
 }  // namespace
 
 // ziov WI-1: disposition of the condition compare's NON-branch (data) uses. The
@@ -2028,7 +2085,12 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // is not a 4.1-lowerable region — decline (closes the compound-cond
   // over-accept; WI-1 adversarial review 2026-06-09).
   if (!isa<CmpInst>(Region.Condition)) {
-    diagnoseUnderControl(declAnchor(Region), "control flow");
+    // bd 3qlq.4: a bare `_Bool` REGISTER as the condition of a value / in-place
+    // Ry / state-prep arm is a filed follow-on (1b-B/1b-C), named by its own
+    // string so the fixture that pins it flips when that increment lands.
+    diagnoseUnderControl(declAnchor(Region),
+                         isCondRailLeaf(Region.Condition) ? kBareRailCondReason
+                                                          : "control flow");
     return ArmDisposition::Declined;
   }
 
@@ -3738,12 +3800,17 @@ PhaseKickbackDisp classifyPhaseKickback(
   // safe (Prime Directive).
   constexpr size_t kPhaseCondTreeMaxLeaves = 8;
   constexpr size_t kPhaseCondTreeMaxNodes = 8;
-  if (Tree.Leaves.size() > kPhaseCondTreeMaxLeaves ||
+  if (Tree.Leaves.size() + Tree.RailLeaves.size() > kPhaseCondTreeMaxLeaves ||
       Tree.Nodes.size() > kPhaseCondTreeMaxNodes) {
     diagnoseUnderControl(BI, "branch phase condition tree too deep");
     return PhaseKickbackDisp::Declined;
   }
-  auto *Cmp = IsTree ? nullptr : Tree.Leaves.front();
+  // A tree with no nodes has exactly ONE leaf, of either kind: a COMPARE
+  // (`Cmp`, the pre-1b path, byte-for-byte) or — bd 3qlq.4 — a RAIL
+  // (`RailCond`, the `_Bool` register itself: no mint, no strip, no free).
+  auto *Cmp = IsTree || Tree.Leaves.empty() ? nullptr : Tree.Leaves.front();
+  CallInst *RailCond =
+      !IsTree && !Tree.RailLeaves.empty() ? Tree.RailLeaves.front() : nullptr;
   for (CmpInst *Leaf : Tree.Leaves) {
     if (!comparePredLowerable(Leaf)) {
       diagnoseUnderControl(declAnchor(Region),
@@ -3804,6 +3871,34 @@ PhaseKickbackDisp classifyPhaseKickback(
       return PhaseKickbackDisp::Declined;
     }
   }
+  // ---- 5b. RAIL LEAVES (bd test_C_libtooling-3qlq.4, Inc 1b). A leaf that is
+  // the `_Bool` register itself (`isCondRailLeaf`: a `cq_theta_i1` result, root
+  // or chained). It mints NOTHING — the register is its own flag — so none of
+  // the compare-leaf gates (predicate, template, Q+Q, i1-operand, in-`Pred`)
+  // has a subject. What it needs instead:
+  //   (i)   tainted — by construction (`cq_theta_i1` is the taint source),
+  //         re-asked as defence in depth;
+  //   (ii)  NOT measured before the branch (`railMeasuredBeforeBranch`) —
+  //         the mirror of the compare's `MeasuredEarly`;
+  //   (iii) the WIRE question, asked below over `Prov` (a rail seeds its own
+  //         wire): a non-diagonal gate on the register between its def and
+  //         the branch stales the name the branch reads.
+  // Its OTHER users are ordinary — it is the user's register, read by
+  // measures, compares and arithmetic as before — so the tree-wide "used
+  // outside the branch" fence deliberately excludes rail leaves, and the
+  // single-leaf `HasDataUse`/`ShareCondFlag` machinery (a COMPARE read as data
+  // must share ONE minted flag) has no subject: nothing is minted.
+  for (CallInst *Rail : Tree.RailLeaves) {
+    if (!Taint.Tainted.count(Rail)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return PhaseKickbackDisp::Declined;
+    }
+    if (railMeasuredBeforeBranch(Rail, Region.Pred, Taint, DT)) {
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition measured before the control route");
+      return PhaseKickbackDisp::Declined;
+    }
+  }
   // Every NODE must live in `Pred` too. Two reasons, both concrete: the network
   // is emitted at the branch, so a node defined elsewhere is either not
   // available there or is shared with code this region does not own; and the
@@ -3848,7 +3943,7 @@ PhaseKickbackDisp classifyPhaseKickback(
         }
   }
   bool HasDataUse = false;
-  if (!IsTree)
+  if (!IsTree && Cmp)  // a RAIL's data uses are ordinary (5b) — no share path.
     for (const User *U : Region.Condition->users())
       if (!isa<BranchInst>(U)) {
         HasDataUse = true;
@@ -3881,11 +3976,14 @@ PhaseKickbackDisp classifyPhaseKickback(
   // leaf's wire. The nodes need no seed — an `and`/`or` result's basis
   // provenance IS the union of its leaves'.
   SmallPtrSet<Value *, 16> Prov;
-  if (IsTree)
+  if (IsTree) {
     for (CmpInst *Leaf : Tree.Leaves)
       condProvenance(Leaf, Taint, Prov);
-  else
+    for (CallInst *Rail : Tree.RailLeaves)
+      condProvenance(Rail, Taint, Prov);  // bd 3qlq.4: the register's own wire.
+  } else {
     condProvenance(Region.Condition, Taint, Prov);
+  }
   // The flag is minted at the BRANCH. A tainted-operand `cq_theta` (a
   // NON-DIAGONAL Ry, which genuinely moves the register) between the compare and
   // the branch makes that mint read a different basis than the source compare —
@@ -3899,7 +3997,13 @@ PhaseKickbackDisp classifyPhaseKickback(
   // for that later gate to invalidate. A kickback is strictly LESS invasive than
   // an in-place rotation arm, which already carries the accept. So the
   // disposition is: DeclineNow declines, ProvenPostRegion accepts.
-  if (condWireDisposition(Region, Taint, Prov, DT) ==
+  // bd 3qlq.4: a single RAIL condition asks `railCondWireDisposition` — the
+  // same walker over the same `Prov`, minus the two prongs that have no subject
+  // for a register (see its header); a tree with rail leaves goes through
+  // `condWireDisposition` unchanged, its root being a `Pred`-resident node and
+  // the rails' wires riding in `Prov`.
+  if ((RailCond ? railCondWireDisposition(Region, Taint, Prov, DT)
+                : condWireDisposition(Region, Taint, Prov, DT)) ==
       CondWireDisp::DeclineNow) {
     diagnoseUnderControl(declAnchor(Region),
                          "condition predates a non-diagonal gate");
@@ -4154,7 +4258,8 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
                      BranchInst *LevelBI) -> bool {
     constexpr size_t kMaxLeaves = 8;
     constexpr size_t kMaxNodes = 8;
-    if (T.Leaves.size() > kMaxLeaves || T.Nodes.size() > kMaxNodes) {
+    if (T.Leaves.size() + T.RailLeaves.size() > kMaxLeaves ||
+        T.Nodes.size() > kMaxNodes) {
       diagnoseUnderControl(BI, "branch phase condition tree too deep");
       return false;
     }
@@ -4197,6 +4302,24 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
             return false;
           }
     }
+    // bd 3qlq.4 — RAIL LEAVES at either level: the same three questions the
+    // flat classifier asks (5b), plus one the nest owns: the rail must be
+    // defined OUTSIDE the nest's own blocks, because both networks are emitted
+    // at the OUTER branch and a `cq_theta_i1` inside `Mid`/`InnerArm` is not
+    // hoistable (it is a rotation under the outer condition, not a phase call —
+    // the `Mid` content scan above already refuses it, since rail leaves are
+    // deliberately NOT in `InnerTreeSet`; this is the belt to that brace).
+    for (CallInst *Rail : T.RailLeaves) {
+      if (!Taint.Tainted.count(Rail) || Rail->getParent() == Mid ||
+          Rail->getParent() == InnerArm) {
+        diagnoseUnderControl(BI, "control flow");
+        return false;
+      }
+      if (railMeasuredBeforeBranch(Rail, Pred, Taint, DT)) {
+        diagnoseUnderControl(BI, "condition measured before the control route");
+        return false;
+      }
+    }
     for (Instruction *N : T.Nodes)
       if (N->getParent() != HomeBB && N->getParent() != Pred) {
         diagnoseUnderControl(BI, "control flow");
@@ -4228,6 +4351,8 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
     SmallPtrSet<Value *, 16> Prov;
     for (CmpInst *Leaf : T.Leaves)
       condProvenance(Leaf, Taint, Prov);
+    for (CallInst *Rail : T.RailLeaves)
+      condProvenance(Rail, Taint, Prov);  // bd 3qlq.4: the register's own wire.
     SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
     if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true)) {
       diagnoseUnderControl(BI, "condition predates a non-diagonal gate");
@@ -4252,6 +4377,23 @@ PhaseKickbackDisp classifyPhaseKickbackNest(
   };
   if (!levelOk(OuterTree, Pred, BI) || !levelOk(InnerTree, Mid, InnerBI))
     return PhaseKickbackDisp::Declined;
+  // bd 3qlq.4 — a NEGATED level whose root is a bare RAIL is a RESIDUAL of Inc
+  // 1b, declined with the bare-i1 string. The nest's conjunction ancilla
+  // `g = rootA ∧ rootB` realizes a negated control by `cqrt_x`-BRACKETING that
+  // control (`CondNetwork::Node::NegL/NegR`), and this increment's invariant
+  // is that NO non-diagonal gate is ever emitted on a user's register (the
+  // outer arm's own phases on a negated rail root use the diagonal
+  // `rz(rail, −θ)` form, which has no analogue for a Toffoli control). The
+  // identity `Toff(¬a,b,g) = CNOT(b,g)·Toff(a,b,g)` would lift it with no gate
+  // on `a`; filed, not built — over-declining is safe.
+  const bool OuterRootIsRail =
+      OuterTree.Nodes.empty() && !OuterTree.RailLeaves.empty();
+  const bool InnerRootIsRail =
+      InnerTree.Nodes.empty() && !InnerTree.RailLeaves.empty();
+  if ((OuterRootIsRail && OuterNeg) || (InnerRootIsRail && InnerNeg)) {
+    diagnoseUnderControl(BI, "branch phase on a bare i1 condition");
+    return PhaseKickbackDisp::Declined;
+  }
   (void)DT;
   (void)LI;
 
@@ -5191,17 +5333,43 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // stream's is not), and the compare feeding a SECOND angle select (two gates
   // per arm, which `clang -O1` produces from `if(c){g1;g2}else{g3;g4}`). All
   // three are recorded follow-ons, not defects.
-  if (!Tree.Nodes.empty() || Tree.Leaves.size() != 1)
+  if (!Tree.Nodes.empty() || Tree.Leaves.size() + Tree.RailLeaves.size() != 1)
     return AngleSelectDisp::NotApplicable;  // a compound `&&`/`||` tree.
-  CmpInst *Cond = Tree.Leaves.front();
-  if (Cond != Sel->getCondition() || !Cond->hasOneUse())
+  // bd 3qlq.4 — the single leaf is a COMPARE (every pre-1b line below) or a
+  // RAIL (`_Bool b = cq_theta(…); if (b) cq_phi(A); else cq_phi(B);`, which
+  // `clang -O1` folds to `select i1 %b, double A, double B` feeding ONE
+  // `cq_phi`). A rail condition is admitted for the PHASE stem only: its
+  // kickback pair is `rz(b, −B); rz(b, A)` on the register itself (no mint,
+  // no strip, no free, nothing non-diagonal on `b`). The Ry stem — a
+  // `cqrt_ry_<W>_controlled(b, …)` controlled on the register — is follow-on
+  // 1b-C and DECLINES with `kBareRailCondReason` (not `NotApplicable`, which the
+  // caller would report as `rotation angle`, the wrong reason).
+  const bool RailCond = !Tree.RailLeaves.empty();
+  Instruction *Cond = RailCond ? static_cast<Instruction *>(Tree.RailLeaves.front())
+                               : static_cast<Instruction *>(Tree.Leaves.front());
+  if (Cond != Sel->getCondition())
     return AngleSelectDisp::NotApplicable;
-  const bool LTainted = Taint.Tainted.count(Cond->getOperand(0)) != 0;
-  const bool RTainted = Taint.Tainted.count(Cond->getOperand(1)) != 0;
-  if (LTainted == RTainted)
-    return AngleSelectDisp::NotApplicable;  // Q+Q, or all-classical.
-  if (!comparePredLowerable(Cond) || !compareFlagMintable(Cond, Taint))
-    return AngleSelectDisp::NotApplicable;
+  if (RailCond) {
+    if (!IsPhase) {
+      diagnoseUnderControl(Sel, kBareRailCondReason);
+      return AngleSelectDisp::Declined;
+    }
+    if (!Taint.Tainted.count(Cond))
+      return AngleSelectDisp::NotApplicable;
+    // A rail's other uses are ordinary (it is the user's register) — no
+    // `hasOneUse` fence; the compare's exists because its FLAG is minted and
+    // erased by this emitter, and a rail is neither.
+  } else {
+    auto *Cmp = cast<CmpInst>(Cond);
+    if (!Cmp->hasOneUse())
+      return AngleSelectDisp::NotApplicable;
+    const bool LTainted = Taint.Tainted.count(Cmp->getOperand(0)) != 0;
+    const bool RTainted = Taint.Tainted.count(Cmp->getOperand(1)) != 0;
+    if (LTainted == RTainted)
+      return AngleSelectDisp::NotApplicable;  // Q+Q, or all-classical.
+    if (!comparePredLowerable(Cmp) || !compareFlagMintable(Cmp, Taint))
+      return AngleSelectDisp::NotApplicable;
+  }
 
   // S5 — the ABI width must have a `cqrt_{ry,rz}_<W>_controlled`, asked through
   // the expression `lowerRotations` MINTS from (`RotationLowering.h`'s note on
@@ -5226,7 +5394,10 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   if (Taint.ControlledRotations.count(T))
     return AngleSelectDisp::NotApplicable;
   for (const ControlRegion &R : plan.Regions) {
-    if (R.Merge == Sel || R.Condition == Cond)
+    // (A RAIL condition may legitimately be another region's condition too —
+    // nothing is minted or erased for it, so two regions on one register do
+    // not contend; the compare clause exists because a compare's flag is.)
+    if (R.Merge == Sel || (!RailCond && R.Condition == Cond))
       return AngleSelectDisp::NotApplicable;
     for (Instruction *I : R.Shadow)
       if (I == T)

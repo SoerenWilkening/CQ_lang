@@ -281,7 +281,11 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     // a lifted shape — leave it; the buildClone "no tainted select survives" backstop
     // declines a surviving tainted select loudly.
     CondTree Tree;
-    if (!collectCondTree(SI->getCondition(), Tree))
+    // bd 3qlq.4: a tree carrying a RAIL LEAF (a bare `_Bool` register as the
+    // condition) is skipped exactly as an off-grammar condition was before the
+    // grammar admitted it — this lift mints per COMPARE leaf and has no
+    // rail-leaf lowering; the disposition here is deliberately UNCHANGED.
+    if (!collectCondTree(SI->getCondition(), Tree) || !Tree.RailLeaves.empty())
       continue;
     const bool IsFp = SI->getType()->isFloatingPointTy();
 

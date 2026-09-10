@@ -13,6 +13,7 @@
 
 #include "ControlPlan.h"
 #include "LiteralIntegrity.h"  // declineAddressTakenBlocks (bd 7udx)
+#include "SelectClassify.h"    // isCondRailLeaf (bd 3qlq.4: never erase a user's rail)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -88,7 +89,11 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   //    scrub it from the taint set (the condition was tainted). Guard on
   //    use_empty so a (malformed) compare with a stray live use is left for the
   //    verifier rather than silently dropped.
-  if (Cond && Cond->use_empty()) {
+  //    bd 3qlq.4: a RAIL-LEAF condition is the USER'S `cq_theta_i1` — never
+  //    this stage's to erase, whatever its use count (the kickback gate keeps it
+  //    live in every accepted region; defence in depth against erasing a user's
+  //    rotation on a shape nobody measured).
+  if (Cond && Cond->use_empty() && !isCondRailLeaf(Cond)) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }
@@ -181,11 +186,11 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    gone. Erasing the arm gates first (the naive flat order) would free `%g`
   //    while `%c2` still references it. Guard on use_empty so a malformed compare
   //    with a stray live use is left for the verifier rather than silently dropped.
-  if (InnerCond && InnerCond->use_empty()) {
+  if (InnerCond && InnerCond->use_empty() && !isCondRailLeaf(InnerCond)) {
     scrubTaint(InnerCond, taint);
     InnerCond->eraseFromParent();
   }
-  if (OuterCond && OuterCond->use_empty()) {
+  if (OuterCond && OuterCond->use_empty() && !isCondRailLeaf(OuterCond)) {
     scrubTaint(OuterCond, taint);
     OuterCond->eraseFromParent();
   }
