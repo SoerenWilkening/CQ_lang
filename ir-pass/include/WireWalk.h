@@ -70,10 +70,17 @@ struct TaintSet;
 // fence that asks this walker. `lowerRotations` decides in-place-ness by exactly
 // one relation, `Chained = taint.Tainted.count(arg0)`; when `Taint` is given the
 // closure crosses the edge on that same relation, so it reasons about the rail
-// the lowering will actually build. A null `Taint` keeps the old ancestry (the
-// per-activation `thetaOnPathTo` caller, whose parity gap is recorded with bd
-// test_C_libtooling-r903). Widening the ancestry can only find MORE gates —
-// monotone toward DECLINE.
+// the lowering will actually build. Every condition-wire caller supplies it
+// (the two flat dispositions, `classifyArms`' routed base, the nest,
+// `RegionTreeDetect`, both switch fences, the 4.4 select's gate 2c,
+// `declineStaleRecordOps`, `SwitchArmProve`). ⚠ NOT `thetaOnPathTo`: its own
+// closure (`collectWireValues`, file-local) keeps the narrow ancestry because its
+// one consumer, `phiTracksWire`, GRANTS on it — an ACCEPT-direction predicate
+// that a widening must not ride along with (round 2, F-1b2-3; the parity gap is
+// bd test_C_libtooling-r903's). Widening THIS walker's ancestry can only find
+// MORE gates — monotone toward DECLINE, proven in round 2 (the crossing adds
+// only NON-theta values to the per-seed exempt set) and measured over all 1732
+// pre-existing fixtures (0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF).
 //
 // Walk the forward in-place-gate wire of every value in `Seeds` and return
 // the first `cq_theta_*` user found whose Ry is NOT provably after every

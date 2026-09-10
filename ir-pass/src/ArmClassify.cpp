@@ -1775,11 +1775,25 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // The fix is in the walker, not here: `findNonDiagonalWireGate` now crosses a
 // chained theta's arg-0 edge whenever the parent is TAINTED (the relation
 // `lowerRotations` builds the rail from), which also closes the compare twin
-// that accepted on `main`. The prong stays absent because the walk with `Taint`
-// asks the rail's whole wire, in this block or another, with the DT prong: a
-// chained or sibling `cq_theta` between the def and the branch is refused
-// (not provably post-branch), and a rotation on the register AFTER the region
-// is admitted (`control_phase_kickback_rail_post_ry.ll`).
+// that accepted on `main`. With `Taint` the walk asks the rail's whole wire, in
+// this block or another, with the DT prong: a chained or sibling `cq_theta`
+// between the def and the branch is refused (not provably post-branch), and a
+// rotation on the register AFTER the region is admitted
+// (`control_phase_kickback_rail_post_ry.ll`).
+//
+// ⚠ THAT IS THE SAME-WIRE HALF ONLY, AND THE PRONG'S OTHER HALF IS NOT COVERED
+// BY ANY WALK (round 2, F-1b2-4 — the sentence above once read as complete).
+// The compare path's P5 keeps its positional scan for a theta on ANOTHER wire,
+// whose residual target is a dtzb in-place `add`/`xor` that would ALIAS the
+// condition's rail (`x = b ^ 1; c = cq_theta(x, θ); if (b) …`), which the
+// forward walk deliberately does not cross. The rail path drops the prong on a
+// STRUCTURAL ground, measured: a condition rail is always read later by its own
+// branch in `R.Pred`, so M-C's G6 ("no data use AFTER the site") refuses the
+// in-place conversion on it — the `xor` lowers OUT of place onto a fresh rail
+// and cannot alias (`control_phase_kickback_rail_inplace_xor_bridge.ll`, the
+// ACCEPT; the compare spelling is the documented over-decline
+// `..._reject_cmp_inplace_xor_bridge.ll`). If M-C's G6 ever admits an in-place
+// op on a rail with a later read, this ground is gone and the prong must return.
 CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
                                      const SmallPtrSetImpl<Value *> &Prov,
                                      const DominatorTree *DT) {

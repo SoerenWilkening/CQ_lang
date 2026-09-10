@@ -62,8 +62,7 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 // over-decline straight-line programs the M-C fence already proves sound. Shape
 // test only, no `TaintSet`: over-inclusion is free in this direction.
 void collectWireValues(Value *Seed, bool CrossValueRouting,
-                       SmallPtrSetImpl<Value *> &Out,
-                       const TaintSet *Taint = nullptr) {
+                       SmallPtrSetImpl<Value *> &Out) {
   SmallVector<Value *, 16> Work;
   for (Value *V = Seed;;) {
     Work.push_back(V);
@@ -81,13 +80,18 @@ void collectWireValues(Value *Seed, bool CrossValueRouting,
       V = Arg0;
       continue;
     }
-    // A CHAINED theta is in place on its parent's rail. The parent is a theta
-    // or (retired) phi call, OR — with `Taint`, F-1b-1 — ANY tainted value: a
-    // template/compare/cast result, a phi, a merge out-rail. Same relation as
-    // `lowerRotations`' `Chained`.
+    // ⚠ THE NARROW ANCESTRY, ON PURPOSE (bd 3qlq.4 round 2, F-1b2-3). This is
+    // `thetaOnPathTo`'s closure, whose ONLY consumer is `phiTracksWire`, where
+    // the polarity is INVERTED (ArmClassify.cpp: a PRECONDITION that GRANTS) —
+    // so widening it as `findNonDiagonalWireGate` was widened for F-1b-1 (cross
+    // the arg-0 edge of ANY tainted parent) would move an ACCEPT-direction
+    // predicate and needs its own Rule-13 round. The parity gap (a template
+    // parent stops this closure at the chained theta) is recorded with bd
+    // test_C_libtooling-r903; no caller supplies a taint set here today, and a
+    // defaulted parameter that nothing supplies was deleted rather than left to
+    // read as a fix (round 2's F-1b2-3).
     if (isCallToPrefix(CI, "cq_theta_") &&
-        (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_") ||
-         (Taint && Taint->Tainted.count(Arg0)))) {
+        (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
       V = Arg0;
       continue;
     }
