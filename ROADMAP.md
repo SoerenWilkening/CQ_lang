@@ -82,6 +82,11 @@ phase, not in advance.
    "forward + controlled-forward only" framing.)
    > ⚠ **PRINCIPLE 7's MECHANISM IS RETIRED, dated 2026-09-06** (bd
    > `test_C_libtooling-3qlq`, Increments 1 + 2, both landed on `main`). Tainted
+   > **Inc 1b (bd `3qlq.4`, 2026-09-10, branch `3qlq-inc1b-rail-cond`): the BARE `_Bool`
+   > CONDITION — a `cq_theta_i1` result is its own flag (RAIL LEAF in the condition grammar;
+   > no mint/strip/free; `¬rail` as the diagonal `rz(−θ)`), lowered by the flat kickback,
+   > the nest and the Rz-stem angle select; every other consumer declines it with `bare i1
+   > register condition` (follow-ons 1b-B/C/D). PRD §13.**
    > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
    > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
    > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),

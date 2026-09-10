@@ -667,6 +667,25 @@ rounds, and two of the seven were introduced by a fix.**
    `542d588`" is true of the DEFECT and not of the TRACE for the four in-region `eqpx`
    members. None is a wrong unitary this tree introduced.
 
+**E14 — Increment 1b, the BARE `_Bool` CONDITION, is BUILT (bd `test_C_libtooling-3qlq.4`,
+2026-09-10; §13).** `_Bool b = cq_theta(b0, θ); if (b) cq_phi(φ)` — §6.3's third row, the
+"gate belongs on `b`'s rail" residual — lowers: the condition grammar admits a **RAIL LEAF**
+(`isCondRailLeaf`: a `cq_theta_i1` result, root or chained, alone or as a child of an
+`and`/`or`/`xor`/logical-select node), `CondTreeEmit` maps it to ITSELF, and the three
+register-free phase emitters (flat kickback, depth-2 nest, Rz-stem angle select) put
+`cqrt_rz_i1(h_b, θ)` on the register's own rail with **no mint, no strip, no free** — and
+**no `cqrt_x` on a user register, ever**: a gate that fires on `b == 0` is the diagonal
+`rz(h_b, −θ)`, on `X·P(θ)·X = diag(e^{iθ},1) = e^{iθ}·P(−θ)` (a GLOBAL phase, which D2
+already discards; `fneg` is exact). Every other tree consumer (the 4.4 data select, the
+value arm, the in-place Ry arm / state prep, the Ry-stem angle select, the clone lift)
+declines a rail leaf loudly with ONE new string, `bare i1 register condition` — those are
+the follow-ons 1b-B/1b-C, not omissions. Residuals keep `branch phase on a bare i1
+condition`: a loop-CARRIED `_Bool` (a header-phi condition), a `trunc`/`zext`/phi/argument
+`i1`, and a NEGATED rail level in the nest. **17 accept + 10 decline fixtures, 9 e2e
+slices (all STRICT stage 2b) + 1 rolled == unrolled `cmp` gate; 0 pre-existing fixtures
+moved except the discriminator itself** (`control_phase_kickback_reject_bare_i1.ll`,
+`git mv`'d to `..._rail_diamond.ll` and rewritten as the accept its header promised).
+
 ## 1. Motivation — the shipped Grover goldens are the identity
 
 Measured 2026-09-05 at HEAD `52d7764`. The runtime ABI pins `cqrt_rz_<W>` as
@@ -854,8 +873,10 @@ nest (SimplifyCFG's fold threshold); both forms are in scope.
 - an arm with N>1 `cq_phi` calls (summing angles is the 2b rounding class again;
   follow-on, not this increment)
 - mixed arms: `cq_phi` beside a value op or an Ry in the same arm
-- a bare tainted `i1` condition with no compare (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ)`)
-  — the gate belongs on `b`'s rail with no mint; filed as **Inc 1b** (Q4)
+- ~~a bare tainted `i1` condition with no compare (`_Bool b = cq_theta(b0,θ); if (b) cq_phi(θ)`)
+  — the gate belongs on `b`'s rail with no mint; filed as **Inc 1b** (Q4)~~ — **BUILT
+  2026-09-10 (E14, §13)**; what remains declined is a NON-register `i1` (a `trunc`/`zext`/
+  phi/argument), a loop-carried `_Bool`, and a negated rail level in the nest
 - a Q+Q compare condition (pre-existing: the flag mint passes no Q+Q width)
 - a multi-block arm (`cq_phi` under a classical branch inside a tainted arm)
 - `cq_phi` inside a value (method-B) region, a loop with a quantum-bounded exit,
@@ -982,7 +1003,11 @@ down before the lowering exists (Rule 16).
 
 | item | re-open when |
 |---|---|
-| Inc 1b: bare tainted `i1` condition (gate on the rail, no mint) | after Inc 1 clearance; a one-lens review |
+| ~~Inc 1b: bare tainted `i1` condition (gate on the rail, no mint)~~ **DONE 2026-09-10, §13** | — |
+| 1b-B (bd `test_C_libtooling-r9e5`): the 4.4 data select / value arm / 6.5 arm on a bare `_Bool` condition (copy merge controlled on the register) | a probe family for the borrowed flag |
+| 1b-C (bd `test_C_libtooling-l4x4`): the in-place Ry arm / state prep / Ry-stem angle select on a bare `_Bool` condition | R4/S7–S9/the freeze re-argued for a BORROWED control |
+| 1b-D (bd `test_C_libtooling-boi6`): a loop-CARRIED `_Bool` (the header-phi rail as a leaf, via `railPhiRootMint`) and a region-merge-phi rail | the C-1 in-loop budget (eight instances over six rounds) |
+| negated rail level in the nest / NOT-carrying rail leaves / derived-`i1` (`trunc`) conditions (bd `test_C_libtooling-r903`) | the `Toff(¬a,b,g) = CNOT(b,g)·Toff(a,b,g)` lift; a NegL/NegR rail leaf; a mint+discharge flag for a derived rail |
 | N `cq_phi` calls in one arm (angle sum) | an owner ruling on the rounding fence for sums |
 | Q+Q compare condition mint | pre-existing; unchanged by this epic |
 | freeing the value-arm SOURCE (`p ^= f ? R⁻¹(out) : out` with the flag alive past the merge — all existing symbols) | a customer that runs out of qubits |
@@ -1059,4 +1084,138 @@ finds a confirmed silent miscompile", and F2 took FOUR generations. Lenses:
   (PRD assumes: no diagnostic, documented semantic.)
 - **Q3** — confirm run-time angle arms are ADMITTED for the Rz stem of the
   angle select, since no arithmetic is performed on them. (PRD assumes: yes.)
-- **Q4** — bare-`i1` condition in Inc 1 or as Inc 1b? (PRD assumes: 1b.)
+- **Q4** — bare-`i1` condition in Inc 1 or as Inc 1b? (PRD assumes: 1b.) **Answered by
+  events: built as Inc 1b on 2026-09-10 (E14, §13).**
+
+
+## 13. Increment 1b — the bare `_Bool` condition (bd `test_C_libtooling-3qlq.4`, 2026-09-10)
+
+### 13.1 The shape, and why it is not a compare
+
+`_Bool b = cq_theta(b0, θ); if (b) cq_phi(φ);` reaches the pass as `br i1 %b` where `%b`
+IS the `@cq_theta_i1` call: a one-qubit REGISTER, with no compare to mint a flag from.
+`clang -O1` produces it from every natural `bool` spelling — `if (b)`, `if (!b)`,
+`if (b == 1)`, `if (b == 0)` (the last three by successor polarity, never by an `icmp`),
+`if (b) cq_phi(A); else cq_phi(B);` (folded to ONE `cq_phi` whose angle is
+`select i1 %b, double A, double B`), `if (b && q == 5)` (`select i1 %b, i1 %cmp, i1 false`),
+`if (b == c)` (`xor i1 %b, %c`), and the owner's cascade `int a = 5; if (b0 == 1) a -= 3;
+if (a >= 3) cq_phi(θ)`, which IPSCCP collapses to `br i1 %b0` outright (the HANDOFF of
+2026-09-10, wall 3). Measured on `main` 170ede1: every one of these declined.
+
+### 13.2 The lowering — the register is its own flag
+
+The §3 kickback derivation reads `f = c(x)` in an ancilla, `P(θ)` on the ancilla, then the
+compare's `_unc` to return it to `|0⟩`. With `c(x) = b` the ancilla would be a CNOT copy of
+`b` — and `P(θ)` on a copy of `b` equals `P(θ)` on `b` itself (both are `diag(1, e^{iθ})` in
+the `b` basis, and the copy is uncomputed afterwards). So the mint, the strip and the free
+are all identity work: the gate belongs directly on `b`'s rail, ONE gate, nothing else.
+
+Three emitters now do this, through ONE grammar change:
+
+* **`CondTree::RailLeaves`** (`SelectClassify.h`): `collectCondTree` admits a leaf that is a
+  `cq_theta_i1` call (`isCondRailLeaf`, deliberately that narrow — see 13.4). A rail may be
+  the whole condition or a child of any node the grammar already knew.
+* **`CondTreeEmit`** maps a rail leaf to ITSELF (`FlagOf[rail] = rail`): the node gates read
+  the register as a CONTROL (`toffoli(h_b, f, g)`, `cnot(h_b, g)`) and mint nothing; the
+  LIFO strip frees the node ancillas and the compare flags only. `CondNetwork::RootIsRail`
+  tells a caller when the root is the user's register.
+* **`SwapRouteEmit::emitKickbackGroup`** — ONE spelling of "fire `P(θ)` when `ctl == v`"
+  for the flat kickback (arms and merge-tail incomings) and the nest (outer arm on its
+  root, inner arm on the conjunction), and the same two-gate form in
+  `AngleSelectEmit::emitPhaseAngleSelect`: on an ANCILLA the pre-1b stream verbatim
+  (`x; rz…; x` for `¬ctl`); on a RAIL, `rz(h, θ)` for `ctl == 1` and **`rz(h, −θ)` for
+  `ctl == 0`**.
+
+**The polarity identity, and why it is the invariant and not a peephole.**
+`X·P(θ)·X = diag(e^{iθ}, 1) = e^{iθ}·diag(1, e^{−iθ}) = e^{iθ}·P(−θ)` — the same unitary up
+to the GLOBAL phase `e^{iθ}`, which owner decision D2 already declares unobservable (an
+uncontrolled `cq_phi` is deleted on exactly that ground). `−θ` is `fneg`: exact in IEEE
+for every double, constant-folded for a `ConstantFP`, no `fsub`, so none of the 2b
+rounding class exists here. The reason to prefer it over the bracket is not elegance:
+**no non-diagonal gate is ever emitted on a user's register by a phase emitter**, and
+three predicates that read the lowered stream depend on that — `Uncomputation::
+preservesBorrowedParent` admits an uncontrolled `cqrt_rz_` on a borrowed parent BY NAME
+and fails CLOSED on anything it does not name (with a bracket, every chain borrowing the
+register — a `zext`, a compare, an `add` — would freeze and leak; measured discharged in
+`control_phase_kickback_rail_data_use.ll`), `ChainWalk::isInPlaceGateOn` deliberately
+never recovers `cqrt_x`, and every wire fence in `ArmClassify` argues from "this region
+emits no non-diagonal gate on any condition register".
+
+**The spine.** The kickback gate is `!cq.branchphase`-recorded exactly as on a flag, so
+`isInPlaceGateOn`/`preservesBasisUnderRecord`/`isInverseEmittable` refuse it, the
+register's DAG is NOT CLOSED, and a DEAD register is LEFT ALLOCATED — the Rule-6
+direction, and the right answer: `Ry(−θ)·P(φ)·Ry(θ)|0⟩ ≠ |0⟩`, so a free after an
+"adjoint" would be a hidden measurement (`control_phase_kickback_rail_dead.ll`). A
+measured register is the user's and was never the spine's.
+
+### 13.3 The classifier ladder for a rail leaf (`classifyPhaseKickback` step 5b)
+
+A rail leaf has no predicate, no template, no mint, no i1-operand, no in-`Pred`
+requirement and no `ShareCondFlag` — none of the compare-leaf gates has a subject. What it
+needs instead, each asked for the flat path, the nest (both levels) and the angle select:
+
+1. **tainted** (by construction; defence in depth);
+2. **not measured before the branch** (`railMeasuredBeforeBranch`: a `cq_measure` user in
+   `Pred`, or in a block that dominates `Pred`; without a dominator tree any measurement
+   outside `Pred` refuses) — the mirror of the compare's `MeasuredEarly`; a measurement
+   downstream owns the register from there on, as for a compare;
+3. **the wire question** (`railCondWireDisposition`): the SSA name the branch reads is
+   stale iff a non-diagonal gate fires on the rail's wire between its def and the branch.
+   `wireGainsNonDiagonalGate` — the SAME walker, the SAME `condProvenance` seed — with the
+   DT prong: a gate not provably post-branch declines `condition predates a non-diagonal
+   gate` (the stale-name spelling `%b = θ(u); %c = θ(%b, .25); br i1 %b`), a gate proven
+   post-branch is admitted (`ProvenPostRegion` — the P1 argument: a kickback leaves nothing
+   for a later gate to invalidate). Two prongs of the compare version are DROPPED because
+   they have no subject: the same-block/positional scan (it bounds a compare→branch window;
+   a rail's window is its whole wire, which the walk already asks — so a rail defined in
+   another block ACCEPTS, `control_phase_kickback_rail_cross_block.ll`, where a compare is
+   the documented `hoisted compare` over-decline) and the `ShareCondFlag` clause (nothing
+   is minted, nothing outlives the region). A tree with rail leaves goes through
+   `condWireDisposition` unchanged, the rails riding in `Prov`.
+4. Its OTHER users are ordinary (it is the user's register): the tree-wide "used outside
+   the branch" fence excludes rail leaves; the single-leaf `HasDataUse` machinery is not
+   asked; the angle select's `hasOneUse` and plan-collision checks are skipped for a rail
+   (two regions may share one register — `control_phase_kickback_rail_two_regions.ll`).
+5. **In a loop (P6):** an INVARIANT `_Bool` lowers ROLLED with one `rz` per activation and
+   NOTHING minted per trip, so the whole C-1 in-loop entangled-rail family has no subject
+   (`slice_control_phase_bool_loop` == its hand-unrolled twin, 12 = 12 lines; a compare on
+   an invariant register is the `hoisted compare` over-decline). A loop-CARRIED `_Bool` is
+   a header phi, not a rail leaf — residual 1b-D.
+6. **Nest:** a rail must be defined outside `Mid`/`InnerArm` (it is a rotation under the
+   outer condition there, not a hoistable phase); a NEGATED level whose root is a bare rail
+   declines — the conjunction `g = ¬a ∧ b` realizes a negated control by `cqrt_x`-bracketing
+   it, and the identity `Toff(¬a,b,g) = CNOT(b,g)·Toff(a,b,g)` that would lift it with no
+   gate on `a` is filed, not built.
+
+### 13.4 The decline partition, and the one new string
+
+* `branch phase on a bare i1 condition` SURVIVES for the non-register `i1` residuals and
+  is thereby a discriminator: a `trunc`/`zext`/`sext` (a DERIVED rail that would need a
+  mint+discharge design), a phi (loop-carried, or a region merge a preceding emitter
+  dissolves), a template result, a clone `Argument`, a QRAM load, a negated rail level in
+  the nest. `isCondRailLeaf` is `cq_theta_i1`-only on purpose.
+* **`bare i1 register condition`** (`kBareRailCondReason`, `SelectClassify.h`) is the ONE
+  string for a rail reaching a consumer that does not lower it yet: the 4.4 data select
+  (`int a = 5; if (b) a -= 3;`), a value arm — bd `test_C_libtooling-r9e5` (1b-B) — the
+  in-place Ry arm and state prep (`if (b) r = cq_theta(r, θ)`), the Ry-stem angle select —
+  bd `test_C_libtooling-l4x4` (1b-C). Each follow-on flips its own fixture and no other.
+  The loop-carried `_Bool` and the region-merge-phi rail are bd `test_C_libtooling-boi6`
+  (1b-D); the negated nest level, NOT-carrying rail leaves and derived-`i1` conditions are
+  bd `test_C_libtooling-r903`.
+* `condition measured before the control route` / `condition predates a non-diagonal
+  gate`: 13.3 items 2 and 3, the compare path's strings, unchanged.
+
+### 13.5 Measured (2026-09-10, branch `3qlq-inc1b-rail-cond`)
+
+* Probe family: 20 + 15 + 4 plain-C `bool` programs (`inc1-records/session-3qlq4/`).
+  On `main` 170ede1 every `bool`-conditioned shape declined; on the branch the kickback
+  family accepts (diamond, negated, folded if/else, `&&`/`||`/`==` trees incl. De Morgan
+  rewrites, dead register, post-region Ry, cross-block rail, two regions on one register,
+  nest at either level, invariant-register loop rolled, one-qubit Grover flat) and the
+  select / value / Ry / state-prep / loop-carried / negated-nest shapes decline with the
+  strings above. Every accept is STRICT stage-2b clean.
+* `ir-pass-lit`: 1707 → **1733** fixtures (+27: 17 accept, 10 decline; the old
+  `reject_bare_i1` `git mv`'d and rewritten), exactly ONE pre-existing fixture moved and it
+  is that discriminator. ctest **367 → 377** (`^e2e-` 357 → 367, `^e2e-slice-` 321 → 330,
+  `twin-identical` 26 → 27), goldens 323 → 332.
+* No new runtime symbol, no ABI change, `tools/`, `runtime/`, `include/` untouched (D3).
