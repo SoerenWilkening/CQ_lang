@@ -1225,6 +1225,8 @@ needs instead, each asked for the flat path, the nest (both levels) and the angl
   earlier full `lit` run. ctest **367 → 377** (`^e2e-` 357 → 367, `^e2e-slice-` 321 → 330,
   `twin-identical` 26 → 27), goldens 323 → 332.
 * No new runtime symbol, no ABI change, `tools/`, `runtime/`, `include/` untouched (D3).
+* `cq-opt` vs stock `opt` full equivalence sweep (required after a diagnostic-surface change):
+  `cmake --build build --target cq-opt-equivalence-full` → **1736 fixtures, 0 mismatches** (after the round-1 fix).
 
 ### 13.6 Rule-13 round 1 (2026-09-10, `inc1-records/session-3qlq4/review_1b_r1.md`) — BLOCK, fixed
 
