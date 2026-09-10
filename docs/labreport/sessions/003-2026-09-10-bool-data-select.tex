@@ -1,0 +1,166 @@
+\labsessionheader{2026-09-10}{The \texttt{bool} data select (bd r9e5, Inc 1b-B.1)}%
+  {d33a34a}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md, section 14; inc1-records/session-r9e5/}
+
+\subsection*{Goal}
+At the close of the previous session the owner's adjusted
+\fpath{example/grover/grover_oracle_uncompute.c} still declined \texttt{bare i1 register condition}
+on \texttt{main} (\commit{b00fdc2}); its \texttt{main()} was committed as
+\fpath{inc1-records/session-3qlq4/user_file_as_of_2026-09-10_close.c} and the handoff asked this
+session to measure the shape first. Measured: \texttt{clang -O1} folds the classical guard away and
+hands the pass \texttt{select i1 \%b0, i32 2, i32 5} --- the 4.4 \emph{data select} whose condition
+is the \texttt{bool} register itself (\bd{r9e5}, follow-on 1b-B of entry 002). This session built
+that half of the follow-on, had it reviewed three times, and filed the other half.
+
+\subsection*{What the shape is, and what \texttt{-O1} does to the rest of the family}
+\texttt{int a = 5; bool b0 = cq\_theta(b0, 0.5); if (b0 == 1) a -= 3;} is one \texttt{select} with
+the register as its condition; so are \texttt{b ? q : 9}, \texttt{b ? q+1 : q}, \texttt{b ? 1.5 : 2.5},
+\texttt{(b != c) ? 2 : 5}, and --- measured, not assumed --- \texttt{if (b) a = a + 3} on a quantum
+\texttt{a}, which the previous session's probe family had filed as a \emph{value arm}: \texttt{-O1}
+hoists the add and folds the diamond. A value arm survives as a diamond only from a five-op-or-longer
+chain (\fpath{inc1-records/session-r9e5/SCOPE_B2.md} \S0.1). The 6.5 classical-call arm on a
+\texttt{bool} \emph{is} plain-C reachable (\texttt{noinline}, pure callee, run-time argument) and its
+\texttt{int} twin already compiles.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{f9387f7} (checkpoint) and the round-1 fix, squashed as \commit{d33a34a} --- \bd{r9e5}
+    --- the 4.4 copy merge on a rail root. The merge stream is the Rule-13-cleared one of
+    Phase~4.4, instruction for instruction; what changes is where the \emph{flag} comes from: a
+    CNOT copy of the register, minted and stripped by the shared condition network under a new
+    trailing parameter (\texttt{CopyRailRoot}; every phase caller byte-unchanged). The classifier
+    asks the entry-002 rail ladder with the \emph{select} as the read point. 13 accept + 9 decline
+    fixtures from the build, 4 declines + 2 accepts from round 1 and 5 declines + 3 accepts from round 2's fix, 9 e2e slices (all strict
+    stage 2b, the owner's \texttt{main()} verbatim among them) and one rolled\,=\,unrolled twin gate.
+    Exactly one pre-existing fixture moved: the entry-002 decline discriminator, renamed and
+    rewritten as the accept its header anticipated.
+  \item Records under \fpath{inc1-records/session-r9e5/}: the brief, the implementation and
+    scoping records, three review reports with their probe corpora (108 + 76 programs from the first two rounds), and a 44-program probe family.
+\end{itemize}
+
+\subsection*{The design decision worth reading}
+Step 4 of the copy merge fires the second copy on \emph{not}-flag, and the project's only spelling
+of that is a self-inverse \texttt{cqrt\_x} bracket on the flag. Entry 002 established that a user's
+register may never carry that bracket (three lowered-stream predicates depend on it), and escaped
+with the diagonal identity \(X P(\theta) X = e^{i\theta} P(-\theta)\) --- which exists only for a
+diagonal gate. A controlled basis \emph{copy} has no such form for its not-half. So the flag is
+copied out of the register: \texttt{bf = cqrt\_alloc\_i1(0); cqrt\_cnot(h\_b, bf)}, the cleared
+stream on \texttt{bf}, then \texttt{cqrt\_cnot(h\_b, bf); cqrt\_free(bf)}. After the copy the pair is
+\(\sum_x \alpha_x |x\rangle_b |x\rangle_{bf}\); one copy fires per basis branch; \texttt{b} is untouched
+(the copies write \texttt{out}, the brackets act on \texttt{bf}); the second CNOT returns \texttt{bf}
+to \(x \oplus x = 0\) on every branch, so the free is a proven-\(|0\rangle\) free. The only gates
+touching the register are read-only controls --- the gate class the entry-002 nest already emits.
+Two alternatives were weighed and recorded (a bracket on the register; the identity
+\(\neg b\cdot F = F \oplus b\cdot F\) with an uncontrolled copy, fewer gates but a disposition change
+in two predicates written for the method-B copy-out) in \fpath{BRIEF_B1.md} \S1.
+
+\begin{table}[h]\centering\small
+\begin{tabular}{@{}ll@{}}\toprule
+\texttt{bool b0} (\fpath{slice_control_select_bool}) & \texttt{int b0} (\fpath{..._int_twin}) \\ \midrule
+\texttt{cqrt\_alloc\_i1(0) -> h0; cqrt\_ry\_i1(h0, 0x1p-1)} & \texttt{cqrt\_alloc\_i32(0) -> h0; cqrt\_ry\_i32(h0, 0x1p-1)} \\
+\texttt{cqrt\_alloc\_i1(0) -> h1; cqrt\_cnot(h0, h1)}      & \texttt{cq\_template\_icmp\_eq\_i32\_hl(h0, 1) -> h1} \\
+\texttt{cqrt\_alloc\_i32(0) -> h2; cqrt\_alloc\_i32(2) -> h3} & (same) \\
+\texttt{cqrt\_copy\_i32\_controlled(h1, h3, h2); cqrt\_x(h1)} & (same) \\
+\texttt{cqrt\_alloc\_i32(5) -> h4; cqrt\_copy\_i32\_controlled(h1, h4, h2); cqrt\_x(h1)} & (same) \\
+\texttt{cqrt\_cnot(h0, h1); cqrt\_free(h1)}                & \texttt{cq\_template\_icmp\_eq\_i32\_hl\_unc(h1, h0, 1); cqrt\_free(h1)} \\
+\texttt{cqrt\_measure\_i1(h0) -> 0; cqrt\_measure\_i32(h2) -> 0} & \texttt{cqrt\_measure\_i32(h0) -> 0; cqrt\_measure\_i32(h2) -> 0} \\
+\bottomrule\end{tabular}
+\caption{The owner's program, both goldens (committed under \fpath{tests/e2e/}). The two streams
+differ only in the flag's mint and strip: a compare template and its adjoint for \texttt{int}, a
+CNOT copy and its repeat for \texttt{bool}. 15 and 14 trace lines.}
+\end{table}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ Found by the orchestrator on the first build, from plain C, before the
+    independent round: the measured-before rung was given the select as its read point, and its
+    same-block clause returned ``after'' without asking reachability. In a loop that is wrong:
+    \texttt{for (i) \{ int a = b ? i : 5; acc += cq\_measure(a) + cq\_measure(b); \}} (a loop-variant
+    arm keeps the select in the body) accepted, verify-clean and stage-2b clean, with every
+    activation after the first controlling its copies on a register the previous trip had collapsed.
+    Fixed by asking reachability for every measurement; two decline fixtures. Its \texttt{int}
+    twin accepts on \texttt{main}: the compare-conditioned select has no measured-before rung at all
+    --- pre-existing, filed as \bd{r10v} (P1).
+  \item \fpreexisting\ Found by the independent round 1 (verdict CLEAR-WITH-ITEMS; 108 programs, no
+    confirmed miscompile, zero regressions): the same rung asked about the rail's SSA \emph{name}
+    while the wire rung walks the physical \emph{wire}, so measuring a chained parent name
+    (\texttt{b = cq\_theta(b0, .3); m = cq\_measure(b0); a = b ? 2 : 5;}) was invisible --- shared
+    with the entry-002 kickback, identical trace on \texttt{main}. Fixed in the shared helper for
+    both callers (the closure follows the same chained-rotation relation the lowering uses and stops
+    at the first non-rotation parent); exactly five of the reviewer's 108 programs move, all to the
+    decline; four decline fixtures and one accept that pins the stop.
+  \item \fdoc\ Round 1's other items, both acted on: the emitter's caller-independent rail backstop
+    had become dead code once the network handed back an ancilla --- restored as a plan-level flag
+    the classifier sets and the emitter demands (the value-arm emitter builds its own region and must
+    go through the ladder in \bd{fg9k}); and the entry-002 structural ground for dropping a
+    positional prong is now pinned at the select as well as at the branch.
+  \item \fconfirmed\ Found by the independent round 2 (verdict BLOCK), from plain C in two
+    translation units: the rail ladder is asked once, at round-1 taint, while the rotation lowering
+    decides ``same register'' at final taint --- so a rotation on a value derived from a
+    classical-call merge is a \emph{source} to the fence and \emph{chained} to the lowering, and a
+    sibling rotation on the same rail is invisible: the select's copies were controlled on
+    \(R_y(0.9)R_y(0.25)|x\rangle\) while the condition named \(R_y(0.25)|x\rangle\), verify-clean and
+    stage-2b clean. The \texttt{int} twin accepts on \texttt{main} with the same wrong stream ---
+    pre-existing, filed as \bd{9pum} (P1). Fixed by recording every emitted rail read and re-asking both
+    rungs after the round-2 taint fixpoint, in both entry points, declining loudly (the pattern that
+    already ships for the in-place rail tripwire); it is the third instance of the ``a stage that runs
+    once has a round-2-false premise'' family and the first in a predicate rather than a stage. The
+    fix's own first spelling missed one of the four places a register is read as a control (the
+    nested conjunction), which the fix agent found from plain C before the third round --- the record
+    now lives in the one function every such read goes through.
+  \item \fdoc\ The independent round 3 (verdict CLEAR-WITH-ITEMS, 54 programs) found the fix sound
+    and decline-monotone, re-derived the one accept it had doubted, and produced eleven more programs
+    the fix closes across every read site (three now pinned as fixtures); its three documentation
+    items --- the stage's placement argument is not its soundness argument, ``loud and final'' is a
+    property of the host tool, and the re-ask's seed equals the classifier's only for a bare register
+    --- are written at the stage.
+  \item \foverdecline\ (by design, filed) The unfolded value diamond on a \texttt{bool} (\bd{fg9k},
+    1b-B.2b, no plain-C customer today) and the 6.5 classical-call arm on a \texttt{bool} (\bd{54ur},
+    1b-B.2a, plain-C reachable, small) keep \texttt{bare i1 register condition}. Both are pure
+    consumers of this session's flag mint and wait for its clearance; B.2a must decide once whether an
+    \(R_y\) on the register \emph{after} a value region is admitted (the two paths would answer it
+    differently by accident --- \fpath{SCOPE_B2.md} H-3).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+lit fixtures & 1776 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1738) \\
+ctest entries & 387 & \measured{ctest --test-dir build -N | tail -1} (was 377) \\
+e2e entries / slices & 377 / 339 & \measured{ctest -N -R '\string^e2e-' ; -R '\string^e2e-slice-'} (was 367 / 330) \\
+twin-identical gates & 28 & \measured{ctest -N -R twin-identical} (was 27) \\
+goldens & 341 & \measured{ls tests/e2e/*.expected.log | wc -l} (was 332) \\
+probe programs & 44 & \measured{ls inc1-records/session-r9e5/probes/*.c | wc -l} \\
+review programs, round 1 & 108 & \measured{ls review\_b1\_r1\_probes/\{c,ll\}} (65 C, 43 hand IR) \\
+rolled vs unrolled bool loop & 39 = 39 lines & \measured{cmp slice\_control\_select\_bool\_loop\{,\_unrolled\}.expected.log} \\
+owner's program & 15 lines & \measured{tools/free\_pairing\_check.py}: 1 verified, 0 violations \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Run on the final tree (\commit{d33a34a}): the full \texttt{ctest -j6} --- \textbf{387/387 passed}, 407.2\,s wall
+(\measured{ctest --test-dir build -j6}; under concurrent reviewer load, not a quiet-box figure);
+the whole lit corpus --- 1775 passed + 1 expected failure of 1776 (\measured{lit ir-pass/test});
+the \texttt{cq-opt} vs stock-\texttt{opt} full equivalence sweep --- 1759 fixtures, 0 mismatches at
+the checkpoint (\measured{cmake --build build --target cq-opt-equivalence-full}); the pre-versus-post
+corpus diff over every pre-existing fixture --- 0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF
+(\measured{scratchpad/impl\_b1/corpus\_diff.py}; the renamed discriminator is the only file that
+moved, and it is no longer on disk under its old name); the round-1 reviewer's 108-program corpus
+re-run after the fix --- 5 movers, all to a decline (\measured{review\_b1\_r1\_probes/run\_corpus.sh}).
+Not run: nothing in the suite was skipped; no simulator exists (Rule 2).
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{r10v} (P1): the compare-conditioned 4.4 select has no measured-before rung --- the
+    \texttt{int} twin of this session's first finding accepts on \texttt{main}. Fix next, or hold?
+  \item \bd{54ur} then \bd{fg9k}: the remaining halves of 1b-B, in that order (the 6.5 arm has the
+    customer and the smaller blast radius); then 1b-C (\bd{l4x4}) and 1b-D (\bd{boi6}) from entry 002.
+  \item The CNOT-identity form (fewer gates, no ancilla, one uncontrolled copy) is recorded as an owner
+    option in \fpath{BRIEF_B1.md} \S1 and PRD \S14.2; the shipped form was chosen for the smaller
+    predicate surface, not for gate count.
+  \item Entry 002's Q4/Q6 (a dead state-prep arm; F2 on an \texttt{i1} seed) are unchanged.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 002, ``Findings'', the by-design over-decline for a \texttt{bool} driving a value arm: the
+example \texttt{if (b) a -= 3;} is a data select at \texttt{-O1}, and so is \texttt{if (b) a = a + 3}
+on a quantum \texttt{a} (probe \texttt{p09}); both lower after this entry. The value-arm half of that
+item is the unfolded diamond only.

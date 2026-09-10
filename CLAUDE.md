@@ -1420,7 +1420,7 @@ the stage header — the placement argument is NOT the soundness argument (four 
 after the stage; closed by `propagateWorklist`'s user edge and the Shadow mixed-access decline, with a
 written retirement trigger), "loud and final" is the host tool's default handler (`exit(1)` inside
 `diagnose`), and the re-ask's `{Rail}` seed equals the classifier's union only for a rail leaf (the
-mixed-tree gap is `9pum`'s).
+mixed-tree gap is `9pum`'s). ⭐ **LANDED on `main` 2026-09-11 as ONE squash commit, d33a34a** (the squash of branch `3qlq-inc1b-b-rail-select`, tip fb72f81; final gates on that tree: full `ctest -j6` 387/387, `cq-opt` equivalence 1776/0).
 
 Tainted `br` / `select` / `switch` is the construct that has produced every
 verify-clean silent miscompile in this project's history. The **old controlled-op

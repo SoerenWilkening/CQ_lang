@@ -1,4 +1,4 @@
-# Next session — after bd `r9e5` 1b-B.1 (the `bool` DATA SELECT) landed (2026-09-10, session close)
+# Next session — after bd `r9e5` 1b-B.1 (the `bool` DATA SELECT) landed on `main` as d33a34a (2026-09-11, session close)
 
 **Start here.** The owner's adjusted `example/grover/grover_oracle_uncompute.c` (committed snapshot
 `../session-3qlq4/user_file_as_of_2026-09-10_close.c`) **COMPILES** on `main` now: 15 trace lines,

@@ -712,7 +712,7 @@ round 2 then BLOCKED on the ROUND-2 TAINT WINDOW (§14.7 F-B1R2-1, a PREDICATE a
 relation `lowerRotations` decides at final taint — plain C, two TUs, pre-existing for the compare select,
 bd `test_C_libtooling-9pum`) and the fix is `reverifyRailCondReads` (§14.8): every emitted rail read is
 recorded at four sites (the fourth, the nest's conjunction toffoli, found by the fix itself) and re-verified
-under FINAL taint after the fixpoint, in both entry points, declining loudly.**
+under FINAL taint after the fixpoint, in both entry points, declining loudly.** Round 3 CLEAR-WITH-ITEMS; **LANDED on `main` 2026-09-11 as d33a34a** (squash of `3qlq-inc1b-b-rail-select`, tip fb72f81).
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 
