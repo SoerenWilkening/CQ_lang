@@ -1,4 +1,52 @@
-# Next session — after bd `test_C_libtooling-3qlq.4` (Inc 1b, the bare `_Bool` condition) landed
+# Next session — the owner's adjusted `grover_oracle_uncompute.c` still DECLINES (2026-09-10, session close)
+
+**Start here.** The owner adjusted `example/grover/grover_oracle_uncompute.c` after bd `3qlq.4`
+(Inc 1b) landed on `main` (b00fdc2) and it still declines. The file is git-excluded, so the
+ONLY committed copy is `user_file_as_of_2026-09-10_close.c` beside this prompt — work from
+that, not from memory. Its `main()`:
+
+```c
+int a = 5;  bool b0 = 0;  bool b1 = 0;
+if (a >= 3) { b0 = cq_theta(b0, 0.5); }
+if (b0 == 1) a -= 3;
+return cq_measure(b0) + cq_measure(a);
+```
+
+**Measured at close on `main` b00fdc2 (`clang -O1` → `cq-lowering`), nothing else was done:**
+
+```
+cq controlled lowering: bare i1 register condition under quantum control
+```
+
+That string is `kBareRailCondReason` (`SelectClassify.h`): a `_Bool` REGISTER driving a
+consumer Inc 1b did not lower. It was not investigated in the closing session on the
+owner's instruction ("do not investigate the problem here"); the next session's first job
+is to do so. Do it in this order:
+
+1. **Measure the shape.** `clang -O1` the committed copy, read the IR, and name which
+   consumer refuses the rail: with `a` the classical constant 5, `if (b0 == 1) a -= 3` is
+   expected to arrive as a DATA select `select i1 %b0, i32 2, i32 5` (the 4.4 select with a
+   rail condition — bd `test_C_libtooling-r9e5`, follow-on 1b-B, whose fixture is
+   `control_swap_reject_select_rail_cond.ll`), and `cq_measure(a)` makes `a` live. Confirm
+   or refute that reading from the IR before touching anything; also check whether the
+   classical guard `if (a >= 3)` folds away (it did on the session-start version).
+2. **If it is 1b-B, build 1b-B** (bd `r9e5`): the copy merge controlled on the register
+   itself — `SelectClassify::classifySelectRegion` admits a single rail leaf on the data
+   path, `SelectMergeEmit` uses `Flag = rail`, no mint/strip/free; the `¬`-copy needs a
+   bracket on the CONTROL, so decide between (a) the CNOT identity / an extra ancilla and
+   (b) re-arguing a `cqrt_x` bracket on the register for a CONTROLLED COPY (Inc 1b's
+   diagonal-only invariant was argued for PHASE gates via `preservesBorrowedParent` — a
+   copy controlled on the register is a different question; measure the spine's
+   dispositions on the probes before choosing). Re-argue gate 2c and the gate-5 walks for a
+   borrowed flag. Rule 12 red-green from the owner's file as the flagship slice, plus a
+   probe family; Rule 13 review; note the value-arm and 6.5 callers share the emitter.
+3. **Then re-run the owner's file** and the `session-3qlq4/probes/` family; anything still
+   declining gets its wall named against 1b-C (`l4x4`), 1b-D (`boi6`), `r903`, or the
+   HANDOFF's Q4/Q6.
+
+Everything below is the state of the record at close.
+
+## Background — after bd `test_C_libtooling-3qlq.4` (Inc 1b, the bare `_Bool` condition) landed
 
 Read first: `CLAUDE.md` (the CORRECTNESS-RISK paragraph "INCREMENT 1b — THE BARE `_Bool`
 CONDITION"), PRD `retire-swap-route-PRD.md` §13 (§13.6/§13.7 are the two Rule-13 rounds),
