@@ -1,5 +1,5 @@
 \labsessionheader{2026-09-10}{The bare \texttt{bool} condition (bd 3qlq.4, Inc 1b)}%
-  {HEADHASH}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md, section 13}
+  {b00fdc2}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md, section 13}
 
 \subsection*{Goal}
 The owner's scratch program \fpath{example/grover/grover_oracle_uncompute.c} drives a branch phase
@@ -123,7 +123,16 @@ rolled vs unrolled bool loop & 12 = 12 lines & \measured{cmp slice\_control\_pha
 \bottomrule\end{tabular}
 
 \subsection*{Verification run}
-VERIFICATIONRUN
+Run, on the final tree of the branch before the squash (\commit{dfd94ac}, byte-identical in
+\fpath{ir-pass/}, \fpath{tests/} and \fpath{tools/} to \commit{b00fdc2}): the full \texttt{ctest -j6}
+--- \textbf{377/377 passed}, 353.6\,s wall under concurrent reviewer load
+(\measured{ctest --test-dir build -j6}); the whole lit corpus --- 1737 passed + 1 expected
+failure of 1738 (\measured{lit ir-pass/test}); the e2e layer alone after the round-1 fix ---
+367/367 with \fpath{git status --porcelain tests/e2e/*.expected.log} empty (zero golden churn);
+the \texttt{cq-opt} vs stock-\texttt{opt} full equivalence sweep --- 1736 fixtures, 0 mismatches
+(\measured{cmake --build build --target cq-opt-equivalence-full}); the round-2 reviewer's own
+main-vs-branch corpus diff --- 0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF over the 1732 pre-existing
+fixtures. Not run: nothing in the suite was skipped; no simulator exists (Rule 2).
 
 \subsection*{Open questions and next steps}
 \begin{itemize}
