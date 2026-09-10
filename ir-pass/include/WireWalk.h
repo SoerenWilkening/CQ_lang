@@ -58,6 +58,30 @@ class Value;
 
 namespace cq {
 
+struct TaintSet;
+
+// `Taint` (bd test_C_libtooling-3qlq.4, Rule-13 round-1 finding F-1b-1 — a
+// CONFIRMED silent miscompile, PRE-EXISTING for the compare path): the backward
+// ancestry closure below crosses a chained `cq_theta`'s arg-0 edge only when the
+// parent is spelled `cq_theta_`/`cq_phi_`, so a theta whose parent is a TEMPLATE
+// result (`bool t = q & 1; b = cq_theta(t, .5); c = cq_theta(t, .9);`) stopped
+// the closure at `b`, and the SIBLING `c` — an in-place Ry on the SAME physical
+// rail, a user of the PARENT and never of the seed — was invisible to every
+// fence that asks this walker. `lowerRotations` decides in-place-ness by exactly
+// one relation, `Chained = taint.Tainted.count(arg0)`; when `Taint` is given the
+// closure crosses the edge on that same relation, so it reasons about the rail
+// the lowering will actually build. Every condition-wire caller supplies it
+// (the two flat dispositions, `classifyArms`' routed base, the nest,
+// `RegionTreeDetect`, both switch fences, the 4.4 select's gate 2c,
+// `declineStaleRecordOps`, `SwitchArmProve`). ⚠ NOT `thetaOnPathTo`: its own
+// closure (`collectWireValues`, file-local) keeps the narrow ancestry because its
+// one consumer, `phiTracksWire`, GRANTS on it — an ACCEPT-direction predicate
+// that a widening must not ride along with (round 2, F-1b2-3; the parity gap is
+// bd test_C_libtooling-r903's). Widening THIS walker's ancestry can only find
+// MORE gates — monotone toward DECLINE, proven in round 2 (the crossing adds
+// only NON-theta values to the per-seed exempt set) and measured over all 1732
+// pre-existing fixtures (0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF).
+//
 // Walk the forward in-place-gate wire of every value in `Seeds` and return
 // the first `cq_theta_*` user found whose Ry is NOT provably after every
 // execution of `EmitPoint` (see header comment for the exact proof
@@ -86,7 +110,8 @@ llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
                                         const llvm::Instruction *EmitPoint =
                                             nullptr,
                                         const llvm::DominatorTree *DT =
-                                            nullptr);
+                                            nullptr,
+                                        const TaintSet *Taint = nullptr);
 
 // "IF `B` executes, `A` has already executed, and `A` never runs again after
 // it." THE ONE SPELLING of this project's position-aware proof obligation, and

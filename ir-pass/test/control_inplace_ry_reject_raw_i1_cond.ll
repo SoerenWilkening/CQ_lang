@@ -17,8 +17,20 @@
 ; rotation-arm clause did not accidentally claim the shape: the classifier's very
 ; first gate is `isa<CmpInst>(Region.Condition)`, unchanged.
 ;
+; ⚠ SINCE bd test_C_libtooling-3qlq.4 (Inc 1b, 2026-09-10) TWO SENTENCES ABOVE
+; ARE HISTORY, and this file is the 1b-C FLIP TARGET (bd test_C_libtooling-l4x4).
+; (i) "The `cq_phi` twin of this source declines identically today" is FALSE:
+; `_Bool c = cq_theta(…); if (c) cq_phi(θ)` now LOWERS — the register is its own
+; flag and the kickback rides its rail (`control_phase_kickback_rail_diamond.ll`).
+; (ii) The string is no longer the generic `control flow`: `classifyArms`' first
+; gate names a bare `_Bool` register condition with `bare i1 register condition`
+; (`kBareRailCondReason`, SelectClassify.h — the ONE string every not-yet-lowered
+; rail consumer shares, so each follow-on flips its own fixture and no other).
+; The DISPOSITION is unchanged: the in-place controlled-Ry arm on a rail
+; condition still declines, and still before any emission.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}control flow under quantum control
+; CHECK: error{{.*}}bare i1 register condition under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
 
 declare i1 @cq_theta_i1(i1, double)

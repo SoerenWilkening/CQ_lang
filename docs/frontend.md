@@ -108,6 +108,24 @@ table below — this is the canonical suffix-to-type map:
 | C type | Suffix | Notes |
 |---|---|---|
 | `_Bool` / `bool` | `_i1` | 1-bit |
+
+> **`bool` as a CONDITION (bd `test_C_libtooling-3qlq.4`, 2026-09-10).** A `bool` register
+> is a one-qubit register and `if (b) …` hands the pass `br i1 %b` with no compare: the
+> register IS the flag. The register-free branch phase lowers it directly —
+> `if (b) cq_phi(θ)` is one `cqrt_rz_i1` on `b`'s own rail (no ancilla, no strip, no free),
+> `if (!b) cq_phi(θ)` is `rz(b, −θ)` (equal to `X·P(θ)·X` up to a global phase; no `cqrt_x`
+> ever touches a user register), `if (b) cq_phi(A); else cq_phi(B);` is the pair
+> `rz(b, −B); rz(b, A)`, and `b && q == 5`, `b || …`, `b == c`, the depth-2 nest and a loop
+> over an INVARIANT `bool` all lower (rolled, in the loop case). What still declines, and
+> with which string: a `bool` that drives a DATA select or value arm (`if (b) a -= 3;`), an
+> in-place Ry or state prep (`if (b) r = cq_theta(r, θ)`) or a Ry angle select — `bare i1
+> register condition` (follow-ons); a loop-CARRIED `bool` (`for (…) { if (b) …; b =
+> cq_theta(b, φ); }`), a NOT inside a tree (`!b && …` where `-O1` keeps the NOT) and a
+> negated level of a nest — `branch phase on a bare i1 condition`. A `bool` measured before
+> its branch, or rotated in place between its definition and its branch while the branch
+> reads the OLD name, declines like a compare would. See
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §13.
+
 | `char` | `_c` | distinct from `signed char` per the C standard |
 | `signed char` | `_si8` | |
 | `unsigned char` | `_ui8` | |

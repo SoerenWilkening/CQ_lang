@@ -103,6 +103,15 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
       diagnoseUnderControl(R.Merge, "control flow");
     return;
   }
+  // bd 3qlq.4 — a RAIL LEAF never reaches this emitter: `classifySelectRegion`
+  // declines it on the data path (`kBareRailCondReason`) and the value-arm /
+  // 6.5 callers hand over only classifier-accepted plans. Re-asked here as the
+  // detection/emission drift guard every emitter carries, BEFORE the first
+  // emission.
+  if (!Tree.RailLeaves.empty()) {
+    diagnoseUnderControl(Sel, kBareRailCondReason);
+    return;
+  }
 
   Value *Tru = Sel->getTrueValue();
   Value *Fls = Sel->getFalseValue();

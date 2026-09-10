@@ -313,7 +313,8 @@ SwitchPhaseKickbackDisp classifyPhaseKickbackSwitch(SwitchInst *SI,
   // A non-diagonal (Ry) gate on `q`'s wire would make the eq-flags read a
   // different basis than the source `switch`; an unowned data use leaves a
   // dirty entangled rail with no owner.
-  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true)) {
+  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true,
+                              /*EmitPoint=*/nullptr, /*DT=*/nullptr, &Taint)) {
     diagnoseUnderControl(SI, "condition predates a non-diagonal gate");
     return SwitchPhaseKickbackDisp::Declined;
   }
@@ -553,7 +554,8 @@ void classifySwitchRegion(SwitchInst *SI, TaintSet &taint, ControlPlan &plan) {
   // AFTER the hidden Ry (verify-clean stale scrutinee; pinned by
   // control_swap_reject_switch_stalecond_router.ll). A router forwards the
   // same physical handle; cross it.
-  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true))
+  if (findNonDiagonalWireGate({Q}, /*CrossValueRouting=*/true,
+                              /*EmitPoint=*/nullptr, /*DT=*/nullptr, &taint))
     return diagnoseUnderControl(SI, "condition predates a non-diagonal gate");
   // An UNOWNED data use of the scrutinee (not the switch, not the merge phi, not
   // an escape `ret`, not a measurement) leaves a dirty/entangled rail with no

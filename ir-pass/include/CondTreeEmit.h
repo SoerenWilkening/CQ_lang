@@ -102,6 +102,13 @@ struct CondNetwork {
   llvm::SmallVector<std::pair<llvm::CmpInst *, llvm::Value *>, 4> Leaves;
   llvm::SmallVector<Node, 4> Nodes;
   llvm::Value *Root = nullptr;
+  // bd 3qlq.4 — TRUE iff `Root` is a RAIL LEAF (the tree is the bare register
+  // itself: no nodes, no compare). The root is then the USER'S register, not an
+  // ancilla this network minted: `stripCondNetwork` frees nothing for it, and a
+  // caller that must fire a gate on `¬Root` may NOT `cqrt_x`-bracket it (a
+  // non-diagonal gate on a user register) — the phase emitters use the diagonal
+  // form `rz(root, −θ)` instead (`SwapRouteEmit`'s `emitKickbackGates`).
+  bool RootIsRail = false;
 };
 
 // Emit ONE interior node's gates onto `N.G`, forward (`Inverse=false`) or as its

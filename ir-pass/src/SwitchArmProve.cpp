@@ -261,7 +261,9 @@ bool proveSwitchValue(const SwitchShape &S, TaintSet &Taint) {
   // wire and the pre-detect `declineStaleRecordOps` declines it first (pinned
   // by control_swap_reject_switch_value_router_base_backstop.ll) — exactly
   // the backstop coincidence this guard exists not to rely on (see above).
-  if (CallInst *Gate = findNonDiagonalWireGate(P, /*CrossValueRouting=*/true)) {
+  if (CallInst *Gate = findNonDiagonalWireGate(P, /*CrossValueRouting=*/true,
+                                               /*EmitPoint=*/nullptr,
+                                               /*DT=*/nullptr, &Taint)) {
     diagnoseUnderControl(Gate, "routed base predates a non-diagonal gate");
     return false;
   }

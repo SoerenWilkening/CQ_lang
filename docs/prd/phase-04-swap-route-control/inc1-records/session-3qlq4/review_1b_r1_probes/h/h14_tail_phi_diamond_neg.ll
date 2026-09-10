@@ -1,0 +1,13 @@
+define i32 @example(i1 %u0) {
+entry:
+  %b = call i1 @cq_theta_i1(i1 %u0, double 5.000000e-01)
+  br i1 %b, label %merge, label %arm
+arm:
+  br label %merge
+merge:
+  %a = phi double [ 9.000000e-01, %arm ], [ 3.000000e-01, %entry ]
+  call void @cq_phi(double %a)
+  %m = call i1 @cq_measure_i1(i1 %b)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}

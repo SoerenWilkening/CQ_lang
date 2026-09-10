@@ -7,6 +7,8 @@
 
 #include "WireWalk.h"
 
+#include "TaintPropagation.h"  // TaintSet (the chained-theta ancestry crossing, F-1b-1)
+
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
@@ -78,6 +80,16 @@ void collectWireValues(Value *Seed, bool CrossValueRouting,
       V = Arg0;
       continue;
     }
+    // ⚠ THE NARROW ANCESTRY, ON PURPOSE (bd 3qlq.4 round 2, F-1b2-3). This is
+    // `thetaOnPathTo`'s closure, whose ONLY consumer is `phiTracksWire`, where
+    // the polarity is INVERTED (ArmClassify.cpp: a PRECONDITION that GRANTS) —
+    // so widening it as `findNonDiagonalWireGate` was widened for F-1b-1 (cross
+    // the arg-0 edge of ANY tainted parent) would move an ACCEPT-direction
+    // predicate and needs its own Rule-13 round. The parity gap (a template
+    // parent stops this closure at the chained theta) is recorded with bd
+    // test_C_libtooling-r903; no caller supplies a taint set here today, and a
+    // defaulted parameter that nothing supplies was deleted rather than left to
+    // read as a fix (round 2's F-1b2-3).
     if (isCallToPrefix(CI, "cq_theta_") &&
         (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
       V = Arg0;
@@ -369,7 +381,8 @@ bool phiTracksWire(const PHINode *P) {
 CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
                                   bool CrossValueRouting,
                                   const Instruction *EmitPoint,
-                                  const DominatorTree *DT) {
+                                  const DominatorTree *DT,
+                                  const TaintSet *Taint) {
   // Seed closure + forward wire walk, PER SEED (test_C_libtooling-6j1, extended
   // for test_C_libtooling-6vk). A seed names a basis RECORD; the physical wire
   // carrying it is shared with the seed's whole ANCESTRY — rotation lowering
@@ -420,8 +433,12 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
       // A CHAINED theta (arg-0 is itself a `cq_theta`/`cq_phi` quantum wire) is
       // an in-place Ry whose arg-0 shares the wire; cross it to reach the parent
       // record. A SOURCE theta (arg-0 is the classical init) is the wire origin.
+      // F-1b-1 (bd 3qlq.4): with `Taint`, cross the arg-0 edge of ANY chained
+      // theta — the relation `lowerRotations` builds the rail from — so a
+      // SIBLING in-place Ry on a template/compare/phi parent is on the closure.
       if (isCallToPrefix(CI, "cq_theta_") &&
-          (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_"))) {
+          (isCallToPrefix(Arg0, "cq_theta_") || isCallToPrefix(Arg0, "cq_phi_") ||
+           (Taint && Taint->Tainted.count(Arg0)))) {
         V = Arg0;
         continue;
       }
