@@ -25,6 +25,60 @@
 # all reds. That is the point — a disposition drift in the loop lowering must
 # never be something a reader has to notice.
 #
+# ⚠ 2026-09-11, bd `test_C_libtooling-b6ap` (THE MULTI-PHI MERGE PEEL) — FIVE
+# CELLS MOVED, `DECLINE-BOTH-DIFFERENT` -> `UNROLLED-ONLY`, and the reason is
+# written here rather than left to a `git blame`. The cells are the `m_rz_*_rz`
+# family: `m_rz_{der,eq0,eq,gt,range}_rz`, i.e. a `cq_phi` PREFIX, a phase region,
+# a `cq_phi` SUFFIX. Only the UNROLLED side moved, and it moved DECLINE -> ACCEPT;
+# the ROLLED side's `condition predates a non-diagonal gate` is unchanged on both
+# binaries, so the divergence is a rolled-side OVER-DECLINE, not a new defect.
+#
+# MECHANISM, measured. In the UNROLLED spelling `clang -O1` SINKS the second
+# repetition's `cq_phi` calls into the merge block, and what it leaves behind is
+# TWO `double` ANGLE phis there:
+#     %5 = phi double [ 1.250000e-01, %arm ], [ -1.250000e-01, %entry ]
+#     %6 = phi double [ 0x400921FB54442D18, %arm ], [ 1.250000e-01, %entry ]
+# `phaseAngleTail` refuses a SECOND phi, so `classifyPhaseKickback` returned
+# NotApplicable and the whole program declined `control flow`. The peel turns both
+# into `select`s, the merge ends EMPTY, the region lowers as a flat kickback, and
+# each peeled ANGLE select is claimed by `classifyAngleSelect`'s **Rz stem** —
+# the shipped drbq Inc-2b / 3qlq Inc-1 P2 KICKBACK PAIR, NOT the kjd1 fp DATA
+# merge. There is no `cqrt_alloc_f64` in any of the five outputs; the f64/angle
+# wire is not crossed, because `SelectClassify`'s gate 3 makes that partition for
+# a peeled select exactly as it does for a source-written one.
+#
+# UNITARY, re-derived by hand on `m_rz_eq_rz` and identical in form for the other
+# four (6 `cqrt_rz_i1` gates each, stage 2b `0 violation(s), 0 unproven`):
+#     a == 5 :  PI + (-0.125) + 0.125 + PI = 2*PI
+#     a != 5 :        (-0.125) + 0.125     = 0
+# which is the source's 2*PI relative phase (the two UNCONTROLLED `cq_phi(0.125)`
+# / `cq_phi(-0.125)` are GLOBAL phases and are deleted by owner decision D2).
+#
+# The lit fixture for the same shape, written from hand IR, is
+# `ir-pass/test/control_peel_angle_tail_datamux.ll`; its one-phi containment
+# control is `control_peel_angle_tail_unchanged_control.ll`.
+#
+# ⚠ CAVEAT FROM THE RULE-13 ROUND-1 REVIEW (2026-09-11, §6), and it is the reason
+# these five rows are a RULING and not a rubber stamp. The reviewer re-derived
+# `m_rz_eq_rz` from scratch out of `tools/loop_twin_matrix.py`'s own
+# `sources('rz','eq','rz', surface='void')` — not from the implementation notes —
+# confirmed the unitary above and UPHELD `UNROLLED-ONLY` (the rolled-side
+# over-decline is the established class for it: 63 other cells carry that verdict,
+# three of them the same `m_rz_*_none` family one axis over). What the ruling adds:
+#
+#   THE PEEL IS NOW A SECOND, NON-OBVIOUS CUSTOMER-GENERATOR FOR THE ANGLE-SELECT
+#   PATH, AND THAT PATH'S ACCEPT CLASS IS NARROWER THAN THE DATA PATH'S —
+#   CONSTANT arms only for the Ry stem (the Inc-2b clearance narrowing), ONE
+#   consumer, and the `2^-40` rounding fence. Every boundary the reviewer probed
+#   declines loudly through the peel exactly as it does for a source-written
+#   select (`f02` angle-AND-data, `f03` two consumers, `f05` Ry run-time arm,
+#   `f07` quantum-derived angle), so the generator is FENCED TODAY. But a future
+#   widening of `classifyAngleSelect` now has a customer source that does not
+#   appear in its own file, its own fixtures, or any `-O1` C twin.
+#
+# Read these five rows as the tripwire for that: if a later increment widens the
+# angle-select accept class, re-derive them rather than regenerating them.
+#
 # VERDICTS
 #   ACCEPT-IDENTICAL        both sides lower, both silent, traces byte-identical.
 #   ACCEPT-IDENTICAL-WARN   as above but both sides warn, with the same message.
@@ -410,26 +464,26 @@ m_ry_ryrz_none_none_none ACCEPT-IDENTICAL
 m_ry_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
 m_rz_der_none            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_der_ry              ACCEPT-IDENTICAL
-m_rz_der_rz              DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_der_rz              UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_eq0_add             ACCEPT-IDENTICAL
 m_rz_eq0_none            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_eq0_ry              ACCEPT-IDENTICAL
-m_rz_eq0_rz              DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_eq0_rz              UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_eq_add              ACCEPT-IDENTICAL
 m_rz_eq_none             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_eq_ry               ACCEPT-IDENTICAL
-m_rz_eq_rz               DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_eq_rz               UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_gt_add              ACCEPT-IDENTICAL
 m_rz_gt_none             UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_gt_ry               ACCEPT-IDENTICAL
-m_rz_gt_rz               DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_gt_rz               UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_rz_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_rz_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_rz_range_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_range_ry            ACCEPT-IDENTICAL
-m_rz_range_rz            DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_range_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_xor_der_ry             ACCEPT-IDENTICAL
 m_xor_eq0_add            UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_xor_eq0_none           DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control

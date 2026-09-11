@@ -26,6 +26,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/Instructions.h"
@@ -1009,6 +1010,122 @@ void deleteGlobalPhases(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
                               TaintSet &taint, SpecPlan &plan6);
 
+// bd `test_C_libtooling-b6ap` — SEEDED FORWARD RE-PROPAGATION over the SHIPPED
+// `propagateWorklist` rule, for a stage that INSERTS new tainted instructions
+// after `propagate` has already run.
+//
+// `Seeds` must ALREADY be in `taint.Tainted` (the caller decides that the value
+// it just built is tainted); this walks FORWARD from them and taints every
+// transitive user under the one shipped rule — the same rule
+// `repropagateControlMerges` re-runs for the 6.5/4.5 `%out` rails, with
+// `skipRuntimeCalls=true` so an already-emitted `cqrt_*` / `cq_template_*`
+// scaffold call is never re-tainted (uncompute parity).
+//
+// ⚠ THAT FLAG IS VACUOUS AT THE TWO ROUND-1 PEEL SITES TODAY, AND IT IS PASSED
+// ANYWAY — the argument, recorded because it was unwritten (bd b6ap ROUND-2 item
+// D-2). At `CQLoweringPass.cpp:441` / `:922` the only stages above the peel that
+// EMIT anything are `lowerControlledIOSinks` (which loud-declines every >=2-φ
+// merge with an I/O-sink arm, so no peel site coexists with its emission — probe
+// `I01`) and `lowerLoops` (whose only `CreateCall`s are three CONSTANT-argument
+// `cqrt_alloc_*`, `LoopLowering.cpp:1746/1748/1750`, which no peeled select can
+// reach as an argument). So there is no `cqrt_*` call in reach of the walk to
+// skip. It stops being vacuous the day a stage that emits runtime calls over
+// tainted operands is added ABOVE the peel — and the flag being already correct
+// is why that day needs no code change here, only this paragraph re-read.
+//
+// ⚠ WHY IT EXISTS, and it is a MEASURED requirement rather than hygiene. The
+// MULTI-PHI MERGE PEEL replaces a merge `phi` by a `select` on the region's
+// (tainted) condition. A `phi` is NOT a user of the branch condition, so a
+// constant-armed merge `phi` is UNTAINTED; a `select` IS one, so the identical
+// mux written in the source is TAINTED (`propagateWorklist` taints every user of
+// a tainted value bar a measure sink and an angle-only edge). Recording only the
+// select — or, worse, copying the `phi`'s taint — leaves its downstream users
+// classical, and an `add nsw i32 %m, %out` over a 4.4 merge OUT-RAIL then reaches
+// the backend UN-LOWERED: it adds the runtime HANDLE TAG instead of the
+// superposed value, which is the verify-clean wrong unitary of the bd `afmv`
+// class. MEASURED on `z08`/`z18`/`z19` (`opt` exit 0, stage-2b `0 violation(s)`);
+// with this call the peeled module is byte-identical to the hand-peeled one,
+// which is exactly the increment's definition.
+//
+// Nothing else in the `TaintSet` is touched — this is the forward-taint edge and
+// nothing more.
+//
+// `Delta`, when non-null, is filled with the WHOLE taint growth this call is
+// responsible for: the seeds themselves PLUS every value the walk newly tainted.
+// It is the `reseed` set `adjudicateTaintDelta` below consumes, and it is
+// computed exactly the way `repropagateControlMerges` computes its own (the
+// seeds are already in `Tainted` before the walk, so a before/after diff alone
+// would MISS them — union them in). The `Tainted` snapshot is taken only when
+// `Delta` is non-null AND `Seeds` is non-empty, so a module that peels nothing
+// pays nothing.
+void propagateFromSeeds(TaintSet &taint, llvm::ArrayRef<llvm::Value *> Seeds,
+                        llvm::SmallPtrSetImpl<llvm::Value *> *Delta = nullptr);
+
+// bd `test_C_libtooling-b6ap`, Rule-13 ROUND-1 finding F-B6-1 — ADJUDICATE A
+// TAINT DELTA. **The one spelling of "taint just grew; ask the stages that own
+// consumers of tainted values about the new values"** (Rule 14).
+//
+// CLAUDE.md's standing lesson is "a stage that runs ONCE has a round-2-FALSE
+// premise", and F-B6-1 is that lesson for a stage that GROWS TAINT rather than
+// one that runs once: `detectSpecializations`, `declineTaintEscapes` and
+// `declineStaleRecordOps` all run as PURE ANALYSIS early in the pipeline, on the
+// premise that `propagate` has already settled. Any later stage that manufactures
+// a tainted value falsifies that premise for the values it manufactures — the
+// guards never see them, so a store / an unknown callee / a visible-body callee /
+// a stale-mask Phase-6 clone consumes a quantum rail HANDLE as a classical
+// integer. MEASURED as five plain-C classes at `opt` exit 0, verify-clean and
+// STRICT stage-2b `0 violation(s)` (review `review_b6ap_r1.md` §F-B6-1), plus the
+// stale-mask clone `k01` below.
+//
+// This is NOT new machinery: it is the four-call sequence
+// `repropagateControlMerges` has always run for ITS OWN taint delta (the 6.5/4.5
+// `%out` rails), lifted out verbatim so there is exactly ONE copy of it —
+//   2. `replanReseedSpecialization` — a ROUND-1 `Pending` candidate whose
+//      C-masked argument is now quantum gets its mask re-widened, or declines
+//      loudly. WITHOUT it the site stays CARVED by `shouldSpecialize` and the
+//      driver clones a body reading the rail as an `_hl` classical literal: the
+//      bd `afmv` verify-clean wrong unitary.
+//   3. `detectSpecializations(&reseed)` — bd 9paa's detection twin: a call that
+//      was ALL-classical before the delta and is a proven candidate now.
+//   4. `declineTaintEscapes` — the escape net over the new consumers.
+//   5. `declineStaleRecordOps` — the stale-record sweep over the new pure ops.
+// Order is load-bearing and is the round-2 order verbatim: both spec stages must
+// precede the escape net, whose `shouldSpecialize`/`Diagnosed` carve-outs read
+// what they wrote.
+//
+// ⚠ THE NUMBERING STARTS AT 2 BECAUSE THERE IS A CALL 1 — `foldIdentityBitcasts`,
+// added by bd b6ap Rule-13 ROUND-2 finding F-B6R2-1 (see its own declaration below
+// for the finding, and the `.cpp` for why it must run AHEAD of 2-5 rather than
+// after them). The four above are the sequence `repropagateControlMerges` has
+// always run; the fifth stage is the one the round-1 enumeration missed.
+//
+// ⚠ WHAT `delta` IS ACTUALLY USED FOR, because it is smaller than the name
+// suggests and that is what makes COMPLETENESS cheap (bd b6ap ROUND-2 item D-1).
+// Only the two SPECIALIZATION calls (2 and 3) read it, and both only as a
+// DIRECT-ARGUMENT membership test (`for (Use &Op : Site->args()) if
+// (delta.count(Op.get()))`). Calls 4 and 5 take NO delta at all — they RE-SCAN THE
+// WHOLE MODULE against the now-grown `taint`; call 1 takes it only to keep it free
+// of pointers it frees. So a consumer cannot be missed by being "far" from a seed;
+// it can only be missed by not being tainted, and the walk that decides that is the
+// shipped `propagateWorklist` (`propagateFromSeeds` above), i.e. the same rule
+// `propagate` runs. ⚠ A FUTURE DELTA-DRIVEN call added here would invalidate that
+// argument and would owe its own completeness proof — as calls 2 and 3 do, by
+// taking the delta as a set of ARGUMENTS rather than as a search frontier.
+//
+// PRECONDITION: every caller runs BEFORE `lowerRotations`/`lowerMeasures`, so
+// pre-RAUW SSA identity still holds (`declineTaintEscapes`' own stated
+// requirement) and the collected `cq_*` call sites are intact.
+//
+// IDEMPOTENCE on an unchanged delta: every one of the five is pure analysis bar
+// the `bitcast` identity fold in (1), the `freeze` identity fold in (4) and the
+// `StaleDeclined` marking in (5) — all three already-done/no-op on a second visit
+// (a fold has nothing left to fold); and a decline is `DS_Error`, which the host
+// tool's handler makes final (`exit(1)`), so a second run can only ever fire on
+// genuinely NEW taint.
+void adjudicateTaintDelta(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
+                          SpecPlan &plan6,
+                          const llvm::SmallPtrSetImpl<llvm::Value *> &delta);
+
 // bd iw81.1 — fold same-width int<->int `bitcast` identity EARLY (before ANY
 // wire / lineage / control / stale-record analysis runs), so the whole pass sees
 // the operand's true wire directly and never an opaque identity node it must
@@ -1027,7 +1144,24 @@ void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
 // bitcasts are NOT identities and are LEFT STANDING to decline loudly at
 // `castInScope` ("no template for opcode 'bitcast …'") — unchanged. Wired FIRST,
 // right after taint settles, in BOTH pipeline entry points (twin-pipeline trap).
-void foldIdentityBitcasts(llvm::Module &M, TaintSet &taint);
+//
+// ⚠ AND IT IS A TAINT-DELTA CONSUMER, so it is ALSO call 1 of
+// `adjudicateTaintDelta` — bd b6ap Rule-13 ROUND-2 finding F-B6R2-1. The fold
+// fires only on an ALREADY-tainted bitcast, and it is the SOLE handler for the
+// opcode, so a bitcast made tainted by a LATER taint-growth stage (the multi-φ
+// merge peel, the 6.5/4.5 round-2 `%out` rails) is left standing and dies at
+// `no template for opcode 'bitcast i32' in tainted context` — an over-decline of
+// a module whose hand-peeled twin lowers at exit 0 (probe `BC1`).
+//
+// `Scrub`, when non-null, is a caller-owned `Value *` set from which every FOLDED
+// (and therefore FREED) bitcast is erased. It exists because the delta
+// `adjudicateTaintDelta` forwards to the two specialization calls is exactly such
+// a set, and a freed pointer left live in it is the bd `drbq` Inc-1 stale-set
+// class. NO DEFAULT ARGUMENT, for the same reason `peelIndependentMergePhis`'
+// `Delta` has none (`MergePhiPeel.h`): every caller states its disposition —
+// a set to scrub, or `nullptr` with the reason it holds no such set.
+void foldIdentityBitcasts(llvm::Module &M, TaintSet &taint,
+                          llvm::SmallPtrSetImpl<llvm::Value *> *Scrub);
 
 // Pre-lowering taint-escape guard (test_C_libtooling-bxv). Pure analysis on
 // the still-unmutated IR, wired FIRST in BOTH pipeline entry points (the

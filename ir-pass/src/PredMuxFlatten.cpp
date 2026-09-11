@@ -106,16 +106,25 @@ bool isTaintedCtrlTerm(const Instruction *T, const TaintSet &Taint) {
   return false;
 }
 
+}  // namespace
+
 // E7 — a type the select substrate can mux: integer ≤ 64 bits or the scalar
 // fp widths of the kjd1 controlled-copy family. (Mirrors copyControlledFn /
 // copyControlledFpFn envelopes so a claimed region cannot half-lower —
 // detect-before-mutate.)
+//
+// bd b6ap — DE-ANONYMIZED (linkage only, definition byte-unchanged) so the
+// MULTI-PHI MERGE PEEL (`MergePhiPeel.cpp`, P5) asks THIS predicate rather than
+// growing a second spelling of "a type the 4.4/kjd1 merge can copy" (Rule 14).
+// Declared in `PredMuxFlatten.h`.
 bool isMuxableType(Type *Ty) {
   if (auto *IT = dyn_cast<IntegerType>(Ty))
     return IT->getBitWidth() <= 64;
   return Ty->isHalfTy() || Ty->isFloatTy() || Ty->isDoubleTy() ||
          Ty->isX86_FP80Ty();
 }
+
+namespace {
 
 // The wider gate for INTERMEDIATE arm values (they never cross a merge, so
 // they only need a forward template, not a controlled copy): the

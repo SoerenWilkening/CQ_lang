@@ -1,0 +1,48 @@
+cqrt_alloc_i32(0) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(0) -> h1
+cqrt_ry_i32(h1, 0x1.999999999999ap-2)
+cqrt_alloc_i32(0) -> h2
+cqrt_ry_i32(h2, 0x1.3333333333333p-1)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h3
+cqrt_ry_i32_controlled(h3, h1, 0x1.ccccccccccccdp-1)
+cq_template_icmp_eq_i32_hl_unc(h3, h0, 5)
+cqrt_free(h3)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h4
+cqrt_alloc_i32(0) -> h5
+cqrt_alloc_i32(7) -> h6
+cqrt_copy_i32_controlled(h4, h6, h5)
+cqrt_x(h4)
+cqrt_alloc_i32(5) -> h7
+cqrt_copy_i32_controlled(h4, h7, h5)
+cqrt_x(h4)
+cq_template_icmp_eq_i32_hl_unc(h4, h0, 5)
+cqrt_free(h4)
+cq_template_icmp_eq_i32_hl(h0, 5) -> h8
+cqrt_alloc_i32(0) -> h9
+cqrt_alloc_i32(2) -> h10
+cqrt_copy_i32_controlled(h8, h10, h9)
+cqrt_x(h8)
+cqrt_alloc_i32(1) -> h11
+cqrt_copy_i32_controlled(h8, h11, h9)
+cqrt_x(h8)
+cq_template_icmp_eq_i32_hl_unc(h8, h0, 5)
+cqrt_free(h8)
+cq_template_icmp_sgt_i32_hl(h2, 3) -> h12
+cqrt_alloc_i32(0) -> h13
+cqrt_copy_i32_controlled(h12, h5, h13)
+cqrt_x(h12)
+cqrt_alloc_i32(0) -> h14
+cqrt_copy_i32_controlled(h12, h14, h13)
+cqrt_x(h12)
+cq_template_icmp_sgt_i32_hl_unc(h12, h2, 3)
+cqrt_free(h12)
+cq_template_add_i32_hl(h13, 1) -> h15
+cqrt_alloc_i32(0) -> h16
+cqrt_copy_i32(h15, h16)
+cq_template_add_i32_hl_unc(h15, h13, 1)
+cqrt_free(h15)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h16) -> 0
+cqrt_measure_i32(h9) -> 0
+0 0 0

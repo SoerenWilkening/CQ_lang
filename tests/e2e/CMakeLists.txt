@@ -5064,6 +5064,29 @@ add_test(NAME e2e-slice-control-select-bool
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool.expected.log")
 
+# ── bd test_C_libtooling-b6ap — THE MULTI-PHI MERGE PEEL ────────────────────
+# Two consecutive source `if`s whose conditions `clang -O1` proves equivalent
+# FUSE into one diamond whose merge holds SEVERAL phi; `soleMergePhi` refuses >1
+# and the whole program declined `control flow` for a bookkeeping reason.
+# `peelIndependentMergePhis` turns each phi the region does not define into a
+# tainted-condition `select` on a CLONE of the region's compare (or, for a bare
+# rail, on the rail itself). Both slices decline on `main` 0c7380c. STRICT 2b.
+add_test(NAME e2e-slice-control-fused-regions-int
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_fused_regions_int.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_fused_regions_int.expected.log")
+
+add_test(NAME e2e-slice-control-fused-regions-phase-bool
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_fused_regions_phase_bool.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_fused_regions_phase_bool.expected.log")
+
 add_test(NAME e2e-slice-control-select-bool-int-twin
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

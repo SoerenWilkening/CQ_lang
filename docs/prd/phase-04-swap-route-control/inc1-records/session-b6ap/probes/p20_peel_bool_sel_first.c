@@ -1,0 +1,9 @@
+/* manual peel, bool rail condition, select BEFORE the prep region */
+#include "CQ.h"
+int main(void) {
+    int a = 5; bool b0 = 0; int b1 = 0;
+    if (a >= 3){ b0 = cq_theta(b0, 0.5); }
+    int a2 = b0 ? 2 : 5;                    /* the peeled `a` data mux */
+    if (!b0){ b1 = cq_theta(b1, 0.5); }     /* the prep region, alone */
+    return cq_measure(b0) + cq_measure(b1) + cq_measure(a2);
+}

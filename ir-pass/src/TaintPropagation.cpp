@@ -17,6 +17,7 @@
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
 #include "Specialization.h"
 #include "LoopPlan.h"          // collapseFlattenedLoopRails (F-R1-1 onward pass)
+#include "MergePhiPeel.h"     // peelIndependentMergePhis (bd b6ap, ROUND-2 site)
 #include "SwapRouteEmit.h"     // lowerControlRegions (yn71 onward-control re-emit)
 #include "WidthDispatch.h"
 
@@ -453,7 +454,8 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   return out;
 }
 
-void foldIdentityBitcasts(Module &M, TaintSet &taint) {
+void foldIdentityBitcasts(Module &M, TaintSet &taint,
+                          SmallPtrSetImpl<Value *> *Scrub) {
   // See TaintPropagation.h for the full rationale. A same-width int<->int
   // `bitcast` is a zero-gate reversible IDENTITY that `rewriteCast` would fold to
   // `result === operand`; folding it HERE — before ANY analysis — means the whole
@@ -493,6 +495,14 @@ void foldIdentityBitcasts(Module &M, TaintSet &taint) {
     // new handle. BirthOrder is not populated for a raw pre-lowering bitcast.
     taint.Tainted.erase(BC);
     taint.HandleWidth.erase(BC);
+    // `Scrub` is the CALLER'S OWN `Value *` set (bd b6ap F-B6R2-1): the delta
+    // `adjudicateTaintDelta` hands to `replanReseedSpecialization` /
+    // `detectSpecializations` as a DIRECT-ARGUMENT membership test. A freed
+    // pointer left live in it is the bd `drbq` Inc-1 stale-set defect, so the
+    // erase happens HERE, at the one place that knows the instruction is dying,
+    // rather than at a call site that would have to predict which bitcasts fold.
+    if (Scrub)
+      Scrub->erase(BC);
     BC->eraseFromParent();
   }
 }
@@ -1383,6 +1393,41 @@ void detectAndLowerOnwardControl(Module &M, WidthDispatch &wd, TaintSet &taint,
                                  const FnSet &ThetaFns, const FnSet &PhiFns,
                                  const FnSet &MeasureFns) {
   while (true) {
+    // bd test_C_libtooling-b6ap — THE MULTI-PHI MERGE PEEL, THE ROUND-2 CALL
+    // SITE (`MergePhiPeel.cpp`). CLAUDE.md's standing lesson "a stage that runs
+    // ONCE has a round-2-FALSE premise" (F-L3-1, F-R1-1, F-B1R2-1) applies to the
+    // peel directly: this loop is a SECOND, FULL round of `detectControlRegions`
+    // over taint re-seeded from the 6.5/4.5 `%out` rails, so it sees tainted
+    // branches round 1 did not. MEASURED customer: probe `p80` — a 6.5
+    // classical-call region followed by a FUSED 2-phi diamond whose condition
+    // `icmp eq i32 %out, 13` is CLASSICAL at round 1 and tainted here; its
+    // one-phi control `p81` already accepts, so the 2-phi wall is the only thing
+    // stopping it, and a round-1-only peel would leave it declining with nothing
+    // in the suite able to notice.
+    //
+    // INSIDE the loop, not before it: the loop is a FIXPOINT (a control emit can
+    // expose a further onward control), so a call placed before it would cover
+    // only the first iteration. The rule is uniform and grep-checkable — the peel
+    // is called immediately before EVERY `detectControlRegions` call in the tree
+    // (here, `CQLoweringPass::run`, and the second entry point).
+    //
+    // Idempotent on an unchanged module: after a successful peel the merge holds
+    // at most one phi, so the >=2-phi containment gate refuses the same site on
+    // the next iteration. It is NOT a no-op to re-call, because each iteration's
+    // lowering can create a fresh fused region.
+    //
+    // ⚠ `Delta = nullptr` HERE, AND IT IS AN INCLUSION ARGUMENT, NOT AN OMISSION
+    // (bd b6ap Rule-13 ROUND-1 finding F-B6-1). The peel GROWS TAINT, and its
+    // growth must be adjudicated by `adjudicateTaintDelta` — the two ROUND-1 call
+    // sites in `CQLoweringPass.cpp` do that themselves. This one does not need to,
+    // because its ONLY caller is `repropagateControlMerges` (measured: `grep -rn
+    // 'detectAndLowerOnwardControl' ir-pass/src ir-pass/include` = the definition,
+    // the forward decl and ONE call site), which snapshots `beforeTaint` at ENTRY
+    // — BEFORE this loop — and computes `reseed = UntaintedMergeRails ∪ (Tainted −
+    // beforeTaint)` AFTER it. Every value this peel taints is therefore inside
+    // that reseed set and is adjudicated by the same `adjudicateTaintDelta` call.
+    // If this loop ever gains a second caller, that caller owes the delta.
+    peelIndependentMergePhis(M, taint, /*Delta=*/nullptr);
     ControlPlan plan2 = detectControlRegions(M, wd, taint);
     if (plan2.Regions.empty())
       break;  // fixpoint: no new onward control region emitted.
@@ -1488,6 +1533,120 @@ void replanReseedSpecialization(TaintSet &taint, WidthDispatch &wd,
 }
 
 }  // namespace
+
+// bd `test_C_libtooling-b6ap` — see the header for what this is and, more
+// importantly, for the MEASURED reason the MULTI-PHI MERGE PEEL needs it.
+//
+// The FnSet rebuild is `repropagateControlMerges`' idiom verbatim and for its
+// stated reason: rebuilding from the collected call sites rather than re-running
+// `resolveSources` avoids re-firing the malformed-decl prototype guard (which has
+// already fired, and exited, in the first `propagate` if it was going to). Both
+// callers run before `lowerRotations`/`lowerMeasures`, so the collected calls are
+// intact.
+void propagateFromSeeds(TaintSet &taint, ArrayRef<Value *> Seeds,
+                        SmallPtrSetImpl<Value *> *Delta) {
+  if (Seeds.empty())
+    return;
+  // The seeds are ALREADY in `Tainted` (the caller decided that), so a pure
+  // before/after diff would miss them. Union them in explicitly — the same
+  // two-part computation `repropagateControlMerges` performs for its own reseed
+  // set (`UntaintedMergeRails` ∪ `Tainted − beforeTaint`).
+  std::set<Value *> beforeTaint;
+  if (Delta)
+    beforeTaint = taint.Tainted;
+  FnSet ThetaFns, PhiFns, MeasureFns;
+  for (CallInst *CI : taint.ThetaCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      ThetaFns.insert(Fn);
+  for (CallInst *CI : taint.PhiCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      PhiFns.insert(Fn);
+  for (CallInst *CI : taint.MeasureCalls)
+    if (Function *Fn = CI->getCalledFunction())
+      MeasureFns.insert(Fn);
+  std::vector<Value *> Worklist(Seeds.begin(), Seeds.end());
+  propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
+                    /*skipRuntimeCalls=*/true);
+  if (Delta) {
+    Delta->insert(Seeds.begin(), Seeds.end());
+    for (Value *V : taint.Tainted)
+      if (!beforeTaint.count(V))
+        Delta->insert(V);
+  }
+}
+
+// bd `test_C_libtooling-b6ap`, F-B6-1 — see the header. This is the round-2
+// sequence `repropagateControlMerges` below has always run for its own taint
+// delta, lifted out VERBATIM (same functions, same order, same arguments) so a
+// second taint-growth customer cannot grow a second spelling of it (Rule 14).
+//
+// ⚠ FIVE CALLS, NOT FOUR — bd b6ap Rule-13 ROUND-2 finding F-B6R2-1. The
+// enumeration this function shipped with was "the stages that adjudicate
+// CONSUMERS of tainted values", and `foldIdentityBitcasts` is one it missed: it
+// is the SOLE handler for a same-width int<->int `bitcast` and it folds ONLY a
+// bitcast that is ALREADY `taint.Tainted` at its pipeline slot (wired first in
+// BOTH entry points, `CQLoweringPass.cpp`), so one made tainted by a LATER
+// taint-growth stage is left STANDING and dies at `no template for opcode
+// 'bitcast i32' in tainted context` — while the hand-peeled twin of the same
+// module lowers at exit 0 on BOTH binaries (probe `BC1`). An OVER-decline, never
+// a wrong unitary, and hand-IR-only (`clang -O1` folds an i32->i32 bitcast long
+// before the pass sees it) — but it falsifies this increment's stated contract,
+// "produce the module the hand peel already is".
+//
+// It is CALL 1 — it runs FIRST, for the SAME reason it is wired first in both
+// entry points: a standing identity node blinds the bespoke provenance/lineage
+// walks the four stages below run, and one of those walks is the stale-record
+// guard's own chained-theta hop (call 5). Folding after them would leave each of
+// those walks looking at exactly the opaque node bd `iw81.1` exists to remove.
+//
+// MONOTONE AND IDEMPOTENT, which is what makes a fifth call free. The fold only
+// ever RAUWs `result === operand` and erases a no-op, so it adds no taint, emits
+// no gate, and can move no accept/decline of its own; over a LARGER `Tainted` it
+// folds a SUPERSET of what the pipeline-slot run folded; and a second run over an
+// unchanged delta finds nothing left to fold. The `delta.empty()` early return
+// above still contains it entirely — a module that peeled nothing never reaches
+// this line, which is what keeps the pre-existing corpus byte-identical.
+void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
+                          SpecPlan &plan6,
+                          const SmallPtrSetImpl<Value *> &delta) {
+  if (delta.empty())
+    return;
+  // ⚠ The fold ERASES instructions, and `delta` is a `Value *` set the two
+  // specialization calls below read as a DIRECT-ARGUMENT membership test. A
+  // folded bitcast that is itself IN the delta (the `BC1` shape exactly: `%bc`
+  // is tainted only BY the peel, so the walk put it there) would leave a freed
+  // pointer as a live key — the bd `drbq` Inc-1 defect verbatim, and the one
+  // dangling-key instance this increment actually creates. So the fold is handed
+  // a LOCAL COPY to scrub, and the copy is what the spec calls consume. No
+  // coverage is lost by the scrub: a tainted bitcast's OPERAND is tainted too
+  // (`propagateWorklist` taints users, so the operand precedes it in the very
+  // same walk) and the RAUW makes every consumer read the operand, which is
+  // still in the delta.
+  //
+  // ⚠ AND THE SAME QUESTION ONE LEVEL OUT, because this call makes a sequence that
+  // was PURE ANALYSIS (bar the `freeze` fold) into one that ERASES INSTRUCTIONS at
+  // a NEW program point: what else could still be naming the bitcast it deletes?
+  // The answer is "nothing", and the reason is ONE property — the fold only ever
+  // erases a value that is TAINTED. Every structure live here either (i) is
+  // scrubbed by the fold itself (`taint.Tainted`, `taint.HandleWidth`, and now the
+  // caller's delta); or (ii) holds only EMITTER-CREATED `cqrt_*` / `cq_template_*`
+  // calls (`ControlOwnedRails`, `OutputRails`, `GraveyardRails`,
+  // `UntaintedMergeRails`, `SharedCondFlags`, `ControlledRotations`); or (iii)
+  // holds only CLASSICAL values (`BreakRegions`' `BoundLimit`/`CounterPhi` — a
+  // tainted bound is Q1-declined before this point); or (iv) is typed so a
+  // `BitCastInst` cannot enter it (`CallInst *` / `StoreInst *` / `BasicBlock *`
+  // containers, `InPlaceRailOps`' `add`/`xor`); or (v) is empty here
+  // (`LiftedConsumers` — `declineClassicalMuxes` runs after BOTH peel sites;
+  // `StaleDeclined` — reaching this line at all means no stale decline fired, and
+  // a `DS_Error` is final). The full row-by-row version of this table, measured
+  // over 194 φ erasures, is `IMPL_b6ap.md` §2d.
+  SmallPtrSet<Value *, 32> live(delta.begin(), delta.end());
+  foldIdentityBitcasts(M, taint, &live);
+  replanReseedSpecialization(taint, wd, plan6, live);
+  detectSpecializations(M, taint, wd, plan6, &live);
+  declineTaintEscapes(M, taint, plan6);
+  declineStaleRecordOps(M, taint);
+}
 
 void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
                               SpecPlan &plan6) {
@@ -1607,10 +1766,18 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    stale-record sweep (mirrors the `declineLiftedStaleRecordOps` re-sweep
   //    precedent). Each decline is a `DiagnosticInfoUnsupported(DS_Error)` → non-zero
   //    exit, so an escape decline exits before the transiently-mistyped IR is verified.
-  replanReseedSpecialization(taint, wd, plan6, reseed);
-  detectSpecializations(M, taint, wd, plan6, &reseed);
-  declineTaintEscapes(M, taint, plan6);
-  declineStaleRecordOps(M, taint);
+  // bd b6ap F-B6-1 — these four calls ARE `adjudicateTaintDelta`, which is this
+  // sequence lifted into a named function so the MULTI-PHI MERGE PEEL's own taint
+  // growth is adjudicated by the SAME code rather than by a second spelling of it
+  // (Rule 14). Behaviour here is byte-unchanged: same functions, same order, same
+  // arguments. ⚠ `reseed` also covers the ROUND-2 PEEL: `peelIndependentMergePhis`
+  // runs inside `detectAndLowerOnwardControl` above, and `beforeTaint` was
+  // snapshotted at this function's ENTRY, so every value that peel tainted is in
+  // `Tainted − beforeTaint` and therefore in `reseed`. That is why the round-2
+  // peel call site needs no adjudication of its own — MEASURED, not assumed: the
+  // only caller of `detectAndLowerOnwardControl` is this function, below the
+  // `UntaintedMergeRails.empty()` early return.
+  adjudicateTaintDelta(M, wd, taint, plan6, reseed);
 
   // 5. THE ONWARD LOOP-RAIL PASS — bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1
   //    (a CONFIRMED rolled≠unrolled divergence, plain C through the shipped 2-TU

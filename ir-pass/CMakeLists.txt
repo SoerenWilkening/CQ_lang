@@ -70,6 +70,7 @@ add_library(CQPass MODULE
   src/LoopLowering.cpp
   src/LoopUnrollPrepass.cpp
   src/MeasureLowering.cpp
+  src/MergePhiPeel.cpp
   src/PoisonFacts.cpp
   src/OpcodeLowering.cpp
   src/OpcodeSupport.cpp

@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function helper i32 (i32): cq specialization: callee contains tainted control flow under quantum lift
+

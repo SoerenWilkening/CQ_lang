@@ -17,6 +17,7 @@
 #include "LoopPlan.h"
 #include "LoopUnrollPrepass.h"
 #include "MeasureLowering.h"
+#include "MergePhiPeel.h"
 #include "OpcodeLowering.h"
 #include "PredMuxFlatten.h"
 #include "QramLowering.h"
@@ -155,7 +156,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // DIRECT-operand form the pass already adjudicates correctly. A pure taint-
   // preserving RAUW+erase (the freeze-fold precedent), so NO re-propagate is
   // needed. fp<->int / vector bitcasts are left standing to decline at castInScope.
-  foldIdentityBitcasts(M, taint);
+  //
+  // ⚠ IT IS ALSO CALL 1 OF `adjudicateTaintDelta` (bd b6ap F-B6R2-1): this run
+  // sees only the taint that has settled BY HERE, and it is the SOLE handler for
+  // the opcode, so a bitcast a LATER stage makes tainted would be left standing
+  // and die at `no template for opcode 'bitcast i32'`. `Scrub=nullptr` here
+  // because this slot holds no taint DELTA to keep consistent — it runs over the
+  // whole settled set, and the only `Value *` table a fold could stale is `taint`
+  // itself, which the fold scrubs.
+  foldIdentityBitcasts(M, taint, /*Scrub=*/nullptr);
 
   // bd 3c6m.14 Inc 3 — volatile-const global-load fold (QramLowering.cpp): the
   // openlibm anti-const-fold idiom (`static volatile double twom1000`,
@@ -373,6 +382,76 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // and flattens the CFG. It runs BEFORE `lowerRotations` so it can reference the
   // still-present `@cq_theta` result; the later RAUW-to-handle updates every
   // emitted call (Rule 9). A classical-condition branch stays byte-untouched.
+  // bd test_C_libtooling-b6ap — THE MULTI-PHI MERGE PEEL (MergePhiPeel.cpp).
+  // `clang -O1` fuses two consecutive source `if`s whose conditions it proves
+  // equivalent into ONE diamond whose merge holds SEVERAL phi; `soleMergePhi`
+  // returns null on >1 phi and `recoverRegion` then declines `control flow` for a
+  // BOOKKEEPING reason (`ControlRegion::Merge` is a single `PHINode *`), not a
+  // semantic one. This accept-only normalisation turns every merge phi the region
+  // does NOT define into a tainted-condition `select` on a CLONE of the region's
+  // compare (or on the rail itself), leaving the ONE phi the region needs and
+  // handing the mux to the 4.4 `SelectClassify`/`SelectMergeEmit` substrate that
+  // has lowered exactly that spelling since Phase 4.4.
+  //
+  // ⚠ THE SLOT: immediately BEFORE `detectControlRegions`, and AFTER the PredMux
+  // fixpoint. Not before it — peeling first would hand PredMux a merge with one
+  // phi where it had two, and BOTH of PredMux's own W5 and W7 witnesses require
+  // `NumMergePhis == 1`, so an earlier peel could silently MOVE a PredMux accept.
+  // Running after the fixpoint means every region PredMux can claim is already
+  // gone, so the peel only ever sees shapes that decline today (its own >=2-phi
+  // containment gate makes that exact; see the definition). The
+  // `lowerControlledIOSinks` / `lowerLoops` precedent is the same "runs BEFORE
+  // `detectControlRegions`" slot, for the same reason.
+  //
+  // ⚠ IT IS CALLED IMMEDIATELY BEFORE **EVERY** `detectControlRegions` CALL IN
+  // THE TREE — here, in the second entry point, and inside
+  // `TaintPropagation::detectAndLowerOnwardControl`'s round-2 fixpoint. That is
+  // CLAUDE.md's standing lesson "a stage that runs ONCE has a round-2-FALSE
+  // premise": `repropagateControlMerges` is a SECOND, FULL round of detection over
+  // taint re-seeded from the 6.5/4.5 `%out` rails, so it creates regions round 1
+  // never saw (MEASURED: probe `p80`, a fused 2-phi diamond whose condition reads
+  // a 6.5 `%out`, against its accepting one-phi control `p81`). A fourth
+  // `detectControlRegions` that forgets this call re-opens that window with no
+  // diagnostic anywhere.
+  //
+  // NOTES §2's stage-table question — "does this stage compute something a LATER
+  // stage consumes, over a premise round 2 falsifies?" — is YES-with-an-argument
+  // here: the peel's P3 dominance and P7 clonability proofs are computed before
+  // detection and consumed by it, but both are STRUCTURAL (dominance, block
+  // shape, `isa<>`) and the peel changes no edge, so round 2 cannot falsify them
+  // for a region round 1 already saw. What round 2 changes is WHICH branches are
+  // tainted, and that is what the third call site is for.
+  //
+  // ⚠ AND THE PEEL GROWS TAINT, SO ITS DELTA IS ADJUDICATED — bd b6ap Rule-13
+  // ROUND-1 finding F-B6-1, a CONFIRMED plain-C silent miscompile in five consumer
+  // classes. The peel turns a CLASSICAL merge phi into a QUANTUM `select`, and
+  // `detectSpecializations` (:321), `declineTaintEscapes` (:330) and
+  // `declineStaleRecordOps` (:337) are pure-analysis pre-passes that ran ~90 lines
+  // ago on the premise that `propagate` had settled — so without this call a
+  // `store`, an unknown callee, a visible-body callee or a STALE-MASK Phase-6
+  // clone consumes the new rail's runtime HANDLE TAG as a classical integer, at
+  // `opt` exit 0, verify-clean and STRICT stage-2b `0 violation(s)`.
+  //
+  // ⚠ THE SLOT IS THE ANSWER TO A MEASURED QUESTION, not a convenience. The
+  // alternative was to MOVE the peel above `detectSpecializations` so the guards
+  // see it in their normal single run; that is refused because the peel cannot
+  // cross the four stages in between — `unrollConstTripLoops` (:273) and
+  // `recognizeCtlzIdiomLoops` (:302) each RE-RUN the PredMux fixpoint internally
+  // and PredMux's own W-witness is literally `NumMergePhis >= 2`
+  // (`PredMuxFlatten.cpp`), so a peel above them MOVES a PredMux verdict;
+  // `lowerControlledIOSinks` (:349) gates on `NumPhis == 0 || ValuePhi`, so a peel
+  // above it manufactures NEW 7.6 I/O accepts nothing has measured (and retires
+  // the containment-gate argument that its verdict is already final); and
+  // `lowerLoops` (:365) is the eight-findings-over-six-rounds neighbourhood the
+  // peel's own P9 refuses to widen into. Keeping the slot and re-asking the
+  // guards costs one pure-analysis re-scan and removes the premise instead of
+  // relocating it. See `FIX_b6ap_R1.md` for the per-stage table.
+  {
+    SmallPtrSet<Value *, 32> PeelDelta;
+    peelIndependentMergePhis(M, taint, &PeelDelta);
+    adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
+  }
+
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
 
@@ -721,8 +800,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
   // bd iw81.1: fold same-width int<->int bitcast identity, mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
-  // fold-before-any-analysis rationale.
-  foldIdentityBitcasts(M, taint);
+  // fold-before-any-analysis rationale (and see it for why `Scrub` is null here).
+  foldIdentityBitcasts(M, taint, /*Scrub=*/nullptr);
 
   // bd 3c6m.14 Inc 3 — volatile-const global-load fold, mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
@@ -846,6 +925,20 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // run in this entry point too, between detection and `lowerRotations`, or
   // unit-level callers silently diverge from `run()` (the twin-pipeline trap,
   // IMPLEMENTATION §6.5).
+  // bd test_C_libtooling-b6ap — the MULTI-PHI MERGE PEEL mirrored in this entry
+  // point too (twin-pipeline parity is MANDATORY, WI-1.12). See run() for the
+  // slot rationale (after the PredMux fixpoint, immediately before
+  // `detectControlRegions`) and for why it is called before EVERY
+  // `detectControlRegions` in the tree — AND for why the peel's taint delta must
+  // be adjudicated (bd b6ap F-B6-1). Twin-pipeline parity applies to the
+  // adjudication exactly as it does to the peel: dropping it here would make this
+  // entry point the one that ships the F-B6-1 miscompile.
+  {
+    SmallPtrSet<Value *, 32> PeelDelta;
+    peelIndependentMergePhis(M, taint, &PeelDelta);
+    adjudicateTaintDelta(M, wd, taint, plan6, PeelDelta);
+  }
+
   ControlPlan plan = detectControlRegions(M, wd, taint);
   lowerControlRegions(M, wd, taint, plan);
   // Issue dugh (Phase 4×6): the SECOND propagation round mirrored in this entry

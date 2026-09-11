@@ -25,11 +25,22 @@
 namespace llvm {
 class Function;
 class Module;
+class Type;
 }  // namespace llvm
 
 namespace cq {
 
 struct TaintSet;
+
+// E7 — a type the select substrate can mux: integer <= 64 bits or the scalar fp
+// widths of the kjd1 controlled-copy family. Mirrors the `copyControlledFn` /
+// `copyControlledFpFn` envelopes, so a claimed region cannot half-lower.
+//
+// DECLARED HERE since bd `test_C_libtooling-b6ap` so the MULTI-PHI MERGE PEEL
+// (`MergePhiPeel.cpp`, P5) asks the SAME predicate PredMux's own W5/W7 witnesses
+// ask, rather than growing a second spelling of "a type the 4.4/kjd1 merge can
+// copy" (Rule 14). Pure; mutates nothing. Defined in PredMuxFlatten.cpp.
+bool isMuxableType(llvm::Type *Ty);
 
 // Flattens AT MOST ONE eligible region per call (so every claim sees fresh
 // dominance/taint state) and returns true iff it mutated the module. Drive to

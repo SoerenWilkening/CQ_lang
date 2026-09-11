@@ -1,0 +1,47 @@
+c4_baseline_int_onephi | ACCEPT | ACCEPT
+p00_owner_bool | cq controlled lowering: control flow under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+p01_owner_intb1 | cq controlled lowering: control flow under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+p09_owner_int | cq controlled lowering: control flow under quantum control | ACCEPT
+p20_peel_bool_sel_first | cq controlled lowering: control flow under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+p21_peel_bool_sel_after | cq controlled lowering: control flow under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+p22_peel_int_sel_first | cq controlled lowering: control flow under quantum control | ACCEPT
+p23_peel_int_sel_after | cq controlled lowering: control flow under quantum control | ACCEPT
+p30_chain_2phi | ACCEPT | ACCEPT
+p31_three_phi | cq controlled lowering: control flow under quantum control | ACCEPT
+p40_owner_sdagger | cq controlled lowering: control flow under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+p50_fp_extra_phi | cq controlled lowering: control flow under quantum control | ACCEPT
+p60_phase_arm | cq controlled lowering: control flow under quantum control | cq controlled lowering: control flow under quantum control
+p70_call_arm | ACCEPT | ACCEPT
+p71_call_arm_opaque | cq controlled lowering: control flow under quantum control | ACCEPT
+p80_round2_out_cond | cq controlled lowering: control flow under quantum control | ACCEPT
+p81_round2_onephi | ACCEPT | ACCEPT
+p85_v8int | cq controlled lowering: control flow under quantum control | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+p86_two_armdefined | cq controlled lowering: control flow under quantum control | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+p87_fp_mux | cq controlled lowering: control flow under quantum control | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+p88_two_preps | cq controlled lowering: control flow under quantum control | cq controlled lowering: control flow under quantum control
+p89_fp_control | ACCEPT | ACCEPT
+p90_qq_mux | cq controlled lowering: control flow under quantum control | ACCEPT
+w01_slice_int_src | cq controlled lowering: control flow under quantum control | ACCEPT
+w02_slice_phase_bool_src | cq controlled lowering: control flow under quantum control | ACCEPT
+h01a_peel_merge | cq controlled lowering: bare i1 register condition under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+h01b_peel_pred | cq controlled lowering: bare i1 register condition under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+h09a_peel_merge_cmp | cq controlled lowering: condition data use neither escaped nor measured under quantum control | cq controlled lowering: condition data use neither escaped nor measured under quantum control
+h09b_peel_pred_cmp | cq controlled lowering: condition data use neither escaped nor measured under quantum control | cq controlled lowering: condition data use neither escaped nor measured under quantum control
+h09c_peel_owncmp | ACCEPT | ACCEPT
+h09d_peel_owncmp_pred | ACCEPT | ACCEPT
+h30_both_armdefined | ACCEPT | ACCEPT
+h30b_armdefined_speculatable | cq controlled lowering: control flow under quantum control | cq controlled lowering: control flow under quantum control
+h31_threephi_peeled | ACCEPT | ACCEPT
+h60_phase_peeled | ACCEPT | ACCEPT
+h61_bool_phase_peeled | ACCEPT | ACCEPT
+h71_call_arm_peeled | ACCEPT | ACCEPT
+h80_round2_peeled | ACCEPT | ACCEPT
+h85_v8int_peeled | cq controlled lowering: condition predates a non-diagonal gate under quantum control | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+h87_fp_peeled | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+h87b_fp_peeled_seed7 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+h87c_fp_phase_peeled | ACCEPT | ACCEPT
+h87d_fp_constarms | ACCEPT | ACCEPT
+h87e_fp_otherlit | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+h87f_nosel | ACCEPT | ACCEPT
+h8v8_rotcond_peeled | cq controlled lowering: bare i1 register condition under quantum control | cq controlled lowering: bare i1 register condition under quantum control
+h90_qq_peeled | ACCEPT | ACCEPT
