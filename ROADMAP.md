@@ -96,6 +96,29 @@ phase, not in advance.
    > ROUND-2 TAINT WINDOW (a fence asked at round-1 taint, `Chained` decided at final taint) —
    > fixed by recording every emitted rail read and re-verifying after the fixpoint
    > (`reverifyRailCondReads`); the compare select's copy of it is bd `9pum`. PRD §14 / E15.**
+   > **SESSION 2026-09-11 — FOUR MORE LANDINGS, and the owner's
+   > `example/grover/grover_oracle_uncompute.c` COMPILES AS WRITTEN (`_Bool b0`, `_Bool b1`,
+   > no `int` workaround, no new `cq_*`): exit 0, empty stderr, 19 trace lines, STRICT stage
+   > 2b clean. (1) **A.1 compare-select FENCE PARITY** `7203d1c` (bd `9pum`+`r10v`+`r903`(b)):
+   > rungs (ii)/(iii) for COMPARE leaves; `TaintSet::CmpCondReads` at the 11 forward
+   > `lowerCompareToFlag` mint sites + `reverifyCmpCondReads` after the round-2 fixpoint in
+   > both entry points; THREE plain-C silent miscompiles on `main` now decline, plus the
+   > pre-existing 7.6/7.5 flag-mint hole (bd `61k6`). Round 1 BLOCK — a boolean over a
+   > return-first walker; the fix is a gate SET difference with a `WireRuled` bit. (2) **b6ap
+   > the MULTI-PHI MERGE PEEL** `3a3a2b9` (`ir-pass/src/MergePhiPeel.cpp`): a diamond whose
+   > merge carries phis the region does not define — `-O1`'s FUSION of consecutive regions
+   > with equivalent conditions — is normalised to selects before every
+   > `detectControlRegions`. Round 1 BLOCK — the peel GROWS TAINT after the consumer guards
+   > ran, a THIRD species of "a stage that runs once"; fixed by `adjudicateTaintDelta`.
+   > (3) **F2 narrowed by the condition's own wire** `a9cc062` (bd `drbq.14`, owner ruling
+   > reversing "the `i1` state-prep width is OUT"): 19 flip / 21 stay; exclude at the TEST,
+   > never at the anchor. (4) **l4x4.b — the in-place controlled-Ry ARM and the controlled
+   > STATE PREP on a bare `_Bool`, incl. the NEGATED condition** `e96f89c`:
+   > `cqrt_ry_<W>_controlled(h_b, h, θ)` with the user REGISTER as the control, no
+   > mint/strip/free; **negation by Ry ADDITIVITY (`ry(h,θ); ry_controlled(h_b,h,−θ)`), never
+   > a `cqrt_x` on a user register**; the control register LEFT ALLOCATED, never freed. Open
+   > under it: l4x4.a (the Ry-stem angle select on a `bool`) and bd `wx8g` = l4x4.c (the
+   > in-loop form, which compiles in NO spelling on any binary today). PRD §15.**
    > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
    > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
    > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),
@@ -368,7 +391,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is FULLY RETIRED** — phase arms 2026-09-05, value arms 2026-09-06, both LANDED on `main` 2026-09-06]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is FULLY RETIRED** — phase arms 2026-09-05, value arms 2026-09-06, both LANDED on `main` 2026-09-06; **the BARE `_Bool` CONDITION campaign landed 2026-09-10/11: Inc 1b `b00fdc2`, 1b-B.1 `d33a34a`, then A.1 `7203d1c` + b6ap `3a3a2b9` + F2 `a9cc062` + l4x4.b `e96f89c`, on which the owner's `grover_oracle_uncompute.c` COMPILES AS WRITTEN**]
 
 > ⚠ **STATUS, 2026-09-05; LANDED on `main` 2026-09-06 — READ THIS BEFORE THE
 > INCREMENT LIST BELOW (bd

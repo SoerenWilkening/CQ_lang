@@ -1,5 +1,16 @@
 # `review_a1_r2_probes` — Rule-13 ROUND-2 probes for Track A.1 (reviewing the round-1 FIX)
 
+> ⚠ **ERRATA 2026-09-11 — THREE ROWS BELOW ARE STALE AND READ AS IF A MISCOMPILE STILL SHIPS.**
+> This file was written against the pre-round-2-fix checkpoint `b439944`. On the LANDED commit
+> `7203d1c` the three `ACCEPT ✘` rows **`io3.c`, `gs1.c` and `multi/io3m.c` are DECLINE**
+> (`condition predates a non-diagonal gate`) — F-A1R2-1 is CLOSED by the round-2 narrowing of the
+> `Covered` exemption to a per-entry `WireRuled` bit, and the pre-existing 7.6 I/O-sink / 7.5
+> guarded-Shadow-store flag-mint hole it names is filed and CLOSED as bd `test_C_libtooling-61k6`.
+> Every other row in this file is unmoved, including the discriminators that make those three
+> readable (`io5` already DECLINE, `io0`/`gs0` accept controls, `io4` DECLINE on both, the seven
+> `c_*` consumers). See `../FIX_A1_R2.md` for the fix and `../../session-f2-i1/MERGE_f2_1.md` §4.5
+> for the independent re-measurement of exactly these three rows on the merged tree.
+
 `./run.sh` re-derives every verdict table in `../review_a1_r2.md` on BOTH binaries.
 It compiles into `mktemp -d` only and writes nothing here.
 

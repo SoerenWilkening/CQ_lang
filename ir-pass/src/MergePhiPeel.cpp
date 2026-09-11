@@ -458,6 +458,15 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
       // ran, then the mux was read) and keeps the peeled compare OUT of the
       // live-on-the-edge set `f2SeedPinnedByLiveRegister`'s backward half walks,
       // which is a gratuitous new interaction with the drbq state-prep fence.
+      // ⚠ 2026-09-11 ERRATA (inc1-records/session-2026-09-11-orchestrator/
+      // review_integration.md item I-1): that last clause is FALSE — the
+      // interaction EXISTS and is MEASURED (`HP_g_sel_only.ll`: the clone alone,
+      // merge-placed, no select, turns an ACCEPT into F2's `state prep seed is
+      // proven equal to the condition register`). It is not reached through the
+      // backward half (the clone is defined after the branch, so the LVI
+      // dominance filter excludes it); which door it takes was not isolated.
+      // Filed as bd `rb9x` — direction SAFE (F2 only ever ADDS colliders, so
+      // this is purely an over-decline). Comment-only; no behaviour here.
       Instruction *IP = S.MergeBB->getFirstNonPHI();
       for (PHINode *Phi : S.Phis) {
         Value *CondV = S.BI->getCondition();

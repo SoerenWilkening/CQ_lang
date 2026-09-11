@@ -1,0 +1,10 @@
+#include "CQ.h"
+int main(void) {
+    bool b1 = cq_theta((bool)0, 0.2);
+    int m = cq_measure(b1);
+    int a = 5; bool b0 = 0;
+    if (a >= 3){ b0 = cq_theta(b0, 0.5); }
+    if (b0 == 1) a -= 3;
+    if (a >= 3){ b1 = cq_theta(b1, 0.5); }
+    return m + cq_measure(b0)+cq_measure(b1)+cq_measure(a);
+}

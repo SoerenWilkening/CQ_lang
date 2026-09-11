@@ -1,0 +1,276 @@
+\labsessionheader{2026-09-11}{Four landings --- the owner's file compiles as written}%
+  {e96f89c}{01NHxGVinGBKbb499HFCuwhT}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/LANDING\_PLAN.md}
+
+\subsection*{Goal}
+Entry 003 closed with the owner's \fpath{example/grover/grover_oracle_uncompute.c} still declining, and
+with three pre-existing holes in the \emph{compare}-conditioned twin of the increment it had just shipped
+(\bd{r10v}, \bd{9pum}, \bd{3d8q}). The owner ruled on all of it at the start of this session, and the
+session then ran \textbf{four increments in parallel worktrees} and landed them one after another on
+\texttt{main}, each merged with everything already landed, re-gated and re-measured before its squash.
+The measurable goal was one sentence: the owner's file, \emph{as written} --- \texttt{bool}, no
+\texttt{int} workaround, no new \texttt{cq\_*} function --- compiles. It does.
+
+\subsection*{The owner's rulings}
+\begin{itemize}
+  \item \textbf{Expressiveness first.} The declines the owner's own program hits are built before further
+    fence work, and the pre-existing compare-path holes are fixed rather than deferred.
+  \item \textbf{Option 1} on the three compare-select holes: the parity fences first, the widenings after
+    (the A.2 list is named in the Track A.1 commit: S\(^\dagger\) after a compare select via the DT prong,
+    the P1 \texttt{SawValueArm} retirement, \texttt{AllowLogicalSelect} for data selects).
+  \item \textbf{H-3 = admit} --- entry 003's open question (\fpath{session-r9e5/SCOPE_B2.md} H-3: an
+    \(R_y\) on the register \emph{after} a value region declines at P1 while the 6.5 arm has no P1
+    wrapper at all). The asymmetry is to be closed by admitting, once, in one place; it is scoped into
+    A.2 and is not yet built.
+  \item \textbf{The \texttt{i1} state-prep decline is reversed}, verbatim (recorded in
+    \fpath{session-f2-i1/BRIEF_f2.md} and \fpath{IMPL_f2.md}): \emph{``WE DO NOT WANT TO WRITE
+    \texttt{int b1}. also WE DO NOT WANT ANOTHER cq function. it should just be an application of gates
+    \ldots{} I dont see the need for the over-decline.''} This reverses a ruling from \bd{drbq} Inc 4
+    (``the \texttt{i1} state-prep width is OUT'') that had cost the owner's file its second wall. The
+    trade was put plainly before the work started and accepted: a \emph{folded} self-controlled rotation
+    written by mistake now compiles as a state prep instead of declining.
+\end{itemize}
+
+\subsection*{What landed, in landing order}
+\begin{itemize}
+  \item \commit{7203d1c} --- \bd{9pum} + \bd{r10v} + \bd{r903}(b), Track A.1, \emph{compare-select fence
+    parity}. The rail ladder entries 002/003 built for \texttt{bool} conditions had no counterpart on the
+    \texttt{int}/compare path: rung~(ii) (``condition measured before the control route'') did not exist
+    there at all, and rung~(iii) (the round-2 taint window) was asked once. Both now exist for compare
+    leaves at the 4.4 select and at the branch, over the operand's \emph{wire}, with the round-2
+    re-verification recorded at all 11 forward flag-mint sites and re-asked after the taint fixpoint in
+    both entry points. Three plain-C silent miscompiles that accept on \texttt{main} now decline, plus a
+    fourth class found by its own review. Rounds: \textbf{BLOCK} \(\to\) fixed \(\to\)
+    \textbf{CLEAR-WITH-ITEMS} \(\to\) items applied.
+  \item \commit{3a3a2b9} --- \bd{b6ap}, the \emph{multi-phi merge peel}. \texttt{clang -O1} \emph{fuses}
+    consecutive source regions whose conditions it can prove equivalent --- the owner's
+    \texttt{if (b0==1) a-=3; if (a>=3) b1=cq\_theta(b1,.5);} becomes ONE diamond on \(\lnot\)\texttt{b0}
+    carrying \emph{two} merge phis, a data mux beside a state-prep merge --- and that shape declined
+    \texttt{control flow}. A new normalisation (\fpath{ir-pass/src/MergePhiPeel.cpp}) turns every merge
+    phi whose incomings are available at the pred into a \texttt{select} with its own compare clone, run
+    immediately before every detection pass. Bool-independent; the peeled select lowers through the
+    cleared 4.4 merge. Rounds: \textbf{BLOCK} \(\to\) fixed \(\to\) \textbf{CLEAR-WITH-ITEMS}.
+  \item \commit{a9cc062} --- \bd{drbq.14}, Track C, the \emph{F2 narrowing}. One conjunct at the equality
+    test: a value pinned on the \emph{condition's own wire closure} is not a collider. That is the whole
+    change (\(+9/-17\) non-comment lines, the now-dead literal fast path deleted and measured subsumed).
+    19 state-prep fixtures flip to accept with their IR byte-unchanged; the 21 non-wire colliders --- the
+    six forward-closure programs, the sideways rewrites, the casts, the curated intrinsics, the derived
+    fp --- all stay declining, and every \emph{unfolded} self-controlled spelling still declines
+    (measured 32/32). One round, \textbf{CLEAR-WITH-ITEMS}.
+  \item \commit{e96f89c} --- \bd{l4x4}.b, the \emph{in-place controlled \(R_y\) arm and state prep on a
+    bare \texttt{\_Bool}}, including the negated condition. The register is the control:
+    \texttt{cqrt\_ry\_<W>\_controlled(h\_b, h, \(\theta\))} with no mint, no strip and no free, and the
+    negated arm is \texttt{ry(h, \(\theta\)); ry\_controlled(h\_b, h, \(-\theta\))} by \(R_y\) additivity
+    (an exact IEEE sign flip) --- \emph{never} a \texttt{cqrt\_x} on a user register, the invariant entry
+    002 established. The control register is left allocated and never freed (\(R_y(\theta)|0\rangle \neq
+    |0\rangle\); a free would be a hidden measurement). One round, \textbf{CLEAR-WITH-ITEMS}.
+\end{itemize}
+
+\subsection*{The measurement: the owner's file, as written}
+\texttt{bool b0}, \texttt{bool b1}, no edits, \texttt{clang -O1} plus the landed \texttt{cq-opt}:
+\texttt{opt} exit 0, \textbf{zero bytes of stderr}, strict stage 2b \texttt{1 verified, 0 violation(s),
+0 unproven}, links and runs, \textbf{19 trace lines}. The stream is reproduced verbatim from
+\fpath{session-l4x4/MERGE_l4x4_1.md} \S4, against which \fpath{MERGE_l4x4_2.md} \S4 re-measured it
+byte-identically after the final merge.
+
+\begin{table}[h]\centering\footnotesize
+\begin{tabular}{@{}rll@{}}\toprule
+\multicolumn{2}{@{}l}{Trace (19 lines)} & Source construct, and which track made it lower \\ \midrule
+1 & \texttt{cqrt\_alloc\_i1(0) -> h0}          & \texttt{if (a >= 3) b0 = cq\_theta(b0, 0.5);} --- \texttt{a} is the literal 5, \\
+2 & \texttt{cqrt\_ry\_i1(h0, 0x1p-1)}          & \quad so the guard folds away and the prep is unconditional \\[2pt]
+3 & \texttt{cqrt\_alloc\_i1(0) -> h1}          & \texttt{if (a >= 3) b1 = cq\_theta(b1, 0.5);} --- after the mux this guard \\
+4 & \texttt{cqrt\_ry\_i1(h1, 0x1p-1)}          & \quad is \texttt{b0 == 0}, so \texttt{-O1} FUSES the two source regions; \\
+5 & \texttt{cqrt\_ry\_i1\_controlled(h0, h1, -0x1p-1)} & \quad the arm sits on the false edge \(\Rightarrow\) the negated prep (\bd{l4x4}.b) \\[2pt]
+6 & \texttt{cqrt\_alloc\_i1(0) -> h2}          & \texttt{if (b0 == 1) a -= 3;} --- the second merge phi, PEELED to a \\
+7 & \texttt{cqrt\_cnot(h0, h2)}                & \quad \texttt{select} (\bd{b6ap}) and merged by the 4.4 copy merge over \\
+8 & \texttt{cqrt\_alloc\_i32(0) -> h3}         & \quad the rail-root CNOT copy of entry 003 (\bd{r9e5}): \texttt{h2} is a \\
+9 & \texttt{cqrt\_alloc\_i32(2) -> h4}         & \quad fresh \(|0\rangle\) ancilla holding a basis copy of \texttt{h0}; \\
+10 & \texttt{cqrt\_copy\_i32\_controlled(h2, h4, h3)} & \quad \texttt{h2 = 1} copies 2 into \texttt{h3}, \(\lnot\)\texttt{h2} copies 5; \\
+11 & \texttt{cqrt\_x(h2)}                      & \quad the second \texttt{cqrt\_cnot} returns \texttt{h2} to \(x \oplus x = 0\), \\
+12 & \texttt{cqrt\_alloc\_i32(5) -> h5}        & \quad so the \texttt{cqrt\_free} is a proven-\(|0\rangle\) free (Rule 6, and \\
+13 & \texttt{cqrt\_copy\_i32\_controlled(h2, h5, h3)} & \quad stage 2b says \texttt{1 verified}). The only two \texttt{cqrt\_x} in \\
+14 & \texttt{cqrt\_x(h2)}                      & \quad the whole stream are on that ancilla. \\
+15 & \texttt{cqrt\_cnot(h0, h2)}               & \\
+16 & \texttt{cqrt\_free(h2)}                   & \\[2pt]
+17 & \texttt{cqrt\_measure\_i1(h0) -> 0}       & \texttt{return cq\_measure(b0) + cq\_measure(b1) + cq\_measure(a);} \\
+18 & \texttt{cqrt\_measure\_i1(h1) -> 0}       & \\
+19 & \texttt{cqrt\_measure\_i32(h3) -> 0}      & \\
+\bottomrule\end{tabular}
+\caption{The owner's program, landed \texttt{main} \commit{e96f89c}. \texttt{h0} (the \texttt{\_Bool}
+\texttt{b0}) is read three times as a \emph{control} (5, 7, 15) and measured once (17); it is never
+\texttt{cqrt\_x}-bracketed and never freed. The emitted order puts the \texttt{b1} prep before the
+\texttt{a} mux where the source has them the other way round: the two blocks are both block-diagonal in
+\texttt{h0}'s basis and act on disjoint targets, so they commute exactly --- the argument is written out
+in \fpath{MERGE_l4x4_1.md} \S4, and it is structural rather than a choice, because \texttt{-O1} fused the
+regions and left no source order between them.}
+\end{table}
+
+The three sibling spellings, measured on the same binary: \texttt{bool b0 / int b1} also compiles (19
+lines); \texttt{int b0 / int b1} compiles (22 lines, byte-identical to \bd{b6ap}'s committed golden);
+\texttt{int b0 / bool b1} stops at F2 with \texttt{state prep seed is proven equal to the condition
+register}, byte-identically to \texttt{main} --- the \texttt{i1}-width residual of \bd{drbq} Inc 4, which
+F2's narrowing cannot reach by construction (there the condition is a \emph{compare}, so its flag is not
+on the condition wire). Filed as \bd{rb9x}.
+
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth, height=4.3cm, ybar, bar width=10pt, ymin=1700, ymax=1960,
+  enlarge x limits=0.16, xtick=data, xticklabels={base,A.1,b6ap,F2,l4x4.b},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize lit fixtures}, grid=major, grid style={cqgray!20},
+  nodes near coords, nodes near coords style={font=\tiny, color=cqgray},
+  title={\footnotesize \texttt{ir-pass/test/*.ll}}]
+  \addplot[draw=cqblue, fill=cqblue!25] table[x=idx, y=fixtures, col sep=space] {figures/004/session_landings.dat};
+\end{axis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth, height=4.3cm, ybar, bar width=10pt, ymin=320, ymax=372,
+  enlarge x limits=0.16, xtick=data, xticklabels={base,A.1,b6ap,F2,l4x4.b},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize e2e goldens}, grid=major, grid style={cqgray!20},
+  nodes near coords, nodes near coords style={font=\tiny, color=cqgray},
+  title={\footnotesize \texttt{tests/e2e/*.expected.log}}]
+  \addplot[draw=cqgreen, fill=cqgreen!25] table[x=idx, y=goldens, col sep=space] {figures/004/session_landings.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{The session's four landings, measured at each commit with \texttt{git ls-tree} by
+\fpath{tools/labreport/figures/session_landings.py} (data: \fpath{figures/004/session_landings.dat};
+base \commit{0c7380c}, then \commit{7203d1c}, \commit{3a3a2b9}, \commit{a9cc062}, \commit{e96f89c}).
+The same file records the \texttt{add\_test} count, which steps \(377 \to 393\).}
+\label{fig:004:landings}
+\end{figure}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ Track A.1, round 1 (verdict \textbf{BLOCK}). The new round-2 re-verification
+    suppressed its own obligation whenever any gate was visible to the taint-blind walk, which re-opened
+    \bd{9pum} for every consumer whose round-1 wire question is the branch's: two translation units of
+    plain C, \emph{one line} from the increment's own decline fixture, at \texttt{opt} exit 0,
+    verify-clean and stage-2b clean, emitting a stream byte-identical to the oracle's. Fixed as a
+    gate-\emph{set} difference over an enumerating walker instead of a boolean, with a per-entry
+    exemption bit; round 2 confirmed the blocker closed and found no way to re-open it.
+  \item \fpreexisting\ Track A.1, round 2 (\textbf{CLEAR-WITH-ITEMS}). That exemption bit was granted on
+    the ground ``the classifier already ruled on this gate'' --- which is false for two consumers that
+    have no wire clause at all: the 7.6 controlled I/O sink and the 7.5 guarded Shadow store mint their
+    control flag from a register a sibling in-place \(R_y\) has already relabelled. Two more plain-C
+    silent miscompiles, pre-existing on \texttt{main}. Filed and then \emph{closed} in the same round's
+    fix by narrowing the exemption (\bd{61k6}).
+  \item \fconfirmed\ \bd{b6ap}, round 1 (verdict \textbf{BLOCK}), and it is the session's standing lesson.
+    The peel manufactures a \emph{tainted} \texttt{select} roughly 90 lines after the three stages that
+    adjudicate consumers of tainted values have run --- specialisation, the taint-escape net and the
+    stale-record guard. Five measured consumer classes let a quantum rail \emph{handle} escape into
+    classical code from plain C, exit 0 and stage-2b clean. This is the third species of the standing
+    ``a stage that runs ONCE has a round-2-false premise'' family (entry 003 recorded the second, a
+    predicate); the first two were about a premise going stale, this one is about \emph{growing the taint
+    set} after its adjudicators are done. Fixed by re-running the same guard sequence the existing
+    round-2 re-propagation already uses, at both round-1 sites. Recorded as bd memory
+    \texttt{taint-growth-after-consumer-guards-b6ap}.
+  \item \fconfirmed\ \bd{b6ap}, found by the implementer before hand-off: the first spelling left the
+    peeled \texttt{select} classical, on the assumption that taint follows the phi. It does not.
+  \item \foverdecline\ \bd{b6ap}, round 2 (\textbf{CLEAR-WITH-ITEMS}): a \emph{fifth} taint-consuming
+    stage sits before the peel (same-width integer bitcast folding) and was not in the four re-asked
+    calls, so a bitcast made tainted only by the peel is left standing and dies at a later decline
+    (hand-IR only, decline-only). Added as the fifth call; the round's 15-row stage table then reports no
+    remaining hole, and a phi-consumer audit over 1814 fixtures and 501 probes reports none dangling.
+  \item \fconfirmed\ \bd{l4x4}.b, round 1 (\textbf{CLEAR-WITH-ITEMS}, fixed before landing): the negated
+    arm's \(R_y\)-additivity cancellation is exact for every \emph{finite} angle and is not the identity
+    for a non-finite one --- \texttt{if (!b) r = cq\_theta(r, \_\_builtin\_inf());} emitted
+    \(R_y(+\infty)\) unconditionally and \(R_y(-\infty)\) controlled, which is not the source's unitary on
+    the untaken branch. Plain C, exit 0, stage-2b clean. Fenced by the angle-select family's own
+    non-finite helper, with \(-\infty\) and the negated \emph{prep} added as members.
+  \item \foverdecline\ \bd{l4x4}.b, round 1, graded \emph{total} by the reviewer and filed as \bd{wx8g}:
+    the in-loop form of this arm is carved out, and the compare spelling cannot express it either
+    (LICM hoists the invariant compare), so Grover as a \emph{rolled} loop with a \texttt{bool}-controlled
+    rotation or prep compiles in no spelling on any binary.
+  \item \foverdecline\ \bd{l4x4}.b, round 1: a 6.5 classical-call-arm region immediately followed by a
+    flat region declines \texttt{control flow}, because the region-ordering graph admits only two region
+    kinds. Pre-existing on \texttt{main}, measured with the \texttt{int} twin; filed as \bd{35t0}.
+  \item \fpreexisting\ Found in passing while scoping (read-only, \texttt{main} \commit{0c7380c}): the 4.5
+    \texttt{switch} mints its equality flags from a \emph{measured} scrutinee. Filed as \bd{lo7u}. The
+    same scoping pass recorded a fence-level over-accept for a NOT-carrying rail leaf as \emph{argued},
+    not confirmed --- it is caught one stage later, and it is exactly the third retirement trigger the
+    predicate's own header already writes down.
+\end{itemize}
+
+\subsection*{Measurements}
+Measured in \fpath{/Users/sorenwilkening/Desktop/CQ_l4x4}, whose tree is byte-identical to the landed
+\texttt{main} in \fpath{ir-pass}, \fpath{include}, \fpath{runtime}, \fpath{tests} and \fpath{tools}
+(\measured{git diff e96f89c HEAD --stat -- ir-pass include runtime tests tools} is empty); the primary
+checkout's \fpath{build/} was deliberately left frozen at the session's base commit as the A/B oracle.
+
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+lit fixtures & 1893 & \measured{ls ir-pass/test/*.ll | wc -l} (was 1776) \\
+ctest entries & 403 & \measured{ctest --test-dir build -N | tail -1} (was 387) \\
+e2e entries / slices & 393 / 353 & \measured{ctest -N -R '\string^e2e-' ; -R '\string^e2e-slice-'} (was 377 / 339) \\
+twin-identical gates & 30 & \measured{ctest -N -R twin-identical} (was 28) \\
+goldens & 355 & \measured{ls tests/e2e/*.expected.log | wc -l} (was 341) \\
+probe and review programs & 853 & \measured{find session-\{9pum,b6ap,f2-i1,l4x4,boi6,r903\} -name '*.c' -o -name '*.ll'} \\
+final merge audit & 778 rows & 89 movers, \emph{every} one \texttt{bare i1 register condition} on \texttt{main}; \\
+ & & 0 accept\(\to\)decline, 0 same-verdict-changed-circuit \\
+owner's file & 19 lines & \measured{tools/free\_pairing\_check.py}: 1 verified, 0 violations, 0 unproven \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Each track ran the full \texttt{ctest -j6} on its own merged tree before its squash; the figures below are
+the last of them, on the tree that became \commit{e96f89c}. Full suite: \textbf{403/403 passed}, 399.7\,s
+(\measured{ctest --test-dir build -j6}). Lit corpus: 1892 passed + 1 expected failure of 1893
+(\measured{lit -s ir-pass/test}) --- the standing Phase-7 XFAIL, 0 unexpected. e2e layer alone: 393/393
+with \fpath{git status --porcelain tests/} empty (zero golden churn). \texttt{cq-opt} vs stock
+\texttt{opt}, full sweep: 1893 fixtures, 0 mismatches
+(\measured{cmake --build build --target cq-opt-equivalence-full}). Corpus diffs against the pre-session
+binary, per track over the fixtures common to both trees: 0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF for A.1 and
+\bd{b6ap}; 19 RCDIFF for F2, every one a \texttt{DECLINE}\(\to\)\texttt{ACCEPT} on the one string it
+narrows, with 0 DIAGDIFF and 0 OUTDIFF. All 61 accepting movers of the final merge were re-lowered and put
+through strict stage 2b: 61 checked, 61 clean. Not run: no simulator exists (Rule 2); the two twin-matrix
+\emph{instruments} were not re-run (they are not gates --- \texttt{e2e-loop-twin-matrix}, which is, ran
+green inside both \texttt{-j6} runs).
+
+The integration review (record \texttt{review\_integration.md}, 99 probes) returned \textsc{clear-with-items}: no confirmed miscompile in the combination; the 19-line stream re-derived from the state vector; 770 corpus rows with 0 both-accept circuit changes; four items, all filed (the peeled compare clone as an F2 collider, bd \texttt{rb9x}, corrected; two pre-existing notes; one policy over-decline).
+An independent Rule-13 review of the four tracks \emph{as one binary} was commissioned at session close
+(\fpath{session-2026-09-11-orchestrator/REVIEW_BRIEF_INTEGRATION.md}). Nobody had reviewed the
+combination: the owner's file compiles only because the peel hands a rail-conditioned negated state prep
+to a classifier whose seed fence no longer collides on the rail, under fences a fourth track added.
+
+\subsection*{Process lessons}
+\begin{itemize}
+  \item \fdoc\ \textbf{Never relink under a running measurement, and never \texttt{pkill} by an unverified
+    pattern.} Two long measurements died or went red for the same self-inflicted reason: rebuilding
+    \texttt{cq-opt} makes the binary briefly not exist, and anything holding a path to it fails with
+    \texttt{FileNotFoundError} --- a red that reads exactly like an equivalence regression and is not one.
+    Separately, a cleanup \texttt{pkill} matched the twin matrix's own temp-dir prefix and SIGKILLed
+    children of the \emph{clean} run, and an earlier \texttt{pkill} matched nothing at all because the
+    real command line is spelled differently, so a run believed dead competed for CPU for another half
+    hour. The fix is mechanical: freeze a copy of the binary for any long sweep, build nothing while a
+    suite runs, and verify a kill. bd memory \texttt{never-relink-or-pkill-under-measurement}.
+  \item \fdoc\ \textbf{A merge can resurrect a fixture a branch renamed.} Track C committed a decline
+    fixture with a written retirement note; Track D had already \texttt{git mv}'d and re-derived it as the
+    accept that note predicted. The merge produced one module under two names with contradictory verdicts
+    and turned lit red --- which is the merge working. The resurrected copy was deleted, with the
+    disposition written into the surviving twin's header so the deletion is not silent, and a whole-corpus
+    duplicate-body scan confirmed it was the only merge artefact. bd memory
+    \texttt{merge-resurrects-git-mv-fixture}.
+  \item \fdoc\ \textbf{Parallel tracks pay for themselves only if every merge re-runs every corpus.} Seven
+    source conflicts in the last merge alone, each resolved by reading both sides and recorded with its
+    reason, and 778 probe rows re-measured on three binaries afterwards --- which found two things no
+    single track could have (the resurrected fixture, and one spelling of the owner's file changing
+    disposition across tracks).
+\end{itemize}
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{wx8g} (l4x4.c): Grover as a rolled loop with a \texttt{bool}-controlled rotation compiles in
+    no spelling. The reviewer graded the cost total; it is the largest single gap this session leaves.
+  \item \bd{rb9x}: a \texttt{bool} state prep under an \texttt{int} \emph{compare} condition still
+    collides on the compare flag, which is not on the condition wire. The same 2026-09-11 argument reaches
+    it; the fix sketch is in the bead.
+  \item \bd{3d8q} (P1, from entry 002) is still open and is now easier to reach: the peel is a new
+    customer-generator for it. \bd{35t0} and \bd{lo7u} are the session's other two pre-existing finds.
+  \item \bd{54ur} then \bd{fg9k} (the 6.5 arm and the unfolded value diamond on a \texttt{bool}), then the
+    A.2 widenings the owner's option-1 ruling defers, of which H-3 is one. \bd{boi6} and \bd{r903} are
+    \emph{scoped} (read-only, measured, nothing built): \bd{boi6} split in two under measurement, and
+    \bd{r903} shrank in three of five items and grew in one.
+  \item \bd{drbq.14} stays open for the rulings it still carries beyond the one taken here.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.

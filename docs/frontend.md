@@ -125,13 +125,22 @@ table below — this is the canonical suffix-to-type map:
 > `b`), including after it a chained `b = cq_theta(b, −θ)` (the S†); what still declines with
 > `bare i1 register condition` is a `bool` driving an UNFOLDED value diamond (a ≥5-op arm, or
 > hand IR — bd `fg9k`), a classical-call arm (`if (b) y = f(n)` with a `noinline` pure `f` — bd
-> `54ur`), an in-place Ry or state prep (`if (b) r = cq_theta(r, θ)`) or a Ry angle select
-> (follow-ons); a loop-CARRIED `bool` (`for (…) { if (b) …; b =
+> `54ur`) or a Ry angle select (bd `l4x4`.a, follow-ons). ⚠ **DATED 2026-09-11: the IN-PLACE Ry
+> ARM and the STATE PREP LEFT that list** — `if (b) r = cq_theta(r, θ)` and
+> `if (b) r = cq_theta(SEED, θ)`, including the NEGATED spelling `if (!b) …`, LOWER since bd
+> `l4x4`.b (`e96f89c`) as `cqrt_ry_<W>_controlled(h_b, h, θ)` with the register ITSELF as the
+> control (no mint, no strip, no free; negation by Ry additivity `ry(h,θ); ry_controlled(h_b,h,−θ)`,
+> never a `cqrt_x` on a user register; the control register is left allocated, never freed). Their
+> **IN-LOOP** form still declines, with a different string — `control flow inside a loop body`
+> (bd `wx8g`) — and a non-finite constant angle on a negated arm declines `rotation angle`.
+> A loop-CARRIED `bool` (`for (…) { if (b) …; b =
 > cq_theta(b, φ); }`), a NOT inside a tree (`!b && …` where `-O1` keeps the NOT) and a
 > negated level of a nest — `branch phase on a bare i1 condition`. A `bool` measured before
 > its branch, or rotated in place between its definition and its branch while the branch
 > reads the OLD name, declines like a compare would. See
-> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §13.
+> `docs/prd/phase-04-swap-route-control/retire-swap-route-PRD.md` §13, §14 and **§15** (the
+> 2026-09-11 landings, incl. the owner's `example/grover/grover_oracle_uncompute.c` compiling
+> as written on `_Bool b0` / `_Bool b1`).
 
 | `char` | `_c` | distinct from `signed char` per the C standard |
 | `signed char` | `_si8` | |

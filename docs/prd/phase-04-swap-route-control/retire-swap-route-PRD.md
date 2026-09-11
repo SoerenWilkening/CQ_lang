@@ -705,14 +705,39 @@ the unfolded diamond (≥5-op chain, hand IR) and the 6.5 arm are bd `test_C_lib
 `test_C_libtooling-54ur` (`inc1-records/session-r9e5/SCOPE_B2.md`). One CONFIRMED plain-C
 over-accept was found by the orchestrator on the first build and fixed before the independent round
 (F-B1-1, §14.7: the same-block measure-after-select in a loop); its COMPARE twin is PRE-EXISTING on
-`main` (bd `test_C_libtooling-r10v`). 13 accept + 9 decline fixtures, 7 STRICT e2e slices + 1
+`main` (bd `test_C_libtooling-r10v` — ⚠ **CLOSED 2026-09-11 by Track A.1, `7203d1c`; see E16/§15**).
+13 accept + 9 decline fixtures, 7 STRICT e2e slices + 1
 rolled == unrolled `cmp` gate (39 = 39); exactly ONE pre-existing fixture moved (the discriminator
 `control_swap_reject_select_rail_cond.ll`, `git mv`'d to `control_swap_select_rail_const.ll`). **Its Rule-13
 round 2 then BLOCKED on the ROUND-2 TAINT WINDOW (§14.7 F-B1R2-1, a PREDICATE asked at round-1 taint whose
 relation `lowerRotations` decides at final taint — plain C, two TUs, pre-existing for the compare select,
-bd `test_C_libtooling-9pum`) and the fix is `reverifyRailCondReads` (§14.8): every emitted rail read is
+bd `test_C_libtooling-9pum` — ⚠ **CLOSED 2026-09-11 by Track A.1, `7203d1c`, with the same tripwire
+over `CmpCondReads`; see E16/§15**) and the fix is `reverifyRailCondReads` (§14.8): every emitted rail read is
 recorded at four sites (the fourth, the nest's conjunction toffoli, found by the fix itself) and re-verified
 under FINAL taint after the fixpoint, in both entry points, declining loudly.** Round 3 CLEAR-WITH-ITEMS; **LANDED on `main` 2026-09-11 as d33a34a** (squash of `3qlq-inc1b-b-rail-select`, tip fb72f81).
+
+**E16 — FOUR MORE INCREMENTS LANDED 2026-09-11 AND THE OWNER'S FILE COMPILES (§15).** `example/
+grover/grover_oracle_uncompute.c` — `_Bool b0`, `_Bool b1`, no `int` workaround, no new `cq_*`
+function — lowers at `opt` exit 0 with EMPTY stderr, **19 trace lines**, STRICT stage 2b `6 rail
+mint(s) of which 5 left allocated, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven`. It
+had THREE walls in order and each was its own Rule-13-core increment: bd `b6ap` `3a3a2b9` (the
+MULTI-PHI MERGE PEEL, `ir-pass/src/MergePhiPeel.cpp` — `-O1` FUSES the file's two source regions into
+ONE diamond with two merge phis); bd `l4x4`.b `e96f89c` (the in-place controlled-Ry ARM and the
+controlled STATE PREP on a bare `_Bool`, incl. the NEGATED condition, by Ry ADDITIVITY and never a
+`cqrt_x` on a user register); bd `drbq.14` `a9cc062` (F2 narrowed by the condition's own wire, the
+owner ruling that REVERSES "the `i1` state-prep width is OUT"). Beside them, bd `9pum`+`r10v`+`r903`
+(b) `7203d1c` gave the COMPARE consumers the rail ladder's two rungs, closing **three** plain-C
+silent miscompiles on `main` plus the pre-existing 7.6/7.5 flag-mint hole (bd `61k6`). **TWO of the
+four BLOCKED on Rule-13 round 1** (A.1: a wire question asked as a BOOLEAN over a return-first
+walker; b6ap: the peel GROWS TAINT after the consumer guards ran — a THIRD species of "a stage that
+runs ONCE has a round-2-FALSE premise", a TAINT-GROWTH EVENT), and in b6ap the IMPLEMENTER'S OWN
+FIRST SPELLING was a confirmed miscompile (it left the peeled `select` classical on the false belief
+that "taint follows the phi"). E15's two filed follow-ons, `r10v` and `9pum`, are **CLOSED** by A.1;
+bd `3d8q` stays open with a WIDENED population (the peel is a new customer-generator for it). Counts
+on the landed tree, MEASURED: lit **1893**, goldens **355**, ctest **403** / `^e2e-` **393** /
+`^e2e-slice-` **353** / `twin-identical` **30**; full `ctest -j6` 403/403; `cq-opt-equivalence-full`
+1893/0. Records: `inc1-records/session-{9pum,b6ap,f2-i1,l4x4}/` +
+`session-2026-09-11-orchestrator/LANDING_PLAN.md`. §15.
 
 ## 1. Motivation — the shipped Grover goldens are the identity
 
@@ -1553,7 +1578,10 @@ plain-C module) and `..._constarm.ll` (hand IR — `-O1` LICM-hoists a constant-
 loop, where the measures are genuinely downstream and `..._rail_measure_after.ll` accepts). **The
 COMPARE twin of that program accepts on `main`**: the 4.4 compare-select classifier has NO
 measured-before rung at all — PRE-EXISTING, filed as bd `test_C_libtooling-r10v` (P1), not this
-increment's. The lesson is 8h7d.5's once more: the read POINT was parameterised (a widening), and the
+increment's. ⚠ **ERRATA 2026-09-11: `r10v` IS CLOSED.** Track A.1 landed on `main` as `7203d1c` and
+gave rung (ii) to COMPARE leaves at both read points (the select, and the branch terminator), so
+"the 4.4 compare-select classifier has NO measured-before rung at all" is the disposition between
+2026-09-10 and 2026-09-11 and not current. See §15. The lesson is 8h7d.5's once more: the read POINT was parameterised (a widening), and the
 same-block clause was a second predicate over the same closure that was not re-derived with it.
 Record: `inc1-records/session-r9e5/IMPL_B1.md` §8, `probes/m1`–`m4`.
 
@@ -1627,7 +1655,11 @@ programs (26 C, 47 hand IR, 3 two-TU) with 0 accept → decline. Then the "fifth
   (measure) of the same window. **PRE-EXISTING for the COMPARE select**: `e08` (hand IR) and `e13`
   (plain C, two TUs) accept on BOTH binaries with byte-identical modules — `main` b00fdc2 miscompiles
   that class today through the 4.4 compare select; filed as bd `test_C_libtooling-9pum` (P1), not this
-  increment's. Nothing catches it: `declineStaleRecordOps` excludes select-condition compares and by
+  increment's. ⚠ **ERRATA 2026-09-11: `9pum` IS CLOSED.** Track A.1 (`7203d1c`) extended the same
+  tripwire pattern to compare seeds — `TaintSet::CmpCondReads` recorded inside `lowerCompareToFlag`
+  at its 11 forward mint sites, re-asked under FINAL taint by `reverifyCmpCondReads` after the
+  round-2 fixpoint in both entry points — so the "nothing catches it" sentence that follows is
+  HISTORY for the compare select. See §15. Nothing catches it: `declineStaleRecordOps` excludes select-condition compares and by
   its round-2 re-sweep the compare is erased; for the rail the stale consumer is the emitter's own
   `cqrt_cnot`; stage 2b sees perfect pairing; the golden would record a self-consistent stream. It is
   the standing lesson "a stage that runs ONCE has a round-2-FALSE premise" (F-L3-1, F-R1-1) one species
@@ -1724,3 +1756,235 @@ is a property of the host tool's default diagnostic handler, not of the stage (`
 `diagnose`; the `Diagnosed`/`bool` machinery is dead under `opt`); **F-B1R3-3** the re-ask seeds
 `{Rail}` while the classifiers seed a `condProvenance` union — equal for a rail leaf, and the mixed-tree
 gap is bd `9pum`'s half (0 reachable programs found).
+
+---
+
+## 15. Session 2026-09-11 — four landings, and the owner's file compiles
+
+Written by the session docs pass. Records: `inc1-records/session-9pum/`, `session-b6ap/`,
+`session-f2-i1/`, `session-l4x4/`, and `session-2026-09-11-orchestrator/LANDING_PLAN.md` +
+`REVIEW_BRIEF_INTEGRATION.md`. Summary line in §0 **E16**. Every count below is MEASURED by the
+command named beside it, on the landed tree.
+
+### 15.0 The owner's rulings
+
+* **Expressiveness first, and it reframes Rule 17's *development* half — not the Prime Directive's
+  runtime half.** Owner, verbatim: *"our end-goal is to not decline any code that will lead to a
+  valid quantum circuit"*. An over-decline is a **DEFECT to remove**, not a free safety margin. An
+  off-pattern *input* still declines loudly; over-accepting is still the one unforgivable bug.
+* **Option 1** for the compare-select work: **fences first** (A.1), **widenings second** (A.2),
+  **then bd `3d8q` on its own**.
+* **H-3 = ADMIT** — the S† after a VALUE region, which P1 refuses on `SawValueArm` while the 6.5
+  classical-call arm has no P1 wrapper at all. Decide once, in the admit direction. It is an **A.2**
+  widening and is **NOT BUILT**.
+* **The `i1` state-prep decline is REVERSED.** Owner, verbatim (bd `drbq.14`): *"WE DO NOT WANT TO
+  WRITE `int b1`. also WE DO NOT WANT ANOTHER cq function. it should just be an application of gates
+  … I dont see the need for the over-decline."*
+
+### 15.1 The four increments
+
+| # | track | landing | rounds | headline |
+|---|---|---|---|---|
+| 1 | **A.1** compare-select FENCE PARITY (bd `9pum` + `r10v` + `r903` NOTES (b)) | `7203d1c` | r1 **BLOCK** → fixed → r2 CLEAR-WITH-ITEMS → applied | the wire question was a BOOLEAN over a return-first walker; the fix is a gate **SET** difference with a per-entry `WireRuled` bit |
+| 2 | **b6ap** the MULTI-PHI MERGE PEEL | `3a3a2b9` | r1 **BLOCK** → fixed → r2 CLEAR-WITH-ITEMS → applied | the peel **GROWS TAINT** after the consumer guards ran — the THIRD species of "a stage that runs once" |
+| 3 | **F2 / Track C** narrowed by the condition's own wire (bd `drbq.14`) | `a9cc062` | r1 CLEAR-WITH-ITEMS → applied | 19 flip / 21 stay; exclude at the **TEST**, never at the **ANCHOR** |
+| 4 | **l4x4.b** the bare-`_Bool` controlled-Ry ARM + STATE PREP, incl. NEGATED | `e96f89c` | r1 CLEAR-WITH-ITEMS → applied | negation by **Ry ADDITIVITY**, never a `cqrt_x` on a user register; the non-finite negated angle was an over-accept fixed before landing |
+
+**A.1.** Rung (ii) *"condition measured before the control route"* is given to COMPARE leaves at the
+4.4 select (read point = the select) and on the `br`/kickback path (read point = the terminator),
+over the operand's WIRE (`railWireNamesBackward`, now crossing `taint.InPlaceRailOps`); rung (iii) is
+asked at FINAL taint for compare seeds — `TaintSet::CmpCondReads` recorded inside `lowerCompareToFlag`
+at its **11 forward mint sites**, each with an explicit `readKind` (8 inverse sites, none), re-asked
+by `reverifyCmpCondReads` after the round-2 fixpoint in BOTH entry points, declining loudly and never
+falling back silently. Plus a per-activation barrier for iteration-local registers. **Three plain-C
+silent miscompiles on `main` now decline** — `r10v` (a post-measure control in a loop), `9pum` (the
+two-TU round-2 sibling theta) and `r903`(b) (measured-before at the kickback) — **and the round-2
+review found a FOURTH, pre-existing and unfiled**: the 7.6 controlled I/O sink and the 7.5 guarded
+Shadow store mint their flag from a register a sibling in-place Ry already relabelled, exempted by
+`Covered` on the written ground that "the classifier ruled on it" — which is false for them, since
+neither has a classifier wire clause (bd `61k6`, CLOSED by the `WireRuled` narrowing). Corpus diff
+over the 1776 pre-existing fixtures: **0 RCDIFF / 0 DIAGDIFF / 0 OUTDIFF** on the compare path; the
+rail path's iteration-local class (`b1`/`b2`/`r3`/`b3`/`b4`) moves DECLINE→ACCEPT and is pinned. One
+parity over-decline taken (a 7.6 I/O-sink accept moved to decline, the same string the kickback gives
+on `main`) — which is how bd `6uqc`'s M-A CTRL-slot pin was LOST, currently unpinnable, filed.
+
+**b6ap.** `peelIndependentMergePhis` (`ir-pass/src/MergePhiPeel.cpp`) rewrites every merge phi whose
+incomings are all pred-available into a `select` with its OWN compare clone (a rail condition uses the
+rail), run immediately before **EVERY** `detectControlRegions` (3 sites, incl. inside
+`detectAndLowerOnwardControl`'s fixpoint), gated at ≥2 phis (a one-phi merge may be the kickback's
+angle-tail phi), with no in-loop peel, no `undef`, and P10 `armWritesMemory` keeping the guarded-store
+arm declining. It is **bool-INDEPENDENT** (the `int`/compare twin declined byte-identically on
+`main`). The witness is hand-IR pairs byte-identical to the MANUAL peel — **there is no plain-C twin,
+because `-O1` re-phi-ifies it** — which is why this increment's weight is 38 lit fixtures and only 2
+e2e slices. ⚠ The round-1 BLOCK is the finding to carry: making the peeled select tainted
+MANUFACTURES tainted values ~90 lines AFTER `detectSpecializations`, `declineTaintEscapes` and
+`declineStaleRecordOps` have adjudicated consumers of tainted values, so **five plain-C escapes of a
+rail HANDLE to classical code** compiled at exit 0 / verify-clean / 2b-clean. The fix,
+`TaintPropagation::adjudicateTaintDelta`, re-runs **the same guard sequence
+`repropagateControlMerges` already runs for its own taint growth** — the in-tree precedent the peel
+had not followed — with `foldIdentityBitcasts` added as the **fifth** call by round 2 (F-B6R2-1, an
+over-decline, hand-IR only). Round 2 also verified a 15-row stage table at **0 HOLE** and a
+φ-consumer audit at **0 DANGLING** over 1814 fixtures + 501 probes, and it filed F-B6R2-2: the peel is
+a new **customer-generator for bd `3d8q`**.
+
+**F2.** `f2SeedPinnedByLiveRegister` gains ONE conjunct at the equality TEST — a value pinned on
+`CondWire` (built at the caller by CALLING R4's own `railWireClosure` over `condProvenance`, so the
+set is byte-identically R4's `CondRails`) is not a collider — and the now-dead plain-literal fast path
+is DELETED (measured subsumed; 40/40 still decline with both removed). **19 F2 fixtures flip to accept
+with their IR byte-unchanged, 21 non-wire colliders stay.** The trade is stated and accepted: a folded
+self-controlled rotation (`int r=k; if(q==k) r=cq_theta(q,θ)` — byte-identical to the prep after
+`-O1`) now compiles AS THE PREP, while every UNFOLDED self-controlled spelling still declines
+(measured 32/32: 2c **16** / F1 **5** / condition-data-use **5** / `bare i1` **1** / **R4 0** — so
+`2c condition predates a non-diagonal gate` is the LIVE fence and the retirement trigger, not R4).
+Corpus sweep over the 1776 pre-existing fixtures: **RCDIFF 19** (all DECLINE→ACCEPT on the F2 string)
+/ DIAGDIFF 0 / OUTDIFF 0. Full narrative: `control-in-place-PRD.md` §14 ERRATA and the CLAUDE.md
+paragraph.
+
+**l4x4.b.** `classifyArms` admits a rail root for the in-place-rotation and state-prep classes
+(rungs (i)/(ii)/(iii) of §13.3's rail ladder asked at the BRANCH; the five-class re-decline partition
+as ONE lambda at four accept sites; rail-only fences: in-loop → `control flow inside a loop body`
+(the l4x4.c carve-out, bd `wx8g`), >1 arm, and a non-finite constant angle on a negated arm →
+`rotation angle`; `RailLadderProven` set, and the emitter refuses a rail without it).
+`emitInPlaceRotationRegion` takes `Flag = RailCond ? Cond : lowerCompareToFlag(…)` and emits
+`cqrt_ry_<W>_controlled(h_b, h, θ)` **with the user REGISTER as the control — no mint, no strip, no
+free**. ⚠ **NEGATION IS BY Ry ADDITIVITY**: `ry(h, θ); ry_controlled(h_b, h, −θ)`, the `fneg` exact.
+Inc 1b's invariant (nothing non-diagonal on a user register) has no `X·P(θ)·X = e^{iθ}P(−θ)` escape
+for a *non*-diagonal gate, so additivity is the only spelling available — and it is exact for every
+FINITE angle and **not the identity for a non-finite one**, which is round 1's F-1: `if (!b) r =
+cq_theta(r, __builtin_inf())` emitted `ry(+inf)` then `ry_controlled(−inf)` at exit 0, now a loud
+`rotation angle` decline through the angle-select family's own `constantAngleIsNonFinite`, with `−inf`
+and the negated PREP added as members. ⚠ **THE CONTROL REGISTER IS LEFT ALLOCATED, NEVER FREED** —
+`isTerminalHandle` refuses it, and a rail leaf independently carries an uncontrolled `cqrt_ry_i1` that
+`preservesBasisUnderRecord` refuses; `Ry(θ)|0⟩ ≠ |0⟩`, so a free would be a hidden measurement
+(Rule 6). H-1 (a raw `Value *` control in `taint.ControlledRotations`) is fixed STRUCTURALLY
+(`WeakTrackingVH` + control-thetas-first ordering in `lowerRotations` + a loud use-site check) rather
+than by ordering alone — the drbq Inc-1 dangling-key defect verbatim. `markRailCondRead` is called at
+the two new rail reads, so `reverifyRailCondReads` re-asks them at final taint.
+
+### 15.2 The owner's file, measured
+
+`opt` exit 0, stderr EMPTY, stage 2b `6 rail mint(s) of which 5 left allocated, 1 cqrt_free site(s):
+1 verified, 0 violation(s), 0 unproven`, link + run OK. **19 trace lines**:
+
+```
+ 1 cqrt_alloc_i1(0) -> h0          10 cqrt_copy_i32_controlled(h2, h4, h3)
+ 2 cqrt_ry_i1(h0, 0x1p-1)          11 cqrt_x(h2)
+ 3 cqrt_alloc_i1(0) -> h1          12 cqrt_alloc_i32(5) -> h5
+ 4 cqrt_ry_i1(h1, 0x1p-1)          13 cqrt_copy_i32_controlled(h2, h5, h3)
+ 5 cqrt_ry_i1_controlled(h0, h1, -0x1p-1)   14 cqrt_x(h2)
+ 6 cqrt_alloc_i1(0) -> h2          15 cqrt_cnot(h0, h2)
+ 7 cqrt_cnot(h0, h2)               16 cqrt_free(h2)
+ 8 cqrt_alloc_i32(0) -> h3         17 cqrt_measure_i1(h0) -> 0
+ 9 cqrt_alloc_i32(2) -> h4         18 cqrt_measure_i1(h1) -> 0
+                                   19 cqrt_measure_i32(h3) -> 0
+```
+
+Lines 1–2: `if (a >= 3) b0 = cq_theta(b0, 0.5)` — `a` is the literal 5, so the guard folds away and
+the prep is unconditional. Lines 3–5: l4x4.b's NEGATED prep — after the mux `a` is 5 iff `b0 == 0`,
+so `-O1` proves the second guard equivalent to `b0 == 0` and FUSES the two source regions into one
+diamond whose arm is on the FALSE edge; `b0 = 1` ⇒ identity ⇒ `b1 = |0⟩`, `b0 = 0` ⇒ `Ry(0.5)|0⟩`.
+Lines 6–16: b6ap's PEELED `a`-mux, lowered as §14's rail-root CNOT-copy select merge. Lines 17–19:
+the three measures, summed as `(m(b1) + m(b0)) + m(a)`.
+
+⚠ **`h0` IS READ ONLY AS A CONTROL** (lines 5, 7, 15) and measured once (17): never `cqrt_x`-
+bracketed, never freed — §13's invariant and Rule 6's required direction. The two `cqrt_x` are on the
+ancilla `h2`, whose `x ⊕ x = 0` return makes line 16 a proven-`|0⟩` free.
+
+⚠ **The emitted ORDER puts the negated prep BEFORE the peeled mux, swapped relative to SOURCE order,
+and it is the SAME UNITARY exactly** — not an approximation: the prep is
+`U = |0⟩⟨0|_{h0} ⊗ I + |1⟩⟨1|_{h0} ⊗ Ry(−0.5)_{h1}` (plus an unconditional `Ry` on `h1` alone) and the
+mux block touches `h0` only as the CONTROL of a `cqrt_cnot`, so `V = Σ_x |x⟩⟨x|_{h0} ⊗ V_x`; both are
+block-diagonal in `h0`'s computational basis and act on DISJOINT targets (`h1` vs `h2,h3,h4,h5`), so
+`[U, V] = 0`. It is also STRUCTURAL rather than a choice: `-O1` fused the two source regions, so
+there is no source order left in the IR between them.
+
+`bool b0 / int b1` also compiles (19 lines). **`int b0 / bool b1` still stops at F2** — a `bool` prep
+under an `int` COMPARE condition collides on the compare FLAG itself, which is not in `CondWire`
+(bd `rb9x`); the owner's real file passes because its condition is a RAIL.
+
+### 15.3 Counts on the landed tree — MEASURED, per commit
+
+```
+ls ir-pass/test/*.ll | wc -l                      1893
+ls tests/e2e/*.expected.log | wc -l                355
+ctest --test-dir build -N | tail -1                403
+ctest --test-dir build -N -R '^e2e-'               393
+ctest --test-dir build -N -R '^e2e-slice-'         353
+ctest --test-dir build -N -R twin-identical         30
+grep -c '^m_'    tools/loop_twin_matrix.expected.txt     259
+grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt    29
+grep -rn 'markRailCondRead(' ir-pass/src | wc -l           7   (definition + 6 call sites)
+grep -rn 'markCmpCondRead\|recordCondRead' ir-pass/src | wc -l   4   (lines, not sites)
+```
+
+| rev | track | ctest | `^e2e-` | slice | twin | lit | goldens |
+|---|---|---|---|---|---|---|---|
+| `0c7380c` | session base | 387 | 377 | 339 | 28 | 1776 | 341 |
+| `7203d1c` | A.1 | 392 | 382 | 343 | 29 | 1813 | 345 |
+| `3a3a2b9` | b6ap | 394 | 384 | 345 | 29 | 1851 | 347 |
+| `a9cc062` | F2 | 397 | 387 | 348 | 29 | 1859 | 350 |
+| `e96f89c` | l4x4.b | **403** | **393** | **353** | **30** | **1893** | **355** |
+
+(e2e columns from `git show <h>:tests/e2e/CMakeLists.txt | grep '^add_test'`; fixture/golden columns
+from `git ls-tree -r --name-only <h>`. The ctest total is e2e + 10 at all five revisions, which is
+the arithmetic signature of a clean union.) `runtime/`, `tools/opcode_table.yaml` and `include/` are
+UNTOUCHED by all four — **no new frozen symbol** (owner D3). Full `ctest -j6` on the merged tree
+**403/403**; `cq-opt-equivalence-full` **1893/0**.
+
+⚠ **ONE FIXTURE WAS RESURRECTED BY A MERGE AND DELETED IN IT** (`MERGE_l4x4_2.md` §2): F2 landed
+`control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll` under the old name while l4x4.b had
+already `git mv`'d that exact module to `control_inplace_ry_stateprep_rail_i1_seed.ll` and re-derived
+it as the ACCEPT its own retirement note predicted — **character for character**. The merge produced
+one module under two names with contradictory verdicts and `ir-pass-lit` went RED at 1894 discovered
+/ 1 failed. A whole-corpus duplicate-body scan (sha-256 over each fixture's non-comment lines) found
+9 same-IR groups and identified this as the only merge artefact; the other 8 are deliberate
+same-module/different-prefix pairs on `main`.
+
+### 15.4 What is OPEN after this session
+
+**Pre-existing silent miscompiles.** bd `3d8q` (P1, the stale-name hole through `cq_theta` /
+`cq_measure` READERS) — ⚠ **population WIDENED**: the peel is a new customer-generator (two sibling
+chained thetas on ONE peeled mux out-rail, both measured, emit one register; reproduces on the oracle
+with no peel at all). bd `lo7u` (the 4.5 `switch` mints eq-flags from a MEASURED scrutinee —
+`Switch*Emit` goes through `emitEqFlag` with no `CmpInst`, so NEITHER A.1's rung (ii) nor
+`CmpCondReads` covers it: the FOURTH consumer of `r903`(b)'s shape).
+
+**Over-declines.** bd `rb9x` (the `bool` prep under an `int` COMPARE condition, §15.2). bd `wx8g` =
+l4x4.c — ⚠ **its cost is TOTAL**: the in-loop bare-`_Bool` controlled-Ry arm / prep declines
+`control flow inside a loop body`, the COMPARE spelling cannot express it either (row W: LICM hoists
+the invariant compare), so **Grover as a ROLLED loop with a bool-controlled rotation or prep compiles
+in NO spelling on ANY binary today**. bd `35t0` (a 6.5 classical-call-arm region immediately followed
+by a flat region declines `control flow` at the hcrg precedence graph — `reorderable()` admits only
+`BranchRegion`/`PhaseKickback`).
+
+**Filed, not built.** The **A.2 widenings** (no bd id yet — named in the `7203d1c` landing message and
+`session-9pum/BRIEF_A1.md`: the S† after a compare select via the DT prong, the P1 `SawValueArm`
+retirement under a live-chain-rail fence = the H-3 ruling, and `AllowLogicalSelect` for data selects).
+**l4x4.a** (the Ry-stem ANGLE SELECT on a `bool`, ~35–50 lines, the cheapest half of bd `l4x4`).
+bd `54ur` (1b-B.2a, the 6.5 arm on a rail). bd `fg9k` (1b-B.2b, the unfolded value diamond on a
+rail). bd `boi6` (1b-D, the loop-CARRIED `_Bool`). bd `r903` residuals **(1)** the negated rail level
+in the depth-2 nest and **(2)** the NOT-carrying rail leaves — plus its (3), the derived
+`trunc`/`zext` `i1` condition — its NOTES item **(b)** being the half A.1 closed.
+
+**Test debt.** bd `6uqc`'s M-A CTRL-slot pin is LOST and currently unpinnable (A.1's one parity
+over-decline took its only pin). bd `f8eu` — **57 missed mutations over 17 fixtures** of pre-existing
+injection-matrix debt in the drbq Inc-4 state-prep accepts, identical on the `main` oracle
+(`session-f2-i1/IMPL_f2.md` §7 Q8).
+
+### 15.5 Standing lessons this session adds
+
+1. **"A stage that runs ONCE has a round-2-FALSE premise" has a THIRD species: a TAINT-GROWTH
+   EVENT.** Species one was a STAGE (F-L3-1, F-R1-1), two a PREDICATE (F-B1R2-1); b6ap's F-B6-1 is a
+   stage that *creates* tainted values after the guards adjudicating consumers of tainted values have
+   run. `RETIRE_SWAP_ROUTE_INC1_NOTES.md` §2's stage table must now ask a SECOND question of every
+   stage: *"do you GROW the taint set, and if so which guards owe a re-ask?"*
+2. **A wire question must be a gate SET, not a BOOLEAN over a return-first walker** (A.1 F-A1-1).
+   Enumerate, take the difference, and carry the exemption as a per-entry bit.
+3. **Never relink a binary under a running measurement; never `pkill` by pattern.** Measured twice:
+   one `cq-opt-equivalence` run `***Failed` with `FileNotFoundError … /build/ir-pass/cq-opt` purely
+   because a rebuild was in flight, and a whole corpus sweep died mid-run for the same reason. A
+   failed gate that is really a rebuild artefact trains you to discount a real red (Rule 19).
+4. **A merge can RESURRECT a `git mv`'d fixture**, invisibly to every review that ran before it
+   (§15.3). Run a duplicate-body scan after any merge that renames fixtures.
+5. **A retirement note in a fixture header is a contract that worked** — F2's predicted stream for
+   the l4x4 landing was character-for-character correct. Write them.

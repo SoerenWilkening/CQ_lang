@@ -2212,12 +2212,51 @@ Two FYIs:
 > bound, so the conservative half becomes selectively skippable (SCOPE H-8). The
 > shipped narrowing therefore touches no path that sets `Truncated`.
 >
-> **⚠ THE OWNER'S `grover_oracle_uncompute.c` STILL DOES NOT COMPILE.** F2 was
-> **wall 3 of 3**: `control flow` (TWO merge phis, bd `b6ap`) → `bare i1 register
-> condition` (bd `l4x4`) → F2. Only wall 3 moved. Measured 2026-09-11 on the
-> narrowed binary: `probes/V0.c` ⇒ `control flow`; `probes/C2.c` and `probes/M1.c`
-> ⇒ `bare i1 register condition`. Pinned by
-> `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll`.
+> **⚠ LANDED on `main` 2026-09-11 as ONE squash commit, `a9cc062`** (the squash of
+> branch `f2-condwire-narrowing`, tip `8e1de9a` = the checkpoint `1419b5e` merged
+> with `main` `7203d1c` and `3a3a2b9`). ONE Rule-13 round, CLEAR-WITH-ITEMS
+> (`inc1-records/session-f2-i1/review_f2_r1.md`, I-1..I-5 applied). Corpus sweep
+> over the 1776 pre-existing fixtures: **RCDIFF 19** (all DECLINE→ACCEPT on the F2
+> string) / DIAGDIFF 0 / OUTDIFF 0.
+>
+> **⚠⚠ THE PARAGRAPH BELOW IS HISTORY, SUPERSEDED THE SAME DAY — it was TRUE at the
+> `a9cc062` landing and is FALSE now. The owner's file COMPILES AS WRITTEN (19 trace
+> lines, exit 0, empty stderr, STRICT stage 2b clean): walls 1 and 2 fell the same
+> day, bd `b6ap` at `3a3a2b9` (the multi-phi merge peel) and bd `l4x4`.b at
+> `e96f89c` (the bare-`_Bool` controlled-Ry arm and state prep, incl. the NEGATED
+> condition by Ry additivity). Current statement:
+> `retire-swap-route-PRD.md` §15 / §0 E16.** As written at the F2 landing:
+>
+> > **⚠ THE OWNER'S `grover_oracle_uncompute.c` STILL DOES NOT COMPILE.** F2 was
+> > **wall 3 of 3**: `control flow` (TWO merge phis, bd `b6ap`) → `bare i1 register
+> > condition` (bd `l4x4`) → F2. Only wall 3 moved. Measured 2026-09-11 on the
+> > narrowed binary: `probes/V0.c` ⇒ `control flow`; `probes/C2.c` and `probes/M1.c`
+> > ⇒ `bare i1 register condition`. Pinned by
+> > `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll`.
+>
+> ⚠ **The fixture that sentence names NO LONGER EXISTS UNDER THAT NAME**: l4x4.b
+> `git mv`'d it to `control_inplace_ry_stateprep_rail_i1_seed.ll` and re-derived it
+> as the ACCEPT its own retirement note had predicted, character for character
+> (`cqrt_alloc_i1(false)` + `cqrt_ry_i1_controlled(h_b0, h_new, 0.5)`); a `main`
+> copy resurrected by the l4x4 merge was DELETED in it —
+> `inc1-records/session-l4x4/MERGE_l4x4_2.md` §2.
+>
+> **⚠ ONE FOLLOW-ON DECLINE REMAINS AND IT IS FILED: bd `rb9x`.** A `bool` STATE
+> PREP under an `int` COMPARE condition still collides — `CondWire` holds the
+> compare's operand rails but **not the compare FLAG itself**, which is what an
+> `i1` seed is pinned against there. The owner's real file passes because its
+> condition is a RAIL, not a compare.
+>
+> **⚠ l4x4.b's ARM/PREP CLASSES NOW REACH THIS SECTION'S EMITTER** (`e96f89c`):
+> `emitInPlaceRotationRegion` takes `Flag = RailCond ? Cond : lowerCompareToFlag(…)`
+> and emits `cqrt_ry_<W>_controlled(h_b, h, θ)` with the user REGISTER as the
+> control — **no mint, no strip, no free** — with NEGATION by Ry additivity
+> (`ry(h,θ); ry_controlled(h_b,h,−θ)`, `fneg` exact) and **never** a `cqrt_x` on a
+> user register; the control register is LEFT ALLOCATED, never freed. Its H-1 fix
+> (`WeakTrackingVH` + control-thetas-first ordering in `lowerRotations` + a loud
+> use-site check) is the structural repair of §11's dangling-key defect. Read
+> `retire-swap-route-PRD.md` §15.1 before touching R4/R6/F1/F2 for a rail
+> condition.
 >
 > **NO NEW FROZEN SYMBOL, no YAML row, no `include/` change** — the owner refused
 > a new `cq_*` function and the narrowing needs none. Scope record:

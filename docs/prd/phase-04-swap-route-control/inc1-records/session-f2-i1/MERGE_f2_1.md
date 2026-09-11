@@ -219,7 +219,11 @@ that always caught the shape, `f4f`/`f4h`/`f4a`/`x1`/`x2`/`x3`/`m1`,
 
 **These three verdicts should be folded into `review_a1_r2_probes/README.md` (or
 its successor) by whoever writes A.1's landing record** — the file currently
-reads as if the miscompile still ships.
+reads as if the miscompile still ships. ⚠ **DISCHARGED 2026-09-11 by the session
+docs pass: `session-9pum/review_a1_r2_probes/README.md` now carries a dated ERRATA
+block naming exactly these three rows and pointing at `FIX_A1_R2.md` and at this
+section.** The three rows in `../session-9pum/review_a1_r2.md` itself are left as
+written — it is a dated review of a pre-fix checkpoint, and its own §0 says so.
 
 ---
 

@@ -264,6 +264,14 @@ pin"*) — the CONDITION there is a COMPARE, so its flag is not on `CondWire` an
 narrowing cannot reach it by construction. **It is a filed follow-on, it is not l4x4.b's,
 and l4x4.b neither fixes nor worsens it: `MRG` and `MAIN` give the same string.**
 
+⚠ **2026-09-11 ERRATA** (`inc1-records/session-2026-09-11-orchestrator/review_integration.md`
+item I-1): the ground stated in the paragraph above is FALSE as measured — the region's OWN
+compare **is** excluded (it is `Region.Condition`, which `railWireClosure` seeds `CondWire`
+with, and the UNPEELED twins `P1`/`P1t` ACCEPT on the subject); the collider is b6ap's peeled
+compare **CLONE** in the merge block, bisected to ONE added `icmp` (`HP_f_nopeel` accepts,
+`HP_g_sel_only` — clone alone, no select — declines). The residual is narrower than recorded
+(it needs a PEEL) and its cause is different; filed as bd `rb9x`, direction SAFE (over-decline).
+
 ---
 
 ## §6 GATES (Rule 19, the full set — merge + Rule-13 core + a moved accept predicate)

@@ -1,0 +1,7 @@
+#include <stdbool.h>
+int main(void) {
+  bool b = cq_theta((bool)0, 0.5);
+  int m = cq_measure(b);
+  if (b) cq_phi(0.3);
+  return m;
+}
