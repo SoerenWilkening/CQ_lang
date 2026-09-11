@@ -36,6 +36,24 @@
 ; `propagateEquality` will not substitute across `oeq` (`+0.0 == -0.0`). What
 ; changed is the SEED side, not the CONDITION side.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; the pinned value is a FORWARD user of a cone member and NO cone member
+; has the seed's type, so it is out of `CondWire` on both counts. That the
+; fold is EXACT (`sitofp` of a pinned integer) is what makes this a real
+; collision rather than a range coincidence.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_

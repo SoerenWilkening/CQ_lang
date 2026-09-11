@@ -2096,6 +2096,142 @@ Two FYIs:
 
 ## 14. Increment 4 design — controlled STATE PREP (S5) (settled 2026-09-04)
 
+> ## ⚠⚠ ERRATA / RULING — 2026-09-11: F2 IS NARROWED BY THE CONDITION'S OWN WIRE
+> ## (owner ruling; bd `drbq.14`). READ THIS BEFORE §14.2b, §14.3, §14.11 Q1.
+>
+> **This is an ERRATA BLOCK, not an edit.** Everything below §14 is the Inc-4
+> design as settled 2026-09-04 and implemented 2026-09-05, and it stays verbatim —
+> including the four adversarial rounds F2 lost, which are the reason this change
+> is risky and must not be deleted to make the section read cleanly. What changed
+> on 2026-09-11 is the **DISPOSITION** of one clause, not the facts under it.
+>
+> **OWNER RULING, verbatim:** *"WE DO NOT WANT TO WRITE `int b1`. also WE DO NOT
+> WANT ANOTHER cq function. it should just be an application of gates … I dont see
+> the need for the over-decline."* The trade (§H-1 below) was put to the owner
+> plainly and was not vetoed.
+>
+> **THE CHANGE.** `f2SeedPinnedByLiveRegister`'s equality test gains ONE conjunct:
+> a pinned value `V` is not a collider when `CondWire.count(V)`, where
+> `CondWire = {Region.Condition} ∪ ⋃_{P ∈ condProvenance(Cond)} railWireClosure(P,
+> BackwardOnly)` — the condition's own backward wire, built at the caller **by
+> calling R4's own helper** so the two fences cannot drift on what "the
+> condition's wire" means (Rule 14). The now-dead plain-literal fast path
+> (clause (a)) is **DELETED**: its `H` is the compare's own operand and therefore
+> unconditionally in `CondWire`, so keeping it would re-assert exactly the
+> declines the ruling removes. Its "depends on no analysis" backstop argument is
+> **retired with it**, said out loud rather than dropped — a future LLVM that
+> weakens LVI costs over-ACCEPTS here, and the answer to that is a fresh fence,
+> not a literal test that contradicts the ruling. PROVED DEAD BY MEASUREMENT: with
+> the fast path deleted AND the conjunct absent, all 40 F2 fixtures — including
+> `eqfold_coincidence{,_ne}`, the two that pinned it — still decline.
+>
+> **WHAT MOVES: 19 of the 40 F2 fixtures flip to ACCEPT; 21 stay declines.**
+> Measured, and it reproduces the scoping prediction cell for cell. The 21 that
+> stay are the whole of the recorded-miscompile population: the F-R1-1 six
+> (forward users), both sideways rewrites, the four curated `llvm.*` rails, the
+> three cast rails, the fp forward hop, the `sitofp`, and the three `Truncated`
+> cells.
+>
+> **§14.11 Q1 IS ANSWERED FOR CONE PINS AND KEPT FOR OFF-CONE ONES.** Q1's
+> "workaround one character — any seed other than the compare literal" no longer
+> applies when the pinning register is on the condition's wire (that is now an
+> ACCEPT; `slice_control_inplace_ry_stateprep_seed_eq_k.c` is the e2e, whose
+> golden differs from the Inc-4 flagship's by EXACTLY ONE LINE, the alloc
+> literal). It still applies verbatim off the cone.
+>
+> **THE `i1` CLAUSE.** §14's "the `i1` state-prep width is OUT" is REVERSED — but
+> the correct phrasing is *"the `i1` width is no longer CATEGORICALLY out"*, never
+> *"`i1` is in"*. There never was an `i1` special case: the collision was a
+> CONSEQUENCE of F2's candidate list, because the branch's own condition is a
+> tainted `i1` that LVI pins to `{true}`/`{false}` on the two edges, so every `i1`
+> seed matched one. `Region.Condition` is the first element of `CondWire`, so that
+> particular collision is gone. An `i1` seed pinned by an INDEPENDENT second
+> compare still collides and still declines
+> (`control_inplace_ry_reject_stateprep_second_flag_i1.ll`).
+>
+> **WHAT IT SILENTLY ABSORBS — say it in these words.** A program that was LOUDLY
+> REFUSED before now receives the circuit for the OTHER reading, with no
+> diagnostic.
+> * **α, 15 of the 19.** `int r = k; if (q == k) r = cq_theta(q, θ);` — an
+>   in-place Ry on the CONDITION's own register — is **BYTE-IDENTICAL after
+>   `-O1`** to the genuine prep (MEASURED: `probes/a_prep.c` vs `probes/a_self.c`,
+>   `diff` EMPTY). It compiles now as a fresh rail rotated under the flag, with
+>   `q` never touched.
+> * **β, 4 of the 19.** The straight-through incoming was a live register `-O1`
+>   folded to the seed; the rival is a quantum-data MUX that F1 refuses in its
+>   unfolded spelling.
+>
+> There is **no fence** that could separate these, because after `-O1` there is
+> ONE module. The mitigation is disclosure: this block, the CLAUDE.md ruling
+> paragraph, the fixture headers that name the rival and cite its measured
+> decline string, and the committed e2e slices. **A `DS_Warning` was considered
+> and deliberately NOT added** (SCOPE §5.4): it would fire on every narrowed
+> accept — i.e. on every Grover state prep the ruling exists to enable — and a
+> warning nobody can silence is one everybody learns to skim (Rule 19's own
+> argument). A flag-gated `-cq-warn-folded-prep` is on the owner's desk as an
+> option, not in the default build.
+>
+> **WHY IT IS ADMISSIBLE — A THEOREM ABOUT R4, NOT A SURVEY.** `railWireClosure`
+> inserts its seed BEFORE any gate, so `RotBase ∈ BaseWireOrder` always, so
+> `RotBase ∈ CondRails ⇒ R4 declines` for EVERY chained (register-arg-0) rotation
+> arm. The only path past R4 is `StatePrep` — the folded case, where the register
+> is no longer in the module at all. The rival therefore has no lowering to be
+> robbed of. (The survey was run anyway and agrees: 19/19 unfolded alternative
+> readings in `probes/alt/` decline, plus 13 plain-C spellings in `probes/`, all
+> re-measured 2026-09-11 **on the narrowed binary**. In practice 2c fires first
+> for 14 of the 15 α shapes, the condition-data-use clause for the 15th, and F1
+> for the β rivals — which is SCOPE H-4: the theorem's fence is a BACKSTOP that is
+> rarely reached, which is fine but fragile.)
+>
+> **β IS NOT COVERED BY THAT THEOREM** and gets its own argument, from the state
+> vector: on the pinned edge the register is pinned to the seed by a SOUND LVI
+> edge fact (a singleton range is a superset claim, the same soundness IPSCCP
+> relies on to perform the substitution), so within that flag subspace the rail is
+> the PRODUCT basis state |seed⟩ and carries no superposition. The rival's only
+> reversible realisation is a controlled copy of it into a fresh |0⟩ rail, which
+> on that subspace yields |seed⟩⊗|seed⟩ — exactly what preparing |seed⟩ yields;
+> and the other subspace is identical in both readings because the ARM's seed is a
+> literal in both. Nothing is cloned. What is given up is F1's loud refusal of the
+> UNFOLDED spelling, which still stands.
+>
+> **⚠ RETIREMENT TRIGGER (SCOPE H-4), and it is a live wish:** *the day any
+> chained rotation arm whose `RotBase` is in `CondRails` LOWERS — R4 narrowed, or
+> 2c made position-aware enough to admit a post-region rotation on the condition's
+> wire — this narrowing is an OVER-ACCEPT and must be re-derived from scratch.*
+> "Rotate the flag in place" is a natural Grover-ancilla idiom. Correspondingly,
+> narrowing `condProvenance` was already a Rule-13 change to R4 and is now one to
+> **F2 as well**.
+>
+> **⚠ THE EXCLUSION IS AT THE TEST, NEVER AT THE ANCHOR (SCOPE H-6).** `CondWire`
+> members keep SEEDING the forward evaluation — they are still `f2Note`d and their
+> users are still modelled — and only the *answer* is filtered. MEASURED on a
+> deliberate anchor-spelling mutant (filtering `Cand` and the fp anchor instead):
+> **all 40** F2 fixtures flip, including the six F-R1-1 CONFIRMED plain-C
+> miscompiles, the 30-program sideways family, the four curated intrinsics **and
+> all three `Truncated` cells** — a smaller candidate list never trips the step
+> bound, so the conservative half becomes selectively skippable (SCOPE H-8). The
+> shipped narrowing therefore touches no path that sets `Truncated`.
+>
+> **⚠ THE OWNER'S `grover_oracle_uncompute.c` STILL DOES NOT COMPILE.** F2 was
+> **wall 3 of 3**: `control flow` (TWO merge phis, bd `b6ap`) → `bare i1 register
+> condition` (bd `l4x4`) → F2. Only wall 3 moved. Measured 2026-09-11 on the
+> narrowed binary: `probes/V0.c` ⇒ `control flow`; `probes/C2.c` and `probes/M1.c`
+> ⇒ `bare i1 register condition`. Pinned by
+> `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll`.
+>
+> **NO NEW FROZEN SYMBOL, no YAML row, no `include/` change** — the owner refused
+> a new `cq_*` function and the narrowing needs none. Scope record:
+> `inc1-records/session-f2-i1/SCOPE_f2_i1.md` (+ `probes/`) and `IMPL_f2.md`.
+>
+> **⚠ THIS IS AN ACCEPT-WIDENING OF A RULE-13 CORE FENCE THAT LOST FOUR
+> CONSECUTIVE ADVERSARIAL ROUNDS** (Inc-4 R1–R4, each to a different InstCombine
+> rewrite). Budget **two** rounds. The standing lesson — *a syntactic answer to a
+> semantic question loses* (bd memory `f2-syntactic-enumeration`) — applies to the
+> narrowing too, since the exclusion set is a syntactic cone. Its saving grace is
+> the DIRECTION: the excluded set has a theorem, so a round should attack **the
+> theorem**, not the cone.
+
+
 > **Status: IMPLEMENTED 2026-09-05** (bd `test_C_libtooling-drbq.5`; the
 > implementation record is `CONTROL_IN_PLACE_INC4_NOTES.md`, and the post-4 twin
 > matrix is `inc4-records/inplace_stateprep_post4.txt` beside the pre-4 one —

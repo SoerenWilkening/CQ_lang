@@ -1,0 +1,70 @@
+MISSED control_inplace_ry_inloop_diamond.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_inloop_diamond.ll <- extra_free
+MISSED control_inplace_ry_inloop_diamond.ll <- extra_x
+MISSED control_inplace_ry_inloop_diamond.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_cond_bitcast_seed.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_cond_bitcast_seed.ll <- extra_x
+MISSED control_inplace_ry_stateprep_cond_bitcast_seed.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_cond_bitcast_seed.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_cond_cast_seed.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_cond_cast_seed.ll <- extra_x
+MISSED control_inplace_ry_stateprep_cond_cast_seed.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_cond_cast_seed.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_consumer_ret.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_consumer_ret.ll <- extra_x
+MISSED control_inplace_ry_stateprep_deep_chain.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_deep_chain.ll <- extra_free
+MISSED control_inplace_ry_stateprep_deep_chain.ll <- extra_x
+MISSED control_inplace_ry_stateprep_deep_chain.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_deep_chain.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_f64.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_f64.ll <- extra_x
+MISSED control_inplace_ry_stateprep_f64.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll <- extra_free
+MISSED control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll <- extra_x
+MISSED control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_fcmp_oeq_folded.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_fcmp_oeq_negzero.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_fcmp_oeq_negzero.ll <- extra_free
+MISSED control_inplace_ry_stateprep_fcmp_oeq_negzero.ll <- extra_x
+MISSED control_inplace_ry_stateprep_fcmp_oeq_negzero.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_fcmp_oeq_negzero.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_fcmp_oeq_twin.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_fcmp_une_folded.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_i16.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_i16.ll <- extra_x
+MISSED control_inplace_ry_stateprep_i64.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_i64.ll <- extra_x
+MISSED control_inplace_ry_stateprep_i8.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_i8.ll <- extra_x
+MISSED control_inplace_ry_stateprep_intrinsic_bswap_accept.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_intrinsic_bswap_accept.ll <- extra_free
+MISSED control_inplace_ry_stateprep_intrinsic_bswap_accept.ll <- extra_x
+MISSED control_inplace_ry_stateprep_intrinsic_bswap_accept.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_lifted_phi_after.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_lifted_phi_after.ll <- extra_x
+MISSED control_inplace_ry_stateprep_range_ordered_seed0.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_range_ordered_seed0.ll <- extra_x
+MISSED control_inplace_ry_stateprep_range_ordered_seed0.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_range_ordered_seed0.ll <- seed_literal
+MISSED control_inplace_ry_stateprep_step_cap_under.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_step_cap_under.ll <- extra_free
+MISSED control_inplace_ry_stateprep_step_cap_under.ll <- extra_x
+MISSED control_inplace_ry_stateprep_step_cap_under.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_suffix_control.ll <- extra_ry_on_cond
+MISSED control_inplace_ry_stateprep_suffix_control.ll <- extra_x
+MISSED control_inplace_ry_stateprep_suffix_control.ll <- dup_ctl_gate
+MISSED control_inplace_ry_stateprep_suffix_control.ll <- seed_literal
+control_inplace_ry_stateprep_warn_live_record.ll: CLEAN-FAIL prefix WARN
+
+control_tainted_diag.ll: DECLINES - skipped
+
+=== summary ===
+dup_ctl_gate           caught=47 MISSED=9
+extra_free             caught=56 MISSED=6
+extra_ry_on_cond       caught=46 MISSED=16
+extra_x                caught=46 MISSED=16
+seed_literal           caught=51 MISSED=12
+uncontrolled_arm       caught=56 MISSED=0

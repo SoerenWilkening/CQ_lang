@@ -45,6 +45,24 @@
 ; `f2SeedPinnedByLiveRegister`'s header in `ArmClassify.cpp` for the three
 ; syntactic generations this replaced and for what it still skips.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; `-O1` moved the compare SIDEWAYS onto a SIBLING (the compare became `and %q, -4`), so the
+; pinned value is neither an ancestor nor a descendant of anything the
+; compare names — it is out of `CondWire` twice over, and no direction of
+; walk from the condition could reach it.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_

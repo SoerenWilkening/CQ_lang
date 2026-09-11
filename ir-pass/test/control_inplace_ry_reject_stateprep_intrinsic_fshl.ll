@@ -19,6 +19,25 @@
 ; Control, byte-identical on BOTH binaries (`p/u04_uncond_bswap.c` for the
 ; `bswap` member): the guard removed rotates the intrinsic's own rail in place.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; the pinned value is the result of a CURATED `llvm.*` intrinsic that CQ
+; LOWERS TO A RAIL — a forward user on a fresh wire, out of `CondWire` for
+; the same reason the `range_forward_*` family is. F-R3-1 found four of
+; these as plain-C accepts when F2's closure enumerated `BinaryOperator`
+; users only.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_

@@ -4692,6 +4692,48 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-twin
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_twin.expected.log")
 
+# ----------------------------------------------------------------------------
+# bd `drbq.14` — F2's `CondWire` NARROWING (owner ruling 2026-09-11).
+#
+# THREE SLICES, NO `compare_files` TWIN GATE, and the omission is deliberate for
+# the same reason the Inc-4 group above records: there is no byte-identical twin
+# to compare against. The witness here is a STATED, RE-DERIVABLE RELATION between
+# goldens that are all committed, so a reviewer checks it with `diff` on two
+# files in the tree:
+#   * `..._seed_eq_k` vs the Inc-4 `..._stateprep` golden differ by EXACTLY ONE
+#     LINE (`cqrt_alloc_i32(0)` -> `cqrt_alloc_i32(5)`) — i.e. the whole of the
+#     ruling's effect at `i32` is "the alloc literal may equal the compare
+#     literal";
+#   * `..._bool_negated` vs `..._bool` differ by EXACTLY TWO LINES, the paired
+#     `cqrt_x(h1)` bracket that controls on `!flag` (Rule 9 polarity).
+# All three run STRICT stage 2b (`0 violation(s), 0 unproven`). ⚠ Stage 2b does
+# NOT witness the SEED — it classifies `cqrt_alloc_<W>` by symbol name and never
+# reads the argument — so the seed is pinned by these goldens and by F1, and a
+# green 2b must not be quoted as evidence for it.
+add_test(NAME e2e-slice-control-inplace-ry-stateprep-bool
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_bool.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_bool.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-stateprep-bool-negated
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_bool_negated.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_bool_negated.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_seed_eq_k.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_seed_eq_k.expected.log")
+
 
 # ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).

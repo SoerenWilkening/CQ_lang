@@ -21,6 +21,27 @@
 ; (`NegMin = INT_MIN.ashr(31) = -1`, `NegMax = (-1).ashr(31) + 1 = 0`), giving
 ; `[-1, 0)` — the singleton `{-1}`, which IS the seed.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; the pinned value is a FORWARD USER of a cone member (``ashr %q, 31``), minted on a
+; FRESH rail — there is no in-place ABI for that opcode — and `CondWire`
+; is built `WireDir::BackwardOnly`, so a forward user is not in it. This is
+; the F-R1-1 class: six CONFIRMED plain-C silent miscompiles, whose defect
+; was precisely that `-O1` rewrote the compare DOWNWARD onto an ANCESTOR of
+; the rotated register, so the backward walk from the compare can never
+; reach it. Widening `CondWire` to `BothWays` would swallow all six.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled

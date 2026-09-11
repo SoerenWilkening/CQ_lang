@@ -35,6 +35,28 @@
 ; instead of `false` and this file is the only one in the family that flips to
 ; ACCEPT.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; THIS DECLINE NEVER REACHES THE EQUALITY TEST AT ALL, so `CondWire` cannot
+; and does not narrow it: the evaluation sets `Truncated` and the caller
+; declines on that alone. That is SCOPE H-8, and it is the reason no
+; `CondWire` check sits on any path that sets `Truncated` — the
+; conservative half (what LLVM's own machinery cannot evaluate) must not
+; become selectively skippable. ⚠ MEASURED 2026-09-11: under a deliberate
+; ANCHOR-spelling mutant this fixture ACCEPTS, because a smaller candidate
+; list never trips the bound. That is the second half of the H-6 tripwire.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_

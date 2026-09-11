@@ -26,6 +26,28 @@
 ; before `IPSCCP`, so `clang -O1` does not produce this module. The shape it does
 ; produce is `..._reject_stateprep_fcmp_oeq_unfolded.ll`.
 ;
+;
+; ---- STILL A DECLINE AFTER THE 2026-09-11 NARROWING (bd `drbq.14`) ----
+;
+; F2 was narrowed on 2026-09-11 (owner ruling): a pinned value that lies on the
+; CONDITION'S OWN BACKWARD WIRE — `CondWire` =
+; `{Region.Condition} ∪ ⋃ railWireClosure(condProvenance(Region.Condition))` — is
+; no longer a collider, and NINETEEN fixtures of this family flipped to ACCEPT
+; (they are now `control_inplace_ry_stateprep_*`). **THIS ONE DID NOT, and the
+; reason is not an accident:**
+;
+; the pin here is ONE HOP FORWARD of the fp anchor's seed. The anchor still
+; SEEDS — `CondWire` is consulted at the equality TEST and NOWHERE ELSE, so
+; the anchor's `f2NoteConst` still fires and the forward evaluation still
+; reaches this value — and the value it reaches is NOT on the condition's
+; backward wire, so it still collides. ⚠ THIS FIXTURE IS HALF OF THE H-6
+; TRIPWIRE: it goes RED if the exclusion is ever moved from the test to the
+; anchor/candidate list. MEASURED 2026-09-11 on a deliberate anchor-spelling
+; mutant: it ACCEPTED, together with all 40 F2 fixtures.
+;
+; So the narrowing is the WIRE and nothing wider, and this file is one of the 21
+; that prove it. Measured 2026-09-11 on the narrowed binary: rc=1, same string,
+; same anchor.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}state prep seed is proven equal to the condition register under quantum control
 ; CHECK-NOT: cqrt_ry_f64_controlled

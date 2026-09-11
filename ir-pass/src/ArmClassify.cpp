@@ -219,7 +219,30 @@ bool isValueChangingOp(const Value *Base) {
 //
 // ⚠ THIS CONE IS ALSO R4's COMPLETENESS CARRIER, which its original callers did
 // not need it to be (round-1 Rule-13 review of bd test_C_libtooling-drbq, lens
-// L1 §2). `classifyArms`' R4 clause seeds `CondRails` with
+// L1 §2) — ⚠ AND SINCE 2026-09-11 IT IS **F2's** COMPLETENESS CARRIER TOO (owner
+// ruling, bd `drbq.14`). `classifyArms`' F2 clause builds its exclusion set
+// `CondWire` from exactly the same two seeds R4 uses, by calling the same
+// `railWireClosure` (Rule 14 — a second spelling of "the condition's wire" is
+// what the drbq Inc-3 (b′) lesson forbids). So the warning below now has TWO
+// subjects and they fail in OPPOSITE directions, which is why it is worth
+// re-reading rather than skimming:
+//   * NARROWING this cone makes **R4** vacuous — a rotation arm on the
+//     condition's wire stops being detected, and the flag is stripped against a
+//     relabelled register (Rules 6/8);
+//   * NARROWING it also SHRINKS **F2's** exclusion set, which is an
+//     OVER-DECLINE, not a miscompile — the safe direction;
+//   * WIDENING it (a forward hop, `WireDir::BothWays`, following a cast) is
+//     harmless for R4 and is an **OVER-ACCEPT for F2**: it would swallow the
+//     F-R1-1 six, the sideways family, the casts, the curated intrinsics and the
+//     `sitofp` — every one a recorded CONFIRMED silent miscompile. Before the
+//     ruling, widening this cone was a decline-monotone tidy-up. It is not any
+//     more.
+// `control_inplace_ry_stateprep_condwire_alias_accept.ll` is the fixture that
+// notices a change here, and it is RED under a mutant that builds `CondWire`
+// as `{Region.Condition} ∪ Prov` (MEASURED 2026-09-11: that mutant moves that
+// ONE file and nothing else in the 109-file state-prep family).
+//
+// `classifyArms`' R4 clause seeds `CondRails` with
 // `railWireClosure(Region.Condition, BackwardOnly, …)` — which stops dead,
 // because a `CmpInst` is not a `BinaryOperator` and that walk has no `CmpInst`
 // arm — and then closes over EVERY member of this set. So "the rotated wire is
@@ -1188,12 +1211,211 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 }
 
 // F2's question, asked semantically. TRUE ⇒ some live tainted value of the
-// SEED'S type is provably EQUAL to the seed on one of the branch's two edges,
-// i.e. the source the author wrote could have been `cq_theta(<that register>,θ)`
-// and this arm's constant is `-O1`'s fold of it. `Truncated` ⇒ the evaluation
-// could not be completed; the caller declines on that too.
+// SEED'S type that is **NOT ON THE CONDITION'S OWN WIRE** is provably EQUAL to
+// the seed on one of the branch's two edges, i.e. the source the author wrote
+// could have been `cq_theta(<that register>,θ)` and this arm's constant is
+// `-O1`'s fold of it. `Truncated` ⇒ the evaluation could not be completed; the
+// caller declines on that too.
+//
+// ---- `CondWire` — THE 2026-09-11 NARROWING (owner ruling; bd `drbq.14`) ----
+//
+// OWNER RULING, verbatim: *"WE DO NOT WANT TO WRITE `int b1`. also WE DO NOT
+// WANT ANOTHER cq function. it should just be an application of gates … I dont
+// see the need for the over-decline."* The trade below was put to the owner
+// plainly and was not vetoed.
+//
+// WHAT CHANGED: a pinned value that is IN THE CONDITION'S OWN BACKWARD WIRE is
+// no longer a collider. Every other pinned value still declines, with the same
+// string. `CondWire` is `{Region.Condition} ∪ ⋃_{P ∈ condProvenance(Cond)}
+// railWireClosure(P, WireDir::BackwardOnly)` — built at the caller **by calling
+// R4's own helper**, never re-spelled (Rule 14; the drbq Inc-3 (b′) lesson).
+//
+// ⚠ SAY OUT LOUD WHAT THAT SET IS, BECAUSE "THE CONDITION'S OWN WIRE" READS
+// FAR NARROWER THAN IT IS (round-1 review item I-3). `condProvenance` follows
+// **EVERY** operand edge backward, stopping only at a `cq_theta` source — so
+// `CondWire` is the condition's whole backward **TAINTED CONE**, and it contains
+// values reached through `mul`, `and`, `shl`, `load`, casts and templates, whose
+// physical RAILS are genuinely DISTINCT from the condition's. Excluding those is
+// therefore NOT justified by "it is the same rail". It is justified by one fact
+// and nothing else, and here it is as a sentence:
+//
+//     `CondWire` is **byte-identically the set R4 builds as `CondRails`** — the
+//     same helper, over the same `Prov`, with the same `Taint`, at the same
+//     program point, in the same `BackwardOnly` direction — so every value F2
+//     stops colliding on is a value R4 would decline a rotation arm for. The
+//     over-approximation in F2's exclusion set CANCELS EXACTLY against the
+//     over-approximation in R4's refusal. The safety of this narrowing is an
+//     argument about the EQUALITY OF TWO SETS, not about physical rails.
+//
+// The cancellation survives the rival module because a rival differs from the
+// prep module only in a FORWARD position (which register the arm rotates) while
+// both closures are `BackwardOnly`, so the two sets are the same set in both. It
+// survives the `r9e5` round-2 taint window for the same reason: both are keyed
+// on the same `Taint` and shrink together.
+//
+// ⚠ RETIREMENT TRIGGER (I-3), and it is the cheapest one here to trip by
+// accident: **if `railWireClosure` as called here and R4's `CondRails` ever
+// DIVERGE — a different helper, a different `WireDir`, a different seed set, an
+// `Exclude` argument passed on one side and not the other, or one call site
+// "tidied" — this narrowing must be RE-DERIVED FROM SCRATCH.** Nothing in the
+// fixture corpus would notice a small divergence except
+// `..._stateprep_condwire_alias_accept.ll`, and that file pins only the
+// chained-theta hop; a divergence anywhere else in the cone is silent.
+//
+// ⚠ THERE ARE **TWO** ADMISSIBILITY ARGUMENTS, NOT ONE, AND THEY COVER DIFFERENT
+// HALVES OF THE ACCEPT CLASS. Do not let the first stand in for the second: the
+// R4 theorem below covers the **α** rivals (an in-place Ry on the condition's
+// own register), and it does NOT reach the **β** rivals (a merge incoming that
+// was a live register `-O1` folded to the seed). β has its own argument, from
+// the state vector, in the "WHAT THIS SILENTLY ABSORBS" block at the end of this
+// header — and it rests on a DIFFERENT kind of assumption (LLVM's own edge
+// analysis being sound, rather than a structural property of this pass), which
+// is why a Rule-13 round should attack the two separately.
+//
+// WHY THE α HALF IS ADMISSIBLE — AND IT IS A THEOREM ABOUT R4, NOT A SURVEY. The
+// alternative reading of an in-cone pin is *"the source rotated the CONDITION'S
+// OWN register in place and `-O1` folded arg-0 to the literal"*. That reading
+// has never had a lowering in CQ and **cannot acquire one while R4 stands**:
+// `railWireClosure` does `Out.insert(W)` BEFORE any gate, so
+// `RotBase ∈ BaseWireOrder` unconditionally, so `RotBase ∈ CondRails ⇒ R4
+// declines` for every CHAINED (register-arg-0) rotation arm. The only way past
+// R4 is `StatePrep` — which is the folded case under discussion, i.e. the case
+// where the register no longer appears in the module at all. So the excluded
+// set is one for which a proof exists, not one for which a survey came back
+// clean. (The survey was run anyway: SCOPE §2.2 measured 19/19 unfolded
+// spellings declining, plus 13 plain-C ones.) ⚠ BUT R4 IS NOT THE FENCE THAT
+// ACTUALLY FIRES — it fired for **0 of the 27** rivals measured to date. Read
+// the retirement trigger below for the split before relying on the theorem.
+//
+// ⚠ RETIREMENT TRIGGER, WRITTEN NOW RATHER THAN DISCOVERED LATER (SCOPE H-4,
+// the bd 8h7d.5 F-1/F-3 discipline). The trigger is *"the day any chained
+// rotation arm whose `RotBase` is in `CondRails` LOWERS, this narrowing becomes
+// an OVER-ACCEPT and must be re-derived from scratch"*, and it has TWO doors.
+// **THEY ARE RANKED HERE BY MEASURED RISK, NOT BY WHICH FENCE THE THEOREM
+// NAMES** (round-1 review item I-1):
+//
+//   1. **2c `condition predates a non-diagonal gate` — THE LIVE DOOR.** This is
+//      the fence that actually refuses the α rivals today, and it has been made
+//      MORE PERMISSIVE twice in this epic's history (drbq Inc 3's position-aware
+//      accept; lom0 Inc 4's). Make it position-aware enough to admit a
+//      post-region rotation on the condition's wire and this narrowing is an
+//      over-accept — whatever R4 still says, and with no fixture moving.
+//      "Rotate the flag in place" is a live Grover-ancilla wish, so treat this
+//      as a warning about a plausible future rather than a formality.
+//   2. **R4 `rotation arm on a condition wire` — the BACKSTOP the theorem is
+//      about.** Narrowing it retires the proof; but nothing reaches it today.
+//
+// MEASURED over the 27 alternative readings built for this increment (IMPL's 21
+// `probes/alt/` modules + the round-1 review's 6 `rival/` ones), the fence that
+// FIRES:
+//     2c  `condition predates a non-diagonal gate` ............... **16**
+//     F1  `state prep merged with a quantum register` ............     5
+//         `condition data use neither escaped nor measured` ......     5
+//         `bare i1 register condition` (bd `l4x4`) ..............      1
+//     **R4 `rotation arm on a condition wire`** ................. **0**
+// R4 is NOT vacuous — `probes/v3.c`, the alias-hop rival, does decline on it —
+// it is simply never REACHED, because 2c stands in front of every direct α
+// rival, including the on-wire row of the round-1 review's F-2 matrix. So a
+// change to **2c**, not only a change to R4, can invalidate this narrowing.
+// The mirror obligation is already recorded at R4: narrowing `condProvenance` is
+// now a Rule-13 change to **two** fences (R4 *and* F2), not one.
+//
+// ⚠ AND THE EXCLUSION IS APPLIED AT THE **TEST**, NEVER AT THE **ANCHOR**
+// (SCOPE H-6 — the one way to get this change catastrophically wrong).
+// `CondWire` members keep SEEDING the forward evaluation: they are still fed to
+// `f2Note`/`f2NoteConst` and their users are still modelled, so every value
+// DERIVED from the condition is still reached and still tested. Only the
+// *answer* is filtered. Dropping them from `Cand` (or from the fp anchor)
+// instead would stop the walk before it started. MEASURED 2026-09-11 on exactly
+// that mutant: **ALL 40** F2 fixtures flip — not the 19, but every one —
+// including the six F-R1-1 CONFIRMED plain-C miscompiles, the 30-program
+// sideways family, the four curated-`llvm.*` rails and the three cast rails.
+// The tripwire fixtures — MEASURED RED on the anchor spelling and green here —
+// are `..._reject_stateprep_fcmp_oeq_derived.ll` (the pin ONE HOP forward of the
+// fp anchor's seed: it can only stay a decline while the anchor still SEEDS),
+// `..._reject_stateprep_range_forward_add.ll`,
+// `..._reject_stateprep_second_flag_i1.ll` and
+// `..._reject_stateprep_offwire_sideways_min.ll`.
+//
+// ⚠ AND THE ANCHOR SPELLING'S DAMAGE IS NOT UNIFORM, WHICH IS A BETTER REASON TO
+// REFUSE IT THAN "IT FLIPS EVERYTHING" (measured 2026-09-11, after the inference
+// was checked and found wrong for one file):
+// `..._reject_stateprep_nonwire_still_collides.ll` KEEPS declining under the
+// anchor mutant. Its off-wire pin `%t = lshr %q, 31` is one LVI can answer about
+// DIRECTLY on the edge, so `%t` is its own `Cand` entry and never needed the
+// forward walk; the four above are pins LVI cannot reach on its own and that
+// only the forward evaluation from an ON-WIRE seed produces. So at the anchor,
+// whether an out-of-cone CONFIRMED miscompile survives depends on whether LVI
+// happens to model that opcode — i.e. the fence's coverage would be decided by
+// an LLVM implementation detail nobody here controls, and would move silently
+// when LLVM improves. At the TEST it does not depend on that at all.
+//
+// ⚠ AND `Truncated` IS UNTOUCHED — a SECOND, INDEPENDENT reason the exclusion
+// belongs here rather than at the anchor. No `CondWire` check sits on any path
+// that sets it, so the conservative half — the one that catches what LLVM's own
+// machinery cannot evaluate — is not selectively skippable (SCOPE H-8).
+// MEASURED on the same anchor mutant, and it is worse than SCOPE predicted:
+// `step_cap_over`, `unevaluable_pinned_operand` and `unfoldable_curated_call`
+// flipped to ACCEPT there too, because a SMALLER CANDIDATE LIST NEVER TRIPS THE
+// 4096-STEP BOUND. At the anchor, filtering the exclusion set silently disables
+// the very half of F2 that exists for the cases no analysis can decide. On the
+// shipped spelling all three are byte-unchanged and never reach the test.
+//
+// WHAT THIS SILENTLY ABSORBS, said in the words it must be said in (SCOPE H-1 /
+// H-2): a program that was LOUDLY REFUSED yesterday now receives the circuit for
+// the *other* reading.
+//   * α (15 of the 19) — the plain-C illustration is `int r = k; if (q == k)
+//     r = cq_theta(q, θ);`, which is BYTE-IDENTICAL after `-O1` to the genuine
+//     prep (MEASURED: `probes/a_prep.c` vs `probes/a_self.c`, `diff` empty). It
+//     now compiles as a fresh rail rotated under the flag, `q` never touched.
+//     ⚠ **DO NOT ATTACK THIS FENCE WITH THAT SPELLING — IT IS THE WRONG RIVAL**
+//     (round-1 review item I-2). For the accepted IR `phi [ %rt, %arm ],
+//     [ k, %entry ]` that spelling's `RotBase` is the REGISTER `%q` while the
+//     straight-through incoming is the LITERAL `k`, so **R3's "ONE base" clause
+//     refuses it before R4 is ever asked**; and `probes/u1.c` measures that the
+//     plain-C form cannot even produce a state-prep module (the Pred edge does
+//     not pin `q`, so only arg-0 folds and F1 fires).
+//
+//     THE RIVAL THAT CAN ACTUALLY PRODUCE THE ACCEPTED IR needs **BOTH** the
+//     arm's arg-0 AND the merge incoming to fold — i.e. a register pinned on
+//     BOTH edges. That is the `%t = and %q, 0` shape of
+//     `..._stateprep_condwire_alias_accept.ll`, and it is what a future round
+//     should try to break this with:
+//
+//         %q  = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
+//         %t  = and i32 %q, 0                       ; singleton {0}, BOTH edges
+//         %b  = call i32 @cq_theta_si32(i32 %t, double 3.000000e-01)
+//         %c  = icmp eq i32 %b, 5
+//         br i1 %c, label %arm, label %merge
+//       arm:
+//         %rt = call i32 @cq_theta_si32(i32 %t, double 9.000000e-01)   ; <- RIVAL
+//         br label %merge
+//       merge:
+//         %rm = phi i32 [ %rt, %arm ], [ %t, %entry ]                  ; <- RIVAL
+//
+//     Both `%t` uses fold to `i32 0`, so `-O1` hands the pass the accepted prep
+//     module verbatim. This is a GENUINE in-place rotation arm, and it **DOES
+//     lower when it is OFF-wire** — delete the chained `%b` and condition on
+//     `icmp eq i32 %q, 5`: rc=0 on BOTH binaries, emitting
+//     `cqrt_ry_i32_controlled(h_cmp, h_op, 0.9)` in place on `%t` (the drbq
+//     Inc-1 shape). ON-wire it declines `condition predates a non-diagonal gate`
+//     on both binaries, because `%t` and `%b` are ONE physical rail and rotating
+//     `%t` IS rotating the register the flag is minted from. That matched 2x2 is
+//     the round-1 review's F-2 and is the measurement the α theorem is worth:
+//     **where the rival has a lowering, F2 still declines its folded image;
+//     where the narrowing removes the decline, the rival has no lowering to be
+//     robbed of.**
+//   * β (4 of the 19) — the straight-through incoming was a live register
+//     `-O1` folded to the seed. On THAT edge the register is pinned to the seed
+//     by a SOUND edge fact, so within the `f`-subspace its rail is the product
+//     basis state |seed⟩: a controlled copy of it into a fresh |0⟩ rail yields
+//     |seed⟩⊗|seed⟩, which is exactly what preparing |seed⟩ yields. There is no
+//     superposition on that edge to clone, so the two readings agree there — and
+//     they already agreed on the other edge, where the arm's seed is a literal
+//     in both. See `..._stateprep_mux_incoming_pinned_accept.ll`.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
                                 TaintSet &Taint, const DominatorTree *DT,
+                                const SmallPtrSetImpl<Value *> &CondWire,
                                 bool &Truncated) {
   BasicBlock *Pred = Region.Pred;
   if (!Pred) {
@@ -1360,7 +1582,13 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
         return false;
       }
       Value *V = S.WL.pop_back_val();
-      if (V->getType() == Seed->getType() && f2Exact(V, S) == Seed)
+      // THE TEST — and the ONE place `CondWire` is consulted (2026-09-11 owner
+      // ruling; see this function's header for the theorem, the retirement
+      // trigger, and why the exclusion is HERE and not at the anchor). `V` is
+      // still popped, and its users are still modelled below, so excluding it
+      // costs the walk NOTHING: it filters an answer, it does not prune a seed.
+      if (V->getType() == Seed->getType() && !CondWire.count(V) &&
+          f2Exact(V, S) == Seed)
         return true;
       for (User *U : V->users()) {
         auto *I = dyn_cast<Instruction>(U);
@@ -2942,7 +3170,9 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
 
   // Backward tainted provenance of the condition — shared by the wire-walk
   // guard below (its seed set; direct-operand seeding misses a derived
-  // condition's wire) and the §3c clobber check on value arms.
+  // condition's wire), the §3c clobber check on value arms, and — since the
+  // 2026-09-11 owner ruling (bd `drbq.14`) — **F2's `CondWire` exclusion set**,
+  // built from these same seeds a few dozen lines down. Three consumers now.
   SmallPtrSet<Value *, 16> Prov;
   condProvenance(Region.Condition, Taint, Prov);
 
@@ -3471,8 +3701,18 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // now rather than discovered later (the bd 8h7d.5 F-1/F-3 discipline):
         // the day compound conditions are admitted to ANY control accept path,
         // the LVI half already handles them (it reads the BRANCH, not the
-        // compare), but the (a) fast path below does not — delete it rather than
-        // extend it.
+        // compare), but the (a) fast path did not — "delete it rather than
+        // extend it" was this trigger's instruction.
+        // ✅ **THAT HALF IS DISCHARGED**: the (a) fast path was DELETED on
+        // 2026-09-11 for an unrelated reason (the `CondWire` narrowing made it
+        // dead), so a compound condition would now meet only the LVI + forward
+        // machinery, which reads the branch. ⚠ THE TRIGGER IS NOT FULLY SPENT:
+        // `CondWire` is seeded from `Region.Condition` and `condProvenance` of
+        // it, and for a compound condition "the condition's wire" has to mean
+        // the union over the tree's LEAVES. Nothing here computes that, and no
+        // fixture could be written for it today because the shape declines
+        // upstream. Whoever admits compound conditions owes this clause a fresh
+        // red-green family, not an assumption that it already works.
         //
         // SECOND RETIREMENT TRIGGER (L2 F-L2-6): an `__builtin_assume(q == 0)`-
         // folded seed is refused today only by `declineTaintEscapes` treating
@@ -3481,41 +3721,81 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // whitelisted this clause sees the fold for free — but it still owes a
         // fresh red-green family, because "for free" is a prediction until it is
         // measured.
+        // ---- THE 2026-09-11 NARROWING (owner ruling; bd `drbq.14`) ----
+        //
+        // ⚠ THE PLAIN-LITERAL FAST PATH THAT STOOD HERE IS **DELETED**, NOT
+        // LEFT TO ROT, AND ITS ARGUMENT IS RETIRED WITH IT RATHER THAN
+        // SILENTLY DROPPED. It read `dyn_cast<ICmpInst>(Region.Condition)`,
+        // took the compare's constant `K` and its other operand `H`, and set
+        // `Pinned` on `K == Seed` with NO analysis at all — kept deliberately
+        // as an analysis-free backstop ("if a future LLVM weakens
+        // `LazyValueInfo`, the A1/A2 family must still decline").
+        //
+        // IT IS NOW DEAD BY CONSTRUCTION, WHICH IS WHY IT MUST GO: `H` is the
+        // compare's own operand, hence unconditionally a member of `CondWire`
+        // below, so the fast path would assert exactly the decline the
+        // narrowing removes — `..._eqfold_coincidence{,_ne}.ll`, the two
+        // fixtures that pinned it, are two of the nineteen the owner ruled must
+        // now ACCEPT. Keeping it "just in case" would make the narrowing a
+        // no-op for the commonest shape the ruling is about. The backstop
+        // argument is gone with it: a future LLVM that weakens LVI costs
+        // over-ACCEPTS here, and the answer to that is a fresh fence, not a
+        // literal test that now contradicts the ruling. Measured proof that it
+        // was load-bearing before and is inert after: with the conjunct absent
+        // AND this path deleted, the `eqfold_*` family goes RED (IMPL §2).
+        //
+        // `CondWire` — the set the test excludes. Built by CALLING R4's own
+        // `railWireClosure` on the same seeds R4 uses (`Region.Condition`, then
+        // every member of `Prov` = `condProvenance(Region.Condition)`), so the
+        // two fences cannot drift on what "the condition's wire" means (Rule
+        // 14). ⚠ `railWireClosure(Region.Condition, …)` contributes EXACTLY ONE
+        // element — a `CmpInst` is not a `BinaryOperator`, so the dispatch
+        // inserts it and falls off the end — which is why the `Prov` LOOP is
+        // the whole condition reach here just as it is at R4 (see R4's own
+        // note).
+        //
+        // ⚠ BUT THE LOOP IS **NOT** THE SAME AS `Prov` ITSELF, AND THE SCOPING
+        // NOTE THAT SAID SO WAS WRONG (measured 2026-09-11, IMPL §2c). The
+        // argument "every backward rail hop is also an operand edge, so the
+        // union IS `{Cond} ∪ condProvenance(Cond)`" holds for every hop EXCEPT
+        // one: `condProvenance` stops at a theta (`if (isThetaCall(I))
+        // continue;` — it collects the RESULT and deliberately does not enter
+        // arg-0, so it cannot walk into a source theta's classical seed), while
+        // `railWireClosure` CROSSES a chained theta's arg-0 because a chained Ry
+        // is in place and the two names are ONE physical rail. So this loop is a
+        // strict superset, by exactly the chained-theta ancestry. MEASURED: a
+        // mutant building `CondWire` as `{Region.Condition} ∪ Prov` moves ONE
+        // module in the whole tree —
+        // `control_inplace_ry_stateprep_condwire_alias_accept.ll`, which is
+        // committed for this reason — and leaves the rest of the state-prep
+        // family's 53/56 split untouched. Deleting either call is therefore a
+        // measurable behaviour change, not a simplification.
+        //
+        // It is BackwardOnly for R4's reason and for a second one that
+        // is specific to F2: `BothWays` would sweep in every FORWARD user of
+        // the condition's registers, i.e. exactly the F-R1-1 six, the sideways
+        // pair, the casts, the curated intrinsics and the `sitofp` — all 21
+        // recorded CONFIRMED miscompiles (SCOPE H-3).
+        //
+        // COMPUTED UNCONDITIONALLY (not inside `if (Pinned)`) and only in this
+        // state-prep block, so no accepting path pays for it.
         bool Pinned = false;
         bool Truncated = false;
-        if (auto *IC = dyn_cast<ICmpInst>(Region.Condition)) {
-          // (a) THE PLAIN LITERAL FAST PATH — kept, deliberately, although the
-          // semantic test SUBSUMES it (on an `icmp eq H, k` the true edge's
-          // exact region IS `{k}`, and LVI reports it). It is kept because it
-          // depends on NO analysis at all: if a future LLVM weakens `LazyValue
-          // Info` or `computeConstantRange`, the A1/A2 family — the two the
-          // increment shipped against — must still decline.
-          // `..._eqfold_coincidence{,_ne}.ll` pin it, and mutation M2a (delete
-          // this line) reddens exactly those two.
-          // POSITION-FREE: `icmp eq 5, %q` is `clang`-unreachable but hand-IR
-          // reachable, and the equality predicate is symmetric, so no
-          // `getSwappedPredicate` is needed for the literal question.
-          ConstantInt *K = dyn_cast<ConstantInt>(IC->getOperand(1));
-          Value *H = IC->getOperand(0);
-          if (!K) {
-            K = dyn_cast<ConstantInt>(IC->getOperand(0));
-            H = IC->getOperand(1);
-          }
-          auto *SeedI = dyn_cast<ConstantInt>(RotBase);
-          if (K && SeedI && !isa<ConstantInt>(H) && Taint.Tainted.count(H) &&
-              K->getType() == SeedI->getType() && IC->isEquality() &&
-              K->getValue() == SeedI->getValue())
-            Pinned = true;
-        }
-        // (b) THE SEMANTIC TEST. Asked of every tainted value of the function,
-        // on both edges, with no gate on the condition's own shape — `Truncated`
+        SmallPtrSet<Value *, 16> CondWire;
+        railWireClosure(Region.Condition, Taint, WireDir::BackwardOnly, nullptr,
+                        nullptr, CondWire);
+        for (Value *P : Prov)
+          railWireClosure(P, Taint, WireDir::BackwardOnly, nullptr, nullptr,
+                          CondWire);
+        // THE SEMANTIC TEST. Asked of every tainted value of the function, on
+        // both edges, with no gate on the condition's own shape — `Truncated`
         // reports an evaluation that could not be completed and declines with
         // the same string, because a search that stopped looking is exactly the
-        // "we stopped and accepted" shape this fence exists to stop.
-        if (!Pinned)
-          Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
-                                              Taint, DT, Truncated) ||
-                   Truncated;
+        // "we stopped and accepted" shape this fence exists to stop. (`Truncated`
+        // is NOT narrowed by `CondWire`; SCOPE H-8.)
+        Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
+                                            Taint, DT, CondWire, Truncated) ||
+                 Truncated;
         if (Pinned) {
           declineArm(declAnchor(Region),
                      "state prep seed is proven equal to the condition register");
