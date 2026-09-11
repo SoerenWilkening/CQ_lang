@@ -4736,6 +4736,101 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 
 
 # ============================================================================
+# bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE IN-PLACE CONTROLLED-Ry
+# ARM AND THE CONTROLLED STATE PREP ON A BARE `_Bool` (RAIL-ROOT) CONDITION,
+# INCLUDING THE NEGATED CONDITION.
+#
+# `clang -O1` hands the pass `br i1 %b` with NO COMPARE from every natural `bool`
+# spelling, and until this increment every such region declined `bare i1 register
+# condition` at `classifyArms`' first gate. The register IS the flag: the §13.3
+# rail ladder is run on it (tainted · not measured before the branch · the wire
+# question) and `emitInPlaceRotationRegion` sets `Flag = Cond`. NOTHING IS
+# MINTED, NOTHING IS STRIPPED, AND THE REGISTER IS NEVER FREED — after
+# `Ry(θ)|0⟩` it is not `|0⟩`, so a free would be a hidden measurement (Rule 6);
+# it is LEFT ALLOCATED, the same Rule-6-safe leak the COMPARE form already gives
+# its own condition register. NO NEW RUNTIME SYMBOL (owner D3): every width this
+# path can reach already has a declared and defined `cqrt_ry_<W>_controlled`.
+#
+# FIVE SLICES + ONE `cmp` TWIN GATE, all STRICT stage 2b.
+#
+# ⚠ FOUR OF THE FIVE HAVE **NO** `compare_files` GATE, DELIBERATELY, AND THE
+# REASON IS THE drbq Inc-4 PRECEDENT: their COMPARE twins are already committed
+# (`slice_control_inplace_ry{,_negated,_stateprep}.expected.log`) and this
+# family's goldens are those files MINUS THREE LINES (the mint, the strip, the
+# flag's `cqrt_free`) with the flag handle renamed to the condition register's.
+# The two goldens differ by a REDUCTION, so a byte-identity gate would assert
+# something FALSE. Each slice header states its own reduction so a reviewer can
+# re-derive it from two files in the tree — 10 trace lines become 7.
+#
+# THE ONE REAL `compare_files` GATE IS THE NEGATED PAIR, and it is available only
+# because of HOW negation is spelled. A `cqrt_x` bracket on the flag — the
+# compare form's answer — is forbidden on a USER REGISTER (bd `3qlq.4`), and
+# unlike the phase path there is no diagonal identity to fall back on. So the arm
+# is fired UNCONDITIONALLY and CANCELLED under the register:
+#     cqrt_ry_<W>(h_r, θ) ; cqrt_ry_<W>_controlled(h_b, h_r, −θ)
+# `−θ` is an IEEE sign flip, never an `fsub`, so the Inc-2b by-difference
+# rounding fence has no subject. That makes the compiler's output directly
+# comparable to a HAND-WRITTEN twin of the same circuit
+# (`r = cq_theta(r, 0.9); if (b) r = cq_theta(r, -0.9);`), which is the gate.
+# ⚠ IT IS AN INTERNAL-CONSISTENCY GATE, NOT AN ORACLE GATE: both halves need
+# l4x4.b to lower at all, and both decline `bare i1 register condition` on `main`
+# 0c7380c. Labelled as such here and in both slice headers.
+add_test(NAME e2e-slice-control-inplace-ry-bool-diamond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_diamond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_diamond.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-negated
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-negated-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated_twin.expected.log")
+
+# THE GATE: the compiler's anti-control == the programmer's own cancellation,
+# byte for byte. Internal-consistency (both halves need l4x4.b), not an oracle.
+add_test(NAME e2e-inplace-ry-bool-negated-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_negated_twin.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-stateprep
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_stateprep.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_stateprep.expected.log")
+
+# THE OWNER'S OWN SECOND REGION, in isolation: a controlled STATE PREP of a
+# `_Bool` under a NEGATED bare-rail condition — the shape bd `b6ap`'s multi-phi
+# peel will hand to this code. ⚠ HISTORY, dated: that sentence used to read "the
+# owner's FILE still declines `control flow` on this branch (two merge phis, bd
+# `b6ap`)". b6ap LANDED on `main` 3a3a2b9 and this branch is merged with it, so
+# the owner's FILE COMPILES now (19 trace lines; `MERGE_l4x4_2.md` §4). This
+# slice remains the REGION in isolation.
+add_test(NAME e2e-slice-control-inplace-ry-bool-stateprep-negated
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_stateprep_negated.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_stateprep_negated.expected.log")
+
+
+# ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).
 #
 # THIRTEEN LIVE ENTRIES (ten slices + three `cmp` twin gates). prep-b registered

@@ -6,6 +6,16 @@
 ; freeze, S7–S9) were argued for a MINTED flag and are re-argued for a borrowed
 ; one in 1b-C, not here. Declined (not `NotApplicable`, which the caller reports
 ; as `rotation angle`, the wrong reason) with `kBareRailCondReason`.
+;
+; ⚠ NOTE ADDED BY bd `test_C_libtooling-l4x4` sub-increment l4x4.b (2026-09-11):
+; **1b-C WAS SPLIT, AND THIS FILE BELONGS TO THE HALF THAT HAS NOT LANDED.** The
+; DIAMOND and the controlled STATE PREP on a rail lower now (l4x4.b); the Ry-stem
+; ANGLE SELECT is **l4x4.a** and is a separate increment, so this file's verdict
+; and its string are DELIBERATELY UNCHANGED. It is not an omission and not a
+; regression: `classifyAngleSelect` was not touched by l4x4.b beyond nothing at
+; all, and the whole-corpus sweep against the F2 base measured exactly two
+; movers, neither of them this one. Read the sentence above as "…are re-argued
+; for a borrowed one in l4x4.a".
 
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so every IR-text negative a
 ; decline fixture could carry is VACUOUS; what pins "no silent lowering" here is

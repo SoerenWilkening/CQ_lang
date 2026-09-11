@@ -51,8 +51,20 @@
    ⚠ AND THIS IS NOT THE OWNER'S `grover_oracle_uncompute.c`. That file is
    conditioned on a BARE RAIL (`br i1 %b0`, no compare) and declines at `bare i1
    register condition` (bd `l4x4`), behind a two-merge-phi `control flow` decline
-   (bd `b6ap`). F2 was wall 3 of 3 and only wall 3 moved; see
-   `ir-pass/test/control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll`.
+   (bd `b6ap`). F2 was wall 3 of 3 and only wall 3 moved.
+
+   ⚠ UPDATED BY bd `test_C_libtooling-l4x4` sub-increment l4x4.b: WALL 2 HAS
+   SINCE MOVED TOO. The bare-rail spelling of this very program now LOWERS — the
+   fixture this header used to cite as *"that fact as a fixture"*,
+   `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll`, was `git mv`'d to
+   `ir-pass/test/control_inplace_ry_stateprep_rail_i1_seed.ll` with its IR
+   BYTE-UNCHANGED and rewritten as the ACCEPT its own retirement note predicted.
+   ⚠ AND WALL 1 HAS MOVED TOO: bd `b6ap`'s multi-phi peel landed on `main`
+   3a3a2b9, so ALL THREE WALLS ARE DOWN and the owner's FILE COMPILES (measured
+   at the second merge: 19 trace lines, stage 2b `1 verified, 0 violation(s), 0
+   unproven`; `MERGE_l4x4_2.md` §4). Its second region alone is pinned by
+   `slice_control_inplace_ry_bool_stateprep_negated`. This slice is unchanged and
+   still measures what it always did — the COMPARE-conditioned spelling.
 
    ⚠ THE TRADE THE RULING BUYS, disclosed rather than fenced: after `-O1` this
    module is indistinguishable from a source that rotated the CONDITION's own

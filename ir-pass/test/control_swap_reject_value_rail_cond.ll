@@ -4,6 +4,33 @@
 ; classifier is where the rail is refused — the same string as the data select,
 ; because it IS the same missing lowering (a copy merge controlled on the
 ; register).
+;
+; ⚠ AMENDED BY bd `test_C_libtooling-l4x4` sub-increment l4x4.b (2026-09-11) —
+; SAME VERDICT, SAME STRING, DIFFERENT FENCE, AND THE DIFFERENCE IS WHY THIS FILE
+; NOW MATTERS MORE THAN IT DID. Until l4x4.b every rail-condition region died at
+; `classifyArms`' FIRST GATE (`!isa<CmpInst>(Region.Condition)`), so this file
+; pinned that one line. l4x4.b WIDENS that gate — the in-place controlled-Ry arm
+; and the controlled state prep lower on a rail now — and re-declines the other
+; arm classes AT THEIR OWN ACCEPT SITES (SCOPE §2.6; hazard H-8: four classes
+; must keep declining after a gate six of them share is widened, and the file's
+; own `SawRotationArm` comment records that the one-directional version of
+; exactly that check was already wrong once — "Luck is not a fence").
+;
+; SO THIS MODULE NOW REACHES THE VALUE-ARM ACCEPT SITE AND IS TURNED BACK THERE.
+; The reason is unchanged and is one layer down: since 3qlq Inc 2 a value arm is
+; the CONTROLLED-COPY MERGE, whose two `cqrt_copy_<W>_controlled` are X-BRACKETED
+; — free on a minted ancilla, FORBIDDEN on a user register (bd `3qlq.4`), and
+; with no `X·P(θ)·X = e^{iθ}P(−θ)` escape because that identity is about a
+; DIAGONAL gate. The rail root would need the 1b-B.1 `CopyRailRoot` CNOT ancilla,
+; and `emitValueRegion` builds its own `SelectRegion` and calls
+; `emitSelectRegion` directly without going through `CondTreeEmit`. Still bd
+; `test_C_libtooling-fg9k`.
+;
+; THE DISCRIMINATOR IS A RECORDED MUTATION, not a second binary (this file
+; declines on `main` 0c7380c, on the F2 checkpoint and here): delete the value
+; site's `if (RailCond) return declineRailClass();` and the region is ACCEPTED by
+; `classifyArms`, whereupon `emitRegion`'s rail dispatch refuses it with
+; `control flow` — a different string from a different layer.
 
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so every IR-text negative a
 ; decline fixture could carry is VACUOUS; what pins "no silent lowering" here is

@@ -261,6 +261,16 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
       G->getType()->isVoidTy() && G->arg_size() == 3 &&
       G->getArgOperand(1) == H)
     return true;
+  // ⚠ THIS BAIL IS WHAT KEEPS THE SPINE OFF AN l4x4.b CONTROL REGISTER — the
+  // clause above matched only `getArgOperand(1)`, the ROTATED rail, so a
+  // bare-`_Bool` register appearing as arg-0 (the CONTROL) falls to here and
+  // becomes an unrecognized consumer: `isTerminalHandle` false, the DAG
+  // `NotClosed`, the register LEFT ALLOCATED (Rule 6's required direction,
+  // `Ry(θ)|0⟩ ≠ |0⟩`). ⚠ BUT DO NOT READ IT AS THE ONLY REASON: a rail leaf is a
+  // `cq_theta_i1` result, so its register always carries an UNCONTROLLED
+  // `cqrt_ry_i1`, which `preservesBasisUnderRecord` refuses INDEPENDENTLY of
+  // every row in this list — the second, stronger exclusion, written out at that
+  // function's header (l4x4.b round-1 Rule-13 review, item H-9).
   if (N.contains("_controlled"))
     return false;
   // Uncontrolled rotation `cqrt_ry/rz_<W>(H, θ)` — arg_size 2, arg 0 is the
@@ -419,6 +429,35 @@ bool isTemplateProducer(const CallInst *G) {
 // Rule 3) and is NOT trivial on |0⟩ — it is the gate that mints the superposition.
 // That, not any "redundancy" argument, is why the shipped slice_io free was a
 // hidden measurement: `Ry† (CNOT-onto-kept-tape) Ry |0⟩` is not |0⟩.
+//
+// ⚠ THE SAME COROLLARY IS THE SECOND — AND STRONGER — REASON THE SPINE NEVER
+// CLAIMS A BARE-`_Bool` CONTROL REGISTER (bd `test_C_libtooling-l4x4`
+// sub-increment l4x4.b, round-1 Rule-13 review item H-9; recorded here because
+// the increment's own record rested on the WEAKER of the two arguments).
+// l4x4.b emits `cqrt_ry_<W>_controlled(h_b, h_r, θ)` with the USER'S `_Bool`
+// register `h_b` as arg-0, the control. Two independent exclusions keep the
+// whole-DAG spine off `h_b`, and only the first is about the `_controlled` list:
+//
+//   (1) `isTerminalHandle(h_b)` is FALSE — the `ry`-stem row above requires
+//       `getArgOperand(1) == H`, so a CONTROL operand is not an in-place gate on
+//       `h_b`, and the generic `if (N.contains("_controlled")) return false;`
+//       bail refuses arg-0 outright. That argument is a property of THIS
+//       FUNCTION'S LIST, and a future row admitted there could move it.
+//
+//   (2) `h_b` can never be an M-B INTERIOR candidate either, and THIS argument
+//       is a property of what a rail leaf IS, not of any list. A rail leaf is BY
+//       DEFINITION a `cq_theta_i1` result (`isCondRailLeaf`), so its register
+//       ALWAYS carries an UNCONTROLLED `cqrt_ry_i1(h_b, θ)` — the very gate the
+//       corollary above names: cond = ∅ and not trivial on |0⟩, hence NOT a
+//       basis permutation, hence `false` HERE, hence `isInteriorConsumer` arm
+//       (a) refuses it. NO ENTRY IN THE `_controlled` LIST CAN CHANGE THAT.
+//
+// Write it that way — and keep it written — because (2) is what survives a
+// widening of (1): the day someone admits a new `_controlled` stem above, the
+// six emitters named there need re-reading, and a bare-`_Bool` control does not,
+// because its Ry is what disqualifies it. (The Rule-6 disposition that follows
+// is the REQUIRED direction, not a shortfall: `Ry(θ)|0⟩ ≠ |0⟩`, so `h_b` is LEFT
+// ALLOCATED and never freed — freeing it would be a hidden measurement.)
 //
 // FAILS CLOSED: anything not named here — including anything a future increment
 // adds to the recovered gate set — is treated as NOT basis-preserving, which

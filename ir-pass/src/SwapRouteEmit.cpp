@@ -638,10 +638,58 @@ struct ArmInfo {
 // its physical rail is disjoint from every condition rail — so the condition's
 // basis at the strip is the basis the mint read, and `f` returns to |0⟩
 // unconditionally (Rule 6, then `cqrt_free`).
+//
+// ---- bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE BARE `_Bool`
+//      (RAIL-ROOT) CONDITION. `Cond` is a `Value *` because it is now either a
+//      `CmpInst` or the user's own `@cq_theta_i1` CALL (`isCondRailLeaf`). For a
+//      rail THREE of the four steps change and the fourth does not:
+//
+//        step 1  — `Flag = Cond`. NOTHING IS MINTED: the register IS its own
+//                  flag, read as a control exactly as the 1b/1b-B.1 emitters
+//                  read it. Byte-for-byte the substitution `emitPhaseAngleSelect`
+//                  already ships for the phase stem.
+//        step 2  — a NEGATED arm may NOT be `cqrt_x`-bracketed. Inc 1b's
+//                  invariant is "no `cqrt_x` on a user register, EVER", and
+//                  unlike the phase path there is no diagonal identity to escape
+//                  through (`X·P(θ)·X = e^{iθ}P(−θ)` needs `P` diagonal; `Ry` is
+//                  not). The answer is ANTI-CONTROL BY Ry ADDITIVITY — see the
+//                  step-2 comment.
+//        step 3  — NO strip and NO free. There is nothing to strip (nothing was
+//                  minted) and freeing the user's register would be a hidden
+//                  measurement: after `Ry(θ)|0⟩` it is not `|0⟩` (Rule 6). The
+//                  register is LEFT ALLOCATED — the same Rule-6-safe leak the
+//                  COMPARE form already gives its own condition register, and
+//                  MEASURED to be so (probe `t11c`: `%h` appears in no
+//                  `cqrt_free`). §2.7.
+//        step 4  — UNCHANGED. M-β is a correctness requirement for a state prep
+//                  and `flattenRegion` already refuses to erase a rail condition
+//                  (`RegionFlatten.cpp`, the 3qlq.4 guard).
 void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
-                               CmpInst *Cond, PHINode *MergePhi,
+                               Value *Cond, PHINode *MergePhi,
                                ArrayRef<ArmInfo> Arms, WidthDispatch &wd,
                                ControlledSymbols &csyms, TaintSet &taint) {
+  // Anchor for every loud bail below. `Cond` is a `CmpInst` or a `CallInst`;
+  // both are `Instruction`s, which is all `diagnoseUnderControl` needs.
+  auto *CondI = dyn_cast<Instruction>(Cond);
+  if (!CondI) {
+    if (MergePhi)
+      diagnoseUnderControl(MergePhi, "control flow");
+    return;
+  }
+  const bool RailCond = isCondRailLeaf(Cond);
+  if (!RailCond && !isa<CmpInst>(Cond)) {
+    diagnoseUnderControl(CondI, "control flow");  // neither compare nor rail.
+    return;
+  }
+  // §2.8 — THE CALLER-INDEPENDENT BACKSTOP. Only `classifyArms` runs the §13.3
+  // rail ladder; this emitter has one caller today and the field is what makes
+  // that a checked fact rather than a reading of the call graph. Same string the
+  // gate itself used before l4x4.b, so a fixture pinning "a rail did not get
+  // through" keeps its words.
+  if (RailCond && !R.RailLadderProven) {
+    diagnoseUnderControl(CondI, kBareRailCondReason);
+    return;
+  }
   // Re-validate the plan shape by SSA identity before mutating anything. A
   // silently skipped accepted region would leave the tainted `br` to the backend
   // as classical control over quantum state (Rule 1), so every bail is LOUD.
@@ -656,7 +704,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // routed base, no proof, decline loudly.
   Value *Base = R.RoutedBase;
   if (!Base) {
-    diagnoseUnderControl(Cond, "control flow");
+    diagnoseUnderControl(CondI, "control flow");
     return;
   }
   // Pair each arm with its recorded gate. `Shadow` belongs to `R.Arm` and
@@ -688,7 +736,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
     // exists to prevent. A loud decline costs nothing (it is unreachable) and
     // fails in the Prime-Directive direction.
     if (Cls != ArmClass::InPlaceRotation) {
-      diagnoseUnderControl(Cond, "control flow");
+      diagnoseUnderControl(CondI, "control flow");
       return;
     }
     // ⚠ FOR A CONTROLLED STATE PREP (PRD §14, bd test_C_libtooling-drbq Inc 4)
@@ -704,13 +752,13 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
     auto *T = Shadow.size() == 1 ? dyn_cast<CallInst>(Shadow.front()) : nullptr;
     if (!T || T->getParent() != A.BB || T->arg_size() < 2 ||
         T->getArgOperand(0) != Base) {
-      diagnoseUnderControl(Cond, "control flow");
+      diagnoseUnderControl(CondI, "control flow");
       return;  // the plan does not describe the IR — never emit half a region.
     }
     Gates.push_back({T, A.Negated});
   }
   if (Gates.empty()) {
-    diagnoseUnderControl(Cond, "control flow");
+    diagnoseUnderControl(CondI, "control flow");
     return;  // classification said InPlaceRotation; nothing to hoist is a bug.
   }
 
@@ -725,13 +773,36 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // 1. Flag mint at the BRANCH — byte-identical to the phase path's step 1. The
   //    ziov SHARED-flag position (mint at the compare) cannot arise here:
   //    `classifyArms` declines a `ShareCondFlag` region for this class.
-  //    (Track A.1, F-A1R2-1) `WireRuled`: this region came through
+  //
+  //    ⚠ FOR A RAIL THE FLAG **IS** THE CONDITION and nothing is minted (l4x4.b,
+  //    §2.1). The register is handed to `cqrt_ry_<W>_controlled` as arg-0, which
+  //    is a READ-ONLY control — the one class of gate on a user register Inc 1b
+  //    already emits (the 4.3 nest's node controls). It is ALWAYS ONE QUBIT:
+  //    `isCondRailLeaf` is a `cq_theta_i1` result, so the rail is a
+  //    `cqrt_alloc_i1` — exactly the width a minted compare flag has, and nothing
+  //    about `cqrt_ry_<W>_controlled`'s tensored semantics changes. 1b-C changes
+  //    WHO arg-0 is, and nothing else.
+  //
+  //    ⚠ MERGE (l4x4.b × Track A.1, 2026-09-11): the two sides of this line are
+  //    DISJOINT and both are kept. A COMPARE condition mints a flag and carries
+  //    A.1's `readKind=CondReadKind::WireRuled` — this region came through
   //    `classifyArms`, which asked `condWireDisposition` over `Prov` at round-1
-  //    taint — so rung (iii)'s taint-blind exemption has a real ruling to respect.
-  Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI,
-                                   /*negate=*/false, /*railToStrip=*/nullptr,
-                                   /*readKind=*/CondReadKind::WireRuled);
+  //    taint, so rung (iii)'s taint-blind exemption has a real ruling to respect.
+  //    A RAIL condition mints NOTHING, so there is no `CmpCondRead` to record and
+  //    no `readKind` to choose: the read is recorded on the RAIL side instead, by
+  //    `markRailCondRead` at the two sites in step 2 below, and re-asked by
+  //    `reverifyRailCondReads`. `reverifyCmpCondReads` iterates the recorded
+  //    entries only — an absent entry is not a hole, it is a region whose
+  //    condition was never a compare (the rail ladder in `classifyArms` §13.3
+  //    owns it end to end).
+  Value *Flag = RailCond
+                    ? Cond
+                    : lowerCompareToFlag(cast<CmpInst>(Cond), wd, taint,
+                                         /*qqWidth=*/{},
+                                         /*inverse=*/false, /*before=*/BI,
+                                         /*negate=*/false,
+                                         /*railToStrip=*/nullptr,
+                                         /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
 
@@ -775,21 +846,120 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    `Cls != InPlaceRotation` case above was deliberately given (round-2 lens
   //    C §3): an unreachable path in this emitter gets a Prime-Directive decline,
   //    not a `continue` and not a verifier abort. Zero cost.
+  //
+  //    ---- l4x4.b, §2.3 OPTION A — ANTI-CONTROL BY Ry ADDITIVITY, the ONLY
+  //         negation this emitter may spell on a user register.
+  //
+  //    The `cqrt_x(f)` bracket above is how the COMPARE path fires an arm on
+  //    `¬f`, and it is FORBIDDEN here: Inc 1b's invariant is "never a `cqrt_x` on
+  //    a user register" (`preservesBorrowedParent` admits an UNCONTROLLED
+  //    `cqrt_rz_` on a borrowed parent BY NAME and fails CLOSED on anything else,
+  //    so a bracket would freeze every chain that borrows the register), and the
+  //    phase path's escape hatch does not exist for `Ry`: `X·P(θ)·X =
+  //    e^{iθ}·P(−θ)` is an identity about a DIAGONAL gate.
+  //
+  //    So `if (!b) r = Ry(r,θ)` is emitted as
+  //
+  //        cqrt_ry_<W>(h_r, θ)                  ; b = 0 → Ry(θ)
+  //        cqrt_ry_<W>_controlled(h_b, h_r, −θ) ; b = 1 → Ry(θ)·Ry(−θ) = I
+  //
+  //    which is the source's unitary on BOTH branches. Four things make it the
+  //    right answer rather than a trick:
+  //      * EXACT, and for a stronger reason than the Inc-2b by-difference angle
+  //        select. `−θ` is an IEEE sign flip, not an `fsub`, so the whole
+  //        `½ ulp(A−B)` / `kAngleSelectMaxRoundingRad` / non-finite-difference
+  //        fence has NO SUBJECT and its constant-arms-only narrowing is not
+  //        imported. (The one literal hazard that IS real — an `undef` angle
+  //        occupying two emitted slots, bd `xy9n` — is refused in `classifyArms`,
+  //        before any mutation.)
+  //      * WIDTH-SAFE. `cqrt_ry_<W>` is TENSORED (`docs/backend.md` §11.3), so
+  //        each of the W qubits independently sees `Ry(θ)Ry(−θ) = I`.
+  //      * NO ancilla, no `cqrt_cnot`, no `cqrt_free`, NO NEW SYMBOL — and for a
+  //        STATE PREP the unconditional twin acts on the FRESH rail the hoisted
+  //        theta mints, so the stream is `alloc(SEED); ry(h,θ); cry(h_b,h,−θ)`.
+  //      * IT IS NOT A NEW EMISSION. The cancelling gate is the ORIGINAL hoisted
+  //        theta, CHAINED onto a clone of itself — the same `setArgOperand(0,
+  //        Prev)` chaining M-β already performs — so `lowerRotations` lowers both
+  //        through its ordinary `Chained` path and `Gates.back().first` is still
+  //        the last gate in the stream, which is what M-β RAUWs the merge to.
+  //
+  //    ⚠ ORDER OF `taint.ThetaCalls` IS PART OF THE FIX, NOT BOOKKEEPING. The
+  //    twin is inserted immediately BEFORE the original in that list, because
+  //    `lowerRotations` documents (and depends on) "a chained theta N+1 takes
+  //    theta N's result as its operand" — appending at the END would let the
+  //    cancelling gate be lowered with an un-RAUW'd operand, i.e. a transiently
+  //    broken module healed only by luck. Same hazard as H-1, same posture.
+  //
+  //    The COMPARE path keeps its `cqrt_x` bracket BYTE-FOR-BYTE: a minted flag
+  //    is an ancilla this emitter owns, the bracket is self-inverse, and every
+  //    shipped golden depends on it.
   FunctionCallee X = csyms.xFn();
   CallInst *Prev = nullptr;
   for (auto &G : Gates) {
     if (Prev == G.first) {
-      diagnoseUnderControl(Cond, "control flow");
+      diagnoseUnderControl(CondI, "control flow");
       return;
     }
-    if (G.second)
+    if (RailCond && G.second) {
+      // `classifyArms` admits at most ONE content arm for a rail, so `Prev` is
+      // null here; the check is the Rule-1 shape, not a live protection.
+      if (Prev) {
+        diagnoseUnderControl(CondI, kBareRailCondReason);
+        return;
+      }
+      CallInst *T = G.first;
+      Value *Angle = T->getArgOperand(1);
+      CallInst *TNeg = cast<CallInst>(T->clone());
+      // The UNCONDITIONAL twin is `T` itself, left at angle θ and moved into the
+      // pred exactly as an un-negated arm's gate is; the CLONE becomes the
+      // cancelling controlled gate, chained onto it.
+      T->moveBefore(BI);
+      TNeg->setArgOperand(0, T);
+      if (auto *CF = dyn_cast<ConstantFP>(Angle)) {
+        APFloat Neg = CF->getValueAPF();
+        Neg.changeSign();  // EXACT: a sign-bit flip, never an `fsub`.
+        TNeg->setArgOperand(1, ConstantFP::get(Angle->getType(), Neg));
+      } else {
+        // A CLASSICAL run-time angle (R2 proved it is not tainted). `fneg` is
+        // exact for every finite, infinite and NaN input, so no rounding fence
+        // has a subject here either.
+        IRBuilder<> NB(BI);
+        Value *N = NB.CreateFNeg(Angle, "cqnegangle");
+        if (auto *NI = dyn_cast<Instruction>(N))
+          NI->setDebugLoc(T->getDebugLoc());
+        TNeg->setArgOperand(1, N);
+      }
+      TNeg->insertBefore(BI);
+      stamp(TNeg);
+      taint.Tainted.insert(TNeg);
+      // Insert into `ThetaCalls` immediately AFTER `T` (see the ⚠ above).
+      auto It = llvm::find(taint.ThetaCalls, T);
+      taint.ThetaCalls.insert(It == taint.ThetaCalls.end() ? It : It + 1, TNeg);
+      taint.ControlledRotations[TNeg] = Flag;
+      markRailCondRead(taint, Flag, TNeg);
+      G.first = TNeg;  // M-β's RAUW target is the LAST gate in the stream.
+      Prev = TNeg;
+      continue;
+    }
+    if (!RailCond && G.second)
       stamp(B.CreateCall(X, {Flag}));
     G.first->moveBefore(BI);
     if (Prev)
       G.first->setArgOperand(0, Prev);
     taint.ControlledRotations[G.first] = Flag;
+    // ---- l4x4.b §2.9 — THE FIFTH `markRailCondRead` SITE. The hoisted theta
+    // BECOMES `cqrt_ry_<W>_controlled(h_b, …)`, i.e. this region's first (and
+    // only) `cqrt_*` READ of the user's register, so `reverifyRailCondReads`
+    // must re-ask rungs (ii)+(iii) against it once taint is final. Forgetting
+    // this call re-opens F-B1R2-1 — a CONFIRMED plain-C silent miscompile, `opt`
+    // exit 0, verify-clean, stage-2b clean — WITH NO DIAGNOSTIC ANYWHERE. The
+    // read point is a still-standing `@cq_theta` at the re-verification's slot
+    // (`CQLoweringPass` runs it BEFORE `lowerRotations`), which is what the
+    // record needs.
+    if (RailCond)
+      markRailCondRead(taint, Flag, G.first);
     Prev = G.first;
-    if (G.second)
+    if (!RailCond && G.second)
       stamp(B.CreateCall(X, {Flag}));
   }
 
@@ -821,12 +991,39 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    the trace reduces byte-for-byte to the chained twin's on the pre-Inc-4
   //    binary. The sentence above still governs the CHAINED class, where R4 does
   //    run.
-  auto *Strip = dyn_cast_or_null<CallInst>(
-      lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
-                         /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag));
-  if (Strip)
-    taint.DischargedFlagGates.insert(Strip);
-  stamp(B.CreateCall(wd.freeFn(), {Flag}));
+  //
+  //    ⚠ BOTH ARE SKIPPED WHOLE FOR A RAIL (l4x4.b §1.3 / §2.7), and each half
+  //    has its own reason:
+  //      * THE STRIP has no subject. It exists to return a MINTED ancilla to
+  //        |0⟩ by recomputing the compare; nothing was minted, and the register
+  //        carries the user's state, not a predicate.
+  //      * THE FREE WOULD BE A HIDDEN MEASUREMENT. `cqrt_free` is a hardware
+  //        reset and may be emitted ONLY where the rail is provably |0⟩ (Rule 6).
+  //        A condition rail is `Ry(θ)|0⟩ ≠ |0⟩` by construction — it is the
+  //        user's `_Bool`. So the register is LEFT ALLOCATED, which is the
+  //        REQUIRED direction and not a shortfall.
+  //    WHAT THE WHOLE-DAG SPINE THEN DOES WITH IT, read off the three predicates
+  //    that decide a rail's fate rather than argued: `isInPlaceGateOn` answers
+  //    FALSE for arg-0 of a `_controlled` gate (it requires arg-1 == H) and the
+  //    generic `_controlled` bail refuses it outright, so `isTerminalHandle` hits
+  //    `return false` and the spine NEVER CLAIMS the register; and
+  //    `preservesBasisUnderRecord`'s disqualify list names every `_controlled`
+  //    gate, so it is never an M-B interior candidate either. Net: not freed, not
+  //    reversed, not adjointed — exactly the disposition the COMPARE form already
+  //    gives its own condition register (MEASURED, probe `t11c`: `%h` appears in
+  //    no `cqrt_free`). If the register is also MEASURED — the flagship program —
+  //    its `cqrt_measure_i1` is an ordinary sink and nothing here changes.
+  //    ⚠ `railCarriesControlledRotation` freezes arg-1 (the ROTATED rail), NOT
+  //    arg-0; the asymmetry is deliberate and is the only thing standing between
+  //    a user register as a control and an M-B interior discharge (§2.7, H-9).
+  if (!RailCond) {
+    auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
+        cast<CmpInst>(Cond), wd, taint, /*qqWidth=*/{}, /*inverse=*/true,
+        /*before=*/BI, /*negate=*/false, /*railToStrip=*/Flag));
+    if (Strip)
+      taint.DischargedFlagGates.insert(Strip);
+    stamp(B.CreateCall(wd.freeFn(), {Flag}));
+  }
 
   // 4. Rewire + erase + scrub, then flatten. The merge φ now denotes the base
   //    register itself — BOTH incomings name the ONE physical rail, exactly as
@@ -922,7 +1119,41 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
 // "phi on both splits and joins" (SCOPING §2).
 void emitRegion(const ControlRegion &R, WidthDispatch &wd,
                 ControlledSymbols &csyms, TaintSet &taint) {
+  // ---- bd test_C_libtooling-l4x4 (l4x4.b). `R.Condition` may now be a BARE
+  // `_Bool` REGISTER (`isCondRailLeaf`) instead of a `CmpInst`, but ONLY for the
+  // control-in-place ROTATION class — `classifyArms` re-declines every other arm
+  // class on a rail (§2.6). So the rail is dispatched to
+  // `emitInPlaceRotationRegion` BEFORE the `CmpInst` cast below, and every path
+  // that follows still sees a real compare. `RailCondI` is non-null exactly when
+  // the condition is a rail.
+  auto *RailCondI = isCondRailLeaf(R.Condition)
+                        ? dyn_cast_or_null<CallInst>(R.Condition)
+                        : nullptr;
   auto *Cond = dyn_cast_or_null<CmpInst>(R.Condition);
+  if (RailCondI) {
+    auto *RailMergePhi = dyn_cast_or_null<PHINode>(R.Merge);
+    auto *RailBI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator())
+                          : nullptr;
+    if (!RailMergePhi || !R.Pred || !R.Arm || !RailBI ||
+        (R.ClassArm != ArmClass::InPlaceRotation &&
+         R.ClassArmFalse != ArmClass::InPlaceRotation)) {
+      // Loud, never a silent skip: a rail-condition region that reaches the
+      // emitter with a plan describing anything else must not be handed to the
+      // backend as classical control over quantum state (Rule 1).
+      diagnoseUnderControl(RailCondI, "control flow");
+      return;
+    }
+    SmallVector<ArmInfo, 2> RailArms;
+    if (R.ArmFalse) {
+      RailArms.push_back({R.Arm, /*Negated=*/false});
+      RailArms.push_back({R.ArmFalse, /*Negated=*/true});
+    } else {
+      RailArms.push_back({R.Arm, R.ArmNegated});
+    }
+    emitInPlaceRotationRegion(R, RailBI, RailCondI, RailMergePhi, RailArms, wd,
+                              csyms, taint);
+    return;
+  }
   auto *MergePhi = dyn_cast_or_null<PHINode>(R.Merge);
   if (!Cond || !MergePhi || !R.Pred || !R.Arm) {
     // Detection guarantees the shape; if it ever fails to hold, bail LOUDLY — a

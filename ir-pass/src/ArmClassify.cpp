@@ -101,6 +101,32 @@ bool isCallToPrefix(const Value *V, StringRef Prefix) {
 bool isPhiCall(const Value *V) { return isCallToPrefix(V, "cq_phi_"); }
 bool isThetaCall(const Value *V) { return isCallToPrefix(V, "cq_theta_"); }
 
+// A CONSTANT rotation angle that is NOT A FINITE NUMBER (`+inf`, `-inf`, NaN).
+//
+// *** ONE SPELLING, SHARED BY THE TWO FENCES THAT DUPLICATE AN ANGLE (Rule 14).
+// *** It is called by `angleSelectArmsAdmissible`'s clauses (2a)/(2b) — bd drbq
+// Inc 2b's by-difference arm fence, where it has shipped since that increment's
+// round-1 Rule-13 review — and by the l4x4.b NEGATED-rail-arm clause in
+// `classifyArms`, added by l4x4.b's round-1 Rule-13 review (finding F-1). Both
+// callers emit ONE user angle into TWO gate slots, and in both the composition
+// on the slot the source leaves ALONE is `Ry(θ)·Ry(−θ)` / `R(B)·R(A−B)` — an
+// identity for every FINITE `θ`, and NaN for a non-finite one. Extracted as a
+// helper rather than re-spelled because the l4x4.b review found this clause
+// missing at the second site, and a second spelling is how they drift apart.
+//
+// `dyn_cast_or_null` on purpose: the l4x4.b caller reads `getArgOperand(1)` of a
+// theta whose arity its own caller has already established, but a null here must
+// answer "not a non-finite constant" (i.e. fall through to the other fences)
+// rather than crash — and a non-constant (run-time) angle is likewise NOT this
+// clause's subject. Each caller states its own disposition for a run-time angle:
+// the angle select REFUSES it at (2c) (the Inc-2b clearance blocker F-11,
+// because `fsub` can manufacture a non-finite value FROM TWO FINITE ONES);
+// l4x4.b ACCEPTS it, because `fneg` provably cannot (see that clause).
+bool constantAngleIsNonFinite(const Value *Angle) {
+  const auto *C = dyn_cast_or_null<ConstantFP>(Angle);
+  return C && !C->getValueAPF().isFinite();
+}
+
 }  // namespace
 
 // The per-arm analyses below are de-anonymized into the named `cq` namespace
@@ -3101,13 +3127,45 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // compound condition (clang's `select i1` for `&&`/`||`) or any non-compare i1
   // is not a 4.1-lowerable region — decline (closes the compound-cond
   // over-accept; WI-1 adversarial review 2026-06-09).
-  if (!isa<CmpInst>(Region.Condition)) {
-    // bd 3qlq.4: a bare `_Bool` REGISTER as the condition of a value / in-place
-    // Ry / state-prep arm is a filed follow-on (1b-B/1b-C), named by its own
-    // string so the fixture that pins it flips when that increment lands.
-    diagnoseUnderControl(declAnchor(Region),
-                         isCondRailLeaf(Region.Condition) ? kBareRailCondReason
-                                                          : "control flow");
+  //
+  // ---- bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE GATE, WIDENED TO
+  //      A BARE `_Bool` (RAIL-ROOT) CONDITION.
+  //
+  // `isCondRailLeaf` is the user's own `_Bool` REGISTER (a `cq_theta_i1` result,
+  // root or chained). `clang -O1` hands it to the pass as `br i1 %b` with NO
+  // compare at all, from every natural `bool` spelling, and until l4x4.b every
+  // such region died on this line. It mints NOTHING — the register IS its own
+  // flag — so the three compare-shaped gates that follow (predicate template,
+  // `HasDataUse`/`ShareCondFlag`, and `condWireDisposition`'s cross-block +
+  // positional prongs) have no subject, and the §13.3 RAIL LADDER replaces them:
+  //
+  //   (i)   tainted — by construction (`cq_theta_i1` is the taint SOURCE),
+  //         re-asked as defence in depth;
+  //   (ii)  NOT measured before the READ POINT (`railMeasuredBeforeReadPoint` at
+  //         `Pred->getTerminator()`, asked over the rail's WIRE and not over its
+  //         SSA name — the r9e5 round-1 F-B1R1-1 widening);
+  //   (iii) the WIRE question — `railCondWireDisposition`, which is
+  //         `condWireDisposition` MINUS the P4 cross-block prong, MINUS the P5
+  //         positional scan and MINUS the `ShareCondFlag` clause.
+  //
+  // ⚠ THE ACCEPT IS **TWO** ARM CLASSES, NOT ALL SIX, and the re-decline is
+  // written AT EVERY OTHER ACCEPT SITE rather than once here (§2.6). l4x4.b ships
+  // the CONTROL-IN-PLACE ROTATION arm and the controlled STATE PREP; the PHASE,
+  // EQ-FOLD and VALUE classes keep `kBareRailCondReason` (bd `fg9k` owns the
+  // value arm; the 6.5 classical-call arm never reaches here, refused by its own
+  // `isa<CmpInst>` early return — bd `54ur`). That is deliberately the same
+  // spelling homogeneity already uses — one flag, a clause at every accept site —
+  // and for the same recorded reason: the one-directional version of that check
+  // was already wrong once ("Luck is not a fence", `SawRotationArm` below).
+  const bool RailCond = isCondRailLeaf(Region.Condition);
+  if (!isa<CmpInst>(Region.Condition) && !RailCond) {
+    diagnoseUnderControl(declAnchor(Region), "control flow");
+    return ArmDisposition::Declined;
+  }
+  if (RailCond && !Region.Pred) {
+    // No pred, no branch, no read point — the ladder's rungs (ii)/(iii) have
+    // nothing to anchor on. Loud, never a silent skip (Rule 1).
+    diagnoseUnderControl(declAnchor(Region), "control flow");
     return ArmDisposition::Declined;
   }
 
@@ -3118,9 +3176,32 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // loudly, but only the FLAT mint is its emit step 1 — decline in DETECTION so
   // the posture is uniform with the nested path (whose inner mint follows the
   // outer route) and the reason is precise (test_C_libtooling-jvun).
-  if (!comparePredLowerable(cast<CmpInst>(Region.Condition))) {
+  //
+  // SKIPPED for a rail: there is no predicate and no `_hl` template — the
+  // register is handed to `cqrt_ry_<W>_controlled` as arg-0 unchanged.
+  if (!RailCond &&
+      !comparePredLowerable(cast<CmpInst>(Region.Condition))) {
     diagnoseUnderControl(declAnchor(Region), "control condition has no template");
     return ArmDisposition::Declined;
+  }
+
+  // ---- l4x4.b, RUNG (i) + RUNG (ii) of the §13.3 rail ladder. Asked HERE, in
+  //      `classifyArms`' own order, so that a rail region's message ordering
+  //      mirrors the compare region's: rung (ii) stands exactly where
+  //      `condDataUseDisposition`'s `MeasuredEarly` stands for a compare, and
+  //      carries that clause's string.
+  if (RailCond) {
+    auto *Rail = cast<CallInst>(Region.Condition);
+    if (!Taint.Tainted.count(Rail)) {
+      diagnoseUnderControl(declAnchor(Region), "control flow");
+      return ArmDisposition::Declined;
+    }
+    if (railMeasuredBeforeReadPoint(Rail, Region.Pred->getTerminator(), Taint,
+                                    DT)) {
+      diagnoseUnderControl(declAnchor(Region),
+                           "condition measured before the control route");
+      return ArmDisposition::Declined;
+    }
   }
 
   // The condition compare may feed a DATA position in addition to the branch
@@ -3137,12 +3218,30 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // on it — both decline LOUDLY (over-declining is always safe). This SUPERSEDES
   // the flat 4.1 blanket decline ("condition used outside the branch"). Pure SSA
   // analysis (Rule 9).
+  //
+  // ⚠ SKIPPED WHOLE FOR A RAIL, AND SKIPPING IS THE ANSWER RATHER THAN AN
+  // OPTIMISATION (bd test_C_libtooling-l4x4, l4x4.b, hazard H-4). Left in, this
+  // block is not merely inapplicable — it is WRONG ABOUT THE WRONG OBJECT. A
+  // rail's `users()` are the user's own reads of a `_Bool` variable: the
+  // increment's flagship program (`bool b = cq_theta(…); if (b) …; return
+  // cq_measure(b);`) has a `cq_measure_i1` user, so `HasDataUse` is TRUE and
+  // `condDataUseDisposition` would adjudicate the USER'S REGISTER as a FLAG
+  // LINEAGE. Every outcome is then a wrong answer about the wrong object:
+  // `ShareOk` would set `Region.ShareCondFlag` (and R7 below would decline a
+  // shape that is perfectly ordinary), `MeasuredEarly` / `Unowned` would decline
+  // a register whose measurement or death is the program, not a defect. Nothing
+  // is MINTED from a rail, so no flag can be shared with a data use or outlive
+  // the region — the identical argument `classifyPhaseKickback` records at its
+  // own `HasDataUse` guard and `SelectClassify` restates. Rung (ii) above is the
+  // replacement for the one real question this block asked (a measurement that
+  // precedes the control read), not a weaker version of it.
   bool HasDataUse = false;
-  for (const User *U : Region.Condition->users())
-    if (!isa<BranchInst>(U)) {
-      HasDataUse = true;
-      break;
-    }
+  if (!RailCond)
+    for (const User *U : Region.Condition->users())
+      if (!isa<BranchInst>(U)) {
+        HasDataUse = true;
+        break;
+      }
   if (HasDataUse) {
     switch (condDataUseDisposition(cast<Instruction>(Region.Condition),
                                    Region.Pred, Taint)) {
@@ -3181,8 +3280,18 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
   // basis than the source compare — the wrong arm fires and the flag cannot be
   // stripped. Decline (see condWireDisposition, which owns the whole rationale
   // INCLUDING the Inc-4 position-aware accept and its five preconditions).
+  //
+  // ---- l4x4.b, RUNG (iii). A rail asks `railCondWireDisposition` — the same
+  // walker over the same `Prov` (which for a bare rail is exactly `{rail}`:
+  // `condProvenance` collects a theta's RESULT and stops), minus the two prongs
+  // that have no subject for a register. Spelled EXACTLY as
+  // `classifyPhaseKickback` spells the same dispatch, so the two consumers of
+  // one ladder cannot drift. `condWireDisposition` asked of a rail returns
+  // `DeclineNow` unconditionally — its P4 prong refuses a condition defined
+  // outside `Pred`, which is where a `_Bool` register's def routinely sits.
   const CondWireDisp WireDisp =
-      condWireDisposition(Region, Taint, Prov, DT);
+      RailCond ? railCondWireDisposition(Region, Taint, Prov, DT)
+               : condWireDisposition(Region, Taint, Prov, DT);
   if (WireDisp == CondWireDisp::DeclineNow) {
     diagnoseUnderControl(declAnchor(Region),
                          "condition predates a non-diagonal gate");
@@ -3204,6 +3313,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
                            "condition predates a non-diagonal gate");
     else
       diagnoseUnderControl(Where, What);
+  };
+  // ---- l4x4.b §2.6 — THE PER-ARM-CLASS RE-DECLINE. The gate above admits a
+  // bare `_Bool` condition for the TWO classes this increment ships (the
+  // control-in-place ROTATION arm and the controlled STATE PREP); every other
+  // class must keep the string its fixture pins, at the accept site that would
+  // otherwise claim it. Routed through `declineArm` like every other decline
+  // below the wire gate, so a region that ALSO carries a deferred wire gate
+  // keeps that message — the wrapper's whole purpose.
+  auto declineRailClass = [&]() {
+    declineArm(declAnchor(Region), kBareRailCondReason);
+    return ArmDisposition::Declined;
   };
 
   // The diamond's straight-through (Pred-edge) incoming — the muxed variable's
@@ -3331,6 +3451,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "impure phase arm");
         return ArmDisposition::Declined;
       }
+      // §2.6 — PHASE class on a rail: out of l4x4.b. A register-carrying
+      // `cq_phi` spine no longer exists (3qlq Inc 1, owner decision D1) and the
+      // register-free one is pre-peeled by `classifyPhaseKickback`, so this is
+      // unreachable from C; it is written because the gate above is shared and a
+      // class must never acquire an accept nobody cleared it for.
+      if (RailCond)
+        return declineRailClass();
       SawPhaseArm = true;
       continue;
     }
@@ -3350,6 +3477,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
+      // §2.6 — EQ-FOLD class on a rail: out of l4x4.b. `tryEqFoldArm`'s D2/D8
+      // polarity proof is written over an `ICmpInst` and its `straightThrough`
+      // re-anchor reads a compare literal; neither has a rail analogue (a rail
+      // branch DOES pin `b` on its edges, and building that re-anchor is a
+      // separate increment — an unbuilt re-anchor can only OVER-decline).
+      if (RailCond)
+        return declineRailClass();
       SawPhaseArm = true;
       continue;
     }
@@ -3384,11 +3518,170 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
+      // ---- l4x4.b — THE TWO RAIL-ONLY SCOPE FENCES, asked FIRST among this
+      //      class's clauses and guarded by `RailCond`, so a COMPARE region's
+      //      message ordering is byte-identical to the pre-l4x4.b binary by
+      //      construction (the Inc-4 `StatePrep` precedent).
+      //
+      // (a) IN-LOOP IS CARVED OUT — bd `test_C_libtooling-l4x4` sub-increment
+      //     l4x4.c, an owner-scoped increment boundary and NOT an omission. The
+      //     shape (`for (…) if (b) r = cq_theta(r,θ);` with `b` loop-INVARIANT)
+      //     reaches here — `flatRegionRollableInLoop` already proved the CFG
+      //     half — and R7's (b)/(b′) clauses would carry unchanged. What it does
+      //     NOT have is a WITNESS: its compare twin declines `condition predates
+      //     a non-diagonal gate` (CLAUDE.md row W — `-O1` LICM-hoists the
+      //     invariant compare and `condWireDisposition`'s P4 refuses a
+      //     cross-block condition, while `railCondWireDisposition` deliberately
+      //     has no P4 prong), so there is nothing for a rolled trace to be
+      //     byte-identical TO except itself. It is also exactly the
+      //     loop-INVARIANT-condition + loop-CARRIED-register mixture that
+      //     produced eight confirmed silent miscompiles over six adversarial
+      //     rounds in `markIfRailLocal`'s neighbourhood (CLAUDE.md's C-1 family),
+      //     and stage 2b is structurally blind to the leak they share. The loop
+      //     STRING, not `kBareRailCondReason`: the shape is refused for being in
+      //     a loop, and part 2 of `ControlDetect`'s in-loop scope fence says the
+      //     same words for the same kind of reason.
+      //
+      //     ⚠ *** SAY THE COST IN FULL, BECAUSE IT IS TOTAL AND NOT PARTIAL ***
+      //     (l4x4.b round-1 Rule-13 review, finding F-2; bd
+      //     `test_C_libtooling-wx8g`). "The compare twin declines" reads like a
+      //     missing witness; it is in fact the OTHER HALF of the capability
+      //     going out with this one. Because the compare spelling cannot express
+      //     this shape AT ALL — measured on ORACLE, F2 and this tree alike,
+      //     `review_l4x4b_r1_probes` `t5c` — the carve-out closes the ONLY door:
+      //     **"Grover as a ROLLED loop with a `_Bool`-controlled rotation or
+      //     state prep" compiles in NO spelling on ANY binary.** That is a
+      //     defensible increment boundary (the C-1 history above is a real
+      //     reason to make the loop form its own round with its own twin
+      //     matrix), and it is NOT a claim that the shape is unlowerable — it is
+      //     an owner-visible over-decline, filed with exactly that sentence.
+      if (RailCond && Region.InLoop) {
+        declineArm(declAnchor(Region), "control flow inside a loop body");
+        return ArmDisposition::Declined;
+      }
+      // (b) ONE CONTENT ARM ONLY. A two-arm if/else on a rail needs anti-control
+      //     on the `¬b` arm, and l4x4.b's answer to anti-control (Ry ADDITIVITY,
+      //     `ry(h,θ); cry(h_b,h,−θ)` — see `emitInPlaceRotationRegion` step 2)
+      //     was argued and pinned for ONE arm. Chaining it for two
+      //     (`ry(h,B); cry(h_b,h,−B); cry(h_b,h,A)`) is a different emission
+      //     order with a different M-β target and owes its own round. UNREACHABLE
+      //     FROM PLAIN C — `-O1` (SimplifyCFG) merges two rotation arms into ONE
+      //     call with an ANGLE SELECT, which is `classifyAngleSelect`'s Ry stem
+      //     and is sub-increment l4x4.a — so this is a hand-IR decline, and it is
+      //     `kBareRailCondReason` because the refusal is about the condition kind.
+      if (RailCond && Arms.size() > 1)
+        return declineRailClass();
       // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
       // `cq_phi` SPINE and never inspects a theta at the arm incoming, so this
       // is the check for this class; same predicate, same string as the phase
       // path's.
       if (rotationAngleIsTainted(T, Taint)) {
+        declineArm(T, "rotation angle");
+        return ArmDisposition::Declined;
+      }
+      // ---- l4x4.b — the ANTI-CONTROL angle must be NEGATABLE WITHOUT CREATING
+      //      A SECOND READING OF ONE LITERAL. For a NEGATED rail arm the emitter
+      //      emits the rotation twice — `ry(h, θ)` unconditionally and
+      //      `cry(h_b, h, −θ)` to cancel it — so an `undef`/`poison` angle would
+      //      occupy TWO emitted gate slots and be read as TWO DIFFERENT VALUES at
+      //      the `-O0` stage 3 (bd `xy9n`, `LiteralIntegrity.cpp`): the cancelling
+      //      gate would then not cancel, on the `b = 1` branch, verify-clean.
+      //      `declineUnpairedUndefLiterals` would catch it module-wide at the very
+      //      end, but that is a decline AFTER mutation — Rule 9 says detect
+      //      first, and the reason belongs where the second slot is created.
+      //      Asked with `valueCarriesUndef` (the shared spelling, Rule 14), and
+      //      only for the negated rail shape: nothing else duplicates an angle.
+      if (RailCond && Region.ArmNegated && !Region.ArmFalse &&
+          valueCarriesUndef(T->getArgOperand(1))) {
+        declineArm(T, "rotation angle");
+        return ArmDisposition::Declined;
+      }
+      // ---- l4x4.b ROUND-1 RULE-13 REVIEW, FINDING F-1 (OVER-ACCEPT-ARGUED) —
+      //      A NON-FINITE **CONSTANT** ANGLE ON THE NEGATED FORM. The clause
+      //      above fenced the `undef` half of its own argument and stopped one
+      //      conjunct short; this is the other half, and it was a wrong unitary
+      //      on a branch the source leaves ALONE.
+      //
+      //      MEASURED at 267937d (`review_l4x4b_r1_probes/x01_neg_inf_angle.c`,
+      //      `x02_neg_nan_angle.c` — plain C at `-O1`, `opt` exit 0,
+      //      verify-clean, stage-2b clean):
+      //
+      //          _Bool b = cq_theta(b,.5); int r = cq_theta(r,.25);
+      //          if (!b) r = cq_theta(r, __builtin_inf());
+      //        ->  cqrt_ry_i32(%h1, +inf)
+      //            cqrt_ry_i32_controlled(%h, %h1, -inf)
+      //
+      //      On the `b = 1` branch the SOURCE IS THE IDENTITY and the emitted
+      //      pair is `Ry(−inf)·Ry(+inf)`, which is NaN — not `I`. Same for NaN.
+      //      The anti-control identity `Ry(θ)·Ry(−θ) = I` that licenses the whole
+      //      negated form (SCOPE §2.3 option A) holds for every FINITE `θ` and
+      //      for NOTHING ELSE. ZERO IS FINITE and is the accept, not an edge
+      //      case: `Ry(0)·Ry(−0) = I` exactly (pinned, `..._negated_zero_angle`).
+      //
+      //      THE COMPARE TWIN IS FAITHFUL, which is what makes this l4x4.b's and
+      //      not a pre-existing disposition: it brackets ONE gate with `cqrt_x`
+      //      (`x(f); cry(f,h1,+inf); x(f)`), so its non-firing branch is
+      //      untouched — measured on the ORACLE, `x01c_neg_inf_cmp.c`.
+      //
+      //      ASKED WITH THE SHARED `constantAngleIsNonFinite` (Rule 14) — the
+      //      SAME spelling `angleSelectArmsAdmissible`'s clauses (2a)/(2b) use,
+      //      now literally the same function. That sibling emitter is the only
+      //      other place in the tree that puts ONE user angle into TWO gate
+      //      slots, and it has had this fence since the Inc-2b round-1 review;
+      //      l4x4.b shipped the `undef` half of the same argument without it.
+      //      Same string as the `undef` clause and as the angle-select family's
+      //      own non-finite decline (`rotation angle`) — NO NEW DIAGNOSTIC.
+      //
+      //      *** A RUN-TIME ANGLE KEEPS ACCEPTING, AND THE F-11 STRUCTURE DOES
+      //      NOT TRANSFER. *** Inc 2b refuses run-time arms outright at (2c)
+      //      because `fsub` MANUFACTURES a non-finite value FROM TWO FINITE ONES
+      //      (measured there: `±8.98846567431158e307` emits a controlled gate at
+      //      `inf`), so its precondition is DISPROVEN on well-formed inputs and
+      //      no compile-time fence can see it. Here the emitter performs `fneg`,
+      //      which flips ONE SIGN BIT: `fneg` of a finite value is finite, of an
+      //      infinity the other infinity, of a NaN a NaN — it cannot leave the
+      //      finite class. So the ONLY input that breaks the identity is an angle
+      //      that was ALREADY non-finite, i.e. an ill-formed CQ program in EVERY
+      //      spelling (`Ry(NaN)` lands on the taken branch of the compare twin
+      //      too, and an uncontrolled `cq_theta(q, inf)` lowers to
+      //      `cqrt_ry_<W>(h, inf)` on every binary in the tree — the distinction
+      //      `control_angle_select_reject_inf_arm.ll`'s header already draws).
+      //      What the negated form adds is that it ALSO corrupts the untaken
+      //      branch of that already-ill-formed program, and for a CONSTANT the
+      //      compiler can SEE it, so it declines. For a run-time angle it cannot,
+      //      and the Prime Directive's "decline what you cannot prove" would here
+      //      refuse every run-time angle to protect a program that is broken
+      //      anyway — a total over-decline of the shipped accept class (Rule 17).
+      //
+      //      A `double` `ConstantExpr` (a relocatable address bitcast to double —
+      //      a LINK-TIME constant this compiler cannot read) is NOT a
+      //      `ConstantFP` and therefore rides with the run-time class here, by
+      //      the same argument: the emitter's `CreateFNeg` puts `E` in one slot
+      //      and `-E` in the other, whatever `E` turns out to be, so the two
+      //      slots still cancel for every finite `E`. ⚠ THAT IS THE OPPOSITE
+      //      DISPOSITION FROM `angleSelectArmsAdmissible`'s clause (1b), WHICH
+      //      REFUSES IT — and the difference is not an oversight: 2b EVALUATES
+      //      `A − B` at compile time, so a value it cannot read makes clauses
+      //      (2a)/(2b)/(3) silently not run; here nothing is evaluated, the
+      //      cancellation is structural, and an unreadable constant is in exactly
+      //      the position a run-time one is. Hand-IR-only either way (every C
+      //      punning idiom goes through a `load`).
+      //
+      //      *** RESIDUAL, RECORDED RATHER THAN FENCED: a run-time angle whose
+      //      value is non-finite AT RUN TIME. *** The alternative that removes it
+      //      entirely for every angle is SCOPE §2.3 OPTION B, the 1b-B.1
+      //      `CopyRailRoot` ancilla with the `cqrt_x` bracket ON THE ANCILLA (not
+      //      on the user register, which Inc 1b forbids):
+      //          bf = cqrt_alloc_i1(0); cqrt_cnot(h_b, bf); cqrt_x(bf);
+      //          cqrt_ry_<W>_controlled(bf, h_r, θ);
+      //          cqrt_x(bf); cqrt_cnot(h_b, bf); cqrt_free(bf)
+      //      — 4 extra gates and 1 ancilla, and it fires exactly ONE rotation, so
+      //      it is exact for EVERY angle including non-finite and run-time ones.
+      //      *** OWNER OPTION. NOT BUILT (see IMPL_l4x4b.md §8 Q8 and
+      //      FIX_l4x4b_R1.md, both under
+      //      docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/). ***
+      if (RailCond && Region.ArmNegated && !Region.ArmFalse &&
+          constantAngleIsNonFinite(T->getArgOperand(1))) {
         declineArm(T, "rotation angle");
         return ArmDisposition::Declined;
       }
@@ -4141,6 +4434,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       Region.setRoutedBase(RotBase);
       Routed = RotBase;
       SawRotationArm = true;
+      // l4x4.b §2.8 — THE CALLER-INDEPENDENT BACKSTOP. `ControlRegion::
+      // RailLadderProven` means "some classifier ran the §13.3 rail ladder for
+      // this region"; `emitInPlaceRotationRegion` REFUSES a rail condition
+      // without it. One field, two writers (`classifySelectRegion` is the other),
+      // one contract — a second field would be the `railOf`/`isAbiQramStore`
+      // drift hazard (Rule 14). Set only when the condition IS a rail, so the
+      // emitter's refusal cannot be satisfied by accident.
+      if (RailCond)
+        Region.RailLadderProven = true;
       continue;
     }
 
@@ -4162,6 +4464,10 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
+      // §2.6 — PHASE class on a rail (the if/else leaf anchor): out of l4x4.b,
+      // for the same reason as its diamond sibling above.
+      if (RailCond)
+        return declineRailClass();
       SawPhaseArm = true;
       Routed = Base;
       continue;
@@ -4361,6 +4667,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
           declineArm(Chain.Ops.front(), "value-arm swap-route");
           return ArmDisposition::Declined;
         }
+        // §2.6 — VALUE class on a rail: out of l4x4.b and filed as bd
+        // `test_C_libtooling-fg9k` (1b-B.2b). The 3qlq Inc-2 value merge hoists
+        // the arm's chain and merges by two X-BRACKETED
+        // `cqrt_copy_<W>_controlled`, and the bracket is the thing Inc 1b forbids
+        // on a user register — the rail root would need the 1b-B.1 `CopyRailRoot`
+        // CNOT ancilla, which `emitValueRegion` does not route through. That is a
+        // whole increment with its own Rule-13 round, not a fall-through.
+        if (RailCond)
+          return declineRailClass();
         // ACCEPT-class value arm: record the class + the ordered chain for
         // the emitter (Shadow = Region.Arm's chain, ShadowFalse =
         // Region.ArmFalse's; for an orientation-B diamond Region.Arm is the
@@ -6175,9 +6490,18 @@ bool angleSelectArmsAdmissible(const Value *A, const Value *B) {
   // non-finite-arm case, not the run-time case. Keeping the `CA &&` / `CB &&`
   // guards also means (2c)'s widening back (owner option (1), one line) cannot
   // silently unfence this class along with the run-time one.
-  if (CA && !CA->getValueAPF().isFinite())
+  //
+  // ⚠ SPELLING ONLY — behaviour UNCHANGED. `constantAngleIsNonFinite(A)` is
+  // `dyn_cast<ConstantFP>` + `!isFinite()`, i.e. `CA && !CA->…isFinite()`
+  // verbatim, including the `CA &&` guard the paragraph above explains (a
+  // non-`ConstantFP` arm is NOT this clause's subject and falls through to
+  // (2c)). It became a shared helper for l4x4.b's round-1 Rule-13 finding F-1:
+  // the negated rail arm is the SECOND emitter in the tree that puts one user
+  // angle into two gate slots, it shipped without this fence, and two spellings
+  // of one question are how the second site gets forgotten again.
+  if (constantAngleIsNonFinite(A))
     return false;
-  if (CB && !CB->getValueAPF().isFinite())
+  if (constantAngleIsNonFinite(B))
     return false;
   if (!CA || !CB)
     // (2c) *** AT LEAST ONE ARM IS A GENUINE RUN-TIME VALUE — REFUSED. ***

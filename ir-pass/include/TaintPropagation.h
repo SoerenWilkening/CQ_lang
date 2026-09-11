@@ -163,7 +163,33 @@ struct TaintSet {
   // UNCONDITIONALLY — an unconditional Ry where a controlled one was meant, i.e.
   // a verify-clean wrong unitary. `TaintSet` is the one object every emitter and
   // `lowerRotations` share. Empty for a module with no in-place rotation arm.
-  llvm::DenseMap<const llvm::CallInst * /*theta*/, llvm::Value * /*flag*/>
+  //
+  // ⚠ THE MAPPED VALUE IS A `WeakTrackingVH`, NOT A RAW `Value *` (bd
+  // test_C_libtooling-l4x4, sub-increment l4x4.b, hazard H-1). Until 1b-C every
+  // control this map held was a `cq_template_icmp_*_hl` RESULT — an `i32` handle
+  // minted by the emitter itself, which no later stage RAUWs or erases, so a raw
+  // pointer was sound by construction. A BARE `_Bool` (rail-root) condition
+  // breaks that construction in BOTH halves: the control is the user's
+  // `@cq_theta_i1` CALL, and `lowerRotations` — the very consumer of this map —
+  // `replaceAllUsesWith`-es that call onto an `i32` handle and then ERASES it.
+  // A raw pointer would therefore hand `cqrt_ry_<W>_controlled(i32, i32, double)`
+  // an `i1` value in its control slot AND hold a use of a soon-to-be-erased
+  // instruction. `WeakTrackingVH` FOLLOWS the RAUW (the entry BECOMES the `i32`
+  // handle) and NULLS on an erase with no replacement — so the stale-set shape
+  // that shipped as the drbq Inc-1 defect (a `Value *` set keyed before
+  // `lowerOps`' RAUW; see the `ControlledRotationRails` obituary below) cannot
+  // recur here.
+  //
+  // ⚠ THE HANDLE IS NECESSARY AND NOT SUFFICIENT, and the second half is
+  // ORDERING: a handle only exists once `lowerRotations` has processed the rail's
+  // own theta. `lowerRotations` therefore lowers every recorded CONTROL theta —
+  // and its whole chained ancestry — in a FIRST PASS, and re-checks at the use
+  // site that the resolved control is a live `i32`, declining LOUDLY otherwise
+  // (never a silent fall-through to the UNCONTROLLED gate, which would fire the
+  // arm on both branches). Read `lowerRotations`' pass-1 comment before changing
+  // either half; neither alone is the fix.
+  llvm::DenseMap<const llvm::CallInst * /*theta*/,
+                 llvm::WeakTrackingVH /*flag: an i32 handle at lowering time*/>
       ControlledRotations;
 
   // ⚠ THERE IS NO `ControlledRotationRails` MEMBER, AND ITS ABSENCE IS THE FIX

@@ -44,8 +44,19 @@
 ; flow` (bd `b6ap`, wall 1). MEASURED 2026-09-11 on the narrowed binary:
 ; `probes/V0.c` ⇒ `control flow`, `probes/C2.c` and `probes/M1.c` ⇒ `bare i1
 ; register condition`. F2 was wall 3, and only wall 3 moved.
-; `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll` is that fact as a
+; `control_inplace_ry_reject_stateprep_rail_i1_seed_l4x4.ll` was that fact as a
 ; fixture.
+;
+; ⚠ UPDATED BY bd `test_C_libtooling-l4x4` sub-increment l4x4.b: WALL 2 HAS SINCE
+; MOVED. That fixture was `git mv`'d to
+; `control_inplace_ry_stateprep_rail_i1_seed.ll` with its IR BYTE-UNCHANGED and
+; rewritten as an ACCEPT — the bare-rail spelling lowers now, with the register
+; itself as the control. ⚠ AND WALL 1 HAS MOVED TOO: bd `b6ap`'s multi-phi peel
+; landed on `main` 3a3a2b9, so ALL THREE WALLS ARE DOWN and the owner's FILE
+; COMPILES (measured at this merge: 19 trace lines, stage 2b `1 verified, 0
+; violation(s), 0 unproven`; `MERGE_l4x4_2.md` §4). Its second region in
+; isolation is `control_inplace_ry_stateprep_rail_negated.ll`. Nothing about THIS
+; module or its verdict changes — it is the COMPARE-conditioned spelling.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

@@ -206,7 +206,75 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
   // theta N RAUWs that result to the handle — so when we re-read theta
   // N+1's operand it is already the handle (tainted), routing it to the
   // ry-only path with no second allocation.
-  for (CallInst *Theta : taint.ThetaCalls) {
+  //
+  // ---- H-1, PART 2: CONTROL THETAS FIRST (bd test_C_libtooling-l4x4, l4x4.b)
+  //
+  // A BARE `_Bool` (rail-root) condition makes the CONTROL of a
+  // `cqrt_ry_<W>_controlled` a `@cq_theta_i1` CALL rather than a minted `i32`
+  // compare flag (`TaintSet::ControlledRotations`, whose header owns the whole
+  // argument). The `WeakTrackingVH` there turns that call INTO its `i32` handle
+  // the moment this loop lowers it — but only if it HAS been lowered, and in
+  // collection order there is nothing that says a control precedes the arm gate
+  // it controls. "It happens to, at `-O1`" is exactly the unwritten dependency
+  // this project's record says goes stale (the drbq Inc-1 `Value *`-set defect,
+  // one hat over), so the order is MADE deterministic here instead of measured.
+  //
+  // PASS 1 lowers every theta that is a recorded CONTROL, plus its whole CHAINED
+  // ancestry (a rail leaf may be a chained theta — `isCondRailLeaf` admits root
+  // OR chained — and its parent must still be lowered before it). PASS 2 lowers
+  // the rest. RELATIVE ORDER IS PRESERVED INSIDE EACH PASS, so the "parent before
+  // child" invariant the paragraph above states is inherited rather than
+  // re-established: any theta-parent of a pass-1 member is itself a pass-1
+  // member, and a pass-1 member that is the parent of a pass-2 member is lowered
+  // first a fortiori.
+  //
+  // ⚠ IT IS A NO-OP FOR EVERY MODULE WITHOUT A RAIL CONTROL, BY CONSTRUCTION AND
+  // BY MEASUREMENT. `ControlThetas` is empty whenever every recorded control is a
+  // compare flag (i.e. every module that existed before 1b-C), and the partition
+  // then reproduces `taint.ThetaCalls` verbatim — which matters because the
+  // `!Chained` arm below consumes a `BirthOrder` slot, the Q+Q ordering seed, and
+  // a reordering that touched it would move goldens for programs this increment
+  // has nothing to do with. The whole-corpus lowered-IR diff is the witness.
+  // ⚠ NAME-PREFIX ONLY, AND THE ARITY IS **NOT** RE-ASKED HERE — recorded rather
+  // than silently relied on. `getArgOperand(0)` below is safe because a theta
+  // whose declaration does not match the frozen prototype has ALREADY fired a
+  // loud decline: `resolveSources` validates every `cq_theta_<sfx>` in
+  // `wd.allSuffixes()` at collection time and `opt` exits non-zero, so no
+  // zero-arg `@cq_theta_i1` reaches this loop. That is a dependency on ANOTHER
+  // stage, which is exactly the kind this file's history says to write down:
+  // RETIREMENT TRIGGER — if the prototype guard is ever narrowed to a subset of
+  // the suffixes, or moved after `lowerRotations`, this walk needs its own
+  // `C->arg_size() >= 1` conjunct (the spelling `railWireNamesBackward` already
+  // carries for the same rail, one file over).
+  auto isThetaCallHere = [](const CallInst *C) {
+    const Function *F = C ? C->getCalledFunction() : nullptr;
+    return F && F->getName().starts_with("cq_theta_");
+  };
+  SmallPtrSet<const CallInst *, 4> ControlThetas;
+  for (const auto &E : taint.ControlledRotations) {
+    auto *C = dyn_cast_or_null<CallInst>(E.second);
+    while (C && isThetaCallHere(C) && ControlThetas.insert(C).second) {
+      // Walk the chained ancestry: a theta whose arg-0 is TAINTED is lowered IN
+      // PLACE on the parent's rail, so the parent owns the handle (this is
+      // `lowerRotations`' own `Chained` relation, not a second spelling of it).
+      Value *Op = C->getArgOperand(0);
+      if (!taint.Tainted.count(Op))
+        break;  // a SOURCE theta: arg-0 is the classical seed, nothing above it.
+      C = dyn_cast<CallInst>(Op);
+    }
+  }
+  SmallVector<CallInst *, 8> ThetaOrder;
+  if (ControlThetas.empty()) {
+    ThetaOrder.assign(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  } else {
+    for (CallInst *T : taint.ThetaCalls)
+      if (ControlThetas.count(T))
+        ThetaOrder.push_back(T);
+    for (CallInst *T : taint.ThetaCalls)
+      if (!ControlThetas.count(T))
+        ThetaOrder.push_back(T);
+  }
+  for (CallInst *Theta : ThetaOrder) {
     StringRef Sfx = suffixFromName(Theta, "cq_theta_");
     StringRef Abi = wd.abiWidthFor(Sfx);
     FunctionCallee Ry = Abi.empty() ? FunctionCallee() : wd.ryRtFn(Abi);
@@ -260,6 +328,44 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (Ctrl && !ControlledSymbols(M, wd).controlledRotationFn(
                     Abi, ControlledSymbols::RotStem::Ry)) {
       diagnoseUnsupported(Theta, "controlled theta suffix/width");
+      continue;
+    }
+    // ---- H-1, PART 3: THE RECORDED CONTROL MUST HAVE BEEN RESOLVED, AND A
+    //      FAILURE IS LOUD (bd test_C_libtooling-l4x4, l4x4.b).
+    //
+    // `Ctrl` reaches this line by one of two routes and they are NOT the same
+    // object at the emission site: a minted compare flag is already the `i32`
+    // result of a `cq_template_icmp_*_hl` (sound as a raw pointer, and the only
+    // case that existed before 1b-C), while a BARE `_Bool` condition is recorded
+    // as the user's `@cq_theta_i1` CALL and only stops being one when pass 1
+    // above lowers it and the `WeakTrackingVH` follows the RAUW. Two things can
+    // therefore be wrong, and both are refused here rather than downstream:
+    //   * NULL — the recorded control was erased with no replacement;
+    //   * STILL A `@cq_theta_*` CALL — pass 1 did not resolve it, so this would
+    //     put an un-lowered `iN` theta result in the control slot of a
+    //     `void(i32,i32,double)` callee AND hold a use of an instruction this
+    //     very loop is about to ERASE. Nothing later repairs either.
+    //
+    // ⚠ IT IS **NOT** SPELLED `isIntegerTy(32)`, AND THE FIRST SPELLING WAS —
+    // measured, and it cost a legitimate accept. A CHAINED theta lowers to
+    // `Handle = Op`, its arg-0, which for a rail whose parent is a TEMPLATE value
+    // (a `%out`-derived `icmp`, i.e. the round-2 taint window) is a pre-`lowerOps`
+    // `iN` value that `lowerOps` RAUWs to an `i32` handle one stage later. That
+    // transient is this file's own documented behaviour ("the mismatch is
+    // transient and laundered by erasure of the tainted users"), it applies to
+    // the UNCONTROLLED gate identically, and refusing it here would decline a
+    // shape that has nothing to do with H-1. What H-1 needs is that the control
+    // was RESOLVED — i.e. is no longer the theta call — and that is what is asked.
+    //
+    // IT DECLINES AND LOWERS NOTHING. Falling through to the UNCONTROLLED `Ry`
+    // would fire the arm's rotation on BOTH branches — a wrong unitary, verify-
+    // clean — which is the identical posture its two sibling bails above take,
+    // and for the identical reason. Placed ABOVE the alloc with them (Rule 1:
+    // never emit half a region).
+    if (taint.ControlledRotations.count(Theta) &&
+        (!Ctrl ||
+         (isa<CallInst>(Ctrl) && isThetaCallHere(cast<CallInst>(Ctrl))))) {
+      diagnoseUnsupported(Theta, "controlled rotation control handle");
       continue;
     }
     if (Chained) {
