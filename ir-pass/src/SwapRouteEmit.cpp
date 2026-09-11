@@ -725,8 +725,13 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   // 1. Flag mint at the BRANCH — byte-identical to the phase path's step 1. The
   //    ziov SHARED-flag position (mint at the compare) cannot arise here:
   //    `classifyArms` declines a `ShareCondFlag` region for this class.
+  //    (Track A.1, F-A1R2-1) `WireRuled`: this region came through
+  //    `classifyArms`, which asked `condWireDisposition` over `Prov` at round-1
+  //    taint — so rung (iii)'s taint-blind exemption has a real ruling to respect.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
+                                   /*inverse=*/false, /*before=*/BI,
+                                   /*negate=*/false, /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
 
@@ -1131,8 +1136,12 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //    at the COMPARE's position so it DOMINATES every data use (a data `zext` may
   //    precede the routed stream); otherwise it lands at the branch as before.
   Instruction *FlagAt = R.ShareCondFlag ? Cond->getNextNode() : BI;
+  // (Track A.1, F-A1R2-1) `WireRuled`: `classifyArms` asked
+  // `condWireDisposition` over this region's `Prov` at round-1 taint.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/FlagAt);
+                                   /*inverse=*/false, /*before=*/FlagAt,
+                                   /*negate=*/false, /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported / Q+Q).
 
@@ -1619,8 +1628,12 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   CondNetwork Net;
   SmallVector<CallInst *, 4> LeafStrips;
   if (IsTree) {
+    // (Track A.1, F-A1R2-1) `LeafWireRuled` — `classifyPhaseKickback` asked
+    // `condWireDisposition` / `railCondWireDisposition` over this tree's own
+    // `Prov` before the region was pushed.
     switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/BI,
-                            DL, /*AllowQQLeaves=*/false, Net)) {
+                            DL, /*AllowQQLeaves=*/false, Net,
+                            /*CopyRailRoot=*/false, /*LeafWireRuled=*/true)) {
     case CondNetDisp::Ok:
       break;
     case CondNetDisp::MintDiagnosed:
@@ -1640,11 +1653,16 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // skips the strip+free below. A tree's root is an ancilla unless the tree IS
   // a rail (`Net.RootIsRail`, the node-less case — unreachable here since a
   // node-less tree takes the `RailCond` path, but asked rather than assumed).
+  // (Track A.1, F-A1R2-1) `WireRuled`: `classifyPhaseKickback` asked
+  // `condWireDisposition` (or `railCondWireDisposition`) over `Prov` at round-1
+  // taint before this region was pushed.
   Value *Flag = IsTree     ? Net.Root
                 : RailCond ? static_cast<Value *>(RailCond)
-                           : lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                                /*inverse=*/false,
-                                                /*before=*/FlagAt);
+                           : lowerCompareToFlag(
+                                 Cond, wd, taint, /*qqWidth=*/{},
+                                 /*inverse=*/false, /*before=*/FlagAt,
+                                 /*negate=*/false, /*railToStrip=*/nullptr,
+                                 /*readKind=*/CondReadKind::WireRuled);
   const bool FlagIsRail = IsTree ? Net.RootIsRail : RailCond != nullptr;
   if (!Flag)
     // REACHABLE, and say so plainly rather than calling it unreachable — an
@@ -1961,9 +1979,13 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // 1-2. OUTER network, then the outer arm's phases on its root.
   CondNetwork OuterNet;
+  // (Track A.1, F-A1R2-1) `LeafWireRuled` — `classifyPhaseKickbackNest` walks
+  // EACH level's own leaf+rail `condProvenance` union with
+  // `findNonDiagonalWireGate` at round-1 taint before the nest is pushed.
   switch (emitCondNetwork(R.Condition, OuterTree, wd, csyms, taint,
                           /*Before=*/BI, DL, /*AllowQQLeaves=*/false,
-                          OuterNet)) {
+                          OuterNet, /*CopyRailRoot=*/false,
+                          /*LeafWireRuled=*/true)) {
   case CondNetDisp::Ok:
     break;
   case CondNetDisp::MintDiagnosed:
@@ -1982,7 +2004,8 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
   CondNetwork InnerNet;
   switch (emitCondNetwork(R.InnerCondition, InnerTree, wd, csyms, taint,
                           /*Before=*/BI, DL, /*AllowQQLeaves=*/false,
-                          InnerNet)) {
+                          InnerNet, /*CopyRailRoot=*/false,
+                          /*LeafWireRuled=*/true)) {
   case CondNetDisp::Ok:
     break;
   case CondNetDisp::MintDiagnosed:

@@ -1865,7 +1865,7 @@ CondWireDisp railCondWireDisposition(const ControlRegion &R, TaintSet &Taint,
 // (the plain-C module) and `…_inloop_measure_after_constarm.ll` (hand IR: the
 // constant-arm select kept inside the body); `…_rail_measure_after.ll` (`s05`,
 // flat) stays the accept that keeps this a discriminator.
-void railWireNamesBackward(const CallInst *Rail, const TaintSet &Taint,
+void railWireNamesBackward(const Value *Rail, const TaintSet &Taint,
                            SmallVectorImpl<const Value *> &Out) {
   // THE ONE RELATION: `lowerRotations` lowers a `cq_theta` IN PLACE on its
   // arg-0's rail iff that arg-0 is TAINTED (`Chained = taint.Tainted.count(Op)`,
@@ -1895,10 +1895,44 @@ void railWireNamesBackward(const CallInst *Rail, const TaintSet &Taint,
   // measurement of T's result lies on such a path and the barrier — the seed
   // theta re-executing — sits between it and the control read. A forward
   // theta that precedes the read WITHOUT either leg is rung (iii)'s own decline.
+  //
+  // (Track A.1, Rule-13 round-1 finding F-A1-3) ⚠ AN IN-PLACE RELABELLING IS THE
+  // SAME REGISTER UNDER A NEW NAME, and the closure CROSSES it. The narrowing of
+  // rung (ii)'s SEED to the compare's direct operands is sound only if the WIRE
+  // is still followed, and `taint.InPlaceRailOps` is a second way one register
+  // wears two names: the dtzb `q = q OP c` that `lowerLoops` proved and
+  // `lowerOps` emits as `cqrt_{addc,xorc}_<W>(handle, imm)` — a MUTATION of the
+  // handle, not a fresh rail. Its result and its rail operand are one physical
+  // register, so a measurement naming either collapses both. Asked of the ONE
+  // set `lowerLoops` writes (`markInPlaceRailOp`, which records the set and the
+  // proven operand INDEX at the same statement — the eqpx spelling) and the same
+  // set `LoopLowering::staleRailRecordRead` reasons over; never re-derived.
+  // The OUT-of-place case is deliberately NOT crossed and is the whole point of
+  // the narrowing: `cq_template_add_<W>_hl` MINTS a fresh rail, and its operand
+  // is a different register the control does not read.
   SmallPtrSet<const Value *, 8> Seen;
   const Value *V = Rail;
   while (V && Seen.insert(V).second) {
     Out.push_back(V);
+    if (auto *I = const_cast<Instruction *>(dyn_cast<Instruction>(V)))
+      if (Taint.InPlaceRailOps.count(I)) {
+        auto It = Taint.InPlaceRailIdx.find(I);
+        if (It != Taint.InPlaceRailIdx.end() &&
+            It->second < I->getNumOperands()) {
+          V = I->getOperand(It->second);
+          continue;  // same register, previous name.
+        }
+        // UNREACHABLE at HEAD — `markInPlaceRailOp` is the one way to join that
+        // set and writes the index in the same statement — but if it ever is
+        // reached, over-approximate the wire (collect BOTH operands and stop)
+        // rather than silently narrow it: more names means more refusals, and a
+        // non-theta last name grants no per-activation barrier either, so both
+        // effects point at a DECLINE. Never guess which operand is the rail.
+        for (const Use &U : I->operands())
+          if (Taint.Tainted.count(U.get()))
+            Out.push_back(U.get());
+        break;
+      }
     const auto *CI = dyn_cast<CallInst>(V);
     if (!CI)
       break;
@@ -1912,7 +1946,7 @@ void railWireNamesBackward(const CallInst *Rail, const TaintSet &Taint,
   }
 }
 
-bool railMeasuredBeforeReadPoint(const CallInst *Rail,
+bool railMeasuredBeforeReadPoint(const Value *Rail,
                                  const Instruction *ReadPoint,
                                  const TaintSet &Taint,
                                  const DominatorTree *DT) {
@@ -1931,6 +1965,50 @@ bool railMeasuredBeforeReadPoint(const CallInst *Rail,
   // `main` b00fdc2, a decline now: monotone toward decline).
   SmallVector<const Value *, 4> Names;
   railWireNamesBackward(Rail, Taint, Names);
+  // ── THE PER-ACTIVATION BARRIER (Track A.1) ────────────────────────────────
+  //
+  // `Names.back()` is where the backward walk STOPPED: the wire's ORIGIN. When
+  // that origin is a SOURCE theta — a `cq_theta_*` whose arg-0 is NOT tainted —
+  // its every execution lowers to a FRESH `cqrt_alloc_<W>` plus `cqrt_ry_<W>`,
+  // i.e. a NEW physical register. So a measurement that is followed by a
+  // re-execution of the origin on EVERY path back to the read point collapsed a
+  // register this read can no longer name, and refuses nothing.
+  //
+  // WITHOUT THIS, AN ITERATION-LOCAL REGISTER IS AN OVER-DECLINE, and it is not
+  // hypothetical: `for (…) { int q = cq_theta(x,.5); if (q > 5) …;
+  // acc += cq_measure(q); }` mints a FRESH `q` every trip, so the body measure
+  // owns THIS trip's register and the next trip's mint reads the NEXT one. Five
+  // shipped accepts have exactly that shape (`control_swap_inloop_diamond_iterlocal`,
+  // `…_seq`, and the three `…_reject_inloop_{irreducible,multilatch,second_cycle}`
+  // declines, which must keep declining on their OWN loop-shape grounds and not
+  // on this rung). `isPotentiallyReachable` alone answers "can the read follow
+  // the measure?" — TRUE around any back edge — and that is the wrong question
+  // inside a loop; the right one is "can it follow it ON THE SAME REGISTER?".
+  //
+  // IT IS THE SAME READING RUNG (iii) ALREADY USES one rung over, and the same
+  // walk: `gateIsHarmless`'s leg 2 (`WireWalk`) admits a wire gate when every
+  // path from it back to the emission re-executes the seed's own definition.
+  // Two rungs of one ladder, one modality (bd 8h7d.5's standing lesson).
+  //
+  // THE BARRIER IS THE ORIGIN AND ONLY WHEN IT IS A SOURCE THETA — Prime
+  // Directive. A CHAINED theta is an IN-PLACE Ry: re-executing it re-rotates the
+  // SAME register and refreshes nothing. A non-theta origin (a template result,
+  // a cast, a phi, an argument) is refused too: an out-of-place template does
+  // mint a fresh rail, but M-C (`ArithLowering::classifyInPlaceReassignment`)
+  // can lower the very same op IN PLACE, and this predicate runs before that
+  // decision is made — so "a fresh rail" is exactly the kind of assumption this
+  // project's history says not to bank on. A missing barrier DECLINES.
+  const Instruction *Barrier = nullptr;
+  if (!Names.empty())
+    if (const auto *Origin = dyn_cast<CallInst>(Names.back())) {
+      const Function *OF = Origin->getCalledFunction();
+      if (OF && OF->getName().starts_with("cq_theta_") &&
+          Origin->arg_size() >= 1 &&
+          !Taint.Tainted.count(
+              const_cast<Value *>(Origin->getArgOperand(0))) &&
+          Origin != ReadPoint)
+        Barrier = Origin;
+    }
   for (const Value *N : Names)
   for (const User *U : N->users()) {
     const auto *M = dyn_cast<CallInst>(U);
@@ -1946,10 +2024,103 @@ bool railMeasuredBeforeReadPoint(const CallInst *Rail,
     // null tree only makes it more conservative). A measurement the read point
     // can never follow is downstream of the region and owns the register from
     // there on, exactly as for a compare.
-    if (isPotentiallyReachable(M, ReadPoint, /*ExclusionSet=*/nullptr, DT))
-      return true;
+    if (!isPotentiallyReachable(M, ReadPoint, /*ExclusionSet=*/nullptr, DT))
+      continue;
+    // The register is re-minted between them on every path ⇒ this measurement
+    // owns a DIFFERENT register than the one the read point names. `M` and
+    // `ReadPoint` in ONE straight-line activation are unaffected: the path from
+    // `M` to `ReadPoint` that stays inside the block does not cross the origin,
+    // so `everyPathReExecutes` is false and the rung still refuses (which is the
+    // flat `int m = cq_measure(q); if (q > 3) …` case, bd r903 item (b)).
+    if (Barrier && M != Barrier && everyPathReExecutes(M, ReadPoint, Barrier))
+      continue;
+    return true;
   }
   return false;
+}
+
+// (Track A.1, Rule-13 round-1 finding F-A1-3) THE ONE SPELLING of "which
+// registers does this compare READ?" — its direct TAINTED operands. Used by
+// rung (ii) at classification (`condCmpMeasuredBeforeReadPoint` below) and
+// recorded by the mint (`CompareLowering.cpp`) so the backstop asks the same
+// question at FINAL taint. Deliberately NOT `condProvenance`: that cone is
+// every tainted ANCESTOR and is rung (iii)'s set (and R4's completeness
+// carrier — see its own header, which forbids narrowing IT). A classical
+// operand is skipped; both operands are collected for a Q+Q compare.
+void condCmpOperandSeeds(const CmpInst *Cmp, TaintSet &Taint,
+                         SmallVectorImpl<Value *> &Out) {
+  if (!Cmp)
+    return;
+  for (const Use &U : Cmp->operands()) {
+    Value *Op = U.get();
+    if (Taint.Tainted.count(Op) && !is_contained(Out, Op))
+      Out.push_back(Op);
+  }
+}
+
+// bd test_C_libtooling-r10v / -r903(b) (Track A.1) — RUNG (ii) FOR COMPARE
+// LEAVES. See `ArmAnalysis.h` for the contract.
+//
+// WHY THIS RUNG DID NOT EXIST, AND WHY NOTHING ELSE CATCHES IT. The compare path
+// asks the measurement question in exactly one place — `condDataUseDisposition`'s
+// `MeasuredEarly` — and that question is about the FLAG's own lineage (`int f =
+// (q > 5)` read as data beside the branch, the ziov `atk9` shape). "Was the
+// condition REGISTER measured?" is a different question with the same shape, and
+// it was asked by NO rung: `int m = cq_measure(q); if (q > 3) cq_phi(.3);` mints
+// `cq_template_icmp_sgt_i32_hl(%h, 3)` AFTER `cqrt_measure_i32(%h)` — a gate
+// controlled on a COLLAPSED register, Rule 6's loud-reject class — at `opt` exit
+// 0, verify-clean and STRICT-stage-2b clean (bd `r903` item (b)). Its one-token
+// `_Bool` twin DECLINES, because the rail ladder's rung (ii) shipped with
+// Increment 1b; this is the parity repair, not a new capability.
+//
+// ⚠ THE SEED SET IS THE COMPARE'S DIRECT TAINTED OPERANDS AND THEIR WIRES —
+// NOT the `condProvenance` cone, and that narrowing is Rule-13 round-1 finding
+// F-A1-3 (an OVER-DECLINE of valid circuits `main` compiles, plain C ×2). The
+// cone collects EVERY tainted ancestor of the condition, so
+// `int t = q + 3; int m = cq_measure(q); int a = (t == 5) ? 2 : 5;` refused on
+// `q` — a register the control never reads. Measured on the oracle, `t` lowers
+// OUT of place (`cq_template_add_i32_hl`) onto a FRESH rail and the flag is
+// minted from THAT rail, with `q` collapsed beside it; `q`'s measurement fixes
+// `t` through their entanglement, so the flag is deterministic and the emitted
+// unitary is exactly what the source asks for (`free_pairing_check`: 4 rail
+// mints, 1 free site, 0 violations). The class was also ASYMMETRIC, which is
+// what made it a defect rather than a policy: the exact mirror
+// (`int t = q + 3; int m = cq_measure(t); int a = (q == 5) ? …`) accepted on
+// both binaries with the same two entangled rails and the same one measurement.
+// The question this rung asks is "was the register THE CONTROL READS
+// collapsed?", and the register the control reads is named by the compare's own
+// operands.
+//
+// THE WIRE, NOT THE NAME, is still the closure (`railWireNamesBackward`): a
+// measurement may name any SSA name of the same physical register — a chained
+// theta's arg-0, or (round-1 item F-B1R1-1) a parent the round-2 crossing
+// reaches — and an IN-PLACE relabelling (`taint.InPlaceRailOps`, the dtzb
+// `q = q OP c` the loop path proves) is the same register under a new name and
+// is CROSSED there. So the narrowing is of the SEED, never of the wire.
+//
+// MEASURED COST OF THE NARROWING, and it is the reason the four reported
+// over-declines are only two: `c2` (`long long t = (long long) q;`) and `c9`
+// (`if (t > 3)` with `t = q + 3`) keep DECLINING, because `clang -O1` folds the
+// cast and rewrites the compare back onto `%q` itself — their stage-1 IR is
+// `icmp eq i32 %1, 5` and `icmp sgt i32 %1, 0`, so the compare's DIRECT operand
+// IS the measured register and the oracle emits `cqrt_measure_i32(%h)` then
+// `cq_template_icmp_*_i32_hl(%h, ·)`, bd `r903` item (b) verbatim. `c1` and
+// `c10` (whose compares read a genuinely separate `add`/`and` rail) accept.
+// Read that as the narrowing being about the WIRE and not about the spelling.
+CmpInst *condCmpMeasuredBeforeReadPoint(ArrayRef<CmpInst *> Leaves,
+                                        const Instruction *ReadPoint,
+                                        TaintSet &Taint,
+                                        const DominatorTree *DT) {
+  if (!ReadPoint)
+    return nullptr;
+  for (CmpInst *Leaf : Leaves) {
+    SmallVector<Value *, 2> Seeds;
+    condCmpOperandSeeds(Leaf, Taint, Seeds);
+    for (Value *P : Seeds)
+      if (railMeasuredBeforeReadPoint(P, ReadPoint, Taint, DT))
+        return Leaf;
+  }
+  return nullptr;
 }
 
 // bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — see the
@@ -2072,6 +2243,10 @@ bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
     // A NULLED handle is SKIPPED, and the direction is the argument: a read that
     // no longer exists is not a live control read, so there is no wrong unitary
     // left to refuse (and a rail whose def was erased has no wire to ask about).
+    // (Track A.1) UNCHANGED — the compare seeds live in their own record
+    // (`CmpCondReads`) and are re-verified by `reverifyCmpCondReads` below,
+    // because their rung (iii) must be asked over the whole cone AT ONCE. This
+    // loop stays the rail ladder's, byte for byte.
     auto *Rail = dyn_cast_or_null<CallInst>(E.first);
     auto *Read = dyn_cast_or_null<Instruction>(E.second);
     if (!Rail || !Read || !Read->getFunction() ||
@@ -2111,6 +2286,318 @@ bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
     }
   }
   return Declined;
+}
+
+// (Track A.1) THE COMPARE HALF — bd test_C_libtooling-9pum, and it is the SAME
+// window one leaf species over. Round-3 item F-B1R3-3 named it in advance:
+// "for a MIXED tree the COMPARE leaves' wires are asked at round 1 only — that
+// is the compare half of the window, bd `test_C_libtooling-9pum`, and the
+// record's extension to compare seeds is where it closes." This is that
+// extension.
+//
+// THE DEFECT, MEASURED (two TUs of plain C through the shipped 6.5 recipe):
+//   int q = cq_theta(3,.5); int y = 5; if (q > 5) y = ext_f(7);
+//   int b = cq_theta(y,.25); int b3 = cq_theta(y,.9);
+//   int a = (b == 1) ? 2 : 5;  return cq_measure(a) + cq_measure(b3);
+// `y` is a 6.5 classical-call-arm `%out` derivative: CLASSICAL at round 1, so
+// `b` and `b3` are two SOURCE thetas — two rails — to gate 2c's walk, and
+// TAINTED after `repropagateControlMerges`, so `lowerRotations`
+// (`Chained = taint.Tainted.count(arg0)`) puts them on ONE rail. The emitted
+// stream is `ry(h2,.25); ry(h2,.9); icmp_eq(h2,1)` — the flag minted from
+// `Ry(.9)Ry(.25)|y⟩` while the source compares `Ry(.25)|y⟩`. `opt` exit 0,
+// verify-clean, STRICT-stage-2b clean, no diagnostic anywhere.
+//
+// WHY THE RAIL FIX DID NOT COVER IT: `reverifyRailCondReads` reads a record
+// written only where a `_Bool` REGISTER is read as a control. Here the control
+// read is a compare MINT, which recorded nothing until this increment.
+//
+// EVERYTHING IN `reverifyRailCondReads`' header applies verbatim and is not
+// repeated: the placement argument, why re-asking AFTER emission is sound (the
+// emitted gates are `cqrt_*`, which match no prefix the walker tests, and
+// `taint.MeasureCalls` still holds `@cq_measure_*` calls because `lowerMeasures`
+// has not run), the four post-slot taint mutations and their retirement trigger,
+// and the `DS_Error`-exits-inside-diagnose reading of "loud and final".
+//
+// ONE THING IS THIS FUNCTION'S OWN, and it is why the two records are separate:
+// rung (iii) is asked over the WHOLE recorded cone in one call. `gateIsHarmless`
+// grows its barrier set from the seed set it is handed, so asking N singleton
+// calls is strictly stricter than one N-seed call — measured as fourteen shipped
+// in-loop accepts turning into declines. One entry, one cone, one call.
+//
+// ⚠ SAY WHERE THE TWO LADDERS DIVERGE, because "the compare half" reads like
+// parity and is not (Rule-13 round-1 item F-A1-5(c)). THIS STAGE IS STRICTLY
+// WEAKER THAN `reverifyRailCondReads` AT RUNG (iii). The rail twin asks both
+// prongs UNCONDITIONALLY — position-free, then position-aware — about every gate
+// on the wire. This one asks only about gates NOT in the taint-blind set — i.e.
+// only about the round-2 crossing — AND ONLY FOR AN ENTRY WHOSE MINT RECORDS A
+// ROUND-1 WIRE DISPOSITION (`CmpCondRead::WireRuled`, round-2 finding
+// F-A1R2-1); for an `Unruled` entry it is the rail twin's unconditional re-ask.
+// The narrowing exists because for the ruled compare consumers the round-1
+// ruling can be an ACCEPT (`condWireDisposition`'s DT prong) that this stage
+// cannot re-derive once `RegionFlatten` and `collapseFlattenedLoopRails` have
+// erased the positions and the barrier phi it used — an argument that has no
+// subject where no classifier ruled at all. The asymmetry is deliberate
+// and measured (asking about everything costs twelve shipped in-loop accepts),
+// but it is an asymmetry: a gate the CLASSIFIER accepted and the round-2 merge
+// then moved is this stage's residual, and closing it needs the classifier's own
+// disposition recorded per compare (IMPL_A1.md §7 O-3). Do not read the two
+// functions as one ladder in two spellings; they answer different questions at
+// rung (iii), and rung (ii) — which IS identical in both — is what makes this a
+// real backstop.
+//
+// ⚠ RUNG (ii) IS ALSO NARROWER BY ONE DELIBERATE STEP: it asks about the
+// compare's DIRECT tainted operands (`OperandSeeds`), never the whole cone
+// (F-A1-3). The rail twin has no such distinction because a rail leaf's cone IS
+// the singleton rail.
+bool reverifyCmpCondReads(Module &M, TaintSet &Taint) {
+  if (Taint.CmpCondReads.empty())
+    return false;
+  (void)M;  // module-wide record; each entry names its own function.
+  DenseMap<Function *, std::unique_ptr<DominatorTree>> Trees;
+  SmallPtrSet<const Value *, 4> Diagnosed;
+  bool Declined = false;
+  for (const auto &E : Taint.CmpCondReads) {
+    auto *Read = dyn_cast_or_null<Instruction>(E.Read);
+    if (!Read || !Read->getFunction())
+      continue;  // the mint was erased — no live control read, nothing to refuse.
+    if (Diagnosed.count(Read))
+      continue;
+    Function *F = Read->getFunction();
+    // A NULLED seed is DROPPED, not fatal: `WeakTrackingVH` nulls what later
+    // stages erase, and a cone member that no longer exists cannot carry a wire.
+    // A seed from ANOTHER function is drift and is dropped for the same reason
+    // the rail stage drops it — never guessed at.
+    auto live = [&](ArrayRef<WeakTrackingVH> In, SmallVectorImpl<Value *> &Out) {
+      for (const auto &S : In) {
+        Value *V = S;
+        if (!V)
+          continue;
+        if (auto *I = dyn_cast<Instruction>(V)) {
+          if (I->getFunction() != F)
+            continue;
+        } else if (auto *A = dyn_cast<Argument>(V)) {
+          if (A->getParent() != F)
+            continue;
+        } else {
+          continue;  // a Constant cannot be tainted; anything else is drift.
+        }
+        Out.push_back(V);
+      }
+    };
+    SmallVector<Value *, 16> Seeds;
+    SmallVector<Value *, 2> OperandSeeds;
+    live(E.Seeds, Seeds);
+    live(E.OperandSeeds, OperandSeeds);
+    // ⚠ THE ONE PLACE THIS STAGE FAILS TOWARD ACCEPT, said out loud rather than
+    // left to be discovered (Rule-13 round-1 item F-A1-5(a)). Everywhere else it
+    // fails toward a decline: `recordCondRead` defaults TRUE so a new emitter is
+    // recorded by construction, and a missing per-activation barrier refuses.
+    // Here an entry whose WHOLE seed set was erased or re-homed is SKIPPED, with
+    // no rung (ii) and no rung (iii). The argument that this is safe is about
+    // what erases a seed: `WeakTrackingVH` FOLLOWS a RAUW (the common case — a
+    // cone member RAUW'd to a 6.5/4.5 `%out` by `SelectMergeEmit` — keeps its
+    // entry and is re-asked on the NEW value), so a null here means the value was
+    // ERASED outright, and an erased value carries no wire, has no `cq_measure`
+    // user and can gain no gate. With EVERY seed gone there is no register left
+    // to ask a question about, and the `Read` that remains is a flag mint whose
+    // operands are constants. The retirement trigger is a stage that erases a
+    // LIVE cone member without RAUW-ing it — then this `continue` would be
+    // skipping a real obligation and must become a decline.
+    //
+    // The same reading covers an EMPTY `OperandSeeds` with a non-empty cone
+    // (rung (ii) is then skipped and rung (iii) still asked): structurally that
+    // needs a compare with a tainted ANCESTOR and no tainted OPERAND, which
+    // cannot mint a quantum flag in the first place, so it should be
+    // unreachable — but it is the same accept-direction branch and it is named
+    // here rather than left to be found (round-2 question Q-4).
+    if (Seeds.empty())
+      continue;
+    auto &Slot = Trees[F];
+    if (!Slot)
+      Slot = std::make_unique<DominatorTree>(*F);
+    DominatorTree *DT = Slot.get();
+    // RUNG (ii) — per DIRECT OPERAND (F-A1-3: the registers the control READS,
+    // never the whole cone), over that operand's own wire closure (the measure
+    // may name any SSA name of the register — round-1 item F-B1R1-1).
+    bool Measured = false;
+    for (Value *S : OperandSeeds)
+      if (railMeasuredBeforeReadPoint(S, Read, Taint, DT)) {
+        Measured = true;
+        break;
+      }
+    if (Measured) {
+      diagnoseUnderControl(Read, "condition measured before the control route");
+      Diagnosed.insert(Read);
+      Declined = true;
+      continue;
+    }
+    // ── RUNG (iii) — THE ROUND-2 CROSSING, AND ONLY IT, AS A SET DIFFERENCE ──
+    //
+    // The gate to refuse is one the classifier COULD NOT HAVE SEEN, and the walk
+    // itself says which those are. `findNonDiagonalWireGate` consults the taint
+    // set in EXACTLY ONE place: the F-1b-1 ancestry crossing, which follows a
+    // chained theta's arg-0 edge when that arg-0 is TAINTED — the same relation
+    // `lowerRotations` builds a rail from (`Chained = taint.Tainted.count(arg0)`).
+    // Its FORWARD half tests no taint at all. So the wire is walked TWICE:
+    //   * TAINT-BLIND (`Taint=nullptr`) — every gate reachable without any
+    //     taint-dependent crossing, ENUMERATED, and exempted as EVIDENCE only
+    //     when this entry records that a classifier actually TOOK a wire
+    //     disposition over this compare (`E.WireRuled`; see below and
+    //     `TaintPropagation.h`). Where one did, `condWireDisposition` could
+    //     still DT-prove such a gate post-region — it ran BEFORE `RegionFlatten`
+    //     and before the round-2 `collapseFlattenedLoopRails` erased the
+    //     loop-header rail phi that proof's barrier needs — so RESPECT THAT
+    //     ANSWER, gate by gate: re-deriving it here is not possible, and asking
+    //     about ALL of them anyway turns twelve shipped in-loop accepts into
+    //     declines (MEASURED, `control_swap_inloop_post_region_theta.ll` and
+    //     eleven siblings, every one an `ArmClassify` consumer).
+    //   * TAINT-AWARE (`&Taint`, FINAL) with the blind set as `Covered` — what
+    //     is left is reachable ONLY through the crossing, i.e. only because of a
+    //     rail merge the classifier did not know about. That IS bd `9pum`:
+    //     `b = cq_theta(y,.25)` and `b3 = cq_theta(y,.9)` with `y` a 6.5 `%out`
+    //     derivative — two rails to the classifier, ONE to `lowerRotations`, and
+    //     `b3` reachable from `b` only by crossing `y`.
+    //
+    // ⚠ A SET DIFFERENCE, NEVER A BOOLEAN — Rule-13 round-1 finding F-A1-1, a
+    // CONFIRMED silent miscompile and this stage's first spelling. That spelling
+    // asked `findNonDiagonalWireGate(…, Taint=nullptr)` as a YES/NO and skipped
+    // the entry when it said yes. But the walker returns ONE gate, so "SOME gate
+    // is visible taint-blind" was standing in for "THIS gate is visible
+    // taint-blind" — two different propositions — and one extra line of plain C
+    // (`int b2 = cq_theta(b, -0.25);`, the shipped S† shape, which
+    // `condWireDisposition`'s DT prong legitimately ACCEPTS as post-region)
+    // suppressed the whole re-ask about the sibling `b3` that only round-2 taint
+    // reveals. bd `9pum` returned verbatim, at `opt` exit 0, verify-clean and
+    // STRICT-stage-2b clean, with the emitted stream byte-identical to the
+    // pre-increment binary's; the discriminator `k9` (the same extra line on
+    // ANOTHER register) still declined, i.e. the fence was defeated by making
+    // the condition wire DIRTIER, which is the inverse of a safety property.
+    // "The classifier ruled on it" is also not "the classifier declined it":
+    // for the select/nest/switch, round-1 rung (iii) is position-free, so a
+    // taint-blind-dirty wire had already declined and the suppression was
+    // harmless — but `condWireDisposition` (the flat kickback, the value arm,
+    // the 6.5 classical-call arm, the in-place-Ry arm) has a DT prong whose
+    // answer can be ACCEPT, so the suppression discarded an obligation nobody
+    // discharged. The exemption is now of the NAMED gates and of nothing else.
+    //
+    // The position-aware prong is then asked as a second chance about exactly
+    // those remaining gates, as `condWireDisposition` asks it: a crossing-only
+    // gate PROVEN after every execution of the read point invalidates nothing
+    // (that is the sibling-AFTER-the-select accept the increment must keep).
+    //
+    // ⚠ THE RESIDUAL, NARROWED BUT NOT EMPTY: a gate that was already reachable
+    // taint-blind at round 1, AT A MINT WHOSE CLASSIFIER RULED ON IT, and whose
+    // WIRE the round-2 merge then changed, is exempted by identity here — what
+    // this stage cannot do is re-derive the ruling after the flatten. What the
+    // set difference buys is that the exemption no longer spreads from one gate
+    // to every other gate on the same wire. Closing the rest needs the
+    // classifier's own disposition recorded per compare (IMPL_A1.md §7 O-3).
+    //
+    // ⚠⚠ WHAT THE EXEMPTION MEANS, EXACTLY — and the earlier sentence here was
+    // wrong TWICE (Rule-13 round-2 finding F-A1R2-4; the first half is finding
+    // F-A1R2-1, a CONFIRMED silent miscompile ×2 from plain C). It read: "the
+    // F-1b-1 crossing only ADDS values to the backward closure, so
+    // `blind ⊆ round-1 ⊆ final` — exempting the blind set exempts no more than
+    // the classifier actually saw". It does not hold as written:
+    //
+    //   (a) IT PRESUMES A CLASSIFIER WALK. For the 7.6 controlled I/O sink, the
+    //       7.5 guarded Shadow store, the 6.5 classical-call arm and the 7.2
+    //       abort park, NO classifier wire walk runs at all — `round-1` is the
+    //       EMPTY SET while `blind` is not, so the containment is the wrong way
+    //       round and the exemption exempted gates nobody had ruled on. That is
+    //       not hypothetical: `io3.c` and `gs1.c` (review_a1_r2_probes) minted a
+    //       controlled tape write / Shadow store from a register a sibling
+    //       in-place Ry had relabelled, at `opt` exit 0. THE REPAIR IS THE
+    //       PER-ENTRY BIT `E.WireRuled` below, supplied by the mint site.
+    //   (b) `Covered` IS A SUPERSET OF WHAT THE ROUND-1 WALK EXAMINED, not a
+    //       subset, because the two walks are built by different rules: in
+    //       return-first mode `walkNonDiagonalWireGates` never PUSHES a staling
+    //       gate — it returns it, or `continue`s without pushing when
+    //       `gateIsHarmless` proves it harmless — while the ENUMERATING mode
+    //       pushes it forward. So a gate `B` reachable only BEHIND a gate `A`
+    //       that round 1 proved harmless was never examined at round 1 and is
+    //       still in `Covered`. That extra membership is safe, by a derivation
+    //       the code did not have and now does: with `A` harmless and
+    //       `B->getArgOperand(0) == A`, (i) `DT.dominates(EmitPoint, A)` and `A`
+    //       dominates `B` give `DT.dominates(EmitPoint, B)`; (ii) every path
+    //       `B ⇝ EmitPoint` extends a path `A → B ⇝ EmitPoint`, so leg 1's
+    //       `!isPotentiallyReachable(A, EmitPoint)` gives the same for `B`;
+    //       (iii) leg 2 is the only seed-dependent leg, and reaching `B` from
+    //       `A` across its barrier needs the wire to cross a back edge — a value
+    //       crossing a back edge arrives as a PHI, which `CrossValueRouting`
+    //       pushes in EVERY mode, round 1 included, so `B` is not behind-only.
+    //
+    // And the reason the measured cost of the exemption's OTHER direction is
+    // zero is CONSTRUCTION, not luck (round-2 Q-2): `Seeds` is the
+    // `condProvenance` CONE — every tainted ancestor — so a value the F-1b-1
+    // crossing would reach BACKWARD is already its own seed in the blind walk,
+    // and the blind forward walk from it finds the same gates; `round1 \ blind`
+    // is near-empty. The crossing adds gates only when the ancestor was not
+    // tainted at round 1, and then the blind walk cannot see them either.
+    //
+    // SO, PRECISELY: `Covered` is "a gate visible TAINT-BLIND at a mint whose
+    // round-1 wire disposition was actually TAKEN by `ArmClassify` (through
+    // `condWireDisposition` / `railCondWireDisposition`) or by `SelectClassify`'s
+    // gate 2c". An `Unruled` entry exempts NOTHING and gets the full re-ask,
+    // which is the correct question there.
+    //
+    // ⚠ WHAT THAT COSTS, MEASURED — and it is ONE MORE than the review predicted,
+    // so do not repeat the prediction. The review's ground for the narrowing was
+    // that it "cannot cost the twelve in-loop accepts, all of which are
+    // `ArmClassify` consumers". ELEVEN of the twelve are, and are unmoved;
+    // the twelfth, `lowering_live_record_tape_ctrl_observed_accept.ll`, is a 7.6
+    // I/O-SINK consumer — i.e. one of the two this finding is about — and it
+    // moves ACCEPT → DECLINE. Its circuit was FAITHFUL (the flag is minted from
+    // an out-of-place `mul` rail written BEFORE the gate), so that decline is an
+    // over-decline of that program; it is taken anyway because it is PARITY —
+    // the same program at the flat kickback declines on `main` with the same
+    // string (measured) — and because the alternative is to give the fence-less
+    // consumers a NARROWER question than every classifier asks. The file is
+    // `git mv`'d to `lowering_reject_live_record_tape_ctrl_cond_staler.ll`,
+    // whose header carries the whole argument, the twin measurement, and the
+    // open question (FIX_A1_R2.md Q-1: should rung (iii) seed from the CONE or
+    // from the compare's DIRECT OPERAND wires, at every consumer?).
+    SmallPtrSet<const CallInst *, 8> Covered;
+    if (E.WireRuled) {
+      SmallVector<CallInst *, 8> BlindGates;
+      collectNonDiagonalWireGates(Seeds, /*CrossValueRouting=*/true,
+                                  /*EmitPoint=*/nullptr, /*DT=*/nullptr,
+                                  /*Taint=*/nullptr, BlindGates);
+      Covered.insert(BlindGates.begin(), BlindGates.end());
+    }
+    if (!findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                 /*EmitPoint=*/nullptr, /*DT=*/nullptr, &Taint,
+                                 &Covered))
+      continue;  // WireRuled: every gate at FINAL taint was already the
+                 // classifier's. Unruled (`Covered` empty): there is no gate on
+                 // the wire at all.
+    if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true,
+                                /*EmitPoint=*/Read, DT, &Taint, &Covered)) {
+      diagnoseUnderControl(Read, "condition predates a non-diagonal gate");
+      Diagnosed.insert(Read);
+      Declined = true;
+    }
+  }
+  return Declined;
+}
+
+// (Track A.1) The write half of the compare record — see `ArmAnalysis.h`.
+void markCmpCondRead(TaintSet &Taint, ArrayRef<Value *> Seeds,
+                     ArrayRef<Value *> OperandSeeds, Instruction *Read,
+                     bool WireRuled) {
+  if (!Read || Seeds.empty())
+    return;
+  for (const auto &E : Taint.CmpCondReads)
+    if (E.Read == Read)
+      return;  // idempotent: one cone per mint.
+  TaintSet::CmpCondRead Rec;
+  for (Value *S : Seeds)
+    Rec.Seeds.emplace_back(S);
+  for (Value *S : OperandSeeds)
+    Rec.OperandSeeds.emplace_back(S);
+  Rec.Read = Read;
+  Rec.WireRuled = WireRuled;
+  Taint.CmpCondReads.push_back(std::move(Rec));
 }
 
 // ziov WI-1: disposition of the condition compare's NON-branch (data) uses. The
@@ -4204,6 +4691,34 @@ PhaseKickbackDisp classifyPhaseKickback(
       return PhaseKickbackDisp::Declined;
     }
   }
+  // RUNG (ii) FOR THE COMPARE LEAVES — Track A.1, bd test_C_libtooling-r903
+  // item (b). THE PARITY REPAIR, and the one-token discriminator is the whole
+  // argument: `int q = cq_theta(0,.5); int m = cq_measure(q); if (q > 3)
+  // cq_phi(.3);` ACCEPTED and emitted `cq_template_icmp_sgt_i32_hl(%h, 3)` AFTER
+  // `cqrt_measure_i32(%h)` — a flag minted from a COLLAPSED register, Rule 6's
+  // loud-reject class — while its `_Bool` twin (`bool b = cq_theta(0,.5);
+  // m = cq_measure(b); if (b) cq_phi(.3);`) DECLINED through step 5b's rail
+  // rung (ii) above. Same ladder, same helper, same string; the read point is
+  // `Pred->getTerminator()` because the kickback's stream lands AT the branch,
+  // so a `cq_measure` user (never a terminator) in `Pred` always precedes it.
+  //
+  // NOT FOLDED INTO `condDataUseDisposition`'s `MeasuredEarly` below, and the
+  // two must stay apart: that one asks whether the FLAG's own data lineage was
+  // collapsed before the route (the ziov `atk9` share-path hazard), this one
+  // asks whether the condition REGISTER was. A program can fail either
+  // independently, and the share path has no subject when the compare has no
+  // data use at all — which is exactly the shape above.
+  //
+  // Asked for BOTH the single-compare and the tree spellings: `Tree.Leaves` is
+  // populated in either case (the single compare is a one-leaf tree).
+  if (CmpInst *Bad = condCmpMeasuredBeforeReadPoint(
+          Tree.Leaves, Region.Pred->getTerminator(), Taint, DT)) {
+    (void)Bad;
+    diagnoseUnderControl(declAnchor(Region),
+                         "condition measured before the control route");
+    return PhaseKickbackDisp::Declined;
+  }
+
   // Every NODE must live in `Pred` too. Two reasons, both concrete: the network
   // is emitted at the branch, so a node defined elsewhere is either not
   // available there or is shared with code this region does not own; and the

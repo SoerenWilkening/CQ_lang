@@ -848,6 +848,26 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
                                   "condition measured before the control route");
   }
 
+  // RUNG (ii) FOR THE COMPARE LEAVES — Track A.1, bd test_C_libtooling-r10v.
+  // THE PARITY REPAIR: the loop above has asked this of a RAIL leaf since
+  // 1b-B.1, and the COMPARE leaf beside it was asked by nothing. The 4.4
+  // classifier has no measured-before rung at all — `condDataUseDisposition`'s
+  // `MeasuredEarly` is a `br`-path question about the FLAG's lineage and is not
+  // even reached from here — so `int b = cq_theta(0,.5); for (i<3) { int a =
+  // (b == 1) ? i : 5; acc += cq_measure(a) + cq_measure(b); }` (plain `clang
+  // -O1`; the arm is loop-VARIANT so the select stays in the body) minted trips
+  // 2 and 3's flag from a register trip 1 had COLLAPSED — `cqrt_measure_i32(h0)`
+  // then `cq_template_icmp_eq_i32_hl(h0, 1)` — at `opt` exit 0, verify-clean and
+  // STRICT-stage-2b clean. It is the RAIL half's own F-B1-1 one leaf species
+  // over, and it is the same read point and the same helper (Rule 14): `Sel`,
+  // because `SelectMergeEmit` emits its whole stream immediately BEFORE the
+  // select, so a same-block measure AFTER the select is the ordinary downstream
+  // case and only `isPotentiallyReachable` can tell the two apart (it answers
+  // the same-block-on-a-cycle case itself, which IS the in-loop program above).
+  if (condCmpMeasuredBeforeReadPoint(Tree.Leaves, Sel, taint, DT))
+    return diagnoseUnderControl(Sel,
+                                "condition measured before the control route");
+
   // GATE 2c — STALE-CONDITION wire guard (kjd1 Rule-13 implementation
   // clearance, fcmp-lens BLOCKER; FP_SELECT_CLEARANCE.md). SelectMergeEmit
   // mints the flag AT THE SELECT, so the flag reads the condition wire's basis

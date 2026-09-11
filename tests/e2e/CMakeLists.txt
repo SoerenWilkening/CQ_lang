@@ -5149,6 +5149,71 @@ add_test(NAME e2e-slice-control-select-bool-round2-opaque-seed
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_opaque_seed.expected.log")
 
+# --- Track A.1 (bd test_C_libtooling-r10v / -9pum / -r903 item (b)) — the
+# --- COMPARE-LEAF parity of the two rungs above. Both are ACCEPTS, and both are
+# --- DISCRIMINATORS: the increment's whole content is three new DECLINES, so
+# --- what the e2e layer has to witness is that the neighbouring correct programs
+# --- still lower, byte for byte. The DECLINE half again has no e2e home —
+# --- `run_slice*.sh` runs under `set -euo pipefail` and byte-diffs a golden, so
+# --- a program whose `opt` exits non-zero cannot be a passing slice — and is
+# --- pinned in lit instead (`control_swap_reject_select_cmp_measured_before.ll`,
+# --- `..._cmp_inloop_measure_after.ll`, `..._cmp_round2_plainc_twotu.ll`).
+# ---
+# --- MEASURE-AFTER: the mint must PRECEDE the `cqrt_measure_i32` in the trace.
+# --- Move the measure one line up in the source and the program is bd `r903`
+# --- item (b) at the select, which ACCEPTED on `main` 0c7380c.
+add_test(NAME e2e-slice-control-select-cmp-measure-after
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_measure_after.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_measure_after.expected.log")
+
+# --- ROUND-2 WINDOW, COMPARE LEAF: TWO TUs, structurally — the window needs a
+# --- 6.5 classical-call arm, i.e. a callee `clang -O1` cannot inline. The
+# --- sibling theta runs AFTER the merge, so the register the copies control on
+# --- really is the one the compare names, and the DT prong proves it; the same
+# --- program with the sibling BEFORE the select is bd `9pum`, the confirmed
+# --- miscompile.
+add_test(NAME e2e-slice-control-select-cmp-round2-window
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window.expected.log")
+
+# --- Track A.1, Rule-13 ROUND-1 finding F-A1-2 — the ITERATION-LOCAL RAIL pair,
+# --- and the ONE ACCEPT-DIRECTION movement in the increment. `main` 0c7380c
+# --- DECLINES both of these programs `condition measured before the control
+# --- route`; the per-activation barrier in `railMeasuredBeforeReadPoint` lowers
+# --- them. The accept is right and the TRACE is the proof: three DISTINCT
+# --- handles, one alloc+ry+rz+measure group per trip, so each measurement owns
+# --- the register its own trip minted. The twin gate below is what makes that a
+# --- measurement rather than an assertion — rolled == hand-unrolled, 12 = 12.
+add_test(NAME e2e-slice-control-phase-bool-loop-iterlocal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-loop-iterlocal-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal_unrolled.expected.log")
+
+add_test(NAME e2e-phase-bool-loop-iterlocal-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_iterlocal_unrolled.expected.log")
+
 
 
 # bd 3qlq Inc 1, the SECOND C-1 review round. Each was a rolled != unrolled

@@ -378,11 +378,20 @@ bool phiTracksWire(const PHINode *P) {
   return true;
 }
 
-CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
-                                  bool CrossValueRouting,
-                                  const Instruction *EmitPoint,
-                                  const DominatorTree *DT,
-                                  const TaintSet *Taint) {
+// THE ONE IMPLEMENTATION of the forward wire walk; its two public faces below
+// differ only in whether they stop at the first staling gate or enumerate them
+// all (Track A.1 — Rule 14: a second walk spelled separately is how two
+// spellings of one relation eventually disagree). `Out != nullptr` is the
+// enumerating mode: a staling gate is APPENDED and the walk continues, the gate
+// itself pushed forward so the enumeration is transitive; `Covered` is the
+// caller's already-ruled-on set, whose members are skipped as evidence with
+// their forward wire still walked (see `WireWalk.h`).
+static CallInst *walkNonDiagonalWireGates(
+    ArrayRef<Value *> Seeds, bool CrossValueRouting,
+    const Instruction *EmitPoint, const DominatorTree *DT,
+    const TaintSet *Taint,
+    const SmallPtrSetImpl<const CallInst *> *Covered,
+    SmallVectorImpl<CallInst *> *Out) {
   // Seed closure + forward wire walk, PER SEED (test_C_libtooling-6j1, extended
   // for test_C_libtooling-6vk). A seed names a basis RECORD; the physical wire
   // carrying it is shared with the seed's whole ANCESTRY — rotation lowering
@@ -502,6 +511,17 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
           // there. Skip it as a staling candidate.
           if (Exempt.count(CI))
             continue;
+          // (Track A.1, F-A1-1) A gate the CALLER has already ruled on is not
+          // this walk's evidence — but it is still a wire, so keep walking
+          // FORWARD from it: the exemption is of the named gate, never of what
+          // lies behind it. Deliberately tested BEFORE the harmlessness proof:
+          // `Covered` is an identity question and needs neither positions nor a
+          // tree, and answering it first keeps the two walks that form the set
+          // difference comparable.
+          if (Covered && Covered->count(CI)) {
+            Work.push_back(CI);
+            continue;
+          }
           // An OFF-ancestry sibling Ry on a shared wire IS stale evidence.
           // Position-free mode (`EmitPoint` null): decline unconditionally.
           // Position-aware mode: harmless iff PROVABLY after every execution of
@@ -526,6 +546,14 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
           if (EmitPoint && DT &&
               gateIsHarmless(EmitPoint, CI, Seed, Seeds, *DT))
             continue;  // provably post-emission on every trace — harmless.
+          if (Out) {
+            // ENUMERATING MODE: record it and keep going, walking THROUGH it so
+            // a gate reachable only behind another one is enumerated too (the
+            // two sets of the difference must be built by the same rule).
+            Out->push_back(CI);
+            Work.push_back(CI);
+            continue;
+          }
           return CI;
         }
         if (isCallToPrefix(CI, "cq_phi_"))
@@ -534,6 +562,24 @@ CallInst *findNonDiagonalWireGate(ArrayRef<Value *> Seeds,
     }
   }
   return nullptr;
+}
+
+CallInst *findNonDiagonalWireGate(
+    ArrayRef<Value *> Seeds, bool CrossValueRouting,
+    const Instruction *EmitPoint, const DominatorTree *DT,
+    const TaintSet *Taint,
+    const SmallPtrSetImpl<const CallInst *> *Covered) {
+  return walkNonDiagonalWireGates(Seeds, CrossValueRouting, EmitPoint, DT,
+                                  Taint, Covered, /*Out=*/nullptr);
+}
+
+void collectNonDiagonalWireGates(ArrayRef<Value *> Seeds,
+                                 bool CrossValueRouting,
+                                 const Instruction *EmitPoint,
+                                 const DominatorTree *DT, const TaintSet *Taint,
+                                 SmallVectorImpl<CallInst *> &Out) {
+  walkNonDiagonalWireGates(Seeds, CrossValueRouting, EmitPoint, DT, Taint,
+                           /*Covered=*/nullptr, &Out);
 }
 
 bool provablyBefore(const Instruction *A, const Instruction *B,

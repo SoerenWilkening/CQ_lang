@@ -257,9 +257,17 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //    the INVERSE-predicate flag (`negate`): `flag = icmp_ne(q,k)` for `br [q==k]`.
   //    The spine reverses the negated compare via its own `_unc`, identical to the
   //    un-negated case — only the predicate string differs (PRD-g5gi §1).
+  //    (Track A.1, F-A1R2-1) `Unruled`: `classifyGuardedStoreArm` is a pre-peel
+  //    that pushes the region and returns before the generic `recoverRegion` /
+  //    `classifyArms` path, and this file has no wire walk (MEASURED). That gap
+  //    is a CONFIRMED silent miscompile on `main` — `gs1.c` minted
+  //    `cqrt_qram_store_i32_controlled` from a register a sibling in-place Ry had
+  //    relabelled — and it is closed by the unexempted re-ask this asks for.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
                                    /*inverse=*/false, /*before=*/BI,
-                                   /*negate=*/R.ArmNegated);
+                                   /*negate=*/R.ArmNegated,
+                                   /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::Unruled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed.
 

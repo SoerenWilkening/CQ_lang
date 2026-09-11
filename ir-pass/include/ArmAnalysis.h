@@ -20,6 +20,7 @@
 #ifndef CQ_IRPASS_ARM_ANALYSIS_H_
 #define CQ_IRPASS_ARM_ANALYSIS_H_
 
+#include "llvm/ADT/ArrayRef.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 
@@ -160,7 +161,18 @@ CondDataDisp condDataUseDisposition(llvm::Instruction *Cond,
 // before it and a same-block measurement AFTER the select is the ordinary
 // downstream case. De-anonymized from `ArmClassify.cpp`; the definition still
 // lives there, only its linkage and its read-point parameter changed.
-bool railMeasuredBeforeReadPoint(const llvm::CallInst *Rail,
+//
+// bd test_C_libtooling-r10v / -9pum / -r903(b) (Track A.1) — THE SEED IS A WIRE,
+// NOT A `cq_theta_i1`. A COMPARE-conditioned control read (`if (q > 3) …`,
+// `(b == 1) ? x : y`) asks the IDENTICAL question of the register the compare
+// reads, and the register is named by an arbitrary tainted value: a `cq_theta`
+// result, a template result (`%t = add %q, 3`), a cast, a phi. The parameter is
+// therefore `const Value *` and the body was ALREADY total over that domain
+// (`railWireNamesBackward` breaks at the first non-`cq_theta_` name, yielding
+// the singleton closure `{Seed}` — which is the right closure for a template
+// result, whose own operands are OTHER rails). ONE spelling for both seed
+// species (Rule 14); the caller supplies the species by supplying the seed.
+bool railMeasuredBeforeReadPoint(const llvm::Value *Rail,
                                  const llvm::Instruction *ReadPoint,
                                  const TaintSet &Taint,
                                  const llvm::DominatorTree *DT);
@@ -173,7 +185,9 @@ bool railMeasuredBeforeReadPoint(const llvm::CallInst *Rail,
 // rails). `railMeasuredBeforeReadPoint` asks its measure question over this
 // closure so that rung (ii) and rung (iii) of the rail ladder are computed over
 // the SAME wire (the 8h7d.5 F-1/F-3 lesson).
-void railWireNamesBackward(const llvm::CallInst *Rail, const TaintSet &Taint,
+// (Track A.1) `Rail` is any tainted value NAMING a register — see
+// `railMeasuredBeforeReadPoint` above for why the seed species is the caller's.
+void railWireNamesBackward(const llvm::Value *Rail, const TaintSet &Taint,
                            llvm::SmallVectorImpl<const llvm::Value *> &Out);
 
 // bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — RECORD
@@ -187,8 +201,74 @@ void railWireNamesBackward(const llvm::CallInst *Rail, const TaintSet &Taint,
 // an identical `(Rail, FirstRead)` pair; a rail read at two different points
 // records both (`reverifyRailCondReads` diagnoses once per rail). Null arguments
 // are ignored.
+//
+// bd test_C_libtooling-r10v / -9pum / -r903(b) (Track A.1) — THE RECORD NOW ALSO
+// CARRIES COMPARE SEEDS, and the write half moved INSIDE the one mint. A
+// COMPARE-conditioned control read has exactly the same round-2 taint window
+// (bd `9pum`: `y` is a 6.5 `%out` derivative, classical at round 1, so the two
+// `cq_theta(y, ·)` siblings are two rails to the fence and ONE rail to
+// `lowerRotations`). Rather than ask ten emitters to remember a call —
+// "every emission site, or none", the `markBranchPhaseGate` / `markRailCondRead`
+// lesson twice over — the compare record is written by `lowerCompareToFlag`
+// ITSELF (`CompareLowering.cpp`), which is the ONE function that mints a compare
+// flag: `Rail` is each member of the compare's `condProvenance` cone (the set
+// gate 2c walks) and `FirstRead` is the minted `cq_template_(i|f)cmp_*` call,
+// which IS the instruction that reads the register. A new control emitter is
+// therefore recorded by construction, and the ONE caller that opts OUT (the
+// straight-line data path `rewriteCompare`, which is not a control read and runs
+// AFTER this stage anyway) says so at its call site.
 void markRailCondRead(TaintSet &Taint, llvm::Value *Rail,
                       llvm::Instruction *FirstRead);
+
+// bd test_C_libtooling-r10v / -r903(b) (Track A.1) — RUNG (ii) FOR THE COMPARE
+// LEAVES of a tainted condition, asked at CLASSIFICATION time (detect before
+// mutate) by the two consumers the increment scopes: `classifySelectRegion`
+// (read point = the `SelectInst`, because `SelectMergeEmit` emits mid-block
+// immediately before it) and `classifyPhaseKickback` (read point =
+// `Pred->getTerminator()`, because the kickback's stream lands AT the branch).
+// Returns the offending leaf, or null. The question is asked over each leaf's
+// `condProvenance` cone — the SAME seed set gate 2c walks for rung (iii), so the
+// two rungs of the ladder are computed over one closure (the bd 8h7d.5 F-1/F-3
+// lesson: when you widen a set, ask what OTHER set was computed over the same
+// closure). Every other consumer of a compare condition is covered at FINAL
+// taint by `reverifyRailCondReads` over the `lowerCompareToFlag` record.
+// (Track A.1) RECORD one emitted COMPARE control read: `Seeds` is the compare's
+// `condProvenance` cone and `Read` the minted `cq_template_(i|f)cmp_*` call.
+// Called from `lowerCompareToFlag` itself — the ONE compare-flag mint — so the
+// record is complete by construction rather than by every emitter remembering.
+// Ignores null/empty arguments; idempotent for an identical `Read`.
+// `OperandSeeds` is the compare's DIRECT tainted operands (rung (ii)'s set) and
+// `Seeds` its `condProvenance` cone (rung (iii)'s) — see `TaintPropagation.h`
+// for why the two rungs must not share one set (F-A1-3).
+// `WireRuled` (round-2 finding F-A1R2-1) says whether the emitter's classifier
+// actually TOOK a round-1 wire disposition over this compare — it is the gate on
+// rung (iii)'s taint-blind exemption, and it is supplied by the mint site rather
+// than inferred here. See `TaintPropagation.h` for the two consumers whose
+// exemption it closes.
+void markCmpCondRead(TaintSet &Taint, llvm::ArrayRef<llvm::Value *> Seeds,
+                     llvm::ArrayRef<llvm::Value *> OperandSeeds,
+                     llvm::Instruction *Read, bool WireRuled);
+
+// (Track A.1) THE COMPARE HALF OF THE RE-VERIFICATION STAGE — the twin of
+// `reverifyRailCondReads` above, same slot, same two rungs, same two strings,
+// same "loud and final, never a silent fallback" contract. Runs over
+// `TaintSet::CmpCondReads`, asking rung (iii) over the whole recorded cone at
+// once (see `TaintPropagation.h` for why the cone must not be split). Returns
+// true iff it declined.
+bool reverifyCmpCondReads(llvm::Module &M, TaintSet &Taint);
+
+llvm::CmpInst *condCmpMeasuredBeforeReadPoint(
+    llvm::ArrayRef<llvm::CmpInst *> Leaves, const llvm::Instruction *ReadPoint,
+    TaintSet &Taint, const llvm::DominatorTree *DT);
+
+// (Track A.1, Rule-13 round-1 finding F-A1-3) The compare's DIRECT tainted
+// operands — the registers the control actually READS, which is rung (ii)'s
+// seed set at both the classifier and the backstop. NOT `condProvenance` (every
+// tainted ANCESTOR; that is rung (iii)'s set and R4's completeness carrier, and
+// using it here refused circuits whose flag reads a separate rail). One
+// spelling, two askers. See the definition in `ArmClassify.cpp`.
+void condCmpOperandSeeds(const llvm::CmpInst *Cmp, TaintSet &Taint,
+                         llvm::SmallVectorImpl<llvm::Value *> &Out);
 
 // bd test_C_libtooling-r9e5 (1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 — THE
 // RE-VERIFICATION STAGE. Re-asks rungs (ii) and (iii) of the §14.3 rail ladder,

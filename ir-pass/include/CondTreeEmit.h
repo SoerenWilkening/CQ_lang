@@ -162,12 +162,23 @@ void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
 // copy; the second `cqrt_cnot` returns `f` to `x ⊕ x = 0` on EVERY basis
 // branch, so its `cqrt_free` is a proven-|0> free (Rule 6) and the register is
 // left exactly as found. DEFAULT FALSE: every phase caller is byte-unchanged.
+//
+// `LeafWireRuled` (Track A.1, Rule-13 round-2 finding F-A1R2-1) — the answer
+// this network's CALLER owes the compare control-read record: did ITS classifier
+// take a round-1 wire disposition over these leaves? It is passed straight
+// through to `lowerCompareToFlag` for every `CmpInst` leaf and gates rung (iii)'s
+// taint-blind exemption in `reverifyCmpCondReads`. A network is shared by four
+// consumers (the 4.4 select, the flat kickback, and the 4.3 nest's outer and
+// inner levels) and this file cannot see which one called it, so the answer must
+// come from the call site. DEFAULT FALSE (`Unruled` — the unexempted re-ask), so
+// a new consumer that says nothing over-DECLINES rather than over-accepts.
 CondNetDisp emitCondNetwork(llvm::Value *Root, const CondTree &Tree,
                             WidthDispatch &wd,
                             const ControlledSymbols &csyms,
                             TaintSet &taint, llvm::Instruction *Before,
                             const llvm::DebugLoc &DL, bool AllowQQLeaves,
-                            CondNetwork &Out, bool CopyRailRoot = false);
+                            CondNetwork &Out, bool CopyRailRoot = false,
+                            bool LeafWireRuled = false);
 
 // The exact LIFO strip of a network emitted above, before `Before`: the
 // `CopyRailRoot` ancilla FIRST when there is one (it was minted LAST — the

@@ -7,6 +7,8 @@
 
 #include "CompareLowering.h"
 
+#include "ArmAnalysis.h"  // condProvenance / markCmpCondRead (Track A.1, bd 9pum)
+
 #include "OpcodeSupport.h"
 #include "TaintPropagation.h"
 #include "TemplateName.h"  // cq::Shape, cq::compareName
@@ -78,7 +80,8 @@ bool isDataPositionCompare(CmpInst *cmp) {
 static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                                StringRef qqWidth, bool inverse,
                                Instruction *before, Value *railBase,
-                               bool negate, Value *railToStrip) {
+                               bool negate, Value *railToStrip,
+                               CondReadKind readKind) {
   // `op` is the family stem the symbol table uses: "icmp" / "fcmp". The
   // predicate range partition is authoritative (an fcmp predicate is < 32;
   // an icmp predicate is in [32,..]); `isa<ICmpInst>` would do as well.
@@ -262,15 +265,76 @@ static Value *lowerCompareImpl(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                     : Builder.CreateCall(Callee, {Lhs, Rhs}, "h_cmp");
   if (DebugLoc DL = cmp->getDebugLoc())
     T->setDebugLoc(DL);
+  // ── THE COMPARE CONTROL-READ RECORD (Track A.1; bd test_C_libtooling-9pum,
+  //    -r10v, -r903 item (b)) ───────────────────────────────────────────────
+  //
+  // THIS CALL — a FORWARD `cq_template_(i|f)cmp_<pred>_<W>_hl(q, k)` — IS the
+  // instruction that reads the quantum register a tainted condition names. Every
+  // control consumer in the tree mints its flag HERE (`SelectMergeEmit` via
+  // `CondTreeEmit`, the flat kickback, the 4.3 nest, `AngleSelectEmit`,
+  // `ClassicalCallArmEmit`, `AbortParkEmit`, `GuardedStoreArmEmit`,
+  // `lowerControlledIOSinks`), so recording at THIS site — rather than at each
+  // emitter — makes the record complete BY CONSTRUCTION. That is deliberate and
+  // it is the lesson of `markBranchPhaseGate` (six call sites, four files, a
+  // seventh emitter re-opens F-L7-1 silently) and of `markRailCondRead`, whose
+  // FIRST spelling already missed a site (the 4.3 nest's conjunction toffoli,
+  // FIX_B1_R2.md). A record written by the shared mint cannot be forgotten; the
+  // failure mode of a NEW caller is therefore an over-DECLINE, which is the
+  // Prime Directive's direction.
+  //
+  // WHAT IS RECORDED: `(each member of the compare's `condProvenance` cone, T)`.
+  // The cone is the seed set gate 2c already walks for rung (iii), so the
+  // ladder's two rungs are computed over ONE closure (bd 8h7d.5 F-1/F-3). The
+  // cone MEMBERS are recorded rather than the `CmpInst` itself because the
+  // compare does not survive: `RegionFlatten` and `AngleSelectEmit` erase it
+  // before the re-verification stage runs, while the cone's members (thetas,
+  // template results, casts) live until `lowerRotations`/`lowerOps`, which are
+  // both LATER. `WeakTrackingVH` nulls anything that is erased anyway, and a
+  // nulled entry is skipped.
+  //
+  // THE ONE OPT-OUT is the straight-line DATA path (`rewriteCompare` below): a
+  // plain tainted `icmp` is not a control read, and `lowerOps` runs AFTER
+  // `reverifyCmpCondReads` (and its rail twin), so such a record could never be
+  // read in any case.
+  // It is spelled explicitly there rather than inferred, so the two paths cannot
+  // drift silently.
+  //
+  // `inverse` mints the `_unc` STRIP, which reads the same operands to zero the
+  // flag rail it already minted — not a control read, and recording it would
+  // pin a read point AFTER the region's own body.
+  if (!inverse && readKind != CondReadKind::NotAControlRead) {
+    SmallPtrSet<Value *, 16> Prov;
+    condProvenance(cmp, taint, Prov);
+    SmallVector<Value *, 16> Seeds(Prov.begin(), Prov.end());
+    // (Track A.1, F-A1-3) TWO SETS, ONE PER RUNG. The cone above is rung (iii)'s
+    // (gate 2c's own wire-walk seed); the compare's DIRECT tainted operands are
+    // rung (ii)'s — "was the register the control READS collapsed?" is a
+    // question about the operands, and asking it over the whole cone refused
+    // circuits whose flag is minted from a separate out-of-place rail beside an
+    // entangled measured parent. Both are captured HERE because the `CmpInst`
+    // does not survive to the backstop (`RegionFlatten` / `AngleSelectEmit`
+    // erase it), so the sets cannot be re-derived there.
+    SmallVector<Value *, 2> OperandSeeds;
+    condCmpOperandSeeds(cmp, taint, OperandSeeds);
+    // (Track A.1, round-2 finding F-A1R2-1) THE THIRD THING RECORDED: whether
+    // the consumer's classifier actually TOOK a round-1 wire disposition over
+    // this compare. It is the CALLER's answer, not a property of the mint —
+    // `lowerCompareToFlag` cannot see which classifier reached it — and it gates
+    // rung (iii)'s taint-blind exemption. Unruled by default; see
+    // `CondReadKind` in `CompareLowering.h` for the site-by-site enumeration.
+    markCmpCondRead(taint, Seeds, OperandSeeds, T,
+                    /*WireRuled=*/readKind == CondReadKind::WireRuled);
+  }
   return T;
 }
 
 Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
                           StringRef qqWidth, bool inverse,
                           Instruction *before, bool negate,
-                          Value *railToStrip) {
+                          Value *railToStrip, CondReadKind readKind) {
   return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before,
-                          /*railBase=*/nullptr, negate, railToStrip);
+                          /*railBase=*/nullptr, negate, railToStrip,
+                          readKind);
 }
 
 // bd adia (3c6m.55 Lever C): logical ABI width of a (possibly already-RAUW'd) tainted
@@ -340,8 +404,17 @@ Value *lowerCompareToFlagRail(CmpInst *cmp, Value *railBase, WidthDispatch &wd,
                               Instruction *before, Value *railToStrip) {
   // Nested-control mint is never negated (the swap-route nest has no FALSE-
   // successor store arm); pass negate=false.
+  // (Track A.1) The record rides the default: this mint substitutes a ROUTED
+  // rail for the compare's own handle operand, so its read point is still a
+  // control read of the condition's wire, and it is `Unruled` — the strongest
+  // re-ask — because a revived router would have to re-establish which
+  // classifier, if any, walked this compare's wire. It has ZERO callers at HEAD
+  // (the 4.3 nest stopped routing at 3qlq Inc 1 — MEASURED: `grep -rn
+  // 'lowerCompareToFlagRail(' ir-pass/src` returns only this definition), so the
+  // choice costs nothing today and fails toward DECLINE if it is ever revived.
   return lowerCompareImpl(cmp, wd, taint, qqWidth, inverse, before, railBase,
-                          /*negate=*/false, railToStrip);
+                          /*negate=*/false, railToStrip,
+                          /*readKind=*/CondReadKind::Unruled);
 }
 
 Value *emitEqFlag(Value *handle, ConstantInt *caseValue, WidthDispatch &wd,
@@ -439,7 +512,19 @@ bool rewriteCompare(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint) {
       QqWidth = WA;  // agreement: feed the recovered logical width.
     // else QqWidth stays empty -> the Q+Q loud decline (disagreement / absent).
   }
-  Value *Flag = lowerCompareToFlag(cmp, wd, taint, QqWidth);
+  // (Track A.1) THE ONE OPT-OUT FROM THE COMPARE CONTROL-READ RECORD, spelled
+  // explicitly. A straight-line tainted `icmp` lowered here is DATA, not a
+  // control read — nothing is controlled on the register by this mint, the flag
+  // is an ordinary reversible producer the whole-DAG spine uncomputes, and the
+  // condition-ladder question ("may a gate be controlled on this register at
+  // this point?") has no subject. It is also structurally unreachable by the
+  // reader: `lowerOps` runs LONG after `reverifyCmpCondReads` (see
+  // `CQLoweringPass::run`), so a record written here could never be re-asked.
+  // Both reasons are given because either alone would be a fragile ground.
+  Value *Flag = lowerCompareToFlag(cmp, wd, taint, QqWidth, /*inverse=*/false,
+                                   /*before=*/nullptr, /*negate=*/false,
+                                   /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::NotAControlRead);
   if (!Flag)
     return false;
   cmp->replaceAllUsesWith(Flag);

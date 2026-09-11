@@ -119,7 +119,8 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
                             const ControlledSymbols &csyms,
                             TaintSet &taint, Instruction *Before,
                             const DebugLoc &DL, bool AllowQQLeaves,
-                            CondNetwork &Out, bool CopyRailRoot) {
+                            CondNetwork &Out, bool CopyRailRoot,
+                            bool LeafWireRuled) {
   if (!Root || !Before)
     return CondNetDisp::Malformed;
   IRBuilder<> B(Before);
@@ -198,11 +199,17 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
       continue;
     }
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
+      // (Track A.1, F-A1R2-1) The leaf's record carries the CALLER's answer to
+      // "did a classifier walk this compare's wire at round 1?" — this file
+      // serves four consumers and cannot tell which one is asking.
       Value *F = lowerCompareToFlag(
           Leaf, wd, taint,
           /*qqWidth=*/AllowQQLeaves ? qqSelectLeafWidth(Leaf, taint)
                                     : StringRef(),
-          /*inverse=*/false, /*before=*/Before);
+          /*inverse=*/false, /*before=*/Before, /*negate=*/false,
+          /*railToStrip=*/nullptr,
+          /*readKind=*/LeafWireRuled ? CondReadKind::WireRuled
+                                     : CondReadKind::Unruled);
       if (!F)
         return CondNetDisp::MintDiagnosed;  // lowerCompareToFlag was LOUD.
       FlagOf[V] = F;

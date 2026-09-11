@@ -206,9 +206,15 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // `c(x) = b`, which is why every §5a invariant below — the bracket SCOPE, the
   // `cqrt_x` COUNT, the single free — carries over unchanged.
   CondNetwork Net;
+  // (Track A.1, F-A1R2-1) `LeafWireRuled` — `classifySelectRegion` ran gate 2c
+  // (`findNonDiagonalWireGate` over the leaves' `condProvenance` union) before
+  // this region was ever pushed, so a round-1 wire disposition WAS taken for
+  // every compare leaf here. `emitValueRegion` (3qlq Inc 2) reaches this same
+  // emitter with a synthesized `SelectRegion`, and its region came through
+  // `classifyArms` → `condWireDisposition`: ruled either way.
   switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel,
                           DL, /*AllowQQLeaves=*/true, Net,
-                          /*CopyRailRoot=*/true)) {
+                          /*CopyRailRoot=*/true, /*LeafWireRuled=*/true)) {
   case CondNetDisp::Ok:
     break;
   case CondNetDisp::MintDiagnosed:

@@ -182,9 +182,15 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
   // step 1 (`lowerCompareToFlag` classifies the operands by taint and applies
   // the classical-on-left predicate flip itself).
   // bd 3qlq.4: for a RAIL condition the flag IS the register — nothing minted.
+  // (Track A.1, F-A1R2-1) `WireRuled`: an angle select is dispatched from
+  // `SelectClassify`'s GATE 3, which runs after gate 2c has walked the leaves'
+  // `condProvenance` union at round-1 taint.
   Value *Flag = RailCond ? static_cast<Value *>(Cond)
-                         : lowerCompareToFlag(Cmp, wd, taint, /*qqWidth=*/{},
-                                              /*inverse=*/false, /*before=*/T);
+                         : lowerCompareToFlag(
+                               Cmp, wd, taint, /*qqWidth=*/{},
+                               /*inverse=*/false, /*before=*/T,
+                               /*negate=*/false, /*railToStrip=*/nullptr,
+                               /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     // UNREACHABLE for the two reasons the sibling records — the lockstep re-ask
     // above, and `DS_Error` → `exit(1)` inside `lowerCompareToFlag`'s own
@@ -503,8 +509,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // Byte-identical to every other path's step 1. `lowerCompareToFlag` classifies
   // the operands by taint and applies the classical-on-left predicate flip
   // itself, so a `5 == q` source mints the same `_hl` symbol a `q == 5` one does.
+  // (Track A.1, F-A1R2-1) `WireRuled`: see the sibling above — gate 2c ruled on
+  // this compare's wire before gate 3 dispatched the angle select.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/T);
+                                   /*inverse=*/false, /*before=*/T,
+                                   /*negate=*/false, /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::WireRuled);
   if (!Flag)
     // UNREACHABLE, and say WHY rather than calling it a bail (round-1 Rule-13
     // review, lens L1-1 / L4-1). This is NOT a "pre-emission" check — the `fsub`

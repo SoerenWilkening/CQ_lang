@@ -429,6 +429,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `cq_theta_i1` calls the record names). A no-op for every module that never
   // read a bare `_Bool` register as a control.
   reverifyRailCondReads(M, taint);
+  // (Track A.1; bd test_C_libtooling-9pum) THE COMPARE HALF of the same stage,
+  // in the same slot for the same reason — `y` in the 6.5 two-TU reproducer is
+  // an `%out` derivative, classical at round 1 and tainted after the fixpoint,
+  // so the two `cq_theta(y, ·)` siblings are two rails to the classifier and ONE
+  // rail to `lowerRotations`. Immediately after its rail twin, not merged with
+  // it: the compare record's rung (iii) is asked over the whole `condProvenance`
+  // cone AT ONCE (`WireWalk::gateIsHarmless` grows its per-activation barriers
+  // from the seed set it is handed), while a rail's is asked per rail.
+  reverifyCmpCondReads(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -850,6 +859,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // makes the taint final) and BEFORE `lowerRotations` (which erases the
   // `cq_theta_i1` calls the record names).
   reverifyRailCondReads(M, taint);
+  // (Track A.1; bd test_C_libtooling-9pum) the compare half, mirrored here too —
+  // twin-pipeline parity is MANDATORY (WI-1.12); see run() for the slot argument.
+  reverifyCmpCondReads(M, taint);
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after

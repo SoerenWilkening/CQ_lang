@@ -378,8 +378,16 @@ void emitAbortParkRegion(const ControlRegion &R, WidthDispatch &wd,
 
   // 1. Mint the abort flag from the PRE-park routed handle — the flag must read
   //    q0 (the live value), so this precedes the park cswap that swaps q.
+  //    (Track A.1, F-A1R2-1) `Unruled`: `classifyAbortPark` is a PRE-PEEL in
+  //    `handleBranchRegion` — it pushes the region and returns before
+  //    `classifyArms` ever reaches `condWireDisposition`, and this file contains
+  //    no wire walk of its own (MEASURED: `grep -n findNonDiagonalWireGate
+  //    ir-pass/src/AbortParkEmit.cpp` is empty). So NO round-1 ruling exists for
+  //    this compare and `reverifyCmpCondReads` must exempt nothing.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
+                                   /*inverse=*/false, /*before=*/BI,
+                                   /*negate=*/false, /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::Unruled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported width / Q+Q).
 

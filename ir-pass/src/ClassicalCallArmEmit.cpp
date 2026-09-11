@@ -194,8 +194,15 @@ void emitClassicalCallArmRegion(const ControlRegion &R, WidthDispatch &wd,
   };
 
   // 1. MINT the flag — cq_template_icmp_<pred>_<Wc>_hl(q, k).
+  // (Track A.1, F-A1R2-1) `Unruled`: `classifyClassicalCallArm` runs BEFORE
+  // `classifyArms` in `handleBranchRegion` and RETURNS on Accept, so
+  // `condWireDisposition` never sees this compare; the 6.5 classifier has no
+  // wire clause of its own (MEASURED: no `findNonDiagonalWireGate` in
+  // `classifyClassicalCallArm`). No round-1 ruling ⇒ no exemption.
   Value *Flag = lowerCompareToFlag(Cond, wd, taint, /*qqWidth=*/{},
-                                   /*inverse=*/false, /*before=*/BI);
+                                   /*inverse=*/false, /*before=*/BI,
+                                   /*negate=*/false, /*railToStrip=*/nullptr,
+                                   /*readKind=*/CondReadKind::Unruled);
   if (!Flag)
     return;  // lowerCompareToFlag already diagnosed (unsupported width / Q+Q).
 

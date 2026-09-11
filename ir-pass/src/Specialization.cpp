@@ -211,9 +211,17 @@ Value *mintCondNetwork(Value *Root, const CondTree &Tree, WidthDispatch &wd,
       // `i1_hl` template + its `_unc` exist and reverse coherently. If compare
       // lowering ever changes how an i1-operand compare is minted, RE-REVIEW this
       // acceptance (it is an asymmetry vs the top level, not a miscompile today).
+      // (Track A.1, F-A1R2-1) `Unruled`, and it is inert either way: this mint
+      // passes the CLONE's `cloneTaint`, so the record lands in a `TaintSet`
+      // `reverifyCmpCondReads` never reads, and `specialize` runs after that
+      // stage. Spelled rather than defaulted so the enumeration is complete in
+      // the source (IMPL_A1.md §7 O-5).
       Value *F = lowerCompareToFlag(Leaf, wd, ct,
                                     /*qqWidth=*/qqSelectLeafWidth(Leaf, ct),
-                                    /*inverse=*/false, /*before=*/SI);
+                                    /*inverse=*/false, /*before=*/SI,
+                                    /*negate=*/false,
+                                    /*railToStrip=*/nullptr,
+                                    /*readKind=*/CondReadKind::Unruled);
       if (!F)
         return nullptr;  // lowerCompareToFlag already diagnosed (width/predicate).
       FlagOf[V] = F;

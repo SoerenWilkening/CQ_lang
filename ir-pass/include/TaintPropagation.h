@@ -314,6 +314,92 @@ struct TaintSet {
                     4>
       RailCondReads;
 
+  // ── THE EMITTED COMPARE CONTROL READS (Track A.1; bd test_C_libtooling-9pum,
+  //    the COMPARE half of F-B1R2-1) ─────────────────────────────────────────
+  //
+  // The identical record for a COMPARE-conditioned control read, and it exists
+  // as a SECOND vector rather than as more entries in `RailCondReads` for one
+  // reason that is a correctness fact, not tidiness: rung (iii) is asked over a
+  // SEED SET, and `WireWalk::gateIsHarmless` grows its per-activation barrier
+  // set by scanning THAT SET for superseding wire-tracking phis. A rail's ladder
+  // is asked per RAIL (its cone is the singleton `{Rail}` — round-3 item
+  // F-B1R3-3), while a compare's is asked over the whole `condProvenance` cone
+  // AT ONCE; splitting the cone into one entry per member would ask each seed
+  // with a singleton set and silently lose those barriers. MEASURED, not
+  // argued: the first spelling did split it and turned FOURTEEN shipped
+  // in-loop accepts into declines.
+  //
+  // `Seeds` is the compare's `condProvenance` cone — the set gate 2c walks — and
+  // `Read` is the minted `cq_template_(i|f)cmp_<pred>_<W>_hl` call, which IS the
+  // instruction that reads the register. Written by `lowerCompareToFlag`
+  // (`CompareLowering.cpp`) rather than by the ten control emitters that call it,
+  // so a new emitter is recorded BY CONSTRUCTION and cannot re-open the window
+  // by forgetting a call; read once by `reverifyCmpCondReads`, in both entry
+  // points, in the same slot as the rail re-verification. Every `WeakTrackingVH`
+  // caveat in the block above applies verbatim.
+  //
+  // RUNG (iii) IS ASKED ONLY FOR A GATE THE CLASSIFIER COULD NOT HAVE SEEN —
+  // AND ONLY WHERE A CLASSIFIER RULED AT ALL (`WireRuled` below; round-2
+  // finding F-A1R2-1). For an `Unruled` mint it is asked about every gate. That
+  // is not a heuristic — `findNonDiagonalWireGate` consults the taint set
+  // in exactly one place (the F-1b-1 chained-theta arg-0 crossing), so running
+  // it taint-blind and taint-aware and taking the DIFFERENCE isolates the round-2
+  // rail merge exactly. The reason it must be isolated is that rung (iii)'s
+  // second prong is POSITION-AWARE and its positions are gone by the time this
+  // stage runs: `RegionFlatten` has erased the diamond and the round-2
+  // `collapseFlattenedLoopRails` has erased the loop-header rail phi that
+  // `WireWalk::gateIsHarmless`' per-activation barrier needs (bd 8h7d.5). Asking
+  // that prong about a gate the classifier already ruled on turns twelve shipped
+  // in-loop accepts into declines — MEASURED, not feared. RUNG (ii) IS NOT
+  // GATED: it has no position-aware prong (a reachability question over
+  // `taint.MeasureCalls`, which the flatten does not disturb), so it is asked on
+  // every entry and is what makes this stage a real backstop for the consumers
+  // that get no classifier clause — the angle select, the 6.5 classical-call
+  // arm, the abort park, the guarded store, the controlled I/O sink.
+  // ⚠ TWO SEED SETS, ONE PER RUNG, and they are different QUESTIONS (Track A.1,
+  // Rule-13 round-1 finding F-A1-3). `Seeds` is the `condProvenance` CONE — every
+  // tainted ancestor — which is what rung (iii)'s wire walk needs (and is R4's
+  // completeness carrier; its own header forbids narrowing it). `OperandSeeds`
+  // is the compare's DIRECT tainted operands: the registers the control READS,
+  // which is the only thing rung (ii) ("was that register collapsed?") may ask
+  // about. Asking rung (ii) over the cone refused valid circuits whose flag is
+  // minted from a separate out-of-place rail while an ENTANGLED parent is
+  // measured — an over-decline `main` does not have, and asymmetric besides (the
+  // exact mirror accepted). Both are recorded at the mint because the `CmpInst`
+  // itself does not survive to the backstop.
+  //
+  // ⚠ `WireRuled` — WAS A ROUND-1 WIRE DISPOSITION ACTUALLY TAKEN FOR THIS MINT?
+  // (Track A.1, Rule-13 round-2 finding F-A1R2-1: a CONFIRMED silent miscompile
+  // at two consumers, PRE-EXISTING on `main`.) Rung (iii) exempts the gates that
+  // are reachable TAINT-BLIND, on the ground that the classifier saw them and
+  // applied its own disposition — which is true only where a classifier ran a
+  // wire walk at all. `lowerControlledIOSinks` (7.6) runs BEFORE
+  // `detectControlRegions`; `classifyGuardedStoreArm` (7.5) and
+  // `classifyClassicalCallArm` (6.5) and `classifyAbortPark` (7.2) each push
+  // their region and return before `classifyArms` ever reaches
+  // `condWireDisposition` — MEASURED: `IOSinkLowering.cpp`,
+  // `GuardedStoreArmEmit.cpp` and `AbortParkEmit.cpp` contain no
+  // `findNonDiagonalWireGate` / `condWireDisposition` call at all, and
+  // `classifyClassicalCallArm`'s body (here in `ArmClassify.cpp`) contains none
+  // either. For such a mint the
+  // round-1 ruling is the EMPTY SET, the exemption exempts gates nobody ruled
+  // on, and `io3.c`/`gs1.c` (review_a1_r2_probes) minted a controlled tape write
+  // and a controlled Shadow store from a register a sibling in-place Ry had
+  // already relabelled, at `opt` exit 0, verify-clean and STRICT-2b clean, while
+  // the kickback twin `io4.c` declined on both binaries. The flag is set by the
+  // MINT SITE, not inferred here: `CondReadKind::WireRuled` says the emitter's
+  // classifier ran `condWireDisposition` (or `SelectClassify`'s gate 2c) over
+  // this compare's own provenance, and the DEFAULT is `Unruled`, so a new
+  // emitter that does not say so gets the UNEXEMPTED re-ask — an over-decline,
+  // which is the Prime Directive's direction.
+  struct CmpCondRead {
+    llvm::SmallVector<llvm::WeakTrackingVH, 8> Seeds;
+    llvm::SmallVector<llvm::WeakTrackingVH, 2> OperandSeeds;
+    llvm::WeakTrackingVH Read;
+    bool WireRuled = false;
+  };
+  llvm::SmallVector<CmpCondRead, 4> CmpCondReads;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal

@@ -55,6 +55,40 @@ namespace cq {
 class WidthDispatch;
 struct TaintSet;
 
+// (Track A.1; bd test_C_libtooling-9pum / -r10v / -r903, Rule-13 round-2 finding
+// F-A1R2-1) WHAT KIND OF READ A COMPARE-FLAG MINT IS. One parameter, three
+// answers, spelled at EVERY forward mint site rather than defaulted there — the
+// `markBranchPhaseGate` lesson (a per-site obligation that is only written down
+// in one place is a site a new emitter forgets silently).
+//
+//   * `NotAControlRead` — the straight-line DATA path (`rewriteCompare`).
+//     Nothing is controlled on the register by this mint, so the condition
+//     ladder has no subject and NO record is written. Exactly one site.
+//   * `Unruled` — a CONTROL read whose consumer's classifier took NO round-1
+//     wire disposition over this compare: the 7.6 controlled I/O sink (it runs
+//     BEFORE `detectControlRegions`), the 7.5 guarded Shadow store, the 6.5
+//     classical-call arm and the 7.2 abort park (each pushes its region and
+//     returns before `classifyArms` reaches `condWireDisposition`). MEASURED:
+//     none of those four files contains a `findNonDiagonalWireGate` or
+//     `condWireDisposition` call. `reverifyCmpCondReads` then exempts NOTHING
+//     for this entry and re-asks rung (iii) about every gate on the wire.
+//   * `WireRuled` — a control read whose classifier DID walk this compare's
+//     provenance wire: `ArmClassify::condWireDisposition` /
+//     `railCondWireDisposition` (the flat kickback, the nest, the value arm, the
+//     in-place-Ry arm) or `SelectClassify`'s gate 2c (the 4.4 data select and,
+//     through gate 3, the angle select). Only such an entry gets rung (iii)'s
+//     taint-blind exemption.
+//
+// THE DEFAULT IS `Unruled`, deliberately: a new control emitter that says
+// nothing gets the UNEXEMPTED re-ask, which can only over-DECLINE (the Prime
+// Directive's direction). See `TaintPropagation.h`'s `CmpCondRead::WireRuled`
+// for the two confirmed silent miscompiles that a blanket exemption kept open.
+enum class CondReadKind {
+  NotAControlRead,
+  Unruled,
+  WireRuled,
+};
+
 // WP18 (PRD §8.5) — mint a switch-case eq-flag DIRECTLY, with no throwaway
 // `CmpInst`: the HL `cq_template_icmp_eq_<W>_hl(handle, caseValue)` forward flag
 // (or its `_inv` twin when `inverse`), where `W` is `caseValue`'s ABI width.
@@ -126,12 +160,23 @@ bool rewriteCompare(llvm::CmpInst *cmp, WidthDispatch &wd, TaintSet &taint);
 // `..._unc(railToStrip, <forward operands…>)` rather than the fresh-returning
 // `_inv` twin, and `railToStrip` (the flag rail being zeroed) is REQUIRED — a
 // null rail declines loudly instead of emitting a form that drops the pairing.
+//   * `readKind` (Track A.1; bd test_C_libtooling-9pum / -r10v / -r903) — see
+//     `CondReadKind` above. A forward mint that is a control read RECORDS
+//     `(the compare's `condProvenance` cone, its DIRECT tainted operands, the
+//     minted call, whether a round-1 wire disposition was taken)` in
+//     `TaintSet::CmpCondReads`, so `reverifyCmpCondReads` can re-ask the
+//     condition ladder's rungs (ii) and (iii) once taint is FINAL (the bd `9pum`
+//     round-2 window). Recording lives in the shared mint precisely so no
+//     control emitter can forget it; the DEFAULT is `Unruled`, so a caller that
+//     forgets fails toward a DECLINE. `NotAControlRead` is today exactly one
+//     site: the straight-line data path `rewriteCompare`, which says so there.
 llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
                                 TaintSet &taint, llvm::StringRef qqWidth = {},
                                 bool inverse = false,
                                 llvm::Instruction *before = nullptr,
                                 bool negate = false,
-                                llvm::Value *railToStrip = nullptr);
+                                llvm::Value *railToStrip = nullptr,
+                                CondReadKind readKind = CondReadKind::Unruled);
 
 // 3c6m.12 (L4) — detection-side DRY-RUN of the HL flag mint above: TRUE iff
 // `lowerCompareToFlag(cmp, …, qqWidth={}, negate=false)` would mint without

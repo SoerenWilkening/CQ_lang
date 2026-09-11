@@ -695,8 +695,19 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
     //     Q+Q (both-tainted) condition is unsupported: the mint returns null after
     //     its own loud decline. Done FIRST (before the lazy `cqrt_tape_alloc`) so a
     //     Q+Q decline leaves NO partial mutation — not even a stray dead tape.
+    //     (Track A.1, F-A1R2-1) `Unruled`: `lowerControlledIOSinks` runs
+    //     BEFORE `detectControlRegions` in both entry points, so no classifier
+    //     has looked at this condition's wire at all (MEASURED: no
+    //     `findNonDiagonalWireGate` / `condWireDisposition` in this file). The
+    //     gap is a CONFIRMED silent miscompile on `main` (`io3.c`: a controlled
+    //     tape write minted from a register a sibling in-place Ry relabelled,
+    //     while the kickback twin `io4.c` declines); the unexempted rung-(iii)
+    //     re-ask this asks for is what closes it.
     Value *Flag = lowerCompareToFlag(C.Cond, wd, taint, /*qqWidth=*/{},
-                                     /*inverse=*/false, /*before=*/C.BI);
+                                     /*inverse=*/false, /*before=*/C.BI,
+                                     /*negate=*/false,
+                                     /*railToStrip=*/nullptr,
+                                     /*readKind=*/CondReadKind::Unruled);
     if (!Flag)
       continue;
 

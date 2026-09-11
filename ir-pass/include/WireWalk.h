@@ -47,6 +47,8 @@
 #define CQ_IRPASS_WIRE_WALK_H_
 
 #include "llvm/ADT/ArrayRef.h"
+#include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 
 namespace llvm {
 class CallInst;
@@ -105,13 +107,38 @@ struct TaintSet;
 // theta (a user of a shared parent handle, NOT on the seed's own arg-0 chain)
 // is stale evidence. A SOURCE theta's arg-0 is the classical init, so the
 // closure stops there.
-llvm::CallInst *findNonDiagonalWireGate(llvm::ArrayRef<llvm::Value *> Seeds,
-                                        bool CrossValueRouting,
-                                        const llvm::Instruction *EmitPoint =
-                                            nullptr,
-                                        const llvm::DominatorTree *DT =
-                                            nullptr,
-                                        const TaintSet *Taint = nullptr);
+//
+// `Covered` (Track A.1, Rule-13 round-1 finding F-A1-1 — a CONFIRMED silent
+// miscompile): THE GATES A CALLER HAS ALREADY RULED ON. A staling gate that is
+// a member is skipped as EVIDENCE and its own forward wire is still walked, so
+// the caller exempts the gate it named and nothing behind it. It exists because
+// the one question a re-verification stage must ask is a SET DIFFERENCE — "is
+// there a gate here that the earlier ruling did not cover?" — and the first
+// spelling of that asked a BOOLEAN ("is ANY gate visible without the crossing?"),
+// which discarded a live obligation about a DIFFERENT gate the moment any gate
+// at all was visible. A boolean cannot name a gate; this parameter can. Null
+// (the default) is the shipped behaviour of every other caller, byte for byte.
+llvm::CallInst *findNonDiagonalWireGate(
+    llvm::ArrayRef<llvm::Value *> Seeds, bool CrossValueRouting,
+    const llvm::Instruction *EmitPoint = nullptr,
+    const llvm::DominatorTree *DT = nullptr, const TaintSet *Taint = nullptr,
+    const llvm::SmallPtrSetImpl<const llvm::CallInst *> *Covered = nullptr);
+
+// (Track A.1) THE ENUMERATING FACE OF THE SAME WALK — same closure, same
+// exemptions, same harmlessness proof; it COLLECTS every staling gate instead of
+// returning the first. One implementation, two faces (Rule 14): a second walk
+// spelled separately is how two spellings of one relation eventually disagree.
+//
+// Its customer is the set difference above: run this taint-BLIND to enumerate
+// what a round-1 classifier could reach with no taint-dependent crossing, then
+// re-walk at FINAL taint with that set as `Covered`. Anything returned by the
+// second walk is reachable ONLY through the round-2 rail merge, which is the
+// obligation no earlier ruling can have discharged. `Out` is APPENDED to and is
+// not cleared.
+void collectNonDiagonalWireGates(
+    llvm::ArrayRef<llvm::Value *> Seeds, bool CrossValueRouting,
+    const llvm::Instruction *EmitPoint, const llvm::DominatorTree *DT,
+    const TaintSet *Taint, llvm::SmallVectorImpl<llvm::CallInst *> &Out);
 
 // "IF `B` executes, `A` has already executed, and `A` never runs again after
 // it." THE ONE SPELLING of this project's position-aware proof obligation, and
