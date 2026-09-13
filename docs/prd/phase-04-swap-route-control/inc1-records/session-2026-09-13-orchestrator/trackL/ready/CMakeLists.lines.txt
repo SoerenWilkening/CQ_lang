@@ -1,0 +1,27 @@
+# ── Track L, bd boi6 H-10 — the two pins for the SHIPPED in-loop carried-_Bool
+# ── kickback whose region condition is the IN-BODY chained theta (boi6 p2/p9).
+# ── Append to tests/e2e/CMakeLists.txt immediately AFTER the
+# ── e2e-phase-bool-loop-twin-identical block (2026-09-13: line 5181), so the
+# ── carried-rail pins sit beside the invariant-rail ones they discriminate from.
+# ── The two .ll fixtures need NO CMake edit (ir-pass/test/*.ll is globbed).
+
+add_test(NAME e2e-slice-control-phase-bool-carried-theta-first
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-carried-theta-first-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.expected.log")
+
+add_test(NAME e2e-phase-bool-carried-theta-first-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.expected.log")

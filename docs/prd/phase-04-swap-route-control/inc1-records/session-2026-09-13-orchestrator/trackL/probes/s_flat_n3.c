@@ -1,0 +1,16 @@
+/* s_flat_n3.c — Track L probe, session 2026-09-13. READ-ONLY scoping.
+   VERDICT on the ORACLE (build/ir-pass/cq-opt sha256 fbbe0820…, e96f89c):
+   Q2(ii) HAND-UNROLLED N=3. Same wall.
+   ⚠ RETIREMENT TRIGGER (L8): as s_flat_n2. */
+#include "CQ.h"
+int main(void) {
+    int a = 5;
+    bool b = 0;
+    if (a >= 3) b = cq_theta(b, 0.5);
+    if (b) a -= 3;
+    if (a >= 3) b = cq_theta(b, 0.5);
+    if (b) a -= 3;
+    if (a >= 3) b = cq_theta(b, 0.5);
+    if (b) a -= 3;
+    return cq_measure(a) + cq_measure(b);
+}
