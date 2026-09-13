@@ -43,6 +43,7 @@ class CmpInst;
 class Instruction;
 class DominatorTree;
 class LoopInfo;
+class PHINode;
 class SelectInst;
 class Value;
 }  // namespace llvm
@@ -86,6 +87,33 @@ struct CondTree {
   // omissions. `collectCondTree` returns true iff at least one leaf of EITHER
   // kind was collected.
   llvm::SmallVector<llvm::CallInst *, 2> RailLeaves;
+  // bd `boi6` (D-B) / Track M — REGION-MERGE-φ RAIL LEAVES. The `Merge` φ of a
+  // diamond ALREADY accepted into the plan as a controlled in-place Ry / state
+  // PREP (`ArmClass::InPlaceRotation`): `bool b1 = 0; if (!b0) b1 =
+  // cq_theta(b1, .5); if (b1) a -= 3;`, which `clang -O1` hands over as
+  // `select i1 %phi, …`. Such a φ is NOT a `CallInst`, so it can never join
+  // `RailLeaves` — THE ELEMENT TYPE THERE IS THE ENFORCEMENT (bd `boi6` H-3:
+  // retyping it to `Instruction *` would hand a φ, with no code change and no
+  // review, to the depth-2 nest, the Rz-stem angle select, the kickback,
+  // `Specialization` and `SwapRouteEmit`). A SECOND field is the whole point.
+  //
+  // ⚠ THE SAME OBLIGATION AS `RailLeaves`, RE-ARMED FOR THIS FIELD: EVERY
+  // CONSUMER THAT READS `Leaves` MUST DECIDE ON `RailPhiLeaves` EXPLICITLY. A
+  // consumer that iterates `Leaves`/`RailLeaves` and treats the tree as
+  // compare-plus-call-only accepts a shape it never proved. The shipped
+  // dispositions, decided ONCE (bd `boi6` H-8): ONLY `classifySelectRegion`
+  // admits a φ leaf (it is the one caller that passes `AllowRailPhi`), and it
+  // proves the φ by CALLING the one owner of "what this merge φ becomes" — the
+  // region's own committed `ClassArm`/`Shadow` verdict in `plan.Regions`
+  // (`ArmClassify`), never by re-deriving it (Rule 14, the drbq Inc-3 (b′)
+  // lesson). `Specialization` SKIPS a φ-carrying tree. Every OTHER consumer sees
+  // `AllowRailPhi == false`, so its string is UNCHANGED: a φ at a `br` keeps
+  // `control flow` (`ArmClassify`'s ternaries are deliberately untouched), a φ
+  // at the kickback keeps `branch phase on a bare i1 condition`, a φ in a loop
+  // keeps the loop layer's string. Re-pointing `kBareRailCondReason` at a φ
+  // would claim a rail capability that does not exist at those consumers and
+  // would move three shipped fixtures' strings without moving a disposition.
+  llvm::SmallVector<llvm::PHINode *, 2> RailPhiLeaves;
   llvm::SmallVector<llvm::Instruction *, 4> Nodes;
 };
 
@@ -100,6 +128,26 @@ struct CondTree {
 // admitted here — they keep the pre-existing `branch phase on a bare i1
 // condition` decline, which is exactly what makes that string a discriminator.
 bool isCondRailLeaf(const llvm::Value *V);
+
+// bd `boi6` (D-B) / Track M — THE SYNTACTIC HALF of "this condition value is the
+// merge φ of a region the plan already owns". DELIBERATELY WEAK, and the weakness
+// is the design: true for any 2-incoming `i1` `PHINode`, because the PROOF is not
+// a shape question at all — it is the classifier asking `plan.Regions` whether
+// some `BranchRegion` committed that very φ as its `Merge` with an
+// `InPlaceRotation` arm (`classifySelectRegion`'s rung 0). Taint is NOT asked
+// here either (neither does `isCondRailLeaf`): rung (i) re-asks it, so an
+// untainted φ admitted by the grammar still declines `control flow`, the same
+// string it takes today.
+//
+// TWO CALLERS, TWO JOBS. `collectCondTree` uses it behind `AllowRailPhi` to
+// admit the leaf; `RegionFlatten` uses it beside `isCondRailLeaf` so that a
+// φ-conditioned region can never erase its own condition. The latter has NO
+// SUBJECT today — the φ's erasure belongs to the PREP region's own
+// `emitInPlaceRotationRegion`/`flattenRegion`, not to the select's — and it is
+// added as defence in depth, so that the first widening which gives a
+// φ-conditioned region a `Pred`/`MergeBB` of its own does not re-open the L9
+// block-lifetime hole silently.
+bool isCondRailPhiShape(const llvm::Value *V);
 
 // bd 3qlq.4 — the ONE decline string for a rail-leaf condition reaching a
 // consumer that does not lower it yet (the 4.4 data select, the Ry-stem angle
@@ -147,8 +195,27 @@ bool decomposeCondNode(llvm::Value *V, llvm::Instruction::BinaryOps &Opc,
 // The register-free BRANCH PHASE (P3) turns it ON because the logical select is
 // the ONLY spelling `clang -O1` hands its `br`. Widening the data select to
 // match is a filed follow-on, not a side effect.
+//
+// `AllowRailPhi` (bd `boi6` D-B / Track M) admits ONE `isCondRailPhiShape` leaf,
+// and only as the tree's ROOT — i.e. the condition IS the φ, never a φ nested
+// inside an `and`/`or`/`xor`. The `AllowLogicalSelect` precedent verbatim: one
+// grammar, per-consumer verdicts, default OFF. Passed `true` by exactly ONE
+// caller, `classifySelectRegion`.
+//
+// ⚠ ROOT-ONLY IS A SCOPE DECISION, NOT AN IMPLEMENTATION ARTEFACT, and it is
+// worth the sentence. A φ as an INTERIOR leaf (`if (b1 && q > 3) a -= 3;` —
+// measured as probe `m31`) would reach `CondTreeEmit`'s NON-root rail path,
+// where the φ has by emit time been RAUW'd to a `cq_theta_i1` call and would be
+// read as a read-only control of a node `cqrt_toffoli`. That may well be sound;
+// it has NO probe family, NO fixture and NO adversarial round (Rule 12), so it
+// stays off-grammar and keeps its `control flow` decline (Prime Directive —
+// over-declining is always safe). RETIREMENT TRIGGER (L8): the increment that
+// widens this must flip `control_swap_reject_select_mergephi_tree_leaf.ll` from
+// a decline to an accept and derive its stream from the pass output — do not
+// delete that fixture, re-derive it.
 bool collectCondTree(llvm::Value *Root, CondTree &Tree,
-                     bool AllowLogicalSelect = false);
+                     bool AllowLogicalSelect = false,
+                     bool AllowRailPhi = false);
 
 // Run the §0 ladder on a tainted-condition `Sel`. On ACCEPT push a
 // `ControlRegion{Kind=SelectRegion, Merge=Sel, Condition=Sel->getCondition()}`

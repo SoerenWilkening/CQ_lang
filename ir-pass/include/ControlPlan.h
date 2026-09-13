@@ -478,6 +478,34 @@ struct ControlRegion {
   unsigned ParentIdx = kNoParent;
   llvm::Value *ParentFlag = nullptr;
 
+  // bd `boi6` D-B / Track M, round-1 finding F-M1 — THE ADMITTING PREP REGION of
+  // a merge-φ-conditioned `SelectRegion`: the index in `ControlPlan::Regions` of
+  // the `BranchRegion` whose `InPlaceRotation` verdict `classifySelectRegion`'s
+  // rung 0 accepted this select's φ on. `kNoParent` for every other region and
+  // for a compare/rail-conditioned select. An INDEX, not a pointer, for exactly
+  // the reason `ParentIdx` gives one line above (the list is a `SmallVector` that
+  // reallocates as detection pushes) — and indices are stable because
+  // `plan.Regions` is only ever `push_back`'d, never erased, sorted or resized.
+  //
+  // ⚠ IT EXISTS TO CARRY AN EMISSION-ORDER OBLIGATION, and the obligation is real
+  // rather than theoretical (MEASURED, round-1 probe `r03_order_third_region.c`).
+  // `lowerControlRegions` does NOT emit in plan order: it Kahn-sorts the bd `hcrg`
+  // precedence graph, in which a `SelectRegion` is INERT (all four block fields
+  // null ⇒ it aliases nothing and nothing aliases it ⇒ `Pending == 0` always). A
+  // following `PhaseKickback` whose `Pred` IS the prep's `MergeBB` is the
+  // sanctioned `sequentialChainAlias` and gets `Precedes[kickback] = {prep}` — so
+  // the prep is scheduled LAST, AFTER the inert select, and the select's
+  // condition re-read then finds the φ still present (M-β has not run) and takes
+  // the loud H-1 backstop. Safe, and an OVER-DECLINE on plain C.
+  //
+  // The fix is this field plus ONE edge in that graph (`SwapRouteEmit`,
+  // `lowerControlRegions`): the admitting region BEFORE this select. The edge is
+  // added by CALLING this record — the predicate that produced it is
+  // `classifySelectRegion`'s and is never re-derived in the emitter (Rule 14).
+  // A select can only gain INCOMING edges this way, so it can never sit on a
+  // precedence cycle.
+  unsigned PrepRegionIdx = kNoParent;
+
   // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),
   // onto which the parent routes its base before the child mints + routes. The
   // child's inner flag is minted FROM this rail (`lowerCompareToFlagRail`), not

@@ -4852,6 +4852,130 @@ add_test(NAME e2e-slice-control-stateprep-bool-under-int-compare-fused
 
 
 # ============================================================================
+# bd `boi6` sub-increment D-B / Track M (2026-09-13) — THE REGION-MERGE-phi RAIL
+# LEAF AT THE 4.4 DATA SELECT.  THE OWNER'S OWN FILE, COMPILING.
+#
+# `if (b1) a -= 3;` where `b1` is the merge phi of an already-accepted controlled
+# STATE PREP.  Before this increment that declined `control flow` at the select
+# while `if (b1) a -= 1;` COMPILED on the same binary — InstCombine folds a +-1
+# delta to `add(a, sext b1)` and leaves a `select` for every other delta, so the
+# phi was already consumed as a quantum register and only the `select` consumer
+# was refused.  The widening is ONE analysis gate (`collectCondTree`'s
+# `AllowRailPhi`, proved by CALLING the region's own committed `InPlaceRotation`
+# verdict in `plan.Regions`); the EMITTED STREAM is the Rule-13-cleared r9e5
+# rail-root CNOT-copy merge, unchanged.
+#
+# ⚠ THE FOUR ENTRIES BELOW ARE ONE ARGUMENT, not four samples, and the two
+# `-identical` gates are where it is actually made:
+#   * `...two_bools`        the owner's file            29 lines  (NEW capability)
+#   * `..._base`            the same minus line 99      19 lines  (must NOT move)
+#   * `..._uncond`          the prep made unconditional 28 lines  (the frozen
+#                           ORACLE already lowered this, via the SAME emitter)
+#   * `..._int`             the `int b1` workaround     28 lines  (the spelling
+#                           the owner refused; pinned so the widening cannot
+#                           change it)
+add_test(NAME e2e-slice-control-cascade-two-bools
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log")
+
+add_test(NAME e2e-slice-control-cascade-two-bools-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.expected.log")
+
+add_test(NAME e2e-slice-control-cascade-two-bools-uncond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.expected.log")
+
+add_test(NAME e2e-slice-control-cascade-two-bools-int
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_int.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_int.expected.log")
+
+# GATE 1 — "an ACCEPT, not a STREAM", the PREFIX half.  The base slice is the
+# flagship minus its last `if`, so the flagship's golden must START with the
+# base's first 16 lines byte for byte: adding a consumer of `b1` changed nothing
+# about how `b0`, `b1` and the `a`-mux are emitted.  A plain `compare_files` will
+# not do (the base's tail is its own three measurements), so this compares the
+# 16-line prefix.
+add_test(NAME e2e-cascade-two-bools-base-prefix-identical
+  COMMAND "${CMAKE_COMMAND}"
+    "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
+    "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_base.expected.log"
+    -DN=16
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_prefix.cmake")
+
+# GATE 2 — "an ACCEPT, not a STREAM", the SELECT half, and this is the real twin
+# gate.  `..._uncond` is the SAME select lowered from a condition that is already
+# a `cq_theta_i1` CALL — a shape the FROZEN ORACLE accepts with no Track M change
+# at all.  The two select halves must be identical once the two rails are renamed
+# (the flagship's extra cancelling prep gate shifts the handle numbering):
+# flagship lines 17-26 vs uncond lines 16-25, with the prep rail h1<->h5 and the
+# a-mux out rail h3<->h2.  MEASURED IDENTICAL 2026-09-13.
+add_test(NAME e2e-cascade-two-bools-twin-identical
+  COMMAND "${CMAKE_COMMAND}"
+    "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log"
+    "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_uncond.expected.log"
+    -DAFROM=17 -DATO=26 -DBFROM=16 -DBTO=25
+    "-DAREN=h1=hPREP;h3=hAMUX" "-DBREN=h5=hPREP;h2=hAMUX"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
+
+# bd `boi6` D-B / Track M, round-1 finding F-M6 — a 4.4 DATA SELECT **INSIDE** a
+# bounded loop whose condition is the merge phi of a prep region **OUTSIDE** it.
+# It moved DECLINE -> ACCEPT with this increment and had no instrument at all.
+#
+# ⚠ It is a DIFFERENT CELL from `m30`, which is the LOOP-CARRIED phi and is
+# declined one layer earlier by the loop lowering itself
+# (`loop-carried tainted value crosses iterations`, unchanged on both binaries).
+# Here the phi is defined outside the loop and is loop-INVARIANT.
+#
+# The loop stays ROLLED: the lowered IR is K-independent at 78 lines / 19 gate
+# calls for both `i < 3` and `i < 1000` (measured, `clang -O1` without `-g`).
+add_test(NAME e2e-slice-control-cascade-select-in-loop-outside-prep
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.expected.log")
+
+add_test(NAME e2e-slice-control-cascade-select-in-loop-unrolled-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.expected.log")
+
+# THE GATE: the compiler's ROLLED loop == the programmer's own three copies, byte
+# for byte.  The rolled form emits the body ONCE and runs it three times; the
+# unrolled form emits three copies run once each.  A per-iteration mint that
+# should have been hoisted, a gate dropped on the back edge, or an ancilla reused
+# across trips all show up here and nowhere else — the loop twin matrix has no
+# `_Bool` axis, so this pair is the ONLY instrument for this cell.
+# ⚠ INTERNAL-CONSISTENCY, NOT AN ORACLE GATE: both halves need bd `boi6` D-B to
+# lower at all (the frozen ORACLE declines both).
+add_test(NAME e2e-cascade-select-in-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.expected.log")
+
+
+# ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).
 #
 # THIRTEEN LIVE ENTRIES (ten slices + three `cmp` twin gates). prep-b registered

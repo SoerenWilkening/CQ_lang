@@ -1,0 +1,34 @@
+m01 | exit=1 | cq controlled lowering: control flow under quantum control
+m02 | exit=1 | cq controlled lowering: control flow under quantum control
+m03 | exit=0 | ACCEPT | trace=23 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m04 | exit=1 | cq controlled lowering: control flow under quantum control
+m05 | exit=1 | cq controlled lowering: control flow under quantum control
+m06 | exit=1 | cq controlled lowering: control flow under quantum control
+m07 | exit=0 | ACCEPT | trace=23 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m08 | exit=1 | cq controlled lowering: branch phase on a bare i1 condition under quantum control
+m09 | exit=0 | ACCEPT | trace=23 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m10 | exit=1 | cq controlled lowering: control flow under quantum control
+m11 | exit=0 | ACCEPT | trace=28 | 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m12 | exit=0 | ACCEPT | trace=31 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 6 left allocated, 3 cqrt_free site(s): 3 verified, 0 violation(s), 0 unproven
+m13 | exit=1 | cq controlled lowering: control flow under quantum control
+m14 | exit=1 | cq controlled lowering: control flow under quantum control
+m15 | exit=1 | cq controlled lowering: control flow under quantum control
+m16 | exit=1 | cq controlled lowering: control flow under quantum control
+m17 | exit=0 | ACCEPT | trace=28 | 2b: free_pairing_check: 1 file(s), 8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m18 | exit=0 | ACCEPT | trace=29 | 2b: free_pairing_check: 1 file(s), 8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m19 | exit=0 | ACCEPT | trace=28 | 2b: free_pairing_check: 1 file(s), 8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m20 | exit=1 | cq controlled lowering: control flow under quantum control
+m21 | exit=1 | cq controlled lowering: control flow under quantum control
+m26 | exit=0 | ACCEPT | trace=25 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+m27 | exit=1 | cq controlled lowering: control flow under quantum control
+m28 | exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+m29 | exit=1 | cq controlled lowering: control flow under quantum control
+m30 | exit=1 | cq loop lowering: loop-carried tainted value crosses iterations
+m31 | exit=1 | cq controlled lowering: control flow under quantum control
+owner_file_2026-09-13 | exit=1 | cq controlled lowering: control flow under quantum control
+owner.main.O1 | exit=1 | cq-opt: /private/tmp/claude-501/-Users-sorenwilkening-Desktop-CQ-lang/ddf48412-8498-4d8b-9bac-51279fb090c0/scratchpad/trackM_impl/probes_base/owner.main.O1.s1.ll:14:29: error: use of undefined value '@cq_measure_i1'
+va | exit=0 | ACCEPT | trace=19 | 2b: free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+vb | exit=1 | cq controlled lowering: control flow under quantum control
+vc | exit=1 | cq controlled lowering: control flow under quantum control
+vd | exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+ve | exit=1 | cq taint escape: tainted value stored to memory

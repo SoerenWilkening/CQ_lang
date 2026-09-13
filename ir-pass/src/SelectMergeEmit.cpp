@@ -92,8 +92,83 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // walk the classifier accepted with (SelectClassify.h; the walk cannot
   // drift). A bare compare is the degenerate single-leaf tree whose emission
   // below is byte-identical to the pre-L4 stream.
+  //
+  // ── bd `boi6` (D-B) / Track M, HAZARD H-1: `R.Condition` IS A RAW `Value *`
+  // AND BY NOW IT CAN BE FREED MEMORY. Read the condition off the SELECT. ──────
+  //
+  // `ControlRegion::Condition` (`ControlPlan.h`) is a plain `Value *`, not a
+  // `WeakTrackingVH`, and `classifySelectRegion` filled it with
+  // `Sel->getCondition()` at DETECTION time. Since Track M that condition may be
+  // the MERGE φ of a controlled state-prep / in-place-Ry diamond, and that
+  // region's `emitInPlaceRotationRegion` ends in
+  // `MergePhi->replaceAllUsesWith(Gates.back().first); MergePhi->
+  // eraseFromParent(); flattenRegion(...)`. So once the prep has emitted, the φ
+  // this region recorded is DESTROYED: dereferencing `R.Condition` here is a
+  // use-after-free on the ACCEPT path.
+  //
+  // ⚠ AND "THE PREP IS EMITTED FIRST" IS **NOT** FREE — THIS SENTENCE USED TO
+  // CLAIM IT WAS, AND THAT WAS FALSE (round-1 finding F-M1, measured on plain C
+  // by `r03_order_third_region.c`). `lowerControlRegions` does NOT emit in plan
+  // order: it Kahn-sorts the bd `hcrg` precedence graph, and a `SelectRegion` has
+  // all-null block fields, so it is INERT there — it aliases nothing, nothing
+  // aliases it, `Pending == 0`. A following `PhaseKickback` whose `Pred` IS the
+  // prep's `MergeBB` takes the sanctioned `sequentialChainAlias` edge
+  // `Precedes[kickback] = {prep}`, which schedules the prep LAST — AFTER this
+  // select. The order is now an explicit OBLIGATION, carried by
+  // `ControlRegion::PrepRegionIdx` (recorded by rung 0) and discharged by ONE
+  // edge in that graph. Read the two together; neither is decoration.
+  //
+  // THE FIX IS NOT A SMART POINTER. Making `Condition` a `WeakTrackingVH` would
+  // silently FOLLOW M-β's RAUW and thereby HIDE the ordering premise instead of
+  // checking it. The select owns its own condition, so re-reading it is both
+  // correct by construction (M-β rewrote that very operand) and Rule-14-clean —
+  // one owner, asked rather than cached. `R.Condition` is never dereferenced
+  // again in this function.
+  //
+  // AND THE BACKSTOP IS THE GRAMMAR'S DEFAULT, NOT A NEW CHECK. `collectCondTree`
+  // is called here WITHOUT `AllowRailPhi`, so if the re-read condition is still a
+  // φ — i.e. M-β did not run, the ordering premise failed, or a future emitter
+  // pushed a `SelectRegion` on a φ without a prep region behind it — the walk
+  // returns false and the existing LOUD `control flow` decline below fires before
+  // anything is emitted (detect-before-mutate, Rule 1). A rail-leaf re-read is
+  // admitted by the pre-existing `RailLeaves` path; a compare tree is unchanged.
+  //
+  // ⚠ HOW THE RAW POINTER WAS SHOWN TO BE GONE — MEASURED BY COUNTERFACTUAL, not
+  // argued (Release has no ASan, so there is no sanitizer to ask). With this one
+  // line reverted to `R.Condition` and nothing else changed, the owner's own
+  // program and both its polarity twins go from ACCEPT to
+  // `control flow under quantum control`, exit 1, deterministically over three
+  // runs — i.e. `collectCondTree` walked the ERASED φ's memory and the walk
+  // failed. ⚠ DO NOT READ THAT AS "the old code was safe": the observable is
+  // whatever the freed object's bytes happen to decode to under this allocator on
+  // this run. The fix turns an undefined read into a defined one; the loud decline
+  // it happened to produce is not a property anything may rely on. THE DIRECTION
+  // matters too — it silently LOSES a proven accept rather than emitting a wrong
+  // stream, which is exactly why no golden and no `opt -verify` could ever have
+  // caught it.
+  //
+  // The positive witness is `control_swap_accept_select_mergephi_rail*.ll` and
+  // `tests/e2e/slice_control_cascade_two_bools.c`: they emit the T1 stream, which
+  // is only reachable if the re-read value is the hoisted `cq_theta_i1` CALL
+  // (`CondTreeEmit`'s `CopyRailRoot` keys on `isCondRailLeaf`, and a `PHINode` is
+  // not a `CallInst`).
+  //
+  // ⚠ THE φ-STILL-PRESENT BRANCH IS THE "A SEVENTH EMITTER FORGOT THE EDGE"
+  // TRIPWIRE. DO NOT DELETE IT. This comment used to say the branch had "NO
+  // SUBJECT today", and round-1 finding F-M1 proved otherwise: `r03` reached it
+  // through the `hcrg` Kahn reorder and took this decline on ordinary `-O1` C.
+  // That hole is closed by `ControlRegion::PrepRegionIdx` + its precedence edge,
+  // so the branch is unreachable AGAIN — but it is unreachable because ANOTHER
+  // FILE keeps an obligation, which is precisely the configuration CLAUDE.md L3
+  // warns about: the day a new `SelectRegion` producer forgets to set
+  // `PrepRegionIdx` (or a new region kind rewrites a select's condition), this is
+  // the only thing between that and a walk over freed φ memory. Its correctness
+  // does not depend on being reachable. The counterfactual is recorded in
+  // `FIX_M_R1.md` the way H-1's was: revert the edge and `r03` declines here
+  // again, deterministically.
   CondTree Tree;
-  if (!Sel || !R.Condition || !collectCondTree(R.Condition, Tree)) {
+  Value *Cond = Sel ? Sel->getCondition() : nullptr;
+  if (!Sel || !Cond || !collectCondTree(Cond, Tree)) {
     // Detection guarantees the shape (SelectClassify pushes only a SelectInst
     // Merge + a tree-shaped Condition); if it ever fails to hold, bail LOUDLY —
     // a silently skipped accepted region leaves the tainted select to the
@@ -212,7 +287,8 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // every compare leaf here. `emitValueRegion` (3qlq Inc 2) reaches this same
   // emitter with a synthesized `SelectRegion`, and its region came through
   // `classifyArms` → `condWireDisposition`: ruled either way.
-  switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/Sel,
+  // `Cond`, not `R.Condition` — see H-1 at the top of this function.
+  switch (emitCondNetwork(Cond, Tree, wd, csyms, taint, /*Before=*/Sel,
                           DL, /*AllowQQLeaves=*/true, Net,
                           /*CopyRailRoot=*/true, /*LeafWireRuled=*/true)) {
   case CondNetDisp::Ok:

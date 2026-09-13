@@ -479,6 +479,90 @@ bool operandsAlias(Value *A, Value *B) {
   return diagonalAliasHit(B, Closure) != nullptr;  // shared physical wire.
 }
 
+// bd `boi6` (D-B) / Track M — RUNG 0 OF THE MERGE-φ LADDER, AND THE WHOLE PROOF.
+// The region that will turn `P` into a single physical register, or null.
+//
+// THIS FUNCTION RE-DERIVES NOTHING (Rule 14; the drbq Inc-3 (b′) defect was a
+// SECOND SPELLING of a predicate the tree already owned). `ArmClassify`'s
+// `classifyArms` is the ONE OWNER of "what this merge φ becomes": at its accept
+// it COMMITS `ClassArm`/`ClassArmFalse = ArmClass::InPlaceRotation`, the single
+// hoisted `cq_theta` in `Shadow`/`ShadowFalse`. We ask by reading exactly those
+// fields, by SSA-value identity, with no walk of our own.
+//
+// WHY EACH CONJUNCT IS THERE (each one is the fence for a §4 decline row):
+//   * `Kind == BranchRegion` — only a `br` diamond has a merge φ at all; a
+//     `SelectRegion` sets no `Merge` φ, a `SwitchRegion`/kickback nest has a
+//     different merge story.
+//   * `Merge == P` — POINTER IDENTITY with the select's own condition. This is
+//     what refuses a φ over two DISTINCT rails (probe `m29`: no single region's
+//     `Merge` is that φ) and a φ whose region was never claimed at all (probe
+//     `m20`/boi6 `p5`: its diamond declines, so it is in no plan).
+//   * the arm class — `InPlaceRotation` is BOTH the controlled in-place Ry arm
+//     and the controlled STATE PREP (`ControlPlan.h`: `ArmClass` has no separate
+//     `StatePrep`; the two share the class and the emitter). A `Value` arm's
+//     merge is a DATA MUX whose φ names no register — refused here, and bd
+//     `fg9k` is the increment that would widen it. A 6.5/4.5 `%out` rail is
+//     refused by the same conjunct (its producer is a `cqrt_alloc` handle, never
+//     a theta, and no region commits it as an `InPlaceRotation` `Merge`).
+//   * the arm's own `Shadow`/`ShadowFalse` NON-EMPTY, paired with the class that
+//     owns it by FIELD identity (`ControlPlan.h`: `Shadow` is `Arm`'s content,
+//     `ShadowFalse` is `ArmFalse`'s — by field, NOT by edge truth, since
+//     `ArmNegated` carries the Rule-9 polarity). The hoisted theta is what M-β
+//     will RAUW `P` to, so an empty content list means there is no register.
+//
+// ⚠ WHAT IS DELIBERATELY **NOT** A CONJUNCT, AND WHY — `RailLadderProven`.
+// The first cut of this predicate also required it, on a "defence in depth"
+// reading of `ControlPlan.h`'s caller-independent backstop. That was WRONG, and
+// measuring it is what showed the mistake (orchestrator ruling, 2026-09-13):
+// `classifyArms` sets that flag ONLY when the REGION'S OWN condition is a bare
+// rail, so the conjunct silently refused every prep guarded by a COMPARE —
+// `int b0 = cq_theta(0,.5); bool b1 = 0; if (b0 == 1) b1 = cq_theta(b1,.5);
+// if (b1) a -= 3;`, a single-φ merge that never peels and so never meets F2
+// (bd `rb9x`). MEASURED: that program reached rung 0 and was refused by this
+// conjunct ALONE.
+//
+// The flag answers "did the RAIL ladder run for this region?", and that is not
+// the question the select needs answered. What the select needs is "will this φ
+// become ONE physical register?", which is exactly what the `InPlaceRotation`
+// class verdict means — its emitter is the one that hoists the arm's theta and
+// RAUWs the φ to it (M-β). A COMPARE-conditioned region reached that same
+// verdict through `condWireDisposition`'s ladder instead; **whichever ladder
+// proved it, the committed verdict is identical**, and the select re-asks its
+// OWN rungs (i)/(ii)/(iii) on the φ regardless. Requiring the rail spelling of
+// the proof was a claim about HOW the region was proved, not about WHAT was
+// proved — and an over-decline of a valid circuit is a defect, not a margin
+// (owner ruling 2026-09-11). Accept:
+// `control_swap_accept_select_mergephi_cmp_cond_region.ll`; the class conjunct
+// still fires on any OTHER claimed class
+// (`control_swap_reject_select_mergephi_other_class.ll`).
+//
+// ⚠ ORDER, AND IT IS PROVEN NOT ASSUMED. `detectControlRegions` walks each block
+// TERMINATOR FIRST (`handleBranchRegion`) and only then that block's `select`s,
+// and the diamond's `br` lives in `Pred` while the select lives in the MERGE
+// block — so by the time a merge-block select is classified, its region's verdict
+// is already in `plan.Regions`. If that ever stops holding the outcome is a LOUD
+// DECLINE, never a miscompile: this lookup simply finds no region and gate 2
+// fires `control flow`. No assertion, by design (Release builds have assertions
+// off and Release is what every gate here runs).
+// Returns the region's INDEX in `plan.Regions`, or `ControlRegion::kNoParent`.
+// An index rather than a pointer because the caller must RECORD it
+// (`ControlRegion::PrepRegionIdx`) for `lowerControlRegions`' precedence edge —
+// round-1 finding F-M1 — and the list is a `SmallVector` that reallocates.
+unsigned preppedRailPhiRegionIdx(const PHINode *P, const ControlPlan &plan) {
+  for (unsigned i = 0, e = plan.Regions.size(); i != e; ++i) {
+    const ControlRegion &R = plan.Regions[i];
+    if (R.Kind != ControlRegion::BranchRegion || R.Merge != P)
+      continue;
+    const bool TrueArm =
+        R.ClassArm == ArmClass::InPlaceRotation && !R.Shadow.empty();
+    const bool FalseArm =
+        R.ClassArmFalse == ArmClass::InPlaceRotation && !R.ShadowFalse.empty();
+    if (TrueArm || FalseArm)
+      return i;
+  }
+  return ControlRegion::kNoParent;
+}
+
 }  // namespace
 
 // 3c6m.12 (L4) — the shared condition-tree walk (see SelectClassify.h). An
@@ -548,7 +632,13 @@ bool isCondRailLeaf(const Value *V) {
   return F && F->getName() == "cq_theta_i1";
 }
 
-bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
+bool isCondRailPhiShape(const Value *V) {
+  const auto *P = dyn_cast_or_null<PHINode>(V);
+  return P && P->getType()->isIntegerTy(1) && P->getNumIncomingValues() == 2;
+}
+
+bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
+                     bool AllowRailPhi) {
   SmallPtrSet<Value *, 8> Seen;
   SmallVector<std::pair<Value *, bool>, 8> Stack;
   Stack.push_back({Root, false});
@@ -567,6 +657,15 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
     // for the obligation this places on every consumer of the tree.
     if (isCondRailLeaf(V)) {
       Tree.RailLeaves.push_back(cast<CallInst>(V));
+      continue;
+    }
+    // bd `boi6` (D-B) / Track M — A REGION-MERGE-φ RAIL LEAF, ROOT ONLY. See the
+    // header for why the test is weak (the proof is the classifier asking
+    // `plan.Regions`) and why a NESTED φ stays off-grammar (no probe family; it
+    // would reach `CondTreeEmit`'s non-root rail path unmeasured). Disjoint from
+    // both tests around it: a `PHINode` is neither a `CallInst` nor a `CmpInst`.
+    if (AllowRailPhi && V == Root && isCondRailPhiShape(V)) {
+      Tree.RailPhiLeaves.push_back(cast<PHINode>(V));
       continue;
     }
     if (auto *Leaf = dyn_cast<CmpInst>(V)) {
@@ -736,7 +835,8 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect) {
     Stack.push_back({NodeR, false});
     Stack.push_back({NodeL, false});  // left child visits first.
   }
-  return !Tree.Leaves.empty() || !Tree.RailLeaves.empty();
+  return !Tree.Leaves.empty() || !Tree.RailLeaves.empty() ||
+         !Tree.RailPhiLeaves.empty();
 }
 
 void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
@@ -777,8 +877,15 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   //     the CONTROL dialect rather than let the emitter's mint reach the
   //     data-path `no template` bail (the message would mis-brand as a
   //     straight-line lowering failure — WI-3 adversarial review NIT).
+  //
+  // bd `boi6` (D-B) / Track M — `AllowRailPhi = true`, THE ONE CALLER. The grammar
+  // now admits a 2-incoming `i1` φ AS THE ROOT; everything that makes it an
+  // accept is the §M.0 ladder below, not the walk. `AllowLogicalSelect` stays
+  // FALSE (`control_swap_reject_select_i1sel_combinator.ll` is a shipped decline
+  // for a data select and is a different construct's widening).
   CondTree Tree;
-  if (!collectCondTree(Sel->getCondition(), Tree))
+  if (!collectCondTree(Sel->getCondition(), Tree, /*AllowLogicalSelect=*/false,
+                       /*AllowRailPhi=*/true))
     return diagnoseUnderControl(Sel, "control flow");
   for (CmpInst *Leaf : Tree.Leaves) {
     if (!comparePredLowerable(Leaf))
@@ -846,6 +953,57 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
     if (railMeasuredBeforeReadPoint(Rail, Sel, taint, DT))
       return diagnoseUnderControl(Sel,
                                   "condition measured before the control route");
+  }
+
+  // ── THE REGION-MERGE-φ RAIL LADDER (bd `boi6` D-B / Track M) ───────────────
+  //
+  // The §14.3 ladder above, one construct over: the condition is not a
+  // `cq_theta_i1` CALL but the MERGE φ of a diamond that is ALREADY in the plan
+  // as a controlled in-place Ry / state PREP. By emit time that φ no longer
+  // exists — `emitInPlaceRotationRegion` hoists the arm's theta into `Pred` and
+  // M-β RAUWs the φ to it (`SwapRouteEmit.cpp`) — so the EMITTED STREAM is the
+  // r9e5 rail-root stream unchanged, byte for byte, and the ORACLE already prints
+  // it for the hand-IR twin of this module (`control_swap_accept_select_rail_
+  // after_prep{,_negated}.ll`, probes `m18`/`m19`). This widening adds an ACCEPT,
+  // not a STREAM.
+  //
+  //   rung 0   the φ is some region's committed `InPlaceRotation` merge — asked
+  //            by CALLING the one owner's verdict, never re-derived;
+  //   rung (i) tainted — true by construction, re-asked as defence in depth;
+  //   rung (ii) NOT measured before the SELECT — and it is asked over the φ's OWN
+  //            PROVENANCE CLOSURE, not over the hoisted theta alone. THAT IS THE
+  //            LOAD-BEARING PART (bd `boi6` H-2/H-4, measured): the user writes
+  //            `cq_measure(b1)`, which after `-O1` names the **φ**, while
+  //            `railWireNamesBackward` `break`s at the first non-call — so a
+  //            closure seeded only from the theta is the singleton `{T}` and the
+  //            measurement is INVISIBLE. `condProvenance(P)` is `{P, T}`, which is
+  //            also EXACTLY the seed set rung (iii) walks below: ONE closure, two
+  //            rungs (the 8h7d.5 F-1/F-3 lesson, L2 — "when you widen a set, ask
+  //            what OTHER set was computed over the same closure"). Probe `m05`
+  //            is the red-green program and flips from `control flow` to
+  //            `condition measured before the control route`;
+  //   rung (iii) the WIRE question — gate 2c below, seeded from the same closure.
+  //
+  // `railMeasuredBeforeReadPoint` takes a `const Value *` and is already total
+  // over an arbitrary tainted name (Track A.1: "the caller supplies the species by
+  // supplying the seed"), so asking it per closure member is the ONE spelling,
+  // not a second one. A φ seed yields the singleton closure `{P}` with NO
+  // per-activation barrier (the origin is not a source theta), i.e. the strictly
+  // more conservative answer — which is the right default for a name that denotes
+  // a different basis label on each incoming edge.
+  unsigned PrepIdx = ControlRegion::kNoParent;
+  for (PHINode *P : Tree.RailPhiLeaves) {
+    PrepIdx = preppedRailPhiRegionIdx(P, plan);
+    if (PrepIdx == ControlRegion::kNoParent)
+      return diagnoseUnderControl(Sel, "control flow");
+    if (!taint.Tainted.count(P))
+      return diagnoseUnderControl(Sel, "control flow");
+    SmallPtrSet<Value *, 16> PhiProv;
+    condProvenance(P, taint, PhiProv);
+    for (Value *Name : PhiProv)
+      if (railMeasuredBeforeReadPoint(Name, Sel, taint, DT))
+        return diagnoseUnderControl(
+            Sel, "condition measured before the control route");
   }
 
   // RUNG (ii) FOR THE COMPARE LEAVES — Track A.1, bd test_C_libtooling-r10v.
@@ -955,6 +1113,19 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
       condProvenance(Leaf, taint, CmpProv);
     for (CallInst *Rail : Tree.RailLeaves)
       condProvenance(Rail, taint, RailProv);  // bd 3qlq.4: the register's wire.
+    // bd `boi6` (D-B) / Track M — RUNG (iii) FOR THE MERGE φ, into the SAME seed
+    // set the rail leaves use, because it IS the same question about the same
+    // kind of object: a physical register named by a value, whose wire must carry
+    // no off-ancestry non-diagonal gate. `condProvenance` needs nothing new for a
+    // φ (`ArmClassify`: it walks operand edges and stops at each `cq_theta`, so a
+    // φ contributes `{φ, each incoming theta}` — exactly the wire), and the DT
+    // prong that `RailProv` gets is exactly the prong a rail owes: position-free
+    // CLEAN ⇒ accept, else no `DT` ⇒ decline, else re-ask at `EmitPoint = Sel`.
+    // ⚠ OMITTING THIS WOULD BE THE WHOLE INCREMENT'S OVER-ACCEPT: a φ leaf
+    // contributes to NEITHER `CmpProv` NOR `RailProv` by default, so gate 2c
+    // would never look at the prepped register's wire at all.
+    for (PHINode *P : Tree.RailPhiLeaves)
+      condProvenance(P, taint, RailProv);
     for (const SmallPtrSet<Value *, 16> *S : {&CmpProv, &RailProv})
       for (Value *P : *S)
         if (isa<FreezeInst>(P))
@@ -1112,7 +1283,20 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   R.Condition = Sel->getCondition();
   // bd r9e5 F-B1R1-2: a rail-carrying tree reached here through the §14.3 rail
   // ladder above; the emitter refuses one that arrives without this flag.
-  R.RailLadderProven = !Tree.RailLeaves.empty();
+  // bd `boi6` (D-B) / Track M — a MERGE-φ tree came through the §M.0 ladder, and
+  // by emit time its φ IS a `cq_theta_i1` call, so the emitter's
+  // `!Tree.RailLeaves.empty() && !R.RailLadderProven` backstop will see a rail
+  // leaf and MUST see the flag. Forgetting this `||` would refuse the very accept
+  // the ladder above just created (the r9e5 round-1 F-B1R1-2 shape verbatim).
+  R.RailLadderProven =
+      !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty();
+  // F-M1 — CARRY THE ORDER OBLIGATION, do not leave the emitter to re-derive it.
+  // `PrepIdx` is rung 0's own answer (the loop above set it, and a φ leaf cannot
+  // reach here without it); `lowerControlRegions` turns it into ONE precedence
+  // edge so this select is emitted AFTER the region whose M-β rewrites its
+  // condition. `kNoParent` for a compare- or rail-conditioned select, which needs
+  // no edge because nothing rewrites its condition.
+  R.PrepRegionIdx = PrepIdx;
   plan.Regions.push_back(R);
 }
 

@@ -213,7 +213,16 @@ define i32 @slice() {
 ;   ^ the register form is a RESERVED NAME and declines (round-1 F-L6-1)
 
 ; Original negatives PRESERVED (re-measured on the Inc-1 output):
-; NOROUTE-NOT: phi
+; NOROUTE-NOT: {{= phi }}
+;   ^ NO `phi` INSTRUCTION survives: the region was flattened and its merge
+;     phi dissolved. ⚠ THE ANCHOR `= phi ` IS LOAD-BEARING, not style. This
+;     line used to read `NOROUTE-NOT: phi`, which ALSO matched the substring
+;     "phi" in the MODULE PATH that `cq-opt` prints in its `ModuleID` /
+;     `source_filename` preamble — so the fixture passed or failed on where
+;     the checkout happened to live, and reddened for everyone working in a
+;     worktree named `*phi*` (measured: 7 fixtures, bd Track M 2026-09-13).
+;     A negative that can match the harness's own preamble is not a negative
+;     about the program. Keep every `-NOT` anchored to IR the pass emits.
 ; NOROUTE-NOT: br i1
 
 ; ---------------------------------------------------------------------------

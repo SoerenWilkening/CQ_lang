@@ -2523,6 +2523,33 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // diagnostic here (anchor on a region block's terminator); a bare return past
   // both arms would be a silent accept of quantum-controlled flow — the one
   // unforgivable bug (Prime Directive).
+  // ⚠ RETIREMENT TRIGGER (bd `boi6` D-B / Track M, round-1 finding F-M7; the
+  // premise CORRECTED by round-2 finding F2-2, which caught the round-1 fix
+  // falsifying its own comment).
+  //
+  // `A.Condition` is a RAW `Value *` and this reads it. A `SelectRegion` REACHES
+  // this lambda — do not read the old claim that it cannot. The F-M1 edge loop at
+  // `:2639` calls `declineRegion(Regions[i])` on a `SelectRegion` directly, and
+  // because that loop can leave `Pending[select] >= 1`, the Kahn backstop at
+  // `:2667` can now find a select `!Done` and decline it too. Only the alias
+  // pre-flight's `declineRegion` (`:2573`) still cannot see one, and that is the
+  // null block fields plus `if (!Doomed) continue;`, not any `Kind` test.
+  //
+  // It is nevertheless SAFE TODAY, for a reason about TIME rather than about kind:
+  // all three call sites run BEFORE any emission (the pre-flight, the edge loop and
+  // the Kahn backstop all precede the `for (size_t i : Order)` emission loop at
+  // `:2685`, and each returns immediately after diagnosing, lowering NOTHING). No
+  // M-β RAUW and no `RegionFlatten` erasure has happened yet, so every region's
+  // `Condition` — a `SelectRegion`'s merge φ included — is still a live
+  // instruction, and the `A.Merge` arm is available as the fallback anchor.
+  //
+  // SO THE TRIGGER IS ABOUT THE EMISSION-TIME READERS, NOT ABOUT THIS LAMBDA: the
+  // day a region's condition is read from the plan's cached pointer AFTER another
+  // region has been emitted (the `fg9k` value arm on a φ is the obvious candidate,
+  // and a fourth `declineRegion` call site placed inside the emission loop is the
+  // other), that read can dereference freed memory. The fix is the one
+  // `emitSelectRegion` took: re-read from the live instruction, never from the
+  // plan's cached pointer.
   auto declineRegion = [&](const ControlRegion &A) {
     if (auto *Anchor = dyn_cast_or_null<Instruction>(A.Condition))
       diagnoseUnderControl(Anchor, "control flow");
@@ -2595,6 +2622,50 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // exactly 2 incomings). Lens L4 could not construct one. Do not delete this as
   // dead code: it is the backstop for the day merge recovery is widened, and a
   // bare fall-through here would emit a partial region set over freed blocks.
+  // bd `boi6` D-B / Track M, round-1 finding F-M1 — THE MERGE-φ SELECT'S ONE EDGE.
+  //
+  // A `SelectRegion` is INERT in everything above: all four of its block fields
+  // are null, so it never `Aliases` as `A` and `doomedBlocks` yields nothing for
+  // it as `B`. For a compare- or rail-conditioned select that is exactly right —
+  // nothing rewrites its condition, so any position will do. For a MERGE-φ
+  // -conditioned select it is WRONG, and the hole was measured on plain C
+  // (`r03_order_third_region.c`): the select's condition is the prep diamond's φ,
+  // which `emitInPlaceRotationRegion`'s M-β RAUWs to the hoisted `cq_theta` and
+  // then ERASES — so the select MUST be emitted after the prep. Left inert, it is
+  // not: a following `PhaseKickback` whose `Pred` is the prep's `MergeBB` takes
+  // the sanctioned `sequentialChainAlias` edge `Precedes[kickback] = {prep}`,
+  // which schedules the prep LAST, after the select, whose re-read then finds the
+  // φ still live and fires the loud H-1 backstop. An OVER-DECLINE.
+  //
+  // ⚠ THE EDGE IS ADDED BY *CALLING* THE CLASSIFIER'S RECORD, NEVER BY RE-DERIVING
+  // ITS PREDICATE (Rule 14 — the drbq Inc-3 (b′) defect was a second spelling of a
+  // predicate the tree already owned). `classifySelectRegion` ran the §M.0 ladder,
+  // committed the admitting region's index in `PrepRegionIdx`, and this loop only
+  // transcribes it. Nothing here knows what an `InPlaceRotation` arm is.
+  //
+  // IT CANNOT CREATE A CYCLE, and the argument is structural rather than
+  // empirical: this is the ONLY way a `SelectRegion` acquires an edge, and every
+  // such edge points INTO it. A node with no outgoing edges cannot lie on a cycle,
+  // so the Kahn backstop below keeps exactly the population it had.
+  //
+  // The `PrepRegionIdx` bound is re-checked rather than trusted: detection only
+  // ever `push_back`s, so a stale or out-of-range index is not reachable, but a
+  // silent skip here would restore the over-decline with no diagnostic — so an
+  // out-of-range index declines LOUDLY instead (Rule 1, never a third path).
+  for (size_t i = 0; i < N; ++i) {
+    if (Regions[i].Kind != ControlRegion::SelectRegion)
+      continue;
+    const unsigned P = Regions[i].PrepRegionIdx;
+    if (P == ControlRegion::kNoParent)
+      continue;  // compare- or rail-conditioned: no condition rewrite, no edge.
+    if (P >= N || P == i) {
+      declineRegion(Regions[i]);
+      return;  // lower NOTHING — over-declining is always safe.
+    }
+    Precedes[P].push_back(i);
+    ++Pending[i];
+  }
+
   SmallVector<size_t, 8> Order;
   Order.reserve(N);
   SmallVector<bool, 8> Done(N, false);

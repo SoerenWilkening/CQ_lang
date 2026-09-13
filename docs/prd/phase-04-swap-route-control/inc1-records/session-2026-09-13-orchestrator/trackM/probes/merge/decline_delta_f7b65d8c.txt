@@ -1,0 +1,621 @@
+# decline-side full-stderr delta over 1593 rows | oracle=fbbe0820ef4b176a merged=f7b65d8ccd7bc472
+# rows that DIFFER: 92
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/A_intb0_boolb1.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/G6_quantum_mux_values.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/O3_mux_quantum_incomings.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/P2_intcmp_i1seed_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/P2t_seed_true_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R1_p80_bool.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R2_p80_window.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R4_p80_measured.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/U1_owner_regfree_phi.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/probes/owner_file_2026-09-13.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/probes/vb.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/probes/vc.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c1_const_bool.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c2_const_i32.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c3_classical_ssa.c
+    1,3c1
+    < error: <unknown>:0:0: in function f i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c4_classical_double.c
+    1,3c1
+    < error: <unknown>:0:0: in function g double (double): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c5_classical_phi.c
+    1,3c1
+    < error: <unknown>:0:0: in function f i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c6_undef_bool.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c8_theta_and_classical.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/i0_poison_operand.ll
+    1c1
+    < error: <unknown>:0:0: in function p i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function p i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/i10_owner_O1_main.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/owner_2026-09-11_2218.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r09_measure_of_measure.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r10_measure_theta_seed.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r11_measure_angle_double.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r12_measure_undef_phi.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r18_measure_classical_noinline.c
+    1,3c1
+    < error: <unknown>:0:0: in function meas i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r20_measure_in_loop_body.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r22_measure_classical_float.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r26_measure_classical_array_elt.c
+    1,3c1
+    < error: <unknown>:0:0: in function mix i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r27_measure_external_arg.c
+    1,3c1
+    < error: <unknown>:0:0: in function api_measure i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r28_measure_volatile_local.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r29_measure_global.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackL/probes/a_flat_n2.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackL/probes/t_loop_phase.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/fix_M_r1_probes/r22_K1000.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/fix_M_r1_probes/r22_K3.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/a_two_selects.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/i2_cmpladder.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/p20_from_boi6.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/p3d8q_sibling.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m01.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m02.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m04.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m05.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m06.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m10.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m13.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m15.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m16.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r01_inplace_arm_bool.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r03_order_third_region.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r05_two_selects_distinct.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r07_phi_other_users.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r08_measure_after_select.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r09_prep_seed_nonzero.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r12_phi_second_user_survives.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r13_m16_runtime_a.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r14_i2_cmpladder.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r15_p3d8q_sibling.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r16_p20.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r17_owner_file.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r18_third_is_select.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r22_inloop_select_outside_prep.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r2_probes/q02_two_selects_one_phi.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r2_probes/q03_select_phi_is_kickback_pred.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r2_probes/r03_order_third_region.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_A_intb0_boolb1.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_P2_intcmp_i1seed_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_P2t_seed_true_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/v_vd_guard_neg.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/v_vd_no_b1_arm.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/v_vd_two_regions.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-boi6/probes/p20.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### ir-pass/test/control_measure_classical_bool_owner.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_peel_stateprep_bool_seed_int_cond.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_peel_stateprep_bool_seed_true.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_cmp_cond_region.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/i2_cmpladder.c:11:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_inloop_outside_prep.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r22_inloop_select_outside_prep.c:12:43: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_quantum_arm_then_prep.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/G6_quantum_mux_values.c:6:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_rail_negated.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m01.c:16:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_rail_prep_true_edge.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m10.c:10:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_rail_sdagger.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m15.c:16:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_rail_then_kickback.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r03_order_third_region.c:10:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_runtime_amux.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m16.c:11:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_accept_select_mergephi_two_selects.ll
+    1,3c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/impl/a_two_selects.c:7:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_swap_reject_select_mergephi_chained_arm.ll
+    1c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-boi6/probes/p20.c:7:13: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: docs/prd/phase-04-swap-route-control/inc1-records/session-boi6/probes/p20.c:7:13: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### ir-pass/test/control_swap_reject_select_mergephi_inplace_arm.ll
+    1c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r01_inplace_arm_bool.c:11:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/review_M_r1_probes/r01_inplace_arm_bool.c:11:9: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+### ir-pass/test/control_swap_reject_select_mergephi_measure_before.ll
+    1c1
+    < error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m05.c:11:9: in function main i32 (): cq controlled lowering: control flow under quantum control
+    ---
+    > error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackM/probes/m05.c:11:9: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control
+### ir-pass/test/lowering_measure_classical_accept.ll
+    1,3c1
+    < error: <unknown>:0:0: in function f_const_i1 i1 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/lowering_measure_classical_mixed_accept.ll
+    1,3c1
+    < error: <unknown>:0:0: in function f_mixed i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/lowering_reject_measure_undef_operand.ll
+    1c1
+    < error: <unknown>:0:0: in function undef_operand i1 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function undef_operand i1 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+DONE

@@ -293,7 +293,15 @@ void lowerCloneSelect(Function &Clone, TaintSet &cloneTaint, WidthDispatch &wd,
     // condition) is skipped exactly as an off-grammar condition was before the
     // grammar admitted it — this lift mints per COMPARE leaf and has no
     // rail-leaf lowering; the disposition here is deliberately UNCHANGED.
-    if (!collectCondTree(SI->getCondition(), Tree) || !Tree.RailLeaves.empty())
+    // bd `boi6` (D-B) / Track M: the same for a REGION-MERGE-φ leaf. `AllowRailPhi`
+    // is not passed here, so such a tree is ALREADY off-grammar and this clause is
+    // the belt to that braces — but the obligation the `CondTree` header states is
+    // that every consumer DECIDE on the field explicitly, and a consumer whose
+    // decision is implicit in a defaulted argument is the kind of "absence of a
+    // decision that hardened by repetition" this project has been bitten by (the
+    // missing `xor i1` node, bd 3c6m.67). The decision is: SKIP.
+    if (!collectCondTree(SI->getCondition(), Tree) ||
+        !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty())
       continue;
     const bool IsFp = SI->getType()->isFloatingPointTy();
 

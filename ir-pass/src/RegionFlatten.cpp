@@ -13,7 +13,7 @@
 
 #include "ControlPlan.h"
 #include "LiteralIntegrity.h"  // declineAddressTakenBlocks (bd 7udx)
-#include "SelectClassify.h"    // isCondRailLeaf (bd 3qlq.4: never erase a user's rail)
+#include "SelectClassify.h"    // isCondRailLeaf / isCondRailPhiShape (never erase a user's rail)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/ArrayRef.h"
@@ -93,7 +93,19 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   //    this stage's to erase, whatever its use count (the kickback gate keeps it
   //    live in every accepted region; defence in depth against erasing a user's
   //    rotation on a shape nobody measured).
-  if (Cond && Cond->use_empty() && !isCondRailLeaf(Cond)) {
+  //    bd `boi6` (D-B) / Track M: the same for a REGION-MERGE φ
+  //    (`isCondRailPhiShape`). IT HAS NO SUBJECT TODAY and that is stated as a
+  //    measured fact, not a hedge — the only φ-conditioned construct Track M
+  //    admits is a 4.4 DATA SELECT, which sets no `Pred`/`MergeBB` and therefore
+  //    never reaches this stage, and the φ's own erasure belongs to the PREP
+  //    region's `emitInPlaceRotationRegion` (which RAUWs it first, deliberately).
+  //    It is added so that the first widening giving a φ-conditioned region a
+  //    flatten of its own cannot re-open the L9 block-lifetime hole in silence:
+  //    a φ is a MERGE node other instructions' SSA edges still name, and erasing
+  //    one here would be exactly the "region whose predecessor is another
+  //    region's merge block" family.
+  if (Cond && Cond->use_empty() && !isCondRailLeaf(Cond) &&
+      !isCondRailPhiShape(Cond)) {
     scrubTaint(Cond, taint);
     Cond->eraseFromParent();
   }
@@ -186,11 +198,16 @@ void flattenRegionTree(const ControlRegion &Outer, const ControlRegion &Inner,
   //    gone. Erasing the arm gates first (the naive flat order) would free `%g`
   //    while `%c2` still references it. Guard on use_empty so a malformed compare
   //    with a stray live use is left for the verifier rather than silently dropped.
-  if (InnerCond && InnerCond->use_empty() && !isCondRailLeaf(InnerCond)) {
+  //    (bd `boi6` D-B / Track M: `isCondRailPhiShape` joins `isCondRailLeaf` at
+  //    both rungs, for the reason spelled out in `flattenRegion` step 3 — no
+  //    subject today, defence in depth against a silent re-opening.)
+  if (InnerCond && InnerCond->use_empty() && !isCondRailLeaf(InnerCond) &&
+      !isCondRailPhiShape(InnerCond)) {
     scrubTaint(InnerCond, taint);
     InnerCond->eraseFromParent();
   }
-  if (OuterCond && OuterCond->use_empty() && !isCondRailLeaf(OuterCond)) {
+  if (OuterCond && OuterCond->use_empty() && !isCondRailLeaf(OuterCond) &&
+      !isCondRailPhiShape(OuterCond)) {
     scrubTaint(OuterCond, taint);
     OuterCond->eraseFromParent();
   }
