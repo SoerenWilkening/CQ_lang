@@ -2,7 +2,7 @@
 
 Instance of `../MERGE_BRIEF_TEMPLATE.md` (read it first). Model: opus. Worktree
 `/Users/sorenwilkening/Desktop/CQ_mphi`, branch `mphi-rail-leaf` (base 8659a77; review r1 CLEAR-WITH-ITEMS →
-FIX_M_R1 → review r2 `<VERDICT — orchestrator fills>`), merging `main` at
+FIX_M_R1 → review r2 **CLEAR-WITH-ITEMS** (`review_M_r2.md`: the edge is sound — a `SelectRegion` is a sink; the round-2 index is consistent by construction; `hcrg` customers byte-identical)), merging `main` at
 `git -C /Users/sorenwilkening/Desktop/CQ_lang log -1 --format=%h` = landing 1 (Track C: `MeasureLowering.{h,cpp}`)
 + landing 2 (Track R-1: `TaintPropagation.h` `PeelClones`, `MergePhiPeel.cpp`, `ArmClassify.cpp` F2 test) +
 this session's docs. Expected conflicts: `tests/e2e/CMakeLists.txt` (three appenders — keep ALL blocks in
@@ -15,7 +15,19 @@ appears, STOP and report. You are the ONLY full-`ctest` runner right now.
 
 ## Landing-specific items (step 8), BEFORE step 3
 
-A. Apply the round-2 review's comment-only items: `<orchestrator fills from review_M_r2.md>`.
+A. Apply the round-2 review's items (fixture/comment only — no pass-source predicate change):
+   1. **F2-1 (Rule-12 gap, MUST)**: in `ir-pass/test/control_swap_accept_select_mergephi_rail_then_kickback.ll`
+      add the `CHECK:` that pins the kickback's TARGET and ANGLE — `cqrt_rz_i1(i32 %[[H_CMP]], double
+      3.000000e-01)` between the lines the reviewer names (`:204`/`:205`); then re-run
+      `review_M_r2_probes/rz_mutation.sh` (target moved onto `%h`/`%h4`/`%out3`; angle 0.3→0.9) — every mutant
+      must now redden; `lit --filter` the fixture.
+   2. **F2-2 (DOC)**: rewrite the F-M7 trigger comment at `SwapRouteEmit.cpp:2526-2536` — `declineRegion` IS
+      called on a `SelectRegion` by the fix's own loop (`:2645`) and `Pending[select]>=1` now permits `!Done`;
+      state that all three sites run before any emission (no live hazard).
+   3. **F2-3 (LOW)**: add `NOX-NOT`/`NOFREE-NOT` on the merge-OUT rail (the user's measured answer register)
+      to the 11 accept fixtures where it is missing (11/11 NOX, 8/11 NOFREE — `review_M_r2_probes/negcoverage.py`
+      lists them); run `probes/impl/vacuity.py` afterwards (0 VACUOUS required) and `lit --filter` each.
+   Item 2 is a source (comment) edit ⇒ the rebuild covers it; record the new hash.
 B. `cq-opt-equivalence-full`: **OWED** (decline strings moved: `m05`/`p20` → later fences; analysis sites
    changed in `SelectClassify` and the `hcrg` graph).
 C. Corpus ONCE on the merged binary over ALL corpora the template names PLUS `$SES/trackM/probes/impl`,
