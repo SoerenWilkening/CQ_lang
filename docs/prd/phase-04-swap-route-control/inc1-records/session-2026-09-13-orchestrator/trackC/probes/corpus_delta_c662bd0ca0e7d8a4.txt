@@ -1,0 +1,47 @@
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r01_measure_65_out.c|A:11faf778|A:11faf778
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r02_measure_select_merge.c|A:05c3c805|A:05c3c805
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r03_measure_value_arm_merge.c|A:73ccc017|A:73ccc017
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r04_measure_switch_out.c|A:656297de|A:656297de
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r05_measure_inplace_ry_merge.c|A:d533ba73|A:d533ba73
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r06_measure_stateprep_merge.c|A:4c455cd9|A:4c455cd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r07_measure_loop_rail.c|A:c3a83c9f|A:c3a83c9f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r08_measure_nest_merge.c|A:95149bf7|A:95149bf7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r09_measure_of_measure.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:6d2a087b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r10_measure_theta_seed.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:a585a463
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r11_measure_angle_double.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:c1d85956
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r12_measure_undef_phi.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:4ddd0ffc
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r13_measure_phase_cond.c|A:03c3d466|A:03c3d466
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r14_measure_value_cond.c|A:41076922|A:41076922
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r15_measure_cmp_only.c|A:75e41931|A:75e41931
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r16_measure_nest_cond.c|D:cq controlled lowering: condition used outside the branch|D:cq controlled lowering: condition used outside the branch
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r17_measure_in_noinline.c|D:cq specialization: callee measures under quantum lift|D:cq specialization: callee measures under quantum lift
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r18_measure_classical_noinline.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:de3fed60
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r19_measure_in_switch_case.c|D:cq controlled lowering: control flow|D:cq controlled lowering: control flow
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r20_measure_in_loop_body.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:bd0b3e0b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r21_measure_in_select_operand.c|D:cq controlled lowering: value-arm swap-route|D:cq controlled lowering: value-arm swap-route
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r22_measure_classical_float.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:7238247a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r23_measure_array_classical_index.c|A:e1b92238|A:e1b92238
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r24_measure_qram_read.c|A:78809b1f|A:78809b1f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r25_measure_qram_guarded.c|A:729d397b|A:729d397b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r26_measure_classical_array_elt.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:f79eeb94
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r27_measure_external_arg.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:3a71e02f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r28_measure_volatile_local.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:14d11360
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r29_measure_global.c|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:3f2ba9d6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r30_measure_65_derived.c|A:a454dd43|A:a454dd43
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r31_measure_break_escape.c|D:cq controlled lowering: loop|D:cq controlled lowering: loop
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r32_measure_break_plus_classical.c|D:cq controlled lowering: loop|D:cq controlled lowering: loop
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r33_classical_measure_in_phase_arm_unused.c|D:cq controlled lowering: control flow|D:cq controlled lowering: control flow
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r34_classical_measure_in_phase_arm_used.c|D:cq controlled lowering: value-arm swap-route|D:cq controlled lowering: value-arm swap-route
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r35_classical_measure_in_65_arm.c|D:cq controlled lowering: value-arm swap-route|D:cq controlled lowering: value-arm swap-route
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r36_classical_measure_in_ifelse_phase.c|D:cq controlled lowering: control flow|D:cq controlled lowering: control flow
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackL/ready/slice_control_phase_bool_carried_theta_first_unrolled.c|A:590f946a|A:590f946a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackL/ready/slice_control_phase_bool_carried_theta_first.c|A:ded536f1|A:ded536f1
+ir-pass/test/control_measure_classical_bool_owner.ll|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:e5f6a8a6
+ir-pass/test/control_phase_kickback_rail_inloop_carried_theta_first_negated.ll|A:b7e082a9|A:b7e082a9
+ir-pass/test/control_phase_kickback_rail_inloop_carried_theta_first.ll|A:e226dd02|A:e226dd02
+ir-pass/test/control_reject_measure_classical_in_arm.ll|D:cq controlled lowering: value-arm swap-route|D:cq controlled lowering: value-arm swap-route
+ir-pass/test/lowering_measure_classical_accept.ll|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:c49325f1
+ir-pass/test/lowering_measure_classical_mixed_accept.ll|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|A:44a6bea7
+ir-pass/test/lowering_measure_round2_sixfive_handle.ll|A:d1af9717|A:d1af9717
+ir-pass/test/lowering_reject_measure_undef_operand.ll|D:cq_measure_<sfx> operand not recognized; expected a tainted i32 handle|D:cq_measure_<sfx> operand is an undef/poison literal; a classical measurement nee
+DONE

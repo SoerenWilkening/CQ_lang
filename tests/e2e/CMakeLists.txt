@@ -5180,6 +5180,34 @@ add_test(NAME e2e-phase-bool-loop-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_loop_unrolled.expected.log")
 
+# ── Track L, bd boi6 H-10 — the two pins for the SHIPPED in-loop carried-_Bool
+# ── kickback whose region condition is the IN-BODY chained theta (boi6 p2/p9).
+# ── Append to tests/e2e/CMakeLists.txt immediately AFTER the
+# ── e2e-phase-bool-loop-twin-identical block (2026-09-13: line 5181), so the
+# ── carried-rail pins sit beside the invariant-rail ones they discriminate from.
+# ── The two .ll fixtures need NO CMake edit (ir-pass/test/*.ll is globbed).
+
+add_test(NAME e2e-slice-control-phase-bool-carried-theta-first
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.expected.log")
+
+add_test(NAME e2e-slice-control-phase-bool-carried-theta-first-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.expected.log")
+
+add_test(NAME e2e-phase-bool-carried-theta-first-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_bool_carried_theta_first_unrolled.expected.log")
+
 # --- bd test_C_libtooling-r9e5 (Inc 1b-B.1) — the 4.4 DATA SELECT on a bare
 # --- `_Bool` (rail-root) condition. `if (b) a -= 3;` is `select i1 %b, …` with
 # --- the register itself as the condition; the §5a controlled-XOR copy merge is
@@ -5414,6 +5442,58 @@ add_test(NAME e2e-phase-nest-andcond-identical
 # `python3 tools/golden_multiset_audit.py --epic 3qlq --rev 52d7764`.
 # (Fourteen entries were registered by prep-b; `e2e-slice-control-phase-nest-deep`
 # was REMOVED — see the OQ-7 note above — leaving thirteen.)
+
+# --- bd test_C_libtooling-21mg — `cq_measure` of a value that never became
+# --- quantum lowers to the CLASSICAL VALUE (no gate, no rail, no trace line).
+# ---
+# --- THE SUBJECT is the owner's 2026-09-11 22:18 file (`bool b1 = 0;` never
+# --- assigned, then measured), which `main` e96f89c refused outright with
+# --- `cq_measure_<sfx> operand not recognized; expected a tainted i32 handle`.
+# ---
+# --- THE WITNESS IS THE TWIN DIFF, not the golden on its own. A rail minted for
+# --- `b1` (the f64/angle miscompile family) or a stray `cqrt_measure_i1` on a
+# --- fresh |0> rail would leave a trace that is still self-consistent, still
+# --- verify-clean and still STRICT-2b clean — `free_pairing_check.py` witnesses
+# --- rail PAIRING, and an extra left-allocated rail is not a pairing violation.
+# --- `e2e-measure-classical-bool-twin-identical` byte-diffs the subject's golden
+# --- against the golden of the SAME program with `cq_measure(b1)` DELETED, and
+# --- that twin golden was independently reproduced byte-for-byte by the ORACLE
+# --- binary (2026-09-13), so the identity is measured against the previous
+# --- compiler's stream rather than against one this change invented. 15 = 15.
+# ---
+# --- `slice_measure_classical_only` is the purely-classical corner and the only
+# --- slice in this directory with an EMPTY golden: no `cq_theta` anywhere, four
+# --- classical measures (constant / derived i32 / f64 `fmul` / `select`), ZERO
+# --- `cqrt_*` calls emitted. It is what proves the classical path needs NO new
+# --- runtime symbol — it links both archives and references nothing in either.
+add_test(NAME e2e-slice-measure-classical-bool
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool.expected.log")
+
+add_test(NAME e2e-slice-measure-classical-bool-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool_twin.expected.log")
+
+add_test(NAME e2e-measure-classical-bool-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_bool_twin.expected.log")
+
+add_test(NAME e2e-slice-measure-classical-only
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_only.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_only.expected.log")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
