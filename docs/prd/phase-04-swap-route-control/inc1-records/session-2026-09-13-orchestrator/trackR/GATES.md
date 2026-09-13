@@ -4,6 +4,7 @@ Format: `<gate> | <sha256 of build/ir-pass/cq-opt, first 16> | <result verbatim>
 
 per-probe pipeline (36 probes, ORACLE) | fbbe0820ef4b176a | 9 ACCEPT (all STRICT stage 2b `0 violation(s), 0 unproven`, all linked and ran), 27 DECLINE; full table in probes/README.md | scoping-R | 2026-09-13 12:06
 per-probe pipeline (3 vd IR surgeries, ORACLE) | fbbe0820ef4b176a | S1/S2/S3: F2 gone, all three -> `control flow` | scoping-R | 2026-09-13 12:08
+per-probe pipeline (24 R-2 rival-audit probes, ORACLE) | fbbe0820ef4b176a | 5 ACCEPT (all STRICT stage 2b `0 violation(s), 0 unproven`; LINKFAIL expected — the probes define @example, not @main), 19 DECLINE; full table in probes/r2/README.md | scoping-R2 | 2026-09-13 13:05
 
 Not run by this agent (scoping row): any build, `lit`, any `ctest`, the corpus sweep, the
 injection matrix, the twin matrices.
