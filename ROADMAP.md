@@ -119,6 +119,18 @@ phase, not in advance.
    > a `cqrt_x` on a user register**; the control register LEFT ALLOCATED, never freed. Open
    > under it: l4x4.a (the Ry-stem angle select on a `bool`) and bd `wx8g` = l4x4.c (the
    > in-loop form, which compiles in NO spelling on any binary today). PRD §15.**
+   > **SESSION 2026-09-13 — THREE MORE LANDINGS, and the owner's EXTENDED file (+ `if (b1) a -= 3;`
+   > after the bool-controlled prep of `b1`) COMPILES AS WRITTEN: 29 trace lines, STRICT 2b clean.
+   > (1) **Track M `59ac5b7`** (bd `boi6` D-B / `8xaw`): the region-merge-φ RAIL LEAF for the 4.4 DATA
+   > SELECT — a `select` whose condition is a state-prep region's MERGE φ is admitted by CALLING
+   > `classifyArms`' committed `InPlaceRotation` verdict; 0 emitter lines (M-β makes the φ a theta CALL
+   > by emit time); the plan's raw `Condition` dangles after the prep's flatten (re-read from the select);
+   > one `hcrg` precedence edge "prep before select". (2) **R-1 `94c085e`** (bd `rb9x`): F2 excludes the
+   > MergePhiPeel compare CLONES via a `taint.PeelClones` record at the TEST, on the PREIMAGE argument.
+   > (3) **C `23b0cd1`** (bd `21mg`): `cq_measure` of a never-quantum value lowers to the classical value,
+   > no gate; + L-0, the loop-carried-`_Bool` rolled accepts pinned. The LOOP form is SCOPED (Track L):
+   > the `bool b[N]` spelling has exactly ONE wall (the tainted store, bd `xdu2`), the scalar spelling
+   > denotes a different circuit; N=3 flat (`vd.c`) awaits an owner ruling (bd `om35`). PRD §16.**
    > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
    > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
    > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),

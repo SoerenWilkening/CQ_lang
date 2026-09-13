@@ -924,6 +924,86 @@ scratch if `railWireClosure` as called by F2 ever diverges from R4's
 "tidied"), and it becomes an OVER-ACCEPT the day any chained rotation arm whose
 `RotBase` is in `CondRails` lowers — whose live door is **2c**, not R4.
 
+### 4b. The 2026-09-13 landing — the owner's EXTENDED file compiles; the loop form is scoped
+
+The owner added ONE line, `if (b1) a -= 3;`, after the bool-controlled prep of `b1`, and it declined
+`control flow`: `-O1` if-converts it into a 4.4 DATA `select` whose CONDITION is the prep region's
+MERGE φ, off the leaf grammar. **Measured before any code: `if (b1) a -= 1;` compiled on the same binary**
+(InstCombine folds a ±1 delta to `add(a, sext b1)` — the φ was already a quantum register to `lowerOps`;
+only the `select` consumer was refused), and the target stream was read off the ORACLE from a hand-IR
+twin (`trackM/probes/m18.ll` = the module after M-β), so the increment was provably an ACCEPT-only
+widening. Three squash landings (records `inc1-records/session-2026-09-13-orchestrator/`, PRD §16):
+
+- **`59ac5b7` — Track M, bd `boi6` D-B / `8xaw`: the region-merge-φ RAIL LEAF for the 4.4 data select.**
+  `CondTree::RailPhiLeaves` + `AllowRailPhi` (default false; `true` ONLY from `classifySelectRegion`;
+  `isCondRailLeaf` NOT widened, `RailLeaves` NOT retyped — the TYPE is the enforcement), ROOT-ONLY; rung 0
+  admits the φ iff it is the `Merge` of a region ALREADY in the plan as `BranchRegion` with
+  `ClassArm`/`ClassArmFalse == InPlaceRotation` and a non-empty `Shadow` — **by CALLING `classifyArms`'
+  committed verdict, never re-deriving it**; rung (ii) over `condProvenance(φ)` (not `Shadow.front()`);
+  rung (iii) = gate 2c seeded from the φ. **`CondTreeEmit` needs 0 lines**: by emit time
+  `emitInPlaceRotationRegion`'s M-β has RAUW'd the φ to the theta CALL and the r9e5 `CopyRailRoot` stream
+  fires unchanged. Two hazards that bit: (H-1) the plan's raw `ControlRegion::Condition` DANGLES after the
+  prep's flatten erased the φ — `SelectMergeEmit` re-reads `cast<SelectInst>(R.Merge)->getCondition()`,
+  proved by COUNTERFACTUAL (one line reverted → the owner's file declines ×3: the emitter was walking
+  freed memory); never "fix" it with a `WeakTrackingVH`. (F-M1, review r1) a `SelectRegion` was INERT in
+  `lowerControlRegions`' `hcrg` precedence graph, so a following kickback whose `Pred` is the prep's merge
+  block could push the prep to emit LAST — fixed by recording `PrepRegionIdx` at rung 0 and adding ONE
+  edge "prep before select" by calling that record (a `SelectRegion` sets no block fields ⇒ a sink ⇒ no
+  cycle); every emitter inserts positionally, so the stream is source order regardless of schedule. The
+  owner's file: **29 lines, STRICT 2b `8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2
+  verified, 0 violation(s), 0 unproven`**, lines 1–16 = the 2026-09-11 stream; `h0`/`h1` read only as
+  CNOT controls; the four `cqrt_x` on ancillas. Also lowers: the run-time-`a` general cascade (31), a
+  compare-conditioned prep + select (21 — the scoped `RailLadderProven` conjunct was an over-decline and
+  was dropped), a third region after the select (33), an in-loop select on an OUTSIDE prep's φ rolled ==
+  unrolled 43 = 43. **H-6 ruled ADMIT**: "two preps of `b1`" is the S† shape (the theta is CHAINED on the
+  condition's own name; the rail spelling accepts on the frozen ORACLE); the GENUINE `3d8q` sibling shape
+  reproduces on the ORACLE with no φ — Track M adds customers to that P1 hole, no fence. **Deferral was
+  measured UNSOUND**: `declineClassicalMuxes` `continue`s on a tainted-condition select, so a deferred
+  select is declined by NOTHING and the `i32` RAUW leaves `select i1 <i32>` → `report_fatal_error`.
+- **`94c085e` — Track R-1, bd `rb9x`: F2 excludes the peel's compare CLONES via `taint.PeelClones`**
+  (`WeakTrackingVH`; consulted as ONE conjunct at the TEST beside `!CondWire.count(V)`; never at the
+  anchor, never pruning the users walk — `control_peel_reject_fp_stateprep.ll` declines through
+  `f2Model`'s conservative arm on an fp select reachable ONLY via the clone). The route: the clone is
+  dominance-filtered out of the BACKWARD `Cand` set and enters through the FORWARD users walk (no
+  position filter), folds to a singleton `i1` per edge, and matches an `i1` seed. The argument is
+  PREIMAGE (a value the pass MANUFACTURES has no source preimage, hence no rival), NOT "same wire" (a
+  two-diamond function clones the OTHER region's condition too). **A dominance conjunct is REFUSED IN
+  WRITING**: ≥11 shipped F2 fixtures pin MERGE-BLOCK colliders (`range_forward_*`, `sideways_*`,
+  `merge_edge_sideways`, `step_cap_over`). The `int b0`/`bool b1` fused spelling compiles (22).
+- **`23b0cd1` — Track C, bd `21mg`: `cq_measure` of a never-quantum value lowers to the classical value**
+  (the sole sink splits on TAINT and nothing else; no symbol, no gate, NO trace line — owner Q-1: if the 7.6
+  output tape wants every user-written measurement, this is the site; a new loud `undef/poison` decline).
+  The round-2 window is discharged by ORDER (`lowerMeasures` after `repropagateControlMerges` in both entry
+  points — RETIREMENT TRIGGER: moving it passes an `i32` HANDLE through as data). Fact recorded:
+  **`LLVMContext::diagnose` EXITS on the first `DS_Error`** — a fixture pins ONE diagnostic; the in-tree
+  "report and skip" comments are wrong (bd `br4a`). Plus **L-0**: the two shipped-but-unpinned rolled
+  accepts (a carried `_Bool` whose condition is the in-body chained theta) pinned 9 = 9, K-independent.
+
+**Still declined, by owner ruling or by scope:** `vd.c` (N=3) — the `b1` prep's seed collides with the
+THIRD region's guard pinned on the true edge (no peel; bd `om35`: the audited spelling R-2′ "a collider
+pinned on ONE edge is not a collider" closes it with an argument but flips ≥11 shipped decline fixtures);
+the phase consumer on a prep merge-φ (bd `3qps` — the same leaf-grammar gap, NOT `drbq.7`'s wire fence:
+`SCOPE_boi6` §0.3 is true of a CHAINED arm theta and false of a SOURCE-theta prep); the in-place-ARM φ
+(pinned as a DECLINE whose retirement is "land the `3d8q` fence, then re-derive `condProvenance`'s seed").
+
+**The LOOP form (Track L, scoped, `trackL/SCOPE_loop.md`, 37 probes, no code).** Spelling (i) `bool
+b[N]` has exactly ONE wall, N-independent — `cq taint escape: tainted value stored to memory`, BEFORE
+`lowerLoops`; rolled, `-O1` stamps `llvm.loop.unroll.disable` so no constant N scalarises; fix = bd `xdu2`
+L-1a the bounded rail ARRAY (`[N x i1]` → `[N x i32]` of handles in classical memory; no new ABI; rails
+stored to memory are FROZEN; `free_pairing_check` counts alloc SITES so the golden trace is the witness).
+Spelling (ii) scalar `bool b` has four walls (bd `x5fp` L-2 the §3c clobber THROUGH THE BACK EDGE; the
+LICM-hoisted compare; L-3 `bool b = 0` gives `railPhiRootMint` NO MINT; bd `ej5w` L-4 the loop layer's X1
+clause declines the in-loop VALUE arm before detection — NOT `3qlq.6`) **and denotes a DIFFERENT circuit**
+(`a` goes negative). A carried `_Bool` is an `i8` WIRE in every loop form (bd `r903` is load-bearing there).
+Owner question Q2 carried: (i) recommended.
+
+**The non-redundancy protocol (owner addon 2026-09-13, `PROTOCOL.md`)**: a hash-keyed `GATES.md` per
+track; a gate result is a fact about a BINARY; the merge-and-gate agent is the ONLY full-`ctest` runner.
+Measured: 4 full-suite runs for 3 landings; 0 cited-but-stale lines. Instrument lessons: md5s do not
+compare ACROSS sweeps; the shared corpus tag regex hides a D→D string change inside the `cq_measure`
+family (close with a full-stderr byte-compare); a mutator reading N/A is a hole; a named negative can be
+VACUOUS (`trackM/probes/impl/vacuity.py`).
+
 ### 5. Open follow-ons, by bd id
 
 **Pre-existing silent miscompiles, still open:** bd `3d8q` (the pass-wide
@@ -1031,12 +1111,12 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
 
-**Counts, measured 2026-09-11 at `e96f89c` (the four landings).** ctest **403**
-· `^e2e-` **393** · `^e2e-slice-` **353** · `twin-identical` **30** ·
-`ls ir-pass/test/*.ll | wc -l` **1893** · `ls tests/e2e/*.expected.log | wc -l`
-**355** · twin matrix `grep -c '^m_' tools/loop_twin_matrix.expected.txt` **259**
-+ `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt` **29** = **288**
-cells. `cq-opt-equivalence-full` on that tree: **1893/0**. **Re-measure rather
+**Counts, measured 2026-09-13 at `59ac5b7` (the three landings; `CLOSING_MEASUREMENTS.md`).** ctest
+**420** · `^e2e-` **410** · `^e2e-slice-` **365** · `twin-identical` **34** · `ls ir-pass/test/*.ll | wc
+-l` **1928** · `ls tests/e2e/*.expected.log | wc -l` **367** · twin matrix `grep -c '^m_'
+tools/loop_twin_matrix.expected.txt` **259** + `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt`
+**29** = **288** cells. `cq-opt-equivalence-full` on that tree: **1928/0**. (2026-09-11 at `e96f89c`: 403 ·
+393 · 353 · 30 · 1893 · 355 · 288; 1893/0.) **Re-measure rather
 than quote** — `ctest --test-dir build -N` and the `ls`/`grep` lines above are
 the source of truth, and these go stale on every fixture batch. The per-commit
 chain and every earlier figure are in `docs/CLAUDE-HISTORY.md`.

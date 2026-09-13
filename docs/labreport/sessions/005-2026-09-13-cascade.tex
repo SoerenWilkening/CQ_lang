@@ -1,0 +1,182 @@
+\labsessionheader{2026-09-13}{The controlled-operation cascade --- the owner's extended file compiles; the loop form scoped}%
+  {59ac5b7}{013Hi5y8TF8WpYRVVqZH21Vo}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/NEXT\_SESSION\_PROMPT.md}
+
+\subsection*{Goal}
+Entry 004 closed with the owner's \fpath{example/grover/grover_oracle_uncompute.c} compiling at 19 lines. The
+owner then added one line, \texttt{if (b1) a -= 3;}, after the \texttt{bool}-controlled preparation of
+\texttt{b1}, and said what the program is for: \emph{``the grover script might be implemented with a large
+loop, where MANY of those controlled operations are applied.''} The line declined \texttt{control flow}.
+This session set out to (a) compile that file as written, (b) remove the two neighbouring over-declines the
+previous entry had filed (\bd{rb9x}, \bd{21mg}), and (c) measure --- not build --- every wall between the
+flat cascade and its loop form, so the owner can choose the loop's spelling with the circuits in front of
+them. A second owner instruction governed \emph{how}: \emph{``each agent should only run tests relevant for
+them \ldots{} avoid redundancy at each opportunity.''}
+
+\subsection*{What the wall was, measured before any code}
+\texttt{clang -O1} if-converts the new line into a data \texttt{select} whose \emph{condition} is the
+preparation region's merge \(\varphi\) --- a value the select classifier's leaf grammar did not know (it
+admitted a compare or a literal \texttt{cq\_theta\_i1} call). Two measurements on the frozen pre-session
+binary decided the shape of the work: \texttt{if (b1) a -= 1;} \emph{already compiled} (the compiler folds a
+\(\pm1\) delta to an \texttt{add}, so the \(\varphi\) was already a quantum register to the arithmetic
+lowering; only the \texttt{select} consumer was refused), and a hand-written IR twin of ``the module after
+the preparation region has emitted'' \emph{already produced the exact 29-line stream} the owner's file
+needed. The increment was therefore provably an accept-only widening: no new gate stream, no emitter change
+in the tree that mints the merge. The record of that measurement is \fpath{trackM/SCOPE_M.md}; the scoping
+also corrected the previous entry's reasoning about this shape (the ``wire fence'' that was thought to be
+the second blocker is a blocker only when the arm's rotation is \emph{chained} on the condition's own
+register; the owner's preparation is a fresh source, and its wire is clean).
+
+\subsection*{What landed, in landing order}
+\begin{itemize}
+  \item \commit{23b0cd1} --- \bd{21mg}: \texttt{cq\_measure} of a value that never became quantum lowers to
+    the classical value, no gate, no trace line. The sole measurement sink now asks one question, taint,
+    and nothing else. The owner's 2026-09-11 evening edit (second region commented out) compiles at 15
+    lines, byte-identical to its twin without that measurement. One review round, \textsc{clear-with-items}.
+    Landed with it: two rolled-loop accepts of a loop-carried \texttt{bool} that had shipped unpinned, now
+    pinned rolled \(=\) unrolled (9 \(=\) 9 lines, lowered-IR size independent of the trip count).
+  \item \commit{94c085e} --- \bd{rb9x}: the state-prep seed fence (F2) no longer collides with the compare
+    \emph{clone} that the 2026-09-11 merge-phi peel manufactures. The scoping isolated the route the
+    previous review had left open (the clone enters through the fence's \emph{forward} users walk, not its
+    dominance-filtered backward half), and the fix is a record of the clones the pass makes, consulted at
+    the one equality test --- never at the anchor, never pruning the walk (one shipped fixture is the
+    red--green witness that pruning would flip a deliberate fp-mux decline into an unargued accept). The
+    argument is that a value the pass \emph{manufactures} has no source program behind it; the tempting
+    ``a collider must dominate the arm'' conjunct is refused in writing because eleven shipped decline
+    fixtures pin merge-block colliders. \texttt{int b0 / bool b1} in a fused diamond now compiles (22 lines).
+    One review round, \textsc{clear-with-items}.
+  \item \commit{59ac5b7} --- \bd{boi6} (the merge-\(\varphi\) half) / \bd{8xaw}: a data \texttt{select} whose
+    condition is a state-prep region's merge \(\varphi\) is admitted by \emph{calling} the classifier's own
+    committed verdict for that region, then handed to the cleared 2026-09-10 rail-select emitter unchanged.
+    Two hazards bit and were fixed before landing: the region plan stored the \(\varphi\) as a raw pointer
+    that the preparation region's own flatten had already freed (proved by reverting the one-line fix and
+    watching the accept turn into a loud decline three times over); and the emission scheduler treated a
+    select region as inert, so a third region after the select could push the preparation to emit
+    \emph{last} --- fixed by one precedence edge, added by calling the same record. Two review rounds,
+    both \textsc{clear-with-items}; the second found the scheduling gap the first had graded as
+    documentation.
+\end{itemize}
+
+\subsection*{The owner's file, measured on the rebuilt tree}
+\begin{table}[htbp]\centering\small
+\begin{tabular}{@{}llrl@{}}\toprule
+program & verdict & lines & reading \\ \midrule
+the owner's file (N=2, \texttt{if (b1) a -= 3}) & accept & 29 & lines 1--16 = entry 004's stream; then the select on \(h_1\) \\
+the same with a run-time \texttt{a} (nothing folds) & accept & 31 & the fully general two-bool cascade \\
+a \emph{compare}-conditioned prep, then the select & accept & 21 & the scoped predicate had refused it; one conjunct dropped \\
+a third region after the select & accept & 33 & source order; the kickback's flag reads the post-select \texttt{a} \\
+an in-loop select on an outside prep's \(\varphi\) & accept & 43 = 43 & rolled and hand-unrolled byte-identical \\
+\texttt{int b0 / bool b1}, fused (\bd{rb9x}) & accept & 22 & the int/int stream with \texttt{i1} widths on \(b_1\) \\
+the 2026-09-11 evening edit (\bd{21mg}) & accept & 15 & byte-identical to its measurement-less twin \\
+the N=3 cascade (\fpath{vd.c}) & decline & --- & F2 on the \emph{third} region's guard; owner ruling (\bd{om35}) \\
+\bottomrule\end{tabular}
+\end{table}
+Every accept above is strict stage-2b clean, and every one was re-derived from the state vector by an
+independent reviewer. In the owner's file the two \texttt{bool} registers are read only as CNOT controls,
+never bracketed by \texttt{cqrt\_x}, never freed; the ancilla returns to \(|0\rangle\) on every branch, which
+is what makes its free a proven one.
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \foverdecline\ The headline: \texttt{a -= 1} compiled and \texttt{a -= 3} declined on one binary,
+    because the front end folds one and not the other. Filed as \bd{8xaw}, closed by \commit{59ac5b7}.
+  \item \foverdecline\ The \emph{phase} consumer of the same \(\varphi\) (\texttt{if (b1) cq\_phi(...)})
+    is the same leaf-grammar gap, not the wire fence the previous scoping named; its \texttt{int} twin
+    compiles. Filed as \bd{3qps}.
+  \item \fdoc\ The N=3 file declines on a different collider (no peel involved). A 24-probe rival audit
+    found the proposed exclusion safe but its stated ground wrong, and a stronger spelling that would flip
+    eleven shipped decline fixtures. That trade is the owner's (\bd{om35}), not an agent's.
+  \item \fpreexisting\ \bd{3d8q} (the sibling-reader hole from entry 002) gains customers again; one
+    over-decline is deliberately \emph{kept} (pinned as a decline whose retirement is ``land that fence
+    first''), because narrowing the seed before it lands would remove the only thing that catches a
+    pre-rotation reader.
+  \item \fdoc\ Four instrument defects, each found by attacking the instrument: lowered-IR digests do not
+    compare across sweeps; the shared corpus tag regex hides a decline-to-decline string change inside the
+    \texttt{cq\_measure} family (three rows were invisible); a mutation harness that reports \emph{n/a} is
+    a hole; and five named negative checks in first-draft fixtures matched handles the module never
+    defined --- vacuous --- caught by a name-existence check now kept beside the fixtures.
+  \item \fdoc\ Seven shipped fixtures' bare \texttt{NOT: phi} matched the \emph{worktree path}
+    (\texttt{CQ\_mphi}) and went red with no compiler change; six more carry the pattern latent
+    (\bd{qta2}).
+\end{itemize}
+
+\subsection*{The loop form, scoped}
+Two spellings were measured on the pre-session binary, each with its hand-unrolled twin and the state
+vector it denotes (\fpath{trackL/SCOPE_loop.md}). \texttt{bool b[N]} --- one qubit per trip, the flat
+file's semantics --- has exactly one wall, independent of N: the tainted store into the array, raised before
+any loop or control stage runs; rolled, the compiler forbids unrolling, so no small N scalarises. A scalar
+\texttt{bool b} re-prepared each trip has four walls in order and, more importantly, denotes a different
+circuit: the value arm is conditioned on \texttt{b} rather than on the flag, so on the branch where
+\texttt{b} was already set it subtracts again and \texttt{a} goes negative. The recommendation put to the
+owner is the array spelling, whose fix needs no new runtime symbol (a rail is an integer handle after
+lowering; the array becomes an array of handles in classical memory, and rails stored to memory are frozen).
+Beads: \bd{xdu2}, \bd{x5fp}, \bd{ej5w}, the classical-rail-root bead, and a note on \bd{r903} (a carried
+\texttt{bool} is an \texttt{i8} wire in every loop form).
+
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth, height=4.3cm, ymin=1880, ymax=1940, xmin=-0.5, xmax=18.5,
+  xtick={0,10,14,18}, xticklabels={base,C+L-0,R-1,M},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize lit fixtures}, grid=major, grid style={cqgray!20},
+  title={\footnotesize \texttt{ir-pass/test/*.ll} per commit}]
+  \addplot[const plot, draw=cqblue, thick, mark=*, mark size=1pt] table[x=idx, y=fixtures, col sep=space] {figures/005/session_landings.dat};
+\end{axis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.49\textwidth, height=4.3cm, ymin=350, ymax=372, xmin=-0.5, xmax=18.5,
+  xtick={0,10,14,18}, xticklabels={base,C+L-0,R-1,M},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize e2e goldens}, grid=major, grid style={cqgray!20},
+  title={\footnotesize \texttt{tests/e2e/*.expected.log} per commit}]
+  \addplot[const plot, draw=cqgreen, thick, mark=*, mark size=1pt] table[x=idx, y=goldens, col sep=space] {figures/005/session_landings.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Every commit of the session (19, docs commits included), measured with \texttt{git ls-tree} by
+\fpath{tools/labreport/figures/session_landings.py} (data: \fpath{figures/005/session_landings.dat}; base
+\commit{86c0d25}, landings at index 10 \commit{23b0cd1}, 14 \commit{94c085e}, 18 \commit{59ac5b7}). The
+same file records \texttt{add\_test}, which steps \(393 \to 400 \to 401 \to 410\).}
+\label{fig:005:landings}
+\end{figure}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+lit fixtures & 1928 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 367 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+ctest entries & 420 & \measured{ctest --test-dir build -N | tail -1} \\
+of which e2e / slices / twin gates & 410 / 365 / 34 & \measured{ctest -N -R e2e- / e2e-slice- / twin-identical} \\
+twin-matrix cells & 259 + 29 & \measured{grep -c m\_ loop\_twin\_matrix.expected.txt; grep -c cell ...quarantine.txt} \\
+full-suite runs this session & 4 & three merge-and-gate + one closing (entry 004: about nine) \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Per landing, on the merged tree, by one merge-and-gate agent: full \texttt{ctest -j6} 410/410 (407.8 s),
+411/411 (417.8 s), 420/420 (388.4 s); \texttt{cq-opt} vs stock \texttt{opt} full sweep 1901/0, 1908/0,
+1928/0; a corpus diff of every probe directory of this and the previous session against the frozen
+pre-session binary at each landing (3021, 3051 and 3113 rows), with every mover explained before the squash:
+0 accept-to-decline, 0 both-accept circuit changes, every accepting mover re-lowered through strict stage
+2b. The closing step rebuilt the primary once and reran the full suite and the sweep
+(\fpath{CLOSING_MEASUREMENTS.md} in the session directory). Implementers ran \texttt{ir-pass-lit} once at
+hand-off and their fixtures one at a time; reviewers ran no build and no suite (each confirmed the ledger's
+binary hash on disk; none mismatched). Not run: no simulator exists (Rule 2); the twin-matrix instruments
+were not re-run outside the gate that runs inside every full suite.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Owner: the loop spelling (array recommended --- it is the flat file's semantics and has one wall);
+    the N=3 ruling (\bd{om35}); whether a classical measurement should appear on the 7.6 output tape
+    (\bd{21mg} Q-1); \bd{boi6} H-1 for the loop-carried half.
+  \item \bd{xdu2} (the bounded rail array) is the increment that finishes the owner's sentence; then
+    \bd{x5fp}, the classical rail root, \bd{ej5w}; \bd{3d8q} before any seed is narrowed.
+  \item Filed this session: \bd{3qps}, \bd{gy1w}, \bd{br4a}, \bd{qta2}, the ROOT-ONLY widening, the
+    ``region before the prep'' composition, the zext-of-peeled-select collider; notes on \bd{xqgx},
+    \bd{r903}, \bd{3d8q}, \bd{boi6}.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 004, ``Open questions'': \emph{``\bd{rb9x}: \ldots{} still collides on the compare flag, which is not
+on the condition wire''} should read \emph{``collides on the compare \emph{clone} the merge-phi peel
+manufactures, reached through F2's forward users walk''} --- the integration review of that session had
+already corrected the cause, and this session isolated the route. Entry 003/004's reading that admitting a
+merge \(\varphi\) as a rail leaf ``buys nothing'' because of the wire fence holds for a chained arm
+rotation only; for the owner's preparation shape the wire is clean (\fpath{trackM/SCOPE_M.md} §0.3).

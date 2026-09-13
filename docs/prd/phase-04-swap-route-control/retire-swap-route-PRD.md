@@ -739,6 +739,31 @@ on the landed tree, MEASURED: lit **1893**, goldens **355**, ctest **403** / `^e
 1893/0. Records: `inc1-records/session-{9pum,b6ap,f2-i1,l4x4}/` +
 `session-2026-09-11-orchestrator/LANDING_PLAN.md`. §15.
 
+**E17 — THREE MORE INCREMENTS LANDED 2026-09-13 AND THE OWNER'S EXTENDED FILE COMPILES (§16).** The owner
+added ONE line to `grover_oracle_uncompute.c` — `if (b1) a -= 3;` after the bool-controlled state prep of
+`b1` — and it declined `control flow`: `-O1` if-converts the line into a 4.4 DATA `select` whose CONDITION
+is the prep region's MERGE φ, off the leaf grammar (a `CmpInst` or a literal `cq_theta_i1` call). MEASURED
+before any code: `if (b1) a -= 1;` COMPILED on the same binary (InstCombine folds a ±1 delta to
+`add(a, sext b1)` — the φ was already a quantum register to `lowerOps`; only the `select` consumer was
+refused), and the target stream was read off the ORACLE from a hand-IR twin. Landed: bd `boi6` D-B /
+`8xaw` `59ac5b7` (the region-merge-φ RAIL LEAF for the 4.4 select: `RailPhiLeaves` + `AllowRailPhi`, rung 0
+by CALLING `classifyArms`' committed `InPlaceRotation` verdict, rung (ii) over `condProvenance(φ)`, gate 2c
+seeded from the φ; 0 emitter lines in `CondTreeEmit` because M-β has RAUW'd the φ to the theta CALL by
+emit time; `SelectMergeEmit` re-reads the condition off the select — the plan's raw `Condition` DANGLES
+after the prep's flatten; ONE `hcrg` precedence edge "prep before select" found by Rule-13 round 1) —
+**29 trace lines, STRICT 2b `8 rail mint(s) of which 6 left allocated, 2 cqrt_free site(s): 2 verified, 0
+violation(s), 0 unproven`**; bd `rb9x` `94c085e` (F2 excludes the peel's compare CLONES via a
+`taint.PeelClones` RECORD consulted at the TEST, on the PREIMAGE argument — the `int b0`/`bool b1` fused
+spelling compiles, 22); bd `21mg` `23b0cd1` (`cq_measure` of a never-quantum value lowers to the classical
+value — the owner's 22:18 edit compiles, 15 = its twin; + the L-0 H-10 pins). The LOOP form was SCOPED
+(Track L, `session-2026-09-13-orchestrator/trackL/SCOPE_loop.md`): the array spelling has exactly ONE wall
+(the tainted store, bd `xdu2`), the scalar spelling denotes a DIFFERENT circuit (`a` goes negative) — owner
+question Q2 carried. The N=3 flat cascade (`vd.c`) still declines F2 on the THIRD region's guard — bd `om35`,
+an owner ruling (the audited spelling R-2′ flips ≥11 shipped decline fixtures). Counts on the landed tree,
+MEASURED (`MERGE_M_1.md`): lit **1928**, goldens **367**, ctest **420** / `^e2e-` **410** / `^e2e-slice-`
+**365** / `twin-identical` **34**; full `ctest -j6` 420/420; `cq-opt-equivalence-full` 1928/0. Records:
+`inc1-records/session-2026-09-13-orchestrator/`. §16.
+
 ## 1. Motivation — the shipped Grover goldens are the identity
 
 Measured 2026-09-05 at HEAD `52d7764`. The runtime ABI pins `cqrt_rz_<W>` as
@@ -1988,3 +2013,154 @@ injection-matrix debt in the drbq Inc-4 state-prep accepts, identical on the `ma
    (§15.3). Run a duplicate-body scan after any merge that renames fixtures.
 5. **A retirement note in a fixture header is a contract that worked** — F2's predicted stream for
    the l4x4 landing was character-for-character correct. Write them.
+
+## 16. Session 2026-09-13 — the controlled-operation CASCADE: three landings, the owner's extended file compiles, the loop form scoped
+
+Written by the session docs pass. Records: `inc1-records/session-2026-09-13-orchestrator/` —
+`ORCHESTRATOR_PROMPT.md` (the session brief and the §3 non-redundancy protocol as first written),
+`PROTOCOL.md`, `track{M,R,C,L}/`, `MERGE_BRIEF_TEMPLATE.md`, `CLOSING_BRIEF.md`, `CLOSING_MEASUREMENTS.md`,
+`NEXT_SESSION_PROMPT.md`. Summary line in §0 **E17**. Every count below is MEASURED by the command named
+beside it, on the landed tree.
+
+### 16.0 The owner's goal and addon
+
+* Goal (2026-09-13, verbatim): *"the grover script might be implemented with a large loop, where MANY of
+  those controlled operations are applied"* — with the 2026-09-11 ruling standing: an over-decline of a
+  valid circuit is a DEFECT to remove.
+* Addon (2026-09-13, verbatim): *"each agent should only run tests relevant for them. we want to avoid
+  redundant runs. implementer and reviewer also don't have to run the tests each time. avoid redundancy at
+  each opportunity."* Implemented as the hash-keyed `GATES.md` ledger and the ownership matrix in
+  `PROTOCOL.md`; bd memory `non-redundancy-gate-protocol-2026-09-13`. Measured effect: **4 full-suite runs
+  for 3 landings** (three merge-and-gate + one closing), 0 cited-but-stale gate lines.
+* Owner questions asked at the start and NOT answered in-session (the orchestrator proceeded on the
+  recommended answers, each recorded where it was applied): Q1 boi6 H-1 → option (a) assumed, no code
+  depends on it yet; Q2 the loop spelling → BOTH scoped, (i) recommended by measurement (§16.4); Q3
+  `21mg` → yes, built; Q4 the phase consumer on a merge φ → filed as bd `3qps` (a leaf-grammar
+  over-decline, NOT `drbq.7`'s wire fence — corrected ground, §16.1).
+
+### 16.1 The three increments
+
+| # | track | landing | rounds | headline |
+|---|---|---|---|---|
+| 1 | **C** `cq_measure` of a classical value (bd `21mg`) + Track L's **L-0** pins | `23b0cd1` | r1 CLEAR-WITH-ITEMS → applied at merge | the sole sink splits on TAINT and nothing else; a classical measure emits NO trace line (owner Q-1); `LLVMContext::diagnose` EXITS on the first `DS_Error` (a fixture pins ONE diagnostic) |
+| 2 | **R-1** F2 excludes the peel's compare CLONES (bd `rb9x`) | `94c085e` | r1 CLEAR-WITH-ITEMS → applied at merge | the clone enters through the FORWARD users walk, not the backward half; the record is consulted at the TEST on the PREIMAGE argument; a dominance conjunct is REFUSED IN WRITING (≥11 pinned merge-block colliders would flip) |
+| 3 | **M** the region-merge-φ rail leaf for the 4.4 data select (bd `boi6` D-B / `8xaw`) | `59ac5b7` | r1 CLEAR-WITH-ITEMS → FIX (the `hcrg` edge) → r2 CLEAR-WITH-ITEMS → applied at merge | the emitter needs 0 lines (M-β makes the φ a theta CALL by emit time); the plan's raw `Condition` dangles after the prep's flatten (H-1, proved by counterfactual); a `SelectRegion` was INERT in the precedence graph and the prep could emit LAST (F-M1) |
+
+**Track M's rulings, and the corrections it forced on the record.** (i) H-6 — "two preps of `b1`" — is the
+S† shape (the theta is CHAINED on the condition's own name; the rail spelling accepts on the frozen ORACLE
+at 29): ADMIT, consistent with the 2026-09-11 H-3 ruling; the GENUINE `3d8q` sibling shape reproduces on the
+ORACLE with no φ — Track M adds customers, no fence. (ii) `SCOPE_boi6.md` §0.3 ("admitting the φ buys `p5`
+nothing — the wire fence is the second blocker") is true of a CHAINED arm theta (`p5`/`m20` → `drbq.7`)
+and FALSE of the owner's prep (a SOURCE theta + a constant seed; the `int` compare twins accept on the
+ORACLE). (iii) The `RailLadderProven` conjunct of the scoped predicate was an over-decline (it asked "did
+the RAIL ladder run", not "will M-β make this φ one register") — dropped after measurement; a
+compare-conditioned prep + a select on its output now lowers (21 lines). (iv) H-8 = change nothing: a φ at a
+`br` keeps `control flow`. (v) Deferral (spelling (b)) measured UNSOUND: `declineClassicalMuxes` explicitly
+`continue`s on a tainted-condition select, so a deferred select is declined by NOTHING and `lowerRotations`'
+`i32` RAUW leaves `select i1 <i32>` → `report_fatal_error` — a crash, not a Rule-1 decline.
+
+**Track R's two records that are NOT code.** `SCOPE_R.md` §1.2/§2 R-2 and `SCOPE_R2.md` (the rival audit,
+24 probes, 14 rows, 0 holes): `vd.c` (N=3) declines F2 because the `b1` prep's seed `false` collides with
+the THIRD region's guard `%9 = icmp sgt i32 %8, 2` pinned false on the TRUE edge of `b0`'s fused diamond —
+no peel involved, R-1 does not touch it. The proposed spelling ("a pinned value that is a conditional
+`br`'s condition is not a collider") is SAFE but its stated 2c ground is WRONG — `condWireDisposition`
+fires in 0 of 24 probes; the protecting fences are R3 `ArmClassify.cpp:4102-4103`, R6 `:4420` and `:3257`.
+A stronger spelling R-2′ ("a collider pinned on only ONE edge is not a collider" — F1 pins the pred slot,
+so the rival is unfoldable by case analysis) closes `vd` AND `rb9x` with an argument but FLIPS ≥11 shipped
+decline fixtures. **Owner ruling, bd `om35`.**
+
+### 16.2 The owner's file, measured (the closing rebuild — `CLOSING_MEASUREMENTS.md`)
+
+`example/grover/grover_oracle_uncompute.c` as on disk 2026-09-13 (= the 2026-09-11 file + `if (b1) a -= 3;`):
+`opt` exit 0, stderr 0 bytes, STRICT stage 2b `8 rail mint(s) of which 6 left allocated, 2 cqrt_free
+site(s): 2 verified, 0 violation(s), 0 unproven`, **29 trace lines** BYTE-IDENTICAL to
+`tests/e2e/slice_control_cascade_two_bools.expected.log`, whose first 16 lines are the 2026-09-11 file's
+`va.trace` unchanged. The select half (lines 17–26): `cq_template_add_i32_hl(h3,-3)→h6` (the arm chain,
+hoisted, lowered by `lowerOps`, NOT `_unc`'d — the Rule-6 chain-final leak); `alloc_i1→h7; cnot(h1,h7)` (the
+rail-root CNOT copy of the PREPPED `b1`); `alloc_i32(0)→h8; copy_i32_controlled(h7,h6,h8); x(h7);
+copy_i32_controlled(h7,h3,h8); x(h7); cnot(h1,h7); free(h7)` (`x ⊕ x = 0` on every branch ⇒ a proven-`|0⟩`
+free); then three measures. `h0`/`h1` are read ONLY as CNOT controls; the four `cqrt_x` sit on ancillas.
+State vector: `Σ_x α_x |x⟩_{b0} ⊗ |β(x)⟩_{b1}` with `β(1) = 0`, `β(0) = Ry(.5)|0⟩`; the CNOT copy is
+basis-faithful on both branches (a permutation arm reads a basis LABEL, never a phase — Rule 7).
+
+The other spellings, same binary: `vb`/`vc` (other source spellings of line 99) 29 lines byte-identical;
+`m16` (a RUN-TIME `a`, nothing folds — the fully general N=2 cascade) 31, three proven-`|0⟩` frees;
+`i2_cmpladder` (a compare-conditioned prep + the select) 21; the `int` spelling 28 (pinned so the widening
+cannot change it); `r03` (a third region AFTER the select) 33 in source order; the in-loop select on an
+OUTSIDE prep's φ rolled == hand-unrolled 43 = 43; `G6` (a QUANTUM select arm then a prep) 26. **`vd.c`
+(N=3) still declines F2** (§16.1, bd `om35`) while `v_vd_guard_neg.c` (its collider neutralised) accepts at 42.
+
+### 16.3 Counts on the landed tree — MEASURED, per landing
+
+| landing | lit | goldens | ctest | `^e2e-` | `^e2e-slice-` | twin-identical | full `ctest -j6` | equivalence |
+|---|---|---|---|---|---|---|---|---|
+| base `86c0d25` (= `e96f89c`) | 1893 | 355 | 403 | 393 | 353 | 30 | 403/403 (2026-09-11) | 1893/0 |
+| C + L-0 `23b0cd1` | 1901 | 360 | 410 | 400 | 358 | 32 | 410/410, 407.77 s | 1901/0 |
+| R-1 `94c085e` | 1908 | 361 | 411 | 401 | 359 | 32 | 411/411, 417.79 s | 1908/0 |
+| M `59ac5b7` | 1928 | 367 | 420 | 410 | 365 | 34 | 420/420, 388.40 s | 1928/0 |
+
+Twin matrix 259 + 29 = 288 cells, unchanged. Corpus ORACLE-vs-MERGED at the last landing: 3113 rows, 79
+DECLINE→ACCEPT (46 `control flow` at a select — incl. four cross-track probes nobody wrote for M; 10 F2's
+seed string; 23 the 21mg string), 10 decline-string moves all to a LATER fence, **0 ACCEPT→DECLINE, 0
+both-accept circuit changes**, 79/79 accepting movers STRICT 2b clean.
+
+### 16.4 The LOOP form — scoped, not built (Track L, `trackL/SCOPE_loop.md`, 37 probes)
+
+* Spelling (i) `bool b[N]`: exactly ONE wall, N-independent — `cq taint escape: tainted value stored to
+  memory` (`TaintPropagation.cpp` `kMsgStore`), BEFORE `lowerLoops` and detection. Rolled, `-O1` stamps
+  `llvm.loop.unroll.disable` so NO constant N scalarises; hand-unrolled, SROA removes the array and the
+  program IS the flat cascade of §16.2. 7.5 QRAM is the OPPOSITE axis (tainted index). Fix = bd `xdu2` L-1a
+  the bounded rail ARRAY (`[N x i1]` → `[N x i32]` of handles in classical memory; no new ABI; rails stored
+  to memory are FROZEN).
+* Spelling (ii) scalar `bool b` re-prepared per trip: four walls in order (bd `x5fp` L-2 the §3c clobber
+  through the BACK EDGE; `drbq.12`/`wx8g` the LICM-hoisted compare; L-3 the classical rail root — `bool b
+  = 0` gives `railPhiRootMint` NO MINT; bd `ej5w` L-4 the loop layer's X1 clause, which declines the
+  in-loop VALUE arm before detection — NOT `3qlq.6`) — AND it denotes a DIFFERENT circuit (the value arm is
+  conditioned on `b`, not the flag: `a` reaches −1 at N=2, −4 at N=3); its flat twin declines too.
+  **Recommendation to the owner: (i).**
+* A fifth wall only loops have: a carried `_Bool` is an `i8` WIRE (`phi i8` + `trunc`/`zext` at every
+  boundary) — bd `r903` is load-bearing in every loop form, decorative flat.
+* L-0 (landed with `23b0cd1`): the two shipped-but-unpinned rolled accepts (a carried `_Bool` whose region
+  condition is the in-body chained theta, `if (b)` / `if (!b)`) pinned rolled == unrolled 9 = 9, 50 lowered
+  lines at K=3 and K=1000.
+
+### 16.5 What is OPEN after this session
+
+**Owner rulings pending:** Q2 (loop spelling — (i) recommended); bd `om35` (R-2/R-2′ for N=3); Q1 (boi6
+H-1); 21mg Q-1 (a classical measure on the 7.6 output tape).
+**Pre-existing silent miscompile:** bd `3d8q` (P1) — population widened AGAIN (the φ-conditioned select
+adds the sibling-reader shape; F-M3 is pinned as a DECLINE whose retirement is "land the `3d8q` fence,
+then re-derive `condProvenance`'s seed"). Build it before narrowing any seed.
+**Over-declines filed:** `3qps` (the phase consumer on a prep merge-φ — the same leaf grammar), the
+ROOT-ONLY interior-leaf φ, `gy1w` (a classical measure inside a tainted arm — needs a `MeasureCalls` scrub),
+`x5fp` L-2, L-3, `ej5w` L-4, the F2-4 "region before the prep" composition, the zext-of-peeled-select F2
+collider, the `m15i` compare/rail S† asymmetry (on `xqgx`), `35t0`, `wx8g`, `boi6`.a, `54ur`, `fg9k`,
+`l4x4`.a.
+**Test/record debt:** `qta2` (6 latent bare `-NOT: phi` fixtures), `br4a` (`<unknown>:0:0` measure
+diagnostics; the "report and skip" comments contradict `exit(1)`-on-first-error), `f8eu`, `6uqc`, `lo7u`.
+
+### 16.6 Standing lessons this session adds
+
+1. **Read the target stream off the ORACLE before writing a line.** Track M's hand-IR twin (`m18.ll` = the
+   module after M-β) ACCEPTED on the frozen binary with the exact 29-line stream — so the increment was
+   provably an ACCEPT-only widening (no new stream, 0 emitter lines in `CondTreeEmit`), and every later
+   claim had a byte-identity witness.
+2. **A stored `Value *` that another region's flatten erases is a Release-build read of freed memory that
+   compares EQUAL** (Track M H-1). Re-read from the instruction that owns the value; prove it by
+   COUNTERFACTUAL (revert the line, watch the accept become a loud decline); never "fix" it with a
+   `WeakTrackingVH` that follows the RAUW and hides the ordering premise.
+3. **An emitter that inserts positionally still needs an ORDER when a later emitter's RAUW is its input**
+   (F-M1). A region kind that is "inert" in the precedence graph is fine until its correctness depends on
+   another region having emitted; then it needs exactly one edge, added by calling the record that
+   admitted it.
+4. **Measure the rival; never quote the bead.** bd `rb9x`'s own NOTES predicted the rival's decline string
+   wrong (F1, not `condition data use`); `SCOPE_boi6` §0.3's "second blocker" was true of one arm shape and
+   false of the owner's; R-2's 2c ground fired in 0 of 24 probes. Three recorded claims corrected by
+   scoping agents before they cost code — write the correction where the next reader looks.
+5. **Instruments: md5s do not compare across sweeps; a corpus tag regex can hide a D→D string change; a
+   mutator that reads N/A is a hole; a named negative can be VACUOUS.** Each was found this session by a
+   check that attacked the instrument (`vacuity.py`, `rz_mutation.sh`, the full-stderr byte-compare) — L10
+   again: a checker nobody has tried to fool is a checker nobody should trust.
+6. **The non-redundancy protocol works when the ledger is hash-keyed.** 4 full-suite runs for 3 landings,
+   every cited gate re-hashed on disk by an independent agent, and one merge (C) found byte-identical to the
+   implementer's binary so its 3021-row sweep was cited and only the 46-row delta ran.
