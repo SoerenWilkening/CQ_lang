@@ -110,6 +110,16 @@ merge:                                            ; preds = %arm, %entry
 ; FCNT-NOT:     call void @cqrt_free(
 ; ACNT-COUNT-5: call i32 @cqrt_alloc_
 ; ACNT-NOT:     call i32 @cqrt_alloc_
+; ⚠ THE NEXT TWO PAIRS ARE MIS-LABELLED BY THE WORD "COUNTS" ABOVE, and the
+; label is fixed here rather than the numbers: their patterns are UNQUALIFIED, so
+; FileCheck also matches the module's `declare` line. MEASURED on the lowered IR
+; (2026-09-13, bd `rb9x` review item R1r1-3): `@cqrt_copy_` occurs 3 times = **2
+; `call void @cqrt_copy_i32_controlled(…)` + 1 `declare`**, and `_unc(` occurs 3
+; times = **2 `call void @cq_template_icmp_eq_i32_hl_unc(…)` + 1 `declare`**. So
+; each 3 is `2 gates + 1 declare`, NOT 3 gates. The `-NOT` half is still live (a
+; 4th occurrence trips it, a 2nd fails the COUNT), so the pairs pin what they
+; always pinned and the numbers are deliberately UNCHANGED — a new fixture must
+; spell these `call void @…` as this increment's own accepts do (IMPL_R1 §7.4).
 ; UCNT-COUNT-3: _unc(
 ; UCNT-NOT:     _unc(
 ; CPCNT-COUNT-3: @cqrt_copy_

@@ -18,7 +18,23 @@
 ; The cell this costs is exactly `fp mux + state-prep arm`. Options, PRESENTED not
 ; decided (OQ-2): teach F2 to skip a select `SelectClassify` will claim, or keep
 ; the cell declined. Do NOT "fix" F2 from here — it is Rule-13 core with four
-; adversarial rounds behind it.;
+; adversarial rounds behind it.
+;
+; ⚠ RETIREMENT TRIGGER — bd `test_C_libtooling-rb9x`, increment R-1 (2026-09-13).
+; R-1 taught F2 to exclude `MergePhiPeel`'s compare CLONES from its collider set
+; (`TaintSet::PeelClones`, consulted at the equality TEST in
+; `f2SeedPinnedByLiveRegister`). **THIS FILE STILL DECLINES, WITH THE SAME STRING
+; AND FOR THE SAME REASON — MEASURED 2026-09-13 on the R-1 binary** — because
+; R-1's exclusion filters an ANSWER and does not prune the WALK: `%cq.peel.cond`
+; is still popped and its users are still modelled, so the fp select reachable
+; only through it still fires `f2Model`'s conservative `!AnyPinnedOperand` arm.
+; THIS FILE IS THE RED-GREEN WITNESS FOR THAT SPELLING. A version of R-1 (or of
+; any successor narrowing) that dropped the clone from the users walk, or from
+; the anchor/`Cand` seeding, would flip this module to an ACCEPT — an fp merge
+; mux admitted with no argument at all, the L9 angle-vs-data wire-crossing
+; family. If this file ever goes green, do not bless it: the exclusion has moved
+; off the test, and that is the defect, not the fix. The deliberate capability
+; cost recorded above (`fp mux + state-prep arm`) is unchanged by R-1.;
 ; bd `test_C_libtooling-b6ap` — THE MULTI-PHI MERGE PEEL (`MergePhiPeel.cpp`), one
 ; row of its P1-P9 DECLINE PARTITION. The peel is ACCEPT-ONLY and NEVER diagnoses:
 ; a shape that fails any clause is left BYTE-UNTOUCHED and reaches its existing

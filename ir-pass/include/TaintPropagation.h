@@ -244,6 +244,133 @@ struct TaintSet {
   // the re-sweep.
   llvm::SmallPtrSet<llvm::Instruction *, 4> LiftedConsumers;
 
+  // ── THE MERGE-PEEL'S COMPARE CLONES (bd `test_C_libtooling-rb9x`, increment
+  //    R-1) ───────────────────────────────────────────────────────────────────
+  //
+  // Every `S.CondCmp->clone()` that `peelIndependentMergePhis`
+  // (`MergePhiPeel.cpp`) MANUFACTURED, recorded at the clone site beside the
+  // `Tainted.insert(Clone)` that makes it visible to the pass at all.
+  //
+  // THE ONE CONSUMER, AND THE ONE QUESTION. `f2SeedPinnedByLiveRegister`
+  // (`ArmClassify.cpp`, the drbq Inc-4 state-prep fence F2) asks *"could the
+  // source the author wrote have been `cq_theta(<this value>, θ)`, with `-O1`
+  // folding it to the arm's literal?"*. A value THIS PASS manufactures has **no
+  // source preimage**: it did not exist in the module `clang` produced, so no
+  // source program can have passed it to the arm's `cq_theta`, so there is no
+  // rival program for F2 to be protecting against. That is the whole argument
+  // — it is a statement about provenance, NOT about wires. ⚠ Do NOT re-ground
+  // it on "the clone is the same compare on the same wire as the region's
+  // condition": a function with two fused diamonds produces a clone of the
+  // OTHER region's condition too (SCOPE_R.md §3b), and only the preimage
+  // argument covers that one.
+  //
+  // BESIDE IT — NOT INSTEAD OF IT — THE FOREIGN CLONE IS ALSO SEMANTICALLY
+  // DOMINATED (2026-09-13 Rule-13 round, `review_R1_r1.md` item 3b). Whenever a
+  // foreign clone is pinned on this region's edge, its ORIGINAL is reached by
+  // the same walk and folds to the same constant: the clone is a bit-copy
+  // (`S.CondCmp->clone()`) so both have the SAME operands and are users of the
+  // same popped `V`; the original is TAINTED (the peel is gated on
+  // `Tainted.count(BI->getCondition())`), so F2's `if (!Tainted.count(I))
+  // continue;` does not skip it; and `f2Model`'s `ICmpInst` arm reads only the
+  // operand ranges and the predicate, with `f2Refine` passing `CxtI = nullptr`
+  // at all four call sites, so the merge-block clone and the pred-block original
+  // cannot diverge. Hence either the original is not in `CondWire` and still
+  // collides (this exclusion is a no-op and F2 declines anyway), or it IS in
+  // `CondWire` and the value was already blessed as a non-collider on this very
+  // edge by the shipped 2026-09-11 narrowing: **this conjunct cannot produce an
+  // accept `CondWire` does not already license.** Carry BOTH arguments — the
+  // preimage one is the one that covers a clone whose original is neither in
+  // `CondWire` nor reachable, and it is the honest ground for the one-diamond
+  // case; the domination one is why
+  // `control_peel_reject_stateprep_two_region_foreign_clone.ll` must NOT be read
+  // as a reason to block the bd `35t0` widening (L6).
+  //
+  // CONSULTED AT F2's EQUALITY **TEST**, NEVER AT ITS ANCHOR AND NEVER TO PRUNE
+  // ITS USERS WALK — the same discipline, and the same measured reason, as the
+  // 2026-09-11 `CondWire` conjunct beside it. `control_peel_reject_fp_stateprep.ll`
+  // is the red-green witness: its fp select is reachable ONLY as a user of the
+  // clone, so a spelling that pruned the clone from the walk would flip a
+  // deliberately-pinned fp-mux capability cost into an unargued ACCEPT.
+  //
+  // ⚠ A RECORD, NOT A NAME OR A SHAPE TEST, AND THAT IS LOAD-BEARING IN TWO
+  // DIRECTIONS. (a) `control_peel_stateprep_datamux_peeled_control.ll`
+  // HAND-WRITES a value called `%cq.peel.cond`; a name test would silently
+  // hand it this exclusion. (b) "a tainted `icmp` whose predicate and operands
+  // are byte-identical to the region's condition" is a SECOND SPELLING of a
+  // question this pass already owns (Rule 14, the drbq Inc-3 (b′) defect) and is
+  // strictly weaker — it cannot tell a clone from a compare the USER wrote
+  // twice, which is precisely the distinction the preimage argument is made of.
+  // `control_peel_reject_stateprep_handwritten_clone_i1.ll` keeps declining for
+  // exactly that reason and is the fixture that fails if anyone re-spells this.
+  //
+  // ⚠ `WeakTrackingVH`, NEVER A RAW `Value *` — the l4x4.b H-1 defect shape.
+  // The clone IS erased inside the pass (`SelectMergeEmit`'s dead-leaf cascade
+  // takes it once the peeled select is lowered), and a freed pointer must never
+  // answer a membership question. `WeakTrackingVH` NULLS on the erase, and a
+  // nulled entry simply stops matching — the right direction, because an erased
+  // clone is not a live collider. It is a `SmallVector` and not a set because
+  // `WeakTrackingVH` is explicitly documented as unusable as a map key (it
+  // moves under RAUW); the scan is over ≤ a handful of entries, once per F2
+  // test.
+  //
+  // L1 (the round-2 window), ANSWERED BY MEASUREMENT RATHER THAN BY ASSERTION.
+  // `peelIndependentMergePhis` runs immediately before ALL THREE
+  // `detectControlRegions` sites (`CQLoweringPass.cpp:451`, `:938`,
+  // `TaintPropagation.cpp:1430`) and F2 runs inside `classifyArms` in BOTH
+  // rounds, so this record is populated by the peel ITSELF in both rounds, by
+  // construction; entries are APPENDED and never removed.
+  //
+  // ⚠ WHAT *COULD* CLEAR IT, AND WHY NOTHING DOES. There is no field-level
+  // `.clear()` on any `TaintSet` member anywhere in the pass (`grep -rn
+  // '\.clear()' ir-pass/src/*.cpp | grep 'taint\.'` — empty), but `taint` is
+  // WHOLESALE REASSIGNED by `taint = propagate(M, wd);` fifteen times across the
+  // two entry points, and each of those constructs a FRESH `TaintSet` and would
+  // empty this record. MEASURED 2026-09-13: every one of them is in the
+  // PRE-PEEL prologue — the last is `CQLoweringPass.cpp:313` in `run()` and
+  // `:892` in the second entry point, both strictly above the peel at `:451` /
+  // `:938`. Between the peel and the last F2 query (the round-2 fixpoint inside
+  // `repropagateControlMerges`) there is no reassignment at all:
+  // `repropagateControlMerges` MUTATES `taint` (re-seeding `Tainted`) and
+  // builds its own local `ControlPlan`, but never replaces the `TaintSet`.
+  // ⚠ RETIREMENT TRIGGER (e): a `taint = propagate(M, wd)` placed BELOW a peel
+  // call empties this record silently. The direction is SAFE — an emptied
+  // record means F2 collides on the clone again, i.e. bd `rb9x` re-opens as an
+  // over-DECLINE, never as an over-accept — but it re-opens with no diagnostic
+  // anywhere, so the fixture that notices is
+  // `control_peel_stateprep_bool_seed_int_cond.ll` and nothing else.
+  //
+  // ⚠ RETIREMENT TRIGGERS, written now rather than discovered later:
+  //   (a) if `MergePhiPeel` ever inserts the clone anywhere other than
+  //       `S.MergeBB->getFirstNonPHI()`, clones anything other than
+  //       `S.CondCmp`, or gives the clone a SECOND consumer, the preimage
+  //       argument must be re-derived (the clone stops being a value whose only
+  //       reader is the peel's own select);
+  //   (b) likewise if the peel is taught to run IN-LOOP, or to peel a φ whose
+  //       incoming is itself a compare;
+  //   (c) `WeakTrackingVH` FOLLOWS a RAUW, so a stage placed between the peel
+  //       and the last F2 query that RAUWs a `CmpInst` would make an entry name
+  //       a value that is NOT a clone — an OVER-ACCEPT. MEASURED 2026-09-13
+  //       that no such stage exists: the only `CmpInst` RAUW in the pass is
+  //       `rewriteCompare` (`CompareLowering.cpp:488,530`), which runs in
+  //       `lowerOps`, i.e. after BOTH control rounds; every
+  //       `replaceAllUsesWith` reachable in the peel→F2 window targets a
+  //       `PHINode`, a `SelectInst`, a `BitCastInst`, a `FreezeInst` or a
+  //       `cq_theta` call.
+  //   (d) F2's own trigger applies unchanged (`ArmClassify.cpp`, the
+  //       `railWireClosure`/`CondRails` divergence trigger).
+  llvm::SmallVector<llvm::WeakTrackingVH, 4> PeelClones;
+
+  // The ONE membership question `PeelClones` answers. A NULLED entry (the clone
+  // was erased) matches nothing — see the `WeakTrackingVH` paragraph above.
+  bool isPeelClone(const llvm::Value *V) const {
+    for (const llvm::WeakTrackingVH &C : PeelClones) {
+      const llvm::Value *P = C;
+      if (P && P == V)
+        return true;
+    }
+    return false;
+  }
+
   // Phase 5 WI-4 (DD-4). Pass-invented control SCRATCH rails the swap-route /
   // select / switch emitters minted (`cqrt_alloc_<W>` work rails, merge / data-mux
   // OUT-rails) and inserted into `Tainted` so downstream consumers keep

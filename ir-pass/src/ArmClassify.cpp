@@ -1439,6 +1439,18 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 //     superposition on that edge to clone, so the two readings agree there — and
 //     they already agreed on the other edge, where the arm's seed is a literal
 //     in both. See `..._stateprep_mux_incoming_pinned_accept.ll`.
+//
+// ---- THERE IS A **SECOND** EXCLUSION AT THE SAME TEST: R-1, 2026-09-13 ----
+//
+// `Taint.isPeelClone(V)` (bd `test_C_libtooling-rb9x`). `MergePhiPeel`'s compare
+// CLONES are not colliders, on the PREIMAGE ground — a value this pass
+// manufactured has no source program behind it, so it is not a register the
+// author could have rotated. It is a different kind of argument from
+// `CondWire`'s (no rival enumeration at all), it is stated in full at the test
+// below and in `TaintSet::PeelClones`' header, and the two exclusions are
+// INDEPENDENT: neither subsumes the other (a clone of a SECOND fused region's
+// condition is off the wire, and an in-cone value the user wrote is not a
+// clone). Both are applied at the TEST and neither touches `Truncated`.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
@@ -1613,8 +1625,62 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
       // trigger, and why the exclusion is HERE and not at the anchor). `V` is
       // still popped, and its users are still modelled below, so excluding it
       // costs the walk NOTHING: it filters an answer, it does not prune a seed.
+      //
+      // ---- THE 2026-09-13 NARROWING, R-1 (bd `test_C_libtooling-rb9x`) ----
+      //
+      // `Taint.isPeelClone(V)` is the SECOND exclusion, and its ground is a
+      // DIFFERENT kind of argument from `CondWire`'s — weaker to state and
+      // stronger to hold. `CondWire` had to reason about rival PROGRAMS (α: an
+      // in-place Ry on the condition's own register; β: a live incoming `-O1`
+      // folded to the seed). R-1 needs no rival at all: a value
+      // `peelIndependentMergePhis` MANUFACTURED **did not exist in the module
+      // `clang` produced**. This function's question is *"the source the author
+      // wrote could have been `cq_theta(<that register>, θ)`"*, and a value the
+      // author could not have named is not in that question's domain — there is
+      // no rival program for F2 to be protecting against.
+      //
+      // ⚠ THE PREIMAGE ARGUMENT, NOT THE "SAME WIRE" ONE. The weaker reading
+      // ("the clone is the same compare, on the same wire, as
+      // `Region.Condition` — which is `CondWire`'s first element") is TRUE for
+      // the one-diamond case and does NOT cover a function with two FUSED
+      // diamonds, where the peel manufactures a clone of the OTHER region's
+      // condition, on a DIFFERENT wire, which can be pinned on this region's
+      // edge (SCOPE_R.md §3b). That clone is excluded here too, and only the
+      // preimage argument licenses it. A later reader who re-grounds this
+      // conjunct on the wire turns that case into an unlicensed accept.
+      //
+      // ⚠ AT THE TEST, FOR A REASON THAT IS MEASURED AND NOT SYMMETRY. `V` is
+      // still popped and its USERS are still modelled, so the clone keeps
+      // seeding the forward evaluation. `control_peel_reject_fp_stateprep.ll`
+      // declines through `f2Model`'s conservative arm on an fp select that is
+      // reachable ONLY as a user of the clone (`Cand` is integer-only and the
+      // branch is an `icmp`, so there is no fp anchor): pruning the clone from
+      // the walk would flip that deliberately-pinned capability cost into an
+      // unargued fp-merge-mux ACCEPT, which is the L9 angle-vs-data
+      // wire-crossing family. The same spelling rule, for a second reason,
+      // therefore has TWO independent measurements behind it.
+      //
+      // WHAT IT DOES **NOT** DO, because the partition is the honest part:
+      //   * it does not reach a value DERIVED from a clone. `r_R4` (SCOPE_R.md
+      //     §3e) pins a `zext i1 %clone to i32` that is itself pinned to
+      //     `i32 0` and collides with an `i32` seed; that module still DECLINES
+      //     after R-1, and deliberately — `zext(<a clone>)` has the same fold
+      //     image as `zext(<the user's own compare>)`, so it is NOT
+      //     preimage-free and a spelling that excluded it would be unargued.
+      //   * it does not reach a compare the USER wrote twice, nor a
+      //     hand-written `%cq.peel.cond`
+      //     (`control_peel_stateprep_datamux_peeled_control.ll`): membership is
+      //     a RECORD written at the manufacture site, never a name or a shape.
+      //     `r_R1b` / `r_R5` as fixtures
+      //     (`control_inplace_ry_reject_stateprep_second_cmp_onwire_{merge,pred}.ll`)
+      //     are what fails if this is ever widened into "any second compare".
+      //
+      // RETIREMENT TRIGGERS: `TaintSet::PeelClones`' header carries all four
+      // (the peel's placement / sole-consumer / in-loop triggers and the
+      // `CmpInst`-RAUW one), and F2's own `railWireClosure`-vs-`CondRails`
+      // divergence trigger above applies to this conjunct unchanged.
       if (V->getType() == Seed->getType() && !CondWire.count(V) &&
-          f2Exact(V, S) == Seed)
+          !Taint.isPeelClone(V) && f2Exact(V, S) == Seed)
         return true;
       for (User *U : V->users()) {
         auto *I = dyn_cast<Instruction>(U);

@@ -1,0 +1,258 @@
+# decline-side full-stderr delta over     1537 rows | oracle=fbbe0820ef4b176a merged=2563baa4125bfd5f
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/A_intb0_boolb1.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/O3_mux_quantum_incomings.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/P2t_seed_true_peeled.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/P2_intcmp_i1seed_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R2_p80_window.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R1_p80_bool.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-11-orchestrator/review_integration_probes/R4_p80_measured.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c1_const_bool.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c5_classical_phi.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c2_const_i32.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c3_classical_ssa.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c4_classical_double.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function f i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function g double (double): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function f i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c6_undef_bool.c
+    1c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/i0_poison_operand.ll
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/i10_owner_O1_main.ll
+    1c1
+    < error: <unknown>:0:0: in function p i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function p i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c8_theta_and_classical.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/owner_2026-09-11_2218.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r10_measure_theta_seed.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r09_measure_of_measure.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r11_measure_angle_double.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r12_measure_undef_phi.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r18_measure_classical_noinline.c
+    1,3c1
+    < error: <unknown>:0:0: in function meas i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r20_measure_in_loop_body.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r22_measure_classical_float.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r27_measure_external_arg.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r26_measure_classical_array_elt.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r28_measure_volatile_local.c
+    1,3c1
+    < error: <unknown>:0:0: in function api_measure i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function mix i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/review_C_r1_probes/r29_measure_global.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackL/probes/t_loop_phase.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_A_intb0_boolb1.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_P2_intcmp_i1seed_peeled.c
+### docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackR/probes/b_P2t_seed_true_peeled.c
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_measure_classical_bool_owner.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_peel_stateprep_bool_seed_int_cond.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/control_peel_stateprep_bool_seed_true.ll
+    1,3c1
+    < error: <unknown>:0:0: in function main i32 (): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/lowering_measure_classical_mixed_accept.ll
+### ir-pass/test/lowering_measure_classical_accept.ll
+    1,3c1
+    < error: <unknown>:0:0: in function f_mixed i32 (i32): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+    1,3c1
+    < error: <unknown>:0:0: in function f_const_i1 i1 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    < 
+    < exit=1
+    ---
+    > exit=0
+### ir-pass/test/lowering_reject_measure_undef_operand.ll
+    1c1
+    < error: <unknown>:0:0: in function undef_operand i1 (): cq_measure_<sfx> operand not recognized; expected a tainted i32 handle
+    ---
+    > error: <unknown>:0:0: in function undef_operand i1 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+DONE

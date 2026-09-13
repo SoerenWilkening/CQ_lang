@@ -4829,6 +4829,27 @@ add_test(NAME e2e-slice-control-inplace-ry-bool-stateprep-negated
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_stateprep_negated.expected.log")
 
+# bd test_C_libtooling-rb9x, increment R-1 (2026-09-13) — a `_Bool` controlled
+# STATE PREP under an `int` COMPARE condition, in a diamond `clang -O1` FUSED so
+# that the merge carries TWO phis. Two shipped features collided: bd `b6ap`'s
+# multi-phi peel manufactures a CLONE of the region's compare, and F2
+# (`f2SeedPinnedByLiveRegister`) read that clone as a live `i1` pinned to the
+# seed and declined `state prep seed is proven equal to the condition register`.
+# MEASURED on the session ORACLE `fbbe0820ef4b176a`: DECLINE. Here: ACCEPT, 22
+# trace lines, STRICT stage 2b `0 violation(s), 0 unproven`. R-1's repair is a
+# RECORD (`TaintSet::PeelClones`) consulted at F2's equality TEST, on the ground
+# that a value the pass MANUFACTURES has no source preimage. The `int b1` twin
+# (`trackR/probes/b_C_intb0_intb1.c`) already compiled on the ORACLE and this
+# golden is its stream with `i1` widths on the b1 rail — the stated reduction
+# that says the WIDTH was the over-decline, not the circuit.
+add_test(NAME e2e-slice-control-stateprep-bool-under-int-compare-fused
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_under_int_compare_fused.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_under_int_compare_fused.expected.log")
+
 
 # ============================================================================
 # bd test_C_libtooling-3qlq Increment 1 — REGISTER-FREE `cq_phi` (PRD S6.5).

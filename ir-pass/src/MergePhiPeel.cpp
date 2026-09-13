@@ -455,18 +455,30 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
       // and `h09d` (pred-placed) BOTH accept at 22 lines and 2b-clean, and their
       // TRACES DIFFER — pred placement emits the select's whole merge stream
       // BEFORE the region's. Merge placement preserves source order (the region
-      // ran, then the mux was read) and keeps the peeled compare OUT of the
-      // live-on-the-edge set `f2SeedPinnedByLiveRegister`'s backward half walks,
-      // which is a gratuitous new interaction with the drbq state-prep fence.
-      // ⚠ 2026-09-11 ERRATA (inc1-records/session-2026-09-11-orchestrator/
-      // review_integration.md item I-1): that last clause is FALSE — the
-      // interaction EXISTS and is MEASURED (`HP_g_sel_only.ll`: the clone alone,
-      // merge-placed, no select, turns an ACCEPT into F2's `state prep seed is
-      // proven equal to the condition register`). It is not reached through the
-      // backward half (the clone is defined after the branch, so the LVI
-      // dominance filter excludes it); which door it takes was not isolated.
-      // Filed as bd `rb9x` — direction SAFE (F2 only ever ADDS colliders, so
-      // this is purely an over-decline). Comment-only; no behaviour here.
+      // ran, then the mux was read).
+      //
+      // ⚠ MERGE PLACEMENT DOES **NOT** KEEP THE CLONE OUT OF THE drbq STATE-PREP
+      // FENCE, and the claim that it does (shipped until 2026-09-13) was false.
+      // `f2SeedPinnedByLiveRegister` has TWO halves; placement only moves the
+      // clone out of the **backward** one (`Cand` filters on
+      // `DT->dominates(&In, BI)`, `ArmClassify.cpp:1505-1510`). The **forward**
+      // half reaches it anyway: it walks every tainted USER of the condition's
+      // pinned operand rail with no position filter
+      // (`ArmClassify.cpp:1619-1626`), folds this clone to a singleton `i1`
+      // through `f2Model`'s `ICmpInst` arm (`:1198-1208`), and `:1616` then
+      // matches it against an `i1` (`_Bool`) seed — `true` on one edge, `false`
+      // on the other, so BOTH `i1` seeds collide. MEASURED:
+      // `HP_g_sel_only.ll` (this clone alone, merge-placed, no select) turns
+      // `HP_f_nopeel.ll`'s ACCEPT into F2's `state prep seed is proven equal to
+      // the condition register`; it is the PIN and not the spelling (`HP_d`:
+      // another predicate, `HP_e`: another constant — both decline). The repair
+      // is at F2's test, not here: the clone is recorded in `taint.PeelClones`
+      // below and excluded at `ArmClassify.cpp:1616`, on the ground that a value
+      // this pass MANUFACTURES has no source preimage and therefore no rival
+      // program for F2 to protect against (bd `rb9x`). Do not re-ground that
+      // exclusion on "the same compare on the same wire": a function with two
+      // fused diamonds produces a clone of the OTHER region's condition too, and
+      // the preimage argument — not the wire one — is what covers it.
       Instruction *IP = S.MergeBB->getFirstNonPHI();
       for (PHINode *Phi : S.Phis) {
         Value *CondV = S.BI->getCondition();
@@ -489,6 +501,19 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
           // `declineClassicalMuxes` and turn today's `control flow` into
           // `kMsgClassicalSelect` — a loud decline, but the wrong one.
           taint.Tainted.insert(Clone);
+          // bd `test_C_libtooling-rb9x`, increment R-1 — THE RECORD. The clone
+          // is a value the COMPILER manufactured; it has no source preimage, so
+          // the drbq Inc-4 state-prep fence F2 must not read it as a rival
+          // register the author could have rotated. This is the L1 pattern
+          // verbatim: record the question at the site that KNOWS the answer
+          // (only this line knows the value is manufactured), ask it at the site
+          // that NEEDS it (`f2SeedPinnedByLiveRegister`'s equality TEST,
+          // `ArmClassify.cpp`). `TaintSet::PeelClones`' header carries the
+          // argument, the `WeakTrackingVH` reason and the retirement triggers.
+          // Recording is UNCONDITIONAL and happens for every clone in every
+          // round, so the fence cannot be handed a clone this line did not
+          // record.
+          taint.PeelClones.push_back(Clone);
           Seeds.push_back(Clone);
           CondV = Clone;
         }

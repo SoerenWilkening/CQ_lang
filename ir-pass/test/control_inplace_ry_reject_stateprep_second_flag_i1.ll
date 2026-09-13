@@ -37,6 +37,21 @@
 ; ACCEPTS. One `i1` on the wire, one off it, opposite dispositions — which is
 ; what "the narrowing is the wire" means at this width.
 ;
+; ⚠ RETIREMENT TRIGGER — bd `test_C_libtooling-rb9x`, increment R-1 (2026-09-13).
+; R-1 added a SECOND exclusion at the same test: `MergePhiPeel`'s compare CLONES
+; (`TaintSet::PeelClones`), on the PREIMAGE ground — a value the compiler
+; manufactured has no source program behind it. **THIS FILE STILL DECLINES —
+; MEASURED 2026-09-13 on the R-1 binary, same string, same anchor** — because
+; `%d` is USER code: the author wrote it, the rival `r = cq_theta(%d, .9)` is a
+; well-formed program, and R-1's ground does not reach it. So the residual this
+; file pins is now TWO-SIDED: an `i1` seed still collides with a tainted `i1`
+; that is neither on the branch's wire NOR compiler-manufactured. ⚠ The
+; NEAR trigger is bd `rb9x`'s follow-on R-2 (`SCOPE_R.md` §2), which would exclude
+; a pinned value that is used as the condition of a conditional `br`: `%d` here is
+; MEASURED and never branched on, so R-2 as scoped leaves this file declining —
+; if a future R-2 spelling turns it green, that spelling has widened past its own
+; argument and must be re-derived, not blessed.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; ⚠ THE IR-TEXT `CHECK-NOT`s BELOW ARE VACUOUS BY CONSTRUCTION and are
 ; kept only as documentation: a `DS_Error` decline writes ZERO bytes to
