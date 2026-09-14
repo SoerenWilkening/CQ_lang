@@ -27,11 +27,20 @@
 ; dominance skip put a phi descendant back", and that distinction is the whole
 ; content of the finding this pair pins.
 ;
-; ⚠ RETIREMENT TRIGGER (L8), BY NAME: **bd `test_C_libtooling-wx8g`**. Like its
-; twin, this module is an in-loop state prep and is stopped a second time by that
-; open over-decline. The day `wx8g` lands, re-measure the PAIR together: this
-; file must keep F2's string, and if it changes, the twin's verdict has stopped
-; being attributable and the pair has to be rebuilt before it means anything.
+; ⚠ RETIREMENT TRIGGER (L8), BY NAME — **FIRED 2026-09-14, DISCHARGED
+; 2026-09-14c.** It read: "bd `test_C_libtooling-wx8g`. Like its twin, this
+; module is an in-loop state prep and is stopped a second time by that open
+; over-decline. The day `wx8g` lands, re-measure the PAIR together." The pair was
+; re-measured and both files kept F2's string. ⚠ BUT THE CLAUSE "stopped a second
+; time by that open over-decline" WAS FALSE: `wx8g`'s carve-out was
+; `if (RailCond && Region.InLoop)`, guarded on a BARE RAIL, and this module's
+; condition is a COMPARE — so the pair was never behind that fence and its
+; holding is not evidence about the bare-rail spelling. See the twin's header and
+; `trackX/X5_REDERIVATION.md`; the bare-rail measurement is
+; `trackX/probes/w3` / `w3b` / `w3c`.
+; ⚠ THE LIVE OBLIGATION IS UNCHANGED: this file must keep F2's string, and if it
+; changes, the twin's verdict has stopped being attributable and the pair has to
+; be rebuilt before it means anything.
 ;
 ; ⚠ **THE PAIR PINS THE CYCLIC HALF OF A BROADER PREDICATE** (round-2 Rule-13
 ; review, F-F2-2). `!DT.dominates(MergeBB, …)` in
