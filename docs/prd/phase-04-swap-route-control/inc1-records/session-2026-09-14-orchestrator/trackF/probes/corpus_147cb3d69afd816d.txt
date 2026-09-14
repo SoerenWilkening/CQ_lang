@@ -1,0 +1,14 @@
+# Track F corpus sweep — ORACLE f7b65d8c… vs SUBJECT 147cb3d69afd816d…
+# 2086 modules = ir-pass/test/*.ll (1930) + trackF probes (156). Row = (exit, FULL stderr, md5 of lowered IR).
+# NOT the shared corpus.sh tag regex: full-stderr byte compare closes PROTOCOL S3's cq_measure_<sfx> hole.
+
+corpus sweep: 2086 modules, 7 mover(s)
+  control_inplace_ry_stateprep_phidesc_collider_accept.ll          'state prep seed is proven equal to the condition register' -> 'ACCEPT'  exit 1->0  IR-DIFFERS
+  n4_cascade_base.ll                                               'state prep seed is proven equal to the condition register' -> 'ACCEPT'  exit 1->0  IR-DIFFERS
+  owner_file_base.ll                                               'state prep seed is proven equal to the condition register' -> 'ACCEPT'  exit 1->0  IR-DIFFERS
+  vd_base.ll                                                       'state prep seed is proven equal to the condition register' -> 'ACCEPT'  exit 1->0  IR-DIFFERS
+  w2_base.ll                                                       'state prep seed is proven equal to the condition register' -> 'control flow'  exit 1->1  IR-same
+  w2_testW.ll                                                      'state prep seed is proven equal to the condition register' -> 'control flow'  exit 1->1  IR-same
+  w3_runtime_a_base.ll                                             'state prep seed is proven equal to the condition register' -> 'ACCEPT'  exit 1->0  IR-DIFFERS
+
+[exited with code 0]

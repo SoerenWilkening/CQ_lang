@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackF/probes/c/w2.c:8:9: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+

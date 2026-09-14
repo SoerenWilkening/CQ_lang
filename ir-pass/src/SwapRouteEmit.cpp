@@ -1102,6 +1102,28 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    hoisted theta's result to its arg-0 handle exactly as today, so the FINAL
   //    LOWERED IR IS IDENTICAL under either convention — which is what makes the
   //    whole-corpus lowered-IR diff against the pre-Inc-3 oracle a real witness.
+  //
+  // ---- ⚠ A FENCE IN ANOTHER FILE DEPENDS ON **WHAT THIS RAUW TARGETS**, not
+  //      just on the target dominating the merge (bd `test_C_libtooling-om35`,
+  //      round-2 Rule-13 review F-F2-1). `ArmClassify.cpp`'s F2 conjunct
+  //      `!PhiDesc.count(V)` excludes the SSA user closure of a state-prep
+  //      region's OWN merge φ, and its soundness across the TWO detection
+  //      rounds (`repropagateControlMerges`) rests on this line targeting a
+  //      value that was ALREADY reachable from the φ it replaces — here
+  //      `Gates.back().first` is the arm theta `T`, or the re-chained `T2`, or
+  //      the negated clone `TNeg` over `T`, and `inPlaceRotationArmTheta`
+  //      (`ArmClassify.cpp:823`) made `MergePhi` that theta's SOLE USER. So the
+  //      RAUW re-parents users of the φ onto something they already reached
+  //      through it and no other region's closure grows.
+  //
+  //      **RETARGET THIS RAUW TO ANYTHING THAT IS NOT A DESCENDANT OF ONE OF
+  //      `MergePhi`'s OWN INCOMINGS — a fresh `select` over the condition, say,
+  //      the shape `:536` and `MergePhiPeel.cpp:559` have — AND THAT F2
+  //      CONJUNCT MUST BE RE-DERIVED**, not merely re-run. The tripwires are
+  //      `ir-pass/test/control_inplace_ry_reject_stateprep_mbeta_base_
+  //      offcone.ll` and `…_mbeta_ifelse_rechain.ll`: if either turns into an
+  //      ACCEPT, this is the line that did it. Relaxing `:823`'s `hasOneUse`
+  //      fires the same trigger.
   MergePhi->replaceAllUsesWith(Gates.back().first);
   scrubTaint(MergePhi, taint);
   MergePhi->eraseFromParent();

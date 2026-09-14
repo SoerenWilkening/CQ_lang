@@ -4906,6 +4906,20 @@ add_test(NAME e2e-slice-control-cascade-two-bools-int
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools_int.expected.log")
 
+# bd `om35` (owner-ruled 2026-09-14) — THE OWNER'S FILE AT N=3. The two-bools
+# slice above is this program with the third region commented out; uncommenting
+# it declined `state prep seed is proven equal to the condition register` until
+# F2 learned that a value in the transitive USER closure of the region's own
+# merge phi is not a collider (availability: it is at neither slot the question
+# is about). 35 lines; read the slice header for the line-by-line.
+add_test(NAME e2e-slice-control-cascade-three-bools
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_three_bools.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_three_bools.expected.log")
+
 # GATE 1 — "an ACCEPT, not a STREAM", the PREFIX half.  The base slice is the
 # flagship minus its last `if`, so the flagship's golden must START with the
 # base's first 16 lines byte for byte: adding a consumer of `b1` changed nothing

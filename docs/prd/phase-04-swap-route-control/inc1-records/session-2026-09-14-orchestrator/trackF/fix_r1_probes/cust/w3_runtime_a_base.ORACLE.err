@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackF/probes/c/w3_runtime_a.c:12:11: in function main i32 (i32, ptr): cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+
