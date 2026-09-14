@@ -17,6 +17,30 @@
 ; (Rule-13 round-1 review, DOC item); probes `x02_poison_incoming.s1.ll` /
 ; `x03_freeze_incoming.s1.ll`.
 
+; ⚠ RETIREMENT TRIGGER (bd `z9t1`, review round 2 F-U2-2 / round 3 F-U3-2 — DO
+; NOT DELETE THIS FIXTURE, RE-DERIVE IT). `normalizeUndefRotationSeed`
+; (`RotationLowering.cpp`) rewrites every `UndefValue` incoming of every phi that
+; carries a normalized `@cq_theta_*` result to the type's zero, BEFORE
+; `MergePhiPeel` runs. *** THE ONLY REASON THIS FIXTURE IS UNTOUCHED IS THAT ITS
+; POISON-BEARING PHI `%6` DOES NOT CARRY A THETA *** — the theta-carrying phi in
+; this module is `%7`, and it has no poison incoming. It is NOT a scope narrowing
+; in z9t1; the two shapes simply miss each other.
+;
+; MAKE `%6` CARRY THE THETA AND P3b STOPS FIRING: the incoming is a concrete
+; `i32 0` by the time the peel looks, the peel proceeds, and the module reaches
+; F2 instead (measured on both binaries; the zero twin is identical — probes
+; `$SES/trackU/review_r3_probes/pC_p3b_carrier*` and
+; `$SES/trackU/review_r2_probes/pC_peel_p3b_carrier.ll`). That disarm is SOUND on
+; P3b's OWN ground, and it is the SAME ground this header already gives for the
+; `freeze` twin above: the hazard is a literal read as two DIFFERENT values at the
+; `-O0` stage-3 link, and a uniqued `i32 0` is single-valued exactly as a `freeze`
+; is. So the disarm and the removal of the hazard are the same event.
+;
+; If this fixture ever goes RED, do not "fix" it by narrowing z9t1: check first
+; whether the module's poison phi has acquired a theta incoming, in which case the
+; verdict legitimately moved and this file must be re-derived onto a phi that
+; still carries no theta.
+
 ; ⚠ A `DS_Error` decline writes 0 bytes to stdout — the `not` inversion on the RUN
 ; line plus the mirrored string is what pins it.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s

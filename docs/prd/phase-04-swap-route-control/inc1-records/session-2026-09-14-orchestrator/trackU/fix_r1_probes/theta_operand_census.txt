@@ -1,0 +1,41 @@
+fixtures scanned: 1936  (ir-pass/test)
+
+SEED undef/poison only  (the z9t1 rule FIRES): 11
+  control_accept_undef_theta_seed_stateprep.ll
+      @cq_theta_i1(i1 undef, double 5.0e-01)
+  control_accept_undef_theta_seed_stateprep.ll
+      @cq_theta_i1(i1 noundef zeroext undef, double noundef 5.000000e-01)
+  control_inplace_ry_reject_stateprep_poison_seed.ll
+      @cq_theta_si32(i32 poison, double 9.000000e-01)
+  control_inplace_ry_reject_stateprep_undef_seed.ll
+      @cq_theta_si32(i32 undef, double 9.000000e-01)
+  control_predmux_reject_selectform_rotation_theta_poison_seed.ll
+      @cq_theta_si32(i32 poison, double 5.000000e-01)
+  lowering_accept_poison_theta_seed_zero.ll
+      @cq_theta_i1(i1 poison, double 5.000000e-01)
+  lowering_accept_undef_theta_seed_chained.ll
+      @cq_theta_i1(i1 undef, double 5.000000e-01)
+  lowering_accept_undef_theta_seed_widths.ll
+      @cq_theta_si32(i32 undef, double 5.000000e-01)
+  lowering_accept_undef_theta_seed_widths.ll
+      @cq_theta_f64(double poison, double 2.500000e-01)
+  lowering_accept_undef_theta_seed_widths.ll
+      @cq_theta_f80(x86_fp80 undef, double 1.250000e-01)
+  lowering_accept_undef_theta_seed_zero.ll
+      @cq_theta_i1(i1 undef, double 5.000000e-01)
+
+ANGLE undef/poison only (blessed 1-slot shape; the z9t1 rule does NOT fire): 3
+  control_inplace_ry_reject_rail_negated_undef_angle.ll
+      @cq_theta_si32(i32 %r, double undef)
+  control_predmux_reject_selectform_rotation_theta_poison_angle.ll
+      @cq_theta_si32(i32 %u, double poison)
+  lowering_reject_undef_literal_paired_rz_angle.ll
+      @cq_theta_si32(i32 %d, double poison)
+
+BOTH  (the F-U1-1 composition -- OPEN, pending owner ruling): 0
+
+PARSE-SKIP (a parenthesised operand this regex did not split): 2
+  control_inplace_ry_reject_stateprep_constexpr_seed.ll
+      i32 ptrtoint (ptr @G to i32), double 9.000000e-01
+  control_inplace_ry_reject_stateprep_constexpr_undef_seed.ll
+      i32 ptrtoint (ptr getelementptr inbounds ([4 x i32], ptr @g, i64 undef

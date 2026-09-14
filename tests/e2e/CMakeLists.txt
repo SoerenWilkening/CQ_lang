@@ -5640,6 +5640,72 @@ add_test(NAME e2e-slice-measure-classical-only
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_measure_classical_only.expected.log")
 
+# --- bd z9t1 (owner ruling 2026-09-14) — THE UNDEF SEED IS A ZERO AT THE
+# --- ALLOCATION. Two slices, one per ruled spelling, and the e2e layer is where
+# --- the rule is actually WITNESSED rather than inferred:
+# ---
+# ---   * `slice_undef_seed_uncontrolled` (customer C2a, `bool b; b =
+# ---     cq_theta(b,.5);`) already compiled on the 2026-09-13 oracle — SILENTLY,
+# ---     handing `i1 undef` to `cqrt_alloc_i1`. The oracle's own trace for that
+# ---     program opens `cqrt_alloc_i1(1) -> h0`, a value the program never wrote
+# ---     and which the golden byte-diff would then pin as if it were the meaning.
+# ---     The golden here opens `cqrt_alloc_i1(0) -> h0`. NO LIT FIXTURE CAN SEE
+# ---     THIS: the IR-level check can only say the operand is a constant; only
+# ---     the linked run says WHICH value the `-O0` stage 3 materialised.
+# ---
+# ---   * `slice_undef_seed_in_region` (customer C2b, `bool b; if (c) b =
+# ---     cq_theta(b,.5);`) was a LOUD DECLINE on that oracle — F1's `state prep
+# ---     seed does not match the merge incoming` — and is the reason the rule is
+# ---     stated over the OBJECT: `clang -O1` spells the uninitialized `b1` as
+# ---     `undef` twice (the seed AND the merge phi's straight-through incoming),
+# ---     and normalizing only the seed leaves F1 comparing `i1 false` against
+# ---     `undef`. 19 lines, the same stream the owner's grover file gets for
+# ---     `bool b1 = 0;` with only the seed line moved.
+# ---
+# --- Both run STRICT stage 2b (no `--allow-unproven`): 2 free site(s), 2
+# --- verified, 0 violations, 0 unproven — the prepared rails are LEFT ALLOCATED
+# --- because `Ry(θ)|0> != |0>` (Rule 6), which is not a pairing violation.
+add_test(NAME e2e-slice-undef-seed-uncontrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_uncontrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_uncontrolled.expected.log")
+
+# --- The THIRD entry is the one that turns the rule from a claim into a
+# --- measurement. `slice_undef_seed_cascade_twin.c` is
+# --- `slice_control_cascade_two_bools.c` — the owner's cascade, landed
+# --- 2026-09-13 — with ONE TOKEN changed (`_Bool b1 = 0;` -> `_Bool b1;`), and
+# --- `e2e-undef-seed-cascade-twin-identical` byte-diffs its golden against that
+# --- shipped one: 29 = 29. A golden of its own could only record whatever this
+# --- compiler emits; the TWIN says the uninitialized spelling gets the circuit
+# --- the INITIALIZED program already had — the reviewed, Rule-13-cleared,
+# --- shipped one — so the rule adds an ACCEPT and not a stream. Same argument as
+# --- `e2e-measure-classical-bool-twin-identical`. On the 2026-09-13 oracle that
+# --- one deleted `= 0` was the difference between 29 trace lines and a loud F1
+# --- decline.
+add_test(NAME e2e-slice-undef-seed-cascade-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_cascade_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_cascade_twin.expected.log")
+
+add_test(NAME e2e-undef-seed-cascade-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_cascade_twin.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_two_bools.expected.log")
+
+add_test(NAME e2e-slice-undef-seed-in-region
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_in_region.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_in_region.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

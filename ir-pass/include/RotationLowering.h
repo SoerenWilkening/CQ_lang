@@ -59,6 +59,41 @@ struct ControlPlan;
 // they agree for every `CQ.h` suffix measured.
 llvm::StringRef suffixFromName(const llvm::CallInst *CI, llvm::StringRef Prefix);
 
+// bd z9t1 (owner ruling 2026-09-14) — THE UNDEF SEED IS A ZERO AT THE
+// ALLOCATION. Rewrites a whole-value `undef`/`poison` arg-0 of ONE SOURCE
+// `@cq_theta_<sfx>` call to `Constant::getNullValue` of that type, AND every
+// `UndefValue` incoming of EVERY `phi` that has this theta's result as an
+// operand. Returns true iff it changed anything. SILENT by ruling: no
+// diagnostic, no warning, exit 0.
+//
+// ⚠ THE PHI HALF IS A SUPERSET OF "THE SAME UNINITIALIZED OBJECT READ TWICE",
+// which is the MOTIVATION and was once written here as if it were the scope
+// (review round 2 F-U2-2, re-measured at scale by round 3 F-U3-2). Several phis
+// per theta, several incomings per phi, and objects the source never equated
+// all move; the soundness ground is the per-`undef` REFINEMENT, and the
+// widening it admits is DISCLOSED at the definition, not fenced. Counts,
+// population and probes: the definition's scope + disclosure paragraphs.
+//
+// CALLED FROM `collectAndSeed` (TaintPropagation.cpp), i.e. from inside
+// `propagate`, which is the ONE funnel both pipeline entry points and every
+// re-propagate fixpoint round come through — see the long comment at the
+// definition for the placement argument and for what the rule deliberately does
+// NOT reach. ⚠ That funnel discharges L1 for the SEED half; the PHI half is
+// ONE-SHOT (the `valueCarriesUndef` gate makes it unreachable after round 1)
+// and rests on three MEASURED facts with three retirement triggers — F-U3-4,
+// at the definition's PLACEMENT section.
+//
+// ⚠ WHEN THIS CALL'S ANGLE (arg-1) ALSO CARRIES AN UNDEF, THE REWRITE DELETES
+// ONE OF THE TWO SLOTS `declineUnpairedUndefLiterals` (GUARD 1) WAS COUNTING,
+// and a module the ORACLE declined compiles silently emitting
+// `cqrt_ry_<W>(h, undef)` — review round 1, finding F-U1-1, MEASURED. No
+// conjunct is added for it: whether that decline was protecting a real pairing
+// break or was a `undef`-is-uniqued-per-type COINCIDENCE is an OPEN OWNER
+// QUESTION. See the definition's F-U1-1 paragraph and `$SES/trackU/FIX_U_R1.md`.
+// A DEFINED seed with an undef angle is a different, BLESSED case and is not
+// affected either way.
+bool normalizeUndefRotationSeed(llvm::CallInst *Theta);
+
 // Lowers every `@cq_theta_<sfx>` / `@cq_phi_<sfx>` collected by
 // `propagate` (in `taint.ThetaCalls` / `taint.PhiCalls`), in BB order, and
 // erases the originals. Mutates `taint`: inserts minted alloc handles into

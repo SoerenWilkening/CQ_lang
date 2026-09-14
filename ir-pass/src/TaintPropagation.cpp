@@ -12,6 +12,7 @@
 #include "IntrinsicLowering.h"
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
+#include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
@@ -127,6 +128,54 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
         continue;
       }
       if (IsTheta) {
+        // bd z9t1 (owner ruling 2026-09-14) — THE UNDEF SEED IS A ZERO AT THE
+        // ALLOCATION, and this is the ONE call site.
+        //
+        // An `undef`/`poison` arg-0 of a SOURCE theta is rewritten to a concrete
+        // zero of that type (and so is the same uninitialized object's other
+        // read, the `undef` incoming of a phi that merges this theta's result).
+        // SILENT by ruling — no diagnostic, no warning, exit 0.
+        //
+        // *** THE PLACEMENT IS THE RULING'S CLAUSE 2, NOT A CONVENIENCE. *** It
+        // must run EARLY, BEFORE classification, so F1/F2 and every downstream
+        // fence see a concrete `0`: normalizing at the emission site
+        // (`lowerRotations`) is measurably WRONG, because the in-region spelling
+        // `bool b; if (c) b = cq_theta(b,.5);` dies ~500 lines earlier at F1's
+        // `state prep seed does not match the merge incoming`.
+        //
+        // Sitting HERE — inside `collectAndSeed`, i.e. inside `propagate` — is
+        // what discharges the L1 round-2 obligation STRUCTURALLY rather than by
+        // a record: `propagate` is the single funnel BOTH entry points and every
+        // re-propagate fixpoint round come through, so a theta minted between
+        // the rounds (`SpecializeClone` substituting an `undef` actual argument,
+        // `LoopUnrollPrepass` duplicating) is re-normalized at that fixpoint's
+        // own `taint = propagate(M, wd)`. There is no second call site to
+        // forget. The full argument, the refinement ground, the
+        // `ConstantExpr` residual and the phi rule's scope are at the definition
+        // (`RotationLowering.cpp`).
+        //
+        // ⚠ THAT DISCHARGE IS THE SEED HALF'S. The PHI half is ONE-SHOT — the
+        // callee early-returns once the seed is concrete, so its phi loop is
+        // UNREACHABLE at every round after the first (review round 3, F-U3-4).
+        // It is safe for three MEASURED reasons, not a structural one, and each
+        // carries a retirement trigger at the definition. Do not quote this call
+        // site as covering the phi half.
+        //
+        // ⚠ THE ASYMMETRY WITH `cq_measure` IS PRINCIPLED AND IS RULED (clause
+        // 4): `cq_measure` of a never-quantum `undef` KEEPS DECLINING (bd 21mg,
+        // `lowering_reject_measure_undef_operand.ll`). There is no allocation,
+        // no register and nothing quantum there for the rule to attach to — it
+        // is a classical read of an indeterminate object, so a zero would be an
+        // invented ANSWER rather than a chosen starting basis state.
+        //
+        // ⚠ MEASURED CONSEQUENCE, OPEN DISPOSITION (review round 1, F-U1-1):
+        // when THIS call's ANGLE also carries an undef, the rewrite removes one
+        // of the TWO slots `declineUnpairedUndefLiterals` was counting, so a
+        // module the ORACLE declined compiles silently with an `undef` rotation
+        // angle. No conjunct is added here — whether that decline was a real
+        // pairing break or a uniquing coincidence is an owner ruling. See
+        // `RotationLowering.cpp`'s F-U1-1 paragraph.
+        normalizeUndefRotationSeed(CI);
         out.ThetaCalls.push_back(CI);
         if (out.Tainted.insert(CI).second)
           Worklist.push_back(CI);

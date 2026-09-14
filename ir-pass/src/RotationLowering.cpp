@@ -10,6 +10,7 @@
 
 #include "ControlPlan.h"
 #include "ControlledSymbols.h"
+#include "LiteralIntegrity.h"  // valueCarriesUndef (bd z9t1 — the ONE spelling)
 #include "OpcodeSupport.h"  // abiWidthFromType
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -53,6 +54,429 @@ StringRef suffixFromName(const CallInst *CI, StringRef Prefix) {
   if (!N.starts_with(Prefix))
     return {};
   return N.substr(Prefix.size());
+}
+
+// ─── bd z9t1 — THE UNDEF SEED IS A ZERO AT THE ALLOCATION ───────────────────
+//
+// OWNER RULING 2026-09-14, verbatim: *"we should NOT make every uninitialized
+// variable to 0. Jut before it hits cq_alloc_*. then clang still can exploid
+// it"* and *"both codes are supposed to compie!! also no warnings."*
+//
+// So the rule attaches to the QUBIT ALLOCATION, never to the C variable. An
+// `undef`/`poison` SEED reaching a SOURCE `@cq_theta_<sfx>`'s arg-0 becomes a
+// concrete zero of that type; CQ makes NO claim about the object the seed was
+// read from, and `clang` keeps every liberty it already had — including deleting
+// a branch that reads the same uninitialized value, which is MEASURED and
+// documented rather than fenced (DIAG_2026-09-14.md Q2 row iv: an uninitialized
+// `int` in a guard makes the guard vanish before this pass ever runs).
+//
+// *** THIS IS A TIGHTENING, NOT A LOOSENING, AND THE DIRECTION MATTERS. ***
+// Before the rule, `bool b; b = cq_theta(b,.5);` compiled SILENTLY and handed
+// `i1 undef` to `cqrt_alloc_i1`, so which basis state the rail started in was
+// whatever the `-O0` stage-3 link materialised — the trace printed
+// `cqrt_alloc_i1(1)`, a value the program never wrote. After it, the rail is
+// deterministically |0> and every reader of the emitted module sees ONE
+// constant: the `declineUnpairedUndefLiterals` multi-materialisation hazard
+// (LiteralIntegrity.h GUARD 1) is REMOVED from this path, not created.
+//
+// ── WHY THE PREDICATE AND THE ACTION ARE TWO DIFFERENT QUESTIONS ───────────
+//
+// The question "is this literal an undef?" has exactly ONE owner in this pass,
+// `valueCarriesUndef` (LiteralIntegrity.h), and Rule 14 says to CALL it rather
+// than re-spell it — so it is the gate below. But its answer is TRUE for a
+// `ConstantExpr` that merely CONTAINS an undef leaf, and for that shape the
+// ACTION would be unsound:
+//
+//   * replacing a WHOLE-VALUE `undef`/`poison` with zero is a REFINEMENT —
+//     LangRef lets any value of the type stand in, so the emitted circuit is one
+//     the source already licensed. This is the ruled case.
+//   * replacing an EXPRESSION with zero is NOT. `ptrtoint (gep @g, undef, 1)`
+//     denotes an address; no choice of the leaf makes that address 0, so
+//     rewriting it would be a silent VALUE CHANGE — the one unforgivable
+//     direction (Prime Directive). And the ruling's own justification does not
+//     reach it: a `ConstantExpr` is UNIQUED into ONE link-time relocation (bd
+//     bu96), so it has no multi-materialisation hazard for the rule to remove.
+//
+// Note the SAFETY POLARITY FLIPS relative to every other caller of that
+// predicate. Everywhere else it gates a DECLINE, where over-firing is safe;
+// here it gates a REWRITE, where over-firing is a miscompile. That is why the
+// action carries its own `isa<UndefValue>` conjunct instead of trusting the
+// shared predicate alone, and why the conjunct has its own negative fixture
+// (`control_inplace_ry_reject_stateprep_constexpr_undef_seed.ll`, whose seed
+// makes `valueCarriesUndef` true and must NOT be normalized).
+//
+// ── THE MOTIVATION IS "ONE OBJECT, READ TWICE"; THE SCOPE IS WIDER ─────────
+//
+// MEASURED, not predicted (`$SES/trackU/probes/u2.c`): for the second ruled
+// spelling `bool b1; if (c) b1 = cq_theta(b1,.5);`, `clang -O1` writes the SAME
+// uninitialized object twice —
+//
+//     %3 = call i1 @cq_theta_i1(i1 undef, double 5.0e-01)   ; the SEED
+//     %6 = phi i1 [ %3, %2 ], [ undef, %0 ]                 ; the MERGE INCOMING
+//
+// — and normalizing only the seed leaves F1's SECOND sub-clause (the Pred
+// incoming must be POINTER-IDENTICAL to the seed, `ArmClassify.cpp:3905-3908`)
+// comparing `i1 false` against `undef`, so the module STILL declines with the
+// same string and the ruling's clause 2 ("both spellings compile") is not met.
+// That is WHY the phi incomings move. It is a MOTIVATION, not a precondition,
+// and the next paragraph exists because the two were once written as if they
+// were the same sentence.
+//
+// ── THE ACTUAL SCOPE, AND IT IS A SUPERSET — MEASURED ──────────────────────
+//
+// ⚠ CORRECTED. This paragraph read, for two review rounds: "A phi incoming is
+// normalized ONLY when that phi carries THIS theta's result as another incoming
+// — i.e. only where the object was undefined on BOTH edges." The clause before
+// the dash IS what the code asks. *** THE "i.e." IS FALSE ***, it was found by
+// review round 2 (F-U2-2), it did not land, and review round 3 (F-U3-2)
+// measured it wronger than round 2 had: the "i.e." describes a rule whose
+// population is about FOUR modules; the shipped clause's is 164.
+//
+// The code asks the first half ALONE — `for (User *U : Theta->users())`, then
+// EVERY `UndefValue` incoming of every phi user. That is wider than "one object
+// read twice" in THREE independent directions, each measured over the 711
+// corpus modules that contain a phi carrying a `@cq_theta_*` result
+// (`$SES/trackU/review_r3_probes/census_main.json`; re-derived independently by
+// the fix round):
+//
+//   1. SEVERAL PHIS PER THETA — the walk is over every phi USER, not the
+//      region's merge phi. **164 of the 972 carried thetas are carried by MORE
+//      THAN ONE phi**, and every undef incoming of every one of them is
+//      rewritten (probe `pL_second_unrelated_phi`).
+//   2. SEVERAL INCOMINGS PER PHI — the inner loop rewrites EVERY undef
+//      incoming, not the Pred edge. **37 phis in that corpus have >= 2
+//      non-theta incomings**, so ONE visit can equate SEVERAL DISTINCT C
+//      OBJECTS (probe `pA_three_edges`).
+//   3. A DIFFERENT OBJECT ENTIRELY — the seed's object and the straight-through
+//      incoming's object need not be the same one. Nothing in the source
+//      equates them; the rule equates them anyway (probe `pD_two_objects`,
+//      which moves D→A on that ground alone). ⇒ THE DISCLOSURE, below.
+//
+// POPULATION, isolated against a seed-only oracle (SUBJECT(undef seed + undef
+// phi) vs ORACLE(zero seed + undef phi), 710 measurable modules): **164 modules
+// move** — 124 decline→accept, 39 decline-string changes, 1 IR-only. All 164
+// land BYTE-IDENTICALLY on the zero twin (0 divergences), which is why this is
+// a SCOPE CORRECTION and not a defect.
+//
+// ⚠ TWO DIFFERENT 164s, AND THEY ARE EQUAL BY COINCIDENCE. "164 of 972 carried
+// thetas" (direction 1) is a COUNT OF THETAS; "164 modules" is the phi half's
+// module population. Different instruments, different denominators. *** DO NOT
+// CITE ONE AS EVIDENCE FOR THE OTHER. ***
+//
+// THE SOUNDNESS GROUND IS NOT THE SCOPE — IT IS THE PER-REWRITE REFINEMENT.
+// Every rewrite is `isa<UndefValue>(In)` → `Constant::getNullValue(T)`, and
+// LangRef lets any value of the type stand at an `undef`, so each one
+// INDEPENDENTLY yields a circuit the source already licensed. The clause cannot
+// turn a DEFINED value into a different one: the `isa<UndefValue>` test is
+// literal and the `ConstantExpr` residual is excluded by its own conjunct
+// above. That argument never needed the "i.e.", which is why removing it costs
+// nothing.
+//
+// WHY THE SHIPPED DECLINE FIXTURES STAY GREEN — the TRUE reasons, one each,
+// because the false "i.e." was carrying this weight and could not:
+//   * `control_inplace_ry_reject_stateprep_undef_incoming.ll`: its SEED is
+//     `i32 0`, so this function returns at the `valueCarriesUndef` gate and the
+//     phi loop NEVER RUNS (round-1 F-U1-2 re-grounding, measured on both
+//     binaries, full-stderr sha `0af03bddc2cc` on each).
+//   * `control_peel_reject_{undef,poison}_incoming.ll` (`MergePhiPeel` P3b):
+//     the undef-bearing phi there is `%6 = phi i32 [ 5, %3 ], [ undef, %0 ]`,
+//     which DOES NOT CARRY A THETA — and the theta-carrying phi in the same
+//     module (`%7`) has no undef incoming. The two shapes simply miss each
+//     other; nothing about the scope narrows. RETIREMENT TRIGGER in both
+//     headers.
+//
+// ── THE P3b INTERACTION, WHICH IS REAL AND WAS UNRECORDED ──────────────────
+//
+// Make that phi CARRY the theta and `MergePhiPeel`'s P3b stops firing: the
+// incoming is a concrete `i32 0` by the time the peel looks, so the peel
+// proceeds and the module reaches F2 instead (measured on both binaries, probes
+// `pC_p3b_carrier` / `pA_peel_p3b`; the zero twin is IDENTICAL). *** THAT IS
+// SOUND, AND THE REASON IS P3b'S OWN. *** P3b's hazard is a literal read as TWO
+// DIFFERENT VALUES at the `-O0` stage-3 link; a uniqued `i32 0` is
+// single-valued, which is the same ground `MergePhiPeel.cpp` already gives for
+// peeling a `freeze`. So the disarm and the removal of the hazard are the SAME
+// EVENT — and that is the test to apply to any other undef-keyed gate this
+// clause reaches (`PredMuxFlatten::classifyConeNode`'s leaf `Fail`,
+// `QramLowering`'s `convertPhis` mirror: both pass it). ⚠ `GUARD 1`
+// (`declineUnpairedUndefLiterals`) is the ONE gate that FAILS that test,
+// because it is a COUNTING gate over a population this clause only PARTIALLY
+// empties — that is F-U1-1, it is OPEN WITH THE OWNER, and it is stated below.
+//
+// ── ⚠ DISCLOSURE — WHAT THIS RULE SILENTLY ABSORBS ────────────────────────
+//
+// *** IN THE WORDS CLAUDE.md §4 INSISTS ON, BECAUSE THIS IS THE SAME CLASS OF
+//     SILENT WIDENING AS THE F2 α/β NARROWING AND IT OWES THE SAME PARAGRAPH.
+//     (Review round 3, F-U3-3. The normative copy is `$SES/trackU/IMPL_U.md`
+//     §2(b′); this is the same text at the mechanism.) ***
+//
+// 136 modules that the ORACLE loudly REFUSED now compile SILENTLY, and 116 of
+// them move through ONE mechanism: **F1's pointer-identity proof is
+// MANUFACTURED, not found.** F1's second sub-clause is a literal `Value*`
+// comparison — `MergePhi->getIncomingValue(PredIdx) != RotBase`
+// (`ArmClassify.cpp:3905-3908`) — and `Constant::getNullValue` is UNIQUED, so
+// rewriting a seed `undef` and a straight-through `undef` to "the type's zero"
+// makes them THE SAME `Value*`, for two operands the source never equated. The
+// other 20: 14 `control flow` (the `MergePhiPeel` P3b route above), 4
+// `cq_measure_<sfx> operand is an undef/poison literal` (the ruled clause-4
+// decline reached UPSTREAM of the sink — F-U3-1, OPEN WITH THE OWNER, NOT
+// covered by this paragraph), 1 `condition predates a non-diagonal gate`, 1
+// `nested control flow`.
+//
+// THE RIVAL READING, AS A PROGRAM AND NOT AS AN IR SHAPE: the seed and the
+// merge's straight-through incoming were TWO DIFFERENT uninitialized C objects,
+// and the source never said they were equal. `pD_two_objects` is the minimal
+// witness — the prep seeds from object X, the straight-through edge carries
+// object Y, and it moves D→A. The compiler now treats them as ONE VALUE at the
+// state-prep proof.
+//
+// WHY THE RIVAL HAS NO LOWERING TO BE ROBBED OF — the two halves, because
+// either alone would be an assertion. (1) On the oracle the two-object module
+// is a LOUD DECLINE, so there was no circuit for the other reading and nothing
+// is displaced. (2) The accept it now receives is a REFINEMENT, not a choice
+// between two circuits: LangRef lets an `undef` stand for any value of its
+// type, so `0` at each read is a value the source ALREADY LICENSED, and the
+// emitted stream is BYTE-IDENTICAL to what a written `= 0` on both objects
+// produces — measured on all 164 modules of the phi half's population, 0
+// divergences, 0 `A→D`. On the ¬flag component the fresh rail holds |0>, which
+// is a value object Y was permitted to have. No fence is deceived about a value
+// the program actually WROTE.
+//
+// WHY DISCLOSURE AND NOT A PREDICATE. After `-O1` there is nothing left to
+// discriminate: "one object read twice" and "two objects that were both
+// uninitialized" are THE SAME MODULE — `undef` is uniqued per type, so the IR
+// carries no record of how many C objects there were. A fence that refused the
+// two-object reading would have to refuse the one-object reading this rule was
+// RULED to compile. And a warning was deliberately NOT added, for the same
+// reason CLAUDE.md §4 gives for the F2 one: it would fire on the owner's own
+// ruled spelling — "both codes are supposed to compie!! also no warnings."
+//
+// ⚠ RETIREMENT TRIGGERS, three, each naming what would make this paragraph
+// wrong rather than merely out of date:
+//   (i)   F1's second sub-clause stops being a `Value*` IDENTITY test. A
+//         value-equality or provenance test would make the manufacture VISIBLE,
+//         and that is the only place a real predicate could live. Re-derive.
+//   (ii)  the clause rewrites anything that is not `isa<UndefValue>`, or
+//         `undef` stops being uniqued per type. Those are the refinement's only
+//         two load-bearing facts; either one gone makes this an OVER-ACCEPT.
+//   (iii) the 4 `cq_measure` rows: this paragraph does NOT cover them. They are
+//         a RULED clause reached by a new route and they are with the owner.
+//
+// ── SOURCE ONLY, BY CONSTRUCTION ───────────────────────────────────────────
+//
+// A CHAINED theta's arg-0 is an SSA handle, i.e. an `Instruction`, and
+// `valueCarriesUndef` is false for every non-`Constant`. So this never touches a
+// chained rotation and there is no second spelling of `lowerRotations`' own
+// `Chained = taint.Tainted.count(arg0)` relation to drift from it (the bd 9pum /
+// L1 PREDICATE species: a fence asked at round-1 taint against a lowering
+// decided at FINAL taint). Pinned by
+// `lowering_accept_undef_theta_seed_chained.ll`.
+//
+// ARG-1 IS THE ANGLE AND IS NEVER TOUCHED (Rule 3). An `undef` angle is out of
+// scope for this increment and keeps today's behaviour exactly: it survives into
+// `cqrt_ry_<W>(h, undef)` as ONE slot, which `declineUnpairedUndefLiterals`
+// counts but does not decline on, and its `cq_phi` twin (two slots, forward +
+// negated adjoint) already declines through
+// `lowering_reject_undef_literal_paired_rz_angle.ll`. Measured 2026-09-14 on the
+// oracle and re-measured after this change: byte-identical.
+//
+// ⚠ ── CORRECTION (review round 1, F-U1-1) — "arg-1 is untouched" IS TRUE OF
+//      ARG-1 IN ISOLATION AND FALSE OF ONE COMPOSITION. OPEN, NOT DECIDED. ────
+//
+// The paragraph above was recorded as "out of scope, unchanged, pinned", and a
+// review round measured that this rule ALSO moves modules through a THIRD
+// diagnostic nobody predicted — `declineUnpairedUndefLiterals` (GUARD 1) — by
+// DELETING one of the two slots that guard was counting:
+//
+//   double d; d = cq_theta(d, d);          // review probe r14
+//
+// At CQ type `double` the SEED and the ANGLE share the LLVM type, and `undef` is
+// UNIQUED PER TYPE, so ONE `double undef` object filled BOTH emitted gate slots
+// (`cqrt_alloc_f64(undef)` + `cqrt_ry_f64(h, undef)`) and GUARD 1's per-function
+// threshold of TWO fired. Normalizing the seed drops the count 2 → 1, the guard
+// goes SILENT, and the module compiles emitting
+// `call void @cqrt_ry_f64(i32 %h, double undef)`.
+//
+// MEASURED 2026-09-14, both binaries, same stage-1 file: ORACLE `f7b65d8c`
+// exit 1 / 246 B; this build exit 0 / 0 B. It is NOT confined to the width
+// coincidence — `_Bool b; double th; b = cq_theta(b, th);` (probe r21) pairs
+// `i1 undef` with `double undef`, TWO DIFFERENT uniqued constants, and moves the
+// same way (oracle exit 1 / 248 B). Nor is it confined to one call: probe r22
+// puts the surviving slot on a DIFFERENT theta and moves the same way, which no
+// conjunct local to this call could see.
+//
+// *** WHETHER THAT DECLINE WAS PROTECTING ANYTHING IS AN OPEN OWNER QUESTION,
+//     AND IT IS WHY NO CONJUNCT IS ADDED HERE. *** GUARD 1 is the PAIRING break
+// (bd xy9n): its invariant is that a literal the LOWERING COPIES to several
+// emitted sites must denote ONE value at every site. In the r14 module the two
+// occupied slots are the alloc SEED and the rotation ANGLE — two INDEPENDENT
+// source operands that are the same `Constant` only because `undef` is uniqued
+// per type. On that reading the oracle's decline is a TYPE COINCIDENCE rather
+// than a pairing break, i.e. itself an over-decline, and restoring it would
+// refuse a program no more undefined than the one this rule was RULED to
+// compile. GUARD 1's own residual note already calls the neighbouring shape
+// ("two INDEPENDENT single-slot occurrences in ONE function") merely *safe* in
+// direction, with a measured population of *zero*.
+//
+// WHAT IS NOT IN DISPUTE, so it is not re-litigated: a DEFINED seed with an
+// undef ANGLE accepts on BOTH binaries, unchanged by this rule — that is the
+// deliberately BLESSED one-slot case (`lowering_accept_undef_literal_single_slot.ll`,
+// the threshold of TWO, and the committed `slice_libm_ld80_nexttoward` golden
+// that rests on it). Probes `r17_double_angle_only.c` / `r03_angle_undef.c`: IR
+// IDENTICAL on both binaries, `cqrt_ry_<W>(h, double undef)` preserved.
+//
+// The measurements the ruling needs — whether the GENUINE pairing hazard (a
+// forward gate and its `_unc` adjoint re-emitting the negated angle) still
+// fires after this rule, the surviving slot count in the r14 module, where the
+// blessed single slot actually sits, and whether the emitted circuit is
+// REPRODUCIBLE — are in `$SES/trackU/FIX_U_R1.md` §2 with their commands.
+//
+// ── PLACEMENT, AND THE L1 (ROUND-2) OBLIGATION ─────────────────────────────
+//
+// Called from `collectAndSeed` (TaintPropagation.cpp), i.e. from inside
+// `propagate` — the ONE funnel that BOTH pipeline entry points (`run` /
+// `runOnFunction`) and EVERY re-propagate fixpoint round come through. That is
+// deliberate and it is the whole L1 argument:
+//
+//   * "EARLY, before classification" is the ruling's own requirement (clause 2)
+//     — at the emission site the in-region spelling would still have died at F1,
+//     which runs ~500 lines earlier;
+//   * control detect+lower runs TWICE (`repropagateControlMerges`), and every
+//     stage that DUPLICATES a theta (`LoopUnrollPrepass`, and the PredMux /
+//     fp80-union / ctlz fixpoints) is followed by a full
+//     `taint = propagate(M, wd)` in its own loop, so the normalization is
+//     re-asked after each of them without a second call site to forget (the L1
+//     cure, discharged STRUCTURALLY rather than by a record).
+//
+// ⚠ *** THAT DISCHARGE IS TRUE OF THE SEED HALF AND ONLY HALF-TRUE OF THE PHI
+//     HALF, AND THE DIFFERENCE IS MEASURED, NOT STRUCTURAL. *** (Review round
+//     3, F-U3-4.) The function EARLY-RETURNS once the seed is concrete —
+//     `valueCarriesUndef(i32 0)` is false — so from the SECOND propagate round
+//     onward the phi loop below is UNREACHABLE. The function is therefore
+//     IDEMPOTENT, and "re-asked at every fixpoint round" means, for the phi
+//     half, "re-asked and the answer is *nothing to do*". An undef phi incoming
+//     that APPEARED or was EXPOSED between rounds would be left alone, F1 would
+//     then compare `i32 0` against `undef`, and the module would DECLINE — the
+//     over-decline direction, and an L1-species asymmetry.
+//
+//     IT IS UNREACHABLE TODAY, AND THAT WAS MEASURED RATHER THAN ASSUMED
+//     (Rule 11 — the fix round re-ran every grep itself and found two spellings
+//     the review's own greps did not):
+//       (a) NOTHING REWRITES A PHI INCOMING BUT THIS CLAUSE. `setIncomingValue`
+//           has exactly ONE site in `ir-pass/{src,include,tools}` — the loop
+//           below. ⚠ The write-spelling FAMILY is wider than that one name and
+//           must be asked as a family (lesson L2): `addIncoming` has 3 sites
+//           (`Specialization.cpp:487` a clone `ret` value, `BreakReversePlay.cpp:834/837`
+//           two `sub` Instructions) and `removeIncomingValue` 2
+//           (`CtlzIdiomPrepass.cpp:433-434`, which only REMOVES). None can put
+//           an `undef` on a phi that carries a theta.
+//       (b) THE PASS MINTS NO UNDEF AT ALL. `UndefValue::get` / `PoisonValue::get`
+//           have ZERO call sites; the single textual hit is the comment at
+//           `LiteralIntegrity.h:136` recording that this grep is clean.
+//       (c) BOTH PHI MINTERS ARE STRUCTURALLY EXCLUDED. `PHINode::Create` /
+//           `CreatePHI` have exactly 2 sites. `cqq.ret` (`Specialization.cpp:484`)
+//           merges CLONE RETURN VALUES, and `SpecializeReject::scanBody` rejects
+//           any body containing a call in `Sets.Rotations` (`SpecializeReject.cpp:636`,
+//           seeded from `taint.ThetaCalls` at `:53`) — its own "load-bearing
+//           precondition R2" — so no theta result can be returned and that phi
+//           can never be a theta user. `cq.brk.ip` (`BreakReversePlay.cpp:831`)
+//           takes exactly two incomings, `NMinus1` and `IDec`, both `sub`
+//           Instructions.
+//       (d) NOT ENUMERATED, and stated rather than implied: a RAUW whose
+//           replacement value is an `undef` ALREADY PRESENT in the input module
+//           could in principle land on a phi incoming. (b) bounds it — the pass
+//           creates no new undef — but the RAUW targets were not enumerated.
+//
+//     ⚠ RETIREMENT TRIGGERS, one per limb: (a) a SECOND writer in the
+//     phi-incoming write family appears; (b) any `UndefValue::get` /
+//     `PoisonValue::get` call site appears; (c) a third phi-creation site
+//     appears, or either existing one stops being excluded (R2 stops rejecting
+//     `Sets.Rotations`, or `cq.brk.ip` gains a non-`sub` incoming). On ANY of
+//     them the phi half must be RE-ASKED after the round-2 fixpoint.
+//
+//     *** AND THE FIX IS A SECOND ENTRY POINT, NEVER A RELAXED GUARD. *** The
+//     seed guard is also the ACTION guard for `setArgOperand`: relaxing it to
+//     reach the phi loop would let the rewrite fire on a seed that is not a
+//     whole-value `undef`, which is the silent VALUE CHANGE the
+//     `isa<UndefValue>` conjunct exists to prevent. ⚠ Review round 3 gave the
+//     reason as "it would make the rewrite non-idempotent"; re-checked here and
+//     that is NOT the hazard — the phi loop IS idempotent (`isa<UndefValue>` is
+//     false after the first rewrite) and the call site discards the return
+//     value. The hazard is the seed operand, not the fixpoint.
+//
+// THE ONE STAGE BETWEEN THE LAST `propagate` AND `lowerRotations` IS
+// `specialize`, AND IT IS MEASURED SAFE RATHER THAN ASSUMED — that gap is
+// exactly where an L1 finding would live, so it was checked three ways:
+//   (1) `SpecializeReject::scanBody` REJECTS every body containing a
+//       `cq_theta`/`cq_phi` — `SpecializeReject.cpp` calls that its
+//       "load-bearing precondition R2" and `Specialization.cpp` restates it as
+//       "a clone body is rotation-free" — so the Phase-6 clone driver cannot
+//       produce a theta at all, with or without an argument substitution;
+//   (2) DUPLICATION IS MONOTONE: a stage that clones a theta copies its
+//       operands, so a clone of a normalized call is normalized
+//       (`SwapRouteEmit`'s negated-arm `T->clone()` is the live instance);
+//   (3) the only way to RE-introduce an undef seed is to WRITE one into arg-0,
+//       every other `setArgOperand(0, ...)` in `ir-pass/src` — four of them,
+//       `AngleSelectEmit` ×1 and `SwapRouteEmit` ×3 — writes an SSA VALUE (a
+//       hoisted theta, `Prev`, `Q`), never a constant `undef`.
+//   So the property "no collected theta has a whole-value undef seed" holds from
+//   the first `propagate` through `lowerRotations`, in BOTH entry points. If a
+//   future stage mints or rewrites a `@cq_theta` arg-0, re-ask this question:
+//   the cheap fix is a second call here, the wrong fix is a check at the alloc.
+//
+// It is also why no passthrough property moves: a module with no theta call has
+// nothing to normalize, so `passthrough_no_quantum` stays byte-identical.
+bool normalizeUndefRotationSeed(CallInst *Theta) {
+  // `declMatchesPrototype` (TaintPropagation.cpp) has already proven arity 2 and
+  // `paramType(0) == returnType == T` for every collected theta, so arg-0 exists
+  // and its type IS the suffix's width — which is why the zero below is minted
+  // from the OPERAND's own type and no width table is consulted (nine reachable
+  // types: i1/i8/i16/i32/i64/half/float/double/x86_fp80; three pinned by
+  // `lowering_accept_undef_theta_seed_widths.ll`).
+  if (Theta->arg_size() < 1)
+    return false;
+  Value *Seed = Theta->getArgOperand(0);
+  if (!valueCarriesUndef(Seed))  // the ONE shared spelling (Rule 14)
+    return false;
+  if (!isa<UndefValue>(Seed))  // ... but only a WHOLE-VALUE undef is rewritable
+    return false;              //     (the ConstantExpr residual, above)
+  // ⚠ NO ARG-1 CONJUNCT HERE — DELIBERATELY, AND THE QUESTION IS OPEN. Review
+  // round 1 (F-U1-1) measured that when the ANGLE also carries an undef this
+  // rewrite drops `declineUnpairedUndefLiterals` below its threshold of 2 and a
+  // module the ORACLE declined compiles silently. Whether that decline was
+  // PROTECTING anything is the open question — see the F-U1-1 paragraph above.
+  // Do NOT add the conjunct on your own judgement; it is an owner ruling.
+  Constant *Zero = Constant::getNullValue(Seed->getType());
+  Theta->setArgOperand(0, Zero);
+  // The straight-through edge. `PoisonValue` derives from `UndefValue`, so one
+  // `isa` covers a mixed `undef`/`poison` spelling; the type test is
+  // belt-and-braces (a phi carrying this theta's result has the theta's type by
+  // construction).
+  //
+  // ⚠ READ THE SCOPE PARAGRAPH ABOVE BEFORE QUOTING THIS LOOP. It is NOT "the
+  // same uninitialized object, read twice" — that is the motivation. It is
+  // EVERY undef incoming of EVERY phi user (measured: 164 of 972 carried thetas
+  // have >1 phi user; 37 phis have >= 2 non-theta incomings; population 164
+  // modules — ⚠ two different 164s, do not cite one for the other). The
+  // soundness ground is the per-rewrite refinement, and the widening it admits
+  // is DISCLOSED above, not fenced.
+  //
+  // ⚠ ONE-SHOT: the `valueCarriesUndef` gate above makes this loop unreachable
+  // at every propagate round after the first. That is safe only for the three
+  // MEASURED reasons in the PLACEMENT section (no second phi-incoming writer,
+  // no undef minted anywhere, both phi minters excluded), each with its own
+  // retirement trigger. If one of them retires, add a SECOND CALL — do NOT
+  // relax the guards above to get here.
+  for (User *U : Theta->users()) {
+    auto *P = dyn_cast<PHINode>(U);
+    if (!P)
+      continue;
+    for (unsigned I = 0, N = P->getNumIncomingValues(); I < N; ++I) {
+      Value *In = P->getIncomingValue(I);
+      if (isa<UndefValue>(In) && In->getType() == Zero->getType())
+        P->setIncomingValue(I, Zero);
+    }
+  }
+  return true;
 }
 
 namespace {
