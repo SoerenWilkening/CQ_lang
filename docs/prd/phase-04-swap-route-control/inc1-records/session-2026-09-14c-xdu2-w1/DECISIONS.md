@@ -75,3 +75,71 @@ the key must be built — bring it back to the owner at that point rather than s
 bd `dnqo` (is an `undef`/`poison` ROTATION ANGLE a loud decline? — F-U1-1), bd `fve8` (the F-U3-1
 disposition: the φ clause disarms ruling clause 4 upstream of `cq_measure`), bd `yiid` (is a
 measurement a BARRIER or a RELABEL — `cq_measure` is not modelled as a wire event at all).
+
+---
+
+## D4 — bd `s82e` RE-RULED, because D2's premise was measured FALSE: **DECLINE THE DIVERGENT SUB-CASE NOW, FILE THE PAIRING**
+
+Track S tested D2's premise before writing a fix, as its brief required, and returned **(R-diverge)**.
+The orchestrator verified the two traces independently before putting the re-ruling to the owner.
+
+**bd `s82e` is TWO classes, and D2 was shown only one of them.**
+
+* **The benign half — D2 is RIGHT here.** The bead's own three exhibits (`w2k_noregion_invread`,
+  `w2h`, `w2h3`) leak a rail entangled only with a **per-trip** register that is dead after the trip
+  and is left allocated in **both** spellings. Their joint garbage never reaches the retained
+  subsystem. Likewise D2's cited evidence — *"`h0 h5 h10` superseded `a`, `h3 h8 h13` the `a-3`
+  temporaries"* — is **superseded value rails**, which cannot be uncomputed without destroying the
+  answer that replaced them. That is a real Rule-6 accepted leak.
+* **The divergent half — D2 is FALSE here, and it is a verify-clean silent miscompile.** An
+  **interior template rail** left entangled with a register that is **still live and re-rotated
+  afterwards**. Measured on `s1_live_shift.c` (10 trace lines rolled vs 14 unrolled, **no tainted
+  control flow at all**) and `s2_live_derived_region.c` (19 vs 25), with `s3_live_rootmint_region.c`
+  as the positive control at **22 == 22**. All ten modules: `opt` exit 0, verify-clean, STRICT 2b
+  `0 violation(s), 0 unproven`, identical on the ORACLE — **pre-existing**.
+
+**The verified mechanism, off the traces:** `cq_template_lshr_i32_hl(h0,1) -> h1` is **out-of-place**
+— CNOTs from `y`'s qubits `j ≥ 1` onto a fresh rail, a which-path copy. The unrolled twin emits
+`cq_template_lshr_i32_hl_unc(h1, h0, 1)` **then** `cqrt_free(h1)`; the rolled form emits **neither**.
+So at the later `cqrt_ry_i32(h0, 0.9)` the rolled form rotates a **dephased** reduced state and the
+unrolled form a pure one, and `cqrt_measure_i32(h0)` is the program's observable. Per qubit the
+`αβ·sin(0.9)` cross term is present in one circuit and absent in the other; `α,β ≠ 0` on every qubit
+(`cqrt_alloc_i32(5)` + tensored `cqrt_ry_i32(h0, 0.5)`). Rule 8 verbatim: *"a permutation that leaves
+a rail dirty **and entangled** still dephases under later interference."*
+
+⚠ **D2's dichotomy was wrong about DISCHARGE, and that is why it must be re-ruled rather than
+refined.** D2 rejected "discharge" reading it as *free the entangled rail* — which would indeed be
+the Rule-6 hidden measurement. **The twin does not do that.** It emits **`_unc` FIRST** (the adjoint,
+which disentangles and restores `|0⟩`) and **only then** `cqrt_free` — Bennett, Rule-6 compliant, and
+**already what this same compiler emits for the straight-line spelling of the same source.** `s3`
+closes it from the other side: the identical interference pattern in a shape `invariantRegisterRoots`
+serves is rolled == unrolled, with the `_unc` and both `cqrt_free` **inside** the loop body block.
+**This is a closure/slot gap, not a physics wall.**
+
+**RULED (owner, 2026-09-14c):** ship a **LOUD decline for the narrow divergent sub-case only** — a
+rail left entangled with a register live after the loop — and **file "build the in-loop pairing" as
+the capability**. Rationale as put to the owner: it closes an open **P1 silent miscompile in this
+session**, it is far narrower than the blanket decline D2 rejected, and it **does not touch the
+owner's rolled cascade**. The cost is stated and accepted: programs that could be compiled correctly
+decline until the pairing is built.
+
+⚠ **Rule 17 check.** This is **not** a punt. These programs do not currently receive a valid circuit
+— they receive an **invalid** one — so declining them is the Prime Directive, not an over-decline,
+and the 2026-09-11 *"do not decline code that leads to a valid quantum circuit"* ruling does not
+reach them. The decline is the **interim**; the pairing is the **end state** and is filed, not
+forgotten.
+
+**ROOT-CAUSE REFINEMENT that lands with this, because the bead points at a site that never runs for
+its own exhibits.** `markIfRailLocal`'s *"accumulating loop-invariant tainted input"* clause fires
+for **none of the five** leaking programs: `collapseFlattenedLoopRails` opens
+`if (taint.InLoopFlattenedPreds.empty()) return;` and that map is filled only by an **in-loop region
+flatten**. So `w2k` / `s1` (no tainted control flow) are refused at **`markIfIterationLocal`**
+(`LoopLowering.cpp:2459-2464`), whose identical clause has **no `invariantRegisterRoots` escape at
+all**; and `w2h` / `w2h3` / `s2` are refused because `invariantRegisterRootsImpl` clause (ii) returns
+false — for `w2h`/`w2h3` because **`-O1` LICM hoists `y & 1` into the preheader**, so the body reads a
+hoisted **template** rail. **A fix aimed where the bead points would move zero programs.**
+
+⚠ **L1 — the fix's slot carries a LIVE window.** `markIfIterationLocal` runs inside `lowerLoops`
+(`CQLoweringPass.cpp:393` / `:1000`), i.e. **before** `repropagateControlMerges` (`:509` / `:1027`) —
+**round-1 taint in both entry points, never re-asked.** That is L1's PREDICATE species. The decline
+owes record-and-re-ask in **both** entry points.
