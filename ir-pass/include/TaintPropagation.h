@@ -453,6 +453,39 @@ struct TaintSet {
   // rail read more than once (two arms of a kickback, two node slots of a tree)
   // may appear more than once — the re-verification diagnoses ONCE PER RAIL.
   //
+  // ⚠ THERE ARE THREE CASES AT THE READER, NOT TWO, AND THE THIRD WAS UNSTATED
+  // UNTIL Rule-13 round-1 finding F-P1-5. `reverifyRailCondReads`' single
+  // `dyn_cast_or_null<CallInst>` collapses them, so name them here:
+  //   (1) a NULLED handle — SKIPPED, by the directional argument above.
+  //   (2) a LIVE `CallInst` — the ordinary case; rungs (ii) and (iii) are
+  //       re-asked against final taint.
+  //   (3) a LIVE value that is NOT a `CallInst` — today, exactly a region-merge
+  //       `PHINode` (bd `3qps`/`4aiu`, Track P, which is the FIRST increment to
+  //       put φs into this record: the flat kickback is emitted BEFORE its prep,
+  //       so `markRailCondRead` sees the φ). It is SKIPPED TOO, and that skip is
+  //       INERT, not conservative — rungs (ii)/(iii) simply go unasked with no
+  //       diagnostic. It is not a hole today because it is UNREACHABLE at this
+  //       reader, and that is a checked fact rather than a hope: rung 0 of
+  //       `classifyPhaseKickback` step 5c admits a φ only if it is some
+  //       `BranchRegion`'s committed `InPlaceRotation` `Merge`, that region's
+  //       `emitInPlaceRotationRegion` always runs before this stage (every
+  //       `return` in it is preceded by a `diagnoseUnderControl`, which EXITS on
+  //       the first `DS_Error` — bd `br4a`; and its one structurally silent path
+  //       `!CondI && !MergePhi` cannot occur for a `BranchRegion`, whose `Merge`
+  //       is always set), M-β RAUWs the φ to the hoisted `cq_theta_i1` call, and
+  //       the `WeakTrackingVH` FOLLOWS that RAUW — so case (3) becomes case (2)
+  //       before the reader looks.
+  // ⚠ RETIREMENT TRIGGER for case (3), and it is the ONLY thing holding it: the
+  // day ANY emitter can record a non-`CallInst` control read whose value is NOT
+  // subsequently RAUW'd to a `cq_theta_*` call — a second φ-recording emitter, a
+  // `BranchRegion` `return` in `emitInPlaceRotationRegion` that is not preceded
+  // by a diagnostic, or a host driver whose diagnostic handler RETURNS instead of
+  // exiting — this record names a live register whose ladder is never re-asked,
+  // silently. At that moment case (3) must become a LOUD decline (it cannot be
+  // one today: no input can reach it, so Rule 12 can supply no fixture for the
+  // string, and an unmirrored decline string is its own defect). Do not narrow
+  // the skip without building the input that reaches it first.
+  //
   // `WeakTrackingVH` also FOLLOWS a RAUW, which is the right behaviour for the
   // one thing that would otherwise dangle: nothing between the emission and the
   // read point RAUWs a condition rail today (`lowerRotations`, which RAUWs every

@@ -504,7 +504,25 @@ struct ControlRegion {
   // `classifySelectRegion`'s and is never re-derived in the emitter (Rule 14).
   // A select can only gain INCOMING edges this way, so it can never sit on a
   // precedence cycle.
-  unsigned PrepRegionIdx = kNoParent;
+  //
+  // ⚠ bd `4aiu` (Track P) — A LIST, because the grammar no longer caps a tree at
+  // ONE φ leaf. Dropping Track M's ROOT-ONLY conjunct makes `(b1 && b2) ? … : …`
+  // in-grammar, and each φ leaf is admitted by its OWN prep region, so the
+  // obligation above is owed ONCE PER LEAF. One entry per admitted φ leaf, in
+  // `Tree.RailPhiLeaves` order; EMPTY for every other region and for a
+  // compare/rail-conditioned select. The vector is the enforcement the same way
+  // `RailPhiLeaves`' element type is: a scalar field would have silently kept the
+  // LAST leaf's index and dropped the others' edges, which is an over-decline at
+  // best and a use-after-free at worst.
+  //
+  // NOT recorded by a `PhaseKickback` consumer of a φ, DELIBERATELY, and the
+  // reason is the opposite ordering: a kickback has real block fields, so the bd
+  // `hcrg` alias pre-flight ALREADY gives it `Precedes[kickback] = {prep}` — the
+  // kickback is emitted FIRST, while the φ is still live, which is exactly what
+  // its emitter needs (see `emitPhaseKickbackRegion`). Adding the select's
+  // "prep before me" edge there would close a CYCLE with that chain edge and
+  // decline the whole module.
+  llvm::SmallVector<unsigned, 2> PrepRegionIdxs;
 
   // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),
   // onto which the parent routes its base before the child mints + routes. The

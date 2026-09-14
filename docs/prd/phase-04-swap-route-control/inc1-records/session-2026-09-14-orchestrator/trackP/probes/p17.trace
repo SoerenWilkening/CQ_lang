@@ -1,0 +1,20 @@
+cqrt_alloc_i1(0) -> h0
+cqrt_ry_i1(h0, 0x1p-1)
+cqrt_alloc_i1(0) -> h1
+cqrt_ry_i1(h1, 0x1p-1)
+cqrt_ry_i1(h1, -0x1p-1)
+cqrt_rz_i1(h1, 0x1.3333333333333p-2)
+cqrt_alloc_i1(0) -> h2
+cqrt_cnot(h0, h2)
+cqrt_alloc_i32(0) -> h3
+cqrt_alloc_i32(2) -> h4
+cqrt_copy_i32_controlled(h2, h4, h3)
+cqrt_x(h2)
+cqrt_alloc_i32(5) -> h5
+cqrt_copy_i32_controlled(h2, h5, h3)
+cqrt_x(h2)
+cqrt_cnot(h0, h2)
+cqrt_free(h2)
+cqrt_measure_i1(h0) -> 0
+cqrt_measure_i1(h1) -> 0
+cqrt_measure_i32(h3) -> 0

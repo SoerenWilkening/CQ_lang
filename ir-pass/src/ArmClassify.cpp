@@ -2911,6 +2911,22 @@ bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
     // A NULLED handle is SKIPPED, and the direction is the argument: a read that
     // no longer exists is not a live control read, so there is no wrong unitary
     // left to refuse (and a rail whose def was erased has no wire to ask about).
+    //
+    // ⚠ THE `dyn_cast_or_null` COLLAPSES **THREE** CASES INTO ONE `continue`,
+    // AND ONLY TWO OF THEM ARE COVERED BY THE SENTENCE ABOVE — Rule-13 round-1
+    // finding F-P1-5. The third is a LIVE value of the wrong TYPE, which since
+    // bd `3qps`/`4aiu` (Track P) has a real population: a region-merge `PHINode`
+    // recorded by `emitCondNode`/`emitKickbackGroup` when the flat kickback is
+    // emitted BEFORE its prep. For such an entry rungs (ii) and (iii) are not
+    // re-asked AT ALL and nothing is printed — an INERT skip, not a conservative
+    // one. It is unreachable today only because the prep's M-β RAUWs that φ to
+    // the hoisted `cq_theta_i1` call before this stage runs and the record's
+    // `WeakTrackingVH` follows the RAUW. THE FULL THREE-CASE STATEMENT AND THE
+    // RETIREMENT TRIGGER LIVE WITH THE RECORD, in `TaintPropagation.h`'s
+    // `RailCondReads` block — read it before widening either half; the day the
+    // M-β premise can fail, this `continue` is a silent hole and must become a
+    // loud decline.
+    //
     // (Track A.1) UNCHANGED — the compare seeds live in their own record
     // (`CmpCondReads`) and are re-verified by `reverifyCmpCondReads` below,
     // because their rung (iii) must be asked over the whole cone AT ONCE. This
@@ -5370,7 +5386,7 @@ constexpr const char *kQQCondReason = "quantum-quantum compare condition";
 
 PhaseKickbackDisp classifyPhaseKickback(
     BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
-    const DominatorTree *DT, const LoopInfo *LI,
+    const ControlPlan &plan, const DominatorTree *DT, const LoopInfo *LI,
     SmallPtrSetImpl<Instruction *> *ClaimedSelects) {
   if (!BI->isConditional())
     return PhaseKickbackDisp::NotApplicable;
@@ -5565,8 +5581,14 @@ PhaseKickbackDisp classifyPhaseKickback(
   // DISCRIMINATOR: when that shape is built, its string must stop firing, and
   // under one shared message it would go on firing for every refused tree with
   // no fixture able to tell.
+  // bd `3qps` / bd `4aiu` (Track P) — `AllowRailPhi = true`, THE SECOND AND LAST
+  // CALLER. The grammar now admits a 2-incoming `i1` φ as a leaf at ANY position;
+  // everything that makes it an ACCEPT is step 5c's ladder below, not the walk.
+  // The emitter re-derives the tree with the IDENTICAL pair of flags, so
+  // detection and emission cannot drift (Rule 14).
   CondTree Tree;
-  if (!collectCondTree(Region.Condition, Tree, /*AllowLogicalSelect=*/true)) {
+  if (!collectCondTree(Region.Condition, Tree, /*AllowLogicalSelect=*/true,
+                       /*AllowRailPhi=*/true)) {
     const bool IsCondTree = [&] {
       if (isa<SelectInst>(Region.Condition))
         return true;
@@ -5599,14 +5621,24 @@ PhaseKickbackDisp classifyPhaseKickback(
   // safe (Prime Directive).
   constexpr size_t kPhaseCondTreeMaxLeaves = 8;
   constexpr size_t kPhaseCondTreeMaxNodes = 8;
-  if (Tree.Leaves.size() + Tree.RailLeaves.size() > kPhaseCondTreeMaxLeaves ||
+  // bd `4aiu` (Track P): φ leaves count toward the bound like every other leaf —
+  // each one is a live control rail between the mint and the strip. L2: the set
+  // was widened, so every predicate computed over "the leaves" is re-asked.
+  if (Tree.Leaves.size() + Tree.RailLeaves.size() + Tree.RailPhiLeaves.size() >
+          kPhaseCondTreeMaxLeaves ||
       Tree.Nodes.size() > kPhaseCondTreeMaxNodes) {
     diagnoseUnderControl(BI, "branch phase condition tree too deep");
     return PhaseKickbackDisp::Declined;
   }
-  // A tree with no nodes has exactly ONE leaf, of either kind: a COMPARE
-  // (`Cmp`, the pre-1b path, byte-for-byte) or — bd 3qlq.4 — a RAIL
-  // (`RailCond`, the `_Bool` register itself: no mint, no strip, no free).
+  // A tree with no nodes has exactly ONE leaf, of one of three kinds: a COMPARE
+  // (`Cmp`, the pre-1b path, byte-for-byte), a RAIL (`RailCond` — bd 3qlq.4, the
+  // `_Bool` register itself: no mint, no strip, no free) or — bd `3qps` — a
+  // REGION-MERGE φ (`RailPhiCond`), which by emit time IS that register and is
+  // treated identically from here on.
+  //
+  // A φ leaf needs no local here: every gate it owes is a LOOP over
+  // `Tree.RailPhiLeaves` (step 5c and the two wire clauses), and the EMITTER
+  // re-derives its own `RailPhiCond` from the same tree.
   auto *Cmp = IsTree || Tree.Leaves.empty() ? nullptr : Tree.Leaves.front();
   CallInst *RailCond =
       !IsTree && !Tree.RailLeaves.empty() ? Tree.RailLeaves.front() : nullptr;
@@ -5688,6 +5720,39 @@ PhaseKickbackDisp classifyPhaseKickback(
   // outside the branch" fence deliberately excludes rail leaves, and the
   // single-leaf `HasDataUse`/`ShareCondFlag` machinery (a COMPARE read as data
   // must share ONE minted flag) has no subject: nothing is minted.
+  //
+  // ⚠ THE SAME SANCTION IS GRANTED TO A REGION-MERGE φ LEAF (5c), AND IT IS
+  // STATED HERE BECAUSE IT IS A MEASURED ACCEPT ASYMMETRY, NOT AN OVERSIGHT —
+  // Rule-13 round-1 finding F-P1-3(c). Step 6's `TreeSet` fence is built from
+  // `Tree.Leaves` + `Tree.Nodes` only, so NEITHER a rail leaf NOR a φ leaf is
+  // asked "are your users inside the tree?". For a COMPARE leaf that fence
+  // fires (`control_swap_reject_*` / probe `r25`: `if (q>3 && r>5) cq_phi(θ);`
+  // plus a second `if (q>3)` declines `condition used outside the branch`); for
+  // a φ leaf with a data use the module ACCEPTS
+  // (`control_phase_kickback_mergephi_tree_leaf_data_use.ll`, probe `r08`).
+  //
+  // WHY THE ASYMMETRY IS SOUND, and it is the rail argument one construct over.
+  // The fence exists because a COMPARE leaf's answer lives in a flag this
+  // emitter MINTS, STRIPS and FREES inside the region — an out-of-tree reader
+  // would read a freed rail, and the single-compare `ShareCondFlag` path (the
+  // only sanctioned sharing) cannot be lifted to a tree because the shared
+  // object would have to be the ROOT ANCILLA, which is also stripped and freed.
+  // A φ leaf mints NOTHING: `CondTreeEmit` maps it to ITSELF (`FlagOf[V] = V`)
+  // and the node gate reads it in a `cqrt_toffoli` CONTROL slot — diagonal,
+  // read-only, basis-label-preserving — so the register is exactly the value it
+  // was and an ordinary out-of-branch consumer lowers through the ordinary
+  // opcode net. MEASURED end to end on `r08`: the data use becomes
+  // `cq_template_zext_i1_to_i32(h2) -> h5; cq_template_add_i32(h0,h5) -> h6`
+  // with its own `_unc` and `cqrt_free(h5)`, the kickback's only reads of `h2`
+  // are the two self-inverse toffoli controls, no `cqrt_x` anywhere, and STRICT
+  // stage 2b reports `4 rail mint(s) of which 3 left allocated, 3 cqrt_free
+  // site(s): 3 verified, 0 violation(s), 0 unproven`.
+  //
+  // ⚠ RETIREMENT TRIGGER: the day a φ leaf is given a MINT of its own (a copy
+  // ancilla, an inverted flag, anything `stripCondNetwork` tears down), this
+  // sanction dies with the "nothing is minted" premise and the φ leaves must be
+  // added to `TreeSet` at step 6. The rail leaf owes the identical re-derivation
+  // at the identical moment; ask both, or neither.
   for (CallInst *Rail : Tree.RailLeaves) {
     if (!Taint.Tainted.count(Rail)) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
@@ -5699,6 +5764,172 @@ PhaseKickbackDisp classifyPhaseKickback(
                            "condition measured before the control route");
       return PhaseKickbackDisp::Declined;
     }
+  }
+  // ---- 5c. REGION-MERGE-φ LEAVES (bd `3qps` / bd `4aiu`, Track P). Step 5b one
+  // construct over: the leaf is not a `cq_theta_i1` CALL but the MERGE φ of a
+  // diamond ALREADY in the plan as a controlled in-place Ry / state PREP. It is
+  // the SAME ladder `classifySelectRegion`'s §M.0 runs, asked through the SAME
+  // helpers, with the BRANCH as the read point instead of the select:
+  //
+  //   rung 0    the φ is some region's committed `InPlaceRotation` merge —
+  //             `preppedRailPhiRegionIdx`, the ONE spelling, CALLED not
+  //             re-derived (Rule 14; it is why that helper left `SelectClassify`'s
+  //             anonymous namespace);
+  //   rung (i)  tainted — true by construction, re-asked as defence in depth;
+  //   rung (ii) NOT measured before the BRANCH, asked over the φ's OWN PROVENANCE
+  //             CLOSURE and not over the hoisted theta alone. LOAD-BEARING, and
+  //             MEASURED as such at the select (bd `boi6` H-2): the user writes
+  //             `cq_measure(b1)`, which after `-O1` names the **φ**, while
+  //             `railWireNamesBackward` `break`s at the first non-call — so a
+  //             closure seeded only from the theta is the singleton `{T}` and the
+  //             measurement is INVISIBLE. `condProvenance(P)` is `{P, T}`, which
+  //             is ALSO exactly the seed set rung (iii) walks: ONE closure, two
+  //             rungs (L2). Probe `p08` is the red-green program;
+  //   rung (iii) the WIRE question — `condWireDisposition` over `Prov` below,
+  //             which already receives the φ's provenance (see there).
+  //
+  // ⚠ WHY THIS DOES NOT NEED A `plan` MUTATION, unlike the select's F-M1 edge.
+  // A `PhaseKickback` has REAL block fields, so `lowerControlRegions`' bd `hcrg`
+  // alias pre-flight already sees that this region's `Pred` IS the prep's
+  // `MergeBB` and takes the sanctioned `sequentialChainAlias` edge
+  // `Precedes[kickback] = {prep}` — the kickback is emitted FIRST, while the φ is
+  // still LIVE, which is precisely what its emitter wants (a φ is just another
+  // `Value *` control, and the prep's later M-β RAUW rewrites the emitted gate's
+  // operand to the theta call, which `lowerRotations` then RAUWs to the `i32`
+  // handle). Recording a `PrepRegionIdxs` edge here would demand the OPPOSITE
+  // order and close a precedence CYCLE, declining the whole module — and that
+  // last clause is true of EVERY φ kickback that lowers, not only of the probed
+  // ones (round-1 item 4), because the hcrg edge below is FORCED:
+  //
+  //   THE THEOREM (round-1 item 3, attacked and unbroken). `P->getParent() ==
+  //   Region.Pred` ∧ `preppedRailPhiRegionIdx(P, plan) = j` ⟹ `P` IS
+  //   `plan.Regions[j].Merge`, which lives in `Regions[j].MergeBB` ⟹
+  //   `kickback.Pred == prep.MergeBB` ⟹ `MergeBB ∈ doomedBlocks(prep)` ⟹ the
+  //   `Aliases` test fires ⟹ EITHER `sequentialChainAlias` returns true (edge
+  //   added, `Precedes[kickback] = {prep}`, kickback emitted first with the φ
+  //   live) OR `declineRegion` fires and the module lowers nothing. There is no
+  //   third outcome. The in-`Pred` premise is supplied for a TREE by the
+  //   positional loop's `P->getParent() != Region.Pred` conjunct and for a φ
+  //   ROOT by `condWireDisposition`'s `Cond->getParent() != R.Pred →
+  //   DeclineNow`.
+  //
+  // ⚠ AT MOST ONE φ LEAF CAN SATISFY THE IN-`Pred` REQUIREMENT HERE, AND THE
+  // REASON IS `R.Merge`, NOT BLOCK COUNTING (Rule-13 round-1 finding F-P1-1,
+  // with a MEASURED counterexample to the reason that used to be given). It is
+  // NOT "two diamonds have two merge blocks": `-O1` FUSES two same-condition
+  // preps into ONE diamond whose ONE merge block carries TWO prep φs, both in
+  // this kickback's `Pred` (bd `b6ap`'s own construct; probe
+  // `review_r1_probes/r07_two_phi_fused.c` — `if (b0) { b1 = cq_theta(b1,.5);
+  // b2 = cq_theta(b2,.9); } if (b1 && b2) cq_phi(.3);`). The real invariant is
+  // rung 0's: `preppedRailPhiRegionIdx` requires `R.Merge == P` and a
+  // `ControlRegion` has exactly ONE `Merge` FIELD, so a fused diamond's SECOND
+  // φ matches no region, returns `kNoParent`, and declines the whole tree —
+  // whatever block it lives in. (Today an earlier fence absorbs that shape:
+  // `soleMergePhi` refuses a 2-φ merge and the region is never recovered, so
+  // `r07` declines `nested control flow` identically on both binaries.)
+  //
+  // ⚠ RETIREMENT TRIGGER for the paragraph above — re-derive it, do not re-read
+  // it, the day `soleMergePhi` admits a multi-φ merge or `MergePhiPeel`'s entry
+  // gate peels an arm-defined incoming. Two φ leaves in ONE `Pred` is a MEASURED
+  // shape, not a hypothetical, and the only thing between it and a two-leaf
+  // accept is which φ happens to be the region's `Merge`.
+  //
+  // ⚠ RETIREMENT TRIGGER — bd `3d8q`. Rung 0 admits a region whose
+  // `ClassArm`/`ClassArmFalse` is `InPlaceRotation` with a non-empty `Shadow`.
+  // The in-place-ARM φ (a SECOND Ry arm conditioned on a prep's merge φ) is a
+  // DECLINE today only because `classifyArms` refuses that region, so it never
+  // reaches the plan with that verdict. The day bd `3d8q` flips it to an ACCEPT,
+  // its region starts matching this rung and the ladder below (rungs (i)/(ii)/
+  // (iii) and step 6's wire disposition) becomes the SOLE fence in front of a
+  // NEW population. Re-derive the ladder against that population before landing
+  // `3d8q`; do not assume this increment's clearance covers it.
+  //
+  // ⚠ THE REFUSAL STRING IS THE SHAPE'S PRE-INCREMENT ONE, DELIBERATELY, AND IT
+  // IS A MEASURED REQUIREMENT RATHER THAN A COURTESY. Admitting the φ at the
+  // GRAMMAR moves every φ that rungs 0/(i) then refuse out of
+  // `collectCondTree`'s `IsCondTree` split, which is where its message used to
+  // come from. Left alone, that silently re-labelled SHIPPED DISCRIMINATOR
+  // fixtures: `control_phase_kickback_reject_bare_i1_loop_phi.ll` (bd `boi6`, the
+  // loop-carried `_Bool` header φ) went from `branch phase on a bare i1
+  // condition` to `control flow` with NO change of disposition — caught by
+  // `ir-pass-lit`, and it is exactly the H-8 hazard ("decide ONCE which string a
+  // φ takes at every consumer"). So the split is reproduced here verbatim:
+  //   * the φ IS the whole condition  → `branch phase on a bare i1 condition`
+  //     (a bare `i1` value this consumer does not lower — which is precisely what
+  //     an unclaimed φ is, and what that string has always meant);
+  //   * the φ is a LEAF of a tree      → `control flow` (a condition TREE the
+  //     grammar cannot use — the message the oracle gave, and the one a user
+  //     sent looking for a `_Bool` would be misled by).
+  // The ONE string that moves in this increment is the one whose DISPOSITION
+  // moves: a claimed prep's φ is now an ACCEPT.
+  const char *PhiRefusal =
+      IsTree ? "control flow" : "branch phase on a bare i1 condition";
+  // ⚠ AND THE ANCHOR IS `BI`, NOT `declAnchor(Region)` — Rule 1, "diagnostics
+  // carry the offending instruction's `!dbg` so they are SOURCE-LOCATED".
+  // `declAnchor` returns `R.Condition`, which for this construct IS THE φ, and a
+  // merge φ carries no `!dbg`: every message below came out as
+  // `<unknown>:0:0` instead of `p1.c:10:13`. MEASURED, and not by reading — the
+  // corpus sweep's FULL-STDERR byte-compare caught it on bd `boi6.a`'s own probe
+  // (`trackL/probes/p1.c`, the loop-carried `_Bool` header φ) as a row whose two
+  // sides carry the SAME message text and DIFFERENT stderr hashes. That is
+  // exactly the hole PROTOCOL S3 says a message-only tag regex hides, and it is
+  // why the sweep hashes the whole stream. `BI` is also the anchor
+  // `collectCondTree`'s refusal used before this increment, so the φ-root row is
+  // byte-identical to the ORACLE's again rather than merely same-string.
+  // For a TREE the φ is a leaf and `declAnchor` gives the `and`/`select` ROOT,
+  // which does carry a `!dbg` — so that case keeps the established anchor.
+  //
+  // ⚠ USED BY EVERY DECLINE BELOW THAT CAN NOW SEE A φ CONDITION — the ladder
+  // here AND the wire disposition at step 6 — because the same `<unknown>:0:0`
+  // loss applies to `condition predates a non-diagonal gate` (probe `p12`, the
+  // in-place-ARM φ). For a COMPARE or RAIL condition `RailPhiLeaves` is empty and
+  // this IS `declAnchor(Region)` expression-for-expression, so every pre-existing
+  // shape's message is byte-identical.
+  //
+  // ⚠ THE PREMISE HAS TWO HALVES AND THE COMMENT USED TO CARRY ONE (Rule-13
+  // round-1 finding F-P1-2). "A merge φ carries no `!dbg`" is the first half;
+  // the second is that `-O1` also stamps merge φs with a `!DILocation(line: 0,
+  // scope: …)`, so the message comes out as `file.c:0:0` — a FILE with LINE
+  // ZERO, not `<unknown>`, and equally unusable. `PhiAnchor` covers both because
+  // it never reads the φ's location at all; a future repair that tests
+  // `Cond->getDebugLoc()` for null instead would fix only half the class.
+  // MEASURED: `review_r1_probes/r16_inplace_arm_phi.c` and `r22` come out at
+  // `…c:0:0`, `r12` at `<unknown>:0:0` — all three IDENTICAL on both binaries
+  // (pre-existing, not this increment's, and each is a residual site OUTSIDE
+  // this classifier: `classifyAngleSelect`'s `rotation angle` and
+  // `classifyArms`' `control flow` ×2).
+  //
+  // ⚠ THE STRUCTURAL LESSON, and it is why F-P2 survived every gate in the tree:
+  // NO HAND-WRITTEN `.ll` FIXTURE CAN EVER PIN A DIAGNOSTIC'S LOCATION. The
+  // fixtures in `ir-pass/test` carry no debug info, so every decline in all 1946
+  // of them is `<unknown>:0:0` whether the anchor is right or wrong; a 0-MISSED
+  // injection matrix and a byte-identical 288-file family cannot see it either,
+  // because none of them reads a location. The ONLY instrument that can is a
+  // `-g`-compiled `.c` probe whose FULL STDERR is byte-compared against the
+  // oracle's. Row 14's "identical on both binaries" was itself measured with
+  // `.ll` probes (`d_angle`, `d_angle_ry`) and was therefore structurally blind
+  // to exactly this property — it was re-measured from C as `r12`.
+  Instruction *const PhiAnchor =
+      (!IsTree && !Tree.RailPhiLeaves.empty()) ? static_cast<Instruction *>(BI)
+                                               : declAnchor(Region);
+  for (PHINode *P : Tree.RailPhiLeaves) {
+    if (preppedRailPhiRegionIdx(P, plan) == ControlRegion::kNoParent) {
+      diagnoseUnderControl(PhiAnchor, PhiRefusal);
+      return PhaseKickbackDisp::Declined;
+    }
+    if (!Taint.Tainted.count(P)) {
+      diagnoseUnderControl(PhiAnchor, PhiRefusal);
+      return PhaseKickbackDisp::Declined;
+    }
+    SmallPtrSet<Value *, 16> PhiProv;
+    condProvenance(P, Taint, PhiProv);
+    for (Value *Name : PhiProv)
+      if (railMeasuredBeforeReadPoint(Name, Region.Pred->getTerminator(), Taint,
+                                      DT)) {
+        diagnoseUnderControl(PhiAnchor,
+                             "condition measured before the control route");
+        return PhaseKickbackDisp::Declined;
+      }
   }
   // RUNG (ii) FOR THE COMPARE LEAVES — Track A.1, bd test_C_libtooling-r903
   // item (b). THE PARITY REPAIR, and the one-token discriminator is the whole
@@ -5757,6 +5988,18 @@ PhaseKickbackDisp classifyPhaseKickback(
   // this emitter strips and frees inside the region, so a downstream data use
   // would read a freed rail. Sharing a tree's predicate is a real capability and
   // a separate increment, not a side effect of this one.
+  //
+  // ⚠ `TreeSet` IS `Leaves` + `Nodes` AND NOT `RailLeaves` / `RailPhiLeaves`,
+  // DELIBERATELY — Rule-13 round-1 finding F-P1-3(c), and the argument is step
+  // 5b's header, which is the one place it is written out. Both excluded leaf
+  // species mint NOTHING (`CondTreeEmit` maps them to themselves and the node
+  // gate reads them as read-only diagonal controls), so there is no ancilla an
+  // out-of-branch reader could read after this emitter freed it — which is the
+  // hazard this fence is about. A COMPARE leaf's flag IS minted, stripped and
+  // freed here, so it stays inside the set. ACCEPT pin:
+  // `control_phase_kickback_mergephi_tree_leaf_data_use.ll` (a φ leaf with a
+  // `zext`+`add` data use after the region); DECLINE pin: any compare-leaf twin
+  // (probe `r25`). Widen the set the day either species acquires a mint.
   if (IsTree) {
     SmallPtrSet<const Value *, 16> TreeSet;
     for (CmpInst *Leaf : Tree.Leaves)
@@ -5810,7 +6053,21 @@ PhaseKickbackDisp classifyPhaseKickback(
       condProvenance(Leaf, Taint, Prov);
     for (CallInst *Rail : Tree.RailLeaves)
       condProvenance(Rail, Taint, Prov);  // bd 3qlq.4: the register's own wire.
+    // bd `4aiu` (Track P) — RUNG (iii) FOR AN INTERIOR φ LEAF, into the SAME seed
+    // set, because it IS the same question about the same kind of object: a
+    // physical register named by a value, whose wire must carry no off-ancestry
+    // non-diagonal gate. `condProvenance` needs nothing new for a φ (it walks
+    // operand edges and stops at each `cq_theta`, so a φ contributes `{φ, each
+    // incoming theta}` — exactly the wire).
+    // ⚠ OMITTING THIS WOULD BE THE WHOLE WIDENING'S OVER-ACCEPT: a φ leaf
+    // contributes to `Prov` through NO other clause, so the wire walk would never
+    // look at the prepped register at all. It is `SelectClassify`'s gate-2c note
+    // verbatim, one consumer over (L2).
+    for (PHINode *P : Tree.RailPhiLeaves)
+      condProvenance(P, Taint, Prov);
   } else {
+    // bd `3qps`: for a φ ROOT this is `condProvenance(φ)` — the same closure step
+    // 5c's rung (ii) walked, by construction rather than by a second call.
     condProvenance(Region.Condition, Taint, Prov);
   }
   // The flag is minted at the BRANCH. A tainted-operand `cq_theta` (a
@@ -5831,11 +6088,25 @@ PhaseKickbackDisp classifyPhaseKickback(
   // for a register (see its header); a tree with rail leaves goes through
   // `condWireDisposition` unchanged, its root being a `Pred`-resident node and
   // the rails' wires riding in `Prov`.
+  //
+  // ⚠ bd `3qps` (Track P) — A φ CONDITION TAKES THE `condWireDisposition` ARM,
+  // DELIBERATELY, AND THE TERNARY IS UNCHANGED TO SAY SO (L3: when a set is
+  // narrowed, ask what OTHER predicate names the same object — and the answer is
+  // not always "narrow it too"). `RailCond` is a `CallInst *` and stays one, so a
+  // φ root falls to the compare arm, which is STRICTLY MORE CONSERVATIVE: it adds
+  // the same-block positional scan (the φ is the first instruction of `Pred`, so
+  // its window to the branch is bounded and real) and the `ShareCondFlag` prong
+  // (vacuous here — nothing is minted for a φ, so the flag cannot outlive the
+  // region). `railCondWireDisposition` drops those two on a ground argued about a
+  // `cq_theta_i1` NAME, and transplanting an unmeasured structural argument onto
+  // a different species is how an over-accept ships.
   if ((RailCond ? railCondWireDisposition(Region, Taint, Prov, DT)
                 : condWireDisposition(Region, Taint, Prov, DT)) ==
       CondWireDisp::DeclineNow) {
-    diagnoseUnderControl(declAnchor(Region),
-                         "condition predates a non-diagonal gate");
+    // `PhiAnchor` == `declAnchor(Region)` for every compare/rail condition; it
+    // differs ONLY when the condition IS a merge φ, which carries no `!dbg`
+    // (Rule 1 — see step 5c's anchor note).
+    diagnoseUnderControl(PhiAnchor, "condition predates a non-diagonal gate");
     return PhaseKickbackDisp::Declined;
   }
   // `condWireDisposition`'s POSITIONAL prong scans from `R.Condition` (the tree
@@ -5843,22 +6114,47 @@ PhaseKickbackDisp classifyPhaseKickback(
   // root, so that window does not cover them — scan each leaf's own window too
   // (all leaves are in `Pred`, proven above). Same predicate, same string; it
   // only ever DECLINES more.
+  //
+  // bd `4aiu` (Track P) — A φ LEAF GETS THE SAME SCAN, and the choice is worth a
+  // sentence because it is NOT what a RAIL leaf gets. `railCondWireDisposition`
+  // drops the positional prong on a STRUCTURAL ground specific to a
+  // `cq_theta_i1` name (M-C's G6 refuses the in-place `add`/`xor` conversion on a
+  // register that is read later by its own branch). That ground is an argument
+  // about a CALL, and a φ is not one; rather than transplant it unmeasured, the
+  // φ keeps the strictly more conservative compare-leaf treatment. A φ ROOT gets
+  // it from `condWireDisposition` itself (its `Cond` IS the φ, in `Pred`), so
+  // this loop is the tree spelling of the same window. Over-declining is safe
+  // (Prime Directive); the measured customers scan an empty-or-pure window.
   if (IsTree) {
     const Instruction *Term = Region.Pred->getTerminator();
-    for (CmpInst *Leaf : Tree.Leaves)
-      for (const Instruction *I = Leaf->getNextNode(); I && I != Term;
+    auto scanForward = [&](const Instruction *From) {
+      for (const Instruction *I = From->getNextNode(); I && I != Term;
            I = I->getNextNode()) {
         const auto *CI = dyn_cast<CallInst>(I);
         if (!CI)
           continue;
         const Function *F = CI->getCalledFunction();
         if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
-            Taint.Tainted.count(CI->getArgOperand(0))) {
-          diagnoseUnderControl(declAnchor(Region),
-                               "condition predates a non-diagonal gate");
-          return PhaseKickbackDisp::Declined;
-        }
+            Taint.Tainted.count(CI->getArgOperand(0)))
+          return true;
       }
+      return false;
+    };
+    for (CmpInst *Leaf : Tree.Leaves)
+      if (scanForward(Leaf)) {
+        diagnoseUnderControl(declAnchor(Region),
+                             "condition predates a non-diagonal gate");
+        return PhaseKickbackDisp::Declined;
+      }
+    for (PHINode *P : Tree.RailPhiLeaves)
+      if (P->getParent() != Region.Pred || scanForward(P)) {
+        diagnoseUnderControl(declAnchor(Region),
+                             "condition predates a non-diagonal gate");
+        return PhaseKickbackDisp::Declined;
+      }
+    // (This loop is inside `IsTree`, where `declAnchor` is the tree ROOT and
+    // carries a `!dbg` — see the anchor note at step 5c. The φ-ROOT spelling
+    // reaches `condWireDisposition` instead, whose own anchor is unchanged.)
   }
 
   // ---- 7. LOOPS (P6). A region on a CFG cycle is admitted only when

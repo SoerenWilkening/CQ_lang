@@ -540,7 +540,7 @@ void handleBranchRegion(BranchInst *BI, TaintSet &Taint, ControlPlan &Plan,
   // Shadow store arm holds a `store` beside nothing this classifier recognizes
   // (its `NumPhase == 0` early-out). The three accept classes are disjoint by
   // arm CONTENT, so each pre-peel returns `NotApplicable` on the other two.
-  switch (classifyPhaseKickback(BI, Taint, R, DT, LI, &ClaimedSelects)) {
+  switch (classifyPhaseKickback(BI, Taint, R, Plan, DT, LI, &ClaimedSelects)) {
   case PhaseKickbackDisp::Accept:
     Plan.Regions.push_back(R);
     return;

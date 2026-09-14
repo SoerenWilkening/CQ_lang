@@ -479,8 +479,19 @@ bool operandsAlias(Value *A, Value *B) {
   return diagonalAliasHit(B, Closure) != nullptr;  // shared physical wire.
 }
 
+}  // namespace
+
 // bd `boi6` (D-B) / Track M — RUNG 0 OF THE MERGE-φ LADDER, AND THE WHOLE PROOF.
 // The region that will turn `P` into a single physical register, or null.
+//
+// ⚠ bd `3qps` / bd `4aiu` (Track P) — THIS LEFT THE ANONYMOUS NAMESPACE SO IT
+// COULD STAY THE *ONE* SPELLING WHEN THE SECOND CONSUMER ARRIVED. The PHASE
+// kickback (`ArmClassify::classifyPhaseKickback` step 5c) asks the identical
+// question about the identical object; giving it a private copy is precisely the
+// drbq Inc-3 (b′) defect (Rule 14 — a second spelling of a predicate the tree
+// already owned). It is declared in `SelectClassify.h` beside
+// `isCondRailPhiShape`, whose syntactic half it completes, and it is asked by
+// CALLING it — never by re-deriving its conjuncts at a consumer.
 //
 // THIS FUNCTION RE-DERIVES NOTHING (Rule 14; the drbq Inc-3 (b′) defect was a
 // SECOND SPELLING of a predicate the tree already owned). `ArmClassify`'s
@@ -562,8 +573,6 @@ unsigned preppedRailPhiRegionIdx(const PHINode *P, const ControlPlan &plan) {
   }
   return ControlRegion::kNoParent;
 }
-
-}  // namespace
 
 // 3c6m.12 (L4) — the shared condition-tree walk (see SelectClassify.h). An
 // explicit two-phase stack (a (value, childrenDone) pair) yields left-to-right
@@ -659,12 +668,22 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
       Tree.RailLeaves.push_back(cast<CallInst>(V));
       continue;
     }
-    // bd `boi6` (D-B) / Track M — A REGION-MERGE-φ RAIL LEAF, ROOT ONLY. See the
-    // header for why the test is weak (the proof is the classifier asking
-    // `plan.Regions`) and why a NESTED φ stays off-grammar (no probe family; it
-    // would reach `CondTreeEmit`'s non-root rail path unmeasured). Disjoint from
-    // both tests around it: a `PHINode` is neither a `CallInst` nor a `CmpInst`.
-    if (AllowRailPhi && V == Root && isCondRailPhiShape(V)) {
+    // bd `boi6` (D-B) / Track M — A REGION-MERGE-φ RAIL LEAF. See the header for
+    // why the test is weak (the proof is the classifier asking `plan.Regions`).
+    // Disjoint from both tests around it: a `PHINode` is neither a `CallInst`
+    // nor a `CmpInst`.
+    //
+    // bd `4aiu` (Track P) — THE `V == Root` CONJUNCT IS GONE: a φ is admitted at
+    // ANY position of the `and`/`or`/`xor` tree, exactly like the `isCondRailLeaf`
+    // rail leaf beside it (`b && q == 5` has been in-grammar for a RAIL since
+    // 3qlq.4). Track M scoped it ROOT-ONLY because an interior φ had no probe
+    // family and no measured emitter path; both now exist — the emitter path is
+    // the SAME one an interior rail takes (`CondTreeEmit` maps the leaf to itself
+    // and the node's `cqrt_toffoli` reads it as a read-only control), measured on
+    // the ORACLE with the φ already RAUW'd (`trackP/probes/p18.ll`, 18 lines).
+    // Every per-leaf gate below is already a LOOP over `RailPhiLeaves`, so an
+    // interior φ is asked rung 0/(i)/(ii)/(iii) identically to a root one.
+    if (AllowRailPhi && isCondRailPhiShape(V)) {
       Tree.RailPhiLeaves.push_back(cast<PHINode>(V));
       continue;
     }
@@ -991,11 +1010,17 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // per-activation barrier (the origin is not a source theta), i.e. the strictly
   // more conservative answer — which is the right default for a name that denotes
   // a different basis label on each incoming edge.
-  unsigned PrepIdx = ControlRegion::kNoParent;
+  // bd `4aiu` (Track P) — ONE INDEX PER ADMITTED LEAF, not one per tree. With the
+  // ROOT-ONLY conjunct gone a tree may carry several φ leaves, each admitted by
+  // its own prep region, and each owes `lowerControlRegions` its own precedence
+  // edge. A scalar would keep the last and silently drop the rest (F-M1 again,
+  // one construct over).
+  SmallVector<unsigned, 2> PrepIdxs;
   for (PHINode *P : Tree.RailPhiLeaves) {
-    PrepIdx = preppedRailPhiRegionIdx(P, plan);
+    const unsigned PrepIdx = preppedRailPhiRegionIdx(P, plan);
     if (PrepIdx == ControlRegion::kNoParent)
       return diagnoseUnderControl(Sel, "control flow");
+    PrepIdxs.push_back(PrepIdx);
     if (!taint.Tainted.count(P))
       return diagnoseUnderControl(Sel, "control flow");
     SmallPtrSet<Value *, 16> PhiProv;
@@ -1291,12 +1316,13 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   R.RailLadderProven =
       !Tree.RailLeaves.empty() || !Tree.RailPhiLeaves.empty();
   // F-M1 — CARRY THE ORDER OBLIGATION, do not leave the emitter to re-derive it.
-  // `PrepIdx` is rung 0's own answer (the loop above set it, and a φ leaf cannot
-  // reach here without it); `lowerControlRegions` turns it into ONE precedence
-  // edge so this select is emitted AFTER the region whose M-β rewrites its
-  // condition. `kNoParent` for a compare- or rail-conditioned select, which needs
-  // no edge because nothing rewrites its condition.
-  R.PrepRegionIdx = PrepIdx;
+  // `PrepIdxs` is rung 0's own answer (one entry per φ leaf the loop above
+  // admitted, and a φ leaf cannot reach here without one); `lowerControlRegions`
+  // turns each into ONE precedence edge so this select is emitted AFTER every
+  // region whose M-β rewrites part of its condition. EMPTY for a compare- or
+  // rail-conditioned select, which needs no edge because nothing rewrites its
+  // condition.
+  R.PrepRegionIdxs = PrepIdxs;
   plan.Regions.push_back(R);
 }
 

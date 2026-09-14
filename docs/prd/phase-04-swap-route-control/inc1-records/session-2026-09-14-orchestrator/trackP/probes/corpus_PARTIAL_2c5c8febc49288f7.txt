@@ -1,0 +1,1436 @@
+ir-pass/test/control_angle_select_accept_exact_difference_large.ll|A:df0b051a|A:df0b051a
+ir-pass/test/control_angle_select_accept_rounding_at_bound.ll|A:3676efab|A:3676efab
+ir-pass/test/control_angle_select_accept_rounding_flagship_bound.ll|A:a09aca33|A:a09aca33
+ir-pass/test/control_angle_select_forward_rail_cycle_frozen.ll|A:167b6e4c|A:167b6e4c
+ir-pass/test/control_angle_select_phase_constants.ll|A:e93572b7|A:e93572b7
+ir-pass/test/control_angle_select_phase_nonfinite_arm.ll|A:81b6b121|A:81b6b121
+ir-pass/test/control_angle_select_phase_rail.ll|A:546d6b9c|A:546d6b9c
+ir-pass/test/control_angle_select_phase_reject_empty_arm_phi.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_in_loop.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_phase_reject_nested_sel.ll|D:c9bf6167:cq controlled lowering: rotation angle|D:c9bf6167:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_phi_and_theta.ll|D:c9bf6167:cq controlled lowering: rotation angle|D:c9bf6167:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_poison_arm.ll|D:c9bf6167:cq controlled lowering: rotation angle|D:c9bf6167:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_qq_cond.ll|D:44ce30c1:cq controlled lowering: rotation angle|D:44ce30c1:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_sharecond.ll|D:c9bf6167:cq controlled lowering: rotation angle|D:c9bf6167:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_two_consumers.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_reject_undef_arm.ll|D:c9bf6167:cq controlled lowering: rotation angle|D:c9bf6167:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_phase_runtime.ll|A:666150ee|A:666150ee
+ir-pass/test/control_angle_select_reject_cmp_data_use.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_cmp_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_reject_cmp_shared_with_region.ll|D:36e47faf:cq controlled lowering: condition data use neither escaped nor measure|D:36e47faf:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_angle_select_reject_compound_cond.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_cond_alias.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_reject_cond_register.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_reject_constexpr_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_cross_block_consumer.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_datamux_qq_after_rauw.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_angle_select_reject_in_loop_rz.ll|D:d773f341:cq controlled lowering: control flow inside a loop body|D:d773f341:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_angle_select_reject_in_loop.ll|D:d773f341:cq controlled lowering: control flow inside a loop body|D:d773f341:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_angle_select_reject_inf_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_inplace_alias_base.ll|D:c3054268:cq controlled lowering: rotation arm on a condition wire|D:c3054268:cq controlled lowering: rotation arm on a condition wire
+ir-pass/test/control_angle_select_reject_irreducible_cycle_rz.ll|D:07fb7591:cq controlled lowering: control flow inside a loop body|D:07fb7591:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_angle_select_reject_irreducible_cycle.ll|D:07fb7591:cq controlled lowering: control flow inside a loop body|D:07fb7591:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_angle_select_reject_lifted_phi_clone_arg.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_lifted_phi_invert.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_lifted_phi_measure.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_lifted_phi_ret.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_lifted_phi_tape.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_loop_rail_exit_block.ll|D:36e9bb8f:cq controlled lowering: control flow inside a loop body|D:36e9bb8f:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_angle_select_reject_nan_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_nested_select.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_overflow_difference.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_phase_rail_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_reject_poison_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_qq_compare.ll|D:e546e34e:cq controlled lowering: rotation angle|D:e546e34e:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_rail_ry.ll|D:253b4242:cq controlled lowering: bare i1 register condition|D:253b4242:cq controlled lowering: bare i1 register condition
+ir-pass/test/control_angle_select_reject_raw_i1_cond.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_angle_select_reject_record_read_on_side_path.ll|D:ced41249:cq controlled lowering: stale rail record read past a controlled Ry|D:ced41249:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_rounding_above_bound.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_rounding_pi_1e16.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_runtime_arms_rz.ll|A:cf2464c8|A:cf2464c8
+ir-pass/test/control_angle_select_reject_runtime_arms.ll|D:306fc19c:cq controlled lowering: rotation angle|D:306fc19c:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_runtime_one_arm.ll|D:628ba2a0:cq controlled lowering: rotation angle|D:628ba2a0:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_second_select_same_cmp.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_stale_chained_theta.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_stale_diag_alias_backward.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_stale_diag_alias_forward.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_stale_diag_alias_two_hop.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_stale_measure.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_stale_ret.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_angle_select_reject_state_prep.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_tainted_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_tainted_both_arms.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_theta_before_select.ll|D:e20f71eb:cq controlled lowering: condition predates a non-diagonal gate|D:e20f71eb:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_angle_select_reject_theta_between.ll|D:e546e34e:cq controlled lowering: rotation angle|D:e546e34e:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_two_consumers.ll|D:e546e34e:cq controlled lowering: rotation angle|D:e546e34e:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_two_phi_consumers.ll|D:e546e34e:cq controlled lowering: rotation angle|D:e546e34e:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_undef_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_reject_undef_constexpr_arm.ll|D:43180350:cq controlled lowering: rotation angle|D:43180350:cq controlled lowering: rotation angle
+ir-pass/test/control_angle_select_ry_alias_pre_gate.ll|A:58543304|A:58543304
+ir-pass/test/control_angle_select_ry_dead_base_frozen.ll|A:a4c99cab|A:a4c99cab
+ir-pass/test/control_angle_select_ry_derived_base_late_use_frozen.ll|A:5e2881d7|A:5e2881d7
+ir-pass/test/control_angle_select_ry_derived_cond.ll|A:70d7f1b0|A:70d7f1b0
+ir-pass/test/control_angle_select_ry_diamond.ll|A:69a1ed2e|A:69a1ed2e
+ir-pass/test/control_angle_select_ry_f64_fcmp.ll|A:afc673e0|A:afc673e0
+ir-pass/test/control_angle_select_ry_i8.ll|A:afaf2d02|A:afaf2d02
+ir-pass/test/control_angle_select_ry_lifted_phi_after_select.ll|A:73225ba0|A:73225ba0
+ir-pass/test/control_angle_select_ry_lifted_phi_base.ll|A:e2c90ad5|A:e2c90ad5
+ir-pass/test/control_angle_select_ry_ne_swapped.ll|A:7f6d3b0c|A:7f6d3b0c
+ir-pass/test/control_angle_select_ry_sgt.ll|A:e6e557aa|A:e6e557aa
+ir-pass/test/control_angle_select_ry_then_region.ll|A:7eff6ea1|A:7eff6ea1
+ir-pass/test/control_angle_select_rz_cond_register.ll|A:69e2e62a|A:69e2e62a
+ir-pass/test/control_angle_select_rz_dead_chain.ll|A:54a9f058|A:54a9f058
+ir-pass/test/control_angle_select_rz_diamond.ll|A:cb55396e|A:cb55396e
+ir-pass/test/control_angle_select_rz_lifted_phi_after_select.ll|A:2af8e1b7|A:2af8e1b7
+ir-pass/test/control_angle_select_rz_loop_rail_exit_block.ll|A:088202f3|A:088202f3
+ir-pass/test/control_angle_select_rz_rounding_one_1e300.ll|A:0b749ab3|A:0b749ab3
+ir-pass/test/control_classical_call_arm_accept_frozen_nsw_add_arg.ll|A:0ee9dc37|A:0ee9dc37
+ir-pass/test/control_classical_call_arm_accept_frozen_poison_arg.ll|A:6c4bba8c|A:6c4bba8c
+ir-pass/test/control_classical_call_arm_accept_i32_ret.ll|A:fc445125|A:fc445125
+ir-pass/test/control_classical_call_arm_accept_i64_measure.ll|A:eab69951|A:eab69951
+ir-pass/test/control_classical_call_arm_accept_nonI32_cast.ll|A:7aa1b477|A:7aa1b477
+ir-pass/test/control_classical_call_arm_accept_onward_arith.ll|A:05d0edea|A:05d0edea
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_phase.ll|A:af1fadaa|A:af1fadaa
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_select.ll|A:cb327559|A:cb327559
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_spec_newcand.ll|A:800e43e5|A:800e43e5
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_spec_replan.ll|A:f60d919f|A:f60d919f
+ir-pass/test/control_classical_call_arm_accept_onward_phase_downstream_if.ll|A:3e663e65|A:3e663e65
+ir-pass/test/control_classical_call_arm_accept_onward_phase.ll|A:6d1f33d3|A:6d1f33d3
+ir-pass/test/control_classical_call_arm_accept_onward_spec_call.ll|A:c6a01404|A:c6a01404
+ir-pass/test/control_classical_call_arm_accept_onward_spec_newcand.ll|A:6f1ce485|A:6f1ce485
+ir-pass/test/control_classical_call_arm_accept_onward_spec_transitive.ll|A:2cb1e981|A:2cb1e981
+ir-pass/test/control_classical_call_arm_accept_poisonselect_callee.ll|A:4bb84784|A:4bb84784
+ir-pass/test/control_classical_call_arm_accept_speculatable_decl.ll|A:1025fd78|A:1025fd78
+ir-pass/test/control_classical_call_arm_accept.ll|A:e4f8462d|A:e4f8462d
+ir-pass/test/control_classical_call_arm_polarity.ll|A:4c7980f8|A:4c7980f8
+ir-pass/test/control_classical_call_arm_reject_block_lifetime.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_clobber.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_classical_call_arm_reject_escape_leak.ll|D:e7490209:cq taint escape: tainted value stored to memory|D:e7490209:cq taint escape: tainted value stored to memory
+ir-pass/test/control_classical_call_arm_reject_fp_result.ll|D:5cf32aec:cq controlled lowering: control flow|D:5cf32aec:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_callee_nonnull.ll|D:4d29f959:cq controlled lowering: control flow|D:4d29f959:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_callee_range.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_range.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_impure.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_interposable_callee.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_localarray_store.ll|D:9d144f43:cq taint escape: tainted value stored to memory|D:9d144f43:cq taint escape: tainted value stored to memory
+ir-pass/test/control_classical_call_arm_reject_multiuser.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_nonI32_ret.ll|D:681afbee:cq taint escape: tainted value returned at non-i32 width|D:681afbee:cq taint escape: tainted value returned at non-i32 width
+ir-pass/test/control_classical_call_arm_reject_onward_branch.ll|D:82b653c0:cq controlled lowering: value-arm swap-route|D:82b653c0:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_classical_call_arm_reject_onward_ctl_clobber.ll|D:8b7304e5:cq controlled lowering: arm rewrites a condition operand|D:8b7304e5:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_classical_call_arm_reject_onward_ctl_spec_fparg.ll|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re
+ir-pass/test/control_classical_call_arm_reject_onward_spec_i16arg.ll|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re
+ir-pass/test/control_classical_call_arm_reject_onward_spec_newcand_fparg.ll|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re|D:5f4259e0:cq specialization: floating-point quantum argument or return has no re
+ir-pass/test/control_classical_call_arm_reject_onward_spec_newcand_inbody.ll|D:9f045f5f:cq specialization: callee contains tainted control flow under quantum |D:9f045f5f:cq specialization: callee contains tainted control flow under quantum 
+ir-pass/test/control_classical_call_arm_reject_onward_spec_qqcmp.ll|D:3b959e9c:|D:3b959e9c:
+ir-pass/test/control_classical_call_arm_reject_opaque_callee.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_partial_callee.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_poisonbr_callee.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_qrom_callee.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_classical_call_arm_reject_tainted_arg.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_inplace_ry_alias_after_region.ll|A:49965e9a|A:49965e9a
+ir-pass/test/control_inplace_ry_alias_chain_consumed.ll|A:dc026626|A:dc026626
+ir-pass/test/control_inplace_ry_alias_pre_region_branch.ll|A:7c04d95f|A:7c04d95f
+ir-pass/test/control_inplace_ry_clone_base_frozen.ll|A:6b5e8309|A:6b5e8309
+ir-pass/test/control_inplace_ry_dead_base_frozen.ll|A:0a0ad4d2|A:0a0ad4d2
+ir-pass/test/control_inplace_ry_dead_base_late_use_frozen.ll|A:8944a4c8|A:8944a4c8
+ir-pass/test/control_inplace_ry_derived_base_add_late_use_frozen.ll|A:bbf96817|A:bbf96817
+ir-pass/test/control_inplace_ry_derived_base_f64_late_use_frozen.ll|A:825044db|A:825044db
+ir-pass/test/control_inplace_ry_derived_base_mul_late_use_frozen.ll|A:f2a2343a|A:f2a2343a
+ir-pass/test/control_inplace_ry_diamond_negated.ll|A:1ea1c1b1|A:1ea1c1b1
+ir-pass/test/control_inplace_ry_diamond.ll|A:44baece3|A:44baece3
+ir-pass/test/control_inplace_ry_f64.ll|A:50b7bc88|A:50b7bc88
+ir-pass/test/control_inplace_ry_ifelse_classical_between.ll|A:e85a9550|A:e85a9550
+ir-pass/test/control_inplace_ry_ifelse.ll|A:2f2be802|A:2f2be802
+ir-pass/test/control_inplace_ry_inloop_cond_pre_measure.ll|A:c3de7f3e|A:c3de7f3e
+ir-pass/test/control_inplace_ry_inloop_derived_cond.ll|A:96c3e948|A:96c3e948
+ir-pass/test/control_inplace_ry_inloop_diamond.ll|A:e8ccd10b|A:e8ccd10b
+ir-pass/test/control_inplace_ry_inloop_ifelse.ll|A:18d7b84c|A:18d7b84c
+ir-pass/test/control_inplace_ry_inloop_leading_gate.ll|A:b55e45e2|A:b55e45e2
+ir-pass/test/control_inplace_ry_inloop_negated.ll|A:8bca2238|A:8bca2238
+ir-pass/test/control_inplace_ry_inloop_offset.ll|A:c8108333|A:c8108333
+ir-pass/test/control_inplace_ry_inloop_post_region_gate.ll|A:1d4b0aae|A:1d4b0aae
+ir-pass/test/control_inplace_ry_inloop_rotated_dead.ll|A:1b98f216|A:1b98f216
+ir-pass/test/control_inplace_ry_inloop_rz_reflection.ll|A:ce17b4ff|A:ce17b4ff
+ir-pass/test/control_inplace_ry_inloop_seq.ll|A:d3e8caa1|A:d3e8caa1
+ir-pass/test/control_inplace_ry_inloop_two_exits.ll|A:4c84a5cf|A:4c84a5cf
+ir-pass/test/control_inplace_ry_inloop_two_registers.ll|A:5553549c|A:5553549c
+ir-pass/test/control_inplace_ry_inplace_alias_witness.ll|A:acbfb8d6|A:acbfb8d6
+ir-pass/test/control_inplace_ry_lifted_phi_after_region.ll|A:4e62d53c|A:4e62d53c
+ir-pass/test/control_inplace_ry_lifted_phi_base.ll|A:db72e25f|A:db72e25f
+ir-pass/test/control_inplace_ry_post_region_theta_cond.ll|A:e2800896|A:e2800896
+ir-pass/test/control_inplace_ry_post_region_theta_derived_cond.ll|A:7f1b6138|A:7f1b6138
+ir-pass/test/control_inplace_ry_post_region_theta_negated.ll|A:ce369b17|A:ce369b17
+ir-pass/test/control_inplace_ry_rail_cast_base.ll|A:bdb087d9|A:bdb087d9
+ir-pass/test/control_inplace_ry_rail_data_use.ll|A:e8b8f18b|A:e8b8f18b
+ir-pass/test/control_inplace_ry_rail_dead_register.ll|A:0a67cdd5|A:0a67cdd5
+ir-pass/test/control_inplace_ry_rail_derived_base.ll|A:a83bea6f|A:a83bea6f
+ir-pass/test/control_inplace_ry_rail_diamond.ll|A:2608bd3d|A:2608bd3d
+ir-pass/test/control_inplace_ry_rail_f64_width.ll|A:1e41df49|A:1e41df49
+ir-pass/test/control_inplace_ry_rail_i1_width.ll|A:ae3749c9|A:ae3749c9
+ir-pass/test/control_inplace_ry_rail_measure_after.ll|A:ab89b53b|A:ab89b53b
+ir-pass/test/control_inplace_ry_rail_negated_runtime_angle.ll|A:d276ea98|A:d276ea98
+ir-pass/test/control_inplace_ry_rail_negated_zero_angle.ll|A:85301513|A:85301513
+ir-pass/test/control_inplace_ry_rail_negated.ll|A:957b115e|A:957b115e
+ir-pass/test/control_inplace_ry_rail_opaque_seed.ll|A:39cc152f|A:39cc152f
+ir-pass/test/control_inplace_ry_rail_post_ry_sdagger.ll|A:143cb1a3|A:143cb1a3
+ir-pass/test/control_inplace_ry_rail_two_regions.ll|A:3b7cfdb7|A:3b7cfdb7
+ir-pass/test/control_inplace_ry_rail_unnegated_inf_angle.ll|A:a23d9c07|A:a23d9c07
+ir-pass/test/control_inplace_ry_reject_cond_register.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_derived_base_sub.ll|D:c3054268:cq controlled lowering: rotation arm on a condition wire|D:c3054268:cq controlled lowering: rotation arm on a condition wire
+ir-pass/test/control_inplace_ry_reject_derived_base.ll|D:c3054268:cq controlled lowering: rotation arm on a condition wire|D:c3054268:cq controlled lowering: rotation arm on a condition wire
+ir-pass/test/control_inplace_ry_reject_diagonal_alias.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_flat_cond_pre_measure.ll|D:c02ec0fe:cq controlled lowering: stale rail record read past a controlled Ry|D:c02ec0fe:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_flat_rotated_dead.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_inloop_alias.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_inloop_cond_register.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_inloop_derived_base.ll|D:a24ebc4d:cq controlled lowering: control flow inside a loop body|D:a24ebc4d:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_frozen_dtzb_carry.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_inloop_frozen_leading_gate.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_inloop_invariant_cond_hoisted.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_inloop_irreducible.ll|D:07fb7591:cq controlled lowering: control flow inside a loop body|D:07fb7591:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_iterlocal_base.ll|D:d773f341:cq controlled lowering: control flow inside a loop body|D:d773f341:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_j4.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_inloop_lifted_phi.ll|D:c07d33fa:cq loop lowering: loop-carried tainted value crosses iterations|D:c07d33fa:cq loop lowering: loop-carried tainted value crosses iterations
+ir-pass/test/control_inplace_ry_reject_inloop_multilatch.ll|D:bd960780:cq controlled lowering: control flow inside a loop body|D:bd960780:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_nested_loop.ll|D:bd960780:cq controlled lowering: control flow inside a loop body|D:bd960780:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_nested.ll|D:cca04809:cq controlled lowering: nested control flow|D:cca04809:cq controlled lowering: nested control flow
+ir-pass/test/control_inplace_ry_reject_inloop_premark.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_inloop_second_cycle.ll|D:07fb7591:cq controlled lowering: control flow inside a loop body|D:07fb7591:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_inloop_sharecond.ll|D:ab0e0be8:cq controlled lowering: rotation arm shares the condition flag|D:ab0e0be8:cq controlled lowering: rotation arm shares the condition flag
+ir-pass/test/control_inplace_ry_reject_inloop_stalecond.ll|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_inloop_tainted_angle.ll|D:628ba2a0:cq controlled lowering: rotation angle|D:628ba2a0:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_inloop_two_gates.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_inplace_alias_base.ll|D:c3054268:cq controlled lowering: rotation arm on a condition wire|D:c3054268:cq controlled lowering: rotation arm on a condition wire
+ir-pass/test/control_inplace_ry_reject_lifted_phi_chained_theta.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_clone_arg.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_invert.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_measure.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_ret.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_switch.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_lifted_phi_tape.ll|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry|D:f17b4c28:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_mixed_ifelse_rz_first.ll|D:475b8a6a:cq controlled lowering: impure phase arm|D:475b8a6a:cq controlled lowering: impure phase arm
+ir-pass/test/control_inplace_ry_reject_mixed_ifelse.ll|D:579eac0e:cq controlled lowering: mixed phase/value arm|D:579eac0e:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_inplace_ry_reject_nested.ll|D:475b8a6a:cq controlled lowering: impure phase arm|D:475b8a6a:cq controlled lowering: impure phase arm
+ir-pass/test/control_inplace_ry_reject_post_region_theta_stalecond.ll|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_rail_chained_between.ll|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_rail_cond_wire.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_rail_ifelse.ll|D:e9c01e18:cq controlled lowering: bare i1 register condition|D:e9c01e18:cq controlled lowering: bare i1 register condition
+ir-pass/test/control_inplace_ry_reject_rail_inloop.ll|D:a24ebc4d:cq controlled lowering: control flow inside a loop body|D:a24ebc4d:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_rail_measured_before.ll|D:f2a0e8e5:cq controlled lowering: condition measured before the control route|D:f2a0e8e5:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_inplace_ry_reject_rail_multigate_arm.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_rail_negated_inf_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_rail_negated_nan_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_rail_negated_neginf_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_rail_negated_undef_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_rail_round2_measured_parent.ll|D:99a0d855:cq controlled lowering: condition measured before the control route|D:99a0d855:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_inplace_ry_reject_rail_round2_sibling_theta.ll|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_rail_sibling_theta.ll|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate|D:26a01cb4:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_rail_stale_record.ll|D:72de2aec:cq controlled lowering: stale rail record read past a controlled Ry|D:72de2aec:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_rail_stateprep_merged_quantum.ll|D:58990717:cq controlled lowering: state prep merged with a quantum register|D:58990717:cq controlled lowering: state prep merged with a quantum register
+ir-pass/test/control_inplace_ry_reject_rail_stateprep_negated_inf_angle.ll|D:434c70d7:cq controlled lowering: rotation angle|D:434c70d7:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_share_cond_flag.ll|D:ab0e0be8:cq controlled lowering: rotation arm shares the condition flag|D:ab0e0be8:cq controlled lowering: rotation arm shares the condition flag
+ir-pass/test/control_inplace_ry_reject_ssa_alias.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stale_chained_theta.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_diag_alias_backward.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_diag_alias_forward.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_diag_alias_pure.ll|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stale_diag_alias_ret.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_diag_alias_two_hop.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_measure.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stale_pure.ll|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stale_ret.ll|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry|D:90d5a634:cq controlled lowering: stale rail record read past a controlled Ry
+ir-pass/test/control_inplace_ry_reject_stateprep_cast_sext_live.ll|D:12fa62b7:cq controlled lowering: state prep seed is proven equal to the conditi|D:12fa62b7:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_cast_trunc_live.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_cast_zext_live.ll|D:12fa62b7:cq controlled lowering: state prep seed is proven equal to the conditi|D:12fa62b7:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_compound_cond.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_cond_qq.ll|D:7867a3b5:|D:7867a3b5:
+ir-pass/test/control_inplace_ry_reject_stateprep_constexpr_seed.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_fanout.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_fcmp_oeq_derived.ll|D:d8edee63:cq controlled lowering: state prep seed is proven equal to the conditi|D:d8edee63:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_fcmp_oeq_unfolded.ll|D:94a9dce7:cq controlled lowering: condition predates a non-diagonal gate|D:94a9dce7:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stateprep_fp_seed_sitofp.ll|D:beebc966:cq controlled lowering: state prep seed is proven equal to the conditi|D:beebc966:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_ifelse_diff_seeds.ll|D:6c27ee77:cq controlled lowering: if/else state prep allocates two rails|D:6c27ee77:cq controlled lowering: if/else state prep allocates two rails
+ir-pass/test/control_inplace_ry_reject_stateprep_ifelse_mixed_chained.ll|D:8143e5c0:cq controlled lowering: if/else state prep beside a chained or phase a|D:8143e5c0:cq controlled lowering: if/else state prep beside a chained or phase a
+ir-pass/test/control_inplace_ry_reject_stateprep_ifelse_mixed_phase.ll|D:8143e5c0:cq controlled lowering: if/else state prep beside a chained or phase a|D:8143e5c0:cq controlled lowering: if/else state prep beside a chained or phase a
+ir-pass/test/control_inplace_ry_reject_stateprep_ifelse_phase_first.ll|D:475b8a6a:cq controlled lowering: impure phase arm|D:475b8a6a:cq controlled lowering: impure phase arm
+ir-pass/test/control_inplace_ry_reject_stateprep_ifelse_two_preps.ll|D:6c27ee77:cq controlled lowering: if/else state prep allocates two rails|D:6c27ee77:cq controlled lowering: if/else state prep allocates two rails
+ir-pass/test/control_inplace_ry_reject_stateprep_inloop_carried.ll|D:66142a75:cq controlled lowering: state prep merged with a quantum register|D:66142a75:cq controlled lowering: state prep merged with a quantum register
+ir-pass/test/control_inplace_ry_reject_stateprep_inloop_iterlocal.ll|D:a37a798a:cq controlled lowering: control flow inside a loop body|D:a37a798a:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_inplace_ry_reject_stateprep_intrinsic_bitreverse.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_intrinsic_bswap.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_intrinsic_fshl.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_intrinsic_fshr.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_merge_edge_sideways.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_negzero_incoming.ll|D:10e002b4:cq controlled lowering: state prep seed does not match the merge incom|D:10e002b4:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_negzero_seed.ll|D:10e002b4:cq controlled lowering: state prep seed does not match the merge incom|D:10e002b4:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_nested.ll|D:a8cc2f6d:cq controlled lowering: impure phase arm|D:a8cc2f6d:cq controlled lowering: impure phase arm
+ir-pass/test/control_inplace_ry_reject_stateprep_nonconst_incoming.ll|D:66142a75:cq controlled lowering: state prep merged with a quantum register|D:66142a75:cq controlled lowering: state prep merged with a quantum register
+ir-pass/test/control_inplace_ry_reject_stateprep_nonwire_still_collides.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_offwire_sideways_min.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_poison_incoming.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_poison_seed.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_prep_then_prep.ll|D:66142a75:cq controlled lowering: state prep merged with a quantum register|D:66142a75:cq controlled lowering: state prep merged with a quantum register
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_add.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_ashr.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_lshr.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_or.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_sub.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_range_forward_xor.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_runtime_seed.ll|D:066c1689:cq controlled lowering: state prep seed does not match the merge incom|D:066c1689:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_second_cmp_onwire_merge.ll|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_second_cmp_onwire_pred.ll|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_second_flag_i1.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_seed_mismatch.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_select_incoming.ll|D:066c1689:cq controlled lowering: state prep seed does not match the merge incom|D:066c1689:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_sharecond.ll|D:f1fbd1dc:cq controlled lowering: rotation arm shares the condition flag|D:f1fbd1dc:cq controlled lowering: rotation arm shares the condition flag
+ir-pass/test/control_inplace_ry_reject_stateprep_sideways_offset.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_sideways_sdiv.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_stalecond.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stateprep_step_cap_over.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_stray_op.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_sunk_arith.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_switch.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_tainted_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_stateprep_theta_phi_arm.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_two_gates.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_stateprep_undef_incoming.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_undef_seed.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_unevaluable_pinned_operand.ll|D:c0514ed5:cq controlled lowering: state prep seed is proven equal to the conditi|D:c0514ed5:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_unfoldable_curated_call.ll|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi|D:f3b1f377:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stateprep_unfolded_twin.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_inplace_ry_reject_stateprep_unrecognized_suffix.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/control_inplace_ry_reject_stateprep_unrolled_k2.ll|D:66142a75:cq controlled lowering: state prep merged with a quantum register|D:66142a75:cq controlled lowering: state prep merged with a quantum register
+ir-pass/test/control_inplace_ry_reject_stateprep_zext_flag_i32seed.ll|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_inplace_ry_reject_stray_op.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_switch.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_tainted_angle.ll|D:628ba2a0:cq controlled lowering: rotation angle|D:628ba2a0:cq controlled lowering: rotation angle
+ir-pass/test/control_inplace_ry_reject_tape_continued.ll|D:8c01aeda:|D:8c01aeda:
+ir-pass/test/control_inplace_ry_reject_theta_phi_arm.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_two_bases.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_reject_two_thetas.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_inplace_ry_sequential_classical_between.ll|A:e37d0139|A:e37d0139
+ir-pass/test/control_inplace_ry_sequential.ll|A:79e9a922|A:79e9a922
+ir-pass/test/control_inplace_ry_stateprep_bool_seed_int_cond.ll|A:e8290e2d|A:e8290e2d
+ir-pass/test/control_inplace_ry_stateprep_cond_bitcast_seed.ll|A:e592fd8f|A:e592fd8f
+ir-pass/test/control_inplace_ry_stateprep_cond_cast_seed.ll|A:9547de06|A:9547de06
+ir-pass/test/control_inplace_ry_stateprep_cond_derived.ll|A:ff65c3fe|A:ff65c3fe
+ir-pass/test/control_inplace_ry_stateprep_cond_ordered.ll|A:e6355ddd|A:e6355ddd
+ir-pass/test/control_inplace_ry_stateprep_condwire_alias_accept.ll|A:fb437e51|A:fb437e51
+ir-pass/test/control_inplace_ry_stateprep_consumer_add.ll|A:15c019ca|A:15c019ca
+ir-pass/test/control_inplace_ry_stateprep_consumer_none.ll|A:00085b8e|A:00085b8e
+ir-pass/test/control_inplace_ry_stateprep_consumer_ret.ll|A:410b0444|A:410b0444
+ir-pass/test/control_inplace_ry_stateprep_consumer_tape.ll|A:01e5445a|A:01e5445a
+ir-pass/test/control_inplace_ry_stateprep_deep_chain.ll|A:be199866|A:be199866
+ir-pass/test/control_inplace_ry_stateprep_diamond.ll|A:e22ce3da|A:e22ce3da
+ir-pass/test/control_inplace_ry_stateprep_eqfold_cast.ll|A:fdf852be|A:fdf852be
+ir-pass/test/control_inplace_ry_stateprep_eqfold_coincidence_ne.ll|A:8aca4d7c|A:8aca4d7c
+ir-pass/test/control_inplace_ry_stateprep_eqfold_coincidence.ll|A:cf3857d8|A:cf3857d8
+ir-pass/test/control_inplace_ry_stateprep_eqfold_derived_cond.ll|A:528f3fde|A:528f3fde
+ir-pass/test/control_inplace_ry_stateprep_eqfold_extremum.ll|A:4618f1ae|A:4618f1ae
+ir-pass/test/control_inplace_ry_stateprep_eqfold_ne_else.ll|A:9a0b4c3b|A:9a0b4c3b
+ir-pass/test/control_inplace_ry_stateprep_eqfold_ult.ll|A:7f660938|A:7f660938
+ir-pass/test/control_inplace_ry_stateprep_f64.ll|A:545595b8|A:545595b8
+ir-pass/test/control_inplace_ry_stateprep_fcmp_oeq_derived_accept.ll|A:7d038198|A:7d038198
+ir-pass/test/control_inplace_ry_stateprep_fcmp_oeq_folded.ll|A:26d4ccb0|A:26d4ccb0
+ir-pass/test/control_inplace_ry_stateprep_fcmp_oeq_negzero.ll|A:da2a614a|A:da2a614a
+ir-pass/test/control_inplace_ry_stateprep_fcmp_oeq_twin.ll|A:1c738063|A:1c738063
+ir-pass/test/control_inplace_ry_stateprep_fcmp_une_folded.ll|A:94863814|A:94863814
+ir-pass/test/control_inplace_ry_stateprep_feeds_later_cond_prep.ll|A:da07e3a9|A:da07e3a9
+ir-pass/test/control_inplace_ry_stateprep_feeds_later_cond.ll|A:ad20bda3|A:ad20bda3
+ir-pass/test/control_inplace_ry_stateprep_i1_arm_flag.ll|A:8fb189a3|A:8fb189a3
+ir-pass/test/control_inplace_ry_stateprep_i1_flag_pinned.ll|A:28e8dc80|A:28e8dc80
+ir-pass/test/control_inplace_ry_stateprep_i16.ll|A:b1b338ad|A:b1b338ad
+ir-pass/test/control_inplace_ry_stateprep_i64.ll|A:fe032eec|A:fe032eec
+ir-pass/test/control_inplace_ry_stateprep_i8.ll|A:c16e0a74|A:c16e0a74
+ir-pass/test/control_inplace_ry_stateprep_intrinsic_bswap_accept.ll|A:faa221b5|A:faa221b5
+ir-pass/test/control_inplace_ry_stateprep_lifted_phi_after.ll|A:55ad5d63|A:55ad5d63
+ir-pass/test/control_inplace_ry_stateprep_mux_incoming_pinned_accept.ll|A:0671ab4e|A:0671ab4e
+ir-pass/test/control_inplace_ry_stateprep_negated.ll|A:1a8ff27f|A:1a8ff27f
+ir-pass/test/control_inplace_ry_stateprep_post_region_theta_cond.ll|A:db289af2|A:db289af2
+ir-pass/test/control_inplace_ry_stateprep_rail_i1_seed.ll|A:a562cd52|A:a562cd52
+ir-pass/test/control_inplace_ry_stateprep_rail_i32.ll|A:4043f086|A:4043f086
+ir-pass/test/control_inplace_ry_stateprep_rail_negated.ll|A:bba3dde3|A:bba3dde3
+ir-pass/test/control_inplace_ry_stateprep_range_a2_alias.ll|A:902a3a95|A:902a3a95
+ir-pass/test/control_inplace_ry_stateprep_range_constleft_accept.ll|A:3c88e482|A:3c88e482
+ir-pass/test/control_inplace_ry_stateprep_range_constleft_eq.ll|A:d43ff934|A:d43ff934
+ir-pass/test/control_inplace_ry_stateprep_range_constleft_ugt.ll|A:ae89e475|A:ae89e475
+ir-pass/test/control_inplace_ry_stateprep_range_i1_both_edges.ll|A:65f3f2af|A:65f3f2af
+ir-pass/test/control_inplace_ry_stateprep_range_knownbits_enum.ll|A:7e92137d|A:7e92137d
+ir-pass/test/control_inplace_ry_stateprep_range_knownbits.ll|A:a979fc41|A:a979fc41
+ir-pass/test/control_inplace_ry_stateprep_range_mask1.ll|A:89b58d29|A:89b58d29
+ir-pass/test/control_inplace_ry_stateprep_range_ordered_seed0.ll|A:5aac73d9|A:5aac73d9
+ir-pass/test/control_inplace_ry_stateprep_range_ordered.ll|A:1c7821d6|A:1c7821d6
+ir-pass/test/control_inplace_ry_stateprep_seed_nonzero.ll|A:feaeb747|A:feaeb747
+ir-pass/test/control_inplace_ry_stateprep_seed_other_users.ll|A:b12afd45|A:b12afd45
+ir-pass/test/control_inplace_ry_stateprep_selfcontrolled_folded_as_prep.ll|A:4728ae8d|A:4728ae8d
+ir-pass/test/control_inplace_ry_stateprep_seq_then_chained.ll|A:30e8d06b|A:30e8d06b
+ir-pass/test/control_inplace_ry_stateprep_step_cap_under.ll|A:b4a8d493|A:b4a8d493
+ir-pass/test/control_inplace_ry_stateprep_suffix_control.ll|A:5473ed81|A:5473ed81
+ir-pass/test/control_inplace_ry_stateprep_then_rolled_loop.ll|A:25acf823|A:25acf823
+ir-pass/test/control_inplace_ry_stateprep_then_uncond_theta.ll|A:4f8940fb|A:4f8940fb
+ir-pass/test/control_inplace_ry_stateprep_two_regions.ll|A:e614a954|A:e614a954
+ir-pass/test/control_inplace_ry_stateprep_warn_live_record.ll|A:b2053113|A:b2053113
+ir-pass/test/control_inplace_ry_tape_after_region.ll|A:39fd1d97|A:39fd1d97
+ir-pass/test/control_inplace_ry_then_phase_region.ll|A:87b93cbf|A:87b93cbf
+ir-pass/test/control_inplace_ry_warn_live_record.ll|A:63595f10|A:63595f10
+ir-pass/test/control_inplace_rz_dead_chain_reversed.ll|A:58b06590|A:58b06590
+ir-pass/test/control_inplace_rz_diamond.ll|A:d6792c9d|A:d6792c9d
+ir-pass/test/control_inplace_rz_ifelse.ll|A:aafd9bac|A:aafd9bac
+ir-pass/test/control_inplace_rz_in_loop_rolled.ll|A:d9219da8|A:d9219da8
+ir-pass/test/control_inplace_rz_lifted_phi_after_region.ll|A:fc0b5a2f|A:fc0b5a2f
+ir-pass/test/control_inplace_rz_multi_rz_spine.ll|A:87da0b4d|A:87da0b4d
+ir-pass/test/control_inplace_rz_negated.ll|A:a9a4f9c5|A:a9a4f9c5
+ir-pass/test/control_inplace_rz_on_condition_register.ll|A:86a6efb0|A:86a6efb0
+ir-pass/test/control_inplace_rz_sequential.ll|A:dc2b659d|A:dc2b659d
+ir-pass/test/control_inplace_rz_share_cond_flag.ll|A:856b9823|A:856b9823
+ir-pass/test/control_measure_classical_bool_owner.ll|A:697be78b|A:697be78b
+ir-pass/test/control_mixed_value_io_reject_narrowphi.ll|D:8b74eef7:|D:8b74eef7:
+ir-pass/test/control_mixed_value_io_reject_twobase.ll|D:25fb1924:|D:25fb1924:
+ir-pass/test/control_mixed_value_io.ll|A:a81a501f|A:a81a501f
+ir-pass/test/control_peel_angle_tail_datamux.ll|A:cd205045|A:cd205045
+ir-pass/test/control_peel_angle_tail_unchanged_control.ll|A:7ac02658|A:7ac02658
+ir-pass/test/control_peel_classical_call_datamux.ll|A:9ab1cd0e|A:9ab1cd0e
+ir-pass/test/control_peel_clone_measured.ll|A:a8b29e1a|A:a8b29e1a
+ir-pass/test/control_peel_clone_stale_mask.ll|A:58abab10|A:58abab10
+ir-pass/test/control_peel_fp_datamux_phase.ll|A:238f7403|A:238f7403
+ir-pass/test/control_peel_freeze_incoming.ll|A:db452581|A:db452581
+ir-pass/test/control_peel_guarded_store_ctrl_unchanged.ll|A:4a672abc|A:4a672abc
+ir-pass/test/control_peel_identity_bitcast.ll|A:769ee846|A:769ee846
+ir-pass/test/control_peel_ifelse_constmux.ll|A:c435250b|A:c435250b
+ir-pass/test/control_peel_predmux_unchanged_control.ll|A:1c3cdb40|A:1c3cdb40
+ir-pass/test/control_peel_qq_datamux.ll|A:c70ecbf3|A:c70ecbf3
+ir-pass/test/control_peel_reject_arm_defined_speculatable.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_cond_tree.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_escape_clone_store.ll|D:0b252690:cq taint escape: tainted value stored to memory|D:0b252690:cq taint escape: tainted value stored to memory
+ir-pass/test/control_peel_reject_escape_ptrstore.ll|D:0b252690:cq taint escape: tainted value stored to memory|D:0b252690:cq taint escape: tainted value stored to memory
+ir-pass/test/control_peel_reject_escape_store.ll|D:0b252690:cq taint escape: tainted value stored to memory|D:0b252690:cq taint escape: tainted value stored to memory
+ir-pass/test/control_peel_reject_escape_unknown_callee.ll|D:3f276f48:cq taint escape: tainted value consumed by an unknown callee|D:3f276f48:cq taint escape: tainted value consumed by an unknown callee
+ir-pass/test/control_peel_reject_fp_stateprep.ll|D:9bebf11f:cq controlled lowering: state prep seed is proven equal to the conditi|D:9bebf11f:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_peel_reject_guarded_store.ll|D:86b5b94d:cq controlled lowering: guarded store with a merge value|D:86b5b94d:cq controlled lowering: guarded store with a merge value
+ir-pass/test/control_peel_reject_identity_phi.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_inloop.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_nonmuxable_type.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_one_phi_void_arm.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_poison_incoming.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_rotated_cond.ll|D:66401aee:cq controlled lowering: condition predates a non-diagonal gate|D:66401aee:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_peel_reject_round2_rotated_cond.ll|D:66401aee:cq controlled lowering: condition predates a non-diagonal gate|D:66401aee:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_peel_reject_stale_mux_record.ll|D:2dd0a5a5:cq opcode lowering: operand predates a non-diagonal gate|D:2dd0a5a5:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_peel_reject_stateprep_handwritten_clone_i1.ll|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi|D:451aa4a6:cq controlled lowering: state prep seed is proven equal to the conditi
+ir-pass/test/control_peel_reject_stateprep_two_region_foreign_clone.ll|D:26fd1f54:cq controlled lowering: control flow|D:26fd1f54:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_three_pred_merge.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_two_arm_defined.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_undef_incoming.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_peel_reject_vector_bitcast.ll|D:bd2e47f7:|D:bd2e47f7:
+ir-pass/test/control_peel_round2_out_cond.ll|A:9e647489|A:9e647489
+ir-pass/test/control_peel_seq_chain.ll|A:20e96fb1|A:20e96fb1
+ir-pass/test/control_peel_stateprep_bool_seed_int_cond.ll|A:640fbc01|A:640fbc01
+ir-pass/test/control_peel_stateprep_bool_seed_true.ll|A:f5343843|A:f5343843
+ir-pass/test/control_peel_stateprep_datamux_peeled_control.ll|A:bbfc3d01|A:bbfc3d01
+ir-pass/test/control_peel_stateprep_datamux.ll|A:97c136e3|A:97c136e3
+ir-pass/test/control_peel_stateprep_rail.ll|A:a866cde3|A:a866cde3
+ir-pass/test/control_peel_three_phis.ll|A:9a705a4d|A:9a705a4d
+ir-pass/test/control_phase_kickback_abort_global_phase.ll|A:4011595e|A:4011595e
+ir-pass/test/control_phase_kickback_and2.ll|A:23ad779f|A:23ad779f
+ir-pass/test/control_phase_kickback_and3_tree.ll|A:1f480d59|A:1f480d59
+ir-pass/test/control_phase_kickback_andbo.ll|A:39919405|A:39919405
+ir-pass/test/control_phase_kickback_cmp_inplace_xor_other_register.ll|A:f823ada2|A:f823ada2
+ir-pass/test/control_phase_kickback_cmp_measure_after.ll|A:1080b60f|A:1080b60f
+ir-pass/test/control_phase_kickback_cmp_sdagger_post_region.ll|A:c14d8b58|A:c14d8b58
+ir-pass/test/control_phase_kickback_derived_cond.ll|A:24768381|A:24768381
+ir-pass/test/control_phase_kickback_diamond.ll|A:4438d416|A:4438d416
+ir-pass/test/control_phase_kickback_f64_cond.ll|A:ec87608c|A:ec87608c
+ir-pass/test/control_phase_kickback_ifelse_tail_armfalse.ll|A:911c9677|A:911c9677
+ir-pass/test/control_phase_kickback_ifelse_tail_phi.ll|A:94112e7a|A:94112e7a
+ir-pass/test/control_phase_kickback_ifelse.ll|A:21419436|A:21419436
+ir-pass/test/control_phase_kickback_inloop_body_gate.ll|A:df1952b3|A:df1952b3
+ir-pass/test/control_phase_kickback_inloop_derived_cond.ll|A:aff4a022|A:aff4a022
+ir-pass/test/control_phase_kickback_inloop_merge_rail.ll|A:6acba0dd|A:6acba0dd
+ir-pass/test/control_phase_kickback_inloop_reject_hoisted_temp.ll|A:c6840d9b|A:c6840d9b
+ir-pass/test/control_phase_kickback_inloop.ll|A:3ea711e5|A:3ea711e5
+ir-pass/test/control_phase_kickback_mixed_claim_across_loops_accept_control.ll|A:9fe4a5db|A:9fe4a5db
+ir-pass/test/control_phase_kickback_mixed_claim_across_loops_leak_control.ll|A:53aae44a|A:53aae44a
+ir-pass/test/control_phase_kickback_mixed_hoisted_template_leak_control.ll|A:0b7059d5|A:0b7059d5
+ir-pass/test/control_phase_kickback_mixed_invariant_carried_inloop.ll|A:ffbf63cf|A:ffbf63cf
+ir-pass/test/control_phase_kickback_mixed_merge_out_rail_preadd_inloop.ll|A:b70c625b|A:b70c625b
+ir-pass/test/control_phase_kickback_mixed_onward_deadgate_leak_control.ll|A:67650f9d|A:67650f9d
+ir-pass/test/control_phase_kickback_mixed_onward_inloop.ll|A:ebc57433|A:ebc57433
+ir-pass/test/control_phase_kickback_mixed_onward_r1open_inloop.ll|A:bf846c96|A:bf846c96
+ir-pass/test/control_phase_kickback_mixed_preheader_add_outofplace_leak_control.ll|A:d83c21b4|A:d83c21b4
+ir-pass/test/control_phase_kickback_mixed_preheader_addc_after_region_inloop.ll|A:7aacb34c|A:7aacb34c
+ir-pass/test/control_phase_kickback_mixed_preheader_addc_inloop.ll|A:cfa99094|A:cfa99094
+ir-pass/test/control_phase_kickback_mixed_preheader_chained_root_inloop.ll|A:69e8eeb2|A:69e8eeb2
+ir-pass/test/control_phase_kickback_mixed_preheader_r2derived_commuted_outofplace.ll|A:b3efa97d|A:b3efa97d
+ir-pass/test/control_phase_kickback_mixed_preheader_r2derived_imm_outofplace.ll|A:afc74efb|A:afc74efb
+ir-pass/test/control_phase_kickback_mixed_preheader_volatile_imm_leak_control.ll|A:ac6ff020|A:ac6ff020
+ir-pass/test/control_phase_kickback_mixed_short_sext_leak_control.ll|A:0cb53634|A:0cb53634
+ir-pass/test/control_phase_kickback_mixed_value_merge_dtzb_head_preadd_inloop.ll|A:211c8453|A:211c8453
+ir-pass/test/control_phase_kickback_mixed_value_merge_preadd_inloop.ll|A:0ef18b65|A:0ef18b65
+ir-pass/test/control_phase_kickback_negated_tail_phi.ll|A:8dd32269|A:8dd32269
+ir-pass/test/control_phase_kickback_negated.ll|A:f02013b8|A:f02013b8
+ir-pass/test/control_phase_kickback_onward_inloop.ll|A:beafbabd|A:beafbabd
+ir-pass/test/control_phase_kickback_onward_merge.ll|A:4adf15cf|A:4adf15cf
+ir-pass/test/control_phase_kickback_or2.ll|A:6eec1409|A:6eec1409
+ir-pass/test/control_phase_kickback_rail_and_cmp.ll|A:63c03b1f|A:63c03b1f
+ir-pass/test/control_phase_kickback_rail_and_rail.ll|A:aa8d61b0|A:aa8d61b0
+ir-pass/test/control_phase_kickback_rail_chained.ll|A:d8bf7bdb|A:d8bf7bdb
+ir-pass/test/control_phase_kickback_rail_cross_block.ll|A:70bc96f9|A:70bc96f9
+ir-pass/test/control_phase_kickback_rail_data_use.ll|A:9420607b|A:9420607b
+ir-pass/test/control_phase_kickback_rail_dead.ll|A:dda200ca|A:dda200ca
+ir-pass/test/control_phase_kickback_rail_diamond.ll|A:87c0595d|A:87c0595d
+ir-pass/test/control_phase_kickback_rail_ifelse.ll|A:918307c4|A:918307c4
+ir-pass/test/control_phase_kickback_rail_inloop_carried_theta_first_negated.ll|A:4bb895f6|A:4bb895f6
+ir-pass/test/control_phase_kickback_rail_inloop_carried_theta_first.ll|A:7513db4c|A:7513db4c
+ir-pass/test/control_phase_kickback_rail_inloop_invariant.ll|A:a672d518|A:a672d518
+ir-pass/test/control_phase_kickback_rail_inloop_iterlocal_carried_seed.ll|A:941ec4ab|A:941ec4ab
+ir-pass/test/control_phase_kickback_rail_inloop_iterlocal_guarded_block.ll|A:c03174ac|A:c03174ac
+ir-pass/test/control_phase_kickback_rail_inloop_iterlocal_invariant_seed.ll|A:bf968cc5|A:bf968cc5
+ir-pass/test/control_phase_kickback_rail_inloop_iterlocal_measure_after.ll|A:9cbeeaf9|A:9cbeeaf9
+ir-pass/test/control_phase_kickback_rail_inplace_xor_bridge.ll|A:63ee934c|A:63ee934c
+ir-pass/test/control_phase_kickback_rail_negated.ll|A:60632353|A:60632353
+ir-pass/test/control_phase_kickback_rail_post_ry.ll|A:47a378fa|A:47a378fa
+ir-pass/test/control_phase_kickback_rail_round2_window_accept.ll|A:0106f9c1|A:0106f9c1
+ir-pass/test/control_phase_kickback_rail_tail_phi.ll|A:a8dcfcce|A:a8dcfcce
+ir-pass/test/control_phase_kickback_rail_two_regions.ll|A:b98d876a|A:b98d876a
+ir-pass/test/control_phase_kickback_rail_xor_rail_negated.ll|A:714b65de|A:714b65de
+ir-pass/test/control_phase_kickback_reject_abort_branch_phase.ll|D:dc0c470a:cq controlled lowering: phase-class value escaping|D:dc0c470a:cq controlled lowering: phase-class value escaping
+ir-pass/test/control_phase_kickback_reject_bare_i1_loop_phi.ll|D:648021d3:cq controlled lowering: branch phase on a bare i1 condition|D:648021d3:cq controlled lowering: branch phase on a bare i1 condition
+ir-pass/test/control_phase_kickback_reject_bare_i1_trunc.ll|D:35758296:cq controlled lowering: branch phase on a bare i1 condition|D:35758296:cq controlled lowering: branch phase on a bare i1 condition
+ir-pass/test/control_phase_kickback_reject_cmp_derived_folded_to_parent.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_cmp_inplace_xor_bridge.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_cmp_inplace_xor_measured_parent.ll|D:99a0d855:cq controlled lowering: condition measured before the control route|D:99a0d855:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_cmp_measured_before.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_cmp_measured_sidepath.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_cmp_round2_sibling_theta_sdagger.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_cmp_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_compound_cond.ll|D:562a5571:cq controlled lowering: control flow|D:562a5571:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_inloop_invariant_cond_hoisted.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_irreducible_loop.ll|D:0bb0fc02:cq controlled lowering: control flow inside a loop body|D:0bb0fc02:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_phase_kickback_reject_mixed_arm.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_multiblock_arm.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_onward_mixed_arm.ll|D:ca8fe7a7:cq controlled lowering: impure value arm|D:ca8fe7a7:cq controlled lowering: impure value arm
+ir-pass/test/control_phase_kickback_reject_preloop_commit_stale.ll|D:9f3f6eab:cq loop lowering: pre-loop in-place op no longer provable at lowering|D:9f3f6eab:cq loop lowering: pre-loop in-place op no longer provable at lowering
+ir-pass/test/control_phase_kickback_reject_qq_compare.ll|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition
+ir-pass/test/control_phase_kickback_reject_rail_chained_between.ll|D:138732ab:cq controlled lowering: condition predates a non-diagonal gate|D:138732ab:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_rail_measured_early.ll|D:e795e315:cq controlled lowering: condition measured before the control route|D:e795e315:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_rail_measured_parent_name.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_rail_measured_sidepath.ll|D:ec06d636:cq controlled lowering: condition measured before the control route|D:ec06d636:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_rail_round2_measured_parent.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_kickback_reject_rail_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_rail_sibling_theta_crossblock.ll|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_rail_sibling_theta.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_sibling_theta_template_parent_cmp.ll|D:f2ba15f8:cq opcode lowering: operand predates a non-diagonal gate|D:f2ba15f8:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_tainted_angle.ll|D:52ba4464:cq controlled lowering: rotation angle|D:52ba4464:cq controlled lowering: rotation angle
+ir-pass/test/control_phase_kickback_reject_tree_classical_leaf.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_tree_cross_block_leaf.ll|D:985a7ca9:cq controlled lowering: control flow|D:985a7ca9:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_tree_data_use.ll|D:12617750:cq controlled lowering: condition used outside the branch|D:12617750:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_phase_kickback_reject_tree_notform.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_phase_kickback_reject_tree_qq_leaf.ll|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition
+ir-pass/test/control_phase_kickback_reject_tree_stale_leaf.ll|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_kickback_reject_tree_too_deep.ll|D:083c2801:cq controlled lowering: branch phase condition tree too deep|D:083c2801:cq controlled lowering: branch phase condition tree too deep
+ir-pass/test/control_phase_kickback_seq.ll|A:06ac07d9|A:06ac07d9
+ir-pass/test/control_phase_kickback_share_flag_negated.ll|A:963d81bc|A:963d81bc
+ir-pass/test/control_phase_kickback_share_flag.ll|A:2b4b9aa1|A:2b4b9aa1
+ir-pass/test/control_phase_kickback_tree_negated.ll|A:01617237|A:01617237
+ir-pass/test/control_phase_kickback_tree_shared_leaf.ll|A:341f0cbc|A:341f0cbc
+ir-pass/test/control_phase_kickback_two_calls.ll|A:3fbff380|A:3fbff380
+ir-pass/test/control_phase_kickback_xor2.ll|A:7b3a20bb|A:7b3a20bb
+ir-pass/test/control_phase_nest_kickback_compound_inner.ll|A:61bbe03a|A:61bbe03a
+ir-pass/test/control_phase_nest_kickback_empty_outer_arm.ll|A:b31919da|A:b31919da
+ir-pass/test/control_phase_nest_kickback_inner_negated.ll|A:f66dc358|A:f66dc358
+ir-pass/test/control_phase_nest_kickback_outer_negated.ll|A:78ff46bf|A:78ff46bf
+ir-pass/test/control_phase_nest_kickback.ll|A:d934b284|A:d934b284
+ir-pass/test/control_phase_nest_rail_inner.ll|A:f6eb306b|A:f6eb306b
+ir-pass/test/control_phase_nest_rail_outer.ll|A:6c8a8077|A:6c8a8077
+ir-pass/test/control_phase_nest_rail_round2_window_accept.ll|A:2b2f0481|A:2b2f0481
+ir-pass/test/control_phase_nest_reject_block_order.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_phase_nest_reject_cmp_measured_before.ll|D:5d3066ba:cq controlled lowering: condition measured before the control route|D:5d3066ba:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_phase_nest_reject_cmp_round2_sibling_theta.ll|D:74481035:cq controlled lowering: condition predates a non-diagonal gate|D:74481035:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_nest_reject_depth3.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/control_phase_nest_reject_in_loop.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/control_phase_nest_reject_merge_phi.ll|D:a8cc2f6d:cq controlled lowering: impure phase arm|D:a8cc2f6d:cq controlled lowering: impure phase arm
+ir-pass/test/control_phase_nest_reject_mixed_arm.ll|D:475b8a6a:cq controlled lowering: impure phase arm|D:475b8a6a:cq controlled lowering: impure phase arm
+ir-pass/test/control_phase_nest_reject_qq_leaf.ll|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition|D:e8f51c5d:cq controlled lowering: quantum-quantum compare condition
+ir-pass/test/control_phase_nest_reject_rail_negated_inner.ll|D:3a2e1064:cq controlled lowering: branch phase on a bare i1 condition|D:3a2e1064:cq controlled lowering: branch phase on a bare i1 condition
+ir-pass/test/control_phase_nest_reject_rail_negated_outer.ll|D:3a2e1064:cq controlled lowering: branch phase on a bare i1 condition|D:3a2e1064:cq controlled lowering: branch phase on a bare i1 condition
+ir-pass/test/control_phase_nest_reject_rail_round2_inner_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_nest_reject_rail_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_nest_reject_tainted_angle.ll|D:52ba4464:cq controlled lowering: rotation angle|D:52ba4464:cq controlled lowering: rotation angle
+ir-pass/test/control_phase_switch_kickback_empty_case.ll|A:c1ee5262|A:c1ee5262
+ir-pass/test/control_phase_switch_kickback_multigate.ll|A:f5be2514|A:f5be2514
+ir-pass/test/control_phase_switch_kickback.ll|A:0497553b|A:0497553b
+ir-pass/test/control_phase_switch_reject_default_edge.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_phase_switch_reject_grouped.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_phase_switch_reject_merge_phi.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_phase_switch_reject_scrutinee_datause.ll|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_phase_switch_reject_stale_scrutinee.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_phase_switch_reject_table_fold.ll|D:98c194ca:|D:98c194ca:
+ir-pass/test/control_phase_switch_reject_tainted_angle.ll|D:52ba4464:cq controlled lowering: rotation angle|D:52ba4464:cq controlled lowering: rotation angle
+ir-pass/test/control_predmux_accept_aliased_leaf.ll|A:795561db|A:795561db
+ir-pass/test/control_predmux_accept_armbody_flags_stripped.ll|A:ecb240f6|A:ecb240f6
+ir-pass/test/control_predmux_accept_compound_negation.ll|A:1933b19e|A:1933b19e
+ir-pass/test/control_predmux_accept_dag_join.ll|A:8adcd736|A:8adcd736
+ir-pass/test/control_predmux_accept_fp_arm_select.ll|A:92f37647|A:92f37647
+ir-pass/test/control_predmux_accept_fp_diamond_solephi_f80.ll|A:6570927f|A:6570927f
+ir-pass/test/control_predmux_accept_fp_diamond_solephi.ll|A:e6574549|A:e6574549
+ir-pass/test/control_predmux_accept_fp_mini_lround.ll|A:47d16c51|A:47d16c51
+ir-pass/test/control_predmux_accept_fp_triangle_crosscond.ll|A:fca99eb3|A:fca99eb3
+ir-pass/test/control_predmux_accept_fp_triangle_solephi.ll|A:77654a97|A:77654a97
+ir-pass/test/control_predmux_accept_i1phi_branch_allconst.ll|A:2df581b8|A:2df581b8
+ir-pass/test/control_predmux_accept_i1phi_branch_chained.ll|A:ed9604a1|A:ed9604a1
+ir-pass/test/control_predmux_accept_i1phi_branch_cond.ll|A:0f59a45e|A:0f59a45e
+ir-pass/test/control_predmux_accept_i1phi_branch_in_andtree.ll|A:4bb27c39|A:4bb27c39
+ir-pass/test/control_predmux_accept_i1phi_cond_fp.ll|A:81c4d68f|A:81c4d68f
+ir-pass/test/control_predmux_accept_i1phi_cond.ll|A:3cb5709a|A:3cb5709a
+ir-pass/test/control_predmux_accept_i1phi_const_folds.ll|A:d3b065c9|A:d3b065c9
+ir-pass/test/control_predmux_accept_i1phi_data.ll|A:053d19b8|A:053d19b8
+ir-pass/test/control_predmux_accept_i1phi_final_merge.ll|A:d1f2f0f1|A:d1f2f0f1
+ir-pass/test/control_predmux_accept_i80_cmp_arm.ll|A:d6511386|A:d6511386
+ir-pass/test/control_predmux_accept_i80_cmp_const_left.ll|A:45413d44|A:45413d44
+ir-pass/test/control_predmux_accept_i80_cmp_pred_sweep.ll|A:4eb354a7|A:4eb354a7
+ir-pass/test/control_predmux_accept_i80_cmp_purecallee_clonecall.ll|A:35f2fcc0|A:35f2fcc0
+ir-pass/test/control_predmux_accept_i80_cmp_purecallee_transitive.ll|A:bd8c6ce6|A:bd8c6ce6
+ir-pass/test/control_predmux_accept_i80_cmp_purecallee.ll|A:b7ff5c13|A:b7ff5c13
+ir-pass/test/control_predmux_accept_int_diamond_constfall_k5.ll|A:83fc9f8f|A:83fc9f8f
+ir-pass/test/control_predmux_accept_int_diamond_constfall_phiorder.ll|A:608d7851|A:608d7851
+ir-pass/test/control_predmux_accept_int_diamond_constfall.ll|A:4a22bd7a|A:4a22bd7a
+ir-pass/test/control_predmux_accept_negated_nested_no_orphan_inner.ll|A:aaaccefa|A:aaaccefa
+ir-pass/test/control_predmux_accept_negated_tree_no_orphan_leaves.ll|A:6fda4742|A:6fda4742
+ir-pass/test/control_predmux_accept_nested_shortcircuit_claim_order.ll|A:c8ac1802|A:c8ac1802
+ir-pass/test/control_predmux_accept_nested_value_chain.ll|A:6e1f52f0|A:6e1f52f0
+ir-pass/test/control_predmux_accept_nested_value.ll|A:3460eee2|A:3460eee2
+ir-pass/test/control_predmux_accept_nonroot_shield_armkill.ll|A:a4647525|A:a4647525
+ir-pass/test/control_predmux_accept_nonroot_shield_no_orphan.ll|A:483e914e|A:483e914e
+ir-pass/test/control_predmux_accept_positive_tree_orphan_armkill.ll|A:f0d9a057|A:f0d9a057
+ir-pass/test/control_predmux_accept_qrom_jumptable.ll|A:1d8baff3|A:1d8baff3
+ir-pass/test/control_predmux_accept_qrom_read_cttz_masked.ll|A:c400eb0e|A:c400eb0e
+ir-pass/test/control_predmux_accept_qrom_read_masked.ll|A:66b0bba8|A:66b0bba8
+ir-pass/test/control_predmux_accept_qrom_read_nonpow2_provable.ll|A:3f761ee9|A:3f761ee9
+ir-pass/test/control_predmux_accept_qrom_read_phi_index.ll|A:b2ef5543|A:b2ef5543
+ir-pass/test/control_predmux_accept_qrom_read.ll|A:a37d8d7c|A:a37d8d7c
+ir-pass/test/control_predmux_accept_selectchain_foldresidue.ll|A:8f77dfee|A:8f77dfee
+ir-pass/test/control_predmux_accept_selectchain_loopphi_residue.ll|A:db4c4922|A:db4c4922
+ir-pass/test/control_predmux_accept_selectform_curated_total.ll|A:ef0db2da|A:ef0db2da
+ir-pass/test/control_predmux_accept_selectform_incone_flags_stripped.ll|A:acd5955e|A:acd5955e
+ir-pass/test/control_predmux_accept_selectform_noundef_arg.ll|A:e3de1778|A:e3de1778
+ir-pass/test/control_predmux_accept_selectform_retattr_dropped.ll|A:99495715|A:99495715
+ir-pass/test/control_predmux_accept_selectform_seed_flags_preserved.ll|A:085d8ebf|A:085d8ebf
+ir-pass/test/control_predmux_accept_seq_siblings.ll|A:9113547b|A:9113547b
+ir-pass/test/control_predmux_accept_shield_two_ands_deep_no_orphan.ll|A:02de8b5f|A:02de8b5f
+ir-pass/test/control_predmux_accept_shield_under_shield_no_orphan.ll|A:4bd14657|A:4bd14657
+ir-pass/test/control_predmux_accept_staircase.ll|A:350496ba|A:350496ba
+ir-pass/test/control_predmux_accept_straightthrough_value_arm.ll|A:741aaaf5|A:741aaaf5
+ir-pass/test/control_predmux_accept_switch_nested_arm.ll|A:0bf405fa|A:0bf405fa
+ir-pass/test/control_predmux_accept_twophi_merge.ll|A:b0effb01|A:b0effb01
+ir-pass/test/control_predmux_accept_unreachable_dead_body.ll|A:d2b4ef52|A:d2b4ef52
+ir-pass/test/control_predmux_accept_unreachable_default_switch.ll|A:c780c7c9|A:c780c7c9
+ir-pass/test/control_predmux_accept_w6_direct_condphi.ll|A:bbe72a92|A:bbe72a92
+ir-pass/test/control_predmux_accept_w6_stranded_merge_condphi.ll|A:70d0247e|A:70d0247e
+ir-pass/test/control_predmux_accept_willtaint_cmp_over_phi.ll|A:1dd175d9|A:1dd175d9
+ir-pass/test/control_predmux_accept_xor_kept_cone_no_orphan.ll|A:42691132|A:42691132
+ir-pass/test/control_predmux_accept_xor_negation.ll|A:64061eed|A:64061eed
+ir-pass/test/control_predmux_fp_diamond_rzlineage_declines.ll|D:81ac1132:cq controlled lowering: control flow|D:81ac1132:cq controlled lowering: control flow
+ir-pass/test/control_predmux_fp_diamond_stalecond_declines.ll|D:57857d58:cq controlled lowering: condition predates a non-diagonal gate|D:57857d58:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_predmux_i1phi_offgrammar_fallback.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_call_arm.ll|D:e2847c08:cq taint escape: tainted value consumed by an unknown callee|D:e2847c08:cq taint escape: tainted value consumed by an unknown callee
+ir-pass/test/control_predmux_leave_classical_branch.ll|D:5d135e8a:cq controlled lowering: control flow|D:5d135e8a:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_fp_diamond_inloop.ll|D:81ac1132:cq controlled lowering: control flow|D:81ac1132:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_fp128_arith.ll|D:55a59906:cq controlled lowering: value-arm swap-route|D:55a59906:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_leave_i128_merge.ll|D:00681128:cq controlled lowering: value-arm swap-route|D:00681128:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_leave_inloop.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_leave_int_diamond_constfall_prereg.ll|A:da7ed380|A:da7ed380
+ir-pass/test/control_predmux_leave_int_diamond_solephi.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_merge_outside_pred.ll|D:a048e2af:cq controlled lowering: nested control flow|D:a048e2af:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_leave_multiexit.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_leave_selectchain_foldthendecline.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_selectchain_offgrammar.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_store_arm.ll|D:710959f7:cq taint escape: tainted value stored to memory|D:710959f7:cq taint escape: tainted value stored to memory
+ir-pass/test/control_predmux_leave_unreachable_multiret.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_leave_unreachable_store_arm.ll|D:e0bd5301:cq taint escape: tainted value stored to memory|D:e0bd5301:cq taint escape: tainted value stored to memory
+ir-pass/test/control_predmux_leave_w6_classical_merge_br.ll|D:79574d3d:cq controlled lowering: value-arm swap-route|D:79574d3d:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_leave_w6_cond_reads_no_phi.ll|D:79574d3d:cq controlled lowering: value-arm swap-route|D:79574d3d:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_leave_w6_i1cmp_shield.ll|D:79574d3d:cq controlled lowering: value-arm swap-route|D:79574d3d:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_leave_w6_selectchain_phi.ll|D:79574d3d:cq controlled lowering: value-arm swap-route|D:79574d3d:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_predmux_reject_blockaddress_inregion.ll|D:636e9c60:cq literal integrity: address-taken block erased|D:636e9c60:cq literal integrity: address-taken block erased
+ir-pass/test/control_predmux_reject_classical_br_in_region.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_degenerate_phi_classical.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_entryphi_via_compare.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_equal_incomings_phi.ll|D:10b8d7f4:cq controlled lowering: nested control flow|D:10b8d7f4:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_reject_i1cmp_shield_phi.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i1phi_entry_block.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i1phi_offgrammar_trunc.ll|D:58faf4fd:cq controlled lowering: nested control flow|D:58faf4fd:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_reject_i1phi_offgrammar_xor.ll|D:58faf4fd:cq controlled lowering: nested control flow|D:58faf4fd:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_reject_i1phi_single_pred.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i80_arm_op.ll|D:c37e04f6:cq controlled lowering: control flow|D:c37e04f6:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i80_cmp_branchcond.ll|D:c68fee35:cq controlled lowering: nested control flow|D:c68fee35:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_reject_i80_cmp_clonemode.ll|D:749e8253:cq specialization: callee contains tainted control flow under quantum |D:749e8253:cq specialization: callee contains tainted control flow under quantum 
+ir-pass/test/control_predmux_reject_i80_cmp_purecallee_armdiamond.ll|D:7bc74f17:cq specialization: callee contains tainted control flow under quantum |D:7bc74f17:cq specialization: callee contains tainted control flow under quantum 
+ir-pass/test/control_predmux_reject_i80_cmp_purecallee_conedef.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i80_cmp_purecallee_constconst.ll|D:8fa52de5:cq controlled lowering: control flow|D:8fa52de5:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i80_cmp_purecallee_qq.ll|D:8fa52de5:cq controlled lowering: control flow|D:8fa52de5:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_i80_cmp_qq.ll|D:8fa52de5:cq controlled lowering: control flow|D:8fa52de5:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_bare_arg.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_curated_poison_immarg.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_load_in_cone.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_nofpclass_arg_redgreen.ll|D:4bcd5fba:cq controlled lowering: control flow|D:4bcd5fba:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_purecallee_inherentpoison.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_purecallee_nested.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_purecallee_poisonflag.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_purecallee_retpoison.ll|D:d4b51073:cq specialization: callee return value denotes no value (undef/poison)|D:d4b51073:cq specialization: callee return value denotes no value (undef/poison)
+ir-pass/test/control_predmux_reject_selectform_range_arg.ll|D:3ae83f19:cq controlled lowering: control flow|D:3ae83f19:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_rotation_hop_chained.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_rotation_hop_inherent_poison.ll|D:9a50bd66:cq controlled lowering: control flow|D:9a50bd66:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_rotation_poison_arg.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_rotation_theta_poison_seed.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_shift_wide_amount.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_selectform_undef_leaf.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_undef_freeze_phi.ll|D:10b8d7f4:cq controlled lowering: nested control flow|D:10b8d7f4:cq controlled lowering: nested control flow
+ir-pass/test/control_predmux_reject_xor_offgrammar_operand.ll|D:b81bbe2b:cq controlled lowering: control flow|D:b81bbe2b:cq controlled lowering: control flow
+ir-pass/test/control_predmux_reject_xor_shielded_select_operand.ll|D:79574d3d:cq controlled lowering: value-arm swap-route|D:79574d3d:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_reject_measure_classical_in_arm.ll|D:82752c6e:cq controlled lowering: value-arm swap-route|D:82752c6e:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_abort_park_exit.ll|A:84ed4435|A:84ed4435
+ir-pass/test/control_swap_abort_park_negated.ll|A:e56f012f|A:e56f012f
+ir-pass/test/control_swap_abort_park_trap.ll|A:29ec3330|A:29ec3330
+ir-pass/test/control_swap_abort_park.ll|A:56d0ac5a|A:56d0ac5a
+ir-pass/test/control_swap_accept_blockaddress_outside_region.ll|A:bdaa5fd8|A:bdaa5fd8
+ir-pass/test/control_swap_accept_diamond_aliased_cond.ll|A:d1fd1521|A:d1fd1521
+ir-pass/test/control_swap_accept_post_region_theta_derived_cond.ll|A:86bbcd71|A:86bbcd71
+ir-pass/test/control_swap_accept_post_region_theta_shapes.ll|A:7279be99|A:7279be99
+ir-pass/test/control_swap_accept_post_region_theta_shared_rail.ll|A:9a897206|A:9a897206
+ir-pass/test/control_swap_accept_post_region_theta.ll|A:d43e62bb|A:d43e62bb
+ir-pass/test/control_swap_accept_select_aliased_leaf.ll|A:8ff2ca68|A:8ff2ca68
+ir-pass/test/control_swap_accept_select_and_aliased_leaf.ll|A:ef4ffe04|A:ef4ffe04
+ir-pass/test/control_swap_accept_select_mergephi_cmp_cond_region.ll|A:0ea470ab|A:0ea470ab
+ir-pass/test/control_swap_accept_select_mergephi_inloop_outside_prep.ll|A:41e6a0f8|A:41e6a0f8
+ir-pass/test/control_swap_accept_select_mergephi_quantum_arm_then_prep.ll|A:b297560a|A:b297560a
+ir-pass/test/control_swap_accept_select_mergephi_rail_negated.ll|A:6a01dc5f|A:6a01dc5f
+ir-pass/test/control_swap_accept_select_mergephi_rail_prep_true_edge.ll|A:7c3a8946|A:7c3a8946
+ir-pass/test/control_swap_accept_select_mergephi_rail_sdagger.ll|A:3d98b427|A:3d98b427
+ir-pass/test/control_swap_accept_select_mergephi_rail_then_kickback.ll|A:39265123|A:39265123
+ir-pass/test/control_swap_accept_select_mergephi_runtime_amux.ll|A:2590e561|A:2590e561
+ir-pass/test/control_swap_accept_select_mergephi_two_selects.ll|A:90485713|A:90485713
+ir-pass/test/control_swap_accept_select_rail_after_prep_negated.ll|A:49e7ce70|A:49e7ce70
+ir-pass/test/control_swap_accept_select_rail_after_prep.ll|A:9f3fada1|A:9f3fada1
+ir-pass/test/control_swap_accept_select_rail_alias_cond.ll|A:47abe75d|A:47abe75d
+ir-pass/test/control_swap_accept_seq_diamond_chain.ll|A:8253bb83|A:8253bb83
+ir-pass/test/control_swap_accept_seq_ifelse_then_diamond.ll|A:b08e4219|A:b08e4219
+ir-pass/test/control_swap_accept_two_iterations.ll|A:43874a53|A:43874a53
+ir-pass/test/control_swap_cond_datause_escape.ll|A:527192da|A:527192da
+ir-pass/test/control_swap_cond_datause_ifelse.ll|A:1ef5e134|A:1ef5e134
+ir-pass/test/control_swap_cond_datause_measured.ll|A:21387f8c|A:21387f8c
+ir-pass/test/control_swap_cond_datause_negarm.ll|A:380da528|A:380da528
+ir-pass/test/control_swap_defer_select_angle.ll|A:eacf0919|A:eacf0919
+ir-pass/test/control_swap_defer_switch.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_defer_value_qq.ll|D:7dc9b611:cq controlled lowering: value-arm swap-route|D:7dc9b611:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_diamond_after_classical_lift.ll|A:a0326878|A:a0326878
+ir-pass/test/control_swap_diamond_derived_chain.ll|A:be8409d7|A:be8409d7
+ir-pass/test/control_swap_diamond_derived_f64.ll|A:eafe1d53|A:eafe1d53
+ir-pass/test/control_swap_diamond_derived_polarity.ll|A:ac20ccf4|A:ac20ccf4
+ir-pass/test/control_swap_diamond_derived_sll.ll|A:f5e9d3d0|A:f5e9d3d0
+ir-pass/test/control_swap_diamond_derived.ll|A:58840447|A:58840447
+ir-pass/test/control_swap_diamond_n3_runtime_angles.ll|A:099e2afe|A:099e2afe
+ir-pass/test/control_swap_diamond_polarity.ll|A:bf654ec8|A:bf654ec8
+ir-pass/test/control_swap_diamond.ll|A:b2cbee33|A:b2cbee33
+ir-pass/test/control_swap_empty_arm.ll|A:1c22441e|A:1c22441e
+ir-pass/test/control_swap_eqfold_classical_between.ll|A:441780fc|A:441780fc
+ir-pass/test/control_swap_eqfold_diamond.ll|A:abdc4f53|A:abdc4f53
+ir-pass/test/control_swap_eqfold_ifelse.ll|A:8c477f02|A:8c477f02
+ir-pass/test/control_swap_eqfold_polarity.ll|A:992a2154|A:992a2154
+ir-pass/test/control_swap_ifelse_derived_crossqubit_cond.ll|A:4e7285b5|A:4e7285b5
+ir-pass/test/control_swap_ifelse_derived_emptyelse.ll|A:e924309e|A:e924309e
+ir-pass/test/control_swap_ifelse_derived_emptythen.ll|A:cd4423e4|A:cd4423e4
+ir-pass/test/control_swap_ifelse_derived_stalecond.ll|A:0d92a587|A:0d92a587
+ir-pass/test/control_swap_ifelse_derived.ll|A:0f0bca02|A:0f0bca02
+ir-pass/test/control_swap_ifelse_escape.ll|A:98d61637|A:98d61637
+ir-pass/test/control_swap_ifelse_multigate.ll|A:f3bed700|A:f3bed700
+ir-pass/test/control_swap_ifelse.ll|A:1bd2eb31|A:1bd2eb31
+ir-pass/test/control_swap_inloop_derived_cond.ll|A:d1e5e5ae|A:d1e5e5ae
+ir-pass/test/control_swap_inloop_diamond_iterlocal.ll|A:7f125e56|A:7f125e56
+ir-pass/test/control_swap_inloop_diamond.ll|A:78d27efc|A:78d27efc
+ir-pass/test/control_swap_inloop_gatefree_body.ll|A:65c8cf2d|A:65c8cf2d
+ir-pass/test/control_swap_inloop_offwire_theta.ll|A:ddd40f14|A:ddd40f14
+ir-pass/test/control_swap_inloop_post_region_theta.ll|A:aac7462a|A:aac7462a
+ir-pass/test/control_swap_inloop_postloop_railop_mc.ll|A:637f7bbf|A:637f7bbf
+ir-pass/test/control_swap_inloop_postloop_railop.ll|A:163ed487|A:163ed487
+ir-pass/test/control_swap_inloop_rail_record_live.ll|A:51e2cf14|A:51e2cf14
+ir-pass/test/control_swap_inloop_railop_inplace.ll|A:e519d2e4|A:e519d2e4
+ir-pass/test/control_swap_inloop_range_cond.ll|A:c57ffd3f|A:c57ffd3f
+ir-pass/test/control_swap_inloop_seq.ll|A:e769e3aa|A:e769e3aa
+ir-pass/test/control_swap_inloop_two_registers.ll|A:15bf4f76|A:15bf4f76
+ir-pass/test/control_swap_nested_phase_bothneg.ll|A:31108f7f|A:31108f7f
+ir-pass/test/control_swap_nested_phase_crossreg_n2.ll|A:a06bdc43|A:a06bdc43
+ir-pass/test/control_swap_nested_phase_derived.ll|A:fb955624|A:fb955624
+ir-pass/test/control_swap_nested_phase_diamond.ll|A:a4671899|A:a4671899
+ir-pass/test/control_swap_nested_phase_gatefree_mid.ll|A:522aa635|A:522aa635
+ir-pass/test/control_swap_nested_phase_innerneg.ll|A:a840c5be|A:a840c5be
+ir-pass/test/control_swap_nested_phase_multigate_mid.ll|A:c91975a3|A:c91975a3
+ir-pass/test/control_swap_nested_phase_multireg.ll|A:0f60900d|A:0f60900d
+ir-pass/test/control_swap_nested_phase_outerneg.ll|A:9e9533ed|A:9e9533ed
+ir-pass/test/control_swap_reject_abort_cond_datause.ll|D:55092d7e:cq controlled lowering: condition used outside the branch|D:55092d7e:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_swap_reject_abort_fp_cond.ll|D:5cf32aec:cq controlled lowering: control flow|D:5cf32aec:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_abort_nonnoreturn.ll|D:562a5571:cq controlled lowering: control flow|D:562a5571:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_abort_phase_sibling.ll|D:1a53d39b:cq controlled lowering: phase-class value escaping|D:1a53d39b:cq controlled lowering: phase-class value escaping
+ir-pass/test/control_swap_reject_blockaddress_abort_arm.ll|D:2cfe7cec:cq literal integrity: address-taken block erased|D:2cfe7cec:cq literal integrity: address-taken block erased
+ir-pass/test/control_swap_reject_blockaddress_diamond_arm.ll|D:22b0cd8b:cq literal integrity: address-taken block erased|D:22b0cd8b:cq literal integrity: address-taken block erased
+ir-pass/test/control_swap_reject_blockaddress_metadata_only.ll|D:22b0cd8b:cq literal integrity: address-taken block erased|D:22b0cd8b:cq literal integrity: address-taken block erased
+ir-pass/test/control_swap_reject_blockaddress_nested_mid.ll|D:22b0cd8b:cq literal integrity: address-taken block erased|D:22b0cd8b:cq literal integrity: address-taken block erased
+ir-pass/test/control_swap_reject_blockaddress_switch_arm.ll|D:21f66ee4:cq literal integrity: address-taken block erased|D:21f66ee4:cq literal integrity: address-taken block erased
+ir-pass/test/control_swap_reject_branch_datamux_exp2.ll|D:11e84816:cq controlled lowering: impure value arm|D:11e84816:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_clobber.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_reject_cond_datause_cqrt_measure_spoof.ll|D:b03aaa87:cq controlled lowering: condition data use neither escaped nor measure|D:b03aaa87:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_cond_datause_dead.ll|D:b03aaa87:cq controlled lowering: condition data use neither escaped nor measure|D:b03aaa87:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_cond_datause_main_dead.ll|D:d8cc46e1:cq controlled lowering: condition data use neither escaped nor measure|D:d8cc46e1:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_cond_datause_measure_early.ll|D:6321dd89:cq controlled lowering: condition measured before the control route|D:6321dd89:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_cond_datause_unlowerable_cast.ll|D:c12231d3:cq controlled lowering: condition data use has no template|D:c12231d3:cq controlled lowering: condition data use has no template
+ir-pass/test/control_swap_reject_cond_datause_unlowerable_fcmp.ll|D:c12231d3:cq controlled lowering: condition data use has no template|D:c12231d3:cq controlled lowering: condition data use has no template
+ir-pass/test/control_swap_reject_crosshandle.ll|D:3bd2dacc:cq controlled lowering: control flow|D:3bd2dacc:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_ctrl_cond_unlowerable_fcmp.ll|D:735c99eb:cq controlled lowering: control condition has no template|D:735c99eb:cq controlled lowering: control condition has no template
+ir-pass/test/control_swap_reject_derived.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_reject_eqfold_cross_handle.ll|D:3bd2dacc:cq controlled lowering: control flow|D:3bd2dacc:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_eqfold_wrong_literal.ll|D:ee1e56ea:cq controlled lowering: control flow|D:ee1e56ea:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_freeze_phi_angle.ll|D:9b90e69d:cq controlled lowering: rotation angle|D:9b90e69d:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_hoisted_clobber.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_reject_ifelse_crosshandle.ll|D:bf1a4b4d:cq controlled lowering: impure phase arm|D:bf1a4b4d:cq controlled lowering: impure phase arm
+ir-pass/test/control_swap_reject_ifelse_mixed_phase_defect.ll|D:bb67e545:cq controlled lowering: mixed phase/value arm|D:bb67e545:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_swap_reject_ifelse_mixed_value_defect.ll|D:30501d3a:cq controlled lowering: impure phase arm|D:30501d3a:cq controlled lowering: impure phase arm
+ir-pass/test/control_swap_reject_inloop_diamond_irreducible.ll|D:1b299f33:cq controlled lowering: control flow inside a loop body|D:1b299f33:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_swap_reject_inloop_multilatch.ll|D:357893e9:cq controlled lowering: control flow inside a loop body|D:357893e9:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_swap_reject_inloop_second_cycle.ll|D:1b299f33:cq controlled lowering: control flow inside a loop body|D:1b299f33:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_swap_reject_inloop_stalecond_invariant.ll|D:e6e18c20:cq controlled lowering: condition predates a non-diagonal gate|D:e6e18c20:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_inloop_switch.ll|D:d61260b7:cq controlled lowering: control flow inside a loop body|D:d61260b7:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_swap_reject_inloop_value_arm.ll|D:bd960780:cq controlled lowering: control flow inside a loop body|D:bd960780:cq controlled lowering: control flow inside a loop body
+ir-pass/test/control_swap_reject_loop_under_control.ll|D:2ce64a39:cq controlled lowering: loop|D:2ce64a39:cq controlled lowering: loop
+ir-pass/test/control_swap_reject_measure_in_arm.ll|D:a5e611b3:cq controlled lowering: control flow|D:a5e611b3:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_botharm_asym.ll|D:cbfe8db0:cq controlled lowering: nested control flow|D:cbfe8db0:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_nested_botharm_sym.ll|D:3b270ed0:cq controlled lowering: nested control flow|D:3b270ed0:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_nested_cond_datause_dead.ll|D:ccf2e826:cq controlled lowering: condition used outside the branch|D:ccf2e826:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_swap_reject_nested_cond_datause_inner.ll|D:ca114234:cq controlled lowering: control flow|D:ca114234:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_cond_datause_measure_early.ll|D:ccf2e826:cq controlled lowering: condition used outside the branch|D:ccf2e826:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_swap_reject_nested_cond_datause_outer.ll|D:ccf2e826:cq controlled lowering: condition used outside the branch|D:ccf2e826:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_swap_reject_nested_cond_datause_unlowerable_cast.ll|D:ccf2e826:cq controlled lowering: condition used outside the branch|D:ccf2e826:cq controlled lowering: condition used outside the branch
+ir-pass/test/control_swap_reject_nested_depth3.ll|D:d47fdf74:cq controlled lowering: nested control flow|D:d47fdf74:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_nested_distinct_base.ll|D:bf1a4b4d:cq controlled lowering: impure phase arm|D:bf1a4b4d:cq controlled lowering: impure phase arm
+ir-pass/test/control_swap_reject_nested_inner_clobber.ll|D:3a249192:cq controlled lowering: mixed phase/value arm|D:3a249192:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_swap_reject_nested_inner_cond_unlowerable_fcmp.ll|D:fe2713a7:cq controlled lowering: control condition has no template|D:fe2713a7:cq controlled lowering: control condition has no template
+ir-pass/test/control_swap_reject_nested_inner_derived.ll|D:ca114234:cq controlled lowering: control flow|D:ca114234:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_loop_irreducible.ll|D:aaba584c:cq controlled lowering: nested control flow|D:aaba584c:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_nested_loop.ll|D:cbfe8db0:cq controlled lowering: nested control flow|D:cbfe8db0:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_nested_mid_stray.ll|D:ca114234:cq controlled lowering: control flow|D:ca114234:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_multireg_derived.ll|D:a5e611b3:cq controlled lowering: control flow|D:a5e611b3:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_select.ll|D:13a3bdb3:cq controlled lowering: arm rewrites a condition operand|D:13a3bdb3:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_reject_nested_stalecond_direct.ll|D:e33c2ebb:cq controlled lowering: condition predates a non-diagonal gate|D:e33c2ebb:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_nested_stalecond_router.ll|D:e33c2ebb:cq controlled lowering: condition predates a non-diagonal gate|D:e33c2ebb:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_nested_switch.ll|D:ca114234:cq controlled lowering: control flow|D:ca114234:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_nested_theta.ll|D:4923f035:cq controlled lowering: impure phase arm|D:4923f035:cq controlled lowering: impure phase arm
+ir-pass/test/control_swap_reject_nested_value_mixed.ll|D:3a249192:cq controlled lowering: mixed phase/value arm|D:3a249192:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_swap_reject_nested_value_pure.ll|D:e5e9498c:cq controlled lowering: value-arm swap-route|D:e5e9498c:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_reject_nonreconverging_value_exit.ll|D:a94bdea1:cq controlled lowering: non-reconverging value exit|D:a94bdea1:cq controlled lowering: non-reconverging value exit
+ir-pass/test/control_swap_reject_phase_rail_cond.ll|D:e9c01e18:cq controlled lowering: bare i1 register condition|D:e9c01e18:cq controlled lowering: bare i1 register condition
+ir-pass/test/control_swap_reject_phase_value_escaping.ll|D:adc6871f:cq controlled lowering: phase-class value escaping|D:adc6871f:cq controlled lowering: phase-class value escaping
+ir-pass/test/control_swap_reject_post_region_theta_and_between.ll|D:66a0aa77:cq controlled lowering: condition predates a non-diagonal gate|D:66a0aa77:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_post_region_theta_nested.ll|D:4d9ebf5d:cq controlled lowering: condition predates a non-diagonal gate|D:4d9ebf5d:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_post_region_theta_sharecond.ll|D:4d9ebf5d:cq controlled lowering: condition predates a non-diagonal gate|D:4d9ebf5d:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_post_region_theta_valuearm.ll|D:a22d425b:cq controlled lowering: condition predates a non-diagonal gate|D:a22d425b:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_alias.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_angle_cast.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_select_badcond.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_classical_leaf.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_cmp_inloop_measure_after_constarm.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_cmp_inloop_measure_after.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_cmp_measured_before.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_cmp_measured_parent_name.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_cmp_measured_sidepath.ll|D:65eeeaa3:cq controlled lowering: condition measured before the control route|D:65eeeaa3:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_cmp_round2_plainc_twotu.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_cmp_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_coherent.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_dualuse.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_select_fp_alias.ll|D:5cf32aec:cq controlled lowering: control flow|D:5cf32aec:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_angle_fanout.ll|D:14f18045:cq controlled lowering: rotation angle|D:14f18045:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_select_fp_coherent_call_derived.ll|D:5cf32aec:cq controlled lowering: control flow|D:5cf32aec:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_coherent.ll|D:2dd12875:cq controlled lowering: control flow|D:2dd12875:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_freeze_cond.ll|D:e9520f61:cq controlled lowering: control flow|D:e9520f61:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_freeze_operand.ll|D:e9520f61:cq controlled lowering: control flow|D:e9520f61:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_phase_sibling_alias.ll|D:2dd12875:cq controlled lowering: control flow|D:2dd12875:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_theta_fork.ll|D:2dd12875:cq controlled lowering: control flow|D:2dd12875:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp_vector.ll|D:c35674f4:cq controlled lowering: control flow|D:c35674f4:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp128_cond.ll|D:e9520f61:cq controlled lowering: control flow|D:e9520f61:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_fp128.ll|D:5cf32aec:cq controlled lowering: control flow|D:5cf32aec:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_freeze.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_select_i1_operand_leaf.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_i128_leaf.ll|D:5a21931e:cq controlled lowering: control flow|D:5a21931e:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_i128.ll|D:c35674f4:cq controlled lowering: control flow|D:c35674f4:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_i1sel_combinator.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_in_routed_arm_intmerge.ll|D:82b653c0:cq controlled lowering: value-arm swap-route|D:82b653c0:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_reject_select_mergephi_chained_arm.ll|D:c4fe9c4e:cq controlled lowering: condition predates a non-diagonal gate|D:c4fe9c4e:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_mergephi_inplace_arm.ll|D:b2fa06d6:cq controlled lowering: condition predates a non-diagonal gate|D:b2fa06d6:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_mergephi_measure_before.ll|D:a60786ac:cq controlled lowering: condition measured before the control route|D:a60786ac:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_mergephi_other_class.ll|D:dfd97d08:cq controlled lowering: control flow|D:dfd97d08:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_mergephi_three_incoming.ll|D:6c089099:cq controlled lowering: control flow|D:6c089099:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_mergephi_tree_leaf.ll|D:e3a60eaf:cq controlled lowering: control flow|A:1fe84cf5
+ir-pass/test/control_swap_reject_select_mergephi_two_rails.ll|D:e3a60eaf:cq controlled lowering: control flow|D:e3a60eaf:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_mergephi_unclaimed.ll|D:e3a60eaf:cq controlled lowering: control flow|D:e3a60eaf:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_mergephi_value_region.ll|D:a0332be8:cq controlled lowering: bare i1 register condition|D:a0332be8:cq controlled lowering: bare i1 register condition
+ir-pass/test/control_swap_reject_select_or_selfdup.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_phase_sibling_alias_i32.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_qq_i1leaf.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_rail_inloop_measure_after_constarm.ll|D:fb766556:cq controlled lowering: condition measured before the control route|D:fb766556:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_inloop_measure_after.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_inloop_stale_theta.ll|D:c3845474:cq controlled lowering: condition predates a non-diagonal gate|D:c3845474:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_rail_measured_before.ll|D:fb766556:cq controlled lowering: condition measured before the control route|D:fb766556:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_measured_parent_before_chain.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_measured_parent_name.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_measured_sidepath.ll|D:ec06d636:cq controlled lowering: condition measured before the control route|D:ec06d636:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_measured_template_parent.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_phi_cond.ll|D:6c089099:cq controlled lowering: control flow|D:6c089099:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_rail_round2_measured_parent.ll|D:0af50359:cq controlled lowering: condition measured before the control route|D:0af50359:cq controlled lowering: condition measured before the control route
+ir-pass/test/control_swap_reject_select_rail_round2_plainc_twotu.ll|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate|D:c78e5550:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_rail_round2_sibling_theta.ll|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate|D:d77ea1dc:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_rail_stale_chained_between.ll|D:c3845474:cq controlled lowering: condition predates a non-diagonal gate|D:c3845474:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_rail_stale_sibling_theta.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_rail_trunc_cond.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_stale_leaf_crossblock.ll|D:e7094cb3:cq controlled lowering: condition predates a non-diagonal gate|D:e7094cb3:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_stale_leaf_onewire.ll|D:e7094cb3:cq controlled lowering: condition predates a non-diagonal gate|D:e7094cb3:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_stale_leaf_theta.ll|D:18a1af9f:cq controlled lowering: condition predates a non-diagonal gate|D:18a1af9f:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_stalecond_chained_theta_i32.ll|D:18a1af9f:cq controlled lowering: condition predates a non-diagonal gate|D:18a1af9f:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_stalecond_chained_theta.ll|D:844b69d9:cq controlled lowering: condition predates a non-diagonal gate|D:844b69d9:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_stalecond_phi_routed.ll|D:62101480:cq controlled lowering: condition predates a non-diagonal gate|D:62101480:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_theta_alias_cond.ll|D:cc054472:cq controlled lowering: condition predates a non-diagonal gate|D:cc054472:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_select_tree_br_crossregion.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_undef_literal_paired.ll|D:d9ea9c38:cq literal integrity: undef/poison literal reaches two emitted gate op|D:d9ea9c38:cq literal integrity: undef/poison literal reaches two emitted gate op
+ir-pass/test/control_swap_reject_select_vector.ll|D:c35674f4:cq controlled lowering: control flow|D:c35674f4:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_xor_notform.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_select_xor_selfdup.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_seq_io_sinks.ll|D:0c9bce91:cq controlled lowering: nested control flow|D:0c9bce91:cq controlled lowering: nested control flow
+ir-pass/test/control_swap_reject_seq_shared_cond.ll|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_seq_then_nest.ll|D:0d238525:cq controlled lowering: control flow|D:0d238525:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_stalecond_chained_theta_sibling.ll|D:f73697d0:cq controlled lowering: condition predates a non-diagonal gate|D:f73697d0:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_stalecond_chained_theta.ll|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_stalecond_derived_cond_preadd.ll|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_stalecond_derived_cond.ll|D:89786ac1:cq opcode lowering: operand predates a non-diagonal gate|D:89786ac1:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_stalecond_router_diamond.ll|D:62101480:cq controlled lowering: condition predates a non-diagonal gate|D:62101480:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_stalecond_sunk_compare.ll|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate|D:d9bb1120:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_straightthrough_cross_handle.ll|D:3bd2dacc:cq controlled lowering: control flow|D:3bd2dacc:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_angle_arith.ll|D:720eb752:cq controlled lowering: condition data use neither escaped nor measure|D:720eb752:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_switch_angle_sitofp.ll|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_switch_angle.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_datamux_angle.ll|A:11a4096b|A:11a4096b
+ir-pass/test/control_swap_reject_switch_datamux_dirtyarm.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_datamux_nonI32_ret.ll|D:156afccf:cq taint escape: tainted value returned at non-i32 width|D:156afccf:cq taint escape: tainted value returned at non-i32 width
+ir-pass/test/control_swap_reject_switch_datamux_spoof_sink.ll|D:e2847c08:cq taint escape: tainted value consumed by an unknown callee|D:e2847c08:cq taint escape: tainted value consumed by an unknown callee
+ir-pass/test/control_swap_reject_switch_datause.ll|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure|D:0ddddcf7:cq controlled lowering: condition data use neither escaped nor measure
+ir-pass/test/control_swap_reject_switch_foreign_pred.ll|D:5d135e8a:cq controlled lowering: control flow|D:5d135e8a:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_fpdata.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_grouped.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_i128.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_impure_phase.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_impure_value.ll|D:9c8bac76:cq controlled lowering: impure value arm|D:9c8bac76:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_switch_mixed.ll|D:579eac0e:cq controlled lowering: mixed phase/value arm|D:579eac0e:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_swap_reject_switch_multiphi.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_muxexch.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_nested.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_nonempty_default.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_phase_foreign_default.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_phase_passthrough_dirty.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_phase_width.ll|D:ecc2e0d2:cq controlled lowering: control flow|D:ecc2e0d2:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_predates_gate.ll|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate|D:7331c082:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_switch_stalecond_router.ll|D:33d93e6b:cq controlled lowering: condition predates a non-diagonal gate|D:33d93e6b:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_switch_value_clobber.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_reject_switch_value_derived_angle.ll|D:d55727b5:cq rotation lowering: unsupported quantum-derived rotation angle|D:d55727b5:cq rotation lowering: unsupported quantum-derived rotation angle
+ir-pass/test/control_swap_reject_switch_value_passthrough_dirty.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_switch_value_qq.ll|D:7dc9b611:cq controlled lowering: value-arm swap-route|D:7dc9b611:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_reject_switch_value_router_base_backstop.ll|D:c4f99f17:cq opcode lowering: operand predates a non-diagonal gate|D:c4f99f17:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_switch_value_stalebase.ll|D:f8698f92:cq controlled lowering: routed base predates a non-diagonal gate|D:f8698f92:cq controlled lowering: routed base predates a non-diagonal gate
+ir-pass/test/control_swap_reject_switch_value_swaproute.ll|D:7dc9b611:cq controlled lowering: value-arm swap-route|D:7dc9b611:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_reject_switch_vector.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_tainted_angle_prebase.ll|D:4c2840c1:cq rotation lowering: unsupported quantum-derived rotation angle|D:4c2840c1:cq rotation lowering: unsupported quantum-derived rotation angle
+ir-pass/test/control_swap_reject_tainted_angle_underived.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_tainted_angle.ll|D:bcab7974:cq controlled lowering: rotation angle|D:bcab7974:cq controlled lowering: rotation angle
+ir-pass/test/control_swap_reject_value_derived_tainted_angle.ll|D:d55727b5:cq rotation lowering: unsupported quantum-derived rotation angle|D:d55727b5:cq rotation lowering: unsupported quantum-derived rotation angle
+ir-pass/test/control_swap_reject_value_diamond_router_base_backstop.ll|D:c4f99f17:cq opcode lowering: operand predates a non-diagonal gate|D:c4f99f17:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_fanout.ll|D:9c8bac76:cq controlled lowering: impure value arm|D:9c8bac76:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_value_i128_merge.ll|D:00e168be:cq controlled lowering: control flow|D:00e168be:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_value_ifelse_qq_readcond.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_value_ifelse_readcond.ll|D:cb06e0b0:cq controlled lowering: control flow|D:cb06e0b0:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_value_ifelse_two_bases.ll|D:b91035da:cq controlled lowering: non-routable value multiplexer|D:b91035da:cq controlled lowering: non-routable value multiplexer
+ir-pass/test/control_swap_reject_value_inarm_bottom.ll|D:fb6a5d10:cq controlled lowering: control flow|D:fb6a5d10:cq controlled lowering: control flow
+ir-pass/test/control_swap_reject_value_mixed_ifelse_valuefirst.ll|D:883d2107:cq controlled lowering: mixed phase/value arm|D:883d2107:cq controlled lowering: mixed phase/value arm
+ir-pass/test/control_swap_reject_value_mixed_ifelse.ll|D:2228dcff:cq controlled lowering: impure phase arm|D:2228dcff:cq controlled lowering: impure phase arm
+ir-pass/test/control_swap_reject_value_mixed_spine.ll|D:48033a21:cq controlled lowering: impure value arm|D:48033a21:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_value_mixed.ll|D:48033a21:cq controlled lowering: impure value arm|D:48033a21:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_value_mux_derived.ll|D:9dcc043a:cq controlled lowering: non-routable value multiplexer|D:9dcc043a:cq controlled lowering: non-routable value multiplexer
+ir-pass/test/control_swap_reject_value_rail_cond_early_clause.ll|D:410aa311:cq controlled lowering: value-arm swap-route|D:410aa311:cq controlled lowering: value-arm swap-route
+ir-pass/test/control_swap_reject_value_rail_cond.ll|D:253b4242:cq controlled lowering: bare i1 register condition|D:253b4242:cq controlled lowering: bare i1 register condition
+ir-pass/test/control_swap_reject_value_readcond.ll|D:23a77002:cq controlled lowering: non-routable value multiplexer|D:23a77002:cq controlled lowering: non-routable value multiplexer
+ir-pass/test/control_swap_reject_value_stalebase_chained_theta.ll|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_stalebase_diamond.ll|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_stalebase_ifelse.ll|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate|D:dfbc6225:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_stalebase_inarm.ll|D:f8698f92:cq controlled lowering: routed base predates a non-diagonal gate|D:f8698f92:cq controlled lowering: routed base predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_stalecond.ll|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate|D:4dd93a7a:cq controlled lowering: condition predates a non-diagonal gate
+ir-pass/test/control_swap_reject_value_stray.ll|D:772eac6e:cq controlled lowering: impure value arm|D:772eac6e:cq controlled lowering: impure value arm
+ir-pass/test/control_swap_reject_value_vector_merge.ll|D:2e8e665f:cq controlled lowering: control flow|D:2e8e665f:cq controlled lowering: control flow
+ir-pass/test/control_swap_select_and_shared_leaf.ll|A:7c3dfdb1|A:7c3dfdb1
+ir-pass/test/control_swap_select_and2.ll|A:32549f9b|A:32549f9b
+ir-pass/test/control_swap_select_base_from_cond.ll|A:a176ef9a|A:a176ef9a
+ir-pass/test/control_swap_select_cascade_conddepth10.ll|A:e226ade6|A:e226ade6
+ir-pass/test/control_swap_select_cascade_depth20.ll|A:1bd08871|A:1bd08871
+ir-pass/test/control_swap_select_chain_fdim.ll|A:8758695e|A:8758695e
+ir-pass/test/control_swap_select_cmp_derived_operand_parent_measured.ll|A:76870364|A:76870364
+ir-pass/test/control_swap_select_cmp_inloop_hoisted_measure_after.ll|A:5f3de453|A:5f3de453
+ir-pass/test/control_swap_select_cmp_inloop_iterlocal_measure_after.ll|A:1e0e3625|A:1e0e3625
+ir-pass/test/control_swap_select_cmp_measure_after.ll|A:86e13786|A:86e13786
+ir-pass/test/control_swap_select_cmp_other_register_measured.ll|A:483d1f99|A:483d1f99
+ir-pass/test/control_swap_select_cmp_parent_operand_derived_measured.ll|A:c97bee45|A:c97bee45
+ir-pass/test/control_swap_select_cmp_round2_opaque_seed_accept.ll|A:293ad77f|A:293ad77f
+ir-pass/test/control_swap_select_cmp_round2_window_accept.ll|A:da8d0567|A:da8d0567
+ir-pass/test/control_swap_select_f16.ll|A:82140bfd|A:82140bfd
+ir-pass/test/control_swap_select_f32_one.ll|A:43694eb0|A:43694eb0
+ir-pass/test/control_swap_select_f32.ll|A:9a05c920|A:9a05c920
+ir-pass/test/control_swap_select_f64.ll|A:5564caab|A:5564caab
+ir-pass/test/control_swap_select_f80.ll|A:2d6705cc|A:2d6705cc
+ir-pass/test/control_swap_select_fanout_alloc.ll|A:56428d78|A:56428d78
+ir-pass/test/control_swap_select_fp_dead_sibling_leak.ll|A:c60d1a4a|A:c60d1a4a
+ir-pass/test/control_swap_select_fp_qqcond.ll|A:8f86d1c7|A:8f86d1c7
+ir-pass/test/control_swap_select_fpdata.ll|A:d12dd81c|A:d12dd81c
+ir-pass/test/control_swap_select_freeze_folded.ll|A:d6b6c8fc|A:d6b6c8fc
+ir-pass/test/control_swap_select_i8.ll|A:9b2d61d2|A:9b2d61d2
+ir-pass/test/control_swap_select_inloop_hoisted_cond.ll|A:e69f5931|A:e69f5931
+ir-pass/test/control_swap_select_inloop.ll|A:0abdbdaa|A:0abdbdaa
+ir-pass/test/control_swap_select_operand_measured.ll|A:089442b2|A:089442b2
+ir-pass/test/control_swap_select_or2_fp.ll|A:8c7651a6|A:8c7651a6
+ir-pass/test/control_swap_select_or2.ll|A:1a478262|A:1a478262
+ir-pass/test/control_swap_select_or3_tree.ll|A:53f75811|A:53f75811
+ir-pass/test/control_swap_select_polarity.ll|A:50fc4d4a|A:50fc4d4a
+ir-pass/test/control_swap_select_qc.ll|A:99d14c26|A:99d14c26
+ir-pass/test/control_swap_select_qq_leaf.ll|A:67bddd86|A:67bddd86
+ir-pass/test/control_swap_select_qq.ll|A:c3661a33|A:c3661a33
+ir-pass/test/control_swap_select_qqcond_ugt.ll|A:059b6767|A:059b6767
+ir-pass/test/control_swap_select_qqcond_ule.ll|A:0c8e2b2d|A:0c8e2b2d
+ir-pass/test/control_swap_select_qqcond.ll|A:0b7f928e|A:0b7f928e
+ir-pass/test/control_swap_select_rail_const.ll|A:44d53470|A:44d53470
+ir-pass/test/control_swap_select_rail_cross_block.ll|A:84c46a17|A:84c46a17
+ir-pass/test/control_swap_select_rail_dead_register.ll|A:c40ec002|A:c40ec002
+ir-pass/test/control_swap_select_rail_fp_data.ll|A:e3abdf8e|A:e3abdf8e
+ir-pass/test/control_swap_select_rail_i1_data.ll|A:35a707a9|A:35a707a9
+ir-pass/test/control_swap_select_rail_in_xor_tree.ll|A:018383ec|A:018383ec
+ir-pass/test/control_swap_select_rail_inloop_invariant.ll|A:90af3ed9|A:90af3ed9
+ir-pass/test/control_swap_select_rail_inloop_iterlocal_measure_after.ll|A:76c59fc5|A:76c59fc5
+ir-pass/test/control_swap_select_rail_inplace_xor_bridge.ll|A:5e0aa3bd|A:5e0aa3bd
+ir-pass/test/control_swap_select_rail_measure_after.ll|A:fa309e8b|A:fa309e8b
+ir-pass/test/control_swap_select_rail_other_register_measured.ll|A:647e1b13|A:647e1b13
+ir-pass/test/control_swap_select_rail_post_ry.ll|A:19852248|A:19852248
+ir-pass/test/control_swap_select_rail_qq_arms.ll|A:e37e477b|A:e37e477b
+ir-pass/test/control_swap_select_rail_quantum_arm.ll|A:c780c25f|A:c780c25f
+ir-pass/test/control_swap_select_rail_round2_opaque_seed_accept.ll|A:940c3ab4|A:940c3ab4
+ir-pass/test/control_swap_select_rail_then_select.ll|A:c49e27fa|A:c49e27fa
+ir-pass/test/control_swap_select_rail_two_regions.ll|A:871e14a7|A:871e14a7
+ir-pass/test/control_swap_select_ret.ll|A:a520fb0d|A:a520fb0d
+ir-pass/test/control_swap_select_shared_node.ll|A:637090fc|A:637090fc
+ir-pass/test/control_swap_select_shared_root_two_selects.ll|A:e6632b08|A:e6632b08
+ir-pass/test/control_swap_select_xor_in_andtree.ll|A:0978540a|A:0978540a
+ir-pass/test/control_swap_select_xor2_fp.ll|A:2024e964|A:2024e964
+ir-pass/test/control_swap_select_xor2.ll|A:36a7ef69|A:36a7ef69
+ir-pass/test/control_swap_seq_ifelse_second.ll|A:c8c6acf3|A:c8c6acf3
+ir-pass/test/control_swap_straightthrough_constfold.ll|A:c1676b6a|A:c1676b6a
+ir-pass/test/control_swap_switch_datamux_angle_runtime.ll|A:9bc7292a|A:9bc7292a
+ir-pass/test/control_swap_switch_datamux_onward_arith.ll|A:36999bd5|A:36999bd5
+ir-pass/test/control_swap_switch_datamux_onward_ctl_phase.ll|A:d36bd091|A:d36bd091
+ir-pass/test/control_swap_switch_datamux.ll|A:ffd80d2e|A:ffd80d2e
+ir-pass/test/control_swap_switch_phase_passthrough.ll|A:8953e8d1|A:8953e8d1
+ir-pass/test/control_swap_switch_phase.ll|A:a6074bb8|A:a6074bb8
+ir-pass/test/control_swap_switch_scrutinee_measured.ll|A:81e9769c|A:81e9769c
+ir-pass/test/control_swap_switch_value_accept_div_const.ll|A:ec48b40f|A:ec48b40f
+ir-pass/test/control_swap_switch_value_reject_speculation.ll|D:4e511806:cq controlled lowering: value arm op that cannot run unconditionally|D:4e511806:cq controlled lowering: value arm op that cannot run unconditionally
+ir-pass/test/control_swap_switch_value.ll|A:8506ca9f|A:8506ca9f
+ir-pass/test/control_swap_value_accept_div_const.ll|A:40b2b3a4|A:40b2b3a4
+ir-pass/test/control_swap_value_accept_i64_merge_cast.ll|A:385bea4b|A:385bea4b
+ir-pass/test/control_swap_value_accept_i8_merge_cast.ll|A:36e5bce0|A:36e5bce0
+ir-pass/test/control_swap_value_accept_nonclobber.ll|A:bd01337e|A:bd01337e
+ir-pass/test/control_swap_value_accept_qq_compare_i16.ll|A:f6cf6dff|A:f6cf6dff
+ir-pass/test/control_swap_value_accept_qq_compare_i8.ll|A:91c698c1|A:91c698c1
+ir-pass/test/control_swap_value_accept_qq_compare_on_merge.ll|A:83cce877|A:83cce877
+ir-pass/test/control_swap_value_diamond_derived.ll|A:afc46ea8|A:afc46ea8
+ir-pass/test/control_swap_value_diamond_polarity.ll|A:265ba9bb|A:265ba9bb
+ir-pass/test/control_swap_value_diamond.ll|A:aced90d2|A:aced90d2
+ir-pass/test/control_swap_value_ifelse_head_out_of_place.ll|A:a380405b|A:a380405b
+ir-pass/test/control_swap_value_ifelse.ll|A:d0127f46|A:d0127f46
+ir-pass/test/control_swap_value_reject_base_from_cond.ll|D:e8001684:cq controlled lowering: non-routable value multiplexer|D:e8001684:cq controlled lowering: non-routable value multiplexer
+ir-pass/test/control_swap_value_reject_clobber_active_transitive.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_value_reject_clobber_active.ll|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand|D:a47d4df2:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_value_reject_clobber_qq.ll|D:8b7304e5:cq controlled lowering: arm rewrites a condition operand|D:8b7304e5:cq controlled lowering: arm rewrites a condition operand
+ir-pass/test/control_swap_value_reject_i128_cond.ll|D:710876dc:cq controlled lowering: control flow|D:710876dc:cq controlled lowering: control flow
+ir-pass/test/control_swap_value_reject_qq_cond.ll|D:646851e6:cq controlled lowering: control flow|D:646851e6:cq controlled lowering: control flow
+ir-pass/test/control_swap_value_reject_speculation.ll|D:4e511806:cq controlled lowering: value arm op that cannot run unconditionally|D:4e511806:cq controlled lowering: value arm op that cannot run unconditionally
+ir-pass/test/control_tainted_diag.ll|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom|D:563c66cd:cq controlled lowering: state prep seed does not match the merge incom
+ir-pass/test/lowering_accept_undef_literal_global_init_pad.ll|A:79c2a980|A:79c2a980
+ir-pass/test/lowering_accept_undef_literal_single_slot.ll|A:e709c9ac|A:e709c9ac
+ir-pass/test/lowering_accept_undef_literal_two_functions.ll|A:728871b7|A:728871b7
+ir-pass/test/lowering_add_qc_f32.ll|A:96729c53|A:96729c53
+ir-pass/test/lowering_add_qc_f64.ll|A:a6a5a4bd|A:a6a5a4bd
+ir-pass/test/lowering_add_qc_i1.ll|A:91a796df|A:91a796df
+ir-pass/test/lowering_add_qc_i16.ll|A:dbaf3840|A:dbaf3840
+ir-pass/test/lowering_add_qc_i32.ll|A:eebae9c1|A:eebae9c1
+ir-pass/test/lowering_add_qc_i64.ll|A:503effa2|A:503effa2
+ir-pass/test/lowering_add_qc_i8.ll|A:9d1d290e|A:9d1d290e
+ir-pass/test/lowering_add_qq_f32.ll|A:25e99100|A:25e99100
+ir-pass/test/lowering_add_qq_f64.ll|A:5fe8c2a2|A:5fe8c2a2
+ir-pass/test/lowering_add_qq_i1.ll|A:f38783ab|A:f38783ab
+ir-pass/test/lowering_add_qq_i16.ll|A:f88eea42|A:f88eea42
+ir-pass/test/lowering_add_qq_i32.ll|A:c317775e|A:c317775e
+ir-pass/test/lowering_add_qq_i64.ll|A:5c50a268|A:5c50a268
+ir-pass/test/lowering_add_qq_i8.ll|A:17e597ac|A:17e597ac
+ir-pass/test/lowering_basic.ll|A:329c8475|A:329c8475
+ir-pass/test/lowering_bitcast_chained_theta_before.ll|A:6559493a|A:6559493a
+ir-pass/test/lowering_bitcast_f32_i32.ll|A:2cb2d94c|A:2cb2d94c
+ir-pass/test/lowering_bitcast_f80_i80.ll|A:a371088d|A:a371088d
+ir-pass/test/lowering_bitcast_fp_to_int.ll|A:6c34df8f|A:6c34df8f
+ir-pass/test/lowering_bitcast_i32_identity.ll|A:fe2434a2|A:fe2434a2
+ir-pass/test/lowering_bitcast_int_to_fp.ll|A:4790aa59|A:4790aa59
+ir-pass/test/lowering_bitcast_measure_after_rerotate.ll|A:d0b2d7dd|A:d0b2d7dd
+ir-pass/test/lowering_bitint_intermediate_masked_i40.ll|A:b520498e|A:b520498e
+ir-pass/test/lowering_bitint_signed_i40.ll|A:0fa5a0a3|A:0fa5a0a3
+ir-pass/test/lowering_branchless_cosl_f80.ll|A:ac3b1029|A:ac3b1029
+ir-pass/test/lowering_branchless_logl_f80.ll|A:cfc5a2dd|A:cfc5a2dd
+ir-pass/test/lowering_branchless_sinl_f80.ll|A:a7afea12|A:a7afea12
+ir-pass/test/lowering_branchless_tanl_f80.ll|A:974dedfe|A:974dedfe
+ir-pass/test/lowering_break_global_phase_before_accept.ll|A:3ac854bf|A:3ac854bf
+ir-pass/test/lowering_byref_inline_multi_use.ll|A:d948ae1c|A:d948ae1c
+ir-pass/test/lowering_byref_inline_user.ll|A:f06c8e98|A:f06c8e98
+ir-pass/test/lowering_classical_mux_phi_lift_diaghop_before_sibling.ll|A:b6b7aff9|A:b6b7aff9
+ir-pass/test/lowering_classical_mux_phi_lift_op_before_sibling.ll|A:30acc831|A:30acc831
+ir-pass/test/lowering_classical_mux_phi_onereg_ifelse.ll|A:188b1b8e|A:188b1b8e
+ir-pass/test/lowering_classical_mux_phi_onereg_nonmain.ll|A:d1425f1e|A:d1425f1e
+ir-pass/test/lowering_classical_mux_phi_onereg_switch_nway.ll|A:1d604e38|A:1d604e38
+ir-pass/test/lowering_classical_mux_phi_onereg_theta_chain.ll|A:216cff30|A:216cff30
+ir-pass/test/lowering_classical_mux_phi_onereg.ll|A:f1bc2cb9|A:f1bc2cb9
+ir-pass/test/lowering_ctlz_idiom_both_loops.ll|A:e967ee39|A:e967ee39
+ir-pass/test/lowering_ctlz_idiom_chained.ll|A:744f0499|A:744f0499
+ir-pass/test/lowering_ctlz_idiom_generic_seed.ll|A:15561ff0|A:15561ff0
+ir-pass/test/lowering_ctlz_idiom_guarded_no_preshift.ll|D:46db0480:cq controlled lowering: control flow|D:46db0480:cq controlled lowering: control flow
+ir-pass/test/lowering_ctlz_idiom_i64.ll|A:086b7754|A:086b7754
+ir-pass/test/lowering_ctlz_idiom_inverted_polarity.ll|A:17fffbe3|A:17fffbe3
+ir-pass/test/lowering_ctlz_idiom_narrow_widths.ll|A:66dd08c8|A:66dd08c8
+ir-pass/test/lowering_ctlz_idiom_reject_ashr.ll|D:c965df9e:cq controlled lowering: loop|D:c965df9e:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_blockaddress_header.ll|D:bbe8dcca:cq controlled lowering: loop|D:bbe8dcca:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_body_call.ll|D:7d48af8b:cq controlled lowering: loop|D:7d48af8b:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_body_store.ll|D:1de46d9d:cq controlled lowering: loop|D:1de46d9d:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_callee_arg_taint.ll|D:2641f03d:cq specialization: callee contains tainted control flow under quantum |D:2641f03d:cq specialization: callee contains tainted control flow under quantum 
+ir-pass/test/lowering_ctlz_idiom_reject_counter_nonconst_init.ll|D:68f69e01:cq controlled lowering: loop|D:68f69e01:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_counter_step.ll|D:956c98a5:cq controlled lowering: loop|D:956c98a5:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_counter_width_mismatch.ll|D:5260283f:cq controlled lowering: loop|D:5260283f:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_dead_counter.ll|D:0ba8a91b:cq controlled lowering: loop|D:0ba8a91b:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_derived_compare.ll|D:7fc6eea3:cq controlled lowering: loop|D:7fc6eea3:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_dynamic_shift.ll|D:7d2c13ed:cq controlled lowering: loop|D:7d2c13ed:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_escaping_counter_phi.ll|D:e59aa4a9:cq controlled lowering: loop|D:e59aa4a9:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_escaping_shift.ll|D:71908522:cq controlled lowering: loop|D:71908522:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_i128.ll|D:aca24091:cq controlled lowering: loop|D:aca24091:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_inverted_successors.ll|D:74836a1c:cq controlled lowering: loop|D:74836a1c:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_irreducible_cycle.ll|D:32f6a4f8:cq controlled lowering: loop|D:32f6a4f8:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_mask_shift_f80.ll|D:041595b2:cq controlled lowering: loop|D:041595b2:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_multi_exit.ll|D:e13391dd:cq loop lowering: multiple early-break sites|D:e13391dd:cq loop lowering: multiple early-break sites
+ir-pass/test/lowering_ctlz_idiom_reject_nested_in_outer_loop.ll|D:224744d2:cq controlled lowering: loop|D:224744d2:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_predicate_ne.ll|D:b8360b91:cq controlled lowering: loop|D:b8360b91:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_shift_amount_2.ll|D:7293ff69:cq controlled lowering: loop|D:7293ff69:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_three_phis.ll|D:aff7719e:cq controlled lowering: loop|D:aff7719e:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_reject_two_preds.ll|D:148aac42:cq controlled lowering: loop|D:148aac42:cq controlled lowering: loop
+ir-pass/test/lowering_ctlz_idiom_skip_classical.ll|A:c9abe276|A:c9abe276
+ir-pass/test/lowering_ctlz_idiom_unguarded_preshift.ll|A:bca6eb75|A:bca6eb75
+ir-pass/test/lowering_fadd_qc_f16.ll|A:8ead1abc|A:8ead1abc
+ir-pass/test/lowering_fadd_qq_f16.ll|A:4395c18e|A:4395c18e
+ir-pass/test/lowering_fadd_qq_f80.ll|A:5c4f32e6|A:5c4f32e6
+ir-pass/test/lowering_fcmp_false_negative.ll|D:63a9848d:|D:63a9848d:
+ir-pass/test/lowering_fcmp_flip_ugt_to_ult_hl_f32.ll|A:1835bfd3|A:1835bfd3
+ir-pass/test/lowering_fcmp_one_hl_f32.ll|A:38334eef|A:38334eef
+ir-pass/test/lowering_fcmp_ord_hl_f64.ll|A:df5f6ad8|A:df5f6ad8
+ir-pass/test/lowering_fcmp_qq_f16.ll|A:2e313959|A:2e313959
+ir-pass/test/lowering_fcmp_qq_f64.ll|A:808141c5|A:808141c5
+ir-pass/test/lowering_fcmp_ueq_qq_f32.ll|A:6ab3472a|A:6ab3472a
+ir-pass/test/lowering_fcmp_uge_qq_f16.ll|A:d616f07c|A:d616f07c
+ir-pass/test/lowering_fcmp_ugt_hl_f64.ll|A:c1a6dc36|A:c1a6dc36
+ir-pass/test/lowering_fcmp_ule_qq_f64.ll|A:6f1d7a49|A:6f1d7a49
+ir-pass/test/lowering_fcmp_ult_hl_f32.ll|A:0e64742d|A:0e64742d
+ir-pass/test/lowering_fcmp_une_hl_f32.ll|A:ce62993f|A:ce62993f
+ir-pass/test/lowering_fcmp_uno_hl_f16.ll|A:7f899a90|A:7f899a90
+ir-pass/test/lowering_fneg_f16.ll|A:f2d26bde|A:f2d26bde
+ir-pass/test/lowering_fneg_f32.ll|A:5511de21|A:5511de21
+ir-pass/test/lowering_fp80_accept_blockaddress_markalive_live.ll|A:3229e11e|A:3229e11e
+ir-pass/test/lowering_fp80_i80_field_insert.ll|A:f773b206|A:f773b206
+ir-pass/test/lowering_fp80_reject_blockaddress_markalive_entry.ll|D:4bb4e4bc:cq literal integrity: address-taken block erased|D:4bb4e4bc:cq literal integrity: address-taken block erased
+ir-pass/test/lowering_fp80_reject_blockaddress_markalive.ll|D:4bb4e4bc:cq literal integrity: address-taken block erased|D:4bb4e4bc:cq literal integrity: address-taken block erased
+ir-pass/test/lowering_fp80_reject_blockaddress_unreachable.ll|D:13ff71e7:cq literal integrity: address-taken block erased|D:13ff71e7:cq literal integrity: address-taken block erased
+ir-pass/test/lowering_fp80_union_arg_seed_multiblock.ll|A:c5c156dd|A:c5c156dd
+ir-pass/test/lowering_fp80_union_arg_seed_padding_drop.ll|A:27c54d44|A:27c54d44
+ir-pass/test/lowering_fp80_union_arg_seed.ll|A:59c2ab4b|A:59c2ab4b
+ir-pass/test/lowering_fp80_union_crossunion.ll|A:885e775f|A:885e775f
+ir-pass/test/lowering_fp80_union_dead_insert.ll|A:1d4ee381|A:1d4ee381
+ir-pass/test/lowering_fp80_union_mixed_oppfail_promotes.ll|A:c9e57fee|A:c9e57fee
+ir-pass/test/lowering_fp80_union_mixed_strictfail_loud.ll|D:5db117f8:cq fp80 union: padding byte observed without a mask|D:5db117f8:cq fp80 union: padding byte observed without a mask
+ir-pass/test/lowering_fp80_union_multiblock.ll|A:d3ca0833|A:d3ca0833
+ir-pass/test/lowering_fp80_union_padding_flow.ll|A:a8f52b7e|A:a8f52b7e
+ir-pass/test/lowering_fp80_union_promote.ll|A:f95864bc|A:f95864bc
+ir-pass/test/lowering_fp80_union_reconstruct_pack.ll|A:36eb012f|A:36eb012f
+ir-pass/test/lowering_fp80_union_reload_chain_drop.ll|A:08674830|A:08674830
+ir-pass/test/lowering_fp80_union_rmw.ll|A:f71c29ff|A:f71c29ff
+ir-pass/test/lowering_fp80_union_seed_constglobal.ll|A:e5ff2510|A:e5ff2510
+ir-pass/test/lowering_fp80_union_seed_fmuladd.ll|A:67c3c68e|A:67c3c68e
+ir-pass/test/lowering_fp80_union_seed_impurecall_drop.ll|A:60b91e91|A:60b91e91
+ir-pass/test/lowering_fp80_union_seed_mutableglobal_drop.ll|A:e200a522|A:e200a522
+ir-pass/test/lowering_fp80_union_seed_noncurated_drop.ll|A:c28f707e|A:c28f707e
+ir-pass/test/lowering_fp80_union_seed_purecall_i80cmp.ll|A:cef65b77|A:cef65b77
+ir-pass/test/lowering_fp80_union_seed_purecall.ll|A:0abd11cc|A:0abd11cc
+ir-pass/test/lowering_fp80_union_signextract.ll|A:b3122d8d|A:b3122d8d
+ir-pass/test/lowering_fpext_f16_to_f32.ll|A:741e56f6|A:741e56f6
+ir-pass/test/lowering_fpext_f64_to_f80.ll|A:321b0109|A:321b0109
+ir-pass/test/lowering_fptosi_f16_to_i32.ll|A:9d665b20|A:9d665b20
+ir-pass/test/lowering_fptosi_f80_to_i32.ll|A:05546035|A:05546035
+ir-pass/test/lowering_fptoui_f80_to_i32.ll|A:ab9c4556|A:ab9c4556
+ir-pass/test/lowering_freeze_passthrough_i32.ll|A:fdf0fcd8|A:fdf0fcd8
+ir-pass/test/lowering_frozen_wire_classical_angle_accept.ll|A:3dc4bfbe|A:3dc4bfbe
+ir-pass/test/lowering_guarded_store_cmp_other_register_staler.ll|A:876bb41c|A:876bb41c
+ir-pass/test/lowering_hybrid_lgammal_words_f80.ll|A:77279c2f|A:77279c2f
+ir-pass/test/lowering_i128_intermediate_mulhi.ll|A:a085c6dd|A:a085c6dd
+ir-pass/test/lowering_icmp_flip_hl_i32.ll|A:f417ca56|A:f417ca56
+ir-pass/test/lowering_icmp_qq_arith_derived.ll|A:9debd8bd|A:9debd8bd
+ir-pass/test/lowering_icmp_qq_cast_derived.ll|A:a72ba1ca|A:a72ba1ca
+ir-pass/test/lowering_icmp_qq_crossblock.ll|A:16f28869|A:16f28869
+ir-pass/test/lowering_icmp_qq_i64.ll|A:d20fbec9|A:d20fbec9
+ir-pass/test/lowering_icmp_qq_mixed_width_reject.ll|D:63a9848d:|D:63a9848d:
+ir-pass/test/lowering_icmp_qq_no_width_reject.ll|D:fa0266e9:|D:fa0266e9:
+ir-pass/test/lowering_icmp_qq_positive.ll|A:f4a20ac4|A:f4a20ac4
+ir-pass/test/lowering_icmp_qq_stale_width_probe.ll|A:2fab3325|A:2fab3325
+ir-pass/test/lowering_icmp_slt_hl_i32.ll|A:72e1b831|A:72e1b831
+ir-pass/test/lowering_inloop_derived_cond_leading_gate.ll|A:26f42fd1|A:26f42fd1
+ir-pass/test/lowering_inplace_rail_ctlA_const_imm_accept.ll|A:87b3ae18|A:87b3ae18
+ir-pass/test/lowering_inplace_rail_k01_arg_imm_xor_accept.ll|A:d8ee88b3|A:d8ee88b3
+ir-pass/test/lowering_inplace_rail_k02_arg_imm_add_accept.ll|A:389fb2f0|A:389fb2f0
+ir-pass/test/lowering_inplace_rail_k03_volatile_imm_accept.ll|A:964ae99f|A:964ae99f
+ir-pass/test/lowering_inplace_rail_n02_select_merge_accept.ll|A:b80c242b|A:b80c242b
+ir-pass/test/lowering_inplace_rail_n03_value_merge_accept.ll|A:4fae4109|A:4fae4109
+ir-pass/test/lowering_inplace_rail_n09_w4_preheader_accept.ll|A:976b987c|A:976b987c
+ir-pass/test/lowering_inplace_rail_z36_inregion_add_accept.ll|A:eb22e34d|A:eb22e34d
+ir-pass/test/lowering_intrinsic_abs_i8.ll|A:85d70bff|A:85d70bff
+ir-pass/test/lowering_intrinsic_bitreverse_i8.ll|A:2d050ec2|A:2d050ec2
+ir-pass/test/lowering_intrinsic_bswap_i32.ll|A:19ca29b1|A:19ca29b1
+ir-pass/test/lowering_intrinsic_bswap_uncompute_shape.ll|A:eab71f83|A:eab71f83
+ir-pass/test/lowering_intrinsic_copysign_f64_qq.ll|A:f60b96da|A:f60b96da
+ir-pass/test/lowering_intrinsic_ctlz_i32.ll|A:99bb0e3c|A:99bb0e3c
+ir-pass/test/lowering_intrinsic_ctpop_i32.ll|A:e888ba5e|A:e888ba5e
+ir-pass/test/lowering_intrinsic_ctpop_sources_live.ll|A:cb24fba9|A:cb24fba9
+ir-pass/test/lowering_intrinsic_fma_f64_qlq.ll|A:384dbcfc|A:384dbcfc
+ir-pass/test/lowering_intrinsic_fma_f64_qqq.ll|A:4c69f9e2|A:4c69f9e2
+ir-pass/test/lowering_intrinsic_fmin_f64_qq.ll|A:acbeecae|A:acbeecae
+ir-pass/test/lowering_intrinsic_fmuladd_f64_qql.ll|A:ca6afcc9|A:ca6afcc9
+ir-pass/test/lowering_intrinsic_fshl_rotation_i32.ll|A:8f44685c|A:8f44685c
+ir-pass/test/lowering_intrinsic_fshr_rotation_i32.ll|A:5a3f68f4|A:5a3f68f4
+ir-pass/test/lowering_intrinsic_funnel_fshl_general_qq_i32.ll|A:c8aea68b|A:c8aea68b
+ir-pass/test/lowering_intrinsic_funnel_fshl_qq_uncompute.ll|A:bc24f03f|A:bc24f03f
+ir-pass/test/lowering_intrinsic_funnel_fshr_general_qq_i32.ll|A:a3583ebc|A:a3583ebc
+ir-pass/test/lowering_intrinsic_smin_fanout_skip.ll|A:6d4235d3|A:6d4235d3
+ir-pass/test/lowering_intrinsic_smin_hl_i32.ll|A:4eef9d59|A:4eef9d59
+ir-pass/test/lowering_intrinsic_smin_qq_i32.ll|A:1b4d8dde|A:1b4d8dde
+ir-pass/test/lowering_intrinsic_sqrt_f64.ll|A:c7f17630|A:c7f17630
+ir-pass/test/lowering_intrinsic_uadd_sat_hl_i32.ll|A:bb066f6a|A:bb066f6a
+ir-pass/test/lowering_intrinsic_umax_qq_i32.ll|A:28ff5d3d|A:28ff5d3d
+ir-pass/test/lowering_intrinsic_usub_sat_lh_i32.ll|A:9fa6f339|A:9fa6f339
+ir-pass/test/lowering_invert_add_i32.ll|A:2910ebcf|A:2910ebcf
+ir-pass/test/lowering_io_accept_global_pad_coarg.ll|A:b56fc098|A:b56fc098
+ir-pass/test/lowering_io_accept_literal_coarg.ll|A:f538c2c6|A:f538c2c6
+ir-pass/test/lowering_io_controlled_both_arm.ll|A:ed6a7446|A:ed6a7446
+ir-pass/test/lowering_io_controlled_cmp_other_register_staler.ll|A:684abaa9|A:684abaa9
+ir-pass/test/lowering_io_controlled_printf_ne.ll|A:121c4ffd|A:121c4ffd
+ir-pass/test/lowering_io_controlled_printf_sgt.ll|A:8a82bece|A:8a82bece
+ir-pass/test/lowering_io_controlled_putchar.ll|A:e38ad7ed|A:e38ad7ed
+ir-pass/test/lowering_io_controlled_shared_tape.ll|A:e9dd55d0|A:e9dd55d0
+ir-pass/test/lowering_io_passthrough_classical.ll|A:f6760c0d|A:f6760c0d
+ir-pass/test/lowering_io_tape_chained_theta.ll|A:1b15a135|A:1b15a135
+ir-pass/test/lowering_io_tape_controlled_ctrl_slot.ll|A:fe8a9b3c|A:fe8a9b3c
+ir-pass/test/lowering_io_tape_derived_uncompute.ll|A:5ac3b2f5|A:5ac3b2f5
+ir-pass/test/lowering_io_tape_frozen_two_writes.ll|A:1a46c246|A:1a46c246
+ir-pass/test/lowering_io_tape_i64.ll|A:4dd7fb8c|A:4dd7fb8c
+ir-pass/test/lowering_io_tape_interleaved_rotation.ll|A:6f4bc417|A:6f4bc417
+ir-pass/test/lowering_io_tape_measure_then_tape.ll|A:5007d495|A:5007d495
+ir-pass/test/lowering_io_tape_multi_emit.ll|A:4a8d8621|A:4a8d8621
+ir-pass/test/lowering_io_tape_partial_freeze_order.ll|A:eea4a617|A:eea4a617
+ir-pass/test/lowering_io_tape_printf_i32.ll|A:22aa3f0a|A:22aa3f0a
+ir-pass/test/lowering_io_tape_putchar_measure.ll|A:ba4bfad6|A:ba4bfad6
+ir-pass/test/lowering_io_tape_qq_both_parents.ll|A:51e879d5|A:51e879d5
+ir-pass/test/lowering_io_tape_qram_borrowed_index.ll|A:0eef6ba3|A:0eef6ba3
+ir-pass/test/lowering_io_tape_rz_preserving.ll|A:8371231c|A:8371231c
+ir-pass/test/lowering_io_user_defined_callee.ll|A:849a565c|A:849a565c
+ir-pass/test/lowering_legacy_phi_decl_prototype_family.ll|A:b1e75557|A:b1e75557
+ir-pass/test/lowering_libm_cross_width.ll|A:1be5bb14|A:1be5bb14
+ir-pass/test/lowering_libm_keep_rounders_f80.ll|A:77aab42d|A:77aab42d
+ir-pass/test/lowering_libm_lrintl_f80.ll|A:263fe0b3|A:263fe0b3
+ir-pass/test/lowering_libm_sqrtl_f80.ll|A:a7ccff5c|A:a7ccff5c
+ir-pass/test/lowering_live_record_anc_measured_before_theta_accept.ll|A:2ab7ed60|A:2ab7ed60
+ir-pass/test/lowering_live_record_anc_observed_after_theta_accept.ll|A:59a3ba8c|A:59a3ba8c
+ir-pass/test/lowering_live_record_clone_call_measured_accept.ll|A:1f584b88|A:1f584b88
+ir-pass/test/lowering_live_record_clone_return_rail_live_accept.ll|A:a2d62eb7|A:a2d62eb7
+ir-pass/test/lowering_live_record_clone_return_rail_measured_accept.ll|A:dfc8c738|A:dfc8c738
+ir-pass/test/lowering_live_record_condtree_toffoli_observed_accept.ll|A:053ebadb|A:053ebadb
+ir-pass/test/lowering_live_record_condtree_xor_observed_accept.ll|A:bbc4e4a2|A:bbc4e4a2
+ir-pass/test/lowering_live_record_dead_compare_flag_discharged.ll|A:24df738e|A:24df738e
+ir-pass/test/lowering_live_record_derived_cond_theta_discharged.ll|A:2c27f9b5|A:2c27f9b5
+ir-pass/test/lowering_live_record_discharged_before_theta.ll|A:8efd3a81|A:8efd3a81
+ir-pass/test/lowering_live_record_mb_anc_dead_sibling_accept.ll|A:85e4ea91|A:85e4ea91
+ir-pass/test/lowering_live_record_mb_discharged_accept.ll|A:9ef1daca|A:9ef1daca
+ir-pass/test/lowering_live_record_mb_router_phi_accept.ll|A:a3e664b7|A:a3e664b7
+ir-pass/test/lowering_live_record_mb_sibling_alias_accept.ll|A:0678773a|A:0678773a
+ir-pass/test/lowering_live_record_measured_before_theta.ll|A:c6e0b324|A:c6e0b324
+ir-pass/test/lowering_live_record_post_gate_record_accept.ll|A:933bdfe2|A:933bdfe2
+ir-pass/test/lowering_live_record_region_owner_probe.ll|A:1dd3c4e7|A:1dd3c4e7
+ir-pass/test/lowering_live_record_sibling_clone_arg_measured_accept.ll|A:f7e46c26|A:f7e46c26
+ir-pass/test/lowering_live_record_sibling_qram_store_load_measure_accept.ll|A:fb761cbf|A:fb761cbf
+ir-pass/test/lowering_live_record_sibling_read_taped_accept.ll|A:fbab770d|A:fbab770d
+ir-pass/test/lowering_live_record_sibling_region_then_measured_accept.ll|A:f2be41df|A:f2be41df
+ir-pass/test/lowering_live_record_source_theta_accept.ll|A:dfe45d33|A:dfe45d33
+ir-pass/test/lowering_loop_break_add.ll|A:c4c46f03|A:c4c46f03
+ir-pass/test/lowering_loop_break_qq_derived.ll|A:2acabe8a|A:2acabe8a
+ir-pass/test/lowering_loop_break_qq_phase.ll|A:4717f515|A:4717f515
+ir-pass/test/lowering_loop_break_qq_relational.ll|A:c9f413de|A:c9f413de
+ir-pass/test/lowering_loop_break_qq.ll|A:fb8233db|A:fb8233db
+ir-pass/test/lowering_loop_break_step.ll|D:96f677bd:cq loop lowering: early break body is not a provable rolled single-rai|D:96f677bd:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_loop_break_unsigned.ll|A:e557e79e|A:e557e79e
+ir-pass/test/lowering_loop_break_value.ll|A:ffe294a9|A:ffe294a9
+ir-pass/test/lowering_loop_iter_local_temp.ll|A:99eb7bf2|A:99eb7bf2
+ir-pass/test/lowering_loop_phase_accum_const.ll|A:d862fee2|A:d862fee2
+ir-pass/test/lowering_loop_phase_accum_dynamic.ll|A:fc595c22|A:fc595c22
+ir-pass/test/lowering_loop_two_handles.ll|A:3d13c236|A:3d13c236
+ir-pass/test/lowering_loop_value_accum_add.ll|A:696456a3|A:696456a3
+ir-pass/test/lowering_loop_value_accum.ll|A:dca43079|A:dca43079
+ir-pass/test/lowering_mc_addc_i1.ll|A:1a576e49|A:1a576e49
+ir-pass/test/lowering_mc_addc_i16.ll|A:94964959|A:94964959
+ir-pass/test/lowering_mc_addc_i32.ll|A:f4de59ba|A:f4de59ba
+ir-pass/test/lowering_mc_addc_i64.ll|A:cea4ad2b|A:cea4ad2b
+ir-pass/test/lowering_mc_addc_i8.ll|A:dfdc6041|A:dfdc6041
+ir-pass/test/lowering_mc_fence_fallback.ll|A:b2f5f1ed|A:b2f5f1ed
+ir-pass/test/lowering_mc_late_add_sub_around.ll|A:d9eaca84|A:d9eaca84
+ir-pass/test/lowering_mc_late_fallback_handwritten.ll|A:b06f089d|A:b06f089d
+ir-pass/test/lowering_mc_late_fallback_measured_chain.ll|A:5eadea50|A:5eadea50
+ir-pass/test/lowering_mc_late_fallback_reader_after.ll|A:5772bc00|A:5772bc00
+ir-pass/test/lowering_mc_late_fallback_terminal_dag.ll|A:7ddb672d|A:7ddb672d
+ir-pass/test/lowering_mc_late_grover2_offset.ll|A:3d581c7a|A:3d581c7a
+ir-pass/test/lowering_mc_late_sub_after.ll|A:c0efafa1|A:c0efafa1
+ir-pass/test/lowering_mc_reject_irreducible_site.ll|A:c5b1d0e8|A:c5b1d0e8
+ir-pass/test/lowering_mc_seq_region_customer.ll|A:5a68c11f|A:5a68c11f
+ir-pass/test/lowering_mc_sub_fence_fallback.ll|A:dc11d871|A:dc11d871
+ir-pass/test/lowering_mc_subc_i1.ll|A:aa195cf1|A:aa195cf1
+ir-pass/test/lowering_mc_subc_i32.ll|A:a225caa7|A:a225caa7
+ir-pass/test/lowering_mc_subc_intmin.ll|A:32e736ce|A:32e736ce
+ir-pass/test/lowering_mc_subc_ssa_imm.ll|A:819ae7a9|A:819ae7a9
+ir-pass/test/lowering_mc_xor_fence_fallback.ll|A:f13a9bcd|A:f13a9bcd
+ir-pass/test/lowering_mc_xorc_chain.ll|A:7c0e87b6|A:7c0e87b6
+ir-pass/test/lowering_mc_xorc_commuted.ll|A:906a61cb|A:906a61cb
+ir-pass/test/lowering_mc_xorc_i1.ll|A:49659498|A:49659498
+ir-pass/test/lowering_mc_xorc_i32.ll|A:7c67e0bf|A:7c67e0bf
+ir-pass/test/lowering_mc_xorc_ssa_imm.ll|A:39a74f66|A:39a74f66
+ir-pass/test/lowering_mc_xorc_widths.ll|A:c5838a4a|A:c5838a4a
+ir-pass/test/lowering_measure_classical_accept.ll|A:112002f3|A:112002f3
+ir-pass/test/lowering_measure_classical_mixed_accept.ll|A:8e8a146e|A:8e8a146e
+ir-pass/test/lowering_measure_f16.ll|A:b1cea759|A:b1cea759
+ir-pass/test/lowering_measure_f32.ll|A:34355a76|A:34355a76
+ir-pass/test/lowering_measure_f64.ll|A:9cd0f3db|A:9cd0f3db
+ir-pass/test/lowering_measure_f80.ll|A:3e170b6a|A:3e170b6a
+ir-pass/test/lowering_measure_i1.ll|A:46e7d820|A:46e7d820
+ir-pass/test/lowering_measure_i16.ll|A:bb833a5e|A:bb833a5e
+ir-pass/test/lowering_measure_i32.ll|A:6c3dda20|A:6c3dda20
+ir-pass/test/lowering_measure_i64.ll|A:18b8f5ac|A:18b8f5ac
+ir-pass/test/lowering_measure_i8.ll|A:37050d41|A:37050d41
+ir-pass/test/lowering_measure_round2_sixfive_handle.ll|A:5091d607|A:5091d607
+ir-pass/test/lowering_mul_qc_i32.ll|A:cd3c8e08|A:cd3c8e08
+ir-pass/test/lowering_phi_classical.ll|A:a2d68667|A:a2d68667
+ir-pass/test/lowering_phi_tainted.ll|A:61b568d4|A:61b568d4
+ir-pass/test/lowering_phi_uncontrolled_deleted.ll|A:60a57a38|A:60a57a38
+ir-pass/test/lowering_predmux_leave_selectform_offgrammar.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/lowering_predmux_leave_selectform_poisoncone.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/lowering_predmux_leave_speccall_classicalargs.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/lowering_predmux_leave_speccall_impure.ll|D:c68f3fd9:cq specialization: callee contains a non-reversibilizable construct un|D:c68f3fd9:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_predmux_leave_speccall_loop.ll|D:26462b9a:cq controlled lowering: nested control flow|D:26462b9a:cq controlled lowering: nested control flow
+ir-pass/test/lowering_predmux_leave_speccall_nonqram.ll|D:8d12d3ca:cq specialization: callee contains a non-reversibilizable construct un|D:8d12d3ca:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_predmux_leave_speccall_qrom_unbounded.ll|D:2b3d6f93:|D:2b3d6f93:
+ir-pass/test/lowering_predmux_leave_speccall_recursive.ll|D:772ab6ca:cq specialization: recursive callee has no static depth bound|D:772ab6ca:cq specialization: recursive callee has no static depth bound
+ir-pass/test/lowering_predmux_leave_speccall_weak.ll|D:8e8b695e:cq specialization: callee has a non-link-exact definition (interposabl|D:8e8b695e:cq specialization: callee has a non-link-exact definition (interposabl
+ir-pass/test/lowering_predmux_purecallee_cycle_under_memo.ll|D:3692d094:cq controlled lowering: control flow|D:3692d094:cq controlled lowering: control flow
+ir-pass/test/lowering_predmux_purecallee_deep_chain.ll|A:df7ce2d0|A:df7ce2d0
+ir-pass/test/lowering_predmux_purecallee_memo_cost.ll|A:9e1b5770|A:9e1b5770
+ir-pass/test/lowering_predmux_purecallee_multiblock_resume.ll|A:4740b49a|A:4740b49a
+ir-pass/test/lowering_predmux_selectform_cond.ll|A:1efc6be0|A:1efc6be0
+ir-pass/test/lowering_predmux_speccall_flatten_qrom.ll|A:af8b82cf|A:af8b82cf
+ir-pass/test/lowering_predmux_speccall_flatten.ll|A:4a07be8f|A:4a07be8f
+ir-pass/test/lowering_q_plus_arg.ll|A:f8e173bb|A:f8e173bb
+ir-pass/test/lowering_q_plus_c.ll|A:98993085|A:98993085
+ir-pass/test/lowering_qram_array_record_chained_theta_accept.ll|A:a2e671cd|A:a2e671cd
+ir-pass/test/lowering_qram_fp64_measure_no_dirty_free.ll|A:f0a78849|A:f0a78849
+ir-pass/test/lowering_qram_guarded_store_fp64.ll|A:770bc2a7|A:770bc2a7
+ir-pass/test/lowering_qram_guarded_store_multi.ll|A:e266bb30|A:e266bb30
+ir-pass/test/lowering_qram_guarded_store_railof.ll|A:17ccb236|A:17ccb236
+ir-pass/test/lowering_qram_guarded_store_swapped.ll|A:63a7af6f|A:63a7af6f
+ir-pass/test/lowering_qram_guarded_store.ll|A:566a502d|A:566a502d
+ir-pass/test/lowering_qram_read_const_global_i32.ll|A:2097f09e|A:2097f09e
+ir-pass/test/lowering_qram_read_dead_uncompute.ll|A:5abfa066|A:5abfa066
+ir-pass/test/lowering_qram_read_fp64.ll|A:0bc0fddc|A:0bc0fddc
+ir-pass/test/lowering_qram_read_nested_index.ll|A:5cf3d622|A:5cf3d622
+ir-pass/test/lowering_qram_read_select_origin.ll|A:849bda66|A:849bda66
+ir-pass/test/lowering_qram_reject_blockaddress_guarded_arm.ll|D:7b2e812a:cq literal integrity: address-taken block erased|D:7b2e812a:cq literal integrity: address-taken block erased
+ir-pass/test/lowering_qram_selfref_store_index.ll|A:cfd48c92|A:cfd48c92
+ir-pass/test/lowering_qram_store_alloca_i32.ll|A:3bb01b24|A:3bb01b24
+ir-pass/test/lowering_qram_store_arith_measure.ll|A:0305d688|A:0305d688
+ir-pass/test/lowering_qram_store_dead_lifo.ll|A:141bfaf1|A:141bfaf1
+ir-pass/test/lowering_qram_store_flat_gep.ll|A:5533f52a|A:5533f52a
+ir-pass/test/lowering_qram_store_fp_widths.ll|A:c3d7d9a0|A:c3d7d9a0
+ir-pass/test/lowering_qram_store_fp64_carrier.ll|A:de526fc4|A:de526fc4
+ir-pass/test/lowering_qram_store_load_copy.ll|A:a25a9f0b|A:a25a9f0b
+ir-pass/test/lowering_qram_store_mixed_classical_separate.ll|A:98af5c83|A:98af5c83
+ir-pass/test/lowering_qram_store_offabi_paramty_leak.ll|A:ddd65f31|A:ddd65f31
+ir-pass/test/lowering_qram_volatile_fold.ll|A:31bda301|A:31bda301
+ir-pass/test/lowering_reject_bitcast_angle_control.ll|D:c35674f4:cq controlled lowering: control flow|D:c35674f4:cq controlled lowering: control flow
+ir-pass/test/lowering_reject_bitcast_angle.ll|D:d68a0987:cq rotation lowering: unsupported quantum-derived rotation angle|D:d68a0987:cq rotation lowering: unsupported quantum-derived rotation angle
+ir-pass/test/lowering_reject_bitcast_chained_theta_arg0.ll|D:8c55c288:cq opcode lowering: operand predates a non-diagonal gate|D:8c55c288:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/lowering_reject_bitcast_downstream_stale.ll|D:f2ba15f8:cq opcode lowering: operand predates a non-diagonal gate|D:f2ba15f8:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/lowering_reject_bitcast_select_stale.ll|D:2185acd1:cq controlled lowering: control flow|D:2185acd1:cq controlled lowering: control flow
+ir-pass/test/lowering_reject_bitcast_tape_stale.ll|D:a49ddbfe:|D:a49ddbfe:
+ir-pass/test/lowering_reject_bitint_raw_iN.ll|D:4fa5e9d0:|D:4fa5e9d0:
+ir-pass/test/lowering_reject_break_addrail_prevalue.ll|D:de61ae70:cq loop lowering: early break body is not a provable rolled single-rai|D:de61ae70:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_escape_not_rail.ll|D:cd2954a4:cq loop lowering: early break body is not a provable rolled single-rai|D:cd2954a4:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_escape_zerotrip.ll|D:8727ef08:cq loop lowering: early break body is not a provable rolled single-rai|D:8727ef08:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_intermediate_rail.ll|D:8ab83a75:cq loop lowering: early break body is not a provable rolled single-rai|D:8ab83a75:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_loopvariant_immediate.ll|D:5a1692df:cq loop lowering: early break body is not a provable rolled single-rai|D:5a1692df:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_measure_in_body.ll|D:01f3d003:cq controlled lowering: loop|D:01f3d003:cq controlled lowering: loop
+ir-pass/test/lowering_reject_break_mint_in_cond.ll|D:56fffb7a:cq loop lowering: early break body is not a provable rolled single-rai|D:56fffb7a:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_multiple_sites.ll|D:2e8d14ba:cq loop lowering: multiple early-break sites|D:2e8d14ba:cq loop lowering: multiple early-break sites
+ir-pass/test/lowering_reject_break_nested_loop.ll|D:86917422:cq loop lowering: early break across nested loops|D:86917422:cq loop lowering: early break across nested loops
+ir-pass/test/lowering_reject_break_nonreconverging.ll|D:e19dfde0:cq loop lowering: early break does not reconverge|D:e19dfde0:cq loop lowering: early break does not reconverge
+ir-pass/test/lowering_reject_break_nonzero_start.ll|D:03d539e3:cq loop lowering: early break body is not a provable rolled single-rai|D:03d539e3:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_phase_answer_kickback.ll|D:65af38e9:cq loop lowering: early break preserves a phase answer|D:65af38e9:cq loop lowering: early break preserves a phase answer
+ir-pass/test/lowering_reject_break_phase_answer.ll|D:d90b7694:cq controlled lowering: loop|D:d90b7694:cq controlled lowering: loop
+ir-pass/test/lowering_reject_break_preloop_mutation.ll|D:0e3eaa3b:cq loop lowering: early break body is not a provable rolled single-rai|D:0e3eaa3b:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_stray_taint.ll|D:830c6608:cq loop lowering: early break body is not a provable rolled single-rai|D:830c6608:cq loop lowering: early break body is not a provable rolled single-rai
+ir-pass/test/lowering_reject_break_uncollected_clone.ll|D:b12e1d5c:cq loop lowering: break reverse-play cannot re-emit an uncollected bod|D:b12e1d5c:cq loop lowering: break reverse-play cannot re-emit an uncollected bod
+ir-pass/test/lowering_reject_break_uncollected_mint.ll|D:8003a186:cq loop lowering: break reverse-play cannot re-emit an uncollected bod|D:8003a186:cq loop lowering: break reverse-play cannot re-emit an uncollected bod
+ir-pass/test/lowering_reject_break_uncollected_stray.ll|D:4e1fc3b3:cq loop lowering: break reverse-play cannot re-emit an uncollected bod|D:4e1fc3b3:cq loop lowering: break reverse-play cannot re-emit an uncollected bod
+ir-pass/test/lowering_reject_break_uninvertible_cond_tail.ll|D:a551b5a8:cq loop lowering: break reverse-play cannot invert a lowered body gate|D:a551b5a8:cq loop lowering: break reverse-play cannot invert a lowered body gate
+ir-pass/test/lowering_reject_break_uninvertible_cond.ll|D:47412378:cq loop lowering: break reverse-play cannot invert a lowered body gate|D:47412378:cq loop lowering: break reverse-play cannot invert a lowered body gate
+ir-pass/test/lowering_reject_byref_frexp_no_inject.ll|D:6592ea38:cq taint escape: tainted value consumed by an unknown callee|D:6592ea38:cq taint escape: tainted value consumed by an unknown callee
+ir-pass/test/lowering_reject_byref_inline_body_load.ll|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_reject_byref_inline_extra_store.ll|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_reject_byref_inline_post_store.ll|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un|D:908e14af:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_reject_byref_inline_side_effect.ll|D:fa77fdfe:cq specialization: callee contains a non-reversibilizable construct un|D:fa77fdfe:cq specialization: callee contains a non-reversibilizable construct un
+ir-pass/test/lowering_reject_classical_mux_phi_crossblock_chain.ll|D:d8cd260b:cq taint escape: tainted value muxed by a classical-condition phi|D:d8cd260b:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_derived_add.ll|D:d8cd260b:cq taint escape: tainted value muxed by a classical-condition phi|D:d8cd260b:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_lift_diaghop_stale.ll|D:a90e70ad:cq opcode lowering: operand predates a non-diagonal gate|D:a90e70ad:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/lowering_reject_classical_mux_phi_lift_stale.ll|D:a90e70ad:cq opcode lowering: operand predates a non-diagonal gate|D:a90e70ad:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/lowering_reject_classical_mux_phi_lift_thetahop_stale.ll|D:fd38a73b:cq opcode lowering: operand predates a non-diagonal gate|D:fd38a73b:cq opcode lowering: operand predates a non-diagonal gate
+ir-pass/test/lowering_reject_classical_mux_phi_loop.ll|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_measured.ll|D:02ef4250:cq taint escape: tainted value muxed by a classical-condition phi|D:02ef4250:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_onereg_nway_crossblock_chain.ll|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_onereg_nway_loop.ll|D:19139365:cq taint escape: tainted value muxed by a classical-condition phi|D:19139365:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_onereg_nway_mixed_incoming.ll|D:db4be3d6:cq taint escape: tainted value muxed by a classical-condition phi|D:db4be3d6:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_onereg_nway_mixedbase.ll|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi|D:654d65bb:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_phi_tworeg.ll|D:d48d661e:cq taint escape: tainted value muxed by a classical-condition phi|D:d48d661e:cq taint escape: tainted value muxed by a classical-condition phi
+ir-pass/test/lowering_reject_classical_mux_select_alltainted_main.ll|D:3b9fb125:cq taint escape: tainted value muxed by a classical-condition select|D:3b9fb125:cq taint escape: tainted value muxed by a classical-condition select
+ir-pass/test/lowering_reject_classical_mux_select_escape.ll|D:69a9d03c:cq taint escape: tainted value muxed by a classical-condition select|D:69a9d03c:cq taint escape: tainted value muxed by a classical-condition select
+ir-pass/test/lowering_reject_classical_mux_select_measured.ll|D:69a9d03c:cq taint escape: tainted value muxed by a classical-condition select|D:69a9d03c:cq taint escape: tainted value muxed by a classical-condition select
+ir-pass/test/lowering_reject_classical_mux_select_onereg.ll|D:87c09f03:cq taint escape: tainted value muxed by a classical-condition select|D:87c09f03:cq taint escape: tainted value muxed by a classical-condition select
+ir-pass/test/lowering_reject_cross_width_lround_no_inject.ll|D:34ab0119:cq taint escape: tainted value consumed by an unknown callee|D:34ab0119:cq taint escape: tainted value consumed by an unknown callee
+ir-pass/test/lowering_reject_decl_prototype_invoke.ll|D:69afa46f:cq rotation lowering: unsupported declared prototype for cq_theta_si32|D:69afa46f:cq rotation lowering: unsupported declared prototype for cq_theta_si32
+ir-pass/test/lowering_reject_decl_prototype_measure.ll|D:c09bcbbd:cq measure lowering: unsupported declared prototype for cq_measure_f64|D:c09bcbbd:cq measure lowering: unsupported declared prototype for cq_measure_f64
+ir-pass/test/lowering_reject_decl_prototype_phi.ll|D:82c282a1:cq rotation lowering: unsupported declared prototype for cq_phi|D:82c282a1:cq rotation lowering: unsupported declared prototype for cq_phi
+ir-pass/test/lowering_reject_decl_prototype_theta.ll|D:7b6f2600:cq rotation lowering: unsupported declared prototype for cq_theta_si32|D:7b6f2600:cq rotation lowering: unsupported declared prototype for cq_theta_si32

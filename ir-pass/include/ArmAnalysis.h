@@ -430,9 +430,26 @@ bool phaseAngleTail(llvm::BasicBlock *MergeBB, const TaintSet &Taint,
 // `emitSelectRegion` then dereferences a select this emitter has already erased
 // — a SIGSEGV on the flagship `if (q==5 && r==3) cq_phi(θ)` customer, MEASURED
 // before the set existed. May be null (a caller with no select scan).
+//
+// `plan` (bd `3qps`, Track P) is the REGION-MERGE-φ ladder's rung 0 — step 5c
+// asks `preppedRailPhiRegionIdx(P, plan)` whether some already-classified
+// `BranchRegion` committed the condition φ as its `Merge` with an
+// `InPlaceRotation` arm. It is a CONST reference, not a pointer: this classifier
+// never pushes, and a null-able plan would make the grammar flag
+// (`AllowRailPhi`) caller-dependent, which is exactly the drift the emitter's
+// re-derivation cannot tolerate (it must pass the SAME flag).
+//
+// ⚠ THE ORDER THAT MAKES RUNG 0 ANSWERABLE IS PROVEN, NOT ASSUMED, and it is the
+// same proof `classifySelectRegion` uses: `detectControlRegions` walks each block
+// and handles its TERMINATOR first, and a prep diamond's `br` lives in `Pred`
+// while the φ — and the `br` that reads it — live in the MERGE block, which comes
+// later in block order. So the prep's verdict is already in `plan.Regions` when
+// this runs. If that ever stops holding the outcome is a LOUD DECLINE, never a
+// miscompile: the lookup finds no region and step 5c fires.
 PhaseKickbackDisp classifyPhaseKickback(
     llvm::BranchInst *BI, TaintSet &Taint, ControlRegion &Region,
-    const llvm::DominatorTree *DT, const llvm::LoopInfo *LI,
+    const ControlPlan &plan, const llvm::DominatorTree *DT,
+    const llvm::LoopInfo *LI,
     llvm::SmallPtrSetImpl<llvm::Instruction *> *ClaimedSelects = nullptr);
 
 // bd test_C_libtooling-3qlq Inc 1 part B — P4, the GENUINE depth-2 register-free

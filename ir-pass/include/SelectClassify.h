@@ -101,18 +101,28 @@ struct CondTree {
   // CONSUMER THAT READS `Leaves` MUST DECIDE ON `RailPhiLeaves` EXPLICITLY. A
   // consumer that iterates `Leaves`/`RailLeaves` and treats the tree as
   // compare-plus-call-only accepts a shape it never proved. The shipped
-  // dispositions, decided ONCE (bd `boi6` H-8): ONLY `classifySelectRegion`
-  // admits a φ leaf (it is the one caller that passes `AllowRailPhi`), and it
-  // proves the φ by CALLING the one owner of "what this merge φ becomes" — the
-  // region's own committed `ClassArm`/`Shadow` verdict in `plan.Regions`
-  // (`ArmClassify`), never by re-deriving it (Rule 14, the drbq Inc-3 (b′)
-  // lesson). `Specialization` SKIPS a φ-carrying tree. Every OTHER consumer sees
-  // `AllowRailPhi == false`, so its string is UNCHANGED: a φ at a `br` keeps
-  // `control flow` (`ArmClassify`'s ternaries are deliberately untouched), a φ
-  // at the kickback keeps `branch phase on a bare i1 condition`, a φ in a loop
-  // keeps the loop layer's string. Re-pointing `kBareRailCondReason` at a φ
-  // would claim a rail capability that does not exist at those consumers and
-  // would move three shipped fixtures' strings without moving a disposition.
+  // dispositions, decided ONCE (bd `boi6` H-8) and EXTENDED ONCE (bd `3qps`,
+  // Track P): exactly TWO classifiers admit a φ leaf — `classifySelectRegion`
+  // (the 4.4 data select) and `ArmClassify::classifyPhaseKickback` (the
+  // register-free branch phase) — and BOTH prove it by CALLING the one owner of
+  // "what this merge φ becomes", `preppedRailPhiRegionIdx` over the region's own
+  // committed `ClassArm`/`Shadow` verdict in `plan.Regions` (`ArmClassify`),
+  // never by re-deriving it (Rule 14, the drbq Inc-3 (b′) lesson).
+  // `Specialization` SKIPS a φ-carrying tree. Every OTHER consumer sees
+  // `AllowRailPhi == false`, so its string is UNCHANGED: a φ at a VALUE/EQ-FOLD
+  // `br` keeps `control flow` (`ArmClassify`'s ternaries are deliberately
+  // untouched), a φ at the depth-2 NEST or at the Ry-stem angle select keeps its
+  // own, a φ in a loop keeps the loop layer's. Re-pointing `kBareRailCondReason`
+  // at a φ would claim a rail capability that does not exist at those consumers
+  // and would move shipped fixtures' strings without moving a disposition.
+  //
+  // ⚠ THE FLAT KICKBACK IS THE ONE STRING THAT MOVED, and only because its
+  // DISPOSITION moved: `if (b1) cq_phi(θ)` on a prep φ WAS
+  // `branch phase on a bare i1 condition` and is now an ACCEPT (bd `3qps`). The
+  // discriminator survives intact — that string still fires for every `i1`
+  // residual the grammar does not admit (`trunc`/`zext`/argument — bd `r903`; a
+  // loop-carried header φ — bd `boi6`; and a φ NO region claimed, which is this
+  // increment's own decline family).
   llvm::SmallVector<llvm::PHINode *, 2> RailPhiLeaves;
   llvm::SmallVector<llvm::Instruction *, 4> Nodes;
 };
@@ -148,6 +158,26 @@ bool isCondRailLeaf(const llvm::Value *V);
 // φ-conditioned region a `Pred`/`MergeBB` of its own does not re-open the L9
 // block-lifetime hole silently.
 bool isCondRailPhiShape(const llvm::Value *V);
+
+// bd `boi6` (D-B) / Track M — THE SEMANTIC HALF, and THE ONE SPELLING OF RUNG 0
+// (Rule 14). Returns the INDEX in `plan.Regions` of the `BranchRegion` that
+// COMMITTED `P` as its `Merge` with an `InPlaceRotation` arm (the controlled
+// in-place Ry arm and the controlled state PREP share that class and that
+// emitter), or `ControlRegion::kNoParent` when no region did.
+//
+// It RE-DERIVES NOTHING: `ArmClassify::classifyArms` is the one owner of "what
+// this merge φ becomes", and this reads its committed `Merge`/`ClassArm`/
+// `Shadow` fields by SSA-value identity. See the definition in
+// `SelectClassify.cpp` for why each conjunct is there.
+//
+// ⚠ TWO CONSUMERS, ONE SPELLING (bd `3qps`, Track P): `classifySelectRegion`'s
+// §M.0 ladder for the 4.4 DATA SELECT, and `ArmClassify::classifyPhaseKickback`
+// step 5c for the register-free BRANCH PHASE. Both ask this function; NEITHER
+// re-derives its conjuncts. An INDEX rather than a pointer because the select
+// consumer must RECORD it (`ControlRegion::PrepRegionIdxs`) and `plan.Regions`
+// is a `SmallVector` that reallocates.
+unsigned preppedRailPhiRegionIdx(const llvm::PHINode *P,
+                                 const ControlPlan &plan);
 
 // bd 3qlq.4 — the ONE decline string for a rail-leaf condition reaching a
 // consumer that does not lower it yet (the 4.4 data select, the Ry-stem angle
@@ -196,23 +226,32 @@ bool decomposeCondNode(llvm::Value *V, llvm::Instruction::BinaryOps &Opc,
 // the ONLY spelling `clang -O1` hands its `br`. Widening the data select to
 // match is a filed follow-on, not a side effect.
 //
-// `AllowRailPhi` (bd `boi6` D-B / Track M) admits ONE `isCondRailPhiShape` leaf,
-// and only as the tree's ROOT — i.e. the condition IS the φ, never a φ nested
-// inside an `and`/`or`/`xor`. The `AllowLogicalSelect` precedent verbatim: one
-// grammar, per-consumer verdicts, default OFF. Passed `true` by exactly ONE
-// caller, `classifySelectRegion`.
+// `AllowRailPhi` (bd `boi6` D-B / Track M) admits `isCondRailPhiShape` leaves.
+// The `AllowLogicalSelect` precedent verbatim: one grammar, per-consumer
+// verdicts, default OFF. Passed `true` by exactly TWO callers (bd `3qps`, Track
+// P) — `classifySelectRegion` for the 4.4 DATA SELECT and
+// `ArmClassify::classifyPhaseKickback` for the register-free BRANCH PHASE, plus
+// each one's own emitter re-derivation, which MUST pass the same value or the
+// walk drifts between detection and emission.
 //
-// ⚠ ROOT-ONLY IS A SCOPE DECISION, NOT AN IMPLEMENTATION ARTEFACT, and it is
-// worth the sentence. A φ as an INTERIOR leaf (`if (b1 && q > 3) a -= 3;` —
-// measured as probe `m31`) would reach `CondTreeEmit`'s NON-root rail path,
-// where the φ has by emit time been RAUW'd to a `cq_theta_i1` call and would be
-// read as a read-only control of a node `cqrt_toffoli`. That may well be sound;
-// it has NO probe family, NO fixture and NO adversarial round (Rule 12), so it
-// stays off-grammar and keeps its `control flow` decline (Prime Directive —
-// over-declining is always safe). RETIREMENT TRIGGER (L8): the increment that
-// widens this must flip `control_swap_reject_select_mergephi_tree_leaf.ll` from
-// a decline to an accept and derive its stream from the pass output — do not
-// delete that fixture, re-derive it.
+// ⚠ ROOT-ONLY IS GONE (bd `4aiu`, Track P) — Track M's `V == Root` conjunct was
+// a SCOPE decision, and its retirement trigger has fired. A φ at an INTERIOR
+// position reaches `CondTreeEmit`'s NON-root rail path, where it is mapped to
+// itself and read as a READ-ONLY control of the node's `cqrt_toffoli`/`cqrt_cnot`
+// — the identical path an interior `isCondRailLeaf` rail has taken since bd
+// 3qlq.4. It is now measured on the ORACLE with the φ already RAUW'd
+// (`trackP/probes/p18.ll`, 18 lines: `cqrt_toffoli(rail, cmpflag, g)`, `rz` on
+// `g`, the LIFO undo, one free) and pinned by its own fixtures and probe family.
+// `control_swap_reject_select_mergephi_tree_leaf.ll` was flipped to the ACCEPT
+// `control_swap_accept_select_mergephi_tree_leaf.ll` with its stream derived from
+// the pass output, exactly as that fixture's own trigger instructed.
+//
+// ⚠ WHAT IS *STILL* NOT ADMITTED, so the grammar's shape stays readable: a φ is a
+// LEAF, never a NODE — `decomposeCondNode` is not widened, so a tree cannot be
+// rooted in a φ that combines two conditions. And `AllowLogicalSelect` remains
+// independent (FALSE for the data select, TRUE for the branch phase): the two
+// flags are orthogonal, and a data select over `b1 && q > 3` still declines on
+// the logical-select node, not on the φ (bd `xqgx` (3)).
 bool collectCondTree(llvm::Value *Root, CondTree &Tree,
                      bool AllowLogicalSelect = false,
                      bool AllowRailPhi = false);

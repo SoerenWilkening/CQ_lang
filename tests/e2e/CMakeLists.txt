@@ -5719,6 +5719,53 @@ add_test(NAME e2e-slice-undef-seed-in-region
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_in_region.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_undef_seed_in_region.expected.log")
+# ── bd `3qps` + bd `4aiu` (Track P) — THE REGION-MERGE-φ AS A *PHASE* LEAF ────
+# `if (b1) cq_phi(θ)` where `b1` is a preceding controlled state PREP's merge φ,
+# plus the interior-leaf form `if (b1 && q > 3) cq_phi(θ)`.
+#
+#   * `..._mergephi`        the 3qps customer          20 lines  (NEW capability;
+#                           lines 7-17 are `slice_control_cascade_two_bools`'s
+#                           lines 6-16 BYTE FOR BYTE — the value path did not move)
+#   * `..._mergephi_int`    the `int b1` workaround    25 lines  (the spelling the
+#                           owner refused; it ALREADY lowered on the frozen ORACLE,
+#                           which is what proved 3qps was a LEAF-GRAMMAR
+#                           over-decline and not a wire wall — pinned so the
+#                           widening cannot change it)
+#   * `..._mergephi_tree`   the 4aiu interior leaf     17 lines  (NEW capability)
+#   * `..._mergephi_ifelse` both arm polarities         9 lines  (the Rule-7
+#                           non-negotiable at the LINK layer: the ¬-arm is the
+#                           DIAGONAL `cqrt_rz_i1(h, −θ)`, ZERO `cqrt_x`)
+add_test(NAME e2e-slice-control-phase-mergephi
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi.expected.log")
+
+add_test(NAME e2e-slice-control-phase-mergephi-int
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_int.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_int.expected.log")
+
+add_test(NAME e2e-slice-control-phase-mergephi-tree
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_tree.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_tree.expected.log")
+
+add_test(NAME e2e-slice-control-phase-mergephi-ifelse
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_ifelse.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_ifelse.expected.log")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

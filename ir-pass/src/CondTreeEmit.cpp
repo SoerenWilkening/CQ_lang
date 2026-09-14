@@ -75,11 +75,42 @@ void emitCondNode(const CondNetwork::Node &N, const ControlledSymbols &csyms,
   // remember it separately — the `markBranchPhaseGate` lesson, one epic later.
   // FORWARD only: the inverse network re-reads the same register at the strip,
   // which proves nothing new and would double the entries.
+  //
+  // bd `4aiu` (Track P) — A REGION-MERGE φ CONTROL IS RECORDED TOO, and this is
+  // the L2 row the widening owes: `emitCondNetwork` widened the set of values
+  // that may BE a flag, and this is the OTHER set computed over that same
+  // closure. At the PHASE kickback the φ is still a `PHINode` when the node's
+  // `cqrt_toffoli`/`cqrt_cnot` reads it (the prep is emitted after — the bd
+  // `hcrg` chain edge), so an `isCondRailLeaf`-only test would have left the
+  // user's register read by a control gate with NO record, and
+  // `reverifyRailCondReads` would never re-ask the ladder on it after round 2.
+  //
+  // The SHAPE predicate is the right one HERE (rather than tree membership as in
+  // `emitCondNetwork`): this function has no `CondTree`.
+  //
+  // ⚠ AND THE REASON IS *NOT* "over-recording only ever declines more" — that
+  // sentence shipped here and it is FALSE (Rule-13 round-1 finding F-P1-5). A
+  // record whose value is still a `PHINode` at `reverifyRailCondReads` is
+  // SKIPPED by that loop's `dyn_cast_or_null<CallInst>`, so an over-recorded φ
+  // declines NOTHING — it is inert, not conservative. The reason the shape test
+  // is safe here is a MEMBERSHIP identity: `N.L`/`N.R` can only be a `PHINode`
+  // when it is a `RailPhiLeaves` member, because `FlagOf[V] = V` (the `isRailFlag`
+  // arm of the walk in `emitCondNetwork`) is the ONLY path that maps a value to
+  // itself, and that arm asks membership. Shape ≡ membership at this site; the
+  // two predicates cannot disagree about a value that reaches here.
+  //
+  // WHY THE SKIP DOES NOT LEAVE A HOLE TODAY: in the shipped order M-β has
+  // RAUW'd the φ to the hoisted theta CALL before the re-verification runs, and
+  // the `WeakTrackingVH` the record is stored in FOLLOWS that RAUW (bd `boi6`
+  // site 12), so the register IS re-asked. See `TaintPropagation.h`'s
+  // `RailCondReads` block for the three cases that loop distinguishes and for
+  // the retirement trigger on this premise.
   auto record = [&](CallInst *C) {
     if (!taint || Inverse)
       return;
     for (Value *Ctl : {N.L, N.R})
-      if (Ctl && isCondRailLeaf(Ctl) && C->hasArgument(Ctl))
+      if (Ctl && (isCondRailLeaf(Ctl) || isCondRailPhiShape(Ctl)) &&
+          C->hasArgument(Ctl))
         markRailCondRead(*taint, Ctl, C);
   };
   auto stamp = [&DL, &record](CallInst *C) {
@@ -123,6 +154,62 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
                             bool LeafWireRuled) {
   if (!Root || !Before)
     return CondNetDisp::Malformed;
+  // bd `4aiu` (Track P) — "IS THIS VALUE ALREADY ITS OWN FLAG?", the ONE spelling
+  // inside this file. A `cq_theta_i1` RAIL always is (bd 3qlq.4). A REGION-MERGE
+  // φ is too, but ONLY when the CALLER's own `collectCondTree` admitted it into
+  // THIS tree (`AllowRailPhi`) — asked by MEMBERSHIP of `Tree.RailPhiLeaves`,
+  // never by re-running `isCondRailPhiShape` here.
+  //
+  // ⚠ MEMBERSHIP IS THE ENFORCEMENT, exactly as the field's ELEMENT TYPE is in
+  // `SelectClassify.h` (bd `boi6` H-3). This file serves four consumers (the flat
+  // kickback, the depth-2 nest, the 4.4 select and `Specialization`'s forward-only
+  // copy); three of them pass `AllowRailPhi = false`, so their trees carry no φ,
+  // their `RailPhiLeaves` is empty, and a φ reaching them still falls through to
+  // `decomposeCondNode` and returns `Malformed` — the loud decline they have
+  // today. A shape predicate here would have silently handed every one of them a
+  // capability none of them proved.
+  //
+  // The 4.4 select never exercises the φ arm in practice: by the time
+  // `SelectMergeEmit` re-derives its tree, M-β has already RAUW'd the φ to a
+  // `cq_theta_i1` call, so `isCondRailLeaf` fires first. The PHASE kickback is
+  // the opposite — it is emitted BEFORE the prep (the bd `hcrg` chain edge), so
+  // its φ is still a `PHINode` here and this clause is what makes it a control.
+  //
+  // ⚠ WHICH OF THE THREE `isRailFlag` USES ACTUALLY HAS A φ SUBJECT — ONE
+  // (Rule-13 round-1 finding F-P1-4, correcting the record, not the code). Only
+  // the in-walk `FlagOf[V] = V` below can be reached with a φ. `CopyRoot`
+  // (`CopyRailRoot && isRailFlag(Root)`) and `Out.RootIsRail` cannot, and the
+  // ground is stronger than "no caller does it today": `collectCondTree` records
+  // a φ ROOT as a leaf and returns, so such a tree has NO nodes, so the flat
+  // kickback's `IsTree` is false, so its `emitCondNetwork` call — the ONE call
+  // site that passes `AllowRailPhi = true`, and it passes `CopyRailRoot = false`
+  // — is not made at all. The other three call sites pass `AllowRailPhi = false`
+  // and their `RailPhiLeaves` is empty by construction.
+  //
+  // ⚠ AND THE HAZARD NARRATIVE THAT USED TO JUSTIFY WIDENING `Out.RootIsRail`
+  // WAS WRONG: "a φ root reaching this function would return `RootIsRail=false`
+  // and the kickback would `cqrt_x`-BRACKET the user's register" could not
+  // happen through this field. `emitPhaseKickbackRegion` computes
+  // `FlagIsRail = IsTree ? Net.RootIsRail : (RailCond || RailPhiCond)`, and a φ
+  // root takes the `!IsTree` arm, which never reads `Net.RootIsRail` at all. The
+  // widening is still right in DIRECTION and stays (one spelling of "is this
+  // value already its own flag", Rule 14) — it is defence in depth with no
+  // subject, and saying so is the point: an overstated justification is how a
+  // real guard gets deleted later as dead.
+  //
+  // RULE 7 HERE IS MEASURED, NOT ARGUED: across EVERY shipped φ PHASE accept
+  // (`control_phase_kickback_mergephi_*.ll` + `…_rail_after_prep.ll`, 11 of them
+  // when this was written) the emitted IR contains ZERO `call void @cqrt_x(`,
+  // and on the φ SELECT accepts every `cqrt_x` targets the network's own fresh
+  // `cqrt_alloc_i1(0)` root ancilla, never a prepped register (which appears
+  // only in `cqrt_toffoli`/`cqrt_cnot` CONTROL slots and is never freed). Count
+  // the family rather than trusting the number — the glob is the invariant.
+  auto isRailFlag = [&Tree](const Value *V) {
+    if (isCondRailLeaf(V))
+      return true;
+    const auto *P = dyn_cast<PHINode>(V);
+    return P && llvm::is_contained(Tree.RailPhiLeaves, P);
+  };
   IRBuilder<> B(Before);
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -134,7 +221,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   // i1 allocator is needed for: such a tree has NO nodes and NO compare leaves
   // (`collectCondTree` records the rail and returns), so the copy flag is the
   // only thing this network mints.
-  const bool CopyRoot = CopyRailRoot && isCondRailLeaf(Root);
+  const bool CopyRoot = CopyRailRoot && isRailFlag(Root);
   // The i1 ancilla allocator is resolved BEFORE the walk, so a resolution
   // failure is a clean "emitted nothing" rather than a half-built network.
   FunctionCallee AllocI1;
@@ -194,7 +281,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     // recorded in `Out.Leaves` and `stripCondNetwork` never strips or frees it
     // (the register is the user's). Same predicate the grammar used
     // (`isCondRailLeaf`, Rule 14), so detection and emission cannot drift.
-    if (isCondRailLeaf(V)) {
+    if (isRailFlag(V)) {
       FlagOf[V] = V;
       continue;
     }
@@ -223,7 +310,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     Stack.push_back({L, false});  // left child visits first.
   }
   Out.Root = FlagOf.lookup(Root);
-  Out.RootIsRail = isCondRailLeaf(Root);
+  Out.RootIsRail = isRailFlag(Root);
   // bd test_C_libtooling-r9e5 (1b-B.1) — THE RAIL-ROOT COPY, minted LAST (so the
   // LIFO strip un-copies it FIRST) and only on the caller's explicit request.
   //

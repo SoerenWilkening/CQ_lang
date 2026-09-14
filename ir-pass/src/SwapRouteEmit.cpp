@@ -1772,8 +1772,29 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // the sibling emitters state: a region that declines MID-STREAM leaves a
   // minted flag and a half-lowered arm behind (the Inc-2a round-1 F-5 finding).
   auto *BI = R.Pred ? dyn_cast<BranchInst>(R.Pred->getTerminator()) : nullptr;
+  // bd `3qps` (Track P) — THE CONDITION IS READ FROM A LIVE ANCHOR, NEVER FROM
+  // THE PLAN'S CACHED POINTER, and `R.Condition` is from here on POINTER-COMPARED
+  // ONLY. This is bd `boi6`'s H-1 discipline (`SelectMergeEmit` re-reads
+  // `cast<SelectInst>(R.Merge)->getCondition()` for the identical reason), asked
+  // at the anchor a kickback actually has: `R.Merge` is null by construction, so
+  // the live anchor is the branch's own operand.
+  //
+  // IT IS NOT A THEORETICAL HAZARD FOR THIS KIND, and the reason is the opposite
+  // of the select's. A merge-φ-conditioned kickback sits in the PREP's `MergeBB`,
+  // so the bd `hcrg` pre-flight gives it `Precedes[kickback] = {prep}` and it is
+  // emitted FIRST, while the φ is still live — which is exactly what this emitter
+  // wants. But nothing here may DEPEND on that: if a future order ever emits the
+  // prep first, M-β has RAUW'd the `br`'s operand to the hoisted theta and
+  // `flattenRegion` has FREED the φ, so `R.Condition` is a dangling pointer.
+  // Reading `BI->getCondition()` makes that case a LOUD DECLINE at the identity
+  // check below rather than a `dyn_cast` on freed memory.
+  // ⚠ Do NOT "fix" the plan field with a `WeakTrackingVH` (bd `boi6` H-1, tried
+  // and wrong): the φ is legitimately REPLACED, not deleted, so a tracking handle
+  // would silently follow the RAUW and HIDE the ordering premise instead of
+  // checking it.
+  Value *const CondV = BI ? BI->getCondition() : nullptr;
   auto anchor = [&]() -> Instruction * {
-    if (auto *A = dyn_cast_or_null<Instruction>(R.Condition))
+    if (auto *A = dyn_cast_or_null<Instruction>(CondV))
       return A;
     return BI;
   };
@@ -1781,21 +1802,31 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // classifier accepted with (Rule 14 — the walk cannot drift). A bare compare
   // is the degenerate single-leaf tree and takes the pre-part-B code below,
   // byte-for-byte; a COMPOUND tree (P3) takes the shared `CondTreeEmit` network.
+  // BOTH flags must match `classifyPhaseKickback`'s literally, `AllowRailPhi`
+  // included (bd `3qps`): a narrower walk here would report drift on every accept
+  // the classifier just created, a wider one would emit a shape nothing proved.
   CondTree Tree;
   if (!BI || !BI->isConditional() || !R.Arm || !R.MergeBB || !R.Condition ||
-      BI->getCondition() != R.Condition ||
-      !collectCondTree(R.Condition, Tree, /*AllowLogicalSelect=*/true)) {
+      CondV != R.Condition ||
+      !collectCondTree(CondV, Tree, /*AllowLogicalSelect=*/true,
+                       /*AllowRailPhi=*/true)) {
     if (Instruction *A = anchor())
       diagnoseUnderControl(A, "control flow");
     return;
   }
   const bool IsTree = !Tree.Nodes.empty();
   // bd 3qlq.4: a node-less tree has ONE leaf, a COMPARE (`Cond`, the pre-1b
-  // path) or a RAIL (`RailCond`, the `_Bool` register itself — its own flag).
+  // path), a RAIL (`RailCond`, the `_Bool` register itself — its own flag) or —
+  // bd `3qps` — a REGION-MERGE φ (`RailPhiCond`), which denotes that same
+  // register and is its own flag for the identical reason.
   auto *Cond = IsTree || Tree.Leaves.empty() ? nullptr : Tree.Leaves.front();
   CallInst *RailCond =
       !IsTree && !Tree.RailLeaves.empty() ? Tree.RailLeaves.front() : nullptr;
-  if ((!IsTree && !Cond && !RailCond) || (R.ShareCondFlag && !Cond)) {
+  PHINode *RailPhiCond =
+      !IsTree && !Tree.RailPhiLeaves.empty() ? Tree.RailPhiLeaves.front()
+                                             : nullptr;
+  if ((!IsTree && !Cond && !RailCond && !RailPhiCond) ||
+      (R.ShareCondFlag && !Cond)) {
     if (Instruction *A = anchor())
       diagnoseUnderControl(A, "control flow");
     return;  // detection/emission drift — before the first emission.
@@ -1884,7 +1915,7 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
     // (Track A.1, F-A1R2-1) `LeafWireRuled` — `classifyPhaseKickback` asked
     // `condWireDisposition` / `railCondWireDisposition` over this tree's own
     // `Prov` before the region was pushed.
-    switch (emitCondNetwork(R.Condition, Tree, wd, csyms, taint, /*Before=*/BI,
+    switch (emitCondNetwork(CondV, Tree, wd, csyms, taint, /*Before=*/BI,
                             DL, /*AllowQQLeaves=*/false, Net,
                             /*CopyRailRoot=*/false, /*LeafWireRuled=*/true)) {
     case CondNetDisp::Ok:
@@ -1906,17 +1937,33 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // skips the strip+free below. A tree's root is an ancilla unless the tree IS
   // a rail (`Net.RootIsRail`, the node-less case — unreachable here since a
   // node-less tree takes the `RailCond` path, but asked rather than assumed).
+  // ⚠ SAME FOR A REGION-MERGE φ ROOT, and it is the ground F-P1-4 wanted stated:
+  // a node-less tree takes the `RailPhiCond` path below, so for a φ ROOT this
+  // ternary evaluates `(RailCond != nullptr || RailPhiCond != nullptr)` and
+  // `Net.RootIsRail` is NEVER READ. `CondTreeEmit`'s widening of that field is
+  // therefore defence in depth with no subject at this consumer — correct in
+  // direction, but it is not what keeps a `cqrt_x` off the user's register here.
+  // What keeps it off is this `||`.
   // (Track A.1, F-A1R2-1) `WireRuled`: `classifyPhaseKickback` asked
   // `condWireDisposition` (or `railCondWireDisposition`) over `Prov` at round-1
   // taint before this region was pushed.
-  Value *Flag = IsTree     ? Net.Root
-                : RailCond ? static_cast<Value *>(RailCond)
-                           : lowerCompareToFlag(
-                                 Cond, wd, taint, /*qqWidth=*/{},
-                                 /*inverse=*/false, /*before=*/FlagAt,
-                                 /*negate=*/false, /*railToStrip=*/nullptr,
-                                 /*readKind=*/CondReadKind::WireRuled);
-  const bool FlagIsRail = IsTree ? Net.RootIsRail : RailCond != nullptr;
+  // bd `3qps`: a REGION-MERGE φ is the flag on the SAME terms as a rail leaf —
+  // `FlagIsRail` selects `emitKickbackGroup`'s diagonal `rz(−θ)` polarity form
+  // (NEVER a `cqrt_x` on the user's register) and skips the strip+free below,
+  // because nothing was minted. By the time `lowerRotations` runs, the prep's
+  // M-β has RAUW'd this φ to the hoisted `cq_theta_i1` call and that call to its
+  // `i32` handle, so the gate's operand is the register — no `i1` φ survives into
+  // a `cqrt_*` argument.
+  Value *Flag = IsTree        ? Net.Root
+                : RailCond    ? static_cast<Value *>(RailCond)
+                : RailPhiCond ? static_cast<Value *>(RailPhiCond)
+                              : lowerCompareToFlag(
+                                    Cond, wd, taint, /*qqWidth=*/{},
+                                    /*inverse=*/false, /*before=*/FlagAt,
+                                    /*negate=*/false, /*railToStrip=*/nullptr,
+                                    /*readKind=*/CondReadKind::WireRuled);
+  const bool FlagIsRail =
+      IsTree ? Net.RootIsRail : (RailCond != nullptr || RailPhiCond != nullptr);
   if (!Flag)
     // REACHABLE, and say so plainly rather than calling it unreachable — an
     // overstated justification is how a real bail later gets deleted as dead.
@@ -2072,7 +2119,7 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // and merge blocks into `Pred` and rewires the branch, exactly as it does for
   // the void-I/O diamond. It also erases `R.Condition` — the tree ROOT — once
   // the branch is gone and the root is use-empty.
-  Value *const Root = R.Condition;
+  Value *const Root = CondV;
   flattenRegion(R, taint);
   // A COMPOUND tree's INTERIOR is not `flattenRegion`'s to erase, and leaving it
   // is not harmless: the mint and strip built FRESH templates from the leaves'
@@ -2662,30 +2709,39 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
   // ⚠ THE EDGE IS ADDED BY *CALLING* THE CLASSIFIER'S RECORD, NEVER BY RE-DERIVING
   // ITS PREDICATE (Rule 14 — the drbq Inc-3 (b′) defect was a second spelling of a
   // predicate the tree already owned). `classifySelectRegion` ran the §M.0 ladder,
-  // committed the admitting region's index in `PrepRegionIdx`, and this loop only
+  // committed the admitting region's index in `PrepRegionIdxs`, and this loop only
   // transcribes it. Nothing here knows what an `InPlaceRotation` arm is.
+  //
+  // bd `4aiu` (Track P) — ONE EDGE PER φ LEAF. With Track M's ROOT-ONLY conjunct
+  // gone a select's condition tree may carry several φ leaves, each rewritten by
+  // a DIFFERENT prep region's M-β, so each owes its own "prep before me" edge.
+  // Each `Aliases` pair still contributes at most one edge here because the
+  // classifier records at most one index per DISTINCT leaf and two distinct
+  // leaves cannot name one region (a `BranchRegion` has exactly one `Merge`), so
+  // `Pending` cannot be double-counted.
   //
   // IT CANNOT CREATE A CYCLE, and the argument is structural rather than
   // empirical: this is the ONLY way a `SelectRegion` acquires an edge, and every
   // such edge points INTO it. A node with no outgoing edges cannot lie on a cycle,
   // so the Kahn backstop below keeps exactly the population it had.
   //
-  // The `PrepRegionIdx` bound is re-checked rather than trusted: detection only
+  // The `PrepRegionIdxs` bound is re-checked rather than trusted: detection only
   // ever `push_back`s, so a stale or out-of-range index is not reachable, but a
   // silent skip here would restore the over-decline with no diagnostic — so an
   // out-of-range index declines LOUDLY instead (Rule 1, never a third path).
   for (size_t i = 0; i < N; ++i) {
     if (Regions[i].Kind != ControlRegion::SelectRegion)
       continue;
-    const unsigned P = Regions[i].PrepRegionIdx;
-    if (P == ControlRegion::kNoParent)
-      continue;  // compare- or rail-conditioned: no condition rewrite, no edge.
-    if (P >= N || P == i) {
-      declineRegion(Regions[i]);
-      return;  // lower NOTHING — over-declining is always safe.
+    for (unsigned P : Regions[i].PrepRegionIdxs) {
+      if (P == ControlRegion::kNoParent)
+        continue;  // never recorded, but a skip must not be a silent one.
+      if (P >= N || P == i) {
+        declineRegion(Regions[i]);
+        return;  // lower NOTHING — over-declining is always safe.
+      }
+      Precedes[P].push_back(i);
+      ++Pending[i];
     }
-    Precedes[P].push_back(i);
-    ++Pending[i];
   }
 
   SmallVector<size_t, 8> Order;
