@@ -5464,29 +5464,59 @@ add_test(NAME e2e-select-bool-loop-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_loop_unrolled.expected.log")
 
-# --- bd test_C_libtooling-r9e5 (Inc 1b-B.1), Rule-13 ROUND-2 finding F-B1R2-1 —
-# --- the TWO ACCEPTS that make `reverifyRailCondReads` a RE-VERIFICATION rather
-# --- than a refusal of the round-2 taint window. The DECLINE half of the pair
-# --- has no e2e home and is pinned in lit instead: `run_slice_multi.sh` runs
-# --- under `set -euo pipefail` and byte-diffs a golden, so a program whose `opt`
-# --- exits non-zero cannot be a passing slice at all (there is no WILL_FAIL and
-# --- no decline runner in this file) — the reproducer is committed as its
-# --- linked stage-1 module, `ir-pass/test/
-# --- control_swap_reject_select_rail_round2_plainc_twotu.ll`.
+# --- ⚠ REMOVED 2026-09-14 (bd test_C_libtooling-3d8q, OWNER RULING 2026-09-14 —
+# --- the stale-reader fence), at the merge gate of that date. The registration
+# --- that stood here, `e2e-slice-control-select-bool-round2-window`, is gone and
+# --- `slice_control_select_bool_round2_window.expected.log` was DELETED. The
+# --- `.c` and its `_lib.c` are KEPT in the tree, unregistered, with the full
+# --- record in their headers — the same disposition
+# --- `slice_control_switch_phase.c` took on 2026-09-05.
 # ---
-# --- The WINDOW slice is TWO TUs, and that is structural: the window needs a 6.5
-# --- classical-call arm, i.e. a callee `clang -O1` cannot inline. Its sibling
-# --- theta runs AFTER the merge, so the register the copies read really is the
-# --- one the select's condition names, and the DT prong proves it — the same
-# --- program with the sibling BEFORE the select is the confirmed miscompile.
-add_test(NAME e2e-slice-control-select-bool-round2-window
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window_lib.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_bool_round2_window.expected.log")
+# --- WHY: the program ends `b = cq_theta(x,.25); …merge…; b3 = cq_theta(x,.9);`
+# --- — two SIBLING rotations reading the name `x`, so `b3` names `Ry(0.9)|x>`
+# --- while the register holds `Ry(0.9)Ry(0.25)|x>`. That is the P1 stale-reader
+# --- class (`docs/frontend.md` §3.2: a rotation consumes the old name), and it
+# --- now declines `cq opcode lowering: rotation/measure operand predates a
+# --- non-diagonal gate`. The prose kept below argued ORDER, and its argument is
+# --- true of the MERGE's read of `b` and silent about `b3`'s own read.
+# ---
+# --- NO GOLDEN WAS REGENERATED AND NONE COULD BE — see the neutered prose below,
+# --- which states the reason itself: a program whose `opt` exits non-zero cannot
+# --- be a passing slice in this file. The deleted golden recorded the ORACLE's
+# --- circuit for a program the compiler now calls a miscompile.
+# ---
+# --- THE DECLINE IS PINNED at the layer that can hold it:
+# --- `ir-pass/test/control_swap_reject_select_rail_round2_window.ll` carries the
+# --- VERBATIM linked stage-1 module of this slice with the diagnostic mirrored
+# --- character-for-character, and was validated NON-VACUOUS by binary mutation
+# --- (RED on the ORACLE `f7b65d8c`, GREEN on the merged binary). Its cmp twin,
+# --- `control_swap_select_cmp_round2_window_accept.ll`, Track D inverted in the
+# --- same landing. Converting this slice cost ZERO coverage.
+# ---
+# --- RETIREMENT TRIGGER (L8): if the open question in that cmp fixture — whether
+# --- the CHAINED rewrite is a separate over-decline — resolves as an
+# --- over-decline and the chained spelling lowers, RE-REGISTER this slice with a
+# --- FRESHLY DERIVED golden. Never restore the deleted one.
+# ---
+# --- THE ORIGINAL REGISTRATION PROSE, KEPT VERBATIM, EVERY DIRECTIVE NEUTERED:
+# --- (was) bd test_C_libtooling-r9e5 (Inc 1b-B.1), Rule-13 ROUND-2 finding
+# --- (was) F-B1R2-1 — the TWO ACCEPTS that make `reverifyRailCondReads` a
+# --- (was) RE-VERIFICATION rather than a refusal of the round-2 taint window.
+# --- (was) The DECLINE half of the pair has no e2e home and is pinned in lit
+# --- (was) instead: `run_slice_multi.sh` runs under `set -euo pipefail` and
+# --- (was) byte-diffs a golden, so a program whose `opt` exits non-zero cannot
+# --- (was) be a passing slice at all (there is no WILL_FAIL and no decline
+# --- (was) runner in this file) — the reproducer is committed as its linked
+# --- (was) stage-1 module, `ir-pass/test/
+# --- (was) control_swap_reject_select_rail_round2_plainc_twotu.ll`.
+# --- (was)
+# --- (was) The WINDOW slice is TWO TUs, and that is structural: the window needs
+# --- (was) a 6.5 classical-call arm, i.e. a callee `clang -O1` cannot inline.
+# --- (was) Its sibling theta runs AFTER the merge, so the register the copies
+# --- (was) read really is the one the select's condition names, and the DT prong
+# --- (was) proves it — the same program with the sibling BEFORE the select is
+# --- (was) the confirmed miscompile.
+# --- (was) add_test(NAME e2e-slice-control-select-bool-round2-window ... )
 
 add_test(NAME e2e-slice-control-select-bool-round2-opaque-seed
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
@@ -5517,20 +5547,33 @@ add_test(NAME e2e-slice-control-select-cmp-measure-after
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_measure_after.expected.log")
 
-# --- ROUND-2 WINDOW, COMPARE LEAF: TWO TUs, structurally — the window needs a
-# --- 6.5 classical-call arm, i.e. a callee `clang -O1` cannot inline. The
-# --- sibling theta runs AFTER the merge, so the register the copies control on
-# --- really is the one the compare names, and the DT prong proves it; the same
-# --- program with the sibling BEFORE the select is bd `9pum`, the confirmed
-# --- miscompile.
-add_test(NAME e2e-slice-control-select-cmp-round2-window
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window.c"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window_lib.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_select_cmp_round2_window.expected.log")
+# --- ⚠ REMOVED 2026-09-14 (bd test_C_libtooling-3d8q, OWNER RULING 2026-09-14 —
+# --- the stale-reader fence), at the merge gate of that date, for exactly the
+# --- reason its bool sibling above was removed: the same two-sibling-rotations
+# --- program, the same P1 stale-reader class, the same loud decline
+# --- (`cq opcode lowering: rotation/measure operand predates a non-diagonal
+# --- gate`). `e2e-slice-control-select-cmp-round2-window` is gone and
+# --- `slice_control_select_cmp_round2_window.expected.log` was DELETED; the `.c`
+# --- and its `_lib.c` are KEPT, unregistered, with the record in their headers.
+# ---
+# --- THE DECLINE WAS ALREADY PINNED before this removal: Track D inverted
+# --- `ir-pass/test/control_swap_select_cmp_round2_window_accept.ll` — verified at
+# --- the merge gate to be the BYTE-IDENTICAL linked stage-1 module of this very
+# --- slice — from ACCEPT to DECLINE in the same landing. So this removal is the
+# --- second half of that conversion, not a new verdict, and it costs ZERO
+# --- coverage. Its RETIREMENT TRIGGER lives in that fixture: if the CHAINED
+# --- rewrite proves to be a separate over-decline and is made to lower, this
+# --- slice becomes registrable again with a FRESHLY DERIVED golden. Never
+# --- restore the deleted one.
+# ---
+# --- THE ORIGINAL REGISTRATION PROSE, KEPT VERBATIM, EVERY DIRECTIVE NEUTERED:
+# --- (was) ROUND-2 WINDOW, COMPARE LEAF: TWO TUs, structurally — the window
+# --- (was) needs a 6.5 classical-call arm, i.e. a callee `clang -O1` cannot
+# --- (was) inline. The sibling theta runs AFTER the merge, so the register the
+# --- (was) copies control on really is the one the compare names, and the DT
+# --- (was) prong proves it; the same program with the sibling BEFORE the select
+# --- (was) is bd `9pum`, the confirmed miscompile.
+# --- (was) add_test(NAME e2e-slice-control-select-cmp-round2-window ... )
 
 # --- Track A.1, Rule-13 ROUND-1 finding F-A1-2 — the ITERATION-LOCAL RAIL pair,
 # --- and the ONE ACCEPT-DIRECTION movement in the increment. `main` 0c7380c

@@ -2868,10 +2868,10 @@ EXPECTED_HEADER = """\
 #        rolled the loop message, FLAT `nested control flow`.
 #
 # ⚠ THEREFORE bd wx8g's LANDING OWES A REGENERATION OF EXACTLY THESE TEN ROWS,
-# and the expected direction is written here so the diff is CHECKED rather than
-# rubber-stamped. Predicted from Track W's own measured probe table (IMPL_W §1,
-# the subject binary: `w_d`/`w_b2`/`w_g`/`w_k` all ACCEPT and all BYTE-IDENTICAL
-# to their per-block twins):
+# and the expected direction was written here so the diff would be CHECKED rather
+# than rubber-stamped. Predicted from Track W's own measured probe table (IMPL_W
+# §1, the subject binary: `w_d`/`w_b2`/`w_g`/`w_k` all ACCEPT and all
+# BYTE-IDENTICAL to their per-block twins):
 #     the EIGHT loop-message rows -> ACCEPT-IDENTICAL (clause (c) working: the
 #         rolled form mints K rails for K activations and matches its per-block
 #         twin byte for byte);
@@ -2879,6 +2879,80 @@ EXPECTED_HEADER = """\
 #         gate 2c — if it flips, the reason is NOT clause (c) and must be found;
 #     `m_none_dilesc_none_none_binv` -> UNMOVED. Its rolled side must go on
 #         declining; its flat side declines for its own `-O1` reason.
+#
+# ━━━ WHAT ACTUALLY HAPPENED — bd wx8g LANDED 2026-09-14 AND THIS IS THE MEASURED
+#     OUTCOME. The three bullets above are HISTORY; read them for what they got
+#     right AND for the one reason that was wrong. Measured at the merge gate of
+#     2026-09-14 on `cq-opt` `5c6f7490a81c7505…` (all six branches merged), 338
+#     cells, 41 moved; full per-group adjudication in
+#     `docs/prd/phase-04-swap-route-control/inc1-records/
+#      session-2026-09-14-orchestrator/MERGE_TWIN_ADJUDICATION.md`.
+#
+#   (1) OF THE EIGHT PREDICTED LOOP-MESSAGE ROWS, **FIVE** FLIPPED to
+#       ACCEPT-IDENTICAL: `m_none_bilry_none_none_binv`,
+#       `m_none_nbilry_none_none_binv`, `m_none_bilprep_none_none_binv`,
+#       `m_none_dilry_none_none_binv`, `m_none_bil2_none_none_binv`.
+#
+#   (2) ⚠ **THREE DID NOT, AND THEY ARE A SURVIVING OVER-DECLINE** —
+#       `m_none_bilry_none_none_bcar`, `m_none_nbilry_none_none_bcar`,
+#       `m_none_bilprep_none_none_bcar` stay `UNROLLED-ONLY / control flow inside
+#       a loop body` (re-measured directly: rolled DECLINEs, flat ACCEPTs, all
+#       three). THE BLOCKER IS THE COMBINATION AND THIS AXIS PAIR ISOLATES IT:
+#       `bcar` re-rotates the CONDITION rail in the body (`b = cq_theta(b,0.25);`
+#       every trip), so the condition register is loop-carried and moves every
+#       activation, while clause (c) covers the iteration-local TARGET rail. That
+#       the two are separable is measured, not argued —
+#       `m_none_bry_none_none_bcar` (same carried condition, NO iteration-local
+#       target) DID flip. What survives is exactly *iteration-local target rail
+#       × in-body-rotated condition rail*. Over-decline => a defect to remove
+#       (owner 2026-09-11), filed; do not read these three rows as a fence.
+#
+#   (3) ⚠ **`m_none_ddilry_none_none_binv` FLIPPED, AND THE PREDICTION'S REASON
+#       WAS WRONG.** It is now ACCEPT-IDENTICAL. The cause was found, as the
+#       bullet demanded: **Track W alone**, and already present in Track W's
+#       ROUND-2-CLEARED binary `40edde36` — not in the three post-clearance
+#       edits (a 2385-module sweep of `40edde36` vs `d47297cf` gives 0 verdict
+#       differences and one GAINED source location).
+#         THE STATED GROUND — "its rolled side declines at gate 2c, not at the
+#       loop fence … so gate 2c refuses it BEFORE the loop clause is ever
+#       reached" — IS SIMPLY FALSE, and the disproof was on the row the whole
+#       time: **if 2c were the operative refusal it would refuse the FLAT
+#       spelling too, and the flat side ACCEPTED on the ORACLE.** 2c never
+#       stopped the rolled side; the loop carve-out did, and lifting the carve-out
+#       lifted it. This is L7 in its exact shape — a wrong reason that reached a
+#       right prediction, hardening by repetition until something forced it to be
+#       checked. It is BENIGN: rolled and flat traces are byte-identical at 28
+#       lines, STRICT stage 2b clean on both, so the rolled spelling merely
+#       caught up with the twin the ORACLE already accepted. NO gate-2c ruling is
+#       owed; the corrected sentence was.
+#
+#   (4) NINE FURTHER CELLS FLIPPED THAT NO BULLET ABOVE COVERS, ALL ON THE
+#       `*bry*` AXIS (`m_addpre_bry_none_none_binv`, `m_none_bry_*` ×5,
+#       `m_none_nbry_none_none_{binv,bcar}`, `m_ry_bry_none_none_binv`). NOT a
+#       surprise in the compiler — a GAP IN THIS PREDICTION: it was written for
+#       the second pass's ten `il*` cells and never covered the FIRST pass's
+#       `*bry*` axis (`c12a2afe`), although that axis is bd wx8g's headline
+#       capability (the in-loop bare-`_Bool` controlled-Ry arm). All nine are
+#       ACCEPT-IDENTICAL, i.e. the rolled trace was byte-diffed against the
+#       unrolled one. **Lesson for the next early-regenerated axis: a prediction
+#       must enumerate every axis the landing touches, not only the axis the
+#       regeneration added.**
+#
+#   (5) `m_none_dilesc_none_none_binv` -> **UNMOVED, as predicted.** The safety
+#       pin of the increment held; see the paragraph below, which still stands
+#       word for word.
+#
+#   (6) NOT PREDICTED BY THIS FILE AT ALL, because it is a different landing:
+#       **18 cells moved in the DECLINE direction on bd `3d8q`'s stale-reader
+#       ruling** (owner 2026-09-14) — 17 `UNROLLED-ONLY (rail record read past an
+#       in-place gate)` -> `DECLINE-BOTH-DIFFERENT` (the FLAT side stops
+#       accepting) and `m_none_pbitd_none_premark_rypost`
+#       `ACCEPT-IDENTICAL` -> `DECLINE-BOTH`. Every one carries the RECORD axis,
+#       i.e. a `mark = a;` whose name the wire then moves past, so
+#       `cq_measure(mark)` measured the ROTATED register while naming the
+#       pre-rotation state. The last of them is the instructive one: a cell whose
+#       two halves were IDENTICAL because both were wrong is precisely what
+#       `ACCEPT-IDENTICAL` cannot see, and only a fence can.
 #
 # ⚠ AND THE ESCAPE CELL IS THE SAFETY PIN OF THE WHOLE INCREMENT, SO READ IT
 # LITERALLY — INCLUDING WHAT IT DOES NOT DO. `ROLLED-ONLY` on
