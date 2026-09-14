@@ -51,6 +51,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/CFG.h"  // successors() — the bd hn29/leyd/52og CFG-bounded scan
 #include "llvm/IR/ConstantRange.h"  // F2 edge-pinned-seed range test (round-1 L2)
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
@@ -2631,32 +2632,167 @@ enum class CondWireDisp {
 //      `lowerControlRegions` dispatches to `emitRegion`. The 4.3 nest, the
 //      switch and the select paths keep their own position-free walks.
 //   P4/P5 the pre-existing preconditions — `Cond` in `R.Pred` and the
-//      positional compare→branch scan — are UNCHANGED and still decline
-//      immediately (the positional scan fires even for a theta on ANOTHER
-//      wire, which no wire walk can see).
+//      positional compare→branch scan — are UNCHANGED for every condition
+//      species but ONE and still decline immediately (the positional scan fires
+//      even for a theta on ANOTHER wire, which no wire walk can see). The one
+//      exception is a CLAIMED prep merge φ — see `chainedThetaBetweenDefAndBranch`
+//      and the `CondIsClaimedRailPhi` parameter below (bd `hn29`/`leyd`/`52og`).
+
+// bd `test_C_libtooling-hn29` / `-leyd` / `-52og` (Track P′) — THE CFG-BOUNDED
+// POSITIONAL SCAN, and it is the ONE spelling of "can a tainted-operand
+// `cq_theta` execute between this condition's definition and the flag mint at
+// the branch?" for both φ consumers (Rule 14: `condWireDisposition`'s P5 prong
+// and `classifyPhaseKickback`'s step-6 per-leaf window both CALL it; a second
+// spelling is the drbq Inc-3 (b′) defect).
+//
+// WHAT IT REPLACES AND WHY THE FENCE IS NOT DELETED. The window this prong had
+// was `Def->getNextNode() … Term` inside ONE block, which is a bounded, complete
+// scan of the program points between the two **only when `Def` lives in `Pred`**.
+// Everywhere else it walks off the end of `Def`'s block and returns `false`
+// VACUOUSLY — which is precisely why the callers paired it with an unconditional
+// `getParent() != Pred → DeclineNow`. The pairing is sound and it is an
+// OVER-DECLINE (bd `hn29`, `leyd`, `52og`, all three filed under the owner's
+// 2026-09-11 ruling that an over-decline of a valid circuit is a defect). This
+// function is the fix the three beads and
+// `control_phase_kickback_reject_mergephi_cross_block.ll`'s retirement trigger
+// all name in the same words: *a real CFG-bounded scan — every block on a path
+// from the φ's block to `Pred`, visited-set bounded — instead of the single-block
+// window it has today*, obtained by SCANNING MORE PROGRAM POINTS and never by
+// dropping the in-`Pred` conjunct.
+//
+// ⚠ THE IN-`Pred` CASE IS BYTE-IDENTICAL, DELIBERATELY AND BY CONSTRUCTION.
+// `Def->getParent() == Pred` takes the first `return` below, which is the old
+// loop expression-for-expression. Nothing that lowered before can move, in
+// either direction, and that is what makes every flip this change produces an
+// ACCEPT-direction one (its other input was an *unconditional* decline).
+//
+// ⚠ IT DOES NOT WIDEN THE IN-`Pred` RESIDUAL EITHER, AND THAT IS A CHOICE, NOT
+// AN OVERSIGHT. Inside a loop, a theta sitting AFTER the branch in the body
+// executes before the NEXT activation of the branch; the in-`Pred` window has
+// never seen that, and the wire walk covers it only for gates on the condition's
+// own wire (`provablyBefore`'s `!isPotentiallyReachable(T, BI)` half). Widening
+// the in-`Pred` window to close it would flip shipped ACCEPTs in the DECLINE
+// direction and is a separate, decline-direction change with its own Rule-13
+// obligation. The CROSS-block walk below DOES cover it, because it must: its
+// baseline is a decline, so the only sound direction to move from is "scan
+// everything that can execute in between". The asymmetry is therefore
+// conservative at both ends and is stated rather than tidied away.
+//
+// THE OBLIGATION, precisely. Decline iff some tainted-operand `cq_theta` can
+// execute after `Def` and before an activation of `Term`. The walk:
+//   * the tail of `Def`'s block — or ALL of it when `Pred` can reach `Def`'s
+//     block, because then a later trip re-executes the part before `Def` while
+//     the φ still denotes the first trip's value;
+//   * every block reachable forward from there that can still reach `Pred`
+//     (`isPotentiallyReachable`, which answers conservative-TRUE when it gives
+//     up on its own block budget — the safe direction here, since a true answer
+//     only adds blocks to scan);
+//   * `Pred` itself up to `Term`, and then `Pred`'s successors ON THE SAME
+//     reachability test — which contributes NOTHING in an acyclic region (no
+//     successor of `Pred` can reach `Pred`) and walks the whole loop body when
+//     the region entry is on a cycle. That second half is load-bearing for bd
+//     `52og`: the back edge is exactly how a body theta gets in front of the
+//     next mint.
+// A visited set bounds it; exhausting the block budget DECLINES (Prime
+// Directive — an unbounded gap is what the old prong refused, and refusing it
+// here keeps that refusal rather than replacing it with a vacuous `false`).
+bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
+                                     const BasicBlock *Pred,
+                                     const Instruction *Term, TaintSet &Taint) {
+  // The predicate is the old loop's, verbatim: a `cq_theta_*` whose arg-0 is
+  // TAINTED is an IN-PLACE, NON-DIAGONAL Ry on a live handle. A source theta
+  // (arg-0 classical) allocates a FRESH rail and relabels nothing, which is why
+  // the two-prep customer (bd `hn29`/`leyd`) is an accept and not a lucky one.
+  auto isChainedTheta = [&](const Instruction &I) {
+    const auto *CI = dyn_cast<CallInst>(&I);
+    if (!CI)
+      return false;
+    const Function *F = CI->getCalledFunction();
+    return F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+           Taint.Tainted.count(CI->getArgOperand(0));
+  };
+  // `[From, Stop)` within one block; a null `Stop` means "to the end".
+  auto scanRange = [&](const Instruction *From, const Instruction *Stop) {
+    for (const Instruction *I = From; I && I != Stop; I = I->getNextNode())
+      if (isChainedTheta(*I))
+        return true;
+    return false;
+  };
+  if (!Def || !Pred || !Term)
+    return true;  // cannot reason about the gap (Prime Directive).
+  const BasicBlock *DefBB = Def->getParent();
+  if (DefBB == Pred)
+    return scanRange(Def->getNextNode(), Term);  // the pre-widening window.
+
+  // ---- cross-block. Bounded forward walk over blocks that can still reach
+  // `Pred`; anything that cannot reach it cannot precede the mint.
+  const bool Cyclic = isPotentiallyReachable(Pred, DefBB);
+  if (scanRange(Cyclic ? &DefBB->front() : Def->getNextNode(), nullptr))
+    return true;
+  SmallPtrSet<const BasicBlock *, 32> Visited;
+  SmallVector<const BasicBlock *, 32> Work;
+  Visited.insert(DefBB);
+  auto push = [&](const BasicBlock *S) {
+    if (!isPotentiallyReachable(S, Pred))
+      return;  // off every path from `Def` to the mint.
+    if (Visited.insert(S).second)
+      Work.push_back(S);
+  };
+  for (const BasicBlock *S : successors(DefBB))
+    push(S);
+  // A budget, not an assertion: a pathological CFG must DECLINE rather than
+  // fall out of the loop with a `false` nobody proved.
+  unsigned Budget = 512;
+  while (!Work.empty()) {
+    if (Budget-- == 0)
+      return true;
+    const BasicBlock *B = Work.pop_back_val();
+    if (scanRange(&B->front(), B == Pred ? Term : nullptr))
+      return true;
+    for (const BasicBlock *S : successors(B))
+      push(S);
+  }
+  return false;
+}
+
 CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
                                  const SmallPtrSetImpl<Value *> &Prov,
-                                 const DominatorTree *DT) {
+                                 const DominatorTree *DT,
+                                 bool CondIsClaimedRailPhi = false) {
   auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
   if (!Cond || !R.Pred)
     return CondWireDisp::DeclineNow;  // cannot reason about the gap (Prime Directive).
-  if (Cond->getParent() != R.Pred)
+  // bd `hn29` / `52og` (Track P′) — THE P4 CROSS-BLOCK PRONG IS NOW SPECIES-
+  // SCOPED, and the scoping is the whole safety argument for leaving every other
+  // caller byte-identical.
+  //
+  // `CondIsClaimedRailPhi` is set by exactly ONE caller
+  // (`classifyPhaseKickback`, for a φ ROOT whose step-5c ladder has already run
+  // rung 0 — `preppedRailPhiRegionIdx`, the ONE spelling, CALLED — plus rungs
+  // (i)/(ii)). Everything else — every COMPARE condition at the flat kickback,
+  // the value arm, the in-place Ry arm, the state prep — passes the default
+  // `false` and keeps the unconditional decline, INCLUDING the LICM-hoisted
+  // loop-invariant compare that CLAUDE.md §2 names as the reason "Grover's
+  // condition register must be loop-variant". A compare is a SNAPSHOT of a
+  // predicate taken at a program point; a claimed prep merge φ, like the
+  // `cq_theta_i1` rail leaf beside it, IS the register. That difference is why
+  // `railCondWireDisposition` may drop the prong entirely for a rail and why a
+  // φ gets the STRICTLY STRONGER treatment of keeping it and making it real.
+  // ⚠ Do NOT "simplify" this by transplanting `railCondWireDisposition`'s
+  // prong-free treatment onto the φ: that ground is an argument about M-C's G6
+  // over a `cq_theta_i1` NAME, and bd `4aiu` refused to transplant it unmeasured.
+  // This change does not transplant it either — it keeps the prong.
+  if (!CondIsClaimedRailPhi && Cond->getParent() != R.Pred)
     return CondWireDisp::DeclineNow;  // unbounded gap across blocks.
   const Instruction *BI = R.Pred->getTerminator();
   // The POSITIONAL scan (P5) is unconditional and runs first: a tainted-operand
   // theta between the compare and the branch is a decline even on another wire,
   // and no position-aware proof can reach it (it is not dominated by `BI`
-  // anyway, but the scan also covers wires the walk never sees).
-  for (const Instruction *I = Cond->getNextNode(); I && I != BI;
-       I = I->getNextNode()) {
-    const auto *CI = dyn_cast<CallInst>(I);
-    if (!CI)
-      continue;
-    const Function *F = CI->getCalledFunction();
-    if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
-        Taint.Tainted.count(CI->getArgOperand(0)))
-      return CondWireDisp::DeclineNow;  // chained Ry on a live handle after the compare.
-  }
+  // anyway, but the scan also covers wires the walk never sees). For a condition
+  // in `R.Pred` this call IS the old single-block loop, expression-for-
+  // expression; for a claimed φ elsewhere it is the CFG-bounded walk.
+  if (chainedThetaBetweenDefAndBranch(Cond, R.Pred, BI, Taint))
+    return CondWireDisp::DeclineNow;  // chained Ry on a live handle after the compare.
   // Position-FREE first: no gate at all is the ordinary accept path, and it
   // must not pay for a dominator query.
   if (!wireGainsNonDiagonalGate(Prov, /*EmitPoint=*/nullptr, /*DT=*/nullptr,
@@ -6320,7 +6456,10 @@ PhaseKickbackDisp classifyPhaseKickback(
   //   rung (iii) the WIRE question — `condWireDisposition` over `Prov` below,
   //             which already receives the φ's provenance (see there).
   //
-  // ⚠ WHY THIS DOES NOT NEED A `plan` MUTATION, unlike the select's F-M1 edge.
+  // ⚠ WHY AN IN-`Pred` φ NEEDS NO `plan` MUTATION, unlike the select's F-M1 edge
+  // — AND WHY A φ OUTSIDE `Pred` DOES (bd `hn29`/`leyd`/`52og`, Track P′,
+  // 2026-09-15: the heading used to read "WHY THIS DOES NOT NEED A `plan`
+  // MUTATION" full stop, and that is now true of one half of the population).
   // A `PhaseKickback` has REAL block fields, so `lowerControlRegions`' bd `hcrg`
   // alias pre-flight already sees that this region's `Pred` IS the prep's
   // `MergeBB` and takes the sanctioned `sequentialChainAlias` edge
@@ -6328,10 +6467,11 @@ PhaseKickbackDisp classifyPhaseKickback(
   // still LIVE, which is precisely what its emitter wants (a φ is just another
   // `Value *` control, and the prep's later M-β RAUW rewrites the emitted gate's
   // operand to the theta call, which `lowerRotations` then RAUWs to the `i32`
-  // handle). Recording a `PrepRegionIdxs` edge here would demand the OPPOSITE
+  // handle). Recording the SELECT's edge here would demand the OPPOSITE
   // order and close a precedence CYCLE, declining the whole module — and that
   // last clause is true of EVERY φ kickback that lowers, not only of the probed
-  // ones (round-1 item 4), because the hcrg edge below is FORCED:
+  // ones (round-1 item 4), because the hcrg edge below is FORCED **whenever its
+  // hypothesis holds**:
   //
   //   THE THEOREM (round-1 item 3, attacked and unbroken). `P->getParent() ==
   //   Region.Pred` ∧ `preppedRailPhiRegionIdx(P, plan) = j` ⟹ `P` IS
@@ -6340,12 +6480,32 @@ PhaseKickbackDisp classifyPhaseKickback(
   //   `Aliases` test fires ⟹ EITHER `sequentialChainAlias` returns true (edge
   //   added, `Precedes[kickback] = {prep}`, kickback emitted first with the φ
   //   live) OR `declineRegion` fires and the module lowers nothing. There is no
-  //   third outcome. The in-`Pred` premise is supplied for a TREE by the
-  //   positional loop's `P->getParent() != Region.Pred` conjunct and for a φ
-  //   ROOT by `condWireDisposition`'s `Cond->getParent() != R.Pred →
-  //   DeclineNow`.
+  //   third outcome.
   //
-  // ⚠ AT MOST ONE φ LEAF CAN SATISFY THE IN-`Pred` REQUIREMENT HERE, AND THE
+  // ⚠ THAT HYPOTHESIS IS NO LONGER SUPPLIED BY THE FENCES, AND THE THEOREM IS
+  // THEREFORE NOT VACUOUSLY TOTAL ANY MORE. It used to be handed `P->getParent()
+  // == Region.Pred` for a TREE by the step-6 positional loop's
+  // `P->getParent() != Region.Pred` conjunct and for a φ ROOT by
+  // `condWireDisposition`'s `Cond->getParent() != R.Pred → DeclineNow`. Track P′
+  // replaced BOTH with `chainedThetaBetweenDefAndBranch`, a real CFG-bounded
+  // scan, so a φ leaf may now be admitted from another block — and for exactly
+  // those the alias edge is ABSENT and plan order emits the prep first. The
+  // record collected below (`PrepIdxs` → `Region.PrepRegionIdxs`) plus the
+  // `PhaseKickback` edge loop in `SwapRouteEmit::lowerControlRegions` supply the
+  // SAME direction the alias supplied, deduped against it. Read the two together:
+  // for an in-`Pred` φ the theorem still forces the order and the record is
+  // redundant; for a cross-block φ the record IS the order.
+  //
+  // ⚠ THE "IN-`Pred` REQUIREMENT" THIS PARAGRAPH IS ABOUT NO LONGER EXISTS
+  // (Track P′, bd `hn29`/`leyd`) — but the paragraph is KEPT, because its
+  // conclusion was never really about blocks and the multi-φ hazard it describes
+  // is unchanged. Read every "in-`Pred`" below as "admitted by this ladder".
+  // Track P′'s own customer is the two-CONDITIONALLY-prepped-bools conjunction
+  // (`trackP/probes/p20.c` ≡ `trackX/probes/fp_x3_…`), which is TWO SEPARATE
+  // diamonds with TWO merge blocks and therefore TWO `R.Merge` fields — it is the
+  // shape this paragraph says is fine, not the fused one it says is refused.
+  //
+  // AT MOST ONE φ LEAF PER REGION, AND THE
   // REASON IS `R.Merge`, NOT BLOCK COUNTING (Rule-13 round-1 finding F-P1-1,
   // with a MEASURED counterexample to the reason that used to be given). It is
   // NOT "two diamonds have two merge blocks": `-O1` FUSES two same-condition
@@ -6444,11 +6604,66 @@ PhaseKickbackDisp classifyPhaseKickback(
   Instruction *const PhiAnchor =
       (!IsTree && !Tree.RailPhiLeaves.empty()) ? static_cast<Instruction *>(BI)
                                                : declAnchor(Region);
+  // bd `hn29` / `leyd` / `52og` (Track P′) — THE EMISSION-ORDER OBLIGATION,
+  // COLLECTED HERE AND COMMITTED AT THE ACCEPT.
+  //
+  // The comment above ("WHY THIS DOES NOT NEED A `plan` MUTATION") states a
+  // THEOREM whose hypothesis is `P->getParent() == Region.Pred`: only then is
+  // `kickback.Pred == prep.MergeBB`, only then does the bd `hcrg` `Aliases` test
+  // fire, and only then is `Precedes[kickback] = {prep}` FORCED. This increment
+  // admits φ leaves that do NOT satisfy that hypothesis, so for them the theorem
+  // says nothing and — MEASURED, probe `a1_clean_gap2.ll` — nothing else orders
+  // the pair either: the Kahn sort falls back to plan index, which is DETECTION
+  // order, which puts the prep FIRST. The prep's M-β then RAUWs the branch
+  // operand to the hoisted theta and `flattenRegion` frees the φ, and
+  // `emitPhaseKickbackRegion`'s `CondV != R.Condition` identity check turns the
+  // whole module into a loud `control flow` decline. Widening the positional
+  // fence alone would therefore have moved this shape from one decline string to
+  // another and called it a fix.
+  //
+  // ⚠ SO THE BEAD'S PREMISE IS WRONG AND THE FIXTURE HEADER IS RIGHT (CLAUDE.md
+  // L6, run in the other direction). bd `hn29` records that *"the Kahn chain
+  // already schedules every kickback before every prep, so the emission order
+  // would be right"*. That is TRUE for the two-prep customer (`p20`, where the
+  // chain `kickback.Pred == prep2.MergeBB == …` supplies it) and FALSE the
+  // moment a block with no region in it sits between the φ and the branch, which
+  // is bd `52og`'s whole shape and `..._reject_mergephi_cross_block.ll`'s.
+  // `control_phase_kickback_reject_mergephi_cross_block.ll`'s header had it
+  // exactly right — *"Break the adjacency and that edge does not fire: nothing
+  // then orders the two"*. Do not re-derive the bead's version.
+  //
+  // WHAT IS RECORDED, and in which DIRECTION. One entry per admitted φ leaf, the
+  // index the ONE spelling `preppedRailPhiRegionIdx` just returned — CALLED, not
+  // re-derived (Rule 14). `lowerControlRegions` turns each into
+  // `Precedes[kickback] = {prep}`: the KICKBACK FIRST, while the φ is still live.
+  // ⚠ That is the OPPOSITE direction from the identically-named field on a
+  // `SelectRegion` (bd `boi6` F-M1 — "prep before select"), and the asymmetry is
+  // the two emitters' opposite needs, not an accident: `SelectMergeEmit` RE-READS
+  // its condition and therefore wants M-β to have run, while
+  // `emitPhaseKickbackRegion` consumes the φ AS A VALUE and wants it still there.
+  // The edge loop in `SwapRouteEmit` keys on `Kind`, so the two can never be
+  // confused; both are spelled out at the field's declaration in `ControlPlan.h`.
+  // ⚠ ONLY THE **CROSS-BLOCK** LEAVES ARE RECORDED, AND THAT IS WHAT MAKES THIS
+  // INCREMENT ZERO-RISK IN THE DECLINE DIRECTION — BY CONSTRUCTION, NOT BY
+  // ARGUMENT. For an in-`Pred` φ the theorem above still FORCES the hcrg alias
+  // edge, so a record would be redundant; leaving it out means every kickback
+  // that lowered before this increment carries an EMPTY `PrepRegionIdxs`, its
+  // plan is bit-identical, and the new edge loop in `SwapRouteEmit` is a literal
+  // no-op for it. A record-everything-and-dedupe spelling would have been
+  // arithmetically equivalent *given* that the alias edge always exists, which is
+  // a claim about `coordinated()` and `sequentialChainAlias`'s own preconditions
+  // that this track has not measured. Narrowing the WRITE is cheaper than
+  // proving the dedupe total. (The dedupe in the edge loop is kept anyway, as
+  // defence in depth for a future widening of what gets recorded.)
+  SmallVector<unsigned, 2> PrepIdxs;
   for (PHINode *P : Tree.RailPhiLeaves) {
-    if (preppedRailPhiRegionIdx(P, plan) == ControlRegion::kNoParent) {
+    const unsigned PrepIdx = preppedRailPhiRegionIdx(P, plan);
+    if (PrepIdx == ControlRegion::kNoParent) {
       diagnoseUnderControl(PhiAnchor, PhiRefusal);
       return PhaseKickbackDisp::Declined;
     }
+    if (P->getParent() != Region.Pred)
+      PrepIdxs.push_back(PrepIdx);
     if (!Taint.Tainted.count(P)) {
       diagnoseUnderControl(PhiAnchor, PhiRefusal);
       return PhaseKickbackDisp::Declined;
@@ -6632,8 +6847,17 @@ PhaseKickbackDisp classifyPhaseKickback(
   // region). `railCondWireDisposition` drops those two on a ground argued about a
   // `cq_theta_i1` NAME, and transplanting an unmeasured structural argument onto
   // a different species is how an over-accept ships.
+  // bd `hn29` / `52og` (Track P′) — the THIRD argument of that compare arm. A φ
+  // ROOT is exactly the case `PhiAnchor` already identifies (`!IsTree` and a
+  // non-empty `RailPhiLeaves`), and by the time control reaches here step 5c has
+  // run rung 0 on it — `preppedRailPhiRegionIdx(P, plan) != kNoParent`, the ONE
+  // spelling, CALLED — so "claimed" is a fact this function was handed, not one
+  // it re-derives (Rule 14). It flips ONLY P4's cross-block bail into the
+  // CFG-bounded scan; the wire walk, `ShareCondFlag` and the DT prong are
+  // untouched, and every non-φ condition passes the parameter's default.
+  const bool PhiRootCond = !IsTree && !Tree.RailPhiLeaves.empty();
   if ((RailCond ? railCondWireDisposition(Region, Taint, Prov, DT)
-                : condWireDisposition(Region, Taint, Prov, DT)) ==
+                : condWireDisposition(Region, Taint, Prov, DT, PhiRootCond)) ==
       CondWireDisp::DeclineNow) {
     // `PhiAnchor` == `declAnchor(Region)` for every compare/rail condition; it
     // differs ONLY when the condition IS a merge φ, which carries no `!dbg`
@@ -6678,8 +6902,28 @@ PhaseKickbackDisp classifyPhaseKickback(
                              "condition predates a non-diagonal gate");
         return PhaseKickbackDisp::Declined;
       }
+    // bd `hn29` / `leyd` (Track P′) — A φ LEAF NO LONGER HAS TO LIVE IN `Pred`;
+    // it has to survive a scan of every program point between its definition and
+    // the mint. `chainedThetaBetweenDefAndBranch` IS `scanForward` for a leaf in
+    // `Pred` (expression-for-expression — so every shipped in-`Pred` φ accept and
+    // decline is unmoved) and is the CFG-bounded walk for one outside it.
+    //
+    // ⚠ THE COMPARE LEAVES ABOVE KEEP `scanForward`, AND THAT IS NOT AN
+    // OVERSIGHT: a cross-block COMPARE leaf never reaches this loop at all —
+    // step 5a declines it `control flow` on the identical "only a BOUNDED window
+    // when the leaf is in `Pred`" ground. Giving compare leaves the CFG scan too
+    // is a SEPARATE widening of a SEPARATE decline string (filed, not built
+    // here): it would flip `control flow` fixtures this track never measured, and
+    // Rule 16 says do not implement out-of-scope shapes. The two prongs are the
+    // same question; only the φ half had a bead.
+    //
+    // ⚠ RETIREMENT TRIGGER: the day step 5a's cross-block compare-leaf decline is
+    // widened, delete `scanForward` and give BOTH loops this helper — a single
+    // window must not survive as the weaker of two spellings of one question (L2:
+    // when you widen a set, ask what OTHER set was computed over the same
+    // closure).
     for (PHINode *P : Tree.RailPhiLeaves)
-      if (P->getParent() != Region.Pred || scanForward(P)) {
+      if (chainedThetaBetweenDefAndBranch(P, Region.Pred, Term, Taint)) {
         diagnoseUnderControl(declAnchor(Region),
                              "condition predates a non-diagonal gate");
         return PhaseKickbackDisp::Declined;
@@ -6714,6 +6958,16 @@ PhaseKickbackDisp classifyPhaseKickback(
     for (Instruction *N : Tree.Nodes)
       if (isa<SelectInst>(N))
         ClaimedSelects->insert(N);
+  // bd `hn29` / `leyd` / `52og` (Track P′) — COMMIT the order record collected at
+  // step 5c, and commit it HERE rather than there. `Region` is the caller's
+  // SCRATCH object: `handleBranchRegion` only `push_back`s it on `Accept`, and on
+  // `NotApplicable` it resets it — but a `Declined` return leaves it untouched,
+  // so a field written mid-ladder would be visible to nothing yet would still be
+  // a write to a half-classified region. Writing it at the single accept exit
+  // keeps "the plan records only what the ladder proved" literally true.
+  // Empty for every compare/rail-conditioned kickback, so the pre-existing
+  // population's plan is bit-identical.
+  Region.PrepRegionIdxs = PrepIdxs;
   return PhaseKickbackDisp::Accept;
 }
 

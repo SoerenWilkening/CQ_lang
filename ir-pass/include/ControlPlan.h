@@ -515,13 +515,29 @@ struct ControlRegion {
   // LAST leaf's index and dropped the others' edges, which is an over-decline at
   // best and a use-after-free at worst.
   //
-  // NOT recorded by a `PhaseKickback` consumer of a φ, DELIBERATELY, and the
-  // reason is the opposite ordering: a kickback has real block fields, so the bd
-  // `hcrg` alias pre-flight ALREADY gives it `Precedes[kickback] = {prep}` — the
-  // kickback is emitted FIRST, while the φ is still live, which is exactly what
-  // its emitter needs (see `emitPhaseKickbackRegion`). Adding the select's
-  // "prep before me" edge there would close a CYCLE with that chain edge and
-  // decline the whole module.
+  // ⚠ bd `test_C_libtooling-hn29` / `-leyd` / `-52og` (Track P′, 2026-09-15) —
+  // A `PhaseKickback` NOW RECORDS HERE TOO, AND ITS EDGE POINTS THE OTHER WAY.
+  // The paragraph this replaces said a kickback records NOTHING because the bd
+  // `hcrg` alias pre-flight ALREADY supplies `Precedes[kickback] = {prep}`. That
+  // was true of the population that existed when it was written, and its
+  // derivation is `ArmClassify` step 5c's theorem, whose HYPOTHESIS is
+  // `φ->getParent() == kickback.Pred` ⟹ `kickback.Pred == prep.MergeBB` ⟹ the
+  // `Aliases` test fires. Track P′ admits φ leaves OUTSIDE `Pred`; for those the
+  // hypothesis fails, no alias edge exists, and plan (detection) order emits the
+  // PREP first — measured, and it turns the module into a loud `control flow`
+  // decline at `emitPhaseKickbackRegion`'s condition-identity check.
+  //
+  // SO ONE FIELD CARRIES TWO OPPOSITE OBLIGATIONS, keyed on `Kind`:
+  //   * `SelectRegion`  → `Precedes[prep] = {select}`   — PREP FIRST, because
+  //     `SelectMergeEmit` RE-READS its condition and needs M-β to have run;
+  //   * `PhaseKickback` → `Precedes[kickback] = {prep}` — KICKBACK FIRST, because
+  //     `emitPhaseKickbackRegion` consumes the φ AS A VALUE and needs it live.
+  // Both loops live in `SwapRouteEmit::lowerControlRegions`, each opening with
+  // its own `Kind` test, and the kickback's DEDUPES against the alias edge so the
+  // Kahn "at most one edge per ordered pair" invariant stays literally true. The
+  // old sentence's last clause — that adding the SELECT's direction at a kickback
+  // would close a cycle — remains correct and is exactly why the direction, not
+  // just the recording, is part of the contract.
   llvm::SmallVector<unsigned, 2> PrepRegionIdxs;
 
   // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),
