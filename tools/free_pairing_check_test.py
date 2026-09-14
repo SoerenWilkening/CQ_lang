@@ -1643,6 +1643,282 @@ CASE_A_NEGATIVES = [
 # A `cqrt_*` symbol the effect model does not know must abort the run, not be
 # quietly skipped: its read/write behaviour is exactly what every verdict rests
 # on (the Prime Directive, applied to the checker itself).
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-21re — THE RAIL-BANK MEMORY SURFACE.
+#
+# WHY THESE ARE HAND-BUILT AND MUST STAY SO FOR NOW. bd `xdu2` (L-1a) carves
+# `bool b[N]` into an `[N x i32]` bank of rail HANDLES marked `!cq.railbank`.
+# Track A ships the CLASSIFIER this session while the taint rule and the type
+# rewrite are DELIBERATELY DEFERRED (BRIEF_A §0), so NO compiler in the tree can
+# emit a `!cq.railbank` load today. A checker fix with no subject is the vacuity
+# trap in its purest form, so the subjects are written by construction and the
+# committed `.ll` copies live in
+#   docs/prd/.../session-2026-09-14c-xdu2-w1/trackI/probes/p{1..6}*.ll
+#
+# ⚠ L8 RETIREMENT TRIGGER: when L-1a's taint rule + type rewrite + D5 allow-list
+# land (bd `xdu2`, the second half), a real slice produces these shapes; re-derive
+# every fixture below against it then, and re-derive (L3)'s measure-only
+# exemption against the allow-list the pass actually ships. Do NOT delete them.
+#
+# WHAT THE PRE-FIX TOOL DID, MEASURED (this is the defect, not a hypothetical):
+#   p1  bank load in a classical-immediate slot -> `OK ... via A1-classical-immediate`, exit 0
+#   p2  bank load as a gate CONTROL             -> `OK ... via A2-reduces-to-identity`, exit 0
+#   p5  rail stored to unmarked memory          -> 1 verified, exit 0
+#   p6  bank in scope, unresolvable load base   -> 1 verified, exit 0
+# ---------------------------------------------------------------------------
+
+# POSITIVE: the D5-sanctioned shape — a bank cell is stored, loaded, and the
+# load's ONLY use is the user's `cq_measure`. This is the L-1a design target
+# (SCOPE_L1a's TARGET_rolled_stage2.ll, trimmed to one cell and one trip). A
+# checker that refuses the increment's own emitted shape is an over-decline.
+BANK_MEASURE_ONLY = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %bank = alloca [1 x i32], align 4, !cq.railbank !0
+  %ha = call i32 @cqrt_alloc_i32(i32 5)
+  %f = call i32 @cq_template_icmp_sgt_i32_hl(i32 %ha, i32 2)
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1_controlled(i32 %f, i32 %hb, double 5.000000e-01)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %f, i32 %ha, i32 2)
+  call void @cqrt_free(i32 %f)
+  %cell = getelementptr inbounds [1 x i32], ptr %bank, i64 0, i64 0
+  store i32 %hb, ptr %cell, align 4
+  %v = load i32, ptr %cell, align 4
+  %m = call i1 @cqrt_measure_i1(i32 %v)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}
+!0 = !{!"i1"}
+"""
+
+# POSITIVE, and the DISCRIMINATION control that earns the rule its precision:
+# a bank IS in scope, and a SECOND load — from an unmarked global — still lands
+# in a classical-immediate slot and must still discharge (A1). Without this
+# fixture, "refuse every load whenever a bank is in the module" would pass every
+# other row here, and it would over-decline the 4 real `load volatile i32,
+# ptr @off` corpus sites the docstring names.
+BANK_PLUS_CLASSICAL_LOAD = """
+@off = internal global i32 3
+define i32 @slice() local_unnamed_addr {
+entry:
+  %bank = alloca [1 x i32], align 4, !cq.railbank !0
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  %cell = getelementptr inbounds [1 x i32], ptr %bank, i64 0, i64 0
+  store i32 %hb, ptr %cell, align 4
+  %k = load volatile i32, ptr @off, align 4
+  %r = call i32 @cqrt_alloc_i32(i32 7)
+  call void @cqrt_addc_i32(i32 %r, i32 %k)
+  call void @cqrt_free(i32 %r)
+  %v = load i32, ptr %cell, align 4
+  %m = call i1 @cqrt_measure_i1(i32 %v)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}
+!0 = !{!"i1"}
+"""
+
+# POSITIVE: the bank is a module-scope GLOBAL reached by a CONSTANT-EXPRESSION
+# getelementptr — the other spelling of the same object, and the one whose
+# pointer operand is nested inside the load's own text. It exercises the
+# `bank_globals` arm and `first_ptr_operand`'s constexpr path together.
+BANK_GLOBAL_CONSTEXPR = """
+@bank = internal global [2 x i32] zeroinitializer, align 4, !cq.railbank !0
+define i32 @slice() local_unnamed_addr {
+entry:
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  store i32 %hb, ptr getelementptr inbounds ([2 x i32], ptr @bank, i64 0, i64 1), align 4
+  %v = load i32, ptr getelementptr inbounds ([2 x i32], ptr @bank, i64 0, i64 1), align 4
+  %m = call i1 @cqrt_measure_i1(i32 %v)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}
+!0 = !{!"i1"}
+"""
+
+# --- the four defects, one per arm -----------------------------------------
+
+# (A1's checked slot) bd `az1h` through a NEW DOOR. Pre-fix: `OK ... via
+# A1-classical-immediate`, exit 0, with %r freed while entangled with %hb.
+BANK_IMM_SLOT = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %bank = alloca [1 x i32], align 4, !cq.railbank !0
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1(i32 %hb, double 5.000000e-01)
+  %cell = getelementptr inbounds [1 x i32], ptr %bank, i64 0, i64 0
+  store i32 %hb, ptr %cell, align 4
+  %r = call i32 @cqrt_alloc_i32(i32 7)
+  %v = load i32, ptr %cell, align 4
+  call void @cqrt_xorc_i32(i32 %r, i32 %v)
+  call void @cqrt_free(i32 %r)
+  %m = call i1 @cqrt_measure_i1(i32 %hb)
+  %z = zext i1 %m to i32
+  ret i32 %z
+}
+!0 = !{!"i1"}
+"""
+
+# (L3) the bead's own example: a bank load as a gate CONTROL, with the rail
+# flipped through its MINT name between the two halves of the pair. The write
+# history is keyed on the SSA operand string, so %v's history is EMPTY and the
+# pair "cancels" — pre-fix `OK ... via A2-reduces-to-identity`, exit 0, while %o
+# is left holding %r's value. This one never reaches `provably_not_a_rail` at
+# all, which is why the fix cannot be a one-line edit to that predicate.
+BANK_CONTROL_SLOT = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %bank = alloca [1 x i32], align 4, !cq.railbank !0
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1(i32 %hb, double 5.000000e-01)
+  %cell = getelementptr inbounds [1 x i32], ptr %bank, i64 0, i64 0
+  store i32 %hb, ptr %cell, align 4
+  %v = load i32, ptr %cell, align 4
+  %r = call i32 @cqrt_alloc_i32(i32 3)
+  %o = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32_controlled(i32 %v, i32 %r, i32 %o)
+  call void @cqrt_x(i32 %hb)
+  call void @cqrt_copy_i32_controlled(i32 %v, i32 %r, i32 %o)
+  call void @cqrt_free(i32 %o)
+  ret i32 0
+}
+!0 = !{!"i1"}
+"""
+
+# (L1) the premise itself: a rail reaches memory that carries no marker. Either
+# the promoter forgot it or a second escape mechanism exists; either way every
+# load classification below it would be a guess.
+UNMARKED_RAIL_STORE = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %slot = alloca i32, align 4
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1(i32 %hb, double 5.000000e-01)
+  store i32 %hb, ptr %slot, align 4
+  %r = call i32 @cqrt_alloc_i32(i32 7)
+  %v = load i32, ptr %slot, align 4
+  call void @cqrt_xorc_i32(i32 %r, i32 %v)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+"""
+
+# (L2) a bank is in scope and a load's object cannot be resolved — here through
+# a formal parameter. Under the old premise "unresolvable" was harmless; with a
+# bank present it is the difference between a classical immediate and a rail.
+UNDECIDABLE_LOAD_BASE = """
+define i32 @slice(ptr %p) local_unnamed_addr {
+entry:
+  %bank = alloca [1 x i32], align 4, !cq.railbank !0
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  %cell = getelementptr inbounds [1 x i32], ptr %bank, i64 0, i64 0
+  store i32 %hb, ptr %cell, align 4
+  %r = call i32 @cqrt_alloc_i32(i32 7)
+  %v = load i32, ptr %p, align 4
+  call void @cqrt_xorc_i32(i32 %r, i32 %v)
+  call void @cqrt_free(i32 %r)
+  ret i32 0
+}
+!0 = !{!"i1"}
+"""
+
+# POSITIVE: the VARIABLE-INDEX bank cell inside a rolled loop — the shape the
+# L-1a design target actually emits
+# ($SESP/trackL/probes/TARGET_rolled_stage2.ll, which this file must not start
+# refusing: measured `4 rail mint(s) of which 3 left allocated, 2 cqrt_free
+# site(s): 2 verified` before AND after bd 21re). None of the fixtures above
+# exercises `getelementptr ... i64 %i`, and a `first_ptr_operand` that only
+# handled constant indices would pass every one of them.
+BANK_VARIABLE_INDEX = """
+define i32 @slice() local_unnamed_addr {
+entry:
+  %bank = alloca [2 x i32], align 4, !cq.railbank !0
+  br label %loop
+
+loop:
+  %i = phi i64 [ 0, %entry ], [ %i.next, %loop ]
+  %hb = call i32 @cqrt_alloc_i1(i1 false)
+  call void @cqrt_ry_i1(i32 %hb, double 5.000000e-01)
+  %cell = getelementptr inbounds [2 x i32], ptr %bank, i64 0, i64 %i
+  store i32 %hb, ptr %cell, align 4
+  %i.next = add nuw nsw i64 %i, 1
+  %done = icmp eq i64 %i.next, 2
+  br i1 %done, label %measure, label %loop
+
+measure:
+  %c0 = getelementptr inbounds [2 x i32], ptr %bank, i64 0, i64 0
+  %v0 = load i32, ptr %c0, align 4
+  %m0 = call i1 @cqrt_measure_i1(i32 %v0)
+  %z0 = zext i1 %m0 to i32
+  ret i32 %z0
+}
+!0 = !{!"i1"}
+"""
+
+MEM_POSITIVE = [
+    ("bank-load-measured-only", BANK_MEASURE_ONLY),
+    ("bank-plus-unmarked-classical-load", BANK_PLUS_CLASSICAL_LOAD),
+    ("bank-global-constexpr-gep", BANK_GLOBAL_CONSTEXPR),
+    ("bank-variable-index-in-loop", BANK_VARIABLE_INDEX),
+]
+
+# Layers 1 (must verify clean) and 3 (proof-targeted sweep) are generic, so the
+# bank positives join them rather than being re-implemented. Layer 2's memory
+# tables stay separate: the counts have to be VISIBLE in the summary line, and
+# a harness that cannot say how many memory constructs it checked is a hole
+# (CLAUDE.md L10 — the injection matrix that printed `0 mutations, MISSED 0,
+# N/A 0` when invoked with no fixture).
+POSITIVE.extend(MEM_POSITIVE)
+
+# (name, module, expected FINDING code) — a defect the model can still render a
+# verdict about.
+MEM_MUTANTS = [
+    ("bank-load-in-classical-immediate-slot", BANK_IMM_SLOT,
+     "A1-imm-not-classical"),
+]
+
+# (name, module, expected Undecidable CODE) — a construct the model cannot
+# decide, so it must refuse to render a verdict at all.
+MEM_STOP_MUTANTS = [
+    ("bank-load-as-gate-control", BANK_CONTROL_SLOT,
+     "L3-bank-rail-in-a-modelled-rail-slot"),
+    ("bank-load-freed-through-its-load-name",
+     sub(BANK_MEASURE_ONLY, "%m = call i1 @cqrt_measure_i1(i32 %v)",
+         "%m = call i1 @cqrt_measure_i1(i32 %v)",
+         "%m = call i1 @cqrt_measure_i1(i32 %v)\n  call void @cqrt_free(i32 %v)"),
+     "L3-bank-rail-in-a-modelled-rail-slot"),
+    ("bank-load-rotated-through-its-load-name",
+     insert_after(BANK_MEASURE_ONLY, "%v = load i32",
+                  "  call void @cqrt_ry_i1(i32 %v, double 2.500000e-01)"),
+     "L3-bank-rail-in-a-modelled-rail-slot"),
+    ("rail-stored-to-unmarked-alloca", UNMARKED_RAIL_STORE,
+     "L1-rail-stored-to-unmarked-memory"),
+    # THE MARKER'S OWN KILL TEST: strip `!cq.railbank` from the POSITIVE and it
+    # must stop being a bank. Without this row the positive could be green
+    # because the rule never fires, which is Rule-12 hygiene defect (c).
+    ("bank-marker-removed-from-the-alloca",
+     sub(BANK_MEASURE_ONLY, "alloca [1 x i32]", ", !cq.railbank !0", ""),
+     "L1-rail-stored-to-unmarked-memory"),
+    ("rail-stored-to-unmarked-global",
+     sub(BANK_GLOBAL_CONSTEXPR, "@bank = internal global", ", !cq.railbank !0",
+         ""),
+     "L1-rail-stored-to-unmarked-memory"),
+    ("bank-in-scope-unresolvable-load-base", UNDECIDABLE_LOAD_BASE,
+     "L2-undecidable-load-provenance"),
+    # `select` and `phi` FORWARD no object: two bank cells merged by a select
+    # is exactly the shape a rolled bank would take if the promoter emitted one,
+    # and the model must refuse it rather than pick a side.
+    ("bank-variable-index-load-in-a-gate-slot",
+     insert_after(BANK_VARIABLE_INDEX, "%v0 = load i32",
+                  "  call void @cqrt_x(i32 %v0)"),
+     "L3-bank-rail-in-a-modelled-rail-slot"),
+    ("bank-load-through-a-select-of-pointers",
+     sub(BANK_MEASURE_ONLY, "%v = load i32, ptr %cell",
+         "%v = load i32, ptr %cell",
+         "%sel = select i1 true, ptr %cell, ptr %bank\n"
+         "  %v = load i32, ptr %sel"),
+     "L2-undecidable-load-provenance"),
+]
+
 UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
                           "@cqrt_teleport_i32", 0)
 
@@ -1654,14 +1930,58 @@ UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
 SWEEP_EXEMPT_RULES = {"A1-classical-immediate"}
 
 
+class _Stop:
+    """An `Undecidable` refusal, rendered finding-shaped (bd 21re).
+
+    A refusal is not a finding — the checker is declining to render a verdict
+    about the module, not reporting a defect in it — but every layer here asks
+    the same two questions of both ("did the checker stop being silent?" and
+    "with which code?"), so they are compared through one shape. The SWEEP in
+    particular must count a refusal as "no longer verifying clean", which is
+    exactly what it is.
+    """
+
+    kind = "REFUSED"
+
+    def __init__(self, e):
+        self.code, self.fn, self.line = e.code, e.fn, e.line
+        self.handle, self.msg = "-", e.msg
+
+    def __str__(self):
+        return f"REFUSED {self.code} @{self.fn} line {self.line}"
+
+
 def findings(text):
-    f, _v, _s, _p, _c = fpc.check_module(text)
+    try:
+        f, _v, _s, _p, _c = fpc.check_module(text)
+    except fpc.Undecidable as e:
+        return [_Stop(e)]
     return f
+
+
+def proofs_of(text):
+    """The VERIFIED-proof records, or [] if the checker refused the module.
+
+    ⚠ Guarded on purpose (bd 21re arm-kill round). Layer 3 used to call
+    `fpc.check_module` directly, so a mutation that made a POSITIVE fixture
+    REFUSE crashed the harness with a traceback AFTER layer 1 had already
+    recorded the real failure — a harness that dies mid-run reports neither its
+    counts nor its other layers, which is the `n/a is a HOLE` failure mode one
+    step removed.
+    """
+    try:
+        _f, _v, _s, proofs, _c = fpc.check_module(text)
+    except fpc.Undecidable:
+        return []
+    return proofs
 
 
 def verdict_map(text):
     """{handle: verdict} for every free site — what an ORDER_PAIR compares."""
-    f, _v, _s, proofs, _c = fpc.check_module(text)
+    try:
+        f, _v, _s, proofs, _c = fpc.check_module(text)
+    except fpc.Undecidable as e:
+        return {"-": "REFUSED:" + e.code}
     d = {handle: "OK:" + rule for _fn, _l, handle, rule, _w in proofs}
     for x in f:
         d[x.handle] = x.kind + ":" + x.code
@@ -1671,7 +1991,7 @@ def verdict_map(text):
 def main():
     verbose = "-v" in sys.argv
     fails = []
-    n_pos = n_mut = n_sweep = n_neg = n_pair = 0
+    n_pos = n_mut = n_sweep = n_neg = n_pair = n_mem = 0
 
     # ---- layer 1: the shipped lowerings must verify clean -----------------
     for name, text in POSITIVE + DEEP_POSITIVE:
@@ -1681,8 +2001,8 @@ def main():
             fails.append(f"POSITIVE {name}: expected 0 findings, got "
                          + "; ".join(str(x) for x in f))
         elif verbose:
-            _f, v, s, _p, _c = fpc.check_module(text)
-            print(f"  ok  positive  {name:32s} {v}/{s} free sites verified")
+            print(f"  ok  positive  {name:32s} "
+                  f"{len(proofs_of(text))} free site(s) verified")
 
     # ---- layer 1b: the verdict may not depend on `cqrt_free` ORDER --------
     # Layer 1 already demands both members verify clean; this layer states the
@@ -1755,6 +2075,31 @@ def main():
         elif verbose:
             print(f"  ok  control   {name:32s} -> no R1")
 
+    # ---- layer 2c: bd 21re, the rail-BANK memory surface ------------------
+    # Two tables on purpose. A defect the model can still render a verdict
+    # about is a FINDING; a construct it cannot decide is a REFUSAL, and the
+    # two are not interchangeable — an UNPROVEN finding can be waived with
+    # `--allow-unproven`, and a waivable model-unsoundness is the hole itself.
+    for name, text, want in MEM_MUTANTS:
+        n_mem += 1
+        codes = [x.code for x in findings(text)]
+        if want not in codes:
+            fails.append(f"MEMORY MUTANT {name}: expected {want}, got "
+                         + (", ".join(codes) if codes else "NOTHING (survived)"))
+        elif verbose:
+            print(f"  ok  memory    {name:38s} -> {want}")
+    for name, text, want in MEM_STOP_MUTANTS:
+        n_mem += 1
+        got = findings(text)
+        codes = [x.code for x in got]
+        if want not in codes or not all(x.kind == "REFUSED" for x in got
+                                        if x.code == want):
+            fails.append(f"MEMORY REFUSAL {name}: expected a REFUSED {want}, "
+                         "got " + (", ".join(f"{x.kind}:{x.code}" for x in got)
+                                   if got else "NOTHING (survived)"))
+        elif verbose:
+            print(f"  ok  refusal   {name:38s} -> {want}")
+
     n_mut += 1
     try:
         findings(UNCLASSIFIED_MUTANT)
@@ -1780,7 +2125,7 @@ def main():
     for name, text in POSITIVE:
         lines = text.split("\n")
         base = len(findings(text))
-        _f, _v, _s, proofs, _c = fpc.check_module(text)
+        proofs = proofs_of(text)
         for (fn, free_line, handle, rule, wlines) in proofs:
             for wl in wlines:
                 if rule in SWEEP_EXEMPT_RULES:
@@ -1800,7 +2145,8 @@ def main():
 
     print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_pair} "
           f"free-order pair(s), {n_cost} cost bound(s), {n_mut} named "
-          f"mutant(s), {n_neg} Case-A negative(s), {n_sweep} proof-targeted "
+          f"mutant(s), {n_mem} memory mutant(s)/refusal(s), {n_neg} Case-A "
+          f"negative(s), {n_sweep} proof-targeted "
           f"mutant(s) ({exempt} exempt by rule), {len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)

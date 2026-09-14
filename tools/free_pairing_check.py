@@ -592,6 +592,31 @@ class Unclassified(Exception):
         self.sym = sym
 
 
+class Undecidable(Exception):
+    """A MEMORY construct whose rail-ness this file cannot decide (bd 21re).
+
+    Same discipline as `Unclassified`, one layer down. A new `cqrt_*` symbol
+    changes what "written" means and must be modelled before any verdict is
+    worth anything; a rail handle that travels through MEMORY changes what
+    "this operand is a rail" means, and the model is keyed on SSA names only.
+
+    WHY IT IS NEW. `provably_not_a_rail` used to answer True for every `load`
+    result on a premise that was TRUE WHEN WRITTEN and that bd `xdu2` (L-1a,
+    the bounded rail ARRAY) exists precisely to remove: *"a tainted `store` is
+    a loud decline at `declineTaintEscapes` long before lowering - so a load
+    result is not a rail."* After L-1a a `!cq.railbank` cell holds an i32 rail
+    HANDLE and a load of it IS a rail. See `adjudicate_memory`.
+
+    Raised, never reported as UNPROVEN, for the same reason `Unclassified` is:
+    an UNPROVEN site can be waived with `--allow-unproven`, and a waivable
+    model-unsoundness is the hole, not the report of it.
+    """
+
+    def __init__(self, code, fn, line, msg):
+        super().__init__(f"{code} @{fn} line {line}: {msg}")
+        self.code, self.fn, self.line, self.msg = code, fn, line, msg
+
+
 class NarrowingViolation(Exception):
     """The stability recursion re-entered a query it was already computing.
 
@@ -884,6 +909,16 @@ class Function:
         self.blocks = []          # [(label, [Call], terminator_text)]
         self.succ = {}
         self.preds = {}
+        # -- the MEMORY surface (bd 21re) ---------------------------------
+        # Only calls are modelled by the rest of this file; these three
+        # records exist so `adjudicate_memory` can REFUSE rather than guess
+        # when a rail handle travels through memory. `def_op` is every
+        # `%x = <opcode> ...` in the function, which is what makes "I cannot
+        # resolve this pointer" a decidable question instead of a silence.
+        self.def_op = {}          # %name -> (opcode, line_text, line_no)
+        self.bank_allocas = set()  # allocas carrying !cq.railbank
+        self.loads = []           # [(line_no, %res, ptr_token, text)]
+        self.stores = []          # [(line_no, value_token, ptr_token, text)]
 
 
 def balanced(s, open_at):
@@ -901,13 +936,58 @@ def balanced(s, open_at):
 
 SSA_NAME_RE = re.compile(r"%(?:\"[^\"]+\"|[-\w.$]+)")
 
+# -- the MEMORY surface (bd 21re) -------------------------------------------
+# LLVM prints one instruction per line, so these are exact for the grammar
+# `llvm-as` accepts; nothing here assumes an ordering or a naming convention
+# (Rule 9). A shape NOT matched falls through to "unresolvable", which is the
+# safe direction: `adjudicate_memory` refuses on unresolvable, it does not
+# assume classical.
+RAILBANK_MD = "!cq.railbank"
+DEF_OP_RE = re.compile(r"^\s*(%(?:\"[^\"]+\"|[-\w.$]+))\s*=\s*"
+                       r"(?:tail\s+|musttail\s+|notail\s+)?(\w+)\b")
+GLOBAL_DEF_RE = re.compile(r"^\s*(@[-\w.$]+)\s*=\s*[^=]*?\b(?:global|constant)\b")
+STORE_RE = re.compile(r"^\s*store\s+(?:volatile\s+|atomic\s+)*"
+                      r"[^,]*?\s([%@][-\w.$]+|[-\w.$]+)\s*,\s*ptr\b")
+# The FIRST `ptr <name>` of a line: the pointer operand of a load/store, the
+# base of a getelementptr, the source of a bitcast. A CONSTANT-EXPRESSION gep
+# (`ptr getelementptr inbounds ([3 x i32], ptr @bank, i64 0, i64 1)`) puts the
+# keyword between, and the keyword is not `%`/`@`, so the first match is still
+# the underlying object.
+PTR_OPERAND_RE = re.compile(r"\bptr\s+(?:nonnull\s+|noundef\s+|dereferenceable\([^)]*\)\s+|"
+                            r"align\s+\d+\s+|inbounds\s+)*([%@][-\w.$]+)")
+# Opcodes whose result is the SAME underlying object as their pointer operand.
+# `select`/`phi`/`inttoptr`/a call result are deliberately NOT here: they are
+# unresolvable, and unresolvable is a REFUSAL, not a classical answer.
+PTR_FORWARDING_OPS = {"getelementptr", "bitcast", "addrspacecast"}
+
+
+def first_ptr_operand(line):
+    m = PTR_OPERAND_RE.search(line)
+    return m.group(1) if m else None
+
+
+class ModuleFns(list):
+    """The function list, plus the module-scope facts `adjudicate_memory` needs.
+
+    A `list` subclass rather than a changed return type on purpose: this
+    function's other in-tree caller (tools/record_census/census_common.py:393)
+    treats the result as a list of functions and must keep working unchanged.
+    """
+
+    def __init__(self, *a):
+        super().__init__(*a)
+        self.bank_globals = set()   # @globals carrying !cq.railbank
+
 
 def parse_module(text):
     """Split a .ll into functions -> basic blocks -> calls, with a CFG."""
-    funcs = []
+    funcs = ModuleFns()
     lines = text.split("\n")
     i = 0
     while i < len(lines):
+        gm = GLOBAL_DEF_RE.match(lines[i])
+        if gm and RAILBANK_MD in lines[i]:
+            funcs.bank_globals.add(gm.group(1))
         m = DEFINE_RE.match(lines[i])
         if not m:
             i += 1
@@ -927,6 +1007,23 @@ def parse_module(text):
                 cur_label, cur_calls, term = "%" + lm.group(1), [], ""
                 i += 1
                 continue
+            # -- the MEMORY surface (bd 21re), recorded for EVERY instruction --
+            dm = DEF_OP_RE.match(ln)
+            if dm:
+                fn.def_op[dm.group(1)] = (dm.group(2), ln, i + 1)
+                if dm.group(2) == "alloca" and RAILBANK_MD in ln:
+                    fn.bank_allocas.add(dm.group(1))
+                if dm.group(2) == "load":
+                    fn.loads.append((i + 1, dm.group(1),
+                                     first_ptr_operand(ln), ln.strip()))
+            sm = STORE_RE.match(ln)
+            if sm:
+                # The POINTER operand is after the first comma. Taking the
+                # line's first `ptr <name>` would pick up the stored VALUE for
+                # `store ptr %h, ptr %p`.
+                fn.stores.append((i + 1, sm.group(1),
+                                  first_ptr_operand(ln.split(",", 1)[1]),
+                                  ln.strip()))
             cm = CALL_RE.match(ln)
             if cm:
                 open_at = ln.index("(", cm.end() - 1)
@@ -1289,9 +1386,27 @@ class StreamAnalysis:
         "integer arithmetic" as the original wording had it: it qualifies on the
         rule's actual ground, which is that the value is neither a known rail,
         nor a formal parameter, nor a rail-minting call result IN THIS FUNCTION.
-        A handle cannot reach a global and come back — a tainted `store` is a
-        loud decline at `declineTaintEscapes` long before lowering — so a load
-        result is not a rail.
+
+        ⚠ THE JUSTIFICATION THIS PARAGRAPH USED TO CARRY IS FALSE AND HAS BEEN
+        REMOVED FROM THE SOURCE, NOT JUST FROM THE RECORD (bd 21re, and
+        CLAUDE.md L7-with-a-twist: a record correction that is not applied to
+        the source is not a correction). It read:
+
+            "A handle cannot reach a global and come back — a tainted `store`
+             is a loud decline at `declineTaintEscapes` long before lowering —
+             so a load result is not a rail."
+
+        bd `xdu2` (L-1a, the bounded rail ARRAY) exists precisely to remove that
+        decline: `bool b[N]` is carved into an `[N x i32]` bank of HANDLES, and
+        a load from a bank cell IS a rail. The premise is now a CHECK rather
+        than an assumption, and it lives in `adjudicate_memory`, which runs
+        before this predicate is ever asked: a rail stored to memory that
+        carries no `!cq.railbank` marker is a LOUD STOP, and a load that
+        resolves INTO a marked bank is folded into `rail_defs`, so this
+        function answers False for it at the third arm below. What survives of
+        the old sentence is only its narrow, measured consequence — the 4
+        `load volatile i32, ptr @off` corpus sites still answer True, because
+        `@off` is not a bank and no rail is stored into it.
 
         (213, not 224: a `grep -c` over the corpus also counts the `declare`
         prototype lines. And no immediate is a `phi` DIRECTLY — the loop counter
@@ -2101,6 +2216,179 @@ def recorded_rails(fn, mints):
     return seed
 
 
+def resolve_object(fn, ptr, bank_globals, _seen=None):
+    """The underlying object `ptr` names, or None if this file cannot tell.
+
+    Pointer arithmetic and pointer casts FORWARD the object; everything else
+    (`select`, `phi`, `inttoptr`, a call result, a formal parameter) does not,
+    and answers None. None is a REFUSAL — `adjudicate_memory` raises on it
+    while a bank is in scope — never "it is classical".
+    """
+    if ptr is None:
+        return None
+    if _seen is None:
+        _seen = set()
+    if ptr in _seen:
+        return None                 # a pointer cycle: refuse
+    _seen.add(ptr)
+    if ptr.startswith("@"):
+        return ptr                  # a module-scope object names itself
+    d = fn.def_op.get(ptr)
+    if d is None:
+        return None                 # a formal parameter, or an unparsed def
+    op, line, _ln = d
+    if op == "alloca":
+        return ptr                  # a function-local object names itself
+    if op in PTR_FORWARDING_OPS:
+        return resolve_object(fn, first_ptr_operand(line), bank_globals, _seen)
+    return None
+
+
+def adjudicate_memory(fn, mints, bank_globals):
+    """bd 21re — the LOAD/STORE half of the model, and what it REFUSES.
+
+    THE FALSIFIED PREMISE
+    ---------------------
+    `provably_not_a_rail` answers True for any non-call SSA value, and its
+    docstring converted the ABSENCE of evidence into positive evidence for the
+    `load` class:
+
+        "A handle cannot reach a global and come back - a tainted `store` is a
+         loud decline at `declineTaintEscapes` long before lowering - so a load
+         result is not a rail."
+
+    bd `xdu2` (L-1a, the bounded rail ARRAY) exists precisely to remove that
+    decline: `bool b[N]` is carved into an `[N x i32]` bank of HANDLES, so a
+    load from a bank cell IS a rail. Two distinct wrong-discharges follow, and
+    both are `exit 0` on the pre-fix tool (the committed subjects are
+    $SES/trackI/probes/p1 and p2):
+
+      * the bd `az1h` defect through a new door - a bank load in the slot the
+        ABI merely ASSERTS is classical, discharged `A1-classical-immediate`;
+      * a bank load used as a CONTROL, where the model's write history is keyed
+        on the literal SSA operand string, so the rail's real history (under its
+        MINT name) is invisible and a non-cancelling pair reduces to identity.
+
+    WHAT THIS FUNCTION DOES
+    -----------------------
+      (L1) a `store` whose VALUE is a known rail of this function and whose
+           object is not a `!cq.railbank` bank (or cannot be resolved) is a
+           LOUD STOP. This is the premise above turned into a CHECK: either no
+           rail reaches memory, or the memory it reaches is marked.
+      (L2) with a bank in scope, a `load` whose object cannot be resolved is a
+           LOUD STOP - it is the difference between a classical immediate and a
+           rail, and this file must not guess it.
+      (L3) a BANK-LOAD result used in a slot `classify()` models as a RAIL slot
+           (a read or a write index - NOT a `classical_imm` slot) at any symbol
+           other than `cqrt_measure_<W>` is a LOUD STOP: `Rail.writes` is keyed
+           on the SSA name, so that name and the mint's name are two rails to
+           the model and no verdict about either is sound. `cqrt_measure_<W>`
+           is the ONE exemption, because it is the only use SCOPE_L1a's D5
+           allow-list sanctions and it is the L-1a emitted shape (p3).
+
+    and RETURNS the bank-load results, which `check_module` folds into
+    `rail_defs` so `provably_not_a_rail` answers False for them - the positive
+    half, whose live arm is the `classical_imm` slot (L3 owns every other).
+
+    WHAT IT DOES NOT DO, STATED SO THE NEXT INCREMENT DOES NOT REDISCOVER IT
+    -----------------------------------------------------------------------
+      * A bank load is NOT entered into the stream write history (`self.rails`).
+        Doing so would MANUFACTURE a second rail identity for one physical rail,
+        which is the defect, not the fix. (L3) is what makes that absence safe:
+        no modelled rail slot may hold one.
+      * The (L1) store rule keys on values this file can SHOW are rails - a
+        rail-minting call result in this function. A FORMAL PARAMETER is
+        "cannot vouch either way" (`provably_not_a_rail` refuses it too), and
+        refusing every parameter store would fire on classical spills. A
+        promoter that banks a parameter rail is therefore out of this rule's
+        reach; it is also not a shape L-1a emits (a bank is a local alloca).
+      * Nothing here sees a rail that reaches memory through a callee. The file
+        is intra-procedural by construction (bd `1yeu`: every corpus in the tree
+        is one function per module, so a cross-function defect is invisible to
+        all of them).
+      * (L3) matches the bank load's OWN SSA name. A bank load LAUNDERED through
+        classical arithmetic (`%z = zext i1 %v`, `%w = add i32 %v, 0`) and only
+        then handed to a gate is NOT matched - it is the same
+        "ALIASING THAT IS NOT SSA-IDENTITY" / "NON-CALL instructions" blind spot
+        the header already names, reached through the bank instead of through a
+        `select`. What stands in front of it is the PASS, exactly as it does for
+        the select/phi case: SCOPE_L1a's D5 allow-list makes "a bank load
+        feeding arithmetic" a loud DECLINE, so a laundered one should never
+        reach stage 2b. It is filed rather than left implicit, and it is the
+        first thing to build if D5 ever widens.
+
+    L8 RETIREMENT TRIGGER: when L-1a's taint rule + type rewrite + D5
+    allow-list land (bd `xdu2`, the second half), REAL lowered modules carry
+    `!cq.railbank`, the hand-built subjects stop being the only exercise of
+    these three rules, and (L3)'s measure-only exemption must be re-derived
+    against the allow-list the pass actually ships. Re-derive it then; do NOT
+    delete the subjects.
+    """
+    banks = set(fn.bank_allocas) | set(bank_globals)
+
+    # (L1) - unconditional: it is what makes the premise CHECKED, not assumed.
+    for line, val, ptr, text in fn.stores:
+        if val not in mints:
+            continue
+        obj = resolve_object(fn, ptr, bank_globals)
+        if obj is None or obj not in banks:
+            raise Undecidable(
+                "L1-rail-stored-to-unmarked-memory", fn.name, line,
+                f"`{text}` stores the rail {val} into "
+                + (f"{obj}, which carries no `{RAILBANK_MD}` marker"
+                   if obj else "an object this file cannot resolve")
+                + ". `provably_not_a_rail` reasons that no `load` result can be "
+                  "a rail BECAUSE a tainted store is a loud decline before "
+                  "lowering (bd 21re); this module falsifies that premise, so "
+                  "every load classification below it would be a guess. Mark "
+                  f"the bank with `{RAILBANK_MD}`, or add this escape "
+                  "mechanism to `adjudicate_memory` before trusting any "
+                  "verdict from this file")
+
+    if not banks:
+        return frozenset()          # premise holds: nothing changes
+
+    bank_loads = set()
+    for line, res, ptr, text in fn.loads:
+        obj = resolve_object(fn, ptr, bank_globals)
+        if obj is None:
+            raise Undecidable(
+                "L2-undecidable-load-provenance", fn.name, line,
+                f"`{text}` loads through a pointer whose underlying object "
+                f"this file cannot resolve, and a `{RAILBANK_MD}` bank is in "
+                f"scope in @{fn.name}. With a bank present the answer decides "
+                f"whether {res} is a classical immediate or a rail handle "
+                f"(bd 21re), so it is refused rather than assumed")
+        if obj in banks:
+            bank_loads.add(res)
+
+    # (L3) - every use of a bank load outside the sanctioned measure slot.
+    if bank_loads:
+        for _lbl, calls, _t in fn.blocks:
+            for c in calls:
+                eff = classify(c.sym)
+                if eff is None:
+                    continue
+                if re.fullmatch(rf"cqrt_measure_{_W}", c.sym):
+                    continue
+                for i, v in enumerate(c.vals):
+                    if v not in bank_loads or i in eff.classical_imm:
+                        continue
+                    raise Undecidable(
+                        "L3-bank-rail-in-a-modelled-rail-slot", fn.name,
+                        c.line,
+                        f"`{c.text}` puts the rail-bank load {v} in operand "
+                        f"slot {i} of @{c.sym}, which this file models as a "
+                        f"RAIL slot. The write history is keyed on the literal "
+                        f"SSA operand string, so {v} and the rail's mint name "
+                        f"are two different rails to the model and a gate on "
+                        f"one is invisible to the other (bd 21re). The only "
+                        f"sanctioned use of a bank load is the user's "
+                        f"`cqrt_measure_<W>` (SCOPE_L1a D5); anything else is "
+                        f"refused rather than guessed at")
+    return frozenset(bank_loads)
+
+
 def check_module(text):
     """Returns (findings, verified_count, free_site_count, proofs).
 
@@ -2133,6 +2421,14 @@ def check_module(text):
                 if eff is not None and eff.mints is not None:
                     mints.add(c.res)
         rail_defs[fn.name] = mints
+    # bd 21re — the MEMORY half. Runs AFTER the mint scan (it needs to know
+    # which values are rails) and BEFORE anything consults `rail_defs`, so a
+    # rail that arrives through a `!cq.railbank` cell is a rail everywhere
+    # `provably_not_a_rail` is asked. It RAISES rather than reports for the
+    # constructs the model cannot decide — see `adjudicate_memory`.
+    for fn in funcs:
+        rail_defs[fn.name] |= adjudicate_memory(
+            fn, rail_defs[fn.name], getattr(funcs, "bank_globals", ()))
     recorded = {fn.name: recorded_rails(fn, rail_defs.get(fn.name, frozenset()))
                 for fn in funcs}
     # bd 261j(b) — THE LEAK CENSUS. This file counts free SITES, so a compiler that
@@ -2190,6 +2486,7 @@ def main(argv=None):
     args = ap.parse_args(argv)
 
     all_findings, verified, sites, unclassified = [], 0, 0, []
+    undecidable = []
     minted_total = leaked_total = 0
     for path in args.files:
         try:
@@ -2203,6 +2500,12 @@ def main(argv=None):
             f, v, s, proofs, (mi, lk) = check_module(text)
         except Unclassified as e:
             unclassified.append((path, e.sym))
+            continue
+        except Undecidable as e:
+            # bd 21re: the model cannot decide this construct, so no verdict
+            # about this module is worth anything. Same discipline as an
+            # unmodelled symbol, one layer down.
+            undecidable.append((path, e))
             continue
         for x in f:
             x.path = path
@@ -2228,13 +2531,20 @@ def main(argv=None):
                           "verified": verified, "violations": dump(viol),
                           "unproven": dump(unpr),
                           "unclassified": [{"file": p, "symbol": s}
-                                           for p, s in unclassified]},
+                                           for p, s in unclassified],
+                          "undecidable": [{"file": p, "code": e.code,
+                                           "fn": e.fn, "line": e.line,
+                                           "msg": e.msg}
+                                          for p, e in undecidable]},
                          indent=2))
     else:
         for path, sym in unclassified:
             print(f"free_pairing_check: {path}: UNCLASSIFIED SYMBOL @{sym} — "
                   f"add its read/write effects to classify() before trusting "
                   f"any verdict from this file", file=sys.stderr)
+        for path, e in undecidable:
+            print(f"free_pairing_check: {path}: UNDECIDABLE MEMORY CONSTRUCT "
+                  f"[{e.code}] @{e.fn} line {e.line}: {e.msg}", file=sys.stderr)
         for f in viol:
             print(f"{f.path}: {f}", file=sys.stderr)
         for f in unpr:
@@ -2247,12 +2557,14 @@ def main(argv=None):
                   f"cqrt_free site(s): {verified} verified, {len(viol)} "
                   f"violation(s), {len(unpr)} unproven"
                   + (f", {len(unclassified)} unclassified symbol(s)"
-                     if unclassified else ""))
+                     if unclassified else "")
+                  + (f", {len(undecidable)} undecidable memory construct(s)"
+                     if undecidable else ""))
     if args.stats:
         for k, n in Counter(f.code for f in all_findings).most_common():
             print(f"   {n:6d}  {k}")
 
-    if unclassified or viol:
+    if unclassified or undecidable or viol:
         return 1
     if unpr and not args.allow_unproven:
         return 1
