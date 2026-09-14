@@ -31,8 +31,11 @@
 ;
 ; THE FIX THIS PINS IS THE RECORD SITE, NOT A PREDICATE: `ArmClassify`'s R7 block
 ; now writes `taint.RolledLoopRegionGates` on the far side of `if (!Rollable)
-; decline`, with a per-entry bit naming the granting clause, so EVERY grant is
-; re-asked. CLAUDE.md L1: the record must be at every grant site.
+; decline`, with a per-entry bit naming the granting clause, so EVERY R7-LOOP
+; grant is re-asked. CLAUDE.md L1: the record must be at every R7-loop grant
+; site. ⚠ NOT "every in-loop grant" (scoped by bd `s82e`, 2026-09-14): the leak
+; is REGION-INDEPENDENT and the R7 slice is a strict subset, so a sibling with
+; no tainted control flow at all still leaks silently.
 ;
 ; RETIREMENT TRIGGER (L8): this becomes an ACCEPT the day `markIfRailLocal` (or
 ; whatever succeeds it) can mark a body that reads a loop-invariant tainted rail,

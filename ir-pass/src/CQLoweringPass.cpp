@@ -762,6 +762,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // the peel / control detection, which reopens the over-decline the split
   // exists to avoid.
   declineRecordedStaleQuantumReaders(M, taint);
+  // bd `test_C_libtooling-s82e` / owner ruling D4 (2026-09-14c) — the narrow
+  // divergent sub-case of the unmarked-loop rail leak. AFTER the stale-reader
+  // backstop on purpose (it keeps its documented "last owner to speak" role for
+  // every module that already declines; this one only ever speaks where nothing
+  // else did — measured as ZERO string moves over the corpus sweep), and after
+  // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
+  // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
+  declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
@@ -1179,6 +1187,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // the peel / control detection, which reopens the over-decline the split
   // exists to avoid.
   declineRecordedStaleQuantumReaders(M, taint);
+  // bd `test_C_libtooling-s82e` / owner ruling D4 (2026-09-14c) — the narrow
+  // divergent sub-case of the unmarked-loop rail leak. AFTER the stale-reader
+  // backstop on purpose (it keeps its documented "last owner to speak" role for
+  // every module that already declines; this one only ever speaks where nothing
+  // else did — measured as ZERO string moves over the corpus sweep), and after
+  // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
+  // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
+  declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);

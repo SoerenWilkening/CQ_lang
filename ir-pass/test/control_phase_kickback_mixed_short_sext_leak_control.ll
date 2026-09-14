@@ -1,3 +1,59 @@
+; ⚠⚠ CONVERTED ACCEPT -> DECLINE, 2026-09-14c, bd `test_C_libtooling-s82e` under
+; OWNER RULING **D4**. READ THIS BLOCK BEFORE THE ORIGINAL HEADER BELOW, WHICH IS
+; KEPT VERBATIM AND IS NOW PARTLY WRONG.
+;
+; This fixture shipped as ACCEPT-AND-LEAKS, and its own header calls that leak
+; "the PRIME-DIRECTIVE disposition, not an oversight" / "the safe direction
+; (Rule 6)". **THAT CLAIM IS MEASURABLY FALSE FOR THIS PROGRAM**, and the
+; measurement that falsifies it is THE ONE THE ORIGINAL HEADER ALREADY RECORDS:
+; the per-bit `and` rails are `3/0 rolled` against `3/3 hand-unrolled`, and the
+; source ends
+;
+;     q = cq_theta(q, 0.9); return cq_measure(q) + cq_measure(r);
+;
+; — a NON-DIAGONAL, TENSORED `cqrt_ry` on `q`, followed by a measurement of `q`.
+; The three leaked rails are which-path copies of `q`'s bits. Leaving them
+; allocated leaves each of `q`'s qubits maximally entangled with an ancilla
+; nobody touches again, so the `Ry(0.9)` acts on a DECOHERED mixture where the
+; hand-unrolled twin acts on the pure state: per qubit the `alpha*beta*sin(0.9)`
+; interference term is present in one circuit and absent in the other, and
+; `cq_measure(q)` is an observable of the program. Rolled and unrolled are
+; DIFFERENT UNITARIES here — `CLAUDE.md` Rule 8, "a permutation that leaves a rail
+; dirty AND entangled still dephases under later interference". It is NOT the
+; accepted Rule-6 qubit leak; that disposition is correct only when the leaked
+; rail's partner is itself garbage, which is what
+; `loop_leak_dephase_accept_pertrip_dead.ll` pins.
+;
+; ⚠ THE DISCRIMINATION IS EXACT AND THE TREE ALREADY CONTAINED THE CONTROL:
+; `control_phase_kickback_mixed_invariant_carried_inloop.ll` is this same source
+; with the invariant base a ROOT MINT instead of a template rail. There
+; `invariantRegisterRoots` admits it, `markIfRailLocal` marks the body, the spine
+; discharges IN-BODY once per trip — and it is UNMOVED by this increment
+; (`A:32d17cb8675d` on both binaries, measured in the same corpus sweep). The
+; difference is conjunct (1) of `declineDephasingUnmarkedLoopRails`: a MARKED body
+; discharges, an UNMARKED one leaks.
+;
+; ⚠ RULE 17: this is NOT a punt. The program receives an INVALID circuit today,
+; so refusing it is the Prime Directive, and the owner's 2026-09-11 "do not
+; decline code that leads to a valid quantum circuit" ruling does not reach it.
+; THE DECLINE IS THE INTERIM; **bd `tu9q`** (P1) is the END STATE and builds the
+; discharge pairing so this program COMPILES.
+;
+; RETIREMENT TRIGGER (L8): when `tu9q` lands this becomes an ACCEPT again, and the
+; stream to re-derive is the HAND-UNROLLED twin's — `3/3`, not the `3/0` this file
+; used to pin. The pre-conversion RUN lines and CHECK prefixes are in git history
+; at this commit's parent; do NOT restore them verbatim, because they pinned the
+; LEAKING stream and that is the thing `tu9q` removes.
+;
+; ⚠ Q-R1-1 IS AFFECTED AND MUST BE RE-READ. `CLAUDE.md` §5 files "an in-loop
+; hoisted loop-invariant TEMPLATE rail read by the body's condition (Q-R1-1)" as
+; an OVER-DECLINE candidate — "a Prime-Directive decline, not a proof". For the
+; sub-case with a post-loop rotation the opposite is now measured: the ACCEPT was
+; the defect. Q-R1-1's remaining population is the sub-case with NO later
+; interference, which still accepts and still leaks.
+;
+; ── the original header follows, verbatim and superseded in the part named above ──
+
 ; control_phase_kickback_mixed_short_sext_leak_control.ll — ACCEPT **AND LEAKS**,
 ; deliberately. bd test_C_libtooling-3qlq Inc 1, the SECOND C-1 review round,
 ; finding **F-C1-3**: the Q-R1-1 template-rail class reached by a TYPE the user
@@ -26,51 +82,31 @@
 ; Prime-Directive disposition until Q-R1-1 is ruled (Rule 6: left allocated, never
 ; freed dirty).
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 ; The two `i16` root mints, then ⭐ the HOISTED `sext` TEMPLATE rail the body's
 ; condition reads. Nothing in the source asked for that cast.
-; CHECK: %[[Q:.*]] = call i32 @cqrt_alloc_i16(
-; CHECK-NEXT: call void @cqrt_ry_i16(i32 %[[Q]], double 5.000000e-01)
-; CHECK-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i16(
-; CHECK-NEXT: call void @cqrt_ry_i16(i32 %[[R]], double 3.000000e-01)
-; CHECK-NEXT: %[[P:.*]] = call i32 @cq_template_sext_i16_to_i32(i32 %[[Q]])
 
 ; The rolled body: the bit rail is minted off the TEMPLATE rail, the flag is
 ; stripped and freed, and the `and` is NEVER discharged. That missing line is what
 ; this file pins.
-; CHECK: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[P]], i32 %{{.*}})
-; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.000000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_ry_i16(i32 %[[R]], double 1.000000e-01)
 
 ; ⭐ ZERO `and` discharges — the Q-R1-1 leak, unreached by either C-1 widening.
-; UCNT-NOT: call void @cq_template_and_i32_hl_unc(
 
 ; ONE free in the body: the flag alone (the bit rail and the `sext` rail are the leak).
-; FCNT-COUNT-1: call void @cqrt_free(
-; FCNT-NOT: call void @cqrt_free(
 
-; XCNT-COUNT-2: call void @cqrt_x(i32
-; XCNT-NOT: call void @cqrt_x(i32
 
-; NOROUTE-NOT: @cqrt_cswap
-; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: @cq_theta
-; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
-; NOROUTE-NOT: fneg
 
 ; ModuleID = 'p/r5_short_inv.c'
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+;
+; (a `DS_Error` decline writes 0 BYTES to stdout, so the property is pinned by the
+;  `not` inversion on the RUN line plus this one message match — Rule 12
+;  fixture-hygiene defect (b). Mirrored character-for-character with
+;  `kMsgLoopLeakDephases` in `LoopLowering.cpp`.)
+; CHECK: cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+
+
 source_filename = "p/r5_short_inv.c"
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

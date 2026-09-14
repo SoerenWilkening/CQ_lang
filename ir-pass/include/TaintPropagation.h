@@ -769,8 +769,12 @@ struct TaintSet {
   // pred block and therefore the loop, plus the ONE BIT saying which clause
   // granted it.
   //
-  // ⚠ IT COVERS EVERY GRANT BECAUSE COVERING ONLY ONE OF THEM SHIPPED A SILENT
-  // MISCOMPILE (review round 1, finding F-W1-2, 2026-09-14). The record was
+  // ⚠ IT COVERS EVERY **R7-LOOP** GRANT BECAUSE COVERING ONLY ONE OF THEM
+  // SHIPPED A SILENT MISCOMPILE (review round 1, finding F-W1-2, 2026-09-14).
+  // (Scoped from a bare "EVERY GRANT" by bd `s82e`, 2026-09-14 — the sentence
+  // 18 lines below has said so since review round 2, and a reader meets THIS
+  // one first. CLAUDE.md L7-with-a-twist: a correction that is not applied at
+  // the site the reader actually reads is not a correction.) The record was
   // first written at the clause-(c) grant alone, on the reading that only an
   // iteration-local rail could leak. `d3_invariant_read.c` measured that false:
   // a loop-CARRIED rotated register under a bare-`_Bool` condition is granted by
