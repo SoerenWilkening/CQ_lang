@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/review_r1b/probes/b8_angle_select_after.c:9:14: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+
