@@ -41,6 +41,7 @@ class Module;
 class Loop;
 class BasicBlock;
 class BinaryOperator;
+class Instruction;  // bd wx8g: iterationLocalTaintEscape
 class CallInst;
 class Value;
 class PHINode;
@@ -398,6 +399,91 @@ llvm::CallInst *railPhiRootMint(
     const llvm::PHINode &P, const llvm::Loop *L,
     const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls,
     const TaintSet &taint, const llvm::DominatorTree &DT);
+
+// bd `test_C_libtooling-wx8g` — `railPhiRootMint`'s CLEAN-RAIL-MINT TAIL, named
+// so a second caller can ask it of a value that is NOT a header phi.
+//
+// Returns the `cq_theta`/`cq_phi` call in `GateCalls` that `V`'s IN-PLACE chain
+// bottoms at when that bottom is a CLEAN RAIL MINT (a classical — i.e. untainted
+// — arg-0, so its every execution lowers to a FRESH `cqrt_alloc_<W>`), or null
+// for a derived out-of-place base (PRD §13.2 row DB). It asks NOTHING about
+// position: `railPhiRootMint` adds `DT.dominates(Mint, L->getHeader())` (the
+// rail is minted ONCE, before the loop) and `ArmClassify`'s R7-loop clause (c)
+// adds `L->contains(Mint->getParent())` (the rail is minted FRESH EVERY TRIP) —
+// the two halves of the same dichotomy, over one body.
+//
+// ONE BODY, THREE READERS (Rule 14 — never a second spelling of "what mints this
+// rail?"): `collapseRailPhisIn` step (1) and clause (b') reach it through
+// `railPhiRootMint`; clause (c) calls it directly. ⚠ It does NOT test the callee
+// FAMILY — a register-free `cq_phi(double)` has an untainted arg-0 (the ANGLE)
+// and therefore passes, which is the pre-existing behaviour of `railPhiRootMint`
+// and is preserved BYTE-FOR-BYTE here. A caller that needs "this mint ALLOCATES"
+// must say so itself; clause (c) does.
+llvm::CallInst *railChainRootMint(
+    llvm::Value *V,
+    const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls,
+    const TaintSet &taint);
+
+// bd `test_C_libtooling-wx8g` — THE RE-ASK HALF of R7-loop clause (c). Contract
+// and the full L1 argument live on `TaintSet::RolledLoopRegionGates`
+// (TaintPropagation.h).
+//
+// For every region clause (c) let through, its loop's OWN blocks must have been
+// marked ITERATION-LOCAL by `markIfRailLocal` — otherwise the whole-DAG spine
+// will not place the body's per-trip `_unc`s and the rolled circuit is a
+// different unitary from the hand-unrolled twin. That marking happens after the
+// flatten, at FINAL taint, in `collapseFlattenedLoopRails`, and it can be
+// refused (or never asked) for reasons detection cannot see. This re-asks the
+// POSTCONDITION and declines LOUDLY; it never marks, never mutates, and is a
+// no-op for a module with no recorded region.
+//
+// MUST run AFTER `repropagateControlMerges` (nothing else makes the marking
+// final) and BEFORE `lowerRotations` (which erases the `@cq_theta` the record
+// names), in BOTH entry points — the same slot, and for the same reason, as
+// `reverifyRailCondReads`. ⚠ RETIREMENT TRIGGER: moving it above the fixpoint
+// makes it read a marking that a round-2-opened loop has not been offered yet,
+// which is an OVER-decline today and becomes an under-decline the moment the
+// onward pass learns to unmark.
+// bd `test_C_libtooling-wx8g` — R7-loop CLAUSE (c3), THE ESCAPE QUESTION, as a
+// named body because it is asked TWICE over two different taint sets.
+//
+// Returns the first TAINTED instruction defined inside `L` that has a user
+// outside `L` (or null when there is none). It is `markIfRailLocal`'s own
+// "an iteration-local temp escaping the loop" clause asked with the EMPTY
+// exemption set — that function skips values on a ROOT rail (`onRail`, keyed on
+// a `Roots` that only exists after the flatten), so this is strictly stronger
+// and can only OVER-decline. The monotonicity is the safety argument and it is
+// one line: a larger `Roots` exempts strictly MORE values, so "nothing defined
+// in `L` escapes" implies "no iteration-local temp escapes", for every `Roots`.
+//
+// TWO CALLERS, ONE BODY (Rule 14): `ArmClassify`'s clause (c3) at DETECTION with
+// ROUND-1 taint, and `declineUnmarkedRolledIterLocal` again after the round-2
+// fixpoint with FINAL taint — because `repropagateControlMerges` can TAINT a
+// value that was classical when the classifier looked (CLAUDE.md's L1 PREDICATE
+// species), and `markIfRailLocal`'s marking is ADDITIVE and never withdrawn, so
+// a round-1 grant would otherwise stand over a round-2 escape.
+//
+// ⚠ IT IS A RETURN-FIRST WALKER AND THAT IS SOUND, BUT ONLY BECAUSE IT IS A PURE
+// ∀ OVER AN EMPTY EXEMPTION SET (CLAUDE.md L4). L4's failure mode needs an
+// EXEMPTION: a first-hit walker is defeated when an already-ACCEPTED item sits in
+// front of an unaccepted one. Every tainted instruction defined in `L` owes the
+// identical obligation here, there is no per-entry `WireRuled` bit, and both
+// consumers read the answer as "∃ a violator" — clause (c3) as
+// `… == nullptr`, the re-ask as a diagnostic ANCHOR and never as a set. So one
+// witness is a complete answer.
+// RETIREMENT TRIGGER, TWO WAYS, and round 1 of the review found the second one
+// missing: (1) THE EXEMPTION SET — the moment any value is exempted (the obvious
+// candidate is `markIfRailLocal`'s on-rail exemption) this must become a SET and
+// a DIFFERENCE; (2) THE CLOSURE (CLAUDE.md L2, the half L4 does not carry) — the
+// ∀ ranges over `L->blocks() × taint.Tainted`, so it must be re-derived if either
+// moves: the subloop inclusion (`L->blocks()` deliberately includes strictly
+// deeper blocks today) or the TAINT ROUND the caller asks it at. Widening a set
+// without asking what OTHER set was computed over the same closure is the 8h7d.5
+// F-1/F-3 shape verbatim.
+llvm::Instruction *iterationLocalTaintEscape(const llvm::Loop *L,
+                                             const TaintSet &taint);
+
+void declineUnmarkedRolledIterLocal(llvm::Module &M, TaintSet &taint);
 
 // Phase 7.4 Increment 2 (epic y05j) — the POST-LOWERING reverse-play stage.
 // Wired AFTER `lowerOps`/`lowerRotations` in BOTH pipeline entry points (PRD-7.4

@@ -64,6 +64,16 @@ void diagnoseUnderControl(Instruction *Where, StringRef What) {
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }
 
+// See the header for the two failure forms and why a null test alone is half a
+// fix (F-W2-5). Deliberately NOT a `DebugLoc` predicate — the question is about
+// an INSTRUCTION's anchor, and every caller has an instruction in hand.
+bool anchorIsLocated(const Instruction *I) {
+  if (!I)
+    return false;
+  const DebugLoc &DL = I->getDebugLoc();
+  return static_cast<bool>(DL) && DL.getLine() != 0;
+}
+
 // The shape recognizers below are de-anonymized into the named `cq` namespace
 // (declared in ControlShape.h, WI-0/MD1) so the 4.3 RegionTreeDetect TU can reuse
 // them; `RegionShape` now lives in that header. PURE REFACTOR — definitions and

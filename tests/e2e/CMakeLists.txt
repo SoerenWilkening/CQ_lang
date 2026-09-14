@@ -5766,6 +5766,142 @@ add_test(NAME e2e-slice-control-phase-mergephi-ifelse
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_ifelse.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_phase_mergephi_ifelse.expected.log")
+# ---------------------------------------------------------------------------
+# bd `test_C_libtooling-wx8g` (l4x4.c) — THE IN-LOOP BARE-`_Bool` CONTROLLED-Ry
+# ARM AND THE ITERATION-LOCAL ROLLED RAIL.
+#
+# Five pairs, each a ROLLED loop and its HAND-UNROLLED TWIN at CQ_K = 2, with a
+# `compare_files` gate over the two committed goldens. The byte-diff is the
+# witness this increment turns on: `free_pairing_check.py` counts `cqrt_alloc`
+# SITES, so a rolled per-trip alloc reads as ONE rail where the circuit mints K,
+# and it is structurally blind to a leaked TEMPLATE-minted rail entirely (its own
+# header says so). All ten run STRICT stage 2b regardless.
+#
+# ⚠ THE ORACLE'S BLIND SPOT, quoted where it lives (the drbq Inc-3 wording,
+# unchanged): the unrolled side IS l4x4.b's FLAT lowering, so a defect the two
+# paths SHARE is byte-identical on both and these gates report success. The flat
+# side's own witness is the l4x4.b lit family.
+#
+# ⚠ AND THE DERIVED PAIR IS THE ONE THAT CAN SEE THE INCREMENT'S REAL HAZARD.
+# The four `_Bool` pairs mint NOTHING for their condition (the register IS the
+# flag), so no spine discharge can go missing in them. Only
+# `slice_control_inplace_ry_loop_iterlocal_derived` mints template rails in the
+# body, and only it can show them being discharged per trip — the decline
+# counterpart, with the per-trip register read after the loop instead of inside
+# it, is ir-pass/test/control_inplace_ry_reject_inloop_iterlocal_escape.ll, whose
+# header carries the measured 19-vs-27 divergence.
+#
+# K-INDEPENDENCE IS A MEASUREMENT, NOT A GATE, following the 8h7d.5 and drbq
+# Inc-3 precedents exactly. MEASURED 2026-09-14, lowered IR WITHOUT `-g` (a `-g`
+# line count is not comparable — SCOPE_loop.md §3):
+#   see $SES/trackW/IMPL_W.md for the per-slice numbers at -DCQ_K=3 vs 1000.
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop-grover
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop-grover-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop-iterlocal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-bool-loop-iterlocal-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-stateprep-bool-loop-iterlocal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal.expected.log")
+
+add_test(NAME e2e-slice-control-stateprep-bool-loop-iterlocal-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal_unrolled.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-iterlocal-derived
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-iterlocal-derived-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived_unrolled.expected.log")
+
+# THE TWIN GATES — `cmp` over the two committed goldens, no clang, no opt, no
+# plugin, milliseconds each. These are what turn red if either side of a pair is
+# ever regenerated alone.
+add_test(NAME e2e-inplace-ry-bool-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-bool-loop-grover-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_grover_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-bool-loop-iterlocal-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_bool_loop_iterlocal_unrolled.expected.log")
+
+add_test(NAME e2e-stateprep-bool-loop-iterlocal-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_stateprep_bool_loop_iterlocal_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-iterlocal-derived-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived_unrolled.expected.log")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

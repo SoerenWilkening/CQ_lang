@@ -1,0 +1,170 @@
+w_a_carried_bool_unrolled|sub|ACCEPT|-|-
+w_a_carried_bool_unrolled|ora|ACCEPT|-|-
+w_a_carried_bool|sub|ACCEPT|-|-
+w_a_carried_bool|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_a_carried_bool.c:8:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_a_neg_unrolled|sub|ACCEPT|-|-
+w_a_neg_unrolled|ora|ACCEPT|-|-
+w_a_neg|sub|ACCEPT|-|-
+w_a_neg|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_a_neg.c:7:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_b_iterlocal_prep_bool_unrolled|sub|ACCEPT|-|-
+w_b_iterlocal_prep_bool_unrolled|ora|ACCEPT|-|-
+w_b_iterlocal_prep_bool|sub|ACCEPT|-|-
+w_b_iterlocal_prep_bool|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_b_iterlocal_prep_bool.c:7:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_b2_prep_bool_unrolled|sub|ACCEPT|-|-
+w_b2_prep_bool_unrolled|ora|ACCEPT|-|-
+w_b2_prep_bool|sub|ACCEPT|-|-
+w_b2_prep_bool|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_b2_prep_bool.c:7:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_c_compare_invariant|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_c_compare_invariant.c:10:42|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_c_compare_invariant|ora|DECLINE|<unknown>:0:0|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_d_iterlocal_base_bool_unrolled|sub|ACCEPT|-|-
+w_d_iterlocal_base_bool_unrolled|ora|ACCEPT|-|-
+w_d_iterlocal_base_bool|sub|ACCEPT|-|-
+w_d_iterlocal_base_bool|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_d_iterlocal_base_bool.c:8:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_e_iterlocal_base_cmp_unrolled|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_e_iterlocal_base_cmp_unrolled.c:5:40|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_e_iterlocal_base_cmp_unrolled|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_e_iterlocal_base_cmp_unrolled.c:5:40|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_e_iterlocal_base_cmp|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_e_iterlocal_base_cmp.c:12:13|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_e_iterlocal_base_cmp|ora|DECLINE|<unknown>:0:0|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_f_iterlocal_prep_cmp_unrolled|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_f_iterlocal_prep_cmp_unrolled.c:5:24|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_f_iterlocal_prep_cmp_unrolled|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_f_iterlocal_prep_cmp_unrolled.c:5:24|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_f_iterlocal_prep_cmp|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_f_iterlocal_prep_cmp.c:11:13|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_f_iterlocal_prep_cmp|ora|DECLINE|<unknown>:0:0|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_g_derived_cond_iterlocal_unrolled|sub|ACCEPT|-|-
+w_g_derived_cond_iterlocal_unrolled|ora|ACCEPT|-|-
+w_g_derived_cond_iterlocal|sub|ACCEPT|-|-
+w_g_derived_cond_iterlocal|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_g_derived_cond_iterlocal.c:12:22|cq controlled lowering: control flow inside a loop body under quantum control
+w_grover_bool_unrolled|sub|ACCEPT|-|-
+w_grover_bool_unrolled|ora|ACCEPT|-|-
+w_grover_bool|sub|ACCEPT|-|-
+w_grover_bool|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_grover_bool.c:8:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_h_iterlocal_escape_unrolled|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_h_iterlocal_escape_unrolled.c:5:34|cq controlled lowering: nested control flow under quantum control
+w_h_iterlocal_escape_unrolled|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_h_iterlocal_escape_unrolled.c:5:34|cq controlled lowering: nested control flow under quantum control
+w_h_iterlocal_escape|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_h_iterlocal_escape.c:12:13|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_h_iterlocal_escape|ora|DECLINE|<unknown>:0:0|cq controlled lowering: condition predates a non-diagonal gate under quantum control
+w_i_no_invariant_root_unrolled|sub|ACCEPT|-|-
+w_i_no_invariant_root_unrolled|ora|ACCEPT|-|-
+w_i_no_invariant_root|sub|ACCEPT|-|-
+w_i_no_invariant_root|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_i_no_invariant_root.c:11:18|cq controlled lowering: control flow inside a loop body under quantum control
+w_j_no_invariant_root_derived_unrolled|sub|ACCEPT|-|-
+w_j_no_invariant_root_derived_unrolled|ora|ACCEPT|-|-
+w_j_no_invariant_root_derived|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_j_no_invariant_root_derived.c:13:31|cq controlled lowering: control flow inside a loop body under quantum control
+w_j_no_invariant_root_derived|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_j_no_invariant_root_derived.c:13:22|cq controlled lowering: control flow inside a loop body under quantum control
+w_k_two_iterlocal_rails_unrolled|sub|ACCEPT|-|-
+w_k_two_iterlocal_rails_unrolled|ora|ACCEPT|-|-
+w_k_two_iterlocal_rails|sub|ACCEPT|-|-
+w_k_two_iterlocal_rails|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_k_two_iterlocal_rails.c:9:14|cq controlled lowering: control flow inside a loop body under quantum control
+w_l_twofn_mixed_clauses_unrolled|sub|ACCEPT|-|-
+w_l_twofn_mixed_clauses_unrolled|ora|ACCEPT|-|-
+w_l_twofn_mixed_clauses|sub|ACCEPT|-|-
+w_l_twofn_mixed_clauses|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w_l_twofn_mixed_clauses.c:13:18|cq controlled lowering: control flow inside a loop body under quantum control
+w2a_twoloop_fail_pass|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2a_twoloop_fail_pass.c:8:31|cq controlled lowering: control flow inside a loop body under quantum control
+w2a_twoloop_fail_pass|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2a_twoloop_fail_pass.c:8:22|cq controlled lowering: control flow inside a loop body under quantum control
+w2a_twoloop_pass_fail|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2a_twoloop_pass_fail.c:18:31|cq controlled lowering: control flow inside a loop body under quantum control
+w2a_twoloop_pass_fail|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2a_twoloop_pass_fail.c:10:18|cq controlled lowering: control flow inside a loop body under quantum control
+w2a_twoloop_passonly_un|sub|ACCEPT|-|-
+w2a_twoloop_passonly_un|ora|ACCEPT|-|-
+w2a_twoloop_passonly|sub|ACCEPT|-|-
+w2a_twoloop_passonly|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2a_twoloop_passonly.c:7:18|cq controlled lowering: control flow inside a loop body under quantum control
+w2b_sameloop_mixed_derived_un|sub|ACCEPT|-|-
+w2b_sameloop_mixed_derived_un|ora|ACCEPT|-|-
+w2b_sameloop_mixed_derived|sub|ACCEPT|-|-
+w2b_sameloop_mixed_derived|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2b_sameloop_mixed_derived.c:7:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2b_sameloop_mixed_un|sub|ACCEPT|-|-
+w2b_sameloop_mixed_un|ora|ACCEPT|-|-
+w2b_sameloop_mixed|sub|ACCEPT|-|-
+w2b_sameloop_mixed|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2b_sameloop_mixed.c:9:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2c_inplace_cmp_un|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_cmp_un.c:8:13|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_cmp_un|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_cmp_un.c:8:13|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_cmp|sub|ACCEPT|-|-
+w2c_inplace_cmp|ora|ACCEPT|-|-
+w2c_inplace_rail_invread_un|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_rail_invread_un.c:4:14|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_rail_invread_un|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_rail_invread_un.c:4:14|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_rail_invread|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_rail_invread.c:8:14|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_rail_invread|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_rail_invread.c:8:14|cq controlled lowering: condition measured before the control route under quantum control
+w2c_inplace_rail_un|sub|ACCEPT|-|-
+w2c_inplace_rail_un|ora|ACCEPT|-|-
+w2c_inplace_rail|sub|ACCEPT|-|-
+w2c_inplace_rail|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2c_inplace_rail.c:7:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2c_noregion_inplace_un|sub|ACCEPT|-|-
+w2c_noregion_inplace_un|ora|ACCEPT|-|-
+w2c_noregion_inplace|sub|ACCEPT|-|-
+w2c_noregion_inplace|ora|ACCEPT|-|-
+w2e1_two_chains_un|sub|ACCEPT|-|-
+w2e1_two_chains_un|ora|ACCEPT|-|-
+w2e1_two_chains|sub|ACCEPT|-|-
+w2e1_two_chains|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e1_two_chains.c:4:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2e2_measured_template_un|sub|ACCEPT|-|-
+w2e2_measured_template_un|ora|ACCEPT|-|-
+w2e2_measured_template|sub|ACCEPT|-|-
+w2e2_measured_template|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e2_measured_template.c:5:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2e3_xor_on_rotated_un|sub|ACCEPT|-|-
+w2e3_xor_on_rotated_un|ora|ACCEPT|-|-
+w2e3_xor_on_rotated|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e3_xor_on_rotated.c:9:14|cq opcode lowering: operand predates a non-diagonal gate
+w2e3_xor_on_rotated|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e3_xor_on_rotated.c:9:14|cq opcode lowering: operand predates a non-diagonal gate
+w2e4_two_rail_regions_un|sub|ACCEPT|-|-
+w2e4_two_rail_regions_un|ora|ACCEPT|-|-
+w2e4_two_rail_regions|sub|ACCEPT|-|-
+w2e4_two_rail_regions|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e4_two_rail_regions.c:4:15|cq controlled lowering: control flow inside a loop body under quantum control
+w2e5_negated_un|sub|ACCEPT|-|-
+w2e5_negated_un|ora|ACCEPT|-|-
+w2e5_negated|sub|ACCEPT|-|-
+w2e5_negated|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e5_negated.c:4:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2e7_stateprep_un|sub|ACCEPT|-|-
+w2e7_stateprep_un|ora|ACCEPT|-|-
+w2e7_stateprep|sub|ACCEPT|-|-
+w2e7_stateprep|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e7_stateprep.c:5:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2e8_inner_classical_loop_un|sub|ACCEPT|-|-
+w2e8_inner_classical_loop_un|ora|ACCEPT|-|-
+w2e8_inner_classical_loop|sub|ACCEPT|-|-
+w2e8_inner_classical_loop|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e8_inner_classical_loop.c:4:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2e9_prep_then_select_un|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e9_prep_then_select_un.c:12:13|cq controlled lowering: value-arm swap-route under quantum control
+w2e9_prep_then_select_un|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e9_prep_then_select_un.c:12:13|cq controlled lowering: value-arm swap-route under quantum control
+w2e9_prep_then_select|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e9_prep_then_select.c:6:15|cq controlled lowering: control flow inside a loop body under quantum control
+w2e9_prep_then_select|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2e9_prep_then_select.c:6:15|cq controlled lowering: control flow inside a loop body under quantum control
+w2f_kindep|sub|ACCEPT|-|-
+w2f_kindep|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2f_kindep.c:8:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2g_mut_d1_no_invread_un|sub|ACCEPT|-|-
+w2g_mut_d1_no_invread_un|ora|ACCEPT|-|-
+w2g_mut_d1_no_invread|sub|ACCEPT|-|-
+w2g_mut_d1_no_invread|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2g_mut_d1_no_invread.c:9:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2g_mut_d3_invread_un|sub|ACCEPT|-|-
+w2g_mut_d3_invread_un|ora|ACCEPT|-|-
+w2g_mut_d3_invread|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2g_mut_d3_invread.c:14:31|cq controlled lowering: control flow inside a loop body under quantum control
+w2g_mut_d3_invread|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2g_mut_d3_invread.c:9:14|cq controlled lowering: control flow inside a loop body under quantum control
+w2h_phase_inloop_invread_un|sub|ACCEPT|-|-
+w2h_phase_inloop_invread_un|ora|ACCEPT|-|-
+w2h_phase_inloop_invread|sub|ACCEPT|-|-
+w2h_phase_inloop_invread|ora|ACCEPT|-|-
+w2h_select_inloop_invread_un|sub|ACCEPT|-|-
+w2h_select_inloop_invread_un|ora|ACCEPT|-|-
+w2h_select_inloop_invread|sub|DECLINE|<unknown>:0:0|cq loop lowering: loop-carried tainted value crosses iterations
+w2h_select_inloop_invread|ora|DECLINE|<unknown>:0:0|cq loop lowering: loop-carried tainted value crosses iterations
+w2h3_select_iterlocal_invread_un|sub|ACCEPT|-|-
+w2h3_select_iterlocal_invread_un|ora|ACCEPT|-|-
+w2h3_select_iterlocal_invread|sub|ACCEPT|-|-
+w2h3_select_iterlocal_invread|ora|ACCEPT|-|-
+w2i_h1_round2_branch_un|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i_h1_round2_branch_un.c:11:20|cq controlled lowering: value-arm swap-route under quantum control
+w2i_h1_round2_branch_un|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i_h1_round2_branch_un.c:11:20|cq controlled lowering: value-arm swap-route under quantum control
+w2i_h1_round2_branch|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i_h1_round2_branch.c:17:22|cq controlled lowering: value-arm swap-route under quantum control
+w2i_h1_round2_branch|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i_h1_round2_branch.c:17:22|cq controlled lowering: value-arm swap-route under quantum control
+w2i2_h1_round2_un|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i2_h1_round2_un.c:7:20|cq controlled lowering: control flow under quantum control
+w2i2_h1_round2_un|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i2_h1_round2_un.c:7:20|cq controlled lowering: control flow under quantum control
+w2i2_h1_round2|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i2_h1_round2.c:12:20|cq controlled lowering: control flow under quantum control
+w2i2_h1_round2|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i2_h1_round2.c:12:20|cq controlled lowering: control flow under quantum control
+w2i2_lib|sub|ACCEPT|-|-
+w2i2_lib|ora|ACCEPT|-|-
+w2i3_h1_cmpcond|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i3_h1_cmpcond.c:12:20|cq controlled lowering: control flow under quantum control
+w2i3_h1_cmpcond|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i3_h1_cmpcond.c:12:20|cq controlled lowering: control flow under quantum control
+w2i4_flat_2c|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i4_flat_2c.c:8:20|cq controlled lowering: control flow under quantum control
+w2i4_flat_2c|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2i4_flat_2c.c:8:20|cq controlled lowering: control flow under quantum control
+w2j_threefn_fail_third|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2j_threefn_fail_third.c:19:31|cq controlled lowering: control flow inside a loop body under quantum control
+w2j_threefn_fail_third|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2j_threefn_fail_third.c:6:44|cq controlled lowering: control flow inside a loop body under quantum control
+w2j_twofn_passonly|sub|ACCEPT|-|-
+w2j_twofn_passonly|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2j_twofn_passonly.c:9:18|cq controlled lowering: control flow inside a loop body under quantum control
+w2k_noregion_invread_un|sub|ACCEPT|-|-
+w2k_noregion_invread_un|ora|ACCEPT|-|-
+w2k_noregion_invread|sub|ACCEPT|-|-
+w2k_noregion_invread|ora|ACCEPT|-|-
+w2l_inplace_plus_chain_un|sub|ACCEPT|-|-
+w2l_inplace_plus_chain_un|ora|ACCEPT|-|-
+w2l_inplace_plus_chain|sub|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2l_inplace_plus_chain.c:12:20|cq controlled lowering: control flow inside a loop body under quantum control
+w2l_inplace_plus_chain|ora|DECLINE|CQ_wx8g/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/fix_r2_probes/corpus/w2l_inplace_plus_chain.c:6:14|cq controlled lowering: control flow inside a loop body under quantum control

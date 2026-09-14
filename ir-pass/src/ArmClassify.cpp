@@ -2156,10 +2156,52 @@ bool valueArmIsPureChain(const BasicBlock *ArmBB,
 
 // An instruction to anchor a generic decline diagnostic on (for the !dbg /
 // source location). Prefer the tainted condition; fall back to the merge phi.
+//
+// ⚠ THE PREFERENCE ORDER IS UNCHANGED WHEN THE PREFERRED ANCHOR IS LOCATED —
+// the rungs below only ever fire where the old spelling produced
+// `<unknown>:0:0` (or `:0:0`), so no located diagnostic moves. When nothing is
+// located the ORIGINAL choice is returned verbatim: `diagnoseUnderControl`
+// dereferences its argument (`Where->getFunction()`), so this must never hand
+// back null where the old spelling handed back an instruction, and the
+// `CQ_CTRL_DBG` lever must keep printing the offending value.
+//
+// WHY THE RUNGS EXIST AT ALL — measured, review round 2 finding F-W2-5,
+// 2026-09-14. The two-TU 6.5 probes `w2i2_h1_round2.c` / `w2i3_h1_cmpcond.c`
+// (built `-O1 -g` per TU, `llvm-link`ed, one `cq-lowering`) decline at
+// `classifyPhaseKickback`'s 2c wire fence, in ROUND 2 out of
+// `repropagateControlMerges` — verified by breakpoint backtrace, not inferred —
+// and `-O1` LICM had hoisted their condition `icmp sgt i32 %y, 50` out of the
+// loop, DROPPING its `!dbg`. The old spelling returned that compare and `opt`
+// printed `error: <unknown>:0:0:`, where the pre-increment ORACLE (which
+// declined the same modules EARLIER, at the loop gate) printed
+// `./w2i2_h1_round2.c:16:18`. A widening that moves traffic to a different
+// fence inherits that fence's anchor quality; this is the repair.
+//
+// RUNG 3 IS THE REGION'S OWN `br i1`, and it is the RIGHT anchor rather than a
+// consolation prize: every consumer of this helper is declining a REGION, and
+// the branch is the `if` the user wrote. On those probes it is
+// `br i1 %7, …, !dbg !48` = `w2i2_h1_round2.c:18:13` — the line that has to
+// change — where the hoisted condition has no location at all. `Pred` is null
+// for a `SelectRegion` / `AngleSelectRegion` (no CFG diamond), which the null
+// test covers; and this helper is only ever called from the CLASSIFIERS, before
+// any emitter flattens or erases a block, so the block pointer is live (the
+// Track M H-1 dangle is a plan field read at EMIT time, a different question).
+//
+// ⚠ RETIREMENT TRIGGER: if a consumer of `declAnchor` is ever moved to run
+// AFTER `RegionFlatten`, rung 3 becomes a read of a freed `BasicBlock` — drop
+// the rung rather than "fixing" it with a handle, exactly as Track M's H-1 note
+// says about `ControlRegion::Condition`.
 Instruction *declAnchor(const ControlRegion &R) {
-  if (auto *I = dyn_cast_or_null<Instruction>(R.Condition))
-    return I;
-  return R.Merge;
+  auto *Cond = dyn_cast_or_null<Instruction>(R.Condition);
+  if (anchorIsLocated(Cond))
+    return Cond;
+  if (anchorIsLocated(R.Merge))
+    return R.Merge;
+  if (R.Pred)
+    if (Instruction *Term = R.Pred->getTerminator())
+      if (anchorIsLocated(Term))
+        return Term;
+  return Cond ? Cond : R.Merge;
 }
 
 }  // namespace
@@ -3545,6 +3587,166 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 
 }  // namespace
 
+// ── bd `test_C_libtooling-wx8g` — R7-LOOP CLAUSE (c): THE ITERATION-LOCAL RAIL ──
+//
+// (b)/(b′) above are about a rail that CROSSES THE BACK EDGE: some member of the
+// rotated base's wire closure is a header φ, and `railPhiRootMint` proves round
+// 2's `collapseRailPhisIn` will CLAIM it. An ITERATION-LOCAL register has no
+// header φ at all, so (b) finds no member and `Rollable` stayed false BY
+// CONSTRUCTION for every such program, forever — which `ArmClassify` itself said
+// in writing above ("R7's LOOP half below is deliberately NOT skipped: it
+// iterates `BaseWireOrder`, which is empty here, so `Rollable` stays false and
+// every in-loop state prep declines `control flow inside a loop body` — the
+// ITERATION-LOCAL spelling"). Two shipped decline fixtures pinned it:
+// `control_inplace_ry_reject_inloop_iterlocal_base.ll` (a rotated base minted in
+// the body) and `control_inplace_ry_reject_stateprep_inloop_iterlocal.ll` (the
+// controlled state prep, whose `BaseWireOrder` is EMPTY because R4/R6 are
+// SKIPPED for a prep).
+//
+// THE OBLIGATION IS A DIFFERENT ONE, AND IT IS NOT "the collapse will claim it":
+// there is nothing to claim. It is **"the rolled body emits, per activation,
+// exactly what the hand-unrolled twin emits for that trip"**. Three clauses
+// prove it; the third is the one that is a UNITARY fence and not bookkeeping,
+// and it has a MEASURED discriminating pair.
+//
+//   (c1) THE RAIL DOES NOT CROSS THE BACK EDGE. `Rollable == false` is NOT this
+//        statement: a header φ that (b′) REFUSED (PRD §13.2 row DB, a DERIVED
+//        out-of-place base) also leaves `Rollable` false, and that rail IS
+//        carried — rolling it would be the X1 cross-iteration dirty rail. Asked
+//        POSITIVELY, over the same `BaseWireOrder` (b) reads, plus the merge φ.
+//
+//   (c2) THE REGISTER IS MINTED FRESH ON EVERY ACTIVATION, INSIDE `L`. Asked by
+//        CALLING `railChainRootMint` — `railPhiRootMint`'s own clean-rail-mint
+//        tail (Rule 14, never a second spelling of "what mints this rail?") —
+//        and then requiring `L->contains(Mint->getParent())` where (b′) requires
+//        `DT.dominates(Mint, LHdr)`. The two are the complementary halves of one
+//        dichotomy: minted ONCE before the loop, or minted FRESH every trip. A
+//        clean mint lowers to `cqrt_alloc_<W>` + `cqrt_ry_<W>`, so a mint inside
+//        the body IS K fresh rails — precisely what K copies of the arm do.
+//        ⚠ For a STATE PREP the base is the seed `Constant` and there is no
+//        pre-region SSA name for the rail at all (§14.5); the mint is the
+//        HOISTED `T` itself, which is why `MintSeed` is `T` there. That also
+//        answers the deferred item recorded in
+//        `control_inplace_ry_reject_stateprep_inloop_iterlocal.ll`'s header: it
+//        reads the obstruction as POSITIONAL and concludes "a rolled in-loop
+//        state prep would need the alloc hoisted OUT of the loop — a real
+//        transformation with its own per-activation reset question (trip 2's
+//        `f=0` component would read a rail trip 1 may have rotated)". That reset
+//        question is a property of HOISTING, which this clause does not do and
+//        must not: leaving the alloc IN the body is what makes trip 2's `f=0`
+//        component read a FRESH |SEED⟩, exactly as the unrolled twin's second
+//        block does.
+//        ⚠ AND THE MINT MUST BE AN Ry. `railChainRootMint` deliberately does not
+//        test the callee family (see LoopPlan.h): a register-free
+//        `cq_phi(double)` has an untainted arg-0 — the ANGLE — and passes it.
+//        `cq_phi` ALLOCATES NOTHING (Rule 3), so it cannot be a per-trip rail
+//        mint; the family test is asked here, by the caller that needs it.
+//
+//   (c3) NO TAINTED VALUE DEFINED INSIDE `L` MAY HAVE A USER OUTSIDE `L`.
+//        THIS IS THE CLAUSE THE INCREMENT TURNS ON, and it is the fence R7's (b)
+//        comment already named without owning: "an ITERATION-LOCAL rotated
+//        register … is measurably not twin-identical — its escape makes
+//        `markIfRailLocal` refuse the marking, so the rolled form leaks the
+//        condition chain once per trip while the hand-unrolled twin discharges
+//        it. A DIFFERENT CIRCUIT."
+//
+//        MEASURED 2026-09-14 on the scaffolded subject with this clause ABSENT,
+//        one pair differing in exactly one edge — where the iteration-local
+//        register is read (`$SES/trackW/probes/ir/il_{escape,noescape}_{rolled,flat}.ll`,
+//        a derived condition `(q>>i)&1` so the per-trip chain is the SPINE's to
+//        discharge and not the emitter's):
+//
+//          ESCAPES `L` (measured after the loop): rolled **19** trace lines,
+//            hand-unrolled twin **27**. The rolled form emits
+//            `lshr; and; icmp; cry; icmp_unc; free(flag)` per trip and NEVER the
+//            `and_unc`/`lshr_unc`/two frees — TWO entangled which-path records of
+//            `q`'s bits leaked per activation. `opt` exit 0 on both, verify-clean
+//            on both, and `free_pairing_check.py` is structurally blind (a
+//            template-minted rail has no `cqrt_alloc` to count).
+//          DOES NOT ESCAPE (measured inside the body): rolled == unrolled,
+//            **BYTE-IDENTICAL**, every rail discharged.
+//
+//        So the clause is a real unitary fence with a control, not a guess.
+//
+//        ⚠ IT IS `markIfRailLocal`'s OWN ESCAPE CLAUSE, ASKED CONSERVATIVELY.
+//        That function exempts values on a ROOT rail (`onRail`, keyed on the
+//        `Roots` `collapseRailPhisIn` + `invariantRegisterRoots` supply AFTER the
+//        flatten); this runs at DETECTION, where no `Roots` exists yet, and
+//        therefore asks the question with the EMPTY exemption set. The direction
+//        is the safe one and the argument is monotonicity, not luck: a LARGER
+//        `Roots` exempts strictly MORE values from that escape check, so
+//        "no tainted value defined in `L` escapes" ⇒ "no iteration-local temp
+//        escapes", for every `Roots`. It can therefore only OVER-decline, never
+//        under-. THE KNOWN OVER-DECLINE IS THE MIXED LOOP — a loop that ALSO
+//        carries a rail whose exit value is read after the loop (`for (k) { q =
+//        cq_theta(q,.1); int r = cq_theta(7,.25); if (b) r = cq_theta(r,.2); … }
+//        return cq_measure(q);`) — which `markIfRailLocal` would have exempted.
+//        Filed as a follow-on rather than approximated here, because predicting
+//        `Roots` at detection is a SECOND SPELLING of two functions' claim
+//        conditions (the drbq Inc-3 (b′) defect), and because a wrong prediction
+//        inverts the monotonicity above into an under-decline.
+//        RETIREMENT TRIGGER: widen this to a real root set only together with a
+//        re-derivation of that monotonicity — and only by CALLING whatever owns
+//        `Roots`, never by re-deriving it here.
+//
+// ⚠ WHAT THIS CLAUSE DELIBERATELY DOES **NOT** ASK, because another owner does:
+// the loop's CFG shape (`flatRegionRollableInLoop` gates (A)-(D), already proved
+// before `Region.InLoop` was set), the quantum-bounded exit (`taintedExit` / Q1,
+// unconditional and untouched — a quantum-dependent trip count still declines
+// loudly and the Rule-18 bound derivation is NOT built), the rotation angle (R2
+// above), the condition's measurement and wire disposition (the §13.3 rail ladder
+// / `condWireDisposition`, both already asked above and both loop-aware), and
+// R6's per-activation record fence (`recordLivePerActivation`, immediately
+// below). Pure analysis; mutates nothing (Rule 9).
+static bool iterationLocalRollable(
+    const llvm::Loop *L, const BasicBlock *LHdr, ArrayRef<Value *> BaseWireOrder,
+    const PHINode *MergePhi, CallInst *T, bool StatePrep, Value *RotBase,
+    const SmallPtrSetImpl<CallInst *> &GateCalls, const TaintSet &Taint) {
+  if (!L || !LHdr || !T)
+    return false;  // no loop, no header, no gate — no proof (Prime Directive).
+  if (!L->getLoopLatch())
+    return false;  // single latch, as every other rail reader requires.
+
+  // (c1) — positively: nothing on the rotated register's wire, nor the merge φ
+  //        the emitter is about to dissolve, is a φ in `L`'s header.
+  for (Value *B : BaseWireOrder)
+    if (auto *P = dyn_cast<PHINode>(B))
+      if (P->getParent() == LHdr)
+        return false;
+  if (MergePhi && MergePhi->getParent() == LHdr)
+    return false;
+
+  // (c2) — the rail is minted fresh, by an Ry, inside `L`.
+  Value *MintSeed = StatePrep ? static_cast<Value *>(T) : RotBase;
+  CallInst *Mint = railChainRootMint(MintSeed, GateCalls, Taint);
+  if (!Mint || !L->contains(Mint->getParent()))
+    return false;
+  const Function *MF = Mint->getCalledFunction();
+  if (!MF || !MF->getName().starts_with("cq_theta_"))
+    return false;  // `cq_phi` is register-free: it allocates nothing (Rule 3).
+  // ⚠ THE `cq_phi` HALF OF THAT TEST IS DEAD TODAY, and review round 1 supplied
+  // a STRONGER ground for it than the one first recorded (H-3). It is not merely
+  // that "a `void` call cannot be the base of an `i32` rail": `peelInPlaceStep`
+  // steps THROUGH a `GateCalls` member only when `CI->getArgOperand(0)` is
+  // TAINTED, and for the register-free `void cq_phi(double)` arg-0 is the
+  // UNTAINTED ANGLE — so the peel STOPS AT a `cq_phi` rather than walking past
+  // it, which means `railChainRootMint` can only return one if it was the input
+  // `V` itself. Both callers pass a REGISTER-TYPED value (`railPhiRootMint` a φ
+  // incoming; this clause `RotBase` or `T`), and a `void` call is never an
+  // operand of anything. Deliberately NO FIXTURE: an unreachable negative is a
+  // VACUOUS fixture, which PROTOCOL.md S3 names as a defect of its own.
+  // RETIREMENT TRIGGER: the day `cq_phi` acquires a register operand — a Key
+  // Prohibition today, but so was the retired `cq_phi_<sfx>` family — this test
+  // goes LIVE, and `railPhiRootMint` (which does NOT have it) needs it too.
+
+  // (c3) — nothing tainted that is DEFINED in `L` is READ outside `L`. Asked by
+  //        CALLING `iterationLocalTaintEscape` (LoopPlan.h), because the SAME
+  //        question is re-asked at FINAL taint after the round-2 fixpoint by
+  //        `declineUnmarkedRolledIterLocal`. One body, two taint sets — never a
+  //        second spelling that agrees today (the drbq Inc-3 (b′) defect).
+  return iterationLocalTaintEscape(L, Taint) == nullptr;
+}
+
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
                             const DominatorTree *DT, const LoopInfo *LI) {
   auto *MergePhi = dyn_cast_or_null<PHINode>(Region.Merge);
@@ -3948,47 +4150,102 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         declineArm(declAnchor(Region), "mixed phase/value arm");
         return ArmDisposition::Declined;
       }
-      // ---- l4x4.b — THE TWO RAIL-ONLY SCOPE FENCES, asked FIRST among this
-      //      class's clauses and guarded by `RailCond`, so a COMPARE region's
-      //      message ordering is byte-identical to the pre-l4x4.b binary by
-      //      construction (the Inc-4 `StatePrep` precedent).
+      // ---- l4x4.b — THE RAIL-ONLY SCOPE FENCE, asked FIRST among this class's
+      //      clauses and guarded by `RailCond`, so a COMPARE region's message
+      //      ordering is byte-identical to the pre-l4x4.b binary by construction
+      //      (the Inc-4 `StatePrep` precedent).
       //
-      // (a) IN-LOOP IS CARVED OUT — bd `test_C_libtooling-l4x4` sub-increment
-      //     l4x4.c, an owner-scoped increment boundary and NOT an omission. The
-      //     shape (`for (…) if (b) r = cq_theta(r,θ);` with `b` loop-INVARIANT)
-      //     reaches here — `flatRegionRollableInLoop` already proved the CFG
-      //     half — and R7's (b)/(b′) clauses would carry unchanged. What it does
-      //     NOT have is a WITNESS: its compare twin declines `condition predates
-      //     a non-diagonal gate` (CLAUDE.md row W — `-O1` LICM-hoists the
-      //     invariant compare and `condWireDisposition`'s P4 refuses a
-      //     cross-block condition, while `railCondWireDisposition` deliberately
-      //     has no P4 prong), so there is nothing for a rolled trace to be
-      //     byte-identical TO except itself. It is also exactly the
-      //     loop-INVARIANT-condition + loop-CARRIED-register mixture that
-      //     produced eight confirmed silent miscompiles over six adversarial
-      //     rounds in `markIfRailLocal`'s neighbourhood (CLAUDE.md's C-1 family),
-      //     and stage 2b is structurally blind to the leak they share. The loop
-      //     STRING, not `kBareRailCondReason`: the shape is refused for being in
-      //     a loop, and part 2 of `ControlDetect`'s in-loop scope fence says the
-      //     same words for the same kind of reason.
+      // ---- (a) THE IN-LOOP CARVE-OUT IS RETIRED — bd `test_C_libtooling-wx8g`
+      //      (l4x4.c), 2026-09-14. It stood here as
       //
-      //     ⚠ *** SAY THE COST IN FULL, BECAUSE IT IS TOTAL AND NOT PARTIAL ***
-      //     (l4x4.b round-1 Rule-13 review, finding F-2; bd
-      //     `test_C_libtooling-wx8g`). "The compare twin declines" reads like a
-      //     missing witness; it is in fact the OTHER HALF of the capability
-      //     going out with this one. Because the compare spelling cannot express
-      //     this shape AT ALL — measured on ORACLE, F2 and this tree alike,
-      //     `review_l4x4b_r1_probes` `t5c` — the carve-out closes the ONLY door:
-      //     **"Grover as a ROLLED loop with a `_Bool`-controlled rotation or
-      //     state prep" compiles in NO spelling on ANY binary.** That is a
-      //     defensible increment boundary (the C-1 history above is a real
-      //     reason to make the loop form its own round with its own twin
-      //     matrix), and it is NOT a claim that the shape is unlowerable — it is
-      //     an owner-visible over-decline, filed with exactly that sentence.
-      if (RailCond && Region.InLoop) {
-        declineArm(declAnchor(Region), "control flow inside a loop body");
-        return ArmDisposition::Declined;
-      }
+      //          if (RailCond && Region.InLoop) decline("control flow inside a
+      //                                                  loop body");
+      //
+      //      and it was an owner-scoped increment boundary, not a fence: l4x4.b
+      //      recorded in writing that the shape "is NOT refused for any reason
+      //      intrinsic to [it]", that `flatRegionRollableInLoop` has already
+      //      proved the CFG half, and that R7's (b)/(b′) clauses below "would
+      //      carry unchanged, since both are questions about the ROTATED
+      //      register and neither mentions the condition". Its two stated
+      //      reasons were VERIFICATION reasons, and both are now measured FALSE:
+      //
+      //      REASON 1 — "there is no oracle twin", because the COMPARE spelling
+      //      of the program declines `condition predates a non-diagonal gate`
+      //      (CLAUDE.md row W). That sentence is TRUE and it is about the WRONG
+      //      TWIN. The shipped witness for every piece of in-loop work in this
+      //      tree is ROLLED versus HAND-UNROLLED (`e2e-*-twin-identical`, 34
+      //      gates), never rolled-versus-compare — and the hand-unrolled `_Bool`
+      //      twin is exactly what l4x4.b itself shipped. MEASURED on the frozen
+      //      2026-09-14 ORACLE (`cq-opt` f7b65d8c…, built from 59ac5b7), three
+      //      pairs, plain C at `-O1`, traces byte-compared:
+      //
+      //        `for (k<2) if (b) r = cq_theta(r,.2);`        rolled == unrolled
+      //                                                       (8 trace lines)
+      //        the same with `if (!b)` (Ry additivity)        == (10 lines)
+      //        one bool-controlled Ry + S†/S per trip         == (12 lines)
+      //
+      //      (probes `w_a_carried_bool`, `w_a_neg`, `w_grover_bool` and their
+      //      `_unrolled` twins, `$SES/trackW/probes/`). The third is the
+      //      sentence CLAUDE.md records as compiling in no spelling anywhere.
+      //
+      //      REASON 2 — "it is the C-1 mixture", the loop-INVARIANT condition
+      //      beside a loop-CARRIED rotated register whose leak signature is a
+      //      per-trip condition chain the rolled form never discharges. TRUE of
+      //      a COMPARE or DERIVED condition and VACUOUS for a rail, and the
+      //      asymmetry is the whole argument: **a bare `_Bool` condition MINTS
+      //      NOTHING AND DERIVES NOTHING**. `emitInPlaceRotationRegion` step 1
+      //      hands the register itself to `cqrt_ry_<W>_controlled` as arg-0 and
+      //      steps 3's strip+free are SKIPPED WHOLE (§2.7), so there is no
+      //      ancilla, no `cq_template_*` rail and no `_unc` for the whole-DAG
+      //      spine to place — which is what the C-1 family leaks. The condition
+      //      register itself is left allocated (Rule 6: `Ry(θ)|0⟩ ≠ |0⟩`),
+      //      rolled and unrolled alike, and `markIfRailLocal` exempts it at its
+      //      "accumulating loop-invariant tainted input" clause because
+      //      `invariantRegisterRoots` admits exactly a classical-arg-0
+      //      `cq_theta` dominating the header — which a `_Bool` mint is — on
+      //      BOTH halves of `collapseFlattenedLoopRails`' dispatch.
+      //
+      //      ⚠ THE GROUND OF THE RETIREMENT IS **NOT** "THE CONDITION MINTS
+      //      NOTHING", AND THIS COMMENT SAID SO FOR ONE REVIEW ROUND (corrected
+      //      after round 2, 2026-09-14). That sentence is TRUE — it survived
+      //      every attack rounds 1 and 2 built, ten byte-identical twin pairs
+      //      among them — and IT IS NOT WHAT MAKES THE RETIREMENT SAFE. Two
+      //      measurements settle that:
+      //        * REASON 2 was never the FIRST wall it was taken for. For
+      //          `w2e3_xor_on_rotated.c` (an in-loop rail Ry arm followed by
+      //          `cq_measure(r ^ 5)`) the pre-increment ORACLE declines EARLIER
+      //          than this carve-out ever ran — at `declineStaleRecordOps`, with
+      //          the SAME string and the SAME anchor as this binary. The
+      //          carve-out was a SCOPE BOUNDARY standing in front of fences that
+      //          were already doing the work.
+      //        * The leak it was imagined to hold back is minted by the BODY,
+      //          not by the condition, so NO property of the condition can bound
+      //          it. That is precisely how F-W1-2 got through: a loop-CARRIED
+      //          rail under a bare `_Bool`, granted by (b′), leaking one
+      //          `cq_template_and_i32_hl_unc` + `cqrt_free` per activation while
+      //          "the condition mints nothing" was still true of it.
+      //      THE HONEST GROUND, AND THE ONE TO QUOTE: **THE FENCE IS THE MARKING
+      //      POSTCONDITION, AND THE CONDITION KIND IS IRRELEVANT TO IT.** Every
+      //      in-loop leak the body can mint is refused by
+      //      `declineUnmarkedRolledIterLocal`'s conjunct 2 — asked of EVERY
+      //      R7-loop grant, asking nothing whatever about the condition — and
+      //      the condition-mints-nothing observation is then a REMARK about why
+      //      the `_Bool` shape has little left to refuse, not a fence.
+      //      Stated this way the retirement PREDICTS F-W1-2 (a grant clause with
+      //      no record is a grant with no fence) instead of being falsified by
+      //      it, which is the test a safety ground has to pass. ⚠ And read the
+      //      scope exactly: conjunct 2 covers every **R7-loop** grant, which is
+      //      a STRICT SUBSET of the region-independent leak class (F-W2-3; see
+      //      `TaintSet::RolledLoopRegionGates`).
+      //
+      //      WHAT REPLACES IT: nothing here. The region falls through to R7's
+      //      loop half below, which now has THREE clauses — (b)/(b′) for the
+      //      loop-CARRIED rail and (c) for the ITERATION-LOCAL one — and which
+      //      asks its questions about the rotated register without caring what
+      //      kind of value the condition is, exactly as l4x4.b predicted. A rail
+      //      region in a loop therefore declines with the SAME string it always
+      //      had whenever the rotated register is unproven; what changed is that
+      //      a PROVEN one no longer declines.
       // (b) ONE CONTENT ARM ONLY. A two-arm if/else on a rail needs anti-control
       //     on the `¬b` arm, and l4x4.b's answer to anti-control (Ry ADDITIVITY,
       //     `ry(h,θ); cry(h_b,h,−θ)` — see `emitInPlaceRotationRegion` step 2)
@@ -4627,13 +4884,18 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // `railWireClosure`'s own comment), so R4 would decline on a literal
       // coincidence.
       //
-      // R7's LOOP half below is deliberately NOT skipped: it iterates
-      // `BaseWireOrder`, which is empty here, so `Rollable` stays false and every
-      // in-loop state prep declines `control flow inside a loop body` — the
-      // ITERATION-LOCAL spelling (PRD §14.3 row L-2). The LOOP-CARRIED spelling
-      // (`int r = 0;` outside the loop) never gets here at all: its merge pred
-      // incoming is the loop's header φ, so F1 killed it above as a data mux.
-      // "In-loop state prep" sounds like one thing and is two.
+      // R7's LOOP half below is deliberately NOT skipped, and WHAT IT DOES WITH
+      // AN EMPTY `BaseWireOrder` CHANGED ON 2026-09-14 (bd
+      // `test_C_libtooling-wx8g`). Until then it iterated `BaseWireOrder`, found
+      // nothing, and every in-loop state prep declined `control flow inside a
+      // loop body` — the ITERATION-LOCAL spelling (PRD §14.3 row L-2). Clause
+      // (c) now asks the question this class CAN answer: the rail is minted by
+      // the HOISTED `T` ITSELF, so (c2) is asked with `MintSeed = T` rather than
+      // with `RotBase`, and an in-loop prep whose alloc repeats per activation
+      // lowers ROLLED. The LOOP-CARRIED spelling (`int r = 0;` outside the loop)
+      // still never gets here at all: its merge pred incoming is the loop's
+      // header φ, so F1 killed it above as a data mux. "In-loop state prep"
+      // sounds like one thing and is two; now one of the two lowers.
       if (!StatePrep) {
         railWireClosure(Region.Condition, Taint, WireDir::BackwardOnly, nullptr,
                         nullptr, CondRails);
@@ -4678,12 +4940,22 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //   (b)  some member of `BaseWire` is a PHINode in `L`'s HEADER — i.e. the
       //        rotated base's rail CROSSES the back edge. This is a SCOPING
       //        clause, not a safety one: Inc 3 is the Ry arm on the loop's
-      //        PERSISTENT register. An ITERATION-LOCAL rotated register (minted
-      //        inside the body) is a different capability, and it is measurably
-      //        not twin-identical — its escape makes `markIfRailLocal` refuse
-      //        the marking, so the rolled form leaks the condition chain once per
-      //        trip while the hand-unrolled twin discharges it. A DIFFERENT
-      //        CIRCUIT, which is exactly what the twin matrix exists to catch.
+      //        PERSISTENT register.
+      //        ⚠ AND THE SENTENCE THAT USED TO FOLLOW WAS HALF RIGHT, WHICH IS
+      //        WHY IT IS QUOTED RATHER THAN DELETED (bd `test_C_libtooling-wx8g`,
+      //        2026-09-14). It read: *"An ITERATION-LOCAL rotated register
+      //        (minted inside the body) is a different capability, and it is
+      //        measurably not twin-identical — its ESCAPE makes `markIfRailLocal`
+      //        refuse the marking, so the rolled form leaks the condition chain
+      //        once per trip while the hand-unrolled twin discharges it."* THE
+      //        MECHANISM IS REAL and it is now clause (c3)'s subject, measured on
+      //        a pair differing in one edge (19 rolled vs 27 unrolled trace
+      //        lines, `opt` exit 0 and STRICT stage-2b clean on both — see
+      //        `iterationLocalRollable`). THE SCOPE CLAIM WAS WRONG: the
+      //        divergence needs the ESCAPE, not the iteration-locality, and the
+      //        NON-escaping spelling is byte-identical to its twin. So the
+      //        capability is real, it is clause (c) below, and the fence is the
+      //        escape rather than the shape.
       //
       //   (b') that header φ must be one `collapseFlattenedLoopRails` will
       //        actually CLAIM — its external incoming peels, through in-place
@@ -4736,6 +5008,11 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         GateCalls.insert(Taint.ThetaCalls.begin(), Taint.ThetaCalls.end());
         GateCalls.insert(Taint.PhiCalls.begin(), Taint.PhiCalls.end());
         bool Rollable = false;
+        // WHICH CLAUSE GRANTED IT — one bit, carried into the post-fixpoint
+        // re-ask because the two conjuncts do NOT cover the same entries
+        // (contract on `TaintSet::RolledLoopRegionGates`). `false` = (b)/(b'),
+        // the loop-CARRIED rail; `true` = (c), the iteration-local one.
+        bool GrantIterLocal = false;
         if (LHdr && DT)
           for (Value *B : BaseWireOrder) {
             auto *P = dyn_cast<PHINode>(B);
@@ -4757,10 +5034,52 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
             if (railPhiRootMint(*P, L, GateCalls, Taint, *DT))
               Rollable = true;                              // (b')
           }
+        // (c) — THE ITERATION-LOCAL SPELLING (bd `test_C_libtooling-wx8g`).
+        //      Asked ONLY when (b)/(b') found nothing, and it is the OTHER half
+        //      of the dichotomy rather than a relaxation of this one: (b) proves
+        //      a rail that CROSSES the back edge will be claimed by round 2; (c)
+        //      proves a rail that does NOT cross it is re-minted every trip.
+        //      `iterationLocalRollable` carries the full argument and the
+        //      measured discriminating pair.
+        if (!Rollable && L && LHdr && DT &&
+            iterationLocalRollable(L, LHdr, BaseWireOrder, MergePhi, T,
+                                   StatePrep, RotBase, GateCalls, Taint)) {
+          Rollable = true;
+          GrantIterLocal = true;
+        }
         if (!Rollable) {
           declineArm(declAnchor(Region), "control flow inside a loop body");
           return ArmDisposition::Declined;
         }
+        // ---- THE RECORD HALF (bd `test_C_libtooling-wx8g`; contract in
+        //      `TaintPropagation.h`), ON THE FAR SIDE OF THE DECLINE SO IT
+        //      CANNOT BE ATTACHED TO ONE CLAUSE.
+        //
+        // The R7-loop clauses prove the rolled body emits per activation what
+        // the hand-unrolled twin emits per copy, and that proof has a consumer
+        // in ANOTHER STAGE: `markIfRailLocal`'s iteration-local marking runs
+        // after the flatten at FINAL taint and can refuse — or never be asked —
+        // for reasons this classifier neither owns nor can see. Do not PREDICT
+        // the marking: record the HOISTED GATE and re-ask the postcondition once
+        // the taint is final (`declineUnmarkedRolledIterLocal`, both entry
+        // points, before `lowerRotations`). The `RailCondReads` / bd `eqpx`
+        // tripwire pattern.
+        //
+        // ⚠ IT WAS WRITTEN INSIDE THE CLAUSE-(c) BRANCH UNTIL REVIEW ROUND 1
+        // (finding F-W1-2, 2026-09-14) AND THAT SHIPPED A SILENT MISCOMPILE: a
+        // loop-CARRIED rail region under a bare `_Bool` is granted by (b'), so
+        // it got no record, no re-ask and a stream missing one
+        // `cq_template_and_i32_hl_unc` + `cqrt_free` per activation
+        // (`d3_invariant_read.c`, 30 vs 34 trace lines, ORACLE DECLINE →
+        // SUBJECT ACCEPT). CLAUDE.md's L1: THE RECORD MUST BE AT EVERY GRANT.
+        // Placing it after `if (!Rollable) return` — rather than in each
+        // clause — is what makes that structural: a new clause sets `Rollable`
+        // and falls through here, and the only way to miss the record is to
+        // return early, which is a DECLINE.
+        //
+        // `T` is the `if (CallInst *T = inPlaceRotationArmTheta(…))` init of the
+        // enclosing block and is non-null by construction; asserted by use.
+        Taint.RolledLoopRegionGates.push_back({T, GrantIterLocal});
       }
       // OVER THE RAIL, NOT THE CHAIN (finding J). The scan ranges over EVERY
       // member of `BaseWire`, not over `RotBase` alone: `int mark = cq_phi(r,·)`

@@ -517,6 +517,19 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // cone AT ONCE (`WireWalk::gateIsHarmless` grows its per-activation barriers
   // from the seed set it is handed), while a rail's is asked per rail.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
+  // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
+  // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip
+  // TEMPLATE rails that loop's body mints are discharged by the whole-DAG spine
+  // ONLY inside `taint.IterationLocalBlocks`. `markIfRailLocal` populates that
+  // set after the flatten at FINAL taint and can refuse — or never be asked —
+  // for four reasons detection cannot see. Same placement rule as its two
+  // neighbours: AFTER the round-2 fixpoint (nothing else makes the marking
+  // final), BEFORE `lowerRotations` (which erases the `@cq_theta` the record
+  // names). See `TaintPropagation.h`'s `RolledLoopRegionGates` for the measured
+  // cost of getting this wrong (two entangled which-path rails leaked per
+  // activation, `opt` exit 0 and stage-2b clean).
+  declineUnmarkedRolledIterLocal(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -955,6 +968,19 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (Track A.1; bd test_C_libtooling-9pum) the compare half, mirrored here too —
   // twin-pipeline parity is MANDATORY (WI-1.12); see run() for the slot argument.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
+  // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
+  // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip
+  // TEMPLATE rails that loop's body mints are discharged by the whole-DAG spine
+  // ONLY inside `taint.IterationLocalBlocks`. `markIfRailLocal` populates that
+  // set after the flatten at FINAL taint and can refuse — or never be asked —
+  // for four reasons detection cannot see. Same placement rule as its two
+  // neighbours: AFTER the round-2 fixpoint (nothing else makes the marking
+  // final), BEFORE `lowerRotations` (which erases the `@cq_theta` the record
+  // names). See `TaintPropagation.h`'s `RolledLoopRegionGates` for the measured
+  // cost of getting this wrong (two entangled which-path rails leaked per
+  // activation, `opt` exit 0 and stage-2b clean).
+  declineUnmarkedRolledIterLocal(M, taint);
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after

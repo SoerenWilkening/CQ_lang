@@ -679,6 +679,129 @@ struct TaintSet {
   // with no Case-B loop.
   llvm::SmallPtrSet<const llvm::BasicBlock *, 8> IterationLocalBlocks;
 
+  // ── THE ROLLED IN-LOOP ROTATION-ARM REGIONS (bd `test_C_libtooling-wx8g`) ──
+  //
+  // One entry per control region that `ArmClassify`'s R7-LOOP CLAUSE LET
+  // THROUGH — **every R7-loop clause**, (b)/(b′) and (c) alike — carrying the
+  // HOISTED
+  // arm gate `T` (a `@cq_theta_*` that `emitInPlaceRotationRegion` MOVES into
+  // the region's pred and leaves alive for `lowerRotations`), which names the
+  // pred block and therefore the loop, plus the ONE BIT saying which clause
+  // granted it.
+  //
+  // ⚠ IT COVERS EVERY GRANT BECAUSE COVERING ONLY ONE OF THEM SHIPPED A SILENT
+  // MISCOMPILE (review round 1, finding F-W1-2, 2026-09-14). The record was
+  // first written at the clause-(c) grant alone, on the reading that only an
+  // iteration-local rail could leak. `d3_invariant_read.c` measured that false:
+  // a loop-CARRIED rotated register under a bare-`_Bool` condition is granted by
+  // (b′), so it got NO record and NO re-ask, and it lowered to a stream missing
+  // one `cq_template_and_i32_hl_unc` + `cqrt_free` PER ACTIVATION against its
+  // hand-unrolled twin (30 vs 34 trace lines; ORACLE DECLINE → SUBJECT ACCEPT).
+  // The leak mechanism is pre-existing and arm-class-independent, but the
+  // CUSTOMER was new, which is CLAUDE.md's `1m5p`/`a3z7` formulation exactly:
+  // *"'pre-existing' is true of the defect and FALSE of its population."*
+  // THE RULE THIS ENCODES IS CLAUDE.md's L1: **the record must be at EVERY
+  // R7-LOOP GRANT site** — a second R7-loop grant clause added without a
+  // `push_back` here re-opens the window with NO DIAGNOSTIC ANYWHERE. There is
+  // exactly ONE `push_back` site, on the far side of the `if (!Rollable)
+  // decline;`, so a new R7-loop clause cannot be added without passing
+  // through it.
+  //
+  // ⚠ READ "EVERY GRANT" AS "EVERY **R7-LOOP** GRANT" AND NOT AS "EVERY IN-LOOP
+  // GRANT" — the difference is measurable and it is NOT this increment's to
+  // close (review round 2, finding F-W2-3, 2026-09-14). The leak mechanism
+  // conjunct 2 exists to catch is `markIfRailLocal` REFUSING the marking, and
+  // that refusal is REGION-INDEPENDENT: its "accumulating loop-invariant
+  // tainted input" clause fires with no tainted control flow in the module at
+  // all. Three measured programs leak 2–4 per-trip template rails against their
+  // hand-unrolled twins with no record and no re-ask — an in-loop PHASE region
+  // (8h7d.5) 30 vs 38, an in-loop 4.4 DATA SELECT 44 vs 48, and a loop with NO
+  // tainted control flow whatsoever 16 vs 20 — and all three are BYTE-IDENTICAL
+  // on the pre-increment ORACLE, so they are PRE-EXISTING and outside this
+  // record's population. The R7 slice this container covers is a STRICT SUBSET
+  // of that class; for the R7 slice the leak is now a loud decline, and for the
+  // rest it is still a silent leak. Filed as its own P1 bead (the fix is to
+  // `markIfRailLocal`'s refusal — a leak that should be a decline — not to this
+  // container, which would then have no reason to exist in its present form).
+  //
+  // WHY A RECORD AND NOT A CLASSIFIER CLAUSE — the same argument, one layer
+  // over, as `RailCondReads` above. The R7-loop clauses prove the rolled body
+  // emits per activation what the hand-unrolled twin emits per copy, and that
+  // proof has a CONSUMER IN ANOTHER STAGE: the per-trip TEMPLATE rails the body
+  // mints (a derived condition's `cq_template_{lshr,and,…}`) are discharged by
+  // the whole-DAG spine, and only inside `taint.IterationLocalBlocks` — which
+  // `LoopLowering::markIfRailLocal` populates AFTER the flatten, at FINAL taint,
+  // and which it REFUSES to populate for several reasons the classifier neither
+  // owns nor can see at detection time:
+  //   * `markIfRailLocal` is never CALLED at all when the loop has no root mint
+  //     to hand it (`collapseRailPhisIn` NotClaimed ∧ `invariantRegisterRoots`
+  //     false) — an iteration-local CONDITION as well as an iteration-local
+  //     register is exactly that loop;
+  //   * it returns early on a second, still-standing tainted branch, on a
+  //     tainted-index memop, on a quantum subloop, and on an "accumulating
+  //     loop-invariant tainted input" (THE `d3` ROUTE — measured);
+  //   * and its ESCAPE clause is asked at ROUND-2 taint, while clause (c3) asks
+  //     it at round-1 taint, so a value that only `repropagateControlMerges`
+  //     taints is invisible to the classifier — CLAUDE.md's L1 PREDICATE
+  //     species, verbatim.
+  // MEASURED what the miss costs (2026-09-14, clause (c3) absent): the rolled
+  // form leaked two entangled which-path rails per activation against a
+  // hand-unrolled twin that discharged them — `opt` exit 0, verify-clean and
+  // STRICT stage-2b clean on both, because `free_pairing_check.py` counts
+  // `cqrt_alloc` sites and a template rail has none.
+  //
+  // So the accept is not predicted, it is RE-ASKED: `declineUnmarkedRolledIterLocal`
+  // runs in BOTH entry points immediately after the round-2 fixpoint and before
+  // `lowerRotations`, and declines LOUDLY on either of two conjuncts — clause
+  // (c3) re-asked at FINAL taint, and the MARKING postcondition.
+  //
+  // ⚠ THE TWO CONJUNCTS DO NOT COVER THE SAME ENTRIES, AND THE BIT IS WHY.
+  //   * CONJUNCT 1 (the (c3) escape re-ask) is asked for `IterationLocal`
+  //     entries ONLY, and THE REASON IS ABOUT PREMISES, NOT ABOUT WHAT
+  //     "CARRIED" MEANS.
+  //     ⚠ THE REASON THIS BULLET GAVE FOR ONE REVIEW ROUND IS MEASURABLY FALSE
+  //     (finding F-W2-2, round 2, 2026-09-14). It read: *"(c3) refuses every
+  //     loop-CARRIED shape BY CONSTRUCTION — the carried register is read after
+  //     the loop, which is what 'carried' means."* `w2b_sameloop_mixed.c`
+  //     breaks it: ONE loop carrying BOTH a (b′) grant and a (c) grant ACCEPTS
+  //     (22 trace lines, byte-identical to its hand-unrolled twin, ORACLE
+  //     DECLINE), and accepting REQUIRES (c3) to have held — (c3) is
+  //     `iterationLocalTaintEscape(L, Taint) == nullptr`, a ∀ OVER THE WHOLE
+  //     LOOP and not over one register — while the (b′) carried register is a
+  //     tainted header φ defined in `L` whose only users (the arm's `cq_theta`,
+  //     the merge φ, a `cq_measure`) are all INSIDE `L`, and
+  //     `iterationLocalTaintEscape` has no φ exemption. A loop-carried
+  //     accumulator measured every trip is an ordinary shape. So "carried ⇒
+  //     read outside `L`" is NOT A THEOREM and a future widening must not lean
+  //     on it (CLAUDE.md L7).
+  //     THE TRUE REASON: conjunct 1 re-asks a premise ONLY CLAUSE (c) EVER HAD.
+  //     (c3) is (c)'s own third conjunct, asserted at ROUND-1 taint; conjunct 1
+  //     is that clause re-asked at FINAL taint — the L1 PREDICATE discharge for
+  //     (c) and for nothing else. Clause (b′) never asserted (c3): ITS premise
+  //     is that the rail's header φ will be CLAIMED by the round-2 collapse, and
+  //     that premise has its own round-2 re-ask — the collapse, which declines
+  //     loudly with `kMsgCrossIter` when the φ is not claimable. What survives
+  //     of the old sentence, unfalsified: asking (c3) of a (b)/(b′) entry would
+  //     ALSO decline every shipped drbq Inc-3 in-loop arm, a total over-decline
+  //     of that capability.
+  //   * CONJUNCT 2 (the marking postcondition) is asked for BOTH, gated on
+  //     `bodyHasSpineDischargeCandidate` — which first checks the body holds
+  //     anything the spine would place an `_unc` for at all. A `_Bool`-conditioned
+  //     clause-(c) loop holds nothing of the kind (rotations, one measurement and
+  //     the merge phi the emitter dissolves) and the blunt form declined four
+  //     programs measured BYTE-IDENTICAL to their hand-unrolled twins.
+  //
+  // `WeakTrackingVH` for the same directional reason as `RailCondReads`: a
+  // NULLED entry is SKIPPED, because an erased hoisted gate is no emitted gate
+  // and there is no wrong unitary left to refuse. Entries are appended, never
+  // removed; one loop may appear more than once (both detection rounds, and
+  // several regions in one loop) and each conjunct is asked of it ONCE.
+  struct RolledLoopGrant {
+    llvm::WeakTrackingVH Gate;   // the hoisted arm gate `T`
+    bool IterationLocal;         // true ⇒ clause (c); false ⇒ clause (b)/(b′)
+  };
+  llvm::SmallVector<RolledLoopGrant, 4> RolledLoopRegionGates;
+
   // Issue dtzb — the in-place reversible arithmetic strategy. A recognized
   // loop-carried VALUE rail self-update (`q = q OP c`, OP ∈ {add, xor}, one
   // tainted operand + a CLASSICAL immediate — a reversible bijection of the

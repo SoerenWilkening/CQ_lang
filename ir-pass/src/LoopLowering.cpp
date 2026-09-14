@@ -48,6 +48,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/IR/ValueHandle.h"  // WeakTrackingVH (bd wx8g RolledLoopRegionGates)
 #include "llvm/TargetParser/Triple.h"
 
 #include <optional>
@@ -375,13 +376,40 @@ llvm::CallInst *railPhiRootMint(const llvm::PHINode &P, const llvm::Loop *L,
     }
   if (!PreV)
     return nullptr;
-  Value *Root = peelInPlaceBase(PreV, GateCalls, taint);
-  auto *Mint = dyn_cast<CallInst>(Root);
-  if (!Mint || !GateCalls.count(Mint) ||
-      taint.Tainted.count(Mint->getArgOperand(0)))
+  // bd `test_C_libtooling-wx8g` — the CLEAN-RAIL-MINT test is now
+  // `railChainRootMint` (declared in LoopPlan.h), called here VERBATIM so this
+  // function's disposition is byte-unchanged, and called directly by
+  // `ArmClassify`'s R7-loop clause (c) for an ITERATION-LOCAL rail, which has no
+  // header phi for this function to be asked about. What stays HERE is the
+  // POSITION half — the mint dominates the header, i.e. the rail is minted ONCE
+  // and crosses the back edge. Clause (c) asks the complementary
+  // `L->contains(Mint->getParent())`. Two positions, one mint predicate.
+  CallInst *Mint = railChainRootMint(PreV, GateCalls, taint);
+  if (!Mint)
     return nullptr;  // not a clean rail mint (a derived out-of-place base).
   if (!DT.dominates(Mint, L->getHeader()))
     return nullptr;
+  return Mint;
+}
+
+// bd `test_C_libtooling-wx8g` — contract in LoopPlan.h. The clean-rail-mint test
+// lifted out of `railPhiRootMint` above. ⚠ TWO defensive conjuncts are NEW and
+// both are monotone toward DECLINE, so no accepted module can move: the null
+// guard (the direct caller passes a `RotBase` that may be null for a state prep
+// whose base is the seed `Constant`) and `arg_size() < 1` (unreachable for a
+// `cq_theta_*`/`cq_phi_*` — `TaintPropagation`'s collection-time prototype
+// validation rejects a 0-arg one — but `getArgOperand(0)` on it would be UB,
+// and a Release build has no assertion to catch that).
+llvm::CallInst *railChainRootMint(llvm::Value *V,
+                                  const SmallPtrSetImpl<CallInst *> &GateCalls,
+                                  const TaintSet &taint) {
+  if (!V)
+    return nullptr;
+  Value *Root = peelInPlaceBase(V, GateCalls, taint);
+  auto *Mint = dyn_cast<CallInst>(Root);
+  if (!Mint || !GateCalls.count(Mint) || Mint->arg_size() < 1 ||
+      taint.Tainted.count(Mint->getArgOperand(0)))
+    return nullptr;  // not a clean rail mint (a derived out-of-place base).
   return Mint;
 }
 
@@ -3675,6 +3703,428 @@ void collapseFlattenedLoopRails(
         // non-zero, and granting an in-body discharge permission for a module
         // that is never emitted is bookkeeping on a corpse (bd 8h7d.5 round 1).
         markIfRailLocal(L, taint, LI, GateCalls, Roots);
+      }
+    }
+  }
+}
+
+// bd `test_C_libtooling-wx8g` — R7-loop CLAUSE (c3). Contract in LoopPlan.h.
+// Pure analysis; mutates nothing (Rule 9). `L->blocks()` deliberately INCLUDES
+// strictly-deeper subloop blocks — a subloop's temp escaping `L` is the same
+// hazard and refusing it is the safe direction.
+Instruction *iterationLocalTaintEscape(const Loop *L, const TaintSet &taint) {
+  if (!L)
+    return nullptr;
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      if (!taint.Tainted.count(&I))
+        continue;
+      for (User *U : I.users()) {
+        auto *UI = dyn_cast<Instruction>(U);
+        if (!UI)
+          return &I;  // a constant expression has no block — no proof.
+        if (!L->contains(UI->getParent()))
+          return &I;
+      }
+    }
+  return nullptr;
+}
+
+// bd `test_C_libtooling-wx8g` — DOES `L`'s BODY CONTAIN ANYTHING THE WHOLE-DAG
+// SPINE WOULD HAVE TO DISCHARGE IN-BODY?
+//
+// This is conjunct 2's PRECONDITION, and it exists because the marking
+// postcondition is only meaningful when there is something to mark FOR.
+// `taint.IterationLocalBlocks` is consumed by `FreePoint` + `Uncomputation` to
+// place a per-iteration recovery + `cqrt_free` inside the body; with no
+// candidate, an unmarked loop and a marked one emit the SAME stream, and
+// `markIfRailLocal` says so itself by bailing `!AnyLocal` ("a pure-rail loop (no
+// temps) — nothing for the spine to place").
+//
+// MEASURED, and it is why this predicate exists rather than the blunt form: the
+// four `_Bool` customers of clause (c) have NO candidate at all (their bodies
+// hold only rotations, a measurement and the merge phi the emitter dissolves),
+// and `invariantRegisterRoots` returns false for them for a reason that is
+// invisible unless you look at the SLOT — at `collapseFlattenedLoopRails`' call
+// site, which runs BEFORE `lowerRotations`, a RAIL condition is not yet an
+// OPERAND of anything in the body. `emitInPlaceRotationRegion` records the
+// control in `taint.ControlledRotations` (a MAP) and the flatten erased the
+// `br`, so the `_Bool`'s only in-loop use has gone and its only remaining users
+// are outside. `Cands` is therefore EMPTY, `invariantRegisterRoots` returns
+// false at its "no invariant register read" early-out, `markIfRailLocal` is
+// never called — and the blunt postcondition declined four programs that are
+// byte-identical to their hand-unrolled twins.
+//
+// THE EXCLUSION LIST IS EXACT AND ITS DIRECTION IS THE SAFETY ARGUMENT. A
+// candidate is any tainted instruction in `L`'s blocks EXCEPT the five kinds
+// that mint no `cq_template_*` rail for the spine to reverse:
+//   * a `@cq_theta_*` call — `lowerRotations` emits `cqrt_alloc_<W>`+`cqrt_ry_<W>`
+//     or an in-place `cqrt_ry_<W>`; an alloc-minted rail is excluded from the M-B
+//     interior partition OUTRIGHT by `ChainWalk::isInteriorTerminalHandle` clause
+//     (I1), and a rail carrying a controlled rotation is FROZEN;
+//   * a `@cq_phi_*` call — register-free (Rule 3): it allocates nothing;
+//   * a `@cq_measure_*` call — the sole sink; its result is not tainted;
+//   * a `PHINode` — no gate, no rail;
+//   * a member of `taint.InPlaceRailOps` — the M-C / dtzb IN-PLACE value rail
+//     self-update, added by review round 1 (finding F-W1-3, 2026-09-14) and
+//     RE-DERIVED AGAINST `lowerOps` AS THE TRIGGER BELOW DEMANDS, not against
+//     this comment. `lowerOps`' Phase-2 dispatch
+//     (`OpcodeLowering.cpp`: `taint.InPlaceRailOps.count(BO) ||
+//     InPlaceReassign.count(BO)`) routes a member to `rewriteInPlaceValueRail`,
+//     which emits `cqrt_{addc,xorc}_<W>(handle, imm)` — a MUTATION OF THE
+//     EXISTING HANDLE. No `cqrt_alloc`, no `cq_template_*` rail, nothing for the
+//     spine to reverse or free. ⚠ AND THE OTHER LIMB OF THE DISJUNCTION IS WHY
+//     THIS IS THE COMMITTED RECORD AND NOT A SECOND SPELLING (Rule 14): the
+//     record carries the PROVEN OPERAND INDEX (`taint.InPlaceRailIdx`) precisely
+//     so no consumer re-derives the predicate, and the drbq Inc-3 (b′) defect is
+//     the counter-example of what re-deriving costs.
+//     THE DISPOSITION IS TOTAL — that is what makes the exclusion sound rather
+//     than optimistic. A member whose marking went stale is NOT silently lowered
+//     out of place: `lowerOps`' two tripwires re-ask it under FINAL taint
+//     (`diagnosePreLoopCommitStale` for W4's `PreLoopCommittedInPlaceOps`,
+//     `diagnoseRailOpStale` + G2 for W1-W3) and DECLINE LOUDLY — *"NEVER A
+//     SILENT FALLBACK TO OUT-OF-PLACE … Rule 1 — no third path"*, in that site's
+//     own words. So a member either mints nothing or the module never lowers.
+//     ⚠ THE SET IS FINAL HERE, BUT NOT FOR THE REASON THIS COMMENT GAVE FOR
+//     ONE REVIEW ROUND — the old wording ("its only `erase` is
+//     `invariantRegisterRoots`' rollback, INSIDE `lowerLoops`, which runs
+//     before this stage") is MEASURABLY FALSE ON BOTH HALVES (review round 2,
+//     finding F-W2-1, 2026-09-14). TWO of `markInPlaceRailOp`'s four call sites
+//     and the one `erase` are reached from `collapseFlattenedLoopRails`, NOT
+//     from `lowerLoops`:
+//         `collapseRailPhisIn`                       (:2747)
+//         `commitOutOfLoopInPlaceOps`                (:3152, via
+//                                                     `invariantRegisterRootsImpl`)
+//         `invariantRegisterRoots`' rollback `erase` (:3479)
+//     and `collapseFlattenedLoopRails` runs at ROUND 1 (`CQLoweringPass.cpp:473`)
+//     AND AGAIN AS THE LAST STATEMENT of `repropagateControlMerges`
+//     (`TaintPropagation.cpp:1816`) — which is its ONLY call in the second entry
+//     point. So a writer "after `lowerLoops`" ALREADY EXISTS at HEAD, twice, one
+//     of them at ROUND 2; a trigger phrased against `lowerLoops` reads as
+//     UNARMED when it is already armed, which is CLAUDE.md L8 inverted.
+//     WHAT IS TRUE, and it is all the exclusion needs: the LAST writer is that
+//     round-2 `collapseFlattenedLoopRails`, and `declineUnmarkedRolledIterLocal`
+//     — this predicate's ONLY caller — runs THREE STATEMENTS later in BOTH entry
+//     points (`repropagateControlMerges` → `reverifyRailCondReads` →
+//     `reverifyCmpCondReads` → here: `CQLoweringPass.cpp:489/510/519/532` and
+//     `:961/967/970/983`). THE MARGIN IS THREE STATEMENTS, NOT A STAGE.
+//     ⚠ RETIREMENT TRIGGER, RE-AIMED AT THAT MARGIN: a `markInPlaceRailOp` or
+//     `InPlaceRailOps.erase` site added ANYWHERE BETWEEN the round-2
+//     `collapseFlattenedLoopRails` and `declineUnmarkedRolledIterLocal`, or
+//     either of those two reordered past the other, makes this read a set that
+//     is still moving.
+//     MEASURED, and it is load-bearing rather than a nicety: with conjunct 2
+//     extended to (b′) grants by F-W1-2, `control_inplace_ry_inloop_offset.ll` —
+//     a SHIPPED drbq Inc-3 accept — went red, and the debug dump showed its loop
+//     holds exactly ONE candidate, `%qn = add i32 %q, 3`, `InPlaceRailOps` = 1.
+//     This exclusion is what keeps that accept, and it is the same fact the
+//     fixture's own `CHECK: call void @cqrt_addc_i32` has always pinned.
+// EVERYTHING else tainted (arithmetic, casts, compares, selects) is lowered by
+// `lowerOps` to a `cq_template_*` rail whose `_unc` + free the spine must place,
+// so it COUNTS. Emitted `cqrt_*` / `cq_template_*` calls are never in
+// `taint.Tainted` (they are minted after propagation) and so cannot mask a real
+// candidate. The region's OWN condition compare is not on the list and does not
+// need to be: `emitInPlaceRotationRegion` mints the flag from it and ERASES it,
+// so by this stage it is not in `L`'s blocks at all (measured on the same dump —
+// `offset.ll`'s `%c = icmp eq i32 %q, 5` is simply gone).
+// ⚠ RETIREMENT TRIGGER: adding a SIXTH kind to this list is adding a claim that
+// it mints nothing — re-derive it against `lowerOps`, not against this comment.
+//
+// ⚠ WHAT THIS PREDICATE STILL OVER-COUNTS, MEASURED RATHER THAN GUESSED, so the
+// next reader does not re-chase it (review round 1 proposed three shapes; two of
+// them are NOT over-declines and the measurement is the reason):
+//   * `od4` — a template rail whose ONLY consumer is a `cq_measure` (`cq_measure(r & 3)`).
+//     A measured rail is never uncomputed and never freed, so the marking is
+//     irrelevant. With conjunct 2 forced off, the rolled stream is BYTE-IDENTICAL
+//     to the hand-unrolled twin at 16 = 16 lines. A GENUINE over-decline; it needs
+//     its own predicate ("is every consumer of this rail a measurement?") and is
+//     FILED, not guessed at here.
+//   * `od2`/`od3` — `cq_measure(r + 1)` and `r ^= 3` on an ITERATION-LOCAL rail.
+//     The review read these as over-declines from their TWINS' streams. They are
+//     NOT: the twin is straight-line, so M-C fires and emits `cqrt_addc_i32` /
+//     `cqrt_xorc_i32` in place; the ROLLED site is inside a natural loop, where
+//     M-C's G5 refuses OUTRIGHT and no `lowerLoops` writer claims a rail with no
+//     header phi — so `InPlaceRailOps` = 0 (measured) and `lowerOps` mints a
+//     FRESH `cq_template_{add,xor}_i32_hl` rail per trip that nothing discharges.
+//     With conjunct 2 forced off, rolled and twin DIVERGE (`cq_template_add_i32_hl(h1,1)
+//     -> h2` vs `cqrt_addc_i32(h1,1)`, twice). The decline is CORRECT and this
+//     exclusion deliberately does not reach them: a value not in the record is a
+//     value the record does not vouch for.
+static bool bodyHasSpineDischargeCandidate(const Loop *L,
+                                          const TaintSet &taint) {
+  for (BasicBlock *BB : L->blocks())
+    for (Instruction &I : *BB) {
+      if (!taint.Tainted.count(&I))
+        continue;
+      if (isa<PHINode>(I))
+        continue;
+      if (const auto *CI = dyn_cast<CallInst>(&I)) {
+        const Function *F = CI->getCalledFunction();
+        if (F && (F->getName().starts_with("cq_theta_") ||
+                  F->getName().starts_with("cq_phi_") ||
+                  F->getName().starts_with("cq_measure_")))
+          continue;
+      }
+      // The M-C / dtzb IN-PLACE value rail self-update, asked by CALLING the
+      // committed record rather than by re-deriving the shape (Rule 14). See the
+      // header for the `lowerOps` re-derivation and for why the disposition is
+      // total.
+      //
+      // ⚠ THE `isa<BinaryOperator>` CONJUNCT IS A LIFETIME FENCE, NOT A TYPE
+      // TIDY-UP, and it is BYTE-NEUTRAL for every genuine member (review round
+      // 2, finding F-W2-4, 2026-09-14). `taint.InPlaceRailOps` is a
+      // `SmallPtrSet<Instruction *>` whose only removal is
+      // `invariantRegisterRoots`' rollback: it is NEVER scrubbed when an
+      // instruction is erased, and this consumer uses MEMBERSHIP TO SUPPRESS A
+      // SAFETY CHECK — the ACCEPT direction, which is F-W1-1's shape one
+      // container over (there the dangling key was a `Loop *`). A recycled
+      // `Instruction *` would silently exclude a REAL discharge candidate.
+      // `markInPlaceRailOp` takes a `BinaryOperator *` (LoopLowering.cpp:192) at
+      // all four of its call sites, so EVERY genuine member is a
+      // `BinaryOperator`: a membership hit on anything else can ONLY be a
+      // recycled address, and refusing it costs nothing and closes the half of
+      // the hazard `lowerOps` does not cover.
+      // THE OTHER HALF — a recycled address landing on a live tainted
+      // `BinaryOperator` — is covered by the disposition the exclusion already
+      // rests on, and it is TOTAL exactly as the header says: `lowerOps` re-asks
+      // EVERY `BinaryOperator` member under FINAL taint — (1b)
+      // `classifyInPlaceReassignment` for a `PreLoopCommittedInPlaceOps` member,
+      // the eqpx tripwire (`inPlaceValueRailOperand` + the `InPlaceRailIdx`
+      // agreement) for every other — and either DECLINES LOUDLY or lowers the op
+      // in place, which mints no rail for the spine to discharge. So the
+      // exclusion is right whichever way that re-ask goes.
+      // ⚠ RETIREMENT TRIGGER: if `markInPlaceRailOp` ever takes a wider type
+      // than `BinaryOperator *`, this conjunct silently starts excluding
+      // genuine members' siblings — re-derive it against the marker's signature,
+      // not against this comment. And if `lowerOps`' two tripwires ever stop
+      // covering every `BinaryOperator` member, the second half of the argument
+      // goes with them and this set needs a real scrub (`WeakTrackingVH`, or an
+      // erase-site scrub) instead.
+      if (isa<BinaryOperator>(&I) &&
+          taint.InPlaceRailOps.count(const_cast<Instruction *>(&I)))
+        continue;
+      return true;
+    }
+  return false;
+}
+
+// bd `test_C_libtooling-wx8g` — THE RE-ASK HALF of the R7-LOOP CLAUSES, ALL OF
+// THEM. Contract in LoopPlan.h; the full L1 argument and the per-entry clause
+// bit on `TaintSet::RolledLoopRegionGates`.
+//
+// PURE CHECK. It rebuilds DT/LI on the POST-FLATTEN CFG (Rule 11/9 — the
+// detection trees are long invalid), looks up the loop each recorded HOISTED
+// GATE now sits in, and requires every one of that loop's OWN blocks to be in
+// `taint.IterationLocalBlocks`. Anything else is a LOUD decline with the string
+// the shape has always had; there is no silent fallback and nothing is marked,
+// erased or rewritten here (Rule 1).
+//
+// THE FOUR WAYS IT FIRES, all measured or enumerated at LoopPlan.h:
+//   * `markIfRailLocal` was never CALLED — the loop has no root mint to hand it
+//     (`collapseRailPhisIn` NotClaimed and `invariantRegisterRoots` false), which
+//     is exactly a loop whose CONDITION is iteration-local too;
+//   * it was called and returned early (a second still-standing tainted branch,
+//     a tainted-index memop, a quantum subloop, an accumulating loop-invariant
+//     tainted input, an unclaimed tainted header phi);
+//   * its ESCAPE clause refused at FINAL taint where clause (c3) passed at
+//     round-1 taint (the L1 PREDICATE species);
+//   * the gate no longer sits in any loop at all — no loop, no proof.
+// ⚠ `!AnyLocal` IS A FIFTH WAY, and pretending otherwise cost four correct
+// programs (measured — see `bodyHasSpineDischargeCandidate`). `markIfRailLocal`
+// bails without marking on a loop with no iteration-local TEMP, and so does the
+// dispatch that never calls it; in both cases an unmarked loop and a marked one
+// emit the SAME stream. Conjunct 2 is therefore asked ONLY when the body has a
+// spine-discharge candidate, which is the precondition that separates "unmarked
+// and it does not matter" from "unmarked and the per-trip rails will leak".
+//
+// A NULLED handle is SKIPPED (an erased hoisted gate is no emitted gate — the
+// `RailCondReads` direction), and each conjunct is asked of one loop ONCE
+// however many regions recorded it — in TWO separate sets, because the
+// conjuncts cover different entries and one shared set lets the cheaper entry
+// suppress the stricter one's check.
+void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
+  if (taint.RolledLoopRegionGates.empty())
+    return;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Do the per-function work only if some record lives here — rebuilding
+    // DT/LI is not free and most functions have no record.
+    bool Any = false;
+    for (const TaintSet::RolledLoopGrant &G : taint.RolledLoopRegionGates)
+      if (auto *I = dyn_cast_or_null<Instruction>(G.Gate))
+        if (I->getParent() && I->getFunction() == &F) {
+          Any = true;
+          break;
+        }
+    if (!Any)
+      continue;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    // ⚠ DECLARED HERE, AND KEYED ON THE LOOP HEADER — BOTH HALVES MATTER, AND
+    // THE PREVIOUS SPELLING (a module-scoped `SmallPtrSet<const Loop *>`) WAS A
+    // DANGLING POINTER THAT SHIPPED A SILENT MISCOMPILE (review round 1,
+    // finding F-W1-1, 2026-09-14). `LoopInfo` OWNS its `Loop` objects and
+    // destroys them at the end of this iteration; a set of `const Loop *` that
+    // outlives it holds freed pointers, the next function's `LoopInfo` re-uses
+    // the same allocation, and `insert(L).second` then returns FALSE FOR A
+    // DIFFERENT LOOP IN A DIFFERENT FUNCTION — skipping the whole re-ask.
+    // MEASURED on two ordinary kernels in one translation unit with no
+    // attributes (`b6_noattr.c`): the second kernel's per-trip
+    // `cq_template_and_i32_hl` rail was minted twice and uncomputed ZERO times,
+    // `opt` exit 0, verify-clean, stage-2b `0 violation(s)`.
+    // A `BasicBlock *` lives as long as the module, so the key is stable even
+    // if someone later hoists these declarations again; the per-function scope
+    // is the primary fix and the header key is the defence in depth, in the
+    // style of the two `defence in depth` notes in `ArmClassify`'s R7 block.
+    // ⚠ TWO SETS, NOT ONE, AND THAT IS NOT TIDINESS: the conjuncts cover
+    // DIFFERENT entries (conjunct 1 only for clause-(c) grants), so a single
+    // "already diagnosed this loop" set lets a (b') entry that passed conjunct 2
+    // suppress the (c) entry's conjunct 1 — the SAME suppression bug one level
+    // down. Each conjunct dedups itself.
+    SmallPtrSet<const BasicBlock *, 4> AskedEscape;   // conjunct 1, per loop
+    SmallPtrSet<const BasicBlock *, 4> AskedMarking;  // conjunct 2, per loop
+    for (const TaintSet::RolledLoopGrant &G : taint.RolledLoopRegionGates) {
+      auto *I = dyn_cast_or_null<Instruction>(G.Gate);
+      if (!I || !I->getParent() || I->getFunction() != &F)
+        continue;  // erased, or another function's record.
+      Loop *L = LI.getLoopFor(I->getParent());
+      if (!L) {
+        diagnoseUnderControl(I, "control flow inside a loop body");
+        return;  // `LLVMContext::diagnose` exits on the first DS_Error anyway.
+      }
+      const BasicBlock *Hdr = L->getHeader();
+      // CONJUNCT 1 — clause (c3) AT FINAL TAINT, FOR CLAUSE-(c) GRANTS ONLY.
+      // `repropagateControlMerges` can taint a value that was classical when
+      // `classifyArms` asked, and `markIfRailLocal`'s marking is ADDITIVE and
+      // never withdrawn, so a round-1 grant would otherwise stand over a round-2
+      // escape. Asked by calling the SAME body clause (c3) called (Rule 14).
+      //
+      // ⚠ NOT ASKED OF A (b)/(b') ENTRY, AND THE REASON IS ABOUT PREMISES, NOT
+      // ABOUT WHAT "CARRIED" MEANS.
+      // THE REASON THIS COMMENT GAVE FOR ONE REVIEW ROUND WAS MEASURABLY FALSE
+      // (finding F-W2-2, round 2, 2026-09-14). It read: *"(c3) refuses when
+      // anything tainted defined in `L` is read outside `L`, and a loop-CARRIED
+      // rotated register is read outside `L` — that is what 'carried' means."*
+      // `w2b_sameloop_mixed.c` breaks it: ONE loop carrying BOTH a (b') grant
+      // (a carried register rotated in place under a loop-invariant `_Bool`) and
+      // a (c) grant (an iteration-local register under a per-trip `_Bool`).
+      // It ACCEPTS — 22 trace lines, BYTE-IDENTICAL to its hand-unrolled twin,
+      // ORACLE DECLINE — and accepting REQUIRES (c3) to have held, because (c3)
+      // is `iterationLocalTaintEscape(L, Taint) == nullptr`: a ∀ OVER THE WHOLE
+      // LOOP, not over one register. Meanwhile the (b') carried register is a
+      // tainted header φ defined in `L` whose only users (the arm's `cq_theta`,
+      // the merge φ, a `cq_measure`) are ALL INSIDE `L`, and
+      // `iterationLocalTaintEscape` has no φ exemption. A loop-carried
+      // accumulator measured every trip is an ordinary shape, not a contrivance.
+      // So "carried ⇒ read outside `L`" is NOT A THEOREM and must not be leaned
+      // on by a future widening (CLAUDE.md L7: a wrong reason that happens to
+      // reach a right conclusion is exactly the shape that hardens into a rule).
+      //
+      // THE TRUE REASON — conjunct 1 re-asks a premise that ONLY CLAUSE (c)
+      // EVER HAD. (c3) is clause (c)'s own third conjunct, asserted by the
+      // classifier at ROUND-1 taint; this is that same clause re-asked at FINAL
+      // taint, i.e. the L1 PREDICATE discharge for (c) and for nothing else.
+      // Clause (b') never asserted (c3). ITS premise is that the rail's header φ
+      // will be CLAIMED by the round-2 collapse — and that premise has its own
+      // round-2 re-ask, namely the collapse itself, which declines loudly with
+      // `kMsgCrossIter` when the φ is not claimable. Asking (c)'s premise of a
+      // (b') entry would be asking a question (b') never answered.
+      // The SECOND half of the old sentence is NOT falsified and is kept: asking
+      // it there would also decline every shipped drbq Inc-3 in-loop arm — in
+      // every (b') shape probed across review rounds 1 and 2 (`w2c_inplace_cmp`,
+      // `control_inplace_ry_inloop_offset.ll`'s C analogue, `d1`) the carried
+      // register IS read after the loop.
+      //
+      // Anchored at the ESCAPING VALUE, not at the hoisted gate: its `!dbg` is
+      // the source line that reads a per-trip register outside the loop, which
+      // is the line the user has to change.
+      //
+      // ⚠ WITH A FALLBACK, AND THE REASON IS A MEASURED CLASS OF DEFECT, not
+      // defensiveness: a diagnostic that loses its `!dbg` reports
+      // `<unknown>:0:0` and is INVISIBLE to every gate this project runs except
+      // a full-stderr hash — one shipped past a green 1946-fixture lit run, a
+      // 0-MISSED injection matrix and a byte-identical 288-cell family (Track P,
+      // 2026-09-14). `Esc` is whatever `iterationLocalTaintEscape` found first,
+      // and the pass MANUFACTURES tainted values that carry no `!dbg` at all
+      // (`MergePhiPeel`'s compare clones, `AngleSelectEmit`'s twin rotation). The
+      // hoisted gate `I` is always a SOURCE `@cq_theta` and always has one, so it
+      // is the anchor of last resort. Never silently emit the less-located of the
+      // two.
+      // ⚠ AND THE NULL TEST THAT USED TO STAND HERE (`Esc->getDebugLoc() ? …`)
+      // WAS HALF A FIX: a `!dbg` whose LINE IS 0 is non-null and still prints
+      // `file:0:0` (review round 2, F-W2-5). `anchorIsLocated` is the ONE
+      // spelling of that question (`ControlPlan.h`, beside
+      // `diagnoseUnderControl`), shared with `declAnchor` so the two cannot
+      // drift.
+      if (G.IterationLocal && AskedEscape.insert(Hdr).second)
+        if (Instruction *Esc = iterationLocalTaintEscape(L, taint)) {
+          diagnoseUnderControl(anchorIsLocated(Esc) ? Esc : I,
+                               "control flow inside a loop body");
+          return;
+        }
+      // CONJUNCT 2 — the MARKING postcondition, asked of EVERY grant (finding
+      // F-W1-2: a (b') grant leaks exactly the same per-trip rail a (c) grant
+      // does, and the leak does not care which clause let the region through),
+      // and asked ONLY when the body has something for the spine to discharge
+      // (see `bodyHasSpineDischargeCandidate` for the measured reason, and for
+      // why its excluded kinds are exact).
+      //
+      // ⚠ `taint.IterationLocalBlocks` IS A RAW `BasicBlock *` SET THAT NOTHING
+      // EVER SCRUBS (`grep -rn 'IterationLocalBlocks\.\(erase\|clear\)'` finds
+      // nothing) AND THIS READ IS IN THE ACCEPT DIRECTION — a stale pointer that
+      // matched a live block would keep `Marked` true for a block never marked,
+      // which is F-W1-1's shape one container over. It is asked and answered
+      // here rather than assumed (review round 2, finding F-W2-4, 2026-09-14).
+      //
+      // WHY IT IS SAFE AT THIS SITE, MEASURED AND NOT ARGUED FROM HABIT: a false
+      // positive needs a LIVE `BasicBlock` to sit at the address of an ERASED
+      // one, i.e. a BasicBlock ALLOCATED between the marking and this read.
+      // `RegionFlatten` does erase blocks between them (round 1 and round 2) —
+      // but NOTHING IN THE PASS CREATES ONE. An exhaustive scan of the
+      // block-creating APIs over `ir-pass/src` + `ir-pass/include` —
+      // `BasicBlock::Create`, `splitBasicBlock`, `SplitBlock`, `SplitEdge`,
+      // `SplitBlockPredecessors`, `SplitCriticalEdge`, `CloneBasicBlock`,
+      // `CloneFunctionInto`, `InlineFunction`, `UnrollLoop`, `simplifyLoop`,
+      // `formLCSSA` — finds exactly four owners, and every one of them is
+      // OUTSIDE the window in BOTH entry points:
+      //   `LoopUnrollPrepass` (`UnrollLoop`/`simplifyLoop`/`formLCSSA`) runs
+      //       BEFORE `lowerLoops`, i.e. before the first marking;
+      //   `Specialization` (`BasicBlock::Create`, `CloneFunctionInto`, reached
+      //       only from `specialize`) and `BreakReversePlay`
+      //       (`splitBasicBlock` + `BasicBlock::Create`, from
+      //       `lowerBreakReversePlay`) both run AFTER this stage
+      //       (`CQLoweringPass.cpp:654`/`:666` and `:1010`/`:1016` vs `:532`
+      //       and `:983`).
+      // An address freed here can therefore only be re-occupied by a NON-block
+      // allocation, which `L->blocks()` never yields. No scrub is needed and a
+      // `WeakTrackingVH` would not even apply (it tracks `Value`s, and a
+      // `BasicBlock` erase does not null one held in a `SmallPtrSet` key).
+      // ⚠ RETIREMENT TRIGGER, and it is a SHORT list to re-check: the day any
+      // block-creating stage is moved (or added) between `lowerLoops` and
+      // `declineUnmarkedRolledIterLocal` in EITHER entry point, this read needs
+      // a real scrub at the erase sites in `RegionFlatten.cpp`.
+      // ⚠ NOT A CLEAN BILL FOR THE SET ITSELF: its OTHER consumers, `FreePoint`
+      // and `Uncomputation`, run at `uncompute` — AFTER `lowerBreakReversePlay`
+      // creates blocks — and read it in the same relaxing direction ("a block
+      // NOT in this set keeps both guards"). That exposure is PRE-EXISTING, is
+      // not this stage's, and is filed rather than silently inherited.
+      if (!AskedMarking.insert(Hdr).second)
+        continue;
+      if (!bodyHasSpineDischargeCandidate(L, taint))
+        continue;
+      bool Marked = true;
+      for (BasicBlock *BB : L->blocks()) {
+        if (LI.getLoopFor(BB) != L)
+          continue;  // a strictly-deeper subloop's block — not `L`'s to mark.
+        if (!taint.IterationLocalBlocks.count(BB)) {
+          Marked = false;
+          break;
+        }
+      }
+      if (!Marked) {
+        diagnoseUnderControl(I, "control flow inside a loop body");
+        return;
       }
     }
   }

@@ -607,6 +607,29 @@ struct ControlPlan {
 // silent pass-through of quantum control is the only unforgivable bug.
 void diagnoseUnderControl(llvm::Instruction *Where, llvm::StringRef What);
 
+// Does `I` carry a `!dbg` that will actually PRINT as a source location?
+// THE ONE SPELLING of that question (Rule 14) — `declAnchor` (ArmClassify) and
+// the R7-loop re-ask's escape anchor (LoopLowering) both call it, so the two
+// cannot drift.
+//
+// ⚠ TWO FAILURE FORMS, AND A NULL TEST ALONE FIXES ONLY HALF THE CLASS —
+// measured, not defensive (bd `test_C_libtooling-wx8g` review round 2, finding
+// F-W2-5, 2026-09-14):
+//   * NO `!dbg` AT ALL. `-O1` LICM DROPS the debug location of every non-call
+//     instruction it hoists into a preheader, which is exactly how a
+//     loop-invariant compare reaches a region classifier.
+//   * A `!dbg` WHOSE LINE IS 0. `clang -O1` stamps `!DILocation(line: 0, …)` on
+//     merge `phi`s and on the scopes of promoted locals — the "no single source
+//     line" location — and `DiagnosticInfoUnsupported` renders it as `file:0:0`,
+//     no more actionable than `<unknown>:0:0`.
+// The failure is invisible to every gate this project runs: no hand-written
+// `.ll` fixture carries debug info at a decline site, so an anchorless
+// diagnostic survives a fully green `ir-pass-lit` and is visible only by
+// compiling a `-g` `.c` probe and reading stderr. Rule 1 wants the diagnostic
+// SOURCE-LOCATED; an anchorless one is a Rule-1 regression even when the
+// accept/decline verdict is right.
+bool anchorIsLocated(const llvm::Instruction *I);
+
 // Pure-analysis detection (swap-route 4.1 IMPLEMENTATION §0/§3). For each
 // tainted-condition `br i1`, recognize the §0 clean diamond / if-else shape by
 // SSA-value identity (Rule 9 — before any mutation), classify each arm
