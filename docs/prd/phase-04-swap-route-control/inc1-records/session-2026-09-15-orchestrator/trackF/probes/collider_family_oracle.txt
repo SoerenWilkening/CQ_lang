@@ -1,0 +1,17 @@
+control_inplace_ry_reject_stateprep_merge_edge_sideways.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_offwire_sideways_min.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_offwire_sideways_min.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_add.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_ashr.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_lshr.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_or.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_sub.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_range_forward_xor.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_sideways_offset.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_sideways_sdiv.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_step_cap_over.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_unevaluable_pinned_operand.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_reject_stateprep_unfoldable_curated_call.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_inplace_ry_stateprep_step_cap_under.ll | ACCEPT exit=0 |
+control_peel_reject_fp_stateprep.ll | DECLINE exit=1 | cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+control_swap_inloop_offwire_theta.ll | ACCEPT exit=0 |

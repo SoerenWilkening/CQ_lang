@@ -64,29 +64,42 @@
 ; ⚠ THE LIVE OBLIGATION ON THIS FILE IS UNCHANGED: **if its string changes to
 ; anything other than F2's, the narrowing has been lost, not widened.**
 ;
-; ⚠ **THIS FILE PINS THE CYCLIC HALF ONLY. THE SHIPPED PREDICATE IS BROADER THAN
-; THIS MODULE** (round-2 Rule-13 review, F-F2-2). `!DT.dominates(MergeBB, …)`
-; also drops a phi in a FULLY ACYCLIC CFG whose block is merely not dominated by
-; `MergeBB` — a classical branch that bypasses the region and re-joins after it
-; needs no cycle at all, and is MEASURED as a mover between the un-narrowed
-; binary (`147cb3d6…`) and the narrowed one (`96fdd3a9…`) on
-; `trackF/fix_r2_probes/r20_acyclic_nondominated_phi.ll`, which contains no loop
-; anywhere. Those acyclic members WERE licensed exclusions, so that half is an
-; OVER-DECLINE in the safe direction, not a correctness repair. ⚠ X5 (2026-09-14c)
-; goes further: the CYCLIC/ACYCLIC split is itself the WRONG AXIS. There is one
-; dominance predicate and one imprecision — the invariant it enforces is
-; SUFFICIENT for "unavailable at both slots" and not NECESSARY — and the two
-; "halves" are just the sub-cases where the dropped phi is, and is not,
-; available. A reader who re-derives only against loop shapes will have
-; re-derived half a predicate. The precise form (test the MEMBER against the SLOTS instead of
-; against `MergeBB`) is a Rule-13 core change filed for an owner decision as **bd
-; `test_C_libtooling-hrts`**; see `collectStatePrepPhiDescendants`' header
-; trigger (3b), which carries the full statement. THIS FILE IS NOT THE TRIPWIRE
-; FOR THAT HALF — `control_inplace_ry_reject_stateprep_acyclic_nondominated_-
-; phi.ll` is, and it is committed beside this one. Note that BOTH binaries
-; decline `r20` at the top level; only the STRING moves (`taint escape …
-; classical-condition phi` -> F2's), which is why the over-decline is a
-; capability cost that is not yet observable as a lost accept anywhere.
+; ⚠ **THE PREDICATE THIS FILE PINS WAS REPLACED ON 2026-09-15 AND THIS FILE DID
+; NOT MOVE — THAT IS THE POINT OF IT.** bd `test_C_libtooling-hrts` / bd
+; `test_C_libtooling-l3i1` (the precision fix) and bd `test_C_libtooling-dpau`
+; (the opcode filter) landed together: `!DT.dominates(MergeBB, I->getParent())`
+; is gone, and `collectStatePrepPhiDescendants` now asks
+; `availableAtAnF2Slot(I, PredSlot, ArmSlots, DT)` of EVERY user. The old line
+; was a SUFFICIENT proxy for "unavailable at both of F2's slots" and not a
+; NECESSARY one, so it also dropped phis that were unavailable and merely sat off
+; `MergeBB`'s dominance subtree — an OVER-DECLINE, whose tripwire
+; `control_inplace_ry_reject_stateprep_acyclic_nondominated_phi.ll` has now
+; flipped to the taint-escape string exactly as its own header instructed.
+;
+; THIS MODULE IS THE OTHER DIRECTION AND IT IS THE ONE TO BE AFRAID OF. `%v` is a
+; LOOP-HEADER phi that takes the `M`-descendant on its BACK EDGE while sitting in
+; a block that DOMINATES both slots — i.e. it is AVAILABLE, hence a GENUINE
+; RIVAL, hence must NOT be excluded. Under the new predicate it is skipped by
+; `DT.dominates(I, PredSlot)` firing, and the walk TRUNCATES there (its users are
+; not enqueued either) — which is REQUIRED and not merely conservative: a user
+; `f(%v)` is spellable at the slot because `%v` is a register available there.
+; MEASURED at the landing: this file and its `nonphidesc` twin BOTH keep F2's
+; string, on the ORACLE (`cq-opt` sha256 `0e280fc6...`) and on the subject
+; (`8cda04ca...`) alike.
+;
+; ⚠ THE CYCLIC / ACYCLIC FRAMING THE EARLIER TEXT HERE USED IS RETIRED (X5,
+; 2026-09-14c, and confirmed by the landing). Cyclicity is not a term in the
+; argument; AVAILABILITY is. This module is simply the sub-case where the
+; candidate IS available at a slot, and `r20_acyclic_nondominated_phi.ll` the
+; sub-case where it is not. A reader who re-derives only against loop shapes will
+; have re-derived half a predicate.
+;
+; ⚠ LIVE OBLIGATION, UNCHANGED AND NOW SHARPER: **if this file's string changes
+; to anything other than F2's, the exclusion has been widened past availability
+; and that is an OVER-ACCEPT, not a capability win.** The ACCEPT direction of the
+; same line is pinned by `control_inplace_ry_stateprep_acyclic_nondominated_phi_
+; accept.ll`; a change that flips that file without flipping this one is the fix,
+; and a change that flips this one is the bug.
 ;
 ; ⚠ The IR-text `CHECK-NOT`s below are VACUOUS BY CONSTRUCTION and are kept only
 ; as belt-and-braces: a `DS_Error` decline writes 0 bytes to stdout, so what pins
