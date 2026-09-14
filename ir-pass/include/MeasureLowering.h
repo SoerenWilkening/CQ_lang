@@ -64,9 +64,27 @@
 // A TAINTED operand that is not an i32 handle still emits an LLVM diagnostic
 // and leaves the call in place. This is intentionally loud rather than
 // silent so a future front-end shape that we missed surfaces as a build
-// break instead of a wrong trace. An `undef`/`poison` CLASSICAL operand is a
-// loud decline of its own (`lowering_reject_measure_undef_operand.ll`) — see
-// `MeasureLowering.cpp` for both arguments.
+// break instead of a wrong trace.
+//
+// ⚠ AN `undef`/`poison` CLASSICAL OPERAND IS **NO LONGER** A LOUD DECLINE OF
+// ITS OWN, and this sentence is rewritten in the same change as the code rather
+// than corrected in a record (CLAUDE.md L7-with-a-twist: a record correction
+// that is not applied to the source is not a correction — a defect found three
+// times on ONE sentence in `RotationLowering.cpp` before it landed). bd
+// `test_C_libtooling-fve8`, owner ruling 2026-09-15 (`DECISIONS.md` E2),
+// retires that decline for the WHOLE-VALUE spelling: `cq_measure(undef)` and
+// `cq_measure(poison)` now measure THE TYPE'S CONCRETE ZERO, in every spelling,
+// and the call is RAUW'd to `Constant::getNullValue(Measure->getType())` — the
+// measurement's OUTCOME, never the operand. Pinned by
+// `lowering_accept_measure_undef_zero.ll` and by the inverted (name-historical)
+// `lowering_reject_measure_undef_operand.ll`.
+//
+// WHAT SURVIVES IS THE RESIDUAL: a FULLY DEFINED constant operand that merely
+// CARRIES an `undef` through a `GlobalValue`'s initializer (`valueCarriesUndef`
+// walks into it) still declines on the unchanged string. Pinned by
+// `lowering_reject_measure_undef_global_init.ll`. See `MeasureLowering.cpp` for
+// the rationale, the DISCLOSURE paragraph this silent widening owes, and its
+// four retirement triggers.
 
 #ifndef CQ_IRPASS_MEASURE_LOWERING_H_
 #define CQ_IRPASS_MEASURE_LOWERING_H_
@@ -81,7 +99,9 @@ struct TaintSet;
 // Walks `taint.MeasureCalls` (already collected by `propagate`); for a TAINTED
 // operand emits `cqrt_measure_<W>(handle)` (W derived per call from the measure
 // intrinsic suffix) and for a CLASSICAL one emits nothing and RAUWs the call to
-// its operand (bd 21mg); either way the original measure call is erased.
+// its operand (bd 21mg) — or, for a whole-value `undef`/`poison` operand, to
+// the type's concrete ZERO (bd fve8); either way the original measure call is
+// erased.
 //
 // ⚠ MUST run AFTER `repropagateControlMerges` — the taint it reads has to be
 // FINAL, or a 6.5/4.5 round-2 merge rail measure degrades into a classical
