@@ -90,3 +90,27 @@ CQ_CTRL_DBG: railbank [Bank] cells=<N> abi=<W> trips=<K> at: <the store>
 ```
 
 `env CQ_CTRL_DBG=1 not %cq-opt …` in the fixture RUN line; the anchor is byte-absent on the ORACLE.
+
+---
+
+## ADDENDUM (same day, after the adversarial self-attack) — the SIGNATURE is unchanged, the ACCEPT SURFACE is NARROWER
+
+⚠ **Track B: nothing you code against moved.** The enum, the struct and the function signature above are
+exactly what shipped (`ir-pass/include/QramLowering.h:434` / `:448` / `:464`). What changed is which
+inputs come back `Bank`, and it changed in the **decline** direction only — so a promoter written
+against the published contract stays correct, it just fires on fewer modules.
+
+Four conjuncts were added after the first subject binary, two of them closing **measured over-accepts**
+that all 18 then-green fixtures, a clean 2096-row corpus sweep and a 29/29 injection matrix had all
+missed (`IMPL_A.md` §10(b)):
+
+| added conjunct | what it now refuses | how it was found |
+|---|---|---|
+| `Loop::getParentLoop() == nullptr` | a cell walk **re-executed by an enclosing loop** — every cell written once per OUTER trip, so the second outer trip's seed load reads a stored HANDLE. C2′'s own hazard, one activation level up | self-attack `H1_nested_outer_rewrite.c`, **measured `Bank`** before it |
+| `AllocaInst::isStaticAlloca()` | a bank object that is **not a single function-lifetime allocation** (an `alloca` in a loop body) | self-attack `H13_alloca_in_loop.c`, **measured `Bank`** before it |
+| `SCEVAddRecExpr::hasNoSelfWrap()` | a `{0,+,1}` index whose **recurrence wraps**, so it revisits cells | reasoned, then constructed in hand IR |
+| `DominatorTree::isReachableFromEntry` on every bank load | asking the DomTree about a block it has no node for — an **API precondition**, the `LazyValueInfo` SIGSEGV precedent | reasoned |
+
+**The consequence for Track B, stated so it is not discovered:** the promoter must run on a shape whose
+walk loop is **outermost**. `for (k…) for (i…) b[i] = …` is now `RejectIndex`, not `Bank`, and that is
+deliberate — promoting it would forward a stored handle as a seed.
