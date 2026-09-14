@@ -1451,6 +1451,22 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   // OTHER closure re-runs the proof. *** Declining the nested walk is the Prime
   // Directive answer; admitting it needs a proof about the OUTER loop that this
   // increment does not have, and `CLAUDE.md` already declines nested loops broadly.
+  //
+  // ⚠ CROSS-SEAM RETIREMENT TRIGGER, ADDED AT THE 2026-09-14c MERGE GATE AND
+  // STATED IN THE DIRECTION THE NEXT EDITOR NEEDS (the L3 MIRROR: when a
+  // predicate acquires a second caller, read the trigger and say which way you
+  // are using it). THIS CONJUNCT IS LOAD-BEARING FOR A CALLER THAT IS NOT THIS
+  // FILE. `promoteRailBankCells` (`RailBankPromote.cpp`, clause B6) calls this
+  // verdict and refuses NOTHING of its own about an ENCLOSING loop — B1 refuses
+  // an access in a SUB-loop only. Track B's round-2 mutant **M12 measured that
+  // deleting this line makes the promoter FIRE** on `for (k…) for (i…) b[i] =
+  // …`, forwarding the previous outer trip's stored HANDLE as a classical zero:
+  // a hidden `|0⟩` assertion on an entangled rail that no fence in the tree can
+  // see, because the rail/wire/uncompute machinery is MEMORY-BLIND by
+  // construction (`SCOPE_L1a.md` §4.1). *** RELAXING THIS LINE WITHOUT GIVING
+  // THE PROMOTER A CLAUSE OF ITS OWN, IN THE SAME CHANGE, IS AN OVER-ACCEPT —
+  // a wrong unitary, not a wrong decline. *** Pinned from the other side by
+  // `railbank_promote_reject_nested_outer_loop.ll`.
   if (L->getParentLoop()) {
     outMsg = kMsgBankNested;
     return RailBankCarve::RejectIndex;

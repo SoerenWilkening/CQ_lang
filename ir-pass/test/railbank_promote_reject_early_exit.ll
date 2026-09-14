@@ -79,4 +79,18 @@ out:
 ; 2026-09-14 session measured as `checked 0`).  It is checked on the ACCEPT
 ; fixtures instead, where the promoter actually runs.
 
-; DECLINE: cq taint escape: tainted value stored to memory
+; ⚠ THE `DECLINE` STRING BELOW WAS CHANGED AT THE 2026-09-14c MERGE GATE, AND THE
+; CHANGE IS A COMPOSITION FACT RATHER THAN A CORRECTION.  This fixture was
+; written on a branch where Track A's rail-bank CARVE CLASSIFIER did not exist,
+; so every module here declined with the generic `cq taint escape: tainted value
+; stored to memory`.  With Track A merged, `declineTaintEscapes` consults
+; `railBankCarveVerdict` FIRST and this shape now takes Track A's PER-CLAUSE
+; rail-bank string.  Measured at the gate, ORACLE vs merged: exit 1 on both, a
+; DECLINE->DECLINE string move, never DECLINE->ACCEPT.  ⚠ The clause this file is
+; ABOUT is the PROMOTER's, and it is pinned by the `DBG` + `NOTS` prefixes (the
+; stage ran, and did not promote) — NOT by this line, which only pins that the
+; module is still loudly refused.  RETIREMENT TRIGGER: when the deferred half of
+; W1 (the taint rule + type rewrite + the D5 allow-list) lands and a `Bank`
+; verdict stops falling through to a decline, this line changes again — and at
+; that point re-derive it, do not delete the check.
+; DECLINE: cq rail bank: cell index is not an injective per-iteration index

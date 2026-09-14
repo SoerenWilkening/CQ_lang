@@ -105,7 +105,7 @@
 //
 // ── WHAT IT REFUSES, AND WHY EACH CLAUSE IS THE REWRITE'S AND NOT THE CARVE'S ─
 //
-// The carve (`RailBankCarve.h`, Track A) answers ONE question — *is this store a
+// The carve (`QramLowering.h`, Track A) answers ONE question — *is this store a
 // rail-bank cell write?* — and this stage CALLS it, never re-derives it (Rule
 // 14; a second spelling of a predicate the tree owns is the drbq Inc-3 (b')
 // defect, filed by name). The B-clauses below are not a second carve: they are
@@ -133,12 +133,33 @@
 //   B8  ≥1 load inside `L`. With no load there is nothing to forward, the
 //       existing store already IS the activation's write, and firing would only
 //       churn the IR — so the module is left BYTE-UNTOUCHED (and that refusal is
-//       pinned by `railbank_promote_o1_shape.ll`, against a module dump, so it
-//       is not the vacuity trap Rule 12 hygiene defect (c) describes).
-//   B9  NOT ALREADY PROMOTED (`isRailBankAlloca` — the `!cq.railbank` record this
-//       stage MINTS). This is what makes the caller's fixpoint TERMINATE: the
-//       stage ADDS a store, so without the record it would re-promote its own
-//       output forever.
+//       pinned by `railbank_promote_reject_already_ssa.ll`, against a module
+//       dump, so it is not the vacuity trap Rule 12 hygiene defect (c)
+//       describes).
+//       ⚠ AND B8 IS LOAD-BEARING FOR TERMINATION, not only for "is it worth
+//       doing" — see the note at `RailBankPromote.cpp`'s `applyBank` tail. The
+//       caller drives this stage to a fixpoint and the stage ADDS a store, so
+//       something must stop it re-promoting its own output. `applyBank`
+//       replaces EVERY in-`L` load, so after a promotion the write loop
+//       contains none and `planBank` refuses on the next turn. RETIREMENT
+//       TRIGGER: weaken B8 (for instance to admit a bank with no load, a no-op
+//       today) and the fixpoint DOES NOT TERMINATE — reinstate a membership
+//       record in the same change.
+//
+// ⚠ THERE IS NO B9, AND THE CLAUSE THAT USED TO BE HERE WAS STALE FOR THE WHOLE
+// OF TRACK B'S GATE. It read *"B9 NOT ALREADY PROMOTED (`isRailBankAlloca` — the
+// `!cq.railbank` record this stage MINTS)"*, and the shipped stage mints NO
+// metadata: `SCOPE_L1a.md` §4.3 designs the record as the FREEZE's membership
+// proof, the freeze is in the deferred half, and minted now it would have no
+// reader (Rule 12 hygiene defect (c)). `RailBankPromote.cpp`'s `applyBank` tail
+// carries the correct statement, Track B's own injection round 4 (mutant M13,
+// "re-add the mint") is CAUGHT by all seven accept fixtures through their `NOMD`
+// prefix, and `isRailBankAlloca` is not shipped at all
+// (`trackA/SIGNATURE.md` deviation (2)). Corrected at the 2026-09-14c merge
+// gate; `IMPL_B.md` §2.3 / §7 / §8 / §10.1 still carry the old wording and are
+// history. ⚠ L7-WITH-A-TWIST, verbatim: *a record correction that is not applied
+// to the source is not a correction* — this one had been applied to the .cpp and
+// not to the .h, which is the same defect wearing the other shoe.
 //
 // ── THE PER-ACTIVATION CONTAINMENT PROOF (why no φ crosses the back edge) ────
 //

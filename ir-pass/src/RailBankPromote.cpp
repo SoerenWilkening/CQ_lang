@@ -13,8 +13,17 @@
 
 #include "RailBankPromote.h"
 
-#include "RailBankCarve.h"  // ⚠ TEMPORARY — becomes "QramLowering.h" when Track
-                            // A merges. See RailBankCarve.h's L8 trigger.
+#include "QramLowering.h"   // railBankCarveVerdict / RailBankCarve / RailBankShape
+                            // — TRACK A'S REAL CLASSIFIER. ⚠ Until the merge of
+                            // 2026-09-14c this was `RailBankCarve.h`, a Track-B
+                            // stand-in built so that leaving it in was a
+                            // DUPLICATE-SYMBOL link error. The trigger FIRED as
+                            // written (measured at the merge gate: `duplicate
+                            // symbol 'cq::railBankCarveVerdict(...)'` in BOTH
+                            // libCQPass.so and cq-opt), the shim and its header
+                            // are deleted, and this line is the whole of the
+                            // change it demanded (L8: a retirement trigger that
+                            // names its own replacement text works).
 #include "OpcodeSupport.h"  // abiWidthFromType (the ABI width the record carries)
 #include "TaintPropagation.h"
 
@@ -64,7 +73,8 @@ struct BankPlan {
   // The per-cell seed. `Constant::getNullValue(CellTy)` for BOTH admitted
   // initializer shapes — a proven whole-object constant-zero `llvm.memset`, and
   // (owner ruling D1, composing with bd `z9t1`) NO initializer at all. The
-  // disclosure that second case owes is in `RailBankCarveShim.cpp`'s header.
+  // disclosure that second case owes is at `railBankCarveVerdictImpl`'s D1
+  // block (`QramLowering.cpp`) and in `IMPL_A.md` §6.
   Constant *Seed = nullptr;
   // The gep to CLONE at the latch, and the store to copy `!dbg`/align/`!tbaa`
   // from. Both come from the LAST `Bank` store in program order, so the surviving
@@ -256,7 +266,7 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
     return false;  // one initializer, or none (owner ruling D1).
 
   // B6 — every store into the bank is a `Bank` store by TRACK A'S CARVE, and
-  // there is at least one. ⚠ THE ONE CALL SITE. `RailBankCarve.h` explains why
+  // there is at least one. ⚠ THE ONE CALL SITE. `QramLowering.h` explains why
   // it is one and why every way its signature can change is a compile or link
   // error rather than a silent second spelling.
   //
@@ -270,7 +280,8 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
   //
   // ⚠ Two facts about the shipped ACCEPT SURFACE that the promoter depends on and
   // does NOT re-ask — the walk loop is OUTERMOST, and C4 admits the
-  // read-modify-write cell address — are recorded in `RailBankCarve.h`. The first
+  // read-modify-write cell address — are recorded in `QramLowering.h` (C2′'s
+  // `getParentLoop()` half and C4's deviation). The first
   // is load-bearing for THIS stage's soundness and the B-clauses do NOT cover it
   // (B1 refuses an access in a SUB-loop, never an ENCLOSING loop);
   // `railbank_promote_reject_nested_outer_loop.ll` pins it.
