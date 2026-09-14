@@ -39,12 +39,17 @@
 ; took on the ORACLE. The env-gated `CQ_CTRL_DBG` anchor is the only observable
 ; (Rule 12 hygiene defect (c)); `--implicit-check-not` closes the other direction.
 ;
-; ⚠ HAND-IR, DELIBERATELY: `clang -O1` ROTATES this loop (it stamps
-; `llvm.loop.mustprogress` and puts the test at the latch), so the top-tested shape
-; is not on the validated floor as C. That is an argument for keeping the conjunct
-; CHEAP, never for dropping it — the carve runs on whatever module reaches it,
-; including hand-written `.ll` and any future front end, and `CLAUDE.md` Rule 9's
-; first sentence is that stock LLVM IR is not stable.
+; ⚠ HAND-IR, AND THE REASON IS MEASURED RATHER THAN ASSERTED — say it in the form
+; the measurement supports. Every `-O1` bank module this track compiled puts the
+; exit test AT THE LATCH: `h1_customer.c`, `p1_cond_store_no_read.c`,
+; `p2_uncond_store_no_read.c` and `c1_readcell1_inloop.c` each emit only
+; latch-terminating conditional branches carrying `!llvm.loop` (4/4/4/2 of them,
+; counted). So I could not produce the top-tested shape from C on this floor, and
+; this file is hand-IR. **That is NOT a proof that `-O1` can never emit it**, and
+; it is not a reason to drop the conjunct: the carve runs on whatever module
+; reaches it — hand-written `.ll`, a `clang` bump, any future front end — and
+; `CLAUDE.md` Rule 9's first sentence is that stock LLVM IR is not stable. It IS a
+; reason to keep the conjunct CHEAP, which two pointer comparisons are.
 ;
 ; ⚠ L8 RETIREMENT TRIGGER: when the L-1a taint rule + type rewrite + D5 allow-list
 ;   land, `Bank` stops falling through to `kMsgStore`. THIS FILE DOES NOT BECOME AN
