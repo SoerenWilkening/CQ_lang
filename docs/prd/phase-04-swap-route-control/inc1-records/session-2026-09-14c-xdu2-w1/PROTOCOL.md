@@ -1,5 +1,23 @@
 # Session 2026-09-14 — the agent protocol every brief copies from (binding; owner addon, STRENGTHENED)
 
+> ⚠ **COPIED VERBATIM INTO SESSION 2026-09-14c, AND ITS ORACLE BLOCK BELOW IS STALE — THE BRIEFS ARE
+> RIGHT, THIS FILE IS NOT.** Found by Track I, 2026-09-14c. The `f7b65d8ccd7bc472…` / `f9e898badfd4207a…`
+> hashes below are the **2026-09-14 session's** oracle, built from `59ac5b7`; that binary **no longer
+> exists on this box** (it was rebuilt at the closing gate). The oracle for session 2026-09-14c is the
+> primary checkout's binary at `main` `6db48142`:
+>
+> * `build/ir-pass/cq-opt` sha256 **`5c6f7490a81c75057fe73abcd6fa5a8e8026e0ccc810e961ff7197f62e515ba8`**
+> * `build/ir-pass/libCQPass.so` sha256 **`5276f7ab7416b36b3ceeb8ae0c9b2de3df6833906ec97c6671dfda336d488be4`**
+>
+> Every `trackX/BRIEF_X.md` in this session carries those two correct hashes inline, which is why no
+> track was misled. **Do NOT "STOP and report" a rebuild that never happened** on the strength of the
+> stale block below — check the brief, not this header. The rest of this file (the gate table, the
+> hash-keyed `GATES.md` discipline, S1/S2/S3) is unchanged and binding.
+>
+> ⚠ The lesson generalises past the hash: **a protocol copied verbatim carries its predecessor's
+> measurements with it, and a measurement is a fact about a moment.** The next session that copies this
+> file owes the same correction at the top rather than at the point of use.
+
 Repo `/Users/sorenwilkening/Desktop/CQ_lang` (`main` 607b6fe4, docs-only over the pass at 59ac5b7).
 `LLVM=/usr/local/opt/llvm@19/bin` (NOT on PATH). Session dir (`$SES`):
 `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/`.  Last session's dir (`$PREV`):

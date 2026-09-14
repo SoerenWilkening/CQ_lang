@@ -143,3 +143,27 @@ hoisted **template** rail. **A fix aimed where the bead points would move zero p
 (`CQLoweringPass.cpp:393` / `:1000`), i.e. **before** `repropagateControlMerges` (`:509` / `:1027`) —
 **round-1 taint in both entry points, never re-asked.** That is L1's PREDICATE species. The decline
 owes record-and-re-ask in **both** entry points.
+
+---
+
+## Corrections landed by the tracks themselves (not owner rulings — recorded so they are not re-derived)
+
+* **`SCOPE_L1a.md` §7/§9 is STALE on one row** (Track I, measured on this session's ORACLE):
+  `a_flat_n3.c` **ACCEPTS** (98 lowered lines). SCOPE_L1a was written against the 2026-09-14 oracle,
+  and **bd `om35` landed after it**. Its sentences *"the dependency is UNMET at N=3"* and *"at the end
+  of this session the N=3 unrolled twin still does not exist"* are **history**. The design's
+  conclusions that rest on them (the witness story in §5, the dependency verdict in §7) must be
+  re-read, not quoted.
+* **`PROTOCOL.md`'s ORACLE block was this session's copy of the PREVIOUS session's** (Track I; my
+  error — I copied it verbatim and did not update the header). Corrected in place at the top of
+  `$SES/PROTOCOL.md`. No track was misled: every brief carries the correct
+  `5c6f7490…` / `5276f7ab…` inline. ⚠ The general lesson is now in that file: **a protocol copied
+  verbatim carries its predecessor's measurements with it, and a measurement is a fact about a
+  moment.**
+* **The 2b census over-counts as well as under-counts** — bd `rixk`, reproduced by the orchestrator on
+  the shipped checker. `CLAUDE.md` records only the under-count (*"counts alloc SITES, so a rolled
+  per-trip alloc reads as ONE rail"*, caused by a loop). The over-count needs **no loop at all**: with
+  `-O1` inlining a small `slice` into `main` and keeping the out-of-line body, eleven lines of C report
+  **6 mints for 3 allocations**. ⚠ **The figures `CLAUDE.md` §4c cites are NOT affected — checked, and
+  they are the regression test**: `slice_control_cascade_three_bools` reports `9 rail mint(s)` and its
+  golden carries exactly 9 `cqrt_alloc` lines.
