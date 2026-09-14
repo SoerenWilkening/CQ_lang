@@ -115,3 +115,10 @@ fixture's own CHECK lines rather than an md5. **The genuine gap is `tests/e2e/*.
 streams that only the sweep (or the `^e2e-` layer the merge agent owns) can compare. That gap is what
 is being handed over, and `probes/corpus_T.sh` is committed and ready to run as-is: it already
 includes `tests/e2e/*.c` in its list, deliberately, for exactly this reason.
+
+## The twin re-measurement COMPLETED after the first close
+
+```
+twin re-measurement, 20 rolled-vs-hand-unrolled pairs (40 programs), probes/src + probes/adv | f972906e961c7e55 | COMPLETE. Every pair reproduces its earlier number exactly. BYTE-IDENTICAL: s1 14==14, s3 22==22, t2 13==13, a1 16==16, a2 18==18, a6 9==9, a7 36==36, a8 9==9, r3 24==24, r5 28==28. Adjudicated divergences: t3/w2h/w2h3/w2k (stage-1 -O1 position or canonicalisation, gate-symbol multiset identical), a9 (T-2), b1/b2 (the (ii-c) boundary controls, UNMOVED from the ORACLE), x1 (0 _unc / 0 free), r2 (T-6, gap isolated to the non-qualifying function). Declines unmoved: s2, t1, a3, a4, a5, r4, x2 | impl | 2026-09-15
+round-2 probes r1..r5, ORACLE vs subject, lowered-IR md5 compared within each row | f972906e961c7e55 | r1 DECLINE->ACCEPT (T-5, NO TWIN WITNESS — filed); r2 DECLINE->ACCEPT (T-6, adjudicated clean); r3 DECLINE->ACCEPT, twin IDENTICAL; r4 DECLINE both, twin IR md5-SAME as ORACLE; r5 ACCEPT both, IR md5-SAME as ORACLE on BOTH halves | impl | 2026-09-15
+```

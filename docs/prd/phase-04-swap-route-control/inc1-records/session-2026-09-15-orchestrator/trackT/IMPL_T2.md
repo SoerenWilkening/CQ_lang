@@ -228,22 +228,21 @@ two streams **before the pass runs**. The gate-symbol multiset is identical (mea
 are the same unitary, because that gate writes a fresh rail while the per-trip chain touches only its
 own: disjoint rails commute.
 
-**THE ADVERSARIAL PAIRS.** The clean-binary re-run reached **`a1`–`a5`** before this record closed and
-is handed over for the rest; the box was at load average **161–319** throughout, with host time
-dilated roughly 75× (the system clock advanced ~4 minutes over an hour of my own wall time).
+**THE ADVERSARIAL PAIRS — the clean-binary re-run COMPLETED**, after this record's first close, and
+**every one of the 20 pairs reproduces its earlier number exactly.** (The run took hours of wall
+clock: the box sat at load average **161–391** with host time dilated roughly 75×.)
 
-* **Clean-binary (`f972906e961c7e55`), and every one reproduces its S2 number exactly:** `a1`
-  16 == 16 BYTE-IDENTICAL, `a2` 18 == 18 BYTE-IDENTICAL, `a3` DECLINE / 20, `a4` DECLINE / 19,
-  `a5` DECLINE / 18. Together with the nine main pairs above that is **14 pairs re-measured on the
-  clean binary and 14 for 14 identical to the S2 numbers.**
-* **[S2] `9337c21095d0afdb`, VERDICTS re-confirmed on the clean binary by the §2(b) sweep, line counts
-  handed over:** `a6` 9 == 9 (unmoved), `a7` 36 == 36 BYTE-IDENTICAL, `a8` 9 == 9 (unmoved), `a9`
-  24 vs 20 (see T-2), `b1` 13 vs 19 and `b2` 14 vs 18 — the pre-existing leak clause (ii-c) correctly
-  refuses, **UNMOVED from the ORACLE in both** (the ORACLE measures the same 13/19 and 14/18), which is
-  the entire point of those two controls.
-* ⚠ **"14 for 14" is evidence about the remaining six, not proof of them.** It is written that way on
-  purpose: this is the same session in which a binary that looked coherent on every observable turned
-  out to be broken (§13), and the lesson there was that coherence is not consistency.
+BYTE-IDENTICAL on the clean binary: `a1` 16 == 16, `a2` 18 == 18, `a6` 9 == 9 (unmoved), `a7`
+36 == 36, `a8` 9 == 9 (unmoved), `r3` 24 == 24, `r5` 28 == 28 (unmoved, and its lowered IR is
+md5-IDENTICAL to the ORACLE's on BOTH halves).
+
+Declines that must decline, all unmoved: `a3`, `a4`, `a5`, `r4` (tainted-index memory), `x2`.
+
+Divergences, each adjudicated rather than blessed: `a9` 24 vs 20 (T-2, a twin the optimiser CSEs);
+`b1` 13 vs 19 and `b2` 14 vs 18 — the pre-existing leak clause (ii-c) correctly refuses, and the
+ORACLE measures **the same 13/19 and 14/18**, which is the entire point of those two controls;
+`x1` 13 == 13 with the order differing and **0 `_unc` / 0 `cqrt_free` in the lowered IR**;
+`r2` 24 vs 30 (T-6, the gap isolated entirely to the non-qualifying function).
 
 ### (d) THE REGRESSION SURFACE, whole-suite
 
@@ -494,6 +493,53 @@ is not IN a loop. **Fix: the re-ask RE-DERIVES its roots under FINAL taint by CA
 below it that could ADD a marking would make that fence read a set that is still moving, which is the
 RETIREMENT TRIGGER its own header states.
 
+**ROUND-2 RESULTS, measured on the CLEAN binary after the record's first close — the twin run
+completed and reached the `r*` probes.** Both binaries, ORACLE vs subject, with the lowered-IR md5
+compared within each row:
+
+| probe | ORACLE | subject | twin | reading |
+|---|---|---|---|---|
+| `r1_break_loop` | DECLINE | **ACCEPT 24** | ⚠ **no witness** | see T-5 |
+| `r2_two_functions` | DECLINE | **ACCEPT 24** | 24 vs 30 DIVERGE | see T-6 — this is the RIGHT answer |
+| `r3_two_loops_one_register` | DECLINE | **ACCEPT 24** | **24 == 24 IDENTICAL** | the per-loop grant KEY works: two loops on one root mint, both marked, neither satisfying the other's re-ask |
+| `r4_qram_body` | DECLINE | DECLINE | — | (L3) tainted-index memory still refuses; **lowered IR of the twin md5-IDENTICAL to the ORACLE's** |
+| `r5_switch_in_body` | ACCEPT | ACCEPT | **28 == 28 IDENTICAL** | (L2) a tainted region still standing at round 1 still refuses; **lowered IR md5-IDENTICAL to the ORACLE's, both halves** |
+| `x1_xorc_inplace_in_body` | ACCEPT | ACCEPT 13 | 13 == 13, order differs | Track S′'s hazard: equal counts and **0 `_unc` / 0 `cqrt_free` in the lowered IR** |
+| `x2_xorc_plus_outofplace` | — | DECLINE | — | a different owner (`cq taint escape: …classical-condition phi`) |
+
+**T-6 (round 2, the bd `test_C_libtooling-1yeu` probe, ADJUDICATED CLEAN).** `r2_two_functions` puts a
+QUALIFYING kernel (`ka`: root mint, re-rotated after the loop) and a NON-qualifying one (`kb`: the
+hoisted template rail `p = y * 3`) in ONE translation unit, which is the cross-function shape every
+corpus and gate in the tree is structurally blind to. Read off the traces line by line: **lines 1–14
+(`ka`) are BYTE-IDENTICAL in both spellings** — the pairing fires, `lshr_unc` + `cqrt_free` per trip —
+and the **entire** 6-line gap is in `kb` (the unrolled twin discharges `h9`, `h7` and the `mul` rail
+`h6`; the rolled form leaks all three). That is precisely the un-built hoisted-template half of §6,
+**isolated to the function that has it**, with no contamination in either direction. A per-function
+state leak in the grant record would have shown here as a moved `ka`; it does not.
+
+⚠ **T-5 (round 2, AN ACCEPT WITH NO TWIN WITNESS — FILED, NOT CLEARED).** `r1_break_loop` (a 7.4
+`break` loop whose exit condition is CLASSICAL, beside an invariant root mint) moves DECLINE →
+ACCEPT 24. `tryBreak` does not claim it — the exiting condition is classical — so it falls through to
+the new offer and is marked. The emitted stream is well-formed (four per-trip groups, each
+`lshr` → `and` → `lshr_unc` → `free` → `measure`, then the diffusion and the final measure; STRICT 2b
+`0 violation(s), 0 unproven`), and the structural argument is that `Uncomputation`'s
+`PDT.dominates(At->getParent(), G->getParent())` is what protects a multi-exit body — a discharge
+point the `break` could skip while the forward gate ran fails post-dominance and the group **leaks
+instead** of half-reversing.
+
+**But that is an argument, and the instrument that decides this class cannot be pointed at it**: the
+hand-unrolled spelling of a `break` loop is a nested-if cascade, which declines at a DIFFERENT owner
+(`cq opcode lowering: rotation/measure operand predates a non-diagonal gate`, bd `3d8q`'s fence) on
+BOTH binaries — so there is no twin to compare against. **CLAUDE.md Rule 2 says analytic reasoning
+plus a green stream is NECESSARY AND NOT SUFFICIENT**, and the trace cannot help either: every
+`cqrt_measure` returns 0 in the trace runtime, so `s` never exceeds 1 and the `break` path is never
+taken in the recorded run. ⚠ **Recorded as an ACCEPT THIS TRACK DID NOT WITNESS.** Two ways to close
+it, neither done here: write a twin whose unrolled form does not trip the stale-reader fence, or
+refuse a multi-exit loop at the new offer until one exists. I did NOT add the refusal, because it
+would be an over-decline on a Prime-Directive argument I cannot substantiate either — but a reviewer
+who disagrees should say so, and this is the single item in this increment where a second opinion
+would change what ships.
+
 **T-4 (round 2, FOUND BY THE MUTATION MATRIX IN MY OWN FIXTURE, FIXED).** The first run of
 `probes/inject_T.py` scored **MISSED 1**: the `inject_unc_free` mutant against
 `loop_leak_dephase_accept_pertrip_dead.ll`. The cause is Rule 12's fixture-hygiene defect **(a)**
@@ -603,7 +649,14 @@ divergence nobody can explain is a gate people stop reading** (L10).
 
 **Owed as a REVIEW, not as code:**
 
-4. **A Rule-13 opinion on the composition with Track S′.** §5 argues structurally that this track's
+4. ⚠ **`r1_break_loop` — an ACCEPT THIS TRACK DID NOT WITNESS (T-5).** A classical-exit 7.4 `break`
+   loop beside an invariant root mint moves DECLINE → ACCEPT, the stream is well-formed and 2b is
+   clean, and the structural argument (multi-exit is protected by `Uncomputation`'s post-dominance
+   clause, which degrades to a LEAK) is sound as far as it goes — but the hand-unrolled twin declines
+   at a different owner on both binaries, so **the one instrument that decides this class cannot be
+   pointed at it**. This is the single item where a second opinion would change what ships.
+
+5. **A Rule-13 opinion on the composition with Track S′.** §5 argues structurally that this track's
    customers exit `declineDephasingUnmarkedLoopRails` at conjunct (1) and never meet S′'s widened
    conjuncts. That argument was made against the SHIPPED fence, not against S′'s branch, which I did
    not read. **A composition is not cleared by clearing its parts** — that is the F×P finding of
