@@ -20,17 +20,22 @@
 #define CQ_IRPASS_QRAM_LOWERING_H_
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <cstdint>
 
 namespace llvm {
+class AllocaInst;
 class BasicBlock;
 class DominatorTree;
 class Instruction;
 class LoadInst;
+class Loop;
 class LoopInfo;
 class Module;
+class ScalarEvolution;
 class StoreInst;
+class Type;
 class Value;
 }  // namespace llvm
 
@@ -333,6 +338,145 @@ void lowerQramReads(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // alloca whose element width has no reversible copy, that aliases/escapes, mixes a
 // classical access, or is observed mid-sequence declines LOUDLY here.
 void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
+
+
+// ── bd `xdu2` / L-1a Increment W1: the rail-bank CARVE CLASSIFIER ───────────────
+//
+// A RAIL BANK is a bounded, non-escaping local array whose cells each hold ONE
+// quantum rail, written once per trip of a classically-bounded loop:
+//
+//     bool b[N];                                  //  or `= {0}`
+//     for (int i = 0; i < N; ++i) {
+//       if (a >= 3) b[i] = cq_theta(b[i], .5);    //  the per-trip rail
+//       if (b[i]) a -= 3;
+//     }
+//
+// Today that program declines `cq taint escape: tainted value stored to memory`
+// (`kMsgStore`) at the store, at every N — the ONE wall bd `xdu2` exists to
+// remove, and the owner's loop-form cascade, spelling (i).
+//
+// *** THIS IS A STAGED LANDING OF ONE CAPABILITY, AND THE `Bank` VERDICT STILL
+// DECLINES. *** L-1a is three pieces: this classifier, the per-activation
+// PROMOTER (clause C5, bd `xdu2` Track B), and — deliberately NOT in this
+// increment — the TAINT RULE (a `load` from a bank cell is tainted), the TYPE
+// REWRITE (`[N x i1]` → `[N x i32]` of handles) and the D5 consumer allow-list.
+// Until those land an ACCEPTED bank is a SILENT MISCOMPILE, and the mechanism is
+// named exactly (`SCOPE_L1a.md` §4.4(D)): `cq_measure(b[i])` on an UNTAINTED load
+// takes `MeasureLowering.cpp`'s classical split and emits **no gate, no symbol, no
+// trace line** — and the golden byte-diff cannot see a measurement that was never
+// emitted. So `RailBankCarve::Bank` FALLS THROUGH to the existing generic
+// `kMsgStore` decline, exactly as `QramCarve::NotQram` does today; what ships here
+// is a classifier plus a per-clause decline matrix, and the accept path is pinned
+// by an env-gated `CQ_CTRL_DBG` anchor rather than by a lowering.
+//
+// This is NOT Rule 17's punt. Rule 17 forbids substituting a decline for the hard
+// work; it does not forbid landing a multi-piece capability in the order that keeps
+// the tree sound at every commit.
+//
+// ⚠ L8 RETIREMENT TRIGGER (write it wherever this verdict is consumed):
+//   *"When the L-1a taint rule + type rewrite + D5 allow-list land (bd `xdu2`, the
+//   second half), the `Bank` verdict stops falling through to `kMsgStore` and the
+//   fixtures' RUN lines become ACCEPTs whose emitted stream is the per-trip
+//   `cqrt_alloc_<W>` / `cqrt_ry_<W>` cascade. Re-derive them then; do NOT delete
+//   them."*
+//
+// ⚠ SECOND RETIREMENT TRIGGER — `railBankCarveVerdict` is a PURE PREDICATE and
+// must stay one. It mutates nothing, mints no metadata and GROWS NO TAINT, which
+// is the whole of its round-2 (L1) answer: `adjudicateTaintDelta` re-runs
+// `declineTaintEscapes`, and `repropagateControlMerges` goes through that, so the
+// verdict is re-asked at the fixpoint automatically in BOTH entry points and a
+// relaxation here is symmetric by construction. The day it acquires a side effect,
+// that argument is void and the L1 question must be re-answered from scratch.
+//
+// THE CLAUSES (SCOPE_L1a §2; C2′ and C6 are new and both are Prime-Directive
+// load-bearing):
+//   C1  a non-escaping, `isStaticAlloca()` `alloca [N x cell]` with a provable
+//       zero initializer or — owner ruling D1, 2026-09-14, composing with bd
+//       `z9t1` — NO initializer at all, whose EVERY user is a canonical cell
+//       access, a lifetime marker or that initializer. The `isStaticAlloca()` half
+//       is the second over-accept this increment caught itself: an `alloca` in a
+//       loop body is a FRESH OBJECT per outer trip, so "the bank" is not one
+//       object and no per-cell statement below means anything.
+//   C2  every access is a CLASSICAL-index cell access. A TAINTED index is 7.5's
+//       axis and keeps 7.5's own decline — enforced by ORDER (this verdict is
+//       consulted only after `qramCarveVerdict` has answered `NotQram`) AND by an
+//       explicit entry conjunct, so the two axes cannot merge by accident.
+//   C2′ INJECTIVITY. The cell index must be an affine, NON-SELF-WRAPPING `{0,+,1}`
+//       add-recurrence of the enclosing loop, whose proven CONSTANT trip count is
+//       ≤ N, AND that loop must not itself be re-executed by an enclosing one.
+//       *Why it is load-bearing:* if two activations write one cell, a later trip's
+//       SEED load reads a previously-stored HANDLE and the promoter forwards the
+//       wrong value.
+//       ⚠ THE `getParentLoop()` HALF WAS AN OVER-ACCEPT THIS INCREMENT SHIPPED AND
+//       THEN CAUGHT ITSELF (`for (k<2) for (i<3) b[i] = cq_theta(b[i], .5);`
+//       classified `Bank`, with 18 fixtures green, the corpus clean and the
+//       injection matrix 29/29). **The lesson is L2's**: every other conjunct of
+//       C2′ is a statement about ONE ACTIVATION of the walk loop and says nothing
+//       about how many times that loop RUNS. When a proof is complete, ask what
+//       OTHER closure re-runs it.
+//   C3  the stored value is tainted and the cell width has a REVERSIBLE COPY —
+//       `widthHasReversibleCopy`, NEVER `abiWidthFromType(...).empty()`: `i128` has
+//       a width string and no copy (`OpcodeSupport.h`), and an fp cell has a width
+//       and no `cqrt_copy_f*`.
+//   C4  no aliasing fan-out: every user of a cell address is a simple load/store of
+//       the cell type through that address, and the bank has exactly ONE store.
+//   C6  TOTALITY. `N` equals the proven trip count, every in-loop read is of the
+//       cell THIS trip writes, and every other read is after the loop. *Why:* after
+//       the (later) type rewrite a never-written cell reads as handle `0`, and `h0`
+//       is a LIVE RAIL in this runtime (`cqrt_alloc_i1(0) -> h0`).
+//
+// ⚠ C4 DELIBERATELY ADMITS A CELL ADDRESS USED BY BOTH A LOAD AND THE STORE, where
+// `matchQramAccess`'s `GEP->hasOneUse()` would refuse it — and that deviation is
+// what lets ONE predicate serve both consumers. `hasOneUse` answers the
+// TAINTED-INDEX aliasing question (two superposed addresses the tape cannot keep
+// coherent); a rail bank's index is CLASSICAL, so one address is one definite cell
+// and a read-modify-write of it is the customer, not a hazard. The promoter sees
+// the RAW read-modify-write shape (it runs in the `-O1`-repair normaliser
+// fixpoint); the carve sees the PROMOTED one-store shape. Both classify `Bank`.
+//
+// ⚠ `matchQramAccess` is NOT called, and the reason is measured, not stylistic:
+// three of its gates reject EVERY rail-bank store outright (`LInfo.getLoopFor` — a
+// bank store is always in a loop; `instUnderTaintedControl` — the raw arm store;
+// `requireTaintedIndex`), and a fourth answers a different question (above). What
+// Rule 14 is protecting — *"do not re-spell the provenance walk"* — is honoured:
+// `walkPtrOrigin`, `isDirectOriginPtr` and `matchAddressGep` are all CALLED, which
+// is why this classifier lives in the QRAM TU beside them. The four conjuncts that
+// ARE replicated (the pun fence, the origin-array/cell-type agreement, `N != 0`,
+// scalar cell) are cross-referenced in both directions at the definition.
+enum class RailBankCarve {
+  NotBank,          // not a rail-bank cell write — fall through to the existing owners
+  Bank,             // C1–C4, C2′, C6 all hold. ⚠ STILL FALLS THROUGH TO kMsgStore
+  RejectShape,      // C1  — provenance / escape / mixed access / initializer
+  RejectIndex,      // C2′ — index is not an injective {0,+,1} over the enclosing loop
+  RejectWidth,      // C3  — the cell width has no reversible copy
+  RejectAlias,      // C4  — the cell address fans out, or the bank has >1 store
+  RejectTotality,   // C6  — N != the proven trip count, or a cell no iteration writes
+};
+
+// The resolved bank on a `Bank` verdict — handed back so no consumer re-derives it
+// (Rule 14: *"ask by CALLING the one owner, never by re-deriving its answer"*; the
+// drbq Inc-3 (b′) defect is a SECOND SPELLING of a predicate the tree already
+// owned). Meaningless for every other verdict.
+struct RailBankShape {
+  llvm::AllocaInst *Alloca = nullptr;  // the bank object
+  llvm::Loop *L = nullptr;             // the loop whose {0,+,1} index walks the cells
+  llvm::Value *RawIndex = nullptr;     // the store address's trailing classical index
+  llvm::Type *CellTy = nullptr;        // the cell scalar type
+  llvm::StringRef ElemAbi;             // "i1" / "i8" / "i16" / "i32" / "i64"
+  uint64_t Count = 0;                  // N
+  uint64_t Trips = 0;                  // the proven constant trip count (== Count)
+};
+
+// The SINGLE rail-bank verdict — the `qramCarveVerdict` discipline, one entry point
+// consulted by the carve AND (bd `xdu2` Track B) by the per-activation promoter, so
+// the two can never diverge. `outMsg` is non-null exactly for a `Reject*` verdict
+// (a pattern-naming, source-located diagnostic the negative fixtures mirror
+// CHARACTER-FOR-CHARACTER). `outShape`, when non-null, receives the resolved bank
+// on `Bank` and is left untouched otherwise. PURE ANALYSIS — no mutation.
+RailBankCarve railBankCarveVerdict(const llvm::StoreInst *SI, const TaintSet &taint,
+                                   llvm::DominatorTree &DT, llvm::LoopInfo &LI,
+                                   llvm::ScalarEvolution &SE, const char *&outMsg,
+                                   RailBankShape *outShape = nullptr);
 
 }  // namespace cq
 

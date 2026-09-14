@@ -146,6 +146,59 @@ owes record-and-re-ask in **both** entry points.
 
 ---
 
+## ERRATUM to D4 — dated 2026-09-14c, closing gate. **The RULING stands; its SCOPE SENTENCE was read as a coverage claim and it is not one.**
+
+Appended, not substituted: **nothing in D4 above is rewritten.** The owner ruled *"ship a LOUD decline
+for the narrow divergent sub-case only — a rail left entangled with a register live after the loop"*,
+and that is exactly what shipped. What this erratum corrects is the reading that the shipped fence's
+four conjuncts **separate the divergent half from the benign half of bd `s82e`**. Rule-13 round 1
+track β (`review_r1b/REVIEW_R1B.md`, verdict FINDING) measured that they do not.
+
+**The fence catches PART of the dephasing class, not the class.** Two members survive it, both P1,
+both **PRE-EXISTING** (the ORACLE `5c6f7490a81c7505…` accepts each with an md5-equal lowered module,
+so neither is a regression this increment introduced), both filed:
+
+* **bd `test_C_libtooling-c767`** — conjunct (2) inspects only rotations **OUTSIDE** the loop, so the
+  identical dephasing with the interference **inside** the body still accepts. Measured on **D4's own
+  benign exhibits plus one line** (`u = cq_theta(u, .9);` before the trip ends): `w2k` 20 rolled vs 24
+  unrolled, `w2h` 34 vs 42.
+* **bd `test_C_libtooling-7845`** — conjunct (3) scans `BinaryOperator` only, and its written rationale
+  (*"a compare rail is the region's own flag, which `emitCondNetwork` strips and frees itself"*) is
+  **false for a compare used as DATA**: `CompareLowering` mints an ordinary out-of-place
+  `cq_template_icmp_<pred>_<W>_hl` rail with no region in the module. Measured: five lines of C, no
+  control flow, 10 rolled vs 14 unrolled, every other conjunct satisfied.
+
+**So D4's phrase "live *after the loop*" describes THIS FENCE'S SCOPE and is not a definition of what
+is benign** — and the ruling's own bullet *"their joint garbage never reaches the retained subsystem"*
+is a true statement about **those three programs** and not about the shape any conjunct tests. Two of
+the three cross the line under a one-line edit.
+
+**In the other direction**, the fence refuses at least one shape it should not: **bd
+`test_C_libtooling-2g52`** (P2, NEW), a constant-trip loop whose only in-body tainted op is a dtzb
+**IN-PLACE** `xor` on a `volatile` operand — `cqrt_xorc_i32` relabels the rail and mints nothing, so
+there is nothing to leak. ACCEPT(7 lines) → DECLINE, with the rolled trace **byte-identical** to the
+hand-unrolled twin's. By the owner's 2026-09-11 ruling that is a defect to remove.
+
+**What is NOT changed by this erratum:** the decline itself (it closes the sub-case it was built for,
+and `s1`/`s2` are refused as ruled), D4's rejection of the blanket decline and of DISCHARGE-by-freeing,
+the Rule-17 posture, and **bd `tu9q` as the end state**. The corrections are applied **in the source**
+— `LoopLowering.cpp`'s fence header and conjuncts (2)/(3), `LoopPlan.h`'s declaration comment, and both
+`loop_leak_dephase_accept_*` fixture headers — because `CLAUDE.md`'s **L7-with-a-twist** says a record
+correction that is not applied to the source is not a correction, and that defect was found three times
+on one sentence before anyone believed it.
+
+⚠ **A correlated signal, recorded at both sites and not to be mistaken for a fence.**
+`RotationLowering::warnLiveRecordRotations` (`kMsgLiveRecord`) fires on all three divergent probes and
+is silent on both benign ones (ORACLE counts: `s1` 2, `s2` 2, `b11_cmp_rail_data` 2; `s3` 0, `w2k` 0).
+On the merged binary `s1`/`s2` are preempted by this fence's own `DS_Error`, and `b11_cmp_rail_data`
+still accepts and still warns — it is bd `7845`'s residual. **It is not a divergence detector**: it
+also fires on `slice_control_inplace_ry_loop_leak` and its `_unrolled` twin, which are byte-identical
+under a shipped ctest gate. It is a WARNING by owner ruling bd `lyyf` (2026-08-29) whose recorded
+reason is **reporting completeness, not benignity**; promoting it to a decline costs 5 of 366 accepting
+e2e slices.
+
+---
+
 ## Corrections landed by the tracks themselves (not owner rulings — recorded so they are not re-derived)
 
 * **`SCOPE_L1a.md` §7/§9 is STALE on one row** (Track I, measured on this session's ORACLE):

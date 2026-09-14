@@ -1,0 +1,130 @@
+lowering_railbank_bank_anchor_intcells.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_intcells.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_intcells.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_n3.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_n3.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_n3.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_promoted.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_promoted.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_uninit.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_uninit.ll AB_SAME Bank fn=@main
+lowering_railbank_bank_anchor_uninit.ll AB_SAME Bank fn=@main
+lowering_reject_fp80_union_loop.ll AB_SAME NotBank fn=@loop_rmw
+lowering_reject_railbank_alias.ll AB_SAME RejectAlias fn=@slice
+lowering_reject_railbank_dynamic_object.ll AB_SAME RejectShape fn=@slice
+lowering_reject_railbank_escape.ll AB_SAME RejectShape fn=@main
+lowering_reject_railbank_fp_cell.ll AB_SAME RejectWidth fn=@main
+lowering_reject_railbank_fp_cell.ll AB_SAME RejectWidth fn=@main
+lowering_reject_railbank_global.ll AB_DIFF verdict real=RejectShape shim=NotBank fn=@main
+lowering_reject_railbank_inloop_read.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+lowering_reject_railbank_inloop_read.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+lowering_reject_railbank_mixed_access.ll AB_SAME RejectShape fn=@main
+lowering_reject_railbank_nested_walk.ll AB_SAME RejectIndex fn=@main
+lowering_reject_railbank_nested_walk.ll AB_SAME RejectIndex fn=@main
+lowering_reject_railbank_noninjective.ll AB_SAME RejectIndex fn=@main
+lowering_reject_railbank_noninjective.ll AB_SAME RejectIndex fn=@main
+lowering_reject_railbank_nonzero_init.ll AB_SAME RejectShape fn=@main
+lowering_reject_railbank_nowidth_cell.ll AB_SAME RejectWidth fn=@slice
+lowering_reject_railbank_nowidth_cell.ll AB_SAME RejectWidth fn=@slice
+lowering_reject_railbank_oversized.ll AB_SAME RejectTotality fn=@main
+lowering_reject_railbank_oversized.ll AB_SAME RejectTotality fn=@main
+lowering_reject_railbank_tainted_index_in_loop_keeps_qram.ll AB_SAME NotBank fn=@main
+lowering_reject_railbank_two_stores.ll AB_DIFF verdict real=RejectAlias shim=RejectIndex fn=@main
+lowering_reject_railbank_two_stores.ll AB_DIFF verdict real=RejectAlias shim=Bank fn=@main
+lowering_reject_railbank_vla.ll AB_DIFF verdict real=RejectShape shim=NotBank fn=@slice
+lowering_reject_railbank_wrapping_index.ll AB_SAME RejectIndex fn=@slice
+lowering_reject_railbank_wrapping_index.ll AB_SAME RejectIndex fn=@slice
+lowering_unroll_leave_shadow_store_loop.ll AB_SAME NotBank fn=@shloop
+railbank_promote_int_cells.ll AB_SAME Bank fn=@main
+railbank_promote_int_cells.ll AB_SAME Bank fn=@main
+railbank_promote_int_cells.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n2_wholeobj_init.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n2_wholeobj_init.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n2_wholeobj_init.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n3.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n3.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n3.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n8.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n8.ll AB_SAME Bank fn=@main
+railbank_promote_loop_n8.ll AB_SAME Bank fn=@main
+railbank_promote_reject_already_ssa.ll AB_SAME Bank fn=@main
+railbank_promote_reject_already_ssa.ll AB_SAME Bank fn=@main
+railbank_promote_reject_classical_store.ll AB_SAME NotBank fn=@main
+railbank_promote_reject_early_exit.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_early_exit.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_escaping_address.ll AB_SAME RejectShape fn=@main
+railbank_promote_reject_inloop_other_read.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+railbank_promote_reject_inloop_other_read.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+railbank_promote_reject_nested_outer_loop.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_nested_outer_loop.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_noninjective_index.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_noninjective_index.ll AB_SAME RejectIndex fn=@main
+railbank_promote_reject_nonzero_init.ll AB_SAME RejectShape fn=@main
+railbank_promote_reject_oversized_bank.ll AB_SAME RejectTotality fn=@main
+railbank_promote_reject_oversized_bank.ll AB_SAME RejectTotality fn=@main
+railbank_promote_reject_second_exiting_block.ll AB_DIFF verdict real=RejectIndex shim=RejectTotality fn=@main
+railbank_promote_reject_second_exiting_block.ll AB_DIFF verdict real=RejectIndex shim=RejectTotality fn=@main
+railbank_promote_reject_store_outside_loop.ll AB_DIFF verdict real=RejectAlias shim=Bank fn=@main
+railbank_promote_reject_store_outside_loop.ll AB_DIFF verdict real=RejectAlias shim=Bank fn=@main
+railbank_promote_reject_two_cells.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+railbank_promote_reject_two_cells.ll AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+railbank_promote_reject_volatile_cell.ll AB_SAME RejectAlias fn=@main
+railbank_promote_uncond_prep.ll AB_SAME Bank fn=@main
+railbank_promote_uncond_prep.ll AB_SAME Bank fn=@main
+railbank_promote_uncond_prep.ll AB_SAME Bank fn=@main
+railbank_promote_uninit_bank.ll AB_SAME Bank fn=@main
+railbank_promote_uninit_bank.ll AB_SAME Bank fn=@main
+railbank_promote_uninit_bank.ll AB_SAME Bank fn=@main
+railbank_promote_unrolled_reads.ll AB_SAME Bank fn=@main
+railbank_promote_unrolled_reads.ll AB_SAME Bank fn=@main
+railbank_promote_unrolled_reads.ll AB_SAME Bank fn=@main
+a_loop_n2 AB_SAME Bank fn=@main
+a_loop_n2 AB_SAME Bank fn=@main
+a_loop_n2 AB_SAME Bank fn=@main
+a_loop_n3_noarm AB_SAME Bank fn=@main
+a_loop_n3_noarm AB_SAME Bank fn=@main
+a_loop_n3_noarm AB_SAME Bank fn=@main
+a_loop_n3_uncond AB_SAME Bank fn=@main
+a_loop_n3_uncond AB_SAME Bank fn=@main
+a_loop_n3_uncond AB_SAME Bank fn=@main
+a_loop_n3 AB_SAME Bank fn=@main
+a_loop_n3 AB_SAME Bank fn=@main
+a_loop_n3 AB_SAME Bank fn=@main
+a_loop_n8 AB_SAME Bank fn=@main
+a_loop_n8 AB_SAME Bank fn=@main
+a_loop_n8 AB_SAME Bank fn=@main
+L1_promoted_store AB_SAME Bank fn=@main
+L1_promoted_store AB_SAME Bank fn=@main
+L7_array_uninit AB_SAME Bank fn=@main
+L7_array_uninit AB_SAME Bank fn=@main
+L7_array_uninit AB_SAME Bank fn=@main
+L8_array_int_cells AB_SAME Bank fn=@main
+L8_array_int_cells AB_SAME Bank fn=@main
+L8_array_int_cells AB_SAME Bank fn=@main
+L9_array_phase_arm AB_SAME Bank fn=@main
+L9_array_phase_arm AB_SAME Bank fn=@main
+L9_array_phase_arm AB_SAME Bank fn=@main
+N1_vla_bound AB_DIFF verdict real=RejectShape shim=NotBank fn=@slice
+N2_escaping_array AB_SAME RejectShape fn=@main
+N3_global_array AB_DIFF verdict real=RejectShape shim=NotBank fn=@main
+N5b_noninjective_var_index AB_SAME RejectIndex fn=@main
+N5b_noninjective_var_index AB_SAME RejectIndex fn=@main
+A1_nonzero_init AB_SAME RejectShape fn=@main
+A2_fp_cells AB_SAME RejectWidth fn=@main
+A2_fp_cells AB_SAME RejectWidth fn=@main
+A3_oversized_bank AB_SAME RejectTotality fn=@main
+A3_oversized_bank AB_SAME RejectTotality fn=@main
+A5_const_index AB_SAME NotBank fn=@main
+A6_two_stores AB_DIFF verdict real=RejectAlias shim=RejectIndex fn=@main
+A6_two_stores AB_DIFF verdict real=RejectAlias shim=Bank fn=@main
+A7_inloop_other_cell AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+A7_inloop_other_cell AB_DIFF verdict real=RejectTotality shim=Bank fn=@main
+A8_byte_view AB_SAME RejectShape fn=@main
+A9_tainted_index_in_loop AB_SAME NotBank fn=@main
+H1_nested_outer_rewrite AB_SAME RejectIndex fn=@main
+H1_nested_outer_rewrite AB_SAME RejectIndex fn=@main
+H13_alloca_in_loop AB_SAME RejectIndex fn=@main
+H13_alloca_in_loop AB_SAME RejectIndex fn=@main
+H17_narrow_index AB_SAME Bank fn=@main
+H17_narrow_index AB_SAME Bank fn=@main
+H17_narrow_index AB_SAME Bank fn=@main

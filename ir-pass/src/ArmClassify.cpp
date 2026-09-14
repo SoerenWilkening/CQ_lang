@@ -1510,17 +1510,70 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 // 0-byte and therefore VACUOUS probe), which is why removing it compiles the
 // file and why removing it changes nothing anywhere else.
 //
-// ⚠ THE ARGUMENT ABOVE IS A THEOREM ONLY FOR AN **ACYCLIC** USER CHAIN, AND
-// THAT PRECONDITION IS NOW ENFORCED IN THE HELPER, NOT ASSUMED. A φ is the one
-// opcode whose operand need only dominate its incoming EDGE, so a LOOP-HEADER φ
-// can take an `M`-descendant on its BACK EDGE and still DOMINATE both slots —
-// i.e. be exactly the available collider the two bullets say cannot exist
-// (round-1 Rule-13 review, F-F1-1; measured as a mover before the narrowing, and
-// pinned by the fixture PAIR `…_reject_stateprep_backedge_phidesc_collider.ll` +
-// `…_reject_stateprep_backedge_nonphidesc_collider.ll`). The helper therefore
-// skips a φ user that `MergeBB` does not dominate, which makes "every member is
-// in a block dominated by `MergeBB`" an invariant of the set rather than a
-// premise about the input.
+// ⚠ WHAT MAKES THE TWO BULLETS A THEOREM IS AN **INVARIANT OF THE SET**, AND THE
+// CYCLIC/ACYCLIC AXIS THE EARLIER TEXT USED HERE WAS THE WRONG ONE. (X5
+// re-derivation, 2026-09-14c, run because bd `test_C_libtooling-wx8g` landed and
+// made the in-loop shapes reachable; records in that session's `trackX/`. The
+// sentence this replaces read "the argument above is a theorem only for an
+// ACYCLIC user chain" — true of the DRAFT it was written against, and a
+// misdescription of the line that shipped.)
+//
+// THE INVARIANT: every member of `PhiDesc` lies in a block DOMINATED BY
+// `MergeBB`. It is maintained by induction. `M` itself satisfies it. A NON-φ
+// user satisfies it for free, because SSA already requires `M`'s definition to
+// dominate that user, so `MergeBB` dominates its block. A φ user is the ONE case
+// SSA does not guarantee — and that is exactly, and only, what the `isa<PHINode>`
+// line in the helper below tests.
+//
+// THE INVARIANT IS SUFFICIENT FOR THE TWO BULLETS, and that step is STRUCTURAL.
+// `recoverRegion` (`ControlDetect.cpp`) admits a Diamond only when
+// `Arm->getSinglePredecessor() == Pred` and `soleMergePhi(MergeBB)` has EXACTLY
+// TWO incomings — a φ's incoming count IS its block's predecessor count — so
+// `MergeBB`'s only predecessors are `Pred` and the arm, the arm's only
+// predecessor is `Pred`, and `Pred` therefore STRICTLY dominates `MergeBB`
+// whenever it is reachable. (An if/else is the same: `MergeBB`'s two
+// predecessors are the two arms, each single-pred `Pred`.) Dominance is
+// antisymmetric, so `MergeBB` dominates NEITHER `Pred` NOR the arm; a member's
+// block, being dominated by `MergeBB`, dominates neither of them either — which
+// IS "unavailable at the arm theta's arg-0, and unavailable on the merge φ's
+// pred edge".
+//
+// ⚠ NOTE WHAT THAT DERIVATION NEVER MENTIONS: cycles. It holds verbatim for a
+// region INSIDE a loop, because on any entry path the FIRST arrival at `Pred`
+// precedes `MergeBB`, whatever the back edges do. That is why the axis is wrong
+// and why the honest reading of the line is "a dominance test", not "a loop
+// test" — a nested loop, a back edge into a non-header block and a purely
+// classical bypass that re-joins after the region are all ONE case to it.
+//
+// ⚠ "IS A φ THE ONLY OPCODE THAT CAN BREAK THE INDUCTION?" — THE ANSWER IS NOT
+// AN OPCODE LIST (L5: a syntactic answer to a semantic question loses). The
+// property that breaks it is "this user's operands need not dominate its own
+// definition", and LLVM 19 spells that in ONE place:
+// `DominatorTree::dominates(const Value *Def, const Use &U)` picks `UseBB` as
+// `PN->getIncomingBlock(U)` for a `PHINode` and as `UserInst->getParent()` for
+// everything else. `llvm/IR/Dominators.h:181-191` documents the three exceptions
+// to that API, and the other two — non-instruction Defs, and `Invoke`/`CallBr`
+// Defs, which "only dominate uses in their default destination" — NARROW
+// availability, so they can only ever REMOVE a rival. MEASURED rather than
+// asserted: both slot spellings of a NON-φ `M`-descendant are rejected by
+// `opt -passes=verify` with "Instruction does not dominate all uses!" (probes
+// `a1_nonphi_mdesc_at_arm_slot_INVALID.ll`, `a2_nonphi_mdesc_at_pred_slot_-
+// INVALID.ll`), and so is a φ placed in the ARM block taking `M`
+// (`c4_arm_block_phi_taking_M_INVALID.ll` — the arm is single-pred by
+// `recoverRegion`, so its φs have one incoming and it is not `M`). WHAT IS
+// SKIPPED, SAID PLAINLY: no enumeration of LLVM's opcodes was performed and none
+// is owed here — the reliance is on the Verifier's own rule, which is
+// opcode-agnostic apart from that one `dyn_cast<PHINode>`.
+//
+// ⚠ AND THAT IS WHERE THE `isa<PHINode>` CONJUNCT IS LOAD-BEARING IN A WAY THE
+// HELPER'S OWN "it is a no-op on every NON-φ user" SENTENCE DOES NOT SAY. Both
+// are true: it IS a no-op on valid IR today, AND it is the only thing standing
+// between this walk and a future opcode with per-edge operands, which would
+// short-circuit past `isa<PHINode>` and enter the set unchecked. Dropping the
+// conjunct — `if (!DT.dominates(MergeBB, I->getParent())) continue;` — makes the
+// guard opcode-agnostic at ZERO behavioural cost on valid IR (the no-op argument
+// is exactly the proof of that). It is still a Rule-13 core edit on this
+// function, so it is FILED rather than taken: trigger (3c) below.
 //
 // ⚠ RETIREMENT TRIGGERS (L8), as file:line conditions — THREE of them:
 //  (1) `f2Model`'s `SelectInst` arm BELOW — the `unionWith` of the two value
@@ -1540,16 +1593,52 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 //      classical branch BYPASSES the region and re-joins after it. Do not read
 //      the two fixture headers, or the paragraph above, as saying this is a
 //      loop-only line: it is not.
-//      (3a) CYCLIC HALF — **bd `test_C_libtooling-wx8g`, BY NAME**: the open
-//           over-decline that keeps every IN-LOOP state prep from reaching this
-//           function today (`control flow inside a loop body`), which the
-//           owner's 2026-09-11 ruling calls a defect to remove. It is the ONLY
-//           reason the back-edge-φ shape is unreachable rather than merely
-//           narrowed; note that in-loop regions DO reach `classifyArms`
-//           (`ControlDetect.cpp`), so the loop is not a blanket fence — only the
-//           prep shape is stopped. **The day `wx8g` lands, the back-edge fixture
-//           pair is the tripwire: re-derive this skip against the shapes `wx8g`
-//           admits, and do not assume the φ case is the only cyclic one.**
+//      (3a) THE CYCLIC HALF — **bd `test_C_libtooling-wx8g` HAS LANDED
+//           (`a2b86139`, 2026-09-14), THIS TRIGGER HAS FIRED, AND THE
+//           RE-DERIVATION IT DEMANDED IS DONE** (X5, session 2026-09-14c,
+//           `trackX/X5_REDERIVATION.md`). Do not read it as pending work. What
+//           it found, in the order that matters:
+//           * ⚠ THE TWO NAMED TRIPWIRES HELD — AND THEY WERE NEVER BEHIND
+//             `wx8g`'s FENCE. Both spell their condition as a COMPARE
+//             (`%c = icmp eq i32 %q, 7`), while the carve-out `wx8g` retired was
+//             `if (RailCond && Region.InLoop)`, guarded on a BARE RAIL. So both
+//             reached F2 on the pre-`wx8g` oracle too — their own headers record
+//             precisely that measurement — and "the pair held" is therefore NOT
+//             evidence about the spelling this trigger was written for. The
+//             sentence in those headers claiming they are "declined twice over"
+//             because every in-loop prep is stopped before F2 was FALSE when
+//             written; it is corrected in both files.
+//           * THE BARE-RAIL SPELLING WAS THEN MEASURED DIRECTLY, as a three-way
+//             isolation on ONE binary (`trackX/probes/w3*.ll`):
+//               w3   in-loop bare-rail prep + a back-edge φ `M`-descendant
+//                    collider                                  -> DECLINE at F2
+//               w3b  the same with that φ removed, leaving only a NON-φ
+//                    `M`-descendant collider (in the set)       -> F2 SILENT
+//               w3c  w3b with ONE operand changed so the collider is no longer
+//                    an `M`-descendant                          -> DECLINE at F2
+//             w3b-vs-w3c attributes the silence to φ-descendant MEMBERSHIP and
+//             to nothing about the loop; w3 says the skip still keeps the
+//             AVAILABLE collider out of the set in the spelling `wx8g` newly
+//             admits. The compare-conditioned triple `w1*.ll` reproduces all
+//             three verdicts, and `w2d`/`w1d` calibrate that the minimal in-loop
+//             prep ACCEPTS in both spellings (so none of this is vacuous).
+//           * THE TRIGGER'S SECOND SENTENCE — "do not assume the φ case is the
+//             only cyclic one" — IS DISCHARGED BY RETIRING THE AXIS, not by
+//             enumerating cyclic shapes: see the INVARIANT paragraph in this
+//             function's header. The line is a DOMINANCE test; cyclicity is not
+//             a term in its correctness argument.
+//           * NEW TRIGGER IN ITS PLACE, and it is about the SHAPE OF THE REGION
+//             rather than about any loop: **the day `recoverRegion` admits a
+//             region whose `MergeBB` has a predecessor that is neither `Pred`
+//             nor an arm — i.e. the day `soleMergePhi`'s exactly-two-incomings
+//             gate or the arms' `getSinglePredecessor() == Pred` gate is
+//             relaxed — `Pred` may stop strictly dominating `MergeBB` and the
+//             sufficiency step above must be re-derived from scratch.** The
+//             companion condition is REACHABILITY: a member's block being
+//             dominated by `MergeBB` is vacuous when `MergeBB` is unreachable,
+//             so if detection is ever run over blocks not reachable from entry
+//             (today `-O1` deletes them, and an unreachable region emits gates
+//             that never execute), this argument does not cover them.
 //      (3b) ACYCLIC HALF — MEASURED, and it has a customer TODAY with no loop
 //           anywhere in the module: `trackF/fix_r2_probes/r20_acyclic_
 //           nondominated_phi.ll` (an `icmp sgt i32 %arg, 100` guard bypassing
@@ -1581,6 +1670,51 @@ bool f2Model(Instruction *I, F2State &S, const DataLayout &DL,
 //           non-dominated-φ module ACCEPTS on the un-narrowed binary and
 //           DECLINES here, the capability cost has become observable as a lost
 //           accept and option (b) is owed.**
+//           ---- X5 UPDATE (2026-09-14c), THREE MEASURED CORRECTIONS ----
+//           (i) THE "CYCLIC / ACYCLIC" SPLIT IS THE WRONG AXIS and is kept only
+//               so the bd ids stay findable. There is ONE predicate, ONE
+//               invariant and ONE imprecision: the invariant (see this
+//               function's header) is SUFFICIENT for unavailability and NOT
+//               NECESSARY, so every φ it drops from the set that was in fact
+//               unavailable at both slots is an over-decline. The back-edge case
+//               is the sub-case where the dropped φ IS available (a genuine
+//               hazard); the bypass case is the sub-case where it is not (pure
+//               cost). Cyclicity does not separate them — AVAILABILITY does.
+//           (ii) THE COST IS NOW ISOLATED ON **ONE** BINARY, which r20 could not
+//               do (it moved only BETWEEN binaries). `trackX/probes/c2` and
+//               `c2c` are the same program, the same collider value and the same
+//               loop; they differ only in whether the classical bypass sits
+//               inside the merge-dominated region. `c2` (not dominated) fires
+//               F2; `c2c` (dominated) does not, and neither does `c2d` (the
+//               collider deleted). ⚠ THE FAILED CONSTRUCTION ABOVE STILL STANDS:
+//               `c2c_…_live` — the variant whose chain is live — declines at
+//               `declineClassicalMuxes`, exactly the masking this bullet names,
+//               so an ACCEPT-vs-DECLINE pair remains unconstructed and the
+//               `hrts` trigger is NOT yet met. Say it that way; do not upgrade
+//               "isolated on one binary" into "observable as a lost accept".
+//          (iii) OPTION (b) IS CHEAPER THAN THIS TEXT SAYS: **the "second clause
+//               for the ARM slot" is NOT NEEDED for any region this pass
+//               detects.** `recoverRegion` requires the arm to be
+//               single-predecessor(`Pred`), so every φ in an arm block has
+//               exactly ONE incoming, on the `Pred`->arm edge, which `M` does
+//               not dominate — the shape is not expressible. MEASURED:
+//               `opt -passes=verify` rejects
+//               `trackX/probes/c4_arm_block_phi_taking_M_INVALID.ll`. So (b) is
+//               the one clause `DT.dominates(I, BI)` plus the `BranchInst`
+//               thread-through. Recorded on bd `test_C_libtooling-hrts`.
+//      (3c) THE OPCODE-AGNOSTIC SPELLING OF THE SAME LINE — filed by X5,
+//           2026-09-14c, as **bd `test_C_libtooling-dpau`**.
+//           `isa<PHINode>(I) &&` is a no-op on every non-φ user of a valid
+//           module and is simultaneously the only thing that would let a
+//           future per-edge-operand opcode into the set unchecked (header, last
+//           ⚠). Deleting the conjunct is behaviour-neutral on valid IR and makes
+//           the guard depend on no opcode enumeration at all. NOT taken here: it
+//           is a Rule-13 core edit and it needs its own red-green plus a round.
+//           **TRIGGER: the day `DominatorTree::dominates(const Value *, const
+//           Use &)` names any class besides `PHINode` when choosing `UseBB`, or
+//           LLVM gains an instruction whose value operands are checked per
+//           incoming edge, this conjunct is an OVER-ACCEPT and must be dropped
+//           in the same change.**
 //
 // The set is COMPUTED LOCALLY, once per call, from `Region.Merge` — deliberately
 // NOT recorded in `TaintSet` the way R-1's clones are. R-1 needed a record
@@ -1700,7 +1834,12 @@ void collectStatePrepPhiDescendants(const Value *Merge, const Function *F,
       // round-2 Rule-13 review §3. The direction argument above is what holds.)
       //
       // ⚠ **THIS LINE IS BROADER THAN THE BACK-EDGE SHAPE THAT MOTIVATED IT,
-      // AND THE EXTRA HALF IS AN OVER-DECLINE.** `!DT.dominates(MergeBB, …)`
+      // AND THE EXTRA HALF IS AN OVER-DECLINE.** (X5 measured the cost on ONE
+      // binary — `trackX/probes/c2` vs `c2c`, same program, same collider, the
+      // bypass moved inside the merge-dominated region — where r20 below could
+      // only move it BETWEEN binaries. The `hrts` trigger is still NOT met: the
+      // live-chain variant is masked by `declineClassicalMuxes`, so no ACCEPT is
+      // demonstrably lost yet.) `!DT.dominates(MergeBB, …)`
       // also drops a φ in a fully ACYCLIC CFG whose block is merely not
       // dominated by `MergeBB` — a classical branch that BYPASSES the region and
       // re-joins after it needs no cycle at all. MEASURED as a mover on
@@ -1722,17 +1861,34 @@ void collectStatePrepPhiDescendants(const Value *Merge, const Function *F,
       // MEMBER against `M` ITSELF and can only ever REMOVE an exclusion, i.e.
       // only ever ADD declines. Opposite object, opposite direction.
       //
-      // It is a no-op on every NON-φ user and is spelled for φs only to say so:
-      // if `I` is not a φ, SSA already requires `M`'s definition to dominate
-      // `I`, hence `MergeBB` to dominate `I`'s block. The resulting INVARIANT —
-      // and it is what the header's availability bullets actually need — is
-      // that EVERY member of this set lies in a block dominated by `MergeBB`,
-      // which (since `Pred` strictly dominates `MergeBB`, and the arm is not
+      // It is a no-op on every NON-φ user, and is spelled for φs to say so: if
+      // `I` is not a φ, SSA already requires `M`'s definition to dominate `I`,
+      // hence `MergeBB` to dominate `I`'s block. The resulting INVARIANT — what
+      // the header's availability bullets actually need — is that EVERY member
+      // of this set lies in a block dominated by `MergeBB`, which (since `Pred`
+      // strictly dominates `MergeBB`, and neither `Pred` nor the arm is
       // dominated by it) is unavailable at the arm slot and at the pred edge.
-      // Before this line that held only for an ACYCLIC user chain, as an
-      // unstated premise; now it holds by construction — at the price named in
-      // the ⚠ above, which is that it ALSO holds for acyclic φs that were never
-      // a hazard.
+      // The header derives that sufficiency step from `recoverRegion`'s own
+      // structural gates and carries the induction; read it there.
+      //
+      // ⚠ TWO THINGS ARE TRUE OF THE `isa<PHINode>` CONJUNCT AT ONCE, and an
+      // earlier draft of this paragraph said only the first. (1) It is a no-op
+      // today. (2) It is nevertheless the ONLY guard against a user whose
+      // operands need not dominate its own definition — `PHINode` is the single
+      // class LLVM 19 treats that way — so a future opcode with per-edge
+      // operands would short-circuit past it and enter the set UNCHECKED. The
+      // opcode-agnostic spelling (drop the conjunct; keep the dominance test) is
+      // behaviour-neutral on valid IR and is FILED as trigger (3c) in the
+      // header, not taken here. ⚠ DO NOT "simplify" this line by deleting the
+      // DOMINANCE half instead — that is the guard.
+      //
+      // ⚠ THE "ACYCLIC user chain" FRAMING THIS PARAGRAPH USED TO CARRY IS
+      // RETIRED (X5, 2026-09-14c). Cyclicity is not a term in the argument: the
+      // invariant holds for a region inside a loop by the same derivation, and
+      // the same line also drops acyclic non-dominated φs, which is the
+      // over-decline bd `test_C_libtooling-hrts` / bd `test_C_libtooling-l3i1`
+      // own. One predicate, one invariant, one imprecision — see (3b)'s X5
+      // UPDATE for the three corrections that measurement produced.
       //
       // `DT.dominates(BB, BB)` is SAFE on an unreachable or node-less block, and
       // that is worth pinning because the very next function carries a comment
@@ -5071,7 +5227,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // it got no record, no re-ask and a stream missing one
         // `cq_template_and_i32_hl_unc` + `cqrt_free` per activation
         // (`d3_invariant_read.c`, 30 vs 34 trace lines, ORACLE DECLINE →
-        // SUBJECT ACCEPT). CLAUDE.md's L1: THE RECORD MUST BE AT EVERY GRANT.
+        // SUBJECT ACCEPT). CLAUDE.md's L1: THE RECORD MUST BE AT EVERY
+        // **R7-LOOP** GRANT — read it as that and NOT as "every in-loop grant"
+        // (bd `s82e`, 2026-09-14; the full scoping argument and its three
+        // measured programs are in `TaintSet::RolledLoopRegionGates`). The leak
+        // this record closes is REGION-INDEPENDENT, and the R7 slice is a
+        // STRICT SUBSET of it: the rest is still a silent leak, and bd `s82e`
+        // measured two further programs in which it is a WRONG UNITARY rather
+        // than an accepted leak (a per-trip rail left entangled with a
+        // loop-INVARIANT register that is afterwards re-rotated and measured).
         // Placing it after `if (!Rollable) return` — rather than in each
         // clause — is what makes that structural: a new clause sets `Rollable`
         // and falls through here, and the only way to miss the record is to

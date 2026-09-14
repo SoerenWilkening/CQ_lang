@@ -1,0 +1,34 @@
+  caught    lowering_railbank_bank_anchor_intcells.ll            the bank's zero initializer becomes non-zero (C1 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_intcells.ll            the store loop's trip count stops matching N (C6 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_intcells.ll            anchor abi= is read [expectation]
+  caught    lowering_railbank_bank_anchor_n3.ll                  the bank's zero initializer becomes non-zero (C1 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_n3.ll                  the store loop's trip count stops matching N (C6 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_n3.ll                  anchor cells= is read [expectation]
+  caught    lowering_railbank_bank_anchor_n3.ll                  anchor abi= is read [expectation]
+  caught    lowering_railbank_bank_anchor_n3.ll                  anchor trips= is read [expectation]
+  caught    lowering_railbank_bank_anchor_promoted.ll            the bank's zero initializer becomes non-zero (C1 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_promoted.ll            the store loop's trip count stops matching N (C6 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_promoted.ll            anchor cells= is read [expectation]
+  caught    lowering_railbank_bank_anchor_uninit.ll              a second store site is injected (C4 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_uninit.ll              the store loop's trip count stops matching N (C6 fires, anchor gone)
+  caught    lowering_railbank_bank_anchor_uninit.ll              anchor cells= is read [expectation]
+  caught    lowering_reject_railbank_alias.ll                    C4: the cell address stops fanning out
+  caught    lowering_reject_railbank_dynamic_object.ll           C1: the bank object is hoisted to the entry block (what clang -O1 itself does)
+  caught    lowering_reject_railbank_escape.ll                   C1: the address no longer escapes to an opaque callee
+  caught    lowering_reject_railbank_fp_cell.ll                  C3: the f64 cell becomes an i64 cell (a width WITH a reversible copy)
+  caught    lowering_reject_railbank_fp_cell.ll                  C3 (weaker, isolating the ORDER): a REAL escape is injected, so C1 fires FIRST
+  caught    lowering_reject_railbank_global.ll                   C1: the global bank becomes a function-local alloca
+  caught    lowering_reject_railbank_inloop_read.ll              C6: the in-loop read of cell 0 becomes a read of THIS trip's own cell
+  caught    lowering_reject_railbank_mixed_access.ll             C1: the byte view is moved off the bank
+  caught    lowering_reject_railbank_nested_walk.ll              C2': the OUTER loop's back edge is removed, so the walk is not re-executed
+  caught    lowering_reject_railbank_noninjective.ll             C2': the i>>1 index becomes the affine {0,+,1} IV, over a bank of matching size
+  caught    lowering_reject_railbank_nonzero_init.ll             C1: the non-zero memset fill becomes zero
+  caught    lowering_reject_railbank_nowidth_cell.ll             C3: the i96 cell becomes an i32 cell (a width abiWidthFromType knows)
+  caught    lowering_reject_railbank_oversized.ll                C6: the store loop's trip count becomes N
+  caught    lowering_reject_railbank_tainted_index_in_loop_keeps_qram.ll C2: the tainted index becomes the loop IV (the shape becomes a rail bank)
+  caught    lowering_reject_railbank_tainted_index_keeps_qram.ll C2: the index becomes classical (the shape leaves 7.5's axis entirely)
+  caught    lowering_reject_railbank_two_stores.ll               C4: the second store site is removed
+  caught    lowering_reject_railbank_vla.ll                      C1: the VLA becomes a bounded alloca
+  caught    lowering_reject_railbank_wrapping_index.ll           C2': the recurrence is flagged no-wrap, so SCEV believes it
+
+32 mutations over 21 fixtures: 32 caught, MISSED 0, n/a-HOLE 0

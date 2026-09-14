@@ -77,6 +77,8 @@ add_library(CQPass MODULE
   src/Plugin.cpp
   src/PredMuxFlatten.cpp
   src/QramLowering.cpp
+  # bd xdu2 / L-1a: the rail-bank per-activation promoter (clause C5).
+  src/RailBankPromote.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   src/RotationLowering.cpp

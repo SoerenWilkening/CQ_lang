@@ -315,6 +315,56 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // `add`/`xor` on the invariant register will be lowered IN PLACE, and that
 // decision has exactly one owner — `ArithLowering::classifyInPlaceReassignment`
 // (Rule 14, never a second spelling). See `invariantRegisterRoots`.
+// bd `test_C_libtooling-s82e`, OWNER RULING **D4** (2026-09-14c) — THE NARROW
+// DIVERGENT SUB-CASE OF THE UNMARKED-LOOP LEAK, AS A LOUD DECLINE.
+//
+// An unmarked loop body leaks its per-trip `cq_template_*` rails (the whole-DAG
+// spine's in-loop guard skips them). That is USUALLY Rule 6's accepted leak — the
+// leaked rail copies a register that is garbage in both forms. It is NOT a leak
+// when the copied register is still LIVE after the loop and a NON-DIAGONAL gate
+// lands on it there: the leaked copy dephases it, and rolled and unrolled become
+// DIFFERENT UNITARIES (`CLAUDE.md` Rule 8) at `opt` exit 0, verify-clean, and
+// STRICT stage 2b clean on both halves. Measured 10-vs-14 and 19-vs-25 trace lines
+// against hand-unrolled twins; the rolled-vs-hand-unrolled trace pair is the ONLY
+// instrument in the tree that sees the class.
+//
+// ⚠ CORRECTION, CLOSING GATE 2026-09-14c — THE PARAGRAPH ABOVE STATES THIS
+// FENCE'S **SCOPE**, NOT THE CLASS, AND IT IS NOT A COVERAGE CLAIM. Rule-13
+// round 1 track β measured that the function catches PART of the dephasing class:
+// conjunct (2) inspects only rotations OUTSIDE the loop, so the identical
+// dephasing with the interference INSIDE the body still ACCEPTS (bd
+// `test_C_libtooling-c767`, P1), and conjunct (3) scans `BinaryOperator` only, so
+// a compare used as DATA — an ordinary out-of-place
+// `cq_template_icmp_<pred>_<W>_hl` which-path copy — also still ACCEPTS (bd
+// `test_C_libtooling-7845`, P1). Both are PRE-EXISTING over-accepts, not
+// regressions. In the other direction it refuses at least one shape whose rolled
+// trace is BYTE-IDENTICAL to its hand-unrolled twin's (a dtzb IN-PLACE `xor`,
+// which mints no rail at all) — an over-decline, bd `test_C_libtooling-2g52`.
+// Read "still LIVE after the loop" and the diagnostic's own "rotated after the
+// loop" as descriptions of the four conjuncts and of nothing else. The full
+// measurement, the correlated-signal note on
+// `RotationLowering::warnLiveRecordRotations`, and the retirement triggers are at
+// the definition in `LoopLowering.cpp`; this declaration must not be quoted
+// without them (`CLAUDE.md` L7-with-a-twist).
+//
+// PURE ANALYSIS — declines or does nothing; mutates no IR and no `taint` set.
+//
+// CALL IT AFTER `declineRecordedStaleQuantumReaders` IN BOTH ENTRY POINTS. The
+// slot is load-bearing twice over: it is after the round-2 fixpoint, so
+// `taint.IterationLocalBlocks` is FINAL and the stage needs no record to re-ask
+// (`CLAUDE.md` L1, answered by ORDER rather than by bookkeeping); and it is after
+// the stale-reader backstop, so a module that already declines keeps its existing
+// string (`LLVMContext::diagnose` EXITS on the first `DS_Error`, bd `br4a`).
+//
+// ⚠ THE DECLINE IS THE INTERIM; **bd `tu9q`** (P1) IS THE END STATE — it builds
+// the discharge pairing so these programs COMPILE. Rule 17: the refused programs
+// receive an INVALID circuit today, so refusing them is the Prime Directive and
+// the 2026-09-11 over-decline ruling does not reach them. See the argued comment
+// at the definition in `LoopLowering.cpp` for the full measurement, for why the
+// stage asks the OUTCOME ("is this body unmarked?") rather than any one refusal
+// CLAUSE, and for its retirement triggers.
+void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
+
 void collapseFlattenedLoopRails(
     llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
     const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =

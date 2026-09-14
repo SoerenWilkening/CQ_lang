@@ -21,6 +21,7 @@
 #include "OpcodeLowering.h"
 #include "PredMuxFlatten.h"
 #include "QramLowering.h"
+#include "RailBankPromote.h"
 #include "RotationLowering.h"
 #include "SpecializeDetect.h"
 #include "SpecializePlan.h"
@@ -144,6 +145,67 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // to taint the inlined producer's downstream; FIXPOINT for nested producers.
   while (lowerByRefInline(M, taint))
     taint = propagate(M, wd);
+
+  // bd `xdu2` / L-1a clause C5 — THE RAIL-BANK PER-ACTIVATION PROMOTER
+  // (RailBankPromote.cpp): a bounded `bool b[N]` / `int b[N]` whose cells hold
+  // one fresh rail per trip is forwarded to SSA WITHIN ONE ACTIVATION — the seed
+  // load becomes the proven initializer constant, every intra-activation load
+  // becomes the dominating store's value (an SSA merge phi where the store is
+  // conditional), and EXACTLY ONE store per activation survives, at the
+  // activation's end. That is the shape `clang -O1` emits for the equivalent
+  // scalar source (`trackL/probes/L1_promoted_store.c`), so everything after it
+  // is SSA and the existing control chain applies unchanged.
+  //
+  // ⚠ IT DOES NOT MAKE ANYTHING COMPILE, AND THAT IS THE STAGING, NOT A PUNT.
+  // W1 is three pieces; the taint rule (a load from a `!cq.railbank` alloca is
+  // tainted), the `[N x i1]` -> `[N x i32]` type rewrite and the D5 allow-list
+  // are deliberately DEFERRED, because until they land an ACCEPTED bank is a
+  // silent miscompile: `cq_measure(b[i])` on an UNTAINTED load takes
+  // `MeasureLowering.cpp`'s classical split and emits no gate, no symbol and NO
+  // TRACE LINE (SCOPE_L1a §4.4(D)), which the golden byte-diff cannot see. The
+  // promoted module therefore still declines `kMsgStore`, at the one surviving
+  // store. See RailBankPromote.h.
+  //
+  // ⚠ THE SLOT IS THE L1 ARGUMENT, AND IT IS WHY THIS IS *FIRST*. This stage
+  // GROWS THE TAINT SET — a bank `load` is untainted today (taint is SSA-only;
+  // `propagateWorklist` has no load/store rule), and forwarding the STORED VALUE
+  // to it makes every downstream user quantum. That is `MergePhiPeel`'s F-B6-1
+  // species verbatim (five plain-C escapes of a rail HANDLE at `opt` exit 0),
+  // and the cure there was `adjudicateTaintDelta`. Here the cure is ORDER: the
+  // loop below re-runs `propagate` FROM SCRATCH after every change, which is
+  // strictly stronger than a delta, and EVERY stage that adjudicates consumers
+  // of tainted values runs after it —
+  //   `foldIdentityBitcasts` (:169, the SOLE handler for a same-width int<->int
+  //   bitcast, and `adjudicateTaintDelta`'s CALL 1 for exactly that reason),
+  //   `foldVolatileConstGlobalLoads`, `foldVolatileConstAllocaLoads`,
+  //   `eraseDeadVolatileScalarStores`, `promoteVolatileScalarLocals`,
+  //   `promoteFp80Union`, `flattenPredMuxRegions`, `unrollConstTripLoops`,
+  //   `recognizeCtlzIdiomLoops`, `detectSpecializations`, `declineTaintEscapes`,
+  //   `declineStaleRecordOps`, `recordStaleQuantumReaders`, the peel and both
+  //   detection rounds.
+  // Nothing above it computes anything a later stage consumes: `lowerByRefInline`
+  // is itself a re-propagating fixpoint. RETIREMENT TRIGGER: move this call below
+  // ANY of the stages named above — or add a taint-consuming stage above it — and
+  // it owes `adjudicateTaintDelta` exactly as the peel does, with NO DIAGNOSTIC
+  // ANYWHERE if the obligation is missed.
+  //
+  // ACCEPT-ONLY: an off-pattern bank is left byte-untouched for its existing loud
+  // owner. ONE bank per call + a full re-propagate (the `flattenPredMuxRegions` /
+  // `promoteVolatileScalarLocals` precedent) so each claim sees fresh taint and
+  // fresh dominance and no cached block identity crosses an erasure (Rule 9).
+  while (promoteRailBankCells(M, taint))
+    taint = propagate(M, wd);
+  // Debug lever (bd `xdu2`; env-gated, no behaviour change): dump the module
+  // after the promotion fixpoint settles — the CQ_FP80_DBG / CQ_SPEC_DBG
+  // precedent. It exists because EVERY module this stage fires on still
+  // DECLINES, and a `DS_Error` decline writes 0 bytes to stdout, so the
+  // promotion is not observable on the lowered IR at all and an IR-text CHECK
+  // there would be vacuous (Rule 12 hygiene defect (b)).
+  if (::getenv("CQ_RAILBANK_DBG")) {
+    llvm::errs()
+        << "=== CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===\n";
+    M.print(llvm::errs(), nullptr);
+  }
 
   // bd iw81.1: fold same-width int<->int `bitcast` identity FIRST, right after
   // taint settles and BEFORE any analysis. A folded bitcast is `result===operand`
@@ -700,6 +762,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // the peel / control detection, which reopens the over-decline the split
   // exists to avoid.
   declineRecordedStaleQuantumReaders(M, taint);
+  // bd `test_C_libtooling-s82e` / owner ruling D4 (2026-09-14c) — the narrow
+  // divergent sub-case of the unmarked-loop rail leak. AFTER the stale-reader
+  // backstop on purpose (it keeps its documented "last owner to speak" role for
+  // every module that already declines; this one only ever speaks where nothing
+  // else did — measured as ZERO string moves over the corpus sweep), and after
+  // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
+  // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
+  declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
@@ -856,6 +926,24 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // p119: by-ref math canonicalization removed (library functions, source-injected
   // not recognized) — see run(). Twin-pipeline parity preserved by the removal in
   // both entry points.
+
+  // bd `xdu2` / L-1a clause C5 — the rail-bank per-activation promoter, mirrored
+  // in this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). See
+  // run() for the contract, the staged landing, and — the part that must not be
+  // separated from the call — the L1 SLOT ARGUMENT: this stage grows the taint
+  // set, so it is sound ONLY because it runs above every stage that adjudicates
+  // consumers of tainted values, `foldIdentityBitcasts` included.
+  while (promoteRailBankCells(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
+  if (::getenv("CQ_RAILBANK_DBG")) {
+    llvm::errs()
+        << "=== CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===\n";
+    M.print(llvm::errs(), nullptr);
+  }
 
   // bd iw81.1: fold same-width int<->int bitcast identity, mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
@@ -1099,6 +1187,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // the peel / control detection, which reopens the over-decline the split
   // exists to avoid.
   declineRecordedStaleQuantumReaders(M, taint);
+  // bd `test_C_libtooling-s82e` / owner ruling D4 (2026-09-14c) — the narrow
+  // divergent sub-case of the unmarked-loop rail leak. AFTER the stale-reader
+  // backstop on purpose (it keeps its documented "last owner to speak" role for
+  // every module that already declines; this one only ever speaks where nothing
+  // else did — measured as ZERO string moves over the corpus sweep), and after
+  // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
+  // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
+  declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);

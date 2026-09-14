@@ -1971,6 +1971,49 @@ bool recordIsExemptAt(CallInst *R, CallInst *T, const TaintSet &taint,
 // on their unconditional twins (e.g. `p/u06_uncond_sdiv4.c`, where the source
 // rotates the DIVISION's own rail in place) and is SILENT on every one of the 42.
 // The only fence for that class is `ArmClassify::f2SeedPinnedByLiveRegister`.
+//
+// ⚠ AND IT IS NOT A BACKSTOP FOR bd `test_C_libtooling-s82e`'s IN-LOOP DEPHASING
+// CLASS EITHER — BUT IT IS **CORRELATED** WITH IT, AND THE RELATIONSHIP IS
+// WRITTEN DOWN HERE SO THE NEXT AGENT FINDS IT INSTEAD OF RE-DERIVING IT (closing
+// gate 2026-09-14c; the same note is at
+// `LoopLowering::declineDephasingUnmarkedLoopRails`, which is that class's fence).
+// MEASURED at that gate, counting this diagnostic's string in `opt` stderr:
+//
+//   ORACLE `5c6f7490a81c7505…`  s1_live_shift 2 · s2_live_derived_region 2 ·
+//                               b11_cmp_rail_data 2   (the three DIVERGENT probes
+//                               — rolled and hand-unrolled compute different
+//                               unitaries) and
+//                               s3_live_rootmint_region 0 · w2k_noregion_invread 0
+//                               (the two BENIGN ones). A clean split on 5 of 5.
+//   MERGED `0e280fc62a91cec2…`  s1 / s2 now exit 1 at the loop fence
+//                               (`CQLoweringPass.cpp:772`), so this stage (`:864`)
+//                               never runs for them — their count is 0 BY
+//                               PREEMPTION, not by silence (`LLVMContext::diagnose`
+//                               EXITS on the first `DS_Error`, bd `br4a`).
+//                               `b11_cmp_rail_data` still exits 0 and still warns
+//                               twice: it is the member that fence MISSES
+//                               (bd `test_C_libtooling-7845`, P1).
+//
+// ⚠⚠ IT IS **NOT** A DIVERGENCE DETECTOR AND MUST NOT BE DESCRIBED AS ONE, however
+// suggestive that 5-of-5 split is. MEASURED on the same binary: it fires on
+// `slice_control_inplace_ry_loop_leak` (1) and on `…_unrolled` (2), a pair whose
+// traces are BYTE-IDENTICAL under the shipped ctest gate
+// `e2e-inplace-ry-loop-leak-twin-identical`. ⚠ And byte identity does not prove
+// that pair CORRECT: if both halves are wrong the same way the twin witness is
+// blind — `CLAUDE.md` L10's `m_none_pbitd_none_premark_rypost` cell, which agreed
+// with itself while both halves were wrong.
+//
+// ⚠ WHY IT IS A WARNING, WHICH IS A RULING AND NOT AN ASSESSMENT OF HARM. Owner
+// ruling bd `test_C_libtooling-lyyf` (2026-08-29) made it `DS_Warning`, and the
+// recorded reason is REPORTING COMPLETENESS — under `DS_Error` the pass was over
+// after one site, and a warning that hid the second would send the author round
+// the compile loop once per record. It is NOT a finding that the reported gates
+// are benign. Promoting it to a decline therefore has a real, measured cost: 5 of
+// the 366 accepting e2e slices emit it (`slice_control_angle_select_ry_derived_base`,
+// `slice_control_inplace_ry_derived_base`, `slice_control_inplace_ry_loop_leak`,
+// `…_unrolled`, `slice_live_record_source_rail_warn`) and would have to be
+// re-dispositioned first. Use it as a SIGNAL when hunting bd `7845` / bd `c767`;
+// never as a second fence and never as coverage.
 bool warnLiveRecordRotations(Module &M, const TaintSet &taint) {
   if (taint.UserChainedRotations.empty())
     return false;  // no site in the whole module — every other cost is skipped.

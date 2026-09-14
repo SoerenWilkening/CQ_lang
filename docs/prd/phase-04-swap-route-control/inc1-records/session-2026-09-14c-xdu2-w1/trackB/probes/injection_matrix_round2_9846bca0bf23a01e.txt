@@ -1,0 +1,10 @@
+BASELINE: 0 red (expected 0): []
+  M1'-B2-address-equality (isolated fixture)     CAUGHT  missed=[]  also_red=[]
+  M2'-B3 + carve single-exiting-block            MISSED  missed=['railbank_promote_reject_early_exit']  also_red=[]
+  M5'-initializer proof, BOTH halves             CAUGHT  missed=[]  also_red=[]
+  M7'-B4 simple access, BOTH halves              CAUGHT  missed=[]  also_red=[]
+  M8'-B5 one writer + carve in-loop store        MISSED  missed=['railbank_promote_reject_store_outside_loop']  also_red=[]
+  M9'-C1 escape, BOTH halves                     CAUGHT  missed=[]  also_red=[]
+  M12-carve OUTERMOST-loop conjunct (Track A's, not mine) CAUGHT  missed=[]  also_red=[]
+
+round-2 mutants=7 applied, N/A=0 (each N/A is a HOLE, not a pass), MISSED=2
