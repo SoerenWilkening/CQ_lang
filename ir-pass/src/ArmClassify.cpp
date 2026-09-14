@@ -5071,7 +5071,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // it got no record, no re-ask and a stream missing one
         // `cq_template_and_i32_hl_unc` + `cqrt_free` per activation
         // (`d3_invariant_read.c`, 30 vs 34 trace lines, ORACLE DECLINE →
-        // SUBJECT ACCEPT). CLAUDE.md's L1: THE RECORD MUST BE AT EVERY GRANT.
+        // SUBJECT ACCEPT). CLAUDE.md's L1: THE RECORD MUST BE AT EVERY
+        // **R7-LOOP** GRANT — read it as that and NOT as "every in-loop grant"
+        // (bd `s82e`, 2026-09-14; the full scoping argument and its three
+        // measured programs are in `TaintSet::RolledLoopRegionGates`). The leak
+        // this record closes is REGION-INDEPENDENT, and the R7 slice is a
+        // STRICT SUBSET of it: the rest is still a silent leak, and bd `s82e`
+        // measured two further programs in which it is a WRONG UNITARY rather
+        // than an accepted leak (a per-trip rail left entangled with a
+        // loop-INVARIANT register that is afterwards re-rotated and measured).
         // Placing it after `if (!Rollable) return` — rather than in each
         // clause — is what makes that structural: a new clause sets `Rollable`
         // and falls through here, and the only way to miss the record is to
