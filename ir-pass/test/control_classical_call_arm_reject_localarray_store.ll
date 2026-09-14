@@ -19,6 +19,34 @@
 ; the PERMANENT SAFE over-decline (Prime Directive). NEVER lowered. See `bd memories
 ; d3ji-gvn-subsumption-finding` + docs/prd/phase-04-swap-route-control/d3ji-*.md.
 ;
+; ── AMENDMENT, bd `xdu2` / L-1a (Track B, 2026-09-14c) — TWO CLAIMS ABOVE ARE
+;    NARROWED, AND ONE OF THEM IS MEASURED FALSE AS STATED ──────────────────────
+;
+; ⚠ (1) *"that forwarding is UNREACHABLE on the clang -O1/-O2/-O3 validated floor —
+; GVN already forwards every provably-same-address round-trip before cq-lowering
+; runs"* IS FALSE AS WRITTEN, and `SCOPE_L1a.md` §3(b) measured the
+; counterexample. In `trackL/probes/a_loop_n3.c` at `-O1`, `%9` and `%15` are the
+; SAME address and `%16` is NOT forwarded — because the store sits in the
+; conditional arm and is only PARTIALLY AVAILABLE. GVN forwards FULLY AVAILABLE
+; stores; the claim holds for those and for no others. The store→load forwarding
+; this header calls unreachable is exactly what bd `xdu2`'s per-activation
+; promoter (`RailBankPromote.cpp`) now performs, on the `-O1` floor, for a
+; rail-bank cell.
+;
+; ⚠ (2) *"Storing a QUANTUM HANDLE into memory is NOT reachable … taint is
+; SSA-only"* is still TRUE OF THIS TREE (there is no load/store taint rule) and
+; is being NARROWED rather than retired: L-1a's deferred half adds one rule — a
+; `load` from a `!cq.railbank` alloca is tainted. The doctrine sentence must not
+; be read as a permanent property of the design.
+;
+; ⚠ THIS FIXTURE IS NOT RETIRED AND ITS VERDICT DOES NOT MOVE. MEASURED on the
+; Track B subject binary: the promoter fires ZERO times on this module. It fails
+; three of the bank clauses independently — its index `%i` is a FUNCTION ARGUMENT
+; with no enclosing loop, so C2' has no `{0,+,1}` add-recurrence at all; its array
+; has no proven zero initializer; and the module is off the `-O1` floor by this
+; header's own last sentence. The `PERMANENT SAFE over-decline` line stands for
+; THIS module; what is no longer permanent is the general claim it rests on.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}tainted value stored to memory
 declare i32 @cq_theta_si32(i32, double)
