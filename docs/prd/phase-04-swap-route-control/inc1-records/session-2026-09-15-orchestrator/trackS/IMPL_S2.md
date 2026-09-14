@@ -208,6 +208,13 @@ bd `br4a`) — and this is that contract applied one slot earlier.
 * **`ir-pass-lit`** (`ctest --test-dir build -R ir-pass-lit`) at `15f6a75a50faba7a`:
   **Passed 2041 / Expectedly Failed 1 / Discovered 2042**, 93.88 s. The pre-cede build at
   `f667cf90436bd31d` was **2040 / 1 XFAIL / 1 FAILED** — the §4 finding.
+  ⚠ **Two fixture-header re-derivations and the new `RY` prefix landed AFTER that complete
+  run.** The binary did not move (same hash), and both are covered by
+  `lit --filter loop_leak_dephase` **7 of 7** plus an accidental-FileCheck-directive scan over
+  the edited prose — which is not a formality: it caught one in the new accept's own header,
+  where the words `CHECK-LABEL:` written inside an explanatory sentence are a LIVE DIRECTIVE
+  and failed the fixture. A confirmatory full re-run was started and **did not complete**
+  under concurrent-track load; it is recorded as a non-result in `GATES.md`, not as a green.
 * **Rule-12 RED**, at the bit-identical-to-oracle build `0e280fc62a91cec2`:
   `Failed Tests (5)` — the three new fixtures plus the two existing rejects whose string
   moved — with the two ACCEPT fixtures PASSING, which is the half that must not move.
@@ -226,7 +233,7 @@ bd `br4a`) — and this is that contract applied one slot earlier.
   `VACUOUS-NO-QUANTUM`. Without that guard a 0-byte or quantum-free module scores ACCEPT
   through the passthrough early-out (bd memory `empty-module-accepts-vacuity-trap`).
 * **corpus sweep** ORACLE-vs-SUBJECT: `probes/corpus_<hash16>.txt` — see §6.
-* **twin matrices**: see §6.
+* **twin matrices**: `e2e-loop-twin-quarantine-selftest` **Passed 1.62 s**; `e2e-loop-twin-matrix` **STARTED, DID NOT COMPLETE** — see §6.2, and read it as the ABSENCE of a result, never as a green.
 * **NOT run** (PROTOCOL forbids them to this row): full `ctest`, `^e2e-`,
   `cq-opt-equivalence-full`.
 
@@ -279,7 +286,33 @@ clean. Track I is editing that script in its own worktree; nothing of theirs is 
 numbers. Cell count on disk: `grep -c '^m_' tools/loop_twin_matrix.expected.txt` = **309**
 plus `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt` = **29** = **338**.
 
-RESULT: *(below)*
+**RESULT, and it is a NON-RESULT for one of the two — said in those words rather than rounded
+into a green (Rule 19):**
+
+| gate | result |
+|---|---|
+| `e2e-loop-twin-quarantine-selftest` | **Passed, 1.62 s.** A complete result. |
+| `e2e-loop-twin-matrix` | **STARTED; DID NOT COMPLETE.** Stopped with `TaskStop` (never `pkill` by pattern) after the box sat at a MEASURED load average of **146–323** with three concurrent tracks on it. ⚠ **This is NOT a failure and must not be reported as one — it is the ABSENCE of a result.** |
+
+⚠ **THE MATRIX MATTERS HERE AND I AM NOT PRETENDING OTHERWISE.** This change touches in-loop
+code, and the rolled-vs-unrolled trace pair is the **only instrument in the tree that can see
+a leaked TEMPLATE-minted rail** — stage 2b is structurally blind to those (no `cqrt_alloc` to
+count) and the corpus sweep compares lowered-IR hashes, not gate streams. **A skipped layer is
+a deferred cost, not a saved one.**
+
+**What I DID run of that same mechanism, so the deferral is bounded rather than open:** every
+`ps.sh` row above is a rolled-vs-hand-unrolled pair run on BOTH binaries — **8 pairs, 16
+programs** — which is the matrix's own comparison on the shapes this change actually touches.
+Every twin is UNMOVED, the three D4-BENIGN pairs are unmoved on both sides, the positive
+control `s3` is 22 == 22 on both, and the one NEW ACCEPT is `cmp`-CLEAN against its twin. What
+the matrix would add is **338 cells of shapes I did not choose**, which is exactly the value of
+an instrument nobody has pointed at their own change (`CLAUDE.md` L10).
+
+**WHO OWNS IT:** the merge-and-gate agent's single full `ctest -j6` on the merged binary —
+PROTOCOL's designated owner of the full-suite row, and the only full-suite runner in the
+session. ⚠ **This track's hand-off therefore carries an explicit ASK: run
+`e2e-loop-twin-matrix` on the merged binary and treat a moved cell as a Track S′ finding until
+attributed otherwise.** My expected strings for attribution are in §6.1.
 
 ---
 
