@@ -131,6 +131,32 @@ phase, not in advance.
    > no gate; + L-0, the loop-carried-`_Bool` rolled accepts pinned. The LOOP form is SCOPED (Track L):
    > the `bool b[N]` spelling has exactly ONE wall (the tainted store, bd `xdu2`), the scalar spelling
    > denotes a different circuit; N=3 flat (`vd.c`) awaits an owner ruling (bd `om35`). PRD §16.**
+   > **SESSION 2026-09-14 — SIX MORE LANDINGS IN ONE GROUP GATE, the owner's N=3 CASCADE COMPILES, and
+   > the project's ONE KNOWN verify-clean SILENT MISCOMPILE IS CLOSED.** The owner's
+   > `grover_oracle_uncompute.c` with the THIRD region live: exit 0, stderr 0 bytes, **35 trace lines**
+   > BYTE-IDENTICAL to `tests/e2e/slice_control_cascade_three_bools.expected.log`, STRICT 2b `9 rail
+   > mint(s) of which 7 left allocated, 3 cqrt_free site(s): 3 verified, 0 violation(s), 0 unproven`.
+   > (1) **bd `uq96` `49b7f7bc`** — the `i1` axis for `e2e-loop-twin-matrix`, 288 → 338 cells, landed
+   > FIRST because it is the witness for (5). (2) **bd `z9t1` `f28e435a`** — an `undef`/`poison` SEED at
+   > a SOURCE `cq_theta` becomes the type's zero AT THE ALLOCATION, normalized early and silently (owner
+   > ruling, 5 clauses); the DISCLOSURE (136 modules that were loudly refused now compile silently, 116
+   > through F1's manufactured pointer identity) is carried verbatim in `CLAUDE.md` §4c. (3) **bd `om35`
+   > `30317792`** — F2's φ-DESCENDANT exclusion on an AVAILABILITY/OPERAND argument, owner-ruled over
+   > R-2′ (which flips **25** shipped decline fixtures, 13 self-labelled CONFIRMED MISCOMPILE, against
+   > this rule's **0**). (4) **bd `3qps` + `4aiu` `71de13c2`** — a preceding prep's merge φ as a rail
+   > LEAF at the phase kickback and at an INTERIOR tree position at BOTH consumers, by CALLING the one
+   > predicate (`preppedRailPhiRegionIdx`), not re-spelling it. (5) **bd `wx8g` `a2b86139`** — the
+   > IN-LOOP iteration-local rail and the retirement of the `l4x4`.b carve-out: a rolled bool-controlled
+   > Ry arm / state prep lowers, where it previously compiled in NO spelling on ANY binary; 8 of 8
+   > accepting pairs byte-identical to the hand-unrolled twin, lowered IR K-independent. (6) **bd `3d8q`
+   > `81c55430`** — the STALE-READER fence: a `cq_theta` arg-0 or `cq_measure` operand reading a stale
+   > rail name is now asked the linear rule, 104 corpus modules move ACCEPT → DECLINE, with the owner's
+   > ruling that the in-loop invariant re-read DECLINES (two realizable circuits, the source names
+   > neither). Resolution `66428ddc`. Gate: **442/442**, `cq-opt-equivalence-full` 1993/0, corpus sweep
+   > 4194 rows / 290 movers / **0 unattributable**, 0 `!dbg` lost. OPEN and NOT settled: the X5
+   > re-derivation (a retirement trigger the same merge fired), a Rule-13 opinion on the F × P
+   > composition (two accepts no single track's gate could see), and two owner dispositions under bd
+   > `z9t1` (bd `dnqo`, bd `fve8`). PRD §17.**
    > control flow is **no longer** lowered by routing data through `cqrt_cswap`:
    > a PHASE arm is a KICKBACK onto the condition flag and a VALUE arm is a
    > CONTROLLED-COPY MERGE (`cqrt_copy_<W>_controlled` into a fresh `|0⟩` rail),
@@ -403,7 +429,7 @@ and `opt -verify` clean; unsupported tainted opcodes still emit the loud
 
 ---
 
-## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is FULLY RETIRED** — phase arms 2026-09-05, value arms 2026-09-06, both LANDED on `main` 2026-09-06; **the BARE `_Bool` CONDITION campaign landed 2026-09-10/11: Inc 1b `b00fdc2`, 1b-B.1 `d33a34a`, then A.1 `7203d1c` + b6ap `3a3a2b9` + F2 `a9cc062` + l4x4.b `e96f89c`, on which the owner's `grover_oracle_uncompute.c` COMPILES AS WRITTEN**]
+## Phase 4 — RSSA swap-routed tainted control flow [4.0–4.5 DONE; **the route is FULLY RETIRED** — phase arms 2026-09-05, value arms 2026-09-06, both LANDED on `main` 2026-09-06; **the BARE `_Bool` CONDITION campaign landed 2026-09-10/11: Inc 1b `b00fdc2`, 1b-B.1 `d33a34a`, then A.1 `7203d1c` + b6ap `3a3a2b9` + F2 `a9cc062` + l4x4.b `e96f89c`, on which the owner's `grover_oracle_uncompute.c` COMPILES AS WRITTEN**; **the CASCADE campaign landed 2026-09-13 (`23b0cd1` + `94c085e` + `59ac5b7`) and 2026-09-14 (`49b7f7bc` + `f28e435a` + `30317792` + `71de13c2` + `a2b86139` + `81c55430` + `66428ddc`), on which the owner's N=3 THREE-`_Bool` cascade compiles byte-identically to its golden and bd `3d8q`, the one known verify-clean silent miscompile, is CLOSED**]
 
 > ⚠ **STATUS, 2026-09-05; LANDED on `main` 2026-09-06 — READ THIS BEFORE THE
 > INCREMENT LIST BELOW (bd

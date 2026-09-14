@@ -3,9 +3,9 @@
    `example/grover/grover_oracle_uncompute.c` (snapshot 2026-09-14) with the
    THIRD region uncommented — the live code lines verbatim, three `_Bool`s, no
    `int` workaround and no new `cq_*` function. Two harness edits only:
-   `main` -> `slice`, and `_Bool b0 = 0;` for `_Bool b0;` (see the RETIREMENT
-   TRIGGER at the bottom — the undef spelling is bd `z9t1`'s subject, not this
-   increment's, and it compiles too, with a trace that differs in ONE literal).
+   `main` -> `slice`, and `_Bool b0 = 0;` for `_Bool b0;` (see the FIRED
+   RETIREMENT TRIGGER at the bottom — the undef spelling was bd `z9t1`'s subject,
+   and since `z9t1` landed the two spellings emit a BYTE-IDENTICAL trace).
 
    IT DECLINED UNTIL 2026-09-14 and the string was
        cq controlled lowering: state prep seed is proven equal to the condition
@@ -72,14 +72,28 @@
      * `h9` is the third region's flag: minted, used as a control, stripped by the
        matching `_unc`, freed. One mint, one strip, one free.
 
-   ⚠ RETIREMENT TRIGGER (L8): the owner's file as it stands on 2026-09-14 spells
-   `_Bool b0;` UNINITIALISED. MEASURED on this binary: it compiles, stage 2b is
-   identical (`9 rail mint(s) of which 7 left allocated, 3 cqrt_free site(s): 3
-   verified`), and the trace differs in exactly ONE literal — `cqrt_alloc_i1(1)`
-   for `cqrt_alloc_i1(0)` on line 1, because stage 3 materialises the `undef`
-   seed. When bd `z9t1` lands ("normalize EARLY", undef-seed-is-zero-at-
-   allocation), that difference disappears and the undef spelling becomes
-   byte-identical to this golden. Re-derive then; do not delete this file.
+   ⚠ RETIREMENT TRIGGER (L8) — IT FIRED, AND ITS PREDICTION WAS CORRECT. As
+   written on 2026-09-14 this trigger said: the owner's file spells `_Bool b0;`
+   UNINITIALISED; it compiles, stage 2b is identical (`9 rail mint(s) of which 7
+   left allocated, 3 cqrt_free site(s): 3 verified`), and the trace differs in
+   exactly ONE literal — `cqrt_alloc_i1(1)` for `cqrt_alloc_i1(0)` on line 1,
+   because stage 3 materialises the `undef` seed; "when bd `z9t1` lands
+   (normalize EARLY, undef-seed-is-zero-at-allocation), that difference
+   disappears and the undef spelling becomes byte-identical to this golden."
+
+   bd `z9t1` LANDED at `f28e435a`. RE-DERIVED on the rebuilt primary at
+   `66428ddc` with the only edit being `_Bool b0 = 0;` -> `_Bool b0;` in a /tmp
+   copy: exit 0, stderr 0 bytes, stage 2b unchanged (`9 rail mint(s) of which 7
+   left allocated, 3 cqrt_free site(s): 3 verified, 0 violation(s), 0 unproven`),
+   and the trace is now BYTE-IDENTICAL to this golden — the one-literal
+   difference is GONE (`CLOSING_MEASUREMENTS.md` §4b). So the sentence "differs
+   in exactly ONE literal" is HISTORY on any binary at or after `f28e435a`, and
+   the two spellings are one program to this test. Do not delete this file.
+
+   NEW TRIGGER: if that one-literal difference ever comes BACK, the first thing
+   to check is `normalizeUndefRotationSeed` (`RotationLowering.cpp`) and the two
+   facts its refinement rests on — the rewrite fires only on `isa<UndefValue>`,
+   and `undef` is uniqued per type (bd `z9t1`, CLAUDE.md CORRECTNESS RISK §4c).
 */
 #include "CQ.h"
 

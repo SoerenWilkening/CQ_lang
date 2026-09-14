@@ -1,0 +1,265 @@
+\labsessionheader{2026-09-14}{Six increments, one merge group, one gate --- the owner's three-bool file compiles and the rolled controlled rotation lowers}%
+  {4a5aa7e5}{013Hi5y8TF8WpYRVVqZH21Vo}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/}
+
+\subsection*{Goal}
+Entry 005 closed with the owner's cascade compiling at \(N=2\) and declining at \(N=3\), with the loop form
+scoped but not built, and with \bd{3d8q} --- the one verify-clean silent miscompile this project knows it
+ships --- recorded as gaining customers from the work that had just landed. This session set out to remove
+the \(N=3\) decline at whatever depth the owner writes, to take down the first wall of the loop form, and to
+close \bd{3d8q} before any further widening fed it. A second aim was procedural, from the owner's instruction
+that test runs be reduced to a minimal number: six increments gated \emph{once}, as one group, instead of
+once per landing.
+
+\subsection*{The headline}
+\fpath{example/grover/grover_oracle_uncompute.c} with \textbf{three} \texttt{bool}s --- three guarded state
+preparations with a controlled subtraction between them, no \texttt{int} workaround and no new
+\texttt{cq\_*} function --- compiles as written: \textbf{exit 0, stderr 0 bytes, 35 trace lines}, strict
+stage 2b \emph{``9 rail mint(s) of which 7 left allocated, 3 cqrt\_free site(s): 3 verified, 0 violation(s),
+0 unproven''}, and the trace is \textbf{byte-identical} to the committed golden (both sha256
+\texttt{3c1dda4a48e8d2ca\ldots}). The uninitialised spelling \texttt{bool b0;} now gives the same 35 lines ---
+a prediction an earlier fixture header had written down, measured true. In that golden the two \texttt{bool}
+registers appear only as \texttt{cqrt\_cnot} controls and as the control of \texttt{cqrt\_ry\_i1\_controlled};
+every \texttt{cqrt\_x} is on an ancilla whose \(x \oplus x = 0\) return is what makes its free a proven one.
+Second, and not visible in that file: a \emph{rolled} \texttt{bool}-controlled Ry arm or state preparation
+now lowers, where \fpath{CLAUDE.md} had recorded the cost of the gap as total --- ``Grover as a rolled loop
+with a bool-controlled rotation or prep compiles in NO spelling on ANY binary''.
+
+\subsection*{What landed, in landing order}
+\begin{itemize}
+  \item \commit{49b7f7bc} --- \bd{uq96}: the loop twin matrix gains an \texttt{i1} axis, \(288 \to 338\)
+    cells, \emph{zero} divergences, every prior cell byte-identical in name, source and verdict. The
+    instrument \fpath{CLAUDE.md} calls the witness of record for in-loop work was generating its 288 cells
+    from a script emitting two \texttt{bool} tokens in total. Nine new rows are \bd{wx8g}'s subject row for
+    row; nine more pin a rolled bare-\texttt{\_Bool} kickback that had shipped with no fixture, no slice and
+    no cell anywhere.
+  \item \commit{f28e435a} --- \bd{z9t1}: an \texttt{undef}/\texttt{poison} seed reaching a \emph{source}
+    \texttt{cq\_theta} becomes a concrete zero \emph{at the qubit allocation}, early and silently. Before
+    it, the shape compiled silently and handed \texttt{i1 undef} to \texttt{cqrt\_alloc\_i1}, whose trace
+    printed \texttt{1} --- a value the program never wrote.
+  \item \commit{30317792} --- \bd{om35}: F2's \(\varphi\)-descendant exclusion --- a value whose operand
+    chain reaches the region's own merge \(\varphi\) is not a witness, being spellable at neither slot the
+    fence's question has. 23 non-comment lines; \textbf{zero} shipped fixtures flip.
+  \item \commit{71de13c2} --- \bd{3qps} + \bd{4aiu}: a state-prep region's merge \(\varphi\) is a rail leaf
+    at the phase kickback and at interior positions of the condition tree, at both consumers. One predicate,
+    two call sites, one definition; no new stream and no new frozen symbol.
+  \item \commit{a2b86139} --- \bd{wx8g}: the in-loop iteration-local rail, and the retirement of the
+    \texttt{l4x4.b} carve-out. Nine of nine rolled/hand-unrolled pairs byte-identical, \(K\)-independence
+    measured at \(K=3\) and \(K=1000\).
+  \item \commit{81c55430} --- \bd{3d8q}: the stale-reader fence. Two sibling rotations on one rail name two
+    states of one register --- a no-cloning request --- and emitted a stream byte-identical to the
+    well-formed chain, because the pass-wide guard swept pure ops only and nothing ever asked a
+    \texttt{cq\_theta} or \texttt{cq\_measure} reader. 14 of 14 reproducers move accept \(\to\) decline.
+  \item \commit{66428ddc} the gate's resolution (no pass source; binary bit-identical to the gated build),
+    \commit{4a5aa7e5} the records.
+\end{itemize}
+
+\subsection*{The adversarial rounds}
+Eleven review records across the six tracks (\measured{ls track*/REVIEW\_*.md | grep -v BRIEF | wc -l}; the
+session's record commit counts thirteen rounds, two of which are not carried as \texttt{REVIEW\_*} files).
+Track T, instrument-only with a binary bit-identical to the oracle, had none. \textbf{Three verdicts were
+\textsc{not clear}} --- Track D twice, Track W once --- and in each the finding sat where a warning already
+written down had pointed.
+\begin{itemize}
+  \item \fconfirmed\ Track W round 1: a \texttt{SmallPtrSet<const Loop *>} declared outside the per-function
+    loop while the \texttt{LoopInfo} owning those \texttt{Loop} objects was declared inside. Pointers dangled
+    across functions, the next \texttt{LoopInfo} reused the allocation, and an entire re-ask was skipped for
+    a different loop in a different function. Two ordinary kernels in one translation unit reproduce it, one
+    entangled which-path rail leaking per activation. Second: half one retired the carve-out for every rail
+    region in a loop, while half two's record-and-re-ask was written only at the new clause's grant.
+  \item \fconfirmed\ Track D rounds 1 and 2: the fence did not yet close the bug it was built for (a reader
+    of a loop-\emph{invariant} quantum name still compiled, byte-identical to its self-assigned twin), and
+    then a second over-accept whose shape a source comment had already named, called ``NOT EXPLOITABLE''
+    and fenced with an instruction to widen the vocabulary in the same change --- not done here.
+\end{itemize}
+\textbf{Reviews were wrong too, and the records say so in both directions.} Track W's round 1 reported three
+over-declines of which \emph{two were refuted by the implementer}: the reviewer had inferred the rolled
+form's lowering from the \emph{twin's} stream, and the twin is straight-line, so a different predicate fires
+there --- measured, the streams genuinely diverge and those declines are correct. (The prescribed exclusion was implemented anyway and proved
+load-bearing for an unrelated reason: without it the other fix turned a shipped, cleared fixture red.)
+Track D's round-1 \emph{prescribed fix} was measured to
+\textbf{decline 12 shipped Rule-13-cleared accepts}, because LLVM's \texttt{isPotentiallyReachable} opens
+\texttt{if (A == B || A->comesBefore(B)) return true;} and is true by identity; it landed as a differently
+shaped predicate with that LLVM fact recorded in three places. Track P's round 2 was deliberately skipped
+after its fix pass left the binary bit-identical, verified twice, to the one round 1 had cleared.
+
+\subsection*{The group gate --- one suite for six landings, and three things no per-track gate could see}
+All six branches were merged into one worktree, built once and gated once. Three interactions surfaced that
+a per-track gate cannot see \emph{by construction}, each needing two tracks present at once.
+\begin{itemize}
+  \item \textbf{F \(\times\) U.} Track U's seed normaliser turns one of Track F's \emph{decline} fixtures
+    into Track F's \emph{accept} fixture byte-for-byte. Predicted by a reviewer, written into the gate brief
+    as a named probe, measured to hold; the undef spelling of all four of Track F's customers then gave the
+    same verdict as its \texttt{= 0} twin, traces byte-identical at 29/35/45 lines.
+  \item \textbf{F \(\times\) P.} Two programs --- a condition \emph{tree} whose leaves are preparations'
+    merge \(\varphi\)s --- decline under either track alone and \textbf{accept only together}. Stage 2b is
+    strict-clean and the streams well formed, and the record states plainly that this is \textbf{cleared by
+    measurement and not by review}: both tracks' rounds saw binaries on which these decline.
+  \item \textbf{Track F's own retirement trigger firing.} F's round-1 fix carries a trigger naming
+    \bd{wx8g} \emph{by name} as the only reason a back-edge shape was unreachable --- and \bd{wx8g} landed
+    in the same merge. This was predicted and written into the gate brief as a named check \emph{before} the
+    gate ran. The two named tripwire fixtures held byte-identically, but three probes built from the shapes
+    Track W now admits move from ``control flow inside a loop body'' to one F1 decline and two accepts: the
+    shape is reachable and the comment's premise is false. The re-derivation is recorded as \textbf{owed},
+    deliberately not attempted.
+\end{itemize}
+The gate's first full run was \textbf{red}, 3 of 444, reproduced at \texttt{-j1} in 1.82\,s so contention was
+excluded. Two failures were attributed to Track D alone by running the exact linked module on all seven
+binaries --- a ruling applied to the lit layer and not to two e2e slices of the same program. Resolving them
+surfaced a coverage hole and closed it: one of the two programs was pinned nowhere else in the tree, so
+unregistering it alone would have dropped the decline outright; its verbatim linked module is now a fixture,
+validated non-vacuous \emph{by binary mutation} --- FileCheck does not match on the oracle, where
+\texttt{opt} exits 0, and matches on the merged binary. The third failure was the twin matrix's 41 moved
+cells, adjudicated by cause and by unitary before anything was regenerated; the most instructive goes
+\textsc{accept-identical} \(\to\) \textsc{decline-both} --- two halves that agreed because both were wrong,
+which an agreement check cannot see.
+
+\begin{figure}[htbp]\centering
+\begin{tikzpicture}
+\begin{axis}[width=0.47\textwidth, height=3.8cm, ymin=1920, ymax=2005, xmin=-0.4, xmax=11.4,
+  xtick={0,4,5,6,7,8,9,10}, xticklabels={base,T,U,F,P,W,D,res},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize lit fixtures}, grid=major, grid style={cqgray!20},
+  title={\footnotesize \texttt{ir-pass/test/*.ll} per commit}]
+  \addplot[const plot, draw=cqblue, thick, mark=*, mark size=1pt] table[x=idx, y=fixtures, col sep=space] {figures/006/session_landings.dat};
+\end{axis}
+\end{tikzpicture}\hfill
+\begin{tikzpicture}
+\begin{axis}[width=0.47\textwidth, height=3.8cm, ybar, bar width=9pt, ymin=0, ymax=132,
+  xmin=-0.7, xmax=6.7, xtick={0,1,2,3,4,5,6}, xticklabels={D,U,P,W,F,comp,amb},
+  xticklabel style={font=\scriptsize}, yticklabel style={font=\scriptsize},
+  ylabel={\footnotesize corpus movers}, grid=major, grid style={cqgray!20},
+  nodes near coords, every node near coord/.append style={font=\tiny},
+  title={\footnotesize 290 movers, attributed by measurement}]
+  \addplot[draw=cqgreen, fill=cqgreen!30] table[x=idx, y=movers, col sep=space] {figures/006/merge_attribution.dat};
+\end{axis}
+\end{tikzpicture}
+\caption{Left: the lit corpus at every commit, by \fpath{tools/labreport/figures/session_landings.py} over
+\texttt{git ls-tree} (base \commit{623c8fa}, the six landings at 4--9, the resolution at 10); the same data
+file records goldens \(367 \to 383\). Right: every verdict mover of the gate's 4194-row sweep, re-run on the
+oracle, on each single-track binary and on the merged one, and attributed by
+\fpath{tools/labreport/figures/merge_attribution.py} from that committed evidence. A mover no single track
+reproduces is a \emph{composition} --- the class the group gate exists to find; \emph{amb}, reproduced by
+more than one, is the control, and there were none.}
+\label{fig:006:gate}
+\end{figure}
+
+\subsection*{Six instruments were measured reporting a PASS when they had measured nothing}
+Each was found by the agent that owned the instrument; every one failed toward ``pass''.
+\begin{itemize}
+  \item \fdoc\ A vacuity checker printed \texttt{checked 0} over 29 real negatives (it matches only
+    negatives naming an SSA handle). Its replacement's first \emph{universe} was too small and reported two
+    false vacuous --- the same failure, reversed.
+  \item \fdoc\ An injection matrix printed \texttt{0 mutations, MISSED 0, N/A 0} when invoked with \emph{no
+    fixture argument}; it now exits non-zero.
+  \item \fdoc\ An injection harness lied twice \emph{in the MISSED direction} first: one spelling
+    re-inserted a line where it already was, the next moved a mutation across a function boundary.
+  \item \fdoc\ An earlier matrix reported \textbf{45 MISSED} against fixtures that catch all of them,
+    having dropped the RUN line's \texttt{--implicit-check-not} flags --- a harness measuring itself.
+  \item \fdoc\ \texttt{--regenerate} silently deleted \textbf{54 lines} of hand-added Rule-13 ruling prose
+    --- a ruling, its re-derived unitary, a reviewer's caveat, a retirement trigger --- and reported
+    success. The sibling file's header says it is script-owned; this one's did not, and that was the whole
+    difference.
+  \item \fdoc\ A \textbf{0-byte \texttt{.ll} module accepts} through the passthrough early-out, so six
+    scoping probes scored false accepts on nothing after a \texttt{sed} redirection truncated its own source
+    on a case-insensitive filesystem. Two of three affected claims survived re-measurement; one did not.
+\end{itemize}
+Two structural gaps were filed with them, each explaining a past near-miss. Every corpus here is
+effectively \emph{one function per module} --- where a fixture does carry two \texttt{define}s, both copies
+want the \emph{same} verdict, so the missing axis is a module whose two loops want different ones. That is
+why the dangling \texttt{Loop *} survived 1937 fixtures, 15 e2e entries, a complete corpus sweep, a 0-MISSED
+matrix and 328 twin cells. And \emph{no hand-written \texttt{.ll} fixture can pin a diagnostic's location},
+which is why a lost \texttt{!dbg} survived a green 1946-fixture run and was caught only by a per-row
+full-stderr hash.
+
+\subsection*{The owner's rulings}
+Recorded in \fpath{DECISIONS.md}; two were decided on measurements that refuted the orchestrator's own
+analysis.
+\begin{itemize}
+  \item \textbf{\bd{om35}: build the \(\varphi\)-descendant predicate, not the broader rival.} The question
+    put was which rule yields ``a more general method not over-declining''. Scoping measured that the rival
+    flips \textbf{25} shipped decline fixtures, not the bead's \(\ge 11\), \textbf{13} of which say
+    \textsc{confirmed miscompile} in their own first ten lines. All 25 rivals were built and run and all
+    still decline --- but on two \emph{capability} fences this project is actively removing, so the margin
+    expires on our own roadmap, and in floating point it already has none. The rule built flips \emph{zero}
+    and covers the cascade family at any depth; the rival stays filed with its price.
+  \item \textbf{\bd{3d8q}'s in-loop spelling declines.} The analysis put to the owner said the emitted chain
+    was the only realizable circuit, the alternative requiring cloning. The implementer refuted it by
+    writing the program: the state is a \emph{known preparation}, so producing it again is re-preparation,
+    and that spelling already compiles. The deciding measurement: intended i.i.d.\ sampling at
+    \(P(1)=\sin^2(0.2)\approx0.0395\) per trip, against \(P(1\,|\,\mathrm{prev}{=}0)\approx0.0025\) and
+    \(P(1\,|\,\mathrm{prev}{=}1)\approx0.9975\) --- a chain locked onto its first outcome, with nothing in
+    the trace that shows it. Two realizable circuits; the source names neither. Both unambiguous spellings
+    are now pinned as accepts, making the decline a two-token fix rather than a lost capability.
+  \item \textbf{A post-measurement \texttt{cq\_theta} is a capability} --- ``it just requires a
+    \texttt{c\_alloc} again''. Measured: chain and fresh allocation are the same state, since the
+    measurement is what disentangles the register; they differ only on a \emph{later} read of the measured
+    name, where the chain is wrong. Designed and costed (0 shipped accepts move, 2 of 367 goldens shorten,
+    no new symbol), not built.
+  \item \textbf{\bd{z9t1}}, five clauses: the rule attaches to qubit allocation and makes no claim about the
+    C variable; \emph{both} spellings compile, which forces the early placement; it is silent;
+    \texttt{cq\_measure} of a never-quantum \texttt{undef} keeps declining (\bd{21mg}); it is not total.
+  \item \textbf{Order.} \bd{3d8q} got a track on correctness-over-expressiveness grounds; the twin matrix
+    was widened \emph{before} the loop work; and after Track L's scoping falsified \bd{xdu2}'s premise,
+    \bd{wx8g} was built first.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries (\texttt{\^{}e2e-} / \texttt{\^{}e2e-slice-} / twin) & 442 (432 / 381 / 40) & \measured{ctest --test-dir build -N | grep -c ...} \\
+lit fixtures & 1994 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 383 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+twin-matrix cells & 309 + 29 = 338 & \measured{grep -c '\^{}m\_' ...expected.txt; grep -c '\^{}cell ' ...quarantine.txt} \\
+\texttt{cq-opt} vs stock \texttt{opt} & 1993 / 0 & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+corpus sweep at the gate & 4194 rows, 290 movers, 0 unattributable & \measured{merge\_gate\_probes/sweep\_one.sh -P6 (6m45s)} \\
+diagnostic locations & 0 lost, 21 gained & \measured{locscan\_one.sh over 2060 decline rows} \\
+duplicate-body groups with mixed verdicts & 0 & \measured{dupscan\_verdicts.py, 4 normalisations} \\
+full-suite runs & 3 & one group gate (red), its re-run, one closing \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+One merge-and-gate agent ran the session's only full suites, on the merged tree: \texttt{ctest -j6}
+\textbf{red at 3/444} (497.00\,s), then, after a resolution that touched no pass source and left both
+artefacts bit-identical, \textbf{green at 442/442} (448.60\,s). On that same binary,
+\texttt{cq-opt-equivalence-full} compared 1993 fixtures with 0 mismatches; the corpus sweep ran to
+completion rather than being closed by a tail argument, repaying two tracks' unfinished sweeps. The closing
+agent rebuilt the primary once and re-ran the full suite on \texttt{main}: \textbf{442/442} in 436.73\,s,
+with both rebuilt artefact hashes reproducing the gate's expected values exactly. Implementers ran
+\texttt{ir-pass-lit} once at hand-off and their own fixtures and slices singly; reviewers ran no build and no
+suite. \emph{Not run}: there is no simulator and none is planned (Rule 2); the non-loop twin matrices, two of which
+share the regenerated-header shape of the instrument that ate 54 lines, are unaudited.
+
+One confusion is worth recording once, because from outside it is indistinguishable from a regression. After
+the landings the owner's file ``still declined'' --- and the decline was real, well formed and
+source-located. The primary \fpath{build/} had simply not been rebuilt: it was holding the frozen pre-merge
+oracle, three increments old. One rebuild produced the gated binary bit for bit, and the byte-identical
+golden. The cheap discriminator is the artefact hash, read before believing any decline.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Owner: the two \bd{z9t1} dispositions left open --- a literal-integrity count drop at CQ type
+    \texttt{double}, where seed and angle share the LLVM type (five measurements point away from restoring
+    the decline; a sixth outcome is a pre-existing abort on 2 of 1922 mutants, not reachable from C), and
+    the \(\varphi\) clause disarming the ruling's fourth clause \emph{upstream} of the sink (4 of 710 rows,
+    all byte-identical to their written-zero twins, the direct spelling still declining).
+  \item \statusopen{Owed}: the X5 re-derivation, recorded rather than attempted --- a comment in the source
+    names a premise the same merge made false.
+  \item \bd{a3z7}, re-raised to P1 with its classification changed from an efficiency divergence to a
+    different program's circuit; \bd{yiid} (\texttt{cq\_measure} is not modelled as a wire event at all, so
+    reading a name after measuring it compiles in every spelling); and a \textbf{region-independent in-loop
+    leak} --- six lines of C with no tainted control flow whatsoever, 16 trace lines against a twin's 20,
+    byte-identical on the oracle and so pre-existing --- filed P1 and nominated as the next round's subject.
+  \item Filed over-declines: three surviving twin-matrix cells whose flat spelling lowers; the in-loop
+    \(\varphi\) phase kickback, which declines where the in-loop \(\varphi\) select accepts --- the shape a
+    rolled Grover kickback takes; and two smaller residuals of the new fence.
+  \item Next on the loop path: the owner's rolled cascade still needs the bounded rail array (\bd{xdu2}) and
+    the in-loop value arm (\bd{ej5w}), in that order, now that \bd{wx8g} has removed the wall between them.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 005, ``The loop form, scoped'': \emph{``\texttt{bool b[N]} \ldots{} has exactly one wall, independent of
+N''} should read \emph{three walls} --- the tainted store, the in-loop state preparation, and the in-loop
+value arm on the carried variable, the third masked while the second stands. One wall was true of the hand-unrolled twin and
+false of the rolled program. That measurement re-ordered the session to build \bd{wx8g} first: the array
+carve alone does not compile the owner's loop, it hands the program to the next wall. The same scoping found
+entry 005's costing low by roughly four times, against four comparable landings.

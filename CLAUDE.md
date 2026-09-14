@@ -44,6 +44,17 @@ so the open follow-ons are additive coverage or deferred capabilities, **not**
 correctness debt. Post-core loop/break widenings live under the open tracker
 bd `8h7d`.
 
+**The project's one KNOWN verify-clean silent miscompile is CLOSED** — bd `3d8q`,
+`81c55430`, 2026-09-14: a `cq_theta` arg-0 or `cq_measure` operand that reads a
+STALE rail name is now asked the same linear rule `declineStaleRecordOps` asked
+of pure ops, and **104 corpus modules that accepted on the pre-session oracle now
+decline** (merge-gate sweep, `MERGE_REPORT.md` §5a). ⚠ **That is not "no
+correctness debt", and do not quote it as such.** The same Rule-13 rounds filed a
+NEW P1 over-accept of their own (a rail φ carrying a dtzb-mutated `cq_theta`
+result IN PLACE — `IMPL_D.md` §15.4, cross-referenced to bd `a3z7` / bd `0njv`),
+and bd `lo7u`, bd `s82e` and bd `yiid` are open P1s today. Count the known ones;
+never claim zero.
+
 ⚠ **Phase 4 has had THREE generations, and the first two are traps.** The
 controlled-op generation shipped and was **removed wholesale** (`7cde677`). The
 **RSSA swap-route** generation that replaced it is **also retired** (bd
@@ -652,8 +663,10 @@ per-bit loop `for (i…) if ((q>>i)&1) cq_phi(θ)`.
 | **sequential** flat regions (`if(q){…}; if(q'){…}`) | ordering, not a new lowering: `lowerControlRegions` builds a precedence graph, Kahn-sorts it, declines only on an unresolvable alias or a cycle | bd `hcrg` |
 | a NON-EXITING tainted **phase** region inside a classically-bounded loop | lowered **ROLLED** (IR size independent of the trip count: 87 lines at K=3 and at K=1000) | bd `8h7d.5` |
 | an in-place controlled **Ry** arm inside such a loop | ROLLED, with `cqrt_ry_<W>_controlled` where the phase path puts the kickback | drbq Inc 3 |
-| a **bare `_Bool` rail condition** (`br i1 %b` with no compare) at the kickback, the nest, the Rz-stem angle select, the 4.4 data select, the in-place Ry arm and the state prep | the register **is** the flag; it is read only as a **control**, never `cqrt_x`-bracketed and never freed | bd `3qlq.4` / `r9e5` / `l4x4`.b |
+| a **bare `_Bool` rail condition** (`br i1 %b` with no compare) at the kickback, the nest, the Rz-stem angle select, the 4.4 data select, the in-place Ry arm and the state prep — and since 2026-09-14 the **in-loop** form of the last two | the register **is** the flag; it is read only as a **control**, never `cqrt_x`-bracketed and never freed | bd `3qlq.4` / `r9e5` / `l4x4`.b / `wx8g` |
 | a diamond whose merge carries phis the region does not define | **normalised before detection**: each independent merge phi becomes a `select` with its own compare clone | `MergePhiPeel` (bd `b6ap`) |
+| a preceding state-prep region's **merge φ** as a condition-tree LEAF at the **phase kickback**, and at an **INTERIOR** position of the `and`/`or`/`xor` tree at **both** consumers (the 4.4 data select and the branch phase) | the φ IS the rail. ONE predicate — Track M's `preppedRailPhiRegionIdx`, **exported and CALLED** by each consumer, re-derived by neither (Rule 14) — so the widening adds an **ACCEPT, not a STREAM** (measured: the emitted stream is the shipped one) | bd `3qps` + `4aiu` (`71de13c2`) |
+| an in-place controlled **Ry** arm or controlled **state prep** on a bare `_Bool` **inside** a classically-bounded loop, and an **iteration-local** rolled rail for every condition kind | ROLLED. Measured: **8 of 8** accepting pairs BYTE-IDENTICAL to the hand-unrolled twin, and the lowered IR is K-independent (81 / 66 / 85 / 83 / 105 lines at K=3 **and** K=1000, measured without `-g`) | bd `wx8g` (`a2b86139`) |
 
 `RegionFlatten` erases the CFG diamond after emission.
 
@@ -661,10 +674,18 @@ per-bit loop `for (i…) if ((q>>i)&1) cq_phi(θ)`.
 `select` twin on four pairs (`e2e-value-{diamond,ifelse,mixedops,polarity}-twin-identical`)
 — a comparison against the *old* compiler's stream, since that spelling already
 lowered through the cleared 4.4 emitter. The in-loop work's is BYTE IDENTITY
-with the hand-unrolled twin (30 `*-twin-identical` ctest gates) plus
-K-independence of the lowered IR. `e2e-loop-twin-matrix` (288 cells) is the only
-instrument in the tree that can see a **leaked TEMPLATE-minted rail** — stage 2b
-is structurally blind to those, having no `cqrt_alloc` to count.
+with the hand-unrolled twin (**40** `*-twin-identical` ctest gates today, **29**
+of them named `*loop*`) plus K-independence of the lowered IR.
+`e2e-loop-twin-matrix` (**338** cells since bd `uq96` gave it an `i1` axis,
+`49b7f7bc`) is the only instrument in the tree that can see a **leaked
+TEMPLATE-minted rail** — stage 2b is structurally blind to those, having no
+`cqrt_alloc` to count. ⚠ Before `uq96` the matrix had **no `i1` axis at all**, so
+the witness of record for in-loop work could not see the width of the owner's
+whole cascade; and the first 40 `i1` cells still could not see the
+iteration-local rail, because every `B_ARM` declares its second register
+**outside** the loop — which is why the axis took a second pass of 10 more cells
+(`IMPL_T.md` §8.1). An instrument is only ever blind in the shape nobody has
+pointed it at yet.
 
 **Three conventions that are load-bearing, not cosmetic:**
 
@@ -708,7 +729,24 @@ they are what a widening must argue with:
   `CondWire` exclusion is applied at the equality **TEST**, never at the LVI
   **ANCHOR** (at the anchor, all 40 F2 fixtures flip). ⚠ The LVI dominance
   filter is an **API precondition, not an optimization**: asking LVI about a
-  value defined after the branch SIGSEGVs a Release `cq-opt`.
+  value defined after the branch SIGSEGVs a Release `cq-opt`. Since 2026-09-14
+  the TEST carries a third exclusion beside `CondWire` and `PeelClones` — the
+  **φ-DESCENDANT** conjunct (bd `om35`, `30317792`), whose ground is
+  AVAILABILITY and which is written out in §4c because a widening has to argue
+  with it.
+- **The STALE-READER fence** (bd `3d8q`, `81c55430`). `recordStaleQuantumReaders`
+  runs as pure ANALYSIS beside `declineStaleRecordOps` (and again, delta-scoped,
+  inside `adjudicateTaintDelta`), and `declineRecordedStaleQuantumReaders` is the
+  **last slot before `lowerRotations`** — a BACKSTOP, never a preemptor, because
+  `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`). A
+  `cq_theta` **arg-0** or a `cq_measure` operand that the wire walker cannot
+  prove executes before a non-diagonal gate on the same wire is
+  `cq opcode lowering: rotation/measure operand predates a non-diagonal gate`.
+  The accept direction is leg 1b's `readerStalesItself` — SCEV proving the
+  reader runs on at most one iteration — and the decline direction is
+  `std::nullopt`: ⚠ the boundary is **SCEV DECIDABILITY, not runtime-ness**, and
+  a runtime-start IV that SCEV can decide accepts soundly (measured,
+  `REVIEW_D_R3.md` F-D3-1).
 - **Rail staleness in loops.** `staleRailRecordRead`: a rail member may be read
   only where no rail-relabelling gate (Ry, or a dtzb in-place `add`/`xor`; Rz is
   diagonal and exempt) executes between the record's definition and the read
@@ -723,8 +761,14 @@ they are what a widening must argue with:
   `lowerOps` under FINAL taint** for every member the pre-loop path marked —
   declining loudly, never falling back silently.
 - **Loop scope.** Irreducible cycles, multi-latch and nested loops, in-loop value
-  (merge) arms, in-loop nests/`switch`/6.5 arms, an iteration-local rotated
-  register, and a rail whose header φ the round-2 collapse will not claim.
+  (merge) arms, in-loop nests/`switch`/6.5 arms, and a rail whose header φ the
+  round-2 collapse will not claim. ⚠ An **iteration-local rotated register no
+  longer declines** (bd `wx8g`, §4c); what survives inside it is measured and
+  filed, not a proof — the `il*`×`bcar` combination (an iteration-local TARGET
+  rail beside a condition rail re-rotated in the body, 3 twin cells,
+  `MERGE_FILINGS.md` §3), a DERIVED condition with no invariant register root,
+  the MIXED case (a clause-(c) rail beside a loop-carried one whose exit value is
+  read, `IMPL_W.md` §7.2 H-2), and bd `onq1`.
 - **The switch off-pattern matrix** (multi-phi C1, grouped C4, non-empty-default
   C5, MUX-EXCH C8/G8, mixed arms, fp/vector/`i128` G4, nested G11, §3c clobber
   G7, tainted angle G3, jump-table fold, impure/unowned scrutinee G10), deeper or
@@ -732,9 +776,9 @@ they are what a widening must argue with:
   **run-time-arm** Ry angle select.
 - **`bare i1 register condition`** for the tree consumers that have not yet been
   given a rail leaf: the UNFOLDED value diamond (bd `fg9k`), the 6.5
-  classical-call arm (bd `54ur`), the Ry-stem angle select (bd `l4x4`.a) and the
-  in-loop form of the Ry arm / prep (bd `wx8g`, which takes
-  `control flow inside a loop body` instead). `branch phase on a bare i1
+  classical-call arm (bd `54ur`) and the Ry-stem angle select (bd `l4x4`.a). ⚠
+  The in-loop form of the Ry arm / prep is **no longer** on this list — bd
+  `wx8g` landed 2026-09-14 (§4c). `branch phase on a bare i1
   condition` survives as the discriminator for the non-register `i1` residuals
   (a loop-carried `bool` header phi — bd `boi6`; `trunc`/`zext`/phi/argument —
   bd `r903`).
@@ -795,6 +839,15 @@ gate DISTURB the borrowed parent's basis label?"* (no — it is diagonal, whoeve
 emitted it). Narrowing it "for symmetry" would silently delete a real discharge.
 A closure table that claims to be complete is worth exactly its most-missing row.
 
+⚠ **The MIRROR of L3 cost a P1 filing on 2026-09-14: when you ADD A CALLER to a
+shared predicate, read the callee's RETIREMENT TRIGGER and state which direction
+you are using it in.** `WireWalk.h` named the dtzb vocabulary gap precisely,
+called it "NOT EXPLOITABLE" *for the callers it then had*, and instructed the
+next caller to *"WIDEN THE VOCABULARY (or fence the caller) IN THE SAME CHANGE"*.
+A third GRANTING caller (`readerStalesItself`) arrived, the argument behind "NOT
+EXPLOITABLE" did not reach it, and nobody read the trigger — `IMPL_D.md` §15.4 /
+§16, filed and open, cross-referenced to bd `a3z7` / bd `0njv`.
+
 **(L4) A wire question must be a gate SET, not a BOOLEAN over a return-first
 walker.** "Is any non-diagonal gate visible?" answered by a walker that returns
 the FIRST one it finds is defeated by putting an already-ACCEPTED gate in front
@@ -818,6 +871,18 @@ Only a unitary hazard is a Prime-Directive decline.
 `fenv`, the missing `xor i1` condition-tree node, the rail fence's "the
 positional prong is already what the walk asks" (false — no measurement behind
 it). If a bound is load-bearing and unruled, take it to the owner.
+
+⚠ **L7 WITH A TWIST, measured three times on one sentence (bd `z9t1`, 2026-09-14):
+A RECORD CORRECTION THAT IS NOT APPLIED TO THE SOURCE IS NOT A CORRECTION.** The
+false clause — *"i.e. only where the object was undefined on BOTH edges"* — was
+corrected in the track's record in review round 1 and **never landed in the
+source**; round 2 found it still in `RotationLowering.cpp` and specified the fix;
+**that fix did not land either**; round 3 found it a third time and measured it
+*wronger than round 2 had* (the "i.e." describes a rule whose population is about
+**four** modules; the shipped clause's is **164**). The justification was not
+merely unruled — it was ruled wrong three times and kept being read off the
+source comment that still carried it. Fix the comment in the same change, or the
+next round re-derives the same finding.
 
 **(L8) Write RETIREMENT TRIGGERS into fixture headers and source comments; they
 work.** A fixture header that said *"when `l4x4` lands, this file's string
@@ -869,6 +934,29 @@ refusal). Its own mutant validation is `e2e-loop-twin-quarantine-selftest` (27
 cases). Same argument as `free_pairing_check_test.py`: a checker nobody has
 tried to fool is a checker nobody should trust. A gate expected to be red is a
 gate people stop reading.
+
+⚠ **AN INSTRUMENT'S FAILURE MODE IS TO REPORT A PASS, so the only instrument
+worth citing is one that has been made to fail on purpose.** This is a
+restatement of L10, not a new rule, and it is in the file because **six measured
+instances landed in ONE session** (2026-09-14), each found by the agent that
+owned the instrument and none by a green suite: a **vacuity checker** printed
+`checked 0` on a batch of 29 real negatives (it matched only handle-form
+negatives); an **injection matrix** printed `0 mutations, MISSED 0, N/A 0` when
+invoked with **no fixture argument** (now exits non-zero); an **injection
+harness lied twice in the MISSED direction** before it told the truth, the second
+spelling moving a mutation *across a function boundary*; an earlier matrix
+reported **45 MISSED against fixtures that catch everything**, because it ran
+`FileCheck --check-prefix` and dropped the RUN line's `--implicit-check-not`
+flags — *a harness that runs a weaker command than lit measures itself, not the
+fixtures*. Two more destroy evidence rather than misreport it: `--regenerate`
+silently ate **54 lines of Rule-13 ruling prose** from a baseline header and
+reported success (bd `gfsk`), and **a 0-byte `.ll` module ACCEPTS** through the
+passthrough early-out, so six probes scored ACCEPT on nothing (bd memory
+`empty-module-accepts-vacuity-trap`; the cause was `sed X.s1.ll > X.S1.ll` on a
+case-insensitive filesystem). ⚠ And the twin matrix's own instructive cell:
+`m_none_pbitd_none_premark_rypost` went `ACCEPT-IDENTICAL` → `DECLINE-BOTH` when
+the stale-reader fence landed — **a cell whose two halves agreed because BOTH
+were wrong is precisely what `ACCEPT-IDENTICAL` cannot see; only a fence can.**
 
 ### 4. The 2026-09-11 landing — the owner's file compiles
 
@@ -985,6 +1073,10 @@ pinned on ONE edge is not a collider" closes it with an argument but flips ≥11
 the phase consumer on a prep merge-φ (bd `3qps` — the same leaf-grammar gap, NOT `drbq.7`'s wire fence:
 `SCOPE_boi6` §0.3 is true of a CHAINED arm theta and false of a SOURCE-theta prep); the in-place-ARM φ
 (pinned as a DECLINE whose retirement is "land the `3d8q` fence, then re-derive `condProvenance`'s seed").
+⚠ **All three moved on 2026-09-14 — read §4c**: `vd.c` compiles (bd `om35`, by the φ-descendant
+exclusion and NOT by R-2′, whose cost was re-measured at **25** flipped decline fixtures, not 11), the
+phase consumer on a prep merge-φ lowers (bd `3qps`), and the `3d8q` fence the third item names is
+landed, so that retirement trigger is now live work rather than a wait.
 
 **The LOOP form (Track L, scoped, `trackL/SCOPE_loop.md`, 37 probes, no code).** Spelling (i) `bool
 b[N]` has exactly ONE wall, N-independent — `cq taint escape: tainted value stored to memory`, BEFORE
@@ -1004,32 +1096,288 @@ compare ACROSS sweeps; the shared corpus tag regex hides a D→D string change i
 family (close with a full-stderr byte-compare); a mutator reading N/A is a hole; a named negative can be
 VACUOUS (`trackM/probes/impl/vacuity.py`).
 
+### 4c. The 2026-09-14 landing — the owner's N=3 cascade compiles, and the project's one known silent miscompile is CLOSED
+
+**The owner's `example/grover/grover_oracle_uncompute.c` with the THIRD region live compiles as
+written** — three `_Bool`s, no `int` workaround, no new `cq_*` function. Measured on the rebuilt
+primary at `66428ddc` (`CLOSING_MEASUREMENTS.md` §3–§4): `opt` exit 0, **stderr 0 bytes** (no warning
+either), **35 trace lines**, STRICT stage 2b `9 rail mint(s) of which 7 left allocated, 3 cqrt_free
+site(s): 3 verified, 0 violation(s), 0 unproven`, and the trace is **BYTE-IDENTICAL** (equal sha-256)
+to `tests/e2e/slice_control_cascade_three_bools.expected.log`. The invariants are readable straight
+off that golden: `h0` and `h5` are the USER'S registers and appear only at arg 0 of a `cqrt_cnot`, as
+the control of `cqrt_ry_i1_controlled`, or in a measure — never `cqrt_x`-bracketed, never freed;
+every `cqrt_x` sits on an ancilla (`h1`, `h7`) whose `x ⊕ x = 0` return makes its `cqrt_free` a
+proven-`|0⟩` one; `h9` is the third region's flag — one mint, one strip, one free.
+
+⚠ **The owner measured that same file DECLINING on that same tree, and the cause was a STALE BUILD,
+not a regression.** The primary `build/` was still the frozen pre-merge oracle, three increments old;
+the string it printed was a real, correct, historically accurate diagnostic — emitted by a compiler
+that predates the fix. **The cheap discriminator is the hash**: `shasum -a 256 build/ir-pass/cq-opt`
+*before* believing any decline. It is the trap this file already records, seen from the other side —
+`--target CQPass` alone leaves `cq-opt` stale and lit reports **false green**; a stale `cq-opt` makes
+a *fixed* program look broken by hand and a *broken* pass look green in lit.
+
+**Six increments, ONE group gate** (`MERGE_REPORT.md`, and every gate line hash-keyed in the session
+`GATES.md`):
+
+| # | bd | commit | what landed |
+|---|---|---|---|
+| 1 | `uq96` | `49b7f7bc` | the `i1` axis for `e2e-loop-twin-matrix` — 288 → 338 cells, the pre-existing 288 byte-identical and unmoved. An instrument, not a lowering, and it landed FIRST because it is the witness for increment 5 |
+| 2 | `z9t1` | `f28e435a` | an `undef`/`poison` SEED reaching a **source** `cq_theta` becomes the type's concrete zero **at the allocation**, normalized early and silently (owner ruling, five clauses) |
+| 3 | `om35` | `30317792` | F2's **φ-DESCENDANT** exclusion — the owner's N-deep cascade compiles; **0 of 29** F2-naming fixtures moved |
+| 4 | `3qps` + `4aiu` | `71de13c2` | a preceding prep's merge φ as a rail LEAF at the phase kickback, and at an INTERIOR tree position at both consumers — ONE predicate, two call sites |
+| 5 | `wx8g` | `a2b86139` | the IN-LOOP iteration-local rail and the retirement of the `l4x4`.b carve-out: a rolled bool-controlled Ry arm / state prep lowers, where `CLAUDE.md` recorded it compiling in **NO spelling on ANY binary** |
+| 6 | `3d8q` | `81c55430` | the **STALE-READER fence** — the project's one known verify-clean silent miscompile, closed |
+| — | — | `66428ddc` | the merge gate's resolution: the e2e half of the stale-reader ruling, and the adjudication of the 41 moved twin-matrix cells |
+
+**The owner's rulings of 2026-09-14** (`DECISIONS.md`, verbatim where quoted): **Q3** — bd `3d8q`
+gets a track, *correctness over expressiveness*, because the miscompile's population had been widened
+twice and now blocks a filed widening too. **Q1** — for bd `om35`, build the **φ-descendant**
+predicate and **not** R-2′; the question put to the owner was *"which one would result in a more
+general method not over-declining, so compiling code that actually leads to valid quantum
+circuits?"*, and the measured answer was that R-2′ flips **25** shipped decline fixtures (13 of which
+say CONFIRMED MISCOMPILE in their own headers) while the φ-descendant rule flips **zero** and closes
+all three customers; R-2′ stays FILED as a costed capability. **Q2** — the loop spelling is (i) the
+bounded rail ARRAY, and after Track L's scoping falsified bd `xdu2`'s premise (three walls, not one)
+the order was changed to build `wx8g` FIRST. **The in-loop invariant re-read DECLINES** — `int b =
+cq_theta(q, 0.1);` re-reading a loop-INVARIANT `q` every trip has **two realizable circuits and the
+source names neither**, so it is ambiguous; the conditional-probability measurement settled it
+(intended `P(1) = sin²(0.2) ≈ 0.0395` i.i.d. per trip against the emitted `P(1|prev=0) ≈ 0.0025` /
+`P(1|prev=1) ≈ 0.9975`, locked onto the first outcome). ⚠ The reading that had been put to the owner
+— *"fresh from `q` each trip requires CLONING, so the emitted chain is the only possible circuit"* —
+was **false**, and re-preparing a KNOWN state is not copying an unknown one.
+
+**What the stale-reader fence cost, measured and not estimated.** 104 corpus modules go
+`ACCEPT → DECLINE` on the new string `cq opcode lowering: rotation/measure operand predates a
+non-diagonal gate`; 12 of them are shipped `ir-pass/test` fixtures, all converted with the increment.
+**Two e2e slices could not be converted in place** — the e2e layer has no decline shape (`run_slice*.sh`
+runs under `set -euo pipefail` and byte-diffs a golden) — so both `.c` files were KEPT unregistered
+with a conversion header and an L8 retirement trigger, both goldens **DELETED** rather than rewritten,
+following the `slice_control_switch_phase.c` precedent of 2026-09-05. ⚠ **A coverage hole was found in
+the process**: the `cmp` program was already pinned by Track D's inverted fixture, but the **bool
+(rail-leaf) program was pinned nowhere at all**, so unregistering it alone would have dropped the
+decline entirely — its verbatim linked stage-1 module is now
+`ir-pass/test/control_swap_reject_select_rail_round2_window.ll`, validated NON-VACUOUS **by binary
+mutation** (FileCheck does not match on the pre-session oracle, where `opt` exits 0). Net coverage
+cost of the conversion: **zero**.
+
+**F2's φ-DESCENDANT exclusion — carried verbatim from the track that measured it (bd `om35`,
+`IMPL_F.md` §2 / `CLAUDE_MD_EDITS.md` §1).** ⚠ Read it with the paragraph that follows it: its closing
+retirement trigger says *"the day `wx8g` lands"*, and `wx8g` landed in the same merge, so the block's
+sentence *"every in-loop state prep is stopped before F2 today"* is **already history**:
+
+> **F2's φ-DESCENDANT exclusion (bd `om35`, owner-ruled 2026-09-14) — the ground is AVAILABILITY, and it is
+> an OPERAND argument, not a position one.** F2 asks *"could the source the author wrote have been
+> `cq_theta(<that register>, θ)`?"*, and that register can occupy exactly **two** slots of the module in
+> front of the pass: the arm theta's arg-0, or the merge φ's PRED-edge incoming. The region's own merge φ
+> `M` is defined **at the join**, so `M` is available at **neither** slot — and therefore **no value whose
+> operand chain reaches `M` can be SPELLED at either slot, in any module**. Such a value is not a register
+> the author could have named in the definition of `M` itself, so it is not a witness, and F2 stops counting
+> it. It **removes a witness, not a decline**: any other pinned value that could occupy a slot is still
+> found, on either edge, and still declines.
+> ⚠ **Never compress this to "`V` sits after the join".** That sentence is about POSITION, it *is* the
+> dominance conjunct that stays REFUSED IN WRITING, and it is **false** — `-O1` **sinks**, so the ≥11 shipped
+> merge-block colliders (`range_forward_*`, `sideways_*`, `merge_edge_sideways`, `offwire_sideways_min`,
+> `step_cap_over`) also sit after the join and are genuine rivals precisely because their position is a
+> consequence of the fold, not evidence about the source. The operand form survives sinking because
+> **sinking moves a definition and never rewrites its operands**; and a pre-region value cannot *acquire* a
+> use of `M` in place at any `-O` level, because that is invalid SSA.
+> ⚠ **The argument is a theorem only for an ACYCLIC user chain, and since 2026-09-14 that precondition is
+> ENFORCED, not assumed.** A φ is the one opcode whose operand need only dominate its incoming EDGE, so a
+> **loop-header φ taking an `M`-descendant on its BACK EDGE** both uses `M` and dominates both slots — the
+> available collider the bullets say cannot exist (measured as a mover: ORACLE fires F2, the un-narrowed
+> subject does not). `collectStatePrepPhiDescendants` therefore **skips a φ user that `M`'s block does not
+> dominate**. That is a **NARROWING of the EXCLUSION set** — opposite object and opposite direction from the
+> refused conjunct, which tests a *collider* against the *arm* and turns declines into accepts, where this
+> tests a *member* against *`M` itself* and can only add declines. The invariant it buys is that every member
+> lies in a block dominated by `M`'s block.
+> ⚠ **RETIREMENT TRIGGER: bd `wx8g`, by name.** Every in-loop state prep is stopped before F2 today
+> (`control flow inside a loop body`), and that open over-decline is the **only** reason the back-edge shape
+> is unreachable rather than merely narrowed — in-loop regions **do** reach `classifyArms`, so the loop is
+> not a blanket fence. The day `wx8g` lands, re-derive the narrowing against the shapes it admits, and do not
+> assume the φ case is the only cyclic one. The fixture pair
+> `control_inplace_ry_reject_stateprep_backedge_{phi,nonphi}desc_collider.ll` is the tripwire.
+
+⚠ **THAT RETIREMENT TRIGGER HAS ALREADY FIRED, AND THE RE-DERIVATION IS OWED, NOT DONE** — `wx8g`
+landed in the same merge. Measured at the group gate (`MERGE_FILINGS.md` §1, probes committed under
+`merge_gate_probes/x5{a,b,c}_*.c`): the two named tripwire fixtures **HELD** (both still decline at
+F2, with a byte-identical `CQ_CTRL_DBG` anchor to the oracle, `lit --filter backedge` 4/4), **but the
+premise "`wx8g` is the ONLY reason the back-edge-φ shape is unreachable" is now FALSE.** Three probes
+built from the shapes `wx8g` admits go from `control flow inside a loop body` on the oracle to, on the
+merged binary, an F1 decline with a source-located `!dbg` (`x5a`, the available back-edge collider
+itself) and two ACCEPTs with STRICT 2b clean (`x5b`, `x5c`). Nothing the gate could construct
+over-accepts; the skip is **live rather than vacuous**; and the trigger's own second sentence — *"do
+not assume the φ case is the only cyclic one"* — is exactly the part three probes cannot discharge.
+**The argument text in `ArmClassify.cpp` is STALE and must not be cited as it stands.** (The
+narrowing has two further open filings of its own, bd `hrts` and bd `l3i1`: the dominance skip is
+broader than its stated rationale and has ACYCLIC customers, so the retirement trigger naming only
+`wx8g` describes the CYCLIC half.)
+
+**The bd `z9t1` DISCLOSURE — carried verbatim from `IMPL_U.md` §2(b′), whose same text is at the
+mechanism in `RotationLowering.cpp`.** It is the same class as the F2 α/β narrowing: a loud refusal
+becomes a silent compile, no predicate can separate the readings after `-O1`, and the mitigation is
+therefore **disclosure, not a fence**.
+
+**136 modules that the ORACLE loudly REFUSED now compile SILENTLY, and 116 of them move through one
+mechanism: F1's pointer-identity proof is MANUFACTURED, not found.** F1's second sub-clause is a
+literal `Value*` comparison — `MergePhi->getIncomingValue(PredIdx) != RotBase`
+(`ArmClassify.cpp:3905-3908`, read in source by this fix round, not inherited) — and
+`Constant::getNullValue` is **uniqued**, so rewriting a seed `undef` and a straight-through `undef`
+to "the type's zero" makes them **the same `Value*`**, for two operands the source never equated.
+The other 20 rows: 14 `control flow` (the `MergePhiPeel` P3b route above), **4
+`cq_measure_<sfx> operand is an undef/poison literal`** — the ruled clause-4 decline reached
+*upstream* of the sink, which is **F-U3-1, open with the owner, and NOT covered by this
+paragraph** — 1 `condition predates a non-diagonal gate`, 1 `nested control flow`.
+
+**The rival reading, stated as a program and not as an IR shape:** the seed and the merge's
+straight-through incoming were **two different uninitialized C objects**, and the source never said
+they were equal. `pD_two_objects` is the minimal witness — the prep seeds from object *X*, the
+straight-through edge carries object *Y*, and it moves `D→A`. The compiler now treats them as **one
+value** at the state-prep proof.
+
+**Why the rival has no lowering to be robbed of — two halves, because either alone would be an
+assertion.** (1) On the oracle the two-object module is a **loud decline**, so there was no circuit
+for the other reading and nothing is displaced. (2) The accept it now receives is a **refinement**,
+not a choice between two circuits: LangRef lets an `undef` stand for any value of its type, so `0` at
+each read is a value the source **already licensed**, and the emitted stream is **byte-identical** to
+what a written `= 0` on both objects produces — measured on all **164** modules of the phi half's
+population, 0 divergences, 0 `A→D`. On the ¬flag component the fresh rail holds |0⟩, which is a value
+object *Y* was permitted to have. **No fence is deceived about a value the program actually wrote.**
+
+**Why disclosure and not a predicate.** After `-O1` there is nothing left to discriminate: *"one
+object read twice"* and *"two objects that were both uninitialized"* are **the same module** —
+`undef` is uniqued per type, so the IR carries no record of how many C objects there were. A fence
+that refused the two-object reading would have to refuse the one-object reading this rule was **ruled
+to compile**. And a warning was **deliberately not added**, for the same reason CLAUDE.md §4 gives for
+the F2 one: it would fire on the owner's own ruled spelling — *"both codes are supposed to compie!!
+also no warnings."*
+
+⚠ **RETIREMENT TRIGGERS, three, each naming what would make this paragraph wrong rather than merely
+out of date:** **(i)** F1's second sub-clause stops being a `Value*` **identity** test — a
+value-equality or provenance test would make the manufacture *visible*, and that is the only place a
+real predicate could live; re-derive from scratch. **(ii)** the clause rewrites anything that is not
+`isa<UndefValue>`, or `undef` stops being uniqued per type — those are the refinement's only two
+load-bearing facts, and either one gone makes this an **over-accept**. **(iii)** the 4 `cq_measure`
+rows are **not** covered here: they are a ruled clause reached by a new route, and they are with the
+owner.
+
+**One positive from the same surface, recorded so the disclosure is not read as all-cost.**
+`lowering_unroll_const_trip` is round 3's single `IR-only` row: at HEAD with an undef phi incoming,
+LLVM constant-folds the `fma` to NaN and **the user's `cq_measure` disappears from the emitted module
+entirely**; the subject restores it. bd `z9t1` *removes* a vanished user measurement here — it does
+not create one.
+
+> ⚠ **TWO DIFFERENT 164s, EQUAL BY COINCIDENCE.** *"164 of 972 carried thetas"* (direction 1) is a
+> **count of thetas**, from the census; *"164 modules"* is the phi half's **module population**, from
+> the isolation sweep. Different instruments, different denominators. **Do not cite one as evidence
+> for the other** — this warning is carried at every site either number appears
+> (`RotationLowering.cpp` ×2, the fixture header, `FIX_U_R3.md`).
+> — and now here, in `CLAUDE.md`.
+
+**What the group gate found that no single track could** (`MERGE_REPORT.md` §5, `MERGE_FILINGS.md`):
+
+- **The F × P composition — two new ACCEPTs cleared BY MEASUREMENT and NOT BY REVIEW.** Of 290 corpus
+  movers, 8 are reproduced by no single-track binary, and three of those are one shape: *a condition
+  TREE whose leaves are preps' merge φs* (`if (b1 && b0) cq_phi(0.3)` and `if (b1 && b0) a -= 3;`).
+  Track F alone clears F2 and then hits the leaf-grammar wall; Track P alone admits the leaf and then
+  hits F2; **only together do they accept.** Both are STRICT-2b clean with well-formed streams (the
+  kickback sits on a `cqrt_toffoli` of the two rail leaves, `h0`/`h1` read only as controls, ancillas
+  returned to `|0⟩` before their free) — and that is exactly the evidence Rule 2 calls **necessary
+  and not sufficient**. Track F's Rule-13 rounds saw a binary on which these decline, and so did
+  Track P's. **A composition is not cleared by clearing its parts.**
+- **Three surviving over-declines on the `il*` × `bcar` combination** (`MERGE_FILINGS.md` §3): the
+  rolled side declines `control flow inside a loop body` while the FLAT spelling of the same program
+  lowers. The blocker is the COMBINATION and the matrix isolates it by measurement — an
+  iteration-local TARGET rail (clause (c)'s subject) beside a CONDITION rail re-rotated inside the
+  body; the same carried condition with no iteration-local target **did** flip. Per the owner's 2026-09-11
+  ruling that is a defect to remove, not a safety margin.
+- **One ACCEPT→DECLINE outside the fence** (`d4_noRailRegion.c`, Track W): safe-direction, present
+  already in the Rule-13-cleared binary, and its own round-1 review had measured that program as a
+  rolled-vs-unrolled TRACE DIVERGENCE **on the oracle**. Filed as an over-decline candidate with that
+  note, not as a defect.
+- **Diagnostic locations: 0 lost `!dbg` over 2060 decline rows, 21 gained.** A lost source location is
+  invisible to every other gate in the tree (Track P's F-P2 found one by sweep, and it was a
+  regression).
+
+**The non-redundancy protocol, measured again** (`PROTOCOL.md`): **3 full-suite runs for 6 landings**
+— the group gate twice (RED, then GREEN after the resolution) and the closing rebuild once — with **0
+cited-but-stale gate lines** found, every `cited:` line re-hashed against the binary on disk. Two
+corrections it earned: (a) a **measured ERRATUM** — `tests/e2e/CMakeLists.txt` is **not** append-only
+at disjoint anchors; it has ONE tail anchor above the mandatory-last `get_property` sweep, every
+slice-adding track appends there, and this merge hit two content conflicts in it. The post-union check
+is now standard: **0 duplicate `add_test` names, the registration count, sweep still last.** (b) the
+**duplicate-body scan** (L8) is worth more when it reads each duplicate's CLAIMED VERDICT off its RUN
+lines and flags groups that MIX them — 1994 fixtures, four normalisations, **0 contradictory-verdict
+groups**, and all four `git mv`'d fixtures confirmed absent (no resurrection).
+
+**Three items are OPEN WITH THE OWNER and must not be written up as settled:** (a) **F-U1-1** — bd
+`z9t1` composes with `LiteralIntegrity` GUARD 1 (`declineUnpairedUndefLiterals`), a *counting* gate
+over a population this clause only partially empties, so `double d; d = cq_theta(d,d);` moves from a
+loud decline to exit 0 emitting `cqrt_ry_f64(i32 %h, double undef)`; the measurements point away from
+restoring the decline (the genuine pairing hazard still fires, the survivor occupies exactly one
+slot, the blessed precedent is an ALLOC operand, and a materialized undef is already committed in a
+shipped golden — bd `u7z9`), **no conjunct was added**, and the ruling is bd `dnqo`. (b) **F-U3-1**
+(bd `fve8`) — the φ clause disarms ruling clause 4 UPSTREAM of the sink: `cq_measure` of an undef
+declines by the ruling, but the clause deletes the undef before `MeasureLowering` sees it; 4 of 710
+rows, all byte-identical to the written-zero twin, and the DIRECT spelling still declines. (c) the
+**X5 re-derivation**, recorded as OWED above.
+
 ### 5. Open follow-ons, by bd id
 
-**Pre-existing silent miscompiles, still open:** bd `3d8q` (the pass-wide
-stale-record guard sweeps PURE ops only, so a `cq_theta`/`cq_measure` READER of a
-stale name is never asked — two siblings emit one register; population widened by
-`MergePhiPeel`, which is a new customer-generator for it); bd `lo7u` (the 4.5
-`switch` mints eq-flags from a MEASURED scrutinee — `Switch*Emit` goes through
-`emitEqFlag` with no `CmpInst`, so neither A.1 rung covers it).
+⚠ **bd `3d8q` is CLOSED** (`81c55430`, 2026-09-14 — §4c), and so are the other
+five of that session: `z9t1`, `om35`, `3qps`/`4aiu`, `wx8g`, `uq96`. What follows
+is what is still open.
 
-**Over-declines** (defects to remove, per the owner's ruling): bd `rb9x` (a
-`bool` prep under an `int` COMPARE condition — the collider is `MergePhiPeel`'s
-peeled compare CLONE, bisected to one added `icmp`; the unpeeled twin accepts);
-bd `wx8g` (the in-loop bare-`_Bool` Ry arm / prep — ⚠ its cost is **total**:
-with the COMPARE spelling unable to express it either, **Grover as a rolled loop
-with a bool-controlled rotation or prep compiles in NO spelling on ANY binary**);
-bd `35t0` (a 6.5 arm immediately followed by a flat region declines at the
-`hcrg` precedence graph — `reorderable()` admits only `BranchRegion`/
-`PhaseKickback`); an in-loop hoisted loop-invariant TEMPLATE rail read by the
-body's condition (Q-R1-1, a Prime-Directive decline, not a proof).
+**Pre-existing silent miscompiles, still open:** bd `lo7u` (the 4.5 `switch`
+mints eq-flags from a MEASURED scrutinee — `Switch*Emit` goes through
+`emitEqFlag` with no `CmpInst`, so neither A.1 rung covers it); bd `s82e` (an
+in-loop leak of entangled which-path rails that needs **no tainted control flow
+at all** — six lines of C with no region, byte-identical on the oracle); bd
+`a3z7`, **re-raised to P1** (the rail φ that carries a dtzb-mutated `cq_theta`
+result IN PLACE: `readerStalesItself` is a third GRANTING caller of
+`phiTracksWire` and the documented dtzb vocabulary gap is live, so two well-formed
+C programs one φ operand apart get ONE circuit — `IMPL_D.md` §15.4, with the
+red-green pair to write WITH the fix; bd `0njv` is the distinct straight-line
+sibling, which the compiler gets RIGHT).
+
+**Over-declines** (defects to remove, per the owner's ruling): bd `35t0` (a 6.5
+arm immediately followed by a flat region declines at the `hcrg` precedence graph
+— `reorderable()` admits only `BranchRegion`/`PhaseKickback`); bd `52og` (the
+in-loop phi PHASE kickback over an OUTSIDE prep declines while the in-loop phi
+DATA SELECT over the same prep is a shipped ACCEPT — an asymmetry between two
+consumers of one leaf grammar, and it is the shape a **rolled Grover phase
+kickback on a bool-controlled prep** takes); bd `onq1` and the three `il*`×`bcar`
+twin cells (`MERGE_FILINGS.md` §3) as the residue inside `wx8g`'s capability; bd
+`hrts` / bd `l3i1` (the φ-descendant dominance skip is broader than its stated
+rationale and has ACYCLIC customers); bd `1ro3`, bd `58tc`, bd `x5fp`, bd `832l`,
+bd `hqor`; the `a3` residual of leg 1b (a guard that runs once but **not on the
+first trip** — the leg proves "false on every latch arrival", strictly narrower
+than "true on at most one iteration", and widening it is an ACCEPT-direction
+relaxation needing its own Rule-13 round); `d4_noRailRegion.c` (safe-direction,
+with a pre-existing trace divergence on the oracle — a candidate, not a defect);
+an in-loop hoisted loop-invariant TEMPLATE rail read by the body's condition
+(Q-R1-1, a Prime-Directive decline, not a proof).
 
 **Capabilities filed, not built:** bd `xqgx` (the **A.2** widenings — the S†
 after a compare select via the DT prong, the P1 `SawValueArm` retirement under a
 live-chain-rail fence = the H-3 ruling, and `AllowLogicalSelect` for data
-selects); bd `l4x4`.a (the Ry-stem angle select on a `bool`); bd `54ur`, bd
-`fg9k`, bd `boi6`, bd `r903`; bd `m57l` (the Rule-18 bound derivation, no
-customer); the 7.x loop/break widenings under bd `8h7d`.
+selects); bd `xdu2` L-1a (the bounded rail ARRAY — the owner's Q2 spelling, still
+the loop form's first wall); bd `yiid` (an UNRULED BOUNDARY, L7: `cq_measure` is
+not modelled as a wire event at all, so reading a name AFTER measuring it
+compiles in every spelling — reading (b) is costed at **2 goldens, 0 shipped
+accepts, no ABI, no new symbol** in `IMPL_D.md` §14 and is an **owner decision**);
+bd `dnqo` (the F-U1-1 ruling — is an `undef`/`poison` ROTATION ANGLE a loud
+decline?); bd `fve8` (the F-U3-1 disposition); bd `l4x4`.a (the Ry-stem angle
+select on a `bool`); bd `54ur`, bd `fg9k`, bd `boi6`, bd `r903`; bd `m57l` (the
+Rule-18 bound derivation, no customer); the 7.x loop/break widenings under bd
+`8h7d`. R-2′ (the rival F2 spelling the owner did **not** take) stays filed with
+T1/T2 pinned.
+
+**Owed, and owed as a REVIEW rather than as code:** the **X5 re-derivation** of
+`ArmClassify.cpp`'s dominance-skip trigger, whose premise the same merge
+falsified (§4c); and a **Rule-13 opinion on the F × P composition** — two accepts
+that exist only with both increments present, cleared by measurement and by no
+review (`MERGE_FILINGS.md` §1–§2).
 
 **Owner-disposition pending / quarantined divergence:** bd `1m5p` (class A: a
 hoisted loop-invariant derived chain whose top rail the ROLLED form leaves
@@ -1040,9 +1388,18 @@ arm-class-independent**; ⚠ "pre-existing" is true of the defect and FALSE of i
 population — the increment that exposed them **adds customers** to a known
 defective path.
 
-**Test debt:** bd `6uqc`'s M-A CTRL-slot pin is lost and currently unpinnable;
-bd `f8eu` (57 missed mutations over 17 fixtures of pre-existing injection-matrix
-debt in the drbq Inc-4 state-prep accepts, identical on the `main` oracle).
+**Test debt:** the M-A CTRL-slot pin is lost and currently unpinnable (bd `6uqc`
+family); bd `f8eu` (57 missed mutations over 17 fixtures of pre-existing
+injection-matrix debt in the drbq Inc-4 state-prep accepts, identical on the
+`main` oracle); bd `1yeu` (**a STRUCTURAL instrument gap**: every corpus and gate
+in the tree is effectively ONE FUNCTION PER MODULE, so a cross-function defect is
+invisible to all of them — two over-ACCEPTs found 2026-09-14 passed 1937 lit
+fixtures, 15 e2e entries, a COMPLETE corpus sweep, a 0-MISSED injection matrix
+and 328 twin cells for that single reason); bd `gfsk` (the `--regenerate` prose
+deletion of L10); bd `gahu` (three `*_reject_*` fixtures are ACCEPTs after bd
+`z9t1` — deliberately NOT renamed yet, because a `git mv` can be resurrected by a
+merge, L8); bd `21re` (`free_pairing_check.py`'s `provably_not_a_rail` rests on a
+premise the `xdu2` rail bank would make false).
 
 ---
 
@@ -1111,15 +1468,18 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
 
-**Counts, measured 2026-09-13 at `59ac5b7` (the three landings; `CLOSING_MEASUREMENTS.md`).** ctest
-**420** · `^e2e-` **410** · `^e2e-slice-` **365** · `twin-identical` **34** · `ls ir-pass/test/*.ll | wc
--l` **1928** · `ls tests/e2e/*.expected.log | wc -l` **367** · twin matrix `grep -c '^m_'
-tools/loop_twin_matrix.expected.txt` **259** + `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt`
-**29** = **288** cells. `cq-opt-equivalence-full` on that tree: **1928/0**. (2026-09-11 at `e96f89c`: 403 ·
-393 · 353 · 30 · 1893 · 355 · 288; 1893/0.) **Re-measure rather
-than quote** — `ctest --test-dir build -N` and the `ls`/`grep` lines above are
-the source of truth, and these go stale on every fixture batch. The per-commit
-chain and every earlier figure are in `docs/CLAUDE-HISTORY.md`.
+**Counts, measured 2026-09-14 at `66428ddc` (the six landings; re-run by the closing docs pass, not
+copied).** ctest **442** · `^e2e-` **432** · `^e2e-slice-` **381** · `twin-identical` **40** · `ls
+ir-pass/test/*.ll | wc -l` **1994** · `ls tests/e2e/*.expected.log | wc -l` **383** · twin matrix
+`grep -c '^m_' tools/loop_twin_matrix.expected.txt` **309** + `grep -c '^cell '
+tools/loop_twin_matrix.quarantine.txt` **29** = **338** cells. Full `ctest -j6` on that tree:
+**442/442** in 436.73 s; `cq-opt-equivalence-full`: **1993/0** (measured at the group gate on the
+bit-identical binary, over the 1993 fixtures that existed before the resolution's one addition).
+(2026-09-13 at `59ac5b7`: 420 · 410 · 365 · 34 · 1928 · 367 · 288; 1928/0. 2026-09-11 at `e96f89c`:
+403 · 393 · 353 · 30 · 1893 · 355 · 288; 1893/0.) The twin matrix moved 288 → 338 because bd `uq96`
+gave it an `i1` axis. **Re-measure rather than quote** — `ctest --test-dir build -N` and the
+`ls`/`grep` lines above are the source of truth, and these go stale on every fixture batch. The
+per-commit chain and every earlier figure are in `docs/CLAUDE-HISTORY.md`.
 
 **Timing.** ~**130–230 s** at `-j6` on a **quiet** box (the spread tracks how
 warm the stage-1 content-addressed cache is), down from 825 s serial. **Under
@@ -1379,18 +1739,18 @@ deliberately few:
 
 | Path | Responsibility |
 |---|---|
-| `ir-pass/src/CQLoweringPass.cpp` | Orchestrator: `propagate → escape/stale guards → peel+detectControl+emit → classical-mux guard → lowerRotations → lowerOps → lowerMeasures → uncompute`; passthrough early-out. ⚠ Control detect+lower runs **twice** (`repropagateControlMerges` fixpoint) — every stage in that window owes the L1 question |
+| `ir-pass/src/CQLoweringPass.cpp` | Orchestrator: `propagate → escape/stale guards → peel+detectControl+emit → classical-mux guard → declineRecordedStaleQuantumReaders → lowerRotations → lowerOps → lowerMeasures → uncompute`; passthrough early-out. ⚠ The reader decline sits in that one slot **in both entry points**, and the slot is a contract: it is the last owner to speak, because `LLVMContext::diagnose` EXITS on the first `DS_Error`. ⚠ Control detect+lower runs **twice** (`repropagateControlMerges` fixpoint) — every stage in that window owes the L1 question |
 | `ir-pass/src/TaintPropagation.cpp` | Forward taint (seed `@cq_theta`, sink `@cq_measure`, skip arg-1 angle) + collection-time `cq_*` prototype validation + `declineTaintEscapes` + `declineClassicalMuxes` (live select/phi over tainted data; one-register merge-phi lift) + **`adjudicateTaintDelta`** (the guard re-run every taint-GROWTH event owes — bd `b6ap`) |
-| `ir-pass/src/RotationLowering.cpp` | `theta → cqrt_alloc_<W> + cqrt_ry_<W>` (the qubit allocation point); RAUW the result to the `i32` handle; the `cqrt_ry_<W>_controlled` mint for in-place arms. ⚠ **`emitRz` is DELETED** — `cq_phi` carries no register, so the only Rz the pass emits is the kickback `cqrt_rz_i1(f, θ)` from the CONTROL emitters, and an uncontrolled one is deleted as a global phase. A `@cq_phi_<sfx>` **use** is a reserved-name loud decline. ⚠ `Chained` is decided at FINAL taint — that asymmetry with round-1 fences is L1's PREDICATE species |
-| `ir-pass/src/OpcodeLowering.cpp` + `Arith/Compare/Cast` | Tainted `add/mul/icmp/fcmp/cast/fneg → cq_template_*`; up-front cast-width capture before RAUW; `classifyInPlaceReassignment` (M-C) and the `lowerOps` **re-verification** of every pre-loop in-place marking under FINAL taint; `declineStaleRecordOps` (pass-wide: a tainted **pure** op scheduled past a non-diagonal wire gate → loud decline — ⚠ pure ops only, which is bd `3d8q`) |
+| `ir-pass/src/RotationLowering.cpp` | `theta → cqrt_alloc_<W> + cqrt_ry_<W>` (the qubit allocation point); RAUW the result to the `i32` handle; the `cqrt_ry_<W>_controlled` mint for in-place arms; **`normalizeUndefRotationSeed`** (bd `z9t1`) — a whole-value `undef`/`poison` SEED at a SOURCE theta, and every same-typed `UndefValue` incoming of every phi that carries that theta, becomes `Constant::getNullValue`, silently (the disclosure is §4c; the `ConstantExpr` residual is excluded by its own conjunct, because the predicate gates a DECLINE everywhere else and a REWRITE here). ⚠ **`emitRz` is DELETED** — `cq_phi` carries no register, so the only Rz the pass emits is the kickback `cqrt_rz_i1(f, θ)` from the CONTROL emitters, and an uncontrolled one is deleted as a global phase. A `@cq_phi_<sfx>` **use** is a reserved-name loud decline. ⚠ `Chained` is decided at FINAL taint — that asymmetry with round-1 fences is L1's PREDICATE species |
+| `ir-pass/src/OpcodeLowering.cpp` + `Arith/Compare/Cast` | Tainted `add/mul/icmp/fcmp/cast/fneg → cq_template_*`; up-front cast-width capture before RAUW; `classifyInPlaceReassignment` (M-C) and the `lowerOps` **re-verification** of every pre-loop in-place marking under FINAL taint; `declineStaleRecordOps` (pass-wide: a tainted **pure** op scheduled past a non-diagonal wire gate → loud decline) **+ the READER half, bd `3d8q` (`81c55430`): `recordStaleQuantumReaders` runs as pure ANALYSIS at two slots (beside `declineStaleRecordOps`, and delta-scoped inside `adjudicateTaintDelta` — every taint-GROWTH event owes the L1 question), and `declineRecordedStaleQuantumReaders` is the last slot before `lowerRotations`, a BACKSTOP and never a preemptor.** ⚠ The old note *"pure ops only"* is HISTORY: a `cq_theta` **arg-0** and a `cq_measure` operand are now asked the same question |
 | `ir-pass/src/OpcodeSupport.cpp` · `TemplateName.cpp` · `WidthDispatch.cpp` | Supported-set / commutativity / predicate policy · symbol-string grammar · suffix→width + lazy `FunctionCallee` minting |
 | `ir-pass/src/MeasureLowering.cpp` | `@cq_measure_<sfx> → cqrt_measure_<W>` |
-| `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `SelectMergeEmit.cpp` · `Switch*Emit.cpp` · `RegionFlatten.cpp` · `ClassicalCallArmEmit.cpp` · `include/ControlPlan.h` | The control chain: region detection (declines what it cannot prove) · arm/condition classification, the tainted-angle and stale-condition guards, the §13.3 **rail ladder**, the state-prep fences **F1/F2** and the 6.5 `classifyClassicalCallArm` · phase **kickback** emission (flat + depth-2 nest) and value **controlled-copy-merge** emission (`emitValueRegion` hoists the chain, builds a `select`, calls `SelectMergeEmit` verbatim) · the 4.4 select merge · the 4.5 switch shapes · CFG flattening · the populated region plan. ⚠ **`emitRoute` has exactly ONE call site**, `AbortParkEmit.cpp` (7.2) — the file name `SwapRouteEmit` is history. ⚠ **`emitKickbackGroup` is the ONE spelling of "fire `P(θ)` when `ctl == v`"**: on an ancilla the `cqrt_x` bracket, on a RAIL the diagonal `rz(−θ)` |
+| `ir-pass/src/ControlDetect.cpp` · `ArmClassify.cpp` · `SwapRouteEmit.cpp` · `SelectMergeEmit.cpp` · `Switch*Emit.cpp` · `RegionFlatten.cpp` · `ClassicalCallArmEmit.cpp` · `include/ControlPlan.h` | The control chain: region detection (declines what it cannot prove) · arm/condition classification, the tainted-angle and stale-condition guards, the §13.3 **rail ladder**, the state-prep fences **F1/F2** — whose TEST carries three exclusions, `CondWire`, `PeelClones` and the 2026-09-14 **φ-DESCENDANT** set (`collectStatePrepPhiDescendants`, bd `om35`) — and the 6.5 `classifyClassicalCallArm` · phase **kickback** emission (flat + depth-2 nest) and value **controlled-copy-merge** emission (`emitValueRegion` hoists the chain, builds a `select`, calls `SelectMergeEmit` verbatim) · the 4.4 select merge · the 4.5 switch shapes · CFG flattening · the populated region plan. ⚠ **`preppedRailPhiRegionIdx` (declared in `SelectClassify.h`) is the ONE spelling of "this φ is a prep region's rail"** — the phase kickback and the data select both CALL it (bd `3qps`/`4aiu`); a second spelling is the drbq Inc-3 (b′) defect. ⚠ **`emitRoute` has exactly ONE call site**, `AbortParkEmit.cpp` (7.2) — the file name `SwapRouteEmit` is history. ⚠ **`emitKickbackGroup` is the ONE spelling of "fire `P(θ)` when `ctl == v`"**: on an ancilla the `cqrt_x` bracket, on a RAIL the diagonal `rz(−θ)` |
 | `ir-pass/src/MergePhiPeel.cpp` · `include/MergePhiPeel.h` | **A NORMALISER that runs before detection, not a lowering** (bd `b6ap`). `peelIndependentMergePhis` rewrites every merge phi whose incomings are all pred-available into a `select` with its OWN compare clone, so a fused multi-phi diamond becomes the one-phi shape `soleMergePhi` proves. Called before **EVERY** `detectControlRegions` (3 sites); ≥2-phi entry gate, no in-loop peel, no `undef`, P10 `armWritesMemory` keeps the guarded-store arm declining. ⚠ It **grows the taint set** — that obligation is discharged by `adjudicateTaintDelta`, and a sixth taint-consuming stage added above it and not added there re-opens F-B6-1 with no diagnostic |
 | `ir-pass/src/CondTreeEmit.cpp` · `include/CondTreeEmit.h` | The ONE spelling of "turn a condition into a flag" for the phase path: `collectCondTree` (the `and`/`or`/`xor` tree over tainted compare leaves, incl. `select i1` combinators via `AllowLogicalSelect` — admitted for the branch phase, **not** for the 4.4 data select: one grammar, two verdicts) · `emitCondNetwork` (one leaf flag per compare, `cqrt_toffoli` for AND, hands back the ROOT the kickback sits on, torn down LIFO). **RAIL LEAVES** map to themselves (`RootIsRail`; nothing minted, stripped or freed). With `CopyRailRoot=true` a bare rail root gets the **CNOT-copy** ancilla instead of a bracket. ⚠ `Specialization::mintCondNetwork` is a THIRD, forward-only copy with no strip, deliberately not folded in |
 | `ir-pass/src/AngleSelectEmit.cpp` | The folded if/else angle select. **Ry stem** by DIFFERENCE (constant arms only, IEEE fence); **Rz stem** a KICKBACK PAIR that performs no subtraction. Do not migrate a fence between the stems. Positional steps, no CFG surgery; every `return` below the first emission is UNREACHABLE and commented as such |
-| `ir-pass/src/LoopLowering.cpp` · `include/LoopPlan.h` | Bounded loops (7.3), `break` (7.4), the rolled in-loop control collapse (`collapseRailPhisIn`, `markIfRailLocal`, `invariantRegisterRoots`), `staleRailRecordRead`, `hasFiniteClassicalTripBound`, and the **Q1 quantum-bounded-exit decline** (unconditional; the Rule-18 bound derivation is NOT built) |
-| `ir-pass/src/WireWalk.{h,cpp}` | The shared forward/backward wire walks (position-free and position-aware; `provablyBeforePerActivation`, `phiTracksWire`, `findNonDiagonalWireGate`, `collectNonDiagonalWireGates`, `railWireNamesBackward`, `railWireClosure`). ⚠ A walker's ANCESTRY rule is a Rule-13 fence in its own right — "same physical rail" must be computed by the relation the **lowering** uses (`Chained`), not by the spelling of the parent |
+| `ir-pass/src/LoopLowering.cpp` · `include/LoopPlan.h` | Bounded loops (7.3), `break` (7.4), the rolled in-loop control collapse (`collapseRailPhisIn`, `markIfRailLocal`, `invariantRegisterRoots`), the R7-loop **clause (c)** ITERATION-LOCAL rail (bd `wx8g`), `staleRailRecordRead`, `hasFiniteClassicalTripBound`, and the **Q1 quantum-bounded-exit decline** (unconditional; the Rule-18 bound derivation is NOT built) |
+| `ir-pass/src/WireWalk.{h,cpp}` | The shared forward/backward wire walks (position-free and position-aware; `provablyBeforePerActivation`, `phiTracksWire`, `findNonDiagonalWireGate`, `collectNonDiagonalWireGates`, `railWireNamesBackward`, `railWireClosure`, and the stale-reader leg `readerStalesItself` behind `RequireEmitDominance`, whose NULL-parameter default is byte-identical to the pre-2026-09-14 behaviour). ⚠ `isPotentiallyReachable(A, B)` in LLVM 19 opens `if (A == B || A->comesBefore(B)) return true;` — so `gateIsHarmless(I, I, …)` is true **by identity** and spelling the leg that way declines 12 shipped cleared ACCEPT fixtures (measured). ⚠ A walker's ANCESTRY rule is a Rule-13 fence in its own right — "same physical rail" must be computed by the relation the **lowering** uses (`Chained`), not by the spelling of the parent |
 | `ir-pass/src/Uncomputation.cpp` · `ChainWalk.cpp` · `DagTraversal.cpp` · `FreePoint.cpp` · `EmitInverse.cpp` | The whole-DAG LIFO uncompute spine (runs last): terminal selection · whole-DAG recovery · post-dom free point · reverse-program-order void `_unc` adjoint + `cqrt_free`; compares decline loudly (no `_unc` grid). `ChainWalk` owns the **`!cq.branchphase` MEMBERSHIP record** (`markBranchPhaseGate`/`isBranchPhaseGate`) refused first by `isInPlaceGateOn`, `preservesBasisUnderRecord` and `EmitInverse::isInverseEmittable`, so the spine cannot adjoint the user's answer. ⚠ Asked as membership of the **instruction**, never by name — and `preservesBorrowedParent` clause (1) deliberately still admits the same gate BY NAME, a different and sound question (L3) |
 | `ir-pass/src/LiteralIntegrity.cpp` | ONE invariant: an emitted gate's LITERAL operands must denote the source's value, identically at every site the lowering copies them to. `declineUnpairedUndefLiterals` (an `undef`/`poison` literal in two gate slots is read as two values at the `-O0` stage 3, so an adjoint stops inverting its forward) · `declineAddressTakenBlocks` / `removeUnreachableBlocksChecked` at all 7 block-erase sites (`~BasicBlock()` RAUWs a `BlockAddress` module-wide) · the shared `valueCarriesUndef`. ⚠ Neither defect is visible to `opt -verify` **or** to `free_pairing_check.py` — the structure is perfect and only the run-time values differ |
 | `runtime/cq_runtime.{h,c}` | Hand-written `cqrt_*` core ABI (trace-only) |
