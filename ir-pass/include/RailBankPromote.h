@@ -125,9 +125,28 @@
 //       measure loop after the break that write is observable.
 //   B4  SIMPLE ACCESSES. Non-volatile, non-atomic, exact cell type; no lifetime
 //       marker and no `MemIntrinsic` touching the bank inside `L`.
+//   B4′ NOTHING NON-REWRITABLE OBSERVES THE OBJECT INSIDE `L` — THE CLAUSE THAT
+//       LICENSES MOVING THE STORE. This stage relocates the activation's write to
+//       the activation's END, so any other observer inside the body would see the
+//       write at a different point in the trip; that is a CLASSICAL miscompile and
+//       `opt -verify` cannot see it. ⚠ It is keyed on the OBSERVATION POINTS, not
+//       on the addresses (bd `test_C_libtooling-n74d`, P1, fixed 2026-09-15): `-O1`
+//       LICM hoists a loop-invariant cell address to the preheader and leaves the
+//       LOAD in the loop, so the gep's block and the load's block are routinely
+//       different blocks on the validated floor. A gep observes nothing.
 //   B5  ONE WRITER. No store to the bank outside `L` — a second writer makes the
 //       per-activation seed something other than the initializer.
-//   B6  ≥1 `Bank` store inside `L`, and EVERY store into the alloca is `Bank`.
+//   B6  ≥1 `BankRaw` store inside `L`, and EVERY store into the alloca is
+//       `BankRaw`. ⚠ `BankRaw`, NOT `Bank` — the carve's clause C7 (bd
+//       `test_C_libtooling-de8n`, 2026-09-15) splits the accept-shaped verdict in
+//       two, and the split IS this stage's contract: **the promoter's INPUT is
+//       `BankRaw` and its OUTPUT is `Bank`.** `Bank` means "no read of the bank
+//       survives inside `L`, and the store is total per trip", which is exactly
+//       what `applyBank` produces and exactly what the deferred type rewrite may
+//       consume. Requiring `BankRaw` narrows nothing that ever fired (B8 refuses a
+//       bank with no in-`L` load, and a `Bank` bank has none); it makes the
+//       contract checked at both ends, and gives the caller's fixpoint a SECOND
+//       termination guarantee beside B8.
 //   B7  MATERIALISABLE AT THE LATCH. The canonical access gep's operands all
 //       dominate the latch terminator, so the clone is legal there.
 //   B8  ≥1 load inside `L`. With no load there is nothing to forward, the
@@ -145,16 +164,31 @@
 //       TRIGGER: weaken B8 (for instance to admit a bank with no load, a no-op
 //       today) and the fixpoint DOES NOT TERMINATE — reinstate a membership
 //       record in the same change.
+//   B9  EXACTLY ONE WRITE PER ACTIVATION (added 2026-09-15, merge filing F-2).
+//       Unreachable today — the carve's C4 second half refuses a multi-store bank
+//       before B6 returns — and written here anyway, because *the promoter's
+//       soundness must not rest on a conjunct that lives in another file and was
+//       cleared for a different purpose* (`MERGE_FILINGS.md` F-1). Its second job
+//       is to keep `applyBank` simple: with one store there is one available value
+//       to register and one write to relocate, so the several-stores-per-activation
+//       `SSAUpdater` merge that used to sit in PASS A — unreachable, untested, and
+//       one widening away from becoming live — is DELETED rather than dormant.
+//       ⚠ RETIREMENT TRIGGER, stating what is OWED rather than what is allowed:
+//       the day C4 or B9 admits a two-writer bank, PASS A needs the several-stores
+//       merge back (register the last cell store of every block; take the
+//       canonical store by dominance among them) and it lands WITH a red-green
+//       pair — an accept with two stores in one activation, and an adversarial
+//       probe putting them in sibling arms. Never one without the other.
 //
-// ⚠ THERE IS NO B9, AND THE CLAUSE THAT USED TO BE HERE WAS STALE FOR THE WHOLE
-// OF TRACK B'S GATE. It read *"B9 NOT ALREADY PROMOTED (`isRailBankAlloca` — the
-// `!cq.railbank` record this stage MINTS)"*, and the shipped stage mints NO
-// metadata: `SCOPE_L1a.md` §4.3 designs the record as the FREEZE's membership
-// proof, the freeze is in the deferred half, and minted now it would have no
-// reader (Rule 12 hygiene defect (c)). `RailBankPromote.cpp`'s `applyBank` tail
-// carries the correct statement, Track B's own injection round 4 (mutant M13,
-// "re-add the mint") is CAUGHT by all seven accept fixtures through their `NOMD`
-// prefix, and `isRailBankAlloca` is not shipped at all
+// ⚠ THE CLAUSE THAT USED TO BE B9 WAS STALE FOR THE WHOLE OF TRACK B'S GATE, AND
+// ITS NUMBER HAS SINCE BEEN REUSED (above). It read *"B9 NOT ALREADY PROMOTED
+// (`isRailBankAlloca` — the `!cq.railbank` record this stage MINTS)"*, and the
+// shipped stage mints NO metadata: `SCOPE_L1a.md` §4.3 designs the record as the
+// FREEZE's membership proof, the freeze is in the deferred half, and minted now it
+// would have no reader (Rule 12 hygiene defect (c)). `RailBankPromote.cpp`'s
+// `applyBank` tail carries the correct statement, Track B's own injection round 4
+// (mutant M13, "re-add the mint") is CAUGHT by all seven accept fixtures through
+// their `NOMD` prefix, and `isRailBankAlloca` is not shipped at all
 // (`trackA/SIGNATURE.md` deviation (2)). Corrected at the 2026-09-14c merge
 // gate; `IMPL_B.md` §2.3 / §7 / §8 / §10.1 still carry the old wording and are
 // history. ⚠ L7-WITH-A-TWIST, verbatim: *a record correction that is not applied

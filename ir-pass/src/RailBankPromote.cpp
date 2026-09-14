@@ -24,6 +24,24 @@
                             // are deleted, and this line is the whole of the
                             // change it demanded (L8: a retirement trigger that
                             // names its own replacement text works).
+                            //
+                            // ⚠ AND EXACTLY ONE THIRD OF THAT TRIPWIRE ACTUALLY
+                            // FIRED (merge filing F-4). The recipe was defended as
+                            // a THREE-part argument — a duplicate-symbol LINK
+                            // error, a REDEFINITION compile error "in any TU that
+                            // sees both headers", and a hard error on the
+                            // duplicated default argument — and the last two are
+                            // INERT: measured at the gate, neither fired, because
+                            // NO TU includes both headers, which is precisely the
+                            // arrangement a stand-in header is built to have. The
+                            // fail-loud property was carried ENTIRELY by the link
+                            // error. Recorded here, at the recipe's own site, so a
+                            // future stand-in built to the same pattern does not
+                            // inherit only the inert parts and call itself
+                            // impossible to forget: **if you build a shim, the
+                            // tripwire must be a DEFINITION collision at LINK
+                            // time; a declaration collision proves nothing about
+                            // headers nobody includes together.**
 #include "OpcodeSupport.h"  // abiWidthFromType (the ABI width the record carries)
 #include "TaintPropagation.h"
 
@@ -231,6 +249,28 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
     }
     if (isConstantOffsetCellRead(UI, Bank, Plan.CellTy)) {
       NonRewritable.push_back(UI);
+      // ⚠ AND ITS LOADS, WHICH ARE A DIFFERENT SET OF BLOCKS (bd
+      // `test_C_libtooling-n74d`, P1, Rule-13 round 1 finding F-α2). The
+      // "nothing non-rewritable inside `L`" clause below is what LICENSES MOVING
+      // THE STORE, and it was keyed on the ADDRESS. `clang -O1` LICM hoists a
+      // loop-invariant cell address to the preheader and LEAVES THE LOAD IN THE
+      // LOOP, so on the validated floor the gep's block and the load's block are
+      // routinely different blocks — MEASURED verbatim in
+      // `trackA/probes/c1_readcell1_inloop.c`'s stage-1 IR:
+      //     %2 = getelementptr inbounds i8, ptr %1, i64 1   ; ENTRY block
+      //   6:                                                ; the loop
+      //     %14 = load i8, ptr %2, align 1                  ; IN `L`
+      // A `Read` gep is NOT an observation; its LOADS are. Rule 9 verbatim:
+      // never assume instruction placement — and this is the class of fence the
+      // project keeps losing to (`CLAUDE.md` L5, F2's four lost rounds).
+      // ⚠ RETIREMENT TRIGGER: the day `BankUse::Read` admits a user that is not a
+      // load (a `memcpy` source, say), enumerate ITS observation points here too —
+      // the invariant this clause needs is *every instruction that OBSERVES the
+      // object*, and a gep observes nothing.
+      if (auto *RG = dyn_cast<GetElementPtrInst>(UI))
+        for (User *RU : RG->users())
+          if (auto *RI = dyn_cast<Instruction>(RU))
+            NonRewritable.push_back(RI);
       continue;
     }
     auto *G = dyn_cast<GetElementPtrInst>(UI);
@@ -285,11 +325,28 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
   // is load-bearing for THIS stage's soundness and the B-clauses do NOT cover it
   // (B1 refuses an access in a SUB-loop, never an ENCLOSING loop);
   // `railbank_promote_reject_nested_outer_loop.ll` pins it.
+  //
+  // ⚠ THE VERDICT THIS CLAUSE REQUIRES IS `BankRaw`, NOT `Bank` (bd
+  // `test_C_libtooling-de8n`, 2026-09-15). The carve's clause C7 splits the
+  // accept-shaped verdict in two, and the split IS this stage's contract:
+  //   *the promoter's INPUT is `BankRaw`; the promoter's OUTPUT is `Bank`.*
+  // `Bank` means "no read of the bank survives inside `L`, and the store is total
+  // per trip" — which is precisely what `applyBank` produces and what the deferred
+  // type rewrite is allowed to see. Requiring `BankRaw` here is not a narrowing of
+  // the fire set: B8 below refuses a bank with no in-`L` load, and a `Bank` bank
+  // has none by definition, so every module this stage has ever fired on is
+  // `BankRaw`. What it buys is that the contract is CHECKED at both ends rather
+  // than argued — and a SECOND, independent guarantee that the caller's fixpoint
+  // terminates (after a promotion the same bank classifies `Bank` and is refused
+  // here, one clause before B8 can be reached).
+  // ⚠ RETIREMENT TRIGGER: if C7 is ever widened so that a shape this stage still
+  // wants to normalise classifies `Bank`, this line silently stops promoting it
+  // with NO diagnostic anywhere. Re-derive C7 and this clause in the same change.
   for (StoreInst *SI : AllStores) {
     const char *Msg = nullptr;
     RailBankShape Shape;
     if (railBankCarveVerdict(SI, taint, DT, LI, SE, Msg, &Shape) !=
-        RailBankCarve::Bank)
+        RailBankCarve::BankRaw)
       return false;
     if (Shape.Alloca != Bank || Shape.CellTy != Plan.CellTy || !Shape.L)
       return false;  // two stores that resolve to different banks or cell types.
@@ -347,7 +404,25 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
   // instruction twice is a use-after-free that `opt -verify` never sees.
   for (GetElementPtrInst *G : SeenGeps)
     Plan.Geps.push_back(G);
-  if (Plan.Stores.empty())
+  // B9 — EXACTLY ONE WRITE PER ACTIVATION, AND THIS STAGE OWNS THE CLAUSE (merge
+  // filing F-2, 2026-09-14c). The carve's C4 second half already refuses a bank
+  // with more than one store site, so this is unreachable today — which is exactly
+  // why it is written here rather than relied upon from there. `MERGE_FILINGS.md`
+  // F-1's lesson, in one line: *the promoter's soundness must not rest on a
+  // conjunct that lives in another file and was cleared for a different purpose.*
+  // Its second job is to make `applyBank` SIMPLE: with one store the rewrite has
+  // one available value to register and one store to relocate, so the
+  // several-stores-per-activation `SSAUpdater` merge that used to sit there — dead
+  // on the merged binary, untested, and one widening away from becoming live — is
+  // gone rather than dormant.
+  // ⚠ RETIREMENT TRIGGER, and it names what is OWED rather than what is allowed:
+  // the day C4 (or this clause) admits a two-writer bank, `applyBank` needs the
+  // several-stores merge BACK — register the last cell store of every block, take
+  // the canonical store by dominance among them, and land it together with a
+  // red-green pair whose accept has two stores in one activation and whose
+  // adversarial probe puts them in sibling arms. Do not widen one without the
+  // other; the `git` history at this commit carries the deleted spelling.
+  if (Plan.Stores.size() != 1)
     return false;
   // B8 — nothing to forward means nothing to do; leave the module byte-untouched.
   if (Plan.Loads.empty())
@@ -380,13 +455,12 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
     if (SE.getSCEV(G) != Addr)
       return false;
 
-  // The canonical gep/store: the LAST `Bank` store in program order within the
-  // latch-most block, so the surviving store keeps the `!dbg` of the write the
-  // author wrote.
-  Plan.CanonStore = Plan.Stores.back();
-  for (StoreInst *SI : Plan.Stores)
-    if (DT.dominates(Plan.CanonStore, SI))
-      Plan.CanonStore = SI;
+  // The canonical gep/store — the activation's single write (B9), whose `!dbg`,
+  // alignment and `!tbaa` the relocated store inherits so `kMsgStore` keeps firing
+  // at the source line the author wrote. ⚠ This used to pick the dominance-last of
+  // several; that selection is gone with the several-stores merge (B9's retirement
+  // trigger says what to restore and what test is then owed).
+  Plan.CanonStore = Plan.Stores.front();
   Plan.CanonGep = cast<GetElementPtrInst>(Plan.CanonStore->getPointerOperand());
 
   // B7 — MATERIALISABLE AT THE LATCH. Asked explicitly rather than argued:
@@ -413,27 +487,24 @@ void applyBank(BankPlan &Plan) {
   SSAUpdater SSA;
   SSA.Initialize(Plan.CellTy, "cq.bank");
 
-  auto lastCellStoreIn = [&](BasicBlock *BB) -> StoreInst * {
-    StoreInst *Last = nullptr;
-    for (Instruction &I : *BB)
-      if (auto *SI = dyn_cast<StoreInst>(&I))
-        if (isCellMemop(SI, Plan.Bank))
-          Last = SI;
-    return Last;
-  };
-
-  // PASS A — the per-block available values. The HEADER is registered
-  // UNCONDITIONALLY (its last in-header store's value, or the seed), and that is
-  // the whole per-activation containment proof: `SSAUpdater` stops its
+  // PASS A — the available values. The HEADER is registered UNCONDITIONALLY (the
+  // activation's store value if the store IS in the header, else the seed), and
+  // that is the whole per-activation containment proof: `SSAUpdater` stops its
   // predecessor walk at a block with an available value, and the header is the
   // only block of a natural loop whose predecessors leave `L` or cross the back
   // edge. See `RailBankPromote.h`.
-  for (BasicBlock *BB : Plan.L->blocks()) {
-    if (StoreInst *Last = lastCellStoreIn(BB))
-      SSA.AddAvailableValue(BB, Last->getValueOperand());
-    else if (BB == Plan.Header)
-      SSA.AddAvailableValue(Plan.Header, Plan.Seed);
-  }
+  //
+  // ⚠ TWO REGISTRATIONS, NOT A WALK OVER `L->blocks()`, BECAUSE B9 PROVES THERE IS
+  // EXACTLY ONE STORE (merge filing F-2). The per-block form carried an
+  // `SSAUpdater` merge of several stores per activation that nothing in the tree
+  // could reach — unreachable rather than merely untested, since the carve's C4
+  // refuses a multi-store bank before B6 even returns — and dead code that becomes
+  // live under a widening, with no test behind it, is the thing F-2 asks not to be
+  // left lying around. B9's retirement trigger carries what to restore.
+  StoreInst *TheStore = Plan.Stores.front();
+  SSA.AddAvailableValue(TheStore->getParent(), TheStore->getValueOperand());
+  if (TheStore->getParent() != Plan.Header)
+    SSA.AddAvailableValue(Plan.Header, Plan.Seed);
 
   // PASS B — every intra-activation load becomes the dominating definition. The
   // in-block ordering is hand-rolled (the part `LoadAndStorePromoter` hand-rolls

@@ -999,6 +999,21 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
         //    and every `lowering_reject_railbank_*` fixture whose header says so
         //    becomes an ACCEPT. Re-derive them then; do NOT delete them.
         //
+        //    ⚠⚠ THE TRIGGER REACHES `Bank` AND NOT `BankRaw`, AND THAT DISTINCTION
+        //    IS THE WHOLE OF bd `test_C_libtooling-de8n` (P1, closed 2026-09-15).
+        //    Until clause C7 existed there was ONE accept-shaped verdict and this
+        //    trigger turned it into the accept — while that verdict did NOT imply
+        //    the shape the type rewrite can serve. A bank the per-activation
+        //    promoter did not normalise still carries the PARTIALLY AVAILABLE
+        //    per-trip read of `SCOPE_L1a.md` §0 H3, and after the `[N x cell]` →
+        //    `[N x i32]` rewrite that read takes the initializer `0` AS A HANDLE —
+        //    `h0` being a LIVE RAIL (`cqrt_alloc_i1(0) -> h0`). Reachable from
+        //    plain `-O1` C, three families, measured. So: `Bank` may one day
+        //    `continue`; `BankRaw` MUST KEEP BREAKING TO `kMsgStore`, FOREVER, and
+        //    a widening that wants a `BankRaw` shape to compile must move it into
+        //    `Bank` at the carve (or teach the promoter to normalise it) rather
+        //    than add an arm here.
+        //
         //    The `Reject*` arms DO fire now: they replace the generic `kMsgStore`
         //    with a per-clause, pattern-naming, source-located diagnostic for
         //    exactly the population this classifier claims — a decline→decline
@@ -1053,6 +1068,19 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
                            << " trips=" << BShape.Trips << " at: " << *BankSI
                            << "\n";
             break;  // ⚠ STAGING — falls through to kMsgStore. See above.
+          case RailBankCarve::BankRaw:
+            // The promoter's INPUT shape (C7 failed). It is NOT a decline of its
+            // own — every clause C1–C6 held and `BMsg` is null — so it takes the
+            // same generic `kMsgStore` it would have taken anyway, and the corpus
+            // sees a byte-identical diagnostic. What changes is only the anchor,
+            // and the anchor is the point: it is the observable that says *"this
+            // bank is NOT the one the type rewrite may have"*.
+            if (::getenv("CQ_CTRL_DBG"))
+              llvm::errs() << "CQ_CTRL_DBG: railbank [BankRaw] cells="
+                           << BShape.Count << " abi=" << BShape.ElemAbi
+                           << " trips=" << BShape.Trips << " at: " << *BankSI
+                           << "\n";
+            break;  // ⚠ MUST STAY A BREAK FOREVER — see the L8 note above.
           case RailBankCarve::RejectShape:
           case RailBankCarve::RejectIndex:
           case RailBankCarve::RejectWidth:

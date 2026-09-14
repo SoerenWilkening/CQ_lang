@@ -1533,7 +1533,15 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   // ── C6 — TOTALITY (NEW). After the (deferred) type rewrite a never-written cell
   //    reads as handle `0`, and `h0` is a LIVE RAIL in this runtime
   //    (`cqrt_alloc_i1(0) -> h0`). With C2′'s `{0,+,1}` index, a constant trip
-  //    count EQUAL to N and one exit, cells 0…N-1 are each written exactly once.
+  //    count EQUAL to N and one exit, the index VISITS cells 0…N-1 exactly once.
+  // ⚠ CORRECTED 2026-09-15 (bd `test_C_libtooling-de8n`, F-α1's attached finding).
+  //    This clause used to end *"cells 0…N-1 are each written exactly once"*, and
+  //    that is a claim about WRITES which trip count alone cannot support: the
+  //    owner's own program stores inside the `if (a >= 3)` ARM, so a trip whose
+  //    condition is false VISITS its cell and writes nothing. The sentence was true
+  //    of the PROMOTED shape and false of the RAW one, and it was load-bearing for
+  //    the deferred type rewrite. VISITING is what C6 proves; WRITING is C7(b)'s,
+  //    below, and it is what separates `Bank` from `BankRaw`.
   if (Trips != N) {
     outMsg = kMsgBankTotality;
     return RailBankCarve::RejectTotality;
@@ -1550,6 +1558,7 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   // block has no `DomTreeNode`; `SI` itself is protected by the entry gate (an
   // unreachable block is in no `Loop`, so `LI.getLoopFor` already returned null),
   // but a bank LOAD in one is not. Refuse rather than ask.
+  bool AnyReadInsideL = false;
   for (LoadInst *LD : Loads) {
     if (!DT.isReachableFromEntry(LD->getParent())) {
       outMsg = kMsgBankTotality;
@@ -1563,6 +1572,7 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
         outMsg = kMsgBankTotality;  // an in-loop read of some OTHER cell.
         return RailBankCarve::RejectTotality;
       }
+      AnyReadInsideL = true;  // C7(a) — see below; the read itself is admitted.
       continue;
     }
     if (!DT.dominates(L->getHeader(), LD->getParent())) {
@@ -1571,6 +1581,9 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     }
   }
 
+  // Everything above holds for BOTH accept verdicts, so the shape is handed back
+  // for both: the PROMOTER consumes it on `BankRaw` (its input), the deferred type
+  // rewrite on `Bank`.
   if (outShape) {
     outShape->Alloca = AI;
     outShape->L = L;
@@ -1580,6 +1593,77 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     outShape->Count = N;
     outShape->Trips = Trips;
   }
+
+  // ── C7 — TYPE-REWRITABLE SHAPE. `Bank` vs `BankRaw`.
+  //
+  // ⚠ THIS CLAUSE EXISTS BECAUSE `Bank` DID NOT IMPLY WHAT ITS OWN L8 RETIREMENT
+  // TRIGGER PROMISED (bd `test_C_libtooling-de8n`, P1, Rule-13 round 1 finding
+  // F-α1). The trigger says the `Bank` arm "stops breaking and becomes a
+  // `continue`" when the taint rule + type rewrite land — i.e. `Bank` IS the
+  // accept predicate of record. Before this clause it was strictly WEAKER than
+  // the shape the type rewrite can serve, and the gap was reachable from plain
+  // `-O1` C (`probes/r2_nopreheader.ll`: `carve=[Bank] promo=0`, MEASURED on the
+  // 2026-09-15 ORACLE `0e280fc6`; three plain-C families reproduce it).
+  //
+  // THE TWO HAZARDS, each stated as the property the type rewrite needs — not as a
+  // structural echo of the promoter's clauses, which live in another file and were
+  // cleared for another purpose (`MERGE_FILINGS.md` F-1's lesson):
+  //
+  //   (a) NO IN-LOOP READ SURVIVES. A per-trip cell read INSIDE the walk loop is
+  //       the PARTIALLY AVAILABLE second load of `SCOPE_L1a.md` §0 H3: the store
+  //       sits in a conditional arm, GVN does not forward it, and after the
+  //       `[N x cell]` → `[N x i32]` rewrite the pred edge reads the initializer
+  //       `0` AS A HANDLE — and `h0` is a LIVE RAIL in this runtime
+  //       (`cqrt_alloc_i1(0) -> h0`), so that is a live-qubit alias, not a null.
+  //       The per-activation promoter (`RailBankPromote.cpp`) exists to remove
+  //       exactly these reads; a bank it did NOT promote still carries them.
+  //
+  //   (b) THE WRITE IS TOTAL PER TRIP. C6 above proves `Trips == N` over an
+  //       injective `{0,+,1}` index and then its own comment concludes "cells
+  //       0…N-1 are each written exactly once". ⚠ THAT SENTENCE WAS TRUE OF THE
+  //       PROMOTED SHAPE AND FALSE OF THE RAW ONE — the owner's own program stores
+  //       inside the `if (a >= 3)` arm, so a trip whose condition is false writes
+  //       NOTHING and that cell reads as handle 0 after the rewrite. Trip count is
+  //       not write count. (F-α1's attached finding; corrected here and at C6.)
+  //
+  // THE PROOF FOR (b), because "obviously executes every iteration" is how a
+  // wrong totality claim gets into a Release build:
+  //   * `SI`'s block `B` is IN `L` (the entry gate computed `L` as `SI`'s loop);
+  //   * `B` DOMINATES the latch. `L` is a NATURAL loop, so its header dominates
+  //     every block of `L`; therefore `B` (if not the header) cannot be reached
+  //     before the header on any path into the loop. If some header→latch path
+  //     avoided `B`, prefixing it with entry→preheader→header would be an
+  //     entry→latch path avoiding `B` — contradicting dominance. So EVERY
+  //     header→latch path contains `B`, i.e. `B` runs on every trip that reaches
+  //     the latch. (If `B` IS the header the conclusion is immediate.)
+  //   * the ONLY exiting block is the latch, so the only way to reach the code
+  //     AFTER the loop is through the latch. Trips that never reach it (a
+  //     `noreturn` call, an `unreachable`, a `ret`/`resume` inside `L`, an
+  //     infinite inner loop) do not reach the after-loop reads either, and an
+  //     `invoke` whose unwind destination is outside `L` makes its own block
+  //     exiting, which `getExitingBlock()` then refuses by returning null.
+  // Hence: every cell read after the loop was written by the trip that owned it.
+  //
+  // ⚠ WHAT `BankRaw` IS AND IS NOT. It is NOT a decline — every clause C1–C6 held,
+  // so `outMsg` stays null and the caller keeps the generic `kMsgStore` it would
+  // have fired anyway. It is the PROMOTER'S INPUT, and it must NEVER become an
+  // accept: `RailBankPromote.cpp`'s B6 requires it, and `TaintPropagation.cpp`'s
+  // L8 trigger is now explicit that only `Bank` may ever stop declining.
+  //
+  // ⚠ RETIREMENT TRIGGER, BOTH DIRECTIONS. (i) The day the promoter is taught to
+  // normalise a shape this clause still calls `BankRaw`, this clause must be
+  // re-derived against the promoter's NEW postcondition in the same change — the
+  // invariant the tree relies on is *promoter input = `BankRaw`, promoter output =
+  // `Bank`*, and `railbank_promote_*` pin it from the other side. (ii) The day
+  // anything other than the promoter is allowed to produce a `Bank` bank, (a) and
+  // (b) are the only two properties the type rewrite may assume; add the third
+  // here, not at the consumer.
+  BasicBlock *Latch = L->getLoopLatch();
+  const bool WriteIsTotalPerTrip =
+      Latch && L->getExitingBlock() == Latch &&
+      DT.dominates(SI->getParent(), Latch);
+  if (AnyReadInsideL || !WriteIsTotalPerTrip)
+    return RailBankCarve::BankRaw;
   return RailBankCarve::Bank;
 }
 
