@@ -39,18 +39,30 @@
 ; and excluding it is exactly what the availability ground licenses. So the F2
 ; that fires on THIS file is on `%v` and on nothing else.
 ;
-; ⚠ THIS FILE IS DECLINED TWICE OVER TODAY, AND THAT IS THE POINT OF THE HEADER.
-; Every IN-LOOP state prep is stopped before F2 by bd `test_C_libtooling-wx8g`
-; (`control flow inside a loop body`), an OPEN OVER-DECLINE the owner's
-; 2026-09-11 ruling calls a defect to remove. The narrowing is what keeps the
-; shape from being an over-ACCEPT the day that fence goes; without it this module
-; is one landed increment away from a silent wrong answer.
+; ⚠ CORRECTED 2026-09-14c (X5 re-derivation). THIS HEADER USED TO SAY "this file
+; is declined TWICE OVER today, [because] every IN-LOOP state prep is stopped
+; before F2 by bd `test_C_libtooling-wx8g`". **THAT WAS FALSE WHEN IT WAS
+; WRITTEN, AND THIS FILE'S OWN MEASUREMENTS ABOVE CONTRADICT IT** — they record
+; F2 firing on the pre-`wx8g` ORACLE. The carve-out `wx8g` retired was
+; `if (RailCond && Region.InLoop)`, guarded on a BARE RAIL; this module's
+; condition is a COMPARE (`%c = icmp eq i32 %q, 7`), so it was never behind that
+; fence at all. The consequence matters: **this pair holding across the `wx8g`
+; landing is NOT evidence about the spelling the trigger below was written for.**
+; The bare-rail spelling is measured separately — see the replacement trigger.
 ;
-; ⚠ RETIREMENT TRIGGER (L8), BY NAME: **bd `test_C_libtooling-wx8g`**. The day
-; the in-loop state prep lands, re-derive `collectStatePrepPhiDescendants`'
-; dominance skip against the shapes `wx8g` admits — DO NOT assume the phi case is
-; the only cyclic one — and re-measure this pair first. If this file's string
-; changes to anything other than F2's, the narrowing has been lost, not widened.
+; ⚠ RETIREMENT TRIGGER (L8), BY NAME — **FIRED, AND DISCHARGED**. It read: "bd
+; `test_C_libtooling-wx8g`. The day the in-loop state prep lands, re-derive
+; `collectStatePrepPhiDescendants`' dominance skip against the shapes `wx8g`
+; admits — DO NOT assume the phi case is the only cyclic one — and re-measure
+; this pair first." `wx8g` landed 2026-09-14 (`a2b86139`); the pair was
+; re-measured and HELD (byte-identical `CQ_CTRL_DBG` anchor); the re-derivation
+; was done in session 2026-09-14c (`trackX/X5_REDERIVATION.md`) and its result
+; is written into `collectStatePrepPhiDescendants`' header — the skip is sound
+; because every member's block is dominated by `MergeBB` BY INDUCTION, and
+; cyclicity is not a term in that argument. The bare-rail three-way isolation
+; `trackX/probes/w3` / `w3b` / `w3c` is the measurement this file could not make.
+; ⚠ THE LIVE OBLIGATION ON THIS FILE IS UNCHANGED: **if its string changes to
+; anything other than F2's, the narrowing has been lost, not widened.**
 ;
 ; ⚠ **THIS FILE PINS THE CYCLIC HALF ONLY. THE SHIPPED PREDICATE IS BROADER THAN
 ; THIS MODULE** (round-2 Rule-13 review, F-F2-2). `!DT.dominates(MergeBB, …)`
@@ -60,9 +72,13 @@
 ; binary (`147cb3d6…`) and the narrowed one (`96fdd3a9…`) on
 ; `trackF/fix_r2_probes/r20_acyclic_nondominated_phi.ll`, which contains no loop
 ; anywhere. Those acyclic members WERE licensed exclusions, so that half is an
-; OVER-DECLINE in the safe direction, not a correctness repair. A reader who
-; lands `wx8g` and re-derives only against loop shapes will have re-derived half
-; a predicate. The precise form (test the MEMBER against the SLOTS instead of
+; OVER-DECLINE in the safe direction, not a correctness repair. ⚠ X5 (2026-09-14c)
+; goes further: the CYCLIC/ACYCLIC split is itself the WRONG AXIS. There is one
+; dominance predicate and one imprecision — the invariant it enforces is
+; SUFFICIENT for "unavailable at both slots" and not NECESSARY — and the two
+; "halves" are just the sub-cases where the dropped phi is, and is not,
+; available. A reader who re-derives only against loop shapes will have
+; re-derived half a predicate. The precise form (test the MEMBER against the SLOTS instead of
 ; against `MergeBB`) is a Rule-13 core change filed for an owner decision as **bd
 ; `test_C_libtooling-hrts`**; see `collectStatePrepPhiDescendants`' header
 ; trigger (3b), which carries the full statement. THIS FILE IS NOT THE TRIPWIRE
