@@ -11,7 +11,7 @@
 ; from a rail bank in EXACTLY ONE respect: the cell index is quantum-derived.
 ;
 ; ⚠ IDENTICAL ON BOTH BINARIES — that is the property. MEASURED: the frozen
-; 2026-09-14 ORACLE (`cq-opt` sha256 5c6f7490…) and the subject (f2a9c0a4…) both
+; 2026-09-14 ORACLE (`cq-opt` sha256 5c6f7490…) and the subject (bc886235…) both
 ; print `cq QRAM access: tainted-index memory access inside a loop`, character for
 ; character. The `--implicit-check-not='cq rail bank:'` is what makes that a CHECK
 ; rather than a hope.

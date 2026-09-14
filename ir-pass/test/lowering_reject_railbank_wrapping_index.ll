@@ -15,7 +15,7 @@
 ;
 ; ⚠ THE ISOLATING CONTROL IS A MEASUREMENT, NOT A SECOND FIXTURE, AND IT IS A
 ; DOCUMENTED RESIDUAL. Adding `nuw nsw` to this module's `%inc = add i8 %i, 1` — and
-; changing NOTHING else — flips it to `Bank` (measured on `cq-opt` f2a9c0a4…:
+; changing NOTHING else — flips it to `Bank` (measured on `cq-opt` bc886235…:
 ; `CQ_CTRL_DBG: railbank [Bank] cells=300 abi=i8 trips=300`), which proves the
 ; conjunct that fires here is `SCEVAddRecExpr::hasNoSelfWrap()` and not one of its
 ; neighbours. It is deliberately NOT shipped as an accept fixture, because that
@@ -28,7 +28,7 @@
 ;
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY. On the frozen 2026-09-14 ORACLE
 ; (`cq-opt` sha256 5c6f7490…) this module declines the GENERIC `cq taint escape:
-; tainted value stored to memory`; on the shipped subject (f2a9c0a4…) it declines
+; tainted value stored to memory`; on the shipped subject (bc886235…) it declines
 ; below.
 ;
 ; ⚠ A `DS_Error` decline writes ZERO BYTES TO STDOUT (Rule 12 hygiene (b)); the

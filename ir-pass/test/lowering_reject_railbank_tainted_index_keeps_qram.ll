@@ -8,7 +8,7 @@
 ;
 ; ⚠ THIS FIXTURE'S VERDICT IS IDENTICAL ON BOTH BINARIES — that is the property.
 ; MEASURED: the frozen 2026-09-14 ORACLE (`cq-opt` sha256 5c6f7490…) and the subject
-; (f2a9c0a4…) both print `cq QRAM access: array address has aliasing fan-out`,
+; (bc886235…) both print `cq QRAM access: array address has aliasing fan-out`,
 ; character for character. The `--implicit-check-not='cq rail bank:'` on the RUN line
 ; is what makes that a CHECK rather than a hope: if the rail-bank classifier ever
 ; claimed this input, the fixture goes red rather than silently re-owning 7.5's

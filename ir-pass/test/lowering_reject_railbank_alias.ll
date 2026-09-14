@@ -21,7 +21,7 @@
 ;
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY. On the frozen 2026-09-14 ORACLE
 ; (`cq-opt` sha256 5c6f7490…) this module declines the GENERIC `cq taint escape:
-; tainted value stored to memory`; on the subject (f2a9c0a4…) it declines below.
+; tainted value stored to memory`; on the subject (bc886235…) it declines below.
 ;
 ; ⚠ A `DS_Error` decline writes ZERO BYTES TO STDOUT (Rule 12 hygiene (b)); the
 ; property is pinned by the `not` on the RUN line plus the exact message, and

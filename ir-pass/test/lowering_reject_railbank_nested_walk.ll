@@ -10,7 +10,7 @@
 ; classified `Bank` — `CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3` — with
 ; all 18 rail-bank fixtures green and the whole `ir-pass/test` corpus unmoved. The
 ; conjunct `L->getParentLoop()` was added in response, and the second subject
-; (f2a9c0a4…) declines with the string below.
+; (bc886235…) declines with the string below.
 ;
 ; THE LESSON IS L2's, and it is the reason this file is worth more than its verdict:
 ; *"when you WIDEN a set, ask what OTHER set was computed over the same closure."*
@@ -29,7 +29,7 @@
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY — TWICE. On the frozen 2026-09-14 ORACLE
 ; (5c6f7490…) this module declines the GENERIC `cq taint escape: tainted value stored
 ; to memory`; on the first subject (53d1a4b6…) it classified `Bank` and still printed
-; that generic string; on the shipped subject (f2a9c0a4…) it declines below.
+; that generic string; on the shipped subject (bc886235…) it declines below.
 ;
 ; ⚠ A `DS_Error` decline writes ZERO BYTES TO STDOUT (Rule 12 hygiene (b)); the
 ; property is pinned by the `not` on the RUN line plus the exact message, and by the

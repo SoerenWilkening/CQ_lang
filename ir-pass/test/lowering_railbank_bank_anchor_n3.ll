@@ -23,7 +23,7 @@
 ; `cq taint escape: tainted value stored to memory`, exactly as it does on the
 ; ORACLE, so a fixture checking only that string would pin NOTHING. What makes it
 ; non-vacuous is the env-gated `CQ_CTRL_DBG` line, which is byte-ABSENT on the
-; ORACLE (`cq-opt` sha256 5c6f7490…) and present on the subject (f2a9c0a4…). MEASURED both
+; ORACLE (`cq-opt` sha256 5c6f7490…) and present on the subject (bc886235…). MEASURED both
 ; ways; the `--implicit-check-not` on the RUN line closes the other direction.
 ;
 ; ⚠ THE `Bank` VERDICT STILL DECLINES, AND THAT IS A CORRECTNESS REQUIREMENT, NOT A

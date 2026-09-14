@@ -1008,6 +1008,27 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             DT.emplace(F);
             LInfo.emplace(*DT);
           }
+          // ⚠ `LInfo->empty()` BEFORE constructing SE — the SAME guard both existing
+          // standalone-SE sites use (`LoopLowering.cpp` and `LoopUnrollPrepass.cpp`
+          // each open with `if (LI.empty()) continue;`), copied rather than
+          // re-derived. A rail bank's store is ALWAYS in a loop, so a loop-free
+          // function can never produce a `Bank` and need not pay for a
+          // ScalarEvolution. It duplicates no rail-bank predicate: the verdict's own
+          // `LI.getLoopFor(SI->getParent())` conjunct is unchanged and is what
+          // actually decides. MEASURED, the cost it avoids is below this pass's
+          // per-spawn noise floor (IMPL_A.md §10 R-5) — it is here because a
+          // pathological function is the case a measurement on the corpus cannot see.
+          //
+          // ⚠ IT IS AN `if`-GUARD AROUND THE REST OF THE BLOCK, NOT AN EARLY `break`,
+          // AND THE FIRST SPELLING OF IT WAS THE OTHER ONE. Inside `for (Instruction
+          // &I : BB)` a bare `break` exits the INSTRUCTION LOOP, so a loop-free
+          // function would have SKIPPED this store's generic `kMsgStore` decline AND
+          // every later instruction of its block — a SILENT SKIP of a decline, i.e.
+          // exactly the Prime-Directive violation Rule 1 calls "no third path". It
+          // compiled clean. Kept as a comment because the shape recurs: a guard
+          // added for PERFORMANCE inside a loop whose body ends in a mandatory
+          // diagnostic is one keyword away from deleting the diagnostic.
+        if (!LInfo->empty()) {
           if (!SE) {
             AC.emplace(F);
             TLII.emplace(Triple(M.getTargetTriple()));
@@ -1042,6 +1063,7 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
           case RailBankCarve::NotBank:
             break;  // not a rail-bank cell write — generic decline, unmoved.
           }
+          }  // if (!LInfo->empty())
         }
         // 4b. `freeze` (Phase-7.1 Increment B) — a basis-level identity. The
         //     accept is NARROW (R-B): an FP freeze is SKIPPED so the GATE-3

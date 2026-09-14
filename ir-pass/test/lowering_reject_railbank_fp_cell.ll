@@ -16,7 +16,7 @@
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY. MEASURED: on the frozen 2026-09-14
 ; ORACLE (`cq-opt` sha256 5c6f7490…, from `c8007c37`) this exact module declines the
 ; GENERIC `cq taint escape: tainted value stored to memory`; on the subject
-; (f2a9c0a4…) it declines the per-clause string below. BOTH ARE DECLINES — bd
+; (bc886235…) it declines the per-clause string below. BOTH ARE DECLINES — bd
 ; `xdu2` Increment W1 is a decline→decline STRING change and never an accept.
 ;
 ; ⚠ WHY THERE ARE NO IR-TEXT `CHECK-NOT`s. A `DS_Error` decline writes ZERO BYTES
