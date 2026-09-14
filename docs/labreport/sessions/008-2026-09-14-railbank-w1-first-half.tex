@@ -1,0 +1,102 @@
+\labsessionheader{2026-09-14}{Rail bank W1, first half --- and two rounds that made the session claim less}%
+  {ea4d488c}{session\_01W949k47K671wSxnbSzRTMV}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/}
+
+\subsection*{Goal}
+Build W1 of \bd{xdu2}, the bounded rail array, so the owner's rolled loop cascade stops
+declining \texttt{tainted value stored to memory}. Five parallel tracks: the carve
+classifier, the per-activation promoter, the open P1 \bd{s82e}, the instruments, and the
+two items the previous session recorded as owed.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{ea4d488c} --- \bd{xdu2} --- the carve classifier (C1--C4, C2$'$ injectivity,
+        C6 totality) and the per-activation promoter (C5). \emph{First half only}: the
+        \texttt{Bank} verdict still falls through to \texttt{kMsgStore}, so the owner's
+        cascade still declines. That is a correctness requirement, not a scope choice ---
+        without the deferred taint rule and type rewrite, \texttt{cq\_measure(b[i])} on an
+        untainted load emits no gate, no symbol and no trace line, which the golden
+        byte-diff structurally cannot see.
+  \item \commit{ea4d488c} --- \bd{s82e} --- a loud decline for the divergent sub-case of the
+        unmarked-loop rail leak, under owner ruling D4.
+  \item \commit{ea4d488c} --- \bd{om35} --- the X5 re-derivation, whose retirement trigger
+        fired in its own merge. The narrowing stands; the argument was wrong on its own axis.
+  \item \commit{ea4d488c} --- \bd{21re} --- \texttt{free\_pairing\_check}'s ``a load result is
+        not a rail'' premise becomes a check. Closed.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ Three \emph{shipped} fixtures were pinning a wrong circuit.
+        \texttt{control\_phase\_kickback\_mixed\_\{hoisted\_template,preheader\_volatile\_imm,short\_sext\}\_leak\_control.ll}
+        each record \texttt{3/0 rolled and 3/3 unrolled} and each end
+        \texttt{q = cq\_theta(q,0.9); cq\_measure(q)} --- a non-diagonal rotation on the very
+        register the leaked rails copy --- then call that leak ``the PRIME-DIRECTIVE
+        disposition \ldots\ the safe direction (Rule 6)''. Rule 6 governs whether a dirty rail
+        may be \emph{freed}; Rule 8 governs this. Converted; \texttt{CLAUDE.md} \S5 corrected.
+  \item \fconfirmed\ Their supporting evidence was a category error worth more than the bug:
+        ``byte-identical rolled traces, \texttt{diff} empty --- that equality IS the assertion''
+        compares the rolled form \emph{across two binaries}, while the \texttt{3/0} vs
+        \texttt{3/3} on the same line is the rolled-vs-unrolled divergence. A stability
+        measurement read as a correctness one.
+  \item \fconfirmed\ Owner ruling D2 was re-ruled mid-session (D4) because Track S tested its
+        premise before implementing and measured it false: \bd{s82e} is two classes, and the
+        divergent half is a wrong unitary, not an accepted leak.
+  \item \fconfirmed\ Two P1 over-accepts \emph{survive} the \bd{s82e} fence (\bd{c767},
+        \bd{7845}); its benign/divergent separation holds by accident on the three programs it
+        was built from. Coverage claims corrected in the \emph{source} at nine sites.
+  \item \fconfirmed\ Blocking for the deferred half: \texttt{Bank} does not imply
+        \emph{promoted} (\bd{8a3p}), and carve C6's own argument text is true of the promoted
+        shape and false of the raw one --- the owner's own program. The store-move clause
+        tests the GEP's block, not the load's (\bd{n74d}).
+  \item \foverdecline\ \bd{2g52} --- a constant-trip loop with a volatile in-place op declines,
+        though its rolled trace is byte-identical to the hand-unrolled twin's.
+  \item \fconfirmed\ \texttt{free\_pairing\_check}'s census \emph{over}-counts as well as
+        under-counts (\bd{rixk}): eleven lines of C, loop-free, report \texttt{6 rail mint(s)}
+        for a trace that allocates 3. The figures \texttt{CLAUDE.md} \S4c cites are unaffected and are
+        the regression test.
+  \item \fconfirmed\ The committed \emph{value} witness for the F\,$\times$\,P composition is
+        vacuous on its own reachable support (\bd{gzgs}): its fourth region multiplexes a flag
+        that is zero on every populated branch.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries & 442 & \measured{ctest --test-dir build -N} \\
+lit fixtures & 2039 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+goldens & 383 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+corpus sweep rows & 6311 & merge gate, merged binary \\
+\quad DECLINE$\to$ACCEPT & 0 & same \\
+\quad unattributable movers & 0 & same \\
+equivalence & 2039/0 & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+slices emitting the live-record warning & 5/366 & orchestrator sweep, ORACLE binary \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Full \texttt{ctest -j6} \textbf{442/442} and \texttt{cq-opt-equivalence-full} \textbf{2039/0}
+were run once by the merge-and-gate agent on the merged binary. The closing corrections
+recompiled 100 translation units and left \texttt{cq-opt} bit-identical
+(\texttt{0e280fc6\ldots}), and the primary rebuild after the squash reproduced that hash with
+an empty tree diff, so both gate lines are \emph{cited} under \textsc{protocol} S2 rather than
+re-run. Two Rule-13 rounds ran. \textbf{Not run:} rounds 2--4 of the budgeted four; no
+statevector simulation at any point (owner decision 2026-06-10).
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{xdu2} second half --- the taint rule, the type rewrite and the D5 allow-list. Its
+        two blocking items (\bd{8a3p}, \bd{n74d}) must not be carried in as cleared.
+  \item The A\,$\times$\,B composition has \emph{no} Rule-13 opinion: measured at the gate,
+        reviewed by nobody. This session's own F\,$\times$\,P finding is why that is recorded
+        rather than assumed.
+  \item Owner decision: the tree's \texttt{warnLiveRecordRotations} is strictly more complete
+        than the new \bd{s82e} fence on this class, but is not a divergence detector and is a
+        warning by owner ruling \bd{lyyf}, whose recorded reason was reporting completeness,
+        not benignity.
+  \item \bd{k4fw} --- \texttt{example/} is excluded by \texttt{.git/info/exclude}, so the
+        canonical customer program ten tracked documents cite, five of them sealed entries of
+        this report, is not in the repository.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
