@@ -394,3 +394,159 @@ have **no tainted control flow at all**.
 ⚠ Per `CLAUDE.md` L10 and the quarantine file's own rules, the `_live` cells must be adjudicated in
 writing, **never** `--regenerate`d — bd `gfsk`: `--regenerate` once silently ate 54 lines of Rule-13
 ruling prose from a baseline header and reported success.
+
+---
+---
+
+# PART II — THE IMPLEMENTATION (owner re-ruling **D4**, 2026-09-14c)
+
+D2's premise was withdrawn on the §0 determination and the owner ruled **(S-b)**: ship a LOUD DECLINE
+for the narrow divergent sub-case only, and FILE the pairing as **bd `tu9q`** (P1) rather than build it.
+Rationale as put to the owner: it closes an open P1 silent miscompile this session, it is far narrower
+than the blanket decline D2 rejected, and it does not touch the owner's rolled cascade. The accepted
+cost is that programs which COULD be compiled correctly decline until `tu9q` is built.
+
+## 11. EXPECTED CORPUS MOVERS — stated BEFORE the sweep, as the protocol requires
+
+Subject binary `00b84dc1facb1c9f…` vs ORACLE `5c6f7490a81c7505…`, over `ir-pass/test/*.ll` (1998 files,
+4 of them mine) plus this track's probes.
+
+1. **`loop_leak_dephase_reject_noregion_live.ll` and `loop_leak_dephase_reject_region_derivedbase_live.ll`
+   — ACCEPT → DECLINE**, string `cq loop lowering: rolled body leaks a rail entangled with a register
+   rotated after the loop`. By construction; they are the increment's red-green pair.
+2. **`loop_leak_dephase_accept_pertrip_dead.ll` and `loop_leak_dephase_accept_marked_rootmint.ll` — NO
+   MOVE.** They are new files, so they appear as `A:<md5>|A:<md5>` on both binaries with equal md5.
+3. **0 to a handful of pre-existing ACCEPT → DECLINE**, each of which must independently satisfy all
+   four conjuncts: an UNMARKED loop body, a CHAINED `@cq_theta_*` outside the loop whose block the loop
+   header dominates, an interior tainted `BinaryOperator` with a real template stem in the loop's own
+   blocks, and a tainted-operand ancestry path from that op to the rotated register. **Every one is a
+   real instance of the class** — the same divergence measured at §0 — and each must be attributed
+   individually. Most in-loop fixtures fail conjunct (1) (the body IS marked) or conjunct (2) (the
+   rotation is INSIDE the loop), so I expect few.
+4. **ZERO DECLINE → DECLINE string changes.** The stage runs AFTER `declineRecordedStaleQuantumReaders`,
+   which is after every other decline owner, and `LLVMContext::diagnose` EXITS on the first `DS_Error`
+   — so any module that already declined keeps its existing string. A string change here is a FINDING
+   and would mean the slot argument is wrong.
+5. **ZERO DECLINE → ACCEPT.** The stage only ever adds a decline; it mutates nothing.
+
+**Anything else is a FINDING.** In particular: an ACCEPT → DECLINE on a loop whose body op is an
+IN-PLACE rail op (`taint.InPlaceRailOps`, the dtzb `add`/`xor` that RELABELS a rail rather than minting
+one) would be an **OVER-DECLINE**, because an in-place op leaks nothing. I could not construct a probe
+that reaches the stage in that shape — both attempts died upstream (`s4_superseded_value`: `-O1` folded
+the whole loop to `a - 6` so `LI.empty()` and the stage never ran — a WORTHLESS probe, recorded as such
+rather than quietly replaced; `s4_inplace_accum_live`: declines `cq taint escape: tainted value muxed by
+a classical-condition phi` on **both** binaries, i.e. pre-existing and upstream). The sweep is therefore
+the instrument for this question, and if it produces such a mover the fix is one conjunct
+(`!taint.InPlaceRailOps.count(&I)`), red-green against that mover.
+
+## 12. THE DECLINE AS SHIPPED — the predicate, spelled
+
+`declineDephasingUnmarkedLoopRails` (`LoopLowering.cpp`, declared in `LoopPlan.h`), called from
+`CQLoweringPass.cpp` at **both** entry points (`:710` and `:1117`), immediately AFTER
+`declineRecordedStaleQuantumReaders` and immediately before `lowerRotations`. **Pure analysis: it
+declines or it does nothing. It mutates no IR and no `taint` set.**
+
+    "cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop"
+
+For each natural loop `L` in each function, ALL FOUR conjuncts must hold:
+
+| # | conjunct | what it excludes, and which fixture pins that |
+|---|---|---|
+| 1 | **the body is UNMARKED** — no block of `L` is in `taint.IterationLocalBlocks` | a MARKED body discharges in-body, once per trip, and is byte-identical to its twin. Pinned by `loop_leak_dephase_accept_marked_rootmint.ll`, which carries the IDENTICAL hazard shape and MUST stay accepting |
+| 2 | **a CHAINED `@cq_theta_*` outside `L` whose block `L->getHeader()` dominates** | a theta with a CLASSICAL arg 0 is a SOURCE — a fresh rail, no existing register to dephase. A theta INSIDE the loop is not "after". A loop with no post-loop rotation at all is the benign half: pinned by `loop_leak_dephase_accept_pertrip_dead.ll` (the bead's own `w2k`), which leaks 16-vs-20 and is nevertheless an ACCEPT |
+| 3 | **an INTERIOR tainted `BinaryOperator` with a real `binaryStem` in `L`'s OWN blocks** | a rail every one of whose users is a `cq_measure` is MEASURE-OWNED and left allocated by BOTH forms (Rule 6) — not a divergence. A COMPARE rail is the region's own flag, which `emitCondNetwork` strips and frees itself — so the scan is `BinaryOperator` only, not every lowerable opcode. Subloop blocks are excluded for the multiplicity reason `markIfRailLocal` gives at its own `L->blocks()` loop |
+| 4 | **a tainted-operand ancestry path from that op to the rotated register** | a per-trip chain that copies something nothing interferes later. This is a transitive backward walk, not `peelInPlaceBase` — the derived-base half (`p = y*3`) needs to reach `y` THROUGH a `mul`, which `peelInPlaceBase` does not cross |
+
+`diagnose` + `return` on the first hit: `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`),
+so one diagnostic per module is all a fixture can pin.
+
+**Why it asks the OUTCOME and not any refusal CLAUSE** — the coordinator's binding point 1, and it comes
+straight out of §1: `markIfRailLocal`'s clause (where bd `s82e`'s own text points) fires for NONE of the
+five leaking programs. A decline keyed there moves zero programs.
+
+**What "interior ⇒ leaks" rests on:** if the body is unmarked, `Uncomputation`'s in-loop guard
+`canRepeat(&BB) && !taint.IterationLocalBlocks.count(&BB)` skips every interior candidate in it, at
+three sites (`collectInteriorPlans`, the dead-terminal driver's §2.9 backstop, and the final-`At`
+fence). So an unmarked body's interior rails are minted, never `_unc`-ed and never freed. That is the
+mechanism, not an inference.
+
+### 12.1 Measured, subject `00b84dc1facb1c9f…` vs ORACLE `5c6f7490a81c7505…`
+
+| program | ORACLE | SUBJECT | |
+|---|---|---|---|
+| `s1_live_shift` | ACCEPT 10 (twin 14) | **DECLINE** at `s1_live_shift.c:11:14` | the divergent half |
+| `s2_live_derived_region` | ACCEPT 19 (twin 25) | **DECLINE** at `s2_live_derived_region.c:11:22` | the region half |
+| `w2k_noregion_invread` | ACCEPT 16 | **ACCEPT 16** | benign — unmoved |
+| `w2h_phase_inloop_invread` | ACCEPT 30 | **ACCEPT 30** | benign — unmoved |
+| `w2h3_select_iterlocal_invread` | ACCEPT 44 | **ACCEPT 44** | benign — unmoved |
+| `s3_live_rootmint_region` | ACCEPT 22 (twin 22) | **ACCEPT 22** | the positive control — unmoved |
+
+Both declines carry a real source location (`!dbg`), which is Rule 1's requirement and the property
+Track P's F-P2 found a regression in by sweep.
+
+## 13. FIXTURE TABLE — the three directions the coordinator required
+
+| fixture | direction | what it pins |
+|---|---|---|
+| `loop_leak_dephase_reject_noregion_live.ll` | **DECLINE** | the divergent sub-case with NO tainted control flow at all — the cleanest statement of the class. String mirrored character-for-character |
+| `loop_leak_dephase_reject_region_derivedbase_live.ll` | **DECLINE** | the same divergence through an in-loop PHASE region with a DERIVED invariant base (`invariantRegisterRootsImpl` clause (ii)). A fix aimed only at the control path would leave the other silently wrong, and vice versa — **keep both** |
+| `loop_leak_dephase_accept_pertrip_dead.ll` | **ACCEPT (benign half)** | `w2k`, the bead's own exhibit: it LEAKS (its `LEAK` prefix pins 0 `_unc` and 0 `cqrt_free`) and is nevertheless correct. If this ever declines, the decline has stopped being narrow and has become the blanket one ruling D2 rejected |
+| `loop_leak_dephase_accept_marked_rootmint.ll` | **ACCEPT (positive control)** | the SAME post-loop interference in a shape `invariantRegisterRoots` serves — 22 == 22 byte-identical, discharge IN-BODY. Conjunct (1) is the whole difference and this is the only thing pinning it |
+
+The **superseded-value-rail** direction has NO fixture, and I say so rather than claim one: both probes
+died upstream (§11). The sweep is the instrument for it.
+
+## 14. L1 — the record-and-re-ask answer
+
+**There is no record, and that is the answer, not an omission.** L1's hazard is a stage computing
+something over a premise the round-2 fixpoint falsifies; its standard cure is RECORD-at-the-site +
+RE-ASK-after-the-fixpoint in both entry points, and its standard failure is a seventh emission site that
+forgets the `push_back` (`markBranchPhaseGate`, 6 call sites). This stage sidesteps that class entirely
+by reading the **OUTCOME after the fixpoint** instead of recording a question at the refusal:
+
+* `taint.IterationLocalBlocks` has exactly three writers — `markIfIterationLocal` (inside `lowerLoops`),
+  `markIfRailLocal` via the round-1 `collapseFlattenedLoopRails`, and the same function again as the
+  **LAST STATEMENT of `repropagateControlMerges`**. All three precede this slot in both entry points.
+* So a fourth marking clause added tomorrow needs no edit here: it either marks (and this stage stays
+  silent) or it does not (and this stage asks its four conjuncts). **RETIREMENT TRIGGER: a writer of
+  `IterationLocalBlocks` added AFTER the round-2 fixpoint, or this call moved above it.**
+* And it is asked at **FINAL taint**, so the L1 PREDICATE species — a value only
+  `repropagateControlMerges` taints being invisible — cannot arise. A predicate written at
+  `markIfIterationLocal`'s own clause, which runs inside `lowerLoops` at ROUND-1 taint and is never
+  re-asked, would have had exactly that defect.
+
+⚠ Both call sites are present (`CQLoweringPass.cpp:710` and `:1117`) — the `runOnFunction` shim
+included. Note the shim's PRE-EXISTING divergence (it never calls the round-1
+`collapseFlattenedLoopRails`, bd `8h7d.5`) is NOT widened by this: the stage reads whatever the shim's
+own markers produced, and a shim that marks LESS declines MORE, which is the safe direction.
+
+## 15. THE WITNESS AND ITS "MADE TO FAIL ON PURPOSE" RECORD (L10) — part II
+
+The injection matrix over the two new accepts **scored 7 of 7 applied mutations MISSED against the
+first draft of the fixtures**, including deleting the `_unc` and deleting a `cqrt_free` — the very
+discharge the positive control exists to pin. Three rounds of strengthening later it is **applied 8,
+MISSED 0, N/A 4**. The three causes, each worth carrying:
+
+1. **Loose positives.** The first draft used unordered positives with no counts; a deletion one line
+   away from a named line walked through. Fixed with contiguous ordered runs (and only where the run
+   really is contiguous — `-g` interleaves `#dbg_value` RECORDS, which are lines to FileCheck).
+2. **`CHECK-LABEL` scoping — and this is the one worth the paragraph.** `-O1` inlines `@slice` into
+   `@main`, so each module carries TWO copies of the stream. With one label the block runs to EOF and
+   every positive could be satisfied by the `@main` COPY: deleting the rail mint **from `@slice`** scored
+   MISSED. Closed with a trailing `CHECK-LABEL: define i32 @main`. **This is bd `1yeu`'s
+   one-function-per-module gap seen from the inside — the second function is not a spare, it is a
+   decoy** — and it is now written into both fixture headers.
+3. **A pure-negative prefix nothing could reach.** `LEAK`'s two `-NOT`s (0 `_unc`, 0 `cqrt_free` — the
+   accepted leak) were unexercised by every mutation. ⚠ The inherited vacuity checker
+   (`$SESP/trackD/probes/vacuity.py`) matches only HANDLE-FORM negatives and would have printed
+   `checked 0` over this batch — the exact lie `CLAUDE.md` L10 records. So vacuity was closed by
+   **MUTATION** instead: mutation `f_add_discharge` injects a `_unc` + `cqrt_free` pair into the
+   leaking fixture, and `LEAK` catches it. Every prefix on every new fixture is now exercised by at
+   least one mutation.
+
+The harness itself was attacked first: invoked with **no fixture argument** it exits non-zero rather
+than printing `0 mutations, MISSED 0` (bd-recorded L10 instance), every mutation is bounded by the
+enclosing `define` (the across-a-function-boundary false MISSED), and a mutation that does not apply
+is printed as `N/A` and counted separately — **`N/A` is a hole, not a pass**. The 4 N/A are honest:
+`pertrip_dead` has no `_unc`, no `cqrt_free` and no post-loop `ry` to mutate, BY DESIGN, and
+`marked_rootmint` has no `lshr` rail for `f_add_discharge`.

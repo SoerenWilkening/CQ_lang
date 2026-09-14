@@ -1,0 +1,187 @@
+ir-pass/test/control_accept_undef_theta_seed_stateprep.ll|A:3391b966b34d|A:3391b966b34d
+ir-pass/test/control_angle_select_accept_exact_difference_large.ll|A:3b21976a5d83|A:3b21976a5d83
+ir-pass/test/control_angle_select_accept_rounding_at_bound.ll|A:1f5f34d0e82b|A:1f5f34d0e82b
+ir-pass/test/control_angle_select_accept_rounding_flagship_bound.ll|A:cdf4e27471c1|A:cdf4e27471c1
+ir-pass/test/control_angle_select_forward_rail_cycle_frozen.ll|A:1a54cace7945|A:1a54cace7945
+ir-pass/test/control_angle_select_phase_constants.ll|A:20b9f15965c1|A:20b9f15965c1
+ir-pass/test/control_angle_select_phase_nonfinite_arm.ll|A:7cd3384c4da2|A:7cd3384c4da2
+ir-pass/test/control_angle_select_phase_rail.ll|A:75048f8e84ee|A:75048f8e84ee
+ir-pass/test/control_angle_select_phase_reject_empty_arm_phi.ll|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_in_loop.ll|D1:12aeb69d9f5e:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:12aeb69d9f5e:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_phase_reject_nested_sel.ll|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_phi_and_theta.ll|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_poison_arm.ll|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_qq_cond.ll|D1:f28e3ef25646:cq controlled lowering: rotation angle under quantum control|D1:f28e3ef25646:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_sharecond.ll|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_two_consumers.ll|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_reject_undef_arm.ll|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control|D1:87fe3aa242c6:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_phase_runtime.ll|A:e3ec2b7ff064|A:e3ec2b7ff064
+ir-pass/test/control_angle_select_reject_cmp_data_use.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_cmp_round2_sibling_theta.ll|D1:09fccf649edf:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:09fccf649edf:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_reject_cmp_shared_with_region.ll|D1:07cb304e542a:cq controlled lowering: condition data use neither escaped nor measured under quantum cont|D1:07cb304e542a:cq controlled lowering: condition data use neither escaped nor measured under quantum cont
+ir-pass/test/control_angle_select_reject_compound_cond.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_cond_alias.ll|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_reject_cond_register.ll|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_reject_constexpr_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_cross_block_consumer.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_datamux_qq_after_rauw.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_angle_select_reject_in_loop_rz.ll|D1:b4eca792cdab:cq controlled lowering: control flow inside a loop body under quantum control|D1:b4eca792cdab:cq controlled lowering: control flow inside a loop body under quantum control
+ir-pass/test/control_angle_select_reject_in_loop.ll|D1:b4eca792cdab:cq controlled lowering: control flow inside a loop body under quantum control|D1:b4eca792cdab:cq controlled lowering: control flow inside a loop body under quantum control
+ir-pass/test/control_angle_select_reject_inf_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_inplace_alias_base.ll|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control
+ir-pass/test/control_angle_select_reject_irreducible_cycle_rz.ll|D1:bbbf598cdb92:cq controlled lowering: control flow inside a loop body under quantum control|D1:bbbf598cdb92:cq controlled lowering: control flow inside a loop body under quantum control
+ir-pass/test/control_angle_select_reject_irreducible_cycle.ll|D1:bbbf598cdb92:cq controlled lowering: control flow inside a loop body under quantum control|D1:bbbf598cdb92:cq controlled lowering: control flow inside a loop body under quantum control
+ir-pass/test/control_angle_select_reject_lifted_phi_clone_arg.ll|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_lifted_phi_invert.ll|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_lifted_phi_measure.ll|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_lifted_phi_ret.ll|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_lifted_phi_tape.ll|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:1941110c012d:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_loop_rail_exit_block.ll|D1:e1d001d73f7d:cq controlled lowering: control flow inside a loop body under quantum control|D1:e1d001d73f7d:cq controlled lowering: control flow inside a loop body under quantum control
+ir-pass/test/control_angle_select_reject_nan_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_nested_select.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_overflow_difference.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_phase_rail_round2_sibling_theta.ll|D1:09fccf649edf:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:09fccf649edf:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_reject_poison_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_qq_compare.ll|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_rail_ry.ll|D1:0b4bb8bdb58e:cq controlled lowering: bare i1 register condition under quantum control|D1:0b4bb8bdb58e:cq controlled lowering: bare i1 register condition under quantum control
+ir-pass/test/control_angle_select_reject_raw_i1_cond.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_angle_select_reject_record_read_on_side_path.ll|D1:7fcd1d6813ff:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:7fcd1d6813ff:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_rounding_above_bound.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_rounding_pi_1e16.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_runtime_arms_rz.ll|A:e088fdde932b|A:e088fdde932b
+ir-pass/test/control_angle_select_reject_runtime_arms.ll|D1:244754f64ca0:cq controlled lowering: rotation angle under quantum control|D1:244754f64ca0:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_runtime_one_arm.ll|D1:43a56acc847e:cq controlled lowering: rotation angle under quantum control|D1:43a56acc847e:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_second_select_same_cmp.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_stale_chained_theta.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_stale_diag_alias_backward.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_stale_diag_alias_forward.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_stale_diag_alias_two_hop.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_stale_measure.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_stale_ret.ll|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D1:c6d1d4585179:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+ir-pass/test/control_angle_select_reject_state_prep.ll|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control|D1:7d4a4d8634da:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_tainted_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_tainted_both_arms.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_theta_before_select.ll|D1:d3e92d71941d:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:d3e92d71941d:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_angle_select_reject_theta_between.ll|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_two_consumers.ll|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_two_phi_consumers.ll|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control|D1:0d1ecf77d684:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_undef_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_reject_undef_constexpr_arm.ll|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control|D1:6817e491d783:cq controlled lowering: rotation angle under quantum control
+ir-pass/test/control_angle_select_ry_alias_pre_gate.ll|A:ac08d32905e2|A:ac08d32905e2
+ir-pass/test/control_angle_select_ry_dead_base_frozen.ll|A:3a8a157ab410|A:3a8a157ab410
+ir-pass/test/control_angle_select_ry_derived_base_late_use_frozen.ll|A:46009a6e1cdd|A:46009a6e1cdd
+ir-pass/test/control_angle_select_ry_derived_cond.ll|A:c2089176dd58|A:c2089176dd58
+ir-pass/test/control_angle_select_ry_diamond.ll|A:fda52c24f6f4|A:fda52c24f6f4
+ir-pass/test/control_angle_select_ry_f64_fcmp.ll|A:ea03be2cea79|A:ea03be2cea79
+ir-pass/test/control_angle_select_ry_i8.ll|A:912acc04345e|A:912acc04345e
+ir-pass/test/control_angle_select_ry_lifted_phi_after_select.ll|A:3152c33ad63d|A:3152c33ad63d
+ir-pass/test/control_angle_select_ry_lifted_phi_base.ll|A:fda3e90a5fd4|A:fda3e90a5fd4
+ir-pass/test/control_angle_select_ry_ne_swapped.ll|A:153d8d006ed3|A:153d8d006ed3
+ir-pass/test/control_angle_select_ry_sgt.ll|A:c2d86c2b8408|A:c2d86c2b8408
+ir-pass/test/control_angle_select_ry_then_region.ll|A:fc438e149ad8|A:fc438e149ad8
+ir-pass/test/control_angle_select_rz_cond_register.ll|A:daaaad18a60e|A:daaaad18a60e
+ir-pass/test/control_angle_select_rz_dead_chain.ll|A:c2a7651b1009|A:c2a7651b1009
+ir-pass/test/control_angle_select_rz_diamond.ll|A:35739949a7fe|A:35739949a7fe
+ir-pass/test/control_angle_select_rz_lifted_phi_after_select.ll|A:419668c512c7|A:419668c512c7
+ir-pass/test/control_angle_select_rz_loop_rail_exit_block.ll|A:db9e40e892f9|A:db9e40e892f9
+ir-pass/test/control_angle_select_rz_rounding_one_1e300.ll|A:c1c85b3782e4|A:c1c85b3782e4
+ir-pass/test/control_classical_call_arm_accept_frozen_nsw_add_arg.ll|A:cdfe9d42b93c|A:cdfe9d42b93c
+ir-pass/test/control_classical_call_arm_accept_frozen_poison_arg.ll|A:0bcc63d1095e|A:0bcc63d1095e
+ir-pass/test/control_classical_call_arm_accept_i32_ret.ll|A:56ffb48a3e9e|A:56ffb48a3e9e
+ir-pass/test/control_classical_call_arm_accept_i64_measure.ll|A:4401f777dd45|A:4401f777dd45
+ir-pass/test/control_classical_call_arm_accept_nonI32_cast.ll|A:d596ef4d5529|A:d596ef4d5529
+ir-pass/test/control_classical_call_arm_accept_onward_arith.ll|A:29159f816f5a|A:29159f816f5a
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_phase.ll|A:a382d7451ea8|A:a382d7451ea8
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_select.ll|A:bcd67434e436|A:bcd67434e436
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_spec_newcand.ll|A:5f18ba67021e|A:5f18ba67021e
+ir-pass/test/control_classical_call_arm_accept_onward_ctl_spec_replan.ll|A:23853e5560ef|A:23853e5560ef
+ir-pass/test/control_classical_call_arm_accept_onward_phase_downstream_if.ll|A:6ed21fcec270|A:6ed21fcec270
+ir-pass/test/control_classical_call_arm_accept_onward_phase.ll|A:18738f7a40b8|A:18738f7a40b8
+ir-pass/test/control_classical_call_arm_accept_onward_spec_call.ll|A:c24f3e428055|A:c24f3e428055
+ir-pass/test/control_classical_call_arm_accept_onward_spec_newcand.ll|A:068bb8fff0ce|A:068bb8fff0ce
+ir-pass/test/control_classical_call_arm_accept_onward_spec_transitive.ll|A:2ea7f220ccf1|A:2ea7f220ccf1
+ir-pass/test/control_classical_call_arm_accept_poisonselect_callee.ll|A:8c3c74f40830|A:8c3c74f40830
+ir-pass/test/control_classical_call_arm_accept_speculatable_decl.ll|A:2076ffb43a96|A:2076ffb43a96
+ir-pass/test/control_classical_call_arm_accept.ll|A:629253430140|A:629253430140
+ir-pass/test/control_classical_call_arm_polarity.ll|A:45018986cf2c|A:45018986cf2c
+ir-pass/test/control_classical_call_arm_reject_block_lifetime.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_clobber.ll|D1:70f05b2b79a6:cq controlled lowering: arm rewrites a condition operand under quantum control|D1:70f05b2b79a6:cq controlled lowering: arm rewrites a condition operand under quantum control
+ir-pass/test/control_classical_call_arm_reject_escape_leak.ll|D1:a860e3f4cc23:cq taint escape: tainted value stored to memory|D1:a860e3f4cc23:cq taint escape: tainted value stored to memory
+ir-pass/test/control_classical_call_arm_reject_fp_result.ll|D1:bb09c49ed529:cq controlled lowering: control flow under quantum control|D1:bb09c49ed529:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_callee_nonnull.ll|D1:b8935a80ca02:cq controlled lowering: control flow under quantum control|D1:b8935a80ca02:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_callee_range.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_frozen_arg_range.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_impure.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_interposable_callee.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_localarray_store.ll|D1:b645f71088b9:cq taint escape: tainted value stored to memory|D1:b645f71088b9:cq taint escape: tainted value stored to memory
+ir-pass/test/control_classical_call_arm_reject_multiuser.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_nonI32_ret.ll|D1:f58d6cb8a2fd:cq taint escape: tainted value returned at non-i32 width|D1:f58d6cb8a2fd:cq taint escape: tainted value returned at non-i32 width
+ir-pass/test/control_classical_call_arm_reject_onward_branch.ll|D1:0051069f2196:cq controlled lowering: value-arm swap-route under quantum control|D1:0051069f2196:cq controlled lowering: value-arm swap-route under quantum control
+ir-pass/test/control_classical_call_arm_reject_onward_ctl_clobber.ll|D1:f357565ab46d:cq controlled lowering: arm rewrites a condition operand under quantum control|D1:f357565ab46d:cq controlled lowering: arm rewrites a condition operand under quantum control
+ir-pass/test/control_classical_call_arm_reject_onward_ctl_spec_fparg.ll|D1:cafaab52913d:|D1:cafaab52913d:
+ir-pass/test/control_classical_call_arm_reject_onward_spec_i16arg.ll|D1:cafaab52913d:|D1:cafaab52913d:
+ir-pass/test/control_classical_call_arm_reject_onward_spec_newcand_fparg.ll|D1:cafaab52913d:|D1:cafaab52913d:
+ir-pass/test/control_classical_call_arm_reject_onward_spec_newcand_inbody.ll|D1:daaf769efff1:|D1:daaf769efff1:
+ir-pass/test/control_classical_call_arm_reject_onward_spec_qqcmp.ll|D1:59b742bfadae:|D1:59b742bfadae:
+ir-pass/test/control_classical_call_arm_reject_opaque_callee.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_partial_callee.ll|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control|D1:5c52c49dec91:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_poisonbr_callee.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_qrom_callee.ll|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control|D1:cbfed68157d8:cq controlled lowering: control flow under quantum control
+ir-pass/test/control_classical_call_arm_reject_tainted_arg.ll|D1:70f05b2b79a6:cq controlled lowering: arm rewrites a condition operand under quantum control|D1:70f05b2b79a6:cq controlled lowering: arm rewrites a condition operand under quantum control
+ir-pass/test/control_inplace_ry_alias_after_region.ll|A:6757acd9bd05|A:6757acd9bd05
+ir-pass/test/control_inplace_ry_alias_chain_consumed.ll|A:6d6f8f8640d2|A:6d6f8f8640d2
+ir-pass/test/control_inplace_ry_alias_pre_region_branch.ll|A:d5a4d3706e38|A:d5a4d3706e38
+ir-pass/test/control_inplace_ry_clone_base_frozen.ll|A:0f96193b43de|A:0f96193b43de
+ir-pass/test/control_inplace_ry_dead_base_frozen.ll|A:dd7eaf1a58b6|A:dd7eaf1a58b6
+ir-pass/test/control_inplace_ry_dead_base_late_use_frozen.ll|A:057fcb277145|A:057fcb277145
+ir-pass/test/control_inplace_ry_derived_base_add_late_use_frozen.ll|A:b51fae20282f|A:b51fae20282f
+ir-pass/test/control_inplace_ry_derived_base_f64_late_use_frozen.ll|A:d808c07e31a7|A:d808c07e31a7
+ir-pass/test/control_inplace_ry_derived_base_mul_late_use_frozen.ll|A:1700aea2f280|A:1700aea2f280
+ir-pass/test/control_inplace_ry_diamond_negated.ll|A:d37657f58649|A:d37657f58649
+ir-pass/test/control_inplace_ry_diamond.ll|A:3347ef8744a2|A:3347ef8744a2
+ir-pass/test/control_inplace_ry_f64.ll|A:1eb9ea681db7|A:1eb9ea681db7
+ir-pass/test/control_inplace_ry_ifelse_classical_between.ll|A:01c198d0fa7c|A:01c198d0fa7c
+ir-pass/test/control_inplace_ry_ifelse.ll|A:c59e215b05aa|A:c59e215b05aa
+ir-pass/test/control_inplace_ry_inloop_cond_pre_measure.ll|A:f881baa4ff69|A:f881baa4ff69
+ir-pass/test/control_inplace_ry_inloop_derived_cond.ll|A:c6f748a9a6eb|A:c6f748a9a6eb
+ir-pass/test/control_inplace_ry_inloop_diamond.ll|A:83bba26b5d4e|A:83bba26b5d4e
+ir-pass/test/control_inplace_ry_inloop_ifelse.ll|A:07c5f56cea9b|A:07c5f56cea9b
+ir-pass/test/control_inplace_ry_inloop_iterlocal_base.ll|A:9b0c223e6202|A:9b0c223e6202
+ir-pass/test/control_inplace_ry_inloop_iterlocal_no_root.ll|A:e19c9b94fb4a|A:e19c9b94fb4a
+ir-pass/test/control_inplace_ry_inloop_leading_gate.ll|A:17d61dcf3c7e|A:17d61dcf3c7e
+ir-pass/test/control_inplace_ry_inloop_negated.ll|A:8c815abc75a3|A:8c815abc75a3
+ir-pass/test/control_inplace_ry_inloop_offset.ll|A:775e5e627d6b|A:775e5e627d6b
+ir-pass/test/control_inplace_ry_inloop_post_region_gate.ll|A:76238866463f|A:76238866463f
+ir-pass/test/control_inplace_ry_inloop_rotated_dead.ll|A:7a77adb39fb3|A:7a77adb39fb3
+ir-pass/test/control_inplace_ry_inloop_rz_reflection.ll|A:078db99faca3|A:078db99faca3
+ir-pass/test/control_inplace_ry_inloop_seq.ll|A:f77f55babd96|A:f77f55babd96
+ir-pass/test/control_inplace_ry_inloop_two_exits.ll|A:10bf7cf01bb3|A:10bf7cf01bb3
+ir-pass/test/control_inplace_ry_inloop_two_registers.ll|A:bacd6b1ddac6|A:bacd6b1ddac6
+ir-pass/test/control_inplace_ry_inloop_twofn_mixed_clauses.ll|A:08573a93411e|A:08573a93411e
+ir-pass/test/control_inplace_ry_inplace_alias_witness.ll|A:848181309e82|A:848181309e82
+ir-pass/test/control_inplace_ry_lifted_phi_after_region.ll|A:77b6d9633493|A:77b6d9633493
+ir-pass/test/control_inplace_ry_lifted_phi_base.ll|A:b61efc068c35|A:b61efc068c35
+ir-pass/test/control_inplace_ry_post_region_theta_cond.ll|A:18592fe46868|A:18592fe46868
+ir-pass/test/control_inplace_ry_post_region_theta_derived_cond.ll|A:f90e23002d00|A:f90e23002d00
+ir-pass/test/control_inplace_ry_post_region_theta_negated.ll|A:228fcd657fad|A:228fcd657fad
+ir-pass/test/control_inplace_ry_rail_cast_base.ll|A:cc9d694bd309|A:cc9d694bd309
+ir-pass/test/control_inplace_ry_rail_data_use.ll|A:03a2322d88b6|A:03a2322d88b6
+ir-pass/test/control_inplace_ry_rail_dead_register.ll|A:11d04c369173|A:11d04c369173
+ir-pass/test/control_inplace_ry_rail_derived_base.ll|A:bddb3d940676|A:bddb3d940676
+ir-pass/test/control_inplace_ry_rail_diamond.ll|A:7db78d97f7ef|A:7db78d97f7ef
+ir-pass/test/control_inplace_ry_rail_f64_width.ll|A:c9cd379b098e|A:c9cd379b098e
+ir-pass/test/control_inplace_ry_rail_i1_width.ll|A:d56bdf3f0ede|A:d56bdf3f0ede
+ir-pass/test/control_inplace_ry_rail_inloop_negated.ll|A:588d74d7fc2d|A:588d74d7fc2d
+ir-pass/test/control_inplace_ry_rail_inloop.ll|A:781bcd40ec0f|A:781bcd40ec0f
+ir-pass/test/control_inplace_ry_rail_measure_after.ll|A:f4e1f49c25b7|A:f4e1f49c25b7
+ir-pass/test/control_inplace_ry_rail_negated_runtime_angle.ll|A:fbd01b519b7e|A:fbd01b519b7e
+ir-pass/test/control_inplace_ry_rail_negated_zero_angle.ll|A:7a01c3c0b8bd|A:7a01c3c0b8bd
+ir-pass/test/control_inplace_ry_rail_negated.ll|A:7d5f9a74ff8d|A:7d5f9a74ff8d
+ir-pass/test/control_inplace_ry_rail_opaque_seed.ll|A:5b56de8de5cc|A:5b56de8de5cc
+ir-pass/test/control_inplace_ry_rail_post_ry_sdagger.ll|A:28567708caa9|A:28567708caa9
+ir-pass/test/control_inplace_ry_rail_two_regions.ll|A:3b508506cab9|A:3b508506cab9
+ir-pass/test/control_inplace_ry_rail_unnegated_inf_angle.ll|A:049e47ca8a9a|A:049e47ca8a9a
+ir-pass/test/control_inplace_ry_reject_cond_register.ll|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+ir-pass/test/control_inplace_ry_reject_derived_base_sub.ll|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control
+ir-pass/test/control_inplace_ry_reject_derived_base.ll|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control|D1:a96598a3aed4:cq controlled lowering: rotation arm on a condition wire under quantum control
+ir-pass/test/control_inplace_ry_reject_diagonal_alias.ll|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D1:3b7502278e2d:cq controlled lowering: condition predates a non-diagonal gate under quantum control
