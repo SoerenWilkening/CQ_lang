@@ -52,3 +52,17 @@ below when they complete.
 
 The full suite, `^e2e-`, `cq-opt-equivalence-full` and the twin matrices remain OUT of this track's
 matrix in every case (the merge-and-gate agent's).
+
+```
+rebuild after the 3 fixture conversions + the invariantRegisterRoots prose correction | 09694fb88985df25 | cq-opt 09694fb88985df25639993d4f162f13ff7057a8452458634ad87d45a8f31d1c3 — UNCHANGED (comment/fixture-only), so every line above stays valid for the tip | impl | 2026-09-14
+lit --filter leak_control (the 3 converted fixtures + the 3 unmoved siblings) | 09694fb88985df25 | Total Discovered 1998, Excluded 1992, Passed 6 | impl | 2026-09-14
+corpus sweep ORACLE-vs-SUBJECT | 09694fb88985df25 | 2013 rows (1998 ir-pass/test/*.ll + 15 trackS probes); MOVERS 7, ALL ATTRIBUTED (4 = this increment's own red-green pair via both the .ll and .c paths, 3 = pre-existing *_leak_control.ll, genuine instances); CLANGERR 0; DECLINE->DECLINE string changes 0; DECLINE->ACCEPT 0; 0 unattributable | impl | 2026-09-14
+ctest -R ir-pass-lit | 09694fb88985df25 | 1/1 Test #8: ir-pass-lit ...... Passed 74.86 sec; 100% tests passed, 0 tests failed out of 1 | impl | 2026-09-14
+```
+
+## What this track did NOT run (Rule 19)
+
+Full `ctest`, `ctest -R '^e2e-'`, `cq-opt-equivalence-full`, and the twin matrices — all out of the
+implementation row of the PROTOCOL matrix and the merge-and-gate agent's. ⚠ `cq-opt-equivalence-full`
+IS owed at the group gate: this increment **added a decline string and a new analysis site**, which is
+the PROTOCOL's stated trigger for it.

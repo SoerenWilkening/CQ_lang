@@ -3208,6 +3208,28 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
 //     still not marked and its rails still leak. MEASURED as the discriminating
 //     control (`z_preheader_rail8`: 8 trips, the `xor`/`and` rails leak, before
 //     and after this change, byte-identical).
+//     ⚠ THAT RESIDUAL LEAK IS NOT UNIFORMLY BENIGN, AND SINCE 2026-09-14c PART
+//     OF IT IS A LOUD DECLINE (bd `s82e`, owner ruling D4). Three shipped
+//     fixtures of exactly this shape — `control_phase_kickback_mixed_{hoisted_
+//     template,preheader_volatile_imm,short_sext}_leak_control.ll` — end with
+//     `q = cq_theta(q, .9); cq_measure(q)`, so the leaked per-bit copies of `q`
+//     dephase a register that is afterwards ROTATED and MEASURED: rolled and
+//     unrolled are DIFFERENT UNITARIES there, not the same one with more
+//     garbage. All three headers used to call the leak "the PRIME-DIRECTIVE
+//     disposition" / "the safe direction (Rule 6)"; all three were CONVERTED TO
+//     DECLINES and the claim is corrected in each (CLAUDE.md L7-with-a-twist: a
+//     record correction that is not applied at the site the reader reads is not
+//     a correction, which is why this bullet moves too).
+//     `declineDephasingUnmarkedLoopRails` (below) owns that sub-case. What
+//     remains HERE — a hoisted-template-rail leak with NO later non-diagonal
+//     gate on the copied register — still accepts and still leaks, and THAT is
+//     what owner question Q-R1-1 is now about. Measured in the same sweep:
+//     `control_phase_kickback_mixed_{claim_across_loops,onward_deadgate,
+//     preheader_add_outofplace}_leak_control.ll` are UNMOVED.
+//     ⚠ So do NOT read this bullet as "refusing the template rail is free". It
+//     is free only where nothing interferes the register later; where something
+//     does, refusing to mark costs a DECLINE, and bd `tu9q` is the capability
+//     that would buy it back.
 // Every value the body itself MINTS repeats exactly as its adjoint will, so the
 // multiplicity the comment protects is 1:1 by construction here.
 //

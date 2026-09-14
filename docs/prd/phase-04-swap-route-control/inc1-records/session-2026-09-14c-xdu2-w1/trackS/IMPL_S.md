@@ -605,3 +605,77 @@ closed the increment. They are all available for the decline. In priority order:
   accepts, so they should be generated against the MERGED binary and adjudicated as declines. The other
   two (`m_noregion_invread_dead` = the blessed benign divergence, `m_region_rootmint_live` = the
   identical positive control) are unchanged and still wanted.
+
+## 18. THE CORPUS SWEEP — 2013 rows, 7 movers, every one attributed
+
+`probes/corpus_09694fb88985df25.txt`. ORACLE `5c6f7490a81c7505…` vs SUBJECT `09694fb88985df25…`, both
+binaries on the SAME stage-1 file per row. ⚠ The shared `corpus.sh`'s tag regex renders a whole decline
+FAMILY as an empty `D:`, so a decline→decline STRING change is invisible to it (`PROTOCOL` S3); this
+sweep records `D<exit>:<sha256 of the FULL stderr>:<string>` and compares that, which closes it.
+
+```
+TOTAL rows 2013  (1998 ir-pass/test/*.ll + 15 trackS probes)
+MOVERS 7 · CLANGERR 0 · DECLINE->DECLINE string changes 0 · DECLINE->ACCEPT 0
+```
+
+| mover | category (§11) | attribution |
+|---|---|---|
+| `loop_leak_dephase_reject_noregion_live.ll` | **1** | the increment's own red-green pair |
+| `loop_leak_dephase_reject_region_derivedbase_live.ll` | **1** | " |
+| `trackS/probes/s1_live_shift.c` | **1** | the same two programs through the `.c` path |
+| `trackS/probes/s2_live_derived_region.c` | **1** | " |
+| `control_phase_kickback_mixed_hoisted_template_leak_control.ll` | **3** | **a genuine instance — see §18.1** |
+| `control_phase_kickback_mixed_preheader_volatile_imm_leak_control.ll` | **3** | " |
+| `control_phase_kickback_mixed_short_sext_leak_control.ll` | **3** | " |
+
+Predictions 4 and 5 held exactly: **0 decline→decline string changes** (the slot argument — this stage
+speaks last and only where nothing else did) and **0 decline→accept**. **0 unattributable movers.**
+
+### 18.1 The three pre-existing movers — and the fixture that proves the discrimination is exact
+
+All three are the SAME source modulo the invariant base's spelling:
+
+```c
+int slice(int u){ int q=cq_theta(u,.5); int r=cq_theta(u,.3); int p = <BASE>;
+  for(i<3){ if((p>>i)&1) cq_phi(.2); r=cq_theta(r,.1); }
+  q=cq_theta(q,.9); return cq_measure(q)+cq_measure(r); }
+```
+
+with `<BASE>` = `q*3` (a `cq_template_mul` rail), `q + <volatile load>` (a dtzb add), or a hoisted
+`sext i16` — each a hoisted loop-invariant **TEMPLATE** rail that `invariantRegisterRootsImpl` clause
+(ii) refuses, so the body is never marked.
+
+**They are genuine instances of the class, and the proof is in their OWN headers.** Each records
+`3/0 rolled` against `3/3 hand-unrolled` for the per-bit `and` rails — that is the (R-diverge)
+signature — and each source ends `q = cq_theta(q, .9); cq_measure(q)`, a TENSORED non-diagonal `Ry` on
+the very register the three leaked rails are which-path copies of, followed by a measurement of it. The
+headers nonetheless called that leak *"the PRIME-DIRECTIVE disposition, not an oversight"* and *"the
+safe direction (Rule 6)"*. **That claim is false for these programs**, on the measurement the headers
+themselves carry. All three are CONVERTED to declines, the false claim corrected in each, with the
+`tu9q` retirement trigger (and a note NOT to restore the old CHECK prefixes verbatim, because they
+pinned the LEAKING stream).
+
+⚠ **THE TREE ALREADY CONTAINED THE CONTROL, AND IT IS BETTER THAN MINE.**
+`control_phase_kickback_mixed_invariant_carried_inloop.ll` is that same source with the invariant base a
+ROOT MINT rather than a template rail — `invariantRegisterRoots` admits it, the body is marked, the
+spine discharges in-body — and it is **`A:32d17cb8675d` on BOTH binaries, md5-identical**. Conjunct (1)
+is the entire difference. Three of the six `*_leak_control.ll` fixtures move and three do not
+(`claim_across_loops`, `onward_deadgate`, `preheader_add_outofplace` are unmoved), which is the
+narrowness claim measured rather than asserted.
+
+⚠ **Q-R1-1 MUST BE RE-READ AND I CANNOT EDIT `CLAUDE.md` FROM HERE.** `CLAUDE.md` §5 files *"an in-loop
+hoisted loop-invariant TEMPLATE rail read by the body's condition (Q-R1-1, a Prime-Directive decline,
+not a proof)"* among the OVER-DECLINES. For the sub-case with a post-loop non-diagonal gate the opposite
+is now measured: **the ACCEPT was the defect.** Q-R1-1's remaining population is the sub-case with no
+later interference, which still accepts and still leaks. The correction is landed in
+`LoopLowering.cpp`'s `invariantRegisterRoots` header and in all three fixture headers; **`CLAUDE.md` §5
+itself is the orchestrator's to amend** (L7-with-a-twist: a correction not applied where the reader
+reads is not a correction, and §5 is where a reader looks).
+
+### 18.2 Diagnostic locations
+
+The three converted fixtures report `<unknown>:0:0`. **That is not a lost anchor**: they carry NO debug
+info at all (`grep -c '!dbg'` = 0, no `llvm.dbg.cu`) because they were built without `-g`, so there is
+no location to lose. Every `-g` subject DOES get a real one — `s1_live_shift.c:11:14`,
+`s2_live_derived_region.c:11:22`, and 30 `!dbg` nodes in each new decline fixture. This is the F-W2-5 /
+F-P2 class and it was checked, not assumed.
