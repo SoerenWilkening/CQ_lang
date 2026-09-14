@@ -22,11 +22,33 @@ rebuild after comment-only scoping edits (3 sites) | 5c6f7490a81c7505 | cq-opt 5
 lit --filter control_inplace_ry_reject_rail_inloop_carried_invariant_read | 5c6f7490a81c7505 | Total Discovered Tests: 1994, Excluded 1993, Passed 1 | impl | 2026-09-14
 ```
 
+## PART II — the D4 implementation
+
+⚠ TWO SUBJECT BINARIES EXIST AND ONLY THE SECOND IS CITED FOR ANY FINAL GATE. `00b84dc1facb1c9f…` was
+the first build of the decline; a self-review then found its cheap-skip DEREFERENCED `taint.Tainted`
+(the first post-flatten consumer to do so), so it was made deref-free and rebuilt to
+`09694fb88985df25…`. A sweep already running against `00b84dc1` was **STOPPED and its partial output
+DELETED** rather than cited, because a gate result is a fact about a BINARY (PROTOCOL) and that binary
+no longer exists on disk. Nothing below cites `00b84dc1`.
+
+```
+build worktree, decline v1 | 00b84dc1facb1c9f | exit 0; cq-opt 00b84dc1facb1c9ff66979c70cf490cfa7aeb26f9a8184fdd1290b0e92b5fb9d, libCQPass.so 9db27ca282aa95d70b24a8df67aea7b2bfc0120b8cd54e96e9fcece71c93fe92 | impl | 2026-09-14
+build worktree, decline v2 (deref-free prescan) | 09694fb88985df25 | exit 0; cq-opt 09694fb88985df25639993d4f162f13ff7057a8452458634ad87d45a8f31d1c3, libCQPass.so b476f7b41eaba62b6e582c3572caaf7786c462e30c97096a2bcfc649d0a9e952 | impl | 2026-09-14
+lit --filter loop_leak_dephase (RED-GREEN: run BEFORE the implementation) | 5c6f7490a81c7505 | Total Discovered 1996, Excluded 1994, Failed 2 — both decline fixtures RED, as Rule 12 requires | impl | 2026-09-14
+lit --filter loop_leak_dephase | 09694fb88985df25 | Total Discovered 1998, Excluded 1994, Passed 4 | impl | 2026-09-14
+per-probe pipeline (s1/s2/s3 + the 3 bead programs) | 09694fb88985df25 | s1 DECLINE @ s1_live_shift.c:11:14, s2 DECLINE @ s2_live_derived_region.c:11:22 (both the new string, both source-located); s3 ACCEPT 22, w2k ACCEPT 16, w2h ACCEPT 30, w2h3 ACCEPT 44 — the positive control and all three bead programs UNMOVED | impl | 2026-09-14
+injection matrix, FIRST DRAFT of the accept fixtures | 00b84dc1facb1c9f | applied 7, MISSED 7, N/A 3 — the matrix earned its keep | impl | 2026-09-14
+injection matrix, final | 09694fb88985df25 | applied 8, MISSED 0, N/A 4 (every prefix incl. the pure-negative LEAK exercised by >=1 mutation) | impl | 2026-09-14
+L10 attack on the injection harness | 09694fb88985df25 | no-fixture invocation exits 2 with a message, not "MISSED 0"; every mutation bounded by the enclosing define; N/A printed as a HOLE | impl | 2026-09-14
+```
+
 ## NOT RUN, and why (Rule 19 — report only what you ran)
 
-`ctest -R ir-pass-lit`, the ORACLE-vs-SUBJECT corpus sweep and the injection matrix are the
-hand-off gates for an IMPLEMENTATION. **There is none** — the branch tip's `cq-opt` is bit-identical to
-the ORACLE, so a corpus sweep would compare a binary with itself (0 movers by construction) and an
-injection matrix would have no new accept to mutate. Running them would be an instrument reporting a
-pass on nothing, which is the failure mode `CLAUDE.md` L10 names. The full suite, `^e2e-`, the
-equivalence sweep and the twin matrix are out of this track's matrix in every case.
+⚠ THIS PARAGRAPH IS PART I's AND IS SUPERSEDED BY PART II. It was true while the branch carried only
+the determination (a bit-identical binary, nothing to sweep or mutate). With the D4 decline landed the
+implementation row of the PROTOCOL matrix applies in full and all three gates are real: the injection
+matrix and the targeted lit runs are above; `ctest -R ir-pass-lit` and the corpus sweep are recorded
+below when they complete.
+
+The full suite, `^e2e-`, `cq-opt-equivalence-full` and the twin matrices remain OUT of this track's
+matrix in every case (the merge-and-gate agent's).

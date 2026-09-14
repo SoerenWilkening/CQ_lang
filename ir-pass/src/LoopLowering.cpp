@@ -3864,13 +3864,29 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // ⚠ THE CHEAP SKIP WALKS THE FUNCTION, NOT `taint.Tainted`, AND THE
+    //    DIRECTION IS THE WHOLE POINT. `lowerLoops`' own prescan iterates the
+    //    SET and dereferences each member (`I->getFunction()`), which is sound
+    //    THERE because it runs before any region flatten. THIS stage runs after
+    //    TWO of them, and `taint.Tainted` can then hold an erased merge phi. It
+    //    would still be sound today — `scrubTaint` erases from `Tainted` at all
+    //    four erasing TUs (`RegionFlatten.cpp:38`, `SelectMergeEmit.cpp:56`,
+    //    `SwapRouteEmit.cpp:73`, `MergePhiPeel.cpp:586`) — but that makes the
+    //    stage's freedom from use-after-free rest on a FOUR-SITE INVARIANT
+    //    nothing tests for this consumer, and this project has already paid for
+    //    one "dereferences freed memory (SIGSEGV on valid input)" (L9). Looking
+    //    LIVE POINTERS UP IN the set is the safe direction and costs nothing, so
+    //    the dependency is simply not taken. Do not "simplify" it back.
     bool AnyTainted = false;
-    for (Value *V : taint.Tainted)
-      if (auto *I = dyn_cast<Instruction>(V))
-        if (I->getFunction() == &F) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB)
+        if (taint.Tainted.count(&I)) {
           AnyTainted = true;
           break;
         }
+      if (AnyTainted)
+        break;
+    }
     if (!AnyTainted)
       continue;
     DominatorTree DT(F);

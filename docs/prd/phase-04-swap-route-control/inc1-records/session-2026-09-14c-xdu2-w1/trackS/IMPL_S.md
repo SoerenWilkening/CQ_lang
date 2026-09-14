@@ -550,3 +550,58 @@ enclosing `define` (the across-a-function-boundary false MISSED), and a mutation
 is printed as `N/A` and counted separately — **`N/A` is a hole, not a pass**. The 4 N/A are honest:
 `pertrip_dead` has no `_unc`, no `cqrt_free` and no post-loop `ry` to mutate, BY DESIGN, and
 `marked_rootmint` has no `lshr` rail for `f_add_discharge`.
+
+## 16. ATTACK SURFACE for the Rule-13 reviewer (part II — the decline as shipped)
+
+Three rounds were budgeted at §7 for the determination and **none was spent there**, because the fork
+closed the increment. They are all available for the decline. In priority order:
+
+1. **CONJUNCT (3) IS THE NARROWEST AND THEREFORE THE LEAKIEST.** It scans `BinaryOperator` only. A
+   leaked interior rail minted by a **cast** (`CastLowering`), an **fneg**, or a **compare that is NOT a
+   region flag** would be missed, and the class would survive silently in that spelling. I chose
+   narrow deliberately (widening to compares would decline shipped region accepts, since a flag rail IS
+   an interior binary-ish rail whose strip the emitter owns), but the residual is real and unmeasured:
+   **I did not construct a cast-minted instance.** This is the most likely next hole.
+2. **CONJUNCT (2)'s "after the loop" IS A DOMINANCE TEST, NOT A REACHABILITY ONE.** `L->getHeader()`
+   dominating the gate's block is SOUND (every path to the gate runs the loop first) but INCOMPLETE: a
+   rotation reached only through a side path the header does not dominate is missed. Deliberately not
+   `llvm::isPotentiallyReachable` — this file's own note at `provablyBefore` records why its exclusion
+   set is wrong here. A miss leaves the PRE-EXISTING leak and can never create a NEW over-accept, but
+   attack it: a multi-exit loop, or a rotation inside a classical `if` after the loop.
+3. **THE IN-PLACE OVER-DECLINE I COULD NOT PROBE.** A dtzb IN-PLACE rail op (`taint.InPlaceRailOps`)
+   passes conjunct (3) — it is a `BinaryOperator` with a stem — yet mints NO rail, so firing on it
+   would be an OVER-DECLINE. Both my probes died upstream (§11) and the corpus sweep is the only
+   instrument left. If a mover turns out to be this shape, the fix is one conjunct
+   `!taint.InPlaceRailOps.count(&I)`. ⚠ And note the direction: `InPlaceRailOps` is a raw `Instruction *`
+   set nothing scrubs (F-W2-4), so using it to SUPPRESS a decline means a recycled pointer silently
+   excludes a real candidate — which is not a new over-accept (it is the pre-existing leak) but must be
+   said out loud if the conjunct is ever added.
+4. **CONJUNCT (1) IS ALL-OR-NOTHING PER LOOP.** `Marked` is true if ANY block of `L` is in
+   `IterationLocalBlocks`. A loop only PARTIALLY marked — if such a thing can be produced — would be
+   treated as marked and skipped. `markIfRailLocal` and `markIfIterationLocal` both insert all of `L`'s
+   own blocks at once, so this cannot arise today; it is a structural coincidence, not an invariant
+   anyone stated, and that is exactly the species `CLAUDE.md` says to write down rather than rely on.
+5. **THE THREE BEAD PROGRAMS STAY ACCEPTING, AND THAT IS A DELIBERATE, RULED LEAK.** If a reviewer can
+   build a program in which the leaked rail's partner is a PER-TRIP register that is nevertheless later
+   interfered (accumulated into a carried register, or rotated before the trip ends), it moves a bead
+   exhibit from (R-leak) to (R-diverge) and the population widens again. I flagged this at §7.3 and did
+   not build it.
+6. **bd `1yeu` — and this increment measured it from the inside.** Every probe and fixture here is one
+   or two functions in one module. The `CHECK-LABEL` finding (§15.2) is that gap turned into a false
+   MISSED; a genuinely CROSS-FUNCTION spelling of this leak (the invariant register passed as an
+   argument, the loop in a callee) is invisible to every instrument in the tree including mine.
+
+## 17. NOT DONE / COULD NOT DO — part II
+
+* **bd `tu9q` is NOT built**, by ruling. I did not touch the multiplicity pairing, and
+  `Uncomputation.cpp:982-1000`'s retirement trigger (a granting widening owes a real multiplicity test)
+  is untouched and still armed.
+* **No probe for the superseded-value-rail / in-place direction** (§11, §16.3).
+* **No cast-minted or cross-function instance** (§16.1, §16.6).
+* **The `bd wx8g` NOTES text** is still handed over rather than written (§8).
+* **Twin-matrix cells** are requested at §10, not generated (PROTOCOL: the merge-and-gate agent's).
+  ⚠ With the decline landed, two of those four requests CHANGE: `m_noregion_invread_live` and
+  `m_region_derivedbase_live` are now **DECLINE-BOTH-SIDES on the subject** rather than divergent
+  accepts, so they should be generated against the MERGED binary and adjudicated as declines. The other
+  two (`m_noregion_invread_dead` = the blessed benign divergence, `m_region_rootmint_live` = the
+  identical positive control) are unchanged and still wanted.
