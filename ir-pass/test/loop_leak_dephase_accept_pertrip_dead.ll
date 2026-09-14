@@ -25,30 +25,39 @@
 ; decline, it has stopped being narrow and is the blanket decline owner ruling D2
 ; explicitly REJECTED.
 ;
-; ⚠⚠ CORRECTION, CLOSING GATE 2026-09-14c — WHAT "BENIGN" ABOVE DOES AND DOES NOT
-; CLAIM. The benignity is a property of THIS PROGRAM, not of the shape any
-; conjunct tests, and this header must not be read as pinning a general one.
-; MEASURED by Rule-13 round 1 track β (`$SES/review_r1b/REVIEW_R1B.md` F-β1, filed
-; as bd `test_C_libtooling-c767`, P1): take this very program — bd `s82e`'s
-; exhibit `w2k_noregion_invread` — and add ONE line, `u = cq_theta(u, .9);` before
-; the trip ends, and it becomes DIVERGENT (20 trace lines rolled against the
+; ⚠⚠ WHAT "BENIGN" ABOVE DOES AND DOES NOT CLAIM. The benignity is a property of
+; THIS PROGRAM, not of the shape any conjunct tests, and this header must not be
+; read as pinning a general one. MEASURED by Rule-13 round 1 track β
+; (`$PREV/review_r1b/REVIEW_R1B.md` F-β1, filed as bd `test_C_libtooling-c767`,
+; P1, closed 2026-09-15): take this very program — bd `s82e`'s exhibit
+; `w2k_noregion_invread` — and add ONE line, `u = cq_theta(u, .9);` before the
+; trip ends, and it becomes DIVERGENT (20 trace lines rolled against the
 ; hand-unrolled twin's 24, the four missing being
-; `cq_template_lshr_i32_hl_unc` + `cqrt_free` twice) and it STILL ACCEPTS, because
-; conjunct (2) only inspects rotations OUTSIDE the loop. The same one-line edit
-; moves bd `s82e`'s second exhibit `w2h` the same way (34 vs 42). Two of the
-; ruling's three exhibits therefore sit on the benign side BY ACCIDENT of where
-; the author put the rotation.
+; `cq_template_lshr_i32_hl_unc` + `cqrt_free` twice). The same one-line edit moves
+; bd `s82e`'s second exhibit `w2h` the same way (34 vs 42). Two of the ruling's
+; three exhibits therefore sit on the benign side BY ACCIDENT of where the author
+; put the rotation, and both of those one-line variants ACCEPTED on the binary
+; this file was first written against.
 ;
-; So: this file pins conjunct (2) as a DISCRIMINATOR — the thing a widening must
-; not break — and NOT as a proof that its program's leak is harmless-in-general.
-; The reason THIS program really is benign is the one stated above (the leaked
-; rail copies the PER-TRIP `u`, which nothing interferes on any trip and which
-; both forms leave allocated), and it survives bd `c767` closing: `u`'s only
-; theta is a SOURCE one (classical arg 0), so a widened conjunct (2) that admits
-; in-loop CHAINED thetas still finds none here. ⚠ L8 RETIREMENT TRIGGER: when bd
-; `c767` closes, RE-DERIVE this file's verdict against the widened conjunct
-; rather than assuming this paragraph — do not delete the file, and do not read
-; its green as evidence about bd `s82e`'s other two exhibits.
+; ⚠ L8 RETIREMENT TRIGGER FIRED, AND THE RE-DERIVATION IS RECORDED HERE RATHER
+; THAN ASSUMED (`CLAUDE.md` L7-with-a-twist). The previous text said this file
+; "survives bd `c767` closing" because `u`'s only theta is a SOURCE one. bd `c767`
+; CLOSED on 2026-09-15 — conjunct (2) lost its `L->contains` skip and now admits
+; in-loop CHAINED thetas — and the prediction was CORRECT, but it is now a
+; MEASUREMENT and not a prediction: on the widened binary
+; (`f667cf90436bd31d…`) this program is `ORACLE A:16 lines | SUBJECT A:16 lines`,
+; UNMOVED, while its one-line variant `b7b_w2k_interfered` goes
+; `ORACLE A:20 | SUBJECT DECLINE`. The reason is exactly the stated one: `int u =
+; cq_theta(6, 0.4);` has a CLASSICAL arg 0, so it is a SOURCE theta, and conjunct
+; (2) counts only CHAINED ones. The two pinned probes are
+; `$SES/trackS/probes/{w2k_noregion_invread,b7b_w2k_interfered}.c`.
+;
+; So: this file pins conjunct (2)'s SOURCE-vs-CHAINED discrimination — the thing a
+; widening must not break — and NOT a proof that its program's leak is
+; harmless-in-general. ⚠ NEXT RETIREMENT TRIGGER: bd `tu9q`. When the in-loop
+; pairing lands, the leak this file pins is DISCHARGED rather than accepted, and
+; the `LEAK` prefix below inverts — re-derive it then; do not delete the file, and
+; do not read its green as evidence about bd `s82e`'s other two exhibits.
 ;
 ; ⚠ THE CHECKS BELOW WERE REWRITTEN AFTER AN INJECTION MATRIX SCORED 2 OF 2
 ; APPLIED MUTATIONS **MISSED** AGAINST THE FIRST DRAFT (three loose positive

@@ -120,7 +120,7 @@
 ;  `not` inversion on the RUN line plus this one message match — Rule 12
 ;  fixture-hygiene defect (b). Mirrored character-for-character with
 ;  `kMsgLoopLeakDephases` in `LoopLowering.cpp`.)
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

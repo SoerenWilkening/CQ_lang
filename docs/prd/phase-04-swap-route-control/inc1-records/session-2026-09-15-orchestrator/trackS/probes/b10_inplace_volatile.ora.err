@@ -1,0 +1,2 @@
+error: b10_inplace_volatile.c:10:11: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+

@@ -321,31 +321,35 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // An unmarked loop body leaks its per-trip `cq_template_*` rails (the whole-DAG
 // spine's in-loop guard skips them). That is USUALLY Rule 6's accepted leak — the
 // leaked rail copies a register that is garbage in both forms. It is NOT a leak
-// when the copied register is still LIVE after the loop and a NON-DIAGONAL gate
-// lands on it there: the leaked copy dephases it, and rolled and unrolled become
-// DIFFERENT UNITARIES (`CLAUDE.md` Rule 8) at `opt` exit 0, verify-clean, and
-// STRICT stage 2b clean on both halves. Measured 10-vs-14 and 19-vs-25 trace lines
+// when the copied register is LIVE ACROSS A LATER NON-DIAGONAL GATE: the leaked
+// copy dephases it, and rolled and unrolled become DIFFERENT UNITARIES
+// (`CLAUDE.md` Rule 8) at `opt` exit 0, verify-clean, and STRICT stage 2b clean on
+// both halves. Measured 10-vs-14, 19-vs-25, 20-vs-24 and 34-vs-42 trace lines
 // against hand-unrolled twins; the rolled-vs-hand-unrolled trace pair is the ONLY
 // instrument in the tree that sees the class.
 //
-// ⚠ CORRECTION, CLOSING GATE 2026-09-14c — THE PARAGRAPH ABOVE STATES THIS
-// FENCE'S **SCOPE**, NOT THE CLASS, AND IT IS NOT A COVERAGE CLAIM. Rule-13
-// round 1 track β measured that the function catches PART of the dephasing class:
-// conjunct (2) inspects only rotations OUTSIDE the loop, so the identical
-// dephasing with the interference INSIDE the body still ACCEPTS (bd
-// `test_C_libtooling-c767`, P1), and conjunct (3) scans `BinaryOperator` only, so
-// a compare used as DATA — an ordinary out-of-place
-// `cq_template_icmp_<pred>_<W>_hl` which-path copy — also still ACCEPTS (bd
-// `test_C_libtooling-7845`, P1). Both are PRE-EXISTING over-accepts, not
-// regressions. In the other direction it refuses at least one shape whose rolled
-// trace is BYTE-IDENTICAL to its hand-unrolled twin's (a dtzb IN-PLACE `xor`,
-// which mints no rail at all) — an over-decline, bd `test_C_libtooling-2g52`.
-// Read "still LIVE after the loop" and the diagnostic's own "rotated after the
-// loop" as descriptions of the four conjuncts and of nothing else. The full
-// measurement, the correlated-signal note on
-// `RotationLowering::warnLiveRecordRotations`, and the retirement triggers are at
-// the definition in `LoopLowering.cpp`; this declaration must not be quoted
-// without them (`CLAUDE.md` L7-with-a-twist).
+// ⚠ IT IS STILL A **SCOPE**, NOT A COVERAGE CLAIM, AND THE HISTORY IS WHY THAT
+// SENTENCE STAYS (`CLAUDE.md` L7-with-a-twist; the retirement trigger at the
+// definition says in so many words not to narrow this paragraph on the strength
+// of one round). As SHIPPED 2026-09-14c the function separated on *where the
+// rotation sat* and on an OPCODE CLASS; Rule-13 round 1 track β broke both in one
+// round — an in-loop interfering rotation escaped conjunct (2) (bd
+// `test_C_libtooling-c767`, P1) and a tainted compare used as DATA escaped
+// conjunct (3) (bd `test_C_libtooling-7845`, P1) — while the opcode class also
+// REFUSED a dtzb IN-PLACE `xor`, which mints no rail at all (bd
+// `test_C_libtooling-2g52`, an over-decline whose rolled trace was byte-identical
+// to its twin's). All three closed 2026-09-15: conjunct (2) lost its
+// `L->contains` skip, conjunct (3) became the membership question
+// `mintsOutOfPlaceTemplateRail` asked of the opcode owners, and the diagnostic
+// stopped claiming a position. ⚠ WHAT IS STILL NOT BOUNDED: nothing measures how
+// many members the class has, a cast/`fneg`-minted instance has NO WITNESS EITHER
+// WAY (admitted by the question, never constructed), and every instrument in the
+// tree is one-function-per-module (bd `test_C_libtooling-1yeu`), so a
+// cross-function spelling is invisible to all of them. The full measurement, the
+// correlated-signal note on `RotationLowering::warnLiveRecordRotations`, the L1
+// composition that makes the in-place suppression sound at a pre-`lowerOps` slot,
+// and the retirement triggers are at the definition in `LoopLowering.cpp`; this
+// declaration must not be quoted without them.
 //
 // PURE ANALYSIS — declines or does nothing; mutates no IR and no `taint` set.
 //
