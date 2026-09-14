@@ -206,22 +206,44 @@ dilated; it completed the first six pairs and is handed over for the rest. Rows 
 measured on the incrementally-built `9337c21095d0afdb` and their **VERDICT** (not the line count) was
 re-confirmed on the clean binary by the §2(b) sweep.
 
-**Measured on the CLEAN binary `f972906e961c7e55`:**
-BYTE-IDENTICAL — `s1` 14 == 14 (and it is the committed e2e gate), `s3` 22 == 22 (the positive
-control, UNMOVED), `t2` 13 == 13. Line-count equal but NOT byte-identical — `t3` 20 == 20, because
-`-O1` folds `(y>>k)==1` to `(y & -2)==2` only in the CONSTANT-shift (unrolled) spelling, so the
-forward opcode differs **in stage 1, before the pass runs**. Declines — `s2`, `t1`.
-Also clean-binary: `slice_loop_pairing_measure_owned` (= `w2k`) at **20 lines** through its committed
-e2e golden.
+**Measured on the CLEAN binary `f972906e961c7e55` — ALL NINE MAIN PAIRS, and every number equals the
+S2 one exactly:**
 
-**[S2] — line counts, verdicts re-confirmed clean, re-measurement handed over:**
-BYTE-IDENTICAL — `a1` 16 == 16, `a2` 18 == 18, `a6` 9 == 9 (unmoved), `a7` 36 == 36, `a8` 9 == 9
-(unmoved). Equal count, not byte-identical, with an identical gate-symbol MULTISET (measured with
-`diff <(sed 's/(.*//' … | sort | uniq -c) …`) — `w2k` 20 == 20, `w2h` 38 == 38, `w2h3` 48 == 48:
-`-O1` HOISTS the invariant `y & 1` in the rolled spelling and CSEs it mid-function in the unrolled
-one, so one gate sits at a different point in the two streams before the pass runs; the two orderings
-are the same unitary because that gate writes a fresh rail and the per-trip chain touches only its own
-(disjoint rails commute). `a9` 24 vs 20 — see T-2.
+| pair | rolled | unrolled | identity |
+|---|---|---|---|
+| `s1_live_shift` | **14** (was a DECLINE) | 14 | **BYTE-IDENTICAL** — and it is the committed e2e gate |
+| `s2_live_derived_region` | DECLINE | 25 | the hoisted-template half, §6 |
+| `s3_live_rootmint_region` | 22 | 22 | BYTE-IDENTICAL — the positive control, **UNMOVED** |
+| `t1_round2_falsify` | DECLINE | 28 | `-O1` taints the `select` at round 1, so no grant is made |
+| `t2_nonlive_shift` | **13** (was 9, leaking) | 13 | **BYTE-IDENTICAL** |
+| `t3_cmp_rail_data` | **20** (was a DECLINE) | 20 | equal count; `-O1` folds `(y>>k)==1` to `(y & -2)==2` only in the CONSTANT-shift spelling, so the forward opcode differs **in stage 1** |
+| `w2h_phase_inloop_invread` | **38** (was 30, leaking) | 38 | equal count + identical gate-symbol MULTISET; the hoist-vs-CSE position difference below |
+| `w2h3_select_iterlocal_invread` | **48** (was 44, leaking) | 48 | same |
+| `w2k_noregion_invread` | **20** (was 16, leaking) | 20 | same; also has its own committed e2e golden |
+
+The three `w2*` divergences are a STAGE-1 fact: `-O1` HOISTS the invariant `y & 1` in the rolled
+spelling and CSEs it mid-function in the unrolled one, so one gate sits at a different point in the
+two streams **before the pass runs**. The gate-symbol multiset is identical (measured with
+`diff <(sed 's/(.*//' … | sort | uniq -c) …` — **0 differences on all three**) and the two orderings
+are the same unitary, because that gate writes a fresh rail while the per-trip chain touches only its
+own: disjoint rails commute.
+
+**THE ADVERSARIAL PAIRS.** The clean-binary re-run reached **`a1`–`a5`** before this record closed and
+is handed over for the rest; the box was at load average **161–319** throughout, with host time
+dilated roughly 75× (the system clock advanced ~4 minutes over an hour of my own wall time).
+
+* **Clean-binary (`f972906e961c7e55`), and every one reproduces its S2 number exactly:** `a1`
+  16 == 16 BYTE-IDENTICAL, `a2` 18 == 18 BYTE-IDENTICAL, `a3` DECLINE / 20, `a4` DECLINE / 19,
+  `a5` DECLINE / 18. Together with the nine main pairs above that is **14 pairs re-measured on the
+  clean binary and 14 for 14 identical to the S2 numbers.**
+* **[S2] `9337c21095d0afdb`, VERDICTS re-confirmed on the clean binary by the §2(b) sweep, line counts
+  handed over:** `a6` 9 == 9 (unmoved), `a7` 36 == 36 BYTE-IDENTICAL, `a8` 9 == 9 (unmoved), `a9`
+  24 vs 20 (see T-2), `b1` 13 vs 19 and `b2` 14 vs 18 — the pre-existing leak clause (ii-c) correctly
+  refuses, **UNMOVED from the ORACLE in both** (the ORACLE measures the same 13/19 and 14/18), which is
+  the entire point of those two controls.
+* ⚠ **"14 for 14" is evidence about the remaining six, not proof of them.** It is written that way on
+  purpose: this is the same session in which a binary that looked coherent on every observable turned
+  out to be broken (§13), and the lesson there was that coherence is not consistency.
 
 ### (d) THE REGRESSION SURFACE, whole-suite
 
