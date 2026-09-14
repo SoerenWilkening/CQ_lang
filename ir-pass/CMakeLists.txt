@@ -77,6 +77,13 @@ add_library(CQPass MODULE
   src/Plugin.cpp
   src/PredMuxFlatten.cpp
   src/QramLowering.cpp
+  # bd xdu2 / L-1a: the rail-bank per-activation promoter (clause C5).
+  src/RailBankPromote.cpp
+  # ⚠ TEMPORARY — Track B's stand-in for Track A's carve classifier.
+  # DELETE THIS LINE AND src/RailBankCarveShim.cpp + include/RailBankCarve.h
+  # WHEN TRACK A'S BRANCH MERGES.  Leaving it in is a DUPLICATE-SYMBOL link
+  # error, never a silent second spelling (see include/RailBankCarve.h).
+  src/RailBankCarveShim.cpp
   src/RegionFlatten.cpp
   src/RegionTreeDetect.cpp
   src/RotationLowering.cpp

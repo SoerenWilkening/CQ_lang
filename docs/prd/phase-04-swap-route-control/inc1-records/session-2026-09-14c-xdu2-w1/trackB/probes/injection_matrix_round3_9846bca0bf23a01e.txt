@@ -1,0 +1,5 @@
+BASELINE red: []
+  M2''-B3 + carve !Exiting, on the ISOLATED probe  CAUGHT missed=[] also_red=[]
+  M8''-B1/B5 one-writing-loop, on the SECOND-LOOP probe CAUGHT missed=[] also_red=[]
+
+round-3 mutants=2, N/A=0, MISSED=0

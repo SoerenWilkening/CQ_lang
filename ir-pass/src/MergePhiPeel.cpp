@@ -151,6 +151,44 @@ bool recoverPeelShape(BranchInst *BI, PeelSite &S) {
 // NOT `mayHaveSideEffects()` / `mayWriteToMemory()`: a `@cq_theta` CALL answers TRUE
 // to both (it is an opaque declaration), and an arm `cq_theta` is the peel's single
 // commonest member — that spelling would silently delete the whole capability.
+//
+// ── AMENDMENT, bd `xdu2` / L-1a (Track B, 2026-09-14c): THE RAIL-BANK PROMOTER
+//    REMOVES STORES FROM ARMS *BEFORE* THIS STAGE, AND THE MEASURED CONSEQUENCE
+//    IS NOT THE ONE THE DESIGN PREDICTED ────────────────────────────────────────
+//
+// `SCOPE_L1a.md` §4.4(D) lists this clause as "a direct obstacle" to L-1a and
+// predicts: *"the promotion must run BEFORE `MergePhiPeel` (it does) and after it
+// the arm holds NO store, so P10 stops refusing. Verify by measurement, and amend
+// the header."* The first half is true — `promoteRailBankCells` runs in the
+// `-O1`-repair normaliser fixpoint, far above this stage — and the prediction is
+// nevertheless FALSE for the whole bank population, for a reason that has nothing
+// to do with this clause.
+//
+// MEASURED (a temporary audit build instrumenting P9 / P1 / P10 plus a
+// `CQ_RAILBANK_OFF` lever, so both halves came from one binary; records at
+// `inc1-records/session-2026-09-14c-xdu2-w1/trackB/probes/p10_measurement.txt`):
+// over six bank modules (`a_loop_n{2,3,8}`, `…_noarm`, the uninitialized bank and
+// the `int`-cell bank), with the promoter OFF and with it ON, this stage's loop
+// emits **ZERO** audit lines — it is NEVER REACHED. The module dies at
+// `declineTaintEscapes`' `kMsgStore` seven stages earlier, and
+// `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`). The same
+// audit binary printed the full P1 → "P10 asked" → "P10 passed" sequence on
+// `control_peel_freeze_incoming.ll` and the "P10 armWritesMemory REFUSED" line on
+// `control_peel_{reject_,}guarded_store*.ll`, so the lever was live and the zero
+// is a fact about the population, not a dead instrument.
+//
+// ⚠ AND WHEN L-1a's DEFERRED HALF LANDS AND THE POPULATION STOPS DECLINING, P10
+// IS STILL NOT THE FENCE IN FRONT OF IT: every rail-bank region is INSIDE THE
+// WRITE LOOP, so **P9** (`regionEntryInLoop`, above) refuses it first, and the
+// ≥2-φ containment gate refuses it again — the promoted latch carries exactly ONE
+// φ. So this clause's own text ("a merge whose arm WRITES MEMORY belongs to the
+// 7.5 owners") stands unchanged and unweakened; what is corrected is only the
+// SCOPE's claim that L-1a would make this clause the live fence.
+//
+// RETIREMENT TRIGGER: the day P9 is narrowed to admit an in-loop peel site
+// (P9's own note calls that a follow-on with its own rounds), re-run the
+// measurement above — a promoted bank region would then reach P1, and this clause
+// would be asked about it for the first time.
 bool armWritesMemory(BasicBlock *ArmBB) {
   for (Instruction &I : *ArmBB)
     if (isa<StoreInst>(I) || isa<AtomicRMWInst>(I) || isa<AtomicCmpXchgInst>(I))
