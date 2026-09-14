@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/a2_fanout_body_rail.c:9:19: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+

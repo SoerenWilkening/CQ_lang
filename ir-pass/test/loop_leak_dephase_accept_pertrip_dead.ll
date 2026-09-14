@@ -1,3 +1,39 @@
+; ⚠⚠⚠ 2026-09-15, bd `test_C_libtooling-tu9q` — THIS PROGRAM NO LONGER LEAKS, AND
+; THE `LEAK` PREFIX THAT USED TO PIN THE LEAK IS NOW A `PAIR` PREFIX THAT PINS THE
+; DISCHARGE. The old prefix's own L8 retirement trigger read *"If a `_unc` or a
+; `cqrt_free` ever appears here, either bd `tu9q` landed (retire this prefix and
+; re-derive the stream) or something started freeing a dirty rail (Rule 6)"* — it
+; fired, and this is the first branch of it. The FILE'S VERDICT (ACCEPT) and the
+; D4 discriminator it pins (conjunct (2): no CHAINED `cq_theta` after the loop) are
+; UNCHANGED; only the stream moved, and it moved from leaking to Bennett-clean.
+;
+; WHY IT MOVED, AND WHICH CLAUSE DID IT. `-O1` LICM hoists the loop-invariant
+; `y & 1` into the preheader, so the body reads a hoisted TEMPLATE rail rather than
+; the register — the `z_preheader_rail8` case `invariantRegisterRootsImpl`'s header
+; already recorded as refused, which is why the discharge of the body's genuinely
+; iteration-local `lshr` chain was refused with it. bd `tu9q`'s clause (ii-c)
+; admits that ONE rail because EVERY user of it is a `cq_measure`, which makes it
+; MEASURE-OWNED: `ChainWalk::isInteriorTerminalHandle` clause (I3) refuses it (a
+; measure is none of `isInteriorConsumer`'s three admitted shapes) and
+; `FreePoint::computeFreePoint` returns `FreePointKind::Measured` for it, so
+; NEITHER partition can ever place an `At` for it and the "K adjoints against ONE
+; forward gate" multiplicity hazard is unbuildable with this spelling. It is
+; therefore still LEFT ALLOCATED here, in both spellings — what changed is only
+; that the loop is now marked and the per-trip `lshr` rail gets its adjoint and its
+; free.
+;
+; MEASURED against the ORACLE `0e280fc6…`, where this module emits neither: `opt`
+; exit 0, verify-clean, rolled trace 16 -> 20 lines, and the hand-unrolled twin is
+; 20 on BOTH binaries. ⚠ The two are NOT byte-identical, and the reason is a
+; STAGE-1 fact, not a lowering one: `-O1` HOISTS `y & 1` in the rolled spelling and
+; CSEs the two copies into a mid-function one in the unrolled spelling, so the
+; forward mint sits at a different point in the two streams before the pass runs.
+; The gate multiset and the `_unc`/free pairing agree exactly.
+;
+; ⚠ STILL LEFT ALLOCATED, BY DESIGN, AND 2b SAYS SO: `%h1` is the per-trip `u`
+; (`Ry(theta)|0> != |0>` — Rule 6 forbids freeing it) and `%h_op` is the
+; measure-owned hoisted rail. Only the interior `%h_op2` is discharged.
+;
 ; loop_leak_dephase_accept_pertrip_dead.ll — ACCEPT (bd `test_C_libtooling-s82e`,
 ; owner ruling D4 of 2026-09-14c). THE BENIGN HALF OF THE CLASS, pinned so the D4
 ; decline can never widen onto it.
@@ -59,7 +95,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=LEAK < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PAIR < %t.cqd0.ll
 ;
 ; the hoisted invariant rail, then the per-trip chain, CONTIGUOUS and IN ORDER:
 ; CHECK-LABEL: define i32 @slice
@@ -73,6 +109,9 @@
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h1, double 4.000000e-01)
 ; CHECK: %h_op2 = call i32 @cq_template_lshr_i32_hl(i32 %h1, i32 1)
 ; CHECK-NEXT: %h_op3 = call i32 @cq_template_and_i32_hl(i32 %h_op2, i32 1)
+; the in-body per-trip pairing — ADJOINT FIRST, then the proven-|0> free (bd `tu9q`):
+; CHECK-NEXT: call void @cq_template_lshr_i32_hl_unc(i32 %h_op2, i32 %h1, i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_op2)
 ; CHECK-NEXT: %m{{[0-9]*}} = call i32 @cqrt_measure_i32(i32 %h_op3)
 ; CHECK-NEXT: %m{{[0-9]*}} = call i32 @cqrt_measure_i32(i32 %h_op)
 ;
@@ -90,13 +129,21 @@
 ; COUNT-COUNT-4: call void @cqrt_ry_i32(
 ; COUNT-NOT: call void @cqrt_ry_i32(
 ;
-; ⚠ AND THE PROGRAM LEAKS, DELIBERATELY. This is the ACCEPTED Rule-6 leak the D4
-; ruling is about: NOTHING is discharged and NOTHING is freed, because the leaked
-; rail copies a PER-TRIP register that is garbage in both forms. If a `_unc` or a
-; `cqrt_free` ever appears here, either bd `tu9q` landed (retire this prefix and
-; re-derive the stream) or something started freeing a dirty rail (Rule 6).
-; LEAK-NOT: call void @cq_template_{{.*}}_unc
-; LEAK-NOT: call void @cqrt_free(
+; ⚠ AND THE PROGRAM IS NOW PAIRED (bd `tu9q`, 2026-09-15) — the prefix that used
+; to be `LEAK-NOT` on every `_unc` and every `cqrt_free`. What it pins now is the
+; RULE-6 BRIGHT LINE: exactly ONE rail per function is discharged, it is the
+; interior `lshr` one, its `_unc` comes BEFORE its `cqrt_free`, and NOTHING ELSE is
+; freed — not the `Ry`-carrying per-trip register `%h1`, not the measure-owned
+; hoisted rail `%h_op`, not the user register `%h`. A free of any of those three
+; would be the hidden measurement Rule 6 forbids; a free without the preceding
+; `_unc` would be a dirty free of an entangled rail.
+; PAIR-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
+; PAIR-NOT: call void @cq_template_lshr_i32_hl_unc(
+; PAIR-NOT: call void @cq_template_and_i32_hl_unc(
+; PAIR-NOT: call void @cqrt_free(i32 %h)
+; PAIR-NOT: call void @cqrt_free(i32 %h1)
+; PAIR-NOT: call void @cqrt_free(i32 %h_op)
+; PAIR-NOT: call void @cqrt_free(i32 %h_op3)
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

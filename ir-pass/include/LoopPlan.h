@@ -365,6 +365,26 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // CLAUSE, and for its retirement triggers.
 void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
 
+// bd `test_C_libtooling-tu9q` — THE L1 RE-ASK of the round-1 root-mint marking
+// grant `lowerLoops` makes (`taint.Round1RailGrants`). `lowerLoops` runs at
+// ROUND-1 taint in both entry points; `repropagateControlMerges` then grows the
+// taint set, and every clause of the marking predicate is a REFUSAL over tainted
+// values — so a round-1 grant can be falsified with nothing to notice. This
+// re-asks the SAME predicate (`railLocalQualifies`, CALLED, not re-spelt) under
+// FINAL taint and declines LOUDLY (`cq loop lowering: round-1 iteration-local
+// marking falsified by round-2 taint`); it never silently withdraws the marking,
+// because the marking has already licensed `commitOutOfLoopInPlaceOps`' dtzb
+// commitments and a silent revert would turn a planned in-body discharge back
+// into a leak with no diagnostic (Rule 1).
+//
+// SLOT CONTRACT: strictly BELOW the round-2 fixpoint (the whole point) and
+// strictly ABOVE `lowerRotations` (which RAUWs every `@cq_theta_*` result to an
+// `i32` handle — the recorded roots would then name handles and the
+// pre-lowering peel vocabulary would no longer match). Moving it either way
+// makes it a silent no-op.
+void declineRound2FalsifiedRailGrants(llvm::Module &M, TaintSet &taint,
+                                      WidthDispatch &wd);
+
 void collapseFlattenedLoopRails(
     llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
     const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =

@@ -1,45 +1,95 @@
-; loop_leak_dephase_reject_noregion_live.ll — DECLINE (bd `test_C_libtooling-s82e`,
-; owner ruling D4 of 2026-09-14c). THE NARROW DIVERGENT SUB-CASE, in its cleanest
-; form: a bounded loop with NO TAINTED CONTROL FLOW AT ALL whose body mints an
-; INTERIOR template rail derived from a LOOP-INVARIANT register that is still LIVE
-; after the loop and is then RE-ROTATED.
+; loop_leak_dephase_reject_noregion_live.ll — ⚠ THE NAME IS HISTORY: THIS FILE IS
+; NOW AN **ACCEPT**. bd `test_C_libtooling-tu9q` (the IN-LOOP PAIRING) landed
+; 2026-09-15 and retired the bd `test_C_libtooling-s82e` / owner-ruling-D4 decline
+; this file used to pin. The retirement trigger the previous header carried was
+; character-for-character correct and is quoted here so the next reader can see
+; that it fired rather than re-deriving it:
+;
+;     "When `tu9q` lands this file becomes an ACCEPT whose stream is the 14-line
+;      hand-unrolled twin's, rolled — re-derive it then; do not delete it."
+;
+; ⚠ IT IS NOT RENAMED, DELIBERATELY (bd `test_C_libtooling-gahu`, `CLAUDE.md` L8):
+; a `git mv`'d fixture can be RESURRECTED by a merge, leaving one module under two
+; names with contradictory verdicts and invisible to every review that ran before
+; the merge. Renaming is owed as its own change, after this one has merged.
+;
+; THE PROGRAM (`trackS/probes/s1_live_shift.c`, stage-1 verbatim, `-O1 -g`):
 ;
 ;     int y = cq_theta(5, 0.5);
 ;     for (k = 1; k <= 2; ++k) s += cq_measure((y >> k) & 1);
 ;     y = cq_theta(y, 0.9);                 // the interference
 ;     return s + cq_measure(y);
 ;
-; WHY IT IS A DECLINE AND NOT AN ACCEPTED LEAK. MEASURED on the ORACLE
-; (`cq-opt` 5c6f7490a81c7505…, `opt` exit 0, verify-clean, STRICT stage 2b
-; "0 violation(s), 0 unproven"): rolled emits 10 trace lines, its hand-unrolled
-; twin 14. The four missing lines are `cq_template_lshr_i32_hl_unc` + `cqrt_free`,
-; TWICE — the adjoint that returns the which-path copy of `y`'s qubits to |0> and
-; the proven-|0> free that follows it. The rolled form therefore applies the
-; TENSORED `cqrt_ry_i32(h0, 0.9)` to a register each of whose qubits is maximally
-; entangled with an ancilla nobody touches again, i.e. to a DECOHERED mixture,
-; where the twin applies it to the pure state. Per qubit the `alpha*beta*sin(0.9)`
-; interference term is present in one circuit and absent in the other, and
-; `cqrt_measure_i32(h0)` is the program's ONLY observable. Rolled and unrolled are
-; DIFFERENT UNITARIES: `CLAUDE.md` Rule 8, "a permutation that leaves a rail dirty
-; AND entangled still dephases under later interference".
+; WHAT CHANGED, AND IT IS A CAPABILITY AND NOT A RELAXED FENCE. `-O1` leaves `y`
+; loop-INVARIANT and the body mints a per-trip `cq_template_lshr_i32_hl` rail — a
+; which-path copy of `y`'s qubits. `markIfIterationLocal` refused to mark the body
+; because it reads a tainted value defined OUTSIDE the loop, and that refusal is a
+; LEAK, not a decline: the spine's in-loop guard then skipped the rail and emitted
+; neither `_unc` nor `cqrt_free`, while the HAND-UNROLLED spelling of the same
+; source emits both. The D4 decline existed because that is a WRONG UNITARY where
+; the copied register is re-rotated afterwards (Rule 8).
 ;
-; ⚠ RULE 17, BECAUSE THE NEXT READER WILL ASK. This is NOT a decline substituted
-; for work we set out to do. These programs do not currently receive a valid
-; circuit — they receive an INVALID one — so refusing them is the Prime Directive,
-; and the owner's 2026-09-11 "do not decline code that leads to a valid quantum
-; circuit" ruling does not reach them. The decline is the INTERIM; the END STATE is
-; bd `tu9q` (P1), which builds the pairing so these programs COMPILE. When `tu9q`
-; lands this file becomes an ACCEPT whose stream is the 14-line hand-unrolled
-; twin's, rolled — re-derive it then; do not delete it (L8 retirement trigger).
+; `lowerLoops` now offers the loop `markIfRailLocal` — the SIBLING marker, which
+; already had the `Roots` escape, and `invariantRegisterRoots`, which already owned
+; the proof that a ROOT MINT is sound to put in that set. Both were built for the
+; ROUND-2 region path, and `collapseFlattenedLoopRails` opens
+; `if (taint.InLoopFlattenedPreds.empty()) return;` — so for a loop with NO TAINTED
+; CONTROL FLOW AT ALL they never ran. `CLAUDE.md` L2: one of the two sibling
+; clauses was widened and the other was left.
 ;
-; ⚠ THE ONLY INSTRUMENT IN THE TREE THAT SEES THIS CLASS is the rolled-vs-hand-
-; unrolled trace pair. STRICT stage 2b `free_pairing_check.py` reports
-; "0 violation(s), 0 unproven" on BOTH halves of this pair — it counts `cqrt_alloc`
-; SITES and a template-minted rail has none. Do not cite 2b as clearance here.
+; MEASURED on the subject, against the ORACLE `0e280fc6…` where this module is a
+; loud DECLINE: `opt` exit 0, verify-clean, the rolled trace is **14 lines and
+; BYTE-IDENTICAL to the hand-unrolled twin's** (`trackT/probes/out/`), and STRICT
+; stage 2b reports `2 rail mint(s) of which 2 left allocated, 2 cqrt_free site(s):
+; 2 verified, 0 violation(s), 0 unproven`.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; ⚠ 2b IS NOT THE WITNESS HERE AND NEVER WAS. It counts `cqrt_alloc` SITES, and the
+; rail this file is about is TEMPLATE-minted — it has no `cqrt_alloc`, so 2b
+; reported `0 violation(s)` on the leaking form too. The witness is the
+; rolled-vs-hand-unrolled trace pair, and it is the only instrument in the tree
+; that sees this class.
 ;
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+; ⚠ THE RAIL IS RETURNED TO |0> BEFORE IT IS FREED, AND THE ORDER IS THE WHOLE
+; RULE-6 ARGUMENT: `cq_template_lshr_i32_hl_unc(%h_op, %h, %4)` re-runs the CNOTs
+; (x^x=0) and THEN `cqrt_free(%h_op)` reclaims a proven-|0> rail. A free before the
+; adjoint would be the hidden measurement that collapses `%h` (Rule 6), which is
+; exactly what owner ruling D2 rejected when it read "discharge" as "free the
+; entangled rail". The `CHECK-NEXT` below pins that order.
+;
+; ⚠ THE MEASURED RAIL IS **NOT** FREED, in either form: `%h_op1` (the `and`) is
+; `cq_measure`'s, and `%h` is the user's register. Only the interior `%h_op` is
+; discharged. The `LEAKCOUNT` prefix pins that there is exactly ONE free per
+; function and it is the interior rail's.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
+;
+; CHECK-LABEL: define i32 @slice
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; the in-body per-trip pairing — forward, forward, ADJOINT, FREE, measure:
+; CHECK: %h_op = call i32 @cq_template_lshr_i32_hl(i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: %h_op1 = call i32 @cq_template_and_i32_hl(i32 %h_op, i32 1)
+; CHECK-NEXT: call void @cq_template_lshr_i32_hl_unc(i32 %h_op, i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: call void @cqrt_free(i32 %h_op)
+; CHECK-NEXT: %m{{[0-9]*}} = call i32 @cqrt_measure_i32(i32 %h_op1)
+;
+; ⚠ THE TRAILING LABEL IS LOAD-BEARING, NOT DECORATION — `-O1` inlines `@slice`
+; into `@main`, so the module carries TWO copies of this stream and without a
+; second `CHECK-LABEL` every positive above can be satisfied by the `@main` copy
+; (bd `test_C_libtooling-1yeu`, the one-function-per-module gap seen from the
+; inside: the second function is not a spare, it is a decoy).
+; CHECK-LABEL: define i32 @main
+;
+; WHOLE-FILE COUNTS, in their OWN prefix — a positive `CHECK-COUNT` inside an
+; ordered block WINDOWS every negative after it (Rule 12 fixture-hygiene defect
+; (a)). Two functions, so: exactly one adjoint and one free per function, and
+; never a free of the measured rail or of the user register.
+; COUNT-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
+; COUNT-NOT: call void @cq_template_lshr_i32_hl_unc(
+; COUNT-NOT: call void @cqrt_free(i32 %h)
+; COUNT-NOT: call void @cqrt_free(i32 %h_op1)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -770,6 +770,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
   // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
   declineDephasingUnmarkedLoopRails(M, taint);
+  // bd `test_C_libtooling-tu9q` — the L1 RE-ASK of `lowerLoops`' round-1
+  // root-mint marking grant, under FINAL taint. Below the round-2 fixpoint (the
+  // whole point) and above `lowerRotations` (which RAUWs the recorded roots to
+  // `i32` handles). Placed LAST in the decline chain so it only ever speaks where
+  // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
+  // every module with no bounded quantum loop reading a loop-invariant register.
+  declineRound2FalsifiedRailGrants(M, taint, wd);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
@@ -1195,6 +1202,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // the round-2 fixpoint so `taint.IterationLocalBlocks` is FINAL. Contract and
   // retirement triggers in `LoopPlan.h`; the argued comment is at the definition.
   declineDephasingUnmarkedLoopRails(M, taint);
+  // bd `test_C_libtooling-tu9q` — the L1 RE-ASK of `lowerLoops`' round-1
+  // root-mint marking grant, under FINAL taint. Below the round-2 fixpoint (the
+  // whole point) and above `lowerRotations` (which RAUWs the recorded roots to
+  // `i32` handles). Placed LAST in the decline chain so it only ever speaks where
+  // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
+  // every module with no bounded quantum loop reading a loop-invariant register.
+  declineRound2FalsifiedRailGrants(M, taint, wd);
 
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
