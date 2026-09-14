@@ -1,0 +1,21 @@
+PHI node operands are not the same type as the result!
+  %r = phi double [ %h, %x ], [ %h, %y ]
+LLVM ERROR: Broken module found, compilation aborted!
+PLEASE submit a bug report to https://github.com/Homebrew/homebrew-core/issues and include the crash backtrace.
+Stack dump:
+0.	Program arguments: /Users/sorenwilkening/Desktop/CQ_lang/build/ir-pass/cq-opt -load-pass-plugin /Users/sorenwilkening/Desktop/CQ_lang/build/ir-pass/libCQPass.so -passes=cq-lowering -S /tmp/cqu_r2_zall/control_swap_reject_stalecond_router_diamond.ll -o /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.HAI6BxgyIh/oz.ll
+1.	Running pass "VerifierPass" on module "/tmp/cqu_r2_zall/control_swap_reject_stalecond_router_diamond.ll"
+Stack dump without symbol names (ensure you have llvm-symbolizer in your PATH or set the environment var `LLVM_SYMBOLIZER_PATH` to point to it):
+0  cq-opt                   0x0000000103b00288 llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) + 40
+1  cq-opt                   0x0000000103afdfa9 llvm::sys::RunSignalHandlers() + 233
+2  cq-opt                   0x0000000103b00a49 SignalHandler(int) + 313
+3  libsystem_platform.dylib 0x00007ff80de1b3bd _sigtramp + 29
+4  libsystem_platform.dylib 0x0000000100000000 _sigtramp + 18446603374643006560
+5  libsystem_c.dylib        0x00007ff80dd21754 abort + 126
+6  cq-opt                   0x0000000103a5f50c llvm::report_fatal_error(llvm::Twine const&, bool) + 476
+7  cq-opt                   0x0000000103a5f329 llvm::report_fatal_error(char const*, bool) + 41
+8  cq-opt                   0x00000001034372b4 llvm::VerifierPass::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 164
+9  cq-opt                   0x00000001034f4542 llvm::detail::PassModel<llvm::Module, llvm::VerifierPass, llvm::AnalysisManager<llvm::Module>>::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 18
+10 cq-opt                   0x000000010340349f llvm::PassManager<llvm::Module, llvm::AnalysisManager<llvm::Module>>::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 463
+11 cq-opt                   0x00000001031b3400 main + 2944
+12 dyld                     0x00007ff80da2c1c8 start + 3240

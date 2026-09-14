@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/r05_seed_and_measure.c:8:26: in function f i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+

@@ -1,0 +1,2 @@
+error: src/r9b_g2_pureop_twin.c:3:72: in function main i32 (): cq opcode lowering: operand predates a non-diagonal gate
+

@@ -1,0 +1,2 @@
+error: src/r22_stateprep_stale_seed.c:5:12: in function slice i32 (i32): cq controlled lowering: state prep merged with a quantum register under quantum control
+

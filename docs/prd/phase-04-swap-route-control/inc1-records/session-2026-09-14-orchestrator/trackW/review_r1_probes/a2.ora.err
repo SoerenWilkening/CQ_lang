@@ -1,0 +1,2 @@
+error: ./a2.c:12:13: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
+

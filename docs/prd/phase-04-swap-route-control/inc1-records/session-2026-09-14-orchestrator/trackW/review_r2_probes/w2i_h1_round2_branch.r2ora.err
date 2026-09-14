@@ -1,0 +1,2 @@
+error: ./w2i_h1_round2_branch.c:17:22: in function slice i32 (): cq controlled lowering: value-arm swap-route under quantum control
+

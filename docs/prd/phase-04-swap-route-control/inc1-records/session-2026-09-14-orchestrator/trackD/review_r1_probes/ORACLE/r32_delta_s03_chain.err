@@ -1,0 +1,8 @@
+warning: src/r32_delta_s03_chain.c:12:12: in function main i32 (): cq rotation lowering: non-diagonal gate over a live derived record
+
+warning: src/r32_delta_s03_chain.c:13:12: in function main i32 (): cq rotation lowering: non-diagonal gate over a live derived record
+
+warning: src/r32_delta_s03_chain.c:14:12: in function main i32 (): cq rotation lowering: non-diagonal gate over a live derived record
+
+ld: warning: object file (/Users/sorenwilkening/Desktop/CQ_lang/build/runtime/libcq_templates.a[2](cq_templates.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
+ld: warning: object file (/Users/sorenwilkening/Desktop/CQ_lang/build/runtime/libcq_runtime.a[2](cq_runtime.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)

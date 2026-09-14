@@ -1,0 +1,8 @@
+warning: overriding the module target triple with x86_64-apple-macosx16.0.0 [-Woverride-module]
+1 warning generated.
+ld: warning: object file (/Users/sorenwilkening/Desktop/CQ_3d8q/build/runtime/libcq_runtime.a[2](cq_runtime.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
+Undefined symbols for architecture x86_64:
+  "_main", referenced from:
+      <initial-undefines>
+ld: symbol(s) not found for architecture x86_64
+clang: error: linker command failed with exit code 1 (use -v to see invocation)

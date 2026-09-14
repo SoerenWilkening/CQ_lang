@@ -1,0 +1,2 @@
+error: ./ctl_wj.c:13:31: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
+

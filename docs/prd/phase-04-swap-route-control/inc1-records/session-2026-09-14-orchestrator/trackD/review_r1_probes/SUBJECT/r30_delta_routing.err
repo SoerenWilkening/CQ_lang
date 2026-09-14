@@ -1,0 +1,2 @@
+error: src/r30_delta_routing.c:9:29: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+

@@ -1,0 +1,12 @@
+#include "CQ.h"
+/* row 12 (the wire ternary NOT widened): a phi ROOT takes condWireDisposition,
+   whose ProvenPostRegion half must ACCEPT a rotation on the register AFTER the
+   region.  If it declined, the ternary would be over-conservative. */
+int main(void) {
+    bool b0 = cq_theta((bool)0, 0.5);
+    bool b1 = 0;
+    if (b0) { b1 = cq_theta(b1, 0.5); }
+    if (b1) cq_phi(0.3);
+    b1 = cq_theta(b1, 0.9);
+    return cq_measure(b0) + cq_measure(b1);
+}

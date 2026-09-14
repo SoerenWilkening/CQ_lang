@@ -1,0 +1,2 @@
+error: ./w2e8_inner_classical_loop.c:4:14: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
+

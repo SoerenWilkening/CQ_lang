@@ -1,0 +1,2 @@
+error: v05_f2_zero_collision.c:11:9: in function main i32 (): cq taint escape: tainted value consumed by an unknown callee
+

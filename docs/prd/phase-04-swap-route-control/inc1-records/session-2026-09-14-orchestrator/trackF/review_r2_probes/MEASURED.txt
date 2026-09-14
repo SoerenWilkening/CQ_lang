@@ -1,0 +1,40 @@
+Track F — ROUND-2 REVIEW probe measurements (2026-09-14). Independent reviewer.
+Binaries (shasum -a 256, verified as FIRST ACT):
+  ORACLE   cq-opt f7b65d8ccd7bc472303d13b3c7bd7a78c03d990a4147fe7589ef73a85487b0bc
+           libCQPass.so f9e898badfd4207a758d27638a34b7e147bd3b702e5611b4fad0e0403879039d
+  PRE-FIX  cq-opt 147cb3d69afd816d15eaea84e3d802f3a5b4105431508886583b442bfa7736e4
+  SUBJECT  cq-opt 96fdd3a9d2c1cd36deb607f0440db0157280a7784a7766bdce04044cd3234cd1
+           libCQPass.so 9537a0ce0c56548e3cc27f273a15a84995ce21dd7754d608d160e064fd9ad68e
+  tip 1a60bb0dd841cde3eb72158be8287362d35cb08e   ALL MATCH the brief.
+Runner: run.sh (prints byte size before every measurement; refuses a 0-byte module).
+No build, no ctest, no lit, no corpus sweep, no twin matrix were run.
+
+probe                          bytes  ORACLE          PRE-FIX         SUBJECT
+q1_mbeta_after_round2prep.s1   2726   D value-arm     D value-arm     D value-arm    (-O1 if-converts; i8 bool wire)
+q2_baseline_no_mbeta.s1        2283   A               A               A
+r1_mbeta_drift                 1913   D 2c            D 2c            D 2c           (collider select becomes its own 4.4 region)
+r1c_offphi_control             1912   D F2            D F2            D F2           (vacuous: %d/%e are themselves colliders)
+r4/r4c                         1577   D F2            D F2            D F2           (same vacuity; superseded by r5)
+r5_round2_phidesc              1664   D F2            A               A   <== ROUND-2 EXCLUSION FIRES
+r5c_round2_nonphidesc          1664   D F2            D F2            D F2  <== isolating control (one operand)
+r6_mbeta_base_is_MB            1888   D F2            A               A   <== M-beta present, base = M_B
+r7_mbeta_base_offcone          1987   D F2            D F2            D F2  <== M-beta present, base OFF cone: NO MANUFACTURE
+r12_mbeta_ifelse_rechain       2123   D F2            D F2            D F2  <== the T1->T2 re-chain manufactures nothing
+r10/r10c, r11/r11c             ~1950  identical on all three; peel-Sel manufacture NOT reachable
+r20_acyclic_nondominated_phi   1291   D F2            D taint-escape  D F2  <== ACYCLIC mover PRE-FIX vs POST-FIX
+
+CQ_CTRL_DBG attribution (SUBJECT):
+  r5c / r7 / r11 / r11c / r12 -> decline anchor `%c2 = icmp eq i32 %out1, 13`
+      -- the `%out1` operand name proves F2 is running in ROUND 2, on the
+         round-1-emitted out-rail. The round-2 F2 call is REACHABLE.
+  r1  -> `%z = select i1 %cs, ...`   (2c on the collider's own 4.4 select region)
+  r20 -> `%c = icmp eq i32 %q, 7`
+
+Fixture-pair binary mutation, independently reproduced (FileCheck of each fixture
+against its own stream, per binary):
+  backedge_phidesc_collider     ORACLE GREEN | PRE-FIX RED  | SUBJECT GREEN
+  backedge_nonphidesc_collider  ORACLE GREEN | PRE-FIX GREEN| SUBJECT GREEN
+  nonphidesc_collider           GREEN on all three
+  phidesc_collider_accept       ORACLE RED   | PRE-FIX GREEN| SUBJECT GREEN
+
+r5 PREFIX vs SUBJECT lowered IR: BYTE-IDENTICAL (cmp).

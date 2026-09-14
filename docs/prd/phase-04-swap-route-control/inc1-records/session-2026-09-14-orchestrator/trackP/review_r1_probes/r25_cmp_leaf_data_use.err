@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackP/review_r1_probes/r25_cmp_leaf_data_use.c:9:15: in function main i32 (): cq controlled lowering: condition used outside the branch under quantum control
+

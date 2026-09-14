@@ -1,5 +1,30 @@
 # SCOPE — Track F: what R-2′ costs, fixture by fixture (bd `om35`)
 
+> ## ⚠ ERRATUM — added by the orchestrator 2026-09-14, AFTER this document was written
+>
+> **Six probes cited below were VACUOUS and their rows are not evidence.** On this (case-insensitive)
+> filesystem `sed X.s1.ll > X.S1.ll` truncates its **own source** to 0 bytes before `sed` reads it, and a
+> **0-byte module ACCEPTS** (`cq-lowering` passes through any module with no `theta`/`phi`/`measure`,
+> exit 0). So each scored a **false ACCEPT on nothing**. The six files are deleted;
+> `probes/c/README_ERRATUM.md` / `probes/c/README-ERRATUM.md` stand in their place, and the trap is bd memory
+> `empty-module-accepts-vacuity-trap`.
+>
+> **Re-measured with distinct names: two of the three affected claims STAND; ONE DOES NOT.** §3b's
+> *"`w2` W → ACCEPT"* was **wrong support** for a conclusion that survives on a different probe — read §3b's
+> conclusion as carried by that other probe, never by the `w2` W-test.
+>
+> **A second correction, also the author's own:** `w2.c` — cited here and in the implementation brief as the
+> runtime-`a` customer — **is not the cascade shape at all**. Its first guard folds to
+> `icmp sgt %argc, -2`, a **classical** branch, and the ORACLE declines it `control flow` at the identical
+> site once its F2 collider is neutralised, so its wall is **pre-existing and unrelated**. The program this
+> document meant is `w3_runtime_a.c` (runtime `a`, range-derived pin, region 1 still quantum-conditioned),
+> which compiles on the subject.
+>
+> The implementation record (`IMPL_F.md` §7, in the Track F worktree) carries both in full. Nothing else in
+> this document is retracted, and the headline counts — 32 fixtures naming F2's string, 29 declining, 25
+> flipped by R-2′, 4 not, 0 row-level HOLEs, 2 predicate-level HOLEs — were re-verified after the erratum.
+
+
 Written 2026-09-14 by the Track-F scoping agent. **READ-ONLY, measure-first**: nothing was built,
 no suite was run, and no file outside `trackF/` was created or edited (`../PROTOCOL.md`, row
 "scoping"). Every number carries its command. Line numbers are HEAD `607b6fe4` (docs-only over the

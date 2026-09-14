@@ -1,0 +1,2 @@
+error: src/oa4_two_readers_one_phi.c:4:54: in function main i32 (): cq loop lowering: loop-carried rail has multiple in-place consumers
+

@@ -1,0 +1,5 @@
+915 A/A divergence diffs were saved by sweep3.sh.
+0 of them contain a NON-header line (i.e. a real difference).
+Header-only diffs (ModuleID / source_filename, an artefact of the two mutant
+directories) were deleted; the kept files, if any, are listed below.
+

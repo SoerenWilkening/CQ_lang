@@ -69,7 +69,16 @@ is exact, not merely conservative:
 
 * the **well-formed chain** `a=θ(q,.5); c=θ(a,.9); measure(c)` stays ACCEPT — **ancestry exempt** (L4: the
   question is a gate SET and a per-entry exemption bit, never a boolean from a return-first walker);
-* `cq_measure(b)` on a well-formed chain stays ACCEPT (`g2_measure_parent`);
+* ~~`cq_measure(b)` on a well-formed chain stays ACCEPT (`g2_measure_parent`);~~
+  ⚠ **ERRATUM, orchestrator 2026-09-14 — THIS LINE WAS WRONG AND IS WITHDRAWN.** The round-1 reviewer
+  adjudicated it on the unitary and the implementer's deviation was CORRECT: `g2_measure_parent` must
+  **DECLINE**. `q` denotes `Ry(.3)|0>` while the register holds `Ry(.8)|0>` — different distributions,
+  silently — and the pure-op twin (`q+1` in place of `cq_measure(q)`, the identical wire question) has
+  declined **on the ORACLE since Phase 5**. The mis-attribution is **mine, in this brief**, not bd `3d8q`'s:
+  `3d8q`'s *"stays ACCEPT (ancestry exempt)"* is about the chain **TIP** (`f1w2`, ancestry `{%b,%a,%q}`),
+  which still accepts and is in the must-not-move list below. `review_1b_r2.md`'s boundary table lists
+  `g2_measure_parent.c` in the **DEFECT** row beside `f1`/`g1`. Keep the decline.
+* `cq_measure` of the chain **TIP** stays ACCEPT (`f1w2`) — that is the shape `3d8q`'s sentence means;
 * **`p07_chained_after` and `control_phase_kickback_rail_post_ry.ll` must be re-measured explicitly** —
   `ProvenPostRegion` must survive (bd `3d8q` names this);
 * **L3**: a set is being NARROWED-by-widening here. Ask what OTHER predicate names the same instruction and

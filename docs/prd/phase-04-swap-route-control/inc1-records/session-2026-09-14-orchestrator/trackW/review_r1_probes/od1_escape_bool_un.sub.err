@@ -1,0 +1,2 @@
+error: ./od1_escape_bool_un.c:5:32: in function slice i32 (): cq controlled lowering: nested control flow under quantum control
+

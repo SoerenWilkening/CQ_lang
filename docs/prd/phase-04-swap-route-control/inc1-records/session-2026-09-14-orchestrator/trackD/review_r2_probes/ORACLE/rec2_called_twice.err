@@ -1,0 +1,2 @@
+error: src/rec2_called_twice.c:3:54: in function f i32 (i32): cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+

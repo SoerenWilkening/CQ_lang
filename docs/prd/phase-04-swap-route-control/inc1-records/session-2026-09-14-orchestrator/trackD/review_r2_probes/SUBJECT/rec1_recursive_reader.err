@@ -1,0 +1,2 @@
+error: src/rec1_recursive_reader.c:5:9: in function f i32 (i32, i32): cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+

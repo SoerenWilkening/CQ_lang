@@ -86,7 +86,31 @@ lines**. Two measured facts make it cheaper still; both are now REQUIRED.
 
 Two tracks are in the same GROUP iff they touch a common file under `ir-pass/`, `include/`, `runtime/` or
 `tools/`. Fixtures, records and `tests/e2e/CMakeLists.txt` do NOT count (append-only at disjoint anchors;
-merged cleanly three times last session). **One merge-and-gate agent per GROUP, not per track**: merge every
+merged cleanly three times last session).
+
+> ⚠ **ERRATUM, MEASURED AT THE MERGE GATE OF 2026-09-14 — THE PARENTHESIS ABOVE IS WRONG ABOUT
+> `tests/e2e/CMakeLists.txt`, AND IT IS KEPT ONLY SO THE CORRECTION HAS SOMETHING TO POINT AT.**
+> The file is **NOT** "append-only at disjoint anchors". It has ONE anchor for new slices — the tail,
+> immediately above the `get_property(_E2E_ALL_TESTS ...)` / `set_tests_properties(...)` block that the
+> file itself requires to stay LAST ("it must stay the LAST statement in this file for that sweep to be
+> complete"). Every track that adds a slice therefore appends at the SAME place. Measured: Tracks U, P
+> and W all did, and the six-branch merge hit **two content conflicts** in this one file (at Track P,
+> then again at Track W). "Merged cleanly three times last session" was true and is not evidence — last
+> session had three landings of which fewer than two added slices at once.
+>
+> **What does NOT change:** the file still does not affect GROUP membership. A conflict here is a
+> mechanical union, never a semantic disagreement, so it must not split a group.
+>
+> **What the next merge agent should do instead of being surprised:** expect a tail conflict per
+> slice-adding branch beyond the first; resolve by UNION in merge order; and then run the check that
+> makes the union safe — which this gate ran and which should be standard:
+> ```
+> grep -o 'add_test(NAME [A-Za-z0-9_-]*' tests/e2e/CMakeLists.txt | sort | uniq -d   # MUST be empty
+> grep -c '^add_test(NAME' tests/e2e/CMakeLists.txt                                  # count reconciles
+> tail -3 tests/e2e/CMakeLists.txt                                                   # sweep still LAST
+> ```
+> (2026-09-14 merge gate: **0 duplicate names, 434 registrations, sweep still last** — 432 after the two
+> `round2-window` removals of that same gate.) **One merge-and-gate agent per GROUP, not per track**: merge every
 branch of the group into one worktree, rebuild once, run the full `ctest -j6` ONCE, run
 `cq-opt-equivalence-full` once iff any track in the group moved a decline string or an analysis site, and run
 ONE corpus sweep on the combined binary with the movers attributed per track BY STRING (each track's brief

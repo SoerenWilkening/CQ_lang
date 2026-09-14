@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/r01_two_objects.c:10:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+

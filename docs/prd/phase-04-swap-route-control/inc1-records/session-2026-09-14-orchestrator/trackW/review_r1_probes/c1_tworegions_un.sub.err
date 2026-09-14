@@ -1,0 +1,2 @@
+error: ./c1_tworegions_un.c:5:87: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
+

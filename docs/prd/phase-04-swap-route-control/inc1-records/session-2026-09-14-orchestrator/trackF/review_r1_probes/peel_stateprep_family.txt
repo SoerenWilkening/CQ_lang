@@ -1,0 +1,1 @@
+MOVED control_inplace_ry_stateprep_phidesc_collider_accept         O=1[cq controlled lowering: state prep seed is proven equal to the condition register under quantum control] S=0[ACCEPT] 

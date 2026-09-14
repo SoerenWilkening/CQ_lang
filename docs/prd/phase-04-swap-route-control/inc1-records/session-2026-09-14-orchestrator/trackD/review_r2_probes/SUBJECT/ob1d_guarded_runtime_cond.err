@@ -1,0 +1,2 @@
+error: src/ob1d_guarded_runtime_cond.c:5:43: in function main i32 (i32, ptr): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+

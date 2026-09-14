@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function slice i32 (): cq loop lowering: loop-carried tainted value crosses iterations
+

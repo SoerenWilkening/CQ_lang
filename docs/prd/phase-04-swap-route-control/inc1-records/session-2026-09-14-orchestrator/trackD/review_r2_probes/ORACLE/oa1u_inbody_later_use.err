@@ -1,0 +1,2 @@
+error: src/oa1u_inbody_later_use.c:7:11: in function main i32 (): cq loop lowering: loop-carried rail has multiple in-place consumers
+
