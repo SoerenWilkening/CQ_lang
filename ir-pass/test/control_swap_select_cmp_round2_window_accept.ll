@@ -23,14 +23,55 @@
 ; ORDER IS THE ASSERTION: `ry(h_cast,.25)`, then the whole merge, then
 ; `ry(h_cast,.9)`. BYTE-UNCHANGED from `main` 0c7380c.
 
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=ORD < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=MCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
+; ─────────────────────────────────────────────────────────────────────────────
+; ⚠ VERDICT INVERTED — ACCEPT → DECLINE (bd test_C_libtooling-3d8q, P1). THE
+; HEADER ABOVE IS KEPT VERBATIM because it is the record of what this file was
+; for, and because its correctness claim is TRUE OF EXACTLY ONE OF THE TWO READS
+; IN THE PROGRAM. "the copies really do read `Ry(0.25)|x>`, the label `b` names"
+; is about the MERGE's read of `b`; it says nothing about `b3`'s own read, and
+; `b3` is where the defect is:
+;
+;     b  = cq_theta(x, 0.25);   /* consumes the name `x` */
+;     …the merge on b…
+;     b3 = cq_theta(x, 0.9);    /* names Ry(0.9)|x>  — the register holds
+;                                  Ry(0.9)Ry(0.25)|x> */
+;
+; That is `f1_two_siblings_nocontrol.c` with a round-2 rail under it — the
+; project's P1 stale-reader class (`docs/frontend.md` §3.2's linear rule:
+; "a rotation consumes the old name"), and this module ACCEPTED on the frozen
+; session ORACLE. It surfaces only through the reader fence's DELTA-SCOPED
+; round-2 re-ask, because `%9` is CLASSICAL at round 1.
+;
+; ⚠ WHAT IS LOST, AND WHAT STILL PINS TRACK A.1 — check this before assuming the
+; conversion cost the increment's subject:
+;   * "the round-2 window is OPEN and the program still lowers" is pinned by
+;     `control_phase_kickback_rail_round2_window_accept.ll` and
+;     `control_phase_nest_rail_round2_window_accept.ll` (both unchanged, both
+;     green);
+;   * the decline side of `reverifyCmpCondReads` is pinned by
+;     `control_swap_reject_select_cmp_round2_sibling_theta.ll` and its five
+;     `*_round2_sibling_theta` relatives (all unchanged, all green);
+;   * WHAT IS LOST is one cell: the COMPARE path with a sibling PRESENT and the
+;     DT prong ACCEPTING. No well-formed program is currently known to occupy it,
+;     which is the honest statement — the shape "two sibling rotations on one
+;     rail, both read" IS the defect, so the cell may be empty by construction.
+;
+; MEASURED, so the next agent does not have to re-derive it: the obvious
+; well-formed rewrite — `%13 = cq_theta(i32 %10, double 9.000000e-01)`, i.e. a
+; CHAINED gate on `b` instead of a sibling on `x`, ONE OPERAND, byte-identical
+; emitted stream — does NOT restore the cell. It declines with
+; `cq controlled lowering: condition predates a non-diagonal gate under quantum
+; control`. Whether that is a true property of the chained shape or a separate
+; over-decline is an OPEN QUESTION, filed, not answered here.
+;
+; RETIREMENT TRIGGER: if that question resolves as an over-decline and the
+; chained spelling is made to lower, THIS FILE becomes an ACCEPT again with that
+; one operand changed and the header above intact. Re-derive it then; do not
+; delete it.
+; ─────────────────────────────────────────────────────────────────────────────
+
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
@@ -94,28 +135,38 @@ attributes #3 = { nounwind }
 
 ; THE SIBLING IS AFTER THE MERGE. One rail (%[[HC]]) carries both rotations, and
 ; the second one follows the flag's free — which is exactly why it is harmless.
-; CHECK:      %[[HC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(
-; CHECK:      call void @cqrt_ry_i32(i32 %[[HC]], double 2.500000e-01)
-; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[HC]], i32 1)
-; CHECK:      call void @cqrt_free(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HC]], double 9.000000e-01)
+; ⚠ THE OLD ACCEPT'S DIRECTIVE BLOCKS ARE PRESERVED BELOW, NEUTERED TO PROSE, and
+; that is deliberate (L8): they are the exact stream this program used to emit
+; — `ry(h_cast,.25)`, the whole 4.4 copy merge, the strip, the free, then
+; `ry(h_cast,.9)`, with 3 ry / 3 free / 3 measure / 4 x — and they are what a
+; future agent must re-derive if the RETIREMENT TRIGGER above ever fires. They
+; are NOT live directives: a `DS_Error` writes 0 bytes to stdout, so leaving
+; them as live positive directives would make this fixture fail for a reason
+; that has nothing to do with its subject. (Writing the directive token in this
+; very sentence is how the first attempt failed — FileCheck reads comments.)
+;
+; (was) [check] %[[HC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(
+; (was) [check] call void @cqrt_ry_i32(i32 %[[HC]], double 2.500000e-01)
+; (was) [check-next] %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[HC]], i32 1)
+; (was) [check] call void @cqrt_free(i32 %[[F]])
+; (was) [check-next] call void @cqrt_ry_i32(i32 %[[HC]], double 9.000000e-01)
 
-; ORD: call void @cqrt_ry_i32({{.*}}, double 2.500000e-01)
-; ORD: call i32 @cq_template_icmp_eq_i32_hl(
-; ORD: call void @cqrt_copy_i32_controlled(
-; ORD: call void @cqrt_copy_i32_controlled(
-; ORD: call void @cq_template_icmp_eq_i32_hl_unc(
-; ORD: call void @cqrt_free(
-; ORD: call void @cqrt_ry_i32({{.*}}, double 9.000000e-01)
+; (was) [ord] call void @cqrt_ry_i32({{.*}}, double 2.500000e-01)
+; (was) [ord] call i32 @cq_template_icmp_eq_i32_hl(
+; (was) [ord] call void @cqrt_copy_i32_controlled(
+; (was) [ord] call void @cqrt_copy_i32_controlled(
+; (was) [ord] call void @cq_template_icmp_eq_i32_hl_unc(
+; (was) [ord] call void @cqrt_free(
+; (was) [ord] call void @cqrt_ry_i32({{.*}}, double 9.000000e-01)
 
-; NOROUTE-NOT: cqrt_cswap
-; NOROUTE-NOT: cqrt_rz
-; NOROUTE-NOT: call i32 @cq_theta_
-; RYCNT-COUNT-3: call void @cqrt_ry_
-; RYCNT-NOT:     call void @cqrt_ry_
-; FCNT-COUNT-3: call void @cqrt_free(
-; FCNT-NOT:     call void @cqrt_free(
-; MCNT-COUNT-3: call i32 @cqrt_measure_
-; MCNT-NOT:     call i32 @cqrt_measure_
-; XCNT-COUNT-4: call void @cqrt_x(
-; XCNT-NOT:     call void @cqrt_x(
+; (was) [noroute-not] cqrt_cswap
+; (was) [noroute-not] cqrt_rz
+; (was) [noroute-not] call i32 @cq_theta_
+; (was) [rycnt-count-3] call void @cqrt_ry_
+; (was) [rycnt-not] call void @cqrt_ry_
+; (was) [fcnt-count-3] call void @cqrt_free(
+; (was) [fcnt-not] call void @cqrt_free(
+; (was) [mcnt-count-3] call i32 @cqrt_measure_
+; (was) [mcnt-not] call i32 @cqrt_measure_
+; (was) [xcnt-count-4] call void @cqrt_x(
+; (was) [xcnt-not] call void @cqrt_x(

@@ -45,8 +45,15 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/Analysis/AssumptionCache.h"   // leg 1b's SCEV (bd 3d8q F-D2-2)
+#include "llvm/Analysis/CFG.h"  // isPotentiallyReachable (bd 3d8q mutual-exclusion leg)
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"   // leg 1b (bd 3d8q F-D2-2)
+#include "llvm/Analysis/TargetLibraryInfo.h" // leg 1b's SCEV (bd 3d8q F-D2-2)
+#include "llvm/TargetParser/Triple.h"        // leg 1b's SCEV (bd 3d8q F-D2-2)
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Support/ErrorHandling.h"  // report_fatal_error (bd 3d8q F-D1-2, outcome 3)
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
@@ -103,10 +110,87 @@ void diagnoseRailOpStale(Instruction *I) {
       I->getDebugLoc()));
 }
 
+// (bd test_C_libtooling-3d8q) THE STALE-READER DECLINE for a `@cq_theta_<sfx>` /
+// `@cq_measure_<sfx>` reader of a stale name. A SEPARATE STRING from
+// `diagnoseStaleRecord` above, and deliberately so:
+//   * the OWNING STAGE is the same (`declineStaleRecordOps`, one operand policy
+//     wider), which is why the `cq opcode lowering:` prefix is retained — the
+//     project's convention is that the message names the stage that owns the
+//     DECISION (`diagnosePreLoopCommitStale` above says this in as many words);
+//   * the FAMILY is not, and the corpus sweep's mover attribution is BY STRING
+//     (PROTOCOL S1), so folding this into the shipped opcode string would make
+//     an ACCEPT→DECLINE row on a rotation reader indistinguishable from one on
+//     an `add`. It would also make Rule 12's "does this negative fixture pin the
+//     NEW predicate?" unanswerable — fixture-hygiene defect (c), the decline
+//     fixture that goes green because its subject is somebody else's.
+// ⚠ The string deliberately does NOT begin with `cq_measure_`: the shared
+// `corpus.sh` tag regex renders that whole family as an empty `D:` (PROTOCOL S3),
+// which would make this decline INVISIBLE to the sweep it must be attributed in.
+void diagnoseStaleQuantumReader(Instruction *I) {
+  I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+      *I->getFunction(),
+      "cq opcode lowering: rotation/measure operand predates a non-diagonal "
+      "gate",
+      I->getDebugLoc()));
+}
+
+// (bd test_C_libtooling-3d8q) The operand a `@cq_theta_<sfx>` / `@cq_measure_<sfx>`
+// call reads AS A BASIS RECORD, or nullptr when `I` is not one of those or the
+// operand carries no wire. THE P1 SILENT MISCOMPILE THIS CLOSES: `inLowerOpsScope`
+// below is `BinaryOperator | UnaryOperator | CastInst | data-position Cmp |
+// curated intrinsic`, so a rotation or a measurement reading a stale name was
+// asked NOTHING, while a PURE op reading the same name declined. One line of
+// plain C — `int b=cq_theta(q,.5); int c=cq_theta(q,.9); return
+// cq_measure(b)+cq_measure(c);` — lowered to a stream BYTE-IDENTICAL to the
+// well-formed chain `a=cq_theta(q,.5); c=cq_theta(a,.9); cq_measure(c)+cq_measure(c)`:
+// two different programs, one circuit, `opt` exit 0 and stage 2b clean (Rule 2 in
+// its purest form; bd 3d8q, review_1b_r2.md §F-1b2-1).
+//
+// ⚠ ARG-0 ONLY, and that is RULE 3 MADE STRUCTURAL, not an optimization. A
+// `cq_theta`'s arg-1 is the CLASSICAL ANGLE; walking its wire would be the
+// f64/angle wire-crossing this project has hit repeatedly. The exclusion is
+// spelled by never looking past index 0, not by a taint test that a future
+// tainted-angle program could pass.
+//
+// A SOURCE theta (arg-0 is the classical init) and the 21mg CLASSICAL measure
+// (`cq_measure(<untainted>)`) both fall out here with no special case: their
+// arg-0 is not tainted, so there is no wire to be stale about. The register-free
+// `void cq_phi(double)` has NO handle operand at all and the 15-width
+// `cq_phi_<sfx>` family is retired (a use is a reserved-name decline), so the
+// phase intrinsic is structurally out of this fence.
+//
+// The name test is the PREFIX form, matching `WireWalk.cpp`'s own
+// `isCallToPrefix(CI, "cq_theta_")` and `RotationLowering.cpp`'s collection loop
+// character-for-character. That lockstep is the point: this fence's reader family
+// must be exactly the family the walker treats as a gate, or the two disagree
+// about what a rail is. `resolveSources` has already validated every surviving
+// `cq_theta_<sfx>` / `cq_measure_<sfx>` prototype by the time this runs.
+Value *staleReaderRecordOperand(Instruction &I, TaintSet &taint) {
+  auto *CI = dyn_cast<CallInst>(&I);
+  if (!CI || CI->arg_size() < 1)
+    return nullptr;
+  const Function *F = CI->getCalledFunction();
+  if (!F)
+    return nullptr;
+  StringRef N = F->getName();
+  if (!N.starts_with("cq_theta_") && !N.starts_with("cq_measure_"))
+    return nullptr;
+  Value *A0 = CI->getArgOperand(0);
+  return taint.Tainted.count(A0) ? A0 : nullptr;
+}
+
 // Is `I` an instruction `lowerOps` would collect? Mirrors the Phase-1
 // collection below exactly: the four tainted classes, with branch/select-
 // condition compares excluded (Phase 4's — ArmClassify owns their stale
 // check via the provenance-seeded wire walk and its own diagnostic).
+//
+// ⚠ NOT WIDENED by bd 3d8q, and that is deliberate: it answers "would `lowerOps`
+// collect this?", which is FALSE of a `@cq_theta_*` / `@cq_measure_*` call
+// (`lowerRotations` / `lowerMeasures` own those). The stale sweep's scope is the
+// UNION of this and `staleReaderRecordOperand` — see `declineStaleRecordOps`.
+// Several shipped fixture headers quote this set verbatim as
+// "binary/unary/cast/data-compare/curated-intrinsic"; keeping the predicate
+// honest keeps those citations true.
 bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
   if (!taint.Tainted.count(&I))
     return false;
@@ -187,6 +271,24 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   // walking forward (test_C_libtooling-6j1; fixtures
   // lowering_reject_stale_record_alias_{sibling,chain}.ll, accept twins
   // lowering_stale_record_alias_{before_theta,producer}.ll).
+  //
+  // ── WHERE THIS RUNS, AND THE L1 ANSWER (bd 3d8q) ─────────────────────────
+  // This sweep is called from FOUR slots and needs no fifth:
+  //   1. `CQLoweringPass.cpp` (both entry points), EARLY — before `lowerLoops`,
+  //      before the peel, before control detection. The `@cq_theta_*` /
+  //      `@cq_measure_*` calls still exist here as calls (rotation and measure
+  //      lowering run ~300 lines later), which is precisely why the widened
+  //      operand policy CAN see them;
+  //   2. `adjudicateTaintDelta` — the guard sequence EVERY taint-growth event
+  //      owes (the `MergePhiPeel` sites, bd b6ap), which ends with this call;
+  //   3. the same, inside `repropagateControlMerges` on the round-2 `reseed`;
+  //   4. `declineLiftedStaleRecordOps`, after the one-register merge-phi lift.
+  // So "can a value become a stale reader only in ROUND 2?" — yes (a 6.5/4.5
+  // merge `%out` rail is untainted at round 1), and slot 3 is what asks about it:
+  // the widening rides the SAME re-run the pure-op policy already rides, because
+  // it is one operand policy inside one function rather than a new stage with a
+  // premise of its own. A NEW SWEEP SITE would have owed the L1 question; this
+  // does not, and that is the reason it was built this way.
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -237,7 +339,246 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // (pre-RAUW SSA identity).
   if (taint.LiftedConsumers.empty())
     return;  // no lift occurred — nothing to re-adjudicate.
+  // ⚠ PURE OPS ONLY, and after bd test_C_libtooling-3d8q that is a positive
+  // statement rather than an accident of scope: `declineStaleQuantumReaders` runs
+  // BEFORE `declineClassicalMuxes`, hence before this lift, ON PURPOSE. A pure op
+  // CAPTURES a basis record onto a FRESH rail, so which record it captures is a
+  // fact about the NAME it reads and the lift's proof ("every incoming is one
+  // register") says nothing about it — that is bd 2qyz, and it is why this
+  // re-sweep exists. A `@cq_theta_*` / `@cq_measure_*` reader READS THE WIRE IN
+  // PLACE: before the lift its name is the merge φ, which denotes the wire on
+  // every edge ("the per-path record matches the wire per path" —
+  // `lowering_classical_mux_phi_onereg_theta_chain.ll`,
+  // `control_phase_kickback_rail_cross_block.ll`, both shipped Rule-13-cleared
+  // ACCEPTS that flip if a reader sweep runs here). RESIDUAL, filed not hidden: a
+  // quantum reader whose staling sibling is reachable ONLY through the lift's
+  // RAUW is not caught — a MISS of the 3d8q class in one narrow shape, strictly
+  // no worse than the pre-fix compiler, which asked NOTHING of any reader.
   declineStaleRecordOps(M, taint);
+}
+
+void recordStaleQuantumReaders(Module &M, TaintSet &taint,
+                               const SmallPtrSetImpl<Value *> *Delta) {
+  // THE LINEAR RULE FOR THE READER FAMILIES (bd test_C_libtooling-3d8q, P1 —
+  // the project's one KNOWN pre-existing silent miscompile). PURE ANALYSIS:
+  // this function diagnoses nothing and mutates no IR; it fills
+  // `taint.StaleQuantumReaders`, which `declineRecordedStaleQuantumReaders`
+  // drains at the late slot. `TaintSet::StaleQuantumReaders` carries the reason
+  // for the split, in measurements.
+  //
+  // `docs/frontend.md` §3.2 states the rule and, since 2026-09-05, states this
+  // exact hole in the same breath: *"the example above declines, but replacing
+  // the arithmetic with a MEASUREMENT of the same stale name … is accepted …
+  // `declineStaleRecordOps` covers tainted PURE OPS only … Do not rely on the
+  // compiler to catch this spelling."* That paragraph is the specification of
+  // this function. The rule is the LANGUAGE SEMANTICS; the enforcement was
+  // incomplete, and the reader families are the incompleteness.
+  //
+  // MEASURED, one line of plain C, byte-identical on three shipped binaries:
+  //   `int q=cq_theta(0,.3); int b=cq_theta(q,.5); int c=cq_theta(q,.9);
+  //    return cq_measure(b)+cq_measure(c);`
+  // emits `ry(.3); ry(.5); ry(.9); measure; measure` — BYTE-IDENTICAL to the
+  // well-formed chain `a=cq_theta(q,.5); c=cq_theta(a,.9);
+  // cq_measure(c)+cq_measure(c)`. Two different programs, one circuit, `opt`
+  // exit 0, verify-clean, stage-2b `0 violation(s)`. Rule 2 in its purest form.
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // Lazy — built only when a reader exists in `F`, and built TOGETHER because
+    // `ScalarEvolution`'s constructor is cheap (it computes nothing until it is
+    // queried) while its answers are what leg 1b of `readerStalesItself` needs
+    // (bd 3d8q, Rule-13 round-2 finding F-D2-2). Declaration ORDER IS THE
+    // DESTRUCTION CONTRACT: `SE` references `TLI`/`AC`/`DT`/`LI` and is declared
+    // last, so it is destroyed first. Same direct-construction idiom as
+    // `LoopLowering.cpp`'s (a default `TargetLibraryInfoImpl` is a conservative
+    // TLI, which is what SCEV's range and trip-count reasoning needs here).
+    std::optional<DominatorTree> DT;
+    std::optional<LoopInfo> LI;
+    std::optional<AssumptionCache> AC;
+    std::optional<TargetLibraryInfoImpl> TLII;
+    std::optional<TargetLibraryInfo> TLI;
+    std::optional<ScalarEvolution> SE;
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB) {
+        Value *Rec = staleReaderRecordOperand(I, taint);
+        if (!Rec)
+          continue;
+        // ── THE ROUND-2 HALF, and it is the L1 obligation paid in the ONE way
+        //    that does not reopen the over-decline (bd 3d8q).
+        //
+        // With `Delta`, only readers whose RECORD OPERAND just became tainted are
+        // analysed. Those are exactly the ones the round-1 pass could not see —
+        // a `MergePhiPeel` mux out-rail, a 6.5/4.5 merge `%out` — and they are
+        // values the pass itself MANUFACTURED or freshly re-seeded, never a name
+        // some earlier rewrite collapsed. Re-asking the WHOLE module here instead
+        // would decline 9 shipped in-loop ACCEPT fixtures, because `lowerLoops`'
+        // rail-φ collapse has already replaced their per-trip barrier φ with the
+        // loop-invariant preheader mint (`TaintSet::StaleQuantumReaders`).
+        //
+        // MEASURED CUSTOMER: `review_b6ap_r2_probes/S03_stale_mux_sibling.c` —
+        // two sibling `cq_theta` on a peeled mux out-rail, both measured, which
+        // ACCEPTED at 35 trace lines on the ORACLE *and* on the round-1-only
+        // version of this fence, because `%m` is a φ over CONSTANTS and is
+        // untainted until the peel manufactures its `select`.
+        // ⚠ THE DELTA'S SOUNDNESS IS PARTLY CARRIED BY A DIFFERENT FENCE, and
+        // that coupling is recorded rather than left as an inference (bd 3d8q,
+        // Rule-13 round-1 item F-D1-5; L3 — "when a set is NARROWED, ask what
+        // OTHER predicate names the same gate"). The full enumeration of what
+        // round 2 can add to a reader's closure, and why only sub-case (c) —
+        // a staling gate behind a `phi`/`select` ROUTING node — is a residual,
+        // is in `TaintSet::StaleQuantumReaders`. (c) is closed by
+        // `declineClassicalMuxes` refusing a live heterogeneous tainted mux and
+        // by the one-register lift claiming the homogeneous one; if either
+        // moves, this scope must be re-derived.
+        if (Delta && !Delta->count(Rec))
+          continue;
+        if (!DT) {
+          DT.emplace(F);
+          LI.emplace(*DT);
+          AC.emplace(F);
+          TLII.emplace(Triple(M.getTargetTriple()));
+          TLI.emplace(*TLII);
+          SE.emplace(F, *TLI, *AC, *DT, *LI);
+        }
+        // (i) THE READER IS ITS OWN GATE, exempted with `Covered` — the shipped
+        // per-entry exemption bit, NOT a boolean short-circuit (L4: "enumerate,
+        // take the difference, and carry the exemption as a per-entry bit").
+        // `c = cq_theta(a, .9)` is an in-place Ry on the very rail it reads, so
+        // a walk seeded at `a` finds `c` among `a`'s users; without the
+        // exemption EVERY well-formed chained rotation would decline against
+        // itself. `Covered` skips it AS EVIDENCE while still walking THROUGH it,
+        // so nothing behind the reader rides on the exemption — precisely the
+        // property the boolean spelling lost (F-A1-1).
+        // ⚠ ONLY for the rotation reader: a `@cq_measure_*` call is not a
+        // `cq_theta_` gate, the walk can never return it, and calling it
+        // "already ruled on" would be an untrue statement in the code.
+        //
+        // ⚠⚠ AND ONLY WHERE THE READER PROVABLY CANNOT STALE ITSELF ACROSS A
+        // BACK EDGE (bd 3d8q, Rule-13 round-1 finding F-D1-1 — an OVER-ACCEPT
+        // in the unforgivable class, found in this exemption).
+        //
+        // `Covered`'s contract is "a gate the CALLER has already ruled on", and
+        // it is tested INSIDE the walker BEFORE the harmlessness proof. Granted
+        // unconditionally, the one gate this fence never ruled on was the
+        // reader's own PREVIOUS DYNAMIC INSTANCE: MEASURED, a loop body holding
+        // exactly ONE `cq_theta` on a loop-INVARIANT quantum name —
+        //   `int q=cq_theta(0,.3); for(i<3){ int b=cq_theta(q,.1);
+        //    s+=cq_measure(b); }`
+        // — compiled at `opt` exit 0 and emitted a stream BYTE-IDENTICAL to the
+        // self-assigned chain `for(i<3){ q=cq_theta(q,.1); … }`, a DIFFERENT,
+        // well-formed program. Two programs, one circuit: bd 3d8q's own
+        // definition of the defect, surviving the fence built to close it.
+        // At trip 2 the name `q` denotes `Ry(.3)|0>` while the register holds
+        // `Ry(.4)|0>` — CLAUDE.md CORRECTNESS RISK §2's rail-staleness rule
+        // verbatim ("no rail-relabelling gate executes between the record's
+        // definition and the read WITHOUT that definition re-executing").
+        //
+        // So ASK — `WireWalk::readerStalesItself`, which owns exactly this
+        // question and asks it with the walker's own shared implementations
+        // (Rule 14 — never a second spelling). ⚠ It is NOT spelled
+        // `gateIsHarmless(I, I, …)`: that relation's leg 1 is
+        // `isPotentiallyReachable(T, EmitPoint)`, TRUE **by identity** in LLVM 19
+        // when the two coincide, so every self-gate falls into leg 2 and a
+        // non-wire-tracking φ seed is refused even where the reader provably runs
+        // at most once — MEASURED on binary `33af6130`, that spelling declines 12
+        // shipped Rule-13-cleared ACCEPT fixtures. See the definition for the
+        // list. The three legs that matter, all measured:
+        //   * straight-line chain / exclusive arms — `reachesWithoutBarrier`
+        //     finds no path back, harmless, EXEMPT (the chain keeps accepting);
+        //   * the φ-carried in-loop chain (`q = cq_theta(q,θ)`) — the header φ
+        //     IS the barrier on every back-edge path, harmless, EXEMPT;
+        //   * the loop-INVARIANT seed — `SeedDef` is outside the loop, the back
+        //     edge reaches the reader again without crossing it, NOT harmless,
+        //     exemption WITHHELD.
+        // ⚠ WITHHOLDING IS THE WHOLE MECHANISM, and it must be done HERE rather
+        // than by weakening `Covered` inside the walker (Track A.1 owns that
+        // contract, and its other half — "walk THROUGH it" — is load-bearing).
+        // With the reader absent from `Self`, the walk reaches it as an ordinary
+        // candidate, asks this same predicate again, and RETURNS it as the
+        // staler. That is why no new relation, and no new diagnostic, is needed.
+        SmallPtrSet<const CallInst *, 1> Self;
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (CI->getCalledFunction() &&
+              CI->getCalledFunction()->getName().starts_with("cq_theta_") &&
+              !readerStalesItself(CI, Rec, *DT, &*LI, &*SE, &taint))
+            Self.insert(CI);
+        // (ii) `RequireEmitDominance=false` — THE POLICY BIT (see `WireWalk.h`).
+        // The pure-op policy keeps the conservative dominance PRECONDITION; this
+        // policy asks the harmlessness proof itself, because the reader family
+        // structurally cannot satisfy that precondition in two shapes that are
+        // perfectly well formed:
+        //   * a rotation reader that IS a branch arm — `%rt` in `armt` and `%rf`
+        //     in `armf` are siblings on one rail that NEVER BOTH RUN, so neither
+        //     can stale the other and neither dominates the other (leg 1;
+        //     `control_inplace_ry_ifelse.ll` + 13 more, measured);
+        //   * a measurement AFTER a loop whose body holds the arm gate — the
+        //     merge φ re-establishes the record every trip, so the exit read is
+        //     fresh, but the exit block dominates nothing in the body (leg 2's
+        //     record-barrier walk; `control_inplace_ry_inloop_*`, 12 measured).
+        if (findNonDiagonalWireGate(Rec, /*CrossValueRouting=*/true, &I, &*DT,
+                                    &taint, Self.empty() ? nullptr : &Self,
+                                    /*RequireEmitDominance=*/false))
+          taint.StaleQuantumReaders.emplace_back(&I);
+      }
+    }
+  }
+}
+
+void declineRecordedStaleQuantumReaders(Module &M, TaintSet &taint) {
+  (void)M;
+  // Drain the early analysis' record, in the program order it was taken in.
+  //
+  // ── THE THREE OUTCOMES, ENUMERATED, NONE SILENT (bd 3d8q, Rule-13 round-1
+  //    finding F-D1-2 — Rule 1's "no third path", which this drain had).
+  //
+  // The record is a `WeakVH`, and the choice of handle IS the fix. Between the
+  // two slots the pass RAUWs freely (`emitInPlaceRotationRegion`'s M-α/M-β,
+  // `MergePhiPeel`, `liftOneRegisterMergePhi`, `SelectMergeEmit`), and LLVM 19's
+  // two nullable handles differ on exactly that (`llvm/IR/ValueHandle.h`):
+  // `WeakTrackingVH` *"tries hard to point to a Value, even across RAUW"*, while
+  // `WeakVH` *"points to a value, and nulls itself out if that value is
+  // deleted"*. The question this drain must answer is **"is the reader
+  // INSTRUCTION still in the module?"**, never "what is its result now" — a
+  // reader whose result was replaced is still an instruction that still reads a
+  // stale name and still lowers to a gate. So:
+  //
+  //   (1) the handle is ALIVE and is an instruction in a block — the reader
+  //       survived, RAUW'd or not. DECLINE, anchored on the reader itself, which
+  //       is also the `!dbg` the early slot read (IMPL_D §7b).
+  //   (2) the handle is NULL — the reader instruction was DESTROYED between the
+  //       slots, which happens when a control emitter CLAIMED and PROVED the
+  //       shape (the in-place-Ry arm's theta is hoisted away and replaced by
+  //       `cqrt_ry_<W>_controlled`). There is nothing left to decline: skip.
+  //       This is the handle's intended semantics, not a papered-over dangle.
+  //   (3) the handle is ALIVE but is NOT an instruction in a block. Under the
+  //       documented `WeakVH` semantics this is UNREACHABLE — a non-tracking
+  //       handle to a `CallInst` cannot come to denote a `Constant` — and it is
+  //       `report_fatal_error` rather than a `continue` precisely BECAUSE it is
+  //       unreachable: the shipped spelling used the TRACKING handle, where a
+  //       RAUW to a non-`Instruction` made `dyn_cast_or_null` return null and
+  //       DROPPED a recorded decline with no diagnostic anywhere. That is the
+  //       over-accept this outcome exists to make impossible. ⚠ Note the fix is
+  //       correct under BOTH readings of `WeakVH`: if it did follow RAUW, this
+  //       path becomes reachable and is LOUD instead of silent.
+  //
+  // `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`), so in
+  // practice this emits exactly one diagnostic and never returns; the loop and
+  // the `StaleDeclined` bookkeeping are written for the case where that ever
+  // stops being true, not as live control flow.
+  for (WeakVH &VH : taint.StaleQuantumReaders) {
+    Value *V = VH;
+    if (!V)
+      continue;  // (2) destroyed — an owner claimed the shape.
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I || !I->getParent())
+      report_fatal_error(  // (3) never silent.
+          "cq: internal — a recorded stale quantum reader survived as a "
+          "non-instruction; refusing to lower (bd 3d8q F-D1-2)");
+    if (taint.StaleDeclined.count(I))
+      continue;
+    diagnoseStaleQuantumReader(I);  // (1)
+    taint.StaleDeclined.insert(I);
+  }
 }
 
 void lowerOps(Module &M, WidthDispatch &wd, TaintSet &taint,

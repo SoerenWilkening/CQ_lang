@@ -1695,6 +1695,15 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
   detectSpecializations(M, taint, wd, plan6, &live);
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
+  // (bd test_C_libtooling-3d8q) THE STALE-READER ANALYSIS, DELTA-SCOPED. Every
+  // taint-GROWTH event owes the L1 question, and for the reader fence the answer
+  // is: ask it only of the values that just BECAME tainted. A reader seeded on a
+  // peel's mux out-rail or a 6.5/4.5 merge `%out` is invisible at round 1 (its
+  // operand is classical there) and is a genuine member of the P1 class; a
+  // FULL re-sweep here would instead decline 9 shipped in-loop ACCEPTS, because
+  // `lowerLoops` has already collapsed the rail φ these fixtures' freshness
+  // proof rests on. The diagnostic stays deferred to the late slot either way.
+  recordStaleQuantumReaders(M, taint, &live);
 }
 
 void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,

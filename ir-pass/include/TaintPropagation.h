@@ -358,6 +358,86 @@ struct TaintSet {
   //       `cq_theta` call.
   //   (d) F2's own trigger applies unchanged (`ArmClassify.cpp`, the
   //       `railWireClosure`/`CondRails` divergence trigger).
+  // ── THE DEFERRED STALE-READER DECLINES (bd `test_C_libtooling-3d8q`, P1) ────
+  //
+  // The readers `recordStaleQuantumReaders` found — a `@cq_theta_<sfx>` (arg-0)
+  // or `@cq_measure_<sfx>` call reading a name the wire has already moved past
+  // (`docs/frontend.md` §3.2's linear rule). ANALYSED EARLY, DIAGNOSED LATE, and
+  // the split is the whole design; both halves were measured, not assumed.
+  //
+  // WHY ANALYSED EARLY (beside `declineStaleRecordOps`, before `lowerLoops`,
+  // before the peel, before control detection): the fence's premise is that an
+  // SSA NAME denotes a basis RECORD, and that premise holds only for names the
+  // USER wrote. Three later stages REWRITE a wire-TRACKING name into a wire-BASE
+  // name that denotes no such record — `LoopLowering`'s rail-φ collapse
+  // (`collapseRailPhisIn` / `collapseFlattenedLoopRails`), `MergePhiPeel`, and
+  // `liftOneRegisterMergePhi`. Asked after any of them, the fence declines a
+  // well-formed program for a reason that is a fact about the COMPILER'S REWRITE:
+  // MEASURED, 9 shipped Rule-13-cleared in-loop ACCEPT fixtures
+  // (`control_inplace_ry_inloop_*`, `control_swap_inloop_*`) flip when the
+  // question is asked after the collapse, because the header φ that IS the
+  // record's per-trip barrier has been replaced by the loop-INVARIANT preheader
+  // mint.
+  //
+  // WHY DIAGNOSED LATE (after the round-2 fixpoint, before `declineClassicalMuxes`
+  // and `lowerRotations`): this fence is a BACKSTOP for the shapes no specialised
+  // owner claims, never a preemptor of one. Emitted at the early slot it takes
+  // the message away from 68 shipped negative fixtures whose subjects are the
+  // condition-wire dispositions, `ArmClassify` R6 and
+  // `LoopLowering::staleRailRecordRead` — leaving 68 fences pinned by nothing
+  // (Rule 12 fixture-hygiene defect (c)). Since `LLVMContext::diagnose` EXITS on
+  // the first `DS_Error` (bd `br4a`), deferral is exactly "every other owner goes
+  // first"; a shape another stage declines never reaches the late slot at all.
+  //
+  // ⚠ A HANDLE, NEVER a raw `Value *`, and `WeakVH` rather than
+  // `WeakTrackingVH` — the CHOICE OF HANDLE IS A FENCE (bd 3d8q, Rule-13 round-1
+  // finding F-D1-2). Between the two slots a control emitter may ERASE the
+  // reader (an in-place-Ry arm's theta is hoisted and replaced by
+  // `cqrt_ry_<W>_controlled`), and a nulled entry is the INTENDED semantics, not
+  // a papered-over dangle: the shape was claimed by an owner that proved it, so
+  // there is nothing left to decline. The pass also RAUWs freely between the
+  // slots (M-α/M-β, `MergePhiPeel`, `liftOneRegisterMergePhi`,
+  // `SelectMergeEmit`), and LLVM 19's two nullable handles differ on exactly
+  // that: `WeakTrackingVH` *"tries hard to point to a Value, even across RAUW"*,
+  // `WeakVH` *"points to a value, and nulls itself out if that value is
+  // deleted"* (`llvm/IR/ValueHandle.h`). The drain's question is **"is the
+  // reader INSTRUCTION still in the module?"** — a reader whose RESULT was
+  // replaced is still an instruction that still reads a stale name and still
+  // lowers to a gate — so the non-tracking handle is the one that answers it.
+  // With the tracking handle a RAUW to a non-`Instruction` made the drain's
+  // `dyn_cast_or_null` return null and DROPPED a recorded decline with no
+  // diagnostic anywhere: Rule 1's "no third path", which
+  // `declineRecordedStaleQuantumReaders` now enumerates in three outcomes, none
+  // silent.
+  //
+  // THE ROUND-2 HALF (the L1 obligation). The analysis is re-run DELTA-SCOPED
+  // from `adjudicateTaintDelta`, over exactly the values that just became
+  // tainted, so a reader whose record operand is a peeled mux out-rail or a
+  // 6.5/4.5 merge `%out` — untainted and therefore invisible at round 1 — is
+  // adjudicated after the fixpoint. `S03_stale_mux_sibling.c` and
+  // `control_swap_select_cmp_round2_window_accept.ll` are its measured
+  // customers; both still accepted with the round-1-only spelling.
+  // ⚠ A **FULL** re-sweep after the fixpoint is NOT the fix and must not be
+  // substituted for the delta: by then `lowerLoops`' rail-φ collapse has
+  // replaced the per-trip barrier φ with the loop-invariant preheader mint, and
+  // 9 shipped Rule-13-cleared in-loop ACCEPT fixtures flip (measured). The
+  // delta's scope is sound because a `cq_theta` result is tainted from round 1
+  // unconditionally, so the only thing round 2 can add to a reader's closure is
+  // reached through the BACKWARD `Taint->Tainted.count(Arg0)` hop: (a) a direct
+  // reader of the newly-tainted parent — itself in the delta, hence analysed;
+  // (b) a gate behind another gate — a CHAIN, which the round-1 FORWARD walk
+  // already reaches with no taint-gated hop; (c) a gate behind a ROUTING node
+  // (`phi`/`select`) tainted at round 1 through a different incoming — THE ONE
+  // RESIDUAL. ⚠ (c)'s closure is carried by a DIFFERENT fence, and that coupling
+  // is recorded rather than left as an inference (L3): `declineClassicalMuxes`
+  // refuses a live `phi`/`select` over tainted data with heterogeneous
+  // incomings, and the one-register merge-φ lift claims the homogeneous case —
+  // in which every incoming is the same register, so the closure is the same
+  // wire anyway. RETIREMENT TRIGGER: if `declineClassicalMuxes` is ever widened
+  // to admit a heterogeneous tainted mux, sub-case (c) becomes live and this
+  // delta scope must be re-derived (bd 3d8q, review round-1 F-D1-5).
+  llvm::SmallVector<llvm::WeakVH, 4> StaleQuantumReaders;
+
   llvm::SmallVector<llvm::WeakTrackingVH, 4> PeelClones;
 
   // The ONE membership question `PeelClones` answers. A NULLED entry (the clone

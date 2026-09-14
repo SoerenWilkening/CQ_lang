@@ -1,3 +1,51 @@
+; ⚠⚠ VERDICT INVERTED: ACCEPT -> DECLINE, **OWNER RULING 2026-09-14** (bd
+; test_C_libtooling-3d8q, Rule-13 round-1 finding F-D1-1). Everything below this
+; block is the file's ORIGINAL header and its original directives, preserved
+; verbatim as the record of what it used to pin, and NEUTERED (`CHECK` ->
+; `[check]`, and every `--check-prefix` name likewise) so FileCheck cannot see
+; them. Read it; do not delete it.
+;
+; THE RULED SHAPE, and this module contains it: the body's `t = cq_theta(r, 0.1)` reads `r`, minted BEFORE the loop.
+; The name is loop-INVARIANT and is RE-READ on every trip while the wire has
+; already moved under it — CLAUDE.md CORRECTNESS RISK §2's rail-staleness rule
+; verbatim ("a rail member may be read only where no rail-relabelling gate
+; executes between the record's definition and the read WITHOUT that definition
+; re-executing"). The owner ruled it a DECLINE on 2026-09-14, on the measurement
+; that the source admits TWO realizable circuits and names neither: the aliasing
+; chain that was emitted, and the RE-PREPARATION reading, which needs no cloning
+; (re-running a known preparation is not copying an unknown state) and which this
+; compiler already emits when the source asks unambiguously. Analytically the two
+; differ: N i.i.d. samples of the prepared state versus one sample followed by
+; N-1 samples locked onto the first outcome.
+;
+; ⚠ WHAT THIS CONVERSION COSTS, stated rather than hidden (Rule 12(c)).
+; The subject was *an UNCARRIED in-body gate on an unclaimed rail* — and
+; "uncarried" IS "loop-invariant arg-0", so the subject and the ruled-out shape
+; are the same thing and this pin cannot be preserved by any edit. The file's own
+; 2026-09-14 note already said so without drawing the conclusion: *"the gate's
+; arg-0 is STILL the loop-invariant `%3` so there is still NO loop-carried header
+; φ for `r`"* — the shape was known, and unruled, in this very increment.
+; MEASURED, so the CLASS property is not lost: 19 other ACCEPT fixtures still
+; carry a zero-`cq_template_and_i32_hl_unc` pin on this binary, four of them
+; `*_leak_control` files, and the one-token sibling
+; `control_phase_kickback_mixed_onward_inloop.ll` (the result CARRIED,
+; `r = cq_theta(r,0.1)`, a header φ) still ACCEPTS — so the discrimination this
+; file half of a pair established survives in the other half. What is lost is the
+; UNCARRIED spelling specifically.
+;
+; RETIREMENT TRIGGER (L8): if the 2026-09-14 ruling is ever reversed this file
+; inverts back to its preserved ACCEPT form — every directive below is still here
+; for exactly that — and `lowering_reject_stale_reader_inloop_invariant_seed.ll`
+; inverts with it, in the same commit. Do not move one without the other.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+;
+; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so an IR-text `CHECK-NOT` here
+; would be VACUOUS (Rule 12 fixture-hygiene defect (b)); the property is carried
+; by the `not` inversion on the RUN line and by the CHECK above.
+;
+; ───────────── ORIGINAL HEADER AND DIRECTIVES, NEUTERED, BELOW ─────────────
 ; control_phase_kickback_mixed_onward_deadgate_leak_control.ll — ACCEPT **AND
 ; LEAKS**, deliberately. bd test_C_libtooling-3qlq Inc 1, the SECOND C-1 review
 ; round: finding F-C1-2(2a)'s DISCRIMINATING CONTROL, and the reason
@@ -6,9 +54,23 @@
 ;     int ext_f(int a);                                  /* separate TU */
 ;     int slice(int u){ int q=cq_theta(u,0.5); int r=cq_theta(u,0.3);
 ;       int y=5; if (q>5) y=ext_f(7);                    /* 6.5 arm -> %out */
-;       for(int i=0;i<3;i++){ if((y>>i)&1) cq_phi(0.25);
-;                             int t=cq_theta(r,0.1); (void)t; }  /* DEAD result */
-;       return cq_measure(r)+cq_measure(y); }
+;       int t=r; for(int i=0;i<3;i++){ if((y>>i)&1) cq_phi(0.25);
+;                                      t=cq_theta(r,0.1); }   /* result UNCARRIED */
+;       return cq_measure(t)+cq_measure(y); }
+;
+; ⚠ `cq_measure(t)`, NOT `cq_measure(r)` — bd test_C_libtooling-3d8q. The body's
+; `cq_theta(r,·)` CONSUMES the name `r` (`docs/frontend.md` §3.2's linear rule),
+; so the original `cq_measure(r)` named the PRE-LOOP record of a rail the loop had
+; already rotated three times — CLAUDE.md's own 8h7d.5 F-3 shape, out of loop, and
+; a member of the P1 stale-reader class. It declines since
+; `recordStaleQuantumReaders` landed. ⚠ WHAT THIS FILE PINS IS UNTOUCHED, which
+; is why the edit is one operand and not a conversion: `%20` is the LAST TRIP's
+; own result, the gate's arg-0 is STILL the loop-invariant `%3` so there is still
+; NO loop-carried header φ for `r`, the rail is still unclaimed, and the emitted
+; stream is BYTE-IDENTICAL — all five prefixes below are the lines they always
+; were, counts included. ⚠ It is NOT the sibling: `..._inloop.ll` CARRIES the
+; result (`r = cq_theta(r,0.1)`, a header φ) and discharges. Uncarried-but-read is
+; a third point, and it lowers exactly like the dead one.
 ;
 ; WHAT THIS PINS. The body gates `r` in place K times, and because the result is
 ; DEAD there is NO loop-carried header phi for it — so no collapse ever claimed
@@ -31,55 +93,50 @@
 ; result LIVE (`r = cq_theta(r,0.1)`), and it discharges — one token apart,
 ; opposite dispositions.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
 
 ; The two root mints and the 6.5 arm's `%out`.
-; CHECK: %[[Q:.*]] = call i32 @cqrt_alloc_i32(
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
-; CHECK-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i32(
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
-; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
+; [check]: %[[Q:.*]] = call i32 @cqrt_alloc_i32(
+; [check]-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; [check]-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i32(
+; [check]-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
+; [check]: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 
 ; The rolled body: the bit rail is minted and the flag stripped and freed, but
 ; the `and` is NEVER discharged — the leak this file pins. The in-place gate on
 ; the unclaimed rail `%[[R]]` still runs once per trip.
-; CHECK: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 %{{.*}})
-; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.500000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 1.000000e-01)
+; [check]: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 %{{.*}})
+; [check]-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
+; [check]-NEXT: call void @cqrt_x(i32 %[[F]])
+; [check]-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.500000e-01), !cq.branchphase
+; [check]-NEXT: call void @cqrt_x(i32 %[[F]])
+; [check]-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
+; [check]-NEXT: call void @cqrt_free(i32 %[[F]])
+; [check]-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 1.000000e-01)
 
 ; ⭐ ZERO `and` discharges — the unclaimed-rail refusal, unchanged by F-C1-2.
-; UCNT-NOT: call void @cq_template_and_i32_hl_unc(
+; [ucnt]-NOT: call void @cq_template_and_i32_hl_unc(
 
 ; TWO frees: the 6.5 arm's own flag, and the body's kickback flag. NOT the bit
 ; rail (that is the leak).
-; FCNT-COUNT-2: call void @cqrt_free(
-; FCNT-NOT: call void @cqrt_free(
+; [fcnt]-COUNT-2: call void @cqrt_free(
+; [fcnt]-NOT: call void @cqrt_free(
 
 ; FOUR `cqrt_x`: the 6.5 arm's two-arm bracket and the kickback's ¬flag bracket.
 ; (Added by the injection matrix: without this prefix the `extra_x` mutation was
 ; caught by NO block.)
-; XCNT-COUNT-4: call void @cqrt_x(i32
-; XCNT-NOT: call void @cqrt_x(i32
+; [xcnt]-COUNT-4: call void @cqrt_x(i32
+; [xcnt]-NOT: call void @cqrt_x(i32
 
-; NOROUTE-NOT: @cqrt_cswap
-; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: @cq_theta
-; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
-; NOROUTE-NOT: fneg
+; [noroute]-NOT: @cqrt_cswap
+; [noroute]-NOT: @cq_phi
+; [noroute]-NOT: @cq_theta
+; [noroute]-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; [noroute]-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
+; [noroute]-NOT: fneg
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
+
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
@@ -99,7 +156,7 @@ define i32 @slice(i32 noundef %0) local_unnamed_addr #0 {
   br label %13
 
 9:                                                ; preds = %19
-  %10 = tail call i32 @cq_measure_si32(i32 noundef %3) #3
+  %10 = tail call i32 @cq_measure_si32(i32 noundef %20) #3
   %11 = tail call i32 @cq_measure_si32(i32 noundef %8) #3
   %12 = add nsw i32 %11, %10
   ret i32 %12

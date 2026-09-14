@@ -54,7 +54,9 @@ namespace llvm {
 class CallInst;
 class DominatorTree;
 class Instruction;
+class LoopInfo;        // leg 1b of `readerStalesItself` (bd 3d8q F-D2-2)
 class PHINode;
+class ScalarEvolution; // leg 1b of `readerStalesItself` (bd 3d8q F-D2-2)
 class Value;
 }  // namespace llvm
 
@@ -118,11 +120,42 @@ struct TaintSet;
 // which discarded a live obligation about a DIFFERENT gate the moment any gate
 // at all was visible. A boolean cannot name a gate; this parameter can. Null
 // (the default) is the shipped behaviour of every other caller, byte for byte.
+//
+// `RequireEmitDominance` (bd test_C_libtooling-3d8q) — THE POSITION-AWARE PROOF'S
+// PRECONDITION, made a per-caller policy rather than a fixed one. The shipped
+// value is `true` and every pre-existing caller keeps it, byte for byte: the
+// harmlessness test refuses outright unless `EmitPoint` DOMINATES the candidate
+// gate, and only then asks leg 1 (`!isPotentiallyReachable`) or leg 2 (the
+// record-barrier walk).
+//
+// That precondition is NOT what carries the soundness — leg 1 and leg 2 each
+// prove "no instance of `T` runs between the record's last establishment and
+// this execution of `EmitPoint`" on their own. It is a CONSERVATIVE gate, and
+// for the pure-op policy it is also cheap and harmless, because a pure op's
+// template mints a FRESH rail and the shapes it refuses are rare.
+//
+// It is neither cheap nor harmless for the 3d8q QUANTUM-READER policy
+// (`OpcodeLowering::declineStaleRecordOps`' `@cq_theta_*` / `@cq_measure_*`
+// half), and the reason is structural, not incidental: a rotation reader
+// routinely IS a branch arm, and a measurement routinely sits AFTER a loop. In
+// both shapes `EmitPoint` cannot dominate a gate that is perfectly harmless —
+// a sibling arm that never executes on the read's own path (the drbq in-place
+// controlled-Ry if/else family), or an in-loop arm gate whose merge φ
+// re-establishes the record on every trip before the post-loop measure reads it
+// (`control_inplace_ry_inloop_*`). `false` therefore asks legs 1 and 2 DIRECTLY.
+//
+// ⚠ `false` IS AN ACCEPT-DIRECTION RELAXATION and is deliberately opt-in. It is
+// NOT flipped for the pure-op policy or for any condition-wire caller in this
+// increment: those fences have shipped and been Rule-13-cleared with the
+// precondition in place, and moving them is a separate, separately-cleared
+// change. One relation, one implementation, one policy bit — never a second
+// spelling of "can this gate stale that read" (Rule 14).
 llvm::CallInst *findNonDiagonalWireGate(
     llvm::ArrayRef<llvm::Value *> Seeds, bool CrossValueRouting,
     const llvm::Instruction *EmitPoint = nullptr,
     const llvm::DominatorTree *DT = nullptr, const TaintSet *Taint = nullptr,
-    const llvm::SmallPtrSetImpl<const llvm::CallInst *> *Covered = nullptr);
+    const llvm::SmallPtrSetImpl<const llvm::CallInst *> *Covered = nullptr,
+    bool RequireEmitDominance = true);
 
 // (Track A.1) THE ENUMERATING FACE OF THE SAME WALK — same closure, same
 // exemptions, same harmlessness proof; it COLLECTS every staling gate instead of
@@ -138,7 +171,8 @@ llvm::CallInst *findNonDiagonalWireGate(
 void collectNonDiagonalWireGates(
     llvm::ArrayRef<llvm::Value *> Seeds, bool CrossValueRouting,
     const llvm::Instruction *EmitPoint, const llvm::DominatorTree *DT,
-    const TaintSet *Taint, llvm::SmallVectorImpl<llvm::CallInst *> &Out);
+    const TaintSet *Taint, llvm::SmallVectorImpl<llvm::CallInst *> &Out,
+    bool RequireEmitDominance = true);
 
 // "IF `B` executes, `A` has already executed, and `A` never runs again after
 // it." THE ONE SPELLING of this project's position-aware proof obligation, and
@@ -222,6 +256,55 @@ bool provablyBefore(const llvm::Instruction *A, const llvm::Instruction *B,
 // (`ArmClassify::recordLivePerActivation`) and in that fixture; all three move
 // together.
 bool phiTracksWire(const llvm::PHINode *P);
+
+// "Can `R`'s OWN PREVIOUS DYNAMIC INSTANCE stale the record `Seed` that `R`
+// reads?" — the question bd test_C_libtooling-3d8q's Rule-13 round-1 finding
+// F-D1-1 found NOBODY was asking, in the one place a reader is its own staler.
+//
+// `OpcodeLowering::recordStaleQuantumReaders` grants every `@cq_theta_*` reader
+// the `Covered` self-exemption (it is an in-place Ry on the rail it reads, so
+// without the exemption every well-formed chained rotation would decline against
+// itself), and `Covered` is tested INSIDE the walker BEFORE the harmlessness
+// proof. Granted unconditionally, the gate never adjudicated was the reader's own
+// previous instance across a back edge — MEASURED, a loop body with exactly one
+// `cq_theta` on a loop-INVARIANT quantum name compiled and emitted a stream
+// byte-identical to a DIFFERENT, well-formed program.
+//
+// ⚠ IT IS NOT `gateIsHarmless(R, R, …)`, and the difference is measured, not
+// stylistic: that relation's leg 1 is `llvm::isPotentiallyReachable(T,
+// EmitPoint)`, which in LLVM 19 answers TRUE **by identity** when the two
+// coincide, so every self-gate falls through to leg 2 and a seed that is a
+// non-tracking φ (or not an Instruction) is refused even when the reader
+// provably runs at most once. That spelling declines 12 shipped Rule-13-cleared
+// ACCEPT fixtures. The definition in `WireWalk.cpp` carries the list and the two
+// legs this predicate asks instead — both of them the SHARED implementations, so
+// there is still exactly one spelling of each (Rule 14).
+//
+// ⚠ THE THIRD LEG, `LI`/`SE` (bd 3d8q, Rule-13 round-2 finding F-D2-2). Leg 1's
+// `reachesWithoutBarrier(R, R, {})` is a CFG question, and "there is a cycle
+// through `R`'s block" is NOT "`R` executes twice". MEASURED: a reader in a
+// block guarded by `if (i == 0)` — and the `first`-flag spelling of the same
+// program — executes EXACTLY ONCE, emits the correct one-rotation circuit on the
+// pre-fence compiler, and was declined by legs 1+2 alone. When BOTH pointers are
+// supplied, leg 1b (`readerRunsAtMostOncePerActivation`, file-local to
+// `WireWalk.cpp` — deliberately not exported, so a second caller cannot acquire
+// the ACCEPT-direction relaxation without coming through this predicate) asks
+// the SEMANTIC form of leg 1's question: is the header guard that routes to the
+// reader's block provably false on every arrival from the latch, and is the loop
+// un-re-enterable after the read? `Taint` is the THIRD required pointer and it
+// is a FENCE, not a convenience: the leg refuses a TAINTED guard outright,
+// because "how many times does this block execute" is a classical question that
+// a quantum condition does not have a classical answer to. Pass NULL for any of
+// the three and the call is
+// BYTE-IDENTICAL to the pre-F-D2-2 behaviour — the leg is strictly additive, and
+// it is the only relaxation in this predicate, so a future caller that cannot
+// build a `ScalarEvolution` simply gets the older, stricter answer.
+//
+// `true` means DECLINE (the reader stales itself); `false` means the
+// self-exemption may be granted.
+bool readerStalesItself(const llvm::CallInst *R, llvm::Value *Seed,
+                        const llvm::DominatorTree &DT, const llvm::LoopInfo *LI,
+                        llvm::ScalarEvolution *SE, const TaintSet *Taint);
 
 // The PER-ACTIVATION reading of `provablyBefore`, for code inside a loop whose
 // every iteration re-establishes the thing being reasoned about (bd

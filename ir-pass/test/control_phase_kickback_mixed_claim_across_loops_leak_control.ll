@@ -1,3 +1,51 @@
+; ⚠⚠ VERDICT INVERTED: ACCEPT -> DECLINE, **OWNER RULING 2026-09-14** (bd
+; test_C_libtooling-3d8q, Rule-13 round-1 finding F-D1-1). Everything below this
+; block is the file's ORIGINAL header and its original directives, preserved
+; verbatim as the record of what it used to pin, and NEUTERED (`CHECK` ->
+; `[check]`, and every `--check-prefix` name likewise) so FileCheck cannot see
+; them. Read it; do not delete it.
+;
+; THE RULED SHAPE, and this module contains it: LOOP B's `int s = cq_theta(r, 0.2)` reads `r`, which LOOP A left behind.
+; The name is loop-INVARIANT and is RE-READ on every trip while the wire has
+; already moved under it — CLAUDE.md CORRECTNESS RISK §2's rail-staleness rule
+; verbatim ("a rail member may be read only where no rail-relabelling gate
+; executes between the record's definition and the read WITHOUT that definition
+; re-executing"). The owner ruled it a DECLINE on 2026-09-14, on the measurement
+; that the source admits TWO realizable circuits and names neither: the aliasing
+; chain that was emitted, and the RE-PREPARATION reading, which needs no cloning
+; (re-running a known preparation is not copying an unknown state) and which this
+; compiler already emits when the source asks unambiguously. Analytically the two
+; differ: N i.i.d. samples of the prepared state versus one sample followed by
+; N-1 samples locked onto the first outcome.
+;
+; ⚠ WHAT THIS CONVERSION COSTS, stated rather than hidden (Rule 12(c)).
+; The subject was F-C1B-2's per-loop `ClaimedRailRoots` key — *"LOOP A's claim must
+; not satisfy clause (0) for LOOP B"* — and it needs LOOP B to hold an in-body
+; in-place gate on a root LOOP B did not itself claim, which is exactly a
+; loop-invariant re-read. The subject is inseparable from the ruled-out shape, so
+; this pin cannot be preserved by an edit either. MEASURED: the discriminating
+; ACCEPT half, `control_phase_kickback_mixed_claim_across_loops_accept_control.ll`
+; (the same source with LOOP B's `cq_theta(r,0.2)` REMOVED), still ACCEPTS on this
+; binary, so the "a narrowed key that refused everything" control is intact; what
+; is lost is the REFUSAL direction's only positive pin. Filed as a Track-D
+; follow-on. ⚠ Note also that this file's own header records that its
+; HAND-UNROLLED twin declines on every binary in the epic — so, exactly as with
+; `l1`/`l1u`, the ruling CLOSES a rolled/unrolled disposition split rather than
+; opening one.
+;
+; RETIREMENT TRIGGER (L8): if the 2026-09-14 ruling is ever reversed this file
+; inverts back to its preserved ACCEPT form — every directive below is still here
+; for exactly that — and `lowering_reject_stale_reader_inloop_invariant_seed.ll`
+; inverts with it, in the same commit. Do not move one without the other.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+;
+; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so an IR-text `CHECK-NOT` here
+; would be VACUOUS (Rule 12 fixture-hygiene defect (b)); the property is carried
+; by the `not` inversion on the RUN line and by the CHECK above.
+;
+; ───────────── ORIGINAL HEADER AND DIRECTIVES, NEUTERED, BELOW ─────────────
 ; control_phase_kickback_mixed_claim_across_loops_leak_control.ll —
 ; ACCEPT-AND-LEAKS. bd test_C_libtooling-3qlq Inc 1, the THIRD C-1 review round,
 ; finding **F-C1B-2**: `taint.ClaimedRailRoots` was MODULE-WIDE and keyed on the
@@ -50,70 +98,63 @@
 ; `p/r40_onward_r1open.c`, `claimedHERE=1` at both offers), and every shipped
 ; customer keeps its 3/3 rolled-vs-unrolled identity.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
-; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=UCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=MDCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 
 ; The two root mints. NOTE the printed BLOCK ORDER below is entry, then the 6.5
 ; region's block, then LOOP A's body, then LOOP B's — `-O1` rotates both loops, so
 ; these CHECKs follow file order, not source order.
-; CHECK: call void @cqrt_ry_i32(i32 %{{.*}}, double 5.000000e-01)
-; CHECK-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i32(
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
+; [check]: call void @cqrt_ry_i32(i32 %{{.*}}, double 5.000000e-01)
+; [check]-NEXT: %[[R:.*]] = call i32 @cqrt_alloc_i32(
+; [check]-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 3.000000e-01)
 
 ; The 6.5 arm's out-rail, minted between the two loops.
-; CHECK: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
+; [check]: %[[OUT:.*]] = call i32 @cqrt_alloc_i32(i32 0)
 
 ; LOOP A: the carried rail collapsed to its root — one `cqrt_ry` per trip on `%r`.
-; CHECK: call void @cqrt_ry_i32(i32 %[[R]], double 1.000000e-01)
+; [check]: call void @cqrt_ry_i32(i32 %[[R]], double 1.000000e-01)
 
 ; LOOP B: the bit rail off `%out`, the flag, the kickback, the strip and the flag
 ; free — and NO discharge of the bit rail. That is the leak this file pins.
-; CHECK: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 %{{.*}})
-; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.500000e-01), !cq.branchphase
-; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
-; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.000000e-01)
+; [check]: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[OUT]], i32 %{{.*}})
+; [check]-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
+; [check]-NEXT: call void @cqrt_x(i32 %[[F]])
+; [check]-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.500000e-01), !cq.branchphase
+; [check]-NEXT: call void @cqrt_x(i32 %[[F]])
+; [check]-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
+; [check]-NEXT: call void @cqrt_free(i32 %[[F]])
+; [check]-NEXT: call void @cqrt_ry_i32(i32 %[[R]], double 2.000000e-01)
 
 ; ⭐ THE ASSERTION: ZERO `and` discharges anywhere. It was ONE on the round-2 binary.
-; UCNT-NOT: call void @cq_template_and_i32_hl_unc(
+; [ucnt]-NOT: call void @cq_template_and_i32_hl_unc(
 
 ; One kickback gate, in loop B's body.
-; ACNT-COUNT-1: call void @cqrt_rz_i1(
-; ACNT-NOT: call void @cqrt_rz_i1(
+; [acnt]-COUNT-1: call void @cqrt_rz_i1(
+; [acnt]-NOT: call void @cqrt_rz_i1(
 
 ; `#cqrt_rz_i1 == #!cq.branchphase` — an unmarked kickback gate is one the
 ; uncompute spine would adjoint, cancelling the user's phase exactly (F-L7-1).
-; MDCNT-COUNT-1: !cq.branchphase
-; MDCNT-NOT: !cq.branchphase
+; [mdcnt]-COUNT-1: !cq.branchphase
+; [mdcnt]-NOT: !cq.branchphase
 
 ; The `cqrt_free` census — a dropped or an extra free is a Rule-6 defect the
 ; positive CHECKs cannot see.
-; FCNT-COUNT-2: call void @cqrt_free(
-; FCNT-NOT: call void @cqrt_free(
+; [fcnt]-COUNT-2: call void @cqrt_free(
+; [fcnt]-NOT: call void @cqrt_free(
 
 ; The `cqrt_x` census: the kickback's polarity bracket(s) and the arm brackets.
 ; An UNPAIRED one is a wrong-branch phase.
-; XCNT-COUNT-4: call void @cqrt_x(i32
-; XCNT-NOT: call void @cqrt_x(i32
+; [xcnt]-COUNT-4: call void @cqrt_x(i32
+; [xcnt]-NOT: call void @cqrt_x(i32
 
 ; WHOLE-FILE PURE-NEGATIVE.
-; NOROUTE-NOT: @cqrt_cswap
-; NOROUTE-NOT: @cq_phi
-; NOROUTE-NOT: @cq_theta
-; NOROUTE-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
-; NOROUTE-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
+; [noroute]-NOT: @cqrt_cswap
+; [noroute]-NOT: @cq_phi
+; [noroute]-NOT: @cq_theta
+; [noroute]-NOT: call void @cqrt_rz_{{(i8|i16|i32|i64|f16|f32|f64|f80)}}(
+; [noroute]-NOT: @cqrt_rz_{{[a-z0-9]+}}_controlled(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
+
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

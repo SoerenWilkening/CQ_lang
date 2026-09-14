@@ -344,6 +344,26 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // diagnoses loudly and marks `taint.StaleDeclined` for `lowerOps` to skip.
   declineStaleRecordOps(M, taint);
 
+  // (bd test_C_libtooling-3d8q, P1) THE STALE-READER ANALYSIS — pure analysis,
+  // no diagnostic, paired with `declineRecordedStaleQuantumReaders` far below.
+  // It asks the linear rule (`docs/frontend.md` §3.2) of the reader families the
+  // sweep above does not cover: a `@cq_theta_<sfx>` (arg-0) or `@cq_measure_<sfx>`
+  // call reading a name the wire has already moved past. Until this, a rotation
+  // or a measurement reading a stale name was asked NOTHING while an `add` on
+  // the same name declined — a CONFIRMED verify-clean silent miscompile, exit 0
+  // and stage-2b clean, emitting a stream byte-identical to a DIFFERENT
+  // well-formed program.
+  //
+  // ⚠ IT MUST RUN HERE, BEFORE `lowerLoops` / the peel / control detection, and
+  // that is the over-decline half of the argument: its premise is that an SSA
+  // name denotes a basis RECORD, which is true only of the names the USER wrote.
+  // The rail-φ collapse, the peel and the one-register lift each REWRITE a
+  // wire-TRACKING name into a wire-BASE name, and the fence asked after any of
+  // them declines well-formed programs for a fact about the rewrite (measured: 9
+  // shipped in-loop ACCEPT fixtures). The diagnostic half is deferred to the late
+  // slot for the opposite reason — see `TaintSet::StaleQuantumReaders`.
+  recordStaleQuantumReaders(M, taint);
+
   // Controlled Tier-0 conditional output (Phase 7.6 Increment 2): a tainted
   // `if (q > k) printf("%d", x)` lowers to ONE `cqrt_tape_write_<W>_controlled`
   // under the minted flag. Runs BEFORE `detectControlRegions` — the void-arm
@@ -655,6 +675,32 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
 
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
+  // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
+  // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,
+  // `docs/frontend.md` §3.2, for a `@cq_theta_<sfx>` / `@cq_measure_<sfx>` reader
+  // of a name the wire has moved past).
+  //
+  // ⚠ AS LATE AS IT CAN POSSIBLY BE, and that is the point. This fence is a
+  // BACKSTOP for the shapes no specialised owner claims, never a preemptor of
+  // one: the condition-wire dispositions, `ArmClassify` R6,
+  // `LoopLowering::staleRailRecordRead`, `declineClassicalMuxes` and
+  // `declineLiftedStaleRecordOps` all own shapes of their own and all give a more
+  // precise message. `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd
+  // `br4a`), so "last" is literally "every other owner goes first" — measured:
+  // emitted at the early slot this takes the message away from 68 shipped
+  // negative fixtures, leaving 68 fences pinned by nothing (Rule 12
+  // fixture-hygiene defect (c)).
+  //
+  // ⚠ IT CANNOT GO ANY LATER. `lowerRotations` below RAUWs every `@cq_theta_*`
+  // result to an `i32` handle and erases the call; `lowerMeasures` does the same
+  // for the measures. A recorded reader is a `WeakTrackingVH`, so moving this
+  // call below either of them NULLS the whole record and the fence becomes a
+  // silent no-op — with no diagnostic anywhere. RETIREMENT TRIGGER: that, and
+  // moving the ANALYSIS half (`recordStaleQuantumReaders`) below `lowerLoops` /
+  // the peel / control detection, which reopens the over-decline the split
+  // exists to avoid.
+  declineRecordedStaleQuantumReaders(M, taint);
+
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
@@ -922,6 +968,26 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   declineTaintEscapes(M, taint, plan6);
   declineStaleRecordOps(M, taint);
 
+  // (bd test_C_libtooling-3d8q, P1) THE STALE-READER ANALYSIS — pure analysis,
+  // no diagnostic, paired with `declineRecordedStaleQuantumReaders` far below.
+  // It asks the linear rule (`docs/frontend.md` §3.2) of the reader families the
+  // sweep above does not cover: a `@cq_theta_<sfx>` (arg-0) or `@cq_measure_<sfx>`
+  // call reading a name the wire has already moved past. Until this, a rotation
+  // or a measurement reading a stale name was asked NOTHING while an `add` on
+  // the same name declined — a CONFIRMED verify-clean silent miscompile, exit 0
+  // and stage-2b clean, emitting a stream byte-identical to a DIFFERENT
+  // well-formed program.
+  //
+  // ⚠ IT MUST RUN HERE, BEFORE `lowerLoops` / the peel / control detection, and
+  // that is the over-decline half of the argument: its premise is that an SSA
+  // name denotes a basis RECORD, which is true only of the names the USER wrote.
+  // The rail-φ collapse, the peel and the one-register lift each REWRITE a
+  // wire-TRACKING name into a wire-BASE name, and the fence asked after any of
+  // them declines well-formed programs for a fact about the rewrite (measured: 9
+  // shipped in-loop ACCEPT fixtures). The diagnostic half is deferred to the late
+  // slot for the opposite reason — see `TaintSet::StaleQuantumReaders`.
+  recordStaleQuantumReaders(M, taint);
+
   // Controlled Tier-0 conditional output (Phase 7.6 Increment 2) mirrored in
   // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12) — see
   // run() for the pre-`detectControlRegions` ordering rationale.
@@ -1008,6 +1074,32 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 6 specialization driver (step 14) — mirrored from run() (twin-pipeline
   // parity, WI-1.12).
   specialize(M, wd, taint, plan6);
+  // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
+  // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,
+  // `docs/frontend.md` §3.2, for a `@cq_theta_<sfx>` / `@cq_measure_<sfx>` reader
+  // of a name the wire has moved past).
+  //
+  // ⚠ AS LATE AS IT CAN POSSIBLY BE, and that is the point. This fence is a
+  // BACKSTOP for the shapes no specialised owner claims, never a preemptor of
+  // one: the condition-wire dispositions, `ArmClassify` R6,
+  // `LoopLowering::staleRailRecordRead`, `declineClassicalMuxes` and
+  // `declineLiftedStaleRecordOps` all own shapes of their own and all give a more
+  // precise message. `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd
+  // `br4a`), so "last" is literally "every other owner goes first" — measured:
+  // emitted at the early slot this takes the message away from 68 shipped
+  // negative fixtures, leaving 68 fences pinned by nothing (Rule 12
+  // fixture-hygiene defect (c)).
+  //
+  // ⚠ IT CANNOT GO ANY LATER. `lowerRotations` below RAUWs every `@cq_theta_*`
+  // result to an `i32` handle and erases the call; `lowerMeasures` does the same
+  // for the measures. A recorded reader is a `WeakTrackingVH`, so moving this
+  // call below either of them NULLS the whole record and the fence becomes a
+  // silent no-op — with no diagnostic anywhere. RETIREMENT TRIGGER: that, and
+  // moving the ANALYSIS half (`recordStaleQuantumReaders`) below `lowerLoops` /
+  // the peel / control detection, which reopens the over-decline the split
+  // exists to avoid.
+  declineRecordedStaleQuantumReaders(M, taint);
+
   lowerRotations(M, wd, taint, &plan);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);

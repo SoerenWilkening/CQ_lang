@@ -12,14 +12,18 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/LoopInfo.h"          // leg 1b (bd 3d8q F-D2-2)
+#include "llvm/Analysis/ScalarEvolution.h"   // leg 1b (bd 3d8q F-D2-2)
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Constants.h"               // leg 1b (bd 3d8q F-D2-2)
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
 
 #include <cassert>
 #include <iterator>
+#include <optional>
 
 using namespace llvm;
 
@@ -326,13 +330,24 @@ bool reachesWithoutBarrier(const Instruction *From, const Instruction *To,
 //
 // A seed that is ITSELF a non-tracking phi gets NO barrier at all — not even
 // its own definition — because the premise fails for it too.
-bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
-                    const Value *Seed, ArrayRef<Value *> Seeds,
-                    const DominatorTree &DT) {
-  if (!DT.dominates(EmitPoint, T))
-    return false;
-  if (!isPotentiallyReachable(T, EmitPoint, /*ExclusionSet=*/nullptr, &DT))
-    return true;  // leg 1 — the pre-existing straight-line proof, unchanged.
+//
+// `RequireEmitDominance` (bd test_C_libtooling-3d8q) — see `WireWalk.h`. The
+// dominance test below is a CONSERVATIVE PRECONDITION, not the proof: legs 1 and
+// 2 each establish "no instance of `T` runs between the record's last
+// establishment and this execution of `EmitPoint`" without it. Leg 2's proof, as
+// written above, never cites `DT.dominates(EmitPoint, T)`; what it needs is that
+// a barrier executes before `t_A`, which SSA gives for free (`Seed` is
+// `EmitPoint`'s own operand, and every superseding phi is separately required to
+// dominate `EmitPoint`). Every shipped caller passes `true` and is byte-unchanged.
+// LEG 2 ALONE, split out for bd test_C_libtooling-3d8q's Rule-13 round-1 finding
+// F-D1-1 so the ONE caller that must skip leg 1 can ask it without re-spelling it
+// (Rule 14). `gateIsHarmless` below is byte-identical in behaviour to what it was
+// before the split, and remains the only entry point every pre-existing caller
+// reaches. Nothing else changed: the barrier set, the superseding-phi closure and
+// the walk are moved verbatim.
+bool recordBarrierCutsPath(const Instruction *EmitPoint, const CallInst *T,
+                           const Value *Seed, ArrayRef<Value *> Seeds,
+                           const DominatorTree &DT) {
   const auto *SeedDef = dyn_cast<Instruction>(Seed);
   if (!SeedDef)
     return false;  // no re-establishing definition — loop-invariant, decline.
@@ -362,7 +377,282 @@ bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
   return !reachesWithoutBarrier(T, EmitPoint, Barriers);
 }
 
+bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
+                    const Value *Seed, ArrayRef<Value *> Seeds,
+                    const DominatorTree &DT, bool RequireEmitDominance) {
+  if (RequireEmitDominance && !DT.dominates(EmitPoint, T))
+    return false;
+  // ⚠ LEG 1 IS MEANINGLESS WHEN `T == EmitPoint`, AND THAT IS AN LLVM FACT, NOT A
+  // STYLE POINT (bd 3d8q, Rule-13 round-1 F-D1-1; owner ruling 2026-09-14).
+  // LLVM 19's `isPotentiallyReachable(A, B)` opens
+  //     if (A == B || A->comesBefore(B)) return true;
+  // so with the two coinciding it answers TRUE **BY IDENTITY** — never because a
+  // path exists — leg 1 never short-circuits, and leg 2 then refuses any seed
+  // that is a non-wire-tracking φ or not an Instruction. MEASURED on binary
+  // `33af6130`: calling THIS function as the stale-reader fence's self-gate test
+  // declines 12 shipped Rule-13-cleared ACCEPT fixtures, ten of which hold a
+  // reader that cannot execute twice at all. The self-gate question has its own
+  // owner, `readerStalesItself` below, which asks leg 1 non-degenerately from
+  // `std::next(R)` and then calls `recordBarrierCutsPath` — the SAME leg 2.
+  // DO NOT "simplify" that back into a `gateIsHarmless(R, R, …)` call.
+  if (!isPotentiallyReachable(T, EmitPoint, /*ExclusionSet=*/nullptr, &DT))
+    return true;  // leg 1 — the pre-existing straight-line proof, unchanged.
+  return recordBarrierCutsPath(EmitPoint, T, Seed, Seeds, DT);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// LEG 1b OF `readerStalesItself` — "the CFG says `R` is in a cycle, but does `R`
+// ITSELF run more than once?" (bd test_C_libtooling-3d8q, Rule-13 round-2
+// finding F-D2-2.)
+//
+// WHY IT EXISTS. Leg 1 is a pure CFG question — `reachesWithoutBarrier(R, R, {})`
+// — and a CFG cycle through `R`'s block is not the same fact as `R` executing
+// twice. MEASURED, two well-formed programs the ORACLE compiled to the CORRECT
+// one-rotation circuit and the round-2 binary declined:
+//
+//   for (i<3) { if (i == 0) { b = cq_theta(q,.1); s += cq_measure(b); } else … }
+//   first = 1; for (i<3) { if (first) { b = cq_theta(q,.1); …; first = 0; } … }
+//
+// `q` is loop-INVARIANT, so leg 2 (`recordBarrierCutsPath`) correctly refuses —
+// there is no per-trip barrier that re-establishes the record. But the reader
+// runs EXACTLY ONCE, so there is no second instance to stale it and the chain
+// reading and the re-preparation reading COINCIDE. The owner's 2026-09-14 ruling
+// declined the in-loop invariant re-read because *"the source admits TWO
+// realizable circuits and names neither"*; a once-executing reader admits
+// exactly ONE, so the ruling's own rationale is absent and the decline is an
+// over-decline this fence created (an over-decline is a DEFECT — owner ruling
+// 2026-09-11, quoted in CLAUDE.md's Prime Directive).
+//
+// ⚠ THIS IS AN ACCEPT-DIRECTION WIDENING — the unforgivable direction if it is
+// wrong — so every clause below is a REQUIREMENT and every unprovable answer is
+// `false` (keep declining). It is reachable from EXACTLY ONE predicate
+// (`readerStalesItself`, itself one caller: `recordStaleQuantumReaders`), and it
+// is inert when the caller passes no `LoopInfo`/`ScalarEvolution`, so it cannot
+// move `gateIsHarmless` or any of the walker's pre-existing callers.
+
+// "What is the guard `C` worth when control arrives at header `H` from the LATCH
+// `Lat`?" `std::nullopt` = NOT PROVABLE, which is always the decline direction.
+//
+// Two evaluators, because the two idioms `-O1` produces are not the same shape:
+//   (i) a ONE-SHOT FLAG (`int first = 1; … first = 0;`) survives `-O1` as an
+//       `i1` header φ with CONSTANT incomings (`[false, %pre], [true, %latch]`).
+//       SCEV models no `i1` φ, so this is read off the φ directly.
+//   (ii) a COMPARE ON THE INDUCTION VARIABLE (`if (i == 0)`) survives as
+//       `icmp eq %iv, 0` on a header φ. Each operand is rewritten to the value
+//       it takes ON THE LATCH EDGE (an `H`-φ becomes its latch incoming; a
+//       loop-invariant operand is already that value) and the rewritten
+//       predicate is put to ScalarEvolution, whose answer is UNIVERSAL over the
+//       add-recurrence's iterations — exactly the quantifier this needs
+//       ("false on EVERY arrival from the latch", not just on the second trip).
+// Anything else — a non-`H` φ, a loop-variant non-φ operand, an `fcmp`, a
+// non-integer operand, a `select`/`and`/`or` tree — is `nullopt` (L5: when you
+// cannot bound something, say what is skipped rather than enumerating folds).
+std::optional<bool> guardValueOnLatchEdge(const Value *C, const BasicBlock *H,
+                                          const BasicBlock *Lat, const Loop *L,
+                                          ScalarEvolution &SE) {
+  if (const auto *K = dyn_cast<ConstantInt>(C))
+    return K->isOne();
+  if (const auto *P = dyn_cast<PHINode>(C)) {
+    if (P->getParent() != H)
+      return std::nullopt;
+    if (const auto *K = dyn_cast<ConstantInt>(P->getIncomingValueForBlock(Lat)))
+      return K->isOne();  // (i) the one-shot flag.
+    return std::nullopt;
+  }
+  const auto *Cmp = dyn_cast<ICmpInst>(C);
+  if (!Cmp)
+    return std::nullopt;
+  Value *Op[2];
+  for (unsigned I = 0; I != 2; ++I) {
+    Value *O = Cmp->getOperand(I);
+    if (auto *P = dyn_cast<PHINode>(O)) {
+      if (P->getParent() != H)
+        return std::nullopt;  // a φ we cannot evaluate on the latch edge.
+      O = P->getIncomingValueForBlock(Lat);
+    } else if (!L->isLoopInvariant(O)) {
+      return std::nullopt;  // loop-variant and not a header φ — unevaluable.
+    }
+    if (!O->getType()->isIntegerTy())
+      return std::nullopt;  // SCEV is asked about integers only.
+    Op[I] = O;
+  }
+  const SCEV *A = SE.getSCEV(Op[0]), *B = SE.getSCEV(Op[1]);
+  ICmpInst::Predicate P = Cmp->getPredicate();
+  if (SE.isKnownPredicate(P, A, B))
+    return true;
+  if (SE.isKnownPredicate(ICmpInst::getInversePredicate(P), A, B))
+    return false;
+  return std::nullopt;  // SCEV cannot decide — the `i < argc` control lands here.
+}
+
+// "Does `R` execute AT MOST ONCE per activation of its function?" — the SEMANTIC
+// reading of leg 1, for a reader that sits in a guarded block inside a loop.
+//
+// THE PROOF, and every clause is load-bearing. Let `L` be `R`'s innermost loop,
+// `H` its header, `PH` its preheader, `Lat` its latch, `B` the reader's block:
+//
+//   (C2) `L` is TOP-LEVEL. In a nest, "once per activation of the inner loop"
+//        is once per trip of the outer one — not once.
+//   (C3) `L` is in loop-simplify-ish form (a preheader and a single latch) and
+//        `B != H` (the header runs every trip by construction).
+//   (C4) `H` is entered on EXACTLY TWO EDGES, and they are `PH` and `Lat`. Both
+//        the edge COUNT (`pred_size`, so a duplicated latch edge cannot pass as
+//        one) and the edge SET are checked, because (C7) reads ONE incoming of a
+//        φ and a second latch edge would carry a value it never saw.
+//   (C5) `B`'s ONLY predecessor is `H` — so every execution of `R` is an `H`→`B`
+//        edge, and there is no second door into the reader.
+//   (C6) `H`'s terminator is a conditional `br` whose successors are DISTINCT
+//        and exactly one of them is `B`. `Want` is the polarity that reaches `R`.
+//   (C1) the guard is CLASSICAL (untainted). Under a tainted condition "how many
+//        times does this block execute" has no classical answer at all.
+//   (C7) THE SEMANTIC STEP: the guard provably evaluates to `!Want` on EVERY
+//        arrival from `Lat`.
+//   (C8a) `PH` is NOT REACHABLE FROM `R` — the loop cannot be re-entered after
+//        the reader has run. Without this the loop could be exited and entered
+//        again, and the second entry arrives at `H` from `PH`, where (C7) says
+//        nothing. `isPotentiallyReachable` is conservative-TRUE (it bails true
+//        past its scan limit), and TRUE here means DECLINE.
+//
+// Then: an execution of `R` needs an `H`→`B` edge (C5), which needs an arrival
+// at `H` with the guard `== Want`; arrivals at `H` come from `PH` or `Lat` (C4);
+// from `Lat` the guard is `!Want` (C7); so only a `PH` arrival can run `R`, and
+// after one has, `PH` never executes again (C8a). Hence at most one `R`. ∎
+//
+//   (C8b) a STRUCTURAL BACKSTOP, deliberately kept although the proof above is
+//         complete without it: every CFG cycle through `R` must cross `H`'s
+//         terminator. The argument above leans on LoopInfo's contracts (a
+//         preheader is outside the loop and is the loop's only non-latch entry);
+//         this clause leans on nothing but the CFG, and it costs one bounded
+//         walk. If the two ever disagree, the conjunction declines — which is
+//         the direction this file is allowed to be wrong in.
+bool readerRunsAtMostOncePerActivation(const Instruction *R, const LoopInfo &LI,
+                                       ScalarEvolution &SE,
+                                       const DominatorTree &DT,
+                                       const TaintSet &Taint) {
+  const BasicBlock *B = R->getParent();
+  const Loop *L = LI.getLoopFor(B);
+  if (!L || L->getParentLoop())
+    return false;  // (C2) no loop (leg 1 owns it) / nested.
+  const BasicBlock *H = L->getHeader();
+  BasicBlock *PH = L->getLoopPreheader();
+  BasicBlock *Lat = L->getLoopLatch();
+  if (!PH || !Lat || B == H)
+    return false;  // (C3)
+  if (pred_size(H) != 2)
+    return false;  // (C4) edge COUNT — a duplicated latch edge is refused here.
+  {
+    SmallPtrSet<const BasicBlock *, 4> P(pred_begin(H), pred_end(H));
+    if (!P.count(PH) || !P.count(Lat))
+      return false;  // (C4) edge SET.
+  }
+  if (B->getUniquePredecessor() != H)
+    return false;  // (C5)
+  const auto *Br = dyn_cast<BranchInst>(H->getTerminator());
+  if (!Br || !Br->isConditional())
+    return false;  // (C6)
+  bool Want;
+  if (Br->getSuccessor(0) == B && Br->getSuccessor(1) != B)
+    Want = true;
+  else if (Br->getSuccessor(1) == B && Br->getSuccessor(0) != B)
+    Want = false;
+  else
+    return false;  // (C6) `B` is both successors, or neither.
+  // (C1) THE GUARD MUST BE CLASSICAL. "How many times does this block execute?"
+  // is a CLASSICAL question, and under a TAINTED condition it does not even have
+  // a classical answer — the region is a control region, the arm runs in
+  // superposition, and `detectControlRegions` (or the loop layer) owns it. Asking
+  // ScalarEvolution about a quantum handle would be a Rule-3 wire crossing of the
+  // exact family this project keeps hitting.
+  //
+  // ⚠ THE L1 RESIDUAL, STATED RATHER THAN LEFT AS AN INFERENCE. This runs at
+  // ROUND-1 taint, and a condition can become tainted only at the round-2
+  // fixpoint (derived from a 6.5/4.5 merge `%out`); the `Delta` re-ask is scoped
+  // to readers whose RECORD operand grew, so such a reader is not re-asked. That
+  // window CANNOT turn a decline into an accept, and the reason is independent of
+  // this leg: a round-2-tainted condition on a LOOP HEADER's branch is a tainted
+  // branch in a loop, which the loop layer refuses on its own (`control flow
+  // inside a loop body under quantum control`, or the Q1 quantum-bounded-exit
+  // decline for an exiting one). Granting here removes ONE reader from
+  // `taint.StaleQuantumReaders`; it disarms no other fence. RETIREMENT TRIGGER:
+  // the day a tainted loop-header branch LOWERS, re-derive this paragraph — the
+  // argument is that it does not, not that the taint set is settled.
+  if (Taint.Tainted.count(Br->getCondition()))
+    return false;
+  std::optional<bool> OnLatch =
+      guardValueOnLatchEdge(Br->getCondition(), H, Lat, L, SE);
+  if (!OnLatch || *OnLatch == Want)
+    return false;  // (C7)
+  if (isPotentiallyReachable(R, PH->getTerminator(), /*ExclusionSet=*/nullptr,
+                             &DT, &LI))
+    return false;  // (C8a) — conservative TRUE is the decline direction.
+  SmallPtrSet<const Instruction *, 1> Cut;
+  Cut.insert(Br);
+  if (reachesWithoutBarrier(R, R, Cut))
+    return false;  // (C8b)
+  return true;
+}
+
 }  // namespace
+
+// (bd test_C_libtooling-3d8q, Rule-13 round-1 finding F-D1-1) "Can `R`'s OWN
+// PREVIOUS DYNAMIC INSTANCE stale the record `Seed` that `R` reads?"
+//
+// THE QUESTION EXISTS BECAUSE OF A MEASURED SILENT MISCOMPILE.
+// `recordStaleQuantumReaders` grants the reader the `Covered` self-exemption —
+// `c = cq_theta(a,θ)` is an in-place Ry on the very rail it reads, so without it
+// every well-formed chained rotation would decline against itself — and that
+// exemption was UNCONDITIONAL. A loop body holding exactly ONE `cq_theta` on a
+// loop-INVARIANT quantum name therefore compiled, emitting a stream
+// BYTE-IDENTICAL to the self-assigned chain, which is a DIFFERENT, well-formed
+// program.
+//
+// ⚠ IT CANNOT BE SPELLED AS `gateIsHarmless(R, R, …)`, AND THAT IS MEASURED, NOT
+// ARGUED. Leg 1 asks `llvm::isPotentiallyReachable(T, EmitPoint)`, whose LLVM-19
+// implementation opens with `if (A == B || A->comesBefore(B)) return true;` — so
+// with `T == EmitPoint` it answers TRUE **BY IDENTITY**, never short-circuits,
+// and every self-gate falls into leg 2. Leg 2 then refuses any seed that is a
+// non-wire-tracking φ or is not an Instruction — correct when the gate really can
+// reach the read, vacuous when the "path" was the identity. MEASURED on binary
+// `33af6130`: that spelling turned **12 shipped Rule-13-cleared ACCEPT fixtures
+// into declines** (`control_inplace_ry_inloop_two_exits`, the three
+// `control_inplace_ry_stateprep_*`, both `control_*_lifted_phi_base`, the two
+// `control_phase_kickback_mixed_*_leak_control`,
+// `control_swap_accept_select_mergephi_rail_sdagger` and the three
+// `lowering_*_live_record_*router_phi*`) plus two decline fixtures whose message
+// moved. Every one of them has a reader that CANNOT EXECUTE TWICE.
+//
+// So the two legs are asked in the only order that is meaningful for the identity
+// case, with the SHARED implementations (Rule 14 — no third spelling of either):
+//   (1) `reachesWithoutBarrier(R, R, {})` — the exact, non-degenerate "is there a
+//       CFG path from just after `R` back to `R`". It starts at `std::next(R)`,
+//       so unlike `isPotentiallyReachable` it cannot match by identity. NO path
+//       ⇒ `R` runs at most once ⇒ it cannot stale itself, whatever the seed is.
+//   (1b) `readerRunsAtMostOncePerActivation` — the SEMANTIC reading of the very
+//       same question, for the case leg 1's CFG test cannot see (bd 3d8q,
+//       Rule-13 round-2 finding F-D2-2): a reader in a GUARDED block inside a
+//       loop, where the guard is provably false on every arrival from the latch
+//       (`if (i == 0) …`, and the `first`-flag idiom). The cycle is real, the
+//       second EXECUTION is not. Skipped when the caller supplies no
+//       `LoopInfo`/`ScalarEvolution`, so it is strictly additive. See the
+//       definition in this file for the eight clauses and the proof.
+//   (2) otherwise leg 2 verbatim (`recordBarrierCutsPath`): every back-edge path
+//       from `R` to `R` must cross a barrier that RE-ESTABLISHES the record —
+//       the seed's own definition, or a superseding wire-tracking φ. The
+//       φ-carried in-loop chain (`q = cq_theta(q,θ)`) passes here; the
+//       loop-INVARIANT seed does not, which is the defect.
+// `Seeds` is the one-element `{Seed}`, exactly what the walk this fence runs is
+// seeded with, so the self-gate is asked the same question as every other gate.
+bool readerStalesItself(const CallInst *R, Value *Seed,
+                        const DominatorTree &DT, const LoopInfo *LI,
+                        ScalarEvolution *SE, const TaintSet *Taint) {
+  SmallPtrSet<const Instruction *, 1> NoBarrier;
+  if (!reachesWithoutBarrier(R, R, NoBarrier))
+    return false;  // (1) `R` cannot execute a second time at all — CFG.
+  if (LI && SE && Taint &&
+      readerRunsAtMostOncePerActivation(R, *LI, *SE, DT, *Taint))
+    return false;  // (1b) — nor semantically, through a one-shot guard.
+  return !recordBarrierCutsPath(R, R, Seed, ArrayRef<Value *>(Seed), DT);
+}
 
 bool phiTracksWire(const PHINode *P) {
   for (unsigned I = 0, E = P->getNumIncomingValues(); I != E; ++I) {
@@ -391,7 +681,7 @@ static CallInst *walkNonDiagonalWireGates(
     const Instruction *EmitPoint, const DominatorTree *DT,
     const TaintSet *Taint,
     const SmallPtrSetImpl<const CallInst *> *Covered,
-    SmallVectorImpl<CallInst *> *Out) {
+    SmallVectorImpl<CallInst *> *Out, bool RequireEmitDominance) {
   // Seed closure + forward wire walk, PER SEED (test_C_libtooling-6j1, extended
   // for test_C_libtooling-6vk). A seed names a basis RECORD; the physical wire
   // carrying it is shared with the seed's whole ANCESTRY — rotation lowering
@@ -544,7 +834,8 @@ static CallInst *walkNonDiagonalWireGates(
           // (bd test_C_libtooling-8h7d.5). Per-seed, never per-closure: an
           // ancestry member is a PRODUCER of the record, not the record.
           if (EmitPoint && DT &&
-              gateIsHarmless(EmitPoint, CI, Seed, Seeds, *DT))
+              gateIsHarmless(EmitPoint, CI, Seed, Seeds, *DT,
+                             RequireEmitDominance))
             continue;  // provably post-emission on every trace — harmless.
           if (Out) {
             // ENUMERATING MODE: record it and keep going, walking THROUGH it so
@@ -568,18 +859,21 @@ CallInst *findNonDiagonalWireGate(
     ArrayRef<Value *> Seeds, bool CrossValueRouting,
     const Instruction *EmitPoint, const DominatorTree *DT,
     const TaintSet *Taint,
-    const SmallPtrSetImpl<const CallInst *> *Covered) {
+    const SmallPtrSetImpl<const CallInst *> *Covered,
+    bool RequireEmitDominance) {
   return walkNonDiagonalWireGates(Seeds, CrossValueRouting, EmitPoint, DT,
-                                  Taint, Covered, /*Out=*/nullptr);
+                                  Taint, Covered, /*Out=*/nullptr,
+                                  RequireEmitDominance);
 }
 
 void collectNonDiagonalWireGates(ArrayRef<Value *> Seeds,
                                  bool CrossValueRouting,
                                  const Instruction *EmitPoint,
                                  const DominatorTree *DT, const TaintSet *Taint,
-                                 SmallVectorImpl<CallInst *> &Out) {
+                                 SmallVectorImpl<CallInst *> &Out,
+                                 bool RequireEmitDominance) {
   walkNonDiagonalWireGates(Seeds, CrossValueRouting, EmitPoint, DT, Taint,
-                           /*Covered=*/nullptr, &Out);
+                           /*Covered=*/nullptr, &Out, RequireEmitDominance);
 }
 
 bool provablyBefore(const Instruction *A, const Instruction *B,

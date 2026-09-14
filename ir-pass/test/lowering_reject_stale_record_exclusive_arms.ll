@@ -17,6 +17,23 @@
 ; it keeps the shape from silently lowering AND records that today's decline
 ; is deliberate, not an accident of the walk.
 ;
+; ⚠ THAT FUTURE REFINEMENT NOW EXISTS — FOR THE OTHER POLICY ONLY (bd
+; test_C_libtooling-3d8q). `WireWalk`'s `RequireEmitDominance=false` asks legs 1
+; and 2 with no dominance PRECONDITION, and leg 1
+; (`!isPotentiallyReachable(T, EmitPoint)`) is exactly the path-exclusivity
+; argument this header asked for. It is passed ONLY by
+; `recordStaleQuantumReaders` (the `@cq_theta_*` / `@cq_measure_*` reader
+; family), where the shape is not exotic but STRUCTURAL — a rotation reader
+; routinely IS a branch arm, and 14 shipped fixtures flip without it. Accept
+; twin, one reader class away: `lowering_stale_reader_exclusive_arms_accept.ll`.
+;
+; THIS FILE'S DECLINE IS DELIBERATELY LEFT STANDING. Flipping the PURE-op policy
+; is an ACCEPT-direction widening of a fence that has shipped and been
+; Rule-13-cleared since Phase 5, and it belongs to its own increment with its own
+; adversarial round — not to a change whose whole warrant is widening a decline.
+; RETIREMENT TRIGGER: when that increment lands, this file becomes an ACCEPT and
+; its stream is the twin's; re-derive it then, do not delete it.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)

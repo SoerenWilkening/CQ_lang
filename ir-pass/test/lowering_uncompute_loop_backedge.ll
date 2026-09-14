@@ -20,8 +20,41 @@
 ; ⚠ Note what the swap does NOT preserve: Rz is DIAGONAL and Ry is not, so a rule
 ; that turned on diagonality would move.  None of these 16 do — that is what the
 ; character-for-character reproduction of the diagnostic establishes.
+;
+; ⚠⚠ MESSAGE OWNERSHIP MOVED — bd test_C_libtooling-3d8q, **OWNER RULING
+; 2026-09-14 (DECLINE)**. The module, the verdict and the subject below are
+; UNCHANGED; only the fence that speaks first has changed, and it is the earlier
+; and more accurate one.
+;
+; This module IS the ruled shape, and it always was: `%h = cq_theta(%x,.25)` is
+; minted in ENTRY, loop-INVARIANT, and the body's `%p = cq_theta(%h,.1)` RE-READS
+; the name `%h` on every trip while the wire has already moved under it (trip 2
+; names `Ry(.25)|x>` while the register holds `Ry(.35)|x>`). The owner ruled that
+; spelling a DECLINE on 2026-09-14: the source admits TWO realizable circuits —
+; the aliasing chain and the re-preparation one, which needs no cloning and which
+; this compiler already emits when asked unambiguously — and names neither.
+; `recordStaleQuantumReaders` runs as pure analysis BEFORE `lowerLoops` and is
+; diagnosed just above `lowerRotations`, i.e. long before the uncompute spine, and
+; `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`) — so the
+; earlier owner is the one the user sees.
+;
+; ⚠ THE UNCOMPUTE FENCE IS NOT LEFT UNPINNED — measured, not assumed:
+; `lowering_reject_loop_nested_quantum.ll` and
+; `lowering_uncompute_leak_irreducible_dead_spine.ll` still decline at
+; `cq uncompute: tainted handle live range crosses a loop backedge` on this
+; binary, each with a positive `CHECK`. This file's own subject (a backedge-
+; crossing live range) is therefore still enforced and still pinned elsewhere.
+;
+; RETIREMENT TRIGGER (L8): if the 2026-09-14 ruling is ever reversed — if the
+; loop-invariant re-read is ruled an ACCEPT — this file reverts to asserting
+; `cq uncompute: tainted handle live range crosses a loop backedge`, and
+; `lowering_reject_stale_reader_inloop_invariant_seed.ll` inverts in the same
+; commit. Do not move one without the other.
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq uncompute: tainted handle live range crosses a loop backedge
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+; ⚠ The line this file asserted until 2026-09-14, kept as the record of what
+; moved and neutered so FileCheck cannot see it:
+;   [check]: error{{.*}}cq uncompute: tainted handle live range crosses a loop backedge
 ;
 declare i32 @cq_theta_si32(i32, double)
 

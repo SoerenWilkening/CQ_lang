@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackD/probes/src/m4_measure_before_uncond.c:2:24: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control
+

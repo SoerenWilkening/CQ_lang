@@ -26,6 +26,8 @@
 // taint set with the next `taint.BirthOrder` slot and drops the original.
 
 #ifndef CQ_IRPASS_OPCODE_LOWERING_H_
+
+#include "llvm/ADT/SmallPtrSet.h"
 #define CQ_IRPASS_OPCODE_LOWERING_H_
 
 #include "llvm/IR/Module.h"
@@ -52,6 +54,32 @@ struct TaintSet;
 // Branch/select-condition compares are excluded — they are Phase 4's, and
 // ArmClassify's provenance-seeded wire walk owns their stale check.
 void declineStaleRecordOps(llvm::Module &M, TaintSet &taint);
+
+// (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP, in two halves.
+//
+// `recordStaleQuantumReaders` is PURE ANALYSIS at the EARLY slot (beside
+// `declineStaleRecordOps`, before `lowerLoops` / the peel / control detection):
+// it asks the same linear rule, of the same walker, for the reader families
+// `inLowerOpsScope` does not cover — a `@cq_theta_<sfx>` (ARG-0 ONLY, Rule 3) or
+// `@cq_measure_<sfx>` call reading a name the wire has moved past — and RECORDS
+// the offenders in `taint.StaleQuantumReaders`. It diagnoses NOTHING.
+//
+// `declineRecordedStaleQuantumReaders` emits the loud decline at the LATE slot
+// (after the round-2 fixpoint, before `declineClassicalMuxes` and
+// `lowerRotations`), for every recorded reader that still exists.
+//
+// The split is load-bearing in BOTH directions and `TaintSet::StaleQuantumReaders`
+// carries the measurements: analysed late, the loop-rail collapse has replaced the
+// per-trip barrier φ with the loop-invariant mint and 9 shipped ACCEPT fixtures
+// flip; diagnosed early, this fence preempts 68 shipped negative fixtures whose
+// subjects are other, more precise owners.
+// `Delta` (bd 3d8q, the round-2 half): when non-null, ONLY readers whose record
+// operand is a member are analysed. That is how the taint-GROWTH events pay the
+// L1 obligation without re-asking the whole module on rewritten IR — see the .cpp.
+void recordStaleQuantumReaders(
+    llvm::Module &M, TaintSet &taint,
+    const llvm::SmallPtrSetImpl<llvm::Value *> *Delta = nullptr);
+void declineRecordedStaleQuantumReaders(llvm::Module &M, TaintSet &taint);
 
 // Post-lift stale-record re-sweep (test_C_libtooling-2qyz) — PURE ANALYSIS,
 // mutates no IR. Must run AFTER `declineClassicalMuxes` (whose one-register

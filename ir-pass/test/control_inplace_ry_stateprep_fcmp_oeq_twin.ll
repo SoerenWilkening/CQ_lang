@@ -46,7 +46,16 @@ entry:
   %t = fmul double %q, 2.000000e+00
   %rt = call double @cq_theta_f64(double %t, double 9.000000e-01)
   %mr = call double @cq_measure_f64(double %rt)
-  %mt = call double @cq_measure_f64(double %t)
+  ; bd test_C_libtooling-3d8q: `%rt`, NOT `%t`. `%rt = cq_theta(%t, .9)` CONSUMES
+  ; the name `%t` (`docs/frontend.md` §3.2's linear rule), so the second
+  ; measurement naming `%t` was a READ OF THE PRE-GATE VALUE — a member of the P1
+  ; stale-reader class, and it declines since `recordStaleQuantumReaders` landed.
+  ; ⚠ THE WITNESS IS UNCHANGED, and that is why this edit is the right one rather
+  ; than converting the file: the header's claim is "BOTH measurements read that
+  ; same rotated rail", `%rt` is RAUW'd to `%t`'s own handle by the chained-theta
+  ; rule, and the emitted stream is BYTE-IDENTICAL — every CHECK below is the
+  ; line it always was. Only the SOURCE became well formed.
+  %mt = call double @cq_measure_f64(double %rt)
   %s  = fadd double %mr, %mt
   ret double %s
 }

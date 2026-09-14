@@ -54,7 +54,59 @@
 ; all three per-trip rails.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: error{{.*}}cq loop lowering: pre-loop in-place op no longer provable at lowering
+; ⚠ MESSAGE OWNERSHIP MOVED — bd test_C_libtooling-3d8q, and the module, the
+; verdict and the anti-miscompile pins below are ALL UNCHANGED. The source's
+; `cq_measure(q)` is a read of the PRE-`q2` name: `q2 = cq_theta(q,0.3)` CONSUMES
+; `q` (`docs/frontend.md` §3.2's linear rule), which this header's own C snippet
+; marks with `^^^^ a LATER read of the PRE-op name`. That is now caught by
+; `recordStaleQuantumReaders`, which runs as PURE ANALYSIS before `lowerLoops` and
+; is DIAGNOSED just above `lowerRotations` — still earlier than `lowerOps`, where
+; the F-C1C-1 tripwire lives. `LLVMContext::diagnose` EXITS on the first
+; `DS_Error` (bd `br4a`), so the earlier owner is the one the user sees, and it is
+; the more accurate message: it names what the AUTHOR did wrong rather than the
+; compiler-internal consequence.
+;
+; ⚠ WHAT IS LOST, stated rather than hidden: this was the SOLE POSITIVE PIN of
+; `diagnosePreLoopCommitStale` (the other 8 files carrying that string carry it as
+; a `CHECK-NOT`, so the predicate now has EIGHT negatives and ZERO positives —
+; measured). The tripwire itself is UNTOUCHED in `OpcodeLowering.cpp` and is now
+; defence in depth.
+;
+; ⚠⚠ THE COMPENSATING ARGUMENT, NARROWED BY bd 3d8q's Rule-13 ROUND 1 (item
+; F-D1-4). The shipped version of this note said it was "plausible that every
+; program reaching the tripwire must contain a stale reader". That is now split
+; into what is PROVEN and what is NOT, because the round-1 reviewer showed the
+; original sentence enumerated only ONE of the tripwire's failure modes.
+; `commitOutOfLoopInPlaceOps` predicts at `lowerLoops` (`CQLoweringPass.cpp:393`)
+; and `lowerOps` re-verifies ~300 lines later — and BETWEEN them run
+; `detectControlRegions` + `lowerControlRegions` (:475, which REWRITES the CFG),
+; the round-2 taint fixpoint `repropagateControlMerges` (:509, which GROWS the
+; taint set) and `MergePhiPeel`. So G2 can change its answer three ways:
+;
+;   (a) AN EXTRA USE OF THE RAUW'd WIRE appears — the F-C1C-1 mode above.
+;       SUBSUMED, and now by an EXHAUSTIVE enumeration rather than a plausibility
+;       argument: that extra use is an LLVM `User` of a TAINTED value, and every
+;       kind of such user has an owner that runs BEFORE `lowerOps` — a
+;       `cq_theta`/`cq_measure` reader (`declineRecordedStaleQuantumReaders`), a
+;       pure op (`declineStaleRecordOps`), an escape/call argument
+;       (`declineTaintEscapes`), a branch/select CONDITION (the condition-wire
+;       dispositions in `ArmClassify`), or a `phi`/`select` data mux
+;       (`declineClassicalMuxes`). There is no sixth kind.
+;   (b) THE CLASSICAL IMMEDIATE STOPS BEING CLASSICAL — a taint-GROWTH event at
+;       the round-2 fixpoint makes the op's other operand tainted, so G2's
+;       Q+C shape fails at re-verification. **NOT SUBSUMED**: no stale read is
+;       involved, and none of the five owners in (a) is the natural claimant.
+;   (c) THE CFG/DOMINATOR/LOOP STRUCTURE CHANGES — `RegionFlatten` erases the
+;       diamond a G5/G6/G7 clause was proven over. **NOT SUBSUMED**, same reason.
+;
+; So the tripwire is NOT provably subsumed; it is subsumed for (a) only. (b) and
+; (c) are structurally reachable and are the construction any replacement fixture
+; must take. Filed as a Track-D follow-on (IMPL_D §11); do NOT read the (a)
+; enumeration as clearance for the predicate as a whole.
+; RETIREMENT TRIGGER: if a program is ever found that reaches the tripwire with no
+; stale reader — the (b) or (c) construction — THAT program is this fixture's
+; replacement and this note goes.
+; CHECK: error{{.*}}cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 
 ; NOTHING is lowered: no in-place gate, and no out-of-place fallback for the op
 ; either (the module never reaches the emitter).

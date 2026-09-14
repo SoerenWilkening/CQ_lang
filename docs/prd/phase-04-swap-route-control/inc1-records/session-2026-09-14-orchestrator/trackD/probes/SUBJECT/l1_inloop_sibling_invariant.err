@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackD/probes/src/l1_inloop_sibling_invariant.c:3:31: in function slice i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+
