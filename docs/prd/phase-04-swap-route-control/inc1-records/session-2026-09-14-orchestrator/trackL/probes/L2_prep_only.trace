@@ -1,0 +1,9 @@
+cqrt_alloc_i1(0) -> h0
+cqrt_ry_i1(h0, 0x1p-1)
+cqrt_measure_i1(h0) -> 0
+cqrt_alloc_i1(0) -> h1
+cqrt_ry_i1(h1, 0x1p-1)
+cqrt_measure_i1(h1) -> 0
+cqrt_alloc_i1(0) -> h2
+cqrt_ry_i1(h2, 0x1p-1)
+cqrt_measure_i1(h2) -> 0
