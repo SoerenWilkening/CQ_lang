@@ -43,6 +43,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @leak_loop(
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %u0)
@@ -58,10 +59,14 @@
 ;
 ; WHOLE-FILE COUNTS in their OWN prefix (Rule 12 hygiene (a)): exactly two frees,
 ; and never of the measured rail or of the user register.
+; ⚠ COUNTS AND NEGATIVES IN SEPARATE PREFIXES — a positive `CHECK-COUNT` WINDOWS
+; every negative after it (Rule 12 fixture-hygiene defect (a); Track T finding T-4
+; caught that hole in `loop_leak_dephase_accept_pertrip_dead.ll`).
 ; COUNT-COUNT-2: call void @cqrt_free(
 ; COUNT-NOT: call void @cqrt_free(
-; COUNT-NOT: call void @cqrt_free(i32 %h)
-; COUNT-NOT: call void @cqrt_free(i32 %h_cast)
+;
+; NEG-NOT: call void @cqrt_free(i32 %h)
+; NEG-NOT: call void @cqrt_free(i32 %h_cast)
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

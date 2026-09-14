@@ -40,3 +40,78 @@ lit ir-pass/test --filter pertrip_dead | 9337c21095d0afdb | PASS (LEAK prefix re
 lit ir-pass/test --filter loop_pairing_reject | 9337c21095d0afdb | PASS 2/2 (the two new (ii-c) boundary fixtures) | impl | 2026-09-15
 L1 reachability, hand-written l1_round2_grow_65arm.ll | 9337c21095d0afdb | ORACLE prints bd s82e's string; SUBJECT prints "cq loop lowering: round-1 iteration-local marking falsified by round-2 taint" — the window is REACHABLE (finding T-1) | impl | 2026-09-15
 ```
+
+## ⚠ THE CLEAN-REBUILD LINE (see `IMPL_T2.md` §13)
+
+Every line ABOVE was taken on an INCREMENTALLY-built `cq-opt`. On `cfb00187163c3254` that binary was
+measured **SEGFAULTING on a four-instruction module** while `libCQPass.so`, built from the same
+sources in the same `cmake --build`, lowered it correctly — a `TaintSet` layout divergence between the
+two targets, with `make` reporting the tree UP TO DATE. The lines above are kept as the record of what
+was measured and when; **they are not quoted as facts about the shipped binary.** The fix was
+`rm -rf build/ir-pass/CMakeFiles/cq-opt.dir` + reconfigure (deleting the dir removes `build.make`) +
+rebuild.
+
+| tag | `cq-opt` sha256 | note |
+|---|---|---|
+| S3/S4 | `cfb00187163c3254…` | ⚠ **BROKEN** — segfaults. Never used for a reported number. |
+| **CLEAN** | **`f972906e961c7e55be581ae18550f12da4535946b831e5c63434c0f089e33951`** | `libCQPass.so` `592d54940fe06a8f2cc381d76e2249132f919c4d202ec288506420da2570f272` |
+
+```
+build the worktree (clean cq-opt.dir + reconfigure + cmake --build build -j6, BOTH targets) | f972906e961c7e55 | exit=0, 0 errors, only the 2 PRE-EXISTING RegionTreeDetect.cpp warnings | impl | 2026-09-15
+discriminator: same module through cq-opt vs opt -load-pass-plugin | f972906e961c7e55 | AGREE (before the clean rebuild they DISAGREED — that disagreement is a BUILD fact, never a lowering one) | impl | 2026-09-15
+per-probe pipeline, all 30 probes + 2 hand-written L1 modules | f972906e961c7e55 | verdicts in IMPL_T2.md §2(b); every one as designed | impl | 2026-09-15
+e2e goldens generated + ctest -R '^e2e-(slice-)?loop-pairing' | f972906e961c7e55 | 4/4 Passed, 13.01 s. rootmint 14 lines, twin 14, `diff` BYTE-IDENTICAL; measure_owned 20 lines; STRICT 2b 0 violation(s), 0 unproven on all three | impl | 2026-09-15
+ctest -R ir-pass-lit | f972906e961c7e55 | 1/1 Passed, 104.84 s (2042 fixtures, 1 XFAIL) | impl | 2026-09-15
+lit --filter 'loop_leak_dephase|interior_leak_loop_rail|loop_pairing' (after the T-4 fixture fix; FIXTURE-only edits, binary unchanged) | f972906e961c7e55 | 8/8 PASS | impl | 2026-09-15
+injection (mutation) matrix over the 5 accept fixtures | f972906e961c7e55 | **30 mutations applied, MISSED 0, N/A 10** (first run: MISSED 1 — finding T-4, a real hole, fixed) | impl | 2026-09-15
+x1_xorc_inplace_in_body (Track S′'s hazard) | f972906e961c7e55 | ACCEPT; `grep -c 'cqrt_free|_unc'` over the lowered IR = **0**. The in-place relabel is neither adjointed nor freed | impl | 2026-09-15
+l1_round2_grow_65arm.ll | f972906e961c7e55 | ACCEPT (the re-ask re-derives its roots and does not over-decline — finding T-1) | impl | 2026-09-15
+l2_round2_grow_derived.ll | f972906e961c7e55 | DECLINE: `cq loop lowering: round-1 iteration-local marking falsified by round-2 taint` — the L1 window is REACHABLE, so the fence has a witness and is not a prediction | impl | 2026-09-15
+```
+
+## ABSENCES — gates NOT run, with the reason (an absence is not a green and not a failure)
+
+* **`e2e-loop-twin-matrix` / `tools/loop_twin_matrix.py` — NEVER STARTED BY THIS TRACK.** Handed to the
+  merge-and-gate agent. Two reasons: the box was at load average **170–391** throughout this track's
+  work (measured with `uptime` at every gate), and Track I landed a BANK axis on
+  `twinmatrix-bank-axis` that moves the matrix 338 → 359 cells, so a run from this worktree would
+  report **21 `MISSING`** as pure version skew. ⚠ **This track ran the matrix ZERO times**, so it is
+  not among the runs the cross-track `pkill -f 'loop_twin_matrix.py --clang'` could have killed.
+  What this track ran INSTEAD, as the matrix's own mechanism on the shapes it touches: **15
+  rolled-vs-hand-unrolled pairs (30 programs)** on both binaries — `probes/src` (9 pairs) and
+  `probes/adv` (11 pairs incl. the boundary controls) — plus a committed `*-twin-identical` ctest gate.
+* **Two of this track's own background runs were stopped BY ME, deliberately**, and neither is a
+  vanished gate: the first `twin.sh` pass (superseded by the faster `twin2.sh`) and the first corpus
+  sweep (stopped because a rebuild was about to relink the binary underneath it — `CLAUDE.md`'s
+  "never relink under a running measurement"). Recorded so they are not mistaken later for runs that
+  disappeared.
+* **The full `ctest -j6`, `^e2e-` and `cq-opt-equivalence-full`**: PROTOCOL reserves all three for the
+  merge-and-gate agent. Not run.
+
+## THE CORPUS SWEEP — STARTED, STOPPED BY ME, HANDED TO THE MERGE-AND-GATE AGENT
+
+`probes/corpus_T.sh` was started on the CLEAN binary and produced **14 rows with 0 movers** before I
+stopped it deliberately. It was progressing at roughly one row per 20–30 s of wall clock against a
+~2400-row list — hours, not minutes — with the box at load average **319** and host time visibly
+dilated (the system clock advanced ~2 minutes across several minutes of my own wall time). Per the
+orchestrator's instruction, a gate too expensive to finish under this load goes to the merge-and-gate
+agent with the reason rather than being fought or half-reported.
+
+⚠ **I stopped it; it did not vanish.** The reason was CPU contention with the twin measurement, which
+is the higher-value gate for this class (it is the ONLY instrument that can see it). Recorded
+explicitly because a cross-track `pkill -f 'loop_twin_matrix.py --clang'` ran today and the
+orchestrator has asked every track not to mis-attribute a lost run — **this one was not lost.**
+
+**What the 14 rows say, as far as they go:** every row is `A:<md5> == A:<md5>` or
+`D:<sha1> == D:<sha1>` — ORACLE and subject agree on all 14. Among them is
+`c1-round3/z21_preadd_volatile_imm.c`, which is the shape §11 names as the one plausible
+stream-change surface of this increment (a PREHEADER dtzb chain with a `volatile` immediate, where the
+new round-1 `invariantRegisterRoots` call could newly commit an in-place op). It is **UNMOVED**. That
+is one data point, not the sweep.
+
+**What still has full coverage without it:** `ir-pass/test/*.ll` is covered completely and more
+strongly by `ctest -R ir-pass-lit` (2042 fixtures, PASSED at `f972906e961c7e55`), which checks each
+fixture's own CHECK lines rather than an md5. **The genuine gap is `tests/e2e/*.c`** — 381 shipped
+streams that only the sweep (or the `^e2e-` layer the merge agent owns) can compare. That gap is what
+is being handed over, and `probes/corpus_T.sh` is committed and ready to run as-is: it already
+includes `tests/e2e/*.c` in its list, deliberately, for exactly this reason.

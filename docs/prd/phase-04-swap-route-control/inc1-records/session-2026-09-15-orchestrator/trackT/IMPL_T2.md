@@ -200,16 +200,28 @@ rolled-vs-hand-unrolled trace pair**, and the only *committed* one is the twin-i
 
 ### (c) TRACE-LEVEL identity, rolled vs hand-unrolled
 
-BYTE-IDENTICAL: `s1` (14 == 14, and it is the committed e2e gate), `t2` (13 == 13), `a1` (16 == 16),
-`a2` (18 == 18), `a6` (9 == 9), `a7` (36 == 36), `a8` (9 == 9), `s3` (22 == 22, unmoved).
+⚠ **The provenance of each row is stated, because §13 makes it matter.** The trace-identity re-run on
+the CLEAN binary was still in flight when the box reached load average **319** with host time visibly
+dilated; it completed the first six pairs and is handed over for the rest. Rows marked **[S2]** were
+measured on the incrementally-built `9337c21095d0afdb` and their **VERDICT** (not the line count) was
+re-confirmed on the clean binary by the §2(b) sweep.
 
-NOT byte-identical, each with a STAGE-1 explanation and an identical gate-symbol MULTISET:
-`w2k` 20 == 20, `w2h` 38 == 38, `w2h3` 48 == 48 — `-O1` HOISTS the invariant `y & 1` in the rolled
-spelling and CSEs it mid-function in the unrolled one, so one gate sits at a different point in the
-two streams **before the pass runs**; the two orderings are the same unitary because that gate writes
-a fresh rail and the per-trip chain touches only its own (disjoint rails commute). `t3` 20 == 20 —
+**Measured on the CLEAN binary `f972906e961c7e55`:**
+BYTE-IDENTICAL — `s1` 14 == 14 (and it is the committed e2e gate), `s3` 22 == 22 (the positive
+control, UNMOVED), `t2` 13 == 13. Line-count equal but NOT byte-identical — `t3` 20 == 20, because
 `-O1` folds `(y>>k)==1` to `(y & -2)==2` only in the CONSTANT-shift (unrolled) spelling, so the
-forward opcode differs in stage 1. `a9` 24 vs 20 — see T-2.
+forward opcode differs **in stage 1, before the pass runs**. Declines — `s2`, `t1`.
+Also clean-binary: `slice_loop_pairing_measure_owned` (= `w2k`) at **20 lines** through its committed
+e2e golden.
+
+**[S2] — line counts, verdicts re-confirmed clean, re-measurement handed over:**
+BYTE-IDENTICAL — `a1` 16 == 16, `a2` 18 == 18, `a6` 9 == 9 (unmoved), `a7` 36 == 36, `a8` 9 == 9
+(unmoved). Equal count, not byte-identical, with an identical gate-symbol MULTISET (measured with
+`diff <(sed 's/(.*//' … | sort | uniq -c) …`) — `w2k` 20 == 20, `w2h` 38 == 38, `w2h3` 48 == 48:
+`-O1` HOISTS the invariant `y & 1` in the rolled spelling and CSEs it mid-function in the unrolled
+one, so one gate sits at a different point in the two streams before the pass runs; the two orderings
+are the same unitary because that gate writes a fresh rail and the per-trip chain touches only its own
+(disjoint rails commute). `a9` 24 vs 20 — see T-2.
 
 ### (d) THE REGRESSION SURFACE, whole-suite
 
@@ -459,6 +471,21 @@ is not IN a loop. **Fix: the re-ask RE-DERIVES its roots under FINAL taint by CA
 `declineDephasingUnmarkedLoopRails` runs just above and reads `IterationLocalBlocks`, and a stage
 below it that could ADD a marking would make that fence read a set that is still moving, which is the
 RETIREMENT TRIGGER its own header states.
+
+**T-4 (round 2, FOUND BY THE MUTATION MATRIX IN MY OWN FIXTURE, FIXED).** The first run of
+`probes/inject_T.py` scored **MISSED 1**: the `inject_unc_free` mutant against
+`loop_leak_dephase_accept_pertrip_dead.ll`. The cause is Rule 12's fixture-hygiene defect **(a)**
+verbatim — I had put the `CHECK-COUNT` directive ABOVE the negatives in ONE prefix, and a positive
+count WINDOWS every negative after it, so an injected `_unc` + `cqrt_free` landing BEFORE the second
+match was scanned by **0 of the 7 negatives**. ⚠ **That file's own header quotes the rule three
+paragraphs above the line that broke it**, which is the finding worth carrying: knowing the lesson is
+not the same as not making the mistake, and the only thing that caught it was a harness that runs the
+fixture's own RUN lines against a mutated module. Fixed by splitting counts and negatives into two
+whole-file prefixes in all THREE converted fixtures (not just the one that failed — the same shape was
+latent in the other two), and re-run: **30 mutations applied, MISSED 0, N/A 10**. ⚠ A second, smaller
+trap fell out of the fix: writing the literal text `PAIR-COUNT-2` **in prose** makes FileCheck parse it
+as a directive (`error: invalid count in -COUNT specification on prefix 'PAIR'`). Never spell a live
+prefix's directive in a comment.
 
 ⚠ **The finding's real content is not the over-decline, it is that `l1_round2_grow_65arm.ll` PROVES
 the L1 window is REACHABLE.** On S1/S2 the module printed the new diagnostic where the ORACLE printed

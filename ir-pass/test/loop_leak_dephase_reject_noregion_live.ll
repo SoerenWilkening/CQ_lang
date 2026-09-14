@@ -64,6 +64,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @slice
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 5)
@@ -86,10 +87,15 @@
 ; ordered block WINDOWS every negative after it (Rule 12 fixture-hygiene defect
 ; (a)). Two functions, so: exactly one adjoint and one free per function, and
 ; never a free of the measured rail or of the user register.
+; ⚠ COUNTS AND NEGATIVES IN SEPARATE PREFIXES — a positive `CHECK-COUNT` WINDOWS
+; every negative after it, and the mutation matrix caught exactly that hole in this
+; file's sibling `loop_leak_dephase_accept_pertrip_dead.ll` (Track T finding T-4).
 ; COUNT-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
 ; COUNT-NOT: call void @cq_template_lshr_i32_hl_unc(
-; COUNT-NOT: call void @cqrt_free(i32 %h)
-; COUNT-NOT: call void @cqrt_free(i32 %h_op1)
+;
+; NEG-NOT: call void @cqrt_free(i32 %h)
+; NEG-NOT: call void @cqrt_free(i32 %h_op1)
+; NEG-NOT: call void @cq_template_and_i32_hl_unc(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

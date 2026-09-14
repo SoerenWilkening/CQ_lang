@@ -1,0 +1,14 @@
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/tu_extf.c|A:dcd3d53c|A:dcd3d53c
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/w3_claim_across_loops_measured_gate.c|D:a8af561e:|D:a8af561e:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/w3u_claim_across_loops_measured_gate_unrolled.c|D:89708639:|D:89708639:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/w4_claim_across_loops_two_invariants.c|D:a41ba567:|D:a41ba567:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/y1_preadd_chained_prerecord.c|D:22d65804:|D:22d65804:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/y2_preadd_chained_nopreread.c|A:68624481|A:68624481
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/y3_preadd_chained_prerecord_unrolled.c|D:98cfaa68:|D:98cfaa68:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z21_preadd_volatile_imm.c|D:a163c6cb:|D:a163c6cb:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z23_preadd_r2derived_imm.c|D:62d31bc9:|D:62d31bc9:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z26_preadd_r2derived_add1.c|D:7745017e:|D:7745017e:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z27_prexor_r2derived.c|D:29db2388:|D:29db2388:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z29_preadd_r2derived_and.c|D:8381ab95:|D:8381ab95:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round3/z32_claim_across_loops_nomeas.c|D:3ae369b1:|D:3ae369b1:
+docs/prd/phase-04-swap-route-control/inc1-records/c1-round4/c1e_a1_head_add_read_by_loop_rolled.c|A:204e1ffc|A:204e1ffc

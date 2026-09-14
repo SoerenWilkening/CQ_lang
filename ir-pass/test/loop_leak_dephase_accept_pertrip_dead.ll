@@ -96,6 +96,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=PAIR < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
 ;
 ; the hoisted invariant rail, then the per-trip chain, CONTIGUOUS and IN ORDER:
 ; CHECK-LABEL: define i32 @slice
@@ -137,13 +138,28 @@
 ; hoisted rail `%h_op`, not the user register `%h`. A free of any of those three
 ; would be the hidden measurement Rule 6 forbids; a free without the preceding
 ; `_unc` would be a dirty free of an entangled rail.
+;
+; ⚠ TWO PREFIXES, AND THE SPLIT IS NOT TIDINESS — IT IS THE HOLE Rule 12's
+; fixture-hygiene defect (a) NAMES, FOUND IN THIS VERY FILE BY THE MUTATION MATRIX
+; (`$SES/trackT/probes/inject_T.py`, Track T finding T-4, 2026-09-15). The first
+; draft put the count directive ABOVE the negatives in ONE prefix, and a positive
+; `CHECK-COUNT` WINDOWS every negative after it: the injected-`_unc`+`free` mutant
+; landed BEFORE the second `lshr_unc` match, so **0 of 7 negatives ever scanned it**
+; and the matrix scored it MISSED. The counts now live in `PAIR` and the negatives
+; in `NEG`, each its own whole-file prefix, which is what the header three
+; paragraphs up already told the reader to do.
 ; PAIR-COUNT-2: call void @cq_template_lshr_i32_hl_unc(
 ; PAIR-NOT: call void @cq_template_lshr_i32_hl_unc(
-; PAIR-NOT: call void @cq_template_and_i32_hl_unc(
-; PAIR-NOT: call void @cqrt_free(i32 %h)
-; PAIR-NOT: call void @cqrt_free(i32 %h1)
-; PAIR-NOT: call void @cqrt_free(i32 %h_op)
-; PAIR-NOT: call void @cqrt_free(i32 %h_op3)
+;
+; the Rule-6 bright line, in a PURE negative prefix: exactly one rail per function
+; is discharged and it is the interior `lshr` one; nothing else is EVER freed —
+; not the `Ry`-carrying per-trip register `%h1`, not the measure-owned hoisted rail
+; `%h_op`, not the measured `%h_op3`, not the user register `%h`.
+; NEG-NOT: call void @cq_template_and_i32_hl_unc(
+; NEG-NOT: call void @cqrt_free(i32 %h)
+; NEG-NOT: call void @cqrt_free(i32 %h1)
+; NEG-NOT: call void @cqrt_free(i32 %h_op)
+; NEG-NOT: call void @cqrt_free(i32 %h_op3)
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
