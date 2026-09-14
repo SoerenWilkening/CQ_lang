@@ -16,9 +16,15 @@ same binary the whole session is measured against.
 
 **SHIPPED:** one new public entry point in the QRAM TU — `railBankCarveVerdict` — plus a second switch
 beside the QRAM one in `declineTaintEscapes`, plus 11 per-clause decline strings and a `Bank`-verdict
-debug anchor. **+693 / −1 pass source** over three files
-(`git diff --numstat -- ir-pass`: `include/QramLowering.h` +132, `src/QramLowering.cpp` +458,
-`src/TaintPropagation.cpp` +103/−1), 21 new fixtures, 12 new committed probes, one new mutation harness.
+debug anchor. **+715 / −1 pass source** over three files
+(`git diff c8007c37 --numstat -- ir-pass include`: `include/QramLowering.h` +132,
+`src/QramLowering.cpp` +458, `src/TaintPropagation.cpp` +125/−1), 21 new fixtures, 12 new committed
+probes, one new mutation harness. ⚠ **NO EXISTING CODE WAS REMOVED** — measured:
+`git diff c8007c37 -U0 -- ir-pass/src/QramLowering.cpp ir-pass/include/QramLowering.h | grep '^-'` is
+EMPTY, and the single deleted line in `TaintPropagation.cpp` is a re-worded comment on an unchanged
+`break`. The estimate band SCOPE_L1a §6.4 gives for the WHOLE of L-1a is ~700–1100 pass-source lines;
+this is one of its three pieces, and the two it leaves (the taint rule and the type rewrite) are the
+small ones.
 
 **DELIBERATELY NOT SHIPPED, per BRIEF_A §0** — the taint rule (a `load` from a bank cell is tainted),
 the `[N x i1]` → `[N x i32]` type rewrite and the D5 consumer allow-list. Until those land an
@@ -363,7 +369,7 @@ pointer"* — cannot apply: there is no member, no cache, and no lifetime beyond
 Three files. `include/QramLowering.h` (+132, declarations and the design comment),
 `src/QramLowering.cpp` (+458, all of it new code in the anonymous namespace plus one exported wrapper —
 **no existing function's body was edited**; verify with `git diff -U0 -- ir-pass/src/QramLowering.cpp |
-grep '^-'`, which is empty), `src/TaintPropagation.cpp` (+103 / −1: the lazy SE quintuple, the second
+grep '^-'`, which is empty), `src/TaintPropagation.cpp` (+125 / −1: the lazy SE quintuple, the second
 carve switch, two include lines; the single deleted line is the `case QramCarve::NotQram: break;`
 comment, re-worded).
 
@@ -559,11 +565,12 @@ Every line below is in `GATES.md` in the PROTOCOL's hash-keyed format. **Report 
   fixtures, by design.
 * **The injection matrix** (`probes/inject_A.py`): **32 mutations over 21 fixtures, 32 caught, MISSED 0,
   n/a-HOLE 0.**
-* **The corpus sweep, PRIORITY half** — the whole `ir-pass/test` corpus plus the Track L and Track A
-  probe dirs, **2088 rows**, ORACLE vs subject on the same stage-1 file, accept rows compared BY BYTE
-  and decline rows by a FULL STDERR + EXIT byte compare (PROTOCOL S3, because the shared `corpus.sh` tag
-  regex renders the whole `cq_measure_<sfx>` family as an empty `D:` and would hide a
-  decline→decline string change inside it):
+* **The corpus sweep** — the whole `ir-pass/test` corpus plus the Track L and Track A probe dirs,
+  **2088 rows**, ORACLE vs the SHIPPED subject `bc886235…` on the same stage-1 file, accept rows
+  compared BY BYTE and decline rows by a FULL STDERR + EXIT byte compare (PROTOCOL S3, because the
+  shared `corpus.sh` tag regex renders the whole `cq_measure_<sfx>` family as an empty `D:` and would
+  hide a decline→decline string change inside it). Committed as `probes/corpus_bc886235.txt`; the
+  earlier run on `f2a9c0a4…` is kept beside it and reproduces these numbers row for row:
 
   | | rows |
   |---|---|
@@ -582,17 +589,19 @@ Every line below is in `GATES.md` in the PROTOCOL's hash-keyed format. **Report 
 `ctest -R '^e2e-'`, `cq-opt-equivalence-full`, `e2e-loop-twin-matrix`, `free_pairing_check.py`
 (unrunnable — this increment produces no lowered IR), the frontend-lit and runtime layers.
 
-⚠ **The corpus sweep's SECOND half is PARTIAL and must be reported as such.** The full list is 5455
-modules (the priority 2088 plus 3367 probe files from every earlier session dir); the box carried five
-parallel agent tracks for the whole session and the sweep ran at roughly 1 row/s rather than the ~6 it
-manages quiet. The completed portion is `probes/corpus_f2a9c0a4.txt` with its row count stated in
-`GATES.md`; the 2088-row priority half — which contains **every fixture the `ir-pass-lit` gate runs** —
-is complete. The residue is old-session `.c` probes, and the argument that they cannot move is
-structural rather than measured: the classifier is reachable only from a `StoreInst` that already read a
-tainted value and already answered `NotQram`, and every clause of it either returns `NotBank` (leaving
-the input byte-for-byte to its existing owner) or replaces `kMsgStore` with a per-clause string.
-**"Structural rather than measured" is exactly the kind of claim this project's history says to
-distrust, so it is written as a gap and not as a result.**
+⚠ **THE SWEEP IS COMPLETE FOR 2088 OF A POSSIBLE 5455 MODULES, AND THE RESIDUE IS A GAP, NOT A
+RESULT.** The 2088 are every `ir-pass/test/*.ll` — i.e. **every fixture the `ir-pass-lit` gate runs** —
+plus the Track L and Track A probe dirs. The other 3367 are `.c` probes from every earlier session dir;
+the box carried five parallel agent tracks all session and the sweep ran at roughly 1 row/s against the
+~6 it manages quiet, so a full pass was hours of contended wall-clock for a population whose
+`kMsgStore` members are already represented in the 2088. The argument that the residue cannot move is
+**structural rather than measured**: the classifier is reachable only from a `StoreInst` that already
+read a tainted value and already answered `NotQram`, and every clause either returns `NotBank` (leaving
+the input byte-for-byte to its existing owner) or replaces `kMsgStore` with a per-clause string — so the
+only possible movement is `kMsgStore` → a rail-bank string, which is a decline→decline change by
+construction. **"Structural rather than measured" is exactly the kind of claim this project's history
+says to distrust, which is why it is written here as a GAP the merge gate's own corpus run should
+close, and not as a result.**
 
 
 ---
@@ -615,6 +624,17 @@ from scratch** on the shipped binary. *A failed gate that is actually a rebuild 
 a slow gate — it trains you to discount a real red* — and a gate whose rows silently straddle two
 binaries is worse still, because it does not look failed at all.
 
+**(iii) AND THEN I DID IT AGAIN, WITH A COMMENT-ONLY REBUILD.** Late in the session I improved two
+comment bullets in `QramLowering.h` and rebuilt while the re-run sweep was in flight. The rebuild
+produced a **byte-identical** `cq-opt` (same sha256), so no row measured a different compiler — but the
+one row whose `exec` landed inside the relink window came back `A|D|VERDICTMOVE oc=0 sc=127`, i.e. a
+**FALSE ACCEPT→DECLINE finding** on `spec_cache_transitive.ll` whose real cause is "binary not found".
+Re-measured standalone: `A|A|SAME`. The row is corrected **and marked as a re-measurement** in
+`probes/corpus_bc886235.txt`'s header rather than silently replaced. ⚠ *A failed gate that is actually a
+rebuild artefact is worse than a slow gate*, and the reason it is worth recording twice is that the
+second time the change was **comment-only** — the category of edit that feels too small to need the
+discipline.
+
 **(ii) A PERFORMANCE GUARD WRITTEN AS `break` WOULD HAVE DELETED A DIAGNOSTIC, AND IT COMPILED CLEAN.**
 The `LInfo->empty()` early-out (added so a loop-free function never pays for a `ScalarEvolution`) was
 first written as `if (LInfo->empty()) break;`. Inside `for (Instruction &I : BB)` that `break` exits the
@@ -626,6 +646,6 @@ for a gate. **The shape is worth carrying**: a guard added for PERFORMANCE, insi
 ends in a mandatory diagnostic, is one keyword away from deleting the diagnostic. The corrected spelling
 is an `if`-scope and the whole paragraph is in the source at the site.
 
-⚠ Both of these were mine, in one increment, alongside the two over-accepts of §10(b). **The hit rate
-this session was four defects in one classifier, none of them found by a green suite** — which is the
+⚠ All three of these were mine, in one increment, alongside the two over-accepts of §10(b). **The hit
+rate this session was five defects in one increment, none of them found by a green suite** — which is the
 measured argument for BRIEF_A §4's budget of FOUR Rule-13 rounds rather than three.

@@ -390,18 +390,30 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //
 // THE CLAUSES (SCOPE_L1a §2; C2′ and C6 are new and both are Prime-Directive
 // load-bearing):
-//   C1  a non-escaping `alloca [N x cell]` with a provable zero initializer or —
-//       owner ruling D1, 2026-09-14, composing with bd `z9t1` — NO initializer at
-//       all, whose EVERY user is a canonical cell access, a lifetime marker or
-//       that initializer.
+//   C1  a non-escaping, `isStaticAlloca()` `alloca [N x cell]` with a provable
+//       zero initializer or — owner ruling D1, 2026-09-14, composing with bd
+//       `z9t1` — NO initializer at all, whose EVERY user is a canonical cell
+//       access, a lifetime marker or that initializer. The `isStaticAlloca()` half
+//       is the second over-accept this increment caught itself: an `alloca` in a
+//       loop body is a FRESH OBJECT per outer trip, so "the bank" is not one
+//       object and no per-cell statement below means anything.
 //   C2  every access is a CLASSICAL-index cell access. A TAINTED index is 7.5's
 //       axis and keeps 7.5's own decline — enforced by ORDER (this verdict is
 //       consulted only after `qramCarveVerdict` has answered `NotQram`) AND by an
 //       explicit entry conjunct, so the two axes cannot merge by accident.
-//   C2′ INJECTIVITY. The cell index must be an affine `{0,+,1}` add-recurrence of
-//       the enclosing loop whose proven CONSTANT trip count is ≤ N. *Why it is
-//       load-bearing:* if two activations write one cell, a later trip's SEED load
-//       reads a previously-stored HANDLE and the promoter forwards the wrong value.
+//   C2′ INJECTIVITY. The cell index must be an affine, NON-SELF-WRAPPING `{0,+,1}`
+//       add-recurrence of the enclosing loop, whose proven CONSTANT trip count is
+//       ≤ N, AND that loop must not itself be re-executed by an enclosing one.
+//       *Why it is load-bearing:* if two activations write one cell, a later trip's
+//       SEED load reads a previously-stored HANDLE and the promoter forwards the
+//       wrong value.
+//       ⚠ THE `getParentLoop()` HALF WAS AN OVER-ACCEPT THIS INCREMENT SHIPPED AND
+//       THEN CAUGHT ITSELF (`for (k<2) for (i<3) b[i] = cq_theta(b[i], .5);`
+//       classified `Bank`, with 18 fixtures green, the corpus clean and the
+//       injection matrix 29/29). **The lesson is L2's**: every other conjunct of
+//       C2′ is a statement about ONE ACTIVATION of the walk loop and says nothing
+//       about how many times that loop RUNS. When a proof is complete, ask what
+//       OTHER closure re-runs it.
 //   C3  the stored value is tainted and the cell width has a REVERSIBLE COPY —
 //       `widthHasReversibleCopy`, NEVER `abiWidthFromType(...).empty()`: `i128` has
 //       a width string and no copy (`OpcodeSupport.h`), and an fp cell has a width
