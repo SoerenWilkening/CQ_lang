@@ -1,5 +1,18 @@
 # Track S — bd `s82e`: THE (R-leak)/(R-diverge) DETERMINATION
 
+> ⚠ **ERRATUM, 2026-09-14c closing gate — READ THIS BEFORE §0's TABLE.** §0 is correct about the six
+> programs it measured and must **not** be read as a statement about the CLASS. Rule-13 round 1 track β
+> (`../review_r1b/REVIEW_R1B.md`) measured that the shipped fence
+> `declineDephasingUnmarkedLoopRails` catches **part** of the dephasing class: an interfering rotation
+> INSIDE the body escapes conjunct (2) (bd `test_C_libtooling-c767`, P1) and a tainted COMPARE used as
+> data escapes conjunct (3) (bd `test_C_libtooling-7845`, P1) — and **two of the three "benign" rows
+> above become DIVERGENT under one added line** (`u = cq_theta(u, .9);`): `w2k` 20-vs-24, `w2h`
+> 34-vs-42. In the other direction the fence introduced one over-decline (bd
+> `test_C_libtooling-2g52`). Nothing in §0's arithmetic is retracted; its **scope** is. The corrected
+> coverage claim lives in the SOURCE (`LoopLowering.cpp`'s fence header and conjuncts (2)/(3),
+> `LoopPlan.h`, both `loop_leak_dephase_accept_*` fixture headers) and in `../DECISIONS.md`'s dated D4
+> ERRATUM — `CLAUDE.md` L7-with-a-twist.
+
 **Status: STOPPED AT THE FORK, per BRIEF_S §2.** The owner ruling D2 ("PROVE IT") rests on a premise
 this track was told to test before writing a fix. **The premise is FALSIFIED.** No fix has been
 written; no pass source has been touched. The worktree's `cq-opt` is BIT-IDENTICAL to the frozen
@@ -454,7 +467,7 @@ For each natural loop `L` in each function, ALL FOUR conjuncts must hold:
 |---|---|---|
 | 1 | **the body is UNMARKED** — no block of `L` is in `taint.IterationLocalBlocks` | a MARKED body discharges in-body, once per trip, and is byte-identical to its twin. Pinned by `loop_leak_dephase_accept_marked_rootmint.ll`, which carries the IDENTICAL hazard shape and MUST stay accepting |
 | 2 | **a CHAINED `@cq_theta_*` outside `L` whose block `L->getHeader()` dominates** | a theta with a CLASSICAL arg 0 is a SOURCE — a fresh rail, no existing register to dephase. A theta INSIDE the loop is not "after". A loop with no post-loop rotation at all is the benign half: pinned by `loop_leak_dephase_accept_pertrip_dead.ll` (the bead's own `w2k`), which leaks 16-vs-20 and is nevertheless an ACCEPT |
-| 3 | **an INTERIOR tainted `BinaryOperator` with a real `binaryStem` in `L`'s OWN blocks** | a rail every one of whose users is a `cq_measure` is MEASURE-OWNED and left allocated by BOTH forms (Rule 6) — not a divergence. A COMPARE rail is the region's own flag, which `emitCondNetwork` strips and frees itself — so the scan is `BinaryOperator` only, not every lowerable opcode. Subloop blocks are excluded for the multiplicity reason `markIfRailLocal` gives at its own `L->blocks()` loop |
+| 3 | **an INTERIOR tainted `BinaryOperator` with a real `binaryStem` in `L`'s OWN blocks** | a rail every one of whose users is a `cq_measure` is MEASURE-OWNED and left allocated by BOTH forms (Rule 6) — not a divergence. A COMPARE rail is the region's own flag, which `emitCondNetwork` strips and frees itself — so the scan is `BinaryOperator` only, not every lowerable opcode. ⚠ **ERRATUM 2026-09-14c: that compare clause is FALSE for a compare used as DATA** (`CompareLowering` mints an ordinary out-of-place `cq_template_icmp_<pred>_<W>_hl` rail with no region in the module) — measured 10-vs-14 by round 1β, filed as bd `test_C_libtooling-7845` (P1), corrected at the conjunct itself in `LoopLowering.cpp`. Subloop blocks are excluded for the multiplicity reason `markIfRailLocal` gives at its own `L->blocks()` loop |
 | 4 | **a tainted-operand ancestry path from that op to the rotated register** | a per-trip chain that copies something nothing interferes later. This is a transitive backward walk, not `peelInPlaceBase` — the derived-base half (`p = y*3`) needs to reach `y` THROUGH a `mul`, which `peelInPlaceBase` does not cross |
 
 `diagnose` + `return` on the first hit: `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`),

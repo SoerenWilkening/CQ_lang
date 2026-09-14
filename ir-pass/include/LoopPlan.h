@@ -328,6 +328,25 @@ void lowerLoops(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // against hand-unrolled twins; the rolled-vs-hand-unrolled trace pair is the ONLY
 // instrument in the tree that sees the class.
 //
+// ⚠ CORRECTION, CLOSING GATE 2026-09-14c — THE PARAGRAPH ABOVE STATES THIS
+// FENCE'S **SCOPE**, NOT THE CLASS, AND IT IS NOT A COVERAGE CLAIM. Rule-13
+// round 1 track β measured that the function catches PART of the dephasing class:
+// conjunct (2) inspects only rotations OUTSIDE the loop, so the identical
+// dephasing with the interference INSIDE the body still ACCEPTS (bd
+// `test_C_libtooling-c767`, P1), and conjunct (3) scans `BinaryOperator` only, so
+// a compare used as DATA — an ordinary out-of-place
+// `cq_template_icmp_<pred>_<W>_hl` which-path copy — also still ACCEPTS (bd
+// `test_C_libtooling-7845`, P1). Both are PRE-EXISTING over-accepts, not
+// regressions. In the other direction it refuses at least one shape whose rolled
+// trace is BYTE-IDENTICAL to its hand-unrolled twin's (a dtzb IN-PLACE `xor`,
+// which mints no rail at all) — an over-decline, bd `test_C_libtooling-2g52`.
+// Read "still LIVE after the loop" and the diagnostic's own "rotated after the
+// loop" as descriptions of the four conjuncts and of nothing else. The full
+// measurement, the correlated-signal note on
+// `RotationLowering::warnLiveRecordRotations`, and the retirement triggers are at
+// the definition in `LoopLowering.cpp`; this declaration must not be quoted
+// without them (`CLAUDE.md` L7-with-a-twist).
+//
 // PURE ANALYSIS — declines or does nothing; mutates no IR and no `taint` set.
 //
 // CALL IT AFTER `declineRecordedStaleQuantumReaders` IN BOTH ENTRY POINTS. The

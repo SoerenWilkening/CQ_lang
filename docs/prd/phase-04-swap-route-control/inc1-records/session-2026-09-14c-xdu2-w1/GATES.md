@@ -52,3 +52,25 @@ counts on the merged tree (re-measured, not copied) | 0e280fc62a91cec2 | ctest *
   that three of Track B's mutants no longer measure what they measured, and files it.
 * **No `--regenerate`, no `--refresh-quarantine`** on any matrix or baseline file (bd `gfsk`).
 * **Nothing was pushed, `main` was not touched, and the primary `build/` was never written.**
+
+---
+
+## CLOSING GATE — the Track-S coverage correction (comments and records only)
+
+Same worktree, same branch `merge-2026-09-14c`. Every line below was RUN by the closing agent on the
+binary named in its own hash column.
+
+```
+pre-edit hash of the worktree binary | 0e280fc62a91cec2 | cq-opt 0e280fc62a91cec2336769edde8a873563a21ee4869744331a0fcf6811549c6d, libCQPass.so 94602c7896e7a7ee1d0d0d54625a073f6a35fd6c9fe0af6e9c714b2043df507b — identical to the gated binary above, so the edits start from the gated tree | closing | 2026-09-14
+ORACLE re-verify before the warn measurement | 5c6f7490a81c7505 | both hashes match; libCQPass.so 5276f7ab7416b36b3ceeb8ae0c9b2de3df6833906ec97c6671dfda336d488be4 | closing | 2026-09-14
+kMsgLiveRecord firing pattern, 5 probes, ORACLE | 5c6f7490a81c7505 | s1_live_shift exit 0 **warn 2** · s2_live_derived_region exit 0 **warn 2** · b11_cmp_rail_data exit 0 **warn 2** (the three DIVERGENT) · s3_live_rootmint_region exit 0 **warn 0** · w2k_noregion_invread exit 0 **warn 0** (the two BENIGN) | closing | 2026-09-14
+kMsgLiveRecord firing pattern, same 5 probes + the loop-leak twin pair, MERGED | 0e280fc62a91cec2 | s1 / s2 **exit 1** at kMsgLoopLeakDephases (warn count 0 BY PREEMPTION — the warn stage never runs) · b11_cmp_rail_data **exit 0 warn 2** · s3 0 · w2k 0 · slice_control_inplace_ry_loop_leak **exit 0 warn 1** · ..._unrolled **exit 0 warn 2** (a BYTE-IDENTICAL pair under e2e-inplace-ry-loop-leak-twin-identical) | closing | 2026-09-14
+e2e slice sweep for kMsgLiveRecord (stage 1 + stage 2 only, no link, no run) | 0e280fc62a91cec2 | 372 `tests/e2e/slice_*.c`: **366 accept**, 3 decline, 3 CLANGFAIL. **Exactly 5 of the 366 accepting slices emit the warning** — slice_control_angle_select_ry_derived_base (2), slice_control_inplace_ry_derived_base (4), slice_control_inplace_ry_loop_leak (1), slice_control_inplace_ry_loop_leak_unrolled (2), slice_live_record_source_rail_warn (2). ⚠ The 3 CLANGFAIL are slice_multi_lib (multi-file, wrong recipe) and the two `*_round2_window` record files, which do not compile — MERGE_FILINGS F-6, reproduced | closing | 2026-09-14
+cmake --build build -j8 AFTER the edits (BOTH targets, never --target CQPass alone) | 0e280fc62a91cec2 | 0 errors, and **cq-opt sha256 UNCHANGED at 0e280fc62a91cec2336769edde8a873563a21ee4869744331a0fcf6811549c6d; libCQPass.so UNCHANGED at 94602c7896e7a7ee1d0d0d54625a073f6a35fd6c9fe0af6e9c714b2043df507b**. Bit-identical relink ⇒ the change is INERT ⇒ PROTOCOL §S2: the full suite and the equivalence sweep are CITED from the group-gate lines above, not re-run | closing | 2026-09-14
+lit ir-pass/test --filter loop_leak_dephase (every fixture whose header was touched, plus its two decline siblings) | 0e280fc62a91cec2 | 4 of 2039 discovered, **4 PASS**, 2.12 s | closing | 2026-09-14
+stray-directive scan over the added fixture comment lines | (n/a) | 0 occurrences of CHECK / RUN: / COUNT / LEAK / RY- in any added `;` line — no comment became a FileCheck directive | closing | 2026-09-14
+```
+
+**CITED, not re-run** (PROTOCOL §S2, on the strength of the bit-identical rebuild above):
+`FULL ctest -j6 442/442 @ 0e280fc62a91cec2 (merge-and-gate, 2026-09-14)` and
+`cq-opt-equivalence-full 2039/0 @ 0e280fc62a91cec2 (merge-and-gate, 2026-09-14)`.

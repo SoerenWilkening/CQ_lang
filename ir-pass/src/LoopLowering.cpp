@@ -3765,17 +3765,118 @@ void collapseFlattenedLoopRails(
 // template-minted rail has none.
 //
 // ⚠ RULE 17, STATED HERE BECAUSE THE NEXT READER WILL ASK. This is NOT a decline
-// substituted for the lowering we set out to build. The refused programs do not
-// currently receive a valid circuit — they receive an INVALID one — so refusing
-// them is the Prime Directive, and the owner's 2026-09-11 ruling ("do not decline
-// code that leads to a valid quantum circuit") does not reach them. THE DECLINE
-// IS THE INTERIM AND **bd `tu9q`** (P1) IS THE END STATE: it builds the pairing so
-// these programs COMPILE. Owner ruling D4 filed the capability rather than
+// substituted for the lowering we set out to build. The programs this fence was
+// BUILT for do not currently receive a valid circuit — they receive an INVALID
+// one — so refusing them is the Prime Directive, and the owner's 2026-09-11
+// ruling ("do not decline code that leads to a valid quantum circuit") does not
+// reach them. ⚠ THAT SENTENCE USED TO SAY "the refused programs", WITHOUT THE
+// NARROWING, AND AS WRITTEN IT IS MEASURED FALSE: this fence ALSO refuses at
+// least one shape whose rolled trace is BYTE-IDENTICAL to its hand-unrolled
+// twin's, which is an OVER-DECLINE and a defect to remove — bd
+// `test_C_libtooling-2g52`, corrected at the closing gate of 2026-09-14c and
+// written out in the CORRECTION block below.
+//
+// THE DECLINE IS THE INTERIM AND **bd `tu9q`** (P1) IS THE END STATE: it builds
+// the pairing so these programs COMPILE. Owner ruling D4 filed the capability rather than
 // building it because the decline closes an open P1 silent miscompile now, is far
 // narrower than the blanket decline ruling D2 rejected, and does not touch the
 // owner's rolled cascade. RETIREMENT TRIGGER: when `tu9q` lands, the two
 // `loop_leak_dephase_reject_*` fixtures become ACCEPTs whose streams are their
 // hand-unrolled twins', rolled — re-derive them then; do not delete them.
+//
+// ══ CORRECTION, CLOSING GATE 2026-09-14c — THE COVERAGE CLAIM, MEASURED ══════
+//
+// ⚠ THIS FENCE CATCHES **PART** OF THE DEPHASING CLASS, NOT THE CLASS, AND
+// EVERY SENTENCE ABOVE MUST BE READ WITH THAT. Rule-13 round 1 track β
+// (`$SES/review_r1b/REVIEW_R1B.md`, verdict FINDING) reached the residual from
+// two independent directions ON THE FIRST ROUND. The correction is applied HERE,
+// in the source, and not only in a record — `CLAUDE.md` L7-WITH-A-TWIST: a record
+// correction that is not applied to the SOURCE is not a correction, and that
+// defect was found three times on one sentence before it was believed.
+//
+// WHAT SURVIVES THE FENCE — two members, both P1, both PRE-EXISTING (the ORACLE
+// `5c6f7490a81c7505…` accepts each one with an md5-equal lowered module, so
+// neither is a regression this increment introduced), both FILED:
+//
+//   * bd `test_C_libtooling-c767` — conjunct (2) only inspects rotations OUTSIDE
+//     `L` (the `L->contains(&BB)` skip at its `for (BasicBlock &BB : F)` loop), so
+//     the IDENTICAL dephasing with the interfering rotation INSIDE the body still
+//     ACCEPTS. MEASURED by round 1β on bd `s82e`'s OWN D4-ruled-BENIGN exhibits
+//     plus ONE added line (`u = cq_theta(u, .9);` before the trip ends):
+//     `w2k_noregion_invread` 20 rolled vs 24 unrolled, `w2h_phase_inloop_invread`
+//     34 vs 42, md5-equal to the oracle in both. The mechanism does not care WHERE
+//     the interference sits — only that the leaked rail's partner is interfered
+//     AT ALL.
+//   * bd `test_C_libtooling-7845` — conjunct (3) scans `BinaryOperator` ONLY, and
+//     its written rationale for excluding compares is false for a compare used as
+//     DATA. Corrected in full at the conjunct itself. MEASURED: five lines of C
+//     with no control flow, 10 rolled vs 14 unrolled, EVERY OTHER CONJUNCT
+//     SATISFIED — a single-conjunct miss.
+//
+// SO "the register the leaked rail copies is STILL LIVE after the loop" IS THIS
+// FENCE'S SCOPE AND NOT THE CLASS BOUNDARY, and it must never be read as a
+// definition of what is benign. The benign/divergent separation that the two
+// `loop_leak_dephase_accept_*` fixtures pin holds ON THOSE PROGRAMS and not on
+// the shape any conjunct tests: one added line moves two of bd `s82e`'s three
+// exhibits across it. Both fixture headers carry the same correction.
+//
+// WHAT IT WRONGLY REFUSES — bd `test_C_libtooling-2g52` (P2, NEW, introduced by
+// this increment and found by no corpus sweep because no corpus module has the
+// shape). A constant-trip loop whose only in-body tainted op is a dtzb IN-PLACE
+// `xor` on a `volatile` operand (`for (k<3) y ^= v;`) goes ACCEPT(7 lines) →
+// DECLINE, and its rolled trace is BYTE-IDENTICAL to the hand-unrolled twin's:
+// `cqrt_xorc_i32` is the IN-PLACE emission — it relabels the rail, returns no
+// handle and MINTS NOTHING, so there is no interior rail, nothing to leak and no
+// divergence to protect against. Conjunct (3) sees a `BinaryOperator` with a real
+// stem and cannot tell. The pre-specified fix is one conjunct
+// (`!taint.InPlaceRailOps.count(&I)`) with three cautions stated in the bead —
+// `InPlaceRailOps` is a raw `Instruction *` set nothing scrubs; this stage runs
+// BEFORE `lowerOps`, which RE-VERIFIES every pre-loop in-place marking under
+// FINAL taint and declines loudly when it fails, so a conjunct read here reads a
+// marking that is not yet final (L1's PREDICATE species, in the GRANTING
+// direction); and it is red-green work, not a comment.
+//
+// ⚠ RETIREMENT TRIGGER for this whole block: bd `c767`, bd `7845` and bd `2g52`,
+// by name. Re-derive it — and the two accept fixtures' headers — from the widened
+// conjuncts when they close. Do NOT narrow this paragraph on the strength of one
+// of the three landing, and do not delete it: a coverage claim that has been
+// measured wrong once is the claim a future round will re-measure.
+//
+// ── A CORRELATED SIGNAL THAT IS NOT A SECOND FENCE (recorded so the next agent
+//    finds the relationship instead of re-deriving it) ─────────────────────────
+// `RotationLowering::warnLiveRecordRotations` (`kMsgLiveRecord`, "cq rotation
+// lowering: non-diagonal gate over a live derived record") FIRES on all three
+// divergent probes of this class and is SILENT on both benign ones. MEASURED at
+// the closing gate, 2026-09-14c, counting the string in `opt` stderr:
+//
+//   ORACLE `5c6f7490a81c7505…`   s1_live_shift 2 · s2_live_derived_region 2 ·
+//                                b11_cmp_rail_data 2  (the three divergent)
+//                                s3_live_rootmint_region 0 ·
+//                                w2k_noregion_invread 0  (the two benign)
+//   MERGED `0e280fc62a91cec2…`   s1 / s2 exit 1 HERE (`CQLoweringPass.cpp:772`),
+//                                so the warn stage (`:864`) NEVER RUNS and its
+//                                count is 0 BY PREEMPTION, not by silence
+//                                (`LLVMContext::diagnose` EXITS on the first
+//                                `DS_Error`, bd `br4a`); b11_cmp_rail_data still
+//                                exit 0 with 2 — it is bd `7845`'s residual, the
+//                                one member THIS fence misses and that warning
+//                                sees.
+//
+// ⚠ IT IS **NOT** A DIVERGENCE DETECTOR AND MUST NOT BE DESCRIBED AS ONE.
+// MEASURED on the same binary: it fires on `slice_control_inplace_ry_loop_leak`
+// (1) and on `…_unrolled` (2) — a pair whose traces are BYTE-IDENTICAL under the
+// shipped ctest gate `e2e-inplace-ry-loop-leak-twin-identical`. ⚠ And byte
+// identity cannot prove that pair CORRECT either: if both halves are wrong the
+// same way the twin witness is blind, which is exactly `CLAUDE.md` L10's
+// `m_none_pbitd_none_premark_rypost` cell. It is a WARNING by OWNER RULING bd
+// `test_C_libtooling-lyyf` (2026-08-29) and the recorded reason is REPORTING
+// COMPLETENESS — every offending gate reported instead of the pass ending after
+// one — NOT benignity. Promoting it to a decline has a measured cost: 5 of the
+// 366 accepting e2e slices emit it (`slice_control_angle_select_ry_derived_base`,
+// `slice_control_inplace_ry_derived_base`, `slice_control_inplace_ry_loop_leak`,
+// `…_unrolled`, `slice_live_record_source_rail_warn`). Use it as a SIGNAL when
+// hunting bd `7845` / bd `c767`; never cite it as coverage.
+// ═════════════════════════════════════════════════════════════════════════════
 //
 // ⚠ WHY IT IS AIMED HERE AND NOT AT `markIfRailLocal`'s CLAUSE, WHICH IS WHERE
 // bd `s82e`'s OWN TEXT POINTS. MEASURED: that clause fires for NONE of the five
@@ -3945,6 +4046,20 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       //     own note at the `provablyBefore` helper explains why its exclusion
       //     set is wrong here). A CFG this misses leaves the PRE-EXISTING leak
       //     exactly as it is today — it can never create a new over-accept.
+      //
+      //     ⚠ CORRECTION (closing gate 2026-09-14c, Rule-13 round 1β; bd
+      //     `test_C_libtooling-c767`, P1): THE `L->contains(&BB)` SKIP BELOW IS A
+      //     SCOPE, NOT A PROOF. An interfering rotation INSIDE the body is
+      //     invisible to this walk, `Rots` comes back EMPTY and the loop is
+      //     passed over — so the identical dephasing accepts. MEASURED on bd
+      //     `s82e`'s own D4-ruled-BENIGN exhibits plus one added in-loop line:
+      //     `w2k` 20 rolled vs 24 unrolled, `w2h` 34 vs 42, md5-equal to the
+      //     ORACLE in both (PRE-EXISTING, not a regression). Stated here as well
+      //     as in the file header because THIS is the line a widening edits, and
+      //     because "after the loop" in the message string and in `LoopPlan.h`
+      //     describes THIS SCOPE and not the class. RETIREMENT TRIGGER: bd
+      //     `c767` — when it closes, the skip changes and the diagnostic's own
+      //     wording ("rotated after the loop") has to change with it.
       SmallPtrSet<Value *, 4> Rots;
       for (BasicBlock &BB : F) {
         if (L->contains(&BB) || !DT.dominates(L->getHeader(), &BB))
@@ -3969,12 +4084,38 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       // (3) AN INTERIOR TEMPLATE RAIL IN `L`'s OWN BLOCKS WHOSE ANCESTRY REACHES
       //     ONE OF THEM. Restricted to `BinaryOperator` with a real template
       //     stem — the measured leak family (`lshr`/`and`/`mul`/`xor`/`add`) —
-      //     rather than every lowerable opcode: a compare rail is the region's
-      //     own flag, which `emitCondNetwork` strips and frees itself, so it is
-      //     not a divergence and widening to it would decline shipped accepts.
+      //     rather than every lowerable opcode.
       //     `L`'s OWN blocks only, for the reason `markIfRailLocal` gives at its
       //     own `L->blocks()` loop (a strictly-deeper subloop runs N times per
       //     outer trip and is a different multiplicity question).
+      //
+      //     ⚠ CORRECTION (closing gate 2026-09-14c, Rule-13 round 1β; bd
+      //     `test_C_libtooling-7845`, P1). THIS COMMENT USED TO JUSTIFY THE
+      //     `BinaryOperator` RESTRICTION LIKE THIS, AND THE CLAUSE IS FALSE:
+      //
+      //         "a compare rail is the region's own flag, which `emitCondNetwork`
+      //          strips and frees itself, so it is not a divergence and widening
+      //          to it would decline shipped accepts."
+      //
+      //     True of a compare that IS a region flag; FALSE of a compare used as
+      //     DATA. `CompareLowering` lowers a tainted `icmp` whose result is
+      //     ordinary data into an OUT-OF-PLACE `cq_template_icmp_<pred>_<W>_hl`
+      //     rail — an ordinary which-path copy — with NO region and NO
+      //     `emitCondNetwork` anywhere in the module. MEASURED: five lines of C,
+      //     no control flow, whose only interior rail-minting op is an `icmp`
+      //     (`icmp → zext → cq_measure`), 10 trace lines rolled against 14
+      //     unrolled, and EVERY OTHER CONJUNCT SATISFIED — a SINGLE-CONJUNCT
+      //     miss, md5-equal to the ORACLE (pre-existing). `CLAUDE.md` L4: a
+      //     set-membership question answered by an opcode-class proxy loses.
+      //
+      //     ⚠ WHAT IS STILL TRUE, SO THE FIX IS **NOT** `isa<BinaryOperator> ||
+      //     isa<CmpInst>`: the second half of the retired clause — that widening
+      //     to every compare would decline shipped region accepts — was never
+      //     measured wrong. The discriminator wanted is "is this compare a region
+      //     FLAG the emitter owns", which the region PLAN already knows; ask that
+      //     owner by CALLING it (Rule 14), never by re-deriving it here. The
+      //     same gap has a cast/`fneg` half that round 1β could not reach and did
+      //     NOT claim unreachable. RETIREMENT TRIGGER: bd `7845`.
       for (BasicBlock *BB : L->blocks()) {
         if (LI.getLoopFor(BB) != L)
           continue;

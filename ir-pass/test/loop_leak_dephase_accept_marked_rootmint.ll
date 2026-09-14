@@ -23,6 +23,25 @@
 ; body's discharge is not." Conjunct (1) of `declineDephasingUnmarkedLoopRails` is
 ; the whole difference, and this file is the only thing pinning it.
 ;
+; ⚠⚠ CORRECTION, CLOSING GATE 2026-09-14c — THE SECOND HALF OF THAT SENTENCE IS
+; EXACT AND THE FIRST HALF OVER-CLAIMS. "An UNMARKED body's leak is refused" is
+; NOT what the fence does: it refuses the sub-case its four conjuncts describe,
+; and Rule-13 round 1 track β measured two members that survive — an interfering
+; rotation INSIDE the body (conjunct (2) inspects only rotations outside `L`; bd
+; `test_C_libtooling-c767`, P1) and a tainted COMPARE used as data (conjunct (3)
+; scans `BinaryOperator` only; bd `test_C_libtooling-7845`, P1). Both are
+; PRE-EXISTING over-accepts, so this file's own verdict is untouched by them.
+;
+; WHAT THIS FILE STILL PINS, UNCHANGED AND MEASURED: conjunct (1). Its program is
+; not a leak at all — rolled and hand-unrolled are BYTE-IDENTICAL at 22 trace
+; lines — so it is the control for "a MARKED body's discharge is not refused",
+; which is the half a widening of conjuncts (2) or (3) is most likely to break.
+; ⚠ L8 RETIREMENT TRIGGER: bd `c767` / bd `7845`. A widening that lands either
+; one must re-run THIS file first; if it ever declines, the widening has stopped
+; being narrow and is the blanket decline owner ruling D2 explicitly REJECTED.
+; The full corrected coverage claim is at `declineDephasingUnmarkedLoopRails` in
+; `ir-pass/src/LoopLowering.cpp`; do not restate it from here.
+;
 ; ⚠ THE CHECKS BELOW WERE REWRITTEN AFTER AN INJECTION MATRIX SCORED 5 OF 5
 ; APPLIED MUTATIONS **MISSED** AGAINST THE FIRST DRAFT — including deleting the
 ; `_unc` and deleting a `cqrt_free`, i.e. the very discharge this file exists to

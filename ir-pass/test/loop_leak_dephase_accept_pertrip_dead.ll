@@ -25,6 +25,31 @@
 ; decline, it has stopped being narrow and is the blanket decline owner ruling D2
 ; explicitly REJECTED.
 ;
+; ⚠⚠ CORRECTION, CLOSING GATE 2026-09-14c — WHAT "BENIGN" ABOVE DOES AND DOES NOT
+; CLAIM. The benignity is a property of THIS PROGRAM, not of the shape any
+; conjunct tests, and this header must not be read as pinning a general one.
+; MEASURED by Rule-13 round 1 track β (`$SES/review_r1b/REVIEW_R1B.md` F-β1, filed
+; as bd `test_C_libtooling-c767`, P1): take this very program — bd `s82e`'s
+; exhibit `w2k_noregion_invread` — and add ONE line, `u = cq_theta(u, .9);` before
+; the trip ends, and it becomes DIVERGENT (20 trace lines rolled against the
+; hand-unrolled twin's 24, the four missing being
+; `cq_template_lshr_i32_hl_unc` + `cqrt_free` twice) and it STILL ACCEPTS, because
+; conjunct (2) only inspects rotations OUTSIDE the loop. The same one-line edit
+; moves bd `s82e`'s second exhibit `w2h` the same way (34 vs 42). Two of the
+; ruling's three exhibits therefore sit on the benign side BY ACCIDENT of where
+; the author put the rotation.
+;
+; So: this file pins conjunct (2) as a DISCRIMINATOR — the thing a widening must
+; not break — and NOT as a proof that its program's leak is harmless-in-general.
+; The reason THIS program really is benign is the one stated above (the leaked
+; rail copies the PER-TRIP `u`, which nothing interferes on any trip and which
+; both forms leave allocated), and it survives bd `c767` closing: `u`'s only
+; theta is a SOURCE one (classical arg 0), so a widened conjunct (2) that admits
+; in-loop CHAINED thetas still finds none here. ⚠ L8 RETIREMENT TRIGGER: when bd
+; `c767` closes, RE-DERIVE this file's verdict against the widened conjunct
+; rather than assuming this paragraph — do not delete the file, and do not read
+; its green as evidence about bd `s82e`'s other two exhibits.
+;
 ; ⚠ THE CHECKS BELOW WERE REWRITTEN AFTER AN INJECTION MATRIX SCORED 2 OF 2
 ; APPLIED MUTATIONS **MISSED** AGAINST THE FIRST DRAFT (three loose positive
 ; lines with no order and no counts). Counts live in their own WHOLE-FILE
