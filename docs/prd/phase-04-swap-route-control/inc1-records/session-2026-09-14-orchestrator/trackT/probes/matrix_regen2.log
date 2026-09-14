@@ -1,0 +1,3 @@
+regenerated /Users/sorenwilkening/Desktop/CQ_twinbool/tools/loop_twin_matrix.expected.txt (309 cells; 29 quarantined and omitted)
+/tmp/runmatrix.sh --regenerate  670,86s user 98,07s system 176% cpu 7:15,71 total
+exit=0

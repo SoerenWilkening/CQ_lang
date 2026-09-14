@@ -658,7 +658,21 @@ RECORD_R = {
                   "post": "        acc = mark * 7;\n",
                   "tail": " + cq_measure(acc)"},
 }
-RECORD_ALL = dict(RECORD, **RECORD_R)
+# bd uq96 — the RECORD axis at the `i1` width, on the BARE RAIL itself. See the
+# `_Bool` AXIS section below for why it is only the `premark` shape: `postmark`
+# and `bodyread` say something about a register a later gate RELABELS, and in a
+# bare-rail cell the only thing that could relabel `b` is a gate on the
+# CONDITION's own wire — which is a documented loud decline in its own right and
+# would make the cell decline for two reasons at once (the `rprep` mistake).
+# `mark` is declared `_Bool`, not `int`: an `int mark = b;` is a ZEXT of a
+# tainted `i1`, which lowers to a `cq_template_zext_*` rail and quietly changes
+# the cell's subject from "a record of a rail" to "a cast of a rail".
+RECORD_B = {
+    "bpremark": {"decl": "    _Bool mark = 0;\n",
+                 "pre": "        mark = b;\n", "post": "",
+                 "tail": " + (int) cq_measure(mark)"},
+}
+RECORD_ALL = dict(RECORD, **RECORD_R, **RECORD_B)
 
 # The sub-grids, declared rather than producted. Sizes are asserted in
 # `cells_of_matrix` so a future edit cannot quietly change the cost of the gate.
@@ -693,6 +707,334 @@ RY_A_STAR = (("none", "none"), ("ry", "none"), ("none", "ry"),
 # by the A star.
 RY_B_AGATES = (("none", "none"), ("none", "add"))
 RY_C_SUFFIX = ("none", "add")
+
+# ── THE SEVENTH AXIS — THE `_Bool` (i1) CONDITION (bd uq96) ──────────────────
+# OWNER RULING 2026-09-14: WIDEN THIS INSTRUMENT BEFORE THE LOOP WORK, so that
+# bd wx8g's primary witness can actually witness its subject.
+#
+# WHAT 288 CELLS COULD NOT SEE, MEASURED BEFORE ANY CODE WAS WRITTEN (Track L,
+# SCOPE_L1a §5): `grep -c -i bool tools/loop_twin_matrix.py` was **2**, and both
+# were inside `phi_surface_of_header`. Every axis above builds its condition from
+# the `int a` register and its arm from `int a` or `int r`, so the `i1` width was
+# uncovered — and `i1` is the width of every shipped bool-controlled state prep
+# and in-place Ry arm since e96f89c (bd l4x4.b), the width of the owner's entire
+# Grover cascade (`tests/e2e/slice_control_cascade_two_bools.c`), and the width
+# bd wx8g is about to lower INSIDE A LOOP. The only instrument in the tree that
+# can see a leaked TEMPLATE-minted rail, pointed at a width it cannot express,
+# reports green over cells that never exercise the subject.
+#
+# THE ONE STRUCTURAL DIFFERENCE, AND IT IS WHY THIS IS AN AXIS AND NOT A NARROWER
+# SPELLING OF `REGION`. A `_Bool` condition is a BARE RAIL: `clang -O1` gives
+# every natural `bool` spelling `br i1 %b` with NO COMPARE AT ALL, so the
+# register IS the flag (CLAUDE.md CORRECTNESS RISK §1, the bare-`_Bool` row; bd
+# 3qlq.4 / r9e5 / l4x4.b). Nothing is minted, nothing is stripped, and on the
+# accept path there is no `cqrt_free` and no `cqrt_x` on the user register at
+# all. These cells therefore do not re-run the Rz/Ry axes at a narrower width —
+# they exercise a DIFFERENT LEAF of the condition grammar, the one every other
+# cell in this file mints a flag for.
+#
+#   B_COND — how the bare rail is read.
+#     `b`   the shipped leaf, `if (b)`.
+#     `nb`  POLARITY, and not a re-spelling of `b` (Rule 9). `if (!b)` is the
+#           ¬-arm on a RAIL, which is the one place the emitter may NOT
+#           `cqrt_x`-bracket a user register: it takes the CNOT-copy ancilla
+#           (`bf = cqrt_alloc_i1(0); cqrt_cnot(h_b, bf)`) or, for a diagonal arm,
+#           the `rz(-θ)` spelling. A bracket appearing on `b` here is the defect.
+#     `ab`  the CONDITION TREE with a rail leaf beside a compare leaf,
+#           `if (b & (a == off))` — `clang -O1`: `and i1 %b, %cmp`, which
+#           `collectCondTree` owns directly and `emitCondNetwork` turns into
+#           `cqrt_toffoli(h_b, h_cmp, node)` with the RAIL AS A CONTROL (the flat
+#           witness for the shape is `tests/e2e/slice_control_phase_bool_and.c`).
+#
+#           ⚠ THE SPELLING WAS MEASURED, NOT CHOSEN, AND ALL THREE READINGS ARE
+#           KEPT because each records a different `clang -O1` phenomenon — this
+#           is the `oeq`/`one`/`oder` lesson a second time. Measured at the
+#           ORACLE f7b65d8c, phase arm, invariant carry:
+#             `b & (a == off)`   ACCEPT-IDENTICAL, 22 trace lines. The BITWISE
+#               `&` forces both operands to be evaluated, so the volatile load is
+#               unconditional and the tree survives as `and i1`; the rolled form
+#               mints and discharges a `cq_template_icmp_eq_i32_hl` rail PER TRIP
+#               and is byte-identical to its twin. This is the live cell, and the
+#               only bare-rail cell in the file that can see a leaked
+#               TEMPLATE-minted rail (the 8h7d.5 F-4 class) at `i1`.
+#             `b && a == off`    DECLINE-BOTH `nested control flow`. SHORT-CIRCUIT
+#               `&&` plus a VOLATILE operand: the load may not be speculated
+#               above the `b` test, so `-O1` cannot if-convert and hands the pass
+#               a genuine depth-2 NEST, not a tree. Kept as sub-grid B6 — it is
+#               the one cell that says a `&&` whose right operand is
+#               non-speculatable is not a condition tree at all.
+#             `b && a == 5`      UNROLLED-ONLY. Speculatable, so `-O1` gives
+#               `select i1 %b, i1 %cmp, i1 false` and the FLAT side accepts with
+#               the full `collectCondTree` stream; the ROLLED side declines the
+#               GENERIC `control flow under quantum control` because `a` and `b`
+#               are both loop-invariant and LICM lifts the compare out (the
+#               `oeq`/`one`/`oder` hoist, verbatim, one axis over). Kept as
+#               sub-grid B6: it is a recorded OVER-DECLINE with a live flat twin.
+#
+#   B_ARM — what fires under the bare rail. All four are SHIPPED FLAT lowerings
+#     and not one of them is shipped IN A LOOP, which is exactly the diff bd wx8g
+#     must produce.
+#     `phi`   the branch-phase KICKBACK (Rule 7): `cqrt_rz_i1(f, θ)` on the flag,
+#             no gate on any user register.
+#     `ry`    the in-place controlled Ry arm on a SECOND, DISJOINT register
+#             (`cqrt_ry_i32_controlled(h_b, h_r, θ)`, after which the rotated
+#             register is FROZEN — Rule 6, `Ry(θ)|0⟩ ≠ |0⟩`). bd wx8g's customer
+#             verbatim, and the flat twin is
+#             `tests/e2e/slice_control_inplace_ry_bool_diamond.c`.
+#     `prep`  the controlled STATE PREP: the arm's `cq_theta` has a CLASSICAL
+#             arg-0, so the hoisted gate MINTS the rail it rotates. `r` is
+#             DECLARED CLASSICAL for this arm and never seeded — unlike the
+#             `rprep` decline control above, whose own comment regrets that its
+#             seeded `r` makes the region a Q data mux INDEPENDENTLY of the loop.
+#             Flat twin: `tests/e2e/slice_control_inplace_ry_bool_stateprep.c`.
+#
+#             ⚠ AND THE INTENT — "then this cell declines for ONE reason" — WAS
+#             MEASURED FALSE, WHICH IS WORTH MORE THAN THE INTENT. At the ORACLE
+#             f7b65d8c all five prep cells are `DECLINE-BOTH-DIFFERENT`: rolled
+#             `control flow inside a loop body`, FLAT `state prep merged with a
+#             quantum register`. The classical declaration buys nothing past the
+#             FIRST repetition, because the flat twin is the body written out
+#             TWICE and repetition 2's pred incoming is repetition 1's MERGE φ —
+#             a tainted incoming, which is F1's no-cloning mux. That is
+#             STRUCTURAL to a twin with TRIPS > 1 and cannot be designed away
+#             here; `rprep`'s comment says the same thing one hop along.
+#
+#             ⚠ SO READ THESE FIVE ROWS AS A TRAP, NOT AS A TODO. The ROLLED side
+#             carries the loop message, so bd wx8g will be tempted to flip them —
+#             but the rolled form's own pred incoming is the header φ of `r`,
+#             which is quantum after trip 1, i.e. the SAME no-cloning question
+#             the flat side refuses. A flip to `ACCEPT-IDENTICAL` is impossible
+#             (the flat side declines); a flip to `ROLLED-ONLY` is the
+#             expected-table header's "an over-accept and a Prime-Directive red
+#             however green the run looks". The passing move is `DECLINE-BOTH` on
+#             the flat message.
+#     `val`   the VALUE arm `a = a - 3`, which `-O1` if-converts to
+#             `select i1 %b, i32 %sub, i32 %a` — the 4.4 data select on a bare
+#             rail condition. It is the owner's own `if (b1) a -= 3;` line
+#             (bd boi6 D-B / Track M, landed 59ac5b7), put in a loop.
+#
+#   B_CARRY — how `b` reaches the body, and the two are different PROGRAMS for
+#     `collapseRailPhisIn`, `railPhiRootMint` and `staleRailRecordRead` rather
+#     than two columns of one.
+#     `binv`  seed once before the loop: the rail is LOOP-INVARIANT and its
+#             header φ is the identity carry (the 8h7d.5 round-2 F-2 shape).
+#     `bcar`  additionally re-rotate it per trip: `b` is LOOP-CARRIED and its
+#             header φ is an `i8` WIRE — a carried `_Bool` is an `i8` in every
+#             loop form, which is why bd r903 is load-bearing here (bd boi6's
+#             loop-carried `bool` header φ is the same object). The theta stands
+#             FIRST in the body, which is the shipped-but-unpinned accept the
+#             2026-09-13 session recorded as L-0.
+#
+# ⚠ WHAT THIS AXIS IS BLIND TO, in the same words the Ry axis says it: the ORACLE
+# is the UNROLLED twin, and the unrolled twin of a bare-rail cell is itself the
+# l4x4.b FLAT lowering. A defect the flat and rolled paths SHARE is byte-identical
+# on both sides and reports `ACCEPT-IDENTICAL`. The flat side's own witnesses are
+# the `ir-pass/test/control_*_bool_*.ll` family and the `slice_control_*_bool_*`
+# slices; nothing here replaces them.
+B_COND_TEXT = {
+    "b": "if (b)",
+    "nb": "if (!b)",
+    "ab": "if (b & (a == off))",
+}
+# The two compound spellings that are NOT the core product's, kept as sub-grid B6
+# at the phase arm only. Each records one `clang -O1` phenomenon measured on the
+# ORACLE and neither is decoration — see the `ab` paragraph above.
+B6_COND_TEXT = {
+    "abs": "if (b && a == off)",     # short-circuit + volatile => a genuine NEST
+    "abl": "if (b && a == 5)",       # speculatable => `select i1`, then LICM
+}
+B_ARM_TEXT = {
+    # Written in the REGISTER spelling like every other `cq_phi` site in this
+    # file, so that `phi_void_source` — the ONE rewriter, applied in ONE place to
+    # the finished text of both sides — is what produces the shipped `void`
+    # spelling `cq_phi(M_PI);`. A hand-written void arm here would be a second
+    # spelling of the surface and could drift from the rolled/unrolled pair.
+    "phi": "{ a = cq_phi(a, M_PI); }",
+    "ry": "{ r = cq_theta(r, 0.9); }",
+    "prep": "{ r = cq_theta(7, 0.9); }",
+    "val": "{ a = a - 3; }",
+}
+# The four arms the B1 CORE PRODUCT iterates. Spelled out rather than taken from
+# `B_ARM_TEXT.keys()` for exactly the reason `BASE_PREFIX` is: B7 below ADDS arm
+# keys, and a live `.keys()` here would silently multiply the long-pole gate by
+# 24 cells. (It did, once, before this line existed.)
+B_CORE_ARM = ("phi", "ry", "prep", "val")
+B_REGION = {c + a: "        %s %s\n" % (B_COND_TEXT[c], B_ARM_TEXT[a])
+            for c in B_COND_TEXT for a in B_CORE_ARM}
+B_REGION.update({c + "phi": "        %s %s\n" % (t, B_ARM_TEXT["phi"])
+                 for c, t in B6_COND_TEXT.items()})
+# What the SECOND register is for each arm — the three-way answer `_wrap` takes.
+# `quantum` seeds it with its own `cq_theta` (the in-place arm needs a live rail
+# to rotate); `classical` declares `int r = 7;` and NEVER seeds it (the state
+# prep's arg-0 must be classical or it is not a prep); `none` does not declare it
+# at all, which is what keeps the 288 pre-existing cells' source text unchanged.
+# Keyed by the ARM, not by a suffix test on the region token: a suffix test reads
+# the answer off the spelling, and a future cond token ending in `ry` or `prep`
+# would silently change a cell's program. The `assert` is the point — a new arm
+# or a new B6 spelling must declare its second register or the module will not
+# import.
+_B_ARM_SECOND = {"phi": "none", "ry": "quantum", "prep": "classical",
+                 "val": "none"}
+B_SECOND = {c + a: _B_ARM_SECOND[a]
+            for c in B_COND_TEXT for a in B_CORE_ARM}
+B_SECOND.update({c + "phi": _B_ARM_SECOND["phi"] for c in B6_COND_TEXT})
+
+# ── B7 — THE ITERATION-LOCAL RAIL (bd uq96 second pass, for bd wx8g clause (c))
+#
+# WHY THE FIRST 40 WERE NOT ENOUGH, measured by Track W and not by me. Every arm
+# above declares its second register OUTSIDE the loop, so `r` is LOOP-CARRIED in
+# all 40. bd wx8g has two halves: it RETIRES the l4x4.b in-loop carve (which is
+# what flips the 9 `*_bry_*` rows) and it adds a NEW clause (c) for the
+# ITERATION-LOCAL rail — a register DECLARED AND MINTED INSIDE THE BODY, which
+# has no header φ at all, so `railPhiRootMint` can never claim it and `Rollable`
+# was false for that shape BY CONSTRUCTION. **No cell in this file reached clause
+# (c)**, i.e. the increment's central capability was unwitnessed by the one
+# instrument that can see a leaked TEMPLATE-minted rail. That is the same blind
+# spot uq96 closed one layer up, one layer down.
+#
+#   `ilry`    the ITERATION-LOCAL ROTATED BASE: `int r = cq_theta(7, 0.25);` in
+#             the body — a ROOT MINT per trip — then the arm rotates it in place.
+#             Clause (c2): K activations must mint K rails.
+#   `ilprep`  clause (c2)'s `MintSeed = T` branch: `int r = 7;` in the body and
+#             the arm's `cq_theta` mints. ⚠ THIS IS THE PREP SHAPE THAT LOWERS,
+#             as opposed to the eight CARRIED `*prep*` rows above, whose flat
+#             twin cannot escape F1's no-cloning mux. The two must not be read as
+#             one family.
+#   `il2`     TWO independent iteration-local rails in one body, each measured
+#             inside it: `staleRailRecordRead`'s grouping key has no entry for an
+#             iteration-local rail, and two rails from two mints are two
+#             registers that must NOT interfere.
+#   `ilesc`   the same rail READ AFTER THE LOOP. ⚠ THIS IS THE 19-vs-27 SHAPE and
+#             it is the safety pair of the whole increment: Track W measured that
+#             WITHOUT its clause (c3) the rolled form emits 19 trace lines where
+#             its hand-unrolled twin emits 27, LEAKING two entangled which-path
+#             rails of the condition's bits PER ACTIVATION — `opt` exit 0,
+#             `opt -verify` clean and STRICT stage 2b `0 violation(s)` on all
+#             four modules, because 2b counts `cqrt_alloc` sites and these rails
+#             are TEMPLATE-minted. The byte-diff is the only instrument in the
+#             tree that can see it, which is this file. The cell must therefore
+#             report a DECLINE on the rolled side; `ROLLED-ONLY` here is not a
+#             disposition mismatch to shrug at, it is that leak.
+#
+# THE DERIVED CONDITION IS NOT DECORATION EITHER. `(a >> i) & 1` is the ONLY
+# condition kind in this family that mints a `cq_template_*` rail in the body per
+# trip, so it is the only one whose per-trip chain is the SPINE's to discharge
+# rather than the emitter's — i.e. the only one that can witness a MISSING SPINE
+# DISCHARGE. It carries no `_Bool` at all (`B_BCOND` is False for it): the
+# condition register is `a`, exactly as Track W's `w_g` uses `q`. `ddilry` adds
+# the sub-grid-F POST-LOOP DIFFUSION, which is what turns a leaked per-trip rail
+# from a Rule-6 leak into a WRONG UNITARY.
+B_ARM_TEXT.update({
+    "ilry": "{ r = cq_theta(r, 0.9); }",
+    "ilprep": "{ r = cq_theta(7, 0.9); }",
+    "il2": "{ r = cq_theta(r, 0.9); }",
+    "ilesc": "{ r = cq_theta(r, 0.9); }",
+})
+B_DERIVED_COND_TEXT = {
+    "d": "if ((a >> i) & 1)",
+    "dd": "if ((a >> i) & 1)",          # + the post-loop diffusion, see below
+}
+B_REGION.update({c + a: "        %s %s\n" % (B_COND_TEXT[c], B_ARM_TEXT[a])
+                 for c in ("b", "nb") for a in ("ilry", "ilprep", "il2")})
+B_REGION.update({c + a: "        %s %s\n" % (t, B_ARM_TEXT[a])
+                 for c, t in B_DERIVED_COND_TEXT.items()
+                 for a in ("ilry", "ilesc")})
+_B_ARM_SECOND.update({"ilry": "iterlocal", "ilprep": "iterlocalprep",
+                      "il2": "iterlocal2", "ilesc": "iterlocalesc"})
+B_SECOND.update({c + a: _B_ARM_SECOND[a]
+                 for c in ("b", "nb") for a in ("ilry", "ilprep", "il2")})
+B_SECOND.update({c + a: _B_ARM_SECOND[a]
+                 for c in B_DERIVED_COND_TEXT for a in ("ilry", "ilesc")})
+# Which regions declare the `_Bool b` CONDITION register at all. The derived
+# family does not: its condition is `(a >> i) & 1` over the invariant `a`, and
+# adding an unused `b` would put an `alloc`/`ry`/`measure` triple in every trace
+# for nothing — noise in the one family whose traces are read for a missing
+# discharge.
+B_BCOND = dict({k: True for k in B_REGION},
+               **{c + a: False for c in B_DERIVED_COND_TEXT
+                  for a in ("ilry", "ilesc")})
+assert set(B_SECOND) == set(B_REGION) == set(B_BCOND), \
+    "a B_REGION key with no second-register answer or no bcond answer"
+# The derived family reads the loop index, so the flat side must bind `i` — the
+# same `_wrap(index=...)` path sub-grid F's per-bit regions take.
+INDEXED_REGION = INDEXED_REGION + tuple(
+    c + a for c in B_DERIVED_COND_TEXT for a in ("ilry", "ilesc"))
+POSTLOOP_FOR_REGION["ddilry"] = "    a = cq_theta(a, 0.9);\n"
+# How `b` is carried. Same `{pre, post}` shape as `RGATE` and merged into the one
+# dict `sources` indexes, so there is a single gate-slot spelling (Rule 14).
+BCARRY = {
+    "binv": {"pre": "", "post": ""},
+    "bcar": {"pre": "        b = cq_theta(b, 0.25);\n", "post": ""},
+}
+GATE_ALL = dict(RGATE, **BCARRY)
+
+# ── WHAT EACH `second` KIND CONTRIBUTES, IN ONE TABLE (bd uq96 second pass) ──
+# `_wrap` used to spell these inline as two `if second == ...` ternaries. The
+# iteration-local kinds need FOUR slots each, not one, so the answers moved into
+# a table: a kind that forgets a slot cannot compile, and a reader can see all
+# six kinds side by side instead of reconstructing them from conditionals.
+#
+#   decl  a line in the head, BEFORE the `_Bool b` declaration
+#   seed  a line in the head, AFTER `a = cq_theta(a, 0.5);`
+#   pre   a line at the TOP of the loop body (after the carry gate)
+#   post  a line at the BOTTOM of the loop body (before the SUFFIX)
+#   tail  what the `return` additionally measures
+#   scope whether each UNROLLED repetition needs its own `{ }` — see `_wrap`
+#
+# `none` / `quantum` / `classical` reproduce the pre-uq96 head and tail BYTE FOR
+# BYTE, which `probes/source_identity.py` proves rather than asserts.
+SECOND = {
+    "none": {"decl": "", "seed": "", "pre": "", "post": "", "tail": "",
+             "scope": False},
+    "quantum": {"decl": "    int r = 0;\n",
+                "seed": "    r = cq_theta(r, 0.3);\n",
+                "pre": "", "post": "", "tail": " + cq_measure(r)",
+                "scope": False},
+    "classical": {"decl": "    int r = 7;\n", "seed": "",
+                  "pre": "", "post": "", "tail": " + cq_measure(r)",
+                  "scope": False},
+    # ── the ITERATION-LOCAL kinds. The register is declared and minted INSIDE
+    # the body and consumed INSIDE it, which is the whole point: nothing tainted
+    # defined in the loop is read outside it, so clause (c3) is satisfied. `s` is
+    # the classical accumulator that makes the per-trip read a real read.
+    "iterlocal": {"decl": "    int s = 0;\n", "seed": "",
+                  "pre": "        int r = cq_theta(7, 0.25);\n",
+                  "post": "        s += cq_measure(r);\n",
+                  "tail": " + s", "scope": True},
+    "iterlocalprep": {"decl": "    int s = 0;\n", "seed": "",
+                      "pre": "        int r = 7;\n",
+                      "post": "        s += cq_measure(r);\n",
+                      "tail": " + s", "scope": True},
+    "iterlocal2": {"decl": "    int s = 0;\n", "seed": "",
+                   "pre": "        int r = cq_theta(7, 0.25);\n"
+                          "        int t = cq_theta(3, 0.125);\n",
+                   "post": "        s += cq_measure(r) + cq_measure(t);\n",
+                   "tail": " + s", "scope": True},
+    # ⚠ THE ESCAPE. `last = r;` carries the per-trip register OUT of the loop and
+    # the `return` reads it — the 19-vs-27 shape. It is the one kind here that
+    # MUST decline on the rolled side.
+    "iterlocalesc": {"decl": "    int last = 0;\n", "seed": "",
+                     "pre": "        int r = cq_theta(7, 0.25);\n",
+                     "post": "        last = r;\n",
+                     "tail": " + cq_measure(last)", "scope": True},
+}
+#
+#   B1  the CORE product: 3 bare-rail spellings x 4 arms x 2 carries        24
+#   B2  the a-register gate STAR beside the three non-value arms, at `binv`  6
+#   B3  the dtzb in-place VALUE gate beside the VALUE arm                    2
+#   B4  the PREHEADER in-place op (the F-C1-1 axis) under a bare rail        2
+#   B5  the RECORD axis at `i1`, on the rail itself                          4
+#   B6  the two NON-core compound spellings, at the phase arm                 2
+#   B7  the ITERATION-LOCAL rail — bd wx8g clause (c), IMPL_W §9.3 W-1..W-5  10
+# 50 cells. B1-B6 (40) were the top of the 24-40 band Track L scoped
+# (SCOPE_loop.md §2.6); B7 is Track W's own list, added once its landing measured
+# that all 40 declare their second register OUTSIDE the loop and so none of them
+# reaches clause (c). This gate is the suite's long pole at ~180-400 s, so nothing
+# goes in here without a named conjunct it is the witness for.
+B_ARMS_NONVALUE = ("phi", "ry", "prep")
+B_A_STAR = (("ry", "none"), ("none", "ry"))
+B_VALUE_A_STAR = (("add", "none"), ("none", "add"))
+B_RECORD_ARM = ("ry", "prep")
 
 HDR = "#include <math.h>\nvolatile int off = 3;\n"
 
@@ -881,20 +1223,35 @@ def sources(prefix, region, suffix, record="none", rgate="none",
     against the HEAD script, not asserted).
     """
     R = RECORD_ALL[record]
-    G = RGATE[rgate]
-    second = region in RY_REGION
-    region_text = RY_REGION[region] if second else REGION[region]
-    body = (PREFIX[prefix] + G["pre"] + R["pre"] + region_text + R["post"]
-            + G["post"] + SUFFIX[suffix])
+    G = GATE_ALL[rgate]
+    # bd uq96: the `_Bool` axis is the THIRD region family and, like the Ry one,
+    # it is recognised by which dict holds the key — never by the cell's arity or
+    # by a token spelling, so adding a family can neither rename a committed cell
+    # nor change another family's source text by one byte.
+    if region in B_REGION:
+        region_text, second = B_REGION[region], B_SECOND[region]
+        bcond = B_BCOND[region]
+    elif region in RY_REGION:
+        region_text, second, bcond = RY_REGION[region], "quantum", False
+    else:
+        region_text, second, bcond = REGION[region], "none", False
+    S = SECOND[second]
+    # `S["pre"]`/`S["post"]` bracket the region INSIDE the body — the
+    # iteration-local mint at the top, the per-trip read at the bottom. Both are
+    # `""` for every pre-uq96 kind, which is what leaves the 328 older cells'
+    # body text untouched.
+    body = (PREFIX[prefix] + G["pre"] + S["pre"] + R["pre"] + region_text
+            + R["post"] + G["post"] + S["post"] + SUFFIX[suffix])
     return _wrap(body, second, R, surface,
                  index=region in INDEXED_REGION,
                  postloop=POSTLOOP_FOR_REGION.get(region, ""),
                  preloop=PRELOOP.get(prefix, ""),
-                 prehead=PREHEAD.get(prefix, ""))
+                 prehead=PREHEAD.get(prefix, ""),
+                 bcond=bcond)
 
 
 def _wrap(body, second, R, surface="register", index=False, postloop="",
-          preloop="", prehead=""):
+          preloop="", prehead="", bcond=False):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
@@ -924,13 +1281,25 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     FINISHED text of both spellings, at the very end and in ONE place, so the
     rolled and unrolled sides can never be rewritten differently — which would
     turn a surface artefact into a `TRACE-DIVERGENCE` and blame the loop
-    lowering for it. `register` returns the text untouched, byte for byte."""
-    head = ("int slice(void){\n    int a = 0;\n"
-            + ("    int r = 0;\n" if second else "") + R["decl"]
-            + "    a = cq_theta(a, 0.5);\n"
-            + ("    r = cq_theta(r, 0.3);\n" if second else ""))
-    tail = "    return cq_measure(a)%s%s;\n}\n" % (
-        " + cq_measure(r)" if second else "", R["tail"])
+    lowering for it. `register` returns the text untouched, byte for byte.
+
+    `second` (bd uq96) is THREE-VALUED, not a flag: `"none"` declares no `r` at
+    all, `"quantum"` declares and SEEDS it with its own `cq_theta` (what every
+    `RY_REGION` cell has always done, and `True` used to spell), and
+    `"classical"` declares `int r = 7;` and never seeds it — which is the
+    controlled STATE PREP's precondition, since a prep whose arg-0 is already
+    quantum is a data mux instead. `bcond` adds the `_Bool b` CONDITION register
+    and its seeding rotation. Both default to the pre-uq96 behaviour, and all
+    288 older cells take that default — PROVEN by hashing every generated source
+    before and after the edit, not asserted (the same discipline `prehead`,
+    `preloop` and `postloop` were added under)."""
+    S = SECOND[second]
+    head = ("int slice(void){\n    int a = 0;\n" + S["decl"]
+            + ("    _Bool b = 0;\n" if bcond else "") + R["decl"]
+            + "    a = cq_theta(a, 0.5);\n" + S["seed"]
+            + ("    b = cq_theta(b, 0.5);\n" if bcond else ""))
+    tail = "    return cq_measure(a)%s%s%s;\n}\n" % (
+        S["tail"], " + (int) cq_measure(b)" if bcond else "", R["tail"])
     rolled = (
         HDR
         + head
@@ -945,16 +1314,30 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     # a re-spelling. A hand-written twin that differs in any other way would make
     # a trace divergence ambiguous between "the loop lowering is wrong" and "the
     # two programs are not the same program".
-    flat = "".join(
-        "    " + l[8:] if l.startswith(" " * 8) else l for l in body.splitlines(True)
-    )
+    #
+    # ⚠ AN ITERATION-LOCAL BODY CANNOT BE DEDENTED AND REPEATED, AND THE FIX IS
+    # THE OPPOSITE OF A RE-SPELLING (bd uq96 second pass). `int r = cq_theta(...)`
+    # written out TWICE in ONE scope is a REDECLARATION and `clang` rejects it —
+    # the same harness artifact the RECORD axis designs around by hoisting `mark`
+    # out of the loop, which an iteration-local rail may not do by definition. So
+    # for `scope` kinds each repetition is wrapped in the `{ }` THE LOOP BODY
+    # ALREADY IS, and the body text is then used VERBATIM, at its original
+    # indentation, with no dedent at all. That is a STRONGER statement than the
+    # dedented form, not a weaker one: the two sides share the body byte for byte.
+    # The `i = i + 1;` stays OUTSIDE the brace, because that is where the `for`
+    # puts it. Every pre-uq96 kind has `scope` False and takes the dedent path.
+    if SECOND[second]["scope"]:
+        one = "    {\n" + body + "    }\n"
+    else:
+        one = "".join("    " + l[8:] if l.startswith(" " * 8) else l
+                      for l in body.splitlines(True))
     unrolled = (
         HDR
         + head
         + prehead
         + preloop
         + ("    int i = 0;\n" if index else "")
-        + (flat + "    i = i + 1;\n" if index else flat) * TRIPS
+        + (one + "    i = i + 1;\n" if index else one) * TRIPS
         + postloop
         + tail
         + "int main(void){(void)slice();return 0;}\n"
@@ -1055,8 +1438,11 @@ SURFACE_CONTROL_VERDICTS = {
 
 def control_sources(name, surface="register"):
     """(rolled, unrolled) C for one boundary control. No second register, no
-    record — deliberately the plainest shape the wrapper can make."""
-    return _wrap(QUARANTINE_CONTROLS[name], False, RECORD["none"], surface)
+    record — deliberately the plainest shape the wrapper can make. `"none"`
+    rather than `False` since bd uq96 made `second` three-valued; the generated
+    text is byte-unchanged, which the boundary controls' own pinned verdicts
+    would have caught had it not been."""
+    return _wrap(QUARANTINE_CONTROLS[name], "none", RECORD["none"], surface)
 
 
 def run_boundary_controls(cfg):
@@ -1393,14 +1779,18 @@ def cell_name(cell):
       `m_<prefix>_<region>_<suffix>`                    the 120 record-free cells
       `m_<prefix>_<region>_<suffix>_<record>`           the 36 RECORD cells
       `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 118 Ry-ARM cells
+                                                       and the 50 `_Bool` cells
 
     The Ry cells ALWAYS carry all five segments (`..._none_none` included) and
     their region token is always an `RY_REGION` one, so no name can collide with
-    a shorter grammar's. All three keep the `m_` prefix, so `grep -c '^m_'` still
-    counts cells.
+    a shorter grammar's. The bd uq96 `_Bool` cells take the SAME five-segment
+    grammar and their region token is always a `B_REGION` one (`b*`/`nb*`/`ab*`,
+    disjoint from every `RY_REGION` token), with the carry key in the `<rgate>`
+    slot — so adding the axis renames NOTHING. All four keep the `m_` prefix, so
+    `grep -c '^m_'` still counts cells.
     """
     prefix, region, suffix, record, rgate = cell
-    if region in RY_REGION:
+    if region in RY_REGION or region in B_REGION:
         return "m_%s_%s_%s_%s_%s" % cell
     if record == "none":
         return "m_%s_%s_%s" % (prefix, region, suffix)
@@ -1626,6 +2016,76 @@ def f_cells():
     return out
 
 
+def bool_cells():
+    """The `_Bool` (i1) sub-grids (bd uq96). See the SEVENTH AXIS block above.
+
+    50 cells. Every one carries the five-segment name with a `B_REGION` token, so
+    no committed cell is renamed and `grep -c '^m_'` keeps counting cells.
+    """
+    out = []
+    # B1 — the CORE product. Every bare-rail spelling x every arm x both carries,
+    # with no a-register gate: the plainest shape in which the width is exercised
+    # at all, and the one a reader writes.
+    out += [("none", c + a, "none", "none", k)
+            for c in B_COND_TEXT for a in B_CORE_ARM for k in BCARRY]
+    # B2 — the a-register gate STAR beside the three NON-value arms, at the bare
+    # `if (b)` and the invariant carry. `a` is a THIRD register here (the arm
+    # rotates `r`, or nothing), so these cells ask whether a non-diagonal gate on
+    # a DISJOINT rail counts against the condition — which is the kjd1 gate-2c
+    # window guard's known non-wire-awareness, the exact phenomenon that made 72
+    # of the Ry axis's first 109 cells inert.
+    out += [(p, "b" + a, s, "none", "binv")
+            for a in B_ARMS_NONVALUE for p, s in B_A_STAR]
+    # B3 — the dtzb in-place VALUE gate beside the VALUE arm. `ry` on `a` is
+    # deliberately absent for the same reason sub-grids B and C of the Ry axis
+    # leave it out: it is a non-diagonal gate on a register this arm WRITES, and
+    # that is a different question from the one these cells ask.
+    out += [(p, "bval", s, "none", "binv") for p, s in B_VALUE_A_STAR]
+    # B4 — the PREHEADER in-place op (the F-C1-1 axis) under a bare rail: an
+    # invariant `a` carrying a pre-loop `a = a + 7` beside a CARRIED second
+    # register, which is the `collapseRailPhisIn` -> `Collapsed` dispatch C-1
+    # lived in, now reached through a condition that mints no flag.
+    out += [("addpre", "b" + a, "none", "none", "binv") for a in ("ry", "phi")]
+    # B5 — the RECORD axis at `i1`, on the RAIL ITSELF: `_Bool mark = b;` taken
+    # before the region and read after the loop. `staleRailRecordRead` groups per
+    # ROOT MINT, and a bare-rail condition is the one shape where the record's
+    # root and the CONDITION's root are the same rail — so this is where a
+    # grouping-key change (bd wx8g owes one for the iteration-local spelling)
+    # becomes visible.
+    out += [("none", "b" + a, "none", "bpremark", k)
+            for a in B_RECORD_ARM for k in BCARRY]
+    # B6 — the two compound spellings the core product does NOT use, at the
+    # cheapest arm. They are here because each is a MEASURED `clang -O1`
+    # phenomenon rather than a shape: `abs` (`&&` with a non-speculatable
+    # volatile operand) is handed to the pass as a NEST and declines on both
+    # sides; `abl` (`&&` with a literal, hence speculatable) becomes the
+    # `select i1` tree, accepts FLAT and is LICM-hoisted out of the rolled loop —
+    # a recorded OVER-DECLINE with a live twin. Deleting either would leave the
+    # `ab` core product looking like the only reading there is.
+    out += [("none", c + "phi", "none", "none", "binv") for c in B6_COND_TEXT]
+    # B7 — the ITERATION-LOCAL rail (bd wx8g clause (c)). 10 cells, and the split
+    # is Track W's own (IMPL_W §9.3 W-1..W-5) rather than mine, because the
+    # increment knows which of its conjuncts each shape reaches.
+    #   W-1 (4) the rotated base at both polarities and both carries — clause
+    #           (c2), "K activations must mint K rails".
+    #   W-2 (2) the same with the PREP arm, at both carries — clause (c2)'s
+    #           `MintSeed = T` branch, the prep shape that LOWERS.
+    #   W-3 (2) the DERIVED condition, without and with the post-loop diffusion —
+    #           the only family that mints TEMPLATE rails in the body, hence the
+    #           only one that can see a missing SPINE discharge, clause (c3)'s
+    #           subject.
+    #   W-4 (1) the same rail READ AFTER THE LOOP — the 19-vs-27 shape.
+    #   W-5 (1) TWO iteration-local rails in one body — the grouping-key probe.
+    out += [("none", c + "ilry", "none", "none", k)
+            for c in ("b", "nb") for k in BCARRY]
+    out += [("none", "bilprep", "none", "none", k) for k in BCARRY]
+    out += [("none", c + "ilry", "none", "none", "binv")
+            for c in B_DERIVED_COND_TEXT]
+    out += [("none", "dilesc", "none", "none", "binv")]
+    out += [("none", "bil2", "none", "none", "binv")]
+    return out
+
+
 def cells_of_matrix():
     """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
     record, plus the 36-cell record sub-grid (see `RECORD_GRID_*`), plus the
@@ -1634,7 +2094,10 @@ def cells_of_matrix():
     MIXED-LOOP sub-grid F (see `F_*` — bd 3qlq Inc 1, the Rule-13 CLEARANCE
     finding C-1, the axis 274 cells did not have, plus its review round's F3
     PREHEADER cells for F-C1-1 and the fourth round's F4 MERGE-OUT-RAIL cells
-    for F-I2-1). 288 cells.
+    for F-I2-1), plus the 50-cell `_Bool` sub-grid (see `B_*` and `bool_cells` —
+    bd uq96, owner-ruled 2026-09-14 to land BEFORE the in-loop bool work; its
+    B7 sub-grid is bd wx8g clause (c)'s ITERATION-LOCAL rail).
+    338 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -1648,10 +2111,12 @@ def cells_of_matrix():
                                 [k for k in RECORD if k != "none"])]
     ry = ry_cells()
     f = f_cells()
-    assert (len(base), len(rec), len(ry), len(f)) == (120, 36, 118, 14), \
-        "sub-grid sizes moved: %d/%d/%d/%d" % (len(base), len(rec), len(ry),
-                                               len(f))
-    cells = base + rec + ry + f
+    b = bool_cells()
+    assert (len(base), len(rec), len(ry), len(f), len(b)) \
+        == (120, 36, 118, 14, 50), \
+        "sub-grid sizes moved: %d/%d/%d/%d/%d" % (len(base), len(rec), len(ry),
+                                                  len(f), len(b))
+    cells = base + rec + ry + f + b
     names = [cell_name(c) for c in cells]
     assert len(set(names)) == len(names), "duplicate cell name"
     return cells
@@ -2096,6 +2561,72 @@ EXPECTED_HEADER = """\
 # all reds. That is the point — a disposition drift in the loop lowering must
 # never be something a reader has to notice.
 #
+# ⚠ THIS HEADER IS SCRIPT-OWNED, EXACTLY AS THE QUARANTINE'S IS, AND THAT WAS
+# LEARNED THE SECOND WAY (bd uq96, 2026-09-14). `--regenerate` rewrites this file
+# from `EXPECTED_HEADER` in `tools/loop_twin_matrix.py`, so ANY text hand-added up
+# here is silently lost on the next regeneration. The quarantine header says this
+# in writing (round-2 review F-R2-3) and this one did not — so the 54-line
+# `b6ap` paragraph below, hand-added to the TABLE on 2026-09-11, was dropped by
+# the first `--regenerate` after it and had to be recovered from
+# `git show HEAD:tools/loop_twin_matrix.expected.txt`. It now lives in the
+# CONSTANT, which is the only place a paragraph survives. A new note goes there,
+# never in this file.
+#
+# ⚠ 2026-09-11, bd `test_C_libtooling-b6ap` (THE MULTI-PHI MERGE PEEL) — FIVE
+# CELLS MOVED, `DECLINE-BOTH-DIFFERENT` -> `UNROLLED-ONLY`, and the reason is
+# written here rather than left to a `git blame`. The cells are the `m_rz_*_rz`
+# family: `m_rz_{der,eq0,eq,gt,range}_rz`, i.e. a `cq_phi` PREFIX, a phase region,
+# a `cq_phi` SUFFIX. Only the UNROLLED side moved, and it moved DECLINE -> ACCEPT;
+# the ROLLED side's `condition predates a non-diagonal gate` is unchanged on both
+# binaries, so the divergence is a rolled-side OVER-DECLINE, not a new defect.
+#
+# MECHANISM, measured. In the UNROLLED spelling `clang -O1` SINKS the second
+# repetition's `cq_phi` calls into the merge block, and what it leaves behind is
+# TWO `double` ANGLE phis there:
+#     %5 = phi double [ 1.250000e-01, %arm ], [ -1.250000e-01, %entry ]
+#     %6 = phi double [ 0x400921FB54442D18, %arm ], [ 1.250000e-01, %entry ]
+# `phaseAngleTail` refuses a SECOND phi, so `classifyPhaseKickback` returned
+# NotApplicable and the whole program declined `control flow`. The peel turns both
+# into `select`s, the merge ends EMPTY, the region lowers as a flat kickback, and
+# each peeled ANGLE select is claimed by `classifyAngleSelect`'s **Rz stem** —
+# the shipped drbq Inc-2b / 3qlq Inc-1 P2 KICKBACK PAIR, NOT the kjd1 fp DATA
+# merge. There is no `cqrt_alloc_f64` in any of the five outputs; the f64/angle
+# wire is not crossed, because `SelectClassify`'s gate 3 makes that partition for
+# a peeled select exactly as it does for a source-written one.
+#
+# UNITARY, re-derived by hand on `m_rz_eq_rz` and identical in form for the other
+# four (6 `cqrt_rz_i1` gates each, stage 2b `0 violation(s), 0 unproven`):
+#     a == 5 :  PI + (-0.125) + 0.125 + PI = 2*PI
+#     a != 5 :        (-0.125) + 0.125     = 0
+# which is the source's 2*PI relative phase (the two UNCONTROLLED `cq_phi(0.125)`
+# / `cq_phi(-0.125)` are GLOBAL phases and are deleted by owner decision D2).
+#
+# The lit fixture for the same shape, written from hand IR, is
+# `ir-pass/test/control_peel_angle_tail_datamux.ll`; its one-phi containment
+# control is `control_peel_angle_tail_unchanged_control.ll`.
+#
+# ⚠ CAVEAT FROM THE RULE-13 ROUND-1 REVIEW (2026-09-11, §6), and it is the reason
+# these five rows are a RULING and not a rubber stamp. The reviewer re-derived
+# `m_rz_eq_rz` from scratch out of `tools/loop_twin_matrix.py`'s own
+# `sources('rz','eq','rz', surface='void')` — not from the implementation notes —
+# confirmed the unitary above and UPHELD `UNROLLED-ONLY` (the rolled-side
+# over-decline is the established class for it: 63 other cells carry that verdict,
+# three of them the same `m_rz_*_none` family one axis over). What the ruling adds:
+#
+#   THE PEEL IS NOW A SECOND, NON-OBVIOUS CUSTOMER-GENERATOR FOR THE ANGLE-SELECT
+#   PATH, AND THAT PATH'S ACCEPT CLASS IS NARROWER THAN THE DATA PATH'S —
+#   CONSTANT arms only for the Ry stem (the Inc-2b clearance narrowing), ONE
+#   consumer, and the `2^-40` rounding fence. Every boundary the reviewer probed
+#   declines loudly through the peel exactly as it does for a source-written
+#   select (`f02` angle-AND-data, `f03` two consumers, `f05` Ry run-time arm,
+#   `f07` quantum-derived angle), so the generator is FENCED TODAY. But a future
+#   widening of `classifyAngleSelect` now has a customer source that does not
+#   appear in its own file, its own fixtures, or any `-O1` C twin.
+#
+# Read these five rows as the tripwire for that: if a later increment widens the
+# angle-select accept class, re-derive them rather than regenerating them.
+#
+
 # VERDICTS
 #   ACCEPT-IDENTICAL        both sides lower, both silent, traces byte-identical.
 #   ACCEPT-IDENTICAL-WARN   as above but both sides warn, with the same message.
@@ -2246,6 +2777,125 @@ EXPECTED_HEADER = """\
 # on the void surface class B went 9 cells -> 21 and class C appeared, because a
 # branch phase leaves `a` loop-INVARIANT in bodies where the register spelling
 # gated it, which is exactly the precondition both classes need.
+#
+# ── bd uq96 — THE 40 `_Bool` (i1) CELLS, AND WHAT THEIR FIRST TABLE SAYS
+#    (owner ruling 2026-09-14: widen this instrument BEFORE the loop work) ────
+#
+# Their region token is a `B_REGION` one — `b*` / `nb*` / `ab*` — and their fifth
+# segment is the CARRY (`binv` invariant, `bcar` loop-carried), not an `RGATE`.
+# They are here because 288 cells emitted TWO `bool` tokens in total, both inside
+# `phi_surface_of_header`, while `i1` is the width of every shipped
+# bool-controlled prep and in-place Ry arm (bd l4x4.b, e96f89c) and of the
+# owner's whole Grover cascade. See the SEVENTH AXIS block in
+# `tools/loop_twin_matrix.py` for the shapes and for what each spelling was
+# measured to do.
+#
+# MEASURED COMPOSITION AT THE 2026-09-14 SESSION ORACLE f7b65d8c — i.e. BEFORE bd
+# wx8g exists, which is the whole point of regenerating an axis early (the Ry
+# axis's own precedent at 1bdaa60): a table written after the implementation can
+# only say the implementation agrees with itself.
+#
+#    9  ACCEPT-IDENTICAL — and every one of the nine is a `phi` (branch-phase
+#       KICKBACK) cell: the bare rail `if (b)`, the negated `if (!b)` and the
+#       bitwise tree `if (b & (a == off))`, at BOTH carries, with an a-register
+#       `ry` gate and with the preheader `add`. These rows are NEW CAPABILITY
+#       BEING PINNED, not new capability arriving: the rolled bare-`_Bool` phase
+#       region already shipped and had NO fixture, NO slice and NO matrix cell
+#       (the 2026-09-13 session recorded it as L-0). Read `m_none_abphi_*` in
+#       particular — the rolled form mints and discharges a
+#       `cq_template_icmp_eq_i32_hl` rail PER TRIP (22 trace lines, byte-identical
+#       to its twin), so it is the first cell in this file that can see a leaked
+#       TEMPLATE-minted rail under a bare-rail condition.
+#   15  UNROLLED-ONLY — 9 on `cq controlled lowering: control flow inside a loop
+#       body under quantum control` (EVERY `ry` arm: the in-place controlled Ry on
+#       a disjoint register), 5 on `cq loop lowering: loop-carried tainted value
+#       crosses iterations` (the `val` arm, `LoopLowering`'s X1 clause, reached
+#       BEFORE detection), and 1 on the generic `cq controlled lowering: control
+#       flow under quantum control` — `m_none_ablphi_none_none_binv`, the B6
+#       short-circuit-with-a-LITERAL cell, whose flat twin accepts with the full
+#       `collectCondTree` stream and whose rolled side loses its compare to LICM.
+#       ⚠ THE FIRST NINE ARE bd wx8g's SUBJECT, ROW FOR ROW. Flipping them to
+#       ACCEPT-IDENTICAL is that increment working; any other flip is not.
+#   11  DECLINE-BOTH-DIFFERENT — 8 `prep` cells (rolled: the loop message; flat:
+#       `state prep merged with a quantum register`) and 3 `val` cells at the
+#       CARRIED bool. READ THE `prep` NOTE IN `B_ARM_TEXT` BEFORE ACTING ON THOSE
+#       EIGHT: their flat side declines for a reason a twin with TRIPS > 1 cannot
+#       avoid, so the only passing flip is to `DECLINE-BOTH`, and a flip to
+#       `ROLLED-ONLY` is the over-accept this table's own note calls a
+#       Prime-Directive red however green the run looks.
+#    5  DECLINE-BOTH — the `ab` TREE at the `ry` and `prep` arms (4 cells, the
+#       generic `control flow`: a condition TREE is off-pattern for the rail
+#       ladder even where the bare rail is admitted), and the B6 cell
+#       `m_none_absphi_none_none_binv`, `nested control flow` — a `&&` whose right
+#       operand is a VOLATILE load cannot be if-converted, so `-O1` hands the pass
+#       a genuine depth-2 nest rather than a tree.
+#
+# ZERO of the 40 diverge. That is a measurement and not a reassurance: the same
+# run reports exactly the 29 pre-existing quarantined divergences and no more, so
+# the `i1` width adds no member to class A, B or C today.
+#
+# ── bd uq96 SECOND PASS — THE 10 ITERATION-LOCAL CELLS (B7), AND THE ONE THING
+#    A READER MUST KNOW ABOUT THEIR ROWS ───────────────────────────────────────
+#
+# `m_none_{b,nb}ilry_none_none_{binv,bcar}`, `m_none_bilprep_none_none_{binv,bcar}`,
+# `m_none_{d,dd}ilry_none_none_binv`, `m_none_dilesc_none_none_binv`,
+# `m_none_bil2_none_none_binv`. They exist because Track W's landing MEASURED that
+# all 40 of the first `_Bool` cells declare their second register OUTSIDE the
+# loop, so `r` is loop-CARRIED in every one and NONE of them reaches bd wx8g's
+# clause (c) — the ITERATION-LOCAL rail, which is that increment's central new
+# capability. See the B7 block in `tools/loop_twin_matrix.py` for what each of
+# W-1..W-5 is the witness for.
+#
+# ⚠ THE ROWS BELOW WERE MEASURED ON THE ORACLE f7b65d8c, WHICH DOES NOT HAVE
+# CLAUSE (c). That is deliberate and it is this file's standing practice — the Ry
+# axis was regenerated at 1bdaa60 BEFORE Inc 3 for the same reason: a table
+# written after the implementation can only say that the implementation agrees
+# with itself. So these ten rows are a table of DECLINES, and THE DIFF THEY
+# PRODUCE WHEN bd wx8g LANDS IS THE WITNESS.
+#
+# MEASURED STARTING VERDICTS, ORACLE f7b65d8c:
+#     9  UNROLLED-ONLY — the flat side lowers each per-block repetition as the
+#        shipped l4x4.b straight-line form; the ROLLED side declines. EIGHT of
+#        the nine decline `control flow inside a loop body under quantum
+#        control`, i.e. on the fence bd wx8g removes.
+#        ⚠ THE NINTH IS `m_none_ddilry_none_none_binv` AND ITS MESSAGE IS
+#        DIFFERENT: `condition predates a non-diagonal gate`. Its post-loop
+#        diffusion `a = cq_theta(a, 0.9)` is a non-diagonal gate on the
+#        CONDITION's own wire, so gate 2c refuses it BEFORE the loop clause is
+#        ever reached. Lifting the loop fence alone will NOT flip that row, and a
+#        reader planning the regeneration must not count it with the other eight.
+#     1  DECLINE-BOTH-DIFFERENT — `m_none_dilesc_none_none_binv`, the ESCAPE:
+#        rolled the loop message, FLAT `nested control flow`.
+#
+# ⚠ THEREFORE bd wx8g's LANDING OWES A REGENERATION OF EXACTLY THESE TEN ROWS,
+# and the expected direction is written here so the diff is CHECKED rather than
+# rubber-stamped. Predicted from Track W's own measured probe table (IMPL_W §1,
+# the subject binary: `w_d`/`w_b2`/`w_g`/`w_k` all ACCEPT and all BYTE-IDENTICAL
+# to their per-block twins):
+#     the EIGHT loop-message rows -> ACCEPT-IDENTICAL (clause (c) working: the
+#         rolled form mints K rails for K activations and matches its per-block
+#         twin byte for byte);
+#     `m_none_ddilry_none_none_binv` -> UNMOVED, unless something also changed
+#         gate 2c — if it flips, the reason is NOT clause (c) and must be found;
+#     `m_none_dilesc_none_none_binv` -> UNMOVED. Its rolled side must go on
+#         declining; its flat side declines for its own `-O1` reason.
+#
+# ⚠ AND THE ESCAPE CELL IS THE SAFETY PIN OF THE WHOLE INCREMENT, SO READ IT
+# LITERALLY — INCLUDING WHAT IT DOES NOT DO. `ROLLED-ONLY` on
+# `m_none_dilesc_none_none_binv` — the rolled side accepting where its twin
+# declines — IS clause (c3) gone, and clause (c3) gone is the 19-vs-27 leak: two
+# entangled which-path rails of the condition's bits left allocated PER
+# ACTIVATION, at `opt` exit 0, `opt -verify` clean and STRICT stage 2b
+# `0 violation(s)` (2b counts `cqrt_alloc` sites and those rails are
+# TEMPLATE-minted). A `TRACE-DIVERGENCE` here is the same thing. Both are reds
+# that no table entry and no quarantine may bless.
+#     WHAT IT IS NOT: a TRACE witness. Track W's 19-vs-27 pair is HAND-WRITTEN IR
+#     (`trackW/probes/ir/il_{escape,noescape}_{rolled,flat}.ll`) whose flat side
+#     ACCEPTS at 27 lines; this cell's flat side is `clang -O1` on two `{ }`
+#     repetitions that both write `last`, and it declines `nested control flow`
+#     for a reason that has nothing to do with the leak. So this row pins the
+#     DISPOSITION — "the rolled side still refuses" — and the hand-IR pair keeps
+#     the trace. Do not quote this cell as if it measured 19 against 27.
 #
 # A CELL BELONGS TO EXACTLY ONE OF THE TWO FILES, and the gate says so out loud.
 # `--regenerate` omits every quarantined cell from this table for that reason;

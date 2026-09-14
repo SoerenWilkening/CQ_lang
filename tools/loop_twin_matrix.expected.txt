@@ -25,6 +25,17 @@
 # all reds. That is the point — a disposition drift in the loop lowering must
 # never be something a reader has to notice.
 #
+# ⚠ THIS HEADER IS SCRIPT-OWNED, EXACTLY AS THE QUARANTINE'S IS, AND THAT WAS
+# LEARNED THE SECOND WAY (bd uq96, 2026-09-14). `--regenerate` rewrites this file
+# from `EXPECTED_HEADER` in `tools/loop_twin_matrix.py`, so ANY text hand-added up
+# here is silently lost on the next regeneration. The quarantine header says this
+# in writing (round-2 review F-R2-3) and this one did not — so the 54-line
+# `b6ap` paragraph below, hand-added to the TABLE on 2026-09-11, was dropped by
+# the first `--regenerate` after it and had to be recovered from
+# `git show HEAD:tools/loop_twin_matrix.expected.txt`. It now lives in the
+# CONSTANT, which is the only place a paragraph survives. A new note goes there,
+# never in this file.
+#
 # ⚠ 2026-09-11, bd `test_C_libtooling-b6ap` (THE MULTI-PHI MERGE PEEL) — FIVE
 # CELLS MOVED, `DECLINE-BOTH-DIFFERENT` -> `UNROLLED-ONLY`, and the reason is
 # written here rather than left to a `git blame`. The cells are the `m_rz_*_rz`
@@ -79,6 +90,7 @@
 # Read these five rows as the tripwire for that: if a later increment widens the
 # angle-select accept class, re-derive them rather than regenerating them.
 #
+
 # VERDICTS
 #   ACCEPT-IDENTICAL        both sides lower, both silent, traces byte-identical.
 #   ACCEPT-IDENTICAL-WARN   as above but both sides warn, with the same message.
@@ -230,6 +242,125 @@
 # branch phase leaves `a` loop-INVARIANT in bodies where the register spelling
 # gated it, which is exactly the precondition both classes need.
 #
+# ── bd uq96 — THE 40 `_Bool` (i1) CELLS, AND WHAT THEIR FIRST TABLE SAYS
+#    (owner ruling 2026-09-14: widen this instrument BEFORE the loop work) ────
+#
+# Their region token is a `B_REGION` one — `b*` / `nb*` / `ab*` — and their fifth
+# segment is the CARRY (`binv` invariant, `bcar` loop-carried), not an `RGATE`.
+# They are here because 288 cells emitted TWO `bool` tokens in total, both inside
+# `phi_surface_of_header`, while `i1` is the width of every shipped
+# bool-controlled prep and in-place Ry arm (bd l4x4.b, e96f89c) and of the
+# owner's whole Grover cascade. See the SEVENTH AXIS block in
+# `tools/loop_twin_matrix.py` for the shapes and for what each spelling was
+# measured to do.
+#
+# MEASURED COMPOSITION AT THE 2026-09-14 SESSION ORACLE f7b65d8c — i.e. BEFORE bd
+# wx8g exists, which is the whole point of regenerating an axis early (the Ry
+# axis's own precedent at 1bdaa60): a table written after the implementation can
+# only say the implementation agrees with itself.
+#
+#    9  ACCEPT-IDENTICAL — and every one of the nine is a `phi` (branch-phase
+#       KICKBACK) cell: the bare rail `if (b)`, the negated `if (!b)` and the
+#       bitwise tree `if (b & (a == off))`, at BOTH carries, with an a-register
+#       `ry` gate and with the preheader `add`. These rows are NEW CAPABILITY
+#       BEING PINNED, not new capability arriving: the rolled bare-`_Bool` phase
+#       region already shipped and had NO fixture, NO slice and NO matrix cell
+#       (the 2026-09-13 session recorded it as L-0). Read `m_none_abphi_*` in
+#       particular — the rolled form mints and discharges a
+#       `cq_template_icmp_eq_i32_hl` rail PER TRIP (22 trace lines, byte-identical
+#       to its twin), so it is the first cell in this file that can see a leaked
+#       TEMPLATE-minted rail under a bare-rail condition.
+#   15  UNROLLED-ONLY — 9 on `cq controlled lowering: control flow inside a loop
+#       body under quantum control` (EVERY `ry` arm: the in-place controlled Ry on
+#       a disjoint register), 5 on `cq loop lowering: loop-carried tainted value
+#       crosses iterations` (the `val` arm, `LoopLowering`'s X1 clause, reached
+#       BEFORE detection), and 1 on the generic `cq controlled lowering: control
+#       flow under quantum control` — `m_none_ablphi_none_none_binv`, the B6
+#       short-circuit-with-a-LITERAL cell, whose flat twin accepts with the full
+#       `collectCondTree` stream and whose rolled side loses its compare to LICM.
+#       ⚠ THE FIRST NINE ARE bd wx8g's SUBJECT, ROW FOR ROW. Flipping them to
+#       ACCEPT-IDENTICAL is that increment working; any other flip is not.
+#   11  DECLINE-BOTH-DIFFERENT — 8 `prep` cells (rolled: the loop message; flat:
+#       `state prep merged with a quantum register`) and 3 `val` cells at the
+#       CARRIED bool. READ THE `prep` NOTE IN `B_ARM_TEXT` BEFORE ACTING ON THOSE
+#       EIGHT: their flat side declines for a reason a twin with TRIPS > 1 cannot
+#       avoid, so the only passing flip is to `DECLINE-BOTH`, and a flip to
+#       `ROLLED-ONLY` is the over-accept this table's own note calls a
+#       Prime-Directive red however green the run looks.
+#    5  DECLINE-BOTH — the `ab` TREE at the `ry` and `prep` arms (4 cells, the
+#       generic `control flow`: a condition TREE is off-pattern for the rail
+#       ladder even where the bare rail is admitted), and the B6 cell
+#       `m_none_absphi_none_none_binv`, `nested control flow` — a `&&` whose right
+#       operand is a VOLATILE load cannot be if-converted, so `-O1` hands the pass
+#       a genuine depth-2 nest rather than a tree.
+#
+# ZERO of the 40 diverge. That is a measurement and not a reassurance: the same
+# run reports exactly the 29 pre-existing quarantined divergences and no more, so
+# the `i1` width adds no member to class A, B or C today.
+#
+# ── bd uq96 SECOND PASS — THE 10 ITERATION-LOCAL CELLS (B7), AND THE ONE THING
+#    A READER MUST KNOW ABOUT THEIR ROWS ───────────────────────────────────────
+#
+# `m_none_{b,nb}ilry_none_none_{binv,bcar}`, `m_none_bilprep_none_none_{binv,bcar}`,
+# `m_none_{d,dd}ilry_none_none_binv`, `m_none_dilesc_none_none_binv`,
+# `m_none_bil2_none_none_binv`. They exist because Track W's landing MEASURED that
+# all 40 of the first `_Bool` cells declare their second register OUTSIDE the
+# loop, so `r` is loop-CARRIED in every one and NONE of them reaches bd wx8g's
+# clause (c) — the ITERATION-LOCAL rail, which is that increment's central new
+# capability. See the B7 block in `tools/loop_twin_matrix.py` for what each of
+# W-1..W-5 is the witness for.
+#
+# ⚠ THE ROWS BELOW WERE MEASURED ON THE ORACLE f7b65d8c, WHICH DOES NOT HAVE
+# CLAUSE (c). That is deliberate and it is this file's standing practice — the Ry
+# axis was regenerated at 1bdaa60 BEFORE Inc 3 for the same reason: a table
+# written after the implementation can only say that the implementation agrees
+# with itself. So these ten rows are a table of DECLINES, and THE DIFF THEY
+# PRODUCE WHEN bd wx8g LANDS IS THE WITNESS.
+#
+# MEASURED STARTING VERDICTS, ORACLE f7b65d8c:
+#     9  UNROLLED-ONLY — the flat side lowers each per-block repetition as the
+#        shipped l4x4.b straight-line form; the ROLLED side declines. EIGHT of
+#        the nine decline `control flow inside a loop body under quantum
+#        control`, i.e. on the fence bd wx8g removes.
+#        ⚠ THE NINTH IS `m_none_ddilry_none_none_binv` AND ITS MESSAGE IS
+#        DIFFERENT: `condition predates a non-diagonal gate`. Its post-loop
+#        diffusion `a = cq_theta(a, 0.9)` is a non-diagonal gate on the
+#        CONDITION's own wire, so gate 2c refuses it BEFORE the loop clause is
+#        ever reached. Lifting the loop fence alone will NOT flip that row, and a
+#        reader planning the regeneration must not count it with the other eight.
+#     1  DECLINE-BOTH-DIFFERENT — `m_none_dilesc_none_none_binv`, the ESCAPE:
+#        rolled the loop message, FLAT `nested control flow`.
+#
+# ⚠ THEREFORE bd wx8g's LANDING OWES A REGENERATION OF EXACTLY THESE TEN ROWS,
+# and the expected direction is written here so the diff is CHECKED rather than
+# rubber-stamped. Predicted from Track W's own measured probe table (IMPL_W §1,
+# the subject binary: `w_d`/`w_b2`/`w_g`/`w_k` all ACCEPT and all BYTE-IDENTICAL
+# to their per-block twins):
+#     the EIGHT loop-message rows -> ACCEPT-IDENTICAL (clause (c) working: the
+#         rolled form mints K rails for K activations and matches its per-block
+#         twin byte for byte);
+#     `m_none_ddilry_none_none_binv` -> UNMOVED, unless something also changed
+#         gate 2c — if it flips, the reason is NOT clause (c) and must be found;
+#     `m_none_dilesc_none_none_binv` -> UNMOVED. Its rolled side must go on
+#         declining; its flat side declines for its own `-O1` reason.
+#
+# ⚠ AND THE ESCAPE CELL IS THE SAFETY PIN OF THE WHOLE INCREMENT, SO READ IT
+# LITERALLY — INCLUDING WHAT IT DOES NOT DO. `ROLLED-ONLY` on
+# `m_none_dilesc_none_none_binv` — the rolled side accepting where its twin
+# declines — IS clause (c3) gone, and clause (c3) gone is the 19-vs-27 leak: two
+# entangled which-path rails of the condition's bits left allocated PER
+# ACTIVATION, at `opt` exit 0, `opt -verify` clean and STRICT stage 2b
+# `0 violation(s)` (2b counts `cqrt_alloc` sites and those rails are
+# TEMPLATE-minted). A `TRACE-DIVERGENCE` here is the same thing. Both are reds
+# that no table entry and no quarantine may bless.
+#     WHAT IT IS NOT: a TRACE witness. Track W's 19-vs-27 pair is HAND-WRITTEN IR
+#     (`trackW/probes/ir/il_{escape,noescape}_{rolled,flat}.ll`) whose flat side
+#     ACCEPTS at 27 lines; this cell's flat side is `clang -O1` on two `{ }`
+#     repetitions that both write `last`, and it declines `nested control flow`
+#     for a reason that has nothing to do with the leak. So this row pins the
+#     DISPOSITION — "the rolled side still refuses" — and the hand-IR pair keeps
+#     the trace. Do not quote this cell as if it measured 19 against 27.
+#
 # A CELL BELONGS TO EXACTLY ONE OF THE TWO FILES, and the gate says so out loud.
 # `--regenerate` omits every quarantined cell from this table for that reason;
 # when a quarantine entry is retired, delete its block and regenerate so the cell
@@ -241,6 +372,7 @@
 #
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+m_add_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_add_der_none           ACCEPT-IDENTICAL
 m_add_der_none_bodyread  ACCEPT-IDENTICAL
 m_add_der_none_postmark  ACCEPT-IDENTICAL
@@ -288,10 +420,44 @@ m_add_rne_none_none_none ACCEPT-IDENTICAL
 m_add_rrange_none_none_none ACCEPT-IDENTICAL
 m_add_ryrz_none_none_none ACCEPT-IDENTICAL
 m_add_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_addpre_bphi_none_none_binv ACCEPT-IDENTICAL
+m_addpre_bry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_addpre_pbit_none_none_rypost ACCEPT-IDENTICAL
 m_addpre_pbitd_none_none_rypost ACCEPT-IDENTICAL
 m_addpresel_pbit_none_none_rypost ACCEPT-IDENTICAL
 m_addpresel_pbitd_none_none_rypost ACCEPT-IDENTICAL-WARN	cq rotation lowering: non-diagonal gate over a live derived record
+m_none_ablphi_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_abphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_abphi_none_none_binv ACCEPT-IDENTICAL
+m_none_abprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abprep_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abry_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abry_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_absphi_none_none_binv DECLINE-BOTH	cq controlled lowering: nested control flow under quantum control
+m_none_abval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_abval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_bil2_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilprep_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilprep_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_bphi_none_none_binv ACCEPT-IDENTICAL
+m_none_bphi_ry_none_binv ACCEPT-IDENTICAL
+m_none_bprep_none_bpremark_bcar DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_bpremark_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_none_bcar DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_ry_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bry_none_bpremark_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bry_none_bpremark_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bry_ry_none_binv  UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bval_add_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_bval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
+m_none_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_ddilry_none_none_binv UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_none_bodyread UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_none_postmark UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
@@ -301,6 +467,8 @@ m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a no
 m_none_der_ry_postmark   UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_none_der_ry_premark    UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_none_der_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_dilesc_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: nested control flow under quantum control
+m_none_dilry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_eq0_add           ACCEPT-IDENTICAL
 m_none_eq0_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_eq0_ry            ACCEPT-IDENTICAL
@@ -323,6 +491,16 @@ m_none_ifelse_add        UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_nbilry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_nbphi_none_none_binv ACCEPT-IDENTICAL
+m_none_nbprep_none_none_bcar DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_nbprep_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_nbry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_nbry_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_nbval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
+m_none_nbval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_oder_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oder_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
 m_none_oder_add_rpostmark_rypost UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
@@ -411,6 +589,9 @@ m_none_rzry_add_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control
 m_none_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_rzry_none_none_rypost DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_rzry_ry_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_ry_bphi_none_none_binv ACCEPT-IDENTICAL
+m_ry_bprep_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_ry_bry_none_none_binv  UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_ry_der_add             ACCEPT-IDENTICAL
 m_ry_der_none            ACCEPT-IDENTICAL
 m_ry_der_none_bodyread   ACCEPT-IDENTICAL

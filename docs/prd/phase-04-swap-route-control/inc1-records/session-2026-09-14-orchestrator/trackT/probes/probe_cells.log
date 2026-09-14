@@ -1,0 +1,79 @@
+=== bphi_binv
+  verdict: ACCEPT-IDENTICAL
+  ROLLED trace (8 lines):
+     cqrt_alloc_i32(0) -> h0
+     cqrt_ry_i32(h0, 0x1p-1)
+     cqrt_alloc_i1(0) -> h1
+     cqrt_ry_i1(h1, 0x1p-1)
+     cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+     cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+     cqrt_measure_i32(h0) -> 0
+     cqrt_measure_i1(h1) -> 0
+  workdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/probe_63vii0am
+=== and_opaque_shortcircuit
+  verdict: DECLINE-BOTH | cq controlled lowering: nested control flow under quantum control
+  workdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/probe_7rozlp_s
+=== and_literal_shortcircuit
+  verdict: UNROLLED-ONLY | cq controlled lowering: control flow under quantum control
+  UNROLLED trace (15 lines):
+     cqrt_alloc_i32(0) -> h0
+     cqrt_ry_i32(h0, 0x1p-1)
+     cqrt_alloc_i1(0) -> h1
+     cqrt_ry_i1(h1, 0x1p-1)
+     cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+     cqrt_alloc_i1(0) -> h3
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_rz_i1(h3, 0x1.921fb54442d18p+1)
+     cqrt_rz_i1(h3, 0x1.921fb54442d18p+1)
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_free(h3)
+     cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+     cqrt_free(h2)
+     cqrt_measure_i32(h0) -> 0
+     cqrt_measure_i1(h1) -> 0
+  workdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/probe_wxtyf28b
+=== and_opaque_bitwise
+  verdict: ACCEPT-IDENTICAL
+  ROLLED trace (22 lines):
+     cqrt_alloc_i32(0) -> h0
+     cqrt_ry_i32(h0, 0x1p-1)
+     cqrt_alloc_i1(0) -> h1
+     cqrt_ry_i1(h1, 0x1p-1)
+     cq_template_icmp_eq_i32_hl(h0, 3) -> h2
+     cqrt_alloc_i1(0) -> h3
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_rz_i1(h3, 0x1.921fb54442d18p+1)
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_free(h3)
+     cq_template_icmp_eq_i32_hl_unc(h2, h0, 3)
+     cqrt_free(h2)
+     cq_template_icmp_eq_i32_hl(h0, 3) -> h4
+     cqrt_alloc_i1(0) -> h5
+     cqrt_toffoli(h1, h4, h5)
+     cqrt_rz_i1(h5, 0x1.921fb54442d18p+1)
+     cqrt_toffoli(h1, h4, h5)
+     cqrt_free(h5)
+     cq_template_icmp_eq_i32_hl_unc(h4, h0, 3)
+     cqrt_free(h4)
+     cqrt_measure_i32(h0) -> 0
+     cqrt_measure_i1(h1) -> 0
+  workdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/probe_xlesrol1
+=== and_literal_bitwise
+  verdict: UNROLLED-ONLY | cq controlled lowering: control flow under quantum control
+  UNROLLED trace (15 lines):
+     cqrt_alloc_i32(0) -> h0
+     cqrt_ry_i32(h0, 0x1p-1)
+     cqrt_alloc_i1(0) -> h1
+     cqrt_ry_i1(h1, 0x1p-1)
+     cq_template_icmp_eq_i32_hl(h0, 5) -> h2
+     cqrt_alloc_i1(0) -> h3
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_rz_i1(h3, 0x1.921fb54442d18p+1)
+     cqrt_rz_i1(h3, 0x1.921fb54442d18p+1)
+     cqrt_toffoli(h1, h2, h3)
+     cqrt_free(h3)
+     cq_template_icmp_eq_i32_hl_unc(h2, h0, 5)
+     cqrt_free(h2)
+     cqrt_measure_i32(h0) -> 0
+     cqrt_measure_i1(h1) -> 0
+  workdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/probe_2v7mnaoy

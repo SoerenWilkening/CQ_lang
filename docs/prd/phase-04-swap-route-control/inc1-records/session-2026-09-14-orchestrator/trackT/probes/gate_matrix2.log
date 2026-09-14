@@ -1,0 +1,9 @@
+Test project /Users/sorenwilkening/Desktop/CQ_twinbool/build
+    Start 318: e2e-loop-twin-matrix
+1/1 Test #318: e2e-loop-twin-matrix .............   Passed  464.29 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) = 464.33 sec
+ctest --test-dir build -R '^e2e-loop-twin-matrix$' --output-on-failure  653,78s user 96,22s system 161% cpu 7:44,41 total
+exit=0
