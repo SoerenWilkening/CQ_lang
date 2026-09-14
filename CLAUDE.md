@@ -1356,7 +1356,35 @@ than "true on at most one iteration", and widening it is an ACCEPT-direction
 relaxation needing its own Rule-13 round); `d4_noRailRegion.c` (safe-direction,
 with a pre-existing trace divergence on the oracle — a candidate, not a defect);
 an in-loop hoisted loop-invariant TEMPLATE rail read by the body's condition
-(Q-R1-1, a Prime-Directive decline, not a proof).
+(Q-R1-1 — ⚠ **CORRECTED 2026-09-14c, and it was on the WRONG SIDE of this list for
+part of its population**: see the paragraph below).
+
+⚠ **Q-R1-1 IS NOT ONE SHAPE, AND THE HALF THAT MATTERS WAS AN OVER-ACCEPT, NOT AN
+OVER-DECLINE** (Track S, 2026-09-14c, bd `s82e` / bd `tu9q`; verified by the
+orchestrator off the fixtures' own headers). A hoisted loop-invariant TEMPLATE rail
+read by the body's condition leaves the body's per-bit rails undischarged. Where the
+register those rails COPY is never touched again, that is a genuine Rule-6 accepted
+leak and the decline-to-be-removed reading is right. **Where the same register is
+rotated by a NON-DIAGONAL gate after the loop and then measured, it is a wrong
+unitary** — the leftover which-path rails dephase the rotation (Rule 8: *"a
+permutation that leaves a rail dirty **and** entangled still dephases under later
+interference"*), and the ACCEPT was the defect.
+
+**Three shipped fixtures were in the second half and said so in their own headers
+without drawing the conclusion** —
+`control_phase_kickback_mixed_{hoisted_template,preheader_volatile_imm,short_sext}_leak_control.ll`.
+Each records the measurement `3/0 rolled and 3/3 unrolled` for the per-bit `and`
+rails **and** carries a source ending `q = cq_theta(q,0.9); return cq_measure(q)…`,
+then calls the leak *"the PRIME-DIRECTIVE disposition, not an oversight … the safe
+direction (Rule 6)"*. **That sentence is false for those programs.** Rule 6 governs
+whether a dirty rail may be FREED; it says nothing about whether leaving it entangled
+is semantically free, and Rule 8 says it is not. ⚠ The headers' supporting equality
+is the trap worth naming: *"byte-identical rolled traces, `diff` empty — that equality
+IS the assertion"* compares the rolled form **across two binaries**, not rolled
+against unrolled, while the `3/0` vs `3/3` on the same line is exactly the
+rolled-vs-unrolled divergence. **A stability measurement was read as a correctness
+one.** All three are converted to declines by bd `s82e`; do not restore their old
+`CHECK` prefixes, which pinned the leaking stream.
 
 **Capabilities filed, not built:** bd `xqgx` (the **A.2** widenings — the S†
 after a compare select via the DT prong, the P1 `SawValueArm` retirement under a
