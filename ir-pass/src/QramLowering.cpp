@@ -21,9 +21,12 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/ValueTracking.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DataLayout.h"
 #include "llvm/IR/DebugLoc.h"
 #include "llvm/IR/DerivedTypes.h"
 #include "llvm/IR/DiagnosticInfo.h"
@@ -177,6 +180,59 @@ constexpr char kMsgQramCohEscape[] =
 // i64 index reaches here it is provably in-bounds and passes.
 constexpr char kMsgQramCloneUnbounded[] =
     "cq QRAM load: speculated const-global table read in a specialized clone: index not provably in-bounds";
+
+// bd `xdu2` / L-1a Increment W1 — the RAIL-BANK decline matrix. Each names the
+// EXACT clause the bounded-rail-array shape failed; the negative LIT fixtures
+// mirror each one CHARACTER-FOR-CHARACTER (Rule 12). They are fired by
+// `declineTaintEscapes` through `railBankCarveVerdict`, the one entry point the
+// carve AND the promoter share, and they REPLACE the generic `kMsgStore` for
+// exactly the population this classifier claims — a decline→decline string change
+// and nothing else this increment (see the header's staging note).
+//
+// A separate string family from `kMsgQram*` DELIBERATELY: 7.5's axis is a TAINTED
+// index over classical memory, L-1a's is a CLASSICAL index over quantum cells.
+// Sharing a string would merge two decline populations whose fixtures pin opposite
+// accept shapes, and would make the injection census point at the wrong wall.
+//   * lowering_reject_railbank_global.ll        → kMsgBankShape
+//   * lowering_reject_railbank_vla.ll           → kMsgBankShape
+//   * lowering_reject_railbank_escape.ll        → kMsgBankEscape
+//   * lowering_reject_railbank_mixed_access.ll  → kMsgBankMixed
+//   * lowering_reject_railbank_nonzero_init.ll  → kMsgBankInit
+//   * lowering_reject_railbank_noninjective.ll  → kMsgBankIndex
+//   * lowering_reject_railbank_fp_cell.ll       → kMsgBankWidth
+//   * lowering_reject_railbank_nowidth_cell.ll  → kMsgBankWidth
+//   * lowering_reject_railbank_alias.ll         → kMsgBankAlias
+//   * lowering_reject_railbank_two_stores.ll    → kMsgBankMultiStore
+//   * lowering_reject_railbank_oversized.ll     → kMsgBankTotality
+//   * lowering_reject_railbank_inloop_read.ll   → kMsgBankTotality
+constexpr char kMsgBankShape[] =
+    "cq rail bank: cell address has no bounded local-array provenance";
+constexpr char kMsgBankEscape[] =
+    "cq rail bank: array escapes to an unsupported user";
+constexpr char kMsgBankMixed[] =
+    "cq rail bank: array mixes a rail cell access with an unrecognized one";
+constexpr char kMsgBankInit[] =
+    "cq rail bank: array has an initializer the rail model cannot represent";
+constexpr char kMsgBankIndex[] =
+    "cq rail bank: cell index is not an injective per-iteration index";
+constexpr char kMsgBankWidth[] =
+    "cq rail bank: array element is not a reversible rail cell";
+constexpr char kMsgBankAlias[] =
+    "cq rail bank: cell address has aliasing fan-out";
+constexpr char kMsgBankMultiStore[] =
+    "cq rail bank: array is written from more than one store site";
+constexpr char kMsgBankTotality[] =
+    "cq rail bank: array has cells no iteration writes";
+// The two clauses ADDED by this increment's own adversarial self-attack (IMPL_A.md
+// §10 H-1 / H-13). Both were MEASURED as `Bank` over-accepts on the first subject
+// binary (53d1a4b6…) and both are the SAME hazard C2′/C1 name, one activation level
+// up — which is why they get their own strings rather than riding an existing one.
+//   * lowering_reject_railbank_nested_walk.ll   → kMsgBankNested
+//   * lowering_reject_railbank_dynamic_object.ll → kMsgBankDynamic
+constexpr char kMsgBankNested[] =
+    "cq rail bank: the cell walk is re-executed by an enclosing loop";
+constexpr char kMsgBankDynamic[] =
+    "cq rail bank: array object is not a single function-lifetime allocation";
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending load's `!dbg`
 // (source-located; `opt` exits non-zero, which the negative fixtures invert with
@@ -1122,6 +1178,395 @@ bool coherentlyEscapesToReturn(Value *V) {
   return false;
 }
 
+
+// ── bd `xdu2` / L-1a W1 — the rail-bank structural helpers (file-local, beside the
+//    provenance walk they CALL; SCOPE_L1a §0 H4 / §2's carve discipline) ─────────
+
+// A canonical rail-bank CELL ADDRESS: `matchAddressGep` in its CLASSICAL-index
+// form (array-decay `[N x E], base, 0, idx` OR the flat element form `E, base,
+// idx` — the same two spellings `matchQramAccess` accepts), over cells of exactly
+// `CellTy`, resolving to `Origin` with a provable ZERO net base offset.
+//
+// ⚠ The `!taint.Tainted.count(RawIndex)` conjunct is CLAUSE C2 and it is the axis
+// separator: a TAINTED index is Phase 7.5's (`qramCarveVerdict`) and must keep
+// 7.5's own decline. `matchAddressGep`'s `requireTaintedIndex` parameter already
+// separates the two axes; this calls it with `false` and then requires the
+// NEGATION, so the axes cannot merge by accident at either caller.
+bool railBankCellAddress(GetElementPtrInst *G, const TaintSet &taint,
+                         const OriginResult &Origin, Type *CellTy,
+                         Value *&RawIndex) {
+  Type *GotTy = nullptr;
+  RawIndex = nullptr;
+  if (!matchAddressGep(G, taint, RawIndex, GotTy,
+                       /*requireTaintedIndex=*/false))
+    return false;
+  if (GotTy != CellTy)
+    return false;
+  if (taint.Tainted.count(RawIndex))
+    return false;  // C2 — 7.5's axis, and it keeps 7.5's string.
+  return isDirectOriginPtr(G->getPointerOperand(), Origin);
+}
+
+// Is `V` a provable WHOLE-ARRAY constant-zero initializer value for `ArrTy`?
+// `clang -O1` spells `bool b[8] = {0}` as `store i64 0, ptr %b` and `bool b[2] =
+// {0}` as `store i16 0, ptr %b` — NOT as a memset (MEASURED on this floor, Rule 9:
+// "stock LLVM IR is not stable"). Both must be recognized or the C6 / C2′ clauses
+// below become unreachable behind a spurious C1 escape decline.
+bool wholeArrayConstantZero(const DataLayout &DL, Value *V, Type *ArrTy) {
+  auto *C = dyn_cast<Constant>(V);
+  if (!C || !C->isNullValue())
+    return false;
+  return DL.getTypeStoreSize(C->getType()).getFixedValue() ==
+         DL.getTypeStoreSize(ArrTy).getFixedValue();
+}
+
+// The rail-bank verdict proper (see QramLowering.h for the clause table, the
+// staging constraint and both retirement triggers). PURE ANALYSIS.
+RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
+                                       DominatorTree &DT, LoopInfo &LI,
+                                       ScalarEvolution &SE, const char *&outMsg,
+                                       RailBankShape *outShape) {
+  outMsg = nullptr;
+
+  // ── ENTRY. Every `NotBank` below leaves the input to its existing owner
+  //    byte-for-byte: the generic `kMsgStore` / `kMsgOther` decline is unmoved,
+  //    and so is every QRAM verdict (which the caller asked FIRST).
+  if (!SI->isSimple())
+    return RailBankCarve::NotBank;
+  Value *StoreVal = SI->getValueOperand();
+  if (!taint.Tainted.count(StoreVal))
+    return RailBankCarve::NotBank;  // a classical store is never a rail bank.
+  auto *G = dyn_cast<GetElementPtrInst>(SI->getPointerOperand());
+  if (!G)
+    return RailBankCarve::NotBank;  // a direct scalar/whole-object store.
+  // C2, stated as a conjunct even though the CALLER's ordering already makes it
+  // unreachable (`qramCarveVerdict` answers `NotQram` for a store only when the
+  // pointer is UNtainted). L3's mirror: a shared ordering premise that is true
+  // "for the callers it then had" is exactly what stops being true when a caller
+  // moves, so the axis is enforced here as well, not only upstream.
+  if (taint.Tainted.count(G))
+    return RailBankCarve::NotBank;
+  Value *RawIndex = nullptr;
+  Type *CellTy = nullptr;
+  if (!matchAddressGep(G, taint, RawIndex, CellTy,
+                       /*requireTaintedIndex=*/false))
+    return RailBankCarve::NotBank;  // non-canonical / struct / vector address.
+  if (taint.Tainted.count(RawIndex))
+    return RailBankCarve::NotBank;  // C2 — 7.5's axis.
+  // THE PUN FENCE — the same question `matchQramAccess` asks at its `AccTy !=
+  // CellTy` line (the 38t2 Rule-13 clearance): the memop's ACCESSED type must BE
+  // the cell type, or a sub-width type-punned access would resolve the ABI width
+  // from the ORIGIN and mint a wrong-width gate stream — verify-clean and wrong.
+  // ⚠ RETIREMENT TRIGGER, BOTH DIRECTIONS: this conjunct and `matchQramAccess`'s
+  // are one fence with two spellings because the two classifiers cannot share a
+  // body (see the header). If either moves, the other moves in the same change.
+  if (StoreVal->getType() != CellTy)
+    return RailBankCarve::NotBank;
+  Loop *L = LI.getLoopFor(SI->getParent());
+  if (!L)
+    return RailBankCarve::NotBank;  // a bank cell is written once per TRIP; a
+                                    // straight-line tainted array store is not a
+                                    // bank and keeps its generic decline (this is
+                                    // what leaves `control_classical_call_arm_
+                                    // reject_localarray_store.ll` untouched).
+
+  // ── C1 — a non-escaping bounded LOCAL array.
+  OriginResult Origin = walkPtrOrigin(G->getPointerOperand());
+  if (Origin.Kind != OriginResult::Alloca) {
+    // A `Bad` origin (VLA / heap / inttoptr / multi-origin / no provenance) and a
+    // GLOBAL array both land here: a rail bank must be a bounded FUNCTION-LOCAL
+    // object, because its cells are rails the pass has to be able to own.
+    outMsg = kMsgBankShape;
+    return RailBankCarve::RejectShape;
+  }
+  AllocaInst *AI = Origin.AI;
+  // ⚠ H-13, FOUND BY THIS INCREMENT'S OWN SELF-ATTACK AND MEASURED AS A `Bank`
+  // OVER-ACCEPT before this conjunct existed (`H13_alloca_in_loop.c`). A bank
+  // declared INSIDE an enclosing loop body is a FRESH OBJECT every outer trip, so
+  // "the bank" is not one object and none of C2′/C6's per-cell reasoning means
+  // anything. `isStaticAlloca()` is exactly the proof — entry block AND a
+  // non-array-allocation size — and `walkPtrOrigin`'s own `isArrayAllocation()`
+  // clause covers only the second half of that.
+  if (!AI->isStaticAlloca()) {
+    outMsg = kMsgBankDynamic;
+    return RailBankCarve::RejectShape;
+  }
+  if (!isDirectOriginPtr(G->getPointerOperand(), Origin)) {
+    outMsg = kMsgBankShape;  // a dynamic / non-zero base offset — index unclean.
+    return RailBankCarve::RejectShape;
+  }
+  auto *AT = dyn_cast<ArrayType>(AI->getAllocatedType());
+  // The origin-array/cell agreement + `N != 0`, `matchQramAccess`'s two shape
+  // conjuncts (same retirement trigger as the pun fence above). A `[0 x iW]` bank
+  // has no cell, so every index is OOB — a degenerate shape, declined.
+  if (!AT || AT->getElementType() != CellTy || AT->getNumElements() == 0) {
+    outMsg = kMsgBankShape;
+    return RailBankCarve::RejectShape;
+  }
+  const uint64_t N = AT->getNumElements();
+  const DataLayout &DL = SI->getModule()->getDataLayout();
+
+  // The alloca-WIDE user scan — the reusable non-escape proof, modelled on
+  // `processShadowAlloca`'s (`kMsgQramEscape` / `kMsgQramMixed` / `kMsgQramInit`)
+  // but asked HERE rather than in an emitter, because this increment ships no
+  // emitter. EVERY user of the bank must be a canonical cell address, a direct
+  // zero-offset cell access, a lifetime marker, or a provable full constant-zero
+  // initializer. Anything else is an escape.
+  SmallVector<StoreInst *, 4> Stores;
+  SmallVector<LoadInst *, 8> Loads;
+  SmallVector<Instruction *, 4> Inits;
+  for (User *U : AI->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI) {
+      outMsg = kMsgBankEscape;  // a ConstantExpr view of the address.
+      return RailBankCarve::RejectShape;
+    }
+    if (auto *UG = dyn_cast<GetElementPtrInst>(UI)) {
+      Value *Idx = nullptr;
+      if (!railBankCellAddress(UG, taint, Origin, CellTy, Idx)) {
+        outMsg = kMsgBankMixed;  // a classical-index byte view / a tainted index.
+        return RailBankCarve::RejectShape;
+      }
+      // ── C4 — no aliasing fan-out. ⚠ A cell address used by BOTH a load and the
+      //    store is ADMITTED here where `matchQramAccess`'s `GEP->hasOneUse()`
+      //    refuses it: see the header. What is refused instead is any user that is
+      //    not a simple load/store OF THE CELL TYPE THROUGH THIS ADDRESS — a
+      //    chained gep, a `ptrtoint`, a call argument, an atomic, a punned width.
+      for (User *GU : UG->users()) {
+        if (auto *LD = dyn_cast<LoadInst>(GU)) {
+          if (LD->isSimple() && LD->getPointerOperand() == UG &&
+              LD->getType() == CellTy) {
+            Loads.push_back(LD);
+            continue;
+          }
+        } else if (auto *ST = dyn_cast<StoreInst>(GU)) {
+          if (ST->isSimple() && ST->getPointerOperand() == UG &&
+              ST->getValueOperand()->getType() == CellTy) {
+            Stores.push_back(ST);
+            continue;
+          }
+        }
+        outMsg = kMsgBankAlias;
+        return RailBankCarve::RejectAlias;
+      }
+      continue;
+    }
+    if (auto *LD = dyn_cast<LoadInst>(UI)) {
+      // A direct zero-offset read of cell 0 — `clang -O1` emits this for `b[0]`
+      // (MEASURED: `N5b_noninjective_var_index.c`'s measure loop). `walkPtrOrigin`
+      // + `isDirectOriginPtr` already proved the zero offset by construction here.
+      if (LD->isSimple() && LD->getType() == CellTy) {
+        Loads.push_back(LD);
+        continue;
+      }
+      outMsg = kMsgBankMixed;  // a volatile/atomic or punned-width whole-object read.
+      return RailBankCarve::RejectShape;
+    }
+    if (auto *ST = dyn_cast<StoreInst>(UI)) {
+      if (ST->isSimple() && ST->getPointerOperand() == AI) {
+        if (wholeArrayConstantZero(DL, ST->getValueOperand(), AT)) {
+          Inits.push_back(ST);  // `= {0}` as `-O1` actually spells it.
+          continue;
+        }
+        if (ST->getValueOperand()->getType() == CellTy) {
+          Stores.push_back(ST);  // a direct zero-offset write of cell 0.
+          continue;
+        }
+        outMsg = kMsgBankInit;  // a non-zero / partial whole-object seed.
+        return RailBankCarve::RejectShape;
+      }
+      outMsg = kMsgBankEscape;  // the ADDRESS is the stored value — it escapes.
+      return RailBankCarve::RejectShape;
+    }
+    if (auto *II = dyn_cast<IntrinsicInst>(UI)) {
+      Intrinsic::ID Id = II->getIntrinsicID();
+      if (Id == Intrinsic::lifetime_start || Id == Intrinsic::lifetime_end)
+        continue;
+      if (Id == Intrinsic::memset || Id == Intrinsic::memset_inline) {
+        // The `processShadowAlloca` §2.6 argument, verbatim in its rail form: the
+        // model seeds every cell |0⟩, so ONLY a constant ZERO fill covering the
+        // WHOLE array is representable. A non-zero (or short, or non-constant)
+        // fill seeds classical contents no rail carries — a later read of an
+        // un-overwritten cell would be 0 in the model and the fill in truth.
+        auto *Fill = dyn_cast<ConstantInt>(II->getArgOperand(1));
+        auto *Len = dyn_cast<ConstantInt>(II->getArgOperand(2));
+        if (Fill && Fill->isZero() && Len &&
+            Len->getZExtValue() == DL.getTypeStoreSize(AT).getFixedValue()) {
+          Inits.push_back(II);
+          continue;
+        }
+        outMsg = kMsgBankInit;
+        return RailBankCarve::RejectShape;
+      }
+    }
+    outMsg = kMsgBankEscape;  // a call argument, ptrtoint, cmp, phi, select …
+    return RailBankCarve::RejectShape;
+  }
+
+  // ⚠ OWNER RULING D1 (2026-09-14) — an alloca with NO initializer at all is
+  // admitted as well as one with a provable constant zero, because the owner's file
+  // writes `bool b0[3];` with no `= {0}`, and bd `z9t1` already rules that an
+  // `undef` seed at a SOURCE `cq_theta` becomes the type's concrete zero AT THE
+  // ALLOCATION. This is a deliberate COMPOSITION with `z9t1`, and it inherits that
+  // ruling's DISCLOSURE and all three of its RETIREMENT TRIGGERS (`CLAUDE.md` §4c;
+  // the disclosure in the two-halves form is `IMPL_A.md` §6). An initializer that IS
+  // present must additionally DOMINATE the bank store — a re-zeroing write reachable
+  // inside the loop denotes a different program (it would re-prepare cells mid-
+  // cascade), and proving that is cheaper than arguing about it.
+  for (Instruction *Init : Inits)
+    if (!DT.isReachableFromEntry(Init->getParent()) || !DT.dominates(Init, SI)) {
+      outMsg = kMsgBankInit;
+      return RailBankCarve::RejectShape;
+    }
+
+  // ── C3 — the cell width must have a REVERSIBLE COPY.
+  // ⚠ NOT `abiWidthFromType(...).empty()`: `OpcodeSupport.h` is explicit that i128
+  // has a width string and NO reversible copy, and an fp cell has a width and no
+  // `cqrt_copy_f*` either. Both halves are pinned (`_nowidth_cell` / `_fp_cell`).
+  StringRef Abi = abiWidthFromType(CellTy);
+  if (Abi.empty() || !widthHasReversibleCopy(Abi)) {
+    outMsg = kMsgBankWidth;
+    return RailBankCarve::RejectWidth;
+  }
+
+  // ── C4 (second half) — exactly ONE store site in the whole bank, and it is this
+  //    one. Two writers of one bank are two rails per cell; the per-trip mint the
+  //    promoter and the type rewrite are built on has no meaning for that shape.
+  if (Stores.size() != 1 || Stores.front() != SI) {
+    outMsg = kMsgBankMultiStore;
+    return RailBankCarve::RejectAlias;
+  }
+
+  // ── C2′ — INJECTIVITY (NEW, and Prime-Directive load-bearing). If two
+  //    activations can write one cell, a later trip's SEED load reads a previously
+  //    stored HANDLE and the promotion forwards the wrong value.
+  // ⚠ H-1, FOUND BY THIS INCREMENT'S OWN SELF-ATTACK AND MEASURED AS A `Bank`
+  // OVER-ACCEPT before this conjunct existed (`H1_nested_outer_rewrite.c`:
+  // `for (k<2) for (i<3) b[i] = cq_theta(b[i], .5);`). Everything C2′ proves is
+  // about ONE ACTIVATION of `L`: `{0,+,1}` over `Trips == N` visits each cell once
+  // PER ACTIVATION. If an enclosing loop re-executes `L`, cell `i` is written once
+  // per outer trip and the second outer trip's SEED LOAD reads a previously-stored
+  // HANDLE — which is, verbatim, the hazard C2′ exists to prevent, one level up.
+  // *** THE LESSON, and it is L2's: when a set is proven over a closure, ask what
+  // OTHER closure re-runs the proof. *** Declining the nested walk is the Prime
+  // Directive answer; admitting it needs a proof about the OUTER loop that this
+  // increment does not have, and `CLAUDE.md` already declines nested loops broadly.
+  if (L->getParentLoop()) {
+    outMsg = kMsgBankNested;
+    return RailBankCarve::RejectIndex;
+  }
+  const SCEV *IdxS = SE.getSCEV(RawIndex);
+  const auto *AR = dyn_cast<SCEVAddRecExpr>(IdxS);
+  if (!AR || AR->getLoop() != L || !AR->isAffine()) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  // ⚠ H-17 — the recurrence must not WRAP. `{0,+,1}` over an index type narrower
+  // than the trip count revisits cell 0 after 2^bits trips, so "start 0, step 1,
+  // Trips ≤ N" is injective only modulo no-self-wrap. `-O1` widens most induction
+  // variables and stamps `nuw nsw`, so this is nearly always available; when it is
+  // not, declining is the safe direction (MEASURED: it costs none of the four
+  // `Bank` anchors).
+  if (!AR->hasNoSelfWrap()) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  const auto *Start = dyn_cast<SCEVConstant>(AR->getStart());
+  const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+  if (!Start || !Start->getAPInt().isZero() || !Step ||
+      !Step->getAPInt().isOne()) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  // The proven CONSTANT trip count. ⚠ `CLAUDE.md` Rule 18 records
+  // `getSmallConstantMaxTripCount` returning 4294967295 on some vacuous bounds and
+  // 0 on others — NEITHER return value distinguishes vacuity — so the bound is read
+  // as an `APInt` AT ITS OWN WIDTH, and vacuity is excluded by three separate
+  // conjuncts instead of by a magic return value:
+  //   (a) the EXACT backedge count is the SAME uniqued SCEV as the constant MAX,
+  //       so the count is a proof and not merely an upper bound;
+  //   (b) the all-ones APInt (SCEV's "no useful bound" at any width) is refused;
+  //   (c) REACHABILITY-TOTAL: ONE exiting block and one latch, so there is no
+  //       second exit the count did not model.
+  // ⚠ `hasFiniteClassicalTripBound` (`LoopLowering.cpp`) is CITED, NOT CALLED: it
+  // is the 7.4 `break` path over `getSymbolicMaxBackedgeTakenCount` and answers a
+  // different question (does the loop terminate), where C2′ asks how many DISTINCT
+  // cells the index visits.
+  const auto *MaxC =
+      dyn_cast<SCEVConstant>(SE.getConstantMaxBackedgeTakenCount(L));
+  const auto *ExactC = dyn_cast<SCEVConstant>(SE.getBackedgeTakenCount(L));
+  if (!MaxC || !ExactC || MaxC != ExactC) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  const APInt &BT = MaxC->getAPInt();
+  if (BT.isAllOnes() || BT.getActiveBits() > 32) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  if (!L->getExitingBlock() || !L->getLoopLatch()) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  const uint64_t Trips = BT.getZExtValue() + 1;
+  if (Trips > N) {
+    outMsg = kMsgBankIndex;  // the index leaves the bank / revisits a cell.
+    return RailBankCarve::RejectIndex;
+  }
+
+  // ── C6 — TOTALITY (NEW). After the (deferred) type rewrite a never-written cell
+  //    reads as handle `0`, and `h0` is a LIVE RAIL in this runtime
+  //    (`cqrt_alloc_i1(0) -> h0`). With C2′'s `{0,+,1}` index, a constant trip
+  //    count EQUAL to N and one exit, cells 0…N-1 are each written exactly once.
+  if (Trips != N) {
+    outMsg = kMsgBankTotality;
+    return RailBankCarve::RejectTotality;
+  }
+  // Every read of the bank is either (i) of the cell THIS trip writes — the
+  // per-trip seed read and the partially-available re-read, both of which the
+  // promoter (C5) removes — or (ii) after the loop, where C2′ + `Trips == N`
+  // proves every cell has been written. Anything else reads a cell in a state the
+  // rail model cannot name.
+  // ⚠ REACHABILITY IS AN API PRECONDITION HERE, NOT AN OPTIMIZATION — the same
+  // lesson `ArmClassify`'s F2 records for `LazyValueInfo` ("asking LVI about a value
+  // defined after the branch SIGSEGVs a Release `cq-opt`"). `declineTaintEscapes`
+  // walks EVERY block of the function, unreachable ones included, and an unreachable
+  // block has no `DomTreeNode`; `SI` itself is protected by the entry gate (an
+  // unreachable block is in no `Loop`, so `LI.getLoopFor` already returned null),
+  // but a bank LOAD in one is not. Refuse rather than ask.
+  for (LoadInst *LD : Loads) {
+    if (!DT.isReachableFromEntry(LD->getParent())) {
+      outMsg = kMsgBankTotality;
+      return RailBankCarve::RejectTotality;
+    }
+    if (L->contains(LD->getParent())) {
+      auto *LG = dyn_cast<GetElementPtrInst>(LD->getPointerOperand());
+      Value *LIdx = nullptr;
+      if (!LG || !railBankCellAddress(LG, taint, Origin, CellTy, LIdx) ||
+          SE.getSCEV(LIdx) != IdxS) {
+        outMsg = kMsgBankTotality;  // an in-loop read of some OTHER cell.
+        return RailBankCarve::RejectTotality;
+      }
+      continue;
+    }
+    if (!DT.dominates(L->getHeader(), LD->getParent())) {
+      outMsg = kMsgBankTotality;  // a read the loop does not precede.
+      return RailBankCarve::RejectTotality;
+    }
+  }
+
+  if (outShape) {
+    outShape->Alloca = AI;
+    outShape->L = L;
+    outShape->RawIndex = RawIndex;
+    outShape->CellTy = CellTy;
+    outShape->ElemAbi = Abi;
+    outShape->Count = N;
+    outShape->Trips = Trips;
+  }
+  return RailBankCarve::Bank;
+}
+
 }  // namespace
 
 // bd q2wk (3c6m.14 Inc 5) — exported wrapper over the Inc-3 predicate so
@@ -1203,6 +1648,19 @@ QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
                            DominatorTree &DT, LoopInfo &LInfo,
                            const char *&outMsg) {
   return classifyQramCarve(I, taint, DT, LInfo, outMsg);
+}
+
+// bd `xdu2` / L-1a W1 — the SINGLE rail-bank verdict (see QramLowering.h for the
+// clause table, the staging constraint and both retirement triggers). Consulted by
+// `declineTaintEscapes` AFTER `qramCarveVerdict` has answered `NotQram`, and — once
+// it lands — by the per-activation promoter, so the two can never diverge.
+RailBankCarve railBankCarveVerdict(const llvm::StoreInst *SI,
+                                   const TaintSet &taint, DominatorTree &DT,
+                                   LoopInfo &LI, ScalarEvolution &SE,
+                                   const char *&outMsg,
+                                   RailBankShape *outShape) {
+  return railBankCarveVerdictImpl(const_cast<StoreInst *>(SI), taint, DT, LI, SE,
+                                  outMsg, outShape);
 }
 
 bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,

@@ -27,8 +27,11 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/ADT/Twine.h"
+#include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"
+#include "llvm/Analysis/TargetLibraryInfo.h"
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/DerivedTypes.h"
@@ -39,6 +42,8 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/TargetParser/Triple.h"
 
 #include <algorithm>
 #include <optional>
@@ -722,6 +727,31 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
     // straight-line (not-under-tainted-control) + not-in-loop carve predicate.
     std::optional<DominatorTree> DT;
     std::optional<LoopInfo> LInfo;
+    // bd `xdu2` / L-1a W1 — ScalarEvolution for the rail-bank C2′ injectivity
+    // clause, built lazily and at most once per function, only when a store has
+    // already passed the (cheap) rail-bank entry gate. The direct-construction
+    // idiom is COPIED FROM `LoopLowering.cpp`'s `lowerLoops` (`AssumptionCache
+    // AC(F); TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
+    // TargetLibraryInfo TLI(TLII); ScalarEvolution SE(F, TLI, AC, DT, LI);`) —
+    // the LIVE one of the tree's two spellings (the other is
+    // `LoopUnrollPrepass.cpp`, byte-identical); a default `TargetLibraryInfoImpl`
+    // is a conservative TLI, sufficient for SCEV's trip-count reasoning.
+    //
+    // ⚠ `TaintPropagation.cpp`'s own warning that *"a `LoopInfo` built
+    // mid-fixpoint would describe a loop the next iteration reshapes"* is
+    // DISCHARGED HERE rather than inherited: `declineTaintEscapes` runs
+    // PRE-DETECTION and PRE-FLATTEN, so this SE describes the SOURCE loop — which
+    // is exactly the loop whose trip count C2′ is asking about. It is rebuilt from
+    // scratch on every re-entry (including `adjudicateTaintDelta`'s), so it can
+    // never be a stale cache either.
+    //
+    // DECLARATION ORDER IS LOAD-BEARING: `SE` holds references to `TLI`, `AC`,
+    // `*DT` and `*LInfo`, and members are destroyed in reverse declaration order,
+    // so `SE` must be declared LAST of the five.
+    std::optional<AssumptionCache> AC;
+    std::optional<TargetLibraryInfoImpl> TLII;
+    std::optional<TargetLibraryInfo> TLI;
+    std::optional<ScalarEvolution> SE;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
         // 1. Calls/invokes FIRST (an InvokeInst is also a terminator — it must
@@ -938,7 +968,79 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             continue;  // iw81.7 — a GuardedStoreArm store/gep: `detectControlRegions`
                        // owns it (flatten + guarded emit) or declines it loudly.
           case QramCarve::NotQram:
-            break;  // fall through to the generic kMsgStore / kMsgOther decline.
+            break;  // fall through to the rail-bank carve, then to the generic
+                    // kMsgStore / kMsgOther decline.
+          }
+        }
+        // 4a-bis-xdu2. THE RAIL-BANK CARVE (bd `xdu2` / L-1a Increment W1), a
+        //    SECOND switch beside the QRAM one and reached ONLY after
+        //    `QramCarve::NotQram` — because a classical-address / value-tainted
+        //    store is precisely `NotQram`'s documented population
+        //    (`QramLowering.h`; implemented at the `!taint.Tainted.count(PtrOp)`
+        //    line of `classifyQramCarve`). The two axes are orthogonal by
+        //    construction: 7.5 owns a TAINTED index over classical memory, L-1a a
+        //    CLASSICAL index over quantum cells, and `railBankCarveVerdict` carries
+        //    the negation as an explicit conjunct so neither can claim the other's
+        //    input if either caller moves (L3's mirror).
+        //
+        //    *** THE `Bank` VERDICT STILL DECLINES THIS SESSION, AND THAT IS A
+        //    CORRECTNESS REQUIREMENT, NOT A SCOPE PREFERENCE. *** The taint rule (a
+        //    `load` from a bank cell is tainted), the `[N x i1]` → `[N x i32]` type
+        //    rewrite and the D5 consumer allow-list are the second half of L-1a.
+        //    Until they land, an ACCEPTED bank is a SILENT MISCOMPILE by a named
+        //    mechanism (`SCOPE_L1a.md` §4.4(D)): `cq_measure(b[i])` on an UNTAINTED
+        //    load takes `MeasureLowering`'s classical split and emits no gate, no
+        //    symbol and NO TRACE LINE — and the golden byte-diff cannot see a
+        //    measurement that was never emitted. So `Bank` `break`s to the generic
+        //    `kMsgStore` below, exactly as `QramCarve::NotQram` does.
+        //
+        //    ⚠ L8 RETIREMENT TRIGGER: when that second half lands, the `Bank` arm
+        //    stops breaking and becomes a `continue` (the bank's owner emits it),
+        //    and every `lowering_reject_railbank_*` fixture whose header says so
+        //    becomes an ACCEPT. Re-derive them then; do NOT delete them.
+        //
+        //    The `Reject*` arms DO fire now: they replace the generic `kMsgStore`
+        //    with a per-clause, pattern-naming, source-located diagnostic for
+        //    exactly the population this classifier claims — a decline→decline
+        //    string change and nothing else.
+        if (auto *BankSI = dyn_cast<StoreInst>(&I)) {
+          if (!DT) {
+            DT.emplace(F);
+            LInfo.emplace(*DT);
+          }
+          if (!SE) {
+            AC.emplace(F);
+            TLII.emplace(Triple(M.getTargetTriple()));
+            TLI.emplace(*TLII);
+            SE.emplace(F, *TLI, *AC, *DT, *LInfo);
+          }
+          const char *BMsg = nullptr;
+          cq::RailBankShape BShape;
+          switch (railBankCarveVerdict(BankSI, taint, *DT, *LInfo, *SE, BMsg,
+                                       &BShape)) {
+          case RailBankCarve::Bank:
+            // The Rule-12 hygiene defect (c) hazard in its purest form: TODAY this
+            // verdict's observable behaviour is identical to doing nothing at all,
+            // so it MUST be pinned by something other than the unchanged
+            // `kMsgStore`. The anchor rides the existing env-gated `CQ_CTRL_DBG`
+            // lever (bd adia; `ControlPlan.h`'s `diagnoseUnderControl` uses the same
+            // variable) — byte-neutral when unset, and byte-ABSENT on the ORACLE,
+            // which is what makes the `env CQ_CTRL_DBG=1` fixtures non-vacuous.
+            if (::getenv("CQ_CTRL_DBG"))
+              llvm::errs() << "CQ_CTRL_DBG: railbank [Bank] cells="
+                           << BShape.Count << " abi=" << BShape.ElemAbi
+                           << " trips=" << BShape.Trips << " at: " << *BankSI
+                           << "\n";
+            break;  // ⚠ STAGING — falls through to kMsgStore. See above.
+          case RailBankCarve::RejectShape:
+          case RailBankCarve::RejectIndex:
+          case RailBankCarve::RejectWidth:
+          case RailBankCarve::RejectAlias:
+          case RailBankCarve::RejectTotality:
+            diagnoseEscape(&I, BMsg);  // per-clause decline; opt non-zero.
+            continue;
+          case RailBankCarve::NotBank:
+            break;  // not a rail-bank cell write — generic decline, unmoved.
           }
         }
         // 4b. `freeze` (Phase-7.1 Increment B) — a basis-level identity. The
