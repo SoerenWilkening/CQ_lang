@@ -53,9 +53,12 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ValueHandle.h"  // WeakTrackingVH (bd wx8g RolledLoopRegionGates)
+#include "llvm/Support/raw_ostream.h"  // errs() — the bd bbu0 instrument marker
 #include "llvm/TargetParser/Triple.h"
 
+#include <cstdlib>  // getenv — the bd bbu0 instrument gate
 #include <optional>
+#include <string>
 #include <utility>
 
 using namespace llvm;
@@ -4127,9 +4130,110 @@ bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint) {
   return false;
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// bd `test_C_libtooling-bbu0`, owner ruling **E6 (2026-09-15) = option (D)** —
+// THE INSTRUMENT. **IT DECIDES NOTHING SEMANTICALLY** and must not be traded
+// against options A/B/C, which are ruled next session **on the number it
+// produces** (`$SES/trackD/MEASUREMENT.md`).
+//
+// WHAT IT EXISTS FOR. The question that separates those options —
+//
+//     is `RotationLowering::warnLiveRecordRotations` ever SILENT on a module
+//     that this fence DECLINES?
+//
+// — **cannot be asked of any shipped binary.** This fence is called at
+// `CQLoweringPass.cpp:772`, the warn stage at `:864`, and `LLVMContext::diagnose`
+// **EXITS on the first `DS_Error`** (bd `br4a`). A module that declines here
+// NEVER REACHES the warning, so every "0 warnings" row over a declining module is
+// **0 BY PREEMPTION, NOT BY SILENCE** — including every `†` row of Track S′'s
+// table (`$SES/trackS/QUESTION_bbu0.md` §1/§3, which measured it and said in so
+// many words that it did NOT construct a counter-example and does NOT claim one
+// exists).
+//
+// ⚠ WHY THIS SPELLING AND NOT EITHER OF THE TWO THE RULING NAMES. Both literal
+// readings were read against the source before anything was written (Rule 11) and
+// **both are unimplementable**, for one shared reason that is itself the reason
+// the gap exists: *the warning is a question about a LOWERED module and this
+// fence is a question about an UNLOWERED one.*
+//   * "MOVE THE WARNINGS EARLIER" — `warnLiveRecordRotations` opens with
+//     `if (taint.UserChainedRotations.empty()) return false;` and then matches
+//     emitted `cqrt_ry_<W>` / `cqrt_ry_<W>_controlled` CALLS. That set is filled
+//     by `lowerRotations` at `:774`, AFTER this fence. Called at this slot the
+//     stage returns on its first line and is silent on EVERYTHING — which would
+//     move the verdict of every accepting module that warns today, and would
+//     "measure" SILENT on 100 % of the population while meaning nothing.
+//   * "HAVE THE FENCE CONSULT THE WARNING'S RECORD SET" — that set (`RecordSet`
+//     + `collectAncestorRecords` / `collectDescendantRecords`) is built INSIDE
+//     the warn stage out of emitted `cqrt_*` calls; at this slot it does not
+//     exist. Re-deriving it here is the second-spelling defect (Rule 14 / drbq
+//     Inc-3 (b′)) that the ruling's own §2 identifies as the REAL duplication —
+//     and it is **option C**, which is **not ruled**.
+// What IS implementable is the third reading of the same sentence: leave both
+// stages exactly where they are and **defer THIS FENCE'S DECLINE past the warn
+// stage**, so the warnings are emitted before it. That is literally *"emit the
+// warnings BEFORE the fence's decline"*.
+//
+// WHY THE DEFERRED RUN GIVES THE *RIGHT* NUMBER, not merely a number. This fence
+// is **pure analysis** — `LoopPlan.h` says so and the body was re-read for this
+// change rather than inherited: a `GateCalls` set, a `DominatorTree`, a
+// `LoopInfo`, and calls to `peelInPlaceBase` (`const TaintSet &`),
+// `mintsOutOfPlaceTemplateRail`, `railIsInterior` and `taintedAncestryReaches`,
+// every one a READ. So suppressing its `diagnose` yields **exactly the pipeline a
+// build with this fence DELETED would run**, and the module the warn stage then
+// sees is exactly the circuit the fence exists to refuse. ⚠ RETIREMENT TRIGGER:
+// the day this fence mutates anything — IR, `taint`, or a plan — the instrument
+// stops measuring the fence-deleted pipeline and this paragraph is FALSE.
+//
+// ⚠ IT CANNOT TURN A DECLINE INTO AN ACCEPT, AND THAT IS THE WHOLE SAFETY
+// ARGUMENT — a control-flow fact, not a hope. Under the gate the verdict is
+// RECORDED and re-emitted by `emitDeferredDephasingDecline`, which is called
+// UNCONDITIONALLY in BOTH entry points; the only paths that skip it are ones a
+// `DS_Error` has already exited on. The variable changes WHEN the decline is
+// emitted, never WHETHER — and that is **pinned, not argued**: the gated RUN line
+// of `loop_leak_dephase_reject_inloop_rotation.ll` is a `not %cq-opt`, so the
+// suite fails the moment the gate accepts.
+//
+// ⚠ THE DEFAULT IS BYTE-IDENTICAL. With the variable unset this returns false and
+// the code path is the shipped `diagnose(&I, …); return;`. The `getenv` is
+// evaluated AT MOST ONCE PER MODULE and only on the declining path — never on an
+// accept. (Precedent for the mechanism is in-tree and long-standing:
+// `CQ_CTRL_DBG`, `CQ_RAILBANK_DBG`, `CQ_PREDMUX_DBG`, `CQ_PREDMUX_COUNT`,
+// `CQ_UNROLL_DBG`, `CQ_CTLZ_DBG`, `CQ_FP80_DBG`, `CQ_SPEC_DBG`.)
+bool deferDephasingDecline() {
+  return ::getenv("CQ_BBU0_DEFER_DEPHASE_FENCE") != nullptr;
+}
+
+// The deferred verdict. ⚠ **NOT an `Instruction *`, and not a `Function *`
+// either.** Everything between this fence's slot and the late slot lowers, RAUWs
+// and ERASES (`lowerRotations`, `lowerOps`, `lowerMeasures`,
+// `lowerBreakReversePlay`, `lowerLateReassignments`, `uncompute`), so the
+// offending instruction is very likely gone by the time the decline is emitted,
+// and holding a raw pointer across that window is the "dereferences freed memory
+// (SIGSEGV on valid input)" shape `CLAUDE.md` L9 already charged this project
+// once. A function NAME is re-looked-up in the module at emit time and a
+// `DebugLoc` is a value copy of a reference to a context-uniqued `DILocation`, so
+// the deferred diagnostic carries the SAME source location the un-deferred one
+// would — which is what makes a deferred row comparable to its control row byte
+// for byte apart from ORDER.
+struct DeferredDephasing {
+  std::string FName;
+  DebugLoc Loc;
+  bool Armed = false;
+};
+
+DeferredDephasing &deferredDephasingSlot() {
+  static DeferredDephasing Slot;
+  return Slot;
+}
+
 }  // namespace
 
 void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
+  // bd `bbu0` (D): the instrument's slot is cleared HERE — before the
+  // `Tainted.empty()` early-out, and unconditionally — so a second module in the
+  // same process can never inherit the previous one's armed verdict. Cheap
+  // enough to be unconditional, which is better than correct-only-under-the-gate.
+  deferredDephasingSlot() = DeferredDephasing{};
   if (taint.Tainted.empty())
     return;
   SmallPtrSet<CallInst *, 32> GateCalls;
@@ -4293,12 +4397,75 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
             continue;  // measure-owned — left allocated by BOTH forms.
           if (!taintedAncestryReaches(&I, Rots, taint))
             continue;  // copies a register nothing interferes later.
+          if (deferDephasingDecline()) {
+            // bd `bbu0` (D) — RECORD and carry on, so that
+            // `warnLiveRecordRotations` at the late slot gets to run on this
+            // module at all. The decline is emitted by
+            // `emitDeferredDephasingDecline` AFTER it. Note the `return` is the
+            // SAME one the un-gated path takes: ONE verdict per module either
+            // way, so the gate cannot turn one diagnostic into several.
+            DeferredDephasing &S = deferredDephasingSlot();
+            S.FName = I.getFunction()->getName().str();
+            S.Loc = I.getDebugLoc();
+            S.Armed = true;
+            return;
+          }
           diagnose(&I, kMsgLoopLeakDephases);
           return;      // ONE diagnostic: `diagnose` EXITS on the first DS_Error.
         }
       }
     }
   }
+}
+
+// bd `test_C_libtooling-bbu0` (owner ruling E6 = option D) — DRAIN the deferred
+// verdict. Called UNCONDITIONALLY at the late slot in BOTH entry points,
+// immediately after `warnLiveRecordRotations`; a no-op unless
+// `CQ_BBU0_DEFER_DEPHASE_FENCE` armed it, which is why the shipped default
+// cannot tell it is there. Contract and retirement triggers at
+// `deferDephasingDecline` above and in `LoopPlan.h`.
+//
+// ⚠ THE MARKER LINE IS THE MEASUREMENT'S VACUITY GUARD, NOT DECORATION
+// (`CLAUDE.md` L10 — *an instrument's failure mode is to report a pass*). It can
+// only be printed from HERE, and HERE is after the warn stage, so a harness that
+// sees it KNOWS the warn stage ran and may score a zero warning count as
+// SILENCE. Without it, a harness scoring "0 warnings" as silent would be
+// measuring its own reachability and would report SILENT on every preempted row
+// — which is precisely the defect this whole instrument exists to remove. The
+// string is mirrored character-for-character by
+// `loop_leak_dephase_reject_inloop_rotation.ll`'s `DEFER` prefix and by
+// `$SES/trackD/probes/bbu0_measure.sh`; a drift between the three is a Rule-12
+// failure, not a cosmetic one.
+void emitDeferredDephasingDecline(Module &M) {
+  DeferredDephasing &S = deferredDephasingSlot();
+  if (!S.Armed)
+    return;
+  S.Armed = false;
+  llvm::errs() << "CQ_BBU0_DEFER_DEPHASE_FENCE: cq bbu0 instrument: dephasing "
+                  "decline DEFERRED past the warn stage\n";
+  // Re-look-up rather than a carried pointer (see `DeferredDephasing`). The
+  // fallback exists so the VERDICT CANNOT BE LOST: whatever happened to the
+  // recorded function, `opt` must still exit non-zero on a module this fence
+  // refused. Unreachable by construction — the fence found the offending
+  // instruction inside a defined function of this same module — and loud rather
+  // than silent if that ever stops being true.
+  Function *F = M.getFunction(S.FName);
+  if (!F || F->isDeclaration()) {
+    F = nullptr;
+    for (Function &G : M)
+      if (!G.isDeclaration()) {
+        F = &G;
+        break;
+      }
+  }
+  if (!F) {
+    llvm::errs() << "CQ_BBU0_DEFER_DEPHASE_FENCE: INSTRUMENT LOST THE VERDICT "
+                    "for function '"
+                 << S.FName << "' — this is a BUG, not an accept\n";
+    return;
+  }
+  F->getContext().diagnose(
+      DiagnosticInfoUnsupported(*F, kMsgLoopLeakDephases, S.Loc));
 }
 
 // bd `test_C_libtooling-wx8g` — R7-loop CLAUSE (c3). Contract in LoopPlan.h.

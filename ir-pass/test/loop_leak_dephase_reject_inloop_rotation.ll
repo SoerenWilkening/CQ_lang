@@ -53,6 +53,36 @@
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
 ; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+;
+; ─────────────────────────────────────────────────────────────────────────────
+; ⚠ bd `test_C_libtooling-bbu0`, owner ruling E6 (2026-09-15), option (D) — THE
+; INSTRUMENT PIN, and it guards the one thing that could go catastrophically
+; wrong with the instrument. Under `CQ_BBU0_DEFER_DEPHASE_FENCE=1` this fence
+; RECORDS its verdict instead of emitting it, lets the pipeline run on so that
+; `RotationLowering::warnLiveRecordRotations` (`CQLoweringPass.cpp:864`) gets to
+; speak, and emits the decline afterwards. **THE GATED RUN LINE IS A
+; `not %cq-opt`: IF THE GATE EVER TURNS THIS DECLINE INTO AN ACCEPT, THIS FIXTURE
+; FAILS.** That is the instrument's whole safety property — pinned, not argued.
+;
+; The `DEFER` prefix is WHOLE-FILE and separate from `CHECK` (fixture-hygiene (a):
+; a positive check above a negative windows it; these are two independent
+; verdicts about two different commands, so they get two prefixes). Its lines are
+; ORDERED and the order is the point: the marker can only be printed by
+; `emitDeferredDephasingDecline`, which is called AFTER the warn stage in both
+; entry points, so a marker standing BEFORE the decline is the proof that the
+; deferral actually reached `:864`. That proof is the vacuity guard for the whole
+; population of `trackD/MEASUREMENT.md` — without it a "0 warnings" row would be
+; measuring the harness's own reachability rather than the warning's silence.
+;
+; ⚠ L8 RETIREMENT TRIGGER: this pin dies with the file when bd `tu9q` turns it
+; into an ACCEPT. MOVE the two `RUN`/`DEFER` blocks to whichever module still
+; declines at this fence then; do not silently drop them.
+;
+; RUN: env CQ_BBU0_DEFER_DEPHASE_FENCE=1 not %cq-opt -load-pass-plugin %cq-pass \
+; RUN:     -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DEFER
+;
+; DEFER: cq bbu0 instrument: dephasing decline DEFERRED past the warn stage
+; DEFER: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

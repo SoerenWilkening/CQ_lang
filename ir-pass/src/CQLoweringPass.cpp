@@ -862,6 +862,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Every WRONG-VALUE and DIRTY-FREE owner above stays loud; the ruling reverses
   // this guard's decline half and nothing else.
   warnLiveRecordRotations(M, taint);
+  // bd test_C_libtooling-bbu0, owner ruling E6 (2026-09-15) = option (D) — drain
+  // the verdict `declineDephasingUnmarkedLoopRails` (:772) DEFERRED under
+  // `CQ_BBU0_DEFER_DEPHASE_FENCE`. A NO-OP with the variable unset; contract in
+  // LoopPlan.h. IMMEDIATELY AFTER the warn stage in BOTH directions: earlier and
+  // the instrument's marker stops proving the warn stage ran (the measurement's
+  // only vacuity guard); omitted here and a gated module would exit ZERO, the one
+  // outcome the instrument must never produce.
+  emitDeferredDephasingDecline(M);
   // THE POSTCONDITION BACKSTOP (bd 3qlq Inc 1 part A, round-1 F-L6-1) — see the
   // function's own header. Runs BEFORE `eraseDeadDecls`, which only erases the
   // declarations that are already unused and is therefore blind to a surviving
@@ -1219,6 +1227,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // report. See run() for the late-slot + emitter-keyed rationale and for why
   // the bool is not branched on (owner ruling 2026-08-29, bd lyyf).
   warnLiveRecordRotations(M, taint);
+  // bd test_C_libtooling-bbu0 (D), mirrored in this entry point too — the
+  // deferred-verdict drain. Twin-pipeline parity is MANDATORY (WI-1.12) and here
+  // it is load-bearing rather than tidy: an entry point that records a deferral
+  // and never drains it hands back a module with `opt` exit 0 on a program this
+  // fence refused. See run() for the full rationale.
+  emitDeferredDephasingDecline(M);
   // The postcondition backstop, mirrored in this entry point too (twin-pipeline
   // parity is MANDATORY, WI-1.12) — see run() for the F-L6-1 rationale.
   if (declineSurvivingIntrinsicCalls(M, wd))
