@@ -41,11 +41,27 @@
 ; itself be an OVER-DECLINE in the sense of the owner's 2026-09-11 ruling (an
 ; over-decline is a defect to remove, not a free safety margin). Removing it is
 ; a SEPARATE change — it would swap `valueCarriesUndef` for `slotCarriesUndef`
-; at this site and leave the string with no customer at all — and it was NOT
-; taken here because E2's ruling scopes the retirement to the `undef`/`poison`
-; OPERAND. RETIREMENT TRIGGER: if that swap is ever made, this fixture becomes
-; an ACCEPT and `kMsgUndefOperand` must be deleted in the same change. Re-derive
-; it then; do not delete it now.
+; at this site — and it was NOT taken here.
+;
+; ⚠ WHY NOT — RE-GROUNDED 2026-09-15 BY THE Rule-13 FIX ROUND (review item 3),
+; WHICH AGREED WITH KEEPING THE DECLINE AND DISAGREED WITH THE REASON. The
+; reason written here first was HYGIENIC ("the swap would leave the string with
+; no customer at all"), and HYGIENE IS NOT A GROUND FOR KEEPING AN
+; OVER-DECLINE: the correct response to "no customer" is to DELETE the string,
+; which is what the trigger below already requires. The ground that survives is
+; SEMANTIC: `slotCarriesUndef`'s `SkipGlobals=true` exists for EMITTED GATE
+; SLOTS and its argument is about LITERAL INTEGRITY AT THE `-O0` STAGE-3 LINK
+; (the same token must denote the same value at every slot the lowering copies
+; it to), while a MEASUREMENT asks a different question — what value does this
+; read report? — and nobody has ruled whether an initializer's `undef` field is
+; reachable from it. Making the swap would be ADDING A CALLER TO A SHARED
+; PREDICATE WITHOUT ASKING WHETHER THE CALLEE'S ARGUMENT REACHES IT (CLAUDE.md's
+; mirror of L3, the P1 filing of 2026-09-14). So the swap needs an OWNER RULING
+; on that semantics question, not developer discretion.
+;
+; RETIREMENT TRIGGER: if that swap is ever made, this fixture becomes an ACCEPT
+; and `kMsgUndefOperand` must be deleted in the same change. Re-derive it then;
+; do not delete it now.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=NOACCEPT

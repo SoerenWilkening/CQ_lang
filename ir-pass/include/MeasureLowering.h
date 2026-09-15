@@ -83,8 +83,20 @@
 // CARRIES an `undef` through a `GlobalValue`'s initializer (`valueCarriesUndef`
 // walks into it) still declines on the unchanged string. Pinned by
 // `lowering_reject_measure_undef_global_init.ll`. See `MeasureLowering.cpp` for
-// the rationale, the DISCLOSURE paragraph this silent widening owes, and its
-// four retirement triggers.
+// the rationale, the DISCLOSURE this silent widening owes — **TWO** rival
+// readings, and the second one is QUANTUM (owner ruling 2026-09-15,
+// `DECISIONS.md` E9, on the Rule-13 round's P1) — and its SIX retirement
+// triggers.
+//
+// ⚠ THE ONE SENTENCE FROM THAT DISCLOSURE THAT BELONGS AT EVERY SITE: after
+// `clang -O1` folds `q + u` to a whole-value `undef`, a measurement the author
+// wrote OF A QUANTUM REGISTER is lowered by this clause as a classical zero,
+// so the user's measurement is ABSENT from the emitted circuit and NOTHING IS
+// PRINTED. The class pre-exists at HEAD (`q * u` / `q & u` fold to a concrete
+// `0` and already ship that circuit), no predicate can separate the readings
+// after `-O1`, and CQ therefore does not diagnose it. Pinned by
+// `lowering_measure_undef_operand_after_taint_fold.ll` and its control
+// `lowering_measure_taint_fold_control.ll`.
 
 #ifndef CQ_IRPASS_MEASURE_LOWERING_H_
 #define CQ_IRPASS_MEASURE_LOWERING_H_

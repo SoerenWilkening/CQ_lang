@@ -167,10 +167,33 @@ The operand is a **defined value**; measuring it classically is well-defined; `s
 (the `SkipGlobals=true` twin, which exists for exactly this distinction) would accept it. Under the
 owner's 2026-09-11 ruling an over-decline is a **defect to remove**, not a safety margin.
 
-It was **not** removed here, for two stated reasons rather than by reflex: the ruling scopes the
-retirement to the `undef`/`poison` **operand**, and the swap would leave `kMsgUndefOperand` with
-**no customer at all** — a string with no fixture is the mirror of a fixture with no subject, and
-the tree already carries two decline strings naming mechanisms that no longer exist (bd `OQ-13`).
+It was **not** removed here. ⚠ **RE-GROUNDED BY THE FIX ROUND, 2026-09-15** (review item 3, which
+agreed with not taking the swap and disagreed with the reason): the reason first written here was
+**hygienic** — *the swap would leave `kMsgUndefOperand` with no customer at all* — and **hygiene is
+not a ground for keeping an over-decline** under the owner's 2026-09-11 ruling. The correct response
+to "no customer" is to **delete the string**, which is exactly what retirement trigger 4 already
+requires; that sentence is binding as a **consequence** of the swap and was never a **reason**
+against it.
+
+**The ground that survives is SEMANTIC, and it is the L3-mirror.** `slotCarriesUndef`'s
+`SkipGlobals=true` exists for **emitted gate slots**, and its argument — *"a `GlobalValue`'s
+operands are its INITIALIZER, while the value under test is the global's ADDRESS, which is defined
+no matter what it is initialised to"* (`LiteralIntegrity.cpp`) — is an argument about **literal
+integrity at the `-O0` stage-3 link**: the same token must denote the same value at every slot the
+lowering copies it to. A **measurement** asks a different question — *what value does this read
+report?* — and nobody has ruled whether an initialiser's `undef` field is reachable from it.
+Swapping the predicate would be **adding a caller to a shared predicate without asking whether the
+callee's argument reaches the new caller** — the defect that cost a P1 filing on 2026-09-14
+(`WireWalk.h` / `readerStalesItself`), whose instruction *widen the vocabulary or fence the caller
+in the same change* applies verbatim. **So the swap needs an OWNER RULING**, not developer
+discretion; the question is *"does a measurement read a global's initialiser?"*, which this project
+has never answered. It was also out of scope for `fve8`, whose ruling scopes the retirement to the
+`undef`/`poison` **operand**.
+
+**Practical weight: near zero.** A residual member needs a `GlobalValue` in the operand's constant
+chain (§2.1), i.e. roughly `cq_measure((int)(intptr_t)&g)` with `g` partly uninitialised. No
+customer writes it — a reason the question is not urgent, not a reason the answer is obvious.
+
 **Filed for the orchestrator as an over-decline candidate**, with the retirement trigger written
 into both the fixture header and the source: *if that swap is ever made, this fixture becomes an
 ACCEPT and `kMsgUndefOperand` must be DELETED in the same change.*
@@ -417,12 +440,29 @@ E2 **adds** no string and **deletes** no string.
 
 ## 6. ⚠ DISCLOSURE — what this rule silently absorbs
 
+> ⚠ **CORRECTED AND EXTENDED BY THE FIX ROUND, 2026-09-15** (`$SES/e2fix/FIX.md`, branch
+> `fve8-fix`), after the independent Rule-13 round returned **FINDING** (`review_r13_e2/REVIEW.md`,
+> 1 × P1 + 2 × P2). Three things below were wrong or missing and are fixed **here and at the
+> mechanism in the same change** (CLAUDE.md L7-with-a-twist):
+>
+> * **A SECOND RIVAL EXISTS AND IT IS QUANTUM** (`F-E2-1`, P1; owner ruling `DECISIONS.md` **E9**:
+>   ACCEPT, AND DISCLOSE THE QUANTUM RIVAL). It is stated below as **RIVAL 2**.
+> * *"byte-identical to what a written `= 0` produces"* was **FALSE** for a multi-use operand
+>   (`F-E2-2`, P2). What was measured is the **one-token IR twin**; the sentence now says so.
+> * The **retirement-trigger set presented itself as exhaustive and was not** (`F-E2-3`, P2). Trigger
+>   2 is split into the half that transfers and the half that does not, and the fact that actually
+>   carries the argument — `lowerMeasures` runs **after every `Value*`-identity fence** — is added as
+>   trigger 5.
+>
+> The **fullest copy is now the comment at the mechanism** in `ir-pass/src/MeasureLowering.cpp`
+> (clause (1a)); this section and `$SES/e2fix/FIX.md` §1 carry the same text.
+
 *(The same text stands at the mechanism in `MeasureLowering.cpp`. This is the normative copy. It is
 written in the form CLAUDE.md §4c insists on, because it is the same class of silent widening as
 bd `z9t1`'s own disclosure and the F2 α/β narrowing: a loud refusal becomes a silent compile, no
 predicate can separate the readings after `-O1`, and the mitigation is **disclosure, not a fence**.)*
 
-**THE RIVAL READING, AS A PROGRAM AND NOT AS AN IR SHAPE:**
+**RIVAL 1 (CLASSICAL) — THE RIVAL READING, AS A PROGRAM AND NOT AS AN IR SHAPE:**
 
 ```c
 int u;  return cq_measure(u);
@@ -432,7 +472,7 @@ The author read an **uninitialised object**. On a real machine that object holds
 slot held — not zero — so the rival reading is *"this measurement reports garbage, and the program
 has no defined outcome."* The compiler now reports **0**, in every spelling, **silently**.
 
-**WHY THE RIVAL HAS NO LOWERING TO BE ROBBED OF — two halves, because either alone would be an
+**WHY RIVAL 1 HAS NO LOWERING TO BE ROBBED OF — two halves, because either alone would be an
 assertion.**
 
 1. **On the ORACLE the module is a LOUD DECLINE** — all **24** corpus movers of §4, every one of
@@ -440,22 +480,89 @@ assertion.**
    is displaced.
 2. **The accept it now receives is a REFINEMENT, not a choice between two circuits.** LangRef lets
    an `undef` stand for **any** value of its type, so `0` at the read is a value the source
-   **already licensed**, and the emitted stream is **byte-identical** to what a written `= 0`
-   produces — measured over the whole censused population, **12 of 12 byte-identical, 0 divergences,
-   0 `A→D`** (§3), against **0 of 12** for the only rival implementation of the same ruling (§3.3).
+   **already licensed**.
+
+   ⚠ **AND THE CORROBORATION IS STATED AS WHAT WAS MEASURED** (`F-E2-2`, corrected 2026-09-15): the
+   emitted stream is **byte-identical to the same module with that one operand token written as the
+   type's zero** — **12 of 12** by this track (§3), extended to **32 of 32** by the review
+   (`REVIEW.md` §3 item 11), 0 divergences, 0 `A→D`, against **0 of 12** for the only rival
+   implementation of the same ruling (§3.3). It is **NOT** *"byte-identical to what a written `= 0`
+   produces"*: that is false for an operand with more than one use, because the clause rewrites the
+   **measurement's result** and never the operand's other reads — `int u; int m = cq_measure(u);
+   return m + u;` keeps `undef` at the second read where the written-`= 0` source has `0` (this
+   track's own probe `e2e_undef_used_twice.c`: `ret i32 undef` vs `ret i32 0`, and §8 states that
+   limitation correctly, which is how the record came to contradict itself). **Soundness is
+   unaffected** — the ground is LangRef, each read of an `undef` may independently be any value of
+   its type — so what was overstated is the *corroboration*, by exactly the multi-use case.
+
    And the measurement is **classical**: branch (1) emits no gate, no rail and no trace line, so the
    **quantum** stream is untouched — the only thing that moves is a classical value LangRef already
    permitted to be anything.
 
-**WHY DISCLOSURE AND NOT A PREDICATE.** After `-O1` there is nothing left to discriminate: *"the
-author meant to read garbage"* and *"the author forgot an initialiser"* are **the same module**. A
-fence that refused the first would refuse the second, which is the program the ruling exists to
-compile. And a warning was **deliberately not added**, for the reason the owner has now given twice
-on this family — *"both codes are supposed to compie!! also no warnings."* Measured: the accept
-writes **0 bytes to stderr**, and the `ACC` prefix of both accept fixtures pins that it stays that
-way.
+**WHY DISCLOSURE AND NOT A PREDICATE, FOR RIVAL 1.** After `-O1` there is nothing left to
+discriminate: *"the author meant to read garbage"* and *"the author forgot an initialiser"* are
+**the same module**. A fence that refused the first would refuse the second, which is the program
+the ruling exists to compile. And a warning was **deliberately not added**, for the reason the owner
+has now given twice on this family — *"both codes are supposed to compie!! also no warnings."*
+Measured: the accept writes **0 bytes to stderr**, and the `ACC` prefix of every accept fixture pins
+that it stays that way.
 
-**A SECOND THING IS ABSORBED AND IT IS NOT ABOUT `undef` AT ALL.** The preemption effect of §5's
+---
+
+**RIVAL 2 (QUANTUM) — AS A PROGRAM AND NOT AS AN IR SHAPE** *(added by the fix round; owner ruling
+`DECISIONS.md` **E9**, on `F-E2-1`)*:
+
+```c
+int u;  int q = cq_theta(0, 0.3);  return cq_measure(q + u);
+```
+
+The author wrote a **measurement of a quantum register**. `clang -O1` folds `add nsw i32 %q, undef`
+→ `undef`, and **that fold deletes the data-flow edge to the theta**, so the operand clause (1a)
+sees has no quantum lineage anywhere in the module: `taint.Tainted` is correct and irrelevant,
+branch (1) is entered legitimately, and (1a) reports the type's zero.
+
+**Measured** on the two frozen binaries (`REVIEW.md` §1): ORACLE **exit 1**, the loud decline;
+SUBJECT **exit 0, 0 bytes of stderr, a 2-line trace** (`cqrt_alloc_i32` + `cqrt_ry_i32`) and **no
+`cqrt_measure` in the emitted module at all** — not even a declaration — while the C-level
+written-zero twin (`int u = 0;`) emits **3 lines with the measurement** (`684d2394674bd01b` vs
+`ea3c225a0aadc87e`). **A user-written measurement disappears and nothing is printed.** The prepared
+rail is left allocated. Rule 5's hard invariant — never *insert* a measurement — is intact; its
+**mirror is not**, and CQ does not diagnose that.
+
+**WHY RIVAL 2 HAS NO LOWERING TO BE ROBBED OF — and the second half is PRE-EXISTENCE, not
+refinement, because the refinement argument above does not reach it.**
+
+1. **On the ORACLE the module is a LOUD DECLINE**, so no circuit for the rival reading is displaced.
+2. **The class ALREADY SHIPS AT HEAD**, on spellings this clause never touches: `cq_measure(q * u)`
+   and `cq_measure(q & u)` fold to a **concrete `0`** at stage 1 — not to `undef` — so they enter
+   branch (1) with a defined operand and **accept on the ORACLE**, emitting the identical 2-line
+   stream (equal trace sha `684d2394674bd01b`). ⇒ **this clause emits no stream HEAD could not
+   already emit**; what it adds is the `undef`-folding spellings and the **silence**. A decline here
+   would be a **new** refusal that leaves `q * u` and `q & u` untouched — it would not close the
+   class, only the half this clause can see.
+
+**WHY DISCLOSURE AND NOT A PREDICATE, FOR RIVAL 2.** The discriminator would have to be *"this
+operand once carried taint"*, and `-O1` has already erased the edge that fact lived on — which is
+precisely why branch (1) takes it (CLAUDE.md **L5**: a syntactic answer to a semantic question
+loses). The only decidable alternative is a Rule-5-**mirror postcondition** — *"the module lowered a
+theta whose handle is never measured"* — and it fires on every legitimately unmeasured register,
+which is most of the tree. **No warning here either** (`DECISIONS.md` E9 restates it).
+
+⚠ **THE INSTRUMENT AGREES WITH THIS ONE — read it before citing the refinement number.**
+`probes/refinement_check.py`, the gate the rival-1 argument rests on, reports the rival-2 module
+**BYTE-IDENTICAL**, because its one-token twin rewrites the measure operand of **the module the pass
+sees** and therefore **inherits the very fold that erased the taint**. The only comparison that can
+see rival 2 is the **C-level** twin (the `undef` source on the subject against the `= 0` source on
+the oracle), a different and weaker instrument this track ran exactly once, on a program where the
+two coincide. CLAUDE.md **L10** on a checker this repo ships — *an instrument's failure mode is to
+report a pass*. **Do not read "0 divergences" as covering rival 2.**
+
+**Pinned by** `ir-pass/test/lowering_measure_undef_operand_after_taint_fold.ll` (the accept, whose
+whole-file `NOMEASURE` prefix pins that the user's measurement is absent) and its one-token control
+`ir-pass/test/lowering_measure_taint_fold_control.ll` (accepts on **both** binaries and emits the
+measurement).
+
+**ONE MORE THING IS ABSORBED, ABOUT NEITHER RIVAL AND NOT ABOUT `undef` AT ALL.** The preemption effect of §5's
 last bullet: a module that previously died at this decline now runs the rest of the pipeline. `e2g`
 is the witness — on the ORACLE it emitted nothing at all; on the SUBJECT it emits a 3-line trace
 whose every gate belongs to the `cq_theta` the ORACLE never reached.
@@ -466,18 +573,45 @@ whose every gate belongs to the `cq_theta` the ORACLE never reached.
    drops the explicit `Measure->getType()`). The refinement claim is a claim about THAT value;
    §3.3 measured it false for any other. Tripwire: the `NOUNDEF` prefix of
    `lowering_accept_measure_undef_zero.ll`.
-2. **The clause starts rewriting anything that is not `isa<UndefValue>`, or `undef` stops being
-   uniqued per type.** Those are the refinement's only two load-bearing facts. ⚠ This is **the same
-   pair `RotationLowering.cpp` names as its own trigger (ii)** — which therefore now has a **SECOND
-   customer**, in a second file, and a change made for one of them must be re-derived against the
-   other. Either fact gone makes this an **OVER-ACCEPT**.
+2. **The clause starts rewriting anything that is not `isa<UndefValue>`.** That is the **one** fact
+   this clause shares with bd `z9t1`'s trigger (ii) in `RotationLowering.cpp` — same predicate, same
+   direction (it gates a DECLINE everywhere else and a REWRITE here), same consequence if widened —
+   and widening it makes this an **OVER-ACCEPT**.
+
+   ⚠ **CORRECTED 2026-09-15 (`F-E2-3`, P2).** The other half of `z9t1`'s pair — *"`undef` stops
+   being uniqued per type"* — **does NOT transfer**, and this trigger claimed a **"SECOND customer"
+   of the PAIR** until the fix round. Uniquing is load-bearing for `z9t1` because F1's second
+   sub-clause is a literal `Value*` **identity** test (`ArmClassify.cpp`,
+   `MergePhi->getIncomingValue(PredIdx) != RotBase`), so manufacturing a uniqued zero makes two
+   operands *the same pointer*; **E2 performs no identity test anywhere** — it asks a type question
+   and RAUWs the measurement's **result**. E2 is a **HALF customer**. This is CLAUDE.md's **mirror
+   of L3**: when you add a caller to a shared argument, read the callee's trigger and **state which
+   direction you are using it in**.
 3. **7.6 decides that the output tape carries every user-written measurement.** Branch (1) emits no
    trace line at all and this clause moves one more shape into it. It is bd `21mg`'s open Q-1 and it
-   must be answered together with that one, not separately.
+   must be answered together with that one, not separately. ⚠ Since 2026-09-15 it is also **the**
+   trigger that would close **RIVAL 2**: rule that every user-written `cq_measure` reaches the tape
+   and rival 2 stops compiling — together with the `q * u` / `q & u` spellings HEAD already ships,
+   which is the only way to close the *class* rather than the half this clause can see.
 4. **`valueCarriesUndef` stops walking global initialisers** (`SkipGlobals` flips, or
    `slotCarriesUndef` replaces it at (1b)). Then the residual has no member, `kMsgUndefOperand` has
    no customer, and the string must be **DELETED in that same change** — not left standing with a
-   fixture that pins nothing.
+   fixture that pins nothing. ⚠ That swap is an **owner** question (§2.4, re-grounded).
+5. ⚠ **NEW, 2026-09-15 (`F-E2-3`) — and it is the fact that actually carried the argument the
+   borrowed uniquing half was standing in for: `lowerMeasures` runs AFTER every `Value*`-identity
+   fence in the pass.** It is called in **both** entry points after `repropagateControlMerges`,
+   hence after every `detectControlRegions` / `classifyArms` / F1 / F2, so a zero manufactured here
+   **cannot reach a pointer-identity test at all**. Move `lowerMeasures` earlier — the same
+   reordering bd `21mg`'s own trigger already forbids for a *different* reason (a round-2 rail
+   measure degrading into a classical passthrough of an `i32` handle) — and this clause's zeros
+   start arriving at F1 beside `z9t1`'s, two rules compounding at a test neither was measured
+   against. **One ordering fact, two triggers; read them together.**
+6. ⚠ **NEW, 2026-09-15, owner ruling `DECISIONS.md` E9 — the pre-existence ground for RIVAL 2 is
+   gone.** Either a taint-history record survives `-O1` folding (then a discriminator exists and
+   *"no predicate can separate the readings"* is false), or `cq_measure(q * u)` / `cq_measure(q & u)`
+   stop shipping this circuit on `main` (then the class no longer pre-exists and a decline here
+   would close it rather than split it). **Re-derive the rival-2 paragraph from scratch; do not
+   patch it.**
 
 ---
 
@@ -488,6 +622,8 @@ whose every gate belongs to the `cq_theta` the ORACLE never reached.
 | `ir-pass/test/lowering_reject_measure_undef_operand.ll` | **INVERTED** decline → accept | the `i1 undef` direct spelling → `ret i1 false`. ⚠ **Filename deliberately NOT changed** (bd `gahu` / L8: a `git mv`'d fixture can be resurrected by a merge, putting one module under two names with contradictory verdicts). The header says the name is historical and why. |
 | `ir-pass/test/lowering_accept_measure_undef_zero.ll` | NEW accept | `poison` at i32 (one predicate covers both), `undef` at i64 and double (the f64/angle family must not mint a rail), the parser-folded `ptrtoint` spelling, and **`@f_beside_quantum` — the RAUW-target discriminator**, pinning `add nsw i32 %m, 0` against `add nsw i32 %m, undef` |
 | `ir-pass/test/lowering_reject_measure_undef_global_init.ll` | NEW decline | the residual, so the retained string is not left with a customer nobody tests (§2.3) |
+| `ir-pass/test/lowering_measure_undef_operand_after_taint_fold.ll` | NEW accept *(fix round, `F-E2-1`)* | **RIVAL 2, the disclosed shape**: `cq_measure(q + u)` after `-O1` folds the operand to `undef`. Its whole-file `NOMEASURE` prefix pins that **the user's measurement is absent from the emitted module** — not a call and not even a declaration |
+| `ir-pass/test/lowering_measure_taint_fold_control.ll` | NEW accept *(fix round)*, GREEN on **both** binaries | the one-token control: the same module with the operand spelled `%1` (the theta's result) emits `cqrt_measure_i32`. The pair is each other's mutant, which is what makes the `NOMEASURE` claim attributable to the fold and to nothing else |
 
 **Rule 12 hygiene, itemised because the three shipped defects are itemised:**
 (a) every count lives in its own whole-file `COUNT` prefix and every negative prefix is pure — the
@@ -550,13 +686,26 @@ that promoted to a gate, the slice is `e2g`'s two lines of C and its golden is t
 * **The operand's OTHER uses are not rewritten.** `int u; int m = cq_measure(u); return m + u;` keeps
   `u` as `undef` at the second read (`e2e`). Deliberate, and it mirrors bd `z9t1`, which normalises
   the theta seed and its theta-carrying phi incomings and nothing else. Stated, not quietly widened.
+  ⚠ **This is also the sentence §6's byte-identity claim contradicted** until the fix round — §8 was
+  right and §6 was wrong, which is exactly why a record that states a limitation correctly in one
+  section does not protect the claim in another (`F-E2-2`).
 * **OPEN / FILED for the orchestrator:**
   1. **The residual decline is an over-decline candidate** (§2.4) — a defect to remove under the
      2026-09-11 ruling, deliberately not removed here, with the retirement trigger written down.
+     ⚠ **Re-grounded 2026-09-15** on the SEMANTIC (L3-mirror) reason; the hygienic one is recorded
+     as **not load-bearing**, and the swap is an **owner** question.
   2. **bd `fve8`'s note and `SCOPE_M.md` §1.3(b) need the §2.2 correction applied**, or the next
      reader re-derives the same finding (L7-with-a-twist). The *conclusion* stands; the name
-     "`ConstantExpr` residual" does not.
+     "`ConstantExpr` residual" does not. *(Still open after the fix round — `SCOPE_M.md` lives on
+     Track M's branch, not this one.)*
   3. **`cq-opt-equivalence-full` is owed at the group gate** — E2 moved a decline string's
-     population.
+     population. *(Still owed; the fix round changed no decline string and no predicate, so the
+     obligation is unchanged, not discharged.)*
   4. **Rule 13**: this is a change to the SOLE SINK. Small is not exempt. It is cleared by an
      independent adversarial reviewer, not by the green suite above.
+     ✅ **Round 1 ran** (`review_r13_e2/REVIEW.md`): verdict **FINDING**, 1 × P1 + 2 × P2, 13 attacks
+     held. All three findings are landed by the fix round (`$SES/e2fix/FIX.md`), the P1 by the
+     owner's ruling `DECISIONS.md` E9 (accept + disclose, **no fence, no warning**).
+     ⚠ **The review's own closing note stands and is not discharged by this fix:** *"do not close
+     this as Rule-13-cleared on one round"*, and the composition with the **rail-bank headline**
+     (both land in `lowerMeasures`' branch (1)) has had **no** review at all.
