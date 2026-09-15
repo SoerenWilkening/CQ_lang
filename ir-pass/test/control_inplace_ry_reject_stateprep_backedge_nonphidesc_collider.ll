@@ -42,15 +42,24 @@
 ; changes, the twin's verdict has stopped being attributable and the pair has to
 ; be rebuilt before it means anything.
 ;
-; ⚠ **THE PAIR PINS THE CYCLIC HALF OF A BROADER PREDICATE** (round-2 Rule-13
-; review, F-F2-2). `!DT.dominates(MergeBB, …)` in
-; `collectStatePrepPhiDescendants` also drops a phi in a fully ACYCLIC CFG whose
-; block is merely not dominated by `MergeBB`, which needs no cycle — only a
-; classical branch bypassing the region and re-joining after it. That half is an
-; over-decline in the safe direction and its own tripwire is
-; `control_inplace_ry_reject_stateprep_acyclic_nondominated_phi.ll` (bd
-; `test_C_libtooling-hrts`). `wx8g` is the trigger for the CYCLIC half only;
-; header trigger (3b) in `ArmClassify.cpp` carries the acyclic one.
+; ⚠ **THE PREDICATE THE PAIR PINS WAS REPLACED ON 2026-09-15 AND THE PAIR DID
+; NOT MOVE.** bd `test_C_libtooling-hrts` / `l3i1` / `dpau` replaced
+; `!DT.dominates(MergeBB, I->getParent())` with `availableAtAnF2Slot(...)`, asked
+; of EVERY user rather than only of phis. The old line was SUFFICIENT for
+; "unavailable at both of F2's slots" and not NECESSARY; the gap was an
+; OVER-DECLINE whose tripwire
+; `control_inplace_ry_reject_stateprep_acyclic_nondominated_phi.ll` has now
+; flipped to the taint-escape string, and whose recovered ACCEPT is
+; `control_inplace_ry_stateprep_acyclic_nondominated_phi_accept.ll`. MEASURED:
+; this file and its `phidesc` twin BOTH keep F2's string across that landing
+; (ORACLE `0e280fc6...` / subject `8cda04ca...`).
+;
+; ⚠ THE CYCLIC / ACYCLIC FRAMING IS RETIRED (X5, 2026-09-14c). The axis is
+; AVAILABILITY: the back-edge phi is the sub-case where the candidate IS
+; available at a slot and must stay a rival; the acyclic bypass phi is the
+; sub-case where it is not. `wx8g` was never this pair's fence either — both
+; files spell their condition as a COMPARE, while the carve-out `wx8g` retired
+; was guarded on a BARE RAIL.
 ;
 ; ⚠ The IR-text `CHECK-NOT`s below are VACUOUS BY CONSTRUCTION and are kept only
 ; as belt-and-braces: a `DS_Error` decline writes 0 bytes to stdout, so what pins

@@ -566,6 +566,36 @@ struct TaintSet {
   // string, and an unmirrored decline string is its own defect). Do not narrow
   // the skip without building the input that reaches it first.
   //
+  // ⚠ CALLERS OF CASE (3), AND THE DIRECTION EACH USES IT IN — the L3-MIRROR
+  // ledger. CLAUDE.md: *"when you ADD A CALLER to a shared predicate, read the
+  // callee's RETIREMENT TRIGGER and state which direction you are using it in"*;
+  // the omission of exactly this sentence cost a P1 filing on 2026-09-14 (bd
+  // `a3z7`, `WireWalk.h`'s "NOT EXPLOITABLE" trigger reaching a third GRANTING
+  // caller nobody told). Keep this list current; a caller added and not listed
+  // re-opens the window with NO DIAGNOSTIC ANYWHERE.
+  //   * bd `3qps`/`4aiu` (Track P, 2026-09-14) — the FIRST φ-recording caller,
+  //     the flat kickback on a prep merge φ in `Pred`, ordered before its prep by
+  //     the bd `hcrg` ALIAS pre-flight. **GRANTING.**
+  //   * bd `hn29`/`leyd`/`52og` (Track P′, 2026-09-15) — the same emitter, with
+  //     the φ leaf allowed OUTSIDE `Pred` and the order supplied by an explicit
+  //     `ControlPlan::PrepRegionIdxs` `PhaseKickback` edge instead of the alias.
+  //     **GRANTING, and it ENLARGES case (3)'s population** — it is a widening of
+  //     the very clause the trigger's bold sentence is about ("the flat kickback
+  //     is emitted BEFORE its prep"), not a new emitter. The premise was
+  //     RE-CHECKED rather than inherited (Rule-13 round 2026-09-15 item R-4, and
+  //     again at the ARM group gate): the prep region is still emitted inside the
+  //     SAME `lowerControlRegions` call — the edge moves the order within it, not
+  //     whether it runs — M-β still RAUWs the φ to the hoisted `cq_theta_i1`, the
+  //     `WeakTrackingVH` follows the RAUW, and this reader still runs after the
+  //     round-2 fixpoint. So case (3) still becomes case (2) before the reader
+  //     looks. `ControlPlan.h`'s `PrepRegionIdxs` block carries the same
+  //     statement at the site that does the enlarging.
+  // ⚠ WHAT WOULD MAKE THE NEXT CALLER DIFFERENT, stated so it is recognisable
+  // rather than merely warned about: a recorded φ whose prep is **not in the same
+  // plan**, or a prep of `SelectRegion` kind (whose emitter performs no M-β).
+  // Either one breaks the RAUW that discharges case (3), and at that moment the
+  // trigger above has fired.
+  //
   // `WeakTrackingVH` also FOLLOWS a RAUW, which is the right behaviour for the
   // one thing that would otherwise dangle: nothing between the emission and the
   // read point RAUWs a condition rail today (`lowerRotations`, which RAUWs every
@@ -885,6 +915,51 @@ struct TaintSet {
     bool IterationLocal;         // true ⇒ clause (c); false ⇒ clause (b)/(b′)
   };
   llvm::SmallVector<RolledLoopGrant, 4> RolledLoopRegionGates;
+
+  // bd `test_C_libtooling-tu9q` — THE ROUND-1 ROOT-MINT MARKING GRANTS, recorded
+  // so `declineRound2FalsifiedRailGrants` can RE-ASK them under FINAL taint
+  // (`CLAUDE.md` L1: `lowerLoops` runs BEFORE `repropagateControlMerges` in both
+  // entry points, so every clause `railLocalQualifies` answers there is answered
+  // with round-1 evidence, and round-2 taint is a strict SUPERSET).
+  //
+  // ⚠ NEVER A `Loop *`. `LoopInfo` owns its `Loop` objects and destroys them per
+  // function; a module-scoped container of `const Loop *` that outlives one holds
+  // freed pointers and the next function's `LoopInfo` re-uses the allocation — the
+  // dangling defect that shipped a silent miscompile in
+  // `declineUnmarkedRolledIterLocal` (F-W1-1, 2026-09-14). The loop is named by
+  // its HEADER BLOCK, which survives every stage that does not erase it.
+  //
+  // ⚠ AND THE HEADER IS A `WeakTrackingVH`, NOT A RAW `BasicBlock *` — Track T
+  // round 2, finding T-3, found by reading the record's own lifetime rather than
+  // by a test. The record is written in `lowerLoops` at ROUND-1 taint and read
+  // after the ROUND-2 fixpoint, and `RegionFlatten` ERASES blocks in that window:
+  // round-2 taint growth can open a region INSIDE a loop the round-1 grant named,
+  // and a loop header that is also a region's merge block goes with it. A raw
+  // pointer would then be dereferenced after free — `CLAUDE.md` L9's "a region
+  // whose predecessor is another region's merge block dereferences freed memory
+  // (SIGSEGV on valid input)", reached from the record side. ⚠ AND IT CANNOT BE
+  // CLOSED BY CHECKING THE POINTER AGAINST A SET OF LIVE BLOCKS: a freed block's
+  // ADDRESS is reused by the next allocation, which is exactly how F-W1-1's
+  // `insert(L).second` returned FALSE FOR A DIFFERENT LOOP. `BasicBlock` is a
+  // `Value`, so `WeakTrackingVH` NULLS on the erase and the re-ask treats a nulled
+  // header as a REFUSAL (loud), never as a silent skip.
+  //
+  // ⚠ THE ROOTS ARE `WeakTrackingVH` FOR THE SAME REASON. A root mint is RAUW'd to
+  // its `i32` handle by `lowerRotations`; the re-ask runs BEFORE that, but a region
+  // emitter can erase a value in the window. A NULLED root is a root that no longer
+  // exists, and the proof the grant rested on no longer has a subject.
+  //
+  // ⚠ `Fn` IS RECORDED ONLY SO A NULLED `Header` CAN STILL BE DIAGNOSED. Without
+  // it, an erased header is unattributable to any function and the re-ask would
+  // have to SKIP it — a silent skip of a grant whose subject is gone, in a stage
+  // whose whole job is to be loud (Rule 1). A `Function` is not erased by any
+  // stage in this window, so the fallback anchor is its entry terminator.
+  struct Round1RailGrant {
+    llvm::WeakTrackingVH Header;                       // the marked loop's header
+    llvm::WeakTrackingVH Fn;                           // the enclosing function
+    llvm::SmallVector<llvm::WeakTrackingVH, 2> Roots;  // what it was granted on
+  };
+  llvm::SmallVector<Round1RailGrant, 2> Round1RailGrants;
 
   // Issue dtzb — the in-place reversible arithmetic strategy. A recognized
   // loop-carried VALUE rail self-update (`q = q OP c`, OP ∈ {add, xor}, one

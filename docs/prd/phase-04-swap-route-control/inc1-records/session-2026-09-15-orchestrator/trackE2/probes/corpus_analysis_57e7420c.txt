@@ -1,0 +1,62 @@
+rows                 : 4986
+  of which fixtures  : 2041
+  of which probes    : 2945
+VACUOUS / CLANGERR   : 259 / 2
+finished (DONE line) : 0
+
+--- 1. MOVERS (verdict field differs) ---
+  ir-pass/test/lowering_accept_measure_undef_zero.ll | D1:7aad51e2 -> A:c70a5843:e3b0c442
+  ir-pass/test/lowering_reject_measure_undef_operand.ll | D1:e6e686e0 -> A:1a35fbbe:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/diag_2026-09-14_probes/u1.c | D1:4b917296 -> A:48cde4b3:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/diag_2026-09-14_probes/u4.c | D1:7dd827c6 -> A:7918a6fb:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/c6_undef_bool.c | D1:31409c7e -> A:4bb1cc88:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-13-orchestrator/trackC/probes/i0_poison_operand.ll | D1:ccd74b7d -> A:e6ee889c:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/fix_r1_probes/u1.c | D1:b6d58a6b -> A:0e026831:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/fix_r1_probes/u4.c | D1:edc2a083 -> A:f857e6b8:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/probes/u1.c | D1:054859f0 -> A:cc603ade:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/probes/u4.c | D1:b53fd779 -> A:a02d32a6:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/r05_seed_and_measure.c | D1:84e739fa -> A:a5613dd0:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r2_probes/a2_measure_undef.zero.c | D1:47aa83bb -> A:4476d209:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r2_probes/a2_measure_undef.c | D1:f3f2bfea -> A:8791df3f:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r3_probes/pN_clause4_direct_u.ll | D1:53fd9402 -> A:a876d4d0:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2a_direct_undef_bool.c | D1:3b25f067 -> A:911f1f22:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2c_direct_undef_int.c | D1:3baea1f4 -> A:ec7c9237:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2e_undef_used_twice.c | D1:61144062 -> A:f7975534:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2i_constexpr_undef_operand.ll | D1:3689af99 -> A:8ef60e15:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2j_poison_operand.ll | D1:ccd74b7d -> A:9ace5068:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2n_residual_bitcast_undef.ll | D1:6c241040 -> A:1544ec62:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2g_undef_measure_with_quantum.c | D1:5cce2d7d -> A:7870d3e4:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2q_undef_measure_feeds_seed.c | D1:86051176 -> A:4f4b18a2:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2s_undef_measure_feeds_angle.c | D1:d52b0f72 -> A:1094ff4b:e3b0c442
+  docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2u_undef_measure_guards_quantum.c | D1:7d057901 -> A:6def6f49:e3b0c442
+  total movers       : 24
+
+--- 2. D->A (the expected direction) / A->D (a REGRESSION) ---
+  D->A : 24
+  A->D : 0
+
+--- 3. A->A with a MOVED STREAM (lowered-IR md5 differs within the row) ---
+  count: 0
+
+--- 4. D->D with a MOVED STRING (full-stderr sha differs; the tag regex is blind here) ---
+  count: 0
+
+--- 5. A->A with MOVED STDERR (a WARNING appearing or vanishing on an accept) ---
+  count: 0
+
+--- 6. ATTRIBUTION: every mover's ORACLE diagnostic, de-prefixed ---
+   1 cq_measure
+   2 cq_measure_<
+   2 cq_measure_<sf
+   2 cq_measure_<sfx> oper
+   7 cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/r05_seed_and_measure.c:8:26: in function f i32 
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r2_probes/a2_measure_undef.c:3:32: in function main i32 (
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r2_probes/a2_measure_undef.zero.c:3:32: in function main 
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2a_direct_undef_bool.c:5:33: in function main i32 (
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2c_direct_undef_int.c:3:31: in function main i32 ()
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2e_undef_used_twice.c:5:32: in function main i32 ()
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2g_undef_measure_with_quantum.c:5:56: in function m
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2q_undef_measure_feeds_seed.c:5:32: in function mai
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2s_undef_measure_feeds_angle.c:5:32: in function ma
+   1 error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackE2/probes/src/e2u_undef_measure_guards_quantum.c:5:32: in function

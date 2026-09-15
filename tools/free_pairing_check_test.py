@@ -1919,6 +1919,356 @@ MEM_STOP_MUTANTS = [
      "L2-undecidable-load-provenance"),
 ]
 
+
+# ---------------------------------------------------------------------------
+# bd 1739 HOLE 2 — `undef`/`poison` OPERAND TEXT IS NOT A VALUE MATCH
+#
+# Why the existing layers could not catch this (the ticket says it, and it is
+# the general lesson): layer 3 mutates what the checker MODELS — it blanks a
+# line a proof consumed. Hole 2 is not a missing line; it is an OPERAND AXIS
+# outside the model, so every witness line is present, the structure is
+# perfect, and only the run-time VALUES differ. A checker nobody has tried to
+# fool on an axis it does not model is a checker nobody should trust on it.
+#
+# Each mutant is paired with a POSITIVE CONTROL carrying the same shape and a
+# REAL literal, so the fix cannot be faked by refusing every pair.
+# ---------------------------------------------------------------------------
+
+UNDEF_T1_PAIR = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
+declare void @cq_template_icmp_sgt_i32_hl_unc(i32, i32, i32)
+declare void @cqrt_free(i32)
+define void @f() {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  %c = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 LIT)
+  call void @cq_template_icmp_sgt_i32_hl_unc(i32 %c, i32 %h, i32 LIT)
+  call void @cqrt_free(i32 %c)
+  ret void
+}
+"""
+
+UNDEF_T1B_PAIR = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cq_template_icmp_sgt_i32_hl(i32, i32)
+declare i32 @cq_template_icmp_sgt_i32_hl_inv(i32, i32)
+declare void @cqrt_free(i32)
+define void @f() {
+  %h = call i32 @cqrt_alloc_i32(i32 3)
+  %c = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 LIT)
+  %u = call i32 @cq_template_icmp_sgt_i32_hl_inv(i32 %h, i32 LIT)
+  call void @cqrt_free(i32 %c)
+  ret void
+}
+"""
+
+# (A2) rather than (A1): the `cqrt_cnot` pair is not a classical-immediate
+# write, so `all(w.eff.classical_imm ...)` is false and the write-history
+# reduction owns the verdict. The two `cqrt_xorc_i32` are SELF-adjoint and
+# cancel by `key()` equality — i.e. by operand text.
+UNDEF_A2_BRACKET = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cqrt_alloc_i1(i1)
+declare void @cqrt_xorc_i32(i32, i32)
+declare void @cqrt_cnot(i32, i32)
+declare void @cqrt_free(i32)
+define void @f() {
+  %c = call i32 @cqrt_alloc_i1(i1 false)
+  %r = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_xorc_i32(i32 %r, i32 LIT)
+  call void @cqrt_cnot(i32 %c, i32 %r)
+  call void @cqrt_cnot(i32 %c, i32 %r)
+  call void @cqrt_xorc_i32(i32 %r, i32 LIT)
+  call void @cqrt_free(i32 %r)
+  ret void
+}
+"""
+
+# A constant EXPRESSION that merely CONTAINS an undef is still not a value: the
+# `norm_arg` constexpr arm keeps the whole text, so the textual match succeeds
+# for exactly the same wrong reason.
+UNDEF_CONSTEXPR_PAIR = UNDEF_T1_PAIR.replace(
+    "i32 LIT", "i32 add (i32 undef, i32 1)")
+
+UNDEF_MUTANTS = [
+    ("undef-t1a-unc-pair", UNDEF_T1_PAIR.replace("LIT", "undef"),
+     "T1-undef-literal-pairing"),
+    ("poison-t1a-unc-pair", UNDEF_T1_PAIR.replace("LIT", "poison"),
+     "T1-undef-literal-pairing"),
+    ("undef-t1b-inv-pair", UNDEF_T1B_PAIR.replace("LIT", "undef"),
+     "T1-undef-literal-pairing"),
+    ("undef-constexpr-operand", UNDEF_CONSTEXPR_PAIR,
+     "T1-undef-literal-pairing"),
+    ("undef-a2-xorc-bracket", UNDEF_A2_BRACKET.replace("LIT", "undef"),
+     "A-undef-literal-pairing"),
+]
+
+# The controls. Same shapes, real literals: these must verify CLEAN, so a
+# "fix" that refuses every pair is caught here rather than in the field.
+UNDEF_CONTROLS = [
+    ("undef-control-t1a-real-literal", UNDEF_T1_PAIR.replace("LIT", "7")),
+    ("undef-control-a2-real-literal", UNDEF_A2_BRACKET.replace("LIT", "12")),
+]
+
+# ⚠ ONE SLOT IS DELIBERATELY NOT REFUSED, and it is the only `undef` the whole
+# shipped corpus actually contains (MEASURED at the fix: 1 of 368 lowered e2e
+# slices carries `undef` in ANY modelled-call operand — `%selop = call i32
+# @cqrt_alloc_f64(double undef)` in slice_libm_ld80_nexttoward, bd u7z9's
+# blessed precedent). Rules (A1)/(A2) rest on the rail holding *a* classical
+# basis state, not on knowing WHICH: an unentangled rail in an unknown-but-
+# definite basis state is still a sound reset. Pinned as a control so that
+# "refuse every undef everywhere" cannot be shipped by accident — it would
+# turn a committed golden's slice red for a property this file does not claim.
+UNDEF_SEED_CONTROL = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare void @cqrt_xorc_i32(i32, i32)
+declare void @cqrt_free(i32)
+define void @f() {
+  %r = call i32 @cqrt_alloc_i32(i32 undef)
+  call void @cqrt_xorc_i32(i32 %r, i32 5)
+  call void @cqrt_free(i32 %r)
+  ret void
+}
+"""
+UNDEF_CONTROLS.append(("undef-control-alloc-seed-slot", UNDEF_SEED_CONTROL))
+
+
+# ---------------------------------------------------------------------------
+# THE CENSUS (bd rixk, bd 19vy, bd 1739 hole 1)
+#
+# The census is not a finding, so NO layer above can see it: a mutant layer
+# keyed on finding codes scores a census that reports twice the truth as a
+# pass. That is this project's own recurring shape — an instrument whose
+# failure mode is to report a pass — so the census gets a table of its own,
+# with the expected numbers written out rather than derived.
+#
+# Each case is (name, module text, expected (minted, leaked, tmpl, dirty,
+# unresolved)).
+# ---------------------------------------------------------------------------
+
+# bd rixk, the reproducer: `-O1` inlines `slice` into `main` AND KEEPS the
+# out-of-line body (external linkage, no call site left). Six static
+# `cqrt_alloc` sites, three that can execute.
+CENSUS_INLINED_DEAD_BODY = """\
+declare i32 @cqrt_alloc_i1(i1)
+declare i32 @cqrt_measure_i1(i32)
+define i32 @slice() {
+  %a = call i32 @cqrt_alloc_i1(i1 false)
+  %b = call i32 @cqrt_alloc_i1(i1 false)
+  %c = call i32 @cqrt_alloc_i1(i1 false)
+  %m = call i32 @cqrt_measure_i1(i32 %a)
+  ret i32 %m
+}
+define i32 @main() {
+  %a = call i32 @cqrt_alloc_i1(i1 false)
+  %b = call i32 @cqrt_alloc_i1(i1 false)
+  %c = call i32 @cqrt_alloc_i1(i1 false)
+  %m = call i32 @cqrt_measure_i1(i32 %a)
+  ret i32 0
+}
+"""
+
+# The control the ticket demands be preserved: `main` CALLS `slice`, so the
+# callee's sites are live and the number is the old one. This is the shape of
+# slice_control_cascade_three_bools, whose "9 rail mint(s) of which 7 left
+# allocated" CLAUDE.md quotes.
+CENSUS_CALLED_CALLEE = CENSUS_INLINED_DEAD_BODY.replace(
+    """define i32 @main() {
+  %a = call i32 @cqrt_alloc_i1(i1 false)
+  %b = call i32 @cqrt_alloc_i1(i1 false)
+  %c = call i32 @cqrt_alloc_i1(i1 false)
+  %m = call i32 @cqrt_measure_i1(i32 %a)
+  ret i32 0
+}""",
+    """define i32 @main() {
+  %r = call i32 @slice()
+  ret i32 0
+}""")
+
+# BOTH: inlined into `main` AND still called. Six sites, six activations —
+# the count must NOT drop here, which is what distinguishes reachability from
+# "just ignore the callee".
+CENSUS_INLINED_AND_CALLED = CENSUS_INLINED_DEAD_BODY.replace(
+    "  %m = call i32 @cqrt_measure_i1(i32 %a)\n  ret i32 0",
+    "  %m = call i32 @cqrt_measure_i1(i32 %a)\n"
+    "  %r = call i32 @slice()\n  ret i32 0")
+
+# An address-taken function can be entered from outside the static call graph.
+CENSUS_ADDRESS_TAKEN = CENSUS_INLINED_DEAD_BODY.replace(
+    "define i32 @main() {",
+    "@fp = global ptr @slice\ndeclare void @sink(ptr)\ndefine i32 @main() {")
+
+# An indirect call means the static call graph is not the call graph. The
+# census falls back to counting everything AND SAYS SO.
+CENSUS_INDIRECT = CENSUS_INLINED_DEAD_BODY.replace(
+    "  %m = call i32 @cqrt_measure_i1(i32 %a)\n  ret i32 0",
+    "  %m = call i32 @cqrt_measure_i1(i32 %a)\n"
+    "  %fp = load ptr, ptr null\n  %r = call i32 %fp()\n  ret i32 0")
+
+# No `main`: every function nothing in the module calls is an entry.
+CENSUS_NO_MAIN = """\
+declare i32 @cqrt_alloc_i1(i1)
+define i32 @a() {
+  %x = call i32 @cqrt_alloc_i1(i1 false)
+  ret i32 %x
+}
+define i32 @b() {
+  %y = call i32 @cqrt_alloc_i1(i1 false)
+  ret i32 %y
+}
+"""
+
+# A call cycle with no entry at all must terminate and count everything rather
+# than silently reporting zero — a census that can be talked down to 0 is the
+# failure bd 261j(b) added it to prevent.
+CENSUS_CYCLE_NO_ENTRY = """\
+declare i32 @cqrt_alloc_i1(i1)
+define i32 @a() {
+  %x = call i32 @cqrt_alloc_i1(i1 false)
+  %r = call i32 @b()
+  ret i32 %x
+}
+define i32 @b() {
+  %y = call i32 @cqrt_alloc_i1(i1 false)
+  %r = call i32 @a()
+  ret i32 %y
+}
+"""
+
+# bd 19vy / bd 1739 hole 1 — the template-minted rail. `%t` is minted by a
+# template, never reversed, never freed, never measured: the C-1 leak shape,
+# and the `h6` of slice_control_cascade_three_bools.
+CENSUS_TEMPLATE_DIRTY = """\
+declare i32 @cqrt_alloc_i32(i32)
+declare i32 @cq_template_add_i32_hl(i32, i32)
+declare i32 @cqrt_measure_i32(i32)
+define i32 @main() {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  %t = call i32 @cq_template_add_i32_hl(i32 %h, i32 -3)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+# ...measured instead: discharged, and the census must say so.
+CENSUS_TEMPLATE_MEASURED = CENSUS_TEMPLATE_DIRTY.replace(
+    "call i32 @cqrt_measure_i32(i32 %h)", "call i32 @cqrt_measure_i32(i32 %t)")
+# ...reversed instead.
+CENSUS_TEMPLATE_UNCD = CENSUS_TEMPLATE_DIRTY.replace(
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)",
+    "  call void @cq_template_add_i32_hl_unc(i32 %t, i32 %h, i32 -3)\n"
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)").replace(
+    "declare i32 @cqrt_measure_i32(i32)",
+    "declare i32 @cqrt_measure_i32(i32)\n"
+    "declare void @cq_template_add_i32_hl_unc(i32, i32, i32)")
+# ...freed instead.
+CENSUS_TEMPLATE_FREED = CENSUS_TEMPLATE_UNCD.replace(
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)",
+    "  call void @cqrt_free(i32 %t)\n"
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)").replace(
+    "declare i32 @cqrt_alloc_i32(i32)",
+    "declare i32 @cqrt_alloc_i32(i32)\ndeclare void @cqrt_free(i32)")
+# ...returned (it escapes; the caller owns it).
+CENSUS_TEMPLATE_RETURNED = CENSUS_TEMPLATE_DIRTY.replace(
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)\n  ret i32 %m",
+    "  ret i32 %t")
+# The output tape is KEPT BY DESIGN (7.6) and must never be counted dirty.
+CENSUS_TAPE_KEPT = """\
+declare i32 @cqrt_tape_alloc()
+declare i32 @cqrt_tape_write_i32(i32, i32)
+declare i32 @cqrt_alloc_i32(i32)
+define i32 @main() {
+  %tp = call i32 @cqrt_tape_alloc()
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  %w = call i32 @cqrt_tape_write_i32(i32 %tp, i32 %h)
+  ret i32 0
+}
+"""
+
+# FREED but never reversed: `freed` must be its own discharge clause, not one
+# that another clause happens to cover. (Added because the kill test of the
+# `res in freed` clause came back GREEN — the first draft's "freed" case was
+# ALSO `_unc`'d, so deleting `freed` changed nothing. A clause nobody has
+# deleted is a clause nobody has validated.)
+CENSUS_TEMPLATE_FREED_ONLY = CENSUS_TEMPLATE_DIRTY.replace(
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)",
+    "  call void @cqrt_free(i32 %t)\n"
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)").replace(
+    "declare i32 @cqrt_alloc_i32(i32)",
+    "declare i32 @cqrt_alloc_i32(i32)\ndeclare void @cqrt_free(i32)")
+
+# Passed to a callee this file does not model: the rail ESCAPES and the callee
+# owns its discharge, exactly as `U1`/`U3` refuse to vouch for a cross-stream
+# handle rather than calling it leaked.
+CENSUS_TEMPLATE_ESCAPED = CENSUS_TEMPLATE_DIRTY.replace(
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)",
+    "  call void @user_sink(i32 %t)\n"
+    "  %m = call i32 @cqrt_measure_i32(i32 %h)").replace(
+    "declare i32 @cqrt_alloc_i32(i32)",
+    "declare i32 @cqrt_alloc_i32(i32)\ndeclare void @user_sink(i32)")
+
+# No `main`, and a mutual-recursion cycle nothing in the module enters. A
+# `defined - called` root rule would drop @a and @b here; the shipped rule
+# counts them, because a module with no `main` is a translation unit whose
+# external functions may be entered from OUTSIDE it. This is the case that
+# pins that clause — without it, "roots = main only" passes unnoticed.
+CENSUS_NO_MAIN_CYCLE = """\
+declare i32 @cqrt_alloc_i1(i1)
+define i32 @a() {
+  %x = call i32 @cqrt_alloc_i1(i1 false)
+  %r = call i32 @b()
+  ret i32 %x
+}
+define i32 @b() {
+  %y = call i32 @cqrt_alloc_i1(i1 false)
+  %r = call i32 @a()
+  ret i32 %y
+}
+define i32 @c() {
+  %z = call i32 @cqrt_alloc_i1(i1 false)
+  ret i32 %z
+}
+"""
+
+CENSUS_CASES = [
+    # name,                         module,                      (mint, leak, tmpl, dirty, unresolved)
+    ("rixk-inlined-dead-body",      CENSUS_INLINED_DEAD_BODY,    (3, 3, 0, 0, False)),
+    ("rixk-control-callee-called",  CENSUS_CALLED_CALLEE,        (3, 3, 0, 0, False)),
+    ("rixk-inlined-AND-called",     CENSUS_INLINED_AND_CALLED,   (6, 6, 0, 0, False)),
+    ("rixk-address-taken-is-live",  CENSUS_ADDRESS_TAKEN,        (6, 6, 0, 0, False)),
+    ("rixk-indirect-counts-all",    CENSUS_INDIRECT,             (6, 6, 0, 0, True)),
+    ("rixk-no-main-both-entries",   CENSUS_NO_MAIN,              (2, 2, 0, 0, False)),
+    ("rixk-cycle-with-no-entry",    CENSUS_CYCLE_NO_ENTRY,       (2, 2, 0, 0, False)),
+    ("rixk-no-main-cycle-counted",  CENSUS_NO_MAIN_CYCLE,        (3, 3, 0, 0, False)),
+    ("1739h1-template-left-dirty",  CENSUS_TEMPLATE_DIRTY,       (1, 1, 1, 1, False)),
+    ("1739h1-template-measured",    CENSUS_TEMPLATE_MEASURED,    (1, 1, 1, 0, False)),
+    ("1739h1-template-reversed",    CENSUS_TEMPLATE_UNCD,        (1, 1, 1, 0, False)),
+    ("1739h1-template-freed",       CENSUS_TEMPLATE_FREED,       (1, 1, 1, 0, False)),
+    ("1739h1-template-freed-only",  CENSUS_TEMPLATE_FREED_ONLY,  (1, 1, 1, 0, False)),
+    ("1739h1-template-escaped",     CENSUS_TEMPLATE_ESCAPED,     (1, 1, 1, 0, False)),
+    ("1739h1-template-returned",    CENSUS_TEMPLATE_RETURNED,    (1, 1, 1, 0, False)),
+    ("1739h1-tape-kept-by-design",  CENSUS_TAPE_KEPT,            (1, 1, 0, 0, False)),
+]
+
+
+# ⚠ THE CENSUS OBJECT IS NOT THE CENSUS LINE, and the first draft of this file
+# pinned only the object. A regression that computed every number correctly and
+# then dropped the template clause from `main()`'s printed line scored GREEN
+# across all of layer 2e — the instrument's own failure mode, one level down.
+# These cases run `main()` and read what a human (or a record) actually sees.
+# (name, module, list of substrings the printed line MUST contain)
+CENSUS_LINE_CASES = [
+    ("line-rixk-inlined-dead-body", CENSUS_INLINED_DEAD_BODY,
+     ["3 rail mint(s) of which 3 left allocated",
+      "0 template rail mint(s) of which 0 left dirty"]),
+    ("line-template-left-dirty", CENSUS_TEMPLATE_DIRTY,
+     ["1 rail mint(s) of which 1 left allocated",
+      "1 template rail mint(s) of which 1 left dirty"]),
+    ("line-indirect-says-so", CENSUS_INDIRECT,
+     ["6 rail mint(s) of which 6 left allocated",
+      "[call graph unresolved: every function counted]"]),
+]
+
+
 UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
                           "@cqrt_teleport_i32", 0)
 
@@ -1992,6 +2342,7 @@ def main():
     verbose = "-v" in sys.argv
     fails = []
     n_pos = n_mut = n_sweep = n_neg = n_pair = n_mem = 0
+    n_census = 0
 
     # ---- layer 1: the shipped lowerings must verify clean -----------------
     for name, text in POSITIVE + DEEP_POSITIVE:
@@ -2120,6 +2471,70 @@ def main():
         elif verbose:
             print(f"  ok  case-A    {name:32s} -> no B* finding")
 
+    # ---- layer 2d: bd 1739 hole 2, the undef/poison operand axis ---------
+    for name, text, want in UNDEF_MUTANTS:
+        n_mut += 1
+        codes = [x.code for x in findings(text)]
+        if want not in codes:
+            fails.append(f"UNDEF MUTANT {name}: expected {want}, got "
+                         + (", ".join(codes) if codes else "NOTHING (survived)"))
+        elif verbose:
+            print(f"  ok  undef     {name:32s} -> {want}")
+    for name, text in UNDEF_CONTROLS:
+        n_mut += 1
+        got = findings(text)
+        if got:
+            fails.append(f"UNDEF CONTROL {name}: the rule must NOT fire here "
+                         f"(same shape, real literal), got "
+                         + "; ".join(str(x) for x in got))
+        elif verbose:
+            print(f"  ok  control   {name:32s} -> clean")
+
+    # ---- layer 2e: the CENSUS (bd rixk, bd 19vy, bd 1739 hole 1) ---------
+    # No other layer can see this: the census is not a finding, so a census
+    # reporting twice the truth scores as a pass everywhere above.
+    for name, text, want in CENSUS_CASES:
+        n_census += 1
+        try:
+            _f, _v, _s, _p, cen = fpc.check_module(text)
+        except fpc.Undecidable as e:
+            fails.append(f"CENSUS {name}: the checker refused the module "
+                         f"({e.code})")
+            continue
+        got = (cen.minted, cen.leaked, cen.tmpl_minted, cen.tmpl_dirty,
+               cen.unresolved_callgraph)
+        if got != want:
+            fails.append(f"CENSUS {name}: expected "
+                         f"(mint,leak,tmpl,dirty,unresolved)={want}, got {got}")
+        elif verbose:
+            print(f"  ok  census    {name:32s} -> {got}")
+
+    # ---- layer 2f: the census LINE, not just the census object -----------
+    import io as _io
+    import tempfile as _tf
+    for name, text, wants in CENSUS_LINE_CASES:
+        n_census += 1
+        with _tf.NamedTemporaryFile("w", suffix=".ll", delete=False) as fh:
+            fh.write(text)
+            path = fh.name
+        buf = _io.StringIO()
+        keep = sys.stdout
+        try:
+            sys.stdout = buf
+            fpc.main([path])
+        finally:
+            sys.stdout = keep
+            os.unlink(path)
+        line = next((l for l in buf.getvalue().splitlines()
+                     if l.startswith("free_pairing_check:")), "")
+        missing = [w for w in wants if w not in line]
+        if missing:
+            fails.append(f"CENSUS LINE {name}: printed line is missing "
+                         + "; ".join(repr(m) for m in missing)
+                         + f" — got {line!r}")
+        elif verbose:
+            print(f"  ok  censline  {name:32s} -> ok")
+
     # ---- layer 3: blank every line a verified proof rests on --------------
     exempt = 0
     for name, text in POSITIVE:
@@ -2146,7 +2561,7 @@ def main():
     print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_pair} "
           f"free-order pair(s), {n_cost} cost bound(s), {n_mut} named "
           f"mutant(s), {n_mem} memory mutant(s)/refusal(s), {n_neg} Case-A "
-          f"negative(s), {n_sweep} proof-targeted "
+          f"negative(s), {n_census} census case(s), {n_sweep} proof-targeted "
           f"mutant(s) ({exempt} exempt by rule), {len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)

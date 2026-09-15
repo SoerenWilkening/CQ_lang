@@ -1,0 +1,2 @@
+error: src/e2q_undef_measure_feeds_seed.c:5:32: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+

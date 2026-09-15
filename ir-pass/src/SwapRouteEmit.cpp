@@ -2744,6 +2744,62 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
     }
   }
 
+  // bd `test_C_libtooling-hn29` / `-leyd` / `-52og` (Track P′) — THE SAME FIELD,
+  // THE OPPOSITE DIRECTION, FOR A `PhaseKickback`. Read this beside the loop
+  // above, never instead of it.
+  //
+  // A merge-φ-conditioned KICKBACK must be emitted BEFORE the prep whose φ it
+  // reads, because it consumes the φ AS A VALUE: the prep's M-β RAUWs that φ to
+  // the hoisted `cq_theta` and `flattenRegion` then frees it, and
+  // `emitPhaseKickbackRegion`'s `CondV != R.Condition` identity check (bd `3qps`)
+  // turns a prep-first order into a loud `control flow` decline. A `SelectRegion`
+  // wants the reverse — `SelectMergeEmit` RE-READS its condition and therefore
+  // needs M-β to have already run. Two emitters, two needs, one field; the `Kind`
+  // test at the top of each loop is what keeps them apart.
+  //
+  // UNTIL THIS INCREMENT THE KICKBACK NEEDED NO EDGE, and the reason it does now
+  // is exactly the reason the increment exists. `ArmClassify`'s step-5c theorem
+  // derives `Precedes[kickback] = {prep}` from `P->getParent() == Region.Pred`
+  // ⟹ `kickback.Pred == prep.MergeBB` ⟹ the bd `hcrg` `Aliases` test fires. Track
+  // P′ admits φ leaves that are NOT in `Pred`, so that hypothesis fails and the
+  // sanctioned alias edge is simply absent — MEASURED on `a1_clean_gap2.ll` and
+  // on bd `52og`'s in-loop customer, where plan (detection) order puts the prep
+  // first and the module declines `control flow`. The edge restores the order the
+  // adjacency used to supply for free.
+  //
+  // ⚠ DEDUPED AGAINST THE ALIAS EDGE, DELIBERATELY. When the φ IS in `Pred` the
+  // alias loop above has ALREADY added this exact edge; adding it twice would
+  // leave `Pending[prep]` at 2 with two matching decrements — arithmetically
+  // harmless today, but it falsifies the Kahn comment's stated invariant ("each
+  // ordered pair contributes AT MOST ONE edge … so `Pending` cannot underflow"),
+  // and an invariant that is only accidentally true is how the next change breaks
+  // it silently.
+  //
+  // ⚠ IT CAN CREATE A CYCLE WHERE THE SELECT'S EDGE COULD NOT, and that is stated
+  // rather than argued away: a select gains only INCOMING edges, while this gains
+  // OUTGOING ones. A cycle needs the prep to also require emission after the
+  // kickback, i.e. `prep.Pred` ∈ `doomedBlocks(kickback)` — the prep would have to
+  // sit AFTER the kickback in the CFG, while its merge φ dominates the kickback's
+  // branch, which no dominance relation permits. The Kahn backstop below is the
+  // enforcement rather than this paragraph: a cycle leaves regions unscheduled and
+  // declines LOUDLY, lowering nothing.
+  for (size_t i = 0; i < N; ++i) {
+    if (Regions[i].Kind != ControlRegion::PhaseKickback)
+      continue;
+    for (unsigned P : Regions[i].PrepRegionIdxs) {
+      if (P == ControlRegion::kNoParent)
+        continue;  // never recorded, but a skip must not be a silent one.
+      if (P >= N || P == i) {
+        declineRegion(Regions[i]);
+        return;  // lower NOTHING — over-declining is always safe.
+      }
+      if (llvm::is_contained(Precedes[i], P))
+        continue;  // the sanctioned alias edge already says exactly this.
+      Precedes[i].push_back(P);
+      ++Pending[P];
+    }
+  }
+
   SmallVector<size_t, 8> Order;
   Order.reserve(N);
   SmallVector<bool, 8> Done(N, false);

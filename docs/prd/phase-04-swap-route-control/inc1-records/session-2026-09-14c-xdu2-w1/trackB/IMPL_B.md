@@ -4,6 +4,43 @@ Track B, session 2026-09-14c. Worktree `/Users/sorenwilkening/Desktop/CQ_xdu2B`,
 `railbank-promoter`, off `main` `c8007c37`. Gate lines (hash-keyed, PROTOCOL format): `GATES.md`.
 Probes: `probes/`.
 
+
+> ## ⚠⚠ DATED CORRECTION — 2026-09-15, appended by Track B of session
+> ## 2026-09-15 (bd `xdu2` W1's SECOND HALF). READ THIS BEFORE §2.3 / §7 / §8 / §10.1.
+>
+> **THE `!cq.railbank` CLAIMS IN THIS DOCUMENT ARE HISTORY, AND THE WAY THEY ARE
+> HISTORY IS THE TRAP.** This record describes the promoter as MINTING the
+> `!cq.railbank` record and gates its fixpoint on a clause **B9** reading it
+> back. The shipped stage minted NOTHING: `RailBankPromote.cpp`'s `applyBank`
+> tail says so in capitals, `isRailBankAlloca` was never shipped
+> (`session-2026-09-15-orchestrator/trackA/SIGNATURE.md` deviation (2)), and the
+> clause number **B9 has since been REUSED** for a different clause (one write
+> per activation, merge filing F-2). **Sections 2.3, 7, 8 and 10.1 must not be
+> cited as design.**
+>
+> **AND THIS SESSION MAKES HALF OF THAT WORDING TRUE AGAIN, WHICH IS WHY THE
+> NOTE IS HERE RATHER THAN IN A NEWER FILE.** W1's second half DOES mint
+> `!cq.railbank` — in a stage of its own, `markRailBankAllocas`, and **only for a
+> `RailBankCarve::Bank` bank**. It still does **NOT** license B9:
+>
+> * **B8** is what terminates the promoter's fixpoint (`applyBank` replaces every
+>   in-`L` load, so `planBank` refuses on the next turn), and a membership guard
+>   there would **MASK a B8 regression** rather than back it up;
+> * the mint runs **AFTER** the promoter's fixpoint has settled **and below the
+>   `CQ_RAILBANK_DBG` module dump**, so the promoter never sees it and the seven
+>   `railbank_promote_*` fixtures' `NOMD-NOT: !cq.railbank` checks — which are
+>   what keeps B9 retired — keep working.
+>
+> The record now also carries the bank's **RAIL** width (not its cell width), for
+> reasons this document could not have anticipated: see
+> `session-2026-09-15-orchestrator/trackB/IMPL_B2.md` §11.0.
+>
+> `CLAUDE.md` L7-with-a-twist says *a record correction that is not applied to the
+> source is not a correction*; this is its MIRROR — **a source change that
+> resurrects half of a retired record**, marked here so the next reader does not
+> read §2.3 as prescient.
+
+
 **ORACLE, verified before the first probe:** `/Users/sorenwilkening/Desktop/CQ_lang/build/ir-pass/cq-opt`
 sha256 `5c6f7490a81c75057fe73abcd6fa5a8e8026e0ccc810e961ff7197f62e515ba8`, `libCQPass.so`
 `5276f7ab7416b36b3ceeb8ae0c9b2de3df6833906ec97c6671dfda336d488be4` — matches the brief.

@@ -36,12 +36,27 @@
 ; ACCEPT and the shape below becomes checkable on stdout.  Re-derive it then; do
 ; NOT delete it.
 ;
-; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
-; RUN:     -S %s > /dev/null 2> %t.dbg
+; ⚠⚠ THE L8 RETIREMENT TRIGGER ABOVE HAS FIRED, AND ITS PREDICTION WAS RIGHT:
+; bd `xdu2` W1's SECOND HALF landed 2026-09-15 and this file is now an ACCEPT
+; whose lowered shape is checkable on stdout.  Re-derived, not deleted.
+;
+; ⚠ AND IT IS NOW THE FIXTURE THAT PINS THE *FLAT ELEMENT-FORM* GEP THROUGH THE
+; TYPE REWRITE.  `matchAddressGep` accepts two address spellings and this module
+; carries BOTH: the array-decay form `[3 x i8], ptr %b, i64 0, i64 %i` in the
+; write loop and the flat element form `i8, ptr %b, i64 1` for the unrolled
+; reads.  The rewrite retypes the first by its SOURCE ELEMENT TYPE (the array)
+; and the second by its source element type (the CELL), and a rewrite that
+; handled only one of them would leave a gep striding by 1 byte over an `i32`
+; bank — verify-clean, and reading the wrong cell.
+;
+; RUN: env CQ_RAILBANK_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
+; RUN:     -S %s > %t.ll 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
 ; RUN: %filecheck --check-prefix=NOTS      --input-file=%t.dbg %s
-; RUN: %filecheck --check-prefix=DECLINE   --input-file=%t.dbg %s
 ; RUN: %filecheck --check-prefix=NOMD      --input-file=%t.dbg %s
+; RUN: %filecheck --check-prefix=IR        --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=CMEAS     --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=IRNOTS    --input-file=%t.ll %s
 
 declare zeroext i1 @cq_theta_i1(i1 zeroext, double)
 declare i32 @cq_theta_si32(i32, double)
@@ -106,7 +121,27 @@ out:
 ; NOTS-COUNT-1: CQ_RAILBANK_DBG: promote bank
 ; NOTS-COUNT-1: store i8 %z0
 
-; DECLINE: cq taint escape: tainted value stored to memory
+; THE LOWERED MODULE.  Cells are runtime handles; BOTH gep spellings are
+; retyped; the storage casts are gone in both directions.
+; IR: %b = alloca [3 x i32], align 4, !cq.railbank
+; IR: %h = call i32 @cqrt_alloc_i1(i1 false)
+; IR: store i32 %h, ptr %cq.bank.addr, align 4
+; IR: %r0 = load i32, ptr %b, align 4
+; IR: %p1 = getelementptr inbounds i32, ptr %b, i64 1
+; IR: %p2 = getelementptr inbounds i32, ptr %b, i64 2
+
+; One measurement per cell — the three the source wrote, none dropped.  ⚠ ITS
+; OWN WHOLE-FILE PREFIX: a positive count inside a negative prefix windows every
+; negative after it (Rule 12 hygiene defect (a)).
+; CMEAS-COUNT-3: call i1 @cqrt_measure_i1(i32
+
+; PURE NEGATIVES on the lowered module.  No storage cast reached `lowerOps` (it
+; would mint a SECOND, ENTANGLED RAIL per cell), no cell is still a byte, and
+; the parked rails are LEFT ALLOCATED rather than freed (Rule 6).
+; IRNOTS-NOT: cq_template_zext
+; IRNOTS-NOT: cq_template_trunc
+; IRNOTS-NOT: cqrt_free
+; IRNOTS-NOT: 3 x i8
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans

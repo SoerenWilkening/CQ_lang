@@ -100,4 +100,38 @@ out:
 ; W1 (the taint rule + type rewrite + the D5 allow-list) lands and a `Bank`
 ; verdict stops falling through to a decline, this line changes again — and at
 ; that point re-derive it, do not delete the check.
+;
+; ⚠⚠ MERGE FILING F-3, MEASURED AND RESOLVED IN THE HONEST DIRECTION (Track B,
+; session 2026-09-15).  **THIS FILE NO LONGER ISOLATES ITS CLAUSE, AND THE
+; CLAUSE'S SUBJECT IS STRUCTURALLY UNREACHABLE — NOT MERELY MIS-SPELLED.**
+;
+; The clause it is ABOUT is the promoter's B2 (ONE CELL PER ACTIVATION).  The negative
+; `promote bank` check below (in the NOTS prefix) is satisfied VACUOUSLY: the
+; promoter never runs, because `planBank`'s B6 calls Track A's carve FIRST and
+; the carve refuses the module before any B-clause is asked.
+;
+; ⚠ WHY A RE-SPELLING WAS ATTEMPTED AND ABANDONED, with the measurement:
+;   Two distinct in-`L` cell addresses cannot reach B2, because the CARVE gets
+;   there first, three ways and all measured:
+;     * a second address with a LOAD  -> C6's in-loop-read test requires
+;       `SE.getSCEV(LIdx) == IdxS`, so any other cell is `RejectTotality`
+;       (`cq rail bank: array has cells no iteration writes`) — MEASURED both on
+;       this module (`b[2-i]`) and on a purpose-built `b[i+1]` probe;
+;     * a second address with a STORE -> C4's `Stores.size() != 1` is
+;       `RejectAlias`;
+;     * a second address with NO user -> `planBank`'s own
+;       `if (!G || G->use_empty()) return false;` refuses it ABOVE B2.
+;
+; ⚠ SO THE FIXTURE WAS NOT PAPERED OVER WITH A HAND-IR MODULE THAT ONLY *LOOKS*
+; LIKE A SUBJECT (`SCOPE_B.md` §8 forbids exactly that), AND THE B CLAUSE WAS NOT
+; DELETED.  What ships is this disclosure: the file keeps pinning that the module
+; is LOUDLY REFUSED and that the promoter does NOT fire on it — both true, both
+; worth keeping — and it states which widening restores isolation.
+;
+; ⚠ L8 RETIREMENT TRIGGER — the day
+;   C6's in-loop-read test is widened to admit a read of a cell OTHER than the
+;   one this trip writes (Track A's SIGNATURE trigger T5 names exactly this
+;   widening for B4'). B2 then becomes reachable and this file becomes an
+;   ISOLATING negative again; re-derive its DECLINE line THEN.
+;
 ; DECLINE: cq rail bank: array has cells no iteration writes

@@ -104,7 +104,7 @@
 ;  `not` inversion on the RUN line plus this one message match — Rule 12
 ;  fixture-hygiene defect (b). Mirrored character-for-character with
 ;  `kMsgLoopLeakDephases` in `LoopLowering.cpp`.)
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
+; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 
 
 source_filename = "p/r5_short_inv.c"

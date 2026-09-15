@@ -1,0 +1,35 @@
+
+=== loop_leak_dephase_accept_inplace_volatile.ll  prefixes=['CHECK', 'COUNT', 'LEAK', 'RY']
+  a_drop_unc         N/A  (mutation does not apply — A HOLE, not a pass)
+  b_drop_free        N/A  (mutation does not apply — A HOLE, not a pass)
+  c_sink_discharge   N/A  (mutation does not apply — A HOLE, not a pass)
+  d_stray_ry         caught by ['RY']
+  e_drop_forward     N/A  (mutation does not apply — A HOLE, not a pass)
+  f_add_discharge    N/A  (mutation does not apply — A HOLE, not a pass)
+  g_unroll_inplace   caught by ['COUNT']
+  h_outofplace_inplace caught by ['CHECK', 'COUNT']
+  i_add_discharge_inplace caught by ['LEAK']
+
+=== loop_leak_dephase_accept_pertrip_dead.ll  prefixes=['CHECK', 'COUNT', 'LEAK']
+  a_drop_unc         N/A  (mutation does not apply — A HOLE, not a pass)
+  b_drop_free        N/A  (mutation does not apply — A HOLE, not a pass)
+  c_sink_discharge   N/A  (mutation does not apply — A HOLE, not a pass)
+  d_stray_ry         caught by ['COUNT']
+  e_drop_forward     caught by ['CHECK']
+  f_add_discharge    caught by ['CHECK', 'LEAK']
+  g_unroll_inplace   N/A  (mutation does not apply — A HOLE, not a pass)
+  h_outofplace_inplace N/A  (mutation does not apply — A HOLE, not a pass)
+  i_add_discharge_inplace N/A  (mutation does not apply — A HOLE, not a pass)
+
+=== loop_leak_dephase_accept_marked_rootmint.ll  prefixes=['CHECK', 'COUNT', 'RY']
+  a_drop_unc         caught by ['CHECK']
+  b_drop_free        caught by ['CHECK', 'COUNT']
+  c_sink_discharge   caught by ['CHECK']
+  d_stray_ry         caught by ['RY']
+  e_drop_forward     caught by ['CHECK']
+  f_add_discharge    N/A  (mutation does not apply — A HOLE, not a pass)
+  g_unroll_inplace   N/A  (mutation does not apply — A HOLE, not a pass)
+  h_outofplace_inplace N/A  (mutation does not apply — A HOLE, not a pass)
+  i_add_discharge_inplace N/A  (mutation does not apply — A HOLE, not a pass)
+
+applied 12, MISSED 0, N/A 15

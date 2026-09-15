@@ -1,0 +1,16 @@
+# Track A injection (mutation) matrix — subject cq-opt b65549356168354626a7f09c748e35e43f9fba186ae7ede8dab6a31fd3aae2bf
+# harness: probes/inject.sh (M1-M11 batch) + probes/inject_one.sh (M3 re-run, M12); command = 'lit ir-pass/test --filter railbank'
+# CAUGHT 9 / MISSED 3 of 12. The MISSED are M8, M9, M10 — each a stated property of the change, reasons in IMPL_A.md §5.3.
+#
+M1  C7(a) deleted (in-loop read no longer downgrades)|CAUGHT(3)|railbank_promote_uncond_prep.ll railbank_promote_unrolled_reads.ll lowering_railbank_bankraw_inloop_read.ll 
+M2  C7(b) deleted (conditional store no longer downgrades)|CAUGHT(1)|lowering_railbank_bankraw_cond_store.ll 
+M4  C7(b) weakened: drop the dominates-the-latch conjunct|CAUGHT(1)|lowering_railbank_bankraw_cond_store.ll 
+M5  C7 deleted entirely (the pre-fix binary: one accept verdict)|CAUGHT(9)|lowering_railbank_bankraw_inloop_read.ll railbank_promote_uncond_prep.ll lowering_railbank_bankraw_cond_store.ll railbank_promote_int_cells.ll railbank_promote_loop_n2_wholeobj_init.ll railbank_promote_unrolled_reads.ll railbank_promote_loop_n8.ll railbank_promote_loop_n3.ll railbank_promote_uninit_bank.ll 
+M6  C7(a) flag never set (equivalent spelling of M1)|CAUGHT(3)|lowering_railbank_bankraw_inloop_read.ll railbank_promote_uncond_prep.ll railbank_promote_unrolled_reads.ll 
+M7  B6 requires Bank instead of BankRaw|CAUGHT(10)|railbank_promote_loop_n2_wholeobj_init.ll railbank_promote_loop_n3.ll railbank_promote_unrolled_reads.ll railbank_promote_int_cells.ll railbank_promote_uncond_prep.ll railbank_promote_uninit_bank.ll railbank_promote_loop_n8.ll lowering_railbank_bank_anchor_n3.ll lowering_railbank_bank_anchor_uninit.ll lowering_railbank_bank_anchor_intcells.ll 
+M8  B6 accepts BOTH Bank and BankRaw|**MISSED**
+M9  B9 weakened to >=1 store per activation|**MISSED**
+M10 B4-prime reverted: the Read gep's LOADS are not observed (bd n74d)|**MISSED**
+M3  C7(b) weakened: drop the single-exiting-block conjunct|MISSED on the first pass (44 railbank fixtures), then CAUGHT(1)|lowering_railbank_bankraw_toptest_exit.ll  <- the fixture the matrix demanded
+M11 CONTROL: carve C6 in-loop-read-of-another-cell deleted (pre-existing clause)|CAUGHT(2)|railbank_promote_reject_two_cells.ll railbank_promote_reject_inloop_hoisted_read.ll
+M12 C7(a) INVERTED (a bank with NO in-loop read is downgraded)|CAUGHT(8)|railbank_promote_uncond_prep.ll railbank_promote_unrolled_reads.ll lowering_railbank_bank_anchor_intcells.ll lowering_railbank_bank_anchor_n3.ll lowering_railbank_bankraw_inloop_read.ll lowering_railbank_bank_anchor_uninit.ll lowering_railbank_bank_anchor_promoted.ll lowering_railbank_bank_anchor_unpromoted.ll

@@ -60,12 +60,18 @@
 # story above a claim about the compiler rather than a paragraph. If either
 # control starts diverging, the entries below stop meaning what they say.
 #
-# THIS HEADER IS SCRIPT-OWNED. `--refresh-quarantine` rewrites the whole file
-# from `QUARANTINE_HEADER` in `tools/loop_twin_matrix.py` and re-sorts the
-# blocks, so ANY text hand-added up here is silently lost on the next refresh
-# (round-2 review F-R2-3). A new class paragraph therefore goes in that
-# constant, never in this file; the two are byte-identical by construction and
-# `--refresh-quarantine` is what keeps them so.
+# ⚠ THIS HEADER IS YOURS TO WRITE IN, AND THAT CHANGED ON 2026-09-15 (bd
+# test_C_libtooling-gfsk). It USED to be script-owned: `--refresh-quarantine`
+# rewrote the whole file from `QUARANTINE_HEADER` in
+# `tools/loop_twin_matrix.py`, so any text hand-added up here was silently lost
+# on the next refresh (round-2 review F-R2-3) — the same defect that deleted 54
+# lines of Rule-13 ruling prose from the EXPECTED table and reported success.
+# Now every line ABOVE the END-OF-HEADER marker at the bottom of this header is
+# PRESERVED BYTE-FOR-BYTE, only the blocks below it are rewritten, and a copy of
+# this file with no marker is REFUSED rather than guessed at. A new class
+# paragraph may go here or in the constant; the constant is the SEED for a file
+# that does not exist yet, and the two are no longer kept byte-identical.
+# ⚠ Do not delete the marker.
 #
 # TO ADD A CELL: file a bd issue naming the owning subsystem and the direction,
 # add the block by hand, then `--refresh-quarantine` to write its digest. The
@@ -166,6 +172,9 @@
 #    `loop_twin_matrix.expected.register.txt`'s note on the three `xor`/`none`
 #    ROLLED-ONLY cells.
 #    OWNER: the GENERATOR (`REGION["range"]` x `PREFIX["xor"]`), not the compiler.
+# ==== END OF HEADER — everything BELOW this line is generated and is rewritten
+# ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
+# ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
 
 cell     m_add_der_add
 class    B

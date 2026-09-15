@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r1_break_loop_un.c:6:24: in function slice i32 (): cq opcode lowering: operand predates a non-diagonal gate
+

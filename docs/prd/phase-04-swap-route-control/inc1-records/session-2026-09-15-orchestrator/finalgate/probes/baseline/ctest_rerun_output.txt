@@ -1,0 +1,17 @@
+Output:
+----------------------------------------------------------
+loop_twin_matrix [--phi-surface void]: 359 cells — 164 ACCEPT-IDENTICAL, 99 DECLINE, 96 other; 29 quarantined (pinned signatures), 2 boundary controls
+    ACCEPT-IDENTICAL                   163
+    ACCEPT-IDENTICAL-WARN              1
+    DECLINE-BOTH                       55
+    DECLINE-BOTH-DIFFERENT             44
+    ROLLED-ONLY                        3
+    TRACE-DIVERGENCE                   29
+    UNROLLED-ONLY                      64
+    control q_armoncond                TRACE-DIVERGENCE
+    control q_noregion                 ACCEPT-IDENTICAL
+all cells match loop_twin_matrix.expected.txt; all 29 quarantined cells diverge with their pinned signature (loop_twin_matrix.quarantine.txt); both boundary controls as pinned for the `void` surface
+<end of output>
+Test time = 171.18 sec
+----------------------------------------------------------
+Test Passed.

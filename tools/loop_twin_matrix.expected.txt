@@ -25,16 +25,26 @@
 # all reds. That is the point — a disposition drift in the loop lowering must
 # never be something a reader has to notice.
 #
-# ⚠ THIS HEADER IS SCRIPT-OWNED, EXACTLY AS THE QUARANTINE'S IS, AND THAT WAS
-# LEARNED THE SECOND WAY (bd uq96, 2026-09-14). `--regenerate` rewrites this file
-# from `EXPECTED_HEADER` in `tools/loop_twin_matrix.py`, so ANY text hand-added up
-# here is silently lost on the next regeneration. The quarantine header says this
-# in writing (round-2 review F-R2-3) and this one did not — so the 54-line
-# `b6ap` paragraph below, hand-added to the TABLE on 2026-09-11, was dropped by
-# the first `--regenerate` after it and had to be recovered from
-# `git show HEAD:tools/loop_twin_matrix.expected.txt`. It now lives in the
-# CONSTANT, which is the only place a paragraph survives. A new note goes there,
-# never in this file.
+# ⚠ THIS HEADER IS YOURS TO WRITE IN, AND THAT IS NEW — READ THIS BEFORE
+# BELIEVING ANY OLDER COPY OF THE SENTENCE IT REPLACES (bd
+# test_C_libtooling-gfsk, 2026-09-15).
+#
+# HISTORY, because the rule only makes sense against it. `--regenerate` used to
+# rewrite this whole file from the `EXPECTED_HEADER` constant in
+# `tools/loop_twin_matrix.py`, header included — so the 54-line `b6ap` paragraph
+# below, hand-added to this TABLE on 2026-09-11, was DELETED by the first
+# regeneration after it, under a success message, and had to be recovered from
+# `git show`. bd uq96 moved the paragraph into the constant and wrote a warning
+# here saying a new note goes in the constant and NEVER in this file. That was a
+# CONVENTION, and a convention is not a mechanism.
+#
+# WHAT IS TRUE NOW. Every line ABOVE the END-OF-HEADER marker at the bottom of
+# this header is PRESERVED BYTE-FOR-BYTE by `--regenerate`; only the rows below
+# it are rewritten, and the script prints how many header lines it preserved. A
+# copy of this file with NO marker is REFUSED outright — the script will not
+# guess which half is yours, so it writes nothing and exits non-zero. Prose you
+# add up here now survives; the constant is only the SEED for a file that does
+# not exist yet. ⚠ Do not delete the marker.
 #
 # ⚠ 2026-09-11, bd `test_C_libtooling-b6ap` (THE MULTI-PHI MERGE PEEL) — FIVE
 # CELLS MOVED, `DECLINE-BOTH-DIFFERENT` -> `UNROLLED-ONLY`, and the reason is
@@ -446,6 +456,9 @@
 #
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+# ==== END OF HEADER — everything BELOW this line is generated and is rewritten
+# ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
+# ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
 m_add_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_add_der_none           ACCEPT-IDENTICAL
 m_add_der_none_bodyread  ACCEPT-IDENTICAL
@@ -478,6 +491,7 @@ m_add_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_add_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_add_ifelse_ry          DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_add_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_add_oder_none_none_none ACCEPT-IDENTICAL
 m_add_oeq_none_none_none ACCEPT-IDENTICAL
 m_add_one_none_none_none ACCEPT-IDENTICAL
@@ -565,6 +579,25 @@ m_none_ifelse_add        UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
+m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_none_kcond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
+m_none_kicond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
+m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
+m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
+m_none_kiprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kover_none_none_kflat UNROLLED-ONLY	cq rail bank: array has cells no iteration writes
+m_none_kover_none_none_kloop DECLINE-BOTH-DIFFERENT	cq rail bank: array has cells no iteration writes	cq taint escape: tainted value stored to memory
+m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
+m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+m_none_kread_none_none_kflat UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_kread_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
 m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_nbilry_none_none_binv ACCEPT-IDENTICAL
 m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL
@@ -698,6 +731,7 @@ m_ry_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_ry_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_ry_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_ry_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_ry_oder_none_none_none ACCEPT-IDENTICAL
 m_ry_oeq_none_none_none  ACCEPT-IDENTICAL
 m_ry_one_none_none_none  ACCEPT-IDENTICAL
