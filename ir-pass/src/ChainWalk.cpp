@@ -4,6 +4,8 @@
 
 #include "ChainWalk.h"
 
+#include "RailBankPromote.h"  // railStoredToRailBank (bd `xdu2` W1 D1)
+
 #include "TaintPropagation.h"
 #include "TemplateName.h"   // isHandleSlot / isUncHandleSlot — the ONE slot table
 
@@ -756,6 +758,38 @@ Value *railOf(CallInst *G) {
 
 bool isTerminalHandle(Value *Handle, const TaintSet &taint) {
   if (!taint.Tainted.count(Handle))
+    return false;
+  // ── bd `xdu2` / L-1a W1 (D1) — A RAIL PARKED IN A BANK CELL IS THE BANK'S.
+  //
+  // The scan below `continue`s on a non-`CallInst` user, so a `StoreInst` is
+  // SILENTLY SKIPPED and a rail whose value was written into a rail-bank cell
+  // is nominated as a DEAD terminal. What happens next is decided in
+  // `computeFreePoint` and both outcomes are wrong for a bank:
+  //   * inside `main` it short-circuits to `Escaped` — right answer, by
+  //     accident, and an accident that covers almost nothing: measured over an
+  //     80-slice sample of `tests/e2e/slice_*.c`, **76 of 80** carry quantum
+  //     work OUTSIDE `main`;
+  //   * outside `main` the store falls to `FirstUnrecognized` and the module
+  //     LOUD-DECLINES `cq uncompute: tainted handle reaches an unrecognized
+  //     user` — an over-decline of the canonical W1 slice, written in the
+  //     ordinary house style (`slice()` called from `main`);
+  //   * and if anything ever DELETES the store, the rail is genuinely dead and
+  //     the spine ADJOINTS AND FREES IT. MEASURED (`probes/b14_bank_nonmain.c`
+  //     under `probes/emulate_piece3.sh`): `ry(+0.5); ry(-0.5); cqrt_free` per
+  //     cell — the spine un-prepares and frees the three qubits the user is
+  //     about to measure — at `opt` exit 0 with stage 2b reporting
+  //     `1 verified, 0 violation(s), 0 unproven`.
+  //
+  // So the nomination is stopped AT SOURCE. The rail is LEFT ALLOCATED, which
+  // is Rule 6's accepted leak and is byte-identical in the emitted stream to
+  // what the flat twin produces for a measured rail (`Measured` ⇒ no adjoint,
+  // no free).
+  //
+  // ⚠ ASKED STRUCTURALLY OF THE HANDLE'S USERS AT ASK TIME, never as a
+  // `Value *`-keyed owner set — that spelling is recorded in
+  // `TaintPropagation.h` as a shipped silent miscompile (a set keyed on a
+  // pre-`lowerOps` SSA value the lowering then erases for every derived base).
+  if (railStoredToRailBank(Handle))
     return false;
   // Terminal iff EVERY user is benign: an in-place rotation on `Handle` (mints
   // no new value), a measurement sink, or a non-quantum read. ANY other gate

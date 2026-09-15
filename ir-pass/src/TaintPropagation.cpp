@@ -12,6 +12,7 @@
 #include "IntrinsicLowering.h"
 #include "OpcodeLowering.h"   // declineStaleRecordOps (dugh second-round re-sweep)
 #include "QramLowering.h"
+#include "RailBankPromote.h"  // railBankOfPointer / isRailBankAlloca / the W1 second half
 #include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
@@ -99,6 +100,43 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
                     TaintSet &out, std::vector<Value *> &Worklist) {
   for (BasicBlock &BB : F) {
     for (Instruction &I : BB) {
+      // ── bd `xdu2` / L-1a W1 PIECE 1 — A RAIL-BANK CELL LOAD IS TAINTED.
+      //
+      // Taint is otherwise SSA-only (`propagateWorklist` has no load/store
+      // rule), which is exactly why a bank cell needs a rule of its own: the
+      // rail's NAME is parked in memory between the write loop and the read,
+      // and a `cq_measure` of an UNTAINTED load takes `MeasureLowering`'s
+      // classical split and emits NO GATE, NO SYMBOL AND NO TRACE LINE — a
+      // silent miscompile a golden byte-diff structurally cannot see
+      // (reproduced with a trace: `trackB/IMPL_B2.md` §1).
+      //
+      // ⚠ THE PROOF IS THE `!cq.railbank` RECORD AND NOTHING ELSE, and the
+      // record is minted ONLY for a `RailBankCarve::Bank` bank
+      // (`markRailBankAllocas`). On a `BankRaw` bank the surviving in-loop read
+      // is the PARTIALLY AVAILABLE one and tainting it is the hazard clause C7
+      // exists to separate (`trackA/SIGNATURE.md` §4 item 2).
+      //
+      // ⚠ SITTING HERE — inside `collectAndSeed`, i.e. inside `propagate` — is
+      // what discharges the L1 round-2 obligation STRUCTURALLY rather than by a
+      // record, the same argument bd `z9t1`'s seed clause makes two screens
+      // below: `propagate` is the single funnel BOTH entry points and every
+      // re-propagation fixpoint come through, so there is no second call site
+      // to forget. The record itself is minted by a stage that runs ABOVE every
+      // taint-consuming guard and whose caller re-`propagate`s from scratch, so
+      // the taint GROWTH it causes owes no `adjudicateTaintDelta` either.
+      //
+      // ⚠ RETIREMENT TRIGGER: the day taint stops being SSA-only for any other
+      // reason, re-derive which of `declineTaintEscapes`' arms a bank load now
+      // reaches. Today it reaches NONE — `readsTaintedValue` is false for a load
+      // whose POINTER is classical, so a tainted load is not an escape; its
+      // CONSUMERS are, and they are adjudicated by the D5 allow-list
+      // (`declineUnallowedRailBankReaders`).
+      if (auto *LD = dyn_cast<LoadInst>(&I)) {
+        if (railBankOfPointer(LD->getPointerOperand()) &&
+            out.Tainted.insert(LD).second)
+          Worklist.push_back(LD);
+        continue;
+      }
       // CallBase (not CallInst) so an `invoke` of a front-end intrinsic is
       // SEEN here — the historical seeding gap (test_C_libtooling-rzs9):
       // `dyn_cast<CallInst>` returns null on an InvokeInst, so an invoke'd
@@ -1067,7 +1105,31 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
                            << BShape.Count << " abi=" << BShape.ElemAbi
                            << " trips=" << BShape.Trips << " at: " << *BankSI
                            << "\n";
-            break;  // ⚠ STAGING — falls through to kMsgStore. See above.
+            // ⚠ THE L8 RETIREMENT TRIGGER ABOVE HAS FIRED (bd `xdu2` W1 second
+            // half, 2026-09-15): the `Bank` arm no longer falls through to
+            // `kMsgStore` — the bank OWNS this store, and the rail it parks is
+            // read back by the type rewrite + the taint rule + the D5
+            // allow-list. Every `lowering_reject_railbank_*` fixture whose
+            // header says so is re-derived as part of that landing.
+            //
+            // ⚠⚠ BUT ONLY WITH THE RECORD PRESENT, AND THE CONJUNCT IS THE
+            // WHOLE SAFETY COUPLING, NOT A BELT-AND-BRACES. The accept, the
+            // taint rule and the type rewrite are all keyed on
+            // `!cq.railbank`; a `Bank` verdict WITHOUT the record means this
+            // store's loads were never tainted and the type rewrite will never
+            // see the object, which is EXACTLY the silent miscompile the second
+            // half exists to close (three written `cq_measure` calls emitting
+            // nothing). The record is minted at the normaliser slot, so the two
+            // can only disagree if a stage BETWEEN that slot and here changed
+            // the shape — and then the safe answer is the generic decline.
+            // MEASURED direction of each disagreement: shape destroyed after
+            // the mint ⇒ the carve no longer says `Bank` and some `Reject*` or
+            // the generic `kMsgStore` fires (over-decline, safe); a NEW bank
+            // manufactured after the mint ⇒ `Bank` with no record ⇒ the `break`
+            // below (over-decline, safe).
+            if (isRailBankAlloca(BShape.Alloca))
+              continue;
+            break;  // `Bank` but UNMARKED — keep the generic kMsgStore.
           case RailBankCarve::BankRaw:
             // The promoter's INPUT shape (C7 failed). It is NOT a decline of its
             // own — every clause C1–C6 held and `BMsg` is null — so it takes the
@@ -1141,6 +1203,29 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
     taint.Tainted.erase(FI);
     FI->eraseFromParent();
   }
+
+  // ── bd `xdu2` / L-1a W1 PIECE 3 — THE D5 CONSUMER ALLOW-LIST.
+  //
+  // LAST inside this guard, deliberately, and for the reason bd `br4a` makes a
+  // rule of: `LLVMContext::diagnose` EXITS on the first `DS_Error`, so "last"
+  // means "every owner with a more precise message goes first" — a bank whose
+  // STORE is still refused (a `Bank` the record was never minted on, or a
+  // `Reject*` clause) keeps its own per-clause string, unmoved.
+  //
+  // It is a POSITIVE allow-list and never a deny-list, because a rail parked in
+  // memory is invisible to every SSA-shaped fence in the tree: `railWireClosure`
+  // has no memory hop and MUST NOT BE TAUGHT ONE (that trips
+  // `f2SeedPinnedByLiveRegister`'s retirement trigger and forces a from-scratch
+  // re-derivation of the F2 narrowing), and the rail/wire/uncompute machinery is
+  // MEMORY-BLIND by construction (`SCOPE_L1a.md` §4.1). So the refusal lives
+  // here, on an enumerated list of consumers, and every other consumer declines.
+  //
+  // ⚠ LIVING INSIDE `declineTaintEscapes` BUYS THE ROUND-2 RE-ASK FOR FREE
+  // (L1's PREDICATE species): `adjudicateTaintDelta` and
+  // `repropagateControlMerges` both call this guard, so a bank load that only
+  // becomes reachable after the control fixpoint is asked the same question
+  // again, with nothing new to remember.
+  declineUnallowedRailBankReaders(M, taint);
 }
 
 namespace {

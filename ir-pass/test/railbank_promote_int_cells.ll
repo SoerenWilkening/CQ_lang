@@ -26,6 +26,16 @@
 ; ACCEPT and the shape below becomes checkable on stdout.  Re-derive it then; do
 ; NOT delete it.
 ;
+;
+; ⚠⚠ THE L8 RETIREMENT TRIGGER BELOW HAS FIRED — bd `xdu2` W1's SECOND HALF
+; landed 2026-09-15 and this file was RE-DERIVED, not deleted.  The promoted
+; shape is UNCHANGED, and that is the POINT OF THE WIDTH AXIS: an `int` cell's
+; C storage type IS the rail type, so there is no storage cast for W1 piece 2's
+; sink to move and the `i8`/`i1` residual the `_Bool` spelling carries does not
+; exist here.  The bank store no longer declines; the REGION does — `cq
+; controlled lowering: control flow inside a loop body under quantum control`,
+; `iterationLocalRollable`'s conjunct (c3), bd `8h7d.11`, which is
+; bank-independent and not W1's.
 ; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:     -S %s > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
@@ -86,7 +96,7 @@ out:
 ; NOTS-NOT: load i32, ptr %g0
 ; NOTS-NOT: load i32, ptr %g1
 
-; DECLINE: cq taint escape: tainted value stored to memory
+; DECLINE: cq controlled lowering: control flow inside a loop body under quantum control
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans

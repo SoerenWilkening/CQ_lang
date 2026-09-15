@@ -53,6 +53,7 @@
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
+#include "llvm/Analysis/ValueTracking.h"  // getUnderlyingObject (Rule 14: LLVM's own walk)
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/DataLayout.h"
@@ -61,6 +62,8 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/LLVMContext.h"
+#include "llvm/IR/DerivedTypes.h"
+#include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Metadata.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/ValueHandle.h"
@@ -68,7 +71,10 @@
 #include "llvm/TargetParser/Triple.h"
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
+#include "llvm/ADT/STLExtras.h"  // make_early_inc_range
+
 #include <cstdlib>
+#include <optional>
 #include <utility>
 
 using namespace llvm;
@@ -648,6 +654,105 @@ void applyBank(BankPlan &Plan) {
   // TRIGGER: weaken B8 (for instance to admit a bank with no load, which is a
   // no-op today) and the fixpoint DOES NOT TERMINATE — reinstate a membership
   // record in the same change.
+  // PASS G — SINK THE STORAGE CAST OUT OF THE ARM (bd `xdu2` W1 piece 2, the
+  // `i8`/`i1` RESIDUAL).
+  //
+  // THE PROBLEM, MEASURED. A `_Bool` cell's C storage type is `i8` while the
+  // rail is `i1`, so `clang -O1` puts a `zext i1 %theta to i8` INSIDE THE ARM
+  // and PASS A builds the merge phi at the CELL type. That cast is a tainted
+  // value-producing op in a region arm, so `classifyArms` reads the region as a
+  // VALUE ARM and the module declines `cq controlled lowering: value-arm
+  // swap-route under quantum control`, ANCHORED AT THE `zext` ITSELF (probe
+  // `derived/B2_nostore.ll`). With the phi at the RAIL type and no cast in the
+  // arm the same module gets past it (`derived/B3_i1cell_nostore.ll`).
+  //
+  // WHY THE CAST CANNOT SIMPLY BE DELETED. `store i1` into an `i8` cell makes
+  // the carve answer `NotBank` at the PUN FENCE (`QramLowering.cpp`,
+  // `StoreVal->getType() != CellTy`), whose header carries a RETIREMENT TRIGGER
+  // IN BOTH DIRECTIONS: it and `matchQramAccess`'s twin are one fence with two
+  // spellings and neither moves without the other. So the cast is SUNK to the
+  // activation-end store instead — measured `Bank`, `cells=3 abi=i8 trips=3`
+  // (`derived/B7_i1phi_zextsunk_store.ll`) — and the fence is untouched.
+  //
+  // ⚠ IT FIRES ONLY WHEN THE STORE'S VALUE IS A `phi`, i.e. ONLY ON THE
+  // CONDITIONAL-ARM SHAPE, WHICH IS ENTIRELY THE DECLINING POPULATION TODAY.
+  // An unconditional per-trip prep has no phi and its cast already sits
+  // directly in front of the store; nothing is narrowed and the module is
+  // byte-unchanged. That is why this rewrite cannot move any accept: it can
+  // only move a decline STRING (wall 2 → wall 3).
+  //
+  // ⚠ THE EQUIVALENCE IS `trunc(zext(x)) == x` AND `trunc(0) == 0`, and it is
+  // exact only because every incoming is a ZERO-extension from ONE common rail
+  // type or the zero constant, and every other user is the matching truncation.
+  // `sext` would be equally exact and is deliberately NOT admitted: `-O1` does
+  // not emit it for a `_Bool` cell, so admitting it would widen the population
+  // past the one this was measured on.
+  //
+  // RETIREMENT TRIGGER: the sink exists so the arm classifies as a state prep
+  // AND so the pun fence stays untouched. If `RailBankShape::ElemAbi` ever
+  // carries the RAIL width, or the pun fence learns a cast, RE-DERIVE THIS FROM
+  // SCRATCH — the sink is then doing nothing and the cast is free to reach
+  // `lowerOps` and mint a second, entangled rail per cell (measured:
+  // `probes/b09_bool_zext_to_int.c` → `cq_template_zext_i1_to_i32(h0) -> h1`).
+  if (auto *P = dyn_cast<PHINode>(Final)) {
+    Type *RailTy = nullptr;
+    bool Narrowable = true;
+    for (unsigned i = 0, e = P->getNumIncomingValues(); i != e && Narrowable; ++i) {
+      Value *In = P->getIncomingValue(i);
+      if (auto *Z = dyn_cast<ZExtInst>(In)) {
+        Type *T = Z->getOperand(0)->getType();
+        if (RailTy && RailTy != T)
+          Narrowable = false;
+        else
+          RailTy = T;
+        continue;
+      }
+      auto *C = dyn_cast<ConstantInt>(In);
+      if (!C || !C->isZero())
+        Narrowable = false;
+    }
+    if (!RailTy || RailTy == P->getType())
+      Narrowable = false;
+    SmallVector<TruncInst *, 4> Truncs;
+    if (Narrowable)
+      for (User *U : P->users()) {
+        if (U == NewStore)
+          continue;
+        auto *TR = dyn_cast<TruncInst>(U);
+        if (!TR || TR->getType() != RailTy) {
+          Narrowable = false;
+          break;
+        }
+        Truncs.push_back(TR);
+      }
+    if (Narrowable) {
+      auto *NP = PHINode::Create(RailTy, P->getNumIncomingValues(), "cq.bank", P);
+      NP->setDebugLoc(P->getDebugLoc());
+      SmallVector<Instruction *, 4> DeadZexts;
+      for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i) {
+        Value *In = P->getIncomingValue(i);
+        if (auto *Z = dyn_cast<ZExtInst>(In)) {
+          NP->addIncoming(Z->getOperand(0), P->getIncomingBlock(i));
+          DeadZexts.push_back(Z);
+        } else {
+          NP->addIncoming(Constant::getNullValue(RailTy),
+                          P->getIncomingBlock(i));
+        }
+      }
+      for (TruncInst *TR : Truncs) {
+        TR->replaceAllUsesWith(NP);
+        TR->eraseFromParent();
+      }
+      auto *Sunk = new ZExtInst(NP, P->getType(), "cq.bank.stg", NewStore);
+      Sunk->setDebugLoc(NewStore->getDebugLoc());
+      NewStore->setOperand(0, Sunk);
+      P->eraseFromParent();
+      for (Instruction *Z : DeadZexts)
+        if (Z->use_empty())
+          Z->eraseFromParent();
+    }
+  }
+
   (void)Ctx;
   if (::getenv("CQ_RAILBANK_DBG"))
     errs() << "CQ_RAILBANK_DBG: promote bank %" << Plan.Bank->getName() << " in @"
@@ -718,6 +823,531 @@ bool promoteRailBankCells(Module &M, const TaintSet &taint) {
     }
   }
   return false;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════
+// bd `xdu2` / L-1a Increment W1 — THE SECOND HALF. See `RailBankPromote.h` for
+// the three-piece contract and for why they land as ONE commit.
+// ═══════════════════════════════════════════════════════════════════════════
+
+namespace {
+
+// The record's name. ONE spelling, in one place.
+constexpr char kRailBankMD[] = "cq.railbank";
+
+// The two diagnostics this half owns. Mirrored CHARACTER-FOR-CHARACTER by the
+// negative fixtures (Rule 12):
+//   * railbank_reject_load_as_branch_cond.ll  → kMsgBankReader
+//   * railbank_reject_load_as_gate_control.ll → kMsgBankReader
+//   * railbank_reject_load_into_arith.ll      → kMsgBankReader
+//   * railbank_reject_rewrite_unexpected_user.ll → kMsgBankRewrite
+constexpr char kMsgBankReader[] =
+    "cq rail bank: unsupported reader of a rail-bank cell";
+constexpr char kMsgBankRewrite[] =
+    "cq rail bank: cell type rewrite failed on a proven bank";
+
+void diagnoseBank(Instruction *I, const char *Msg) {
+  I->getFunction()->getContext().diagnose(
+      DiagnosticInfoUnsupported(*I->getFunction(), Msg, I->getDebugLoc()));
+}
+
+// Drop an erased instruction from every taint work-list that might still hold
+// it, so a later module walk never dereferences freed memory. The house
+// `scrubTaint` (AngleSelectEmit / SelectMergeEmit / ClassicalCallArmEmit), in
+// its rail-bank spelling: the erased classes here are a STORAGE CAST (a
+// `CastInst`) and nothing else, so the CallInst arms of the sibling scrubs are
+// deliberately absent rather than copied.
+void scrubTaint(Instruction *I, TaintSet &taint) {
+  taint.Tainted.erase(I);
+  taint.BirthOrder.erase(I);
+  taint.StaleDeclined.erase(I);
+  taint.HandleWidth.erase(I);
+}
+
+}  // namespace
+
+bool isRailBankAlloca(const AllocaInst *AI) {
+  return AI && AI->getMetadata(kRailBankMD) != nullptr;
+}
+
+Type *railBankRailType(const AllocaInst *AI) {
+  MDNode *N = AI ? AI->getMetadata(kRailBankMD) : nullptr;
+  if (!N || N->getNumOperands() != 1)
+    return nullptr;
+  auto *CM = dyn_cast<ConstantAsMetadata>(N->getOperand(0));
+  auto *CI = CM ? dyn_cast<ConstantInt>(CM->getValue()) : nullptr;
+  if (!CI)
+    return nullptr;
+  return IntegerType::get(AI->getContext(),
+                          static_cast<unsigned>(CI->getZExtValue()));
+}
+
+AllocaInst *railBankOfPointer(Value *P) {
+  if (!P)
+    return nullptr;
+  auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(P));
+  return isRailBankAlloca(AI) ? AI : nullptr;
+}
+
+bool railStoredToRailBank(const Value *H) {
+  if (!H)
+    return false;
+  for (const User *U : H->users())
+    if (const auto *SI = dyn_cast<StoreInst>(U))
+      if (SI->getValueOperand() == H &&
+          railBankOfPointer(const_cast<Value *>(SI->getPointerOperand())))
+        return true;
+  return false;
+}
+
+bool markRailBankAllocas(Module &M, const TaintSet &taint) {
+  bool Changed = false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    // The same cheap pre-filter `promoteRailBankCells` uses, for the same
+    // measured reason: an unconditional DominatorTree costs ~60ms per
+    // invocation on a census slice with nothing to claim.
+    bool AnyCandidate = false;
+    for (Instruction &I : F.getEntryBlock())
+      if (auto *A = dyn_cast<AllocaInst>(&I))
+        if (!A->isArrayAllocation() && isa<ArrayType>(A->getAllocatedType())) {
+          AnyCandidate = true;
+          break;
+        }
+    if (!AnyCandidate)
+      continue;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    if (LI.empty())
+      continue;  // a bank store is ALWAYS in a loop (the carve's own conjunct).
+    AssumptionCache AC(F);
+    TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
+    TargetLibraryInfo TLI(TLII);
+    ScalarEvolution SE(F, TLI, AC, DT, LI);
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *SI = dyn_cast<StoreInst>(&I);
+        if (!SI)
+          continue;
+        const char *Msg = nullptr;
+        RailBankShape Shape;
+        // ⚠ `Bank` AND NOTHING ELSE. `BankRaw` is the promoter's input and must
+        // keep declining (`trackA/SIGNATURE.md` §3/§4); a `Reject*` keeps its
+        // own per-clause diagnostic at `declineTaintEscapes`, which is the ONE
+        // site that diagnoses — this stage NEVER diagnoses, so a bank it cannot
+        // claim is left byte-untouched for its existing loud owner (the
+        // accept-only normaliser discipline).
+        if (railBankCarveVerdict(SI, taint, DT, LI, SE, Msg, &Shape) !=
+            RailBankCarve::Bank)
+          continue;
+        if (!Shape.Alloca || isRailBankAlloca(Shape.Alloca))
+          continue;
+        // ⚠ THE RECORD CARRIES THE **RAIL** WIDTH, NOT THE CELL WIDTH, AND
+        // THE TWO DIFFER FOR EXACTLY THE OWNER'S SPELLING. A `_Bool` cell's C
+        // storage type is `i8` while the rail is `i1`, and `clang -O1` bridges
+        // them with a storage EXTENSION cast on the store side and a storage
+        // TRUNCATION cast on the read side. Both casts are erased by the type
+        // rewrite, so BOTH the D5 allow-list and the rewrite must be able to
+        // tell a STORAGE cast from a cast the user wrote — and after
+        // `lowerRotations`' cross-type RAUW the extension cast reads
+        // `zext i32 %h to i8` and its original source type is UNRECOVERABLE.
+        // So the width is captured HERE, pre-lowering, where the store's value
+        // operand still names it.
+        //
+        // ⚠ THE OVER-ACCEPT THIS CLOSES WAS MEASURED, NOT ANTICIPATED
+        // (`probes/d5g_width_pun_measure.c`). `int b0[3]` with
+        // `cq_measure((short) b0[i])` gave a rail minted `cqrt_alloc_i32` and
+        // MEASURED `cqrt_measure_i16` — the truncation GATE dropped entirely.
+        // The scalar twin (`probes/d5h_scalar_width_pun.c`, no array anywhere)
+        // emits `cq_template_trunc_i32_to_i16(h0) -> h1` and measures the NEW
+        // rail, on this binary AND on the ORACLE. A bank must not lose a gate
+        // the register spelling emits.
+        Type *CellT = Shape.CellTy;
+        Type *RailT = CellT;
+        if (auto *C = dyn_cast<CastInst>(SI->getValueOperand()))
+          if (C->getDestTy() == CellT && C->getSrcTy()->isIntegerTy())
+            RailT = C->getSrcTy();
+        Shape.Alloca->setMetadata(
+            kRailBankMD,
+            MDNode::get(F.getContext(),
+                        {ConstantAsMetadata::get(ConstantInt::get(
+                            Type::getInt32Ty(F.getContext()),
+                            RailT->getIntegerBitWidth()))}));
+        Changed = true;
+        if (::getenv("CQ_RAILBANK_DBG"))
+          errs() << "CQ_RAILBANK_DBG: mark bank %" << Shape.Alloca->getName()
+                 << " in @" << F.getName() << " cells=" << Shape.Count
+                 << " cell=" << Shape.ElemAbi
+                 << " rail=i" << RailT->getIntegerBitWidth() << "\n";
+      }
+  }
+  return Changed;
+}
+
+namespace {
+
+// Is `U` an admitted reader of the rail-bank cell load `LD`? THE POSITIVE
+// ALLOW-LIST — see `RailBankPromote.h`. Everything this returns false for is a
+// loud decline; there is no third answer.
+bool isAdmittedRailBankReader(const Instruction *U, const LoadInst *LD,
+                              Type *RailTy,
+                              const SmallPtrSetImpl<const CallInst *> &Measures) {
+  // (1) the measurement sink itself. EXACT MEMBERSHIP of the collected
+  //     `@cq_measure_<sfx>` call sites, never a `starts_with("cq_measure_")`
+  //     prefix — prefix-on-accept is spoofable and an opaque `cq_measure_evil`
+  //     would confer ownership of a live rail (the `ArmClassify` G10 / `soleMeasure`
+  //     discipline, copied deliberately).
+  //     ⚠ AND ITS OPERAND TYPE MUST BE THE **RAIL** TYPE. A direct measure of
+  //     the load is admissible only when the cell type IS the rail type (an
+  //     `int` bank). On a `_Bool` bank the cell is `i8` and the rail `i1`, so a
+  //     measure reading the `i8` load directly is `cq_measure((char) b0[i])` —
+  //     whose register spelling emits a real `cq_template_zext_i1_to_i8` GATE
+  //     and measures the NEW rail. Admitting it here would DROP that gate.
+  if (const auto *CI = dyn_cast<CallInst>(U))
+    return Measures.count(CI) != 0 && LD->getType() == RailTy;
+  // (2) the storage-TRUNCATION cast `-O1` emits because the C storage type of a
+  //     `_Bool` cell is `i8` while the rail is `i1`. Single-use, and its one
+  //     user must itself be an admitted measure. Piece 2 erases it; at D5 time
+  //     it is still standing, which is why this entry exists at all.
+  //     ⚠ AND ITS DESTINATION MUST BE THE **RAIL** TYPE, WHICH IS THE WHOLE
+  //     FENCE. A `trunc` to any OTHER width is a truncation the user wrote, and
+  //     the register spelling of that program emits
+  //     `cq_template_trunc_<from>_to_<to>` — a real reversible gate minting a
+  //     NEW rail, which is then what gets measured. MEASURED both ways
+  //     (`probes/d5g` vs `probes/d5h`): without this conjunct `int b0[3]` with
+  //     `cq_measure((short) b0[i])` minted `cqrt_alloc_i32` and measured
+  //     `cqrt_measure_i16`, dropping the gate. A bank must never lose a gate
+  //     the register spelling emits.
+  if (const auto *TR = dyn_cast<TruncInst>(U)) {
+    if (TR->getOperand(0) != LD || !TR->hasOneUse() || TR->getType() != RailTy)
+      return false;
+    const auto *One = dyn_cast<CallInst>(*TR->user_begin());
+    return One && Measures.count(One) != 0;
+  }
+  // ⚠ THERE IS NO ENTRY (3), AND ITS ABSENCE IS A MEASUREMENT RATHER THAN AN
+  //   OVERSIGHT.  `SCOPE_B.md` §5.1 designed a third entry — *a further store
+  //   into a `!cq.railbank` cell* (a bank-to-bank copy of the rail NAME: no
+  //   gate, no clone).  It was implemented, and then it was measured to have NO
+  //   REACHABLE SUBJECT AT THE `-O1` FLOOR: on
+  //   `trackB/probes/d5d_bank_to_bank_copy.c` (`for (i<3) b1[i] = b0[i];`
+  //   between the write loop and the measure loop) `clang -O1` FORWARDS the
+  //   copy and DELETES the second array outright, so the module that reaches
+  //   this pass has exactly ONE bank and the entry never fires.  Pinned by
+  //   `railbank_accept_bank_copy_folded.ll`.
+  //
+  //   An allow-list entry with no customer is Rule 12 hygiene defect (c) in its
+  //   purest form — an ACCEPT DOOR in a Prime-Directive fence that no fixture
+  //   can hold open — so it was REMOVED rather than shipped unpinned.  Removing
+  //   it narrows the accept, which is the safe direction: a module that somehow
+  //   did carry a surviving bank-to-bank store now declines loudly.
+  //
+  //   ⚠ AND THE REMOVAL TOOK A CUSTOMER OFF AN OPEN P1 WITH IT.  A surviving
+  //   copy makes TWO names denote ONE rail, so measuring both banks emits
+  //   `cqrt_measure_i1(h0)` twice on one qubit — bd `yiid`'s shape.  MEASURED
+  //   also WITHOUT any bank (`trackB/probes/d5f_scalar_double_measure.c`:
+  //   `cq_measure(q) + cq_measure(q)`, no array anywhere, compiles identically
+  //   on this binary and on the pre-second-half one), so the boundary is bd
+  //   `yiid`'s and not this increment's — but this increment does not add to it
+  //   either.
+  //
+  //   RETIREMENT TRIGGER: the day a `-O1` spelling is found in which a
+  //   bank-to-bank store SURVIVES — or the floor stops folding it — re-derive
+  //   entry (3) WITH the bd `yiid` question answered, not before.
+  return false;
+}
+
+}  // namespace
+
+void declineUnallowedRailBankReaders(Module &M, const TaintSet &taint) {
+  SmallPtrSet<const CallInst *, 16> Measures;
+  Measures.insert(taint.MeasureCalls.begin(), taint.MeasureCalls.end());
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *LD = dyn_cast<LoadInst>(&I);
+        if (!LD)
+          continue;
+        AllocaInst *Bank = railBankOfPointer(LD->getPointerOperand());
+        if (!Bank)
+          continue;
+        Type *RailTy = railBankRailType(Bank);
+        // ⚠ ENUMERATE, NEVER STOP AT THE FIRST MATCH (L4: *a wire question must
+        // be a gate SET, not a BOOLEAN over a return-first walker*). The answer
+        // is "every user is admitted", so the whole user list is walked and the
+        // OFFENDING user is what carries the `!dbg` — putting an admitted
+        // consumer in front of an unadmitted one cannot hide the second.
+        for (User *U : LD->users()) {
+          auto *UI = dyn_cast<Instruction>(U);
+          if (!UI) {
+            diagnoseBank(LD, kMsgBankReader);  // a ConstantExpr view of the value.
+            continue;
+          }
+          if (RailTy && isAdmittedRailBankReader(UI, LD, RailTy, Measures))
+            continue;
+          diagnoseBank(UI, kMsgBankReader);
+        }
+      }
+  }
+}
+
+namespace {
+
+// Retype ONE proven bank in place. `Fail` is set (and a loud diagnostic fired)
+// on anything the rewrite did not expect — NEVER a silent `continue`
+// (`SCOPE_B.md` §10 item 2: the rewrite enumerates from the SAME user shapes
+// C1's scan proves, and an omission here is silent because the verifier cannot
+// see a 4-byte write into a 3-byte object).
+//
+// ⚠ IN-PLACE MUTATION, NOT REBUILD-AND-RAUW, AND THAT IS DELIBERATE. Every
+// `Value *` in `taint` and in the control plan stays valid because no load, gep
+// or alloca is replaced — only the STORAGE CASTS are erased, and those are
+// scrubbed. Rebuilding the loads would leave freed pointers in tables this
+// stage cannot enumerate.
+void rewriteOneBank(AllocaInst *AI, TaintSet &taint, bool &Fail) {
+  Module &M = *AI->getModule();
+  LLVMContext &Ctx = AI->getContext();
+  const DataLayout &DL = M.getDataLayout();
+  Type *I32 = Type::getInt32Ty(Ctx);
+  auto *OldArr = dyn_cast<ArrayType>(AI->getAllocatedType());
+  if (!OldArr) {
+    diagnoseBank(AI, kMsgBankRewrite);
+    Fail = true;
+    return;
+  }
+  auto *NewArr = ArrayType::get(I32, OldArr->getNumElements());
+
+  // Collect first, mutate after: the walks below read `AI->users()` and
+  // `GEP->users()`, and PASS 3 erases.
+  SmallVector<GetElementPtrInst *, 8> Geps;
+  SmallVector<LoadInst *, 8> Loads;
+  SmallVector<StoreInst *, 4> Stores;
+  SmallVector<Instruction *, 4> Lifetimes;
+  SmallVector<Instruction *, 4> Inits;
+
+  auto takeCellUser = [&](User *GU, Value *Ptr) -> bool {
+    if (auto *LD = dyn_cast<LoadInst>(GU)) {
+      if (LD->getPointerOperand() == Ptr) {
+        Loads.push_back(LD);
+        return true;
+      }
+    } else if (auto *ST = dyn_cast<StoreInst>(GU)) {
+      if (ST->getPointerOperand() == Ptr) {
+        Stores.push_back(ST);
+        return true;
+      }
+    }
+    return false;
+  };
+
+  for (User *U : AI->users()) {
+    auto *UI = dyn_cast<Instruction>(U);
+    if (!UI) {
+      diagnoseBank(AI, kMsgBankRewrite);
+      Fail = true;
+      return;
+    }
+    if (auto *G = dyn_cast<GetElementPtrInst>(UI)) {
+      Geps.push_back(G);
+      for (User *GU : G->users())
+        if (!takeCellUser(GU, G)) {
+          diagnoseBank(cast<Instruction>(GU), kMsgBankRewrite);
+          Fail = true;
+          return;
+        }
+      continue;
+    }
+    if (auto *II = dyn_cast<IntrinsicInst>(UI)) {
+      Intrinsic::ID Id = II->getIntrinsicID();
+      if (Id == Intrinsic::lifetime_start || Id == Intrinsic::lifetime_end) {
+        Lifetimes.push_back(II);
+        continue;
+      }
+      if (Id == Intrinsic::memset || Id == Intrinsic::memset_inline) {
+        Inits.push_back(II);
+        continue;
+      }
+      diagnoseBank(II, kMsgBankRewrite);
+      Fail = true;
+      return;
+    }
+    if (auto *ST = dyn_cast<StoreInst>(UI)) {
+      // The whole-object constant-zero initializer `-O1` spells as
+      // `store i64 0, ptr %b` — C1 admits it, and it is DELETED rather than
+      // rescaled (see PASS 3).
+      //
+      // ⚠ ASKED BY CALLING `isWholeObjectZeroStore`, THE SAME PREDICATE THE
+      // CARVE'S C1 USER SCAN ASKS (Rule 14), and the first spelling here was a
+      // type INEQUALITY (`value type != cell type`) which DIVERGES from it on a
+      // one-cell bank: for `[1 x i8]` the whole-object zero IS a `store i8 0`,
+      // so the carve files it as an Init while the inequality filed it as a
+      // CELL STORE — and PASS 4 then hit its loud `kMsgBankRewrite` on a shape
+      // the carve had proven. A divergence between a rewrite and the carve that
+      // licensed it is the drbq Inc-3 (b') defect in miniature: two spellings of
+      // one question.
+      if (isWholeObjectZeroStore(ST, AI)) {
+        Inits.push_back(ST);
+        continue;
+      }
+    }
+    if (!takeCellUser(UI, AI)) {  // the direct zero-offset cell-0 access.
+      diagnoseBank(UI, kMsgBankRewrite);
+      Fail = true;
+      return;
+    }
+  }
+
+  // PASS 1 — the object. ⚠ SEMANTICALLY LOAD-BEARING AND INVISIBLE TO
+  // `opt -verify` (header): an `i32` handle stored into a `[3 x i8]` alloca is
+  // a 4-byte write into a 3-byte object and verifies clean under opaque
+  // pointers. The alignment must move with the type or every cell access is
+  // under-aligned.
+  AI->setAllocatedType(NewArr);
+  if (AI->getAlign() < DL.getABITypeAlign(I32))
+    AI->setAlignment(DL.getABITypeAlign(I32));
+
+  // PASS 2 — the addresses. Both `matchAddressGep` spellings are covered: the
+  // array-decay form `[N x cell], base, 0, idx` (source element type is the
+  // ARRAY) and the flat element form `cell, base, idx` (source element type is
+  // the CELL).
+  for (GetElementPtrInst *G : Geps) {
+    if (G->getSourceElementType() == OldArr)
+      G->setSourceElementType(NewArr);
+    else if (G->getSourceElementType() == OldArr->getElementType())
+      G->setSourceElementType(I32);
+    else {
+      diagnoseBank(G, kMsgBankRewrite);
+      Fail = true;
+      return;
+    }
+    G->setResultElementType(I32);
+  }
+
+  // PASS 3 — the initializer. DELETED, not rescaled, and C6 TOTALITY is what
+  // licenses it: every cell is stored before any cell is loaded, so the fill is
+  // never observed.
+  //
+  // ⚠ THE REASON TO PREFER DELETION IS COUNTERFACTUAL, AND SAYING SO IS THE
+  // POINT. A RESCALED memset would write handle `0` into every cell, and handle
+  // `0` IS A LIVE RAIL in this runtime (`cqrt_alloc_i1(0) -> h0`) — so the day
+  // C6 is widened to admit a never-written cell, the rescale hands a MEASURE a
+  // live rail's handle while the deletion hands it an uninitialised one. WHILE
+  // C6 HOLDS the two are indistinguishable, and that was MEASURED rather than
+  // argued: injection mutant M8b (rescale instead of delete) was MISSED by every
+  // railbank fixture, every railbank e2e slice and stage 2b — the emitted trace
+  // is byte-identical either way and `free_pairing_check.py` does not model
+  // memory. The ONE instrument in the tree that separates them is the
+  // `NOTS-NOT: call void @llvm.memset` negative in
+  // `railbank_accept_zeroinit_memset.ll`, written BECAUSE the mutant was missed.
+  // RETIREMENT TRIGGER: widen C6's totality and this choice becomes observable —
+  // re-derive it then, and do not read "it never fired" as "it does not matter".
+  for (Instruction *Init : Inits) {
+    Init->eraseFromParent();
+  }
+
+  // PASS 3b — the lifetime markers. The object's size changed; a stale constant
+  // size would describe a shorter object than the one being written.
+  const uint64_t NewSize = DL.getTypeAllocSize(NewArr).getFixedValue();
+  for (Instruction *LM : Lifetimes) {
+    auto *CI = cast<CallInst>(LM);
+    if (isa<ConstantInt>(CI->getArgOperand(0)))
+      CI->setArgOperand(0, ConstantInt::get(Type::getInt64Ty(Ctx), NewSize));
+  }
+
+  // PASS 4 — the writes. After `lowerRotations` the stored value is either the
+  // `i32` handle itself (a cell whose C storage type IS the rail type: `int`
+  // cells) or the STORAGE EXTENSION cast standing one hop in front of it (a
+  // `_Bool` cell: `zext i1 %theta to i8`, whose operand the cross-type RAUW has
+  // already turned into the handle). The cast is erased, NOT lowered: reaching
+  // `lowerOps` it becomes `cq_template_zext_i1_to_i8` — a second, entangled
+  // rail per cell with the original left allocated.
+  SmallVector<Instruction *, 4> DeadCasts;
+  for (StoreInst *ST : Stores) {
+    Value *V = ST->getValueOperand();
+    if (V->getType() != I32) {
+      auto *C = dyn_cast<CastInst>(V);
+      if (!C || C->getOperand(0)->getType() != I32) {
+        diagnoseBank(ST, kMsgBankRewrite);
+        Fail = true;
+        return;
+      }
+      ST->setOperand(0, C->getOperand(0));
+      DeadCasts.push_back(C);
+    }
+    ST->setAlignment(DL.getABITypeAlign(I32));
+    ST->setMetadata(LLVMContext::MD_tbaa, nullptr);
+  }
+
+  // PASS 5 — the reads. The load is MUTATED in place (see the note above), its
+  // `!range`/`!tbaa` dropped (a `!range` whose type no longer matches the
+  // instruction is a VERIFIER error, not a cosmetic staleness), and its storage
+  // TRUNCATION cast folded away — the same cast D5 admits as allow-list entry
+  // (2), which is why D5 runs BEFORE this stage and this stage after it.
+  Type *RailTy = railBankRailType(AI);
+  if (!RailTy) {
+    diagnoseBank(AI, kMsgBankRewrite);
+    Fail = true;
+    return;
+  }
+  for (LoadInst *LD : Loads) {
+    // ⚠ ONLY THE STORAGE TRUNCATION — a `trunc` TO THE RAIL TYPE. A `trunc` to
+    // any other width is a truncation the USER wrote, and erasing it would drop
+    // the `cq_template_trunc_*` gate the register spelling of the same program
+    // emits (measured: `probes/d5g` vs `probes/d5h`). D5 already refuses such a
+    // reader, so this is the second of two spellings of one fence — kept
+    // because the alternative failure is a DROPPED GATE and is silent.
+    for (User *U : llvm::make_early_inc_range(LD->users()))
+      if (auto *TR = dyn_cast<TruncInst>(U))
+        if (TR->getType() == RailTy) {
+          TR->replaceAllUsesWith(LD);
+          DeadCasts.push_back(TR);
+        }
+    LD->mutateType(I32);
+    LD->setAlignment(DL.getABITypeAlign(I32));
+    LD->setMetadata(LLVMContext::MD_range, nullptr);
+    LD->setMetadata(LLVMContext::MD_tbaa, nullptr);
+    // The load IS a rail name now (piece 1 tainted it); `lowerMeasures` refuses
+    // a tainted operand that is not an `i32` handle, which is exactly what the
+    // mutation above supplies.
+    taint.HandleWidth.erase(LD);
+  }
+
+  // ⚠ ONLY A CAST THAT IS ACTUALLY DEAD. The store side swaps the store's
+  // operand and the read side RAUWs the trunc to the load, so both are normally
+  // use-free by here — but the STORED VALUE's cast is not constrained to have
+  // one user by any clause of the carve, and a cast with a surviving consumer
+  // that we erased would leave that consumer reading POISON: verify-clean, and
+  // a wrong value at run time. A cast with another user is LEFT STANDING and
+  // `lowerOps` lowers it into the `cq_template_*` gate that consumer genuinely
+  // wants — the bank stores the raw handle either way, so the two do not fight.
+  for (Instruction *C : DeadCasts) {
+    if (!C->use_empty())
+      continue;
+    scrubTaint(C, taint);
+    C->eraseFromParent();
+  }
+}
+
+}  // namespace
+
+void rewriteRailBankCellTypes(Module &M, TaintSet &taint) {
+  SmallVector<AllocaInst *, 4> Banks;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (Instruction &I : F.getEntryBlock())
+      if (auto *A = dyn_cast<AllocaInst>(&I))
+        if (isRailBankAlloca(A))
+          Banks.push_back(A);
+  }
+  bool Fail = false;
+  for (AllocaInst *A : Banks) {
+    rewriteOneBank(A, taint, Fail);
+    if (Fail)
+      return;  // `LLVMContext::diagnose` exits on the first DS_Error anyway.
+  }
 }
 
 }  // namespace cq

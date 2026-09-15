@@ -231,7 +231,10 @@
 #define CQ_IRPASS_RAILBANKPROMOTE_H
 
 namespace llvm {
+class AllocaInst;
 class Module;
+class Type;
+class Value;
 }  // namespace llvm
 
 namespace cq {
@@ -261,6 +264,139 @@ struct TaintSet;
 // stage fires on still DECLINES, and a `DS_Error` decline writes 0 bytes to
 // stdout, so the promotion is not observable on the lowered IR at all.
 bool promoteRailBankCells(llvm::Module &M, const TaintSet &taint);
+
+// ── bd `xdu2` / L-1a Increment W1, THE SECOND HALF (session 2026-09-15) ────
+//
+// Three pieces that land TOGETHER or not at all, because any two of them
+// without the third is a SILENT MISCOMPILE with a measured trace:
+//
+//   piece 1  THE TAINT RULE     — a `load` from a `!cq.railbank` alloca is
+//                                 tainted (`TaintPropagation::collectAndSeed`);
+//   piece 2  THE TYPE REWRITE   — `[N x cell]` → `[N x i32]` of handles
+//                                 (`rewriteRailBankCellTypes`, below);
+//   piece 3  THE D5 ALLOW-LIST  — the `Bank` store stops declining and every
+//                                 reader of a bank load that is not on a
+//                                 POSITIVE list is a loud decline
+//                                 (`declineUnallowedRailBankReaders`).
+//
+// ⚠ PIECE 3 WITHOUT PIECE 1 IS THE MISCOMPILE, AND IT WAS REPRODUCED WITH A
+// TRACE BEFORE THE FIX (`trackB/IMPL_B2.md` §1, probe
+// `probes/emulate_piece3.sh b12_bank_bool_measureloop.c`): `opt` exit 0,
+// STRICT stage 2b `0 violation(s), 0 unproven`, a plausible SIX-line trace of
+// three minted and rotated rails — and the program's three `cq_measure(b0[i])`
+// calls emit NOTHING AT ALL, because `MeasureLowering`'s classical split on an
+// UNTAINTED operand emits no gate, no symbol and no trace line, and a golden
+// byte-diff cannot see a measurement that was never emitted. That is why there
+// is no staged landing here: the three pieces are one commit.
+//
+// ⚠ AND THE WHOLE OF IT GATES ON `RailBankCarve::Bank`, NEVER ON "a bank"
+// (`trackA/SIGNATURE.md` §4). `BankRaw` is the PROMOTER'S INPUT and must keep
+// declining forever: its per-trip cell read is still INSIDE the walk loop and
+// PARTIALLY AVAILABLE, so after the `[N x cell]` → `[N x i32]` rewrite it would
+// read the initializer `0` AS A HANDLE — and `h0` is a LIVE RAIL in this
+// runtime (`cqrt_alloc_i1(0) -> h0`).
+
+// THE `!cq.railbank` MEMBERSHIP RECORD, minted by `markRailBankAllocas` and by
+// nothing else. It is the ONE spelling of "this object is a proven rail bank",
+// and every consumer of the second half asks it by CALLING this (Rule 14).
+//
+// ⚠ IT DOES NOT RESURRECT THE RETIRED CLAUSE **B9** (`RailBankPromote.h`'s
+// note above, merge filing F-9). B9 read *"NOT ALREADY PROMOTED
+// (`isRailBankAlloca` — the `!cq.railbank` record this stage MINTS)"* and was
+// retired as false: the promoter mints nothing and **B8** is what terminates
+// its fixpoint. The mint is back; the GUARD is not, and must not come back — a
+// membership guard on the promoter's fixpoint would MASK a B8 regression that
+// otherwise does not terminate. The mint happens AFTER the promoter's fixpoint
+// has already settled, so the promoter never sees it.
+bool isRailBankAlloca(const llvm::AllocaInst *AI);
+
+// The bank's **RAIL** type, read back out of that record — NOT its cell type,
+// and the two differ for exactly the owner's spelling: a `_Bool` cell's C
+// storage type is `i8` while the rail is `i1`.
+//
+// ⚠ IT IS RECORDED RATHER THAN RE-DERIVED BECAUSE IT BECOMES UNRECOVERABLE.
+// After `lowerRotations`' cross-type RAUW the store's storage-extension cast
+// reads `zext i32 %h to i8` and its original source type is gone, so the type
+// rewrite could not compute it even though it needs it.
+//
+// ⚠ AND IT IS LOAD-BEARING AGAINST A MEASURED OVER-ACCEPT, not bookkeeping: a
+// cast to any width OTHER than the rail's is a cast the USER wrote, whose
+// register spelling emits a real `cq_template_{trunc,zext}_*` GATE minting a
+// NEW rail. Without the width conjunct, `int b0[3]` with
+// `cq_measure((short) b0[i])` minted `cqrt_alloc_i32` and measured
+// `cqrt_measure_i16` — the gate DROPPED (`trackB/probes/d5g` vs the
+// array-free scalar twin `d5h`, which emits it on this binary and on the
+// ORACLE). Returns null if the record is absent or malformed, and every caller
+// treats null as a refusal.
+llvm::Type *railBankRailType(const llvm::AllocaInst *AI);
+
+// The proven rail bank `P` points into, or null. `getUnderlyingObject` is
+// LLVM's own machinery (Rule 14, the "ask LLVM" move) and stops at a `phi` /
+// `select` / `inttoptr`, which is the conservative direction. The answer is
+// only ever non-null for an alloca `markRailBankAllocas` proved, and clause C1
+// of the carve is what makes that proof alloca-WIDE: every user of a `Bank`
+// alloca is a canonical cell access, a lifetime marker or the initializer, so
+// "points into the object" and "is a canonical cell address" coincide.
+llvm::AllocaInst *railBankOfPointer(llvm::Value *P);
+
+// Is `H` stored into a cell of a proven rail bank? The D1/D6 FREEZE predicate:
+// a rail whose value is parked in a bank cell is owned by the bank, so the
+// whole-DAG spine must neither adjoint nor free it (Rule 6 — it is left
+// allocated, deliberately).
+//
+// ⚠ DEMAND-DRIVEN AND STRUCTURAL, never a `Value *`-keyed owner set: that
+// spelling is recorded in `TaintPropagation.h` as a shipped silent miscompile
+// (a set keyed on a pre-`lowerOps` SSA value the lowering then erases).
+bool railStoredToRailBank(const llvm::Value *H);
+
+// Mint `!cq.railbank` on every alloca whose store the carve calls `Bank`.
+// Returns true iff anything was newly marked; the caller then re-`propagate`s,
+// which is what makes piece 1 fire and what discharges L1 (the taint-GROWTH
+// species) STRUCTURALLY rather than by a record.
+//
+// ⚠ THE CARVE ITSELF STAYS A PURE PREDICATE (`QramLowering.h`'s SECOND
+// RETIREMENT TRIGGER). This stage is the one that mutates, and all it mutates
+// is metadata on an `AllocaInst`; the verdict is unchanged and is still re-asked
+// at the round-2 fixpoint through `declineTaintEscapes`.
+bool markRailBankAllocas(llvm::Module &M, const TaintSet &taint);
+
+// PIECE 2 — rewrite a proven bank's cells to RUNTIME HANDLES: `[N x cell]` →
+// `[N x i32]` (Rule 15: a handle is ALWAYS `i32`, at every width), every cell
+// address gep retyped, every cell load retyped to `i32`, every storage
+// extension/truncation cast erased.
+//
+// ⚠ THE SLOT IS BETWEEN `lowerRotations` AND `lowerOps`, AND BOTH BOUNDS ARE
+// LOAD-BEARING. Above `lowerRotations` the store's value is still the
+// `@cq_theta` call and there is no handle to store. Below `lowerOps` the
+// storage cast has already become `cq_template_zext_i1_to_i8` — A SECOND,
+// ENTANGLED RAIL per cell, with the original left allocated (measured:
+// `probes/b09_bool_zext_to_int.c` → `cq_template_zext_i1_to_i32(h0) -> h1`).
+//
+// ⚠ AND IT IS INVISIBLE TO THE VERIFIER. After `lowerRotations`,
+// `store i32 %h, ptr %cell` into a `[3 x i8]` alloca is WELL-TYPED — opaque
+// pointers give a `store` no pointee constraint — so a 4-byte write into a
+// 3-byte object is `opt -verify` CLEAN. Retyping the object is semantically
+// load-bearing and the verifier cannot witness it: Rule 2's exact shape.
+void rewriteRailBankCellTypes(llvm::Module &M, TaintSet &taint);
+
+// PIECE 3 — the D5 POSITIVE allow-list. Every reader of a rail-bank cell load
+// that is not one of
+//   (1) a `@cq_measure_<sfx>` call taking the load as its operand,
+//   (2) that load's storage-TRUNCATION cast, single-use, whose one user is (1),
+// is a LOUD decline. (`SCOPE_B.md` §5.1 designed a THIRD entry — a further store
+// into a rail-bank cell — and it was removed after being measured to have no
+// reachable subject at the `-O1` floor; the argument and its retirement trigger
+// are at the definition.) ⚠ It is an allow-list and NEVER a deny-list: the fences
+// that would otherwise adjudicate these consumers are all SSA-shaped and go
+// SILENT on a memory-resident wire (`SCOPE_B.md` §4.4) — `hasTaintedCondBranch`
+// is blind to a memory-resident branch condition, and `railWireClosure` has no
+// memory hop (and must not be taught one: that trips
+// `f2SeedPinnedByLiveRegister`'s retirement trigger and forces a from-scratch
+// re-derivation of the F2 narrowing). The refusal happens HERE instead.
+//
+// ⚠ ENTRY (2) IS LOAD-BEARING AND EASY TO MISS: at D5 time piece 2 has NOT run,
+// so the `trunc i8 → i1` the C storage type forces is still standing.
+void declineUnallowedRailBankReaders(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq
 

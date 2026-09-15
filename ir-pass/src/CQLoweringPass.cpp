@@ -195,6 +195,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // fresh dominance and no cached block identity crosses an erasure (Rule 9).
   while (promoteRailBankCells(M, taint))
     taint = propagate(M, wd);
+
   // Debug lever (bd `xdu2`; env-gated, no behaviour change): dump the module
   // after the promotion fixpoint settles — the CQ_FP80_DBG / CQ_SPEC_DBG
   // precedent. It exists because EVERY module this stage fires on still
@@ -205,6 +206,50 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     llvm::errs()
         << "=== CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===\n";
     M.print(llvm::errs(), nullptr);
+  }
+  // ── bd `xdu2` / L-1a W1 PIECE 1's PRECONDITION — MINT THE `!cq.railbank`
+  //    RECORD, then re-`propagate` so the bank's LOADS become tainted.
+  //
+  // The mint is the ONE proof the whole second half is keyed on (the taint rule,
+  // the type rewrite, the D5 allow-list and the accept at `declineTaintEscapes`
+  // all ask `isRailBankAlloca`), and it is minted for a `RailBankCarve::Bank`
+  // bank and nothing else — `BankRaw` is the promoter's INPUT and must keep
+  // declining forever (`trackA/SIGNATURE.md` §3).
+  //
+  // ⚠ THE SLOT IS THE WHOLE L1 ARGUMENT, exactly as it is for the promoter
+  // immediately above. This stage GROWS THE TAINT SET — it is what makes a
+  // memory-resident rail name quantum — and it is sound only because it runs
+  // ABOVE every stage that adjudicates consumers of tainted values
+  // (`foldIdentityBitcasts`, `flattenPredMuxRegions`, `unrollConstTripLoops`,
+  // `recognizeCtlzIdiomLoops`, `detectSpecializations`, `declineTaintEscapes`,
+  // `declineStaleRecordOps`, `recordStaleQuantumReaders`, the peel and both
+  // detection rounds), and because the growth is published by a FULL
+  // `propagate` rather than by a delta. RETIREMENT TRIGGER: move this call below
+  // any of those — or add a taint-consuming stage above it — and it owes
+  // `adjudicateTaintDelta` exactly as `MergePhiPeel` does, with NO DIAGNOSTIC
+  // ANYWHERE if the obligation is missed.
+  //
+  // ⚠ AND IT IS *AFTER* THE PROMOTER'S FIXPOINT, NOT INSIDE IT. Clause B8 is
+  // what terminates that fixpoint (`applyBank` replaces every in-`L` load, so
+  // the next turn finds none); a membership record consulted by the promoter
+  // would MASK a B8 regression rather than back it up, which is precisely why
+  // the retired clause B9 was retired (merge filing F-9). The mint arrives after
+  // the promoter has already stopped, so the promoter never sees it.
+  //
+  // ⚠ AND IT IS BELOW THE `CQ_RAILBANK_DBG` MODULE DUMP, DELIBERATELY. That
+  // dump is the PROMOTER'S OUTPUT, and seven shipped `railbank_promote_*`
+  // fixtures pin `NOMD-NOT: !cq.railbank` on it — the check that keeps the
+  // RETIRED clause B9 retired (*the promoter mints nothing*, merge filing F-9).
+  // Minting above the dump would make all seven vacuously unable to see a
+  // promoter that started minting again. The mint is a SEPARATE stage and the
+  // dump must keep showing the module without it.
+  //
+  // ⚠ ONE-SHOT BY CONSTRUCTION, NOT BY LUCK: `markRailBankAllocas` skips an
+  // alloca that already carries the record, so a second call returns false. It
+  // is written as an `if` rather than a `while` for that reason — a `while` here
+  // would read as a fixpoint whose termination depends on that skip.
+  if (markRailBankAllocas(M, taint)) {
+    taint = propagate(M, wd);
   }
 
   // bd iw81.1: fold same-width int<->int `bitcast` identity FIRST, right after
@@ -772,6 +817,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
+  // ── bd `xdu2` / L-1a W1 PIECE 2 — the rail-bank cell TYPE REWRITE,
+  //    `[N x cell]` → `[N x i32]` of runtime handles (Rule 15).
+  //
+  // ⚠ BETWEEN `lowerRotations` AND `lowerOps`, AND BOTH BOUNDS ARE THE
+  // CONTRACT. Above `lowerRotations` the stored value is still the `@cq_theta`
+  // call and there is no handle to store. Below `lowerOps` the storage cast has
+  // already become `cq_template_zext_i1_to_i8` — A SECOND, ENTANGLED RAIL PER
+  // CELL, with the original left allocated (measured, `probes/b09`). This is
+  // NOT `SCOPE_L1a.md` §3(a)'s proposed slot ("after `lowerOps`"), and the move
+  // is deliberate and recorded there.
+  //
+  // The L1 answer is unchanged by the move and still sufficient: this slot is
+  // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
+  rewriteRailBankCellTypes(M, taint);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2): the value-arm `break` capture + whole-loop
@@ -943,6 +1002,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     llvm::errs()
         << "=== CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===\n";
     M.print(llvm::errs(), nullptr);
+  }
+  // bd `xdu2` / L-1a W1 — the `!cq.railbank` mint + re-propagate, mirrored in
+  // this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). See
+  // run() for the slot argument, which must not be separated from the call.
+  if (markRailBankAllocas(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
   }
 
   // bd iw81.1: fold same-width int<->int bitcast identity, mirrored in this entry
@@ -1197,6 +1265,20 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   declineDephasingUnmarkedLoopRails(M, taint);
 
   lowerRotations(M, wd, taint, &plan);
+  // ── bd `xdu2` / L-1a W1 PIECE 2 — the rail-bank cell TYPE REWRITE,
+  //    `[N x cell]` → `[N x i32]` of runtime handles (Rule 15).
+  //
+  // ⚠ BETWEEN `lowerRotations` AND `lowerOps`, AND BOTH BOUNDS ARE THE
+  // CONTRACT. Above `lowerRotations` the stored value is still the `@cq_theta`
+  // call and there is no handle to store. Below `lowerOps` the storage cast has
+  // already become `cq_template_zext_i1_to_i8` — A SECOND, ENTANGLED RAIL PER
+  // CELL, with the original left allocated (measured, `probes/b09`). This is
+  // NOT `SCOPE_L1a.md` §3(a)'s proposed slot ("after `lowerOps`"), and the move
+  // is deliberate and recorded there.
+  //
+  // The L1 answer is unchanged by the move and still sufficient: this slot is
+  // strictly after `repropagateControlMerges`, so the taint it reads is FINAL.
+  rewriteRailBankCellTypes(M, taint);
   lowerOps(M, wd, taint);
   lowerMeasures(M, wd, taint);
   // Phase 7.4 Inc 2 (y05j.2) — twin-pipeline parity (WI-1.12): miss this and

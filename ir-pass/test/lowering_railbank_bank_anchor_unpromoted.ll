@@ -40,10 +40,74 @@
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, VERBATIM, of
 ; `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackA/probes/p2_uncond_store_no_read.c`.
 ;
-; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='railbank [BankRaw]' --implicit-check-not='cq rail bank:'
-; CHECK: CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3 at:
-; CHECK: cq taint escape: tainted value stored to memory
+; ⚠⚠ THE L8 RETIREMENT TRIGGER ABOVE HAS FIRED, AND ITS PREDICTION WAS
+; CHARACTER-FOR-CHARACTER RIGHT.  bd `xdu2` W1's SECOND HALF landed 2026-09-15
+; and this file is now an ACCEPT: a per-trip `cqrt_alloc_i1`/`cqrt_ry_i1`
+; cascade, one `cqrt_measure_i1` per cell, and NO PROMOTION ANYWHERE IN THE
+; MODULE.  Re-derived, not deleted, in the same change.
+;
+; ⚠ AND IT IS STILL THE CONTROL IT WAS BUILT TO BE, now from the other side: it
+; is the cheapest end-to-end check that the TYPE REWRITE does not secretly
+; depend on the promoter having run.  `CQ_RAILBANK_DBG` prints NO
+; `promote bank` line for this module (B8: no in-`L` load, nothing to forward)
+; and it compiles anyway.
+;
+; ⚠ IT IS ALSO THE NON-`main` WITNESS FOR THE D1 SPINE DOOR.  `@slice` is not
+; `main`, so `FreePoint`'s `main` short-circuit does NOT apply: without
+; `isTerminalHandle` refusing a rail parked in a bank cell (`railStoredToRailBank`,
+; `ChainWalk.cpp`), the surviving store falls to `FirstUnrecognized` and this
+; module LOUD-DECLINES `cq uncompute: tainted handle reaches an unrecognized
+; user`.  Measured over an 80-slice sample, **76 of 80** `tests/e2e/slice_*.c`
+; carry quantum work outside `main`, so that door is the common case and not an
+; edge.  The negative on `cqrt_free` below is the other half: the rail is LEFT ALLOCATED
+; (Rule 6), never adjointed and never freed.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
+; RUN: %filecheck --check-prefix=IR    --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=CALLOC --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=CMEAS  --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=NOTS  --input-file=%t.ll %s
+; RUN: env CQ_CTRL_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
+; RUN:     > /dev/null 2> %t.dbg
+; RUN: %filecheck --check-prefix=DBG --input-file=%t.dbg %s \
+; RUN:     --implicit-check-not='railbank [BankRaw]' --implicit-check-not='cq rail bank:'
+; RUN: %filecheck --check-prefix=NOPROMO --input-file=%t.dbg %s
+
+; The carve still anchors `Bank` on the store, and the store is now OWNED rather
+; than declined.
+; DBG: CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3 at:
+
+; The promoter never ran on this module — that is the whole point of the file.
+; NOPROMO-NOT: CQ_RAILBANK_DBG: promote bank
+
+; The cells are RUNTIME HANDLES after the type rewrite (Rule 15: always i32),
+; the record is minted on the object, and the storage casts are GONE — the
+; per-cell `zext i1 -> i8` never reaches `lowerOps`, so no second rail is minted.
+; IR: %{{.*}} = alloca [3 x i32], align 4, !cq.railbank
+; IR: call i32 @cqrt_alloc_i1(i1 false)
+; IR: call void @cqrt_ry_i1(i32 %h, double 5.000000e-01)
+; IR: store i32 %h, ptr %{{.*}}, align 4
+; IR: load i32, ptr %{{.*}}, align 4
+; IR: call i1 @cqrt_measure_i1(i32 %{{.*}})
+
+; ⚠ ONE WHOLE-FILE PREFIX PER COUNTED SYMBOL, AND THAT IS TWO RULES AT ONCE.
+; (a) A positive `CHECK-COUNT` inside a NEGATIVE prefix WINDOWS every negative
+; after it (Rule 12 hygiene defect (a)), so the counts are not in `NOTS`.
+; (b) Two `*-COUNT-2` directives in ONE prefix are ORDERED — the second scans
+; only from where the first stopped — and this module interleaves two functions,
+; so `@slice`'s measure sits ABOVE `@main`'s alloc.  MEASURED: sharing a prefix
+; makes the measure count fail `(2 out of 2)` on a correct module.  Two of each
+; because the module defines TWO functions (`@slice` and `@main`), each with one
+; ROLLED per-trip mint site.
+; CALLOC-COUNT-2: call i32 @cqrt_alloc_i1(
+; CMEAS-COUNT-2: call i1 @cqrt_measure_i1(
+
+; PURE NEGATIVES.  No storage cast survived to `lowerOps` (either direction), no
+; cell is still a byte, and the parked rail is left allocated rather than freed.
+; NOTS-NOT: cq_template_zext
+; NOTS-NOT: cq_template_trunc
+; NOTS-NOT: cqrt_free
+; NOTS-NOT: 3 x i8
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

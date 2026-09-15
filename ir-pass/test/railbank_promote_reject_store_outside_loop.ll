@@ -105,4 +105,40 @@ out:
 ; W1 (the taint rule + type rewrite + the D5 allow-list) lands and a `Bank`
 ; verdict stops falling through to a decline, this line changes again — and at
 ; that point re-derive it, do not delete the check.
+;
+; ⚠⚠ MERGE FILING F-3, MEASURED AND RESOLVED IN THE HONEST DIRECTION (Track B,
+; session 2026-09-15).  **THIS FILE NO LONGER ISOLATES ITS CLAUSE, AND THE
+; CLAUSE'S SUBJECT IS STRUCTURALLY UNREACHABLE — NOT MERELY MIS-SPELLED.**
+;
+; The clause it is ABOUT is the promoter's B5 (ONE WRITER).  The negative
+; `promote bank` check below (in the NOTS prefix) is satisfied VACUOUSLY: the
+; promoter never runs, because `planBank`'s B6 calls Track A's carve FIRST and
+; the carve refuses the module before any B-clause is asked.
+;
+; ⚠ WHY A RE-SPELLING WAS ATTEMPTED AND ABANDONED, with the measurement:
+;   A bank with a second store ANYWHERE is `RejectAlias` at the carve's C4
+;   second half (`Stores.size() != 1`, `cq rail bank: array is written from more
+;   than one store site`) — MEASURED on this module — and a bank whose ONLY
+;   store is outside any loop is `NotBank` at the carve's
+;   `LI.getLoopFor(SI->getParent())` entry conjunct.  Every module that could
+;   exercise B5 is refused earlier.  ⚠ Track B's scoping predicted this
+;   structurally before measuring it (`SCOPE_B.md` §8) and it is the same
+;   finding, one clause over, as merge filing F-2's unreachable multi-store
+;   `SSAUpdater` path.
+;
+; ⚠ SO THE FIXTURE WAS NOT PAPERED OVER WITH A HAND-IR MODULE THAT ONLY *LOOKS*
+; LIKE A SUBJECT (`SCOPE_B.md` §8 forbids exactly that), AND THE B CLAUSE WAS NOT
+; DELETED.  What ships is this disclosure: the file keeps pinning that the module
+; is LOUDLY REFUSED and that the promoter does NOT fire on it — both true, both
+; worth keeping — and it states which widening restores isolation.
+;
+; ⚠ L8 RETIREMENT TRIGGER — the day
+;   C4's `Stores.size() != 1` is relaxed to admit a two-writer bank.  ⚠ That is
+;   exactly the widening B9's OWN retirement trigger already governs (the
+;   several-stores `SSAUpdater` merge must come back WITH a red-green pair), so
+;   the two must move together.  B5 then becomes reachable; re-derive this file
+;   THEN.  ⚠ AND DO NOT DELETE B5 IN THE MEANTIME: `MERGE_FILINGS` F-1's lesson
+;   is that the promoter's soundness must not rest on a conjunct that lives in
+;   ANOTHER FILE and was cleared for another purpose.
+;
 ; DECLINE: cq rail bank: array is written from more than one store site
