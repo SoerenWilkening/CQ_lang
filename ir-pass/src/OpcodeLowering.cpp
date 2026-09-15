@@ -39,6 +39,7 @@
 // ask it, never re-spell it.
 #include "LoopPlan.h"
 #include "OpcodeSupport.h"
+#include "RailBankPromote.h"  // railBankParkedRails — the memory hop (review F-1)
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 #include "WireWalk.h"
@@ -54,6 +55,7 @@
 #include "llvm/TargetParser/Triple.h"        // leg 1b's SCEV (bd 3d8q F-D2-2)
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Support/ErrorHandling.h"  // report_fatal_error (bd 3d8q F-D1-2, outcome 3)
+#include "llvm/Support/raw_ostream.h"    // CQ_STALEBANK_DBG (the memory hop)
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Dominators.h"
@@ -403,6 +405,86 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         Value *Rec = staleReaderRecordOperand(I, taint);
         if (!Rec)
           continue;
+        // ── THE MEMORY HOP (bd `xdu2` W1, Rule-13 review F-1, 2026-09-15 —
+        //    a P1 OVER-ACCEPT: THE RAIL BANK LAUNDERED bd `3d8q` THROUGH MEMORY).
+        //
+        // Everything below this line walks an SSA WIRE. A rail bank parks a
+        // rail's NAME IN A MEMORY CELL, so when `Rec` is a cell `load` the
+        // walker is handed a value with no wire: it finds no gate, the reader is
+        // never adjudicated, and a `cq_measure` of a name a later non-diagonal
+        // gate has relabelled COMPILES SILENTLY. MEASURED on the reviewed binary
+        // `784c14fa` (`bfix/probes/f01`): exit 0, stderr EMPTY, STRICT 2b
+        // `0 violation(s)`, a plausible 7-line trace — emitting
+        // `ry(.5); ry(.7); measure x4`, so three bank measures observe the
+        // register AFTER a rotation the source places AFTER them. The REGISTER
+        // SPELLING of the same program (`f02`) declines on the ORACLE, on the
+        // base and on that same binary, with this fence's own string.
+        //
+        // THE FIX IS A SEED, NOT A POLICY. `railBankParkedRails` answers "which
+        // rail NAME does this cell read denote", and the walk that follows is
+        // the SAME walk with the SAME `EmitPoint` and the SAME policy bit. So a
+        // bank cell read is adjudicated EXACTLY AS IF THE SOURCE HAD NAMED THE
+        // PARKED RAIL DIRECTLY — which is precisely what the source says it is —
+        // and that is why the fix separates ORDERING rather than banning the
+        // shape:
+        //   * a gate between the STORE and the READ is not provably after the
+        //     read ⇒ returned ⇒ DECLINE (`f01`, `p01`/`p05`/`p08`);
+        //   * a gate AFTER the read is harmless by leg 1 ⇒ ACCEPT, and the
+        //     emitted stream is byte-identical to the register twin's (`f06`
+        //     vs `f07`, measured equal; pair `p02`);
+        //   * the CAPABILITY — a DISTINCT theta per cell, minted INSIDE the walk
+        //     loop — seeds at a SOURCE theta (after `applyBank` PASS A the
+        //     in-loop cell read IS `Constant::getNullValue`, so the theta's
+        //     arg-0 is a classical constant), whose backward closure therefore
+        //     stops at that init and whose forward users are the storage cast
+        //     and the store — NEITHER of them a gate. So no gate is found and
+        //     NOTHING changes (pairs `p03`/`p04`/`p07`; MEASURED with
+        //     `CQ_STALEBANK_DBG=1`, which prints the seed: `o01` gives
+        //     `cq_theta_si32(i32 noundef 0, …)` and `o02` gives
+        //     `cq_theta_i1(i1 noundef zeroext false, …)`).
+        //
+        // ⚠ WHY HERE AND NOT AT D5. `isAdmittedRailBankReader` adjudicates WHICH
+        // consumer may read a parked rail and asks nothing POSITIONAL; this is a
+        // WHEN question and it belongs to the fence that owns it. Putting the
+        // refusal on ALIASING grounds instead (N cells holding one rail) would
+        // also decline `f06`/`d03`, which are byte-identical to register twins
+        // the ORACLE accepts — an over-decline of a valid circuit (owner ruling
+        // 2026-09-11), and a fence in the wrong file.
+        //
+        // ⚠ THE OTHER TWO FENCES THAT GO SILENT ON A MEMORY-RESIDENT WIRE ARE
+        // NOT TAUGHT THIS HOP, DELIBERATELY. `railWireClosure` MUST NOT LEARN
+        // ONE — `RailBankPromote.h` says so and it would trip
+        // `f2SeedPinnedByLiveRegister`'s retirement trigger — and
+        // `LoopLowering::staleRailRecordRead` groups per ROOT MINT, which a bank
+        // load has none of. Their subjects are refused UPSTREAM by D5's POSITIVE
+        // allow-list (a bank load may reach a `@cq_measure_<sfx>` and its
+        // storage `trunc`, and nothing else). RETIREMENT TRIGGER: the day D5
+        // admits a consumer that is not a measurement — a branch condition, an
+        // arithmetic reader, a `cq_theta` arg-0 — re-derive which of those
+        // fences now has a memory-resident subject, and give
+        // `declineStaleRecordOps` the same hop in the same change.
+        SmallVector<Value *, 4> Seeds;
+        const bool Hopped = railBankParkedRails(Rec, Seeds);
+        if (Seeds.empty()) {
+          // Not a bank read at all — or a bank every store into which parks a
+          // CONSTANT, i.e. a cell holding no rail name. Seeding `Rec` is then
+          // byte-for-byte the pre-fix behaviour, so this fallback can never
+          // create an accept; it can only fail to add a decline. It has no
+          // subject today because the carve refuses a bank whose store value is
+          // untainted (`QramLowering.cpp`: *"a classical store is never a rail
+          // bank"*) and a `Constant` is never tainted — but the conjunct is
+          // justified by DIRECTION, not by that unreachability (the Rule-13
+          // review's item I-6 is exactly the objection to resting on a stage
+          // enumeration), and the alternative failure would be silent.
+          Seeds.push_back(Rec);
+        }
+        if (::getenv("CQ_STALEBANK_DBG") && Hopped) {
+          errs() << "CQ_STALEBANK_DBG: reader in @" << F.getName()
+                 << " reads a rail bank; seeds=" << Seeds.size();
+          for (Value *S : Seeds)
+            errs() << " [" << *S << " ]";
+          errs() << "\n";
+        }
         // ── THE ROUND-2 HALF, and it is the L1 obligation paid in the ONE way
         //    that does not reopen the over-decline (bd 3d8q).
         //
@@ -430,8 +512,25 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // `declineClassicalMuxes` refusing a live heterogeneous tainted mux and
         // by the one-register lift claiming the homogeneous one; if either
         // moves, this scope must be re-derived.
-        if (Delta && !Delta->count(Rec))
-          continue;
+        //
+        // ⚠ THE DELTA IS TESTED AGAINST THE **SEEDS**, NOT ONLY AGAINST `Rec`
+        // (the memory hop, 2026-09-15). A bank cell load is tainted from round 1
+        // by piece 1, so keying the re-ask on `Rec` alone would skip a bank
+        // whose PARKED RAIL is the value that just became tainted — the very
+        // L1 PREDICATE species this comment is about, one indirection out. The
+        // conjunct is a DECLINE-direction widening of a re-ask (it can only add
+        // work and add declines, never grant one), and it has no constructible
+        // subject today because a `%out` rail reaches a bank store only through
+        // in-loop tainted control flow, which declines earlier. It is here on
+        // I-6's ground — *the alternative failure is silent and the direction is
+        // narrowing* — and NOT on a claim of unreachability.
+        if (Delta) {
+          bool InDelta = Delta->count(Rec) != 0;
+          for (Value *S : Seeds)
+            InDelta = InDelta || Delta->count(S) != 0;
+          if (!InDelta)
+            continue;
+        }
         if (!DT) {
           DT.emplace(F);
           LI.emplace(*DT);
@@ -496,12 +595,30 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // With the reader absent from `Self`, the walk reaches it as an ordinary
         // candidate, asks this same predicate again, and RETURNS it as the
         // staler. That is why no new relation, and no new diagnostic, is needed.
+        //
+        // ⚠ AND IT IS WITHHELD OUTRIGHT WHEN THE MEMORY HOP FIRED. The
+        // exemption's contract is "the reader IS its own gate on the record it
+        // reads", and `readerStalesItself` is asked about `Rec`. After the hop
+        // the record is the PARKED RAIL and `Rec` is only the cell that holds
+        // its name, so asking the predicate about `Rec` would be asking about
+        // the wrong object — the L3-MIRROR failure exactly (a third caller
+        // arriving at a shared predicate without reading which direction it
+        // grants in). Withholding is the DECLINE direction and needs no new
+        // reasoning. It has no subject today: the only reader that can hop is a
+        // `@cq_measure_*`, which is never a `cq_theta_` call, because D5's
+        // positive allow-list refuses a bank load at `cq_theta` arg-0
+        // (`bfix/probes/e03_load_theta_arg0.c`, measured DECLINE). RETIREMENT
+        // TRIGGER: the day D5 admits a rotation reader, this must become
+        // `readerStalesItself(CI, Seeds.front(), …)` over each seed, not a
+        // blanket withholding — and the seed set must be a singleton for that
+        // question to be well posed.
         SmallPtrSet<const CallInst *, 1> Self;
-        if (auto *CI = dyn_cast<CallInst>(&I))
-          if (CI->getCalledFunction() &&
-              CI->getCalledFunction()->getName().starts_with("cq_theta_") &&
-              !readerStalesItself(CI, Rec, *DT, &*LI, &*SE, &taint))
-            Self.insert(CI);
+        if (!Hopped)
+          if (auto *CI = dyn_cast<CallInst>(&I))
+            if (CI->getCalledFunction() &&
+                CI->getCalledFunction()->getName().starts_with("cq_theta_") &&
+                !readerStalesItself(CI, Rec, *DT, &*LI, &*SE, &taint))
+              Self.insert(CI);
         // (ii) `RequireEmitDominance=false` — THE POLICY BIT (see `WireWalk.h`).
         // The pure-op policy keeps the conservative dominance PRECONDITION; this
         // policy asks the harmlessness proof itself, because the reader family
@@ -515,7 +632,32 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         //     merge φ re-establishes the record every trip, so the exit read is
         //     fresh, but the exit block dominates nothing in the body (leg 2's
         //     record-barrier walk; `control_inplace_ry_inloop_*`, 12 measured).
-        if (findNonDiagonalWireGate(Rec, /*CrossValueRouting=*/true, &I, &*DT,
+        //
+        // ⚠ THE POLICY BIT IS UNCHANGED BY THE MEMORY HOP, AND THAT IS THE
+        // POINT. `Seeds` is `{Rec}` for every reader that is not a bank read —
+        // byte-for-byte the shipped call — and the parked rail for one that is.
+        // One relation, one implementation, one policy bit (Rule 14): the hop
+        // moves the SEED and nothing else, so a bank cell read gets exactly the
+        // verdict its register spelling gets.
+        //
+        // ⚠ LEG 2'S BARRIER IS THE SEED'S **DEFINITION**, NOT THE **STORE**, and
+        // for a bank those are two different instructions. `recordBarrierCutsPath`
+        // grants when every path from the staling gate back to the read
+        // re-executes the seed's def; what re-establishes a CELL's contents is
+        // the store. They coincide today, and only because of clauses proven
+        // elsewhere: the carve's C4 gives ONE store site, `applyBank` puts it at
+        // the single LATCH of `L`, and a seed defined inside `L` is that store's
+        // own operand — so re-executing the def re-executes the store in the
+        // same activation. A seed defined OUTSIDE `L` cannot be granted at all
+        // (its def never re-executes between the two loops), which is `f01`.
+        // RETIREMENT TRIGGER — THE SAME GATE AS THE REVIEW'S I-2/I-3: the day a
+        // CONDITIONAL bank store accepts, the store's value is a `phi` (PASS G),
+        // a seed def inside `L` no longer implies the store ran, and this
+        // coincidence must be re-derived against the STORE rather than assumed.
+        // The same landing also owes this hop a backward closure through that
+        // `phi`'s incomings — today the seed IS the `phi` and only its forward
+        // users are walked.
+        if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, &I, &*DT,
                                     &taint, Self.empty() ? nullptr : &Self,
                                     /*RequireEmitDominance=*/false))
           taint.StaleQuantumReaders.emplace_back(&I);

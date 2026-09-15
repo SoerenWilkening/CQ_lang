@@ -230,9 +230,12 @@
 #ifndef CQ_IRPASS_RAILBANKPROMOTE_H
 #define CQ_IRPASS_RAILBANKPROMOTE_H
 
+#include "llvm/ADT/SmallVector.h"  // railBankParkedRails' out-parameter
+
 namespace llvm {
 class AllocaInst;
 class Module;
+class StoreInst;
 class Type;
 class Value;
 }  // namespace llvm
@@ -348,6 +351,62 @@ llvm::AllocaInst *railBankOfPointer(llvm::Value *P);
 // spelling is recorded in `TaintPropagation.h` as a shipped silent miscompile
 // (a set keyed on a pre-`lowerOps` SSA value the lowering then erases).
 bool railStoredToRailBank(const llvm::Value *H);
+
+// The RAIL NAME a bank store parks: the store's value operand with the STORAGE
+// cast stripped — `store i8 (zext i1 %h to i8)` parks `%h`, not the `zext`.
+// `CellT` is the bank's cell type, and the cast is recognised by
+// `DestTy == CellT && SrcTy->isIntegerTy()`, the two conjuncts the
+// `!cq.railbank` width capture has always used.
+//
+// ⚠ ONE SPELLING, TWO CALLERS, AND THE SECOND IS WHY THIS IS A FUNCTION AT ALL
+// (Rule 14). `markRailBankAllocas` needs the WIDTH this value carries — the
+// record's payload — and `railBankParkedRails` needs the VALUE ITSELF, as the
+// seed the stale-reader fence walks. The Rule-13 review's item I-4 found a
+// second spelling of a different bank question three screens from here
+// (`isWholeObjectZeroStore` vs `wholeArrayConstantZero`), and the drbq Inc-3
+// (b′) defect is that shape as a shipped miscompile: two spellings of one
+// question eventually disagree.
+llvm::Value *bankStoreRailValue(llvm::StoreInst *SI, llvm::Type *CellT);
+
+// ── THE MEMORY HOP (Rule-13 review F-1, 2026-09-15 — a P1 OVER-ACCEPT) ──────
+//
+// "Which rail NAME(s) does this value denote, if it is a rail-bank cell read?"
+// `V` is a cell `load`, or the storage TRUNCATION standing in front of one (D5
+// entry (2)). `Out` is APPENDED with the cast-stripped value operand of every
+// store into that bank; the return value says whether `V` was a bank cell read
+// at all, so a caller can tell "not a bank" from "a bank that parks no rail".
+//
+// WHY IT EXISTS. Taint is otherwise SSA-only and so is every wire walk in the
+// tree: `WireWalk`'s forward/backward walks, `LoopLowering::staleRailRecordRead`
+// (which groups records per ROOT MINT — a bank load belongs to no group) and
+// `railWireClosure` all take a `Value *` and follow def/use edges. A rail bank
+// parks a rail's NAME IN MEMORY, so a `cq_measure` whose operand is a cell load
+// is handed a value with NO WIRE and every freshness fence goes SILENT on it.
+// MEASURED: the bd `3d8q` stale-reader program — the project's one KNOWN
+// verify-clean silent miscompile, closed 2026-09-14 — compiled SILENTLY through
+// the bank (exit 0, empty stderr, STRICT 2b `0 violation(s)`, a plausible
+// seven-line trace) while its REGISTER SPELLING declined on the same binary
+// (`bfix/probes/f01` vs `f02`; and `tools/railbank_twin_pairs/p01`, `p05`, `p08`).
+//
+// ⚠ THIS IS NOT "TEACHING `railWireClosure` A MEMORY HOP", WHICH THIS HEADER
+// FORBIDS BELOW AND WHICH WOULD TRIP `f2SeedPinnedByLiveRegister`'s RETIREMENT
+// TRIGGER. Nothing in `WireWalk` changes, and no shared predicate gains a
+// caller: this computes a SEED SET, and its one caller hands that set to the
+// same walker the stale-reader fence already called with a single seed.
+//
+// ⚠ EVERY STORE, NOT "the one the carve proved". C4 proves ONE store SITE and
+// `markRailBankAllocas` re-proves it on `applyBank`'s output — but that is a
+// fact about the module AT THE MINT, and stages run between the mint and the
+// fence (`unrollConstTripLoops` among them) that could in principle duplicate
+// it. Enumerating is L4's discipline ("a wire question must be a gate SET, not
+// a BOOLEAN over a return-first walker") and is the safe direction: more seeds
+// can only find more staling gates.
+//
+// ⚠ A CONSTANT IS NEVER A SEED, and the reason is LLVM's rather than ours —
+// see the definition. Constants are uniqued module-wide, so seeding one walks
+// every unrelated use of that literal.
+bool railBankParkedRails(llvm::Value *V,
+                         llvm::SmallVectorImpl<llvm::Value *> &Out);
 
 // Mint `!cq.railbank` on every alloca whose store the carve calls `Bank`.
 // Returns true iff anything was newly marked; the caller then re-`propagate`s,

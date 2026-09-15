@@ -6046,6 +6046,44 @@ add_test(NAME e2e-railbank-flat-twin-identical
 # trigger.  The decline is pinned in the lit layer.  bd `zwtm` closes when
 # (c3) + W3 land and this file is registered — NOT when it is committed.
 
+# ── bd `xdu2` / L-1a W1, Rule-13 review F-1 — THE REGISTER-TWIN DECLINE GATE ──
+#
+# The instrument that sees the class the corpus sweep structurally cannot. That
+# sweep's headline safety property is `0 A->D` over a corpus written BEFORE the
+# rail-bank capability existed, and F-1 was a `D->A`: a program the REGISTER
+# spelling loudly refuses compiled silently through a memory cell, with `opt`
+# exit 0, empty stderr, STRICT stage 2b `0 violation(s)` and a plausible
+# seven-line trace. `ir-pass-lit`, the 8 e2e railbank entries and every
+# twin-IDENTITY gate here were green on it, because none of them contained a
+# program of that shape.
+#
+# This extends the shipped twin discipline (`e2e-railbank-flat-twin-identical`:
+# *does the bank MATCH the register spelling when both accept?*) in the
+# direction that catches an over-accept:
+#   P1  the bank DECLINES whenever the register spelling DECLINES   (a VIOLATION fails)
+#   P2  when BOTH accept, the emitted traces are BYTE-IDENTICAL     (a MISMATCH fails)
+# The converse — the bank declining where the register spelling accepts — is an
+# OVER-DECLINE: counted and printed, never failed on (owner ruling 2026-09-11).
+#
+# It compiles and runs its own pairs, so it needs the build tree; what it does
+# NOT witness is in `tools/railbank_twin_pairs/PAIRS.md`, stated so absence is
+# not read as clearance.
+add_test(NAME e2e-railbank-register-twin-decline
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/railbank_register_twin_gate.py"
+    --build "${CMAKE_BINARY_DIR}"
+    --pairs "${CMAKE_SOURCE_DIR}/tools/railbank_twin_pairs"
+    --include "${CMAKE_SOURCE_DIR}/include")
+
+# Its MUTANT VALIDATION (CLAUDE.md L10 — "an instrument's failure mode is to
+# REPORT A PASS, so the only instrument worth citing is one that has been made
+# to FAIL ON PURPOSE"; nine instrument self-failures were measured in the
+# 2026-09-14/-15 sessions alone). 20 mutants across two layers: the pure verdict
+# table, and the whole driver's EXIT CODE on deliberately broken corpora (empty,
+# fabricated violation, fabricated trace mismatch, vacuous half, missing twin).
+add_test(NAME e2e-railbank-register-twin-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/railbank_register_twin_gate_test.py"
+    --build "${CMAKE_BINARY_DIR}")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

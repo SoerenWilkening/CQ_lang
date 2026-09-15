@@ -681,6 +681,36 @@ void applyBank(BankPlan &Plan) {
   // byte-unchanged. That is why this rewrite cannot move any accept: it can
   // only move a decline STRING (wall 2 → wall 3).
   //
+  // ⚠ CORRECTION (Rule-13 review item I-2, 2026-09-15): THE `phi` TEST IS NOT
+  // WHAT CARRIES "cannot move an accept". The load-bearing premise is that
+  // BOTH condition classes for a conditional bank store decline today, and
+  // both were measured separately: a CLASSICAL condition dies at
+  // `cq taint escape: tainted value muxed by a classical-condition phi`
+  // (probes `b01`/`b02`), a TAINTED one at `cq controlled lowering: condition
+  // predates a non-diagonal gate` (probes `c01`/`c02`). Neither is a property
+  // of this sink, and either could move — bd `wx8g` already landed the in-loop
+  // rolled bool-controlled prep, and the 2c fence is on CLAUDE.md §5's
+  // over-decline list. RETIREMENT TRIGGER: **the day a conditional bank store
+  // accepts, re-derive this claim from scratch; the `phi` test alone does not
+  // carry it.** That landing also owes the two obligations below.
+  //
+  // ⚠ AND IT MANUFACTURES THE VALUE PASS 3 REFUSES TO WRITE — a LATENT P1,
+  // gated by exactly that trigger (review item I-3). The `addIncoming` below
+  // builds `Constant::getNullValue(RailTy)` for every non-`zext` incoming, so
+  // after the type rewrite the ¬arm parks HANDLE `0` IN A CELL. PASS 3 of the
+  // rewrite deletes the zero initializer rather than rescaling it for precisely
+  // this reason, in its own words: *"a RESCALED memset would write handle `0`
+  // into every cell, and handle `0` IS A LIVE RAIL in this runtime
+  // (`cqrt_alloc_i1(0) -> h0`)"*. The same live rail, arriving by a different
+  // door, protected by nothing that knows about it. When a conditional bank
+  // store accepts, the ¬arm owes a REAL `|0>` rail (a fresh `cqrt_alloc`), not
+  // the literal 0 — and PASS 3's comment and this one must be read together.
+  //
+  // ⚠ THIRD OBLIGATION OF THE SAME LANDING (review F-1's fix): with a `phi`
+  // store value, `railBankParkedRails` seeds the stale fence AT THE `phi` and
+  // walks only its forward users, and `recordBarrierCutsPath`'s barrier stops
+  // being the store. Both are stated at the call site in `OpcodeLowering.cpp`.
+  //
   // ⚠ THE EQUIVALENCE IS `trunc(zext(x)) == x` AND `trunc(0) == 0`, and it is
   // exact only because every incoming is a ZERO-extension from ONE common rail
   // type or the zero constant, and every other user is the matching truncation.
@@ -889,6 +919,68 @@ AllocaInst *railBankOfPointer(Value *P) {
   return isRailBankAlloca(AI) ? AI : nullptr;
 }
 
+Value *bankStoreRailValue(StoreInst *SI, Type *CellT) {
+  Value *SV = SI->getValueOperand();
+  if (auto *C = dyn_cast<CastInst>(SV))
+    if (CellT && C->getDestTy() == CellT && C->getSrcTy()->isIntegerTy())
+      return C->getOperand(0);
+  return SV;
+}
+
+bool railBankParkedRails(Value *V, SmallVectorImpl<Value *> &Out) {
+  auto *LD = dyn_cast<LoadInst>(V);
+  if (!LD)
+    // D5 entry (2): on a `_Bool` bank the C storage type is `i8` and the rail
+    // `i1`, so the value the reader actually names is the storage TRUNCATION,
+    // not the load. Recognised by the SAME shape entry (2) admits, and nothing
+    // wider: a `zext`/`sext`/`bitcast` reader is not on the allow-list and the
+    // module declines before this question is ever asked.
+    if (auto *TR = dyn_cast<TruncInst>(V))
+      LD = dyn_cast<LoadInst>(TR->getOperand(0));
+  if (!LD)
+    return false;
+  AllocaInst *Bank = railBankOfPointer(LD->getPointerOperand());
+  if (!Bank)
+    return false;
+  Type *CellT = nullptr;
+  if (auto *AT = dyn_cast<ArrayType>(Bank->getAllocatedType()))
+    CellT = AT->getElementType();
+  // The OBJECT'S ADDRESS TREE, not a scan of the function. A `Bank` alloca's
+  // every user is a canonical cell access, a lifetime marker or the initializer
+  // (carve clause C1), so the stores are reachable from the alloca through gep
+  // and cast hops alone — and C1 is what makes that enumeration complete rather
+  // than merely plausible.
+  SmallVector<Value *, 8> WL{Bank};
+  SmallPtrSet<Value *, 8> Seen;
+  while (!WL.empty()) {
+    Value *P = WL.pop_back_val();
+    if (!Seen.insert(P).second)
+      continue;
+    for (User *U : P->users()) {
+      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||
+          isa<AddrSpaceCastInst>(U)) {
+        WL.push_back(cast<Value>(U));
+        continue;
+      }
+      auto *SI = dyn_cast<StoreInst>(U);
+      if (!SI || SI->getPointerOperand() != P)
+        continue;
+      Value *R = bankStoreRailValue(SI, CellT);
+      // ⚠ A CONSTANT IS NEVER A SEED, AND THE REASON IS LLVM'S, NOT OURS.
+      // Constants are UNIQUED MODULE-WIDE, so handing `i8 0` — the whole-object
+      // zero initializer C1 admits, or a `false` arm incoming PASS G builds —
+      // to a walker that follows USER edges enumerates every unrelated use of
+      // that literal in the module and can return a `cq_theta` on a wire this
+      // bank never touched. That would be an OVER-DECLINE MANUFACTURED BY THE
+      // SEED rather than found in the program. A constant also parks no rail:
+      // it has no wire, so there is nothing for a later gate to stale.
+      if (!isa<Constant>(R))
+        Out.push_back(R);
+    }
+  }
+  return true;
+}
+
 bool railStoredToRailBank(const Value *H) {
   if (!H)
     return false;
@@ -938,6 +1030,37 @@ bool markRailBankAllocas(Module &M, const TaintSet &taint) {
         // site that diagnoses — this stage NEVER diagnoses, so a bank it cannot
         // claim is left byte-untouched for its existing loud owner (the
         // accept-only normaliser discipline).
+        // ── THE A×B COMPOSITION, ANSWERED HERE (2026-09-14c `MERGE_FILINGS.md`
+        //    F-1, re-derived by the Rule-13 review of 2026-09-15).
+        //
+        // F-1 asked that C2′, C4 and C6 be re-derived as PRECONDITIONS OF
+        // `applyBank` rather than inherited as clauses of a classifier. The
+        // structural answer is stronger than F-1 feared and it is THIS LOOP:
+        // the full carve runs AGAIN, on the module AFTER the promoter's fixpoint
+        // has settled, and mints only on `RailBankCarve::Bank`. So every
+        // precondition the type rewrite and the D5 allow-list rest on is
+        // RE-PROVEN ON `applyBank`'s OUTPUT — Rule 11 applied to a sibling stage
+        // instead of trust.
+        //   * C2′ (non-self-wrapping affine `{0,+,1}`, constant trips ≤ N) —
+        //     re-proven here, on the promoter's own cloned latch gep. It is what
+        //     makes "each cell written once" true for PASS 2's index-preserving
+        //     retype.
+        //   * C4 (exactly one store site) — re-proven here. ⚠ `applyBank` ADDS a
+        //     store, so the input's C4 and the output's C4 are different facts
+        //     about different modules; both are checked, in that order.
+        // ⚠ C6 IS THE SEAM AND IT IS NOT FULLY RE-PROVEN. Its COUNTING half
+        // (`Trips == N`) does re-prove here, and that is the half PASS 3 leans
+        // on when it DELETES the initializer. Its IN-LOOP-READ half is VACUOUS
+        // on this module, because `applyBank` PASS B has already erased every
+        // in-`L` load: the forwarding PASS B performed is licensed by the INPUT
+        // carve alone, and this mint cannot re-check it — THE EVIDENCE WAS
+        // CONSUMED. That is not a defect (B6's `BankRaw` requirement is exactly
+        // that proof, taken while the loads still existed), but it is the one
+        // precondition established ONCE and thereafter UNFALSIFIABLE, and it is
+        // where T1/T3's "widen the promoter and C7 in the same change"
+        // obligation actually bites. RETIREMENT TRIGGER: any widening of the
+        // promoter's read handling must re-establish the in-loop-read half at
+        // its own site, because nothing downstream of `applyBank` can.
         if (railBankCarveVerdict(SI, taint, DT, LI, SE, Msg, &Shape) !=
             RailBankCarve::Bank)
           continue;
@@ -963,11 +1086,14 @@ bool markRailBankAllocas(Module &M, const TaintSet &taint) {
         // emits `cq_template_trunc_i32_to_i16(h0) -> h1` and measures the NEW
         // rail, on this binary AND on the ORACLE. A bank must not lose a gate
         // the register spelling emits.
+        // ⚠ ASKED BY CALLING `bankStoreRailValue`, WHICH IS ALSO WHAT THE STALE
+        // FENCE'S MEMORY HOP SEEDS FROM (Rule 14, and the Rule-13 review's I-4
+        // is this file's own cautionary instance of the alternative). The record
+        // carries that value's WIDTH; `railBankParkedRails` carries the VALUE.
+        // One relation, one implementation — a width that disagreed with the
+        // seed would let the fence walk a wire the record does not describe.
         Type *CellT = Shape.CellTy;
-        Type *RailT = CellT;
-        if (auto *C = dyn_cast<CastInst>(SI->getValueOperand()))
-          if (C->getDestTy() == CellT && C->getSrcTy()->isIntegerTy())
-            RailT = C->getSrcTy();
+        Type *RailT = bankStoreRailValue(SI, CellT)->getType();
         Shape.Alloca->setMetadata(
             kRailBankMD,
             MDNode::get(F.getContext(),
@@ -1178,15 +1304,32 @@ void rewriteOneBank(AllocaInst *AI, TaintSet &taint, bool &Fail) {
       // `store i64 0, ptr %b` — C1 admits it, and it is DELETED rather than
       // rescaled (see PASS 3).
       //
-      // ⚠ ASKED BY CALLING `isWholeObjectZeroStore`, THE SAME PREDICATE THE
-      // CARVE'S C1 USER SCAN ASKS (Rule 14), and the first spelling here was a
-      // type INEQUALITY (`value type != cell type`) which DIVERGES from it on a
-      // one-cell bank: for `[1 x i8]` the whole-object zero IS a `store i8 0`,
-      // so the carve files it as an Init while the inequality filed it as a
-      // CELL STORE — and PASS 4 then hit its loud `kMsgBankRewrite` on a shape
-      // the carve had proven. A divergence between a rewrite and the carve that
-      // licensed it is the drbq Inc-3 (b') defect in miniature: two spellings of
-      // one question.
+      // ⚠ ASKED BY CALLING `isWholeObjectZeroStore`, and the first spelling
+      // here was a type INEQUALITY (`value type != cell type`) which DIVERGES
+      // from the carve on a one-cell bank: for `[1 x i8]` the whole-object zero
+      // IS a `store i8 0`, so the carve files it as an Init while the
+      // inequality filed it as a CELL STORE — and PASS 4 then hit its loud
+      // `kMsgBankRewrite` on a shape the carve had proven. A divergence between
+      // a rewrite and the carve that licensed it is the drbq Inc-3 (b') defect
+      // in miniature: two spellings of one question.
+      //
+      // ⚠ CORRECTION (Rule-13 review item I-4, 2026-09-15): THIS IS NOT "THE
+      // SAME PREDICATE C1 ASKS", AND THE EARLIER WORDING SAID IT WAS — a
+      // Rule-14 property asserted in a Rule-13 core stage four lines above a
+      // warning about exactly that. It IS two spellings. C1
+      // (`QramLowering.cpp`) asks `wholeArrayConstantZero(DL, value, AT)`:
+      // `getTypeStoreSize(valueTy) == getTypeStoreSize(ArrTy)`. This asks
+      // `isWholeObjectZeroStore(ST, AI)`: pointer identity AND `isSimple()` AND
+      // `getTypeStoreSize(valueTy) == getTypeAllocSize(allocatedTy)`. They agree
+      // on every reachable module (for an integer-element array `StoreSize ==
+      // AllocSize`), so this is a DOCUMENTATION defect and not a correctness
+      // one — but the honest statement is "a STRICTLY STRONGER predicate that
+      // agrees with C1 on the reachable population", never "the same predicate".
+      // L7-with-a-twist: the correction is landed in the SOURCE, because a
+      // correction that lives only in a record gets re-derived next round.
+      // RETIREMENT TRIGGER: the day a bank's cells are not an integer type — a
+      // pointer, a struct, an `i1` array with a non-byte store size — the two
+      // size questions can part company; consolidate them then, in one place.
       if (isWholeObjectZeroStore(ST, AI)) {
         Inits.push_back(ST);
         continue;
@@ -1249,6 +1392,19 @@ void rewriteOneBank(AllocaInst *AI, TaintSet &taint, bool &Fail) {
 
   // PASS 3b — the lifetime markers. The object's size changed; a stale constant
   // size would describe a shorter object than the one being written.
+  //
+  // ⚠ THE `isa<ConstantInt>` TEST HAS NO `else`, WHICH READS LIKE THE SILENT
+  // `continue` THIS STAGE'S HEADER FORBIDS. It is not one, and the reason is
+  // LLVM'S RATHER THAN THIS STAGE'S (Rule-13 review item I-5, 2026-09-15):
+  // `llvm.lifetime.{start,end}.p0`'s size operand is `immarg`, so a
+  // non-constant size fails `opt -passes=verify` with *"immarg operand has
+  // non-immediate parameter"* and cannot occur in a well-formed module. The
+  // VERIFIER OWNS THIS CASE; the test is a `cast`-safety guard, not a policy
+  // choice, and the header's "NEVER a silent `continue`" contract is about
+  // shapes this stage could meet and chose not to handle. C1 admits these
+  // markers unconditionally with no size check, so the two enumerations agree
+  // on every module LLVM will build. Saying so at the site is cheaper than a
+  // `Fail` arm with no reachable subject (Rule 12 hygiene defect (c)).
   const uint64_t NewSize = DL.getTypeAllocSize(NewArr).getFixedValue();
   for (Instruction *LM : Lifetimes) {
     auto *CI = cast<CallInst>(LM);

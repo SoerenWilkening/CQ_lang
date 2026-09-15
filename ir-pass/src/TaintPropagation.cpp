@@ -1127,6 +1127,26 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             // the generic `kMsgStore` fires (over-decline, safe); a NEW bank
             // manufactured after the mint ⇒ `Bank` with no record ⇒ the `break`
             // below (over-decline, safe).
+            //
+            // ⚠ AND THAT DIRECTION ARGUMENT IS THE WHOLE JUSTIFICATION — the
+            // injection matrix's mutant M2 (drop this conjunct) is reported
+            // MISSED, and it must NOT additionally be justified by claiming no
+            // stage between the mint and here can manufacture a bank shape
+            // (Rule-13 review item I-6, 2026-09-15). That claim was an
+            // ENUMERATION OF STAGES, which is L5's losing move — a syntactic
+            // answer to a semantic question — and the window contains
+            // `foldIdentityBitcasts`, `promoteFp80Union`, the
+            // `flattenPredMuxRegions` fixpoint, `unrollConstTripLoops`,
+            // `recognizeCtlzIdiomLoops` and `detectSpecializations`, at least
+            // one of which (PredMux) exists to turn conditional control flow
+            // into straight-line code — the very transformation that would turn
+            // a `BankRaw`/`Reject*` shape into a `Bank` one. NOBODY HAS
+            // CONSTRUCTED SUCH A MODULE and this comment does not claim one
+            // exists. What it claims is enough and is checkable: dropping the
+            // conjunct fails SILENTLY (a `Bank` with no record accepts a store
+            // whose loads were never tainted), and keeping it fails LOUDLY in
+            // the over-decline direction. That asymmetry, not unreachability,
+            // is why the conjunct stays and why M2 is a deliberate MISSED.
             if (isRailBankAlloca(BShape.Alloca))
               continue;
             break;  // `Bank` but UNMARKED — keep the generic kMsgStore.

@@ -964,6 +964,43 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         // erase a value that owner still names. The SAME explicit-image
         // discipline the uncompute driver applies at terminal selection — and
         // for the same reason (do not rest on the incidental exclusion).
+        //
+        // ⚠ A **RAIL-BANK** RAIL IS DELIBERATELY NOT ON THIS LIST, AND THE
+        // CLAIM THAT IT COULD NOT REACH HERE WAS FALSE (bd `xdu2` W1, Rule-13
+        // review item I-1, 2026-09-15). `IMPL_B2.md` §12 round 4 and
+        // `SCOPE_B.md` §5.2 said D6's subtraction sites *"were measured
+        // unreachable for a bank rail"* because `isTerminalHandle` stops the
+        // nomination at source. That is true of the other three families —
+        // `collectTerminalCandidates` (explicit), `isInteriorTerminalHandle`
+        // (structural: a `store` is not a `CallInst`), `DagTraversal`'s closure
+        // scan (incidental, via `D.NotClosed`) — and FALSE of this one, which
+        // refuses a bank rail by NOTHING. The correction is recorded HERE, at
+        // the site, and not only in a track record: the review's own I-4 and
+        // CLAUDE.md's L7-with-a-twist are both about a correction that never
+        // reached the source and was re-derived three rounds running.
+        //
+        // IT IS LEFT ABSENT ON PURPOSE, AND THE GROUND IS MEASUREMENT, NOT
+        // ARGUMENT. A bank cell parking `t = q + 7` DOES reach this site and IS
+        // converted in place — `cqrt_addc_i32(h0, 7)` — and that stream is
+        // BYTE-IDENTICAL to its array-free register twin, which the ORACLE
+        // accepts (review probes `h01` vs `h04`). Where a later reader exists
+        // the conversion's own `provablyBefore` discipline refuses it and the
+        // out-of-place `cq_template_add_i32_hl` stands, again byte-identically
+        // to the register twins (`h02`/`h03`, `h05`/`h06`). Adding
+        // `railStoredToRailBank` here would therefore REMOVE an accept whose
+        // circuit is right — an over-decline, which the owner's 2026-09-11
+        // ruling calls a defect rather than a margin.
+        //
+        // ⚠ RETIREMENT TRIGGER, because the measurement is one shape and not a
+        // proof: the in-place conversion RELABELS the parked rail, and the
+        // stale-reader fence's memory hop (`railBankParkedRails`, review F-1)
+        // walks for `cq_theta_` gates and NOT for a dtzb in-place `add`/`xor` —
+        // the documented `WireWalk.h` vocabulary gap, bd `a3z7`. So the day a
+        // bank rail's in-place reassignment can sit BETWEEN the store and a
+        // later cell read, this absence and that gap compose into a stale read
+        // the fence cannot see. Today it cannot: D5 admits only a measurement
+        // and its storage `trunc` as cell readers, so there is no reader after
+        // the conversion to be staled. Re-derive BOTH in the same change.
         if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
             taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
           continue;
