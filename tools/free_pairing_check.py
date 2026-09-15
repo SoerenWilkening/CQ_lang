@@ -567,7 +567,7 @@ import argparse
 import json
 import re
 import sys
-from collections import Counter
+from collections import Counter, namedtuple
 
 # ---------------------------------------------------------------------------
 # Effect model — the read/write/mint behaviour of every symbol the pass emits.
@@ -1105,6 +1105,49 @@ def _hex_neg(a, b):
     return False
 
 
+# ---------------------------------------------------------------------------
+# bd 1739 HOLE 2 — A TEXTUAL OPERAND MATCH IS NOT A VALUE MATCH WHEN THE TEXT
+# IS `undef`/`poison`.
+#
+# Every pairing proof in this file establishes "the reversal undoes the
+# forward" by comparing OPERAND TEXT: (T1a) `tuple(w.args[1:]) == fwd_args`,
+# (T1b) the `_inv` pool keyed on `(base, fwd_args)`, and `adjoint_matches`'
+# three arms. `undef` is the one token in LLVM's grammar that DOES NOT DENOTE A
+# VALUE: LangRef lets each USE of it materialise independently, and at the -O0
+# stage-3 link they do. So
+#
+#     cq_template_icmp_sgt_i32_hl(h0, undef)      -> h4
+#     cq_template_icmp_sgt_i32_hl_unc(h4, h0, undef)
+#
+# is a structurally perfect pair whose adjoint inverts a DIFFERENT predicate,
+# leaving h4 dirty at its `cqrt_free` — and the checker reported
+# `1 verified, 0 violation(s)`, exit 0 (probes/j1739_undef_pairing.ll). The
+# runtime prints both slots as bare decimals, so the GOLDEN TRACE cannot see it
+# either; this is bd bu96 / bd xy9n, the pairing break the pass's own
+# `LiteralIntegrity::declineUnpairedUndefLiterals` exists to refuse. A module
+# reaching this file with one is a module where that guard did not fire.
+#
+# ⚠ SCOPE, AND IT IS NARROW ON PURPOSE. This refuses a PAIRING proof, never a
+# value. It is deliberately NOT applied to:
+#   * a `cqrt_alloc_<W>(undef)` SEED — rule (A1)/(A2) rest on the rail holding
+#     *a* classical basis state, not on knowing WHICH, and an unentangled rail
+#     in an unknown-but-definite basis state is still a sound reset. That slot
+#     is also the one shipped occurrence in the whole corpus (MEASURED: 1 of
+#     368 lowered e2e slices carries `undef` in any modelled-call operand, and
+#     it is `%selop = call i32 @cqrt_alloc_f64(double undef)` in
+#     slice_libm_ld80_nexttoward — bd u7z9's blessed precedent), which is why
+#     this fix moves ZERO shipped verdicts.
+#   * rule (A1)'s classical-immediate slot, for the same reason.
+# What it does refuse is any place where "these two operands are the same
+# value" is the LOAD-BEARING STEP of a proof.
+UNDEF_TOKEN_RE = re.compile(r"\b(?:undef|poison)\b")
+
+
+def carries_undef(arg):
+    """Does this operand's text contain `undef`/`poison` (constexprs included)?"""
+    return bool(UNDEF_TOKEN_RE.search(arg))
+
+
 def is_negation(a, b):
     """True iff argument strings `a` and `b` are `x` and `-x`.
 
@@ -1195,6 +1238,11 @@ class StreamAnalysis:
         self._co_written_memo = {}   # (v, p1, p2, id(c1)) -> (ok, lines)
         self._co_written_active = set()   # ditto, the co-written edge
         self.proofs = []            # [(fn, free_line, handle, rule, lines)]
+        # bd 1739 hole 2: adjoint pairs refused because their operand match was
+        # `undef`/`poison` TEXT rather than a value. Kept so the free site can
+        # name the reason (`A-undef-literal-pairing`) instead of reporting an
+        # ordinary unpairable history.
+        self.undef_refused = []
 
     # -- main scan ---------------------------------------------------------
     def run(self):
@@ -1556,6 +1604,16 @@ class StreamAnalysis:
         """Is call `b` the adjoint of call `a` on their shared target rail?"""
         ea = a.eff
         if ea is None or ea.adjoint_of is None:
+            return False
+        # bd 1739 hole 2: every arm below decides by comparing operand TEXT
+        # (`key()` equality, per-slot equality, `vals` equality). `undef` text
+        # is not a value, so a pair that matches only because both sides spell
+        # it is not a cancellation. Recorded, not silently dropped, so the
+        # rail's finding can name the reason instead of reading as an ordinary
+        # unpairable history.
+        if a.sym == b.sym and len(a.args) == len(b.args) and \
+                any(carries_undef(x) for x in a.args + b.args):
+            self.undef_refused.append((a, b))
             return False
         if a.ctl_parity != b.ctl_parity:
             # Same gate on the complementary branch of its flag is NOT the
@@ -1970,6 +2028,22 @@ class StreamAnalysis:
                      f"so neither the verifier nor the golden can see it. "
                      f"(A2) did not rescue it either: {why}")
         else:
+            # bd 1739 hole 2: name the reason when the reduction failed because
+            # a pair matched only by `undef`/`poison` TEXT on THIS rail.
+            names = {w.vals[i] for a, b in self.undef_refused for w in (a, b)
+                     for i in w.eff.writes if i < len(w.vals)}
+            if r.name in names:
+                ua, ub = next((a, b) for a, b in self.undef_refused
+                              if any(w.vals[i] == r.name for w in (a, b)
+                                     for i in w.eff.writes if i < len(w.vals)))
+                self.add(UNPROVEN, "A-undef-literal-pairing", c, r.name,
+                         f"`{ua.text}` (line {ua.line}) and `{ub.text}` (line "
+                         f"{ub.line}) cancel only by OPERAND TEXT, and that "
+                         f"text is `undef`/`poison`: LangRef lets each use "
+                         f"materialise independently, so the bracket need not "
+                         f"close and the rail need not be back at its alloc "
+                         f"value at the free (bd 1739 hole 2). {why}")
+                return
             self.add(UNPROVEN, "A-not-reducible", c, r.name,
                      f"rail allocated at line {r.origin.line} by "
                      f"@{r.origin.sym}: {why}; cannot prove it holds a known "
@@ -2014,6 +2088,26 @@ class StreamAnalysis:
 
         rev = self.calls[rev_pos]
         witness = {fwd.line, rev.line}
+        # (T1u) bd 1739 hole 2 — the match that just succeeded was TEXTUAL, and
+        # `undef`/`poison` text does not denote a value. The token is claimed
+        # above rather than left in the pool on purpose: it IS the textual
+        # match, and leaving it unclaimed would let a second free of the same
+        # shape be discharged by it.
+        und = [a for a in fwd_args if carries_undef(a)]
+        if und:
+            self.add(UNPROVEN, "T1-undef-literal-pairing", c, r.name,
+                     f"rail minted at line {fwd.line} by `{fwd.text}` is "
+                     f"paired with the {rev_kind} at line {rev.line} ONLY BY "
+                     f"OPERAND TEXT, and operand `{und[0]}` is "
+                     f"`undef`/`poison`: LangRef lets each use of it "
+                     f"materialise independently, so the reversal may recompute "
+                     f"a DIFFERENT value and leave the rail dirty at the free "
+                     f"(bd 1739 hole 2 / bd bu96 / bd xy9n). The runtime prints "
+                     f"the slot as a bare literal, so the golden trace cannot "
+                     f"see this either. The pass's own "
+                     f"`declineUnpairedUndefLiterals` refuses such a module — "
+                     f"reaching this file means it did not fire.")
+            return
         # (T3) rail unchanged mint->reversal, untouched reversal->free.
         ok, why, wit = self.reduces_to_identity(
             [(p, w) for p, w in r.writes if r.pos < p < rev_pos], r.name)
@@ -2389,6 +2483,188 @@ def adjudicate_memory(fn, mints, bank_globals):
     return frozenset(bank_loads)
 
 
+# ---------------------------------------------------------------------------
+# THE CENSUS (bd rixk, bd 19vy, bd 1739 hole 1)
+#
+# The census line is not a proof — it is the thing that stops the PROOF COUNT
+# from being read as a coverage measure. bd 261j(b) added it because "0
+# cqrt_free site(s): 0 verified" passes STRICT, so a compiler that stops
+# freeing everything reports a clean gate. Two halves of that line were wrong
+# in opposite directions and both were quoted as measurements for months.
+#
+# (1) bd rixk — IT COUNTED STATIC SITES IN EVERY FUNCTION OF THE MODULE,
+#     INCLUDING BODIES THAT CANNOT EXECUTE. `-O1` inlines a small `slice()`
+#     into `main` and KEEPS the out-of-line body (external linkage, no call
+#     site left), so eleven lines of loop-free C reported "6 rail mint(s)" for
+#     a trace that allocates 3. MEASURED at the fix: 162 OF THE 368 lowered
+#     e2e slices carried a doubled census for exactly this reason — the shape
+#     is the corpus norm, not a corner. CLAUDE.md records only the OTHER
+#     direction ("a rolled per-trip alloc reads as ONE rail"), which is an
+#     UNDER-count and needs a loop; this one is an OVER-count and needs no
+#     loop at all. Both are the same root cause: A STATIC SITE CENSUS
+#     PRESENTED AS A RAIL COUNT.
+#
+#     The fix is reachability, not a heuristic: count only functions that can
+#     execute — `main`'s static call graph when the module has a `main`, every
+#     function nothing in the module calls otherwise, plus every
+#     address-taken function, and EVERYTHING when an indirect call makes the
+#     call graph unresolvable (the conservative direction is the old
+#     behaviour, and it is stated in the census line rather than assumed).
+#
+#     ⚠ WHAT IT IS STILL NOT. This remains a STATIC SITE census: a site inside
+#     a loop executes K times and counts once. Reachability only removes
+#     bodies that cannot run at all. Do not quote the number as "rails the
+#     program allocates"; quote it as "rail mint SITES that can execute".
+#
+# (2) bd 19vy / bd 1739 hole 1 — IT COUNTED ONLY `cqrt_alloc_*`. A rail minted
+#     by a `cq_template_*` (or a `cqrt_qram_load_<W>`) was invisible: not
+#     counted as minted, not counted as leaked, and therefore not visible at
+#     all when it is never uncomputed, never freed and never measured. That is
+#     the C-1 leak family CLAUDE.md warns must not be cleared by this file,
+#     and it is the ONE residual of the F x P value-arm accepts (`h6 =
+#     cq_template_add_i32_hl(h2, -3)` in slice_control_cascade_three_bools,
+#     the owner's own headline slice: minted, never reversed, never freed,
+#     never measured, and invisible to every gate in the tree).
+#
+#     `left_dirty` uses census_03_orphan_rails.py's UNDISCHARGED definition
+#     verbatim (Rule 14 — one spelling of one population): a template/qram
+#     rail with no `_unc` naming it in the OUT slot, no `cqrt_free` of it, no
+#     `cqrt_measure_*` of it, and no escape. CROSS-CHECKED against that file's
+#     independent trace-layer sweep at the fix: 5361 here over 368 lowered
+#     modules against its 5046 over 383 goldens, and the direction is the
+#     expected one (a trace is ONE EXECUTION and under-counts; static IR sees
+#     both arms of a classical branch).
+#
+#     ⚠ IT IS REPORTED, NEVER FAILED ON, and that is deliberate rather than
+#     timid: Rule 6's fallback LEAVES a not-provably-|0> rail allocated, 159
+#     of 368 shipped slices do it, and deciding WHICH of those leaks is a
+#     Rule-8 dephasing hazard is a compiler question (bd s82e), not one this
+#     file can answer from structure. What this file can do is stop the number
+#     being ZERO BY CONSTRUCTION.
+# ---------------------------------------------------------------------------
+
+Census = namedtuple("Census",
+                    ["minted", "leaked", "tmpl_minted", "tmpl_dirty",
+                     "unresolved_callgraph"])
+
+# A call through a value rather than a symbol: `call i32 %fp(i32 %x)`. One of
+# these anywhere in the module means the static call graph is not the whole
+# call graph, and the census says so instead of pretending.
+INDIRECT_CALL_RE = re.compile(
+    r"^\s*(?:%[-\w.$]+\s*=\s*)?(?:tail\s+|musttail\s+|notail\s+)?call\s"
+    r"(?:[^@\n]|\([^()]*\))*?%[-\w.$]+\s*\(", re.M)
+RET_VALUE_RE = re.compile(r"^\s*ret\s+\S+\s+(%[-\w.$]+)", re.M)
+# The output tape is KEPT BY DESIGN (Phase 7.6: never freed, never uncomputed),
+# so a tape rail that is never discharged is CORRECT. Excluded here for the
+# same reason census_03_orphan_rails.py excludes it, and named so the exclusion
+# is visible rather than silent.
+_TAPE_MINT = re.compile(rf"cqrt_tape_write_{_W}(?:_controlled)?")
+
+
+def address_taken(text, defined):
+    """Defined functions whose `@name` appears somewhere other than a call."""
+    out = set()
+    for name in defined:
+        pat = re.compile(r"@" + re.escape(name) + r"(?![\w.$])")
+        for line in text.split("\n"):
+            if not pat.search(line):
+                continue
+            s = line.lstrip()
+            if s.startswith("define") or s.startswith("declare"):
+                continue
+            m = CALL_RE.match(line)
+            if m and m.group(2).strip('"') == name:
+                # A direct call to it is not taking its address — but the same
+                # line may ALSO pass it as an argument, so check the operands.
+                popen = line.index("(", m.end() - 1)
+                if not pat.search(line[popen:balanced(line, popen)]):
+                    continue
+            out.add(name)
+            break
+    return out
+
+
+def live_functions(funcs, text):
+    """(set of function names that can execute, call-graph-unresolved flag)."""
+    defined = {fn.name for fn in funcs}
+    if not defined:
+        return set(), False
+    edges = {}
+    for fn in funcs:
+        e = set()
+        for _lbl, calls, _term in fn.blocks:
+            for c in calls:
+                if c.sym in defined:
+                    e.add(c.sym)
+        edges[fn.name] = e
+    if INDIRECT_CALL_RE.search(text):
+        # Unresolvable: fall back to the pre-rixk behaviour (count everything)
+        # and SAY SO. The safe direction for a census is to over-report.
+        return set(defined), True
+    if "main" not in defined:
+        # A TRANSLATION UNIT, NOT A PROGRAM. Every external-linkage function in
+        # it may be entered from outside the module, so nothing here can be
+        # shown dead and the census counts all of it — the pre-rixk behaviour,
+        # kept deliberately. This is also why the narrowing costs nothing on
+        # `ir-pass/test/*.ll`, which are single-function modules with no `main`.
+        # The rixk shape REQUIRES a `main`: it is `-O1` inlining a callee into
+        # it and keeping the now-uncalled out-of-line body.
+        return set(defined), False
+    roots = {"main"} | address_taken(text, defined)
+    seen, work = set(), list(roots)
+    while work:
+        x = work.pop()
+        if x in seen:
+            continue
+        seen.add(x)
+        work.extend(edges.get(x, ()))
+    return seen, False
+
+
+def census_of(funcs, text):
+    """The reported census over the functions that can actually execute."""
+    live, unresolved = live_functions(funcs, text)
+    returned = set(RET_VALUE_RE.findall(text))
+    minted = leaked = tmpl_minted = tmpl_dirty = 0
+    for fn in funcs:
+        if fn.name not in live:
+            continue
+        freed, uncd, measured, escaped = set(), set(), set(), set()
+        mints = []
+        for _lbl, calls, _term in fn.blocks:
+            for c in calls:
+                eff = classify(c.sym)
+                if eff is None:
+                    # An unmodelled callee (a user classical call, a Phase-6
+                    # clone this file does not model): a handle passed to it
+                    # ESCAPES, and an escaped rail is the callee's to discharge.
+                    escaped.update(c.vals)
+                    continue
+                if c.sym == "cqrt_free" and c.vals:
+                    freed.add(c.vals[0])
+                elif eff.role == "unc" and c.vals:
+                    uncd.add(c.vals[0])        # DD-3: the rail is slot 0
+                elif eff.role == "inv":
+                    uncd.update(c.vals)        # generous: the ABI names no rail
+                elif eff.role == "measure" and c.vals:
+                    measured.add(c.vals[0])
+                if c.res and eff.mints == "rail":
+                    mints.append((c.res, eff.role, c.sym))
+        for res, role, sym in mints:
+            if role == "alloc":
+                minted += 1
+                if res not in freed:
+                    leaked += 1
+            else:                              # template / qram_load / tape
+                if _TAPE_MINT.fullmatch(sym):
+                    continue                   # kept BY DESIGN (7.6)
+                tmpl_minted += 1
+                if not (res in freed or res in uncd or res in measured
+                        or res in returned or res in escaped):
+                    tmpl_dirty += 1
+    return Census(minted, leaked, tmpl_minted, tmpl_dirty, unresolved)
+
+
 def check_module(text):
     """Returns (findings, verified_count, free_site_count, proofs).
 
@@ -2439,22 +2715,9 @@ def check_module(text):
     # unless you also know what it did NOT have to prove. Rails left allocated are
     # LEGAL (Rule 6's fallback) so this is reported, never failed on — but it is
     # reported, so the number can never be silently zero.
-    minted = leaked = 0
-    for fn in funcs:
-        freed = set()
-        for _lbl, calls, _term in fn.blocks:
-            for c in calls:
-                if c.sym == "cqrt_free" and c.vals:
-                    freed.add(c.vals[0])
-        for _lbl, calls, _term in fn.blocks:
-            for c in calls:
-                if not c.res:
-                    continue
-                eff = classify(c.sym)
-                if eff is not None and eff.mints == "rail" and eff.role == "alloc":
-                    minted += 1
-                    if c.res not in freed:
-                        leaked += 1
+    # Its two measured defects (bd rixk: static sites across INLINED COPIES; bd
+    # 19vy / bd 1739 hole 1: `cqrt_alloc_*` only) are fixed in `census_of`.
+    census = census_of(funcs, text)
     findings, verified, sites, proofs = [], 0, 0, []
     for fn in funcs:
         for _chain, calls in build_streams(fn):
@@ -2468,7 +2731,7 @@ def check_module(text):
             verified += sa.verified
             sites += sa.sites
             proofs.extend(sa.proofs)
-    return findings, verified, sites, proofs, (minted, leaked)
+    return findings, verified, sites, proofs, census
 
 
 def main(argv=None):
@@ -2488,6 +2751,8 @@ def main(argv=None):
     all_findings, verified, sites, unclassified = [], 0, 0, []
     undecidable = []
     minted_total = leaked_total = 0
+    tmpl_total = tmpl_dirty_total = 0
+    unresolved_cg = False
     for path in args.files:
         try:
             with open(path) as fh:
@@ -2497,7 +2762,7 @@ def main(argv=None):
                   file=sys.stderr)
             return 2
         try:
-            f, v, s, proofs, (mi, lk) = check_module(text)
+            f, v, s, proofs, cen = check_module(text)
         except Unclassified as e:
             unclassified.append((path, e.sym))
             continue
@@ -2512,8 +2777,11 @@ def main(argv=None):
         all_findings.extend(f)
         verified += v
         sites += s
-        minted_total += mi
-        leaked_total += lk
+        minted_total += cen.minted
+        leaked_total += cen.leaked
+        tmpl_total += cen.tmpl_minted
+        tmpl_dirty_total += cen.tmpl_dirty
+        unresolved_cg = unresolved_cg or cen.unresolved_callgraph
         if args.explain:
             for fn, line, handle, rule, lines in proofs:
                 print(f"{path}: OK @{fn} line {line} [{handle}] via {rule} "
@@ -2528,6 +2796,11 @@ def main(argv=None):
                      "line": f.line, "handle": f.handle, "msg": f.msg}
                     for f in fs]
         print(json.dumps({"files": len(args.files), "free_sites": sites,
+                          "rail_mint_sites": minted_total,
+                          "rail_mints_left_allocated": leaked_total,
+                          "template_rail_mint_sites": tmpl_total,
+                          "template_rails_left_dirty": tmpl_dirty_total,
+                          "call_graph_unresolved": unresolved_cg,
                           "verified": verified, "violations": dump(viol),
                           "unproven": dump(unpr),
                           "unclassified": [{"file": p, "symbol": s}
@@ -2553,9 +2826,13 @@ def main(argv=None):
         if not args.quiet or viol or unpr or unclassified:
             print(f"free_pairing_check: {len(args.files)} file(s), "
                   f"{minted_total} rail mint(s) of which {leaked_total} left "
-                  f"allocated, {sites} "
+                  f"allocated, "
+                  f"{tmpl_total} template rail mint(s) of which "
+                  f"{tmpl_dirty_total} left dirty, {sites} "
                   f"cqrt_free site(s): {verified} verified, {len(viol)} "
                   f"violation(s), {len(unpr)} unproven"
+                  + (" [call graph unresolved: every function counted]"
+                     if unresolved_cg else "")
                   + (f", {len(unclassified)} unclassified symbol(s)"
                      if unclassified else "")
                   + (f", {len(undecidable)} undecidable memory construct(s)"

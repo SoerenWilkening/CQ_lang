@@ -15,9 +15,9 @@
 
    WHY IT DECLINES. The program ends
 
-       bool b  = cq_theta(x, 0.25);   /* consumes the name `x` */
+       bool b  = cq_theta(x, 0.25);   -- consumes the name `x`
        ... the 4.4 merge on that rail ...
-       bool b3 = cq_theta(x, 0.9);    /* the SIBLING — reads `x` a SECOND time */
+       bool b3 = cq_theta(x, 0.9);    -- the SIBLING, reads `x` a SECOND time
 
    so `b3` names `Ry(0.9)|x>` while the register holds `Ry(0.9)Ry(0.25)|x>`: two
    sibling rotations emitting on ONE physical register. That is

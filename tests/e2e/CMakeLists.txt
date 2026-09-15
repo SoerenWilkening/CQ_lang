@@ -5987,6 +5987,26 @@ add_test(NAME e2e-loop-pairing-rootmint-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint_unrolled.expected.log")
+# bd test_C_libtooling-jdec — THE VACUITY CHECKER'S OWN GATE, and the same
+# argument as e2e-free-pairing-selftest and e2e-loop-twin-quarantine-selftest
+# one instrument over. `tools/negative_vacuity_check.py` replaces five divergent
+# copies of a throwaway script that PRINTED `checked 0` AND EXITED 0 on a batch
+# of 29 real negatives — a result indistinguishable at a glance from "29
+# checked, 0 vacuous" — and whose hard-coded `REPO` names worktrees that no
+# longer exist. A checker whose failure mode is SILENCE needs a gate whose
+# largest layer is "does it refuse to claim a pass when it evaluated nothing":
+# five hole cases (no arguments, a batch matching no directive, an empty
+# module, a missing compiler, a universe that lowered to nothing) must each
+# EXIT 2, four healthy fixtures must come back clean, and each planted vacuity
+# must be reported under its own code.
+#
+# ⚠ THIS IS THE SELFTEST, NOT A CORPUS SWEEP. Running the checker over all of
+# `ir-pass/test/*.ll` costs ~1994 `cq-opt` spawns; it is an on-demand
+# instrument (like the twin matrices), invoked per accept-fixture BATCH by the
+# session protocol, not a per-commit gate. It needs the built plugin, so it
+# lives here rather than in ir-pass-lit.
+add_test(NAME e2e-negative-vacuity-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/negative_vacuity_check_test.py")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
