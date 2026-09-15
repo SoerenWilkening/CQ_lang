@@ -1,0 +1,2 @@
+error: src/e2u_undef_measure_guards_quantum.c:5:32: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+
