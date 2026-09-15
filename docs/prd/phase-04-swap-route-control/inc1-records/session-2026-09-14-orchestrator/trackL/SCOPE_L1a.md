@@ -346,7 +346,7 @@ a loud decline.
 | **stage 2b `free_pairing_check.py`** | rail identities, `|0⟩`-at-free | ⚠ **counts `cqrt_alloc` SITES**, so a rolled per-trip alloc reads as **one** rail left allocated when the circuit mints K. Already structurally blind to template-minted rails | **do not cite 2b as clearance here.** Put the sentence in the slice header, not in the review |
 | ⚠ **`free_pairing_check.py`'s own premise** | — | — | **`tools/free_pairing_check.py:1259 provably_not_a_rail` carries a load-bearing assumption L-1a falsifies**, in the docstring at `:1292`: *"A handle cannot reach a global and come back — a tainted `store` is a loud decline at `declineTaintEscapes` long before lowering — so a load result is not a rail."* After L-1a a bank `load i32` **is** a rail handle and `provably_not_a_rail` returns `True` (`:1308`) for it, so any rule that reads it as a classical immediate — e.g. a bank load passed as a **control** to `cqrt_copy_i32_controlled` — could discharge a free it should not. **The checker must learn the bank, or the increment must keep the premise true.** This is a Rule-13-class instrument finding, not a nicety |
 | **`e2e-loop-twin-matrix`** (288 cells at the time of this scoping: `grep -c '^m_' tools/loop_twin_matrix.expected.txt` = 259 + `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt` = 29) | ⚠ **the only thing in the tree that can see a leaked TEMPLATE-minted rail** | a `_Bool` condition — `grep -c bool tools/loop_twin_matrix.py` = **2**, both inside `phi_surface_of_header`; **every one of the 288 cells is blind to it** | **applies and is not optional**, but it needs the `_Bool` axis built first (`SCOPE_loop.md` §2.6). See §6 for the cell count. ⚠ **ANNOTATED 2026-09-14 (closing docs pass): THIS ROW IS STALE AS A MEASUREMENT AND CORRECT AS A DIAGNOSIS.** bd `uq96` (`49b7f7bc`) built that `_Bool` axis the same day: the matrix is now **338 cells** (309 + 29, re-measured at `66428ddc`) and 50 of them carry an `i1` register. The blind spot this row named is the one the axis closed; do not re-quote the `288` / `= 2` figures as current |
-| **rolled == hand-unrolled byte identity** | a per-iteration mint that should have been hoisted, a gate dropped on the back edge, an ancilla reused across trips | — | ⚠ **NOT available for the owner's literal program.** With `a = 5` constant, `-O1` folds trip 0's condition in the *unrolled* spelling and cannot in the rolled one (H2), so the two streams legitimately differ. With an opaque `a` the unrolled twin **declines** (`L13`). **The byte-identity gate must therefore be built on a program whose every trip is identical and whose flat twin lowers** — or replaced by K-independence + a per-trip multiset argument, labelled as an INTERNAL-CONSISTENCY gate in the `slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.c:11-15` style |
+| **rolled == hand-unrolled byte identity** | a per-iteration mint that should have been hoisted, a gate dropped on the back edge, an ancilla reused across trips | — | ⚠ **NOT available for the owner's literal program** — ⚠ **AND THE REASON GIVEN HERE IS STALE; see the 2026-09-15 correction note at §7.** The reason is NOT that the N=3 flat twin declines (it ACCEPTS since bd `om35`); it is that the flat spelling's three per-trip blocks are **structurally different** — only trip 2 carries a real compare flag (Track I `IMPL_I.md` §4.1, measured) — so there is nothing for a rolled stream to be byte-identical to. The resolution is **both**, on different slices (Track I §4.3): build the byte-identity gate on an **identical-trip** program whose flat twin lowers (`trackI/probes/w1_flat_prep_only.c` — ACCEPT, 9 trace lines, and its gate stream is byte-identical to the bank's, measured 2026-09-15), and use K-independence + a per-trip multiset argument, labelled as an INTERNAL-CONSISTENCY gate in the `slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.c:11-15` style, for the cascade |
 | **K-independence of the lowered IR** | that the loop was rolled, not unrolled | anything about the unitary | measure **without `-g`** (debug metadata inflates the count and a `-g` number is not comparable — `SCOPE_loop.md` §3) |
 
 ---
@@ -430,6 +430,35 @@ were confirmed silent miscompiles. Round 1 should be scoped to §4's enumeration
 
 ## 7. §2f — The DEPENDENCY verdict at `main` `607b6fe4`
 
+> ⚠ **CORRECTION, 2026-09-15 (Track B-scoping, session `…-2026-09-15-orchestrator`; routing item R4 of
+> `…-2026-09-14c-xdu2-w1/ROUTING.md`). THE SECOND BULLET BELOW IS FALSE ON EVERY BINARY SINCE
+> `30317792`, AND SO IS §5's TWIN ROW THAT LEANS ON IT.** `a_flat_n3.c` **ACCEPTS** — re-measured on
+> the frozen session-2026-09-15 ORACLE (`cq-opt`
+> `0e280fc62a91cec2336769edde8a873563a21ee4869744331a0fcf6811549c6d`) as `opt` exit 0. bd `om35`
+> (the F2 φ-descendant exclusion) landed **after** this document was written and closed the `vd.c`
+> wall it names.
+>
+> **The CONCLUSION survives and the REASON does not, which is exactly how a stale premise outlives its
+> correction (`CLAUDE.md` L7-with-a-twist).** There is still no rolled-vs-flat **byte-identity** gate
+> for the owner's cascade, but not because the N=3 twin fails to exist. Track I measured the real
+> reason (`…-2026-09-14c-xdu2-w1/trackI/IMPL_I.md` §4.1): `a_flat_n3.c`'s trace has **three
+> structurally different per-trip blocks** — trip 0's condition is const-folded, trip 1 is an
+> anti-control by Ry additivity, and only **trip 2** carries a real
+> `cq_template_icmp_sgt_i32_hl` flag — so the flat spelling is not K copies of anything and there is
+> nothing for a rolled stream to be byte-identical **to**. ⚠ **Do not re-derive the witness plan from
+> the bullet below.** The replacement is Track I §4.3, also measured: build the byte-identity gate on
+> an **identical-trip** program (`trackI/probes/w1_flat_prep_only.c`, ACCEPT, 9 trace lines on this
+> ORACLE) and use K-independence + a per-trip multiset argument, **labelled as internal-consistency**,
+> for the cascade.
+>
+> ⚠ **One further consequence this document could not have drawn.** §7's closing sentence — *"L-1a
+> clears W1 and lands on `wx8g`"* — is **also stale, and in the direction that matters**: `wx8g`
+> landed at `a2b86139`, and the owner's cascade still does not clear it. Measured (session
+> 2026-09-15, `trackB/SCOPE_B.md` §1): with the bank's three deferred pieces hand-emulated, the
+> program declines `control flow inside a loop body` at `iterationLocalRollable`'s **(c3)**, and
+> behind that `loop-carried tainted value crosses iterations` (**X1 / W3 / bd `ej5w`**). W1 is
+> necessary and **not sufficient** for the headline.
+
 `xdu2` says L-1a depends on Track M (`59ac5b7`) + Track R (`94c085e`) for the unrolled twin's stream.
 **Re-measured on this ORACLE:**
 
@@ -437,10 +466,13 @@ were confirmed silent miscompiles. Round 1 should be scoped to §4's enumeration
   internal-consistency one.** `a_flat_n2.c` accepts (29 lines, 2b `8/6/2 verified`) and its gate
   stream equals the committed golden `slice_control_cascade_two_bools.expected.log`. The Track M merge
   record names `trackL/a_flat_n2` among its 79 DECLINE→ACCEPT movers — independent confirmation.
-* **The dependency is UNMET at N=3.** `a_flat_n3.c` declines
+* ~~**The dependency is UNMET at N=3.** `a_flat_n3.c` declines
   `cq controlled lowering: state prep seed is proven equal to the condition register under quantum
   control` — the `vd.c` wall, **bd `om35`**, which this session's **Track F is SCOPING, not
-  implementing**. So at the end of this session the N=3 unrolled twin still does not exist.
+  implementing**. So at the end of this session the N=3 unrolled twin still does not exist.~~
+  ⚠ **STRUCK 2026-09-15 — FALSE since bd `om35` landed (`30317792`).** `a_flat_n3.c` ACCEPTS on the
+  session-2026-09-15 ORACLE. The dependency is **MET at N=3**; the twin exists and is not
+  byte-comparable for the unrelated reason given in the correction note above.
 * **Track P does not change the unrolled twin.** bd `3qps` is the **PHASE** consumer of the
   merge-φ leaf; the array cascade's arm is a **VALUE** arm (a `select`), already Track M's. bd `4aiu`
   is the ROOT-ONLY widening (a φ at an *interior* position of a compound select condition); the
@@ -452,8 +484,13 @@ were confirmed silent miscompiles. Round 1 should be scoped to §4's enumeration
   wants `bool b[N];` to compile, the two must be composed deliberately: the bank's per-cell seed is the
   site `z9t1`'s rule would attach to. **File this as a composition question, not as a blocker.**
 
-**Plain statement of the finding (the brief asks for it): the dependency is UNMET for the N≥3 witness,
-and L-1a's own scope is insufficient for the owner's program.** L-1a clears W1 and lands on `wx8g`.
+~~**Plain statement of the finding (the brief asks for it): the dependency is UNMET for the N≥3 witness,
+and L-1a's own scope is insufficient for the owner's program.** L-1a clears W1 and lands on `wx8g`.~~
+
+⚠ **RESTATED 2026-09-15 on measurement.** The *second half* of that sentence is the durable one and the
+first half is not: **L-1a's own scope is insufficient for the owner's program** — but the Track-M/R
+dependency is **MET**, and L-1a does **not** land on `wx8g` either, because `wx8g` has landed. It lands
+on **`wx8g`'s (c3) conjunct and then on `ej5w`'s X1**. See `trackB/SCOPE_B.md` §1.
 
 ---
 
@@ -489,7 +526,7 @@ ORACLE; every probe was run from the repo root as `./…/trackL/probes/run.sh <p
 |---|---|
 | `a_loop_n{2,3,8}`, `a_loop_n3_noarm`, `a_loop_n3_uncond` | DECLINE `tainted value stored to memory` — **W1, N-independent, unmoved from `e96f89c`** |
 | `a_flat_n2` | **ACCEPT** — 115 lowered lines, 29 trace lines, 2b `8/6/2 verified`; stream == `slice_control_cascade_two_bools.expected.log` |
-| `a_flat_n3` | DECLINE `state prep seed is proven equal to the condition register` (bd `om35`) |
+| `a_flat_n3` | ~~DECLINE `state prep seed is proven equal to the condition register` (bd `om35`)~~ ⚠ **STALE — re-measured 2026-09-15 on ORACLE `0e280fc6…`: ACCEPT (`opt` exit 0).** bd `om35` landed at `30317792` after this table was written |
 | `L1_promoted_nostore` | DECLINE **`control flow inside a loop body`** — **W2**, anchor `%6 = icmp sgt i32 %5, 2` |
 | `L1_promoted_store` | DECLINE `tainted value stored to memory` (col 14) — and its `-O1` IR **is** the carve's target shape |
 | `L3_uncond_prep_value`, `L6_good_prep_value_arm` | DECLINE **`loop-carried tainted value crosses iterations`** — **W3**, two independent spellings |

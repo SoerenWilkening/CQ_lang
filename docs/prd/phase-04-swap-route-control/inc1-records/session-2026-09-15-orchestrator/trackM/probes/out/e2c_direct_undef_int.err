@@ -1,0 +1,2 @@
+error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackM/probes/src/e2c_direct_undef_int.c:3:31: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
+
