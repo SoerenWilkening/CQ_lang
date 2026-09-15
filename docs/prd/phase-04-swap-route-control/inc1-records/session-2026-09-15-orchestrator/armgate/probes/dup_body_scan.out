@@ -1,0 +1,67 @@
+fixtures scanned: 2047
+  N1: 13 duplicate-body group(s), 0 with MIXED verdicts
+    [agree] control_predmux_reject_selectform_rotation_hop_chained.ll=DECLINE  control_predmux_reject_selectform_rotation_poison_arg.ll=DECLINE
+    [agree] spec_overaccept_probe_callbr_visible.ll=DECLINE  spec_reject_callbr.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_backward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_forward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_two_hop.ll=DECLINE
+    [agree] control_swap_reject_tainted_angle.ll=DECLINE  control_swap_reject_tainted_angle_underived.ll=DECLINE
+    [agree] control_angle_select_phase_constants.ll=ACCEPT  control_angle_select_rz_cond_register.ll=ACCEPT
+    [agree] control_inplace_ry_alias_after_region.ll=ACCEPT  control_inplace_ry_alias_chain_consumed.ll=ACCEPT
+    [agree] control_angle_select_reject_cond_alias.ll=DECLINE  control_angle_select_reject_cond_register.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_ret.ll=DECLINE  control_inplace_ry_reject_stale_ret.ll=DECLINE
+    [agree] control_swap_ifelse.ll=ACCEPT  control_swap_ifelse_derived.ll=ACCEPT
+    [agree] control_swap_reject_nested_inner_clobber.ll=DECLINE  control_swap_reject_nested_value_mixed.ll=DECLINE
+    [agree] control_swap_diamond.ll=ACCEPT  control_swap_diamond_derived.ll=ACCEPT
+    [agree] control_classical_call_arm_accept.ll=ACCEPT  lowering_measure_round2_sixfive_handle.ll=ACCEPT
+    [agree] control_inplace_rz_on_condition_register.ll=ACCEPT  control_swap_diamond_derived_chain.ll=ACCEPT
+  N2: 13 duplicate-body group(s), 0 with MIXED verdicts
+    [agree] control_predmux_reject_selectform_rotation_hop_chained.ll=DECLINE  control_predmux_reject_selectform_rotation_poison_arg.ll=DECLINE
+    [agree] spec_overaccept_probe_callbr_visible.ll=DECLINE  spec_reject_callbr.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_backward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_forward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_two_hop.ll=DECLINE
+    [agree] control_swap_reject_tainted_angle.ll=DECLINE  control_swap_reject_tainted_angle_underived.ll=DECLINE
+    [agree] control_angle_select_phase_constants.ll=ACCEPT  control_angle_select_rz_cond_register.ll=ACCEPT
+    [agree] control_inplace_ry_alias_after_region.ll=ACCEPT  control_inplace_ry_alias_chain_consumed.ll=ACCEPT
+    [agree] control_angle_select_reject_cond_alias.ll=DECLINE  control_angle_select_reject_cond_register.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_ret.ll=DECLINE  control_inplace_ry_reject_stale_ret.ll=DECLINE
+    [agree] control_swap_ifelse.ll=ACCEPT  control_swap_ifelse_derived.ll=ACCEPT
+    [agree] control_swap_reject_nested_inner_clobber.ll=DECLINE  control_swap_reject_nested_value_mixed.ll=DECLINE
+    [agree] control_swap_diamond.ll=ACCEPT  control_swap_diamond_derived.ll=ACCEPT
+    [agree] control_classical_call_arm_accept.ll=ACCEPT  lowering_measure_round2_sixfive_handle.ll=ACCEPT
+    [agree] control_inplace_rz_on_condition_register.ll=ACCEPT  control_swap_diamond_derived_chain.ll=ACCEPT
+  N3: 15 duplicate-body group(s), 0 with MIXED verdicts
+    [agree] control_classical_call_arm_accept.ll=ACCEPT  lowering_measure_round2_sixfive_handle.ll=ACCEPT
+    [agree] control_angle_select_reject_cond_alias.ll=DECLINE  control_angle_select_reject_cond_register.ll=DECLINE
+    [agree] spec_overaccept_probe_callbr_visible.ll=DECLINE  spec_reject_callbr.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_backward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_forward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_two_hop.ll=DECLINE  control_inplace_ry_reject_stale_measure.ll=DECLINE
+    [agree] control_predmux_reject_selectform_rotation_hop_chained.ll=DECLINE  control_predmux_reject_selectform_rotation_poison_arg.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_ret.ll=DECLINE  control_inplace_ry_reject_stale_ret.ll=DECLINE
+    [agree] control_inplace_rz_on_condition_register.ll=ACCEPT  control_swap_diamond_derived_chain.ll=ACCEPT
+    [agree] control_inplace_ry_reject_cond_register.ll=DECLINE  control_inplace_ry_reject_diagonal_alias.ll=DECLINE
+    [agree] control_swap_reject_tainted_angle.ll=DECLINE  control_swap_reject_tainted_angle_underived.ll=DECLINE
+    [agree] control_swap_diamond.ll=ACCEPT  control_swap_diamond_derived.ll=ACCEPT
+    [agree] control_angle_select_phase_constants.ll=ACCEPT  control_angle_select_rz_cond_register.ll=ACCEPT
+    [agree] control_angle_select_reject_stale_diag_alias_backward.ll=DECLINE  control_angle_select_reject_stale_diag_alias_forward.ll=DECLINE  control_angle_select_reject_stale_diag_alias_two_hop.ll=DECLINE  control_angle_select_reject_stale_measure.ll=DECLINE
+    [agree] control_swap_reject_nested_inner_clobber.ll=DECLINE  control_swap_reject_nested_value_mixed.ll=DECLINE
+    [agree] control_inplace_ry_alias_after_region.ll=ACCEPT  control_inplace_ry_alias_chain_consumed.ll=ACCEPT
+    [agree] control_swap_ifelse.ll=ACCEPT  control_swap_ifelse_derived.ll=ACCEPT
+  N4: 15 duplicate-body group(s), 0 with MIXED verdicts
+    [agree] control_classical_call_arm_accept.ll=ACCEPT  lowering_measure_round2_sixfive_handle.ll=ACCEPT
+    [agree] control_angle_select_reject_cond_alias.ll=DECLINE  control_angle_select_reject_cond_register.ll=DECLINE
+    [agree] spec_overaccept_probe_callbr_visible.ll=DECLINE  spec_reject_callbr.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_backward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_forward.ll=DECLINE  control_inplace_ry_reject_stale_diag_alias_two_hop.ll=DECLINE  control_inplace_ry_reject_stale_measure.ll=DECLINE
+    [agree] control_predmux_reject_selectform_rotation_hop_chained.ll=DECLINE  control_predmux_reject_selectform_rotation_poison_arg.ll=DECLINE
+    [agree] control_inplace_ry_reject_stale_diag_alias_ret.ll=DECLINE  control_inplace_ry_reject_stale_ret.ll=DECLINE
+    [agree] control_inplace_rz_on_condition_register.ll=ACCEPT  control_swap_diamond_derived_chain.ll=ACCEPT
+    [agree] control_inplace_ry_reject_cond_register.ll=DECLINE  control_inplace_ry_reject_diagonal_alias.ll=DECLINE
+    [agree] control_swap_reject_tainted_angle.ll=DECLINE  control_swap_reject_tainted_angle_underived.ll=DECLINE
+    [agree] control_swap_diamond.ll=ACCEPT  control_swap_diamond_derived.ll=ACCEPT
+    [agree] control_angle_select_phase_constants.ll=ACCEPT  control_angle_select_rz_cond_register.ll=ACCEPT
+    [agree] control_angle_select_reject_stale_diag_alias_backward.ll=DECLINE  control_angle_select_reject_stale_diag_alias_forward.ll=DECLINE  control_angle_select_reject_stale_diag_alias_two_hop.ll=DECLINE  control_angle_select_reject_stale_measure.ll=DECLINE
+    [agree] control_swap_reject_nested_inner_clobber.ll=DECLINE  control_swap_reject_nested_value_mixed.ll=DECLINE
+    [agree] control_inplace_ry_alias_after_region.ll=ACCEPT  control_inplace_ry_alias_chain_consumed.ll=ACCEPT
+    [agree] control_swap_ifelse.ll=ACCEPT  control_swap_ifelse_derived.ll=ACCEPT
+
+self-mixed (a file whose own RUN lines claim both):
+    MIXED-SELF: lowering_predmux_purecallee_deep_chain.ll
+    1 file(s)
+
+RESULT: PASS — no duplicate-body group mixes verdicts
