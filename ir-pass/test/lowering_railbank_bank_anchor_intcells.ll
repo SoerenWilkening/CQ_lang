@@ -44,10 +44,34 @@
 ;     for(int i=0;i<3;++i){ if(a>=3) b[i]=cq_theta(b[i],0.5); if(b[i]) a-=3; }
 ;     int s=cq_measure(a); for(int i=0;i<3;++i) s+=cq_measure(b[i]); return s; }
 ;
+;
+; ⚠⚠ THE L8 RETIREMENT TRIGGER BELOW HAS FIRED — bd `xdu2` W1's SECOND HALF
+; landed 2026-09-15 (the taint rule + the `[N x cell]` -> `[N x i32]` type
+; rewrite + the D5 allow-list), and this file was RE-DERIVED, not deleted, in
+; the same change.  READ THE NEW VERDICT AS A MOVED WALL, NOT AS AN ACCEPT:
+;
+;   * the bank STORE no longer declines.  `CQ_CTRL_DBG` still anchors the
+;     `[Bank]` verdict on it and `--implicit-check-not='cq rail bank:'` still
+;     proves no per-clause rail-bank decline fires anywhere;
+;   * what declines now is the REGION — `cq controlled lowering: control flow
+;     inside a loop body under quantum control`, `iterationLocalRollable`'s
+;     conjunct (c3), bd `8h7d.11`.  That conjunct is BANK-INDEPENDENT: the same
+;     loop with a SCALAR `bool` and no array at all declines identically
+;     (`trackB/probes/b02_scalar_measure_a_outside.c`), so the rail bank cannot
+;     move it and W1 never could.
+;
+; This is owner ruling E5 in one file: *the bank compiles; the owner's cascade
+; needs (c3) + W3.*  The accept half of W1 is pinned by
+; `railbank_accept_*` and by `lowering_railbank_bank_anchor_unpromoted.ll`.
+;
+; ⚠ NEXT L8 RETIREMENT TRIGGER: the day bd `8h7d.11` (the (c3) widening) lands,
+; this file's decline moves again — to `cq loop lowering: loop-carried tainted
+; value crosses iterations` (X1 / bd `ej5w` / W3), MEASURED on this module's own
+; `noAmeasure` variant.  Re-derive it then; do NOT delete it.
 ; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank:'
 ; CHECK: CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i32 trips=3 at:
-; CHECK: cq taint escape: tainted value stored to memory
+; CHECK: cq controlled lowering: control flow inside a loop body under quantum control
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

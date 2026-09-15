@@ -90,4 +90,33 @@ out:
 ; W1 (the taint rule + type rewrite + the D5 allow-list) lands and a `Bank`
 ; verdict stops falling through to a decline, this line changes again — and at
 ; that point re-derive it, do not delete the check.
+;
+; ⚠⚠ MERGE FILING F-3, MEASURED AND RESOLVED IN THE HONEST DIRECTION (Track B,
+; session 2026-09-15).  **THIS FILE NO LONGER ISOLATES ITS CLAUSE, AND THE
+; CLAUSE'S SUBJECT IS STRUCTURALLY UNREACHABLE — NOT MERELY MIS-SPELLED.**
+;
+; The clause it is ABOUT is the promoter's B4' (NOTHING NON-REWRITABLE OBSERVES THE OBJECT INSIDE `L`).  The negative
+; `promote bank` check below (in the NOTS prefix) is satisfied VACUOUSLY: the
+; promoter never runs, because `planBank`'s B6 calls Track A's carve FIRST and
+; the carve refuses the module before any B-clause is asked.
+;
+; ⚠ WHY A RE-SPELLING WAS ATTEMPTED AND ABANDONED, with the measurement:
+;   The in-loop read of a DIFFERENT cell is `RejectTotality` at the carve's C6
+;   in-loop-read test — MEASURED on this module — so B4' is never asked.  Track
+;   A recorded the same shadowing from the other side: `SIGNATURE.md` trigger T5
+;   says in writing that B4' becomes the SOLE defence, and
+;   `railbank_promote_reject_inloop_hoisted_read.ll` an ISOLATING negative, only
+;   once C6's in-loop-read test is widened.
+;
+; ⚠ SO THE FIXTURE WAS NOT PAPERED OVER WITH A HAND-IR MODULE THAT ONLY *LOOKS*
+; LIKE A SUBJECT (`SCOPE_B.md` §8 forbids exactly that), AND THE B CLAUSE WAS NOT
+; DELETED.  What ships is this disclosure: the file keeps pinning that the module
+; is LOUDLY REFUSED and that the promoter does NOT fire on it — both true, both
+; worth keeping — and it states which widening restores isolation.
+;
+; ⚠ L8 RETIREMENT TRIGGER — the day
+;   C6's in-loop-read test is widened (SIGNATURE trigger T5's own example is
+;   `if (b[i-1]) ...`).  B4' then becomes the sole defence against the store
+;   move and this file becomes isolating; re-derive its DECLINE line THEN.
+;
 ; DECLINE: cq rail bank: array has cells no iteration writes

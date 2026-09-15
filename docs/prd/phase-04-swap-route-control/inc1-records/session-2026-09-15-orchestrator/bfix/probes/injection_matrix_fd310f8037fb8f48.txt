@@ -1,0 +1,49 @@
+M1: CAUGHT  lit_fail=11 ctest_fail=0 twin_fail=7
+      by CQ IR-pass :: lowering_railbank_bank_anchor_unpromoted.ll
+      by CQ IR-pass :: railbank_accept_bank_copy_folded.ll
+      by CQ IR-pass :: railbank_accept_bool_prep_measureloop.ll
+      by CQ IR-pass :: railbank_accept_int_cells_measureloop.ll
+      by CQ IR-pass :: railbank_accept_invariant_rail_measured_before_gate.ll
+      by CQ IR-pass :: railbank_accept_k1000.ll
+      by CQ IR-pass :: railbank_accept_nonmain.ll
+      by CQ IR-pass :: railbank_accept_percell_theta_sibling_register_rotated.ll
+M2: MISSED  lit_fail=0 ctest_fail=0 twin_fail=0
+M10: MISSED  lit_fail=0 ctest_fail=0 twin_fail=0
+M11: CAUGHT  lit_fail=1 ctest_fail=0 twin_fail=3
+      by CQ IR-pass :: railbank_reject_measure_after_nondiagonal_on_parked_rail.ll
+      by p08_nonmain_stale            VIOLATION      bank_rc=0 reg_rc=1
+      by railbank_register_twin_gate: 8 pair(s) checked, 3 VIOLATION(s) (P1: bank accepted where the register spelling declined), 0 TRACE-MISMATCH(es) (P2), 0 over-decline(s) [filed, not failed]
+M12: MISSED  lit_fail=0 ctest_fail=0 twin_fail=0
+M13: MISSED  lit_fail=0 ctest_fail=0 twin_fail=0
+M14: CAUGHT  lit_fail=12 ctest_fail=0 twin_fail=0
+      by CQ IR-pass :: lowering_railbank_bank_anchor_n3.ll
+      by CQ IR-pass :: lowering_railbank_bank_anchor_promoted.ll
+      by CQ IR-pass :: lowering_railbank_bank_anchor_uninit.ll
+      by CQ IR-pass :: lowering_railbank_bank_anchor_unpromoted.ll
+      by CQ IR-pass :: railbank_accept_bank_copy_folded.ll
+      by CQ IR-pass :: railbank_accept_bool_prep_measureloop.ll
+      by CQ IR-pass :: railbank_accept_k1000.ll
+      by CQ IR-pass :: railbank_accept_nonmain.ll
+
+=== INJECTION MATRIX ===
+M1   CAUGHT       PIECE 1 REMOVED — the bank load stops being tainted. THE SILENT MISCOMPILE: three written cq_measure calls emit nothing.
+     caught by: CQ IR-pass :: lowering_railbank_bank_anchor_unpromoted.ll
+     caught by: CQ IR-pass :: railbank_accept_bank_copy_folded.ll
+     caught by: CQ IR-pass :: railbank_accept_bool_prep_measureloop.ll
+     caught by: CQ IR-pass :: railbank_accept_int_cells_measureloop.ll
+M2   MISSED       THE MINT CONJUNCT DROPPED — `Bank` accepts whether or not the record was minted, so a bank the mark stage never claimed compiles with untainted loads.
+M10  MISSED       THE TYPE REWRITE'S HALF OF THE WIDTH FENCE DROPPED — PASS 5 erases any `trunc` off a bank load, not only the storage one. ⚠ EXPECTED MISSED while D5 holds: the two spellings are one fence and D5 refuses the input first.
+M11  CAUGHT       THE MEMORY HOP REMOVED — the stale-reader fence goes blind on a memory-resident wire again and the rail bank re-launders bd `3d8q`. THE P1.
+     caught by: CQ IR-pass :: railbank_reject_measure_after_nondiagonal_on_parked_rail.ll
+     caught by: p08_nonmain_stale            VIOLATION      bank_rc=0 reg_rc=1
+     caught by: railbank_register_twin_gate: 8 pair(s) checked, 3 VIOLATION(s) (P1: bank accepted where the register spelling declined), 0 TRACE-MISMATCH(es) (P2), 0 over-decline(s) [filed, not failed]
+M12  MISSED       THE CONSTANT-SEED FILTER DROPPED — a module-wide UNIQUED literal (the whole-object zero initializer) becomes a walk seed, so the fence can return a theta on a wire this bank never touched: an OVER-DECLINE manufactured by the seed. Direction is SAFE, so a MISSED here is not a hole — it is the measurement of how much the filter is load-bearing today.
+M13  MISSED       THE STORAGE-TRUNCATION ARM OF THE HOP DROPPED — a `_Bool` bank's reader names the `trunc`, not the load, so the hop never fires there. ⚠ EXPECTED MISSED: a `_Bool`-cell STALE bank is NOT CONSTRUCTIBLE at the `-O1` floor (clang memsets an invariant `_Bool` park — probes `f08`/`f09`, measured).
+M14  CAUGHT       THE STORE-SIDE STORAGE-CAST STRIP DROPPED — the seed becomes the `zext` rather than the rail, so the walk sees only the store. ⚠ It ALSO moves the `!cq.railbank` WIDTH, because `bankStoreRailValue` is the ONE spelling both callers use: the Rule-14 coupling made observable by a mutant.
+     caught by: CQ IR-pass :: lowering_railbank_bank_anchor_n3.ll
+     caught by: CQ IR-pass :: lowering_railbank_bank_anchor_promoted.ll
+     caught by: CQ IR-pass :: lowering_railbank_bank_anchor_uninit.ll
+     caught by: CQ IR-pass :: lowering_railbank_bank_anchor_unpromoted.ll
+
+7 mutations, MISSED 4
+INJECT exit=1

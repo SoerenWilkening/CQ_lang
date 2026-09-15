@@ -380,6 +380,19 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //   `cqrt_alloc_<W>` / `cqrt_ry_<W>` cascade. Re-derive them then; do NOT delete
 //   them."*
 //
+// ⚠⚠ AND IT APPLIES TO `Bank` ONLY. `BankRaw` MUST KEEP DECLINING, IN EVERY FUTURE
+// HALF (bd `test_C_libtooling-de8n`, P1, closed 2026-09-15). Before clause C7
+// existed there was ONE accept-shaped verdict and the trigger above turned it into
+// the accept — but that verdict did **not** imply the shape the type rewrite can
+// serve, and the gap was reachable from plain `-O1` C (three families, MEASURED:
+// a second bank loop with no dedicated preheader, an in-loop whole-array re-zero,
+// in-loop lifetime markers — each `carve=[Bank] promo=0` on the 2026-09-15 ORACLE
+// `0e280fc6`). On such a bank the per-trip cell is still read INSIDE the loop and
+// that read is PARTIALLY AVAILABLE (`SCOPE_L1a.md` §0 H3), so the rewrite would
+// make it read handle `0` — a LIVE RAIL. C7 is the separation, and the invariant
+// the tree now relies on is: **the promoter's INPUT is `BankRaw`, its OUTPUT is
+// `Bank`.**
+//
 // ⚠ SECOND RETIREMENT TRIGGER — `railBankCarveVerdict` is a PURE PREDICATE and
 // must stay one. It mutates nothing, mints no metadata and GROWS NO TAINT, which
 // is the whole of its round-2 (L1) answer: `adjudicateTaintDelta` re-runs
@@ -424,6 +437,20 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //       cell THIS trip writes, and every other read is after the loop. *Why:* after
 //       the (later) type rewrite a never-written cell reads as handle `0`, and `h0`
 //       is a LIVE RAIL in this runtime (`cqrt_alloc_i1(0) -> h0`).
+//       ⚠ C6 proves the index VISITS each cell once. It does NOT prove each cell is
+//       WRITTEN — a conditional arm store visits and writes nothing. That half is
+//       C7(b) (corrected 2026-09-15; the old wording said "written" and was true of
+//       the promoted shape only).
+//   C7  TYPE-REWRITABLE SHAPE — the `Bank` / `BankRaw` separation, and the ONLY
+//       clause that is about which CONSUMER may have the bank:
+//         (a) no read of the bank survives INSIDE the walk loop (the §0 H3
+//             partially-available second load — the promoter removes these); and
+//         (b) the store is TOTAL PER TRIP: its block dominates the latch and the
+//             latch is the only exiting block, so every cell read after the loop
+//             was written by the trip that owned it.
+//       Both hold by construction of the per-activation promoter's output, and
+//       neither is implied by C1–C6. `BankRaw` is the promoter's input; `Bank` is
+//       the deferred type rewrite's.
 //
 // ⚠ C4 DELIBERATELY ADMITS A CELL ADDRESS USED BY BOTH A LOAD AND THE STORE, where
 // `matchQramAccess`'s `GEP->hasOneUse()` would refuse it — and that deviation is
@@ -432,7 +459,16 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // coherent); a rail bank's index is CLASSICAL, so one address is one definite cell
 // and a read-modify-write of it is the customer, not a hazard. The promoter sees
 // the RAW read-modify-write shape (it runs in the `-O1`-repair normaliser
-// fixpoint); the carve sees the PROMOTED one-store shape. Both classify `Bank`.
+// fixpoint); `declineTaintEscapes` sees the PROMOTED one-store shape.
+// ⚠ CORRECTED 2026-09-15 (bd `test_C_libtooling-de8n`): this sentence used to end
+// *"Both classify `Bank`"*, and after clause C7 they do not — the RAW shape is
+// `BankRaw` and the PROMOTED one is `Bank`, which is the entire point of the split.
+// C4's deviation is unchanged and still what lets ONE predicate serve both
+// consumers; what changed is that the two consumers now get DIFFERENT verdicts,
+// deliberately. MEASURED, and it is worth knowing which module a given fixture's
+// anchor is really about: `lowering_railbank_bank_anchor_n3.ll` carries the RAW
+// text but its `[Bank]` line names `store i8 %cq.bank, ptr %cq.bank.addr` — the
+// promoter's output, because the promoter runs first.
 //
 // ⚠ `matchQramAccess` is NOT called, and the reason is measured, not stylistic:
 // three of its gates reject EVERY rail-bank store outright (`LInfo.getLoopFor` — a
@@ -445,18 +481,26 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // scalar cell) are cross-referenced in both directions at the definition.
 enum class RailBankCarve {
   NotBank,          // not a rail-bank cell write — fall through to the existing owners
-  Bank,             // C1–C4, C2′, C6 all hold. ⚠ STILL FALLS THROUGH TO kMsgStore
+  Bank,             // C1–C4, C2′, C6 AND C7 hold — the TYPE-REWRITABLE shape.
+                    // ⚠ STILL FALLS THROUGH TO kMsgStore this increment
+  BankRaw,          // C1–C4, C2′, C6 hold and C7 does NOT: a rail bank the deferred
+                    // TYPE REWRITE must not see. ⚠ NOT A DECLINE (`outMsg` is null,
+                    // the caller keeps its generic `kMsgStore`) and ⚠ NEVER AN
+                    // ACCEPT — it is the per-activation PROMOTER'S INPUT and
+                    // nothing else. See C7 and the L8 trigger above
   RejectShape,      // C1  — provenance / escape / mixed access / initializer
   RejectIndex,      // C2′ — index is not an injective {0,+,1} over the enclosing loop
   RejectWidth,      // C3  — the cell width has no reversible copy
   RejectAlias,      // C4  — the cell address fans out, or the bank has >1 store
-  RejectTotality,   // C6  — N != the proven trip count, or a cell no iteration writes
+  RejectTotality,   // C6  — N != the proven trip count, or a cell no iteration visits
 };
 
-// The resolved bank on a `Bank` verdict — handed back so no consumer re-derives it
-// (Rule 14: *"ask by CALLING the one owner, never by re-deriving its answer"*; the
-// drbq Inc-3 (b′) defect is a SECOND SPELLING of a predicate the tree already
-// owned). Meaningless for every other verdict.
+// The resolved bank on a `Bank` OR `BankRaw` verdict — handed back so no consumer
+// re-derives it (Rule 14: *"ask by CALLING the one owner, never by re-deriving its
+// answer"*; the drbq Inc-3 (b′) defect is a SECOND SPELLING of a predicate the tree
+// already owned). It is filled for BOTH accept-shaped verdicts because the
+// promoter's input is `BankRaw` and it needs the same seven fields. Meaningless for
+// every `Reject*` and for `NotBank`.
 struct RailBankShape {
   llvm::AllocaInst *Alloca = nullptr;  // the bank object
   llvm::Loop *L = nullptr;             // the loop whose {0,+,1} index walks the cells
@@ -472,7 +516,8 @@ struct RailBankShape {
 // the two can never diverge. `outMsg` is non-null exactly for a `Reject*` verdict
 // (a pattern-naming, source-located diagnostic the negative fixtures mirror
 // CHARACTER-FOR-CHARACTER). `outShape`, when non-null, receives the resolved bank
-// on `Bank` and is left untouched otherwise. PURE ANALYSIS — no mutation.
+// on `Bank` AND on `BankRaw`, and is left untouched otherwise. PURE ANALYSIS — no
+// mutation.
 RailBankCarve railBankCarveVerdict(const llvm::StoreInst *SI, const TaintSet &taint,
                                    llvm::DominatorTree &DT, llvm::LoopInfo &LI,
                                    llvm::ScalarEvolution &SE, const char *&outMsg,

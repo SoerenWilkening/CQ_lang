@@ -26,6 +26,15 @@
 ; ACCEPT and the shape below becomes checkable on stdout.  Re-derive it then; do
 ; NOT delete it.
 ;
+;
+; ⚠⚠ THE L8 RETIREMENT TRIGGER BELOW HAS FIRED — bd `xdu2` W1's SECOND HALF
+; landed 2026-09-15 and this file was RE-DERIVED, not deleted.  The promoted
+; shape is UNCHANGED (W1's cast sink fires only when the store's value is a
+; `phi`, i.e. only on the conditional-arm shape, and this program's prep is
+; unconditional), and the bank store no longer declines.  What declines now is
+; the loop-carried tainted accumulator `a` — `cq loop lowering: loop-carried
+; tainted value crosses iterations`, X1 / bd `ej5w` / W3 — which is wall 4 of
+; the owner's cascade and is not W1's.
 ; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:     -S %s > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
@@ -83,7 +92,7 @@ out:
 ; NOTS-NOT: %cq.bank = phi
 ; NOTS-COUNT-1: CQ_RAILBANK_DBG: promote bank
 
-; DECLINE: cq taint escape: tainted value stored to memory
+; DECLINE: cq loop lowering: loop-carried tainted value crosses iterations
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans

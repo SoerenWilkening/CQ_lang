@@ -6007,6 +6007,143 @@ add_test(NAME e2e-loop-pairing-rootmint-twin-identical
 # lives here rather than in ir-pass-lit.
 add_test(NAME e2e-negative-vacuity-selftest
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/negative_vacuity_check_test.py")
+# ── bd `xdu2` / L-1a Increment W1, THE SECOND HALF (Track B, 2026-09-15) ─────
+# The rail BANK: a bounded local array whose cells each hold one quantum rail.
+# Until this increment every one of these programs declined `cq taint escape:
+# tainted value stored to memory` at every N.
+#
+# ⚠ EVERY ENTRY RUNS STRICT STAGE 2B (no `--allow-unproven`), and stage 2b counts
+# `cqrt_alloc` SITES rather than dynamic mints, so a ROLLED per-trip allocation
+# reads as ONE rail per site.  Each slice header carries its own measured 2b line.
+#
+# ⚠ THE THREE `cqrt_measure_i1` LINES IN THESE GOLDENS ARE THE POINT.  With the
+# type rewrite and the D5 allow-list but WITHOUT the taint rule these programs
+# give `opt` exit 0, STRICT 2b clean and a plausible SIX-line trace with the
+# user's three measurements emitting NOTHING — a golden byte-diff cannot see a
+# measurement that was never emitted, so the pieces are one commit.
+add_test(NAME e2e-slice-railbank-bool-prep-measureloop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop.expected.log")
+
+add_test(NAME e2e-slice-railbank-bool-prep-measureloop-zeroinit
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop_zeroinit.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop_zeroinit.expected.log")
+
+add_test(NAME e2e-slice-railbank-bool-prep-constidx-measures
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_constidx_measures.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_constidx_measures.expected.log")
+
+add_test(NAME e2e-slice-railbank-int-cells-measureloop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_int_cells_measureloop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_int_cells_measureloop.expected.log")
+
+add_test(NAME e2e-slice-railbank-nonmain
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_nonmain.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_nonmain.expected.log")
+
+add_test(NAME e2e-slice-railbank-flat-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_flat_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_flat_twin.expected.log")
+
+# GATE — R2 / owner ruling D1.  The UNINITIALISED bank (`bool b0[3];`) is
+# admitted by C6 TOTALITY alone; it does NOT inherit bd `z9t1`'s justification,
+# because `normalizeUndefRotationSeed` does not reach a MEMORY seed.  The claim
+# that the two spellings denote one program is therefore owed a MEASUREMENT, and
+# this is it.  ⚠ It compares TRACES and not IR on purpose: the zero-init twin
+# carries an extra `llvm.memset` that an IR diff would report and that no
+# emitted gate can see.  MEASURED 2026-09-15: byte-identical, equal sha256
+# `0eaaad13…`, 0 divergences.  ⚠ ANY DIVERGENCE HERE RETURNS D1 TO THE OWNER —
+# it is a ruling, not an implementation detail.
+add_test(NAME e2e-railbank-uninit-zeroinit-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop_zeroinit.expected.log")
+
+# GATE — the BYTE-IDENTITY WITNESS `SCOPE_L1a.md` §5 asked the capability to
+# carry.  The bank's stream must equal the FLAT twin's: three scalar `_Bool`s,
+# three preps, three measures, no array anywhere.  Every trip is identical by
+# construction in both programs, which is the property that makes the comparison
+# meaningful rather than coincidental.  ⚠ What it witnesses is the emitted
+# STREAM, not the unitary (Rule 2) and not rail identity (that is stage 2b's,
+# and the two programs differ there by construction).
+add_test(NAME e2e-railbank-flat-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_bool_prep_measureloop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_flat_twin.expected.log")
+
+# ⚠ `slice_railbank_owner_cascade.c` IS DELIBERATELY NOT REGISTERED AND HAS NO
+# GOLDEN.  It is the owner's canonical customer program committed as the RECORD
+# (owner ruling E4, bd `zwtm`), and it still DECLINES — `cq controlled lowering:
+# control flow inside a loop body under quantum control`, wall 3 of four, which
+# is `iterationLocalRollable`'s conjunct (c3) / bd `8h7d.11` and is
+# BANK-INDEPENDENT.  The e2e layer has no decline shape (`run_slice*.sh` runs
+# under `set -euo pipefail` and byte-diffs a golden), so the file follows the
+# `slice_control_switch_phase.c` (2026-09-05) and bd-`3d8q` (2026-09-14)
+# precedent: KEPT, unregistered, with a conversion header and an L8 retirement
+# trigger.  The decline is pinned in the lit layer.  bd `zwtm` closes when
+# (c3) + W3 land and this file is registered — NOT when it is committed.
+
+# ── bd `xdu2` / L-1a W1, Rule-13 review F-1 — THE REGISTER-TWIN DECLINE GATE ──
+#
+# The instrument that sees the class the corpus sweep structurally cannot. That
+# sweep's headline safety property is `0 A->D` over a corpus written BEFORE the
+# rail-bank capability existed, and F-1 was a `D->A`: a program the REGISTER
+# spelling loudly refuses compiled silently through a memory cell, with `opt`
+# exit 0, empty stderr, STRICT stage 2b `0 violation(s)` and a plausible
+# seven-line trace. `ir-pass-lit`, the 8 e2e railbank entries and every
+# twin-IDENTITY gate here were green on it, because none of them contained a
+# program of that shape.
+#
+# This extends the shipped twin discipline (`e2e-railbank-flat-twin-identical`:
+# *does the bank MATCH the register spelling when both accept?*) in the
+# direction that catches an over-accept:
+#   P1  the bank DECLINES whenever the register spelling DECLINES   (a VIOLATION fails)
+#   P2  when BOTH accept, the emitted traces are BYTE-IDENTICAL     (a MISMATCH fails)
+# The converse — the bank declining where the register spelling accepts — is an
+# OVER-DECLINE: counted and printed, never failed on (owner ruling 2026-09-11).
+#
+# It compiles and runs its own pairs, so it needs the build tree; what it does
+# NOT witness is in `tools/railbank_twin_pairs/PAIRS.md`, stated so absence is
+# not read as clearance.
+add_test(NAME e2e-railbank-register-twin-decline
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/railbank_register_twin_gate.py"
+    --build "${CMAKE_BINARY_DIR}"
+    --pairs "${CMAKE_SOURCE_DIR}/tools/railbank_twin_pairs"
+    --include "${CMAKE_SOURCE_DIR}/include")
+
+# Its MUTANT VALIDATION (CLAUDE.md L10 — "an instrument's failure mode is to
+# REPORT A PASS, so the only instrument worth citing is one that has been made
+# to FAIL ON PURPOSE"; nine instrument self-failures were measured in the
+# 2026-09-14/-15 sessions alone). 20 mutants across two layers: the pure verdict
+# table, and the whole driver's EXIT CODE on deliberately broken corpora (empty,
+# fabricated violation, fabricated trace mismatch, vacuous half, missing twin).
+add_test(NAME e2e-railbank-register-twin-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/railbank_register_twin_gate_test.py"
+    --build "${CMAKE_BINARY_DIR}")
 
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or

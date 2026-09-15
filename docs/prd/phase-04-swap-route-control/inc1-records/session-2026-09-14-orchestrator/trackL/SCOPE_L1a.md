@@ -346,7 +346,7 @@ a loud decline.
 | **stage 2b `free_pairing_check.py`** | rail identities, `|0⟩`-at-free | ⚠ **counts `cqrt_alloc` SITES**, so a rolled per-trip alloc reads as **one** rail left allocated when the circuit mints K. Already structurally blind to template-minted rails | **do not cite 2b as clearance here.** Put the sentence in the slice header, not in the review |
 | ⚠ **`free_pairing_check.py`'s own premise** | — | — | **`tools/free_pairing_check.py:1259 provably_not_a_rail` carries a load-bearing assumption L-1a falsifies**, in the docstring at `:1292`: *"A handle cannot reach a global and come back — a tainted `store` is a loud decline at `declineTaintEscapes` long before lowering — so a load result is not a rail."* After L-1a a bank `load i32` **is** a rail handle and `provably_not_a_rail` returns `True` (`:1308`) for it, so any rule that reads it as a classical immediate — e.g. a bank load passed as a **control** to `cqrt_copy_i32_controlled` — could discharge a free it should not. **The checker must learn the bank, or the increment must keep the premise true.** This is a Rule-13-class instrument finding, not a nicety |
 | **`e2e-loop-twin-matrix`** (288 cells at the time of this scoping: `grep -c '^m_' tools/loop_twin_matrix.expected.txt` = 259 + `grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt` = 29) | ⚠ **the only thing in the tree that can see a leaked TEMPLATE-minted rail** | a `_Bool` condition — `grep -c bool tools/loop_twin_matrix.py` = **2**, both inside `phi_surface_of_header`; **every one of the 288 cells is blind to it** | **applies and is not optional**, but it needs the `_Bool` axis built first (`SCOPE_loop.md` §2.6). See §6 for the cell count. ⚠ **ANNOTATED 2026-09-14 (closing docs pass): THIS ROW IS STALE AS A MEASUREMENT AND CORRECT AS A DIAGNOSIS.** bd `uq96` (`49b7f7bc`) built that `_Bool` axis the same day: the matrix is now **338 cells** (309 + 29, re-measured at `66428ddc`) and 50 of them carry an `i1` register. The blind spot this row named is the one the axis closed; do not re-quote the `288` / `= 2` figures as current |
-| **rolled == hand-unrolled byte identity** | a per-iteration mint that should have been hoisted, a gate dropped on the back edge, an ancilla reused across trips | — | ⚠ **NOT available for the owner's literal program.** With `a = 5` constant, `-O1` folds trip 0's condition in the *unrolled* spelling and cannot in the rolled one (H2), so the two streams legitimately differ. With an opaque `a` the unrolled twin **declines** (`L13`). **The byte-identity gate must therefore be built on a program whose every trip is identical and whose flat twin lowers** — or replaced by K-independence + a per-trip multiset argument, labelled as an INTERNAL-CONSISTENCY gate in the `slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.c:11-15` style |
+| **rolled == hand-unrolled byte identity** | a per-iteration mint that should have been hoisted, a gate dropped on the back edge, an ancilla reused across trips | — | ⚠ **NOT available for the owner's literal program.** With `a = 5` constant, `-O1` folds trip 0's condition in the *unrolled* spelling and cannot in the rolled one (H2), so the two streams legitimately differ. With an opaque `a` the unrolled twin **declines** (`L13`). **The byte-identity gate must therefore be built on a program whose every trip is identical and whose flat twin lowers** — or replaced by K-independence + a per-trip multiset argument, labelled as an INTERNAL-CONSISTENCY gate in the `slice_control_cascade_select_in_loop_outside_prep_unrolled_twin.c:11-15` style. ⚠ **ANNOTATED 2026-09-15 (Track A, routing item R4): THIS ROW'S VERDICT STANDS AND ITS STATED GROUND MUST NOT BE READ AS *'the N=3 twin does not exist'*.** §7's N=3 bullet is HISTORY — bd `om35` landed and `a_flat_n3.c` ACCEPTS on the 2026-09-15 ORACLE (exit 0, 147 lines, measured). The two reasons this row is still correct are independent of that: the H2 constant-fold asymmetry, and `L13_flat_n2_opaque_noinline.c` still declining `cq controlled lowering: control flow under quantum control` on the same ORACLE (re-measured). See the erratum at §7 |
 | **K-independence of the lowered IR** | that the loop was rolled, not unrolled | anything about the unitary | measure **without `-g`** (debug metadata inflates the count and a `-g` number is not comparable — `SCOPE_loop.md` §3) |
 
 ---
@@ -437,10 +437,38 @@ were confirmed silent miscompiles. Round 1 should be scoped to §4's enumeration
   internal-consistency one.** `a_flat_n2.c` accepts (29 lines, 2b `8/6/2 verified`) and its gate
   stream equals the committed golden `slice_control_cascade_two_bools.expected.log`. The Track M merge
   record names `trackL/a_flat_n2` among its 79 DECLINE→ACCEPT movers — independent confirmation.
-* **The dependency is UNMET at N=3.** `a_flat_n3.c` declines
+* ~~**The dependency is UNMET at N=3.**~~ `a_flat_n3.c` declines
   `cq controlled lowering: state prep seed is proven equal to the condition register under quantum
   control` — the `vd.c` wall, **bd `om35`**, which this session's **Track F is SCOPING, not
   implementing**. So at the end of this session the N=3 unrolled twin still does not exist.
+
+  > ⚠ **ERRATUM, 2026-09-15 (Track A, applied IN THE SOURCE this time).** **The bullet above is
+  > HISTORY and its conclusion is wrong.** bd `om35` LANDED on 2026-09-14 (`30317792`), after this
+  > document was written, and re-measured on the 2026-09-15 ORACLE (`cq-opt`
+  > `0e280fc62a91cec2336769edde8a873563a21ee4869744331a0fcf6811549c6d`) **`a_flat_n3.c` ACCEPTS**:
+  > ```
+  > clang -Iinclude -include CQ.h -O1 -g -emit-llvm -S trackL/probes/a_flat_n3.c -o a_flat_n3.s1.ll
+  > <ORACLE>/ir-pass/cq-opt -passes=cq-lowering -S a_flat_n3.s1.ll -o a_flat_n3.s2.ll   # exit 0, 147 lines
+  > ```
+  > (`a_flat_n2.c` likewise, exit 0, 115 lines.) **So the N=3 unrolled twin DOES exist**, and the
+  > dependency this bullet calls UNMET is MET.
+  >
+  > ⚠ **AND THE §5 CONCLUSION THAT RESTED ON IT STILL HOLDS — FOR A DIFFERENT REASON, WHICH IS
+  > EXACTLY HOW A STALE PREMISE SURVIVES A CORRECTION.** §5's *"rolled == hand-unrolled byte
+  > identity … NOT available for the owner's literal program"* row must NOT be re-derived from "the
+  > twin does not exist". Its two live reasons are **independent of `om35`** and both were
+  > re-measured here: (i) with `a = 5` constant, `-O1` folds trip 0's condition in the UNROLLED
+  > spelling and cannot in the rolled one (H2), so the two streams legitimately differ; and (ii) the
+  > opaque-`a` alternative still declines — `L13_flat_n2_opaque_noinline.c` measures exit 1
+  > `cq controlled lowering: control flow under quantum control` on the SAME ORACLE. The byte-identity
+  > gate therefore still has to be built on a third program, or replaced by K-independence plus a
+  > per-trip multiset argument, labelled INTERNAL-CONSISTENCY.
+  >
+  > This erratum exists because the correction was recorded in
+  > `session-2026-09-14c-xdu2-w1/DECISIONS.md` ("Corrections landed by the tracks themselves") and
+  > **never applied here**. `CLAUDE.md` L7-with-a-twist, verbatim: *a record correction that is not
+  > applied to the source is not a correction* — and that defect was found three times on one
+  > sentence before anyone believed it.
 * **Track P does not change the unrolled twin.** bd `3qps` is the **PHASE** consumer of the
   merge-φ leaf; the array cascade's arm is a **VALUE** arm (a `select`), already Track M's. bd `4aiu`
   is the ROOT-ONLY widening (a φ at an *interior* position of a compound select condition); the

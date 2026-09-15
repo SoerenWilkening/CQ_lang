@@ -30,6 +30,32 @@
 ; becomes an ACCEPT and the promoted shape below becomes checkable on stdout.
 ; Re-derive it then; do NOT delete it.
 ;
+;
+; ⚠⚠ THE L8 RETIREMENT TRIGGER BELOW HAS FIRED — bd `xdu2` W1's SECOND HALF
+; landed 2026-09-15 and this file was RE-DERIVED, not deleted, in the same
+; change.  TWO things moved and both are recorded here rather than absorbed:
+;
+;   (1) THE PROMOTED SHAPE.  W1 piece 2 SINKS the `_Bool` cell's storage cast
+;       out of the region arm: the merge phi is now built at the RAIL type
+;       (`%cq.bank1 = phi i1`) and the `zext i1 -> i8` sits immediately in front
+;       of the activation-end store (`%cq.bank.stg`).  The `trunc` the arm's
+;       consumer used to read is folded away with it.  With the cast IN the arm
+;       the arm classified as a VALUE arm and the module declined `value-arm
+;       swap-route under quantum control` anchored at the `zext` itself.  The
+;       PUN FENCE (`StoreVal->getType() != CellTy`) is untouched — the store
+;       still stores `i8` — which is why the cast is SUNK and not deleted.
+;
+;   (2) THE DECLINE.  The bank store no longer declines; the REGION does —
+;       `cq controlled lowering: control flow inside a loop body under quantum
+;       control`, `iterationLocalRollable`'s conjunct (c3), bd `8h7d.11`.  That
+;       conjunct is BANK-INDEPENDENT (the same loop with a scalar `bool` and no
+;       array declines identically), so W1 neither caused it nor can move it.
+;       Owner ruling E5 in one line: *the bank compiles; the owner's cascade
+;       needs (c3) + W3.*
+;
+; ⚠ NEXT L8 RETIREMENT TRIGGER: the day bd `8h7d.11` lands, this decline moves
+; again, to `cq loop lowering: loop-carried tainted value crosses iterations`
+; (X1 / bd `ej5w` / W3).  Re-derive it then; do NOT delete it.
 ; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
 ; RUN:     -S %s > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
@@ -102,16 +128,15 @@ out:
 ;     false, …)` verbatim.  Nothing addresses the bank in the arm any more.
 ; DBG:      arm:
 ; DBG-NEXT:   %q = call zeroext i1 @cq_theta_i1(i1 false, double 5.000000e-01)
-; DBG-NEXT:   %z0 = zext i1 %q to i8
 ; DBG-NEXT:   br label %latch
 
 ; (2) The intra-activation load is the SSA MERGE, and (3) exactly ONE store per
 ;     activation survives, at the activation's end, of that merge value.
 ; DBG:      latch:
-; DBG-NEXT:   %cq.bank = phi i8 [ %z0, %arm ], [ 0, %head ]
-; DBG-NEXT:   %t1 = trunc nuw i8 %cq.bank to i1
+; DBG-NEXT:   %cq.bank1 = phi i1 [ %q, %arm ], [ false, %head ]
 ; DBG:        %cq.bank.addr = getelementptr inbounds [3 x i8], ptr %b, i64 0, i64 %i
-; DBG-NEXT:   store i8 %cq.bank, ptr %cq.bank.addr, align 1
+; DBG-NEXT:   %cq.bank.stg = zext i1 %cq.bank1 to i8
+; DBG-NEXT:   store i8 %cq.bank.stg, ptr %cq.bank.addr, align 1
 ; DBG-NEXT:   br i1 %done, label %mend, label %head
 
 ; The measure loop is NOT promoted — it reads cells written by a DIFFERENT
@@ -121,7 +146,7 @@ out:
 ; DBG:      mhead:
 ; DBG:        %s2 = load i8, ptr %g2, align 1
 
-; DECLINE: cq taint escape: tainted value stored to memory
+; DECLINE: cq controlled lowering: control flow inside a loop body under quantum control
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans
