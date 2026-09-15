@@ -226,6 +226,9 @@
 #
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+# ==== END OF HEADER — everything BELOW this line is generated and is rewritten
+# ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
+# ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
 m_add_der_add            ACCEPT-IDENTICAL
 m_add_der_none           ACCEPT-IDENTICAL
 m_add_der_none_bodyread  ACCEPT-IDENTICAL

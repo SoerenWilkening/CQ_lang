@@ -1212,6 +1212,171 @@ def phi_void_source(text):
 # exists in the trace, and it is small enough that a divergence is readable.
 TRIPS = 2
 
+# ── THE BANK AXIS (bd test_C_libtooling-rpkr) ───────────────────────────────
+# WHY IT EXISTS, and why it had to exist BEFORE the capability it watches.
+# bd `xdu2` / L-1a carves a bounded `bool b[N]` into an `[N x i32]` RAIL BANK —
+# classical memory holding one quantum rail HANDLE per cell — and `SCOPE_L1a`
+# §4.4 enumerates, site by site, that essentially every fence in the tree is
+# SILENT on a value that arrives through a `load`: `railWireClosure`, gate 2c,
+# `condProvenance`, `collectRailGates`, `markIfRailLocal`, `hasTaintedCondBranch`
+# and `lowerMeasures` all fall off a `LoadInst` without a word. This instrument
+# is the only one in the tree that can see a LEAKED TEMPLATE-MINTED RAIL (stage
+# 2b has no `cqrt_alloc` to count), so it inherits the job of watching the bank —
+# and on the day the accept lands it must already have cells pointed at the
+# shape, not be widened afterwards to explain one.
+#
+# THAT SEQUENCING IS THE LESSON OF bd `uq96`, WHICH FAILED IT TWICE. Before uq96
+# the matrix had no `i1` axis at all, so the witness of record for in-loop work
+# could not see the width of the owner's entire cascade; and the first 40 `i1`
+# cells still could not see the ITERATION-LOCAL rail, because every `B_ARM`
+# declared its second register OUTSIDE the loop — the axis took a second pass of
+# ten more cells. `CLAUDE.md`: *an instrument is only ever blind in the shape
+# nobody has pointed it at yet.*
+#
+# WHAT A BANK CELL MEASURES, AND IT IS NOT ONE THING — THE READ SHAPE DECIDES.
+# This is the axis's substance and the reason it is two-valued rather than a
+# flag. `_wrap`'s unrolled twin is the SAME body text repeated with the loop
+# counter `i` bound and constant-propagated, so the twin's bank subscripts are
+# COMPILE-TIME CONSTANTS. What happens next is a MEASURED `-O1` fact, not a
+# design choice (oracle `0e280fc6`, `probes/k_readshape.md`):
+#
+#   `kflat` — the bank is read back with constant subscripts. SROA then
+#     scalarises the twin COMPLETELY. ⚠ SO THE TWIN OF A `kflat` CELL IS NOT A
+#     BANK PROGRAM. `ACCEPT-IDENTICAL` here is the claim *"the rolled bank emits
+#     byte-for-byte what the equivalent SCALAR cascade emits"* — which is exactly
+#     witness W-B of `$PREV/trackI/IMPL_I.md` §4.2, and the strongest statement
+#     available for this increment. It says nothing about a defect the SCALAR
+#     path shares.
+#
+#   `kloop` — the bank is read back through a second, still-ROLLED loop over a
+#     dynamic subscript, so SROA scalarises NEITHER side and the twin IS a bank
+#     program. `ACCEPT-IDENTICAL` here is the narrower, different claim *"the
+#     bank WRITE loop rolled emits what the bank write loop unrolled emits"*. It
+#     says nothing about a defect in the PROMOTER, which fires on both sides.
+#
+# MEASURED on the oracle `0e280fc6`, from the GENERATED sources themselves and
+# not from a hand-written lookalike — `probes/k_readshape.py` (array `alloca` /
+# `getelementptr` counts in the stage-1 module):
+#
+#     cell                            side       alloca  gep   aggregate?
+#     m_none_kprep_none_none_kflat    rolled          1    2   YES
+#     m_none_kprep_none_none_kflat    unrolled        0    0   no (SROA)
+#     m_none_kprep_none_none_kloop    rolled          2    4   YES
+#     m_none_kprep_none_none_kloop    unrolled        1    2   YES
+#     m_none_kiprep_none_none_kflat   rolled          2    4   YES
+#     m_none_kiprep_none_none_kflat   unrolled        0    0   no (SROA)
+#     m_none_k2b_none_none_kloop      rolled          2    4   YES
+#     m_none_k2b_none_none_kloop      unrolled        2    4   YES
+#
+# Neither claim implies the other and neither is the unitary (Rule 2). They are
+# recorded as two columns precisely so that a future reader cannot collapse them
+# into one sentence about "the bank axis".
+#
+# TODAY EVERY CELL HERE DECLINES, and that is the axis working rather than the
+# axis waiting: `kflat` cells are `UNROLLED-ONLY` (the rolled bank dies at
+# `cq taint escape: tainted value stored to memory` while the scalarised twin
+# lowers) and `kloop` cells are `DECLINE-BOTH` on that same string. The verdict
+# strings PIN THE DIAGNOSTIC CHARACTER-FOR-CHARACTER, so the accept's arrival is
+# a red that must be regenerated deliberately with a written reason (Rule 12) —
+# the same instrument posture the 59 `UNROLLED-ONLY` Ry cells had before drbq
+# Inc 3 flipped them, and the same one they are still read by.
+K_REGION = {
+    # The DESIGN TARGET: one fresh rail per trip, written to its own cell. This
+    # is `$PREV/trackI/probes/w1_bank_prep_only.c`'s body verbatim.
+    "kprep":  "        k[i] = cq_theta(k[i], 0.5);\n",
+    # The same store inside a TAINTED-CONDITION ARM — the cascade's arm, and the
+    # `MergePhiPeel` P10 `armWritesMemory` obstacle (`SCOPE_L1a` §4.4 (D)): the
+    # peel refuses an arm that writes memory, and the promoter is supposed to
+    # have removed the store before the peel ever looks.
+    "kcond":  "        if (a > 5) k[i] = cq_theta(k[i], 0.5);\n",
+    # D5, the allow-list's first complement: a bank LOAD used as a BRANCH
+    # CONDITION. `SCOPE_L1a` calls this the headline silent failure if taint is
+    # let across memory without the promotion — `br i1 %load` is untainted, so
+    # `hasTaintedCondBranch` never fires and the ARM RUNS AS CLASSICAL CODE.
+    "kread":  "        k[i] = cq_theta(k[i], 0.5);\n"
+              "        if (k[i]) a = cq_theta(a, 0.25);\n",
+    # D5, second complement: a bank load feeding ARITHMETIC.
+    "karith": "        k[i] = cq_theta(k[i], 0.5);\n"
+              "        a = a + (int) k[i];\n",
+    # C2 — a TAINTED INDEX. The negative that must keep 7.5's existing string and
+    # never acquire a new one of its own (`SCOPE_L1a` §6.1).
+    "kidx":   "        k[a & 1] = cq_theta(k[a & 1], 0.5);\n",
+    # C6 — TOTALITY. Same body as `kprep`; the BANK is over-sized (see `K_BANK`)
+    # so two trips leave six cells never written and never read.
+    "kover":  "        k[i] = cq_theta(k[i], 0.5);\n",
+    # TWO banks in one body — the GROUPING-KEY probe, the bank mirror of
+    # sub-grid B7's W-5 two-iteration-local-rails cell. `staleRailRecordRead`
+    # groups per ROOT MINT and a bank rail has no root mint at all
+    # (`SCOPE_L1a` §4.4 (B)), so "which rails must interfere" is an open
+    # question with two allocas in front of it.
+    "k2b":    "        k[i] = cq_theta(k[i], 0.5);\n"
+              "        m[i] = cq_theta(m[i], 0.25);\n",
+    # The `int`-cell WIDTH control. The `[N x i1]` -> `[N x i32]` TYPE REWRITE is
+    # one of the three pieces Track B lands; an `int` bank needs no rewrite at
+    # all, so this pair is the discriminator between "the bank works" and "the
+    # type rewrite works".
+    "kiprep": "        k[i] = cq_theta(k[i], 0.5);\n",
+    "kicond": "        if (a > 5) k[i] = cq_theta(k[i], 0.5);\n",
+}
+
+# (cell type, DECLARED bank size, whether a second bank `m` is declared).
+# The size is separate from `TRIPS` for exactly one cell — `kover`, C6 — and the
+# read always covers indices `0 .. TRIPS-1`, so an over-sized bank's tail never
+# reads a cell the body never wrote.
+K_BANK = {
+    "kprep":  ("_Bool", TRIPS, False),
+    "kcond":  ("_Bool", TRIPS, False),
+    "kread":  ("_Bool", TRIPS, False),
+    "karith": ("_Bool", TRIPS, False),
+    "kidx":   ("_Bool", TRIPS, False),
+    "kover":  ("_Bool", 8,     False),
+    "k2b":    ("_Bool", TRIPS, True),
+    "kiprep": ("int",   TRIPS, False),
+    "kicond": ("int",   TRIPS, False),
+}
+assert set(K_BANK) == set(K_REGION), "K_BANK and K_REGION disagree"
+
+# The READ SHAPE rides in the `<rgate>` name slot, the way bd uq96 put the carry
+# key there: it contributes NOTHING to the loop body, so its `GATE_ALL` entry is
+# the empty pair and no cell's body text can depend on it.
+K_READ = ("kflat", "kloop")
+GATE_ALL.update({r: {"pre": "", "post": ""} for r in K_READ})
+
+# The `a`-register gate STAR beside the design-target body: the pre-existing
+# PREFIX/SUFFIX axes crossed with a bank, which is the only place this axis asks
+# whether an in-place gate on a DISJOINT register interacts with a bank rail.
+K_A_STAR = (("ry", "none"), ("none", "ry"), ("add", "none"))
+
+# Every K region except `kidx` reads the loop counter, so the unrolled twin must
+# bind `i` for them (see `_wrap`'s `index`). `kidx` subscripts by `a & 1` and
+# would carry a dead counter, so it is deliberately left out rather than swept
+# in — a dead `i` in two of twenty-one sources is the kind of harness noise that
+# later reads as a shape.
+INDEXED_REGION = INDEXED_REGION + tuple(k for k in K_REGION if k != "kidx")
+
+
+def _bank_text(region, read):
+    """(declaration, post-loop block, extra `return` terms) for one bank cell.
+
+    ALL of a bank cell's non-body text is minted here, in ONE place, so the
+    rolled and unrolled spellings cannot receive different versions of it — the
+    same argument `_wrap` makes for the `surface` rewrite.
+    """
+    cells, size, twin = K_BANK[region]
+    names = ["k"] + (["m"] if twin else [])
+    # `= {0}` is deliberate and is NOT decoration: L-1a clause C1 requires a
+    # constant-zero initializer, and an uninitialized `bool b[N];` is the OPEN
+    # composition question with bd `z9t1` (`SCOPE_L1a` §7, R2). This axis takes
+    # the ruled shape and leaves the unruled one to the increment that rules it.
+    decl = "".join("    %s %s[%d] = {0};\n" % (cells, n, size) for n in names)
+    if read == "kflat":
+        return decl, "", "".join(" + (int) cq_measure(%s[%d])" % (n, j)
+                                 for n in names for j in range(TRIPS))
+    post = "    int ks = 0;\n" + "".join(
+        "    for (int j = 0; j < %d; ++j) ks += (int) cq_measure(%s[j]);\n"
+        % (TRIPS, n) for n in names)
+    return decl, post, " + ks"
+
 
 def sources(prefix, region, suffix, record="none", rgate="none",
             surface="register"):
@@ -1233,6 +1398,13 @@ def sources(prefix, region, suffix, record="none", rgate="none",
         bcond = B_BCOND[region]
     elif region in RY_REGION:
         region_text, second, bcond = RY_REGION[region], "quantum", False
+    elif region in K_REGION:
+        # bd rpkr: the BANK axis is the FOURTH region family and, exactly as the
+        # `_Bool` one, it is recognised by which dict holds the key. The bank
+        # declares no second register `r` and no `_Bool b` condition, so its
+        # head and tail differ from a pre-rpkr cell's only by the bank text
+        # `_bank_text` mints — which is `("", "", "")` for every other cell.
+        region_text, second, bcond = K_REGION[region], "none", False
     else:
         region_text, second, bcond = REGION[region], "none", False
     S = SECOND[second]
@@ -1247,11 +1419,12 @@ def sources(prefix, region, suffix, record="none", rgate="none",
                  postloop=POSTLOOP_FOR_REGION.get(region, ""),
                  preloop=PRELOOP.get(prefix, ""),
                  prehead=PREHEAD.get(prefix, ""),
-                 bcond=bcond)
+                 bcond=bcond,
+                 bank=_bank_text(region, rgate) if region in K_REGION else None)
 
 
 def _wrap(body, second, R, surface="register", index=False, postloop="",
-          preloop="", prehead="", bcond=False):
+          preloop="", prehead="", bcond=False, bank=None):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
@@ -1292,14 +1465,25 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     and its seeding rotation. Both default to the pre-uq96 behaviour, and all
     288 older cells take that default — PROVEN by hashing every generated source
     before and after the edit, not asserted (the same discipline `prehead`,
-    `preloop` and `postloop` were added under)."""
+    `preloop` and `postloop` were added under).
+
+    `bank` (bd rpkr) is the RAIL-BANK triple `(declaration, post-loop read
+    block, extra return terms)` minted by `_bank_text`, or `None`. `None`
+    unpacks to three empty strings and every one of the 338 pre-rpkr cells takes
+    it — PROVEN the same way, by `probes/source_identity.py` over all 676
+    cell/surface pairs. The read block is APPENDED to `postloop` rather than
+    given a placement of its own, because `postloop` is already the one position
+    that sits outside the repetition on BOTH spellings, which is the property
+    that makes a bank read faithful between them."""
     S = SECOND[second]
-    head = ("int slice(void){\n    int a = 0;\n" + S["decl"]
+    bdecl, bpost, btail = bank if bank else ("", "", "")
+    postloop = postloop + bpost
+    head = ("int slice(void){\n    int a = 0;\n" + S["decl"] + bdecl
             + ("    _Bool b = 0;\n" if bcond else "") + R["decl"]
             + "    a = cq_theta(a, 0.5);\n" + S["seed"]
             + ("    b = cq_theta(b, 0.5);\n" if bcond else ""))
-    tail = "    return cq_measure(a)%s%s%s;\n}\n" % (
-        S["tail"], " + (int) cq_measure(b)" if bcond else "", R["tail"])
+    tail = "    return cq_measure(a)%s%s%s%s;\n}\n" % (
+        S["tail"], " + (int) cq_measure(b)" if bcond else "", R["tail"], btail)
     rolled = (
         HDR
         + head
@@ -1712,6 +1896,110 @@ def divergence_signature(rolled_trace, unrolled_trace):
             ul[i] if i < len(ul) else "<end>")
 
 
+# ── THE HEADER CONTRACT (bd test_C_libtooling-gfsk) ─────────────────────────
+# ⚠ WHAT WENT WRONG, because the fix only makes sense against it. `--regenerate`
+# used to rewrite the WHOLE expected table, header included, from the
+# `EXPECTED_HEADER` constant. On 2026-09-11 a human added 54 lines of Rule-13
+# RULING prose to the file — the bd `b6ap` multi-phi-peel ruling, its re-derived
+# unitary, the round-1 reviewer's caveat and an explicit L8 RETIREMENT TRIGGER —
+# and the next `--regenerate` DELETED ALL OF IT and printed a success line. That
+# is worse than a misreport: it DESTROYS EVIDENCE, and the thing it destroyed was
+# a recorded decision, which is `CLAUDE.md` L7's failure mode arriving by tooling
+# instead of by omission.
+#
+# bd uq96 recovered the paragraph into the constant and wrote a warning into the
+# header saying "a new note goes in the constant, never in this file." ⚠ THAT IS
+# A CONVENTION, NOT A MECHANISM, and this project's whole method is that a
+# convention nobody can violate beats a convention nobody should. So:
+#
+#   1. Every table this script writes carries `HEADER_END_MARKER`. Everything
+#      ABOVE it is the HEADER and belongs to whoever wrote it; everything below
+#      is generated rows.
+#   2. `--regenerate` and `--refresh-quarantine` PRESERVE the on-disk header
+#      byte-for-byte. Hand-added prose survives, and the script says how many
+#      lines it preserved — a silent deletion is no longer expressible.
+#   3. A file that EXISTS but carries NO marker is a REFUSAL, not a guess: the
+#      script cannot tell your prose from its own, so it writes nothing and
+#      exits non-zero. (This is the one case that used to eat the paragraph.)
+#   4. A MISSING file is seeded from the constant, which ends with the marker,
+#      so the very next regeneration is already under rule 2.
+#   5. After every write the file is READ BACK and its header compared to what
+#      was meant to be preserved. An instrument's failure mode is to report a
+#      pass (L10); this one checks its own work before it reports one.
+#   6. Every PLAIN run checks the marker too, so a file that loses it is a red at
+#      the gate rather than a surprise at the next regeneration.
+HEADER_END_MARKER = (
+    "# ==== END OF HEADER — everything BELOW this line is generated and is "
+    "rewritten\n"
+    "# ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is "
+    "PRESERVED\n"
+    "# ==== byte-for-byte, including prose you add by hand (bd "
+    "test_C_libtooling-gfsk).\n")
+
+
+def split_header(path):
+    """(header-text-including-the-marker, found_marker).
+
+    `(None, False)` when the file does not exist. `(whole-file, False)` when it
+    exists without a marker — the caller must REFUSE on that, never guess.
+    """
+    if not path or not os.path.exists(path):
+        return None, False
+    with open(path) as f:
+        text = f.read()
+    i = text.find(HEADER_END_MARKER)
+    if i < 0:
+        return text, False
+    return text[:i + len(HEADER_END_MARKER)], True
+
+
+def resolve_header(path, default_header):
+    """(header, note, refusal). Exactly one of `header` / `refusal` is None."""
+    hdr, found = split_header(path)
+    if hdr is None:
+        seeded = default_header + HEADER_END_MARKER
+        return seeded, ("seeded %s with the script's own %d-line header, which "
+                        "ends in the END-OF-HEADER marker — every later write "
+                        "preserves whatever is above it"
+                        % (os.path.basename(path), seeded.count("\n"))), None
+    if not found:
+        return None, None, (
+            "REFUSED: %s has no END-OF-HEADER marker, so this run cannot tell "
+            "your prose from the script's — and it will not guess.\n"
+            "    %s is BYTE-UNCHANGED.\n"
+            "    Insert these three lines after the last header line and before "
+            "the first generated row:\n\n%s\n"
+            "    Everything above them is then preserved VERBATIM by every "
+            "future --regenerate / --refresh-quarantine. This path once deleted "
+            "54 lines of Rule-13 ruling prose and reported success (bd "
+            "test_C_libtooling-gfsk); refusing is the whole fix."
+            % (path, path, HEADER_END_MARKER))
+    return hdr, ("preserved %d header line(s) of %s byte-for-byte"
+                 % (hdr.count("\n"), os.path.basename(path))), None
+
+
+def write_preserving_header(path, header, body):
+    """Write `header + body`, then READ IT BACK and prove the header survived.
+
+    Rule 2 of the contract is only worth what its verification is worth, and an
+    instrument that reports its own success without checking is the L10 failure
+    mode. A mismatch raises `SystemExit`, which is loud and non-zero — never a
+    printed warning beside a zero exit.
+    """
+    with open(path, "w") as f:
+        f.write(header)
+        f.write(body)
+    back, found = split_header(path)
+    if not found or back != header:
+        raise SystemExit(
+            "INTERNAL: %s was written but its header did not survive the write "
+            "— %s. This is the bd test_C_libtooling-gfsk defect happening "
+            "again and the file on disk is NOT trustworthy; restore it from "
+            "git." % (path, "the marker is gone" if not found
+                       else "%d line(s) went in, %d came back"
+                            % (header.count("\n"), back.count("\n"))))
+
+
 def load_quarantine(path):
     """name -> {class, bd, owner, digest, rolled, unrolled}.
 
@@ -1761,15 +2049,21 @@ def load_quarantine(path):
 
 
 def write_quarantine(path, quar, order):
-    with open(path, "w") as f:
-        f.write(QUARANTINE_HEADER)
-        f.write("\n")
-        for n in order:
-            rec = quar[n]
-            f.write("cell     %s\n" % n)
-            for k in ("class", "bd", "owner", "digest", "rolled", "unrolled"):
-                f.write("%-8s %s\n" % (k, rec[k]))
-            f.write("\n")
+    """Returns the header note to print. Raises `SystemExit` on a refusal or on
+    a failed read-back — this file is never rewritten on a guess (the header
+    contract above; bd test_C_libtooling-gfsk)."""
+    header, note, refusal = resolve_header(path, QUARANTINE_HEADER)
+    if refusal:
+        raise SystemExit(refusal)
+    body = "\n"
+    for n in order:
+        rec = quar[n]
+        body += "cell     %s\n" % n
+        for k in ("class", "bd", "owner", "digest", "rolled", "unrolled"):
+            body += "%-8s %s\n" % (k, rec[k])
+        body += "\n"
+    write_preserving_header(path, header, body)
+    return note
 
 
 def cell_name(cell):
@@ -1778,19 +2072,22 @@ def cell_name(cell):
 
       `m_<prefix>_<region>_<suffix>`                    the 120 record-free cells
       `m_<prefix>_<region>_<suffix>_<record>`           the 36 RECORD cells
-      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 118 Ry-ARM cells
-                                                       and the 50 `_Bool` cells
+      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 118 Ry-ARM cells,
+                                                       the 50 `_Bool` cells and
+                                                       the 21 BANK cells
 
     The Ry cells ALWAYS carry all five segments (`..._none_none` included) and
     their region token is always an `RY_REGION` one, so no name can collide with
     a shorter grammar's. The bd uq96 `_Bool` cells take the SAME five-segment
     grammar and their region token is always a `B_REGION` one (`b*`/`nb*`/`ab*`,
     disjoint from every `RY_REGION` token), with the carry key in the `<rgate>`
-    slot — so adding the axis renames NOTHING. All four keep the `m_` prefix, so
-    `grep -c '^m_'` still counts cells.
+    slot — so adding the axis renames NOTHING. The bd rpkr BANK cells do the
+    same again: a `K_REGION` token (always `k*`, disjoint from all three of the
+    others) with the READ SHAPE in the `<rgate>` slot. All keep the `m_` prefix,
+    so `grep -c '^m_'` still counts cells.
     """
     prefix, region, suffix, record, rgate = cell
-    if region in RY_REGION or region in B_REGION:
+    if region in RY_REGION or region in B_REGION or region in K_REGION:
         return "m_%s_%s_%s_%s_%s" % cell
     if record == "none":
         return "m_%s_%s_%s" % (prefix, region, suffix)
@@ -2086,6 +2383,92 @@ def bool_cells():
     return out
 
 
+def bank_cells():
+    """The RAIL-BANK sub-grids (bd test_C_libtooling-rpkr). See the BANK AXIS
+    block above the `K_*` tables for what this axis can and cannot witness.
+
+    21 cells, inside `SCOPE_L1a` §6.3's measured 16-24 band. Every one carries
+    the five-segment name with a `K_REGION` token and a `K_READ` read shape, so
+    no committed cell is renamed and `grep -c '^m_'` keeps counting cells.
+    """
+    out = []
+    # K1 — the CORE product: the design target, the tainted-condition arm that
+    # writes memory, and the two D5 allow-list complements, each at BOTH read
+    # shapes. The read shape is crossed rather than picked because the two make
+    # DIFFERENT claims (see the axis block) and a cell that carries only one of
+    # them would let a reader quote the wrong one.
+    out += [("none", r, "none", "none", rd)
+            for r in ("kprep", "kcond", "kread", "karith") for rd in K_READ]
+    # K2 — the `int`-cell WIDTH control, at the two regions that lower.
+    out += [("none", r, "none", "none", rd)
+            for r in ("kiprep", "kicond") for rd in K_READ]
+    # K3 — the a-register gate STAR at the design target. `kflat` only: the star
+    # asks about a DISJOINT register's in-place gate, and the read shape is
+    # orthogonal to that question — crossing it would buy three duplicate
+    # answers at the price of the suite's long pole.
+    out += [(p, "kprep", s, "none", "kflat") for p, s in K_A_STAR]
+    # K4 — the CARVE controls: C2's tainted index and C6's over-sized bank.
+    out += [("none", r, "none", "none", rd)
+            for r in ("kidx", "kover") for rd in K_READ]
+    # K5 — TWO banks, the grouping-key probe.
+    out += [("none", "k2b", "none", "none", rd) for rd in K_READ]
+    return out
+
+
+# ── THE NON-VACUITY FLOOR — the half of this axis that is not a disposition ──
+# ⚠ THE BANK'S WORST FAILURE IS A TRACE THAT IS TOO SHORT, AND `ACCEPT-IDENTICAL`
+# CANNOT SEE ONE. `SCOPE_L1a` §4.4 (D) measures the hole precisely:
+# `cq_measure(b[i])` on an UNTAINTED load takes `MeasureLowering.cpp`'s classical
+# split and emits **no gate, no symbol and NO TRACE LINE**. If that happens it
+# happens to BOTH spellings, the two traces stay byte-identical, and every
+# comparison in this file reports green while the user's measurement has silently
+# vanished. That is `CLAUDE.md` L10's `m_none_pbitd_none_premark_rypost` lesson
+# from the other side — *a cell whose two halves agree because BOTH are wrong is
+# precisely what `ACCEPT-IDENTICAL` cannot see* — and the answer there was that
+# only a FENCE can see it. This is that fence, inside the instrument.
+#
+# THE NUMBERS ARE DERIVED FROM THE PROGRAM, NOT CHOSEN. Every bank cell's source
+# measures `a` once and each written bank cell once, so an accepting trace owes
+# at least `1 + TRIPS * <banks>` `cqrt_measure_` lines; and each of those
+# registers is a distinct rail, so it owes at least that many `-> h` mints. They
+# are LOWER bounds on purpose — a cell that emits more (a flag rail, a template
+# rail, the `kread`/`karith` extra rotation) is not the failure this guards
+# against. `_floor_is_a_lower_bound` asserts the derivation against the generated
+# source at import time, so a future edit that deletes a measurement from the
+# program cannot leave the floor behind pointing at it.
+def _bank_floor(cell):
+    _, region, _, _, _ = cell
+    banks = 2 if K_BANK[region][2] else 1
+    return (1 + TRIPS * banks, 1 + TRIPS * banks)
+
+
+BANK_FLOOR = {cell_name(c): _bank_floor(c) for c in bank_cells()}
+
+
+def _floor_is_a_lower_bound():
+    """Every bank cell's floor must be >= the number of `cq_measure` CALL SITES
+    in its generated source, and the `kloop` shape must be STRICTLY greater
+    (its read loop is one call site executed TRIPS times). A floor that fell
+    below the call-site count would be satisfiable by a trace that has already
+    dropped a measurement."""
+    for cell in bank_cells():
+        name = cell_name(cell)
+        rolled, _ = sources(*cell, surface="void")
+        sites = rolled.count("cq_measure(")
+        assert BANK_FLOOR[name][0] >= sites, (
+            "%s: floor %d < %d cq_measure call sites — the floor cannot see a "
+            "dropped measurement" % (name, BANK_FLOOR[name][0], sites))
+
+
+_floor_is_a_lower_bound()
+
+
+def trace_floor(side):
+    """(cqrt_measure lines, rail mints) for one side's trace. `counts()` already
+    owns the mint count and is CALLED rather than re-spelled (Rule 14)."""
+    return side.trace.count("cqrt_measure_"), counts(side.trace)[2]
+
+
 def cells_of_matrix():
     """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
     record, plus the 36-cell record sub-grid (see `RECORD_GRID_*`), plus the
@@ -2096,8 +2479,10 @@ def cells_of_matrix():
     PREHEADER cells for F-C1-1 and the fourth round's F4 MERGE-OUT-RAIL cells
     for F-I2-1), plus the 50-cell `_Bool` sub-grid (see `B_*` and `bool_cells` —
     bd uq96, owner-ruled 2026-09-14 to land BEFORE the in-loop bool work; its
-    B7 sub-grid is bd wx8g clause (c)'s ITERATION-LOCAL rail).
-    338 cells.
+    B7 sub-grid is bd wx8g clause (c)'s ITERATION-LOCAL rail), plus the 21-cell
+    RAIL-BANK sub-grid (see `K_*` and `bank_cells` — bd rpkr, landed BEFORE
+    bd xdu2 / L-1a's accept for the same reason uq96 landed before wx8g).
+    359 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -2112,11 +2497,12 @@ def cells_of_matrix():
     ry = ry_cells()
     f = f_cells()
     b = bool_cells()
-    assert (len(base), len(rec), len(ry), len(f), len(b)) \
-        == (120, 36, 118, 14, 50), \
-        "sub-grid sizes moved: %d/%d/%d/%d/%d" % (len(base), len(rec), len(ry),
-                                                  len(f), len(b))
-    cells = base + rec + ry + f + b
+    k = bank_cells()
+    assert (len(base), len(rec), len(ry), len(f), len(b), len(k)) \
+        == (120, 36, 118, 14, 50, 21), \
+        "sub-grid sizes moved: %d/%d/%d/%d/%d/%d" % (
+            len(base), len(rec), len(ry), len(f), len(b), len(k))
+    cells = base + rec + ry + f + b + k
     names = [cell_name(c) for c in cells]
     assert len(set(names)) == len(names), "duplicate cell name"
     return cells
@@ -2163,6 +2549,37 @@ def verdict(name, rolled, unrolled):
         return "HARNESS-ERROR", "%s: unrolled side: %s" % (name, unrolled.error)
 
     if rolled.exit == 0 and unrolled.exit == 0:
+        # (0) THE NON-VACUITY FLOOR, asked FIRST and of BOTH sides (bd rpkr).
+        # It is first because every other verdict below is a COMPARISON, and a
+        # comparison of two traces that both lost the same line is green. It is
+        # asked of both sides even though the identity check would make one
+        # enough, so that re-ordering these clauses cannot silently halve it.
+        # See `BANK_FLOOR`. Cells without a floor (every pre-rpkr cell) skip it
+        # entirely, so no committed verdict moves.
+        floor = BANK_FLOOR.get(name)
+        if floor:
+            thin = [(w, trace_floor(s), s) for w, s
+                    in (("rolled", rolled), ("unrolled", unrolled))
+                    if trace_floor(s)[0] < floor[0]
+                    or trace_floor(s)[1] < floor[1]]
+            if thin:
+                rep = ["%s: VACUOUS ACCEPT — the trace is BELOW the floor this "
+                       "program owes." % name,
+                       "  owed: >= %d cqrt_measure_ line(s) and >= %d rail "
+                       "mint(s) (1 for `a` + %d per bank cell)"
+                       % (floor[0], floor[1], TRIPS)]
+                for w, (m, h), s in thin:
+                    rep.append("  %-8s: %d measure(s), %d mint(s) over %d line(s)"
+                               % (w, m, h, len(s.trace.splitlines())))
+                rep.append(
+                    "  ⚠ A MEASUREMENT THAT WAS NEVER EMITTED IS INVISIBLE TO "
+                    "EVERY COMPARISON IN THIS FILE: `cq_measure` of an UNTAINTED "
+                    "value takes MeasureLowering's classical split and emits no "
+                    "gate, no symbol and no trace line (SCOPE_L1a §4.4 (D)), and "
+                    "it does that to BOTH spellings at once. That is what this "
+                    "floor exists to catch and it may never be blessed by a "
+                    "table row or by the quarantine.")
+                return "VACUOUS-ACCEPT", "\n".join(rep)
         if rolled.trace != unrolled.trace:
             # (ii) TRACE DIVERGENCE — always a hard failure, never blessable.
             rl, ul = rolled.trace.splitlines(), unrolled.trace.splitlines()
@@ -2303,6 +2720,18 @@ def main():
         return 2
 
     cells = cells_of_matrix()
+    # ⚠ A HARNESS THAT REPORTS A PASS ON NO INPUT IS A HOLE, NOT A PASS. Six
+    # measured instances of that shape landed in this tree in ONE session
+    # (`CLAUDE.md` L10): a vacuity checker printing `checked 0` over 29 real
+    # negatives, an injection matrix printing `0 mutations, MISSED 0` when given
+    # no fixture, a 0-byte `.ll` ACCEPTing through the passthrough early-out. So
+    # an empty cell list exits NON-ZERO here rather than printing a tidy
+    # "0 cells — all match".
+    if not cells:
+        print("REFUSED: cells_of_matrix() produced NO cells. A matrix with no "
+              "subject witnesses nothing, and reporting that as a pass is the "
+              "hole this line exists to close.")
+        return 2
     results = {}
     # A PROCESS pool, not a thread pool — stage 2b runs in-process (see
     # `_pair_check`) and mutates the interpreter's recursion limit.
@@ -2436,9 +2865,14 @@ def main():
             return 1
         for n in quar:
             quar[n]["digest"], quar[n]["rolled"], quar[n]["unrolled"] = sig[n]
-        write_quarantine(cfg.quarantine, quar, sorted(quar))
+        try:
+            note = write_quarantine(cfg.quarantine, quar, sorted(quar))
+        except SystemExit as e:
+            print(str(e))
+            return 1
         print("re-pinned %d quarantined signature(s) in %s"
               % (len(quar), cfg.quarantine))
+        print("    %s" % note)
         return 0
 
     if cfg.regenerate:
@@ -2455,19 +2889,43 @@ def main():
             for r in blocking:
                 print(r)
             return 1
+        # THE HEADER IS RESOLVED BEFORE ANYTHING IS WRITTEN (bd gfsk). A file
+        # with no END-OF-HEADER marker is a REFUSAL — the one case that used to
+        # silently eat 54 lines of Rule-13 ruling prose and report success.
+        header, note, refusal = resolve_header(cfg.expected, EXPECTED_HEADER)
+        if refusal:
+            print(refusal)
+            return 1
         # QUARANTINED CELLS ARE NOT WRITTEN TO THE EXPECTED TABLE. The two files
         # make two different claims and a cell may be in exactly one of them —
         # otherwise the next `--regenerate` writes `TRACE-DIVERGENCE` into a file
         # whose own header forbids it to appear there.
-        with open(cfg.expected, "w") as f:
-            f.write(EXPECTED_HEADER)
-            for name in sorted(got):
-                if name in quar:
-                    continue
-                f.write("%-24s %s\n" % (name, got[name]))
+        body = "".join("%-24s %s\n" % (name, got[name])
+                       for name in sorted(got) if name not in quar)
+        try:
+            write_preserving_header(cfg.expected, header, body)
+        except SystemExit as e:
+            print(str(e))
+            return 1
         print("regenerated %s (%d cells; %d quarantined and omitted)"
               % (cfg.expected, len(got) - len(quar), len(quar)))
+        print("    %s" % note)
         return 0
+
+    # RULE 6 OF THE HEADER CONTRACT (bd gfsk): the marker is checked on EVERY
+    # plain run too, so a table that loses it is a red HERE — at the gate, with
+    # the whole suite watching — rather than a surprise at the next
+    # regeneration, which is when it would eat something.
+    for label, path, const in (("expected table", cfg.expected, EXPECTED_HEADER),
+                               ("quarantine", cfg.quarantine, QUARANTINE_HEADER)):
+        _h, _found = split_header(path)
+        if _h is not None and not _found:
+            qfails.append(
+                "%s (%s) has NO END-OF-HEADER marker. `--regenerate` / "
+                "`--refresh-quarantine` will REFUSE to write it until the marker "
+                "is restored, and until then nobody can tell hand-written prose "
+                "from generated rows (bd test_C_libtooling-gfsk). Insert:\n%s"
+                % (label, path, HEADER_END_MARKER))
 
     want = {}
     with open(cfg.expected) as f:
@@ -2561,16 +3019,26 @@ EXPECTED_HEADER = """\
 # all reds. That is the point — a disposition drift in the loop lowering must
 # never be something a reader has to notice.
 #
-# ⚠ THIS HEADER IS SCRIPT-OWNED, EXACTLY AS THE QUARANTINE'S IS, AND THAT WAS
-# LEARNED THE SECOND WAY (bd uq96, 2026-09-14). `--regenerate` rewrites this file
-# from `EXPECTED_HEADER` in `tools/loop_twin_matrix.py`, so ANY text hand-added up
-# here is silently lost on the next regeneration. The quarantine header says this
-# in writing (round-2 review F-R2-3) and this one did not — so the 54-line
-# `b6ap` paragraph below, hand-added to the TABLE on 2026-09-11, was dropped by
-# the first `--regenerate` after it and had to be recovered from
-# `git show HEAD:tools/loop_twin_matrix.expected.txt`. It now lives in the
-# CONSTANT, which is the only place a paragraph survives. A new note goes there,
-# never in this file.
+# ⚠ THIS HEADER IS YOURS TO WRITE IN, AND THAT IS NEW — READ THIS BEFORE
+# BELIEVING ANY OLDER COPY OF THE SENTENCE IT REPLACES (bd
+# test_C_libtooling-gfsk, 2026-09-15).
+#
+# HISTORY, because the rule only makes sense against it. `--regenerate` used to
+# rewrite this whole file from the `EXPECTED_HEADER` constant in
+# `tools/loop_twin_matrix.py`, header included — so the 54-line `b6ap` paragraph
+# below, hand-added to this TABLE on 2026-09-11, was DELETED by the first
+# regeneration after it, under a success message, and had to be recovered from
+# `git show`. bd uq96 moved the paragraph into the constant and wrote a warning
+# here saying a new note goes in the constant and NEVER in this file. That was a
+# CONVENTION, and a convention is not a mechanism.
+#
+# WHAT IS TRUE NOW. Every line ABOVE the END-OF-HEADER marker at the bottom of
+# this header is PRESERVED BYTE-FOR-BYTE by `--regenerate`; only the rows below
+# it are rewritten, and the script prints how many header lines it preserved. A
+# copy of this file with NO marker is REFUSED outright — the script will not
+# guess which half is yours, so it writes nothing and exits non-zero. Prose you
+# add up here now survives; the constant is only the SEED for a file that does
+# not exist yet. ⚠ Do not delete the marker.
 #
 # ⚠ 2026-09-11, bd `test_C_libtooling-b6ap` (THE MULTI-PHI MERGE PEEL) — FIVE
 # CELLS MOVED, `DECLINE-BOTH-DIFFERENT` -> `UNROLLED-ONLY`, and the reason is
@@ -3048,12 +3516,18 @@ QUARANTINE_HEADER = """\
 # story above a claim about the compiler rather than a paragraph. If either
 # control starts diverging, the entries below stop meaning what they say.
 #
-# THIS HEADER IS SCRIPT-OWNED. `--refresh-quarantine` rewrites the whole file
-# from `QUARANTINE_HEADER` in `tools/loop_twin_matrix.py` and re-sorts the
-# blocks, so ANY text hand-added up here is silently lost on the next refresh
-# (round-2 review F-R2-3). A new class paragraph therefore goes in that
-# constant, never in this file; the two are byte-identical by construction and
-# `--refresh-quarantine` is what keeps them so.
+# ⚠ THIS HEADER IS YOURS TO WRITE IN, AND THAT CHANGED ON 2026-09-15 (bd
+# test_C_libtooling-gfsk). It USED to be script-owned: `--refresh-quarantine`
+# rewrote the whole file from `QUARANTINE_HEADER` in
+# `tools/loop_twin_matrix.py`, so any text hand-added up here was silently lost
+# on the next refresh (round-2 review F-R2-3) — the same defect that deleted 54
+# lines of Rule-13 ruling prose from the EXPECTED table and reported success.
+# Now every line ABOVE the END-OF-HEADER marker at the bottom of this header is
+# PRESERVED BYTE-FOR-BYTE, only the blocks below it are rewritten, and a copy of
+# this file with no marker is REFUSED rather than guessed at. A new class
+# paragraph may go here or in the constant; the constant is the SEED for a file
+# that does not exist yet, and the two are no longer kept byte-identical.
+# ⚠ Do not delete the marker.
 #
 # TO ADD A CELL: file a bd issue naming the owning subsystem and the direction,
 # add the block by hand, then `--refresh-quarantine` to write its digest. The
