@@ -1,0 +1,64 @@
+FAILED (15):
+m_add_kprep_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+
+m_none_k2b_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : ACCEPT-IDENTICAL
+
+m_none_k2b_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : ROLLED-ONLY	cq taint escape: tainted value stored to memory
+
+m_none_karith_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+
+m_none_karith_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
+
+m_none_kcond_none_none_kflat: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq taint escape: tainted value stored to memory	cq controlled lowering: control flow under quantum control
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+
+m_none_kcond_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+
+m_none_kicond_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+
+m_none_kiprep_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : ROLLED-ONLY	cq taint escape: tainted value stored to memory
+
+m_none_kprep_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : ACCEPT-IDENTICAL
+
+m_none_kprep_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : ROLLED-ONLY	cq taint escape: tainted value stored to memory
+
+m_none_kprep_ry_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+
+m_none_kread_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+
+m_none_kread_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+
+m_ry_kprep_none_none_kflat: verdict changed
+    expected: UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+    got     : UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+
+
+
+99% tests passed, 1 tests failed out of 457
