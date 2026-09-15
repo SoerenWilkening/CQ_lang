@@ -53,6 +53,66 @@
 ;
 ; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 
+; ─────────────────────────────────────────────────────────────────────────────
+; ⚠ RELOCATED HERE AT THE LOOP-GROUP MERGE GATE, 2026-09-15, BY THE SOURCE
+; FIXTURE'S OWN L8 RETIREMENT TRIGGER — WHICH FIRED AND WHICH NAMED THIS ACTION:
+;
+;     "L8 RETIREMENT TRIGGER: this pin dies with the file when bd `tu9q` turns it
+;      into an ACCEPT. MOVE the two `RUN`/`DEFER` blocks to whichever module still
+;      declines at this fence then; do not silently drop them."
+;
+; It was written on `loop_leak_dephase_reject_inloop_rotation.ll` by Track D
+; (branch `bbu0-warn-reorder`), based on Track S′ ALONE — a binary on which that
+; module declined. Composed with Track T's bd `test_C_libtooling-tu9q` IN-LOOP
+; PAIRING in this group's merge, that module became an **ACCEPT**, so its gated
+; `not %cq-opt` would have gone red and the instrument's one safety pin would
+; have been lost with it. This file was chosen as the new host BY MEASUREMENT on
+; the merged binary `f2ee2eb69f1cdf9b7`, not by inspection: of the 16
+; `loop_leak_dephase_*` / `loop_pairing_*` fixtures, 5 still decline at this
+; fence, and this is the flat (non-nested) one among them, so the pin does not
+; also depend on bd `test_C_libtooling-emkg`'s nesting fix.
+;
+; ⚠ bd `test_C_libtooling-bbu0`, owner ruling E6 (2026-09-15), option (D) — THE
+; INSTRUMENT PIN, and it guards the one thing that could go catastrophically
+; wrong with the instrument. Under `CQ_BBU0_DEFER_DEPHASE_FENCE=1` this fence
+; RECORDS its verdict instead of emitting it, lets the pipeline run on so that
+; `RotationLowering::warnLiveRecordRotations` gets to speak, and emits the
+; decline afterwards. **THE GATED RUN LINE IS A `not %cq-opt`: IF THE GATE EVER
+; TURNS THIS DECLINE INTO AN ACCEPT, THIS FIXTURE FAILS.** That is the
+; instrument's whole safety property — pinned, not argued.
+;
+; The `DEFER` prefix is WHOLE-FILE and separate from `CHECK` (fixture-hygiene (a):
+; a positive check above a negative windows it; these are two independent
+; verdicts about two different commands, so they get two prefixes). Its lines are
+; ORDERED and the order is the point: the marker can only be printed by
+; `emitDeferredDephasingDecline`, which is called AFTER the warn stage in both
+; entry points, so a marker standing BEFORE the decline is the proof that the
+; deferral actually reached that slot. That proof is the vacuity guard for the
+; whole population of `$SES/trackD/MEASUREMENT.md` — without it a "0 warnings"
+; row would be measuring the harness's own reachability rather than the
+; warning's silence.
+;
+; ⚠ AND THIS HOST MAKES THE PIN STRICTLY STRONGER THAN IT WAS, MEASURED: this
+; module also WARNS (`cq rotation lowering: non-diagonal gate over a live derived
+; record`, twice), and the `DEFER` prefix below pins those warnings BETWEEN the
+; ungated silence and the deferred decline. So the fixture now witnesses not only
+; "the gate does not lose the verdict" but "the gate actually lets the warn stage
+; speak on a module the fence refuses" — which is the measurement's subject.
+;
+; ⚠ L8 RETIREMENT TRIGGER, CARRIED FORWARD AND RE-AIMED: this pin dies with this
+; file the day anything turns THIS module into an ACCEPT (the live conjunct work
+; of bd `c767` / bd `7845` / bd `2g52`, or a further pairing widening). MOVE the
+; `RUN`/`DEFER` block again then, to whichever module still declines at
+; `declineDephasingUnmarkedLoopRails`; do not silently drop it. The cheap way to
+; find one is the loop in `$SES/loopgate/probes/fence_hosts.sh`.
+;
+; RUN: env CQ_BBU0_DEFER_DEPHASE_FENCE=1 not %cq-opt -load-pass-plugin %cq-pass \
+; RUN:     -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DEFER
+;
+; DEFER: cq rotation lowering: non-diagonal gate over a live derived record
+; DEFER: cq bbu0 instrument: dephasing decline DEFERRED past the warn stage
+; DEFER: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

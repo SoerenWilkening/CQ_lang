@@ -389,6 +389,32 @@ void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
 void declineRound2FalsifiedRailGrants(llvm::Module &M, TaintSet &taint,
                                       WidthDispatch &wd);
 
+// bd `test_C_libtooling-bbu0`, owner ruling **E6 (2026-09-15) = option (D)** —
+// drain the verdict `declineDephasingUnmarkedLoopRails` DEFERRED under
+// `CQ_BBU0_DEFER_DEPHASE_FENCE`. **A NO-OP unless that variable is set**, which
+// is the whole of its shipped behaviour.
+//
+// WHY IT EXISTS. *"Is `RotationLowering::warnLiveRecordRotations` ever SILENT on
+// a module this fence DECLINES?"* separates options A/B/C and **cannot be asked
+// of any shipped binary**: the fence is called at `CQLoweringPass.cpp:772`, the
+// warn stage at `:864`, and `LLVMContext::diagnose` EXITS on the first
+// `DS_Error` (bd `br4a`), so every "0 warnings" row over a declining module is
+// **0 BY PREEMPTION, NOT BY SILENCE**. Under the gate the fence records instead
+// of speaking, the pipeline runs on so the warn stage can speak, and this
+// function emits the decline afterwards. **The gate changes WHEN the decline is
+// emitted, never WHETHER** — and that is pinned by the `not %cq-opt` on the
+// gated RUN line of `loop_leak_dephase_reject_inloop_rotation.ll`.
+//
+// **CALL IT UNCONDITIONALLY, IMMEDIATELY AFTER `warnLiveRecordRotations`, IN
+// BOTH ENTRY POINTS.** That position is the contract in both directions: earlier
+// and the marker stops proving the warn stage ran (the measurement's only
+// vacuity guard, `CLAUDE.md` L10); omitted from one entry point and that path
+// loses the deferred verdict entirely — a module would exit ZERO under the gate,
+// which is the one outcome the instrument must never produce. ⚠ It is NOT an
+// argument for or against options A/B/C; those are ruled on the number in
+// `$SES/trackD/MEASUREMENT.md`, not on this mechanism.
+void emitDeferredDephasingDecline(llvm::Module &M);
+
 void collapseFlattenedLoopRails(
     llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
     const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =
