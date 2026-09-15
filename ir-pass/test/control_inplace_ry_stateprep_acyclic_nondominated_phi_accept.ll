@@ -50,11 +50,55 @@
 ; forward and uncomputed, and its `trunc` result is a TEMPLATE-minted rail left
 ; allocated. `free_pairing_check.py` is STRUCTURALLY BLIND to template-minted
 ; rails (there is no `cqrt_alloc` to count — CLAUDE.md, stage 2b), so the `0
-; violation(s)` above is not clearance for that class. That leak is the bd
-; `test_C_libtooling-s82e` family and is ORTHOGONAL to this landing: it is the
-; ordinary disposition of a dead tainted chain and is byte-identical in shape to
-; what any other accepted dead chain produces. It is named here so a later reader
-; does not mistake this file's green for a statement about it.
+; violation(s)` above is not clearance for that class.
+;
+; ⚠ **THAT LEAK IS A CUSTOMER THIS LANDING ADDS TO bd `test_C_libtooling-s82e`,
+; NOT SOMETHING ORTHOGONAL TO IT.** The word this paragraph used to carry —
+; *"ORTHOGONAL to this landing: it is the ordinary disposition of a dead tainted
+; chain"* — is the SAME sentence CLAUDE.md §5 has already called false once, in
+; the same words, about three other fixtures: *"Rule 6 governs whether a dirty
+; rail may be FREED; it says nothing about whether leaving it entangled is
+; semantically free, and Rule 8 says it is not."* Corrected 2026-09-15 at the ARM
+; group gate on the Rule-13 round's R-1 (`review_r13_armclassify/REVIEW.md`).
+;
+; THE SPLIT THIS FILE SITS ON, and it is the reason the correction matters. THIS
+; module is in the **BENIGN** half: `%MB` is measured directly and no
+; non-diagonal gate runs on it after the leak, so the leftover record
+; distinguishes nothing that later interferes. The capability the landing ships
+; also covers the **MALIGN** half, where the same register is ROTATED after the
+; leak and then measured — the leftover entangled which-path copy makes the two
+; branches distinguishable and the measured distribution is the dephased one
+; (Rule 8 verbatim: *"a permutation that leaves a rail dirty **and** entangled
+; still dephases under later interference"*).
+;
+; THE WITNESSES, all three committed under
+; `docs/prd/.../session-2026-09-15-orchestrator/review_r13_armclassify/probes/`:
+;   `m1_malign_leak_then_rotate_measure.ll`  the malign half. ORACLE `0e280fc6…`
+;       exit=1 at F2; after this landing exit=0, emitting a never-`_unc`'d
+;       `cq_template_trunc_i64_to_i32` and then `cqrt_ry_i32(%h1,0.9)` +
+;       `cqrt_measure_i32(%h1)`. **For that program this landing is an
+;       OVER-ACCEPT, in the P1 direction. Say it in those words.**
+;   `m1c_control_offdesc.ll`  ONE operand changed (`%mz = zext i32 %q`), so the
+;       dead φ no longer carries an `%MB`-descendant: DECLINES at F2 on BOTH
+;       binaries. It pins the flip to φ-descendant MEMBERSHIP and to nothing
+;       about deadness or block layout.
+;   `m2_nodeadphi_reference.ll`  `m1` with the dead φ DELETED: **ACCEPTS on the
+;       ORACLE**, exit 0, and its gate stream is byte-identical to `m1`'s here
+;       (re-measured at the group gate: `cqrt_alloc_i32/ry_i32/icmp_eq_hl/alloc/
+;       ry_i32_controlled/…/trunc_i64_to_i32 (leaked)/…/ry_i32/measure_i32`).
+;       **So the hazardous circuit already ships from `main`; this landing widens
+;       its POPULATION by one spelling.** CLAUDE.md's own formulation:
+;       *"'pre-existing' is true of the defect and FALSE of its population."*
+;
+; ⚠ NOTE FOR WHOEVER BUILDS THE FENCE: on `m2` the ORACLE already prints
+; `warning: … cq rotation lowering: non-diagonal gate over a live derived record`
+; at exit 0. The hazard has a WARNING and no DECLINE; that warning site is the
+; obvious hook, and it is bd `s82e`'s to build — NOT this file's, and not a
+; second spelling added here (Rule 14). The red-green pair to write WITH that
+; fence is RED `m1`, GREEN an `m2`-shaped module with the trailing
+; `cq_theta`/`cq_measure` removed (the genuine Rule-6 accepted leak), isolating
+; control `m1c`. It is named here so a later reader does not mistake this file's
+; green for a statement about the class.
 ;
 ; ⚠ NON-VACUITY IS PINNED BY A SIBLING. `…_acyclic_nondominated_phi_accept_
 ; control.ll` is this module with ONE operand changed (`%mz = zext i32 %q` for

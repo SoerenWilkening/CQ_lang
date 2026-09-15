@@ -2696,6 +2696,92 @@ enum class CondWireDisp {
 // A visited set bounds it; exhausting the block budget DECLINES (Prime
 // Directive — an unbounded gap is what the old prong refused, and refusing it
 // here keeps that refusal rather than replacing it with a vacuous `false`).
+//
+// ⚠ THE VOCABULARY IS `cq_theta_*` ONLY, AND THE GROUND FOR THAT IS
+// **AVAILABILITY** — NOT A TWIN. The rail-relabelling gate set also contains the
+// dtzb in-place `add`/`xor` (CLAUDE.md), so scanning cross-block for thetas
+// alone newly admits programs that could, in principle, carry such an op on the
+// φ's rail inside the gap. The clearance for that was originally written as an
+// argument from ONE measured twin (`c5_bare_xor_in_pred.ll` accepts on the
+// ORACLE and its `xor` lowers OUT of place, `IMPL_P.md` §6 V12). That twin is
+// real and it is not the reason. The reason is stronger, is about the module in
+// front of the pass, and was re-derived at the Rule-13 round of 2026-09-15
+// (item R-6):
+//
+//   **THE ONLY NAMES OF THE CONDITION RAIL THAT ARE AVAILABLE IN THE GAP ARE THE
+//   φ ITSELF AND VALUES DERIVED FROM IT.** The arm theta's result is NOT: it is
+//   defined inside the arm, the gap is not dominated by the arm, and spelling an
+//   `xor` on it there is INVALID SSA — measured, not argued, on all three
+//   binaries of that round and re-measured on the ORACLE at the ARM group gate:
+//   `review_r13_armclassify/probes/r1_crossblock_xor_on_theta_name.ll` and its
+//   in-`Pred` twin `r2_inpred_xor_on_theta_name.ll` are both rejected by the
+//   VERIFIER — *"Instruction does not dominate all uses!"* — so the shape is not
+//   expressible at all. And a state prep's straight-through incoming is the
+//   SEED, which F1 requires to be untainted (*"a TAINTED pred incoming is a
+//   no-cloning mux"*), so it is CLASSICAL and an `xor` on it is not a rail op.
+//
+//   The φ is then ALWAYS READ LATER — by the branch (a φ ROOT) or by a tree node
+//   in `Pred` (a φ LEAF) — so `ArithLowering::classifyInPlaceReassignment`'s G6
+//   (*"no data use AFTER the op"*, `provablyBefore` over EVERY user) refuses the
+//   in-place conversion on it: the `xor` lowers onto a FRESH handle and cannot
+//   alias the kickback's control. G6 additionally bails unconditionally inside a
+//   loop (`LI.getLoopFor(Site->getParent()) || blockCanRepeat(…) → false`), which
+//   covers the in-loop spelling the back-edge clause admits.
+//
+// ⚠ RETIREMENT TRIGGER — THE SAME ONE `railCondWireDisposition`'s header
+// carries, now with a FOURTH pin: *"If M-C's G6 ever admits an in-place op on a
+// rail with a later read, this ground is gone"*. The pins are the kickback's
+// `control_phase_kickback_rail_inplace_xor_bridge.ll`, the select's
+// `control_swap_select_rail_inplace_xor_bridge.ll`, the compare spelling's
+// documented over-decline `..._reject_cmp_inplace_xor_bridge.ll`, and now the
+// cross-block pair `d5_bare_xor_in_gap.ll` / `c5_bare_xor_in_pred.ll`
+// (`trackP/probes/`), whose SUBJECT stream is
+// `%h_op = cq_template_xor_i1_hl(i32 %h1, i1 true)` — a fresh handle — followed
+// by `cqrt_rz_i1(i32 %h1, 0.9), !cq.branchphase`, the control untouched.
+// ⚠ AND THE AVAILABILITY HALF HAS A TRIGGER OF ITS OWN: it is an argument about
+// what can be SPELLED in the gap, so the day this helper gains a caller whose
+// `Def` is NOT a region merge φ — a plain compare leaf, say, if step 5a's
+// cross-block decline is ever widened — re-derive it. A compare is a snapshot,
+// not a register, and neither half of the argument above transfers unexamined.
+//
+// ⚠ THE L1 ITEM — THIS PREDICATE DECIDES ON **ROUND-1 TAINT**, AND NOTHING
+// RE-ASKS IT (Rule-13 round 2026-09-15, item R-5; neither track's record carried
+// it, and `IMPL_P.md` §6's V1–V13 has no L1 entry at all). `isChainedTheta`
+// below keys on `Taint.Tainted.count(CI->getArgOperand(0))`, and every caller
+// runs inside `detectControlRegions`/`classifyPhaseKickback`, i.e. BEFORE
+// `repropagateControlMerges` re-seeds taint from the 6.5/4.5 merge `%out` rails.
+// A `cq_theta` whose arg-0 becomes tainted only in round 2 therefore reads as a
+// SOURCE theta to this scan and as a CHAINED one to `lowerRotations`, which
+// decides at FINAL taint — CLAUDE.md's L1 **PREDICATE** species, verbatim, and
+// the same asymmetry that produced bd `9pum` / r9e5 F-B1R2-1.
+//
+// THE RECORD-AND-RE-ASK MACHINERY THAT EXISTS FOR THIS FAMILY DOES NOT COVER
+// THIS PRONG, and that is a fact about it rather than an oversight to be read
+// past: `markRailCondRead` → `reverifyRailCondReads` re-asks rungs (ii) and
+// (iii) ONLY — the measure question and the wire question, *"exactly as
+// `railCondWireDisposition` asks them"* — and `railCondWireDisposition` has NO
+// POSITIONAL PRONG. So the positional scan is asked once, at round-1 taint, and
+// never again.
+//
+// WHY THE RESIDUAL IS BELIEVED EMPTY — AN ARGUMENT, NOT A CLOSURE, AND IT WAS
+// NOT CONSTRUCTED. (a) A round-2-only-tainted theta on the condition's OWN wire
+// is covered by rung (iii)'s re-ask, which runs at FINAL taint. (b) The scan's
+// reason for existing is the OTHER-wire case, and the only rail-relabelling gate
+// it could miss there is a dtzb in-place `add`/`xor` aliasing the condition's
+// rail — which the availability paragraph below shows is not spellable in the
+// gap for this species, and which M-C's G6 refuses to convert in place anyway.
+// ⚠ **SAY "PROBABLY EMPTY", NEVER "CLOSED"**: nobody has built the input, the
+// exposure is PRE-EXISTING (the in-`Pred` window has it identically, and the
+// in-`Pred` path is byte-identical here by construction), and what bd `hn29` /
+// `leyd` / `52og` changed is that a population moved from an UNCONDITIONAL
+// decline onto this taint-dependent test — new customers for an old premise.
+// ⚠ RETIREMENT TRIGGER, by name: `reverifyRailCondReads`. The day it (or a
+// sibling re-ask) gains a POSITIONAL rung, this prong owes it too — record the
+// question at every call site here and re-ask it after the round-2 fixpoint, in
+// BOTH entry points, declining loudly (CLAUDE.md L1: *"the cure is always the
+// same and it is a pattern, not a prediction"*). Equally, the day any caller
+// passes a `TaintSet` that is already FINAL, delete this paragraph rather than
+// leaving a stale warning in front of a closed hole (L7-with-a-twist).
 bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
                                      const BasicBlock *Pred,
                                      const Instruction *Term, TaintSet &Taint) {

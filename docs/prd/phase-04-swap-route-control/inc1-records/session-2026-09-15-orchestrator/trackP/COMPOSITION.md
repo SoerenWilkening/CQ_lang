@@ -179,6 +179,52 @@ sampled by a corpus and by one hand construction; it is not enumerated. That is 
 `test_C_libtooling-oej0`'s standing complaint about composition testing generally, and this track does
 not close it.
 
+---
+
+### ⚠ ERRATUM, 2026-09-15, ARM GROUP GATE — **THE SURFACE IS NOT EMPTY, AND ONE ROUND FOUND TWO.**
+
+The sentence above was true when written and is **falsified by construction**. Recorded here rather
+than edited away, because *how* it was wrong is the part worth keeping (Rule-13 round bd `hlhh`,
+`review_r13_armclassify/REVIEW.md` item R-2; probes committed under that directory's `probes/`; also
+filed on bd `oej0`).
+
+**The mechanism, and it is one line of the pipeline.** §4 above looked for a program where the two
+widenings **meet on one φ** — and they cannot, except as the pre-existing exit-134 crash, because
+**every F2 decline is FATAL to the module** (`diagnoseUnderControl` → `DS_Error` →
+`LLVMContext::diagnose` EXITS, bd `br4a`). A region F2 refuses never sits in a plan beside anything,
+so F′ cannot "add a leaf to a plan that already existed" — it can only turn a **dead module into a
+live one**. **Every F′ × P′ composition is therefore MODULE-level**: any program carrying an
+F′-dependent prep *anywhere* and a P′-dependent kickback *anywhere*. That surface is large and
+trivially reachable; §4's reasoning was about the **shape-level** surface, which is the confined one.
+
+| probe | ORACLE | BASE_F (F′ alone) | P_ALONE (P′ alone) | SUBJ_P (both) |
+|---|---|---|---|---|
+| `c1` two independent preps in one function (F′-dependent **i32** prep + P′-dependent **i1** cross-block φ leaf) | D (F2) | D (P4 cross-block) | D (F2) | **ACCEPT** |
+| `c1a` isolating control — kickback branch moved INTO the prep's merge block | D (F2) | ACCEPT | D | ACCEPT |
+| `c2` the same rolled in a loop — the **three-way** F′ × P′ × `wx8g` bd `oej0` says nobody built | D (F2) | D (P4) | D (F2) | **ACCEPT** |
+
+⚠ **At i32 the dead φ does NOT hit the broken-module defect** (`lowerOps` RAUWs the tainted i32 op to
+an **i32** handle and the types agree) — that is the whole trick, and it is why `fxp1` could not be an
+accept while `c1` is.
+
+**Both are clean by the project's strongest witness**: `c1`'s gate stream is byte-identical to `c1a`'s
+and the two linked traces are byte-identical at **27 lines**; `c2`'s rolled-vs-unrolled twin trace is
+byte-identical at **29 = 29** and its lowered module is **K-independent at 99 lines for K = 3 and 99
+for K = 1000**; STRICT stage 2b clean on both.
+
+⚠ **AND THAT IS EXACTLY THE EVIDENCE RULE 2 CALLS NECESSARY AND NOT SUFFICIENT.** This track's Rule-13
+rounds saw a binary on which `c1`/`c2` decline, and so did Track F′'s. **A composition is not cleared
+by clearing its parts** — three consecutive sessions, three filings.
+
+**Three P′-ONLY accepts neither track's probe set contains** were found by the same round and are
+*not* compositions (they accept on `P_ALONE` too), but they are the interactions with already-landed
+features that a shape-level sweep misses: `o1`/`o2` — one prep merge φ read by **two consumers with
+opposite order obligations** (a 4.4 data select, *prep first*; a cross-block phase kickback, *kickback
+first*), in both CFG orders, which is where this track's "one field, two opposite obligations, keyed
+on `Kind`" is actually exercised — and `o3`, a **mixed** condition tree with one φ leaf cross-block
+behind an empty gap block and one φ leaf in `Pred`, one edge from each source inside one region. All
+three are byte-identical in gate stream to a twin that accepts on the **ORACLE**.
+
 ## 5. What my accepts LOSE to F′ — nothing measured
 
 No row anywhere in the sweep is `ORACLE == SUBJECT != BASE` (a reversion), and no accept of mine

@@ -538,6 +538,40 @@ struct ControlRegion {
   // old sentence's last clause — that adding the SELECT's direction at a kickback
   // would close a cycle — remains correct and is exactly why the direction, not
   // just the recording, is part of the contract.
+  //
+  // ⚠ THIS FIELD IS A CALLER OF `TaintSet::RailCondReads` CASE (3), AND THE
+  // DIRECTION IT USES THAT RECORD IN IS **GRANTING** (CLAUDE.md L3-MIRROR: *"when
+  // you ADD A CALLER to a shared predicate, read the callee's RETIREMENT TRIGGER
+  // and state which direction you are using it in"* — the omission that cost a P1
+  // on 2026-09-14, bd `a3z7`). `TaintPropagation.h`'s `RailCondReads` block names
+  // three cases at `reverifyRailCondReads`; case (3) is a LIVE non-`CallInst`
+  // value — today exactly a region-merge `PHINode` — and it is SKIPPED, a skip
+  // that is INERT rather than conservative and is held open ONLY by the premise
+  // *"M-β RAUWs the φ to the hoisted `cq_theta_i1` before the reader looks"*.
+  // The `PhaseKickback` direction of this field **ENLARGES case (3)'s
+  // population**: it is precisely the mechanism by which a kickback is emitted
+  // BEFORE its prep, which is when `markRailCondRead` sees a φ rather than a
+  // call. Before Track P′ that population was whatever the bd `hcrg` alias
+  // supplied for free (φ in `Pred`); now it is every cross-block φ leaf under an
+  // explicit edge.
+  //
+  // ⚠ THE PREMISE IS PRESERVED BY CONSTRUCTION, AND THAT IS WHY THIS IS A
+  // DISCLOSURE AND NOT A DEFECT — re-checked at the 2026-09-15 Rule-13 round
+  // (R-4) and again at the ARM group gate. This edge changes the ORDER WITHIN one
+  // `lowerControlRegions` call, never WHETHER the prep region is emitted in it:
+  // both regions are in the same plan (rung 0 admits the φ only for a region
+  // ALREADY committed as `InPlaceRotation`, which is what `PrepRegionIdxs`
+  // records), `emitInPlaceRotationRegion`'s M-β still RAUWs the φ to the hoisted
+  // `cq_theta_i1`, the record's `WeakTrackingVH` FOLLOWS that RAUW, and
+  // `reverifyRailCondReads` still runs after the round-2 fixpoint — so case (3)
+  // becomes case (2) before the reader looks, exactly as its block claims.
+  // ⚠ RETIREMENT TRIGGER, and it is the callee's own, restated in this field's
+  // terms: the day a region index recorded HERE names a prep that is **not in the
+  // same plan**, or a `SelectRegion`-kind prep (whose emitter performs no M-β),
+  // the RAUW that discharges case (3) does not happen and the record names a live
+  // register whose ladder is never re-asked, **silently**. Read
+  // `TaintPropagation.h`'s case-(3) trigger in full before widening either
+  // direction of this field.
   llvm::SmallVector<unsigned, 2> PrepRegionIdxs;
 
   // 4.3 (IMPLEMENTATION-4.3 §1/§4) — the parent region's work rail (`rail1`),

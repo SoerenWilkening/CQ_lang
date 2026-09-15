@@ -566,6 +566,36 @@ struct TaintSet {
   // string, and an unmirrored decline string is its own defect). Do not narrow
   // the skip without building the input that reaches it first.
   //
+  // ⚠ CALLERS OF CASE (3), AND THE DIRECTION EACH USES IT IN — the L3-MIRROR
+  // ledger. CLAUDE.md: *"when you ADD A CALLER to a shared predicate, read the
+  // callee's RETIREMENT TRIGGER and state which direction you are using it in"*;
+  // the omission of exactly this sentence cost a P1 filing on 2026-09-14 (bd
+  // `a3z7`, `WireWalk.h`'s "NOT EXPLOITABLE" trigger reaching a third GRANTING
+  // caller nobody told). Keep this list current; a caller added and not listed
+  // re-opens the window with NO DIAGNOSTIC ANYWHERE.
+  //   * bd `3qps`/`4aiu` (Track P, 2026-09-14) — the FIRST φ-recording caller,
+  //     the flat kickback on a prep merge φ in `Pred`, ordered before its prep by
+  //     the bd `hcrg` ALIAS pre-flight. **GRANTING.**
+  //   * bd `hn29`/`leyd`/`52og` (Track P′, 2026-09-15) — the same emitter, with
+  //     the φ leaf allowed OUTSIDE `Pred` and the order supplied by an explicit
+  //     `ControlPlan::PrepRegionIdxs` `PhaseKickback` edge instead of the alias.
+  //     **GRANTING, and it ENLARGES case (3)'s population** — it is a widening of
+  //     the very clause the trigger's bold sentence is about ("the flat kickback
+  //     is emitted BEFORE its prep"), not a new emitter. The premise was
+  //     RE-CHECKED rather than inherited (Rule-13 round 2026-09-15 item R-4, and
+  //     again at the ARM group gate): the prep region is still emitted inside the
+  //     SAME `lowerControlRegions` call — the edge moves the order within it, not
+  //     whether it runs — M-β still RAUWs the φ to the hoisted `cq_theta_i1`, the
+  //     `WeakTrackingVH` follows the RAUW, and this reader still runs after the
+  //     round-2 fixpoint. So case (3) still becomes case (2) before the reader
+  //     looks. `ControlPlan.h`'s `PrepRegionIdxs` block carries the same
+  //     statement at the site that does the enlarging.
+  // ⚠ WHAT WOULD MAKE THE NEXT CALLER DIFFERENT, stated so it is recognisable
+  // rather than merely warned about: a recorded φ whose prep is **not in the same
+  // plan**, or a prep of `SelectRegion` kind (whose emitter performs no M-β).
+  // Either one breaks the RAUW that discharges case (3), and at that moment the
+  // trigger above has fired.
+  //
   // `WeakTrackingVH` also FOLLOWS a RAUW, which is the right behaviour for the
   // one thing that would otherwise dangle: nothing between the emission and the
   // read point RAUWs a condition rail today (`lowerRotations`, which RAUWs every
