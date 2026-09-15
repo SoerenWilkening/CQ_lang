@@ -540,6 +540,37 @@ would be an over-decline on a Prime-Directive argument I cannot substantiate eit
 who disagrees should say so, and this is the single item in this increment where a second opinion
 would change what ships.
 
+> ✅ **T-5 IS CLOSED — 2026-09-15, Rule-13 round 2 (`review_r13_loop/REVIEW.md` §I-1) and the
+> loop-group merge+fix landing. THE SECOND OPINION THIS PARAGRAPH ASKED FOR ARRIVED, AND IT FOUND A
+> WITNESS RATHER THAN A DEFECT.** The disposition is **SHIP, WITH THE WITNESS RECORDED — and NO
+> multi-exit refusal**, which is the call this track made and the reviewer independently endorsed
+> (Rule 17, owner 2026-09-11: an over-decline on an unsubstantiable claim is a defect, not a margin).
+>
+> **Both halves of "no twin" were confirmed, not taken on trust.** `r1_break_loop_un` declines with
+> `cq opcode lowering: operand predates a non-diagonal gate` on the ORACLE, on Track S′, on Track T
+> AND on the merged binary; a split-body variant built specifically so `-O1` cannot if-convert it
+> (`loopfix/probes/t5b_break_split.c`) declines at the **same** fence on all of them.
+>
+> **THE TRANSFER WITNESS, re-measured at the merge on `9dd81edb9f949bb5`:** `-O1` folds the `break`
+> into one extra disjunct on the **latch**, so the body is a SINGLE basic block — mint, mint, `_unc`,
+> `cqrt_free`, `measure`, then `br i1 %8` — which makes the per-trip group atomic and 1:1 *by
+> construction*, and means the `break` can only ever stop the sequence at a group boundary. The
+> break-free twin of the same body (`loopfix/probes/t5a_nobreak.c`, the `if (s > 1) break;` deleted)
+> **does** have a usable hand-unrolled twin and is **24 == 24, `diff` EMPTY, BYTE-IDENTICAL** — and
+> `diff r1_break_loop.trace t5a_nobreak.trace` is **EMPTY** too. So this program's emitted stream IS
+> the stream of a program that is byte-identical to its own hand-unrolled twin.
+>
+> ⚠ **It is a witness OF THE SAME KIND obtained by DECOMPOSITION, and it is not a twin.** Multi-exit
+> shapes are still not exhausted, and "the reachable ones die at bd `3d8q` first" remains **a
+> measurement about today's binary, not a proof** — both sentences are carried verbatim into the
+> fixture header rather than left here.
+>
+> **The cell is now PINNED**, which it was not when this paragraph was written:
+> `ir-pass/test/loop_pairing_accept_break_latch_folded.ll`, with the atomicity pinned by a
+> `CHECK-NEXT` chain (so a `-O1` that stopped folding the break would go red) and an **L8 retirement
+> trigger naming bd `test_C_libtooling-3d8q` by id**: when that fence stops refusing the nested-`if`
+> cascade, a real twin becomes constructible — build it and re-derive the cell.
+
 **T-4 (round 2, FOUND BY THE MUTATION MATRIX IN MY OWN FIXTURE, FIXED).** The first run of
 `probes/inject_T.py` scored **MISSED 1**: the `inject_unc_free` mutant against
 `loop_leak_dephase_accept_pertrip_dead.ll`. The cause is Rule 12's fixture-hygiene defect **(a)**
@@ -716,6 +747,44 @@ measure / interior / …", then `measureOwnedInvariantRail` IS a special case of
 re-expressed as a call to it.** That is a genuine Rule-14 obligation and I am flagging it rather than
 guessing at a body I cannot see. It does not change the accept set either way — only which function
 owns the sentence.
+
+> ⚠⚠ **ERRATUM, 2026-09-15, loop-group merge+fix agent — THE PARAGRAPH ABOVE RESTS ON A FALSE
+> PREMISE AND THE RULE-14 CHARGE IT RAISES DOES NOT STAND.** The premise is left in place above
+> because deleting it would hide what was believed; this block is the correction, and it is landed
+> here as well as in the review file because *a record correction that is not applied at the site is
+> not a correction* (`CLAUDE.md` L7-with-a-twist).
+>
+> **`railValueConsumerDisposition` DOES exist on `main`, and it predates both branches.** Measured
+> twice — once by the Rule-13 reviewer (`review_r13_loop/REVIEW.md` §I-3) and once independently at
+> the merge, by this agent, against the ORACLE commit `74eabd2c` rather than against a worktree:
+>
+> ```
+> git show 74eabd2c:ir-pass/src/LoopLowering.cpp   | grep -n railValueConsumerDisposition
+>   242:RailValueUse railValueConsumerDisposition(        <- the definition
+>   317:  996:  2255:  2685:                              <- four call sites
+> git show 74eabd2c:ir-pass/src/OpcodeLowering.cpp | grep -n railValueConsumerDisposition
+>   768:  // `railValueConsumerDisposition` (`LoopLowering.cpp`, by NAME), whose
+> ```
+>
+> It is **not** declared in `LoopPlan.h` — it is file-local to `LoopLowering.cpp` — which is the most
+> likely way a header-scoped or path-scoped `grep` missed it. ⚠ **The lesson is the grep, not the
+> conclusion:** "grepped" is not a measurement unless the scope of the grep is stated with it
+> (Rule 11 / Rule 19 — *report only what you ran*).
+>
+> **And the charge fails on the merits even if the premise had held**, so it is not merely unproven:
+> `railValueConsumerDisposition` answers *"will this `BinaryOperator` be lowered as an IN-PLACE
+> mutation of rail value `V`'s handle?"* — a question about an **OP's lowering disposition**, taking
+> a `BinaryOperator *` and a rail `Value *`. `measureOwnedInvariantRail` answers *"is EVERY user of
+> this value a `cq_measure`?"* — a question about a **VALUE's user set**, taking one `Value *`. They
+> share no argument, no return type and no subject. `measureOwnedInvariantRail` is **not** a special
+> case of it. **DO NOT MERGE THE TWO PREDICATES.**
+>
+> The near-neighbour the reviewer did check is `railIsInterior`, and that charge fails too, for the
+> reason `measureOwnedInvariantRail`'s own header already gives in the source: the two have
+> **OPPOSITE SAFE DIRECTIONS** on a non-`Instruction` user (`railIsInterior` `continue`s past one;
+> this one REFUSES), so folding them would need a direction parameter — which is exactly how a shared
+> predicate acquires a caller its argument does not reach (`CLAUDE.md` L3-mirror). The retirement
+> trigger Track T wrote at that site is the right disposition and stands.
 
 ### (2) The interaction reading — **I AGREE, with one correction of scope**
 

@@ -3303,6 +3303,33 @@ void commitOutOfLoopInPlaceOps(Value *V, Loop *L, TaintSet &taint,
 // unbuildable with this spelling too, by a DIFFERENT mechanism from the
 // alloc-minted one and stated separately for exactly that reason.
 //
+// ⚠⚠ **AND THE ARGUMENT ABOVE IS THE WEAKER HALF. THE GROUND IS PHYSICS, NOT
+// MULTIPLICITY** (Rule-13 round 2, 2026-09-15 — the reviewer's §I-3, landed at
+// the site rather than left in a review file: `CLAUDE.md` L7-with-a-twist).
+// Everything up to here argues that no `At` CAN be placed for this rail, which
+// is a fact about the two partitions' bookkeeping and dies the day
+// `isInteriorTerminalHandle` or `computeFreePoint` is re-spelled. The reason the
+// rail is harmless does not depend on either: **a MEASURED rail is not a
+// COHERENT which-path record.** The user's own `cq_measure` — the only consumer
+// it has — collapses it in the computational basis, which is precisely why
+// Rule 6 says the measurement OWNS such a handle and why
+// `computeFreePoint` calls the kind `Measured` rather than `Leaked`. The Rule-8
+// hazard this whole area exists for (*"a permutation that leaves a rail dirty AND
+// entangled still dephases under later interference"*) needs the rail to be
+// ENTANGLED at the interference; a rail every one of whose users is a measurement
+// is not.
+// MEASURED, and it is a NEGATIVE-control measurement rather than an assertion:
+// `RotationLowering::warnLiveRecordRotations` — the stage whose whole job is to
+// notice a live record standing at a rotation — is **SILENT (0 bytes of stderr)
+// on BOTH HALVES of `review_r13_loop/probes/x1_iic_bodyrail_interfered{,_un}.c`**,
+// a program that deliberately puts a (ii-c) rail beside an interfered register
+// and accepts at 17 == twin 17; on the ORACLE that same stage FIRES with count 1
+// on `b7b_w2k_interfered` and count 2 on `b11_cmp_rail_data`. So the instrument
+// that sees this class was pointed at this shape and found nothing there.
+// ⚠ KEEP BOTH HALVES. The multiplicity half is what makes the admission safe
+// for the SPINE's bookkeeping; the physics half is what makes it safe for the
+// UNITARY, and it is the one that survives a change to either partition.
+//
 // WHY IT MATTERS: `-O1` LICM HOISTS a loop-invariant `y & 1` into the preheader,
 // so the body of `w2k_noregion_invread` / `w2h_phase_inloop_invread` /
 // `w2h3_select_iterlocal_invread` reads a TEMPLATE rail, not the register — and
@@ -4256,6 +4283,35 @@ bool railIsInterior(Instruction *I) {
 // a writer that runs AFTER this stage, half (ii) is gone and this suppression
 // becomes an OVER-ACCEPT — re-derive it from scratch, do not narrow it.
 //
+// ⚠⚠ **THAT TRIGGER HAS FIRED, AND THE RE-DERIVATION IS RECORDED HERE RATHER
+// THAN ONLY IN A REVIEW FILE** (bd `test_C_libtooling-emkg` landing, 2026-09-15;
+// `CLAUDE.md` L7-with-a-twist — *a record correction that is not applied to the
+// SOURCE is not a correction*, a lesson this project paid three review rounds for
+// on one sentence). bd `test_C_libtooling-tu9q` added exactly the writer the
+// trigger names: `declineRound2FalsifiedRailGrants` runs IMMEDIATELY AFTER this
+// stage (`CQLoweringPass.cpp`, the fence then the grant re-ask, in both entry
+// points) and calls `invariantRegisterRoots` → `commitOutOfLoopInPlaceOps` →
+// `markInPlaceRailOp`. The trigger fired and NEITHER TRACK READ IT; the Rule-13
+// reviewer re-derived it, and the answer is **SAFE — but for three specific
+// reasons, none of which is "it probably does not matter":**
+//   (a) **THE POPULATIONS ARE DISJOINT.** `commitOutOfLoopInPlaceOps` opens
+//       `if (L->contains(BO->getParent())) return;` — it commits OUT-OF-LOOP ops
+//       only — while conjunct (3), this predicate's caller, scans `L`'s OWN
+//       blocks. No instruction can be in both sets.
+//   (b) **THE ROLLBACK CANNOT REMOVE A MARKING THIS STAGE RELIED ON.**
+//       `commitOutOfLoopInPlaceOps` skips an op already in `InPlaceRailOps`
+//       (`if (!BO || taint.InPlaceRailOps.count(BO)) continue;`), so the
+//       `Marked` list it hands back holds ONLY that call's NEW commitments, and
+//       `invariantRegisterRoots`' failure path erases only those — which this
+//       stage, running earlier, could not have seen.
+//   (c) **THE RESIDUAL SKEW POINTS AT DECLINES.** This stage sees a SMALLER
+//       in-place set than `lowerOps` eventually will; a smaller in-place set
+//       means fewer suppressions, i.e. MORE declines, never fewer.
+// ⚠ RE-AIMED TRIGGER: the argument above is about a writer whose population is
+// OUT-OF-LOOP. A `markInPlaceRailOp` caller added after this stage that can
+// commit an **IN-LOOP** op falsifies (a) outright and (b) with it — that one is
+// the over-accept, and it must be re-derived from scratch rather than narrowed.
+//
 // ⚠ RESIDUAL, STATED RATHER THAN MITIGATED AWAY (bd `test_C_libtooling-f8eu`
 // family / round 1β caution (a)): `taint.InPlaceRailOps` is a raw `Instruction *`
 // set that NOTHING SCRUBS on erase, so in principle a recycled allocation could
@@ -4311,6 +4367,78 @@ bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint) {
     return U->getOpcode() == Instruction::FNeg &&
            !abiWidthFromType(U->getType()).empty();
   return false;
+}
+
+// ── bd `test_C_libtooling-emkg`, 2026-09-15 ──────────────────────────────────
+// THE ONE SPELLING OF "ARE `L`'s OWN BODY BLOCKS MARKED ITERATION-LOCAL?", and it
+// exists because there were two and they DISAGREED (Rule 14; `CLAUDE.md` L2 —
+// *when you WIDEN a set, ask what OTHER set was computed over the same closure*).
+//
+// `llvm::Loop::blocks()` returns `L`'s blocks INCLUDING every strictly-deeper
+// subloop's. `declineUnmarkedRolledIterLocal`'s conjunct 2 has always filtered
+// those out (`LI.getLoopFor(BB) != L` — "not `L`'s to mark"), and so has
+// `declineDephasingUnmarkedLoopRails`' conjunct (3); its conjunct (1) did NOT, and
+// that single missing line was a **P1 OVER-ACCEPT**: a marked INNER loop set
+// `Marked` on an inner block, `continue`d, and the ENCLOSING OUTER loop's own
+// per-trip which-path rails were never asked about at all — leaked, undischarged,
+// at a later non-diagonal gate on the register they copy (Rule 8). Found by
+// Rule-13 round 2 of 2026-09-15 on THREE markers at once
+// (`markIfIterationLocal`, the bd `test_C_libtooling-tu9q` root-mint escape, and
+// its clause (ii-c)); pinned by `loop_leak_dephase_reject_nested_*.ll`, one per
+// marker, with `loop_leak_dephase_accept_nested_outer_no_own_rail.ll` as the
+// positive control.
+//
+// ⚠ **ALL, NOT ANY, AND THE POLARITY IS THE SECOND HALF OF THE FIX.** Conjunct (1)
+// used to set `Marked` on the FIRST marked block; conjunct 2 has always required
+// EVERY own block to be marked. ANY is the ACCEPT direction — a partially-marked
+// body would silence the fence — so ALL is the safe polarity and is what both
+// callers now get.
+//
+// **WHY THE TWO ANSWERS COINCIDE TODAY IS AN ENUMERATION, NOT A HOPE, AND IT IS
+// SHORT ENOUGH TO RE-RUN:** `grep -n 'IterationLocalBlocks.insert' ir-pass/src`
+// finds **exactly two** writers, and NEITHER can mark a PROPER SUBSET of any
+// loop's own blocks:
+//   * `markIfIterationLocal` inserts **`L->blocks()` — all of them, subloops
+//     included**, so for `L` itself and for every loop NESTED INSIDE `L` it
+//     covers every own block;
+//   * `markIfRailLocal` inserts `L`'s **own** blocks only (`LI.getLoopFor(BB) ==
+//     L`), so it covers all of `L`'s and none of any other loop's.
+// A DESCENDANT's marking therefore never touches an ancestor's own blocks — which
+// is precisely the asymmetry that made the old conjunct (1) wrong — and an
+// ANCESTOR's marking (only ever `markIfIterationLocal`'s) covers a descendant's
+// own blocks COMPLETELY. Partial marking of one loop's own blocks is unreachable
+// from either writer. ⚠ MEASURED AGAINST THAT: the ANY→ALL half moves **0 of 2050
+// modules** in `ir-pass/test` (the fix's whole corpus delta is the three, later
+// four, nested-loop fixtures, and every one of them moves through the SUBLOOP
+// FILTER, not through the polarity). So the polarity half is **unwitnessed, and
+// that is stated rather than papered over**.
+// ⚠ RETIREMENT TRIGGER, and it is the cheap one to check: a THIRD
+// `IterationLocalBlocks.insert` site, or either existing one narrowed to a subset
+// of a loop's own blocks, makes ANY and ALL genuinely differ — re-derive this
+// paragraph then, and note that the difference would appear as an ACCEPT→DECLINE
+// (safe) at this site and as a DECLINE→ACCEPT nowhere.
+//
+// ⚠ THE `Any` GUARD IS DEFENCE IN DEPTH AND IS EXPECTED NEVER TO FIRE: LLVM's
+// `LoopInfo` invariant is `LI.getLoopFor(L->getHeader()) == L`, so a well-formed
+// loop always has at least one own block. It is written anyway so the predicate is
+// TOTAL — "no own blocks" then answers *not marked*, which keeps the caller's
+// fence armed instead of vacuously silencing it.
+//
+// ⚠ RETIREMENT TRIGGER: this is a SUPPRESSION at both call sites — a `true` here
+// silences a decline. Any third caller must state which direction it reads the
+// answer in BEFORE it is added, because the argument above is written for the
+// suppressing direction only (`CLAUDE.md` L3-mirror: a shared predicate acquires a
+// caller its argument does not reach, and the callee's trigger is what stops it).
+bool bodyBlocksMarked(const Loop *L, const LoopInfo &LI, const TaintSet &taint) {
+  bool Any = false;
+  for (BasicBlock *BB : L->blocks()) {
+    if (LI.getLoopFor(BB) != L)
+      continue;  // a strictly-deeper subloop's block — not `L`'s to mark.
+    if (!taint.IterationLocalBlocks.count(BB))
+      return false;
+    Any = true;
+  }
+  return Any;
 }
 
 }  // namespace
@@ -4489,13 +4617,29 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       //     7.3 exception — and is byte-identical to its hand-unrolled twin.
       //     `s3_live_rootmint_region` is exactly that and is the positive
       //     control: it has the SAME post-loop `Ry` and MUST stay accepting.
-      bool Marked = false;
-      for (BasicBlock *BB : L->blocks())
-        if (taint.IterationLocalBlocks.count(BB)) {
-          Marked = true;
-          break;
-        }
-      if (Marked)
+      //
+      //     ⚠ `L`'s OWN BLOCKS, AND IT IS ASKED BY CALLING THE ONE OWNER OF THAT
+      //     QUESTION (`bodyBlocksMarked`, above; Rule 14). THE SPELLING THAT USED
+      //     TO STAND HERE — an ANY over the raw `L->blocks()` — WAS A **P1
+      //     OVER-ACCEPT** (bd `test_C_libtooling-emkg`, closed 2026-09-15; found
+      //     by Rule-13 round 2, `review_r13_loop/REVIEW.md` F-1). `Loop::blocks()`
+      //     includes every strictly-deeper subloop's blocks, so a marked INNER
+      //     loop silenced this entire fence for its ENCLOSING OUTER loop —
+      //     conjuncts (2) and (3) were never evaluated for the outer body at all,
+      //     even though conjunct (3) EXCLUDES those same inner blocks itself.
+      //     The two conjuncts of one fence were reading the same closure through
+      //     different quantifiers (`CLAUDE.md` L2), and the sibling stage had the
+      //     right spelling the whole time.
+      //     MEASURED, three markers, one stage-1 module each, rolled vs
+      //     hand-unrolled twin: `markIfIterationLocal` 38 vs 42 (PRE-EXISTING —
+      //     it reproduces on the 2026-09-15 ORACLE `0e280fc6…` and needs no
+      //     2026-09-15 track); the bd `test_C_libtooling-tu9q` root-mint escape
+      //     DECLINE → 30 vs 34; its clause (ii-c) DECLINE → 43 vs 48. The missing
+      //     lines are in every case the OUTER body's `cq_template_*_unc` +
+      //     `cqrt_free` pairs, standing at a `cqrt_ry_*` on the register they
+      //     copy — `opt` exit 0, verify-clean, stage-2b structurally blind
+      //     (template-minted rails have no `cqrt_alloc` to count).
+      if (bodyBlocksMarked(L, LI, taint))
         continue;
 
       // (2) A NON-DIAGONAL GATE ON AN EXISTING REGISTER, ON OR AFTER THE LOOP.
@@ -5020,16 +5164,18 @@ void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
         continue;
       if (!bodyHasSpineDischargeCandidate(L, taint))
         continue;
-      bool Marked = true;
-      for (BasicBlock *BB : L->blocks()) {
-        if (LI.getLoopFor(BB) != L)
-          continue;  // a strictly-deeper subloop's block — not `L`'s to mark.
-        if (!taint.IterationLocalBlocks.count(BB)) {
-          Marked = false;
-          break;
-        }
-      }
-      if (!Marked) {
+      // ⚠ THE LOOP THAT USED TO STAND HERE IS NOW `bodyBlocksMarked` (bd
+      // `test_C_libtooling-emkg`, 2026-09-15). ITS BEHAVIOUR AT **THIS** SITE IS
+      // UNCHANGED, and that is the whole point of the change: this spelling was
+      // the CORRECT one — `L`'s own blocks, ALL of them — and
+      // `declineDephasingUnmarkedLoopRails`' conjunct (1) was the second, wrong
+      // spelling of the same question. The predicate's extra `Any` guard cannot
+      // move this site: `LI.getLoopFor(L->getHeader()) == L` is a `LoopInfo`
+      // invariant, so `L` always has at least one own block and the old `Marked =
+      // true` initial value was never observed vacuously. THIS SITE IS THE
+      // REFERENCE READING; if the shared predicate and this comment ever
+      // disagree, the predicate is what runs.
+      if (!bodyBlocksMarked(L, LI, taint)) {
         diagnoseUnderControl(I, "control flow inside a loop body");
         return;
       }

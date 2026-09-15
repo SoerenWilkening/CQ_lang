@@ -1,3 +1,58 @@
+; ⚠⚠⚠ 2026-09-15 — THE NAME IS HISTORY: THIS FILE IS NOW AN **ACCEPT**, AND ITS
+; OWN L8 RETIREMENT TRIGGER (below, unedited) NAMED THE EVENT BY BEAD ID AND WAS
+; CHARACTER-FOR-CHARACTER CORRECT:
+;
+;     "bd `tu9q` is the end state that turns this file into an ACCEPT whose
+;      stream is the twin's 14 lines, rolled. Re-derive it then; do not delete it."
+;
+; bd `test_C_libtooling-tu9q` (the IN-LOOP `_unc` + `cqrt_free` PAIRING) landed in
+; the loop-group merge of 2026-09-15 and the re-derivation is below.
+;
+; ⚠ FOUND AT THE MERGE, BY NEITHER TRACK AND BY NO REVIEW. Track S′ built this
+; fixture on a binary WITHOUT the pairing; Track T built the pairing on a binary
+; WITHOUT this fixture; the Rule-13 reviewer checked the three
+; `control_phase_kickback_mixed_*_leak_control.ll` string-update fixtures against
+; the Track-T binary and confirmed they still decline, but did NOT check this one
+; or its sibling `loop_leak_dephase_reject_inloop_rotation.ll`. MEASURED at the
+; merge gate, `ir-pass/test/*.ll` on four binaries: ORACLE `0e280fc6…` ACCEPT (the
+; pre-S′ conjuncts), Track S′ `15f6a75a…` DECLINE, Track T `f972906e…` ACCEPT,
+; merged ACCEPT. `CLAUDE.md` §4c, verbatim: **a composition is not cleared by
+; clearing its parts** — here in the benign direction, which is exactly why a
+; green-suite habit would have missed it.
+;
+; ⚠ IT IS NOT RENAMED, DELIBERATELY (bd `test_C_libtooling-gahu`, `CLAUDE.md` L8):
+; a `git mv`'d fixture can be RESURRECTED by a merge, leaving one module under two
+; names with contradictory verdicts, invisible to every review that ran before the
+; merge. Renaming is owed as its own change.
+;
+; THE RE-DERIVATION, and it is the trigger's own end state. The loop is now MARKED
+; (the bd `tu9q` root-mint escape admits `y`'s root mint, so `markIfRailLocal`
+; marks the body), the compare rail gets its adjoint and its free IN THE BODY once
+; per trip, and `declineDephasingUnmarkedLoopRails` exits at conjunct (1) on the
+; loop's OWN marking — which is what conjunct (1) always meant, and which bd
+; `test_C_libtooling-emkg` had to fix conjunct (1) to make true (it used to be
+; satisfiable by a marking on a strictly-deeper SUBLOOP's blocks; this loop has no
+; subloop, so that fix does not move this file).
+;
+; MEASURED on the merged binary `9dd81edb9f949bb5` against the hand-unrolled twin
+; (`loopfix/probes/c1_cmp_rail_data{,_un}.c`): ROLLED **14 trace lines, BYTE-
+; IDENTICAL** to the twin's 14 (`diff` empty) — where the ORACLE emitted 10 and
+; the twin 14. The divergence this file was built to refuse is CLOSED, not hidden.
+;
+; ⚠ 2b IS NOT THE WITNESS AND NEVER WAS: it counts `cqrt_alloc` SITES and these
+; rails are TEMPLATE-minted, so it reported `0 violation(s)` on the leaking form
+; too. The rolled-vs-hand-unrolled trace pair is the only instrument in the tree
+; that sees this class.
+;
+; ⚠ NEW L8 RETIREMENT TRIGGER: if this file ever goes red with
+; `rolled body leaks a rail entangled with a rotated register`, the pairing has
+; stopped marking this loop — re-derive from `c1_cmp_rail_data.c` and its twin
+; BEFORE touching the fence; a red here is a capability regression, not a fence
+; that grew.
+;
+; ── THE HISTORICAL HEADER FOLLOWS, UNEDITED. Read it as the record of WHY the
+; ── decline existed; its verdict line is superseded by the banner above.
+;
 ; loop_leak_dephase_reject_cmp_rail_data.ll — DECLINE (bd
 ; `test_C_libtooling-7845`, P1, closed 2026-09-15). A TAINTED COMPARE USED AS
 ; **DATA** IS AN ORDINARY OUT-OF-PLACE RAIL, AND CONJUNCT (3) USED TO SCAN
@@ -51,9 +106,48 @@
 ; inversion on the RUN line, and this file was validated by BINARY MUTATION (it
 ; does not match on the pre-fix oracle, where `opt` exits 0).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=UNCCOUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FREECOUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+;
+; THE ORDERED STREAM — mint, cast, ADJOINT, FREE, measure. The order is the whole
+; Rule-6 argument: `…_unc` re-runs the CNOTs (x^x=0) and THEN `cqrt_free` reclaims
+; a proven-|0> rail. A free before the adjoint would be the hidden measurement
+; that collapses `%h`.
+; CHECK-LABEL: define i32 @slice
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; CHECK: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: %h_cast = call i32 @cq_template_zext_i1_to_i32(i32 %h_cmp)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 %{{[0-9]+}})
+; CHECK-NEXT: call void @cqrt_free(i32 %h_cmp)
+; CHECK-NEXT: %m{{[0-9]*}} = call i32 @cqrt_measure_i32(i32 %h_cast)
+;
+; ⚠ THE TRAILING LABEL IS LOAD-BEARING: `-O1` inlines `@slice` into `@main`, so
+; the module carries TWO copies of this stream and without a second `CHECK-LABEL`
+; every positive above can be satisfied by the `@main` copy (bd
+; `test_C_libtooling-1yeu` — the second function is a DECOY, not a spare).
+; CHECK-LABEL: define i32 @main
+;
+; WHOLE-FILE COUNTS, ONE COUNTED SYMBOL PER PREFIX, NEGATIVES SOMEWHERE ELSE
+; ENTIRELY (Rule 12 fixture-hygiene defect (a): a positive `CHECK-COUNT` above a
+; negative WINDOWS it). Two functions, one pair each.
+; UNCCOUNT-COUNT-2: call void @cq_template_icmp_sgt_i32_hl_unc(
+; UNCCOUNT-NOT: call void @cq_template_icmp_sgt_i32_hl_unc(
+;
+; FREECOUNT-COUNT-2: call void @cqrt_free(
+; FREECOUNT-NOT: call void @cqrt_free(
+;
+; PURE NEGATIVES — never a free of the user's register, never a free of the
+; measure-owned `zext` rail, never an adjoint of it, and no decline text.
+; NEG-NOT: call void @cqrt_free(i32 %h)
+; NEG-NOT: call void @cqrt_free(i32 %h_cast)
+; NEG-NOT: call void @cq_template_zext_i1_to_i32_unc(
+; NEG-NOT: rolled body leaks a rail
+
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 

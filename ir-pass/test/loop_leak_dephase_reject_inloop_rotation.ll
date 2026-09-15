@@ -1,3 +1,63 @@
+; ⚠⚠⚠ 2026-09-15 — THE NAME IS HISTORY: THIS FILE IS NOW AN **ACCEPT**, AND ITS
+; OWN L8 RETIREMENT TRIGGER (below, unedited) NAMED THE EVENT BY BEAD ID AND WAS
+; CHARACTER-FOR-CHARACTER CORRECT:
+;
+;     "when `tu9q` lands this file becomes an ACCEPT whose stream is the 24-line
+;      hand-unrolled twin's, rolled — re-derive it then; do not delete it."
+;
+; bd `test_C_libtooling-tu9q` (the IN-LOOP `_unc` + `cqrt_free` PAIRING) landed in
+; the loop-group merge of 2026-09-15. The re-derivation is below, and it is the
+; one place this file's claim is WEAKER than its sibling's.
+;
+; ⚠ FOUND AT THE MERGE, BY NEITHER TRACK AND BY NO REVIEW — see the sibling
+; `loop_leak_dephase_reject_cmp_rail_data.ll`'s banner for the four-binary
+; measurement and why a composition is not cleared by clearing its parts.
+;
+; ⚠ IT IS NOT RENAMED, DELIBERATELY (bd `test_C_libtooling-gahu`, `CLAUDE.md` L8).
+;
+; THE RE-DERIVATION. MEASURED on the merged binary `9dd81edb9f949bb5` against the
+; hand-unrolled twin (`loopfix/probes/c2_inloop_rotation{,_un}.c`): ROLLED **24
+; trace lines against the twin's 24**, where the ORACLE emitted 20 against 24.
+; The four lines that were missing — `cq_template_lshr_i32_hl_unc` + `cqrt_free`,
+; twice — are now emitted IN THE BODY, once per trip.
+;
+; ⚠ **THE TWO TRACES ARE NOT BYTE-IDENTICAL, AND THE CLAIM IS THEREFORE A
+; MULTISET-PLUS-COMMUTATION ONE, NOT AN IDENTITY ONE.** Saying it the weaker way
+; is the point: `CLAUDE.md` §5 records a shipped fixture family whose header read
+; a STABILITY measurement as a CORRECTNESS one, and the cure is to state exactly
+; what was compared. What was compared, and what came back:
+;   * gate-symbol MULTISET, rolled vs twin: **delta EMPTY** (`diff` of
+;     `sed 's/(.*//' | sort | uniq -c` over both traces);
+;   * the ONE positional difference: `-O1` LICM-hoists the loop-invariant `y & 1`
+;     to trace line 3 in the ROLLED spelling and CSEs the twin's two copies into
+;     one at trace line 10. The gates between those two positions are
+;     `cqrt_alloc_i32(6)`, `cqrt_ry_i32`, `lshr`, `and`, `lshr_unc`, `cqrt_free`
+;     and one `cqrt_measure_i32` — EVERY ONE of them on the per-trip register `u`
+;     and its own ancilla, a support DISJOINT from `%h` and from the `y & 1`
+;     rail's fresh ancilla. Disjoint supports commute EXACTLY, so the reorder is
+;     not an approximation;
+;   * handle NUMBERING differs as a consequence of the reorder (the `y & 1` rail
+;     is `h1` rolled and `h4` unrolled) — a relabelling, not a circuit;
+;   * the `y & 1` rail is MEASURE-OWNED (both its users are `cq_measure`) and is
+;     LEFT ALLOCATED by BOTH forms — identical disposition, Rule 6's accepted leak,
+;     and clause (ii-c)'s subject.
+; A BYTE-IDENTICAL twin is NOT available for this program at any `-O` level this
+; project uses, because the hoist/CSE decision is made in STAGE 1, before the pass
+; runs. That is a fact about `clang -O1`, not about the lowering.
+;
+; ⚠ 2b IS BLIND HERE and was blind on the leaking form too (`0 violation(s)` on
+; both halves): it counts `cqrt_alloc` SITES and these rails are TEMPLATE-minted.
+;
+; ⚠ NEW L8 RETIREMENT TRIGGER, TWO BRANCHES: (a) if this file goes red with
+; `rolled body leaks a rail entangled with a rotated register`, the pairing has
+; stopped marking this loop — re-derive from `c2_inloop_rotation.c` and its twin
+; BEFORE touching the fence. (b) If anything ever makes the two spellings agree
+; POSITIONALLY, upgrade the claim above from multiset-plus-commutation to byte
+; identity and say which stage-1 change did it.
+;
+; ── THE HISTORICAL HEADER FOLLOWS, UNEDITED. Read it as the record of WHY the
+; ── decline existed; its verdict line is superseded by the banner above.
+;
 ; loop_leak_dephase_reject_inloop_rotation.ll — DECLINE (bd
 ; `test_C_libtooling-c767`, P1, closed 2026-09-15). THE DEPHASING CLASS WITH THE
 ; INTERFERING ROTATION **INSIDE** THE BODY. Until this fixture existed, conjunct
@@ -50,9 +110,54 @@
 ; inversion on the RUN line plus the message match, and this file was validated by
 ; BINARY MUTATION (it does not match on the pre-fix oracle, where `opt` exits 0).
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=UNCCOUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FREECOUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+;
+; THE ORDERED STREAM, ROLLED — the per-trip group is mint, mint, ADJOINT, FREE,
+; measure, ALL IN ONE BODY BLOCK, which is what makes it atomic per trip.
+; CHECK-LABEL: define i32 @slice
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; the LICM-hoisted, MEASURE-OWNED `y & 1` rail — minted once, never freed:
+; CHECK: %h_op = call i32 @cq_template_and_i32_hl(i32 %h, i32 1)
+; the per-trip body group:
+; CHECK: %h1 = call i32 @cqrt_alloc_i32(i32 6)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h1, double 4.000000e-01)
+; CHECK: %h_op2 = call i32 @cq_template_lshr_i32_hl(i32 %h1, i32 1)
+; CHECK-NEXT: %h_op3 = call i32 @cq_template_and_i32_hl(i32 %h_op2, i32 1)
+; CHECK-NEXT: call void @cq_template_lshr_i32_hl_unc(i32 %h_op2, i32 %h1, i32 1)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_op2)
+; CHECK-NEXT: %m{{[0-9]*}} = call i32 @cqrt_measure_i32(i32 %h_op3)
+;
+; ⚠ NO SECOND `CHECK-LABEL` HERE, AND THAT IS A MEASURED DIFFERENCE FROM THE
+; SIBLING, NOT AN OMISSION: `-O1` does NOT inline `@slice` into `@main` in this
+; module (the loop survives), so there is exactly ONE copy of the stream and the
+; bd `test_C_libtooling-1yeu` decoy hazard does not arise. The counts below are
+; the check on that claim — if `@slice` is ever inlined they double and the
+; `*COUNT-NOT` lines fire.
+;
+; WHOLE-FILE COUNTS, ONE COUNTED SYMBOL PER PREFIX, NEGATIVES SOMEWHERE ELSE
+; ENTIRELY (Rule 12 fixture-hygiene defect (a)). ROLLED, so exactly one of each
+; in the IR however many trips run.
+; UNCCOUNT-COUNT-1: call void @cq_template_lshr_i32_hl_unc(
+; UNCCOUNT-NOT: call void @cq_template_lshr_i32_hl_unc(
+;
+; FREECOUNT-COUNT-1: call void @cqrt_free(
+; FREECOUNT-NOT: call void @cqrt_free(
+;
+; PURE NEGATIVES — never a free of the user's register, never a free of either
+; measure-owned rail, never an adjoint of the measured `and`, and no decline text.
+; NEG-NOT: call void @cqrt_free(i32 %h)
+; NEG-NOT: call void @cqrt_free(i32 %h1)
+; NEG-NOT: call void @cqrt_free(i32 %h_op)
+; NEG-NOT: call void @cqrt_free(i32 %h_op3)
+; NEG-NOT: call void @cq_template_and_i32_hl_unc(
+; NEG-NOT: rolled body leaks a rail
+
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
 
