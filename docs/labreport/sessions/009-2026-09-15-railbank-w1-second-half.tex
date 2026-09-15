@@ -1,0 +1,101 @@
+\labsessionheader{2026-09-15}{The rail bank accepts; the headline does not}%
+  {95949550}{session\_01MkfRdaw1sdEFsnRyZdMn8v}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/}
+
+\subsection*{Goal}
+Compile the owner's rolled loop script. The session was scoped around finishing
+\bd{xdu2}'s L-1a W1 --- the taint rule, the type rewrite and the D5 allow-list deferred
+last session --- after clearing two blocking P1s. Nine tracks ran in git worktrees under
+one orchestrator.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{95949550} --- one squash over 28 commits; per-track branches preserved.
+  \item \bd{xdu2} --- the rail bank ACCEPTS. \texttt{bool b[N]} with a per-cell
+        \texttt{cq\_theta} in a rolled loop compiles: three distinct rails, three
+        measures, STRICT 2b clean. Track A's clause C7 splits \texttt{Bank} from
+        \texttt{BankRaw} so \texttt{Bank} implies type-rewritable.
+  \item \bd{tu9q} --- the in-loop pairing; \texttt{s1\_live\_shift} DECLINE
+        $\rightarrow$ 14 lines byte-identical to its twin, uncompute spine untouched.
+  \item \bd{c767}, \bd{7845}, \bd{2g52}; \bd{hrts}/\bd{l3i1}/\bd{dpau};
+        \bd{hn29}/\bd{leyd}/\bd{52og}; \bd{fve8}; \bd{rpkr}/\bd{gfsk};
+        \bd{rixk}/\bd{19vy}/\bd{1739}/\bd{jdec}/\bd{gzgs}.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \bd{emkg} (P1) --- \texttt{declineDephasingUnmarkedLoopRails}
+        conjunct~(1) scanned \texttt{L->blocks()} \emph{including deeper subloops} while
+        conjunct~(3) scanned \texttt{L}'s own, so a marked INNER loop silenced the fence
+        for the OUTER one. Two of its three faces were regressions introduced by
+        \bd{tu9q} the same day. Found by an independent Rule-13 round; invisible to all
+        three instruments, each for a different reason.
+  \item \fconfirmed\ the rail bank LAUNDERED \bd{3d8q} THROUGH MEMORY --- a rail parked
+        in a bank cell, measured after a later non-diagonal gate: exit 0, empty stderr,
+        2b clean, while the register spelling of the same program declined. Closed by
+        giving the stale-reader fence the memory hop it lacked; ORDERING separated, not
+        the shape banned. The refusal ground was chosen by measurement: an aliasing fence
+        would have refused three programs whose streams match register twins the oracle
+        accepts.
+  \item \fconfirmed\ F-E2-1 (P1) --- a folded-to-\texttt{undef} \emph{quantum}
+        measurement vanishing with no diagnostic. Owner-ruled ACCEPT + DISCLOSE (E9): the
+        class pre-exists at HEAD via \texttt{q*u} / \texttt{q\&u}, measured. \emph{The
+        instrument agreed with the bug} --- the refinement checker reports the module
+        byte-identical because its one-token twin inherits the fold that erased the taint.
+  \item \foverdecline\ \bd{8h7d.11} (filed, previously unowned) --- clause~(c3) refuses a
+        rolled region because a register the region does \emph{not} rotate is measured
+        after the loop. Bank-independent: a scalar \texttt{bool} with no array declines
+        identically.
+  \item \fdoc\ the in-loop escape diagnostic names a construct that \emph{works}
+        (``control flow inside a loop body'') instead of the property that failed. Raised
+        by the owner, who read it as a regression of a capability shipped 2026-08-30.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+full suite & 457/457 & \measured{ctest --test-dir build -j6} \\
+equivalence & 2082/0 & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+corpus sweep & 6165 rows, 0 unattributable & final gate \\
+A$\rightarrow$A movers adjudicated & 58/58 & 0 gates removed, 0 non-discharges added \\
+twin matrix & 359 cells & \measured{grep -c '\^{}m\_' tools/loop\_twin\_matrix.expected.txt} + 29 \\
+lit fixtures & 2082 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 392 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+ctest registrations & 447 & \measured{grep -c '\^{}add\_test(NAME' tests/e2e/CMakeLists.txt} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Four independent Rule-13 rounds ran; two returned FINDING, each with a P1, and both were
+fixed in-session. Two group gates (loop, arm) and one final integration gate ran the full
+suite; the integration gate discharged \texttt{cq-opt-equivalence-full}, a debt owed three
+times over and never run for Group~1 before. \texttt{main}'s source is bit-identical to the
+gated tree (\texttt{git diff main verify-integration -- ir-pass include runtime tests tools}
+empty), so those results are cited, not re-run.
+
+NOT run: a Rule-13 opinion on the loop group's merge-derived conversions and its
+\texttt{r3} composition --- they were cleared by the agent that merged them, and the gate's
+re-measurement was a third measurement, not a second opinion.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item The headline is NOT reachable by this increment. Ruling E5: the owner's program
+        has FOUR walls, two of which the rail bank cannot touch, and the wall table is
+        ``the first four I could reach'', not four. Measured after the fact:
+        \bd{8h7d.11} and \bd{ej5w} are ONE capability --- a quantum-dependent
+        loop-carried classical accumulator --- wearing two decline strings, and both sit
+        on the single line \texttt{if (b0[i]) a -= 3;}. They should be scoped together.
+  \item Ruling E6(D) (\bd{bbu0}) is RULED BUT NOT BUILT and has no home. Track D delivered
+        its number --- the warning is SILENT on 0 of 14 programs the fence declines, with
+        \texttt{marker=1} on every row so nothing is 0-by-preemption --- but A/B/C remain
+        unruled.
+  \item \bd{yiid} is now a THREE-increment path (7.6 tape ruling $\rightarrow$
+        \texttt{AngleSelectEmit} classical base $\rightarrow$ E3), not one increment.
+  \item Nine instrument self-failures were measured this session, every one found by the
+        agent that owned the instrument and none by a green suite --- including a harness
+        reporting 7/7 green \emph{including its own mutants}, a sweep reporting ``0
+        movers'' while all 2050 rows were exit 127, and a forbidden pattern
+        \texttt{pkill} that probably destroyed another track's gate.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
