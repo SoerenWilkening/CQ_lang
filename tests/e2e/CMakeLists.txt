@@ -5946,6 +5946,48 @@ add_test(NAME e2e-inplace-ry-loop-iterlocal-derived-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_iterlocal_derived_unrolled.expected.log")
 
+# ── bd `test_C_libtooling-tu9q` (2026-09-15) — THE IN-LOOP PAIRING ────────────
+# The rolled body now emits the per-trip `_unc` + `cqrt_free` that the FLAT form
+# already emitted. These three slices are the only layer that LINKS, so they are
+# what proves every emitted `cq_template_*_unc` symbol resolves and
+# signature-matches; the twin-identical gate below is the only instrument in the
+# tree that can SEE this class at all, because STRICT stage 2b counts `cqrt_alloc`
+# SITES and every rail here is TEMPLATE-minted (2b reported `0 violation(s)` on the
+# leaking form too — never cite it as clearance for this class).
+add_test(NAME e2e-slice-loop-pairing-rootmint
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint.expected.log")
+
+add_test(NAME e2e-slice-loop-pairing-rootmint-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint_unrolled.expected.log")
+
+# clause (ii-c), the MEASURE-OWNED hoisted invariant rail. NO twin gate: `-O1`
+# hoists `y & 1` in the rolled spelling and CSEs it mid-function in the unrolled
+# one, so the two streams differ in the POSITION of one gate before the pass runs.
+# The gate symbol multiset is identical and the two orderings commute (disjoint
+# rails); the slice's own golden is the link + stream witness.
+add_test(NAME e2e-slice-loop-pairing-measure-owned
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_measure_owned.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_measure_owned.expected.log")
+
+add_test(NAME e2e-loop-pairing-rootmint-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_pairing_rootmint_unrolled.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory

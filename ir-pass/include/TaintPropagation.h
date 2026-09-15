@@ -886,6 +886,51 @@ struct TaintSet {
   };
   llvm::SmallVector<RolledLoopGrant, 4> RolledLoopRegionGates;
 
+  // bd `test_C_libtooling-tu9q` — THE ROUND-1 ROOT-MINT MARKING GRANTS, recorded
+  // so `declineRound2FalsifiedRailGrants` can RE-ASK them under FINAL taint
+  // (`CLAUDE.md` L1: `lowerLoops` runs BEFORE `repropagateControlMerges` in both
+  // entry points, so every clause `railLocalQualifies` answers there is answered
+  // with round-1 evidence, and round-2 taint is a strict SUPERSET).
+  //
+  // ⚠ NEVER A `Loop *`. `LoopInfo` owns its `Loop` objects and destroys them per
+  // function; a module-scoped container of `const Loop *` that outlives one holds
+  // freed pointers and the next function's `LoopInfo` re-uses the allocation — the
+  // dangling defect that shipped a silent miscompile in
+  // `declineUnmarkedRolledIterLocal` (F-W1-1, 2026-09-14). The loop is named by
+  // its HEADER BLOCK, which survives every stage that does not erase it.
+  //
+  // ⚠ AND THE HEADER IS A `WeakTrackingVH`, NOT A RAW `BasicBlock *` — Track T
+  // round 2, finding T-3, found by reading the record's own lifetime rather than
+  // by a test. The record is written in `lowerLoops` at ROUND-1 taint and read
+  // after the ROUND-2 fixpoint, and `RegionFlatten` ERASES blocks in that window:
+  // round-2 taint growth can open a region INSIDE a loop the round-1 grant named,
+  // and a loop header that is also a region's merge block goes with it. A raw
+  // pointer would then be dereferenced after free — `CLAUDE.md` L9's "a region
+  // whose predecessor is another region's merge block dereferences freed memory
+  // (SIGSEGV on valid input)", reached from the record side. ⚠ AND IT CANNOT BE
+  // CLOSED BY CHECKING THE POINTER AGAINST A SET OF LIVE BLOCKS: a freed block's
+  // ADDRESS is reused by the next allocation, which is exactly how F-W1-1's
+  // `insert(L).second` returned FALSE FOR A DIFFERENT LOOP. `BasicBlock` is a
+  // `Value`, so `WeakTrackingVH` NULLS on the erase and the re-ask treats a nulled
+  // header as a REFUSAL (loud), never as a silent skip.
+  //
+  // ⚠ THE ROOTS ARE `WeakTrackingVH` FOR THE SAME REASON. A root mint is RAUW'd to
+  // its `i32` handle by `lowerRotations`; the re-ask runs BEFORE that, but a region
+  // emitter can erase a value in the window. A NULLED root is a root that no longer
+  // exists, and the proof the grant rested on no longer has a subject.
+  //
+  // ⚠ `Fn` IS RECORDED ONLY SO A NULLED `Header` CAN STILL BE DIAGNOSED. Without
+  // it, an erased header is unattributable to any function and the re-ask would
+  // have to SKIP it — a silent skip of a grant whose subject is gone, in a stage
+  // whose whole job is to be loud (Rule 1). A `Function` is not erased by any
+  // stage in this window, so the fallback anchor is its entry terminator.
+  struct Round1RailGrant {
+    llvm::WeakTrackingVH Header;                       // the marked loop's header
+    llvm::WeakTrackingVH Fn;                           // the enclosing function
+    llvm::SmallVector<llvm::WeakTrackingVH, 2> Roots;  // what it was granted on
+  };
+  llvm::SmallVector<Round1RailGrant, 2> Round1RailGrants;
+
   // Issue dtzb — the in-place reversible arithmetic strategy. A recognized
   // loop-carried VALUE rail self-update (`q = q OP c`, OP ∈ {add, xor}, one
   // tainted operand + a CLASSICAL immediate — a reversible bijection of the

@@ -19,7 +19,35 @@
 ; control flow at all, so a fix aimed only at the control path would leave this
 ; one silently wrong (or vice versa). Keep both.
 ;
-; RETIREMENT TRIGGER (L8): becomes an ACCEPT the day bd `tu9q` builds the pairing.
+; ⚠ RETIREMENT TRIGGER (L8) — **PARTIALLY FIRED, AND THIS FILE IS THE HALF THAT
+; DID NOT MOVE.** bd `tu9q` landed 2026-09-15 and its sibling
+; `loop_leak_dephase_reject_noregion_live.ll` IS now an ACCEPT. This one still
+; DECLINES, deliberately, and the reason is the exact boundary of what was built:
+; `tu9q` widened the admitted invariant reads to a ROOT MINT (at
+; `markIfIterationLocal`'s slot, which had no `Roots` parameter at all) and to a
+; MEASURE-OWNED template rail (clause (ii-c)). `p = y * 3` is NEITHER — it is a
+; hoisted template rail read as DATA, which is exactly what
+; `ChainWalk::isInteriorTerminalHandle` clause (I1) ADMITS to the interior
+; partition, so admitting it as a root would put its `At` — computed from consumers
+; that are all in the body — inside a K-times body against ONE preheader forward
+; `cq_template_mul_i32_hl`: **K adjoints against one forward gate**, an
+; over-reversed rail, a wrong unitary rather than a leak. Closing this half needs
+; BOTH the real multiplicity test `Uncomputation.cpp:982-1000` specifies AND a
+; loop-EXIT recovery point for a preheader-minted rail, neither of which exists.
+; Filed, not built — see `$SES/trackT/IMPL_T2.md` §6 and bd
+; `test_C_libtooling-1m5p`, which is the same family reached through the twin
+; matrix. RE-DERIVE this file when that increment lands; do not delete it, and do
+; NOT read its sibling's conversion as evidence about it.
+;
+; ⚠ THE DIAGNOSTIC BELOW IS OWNED BY ANOTHER FENCE
+; (`declineDephasingUnmarkedLoopRails`, bd `s82e`) whose conjuncts are LIVE WORK
+; (bd `c767` / bd `7845` / bd `2g52`). If that work moves the string or the
+; conjuncts, this file moves with it — its VERDICT (decline) is the property, the
+; string is that fence's. The boundary of `tu9q`'s clause (ii-c) is pinned
+; INDEPENDENTLY, without any fence's string, by
+; `loop_pairing_reject_root_hoisted_template_data.ll` and
+; `loop_pairing_reject_root_invariant_read_after_loop.ll` — read those if this one
+; is red after a fence edit.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
