@@ -1,0 +1,10 @@
+Q1 — SUBJECT rolled bank  ==  ORACLE unrolled scalar cascade
+  m_none_kprep_none_none_kflat       rolled(SUB)==unrolled(ORA): False  rolled(SUB)==unrolled(SUB): False  lines=0
+  m_none_k2b_none_none_kflat         rolled(SUB)==unrolled(ORA): False  rolled(SUB)==unrolled(SUB): False  lines=0
+Q2 — ROLLED-ONLY `kloop` rolled stream vs its `kflat` sibling
+  m_none_kprep_none_none_kloop       non-vacuous: False  gate-stream identical: False  measure multiset equal: False  measure ORDER differs (as the sources do): False
+  m_none_k2b_none_none_kloop         non-vacuous: False  gate-stream identical: False  measure multiset equal: False  measure ORDER differs (as the sources do): False
+Q2b — `kiprep` (int cells) vs `kprep` (_Bool cells), modulo width
+  m_none_kiprep_none_none_kloop      non-vacuous: False  i1->i32 rewrite of _Bool stream == int stream: False  (lines 0 / 0)
+
+checked 5 comparison(s), 5 unexpected

@@ -491,7 +491,7 @@ m_add_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_add_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_add_ifelse_ry          DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_add_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
-m_add_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_add_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_add_oder_none_none_none ACCEPT-IDENTICAL
 m_add_oeq_none_none_none ACCEPT-IDENTICAL
 m_add_one_none_none_none ACCEPT-IDENTICAL
@@ -579,25 +579,25 @@ m_none_ifelse_add        UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
-m_none_k2b_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_k2b_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
-m_none_karith_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_karith_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
-m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq taint escape: tainted value stored to memory	cq controlled lowering: control flow under quantum control
-m_none_kcond_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
+m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
+m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+m_none_kcond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
 m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
-m_none_kicond_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
+m_none_kicond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
-m_none_kiprep_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
+m_none_kiprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kover_none_none_kflat UNROLLED-ONLY	cq rail bank: array has cells no iteration writes
 m_none_kover_none_none_kloop DECLINE-BOTH-DIFFERENT	cq rail bank: array has cells no iteration writes	cq taint escape: tainted value stored to memory
-m_none_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_kprep_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
-m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_kread_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
-m_none_kread_none_none_kloop DECLINE-BOTH	cq taint escape: tainted value stored to memory
+m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
+m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+m_none_kread_none_none_kflat UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_kread_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
 m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_nbilry_none_none_binv ACCEPT-IDENTICAL
 m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL
@@ -731,7 +731,7 @@ m_ry_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_ry_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_ry_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_ry_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_ry_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_ry_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_ry_oder_none_none_none ACCEPT-IDENTICAL
 m_ry_oeq_none_none_none  ACCEPT-IDENTICAL
 m_ry_one_none_none_none  ACCEPT-IDENTICAL

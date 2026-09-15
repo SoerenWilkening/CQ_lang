@@ -1,0 +1,63 @@
+tools/loop_twin_matrix.expected.txt - row-by-row diff, PRE (the 74eabd2c ORACLE pin) vs POST (regenerated on 9bd01598)
+rows PRE=330 POST=330  added=0 removed=0
+MOVED=15  UNCHANGED=315  every mover is a BANK (k-region) cell: True
+
+m_add_kprep_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: UNROLLED-ONLY ||| cq taint escape: tainted value muxed by a classical-condition phi
+
+m_none_k2b_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: ACCEPT-IDENTICAL
+
+m_none_k2b_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: ROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+
+m_none_karith_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: UNROLLED-ONLY ||| cq loop lowering: loop-carried tainted value crosses iterations
+
+m_none_karith_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: DECLINE-BOTH-DIFFERENT ||| cq loop lowering: loop-carried tainted value crosses iterations ||| cq taint escape: tainted value stored to memory
+
+m_none_kcond_none_none_kflat
+  PRE : DECLINE-BOTH-DIFFERENT ||| cq taint escape: tainted value stored to memory ||| cq controlled lowering: control flow under quantum control
+  POST: DECLINE-BOTH-DIFFERENT ||| cq controlled lowering: condition predates a non-diagonal gate under quantum control ||| cq controlled lowering: control flow under quantum control
+
+m_none_kcond_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: DECLINE-BOTH-DIFFERENT ||| cq controlled lowering: condition predates a non-diagonal gate under quantum control ||| cq taint escape: tainted value stored to memory
+
+m_none_kicond_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: DECLINE-BOTH-DIFFERENT ||| cq controlled lowering: condition predates a non-diagonal gate under quantum control ||| cq taint escape: tainted value stored to memory
+
+m_none_kiprep_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: ROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+
+m_none_kprep_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: ACCEPT-IDENTICAL
+
+m_none_kprep_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: ROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+
+m_none_kprep_ry_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: UNROLLED-ONLY ||| cq taint escape: tainted value muxed by a classical-condition phi
+
+m_none_kread_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: UNROLLED-ONLY ||| cq controlled lowering: control flow inside a loop body under quantum control
+
+m_none_kread_none_none_kloop
+  PRE : DECLINE-BOTH ||| cq taint escape: tainted value stored to memory
+  POST: DECLINE-BOTH-DIFFERENT ||| cq controlled lowering: control flow inside a loop body under quantum control ||| cq taint escape: tainted value stored to memory
+
+m_ry_kprep_none_none_kflat
+  PRE : UNROLLED-ONLY ||| cq taint escape: tainted value stored to memory
+  POST: UNROLLED-ONLY ||| cq taint escape: tainted value muxed by a classical-condition phi
