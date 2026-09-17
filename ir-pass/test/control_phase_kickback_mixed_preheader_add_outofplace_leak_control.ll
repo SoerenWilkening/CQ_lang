@@ -37,6 +37,14 @@
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=XCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=EXITD < %t.cqd0.ll
+;
+; bd `tu9q` P2 — the HOISTED rail's discharge, pinned POSITIONALLY and not only
+; counted: it sits in the loop-EXIT block, immediately before the post-loop
+; measures, which no in-body placement could produce.
+; EXITD: call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 7)
+; EXITD-NEXT: call void @cqrt_free(i32 %h_op)
+; EXITD-NEXT: %m = call i32 @cqrt_measure_i32(i32 %h)
 
 ; The two root mints, then ⭐ the preheader op as a FRESH OUT-OF-PLACE RAIL.
 ; CHECK: %[[Q:.*]] = call i32 @cqrt_alloc_i32(
@@ -67,8 +75,25 @@
 ; PCNT-COUNT-1: call i32 @cq_template_add_i32_hl(
 ; PCNT-NOT: call i32 @cq_template_add_i32_hl(
 
-; ONE free in the body: the flag alone (the bit rail is the leak).
-; FCNT-COUNT-1: call void @cqrt_free(
+; ── CONVERTED IN PLACE, 2026-09-18 (bd `test_C_libtooling-tu9q`, piece P2) ────
+; ⚠ **THIS CENSUS SAID "ONE free in the body: the flag alone (the bit rail is the
+; leak)" AND THE COUNT IS NOW 2.** The second free is NOT in the body: it is the
+; HOISTED `add` rail `%h_op`, minted once in the preheader and now discharged ONCE
+; at the LOOP EXIT by `Uncomputation::anchorForConsumer`. The bit (`and`) rail is
+; still the leak, and `UCNT-NOT` above still pins that — the two halves of the old
+; sentence came apart and only one moved.
+;
+; CORRECTNESS, on the operands: `%h_op = %h + 7` has exactly one in-loop user and
+; it READS (`cq_template_and_i32_hl`); the only non-diagonal gate in the body is
+; `cqrt_ry_i32(%h1, 0.1)` on the OTHER register, so nothing writes `%h` between the
+; mint and the exit and the exit `_unc` reads the basis the forward `add` read
+; (clause (d)'s LEFT disjunct). One mint, one adjoint: `multiplicityAgrees` keys
+; both endpoints to `nullptr` (neither the preheader nor the exit is marked).
+;
+; ⚠ L8 RETIREMENT TRIGGER: when P0/P3 lands, the per-trip `and` gains its own
+; in-body pair, `UCNT-NOT` fires and this count goes to 3. Re-derive then against
+; the hand-unrolled twin's MULTISET; do not relax the census into a range.
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
 ; XCNT-COUNT-2: call void @cqrt_x(i32

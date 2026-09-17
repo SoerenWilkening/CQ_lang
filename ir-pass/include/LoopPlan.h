@@ -599,6 +599,36 @@ void declineUnmarkedRolledIterLocal(llvm::Module &M, TaintSet &taint);
 // `taint.BreakRegions` is empty (every module with no recognized value-arm break).
 void lowerBreakReversePlay(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 
+// ── bd `test_C_libtooling-tu9q`, the HOISTED-TEMPLATE half (2026-09-18) ───────
+// **THE ONE SPELLING OF "DOES `L` HAVE A POINT AT WHICH A RAIL MINTED OUTSIDE IT
+// CAN BE DISCHARGED EXACTLY ONCE?"** — the loop's UNIQUE exit block, or `nullptr`.
+//
+// It is exported rather than duplicated because it has TWO customers in TWO TUs
+// and they must not be able to disagree (Rule 14; the drbq Inc-3 (b′) defect is a
+// SECOND SPELLING of a predicate the tree already owned):
+//   * `Uncomputation::planInteriorComponent` (P2) ANCHORS a preheader-minted
+//     rail's discharge here instead of at its in-body consumer's next node,
+//     which is a point that repeats while the forward gate does not;
+//   * `LoopLowering::invariantRegisterRootsImpl` clause (ii-d) (P3) REFUSES to
+//     admit such a rail as a Root unless this returns non-null — because the
+//     whole licence for that clause is the placement the first customer makes.
+//
+// ⚠ DIRECTION, STATED BEFORE THE SECOND CALLER WAS ADDED (`CLAUDE.md` L3-mirror).
+// BOTH callers read it in the **GRANTING** direction: non-null ⇒ more is
+// admitted. So a widening of this predicate widens an ACCEPT surface in two
+// files at once, and the conservative answer is `nullptr`.
+//
+// ⚠ MULTI-EXIT IS `nullptr` BY CONSTRUCTION AND THAT IS TODAY'S BEHAVIOUR, NOT A
+// NEW DECLINE: `llvm::Loop::getUniqueExitBlock()` returns null for a loop with
+// more than one exit block, the candidate is dropped and the rail is LEFT
+// ALLOCATED (Rule 6's fallback). A multi-exit discharge point is a separate
+// capability with its own post-dominance obligation and is deliberately NOT
+// invented here.
+//
+// A non-null result is additionally guaranteed to have a usable insertion point
+// (`getFirstInsertionPt() != end()`), so a caller never has to re-check it.
+llvm::BasicBlock *loopExitDischargePoint(const llvm::Loop *L);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_LOOP_PLAN_H_
