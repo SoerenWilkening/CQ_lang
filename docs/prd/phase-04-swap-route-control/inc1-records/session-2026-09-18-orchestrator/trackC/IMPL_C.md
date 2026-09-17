@@ -1,7 +1,7 @@
 # Track C — (T4), the LOOP-EXIT DISCHARGE for `tools/free_pairing_check.py`
 
 **Branch** `freepair-loop-exit-discharge`, forked from the gate tip `10e95a52`.
-**Tip** `<t4sw>`. **Files touched: two, and only two** —
+**Tip** `3fcecc84`. **Files touched: two, and only two** —
 `tools/free_pairing_check.py` and `tools/free_pairing_check_test.py`.
 The pass source, `tools/loop_twin_matrix*`, every fixture, every golden and
 `tests/e2e/CMakeLists.txt` are **untouched** (`git diff --stat` at the commit:

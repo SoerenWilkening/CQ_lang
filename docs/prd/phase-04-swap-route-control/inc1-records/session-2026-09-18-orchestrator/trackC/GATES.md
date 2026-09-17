@@ -36,12 +36,12 @@ Selftest summary line at that run, **re-run, not copied**:
 
 ```
 free_pairing_check_test: 32 positive fixture(s), 2 free-order pair(s),
-  1 cost bound(s), 77 named mutant(s), 10 memory mutant(s)/refusal(s),
-  5 Case-A negative(s), 19 census case(s), 18 T4 loop-exit case(s),
+  1 cost bound(s), 77 named mutant(s), 11 memory mutant(s)/refusal(s),
+  5 Case-A negative(s), 19 census case(s), 21 T4 loop-exit case(s),
   329 proof-targeted mutant(s) (4 exempt by rule), 0 failure(s)
 ```
 
-Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 18**,
+Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 21**,
 proof-targeted sweep **315 → 329**. Every other count is unchanged, which is the
 non-churn statement.
 
@@ -163,6 +163,68 @@ was reading the same file**. Those sweep results were discarded and the sweep
 restarted after the source was final. Same class as *"never relink a binary under
 a running measurement"*, one layer down.
 
+### G-C6 — bd `t4sw`, the P1 the composition round found (SECOND GATE RUN)
+
+```
+cited: 96d74fe6008133b8
+DONE | ctest --test-dir build -R e2e-free-pairing-selftest --output-on-failure
+     | 1/1 Test #294: e2e-free-pairing-selftest ........   Passed    0.86 sec
+     | 100% tests passed, 0 tests failed out of 1
+```
+
+RED/GREEN, measured on this branch:
+
+```
+t4_switch_backedge_k1.ll      BEFORE 2 verified, 0 violation(s), 0 unproven  rc=0   <-- VERIFIED the K:1
+                              AFTER  1 verified, 0 violation(s), 1 unproven  rc=1   <-- (T4f) speaks
+t4_br_backedge_k1_control.ll  BEFORE rc=1   AFTER rc=1   UNCHANGED
+```
+
+CFG parse on the shipped fixture `lowering_classical_mux_phi_onereg_switch_nway.ll`:
+
+```
+BEFORE  succ['%entry']=['%merge']                   preds['%arm1']=[]  preds['%arm2']=[]
+AFTER   succ['%entry']=['%merge','%arm1','%arm2']   preds['%arm1']=['%entry']
+```
+
+TARGETED CORPUS — and the targeting IS the argument: the fix can only change a
+module whose LOWERED IR carries a multi-line terminator or an `invoke`, so both
+populations were enumerated and A/B'd IN FULL against the pre-fix checker
+(`43039a28`) rather than sampling a corpus of unchanged inputs.
+
+```
+cited: 96d74fe6008133b8 / pre-fix checker 43039a28
+ir-pass/test: 2095 fixtures, 1044 accepted by cq-opt,
+              1 with switch/indirectbr/invoke in LOWERED IR, 0 MOVED
+e2e:          25 switch-mentioning .c sources, 1 reaching the construct, 0 MOVED
+```
+
+### G-C7 — the ARM-KILL MATRIX, RE-RUN over TWELVE arms, MISSED 1
+
+```
+cited: source-level mutation of tools/free_pairing_check.py; no binary involved
+P1-multi-line-terminator-accumulation  RED 1   t4-switch-backedge-k1
+P1-invoke-loud-refusal                 RED 1   t4-invoke-is-a-call-and-a-terminator
+ANTI-blanket-switch-is-cyclic          RED 1   t4-acyclic-switch-still-verifies   <-- the OTHER direction
+T4a-not-a-template-mint                RED 1   t4-alloc-rail-cross-stream-bracket
+T4b-undef-forward-operand              RED 1   t4-undef-forward-operand
+T4b-unc-operands-match                 RED 1   t4-adjoint-with-a-different-literal
+T4b-unc-names-this-rail                *** GREEN - ARM SURVIVED ***
+T4c-single-write-in-the-function       RED 4   write-in-loop / measured / rotated / two-exit-blocks
+T4d-exactly-one-free                   RED 1   t4-one-reversal-two-frees
+T4f-mint-stream-acyclic                RED 1   t4-mint-inside-the-loop
+T4f-free-stream-acyclic                RED 3   t4-{br,switch}-backedge-k1, t4-k1-reversal-and-free-inside-the-loop
+T4g-forward-operands-held-still        RED 2   t4-forward-operand-moved-inside-the-loop, t4-non-lifo-discharge-order
+```
+
+**MISSED 1 of 12** - the same pre-existing survivor. `ANTI-blanket-switch-is-cyclic`
+is the row that makes the fix's SHAPE checkable and not just its direction.
+
+⚠ (T4f) went from ONE killer to THREE. The lesson: (T4)'s original matrix killed
+eight arms - including (T4f) twice - and every mutant spelled its CFG with `br`.
+An arm-kill that never varies the SPELLING of the construct it tests measures the
+rule and not the parser underneath it.
+
 ### G-C5 — corpus verdict diff, **COMPLETE**
 
 ```
@@ -191,7 +253,7 @@ measurement because the 381st moved.
 
 ```
 branch freepair-loop-exit-discharge (from gate tip 10e95a52)
-tip    43039a28
+tip    3fcecc84
 files  tools/free_pairing_check.py (+390), tools/free_pairing_check_test.py (+416)
        2 files changed, 798 insertions(+), 8 deletions(-)
 ```
