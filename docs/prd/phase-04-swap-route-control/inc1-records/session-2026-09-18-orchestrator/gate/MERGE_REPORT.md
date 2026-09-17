@@ -175,8 +175,66 @@ nested-loop class.
 
 ## 8. `cq-opt-equivalence-full`
 
-*(recorded in §8 below once complete — see GATES.md for the verbatim line)*
+*(see GATES.md for the verbatim line)*
 
-## 9. Corpus sweep, ORACLE `9bd01598` vs SUBJECT `96d74fe6`
+## 9. Corpus sweep, ORACLE `9bd01598` vs SUBJECT `96d74fe6` — **6981 rows, 137 movers, 0 unattributable, A→D = 0**
 
-*(recorded below once complete)*
+Ran 15:03:44 → 15:27:27 (**23 m 43 s**) at `-P 3`, over `ir-pass/test/*.ll` **plus every session
+dir's `track*/probes` and `review_*/probes`** (worktree) **plus this session's main-checkout-only
+probe dirs** (`review_r13_group1`, `review_r13_loopconv`, `review_r13_trackD`, `trackX`, `wave0`).
+Both binaries run on the **same stage-1 file** per row, so the md5s are comparable **within** a row
+(PROTOCOL S3). Output: `gate/corpus_96d74fe6.txt`.
+
+**6981 rows written** (the 7012-entry list minus 31 `*_lib.c` / `lib*.c` halves swept with their
+caller); **6972 scored**, 2 `CLANGERR`, 7 `EMPTYMOD` — the last of these is the
+`empty-module-accepts` trap, reported as its own bucket and **never scored as ACCEPT**.
+
+| bucket | rows | attribution |
+|---|---|---|
+| **A→D** | **0** | ⚠ the safety property: **this landing introduces no new decline anywhere in the corpus** |
+| **D→A** | **79** | **Track D** — *all 79*, re-measured in full (below) |
+| **A→A, md5 changed** | **32** | **Group 1's P2** — every one a named customer (below) |
+| A→A, stderr changed | 5 | Group 1 (the live-record warning disappearing as rails get discharged) |
+| **D→D, decline STRING changed** | **14** | Track D — module still declines, at a **later** fence |
+| D→D, stderr-only changed | 7 | ditto |
+| **TOTAL MOVERS** | **137** | **0 unattributable** |
+
+### 9a. The D→A attribution is RE-MEASURED, not read off the sweep
+
+⚠ The sweep row stores `cut -c1-200` of the whole error **line**, and a long probe path eats the
+message — leaving fragments like `cq controlled lowering: condi`, which is a prefix of **three**
+different real strings (`condition predates…`, `condition measured before…`, `condition data use…`).
+Attributing from the fragment would have been a guess. So every D→A mover was **re-run on the ORACLE
+and its diagnostic read in full** (`gate/probes/attribute.py`):
+
+```
+D->A movers: 79
+    75  cq controlled lowering: condition predates a non-diagonal gate
+     4  cq controlled lowering: control flow
+UNATTRIBUTABLE to Track D's two expected strings: 0
+```
+
+Both strings are exactly the two the brief names for Track D. **Zero movers in the accept direction
+belong to anything else.**
+
+### 9b. The A→A md5 movers are all Group 1's
+
+The 32 include the 5 `ir-pass/test` fixtures Group 1 converted or added
+(`control_phase_kickback_inloop_reject_hoisted_temp`,
+`…mixed_preheader_add_outofplace_leak_control`, `loop_pairing_accept_hoisted_chain_exit_discharge`,
+`loop_pairing_accept_twoblock_body_straddle`, `loop_pairing_reject_root_hoisted_template_data`),
+Group 1's own named P2 customers from an earlier session
+(`trackT/probes/adv/b1_mixed_nonlive`, `r2_two_functions` — the two its `GATES.md` names), its own
+`trackT2/probes/*` (`a1_apost`, the two `m_none_oder_*`, `t5h`, `t5j`, `p2d`, `p2g`, `g1`, `g3`), and
+**`trackD2/probes/dD5`** — the pre-existing bd `s82e` reference that Group 1's P2 discharges (§3).
+
+### 9c. The PROTOCOL S3 blind spot was closed, and it found 14 rows
+
+The shared `corpus.sh` tag regex renders the whole `cq_measure_<sfx>` family as an empty `D:`, so a
+decline→decline string change inside it is **invisible**. This sweep records the **FULL first
+`error:` line plus a sha-256 of the WHOLE stderr**, so a D→D move is visible either way. It found
+**14 string changes and 7 stderr-only changes** — every one in the **safe** direction (the module
+still declines, at an earlier/different fence, e.g.
+`condition predates a non-diagonal gate` → `value-arm swap-route` or
+`control flow inside a loop body`), which is Track D's widening letting a module past the condition
+fence only for a later fence to refuse it.

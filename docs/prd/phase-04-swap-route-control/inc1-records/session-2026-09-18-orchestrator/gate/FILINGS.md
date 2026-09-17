@@ -85,6 +85,44 @@ unproven`; twin `5 verified, 0 unproven`) and compensated by a POSITIONAL pin in
 widening of the set of slices whose stage-2b result is not strict, and it should be visible as such
 rather than absorbed.
 
+## G-7 — **P1 (instrument, needs an OWNER/Track-V decision): `e2e-loop-twin-matrix` can no longer speak for 24 cells + 1 pinned boundary control, because Group 1's P2 makes `UNPROVEN` the normal stage-2b answer**
+
+Measured: **24 cells and the boundary control `q_armoncond` return `HARNESS-ERROR`**, every one with
+the identical cause — `rolled side: stage 2b (free_pairing_check, STRICT) failed: … UNPROVEN
+U3-extern-rail` — and every one reporting **`0 violation(s)` and `0 … left dirty`**. The rails ARE
+discharged; `free_pairing_check.py` models a straight-line STREAM and P2 puts the discharge at the
+**loop exit**, a different stream from the mint, so `UNPROVEN` is structural.
+
+The matrix's policy is deliberate and says so at the site (`loop_twin_matrix.py:2156`): *"Stage 2b —
+STRICT. A cell that needs `--allow-unproven` is not a cell this gate can speak for, and saying so
+loudly is the point."* It was right when written. It now collides with a capability.
+
+**Consequences measured at this gate, not predicted:**
+
+1. **The matrix cannot be regenerated to green at all** — a `HARNESS-ERROR` has no verdict to record,
+   so no `--regenerate` and no `--refresh-quarantine` can clear those 25.
+2. **The six cells that watch class A (bd `1m5p`) are among them**, so the instrument went blind to
+   class A **on the very run in which class A changed**.
+3. It printed **`QUARANTINE STALE — REMOVE IT`** for those six — an instruction which, followed,
+   deletes the only cells that watch the class. It is an artefact: the verdict is `HARNESS-ERROR`, so
+   the stale-check fired on a cell whose traces were never compared. **The stale check and the
+   harness-error check are not ordered defensively** (G-7a below).
+
+**Options, costed (recommendation labelled as such, not a ruling):** (a) run the rolled side's 2b with
+`--allow-unproven` — the instrument stops seeing genuine dirty-rail regressions on those cells, which
+is the F-4 class it exists for; (b) teach `free_pairing_check.py` a cross-stream model so a loop-exit
+discharge can be *verified* — a real increment with its own Rule-13 round; (c) leave it red — Rule 19
+verbatim, *"a gate expected to be red is a gate people stop reading."*
+**Recommend (b), with (a) as an explicitly time-boxed stop-gap recorded in the quarantine header.**
+⚠ **`tools/loop_twin_matrix*` is Track V's EXCLUSIVELY (R14); I changed nothing.**
+
+### G-7a — **P2 (instrument, L10): a cell whose verdict could not be COMPUTED is reported as "no longer diverging"**
+
+`QUARANTINE STALE — REMOVE IT` and `HARNESS-ERROR` are emitted for the same cell in the same run, and
+they contradict each other. A cell that errored should be reported **unmeasured**, never as
+*stale*, because "stale → REMOVE IT" is an instruction to delete a gate. This is the L10 species —
+an instrument stating a conclusion it did not measure — and it is in the dangerous direction.
+
 ## G-6 — **P1 (population, and it answers an open question nobody had the number for): `review_r13_group1` F-1's HAZARD already ships in 2 registered goldens whose headers carry the Rule-6 sentence CLAUDE.md §5 has already ruled FALSE**
 
 Full record and method: `BLAST_RADIUS_g8.md`. Measured on the COMBINED binary over **383 of 386
