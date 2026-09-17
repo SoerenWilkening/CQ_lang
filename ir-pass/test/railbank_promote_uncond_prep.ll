@@ -92,7 +92,36 @@ out:
 ; NOTS-NOT: %cq.bank = phi
 ; NOTS-COUNT-1: CQ_RAILBANK_DBG: promote bank
 
-; DECLINE: cq loop lowering: loop-carried tainted value crosses iterations
+; ⚠⚠ THE WALL MOVED AGAIN — bd `test_C_libtooling-zujr` (2026-09-19), and this
+; file was RE-DERIVED, not deleted.  It is the ONE module of the eleven the
+; increment moved that did NOT become an accept, and WHY is the whole reason it
+; is still here.
+;
+; X1 IS GONE: `a` here IS a loop-carried HANDLE variable — constant seed `5`,
+; latch incoming a tainted-condition `select` — so `loopCarriedHandlePhi` admits
+; it, both X1 sites defer and the promotion materialises
+; `%cq.carried = cqrt_alloc_i32(5)` in the preheader exactly as it does for the
+; ten siblings.  What refuses this module is the SELECT's own condition:
+;
+;     %t1 = trunc nuw i8 %z0 to i1        ; %z0 = zext i1 %q to i8
+;     %a.next = select i1 %t1, i32 %sub, i32 %a
+;
+; a bare `trunc`-of-`zext` `i1` — the `_Bool` STORAGE WIRE — which is off
+; `collectCondTree`'s leaf grammar (no `CmpInst`, no rail leaf).  That is bd
+; `r903`, the `i8` `_Bool` wire, and it is NOT this increment's: the C spelling of
+; the same program compiles, because `clang -O1` folds `trunc(zext(%q))` to `%q`
+; before the pass ever sees it (MEASURED: the C twin
+; `$SES/probes/p2_valuearm.c` is exit 0 on the subject).  THIS FILE IS
+; HAND-TRANSCRIBED and keeps the unfolded pair, which is what makes it a
+; discriminator for the wire and not for the loop.
+;
+; ⚠ SO THE DECLINE STRING BELOW IS A `r903` STRING, NOT A LOOP STRING, and the
+; difference is the point (CLAUDE.md L6: a structural guard wearing the wrong
+; label is a defect).  L8 RETIREMENT TRIGGER: the day bd `r903` gives the 4.4
+; data select a `trunc`/`zext` `_Bool`-wire leaf, this module ACCEPTS with the
+; same stream its ten siblings emit and this file is re-derived a third time.
+; Do NOT delete it.
+; DECLINE: cq controlled lowering: control flow under quantum control
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans

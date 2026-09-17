@@ -759,6 +759,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // One deliberate accept (test_C_libtooling-5j5): the proven ONE-REGISTER
   // merge phi (`if (classical_c) q = cq_phi(q, θ); use(q)`) is RAUW'd to its
   // wire base and erased here instead of declined.
+  // bd `test_C_libtooling-zujr` — THE TRIP-1 PROMOTION, immediately before the
+  // guard whose accept it grants. Contract, slot and retirement trigger in
+  // `LoopPlan.h`; it never declines, and an unpromoted carried-handle φ is
+  // refused by the very next call.
+  promoteLoopCarriedHandleSeeds(M, wd, taint);
   declineClassicalMuxes(M, taint);
 
   // Post-lift stale-record re-sweep (test_C_libtooling-2qyz): the lift above
@@ -1255,6 +1260,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   lowerShadowMemory(M, wd, taint);
   // Classical-condition mux guard in this entry point too (twin-pipeline
   // trap, IMPLEMENTATION §6.5) — see run() for the ordering rationale.
+  // bd `test_C_libtooling-zujr` — THE TRIP-1 PROMOTION, immediately before the
+  // guard whose accept it grants. Contract, slot and retirement trigger in
+  // `LoopPlan.h`; it never declines, and an unpromoted carried-handle φ is
+  // refused by the very next call.
+  promoteLoopCarriedHandleSeeds(M, wd, taint);
   declineClassicalMuxes(M, taint);
   // Post-lift stale-record re-check (test_C_libtooling-2qyz) — see run().
   declineLiftedStaleRecordOps(M, taint);

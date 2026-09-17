@@ -31,6 +31,9 @@
 #include "OpcodeSupport.h"  // abiWidthFromType (rail width for the capture allocs)
 #include "WidthDispatch.h"
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
+#include "LiteralIntegrity.h"  // valueCarriesUndef (bd zujr, clause (Z4))
+#include "RailBankPromote.h"  // isRailBankAlloca/railBankOfPointer (bd zujr, L3)
+#include "SelectMergeEmit.h"   // materializeCopySource (bd zujr, the promotion)
 
 #include "llvm/IR/IRBuilder.h"
 
@@ -1122,6 +1125,295 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
   return nullptr;
 }
 
+}  // namespace
+
+// ─────────────────────────────────────────────────────────────────────────────
+// bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE.
+//
+// THE THIRD KIND OF LOOP-CARRIED REGISTER, and it is the owner's rolled cascade:
+//
+//     int a = 5; bool b0[3];
+//     for (int i = 0; i < 3; ++i) { if (a >= 3) b0[i] = cq_theta(b0[i], .5);
+//                                   if (b0[i]) a -= 3; }
+//
+// After `clang -O1` the second `if` is if-converted into a 4.4 DATA SELECT and
+// `a` is a header φ whose ENTRY incoming is the constant `5` and whose LATCH
+// incoming is that select's merge output:
+//
+//     %a  = phi i32 [ 5, %entry ], [ %merge, %latch ]
+//     %a3 = add nsw i32 %a, -3
+//     %merge = select i1 %rail, i32 %a3, i32 %a
+//
+// It is NEITHER of the two kinds the loop layer already knows:
+//   * NOT (b)/(b′), the rail that crosses the back edge IN PLACE — the latch
+//     incoming does not peel back to the φ (`collapseRailPhisIn`'s closed
+//     self-cycle), because `SelectMergeEmit` mints a FRESH `%out = cqrt_alloc_<W>`
+//     per activation and RAUWs the merge onto it. `ControlDetect.cpp` already
+//     says so in words for the value arm: *"the loop-carried register is a
+//     different handle every trip"*.
+//   * NOT (c), the ITERATION-LOCAL rail — it manifestly crosses the back edge and
+//     its exit value is the program's answer (`cq_measure(a)`).
+//
+// It is a LOOP-CARRIED HANDLE VARIABLE: a register that crosses the back edge AND
+// is re-minted every trip. THE RUNTIME NEEDS NOTHING — a handle is an `i32` and a
+// loop-carried `i32` whose φ is selected by CLASSICAL loop control is ordinary
+// classical data. The only thing missing from the module is the TRIP-1 register:
+// the entry incoming is a classical literal, not a handle, so trip 1 would pass
+// `5` where every gate wants a handle. That is what `promoteLoopCarriedHandleSeeds`
+// materialises, and it is the owner's ruling of 2026-09-17 (bd memory
+// `owner-ruling-loop-carried-handle-2026-09-17`): *"trip-1 PROMOTION accepted —
+// materialise `cqrt_alloc_<W>(entry value)` in the preheader … slightly less
+// efficient is fine"*. The FLAT twin already does exactly this, as the
+// `cqrt_alloc_i32(5)` copy source inside its trip-1 mux.
+//
+// THE PER-TRIP UNITARY ARGUMENT (Rule 2 — analytic, there is no simulator). Let
+// `a_0` be the preheader `cqrt_alloc_<W>(C)` = |C⟩ and `a_k` the register the φ
+// names on trip k. Each activation emits, on the ORIGINAL register `a_{k-1}`:
+//   (1) a which-path flag built by a reversible template and STRIPPED back to
+//       |0⟩ before its free (`a_{k-1}` is not written, so the strip's premise
+//       holds);
+//   (2) whatever gates the region's own emitter is cleared for;
+//   (3) the arm's pure chain on `a_{k-1}` (here `h_op = a_{k-1} − 3`), a fresh
+//       rail LEFT ALLOCATED — the 3qlq Inc-2 PRD §0 E1 policy;
+//   (4) `a_k = cqrt_alloc_<W>(0)` and the two X-bracketed
+//       `cqrt_copy_<W>_controlled`, which write `a_k` once per basis branch and
+//       leave `a_{k-1}` untouched.
+// So `a_k = flag ? h_op : a_{k-1}` on every basis branch — gate for gate what
+// copy k of the hand-unrolled program emits. `a_{k-1}` and `h_op` are left as
+// which-path records, which is EXACTLY what the flat twin leaves (measured: 6
+// undischarged rails in each form; the flat form's are 2 template + 4 alloc
+// because `-O1` const-folds its first two trips, the rolled form's 3 + 3).
+//
+// ⚠ BYTE-IDENTITY WITH THE HAND-UNROLLED TWIN IS AN INSTRUMENT HERE, NOT THE
+// TARGET, and that is the owner's ruling (2): `clang -O1` stamps
+// `llvm.loop.unroll.disable` and does not peel, so the rolled form emits a REAL
+// compare + strip on EVERY trip, while `-O1` folds the flat twin's trip-1 compare
+// to `true` and its trip-2 compare to `!b0[0]`. Same unitary, different bytes. The
+// witness is this argument plus a QUARANTINED divergence carrying it.
+//
+// PURE ANALYSIS; mutates nothing (Rule 9). Asked at FOUR slots over two taint
+// sets, which is why it is ONE function and never a second spelling (Rule 14):
+//   * `iterationLocalTaintEscape`  — R7-loop clause (c3) / conjunct 1;
+//   * `tryCaseA`                   — X1, ROUND 1, pre-emission;
+//   * `collapseRailPhisIn`         — X1, ROUND 2, post-emission;
+//   * `invariantRegisterRootsImpl` — clause (i), the marking premise.
+// SCOPE_L1a: the two X1 sites MUST move together or round 2 re-declines what
+// round 1 accepted.
+//
+// ⚠ THE PREDICATE IS DELIBERATELY NOT THE WHOLE PROOF. It is STRUCTURAL and is
+// asked BEFORE the merge emitters have run, so it cannot ask whether the latch
+// incoming really is a control-merge `%out`. `promoteLoopCarriedHandleSeeds` asks
+// that (`taint.ControlOwnedRails`) at FINAL taint and is the ONLY granter of the
+// `declineClassicalMuxes` accept — so a φ this predicate admits but the promotion
+// refuses reaches that guard UNPROMOTED and DECLINES LOUDLY. Every site below is
+// therefore decline-SAFE on its own: none of them is the last owner.
+// bd `test_C_libtooling-zujr` clause (Z6) — WILL THIS VALUE BE A CONTROL-MERGE
+// `%out` RAIL? Contract at the clause. Pure analysis.
+static bool latchIsControlMergeRail(Value *LatV, const TaintSet &taint) {
+  if (taint.ControlOwnedRails.count(LatV))
+    return true;  // POST-emission: the merge emitters' own record (Rule 14).
+  // PRE-emission (round-1 taint): the SHAPE those emitters claim. `clang -O1`
+  // if-converts `if (b) a -= 3;` to a tainted-condition `select` (the 4.4 data
+  // select); when it does not, the diamond survives as a merge φ whose block has
+  // a tainted-condition conditional branch among its predecessors' terminators.
+  // DEFER-ONLY — see the clause.
+  if (auto *SI = dyn_cast<SelectInst>(LatV))
+    return taint.Tainted.count(SI->getCondition()) != 0;
+  if (auto *MP = dyn_cast<PHINode>(LatV))
+    for (BasicBlock *PB : predecessors(MP->getParent()))
+      if (auto *BI = dyn_cast<BranchInst>(PB->getTerminator()))
+        if (BI->isConditional() && taint.Tainted.count(BI->getCondition()))
+          return true;
+  return false;
+}
+
+std::optional<CarriedHandleProof> loopCarriedHandlePhi(
+    PHINode &P, const Loop *L, const TaintSet &taint,
+    const SmallPtrSetImpl<CallInst *> &GateCalls) {
+  // (Z1) A REDUCIBLE, SINGLE-LATCH LOOP WITH A REAL PREHEADER. The preheader is
+  //      where the promotion has to put the `cqrt_alloc`, and "there is a block
+  //      that runs exactly once, immediately before the header" is precisely
+  //      what `getLoopPreheader()` answers. A ROTATED loop with a zero-trip
+  //      GUARD has none (the guard block has two successors) — that is a real
+  //      `-O1` shape and it DECLINES here rather than acquiring a promotion slot
+  //      nobody proved runs once (Prime Directive).
+  if (!L || !L->getLoopLatch() || !L->getLoopPreheader())
+    return std::nullopt;
+  BasicBlock *Latch = L->getLoopLatch();
+  BasicBlock *Pre = L->getLoopPreheader();
+  if (P.getParent() != L->getHeader() || !taint.Tainted.count(&P))
+    return std::nullopt;
+  // (Z2) EXACTLY TWO INCOMINGS: the latch and the preheader. A third edge is a
+  //      multi-entry / irreducible shape, and an external edge that is NOT the
+  //      preheader means the seed is not available at the promotion point.
+  if (P.getNumIncomingValues() != 2)
+    return std::nullopt;
+  CarriedHandleProof Pf;
+  Value *LatV = nullptr;
+  for (unsigned i = 0; i < 2; ++i) {
+    BasicBlock *IB = P.getIncomingBlock(i);
+    if (IB == Latch) {
+      LatV = P.getIncomingValue(i);
+    } else if (IB == Pre) {
+      Pf.ExtIdx = i;
+      Pf.Seed = P.getIncomingValue(i);
+    }
+  }
+  if (!LatV || !Pf.Seed)
+    return std::nullopt;
+  // (Z3) THE φ CARRIES A HANDLE, AND THE HANDLE ABI IS `i32` (Rule 15: *"a
+  //      runtime handle is ALWAYS `i32` regardless of width"*). `cqrt_alloc_<W>`
+  //      RETURNS `i32` at every width, and so does every merge `%out`, so an
+  //      `i16`/`i1`/`i64` φ would mux two `i32` values through a φ of the wrong
+  //      type — `report_fatal_error`, MEASURED (a `short a` spelling of the
+  //      owner's program crashes a build that skips this test). `lowerRotations`
+  //      gets away with the same mismatch only because *"that mismatch is
+  //      transient and laundered by erasure of the tainted users"* — and a φ is
+  //      the one tainted user that is NOT erased.
+  //      A `mutateType(i32)` here (the `RailBankPromote` idiom) would widen this,
+  //      and it is DELIBERATELY NOT DONE in this increment: it is an
+  //      ACCEPT-direction change to a value every later stage reads, and it owes
+  //      its own Rule-13 round. Follow-on: bd `zujr` narrow-width spelling.
+  if (!P.getType()->isIntegerTy(32))
+    return std::nullopt;
+  Pf.Abi = abiWidthFromType(P.getType());
+  if (Pf.Abi.empty())
+    return std::nullopt;
+  // (Z4) THE SEED IS CLASSICAL AND AVAILABLE IN THE PREHEADER. Untainted, so the
+  //      promotion is materialising a CLASSICAL value into a register and not
+  //      re-allocating something that is already a handle; and not `undef`
+  //      /`poison`, which `normalizeUndefRotationSeed` (bd `z9t1`) normalises at
+  //      a SOURCE theta and nothing normalises here.
+  if (taint.Tainted.count(Pf.Seed) || valueCarriesUndef(Pf.Seed))
+    return std::nullopt;
+  if (auto *SI = dyn_cast<Instruction>(Pf.Seed))
+    if (L->contains(SI->getParent()))
+      return std::nullopt;  // defined in the loop — not available at the promotion.
+  // (Z5) THE LATCH INCOMING IS A FRESH TAINTED VALUE, NOT THE CLOSED SELF-CYCLE.
+  //      `peelInPlaceBase(LatV) == &P` is EXACTLY `collapseRailPhisIn`'s claim
+  //      condition, asked by CALLING it, so this kind and the (b)/(b′) kind
+  //      cannot both claim one φ (Rule 14). A rail that crosses the back edge IN
+  //      PLACE stays the collapse's; this kind is the complement.
+  auto *LatI = dyn_cast<Instruction>(LatV);
+  if (!LatI || !L->contains(LatI->getParent()) || !taint.Tainted.count(LatV))
+    return std::nullopt;
+  if (peelInPlaceBase(LatV, GateCalls, taint) == &P)
+    return std::nullopt;
+  // (Z6) THE LATCH INCOMING IS A CONTROL-MERGE RAIL — the SCOPE bd `zujr` names:
+  //      *"a latch incoming that is a controlled-copy merge `%out` (fresh rail
+  //      per activation)"*. That is what makes the per-trip unitary argument
+  //      above true: a merge `%out` is a FRESH `|0⟩` rail written once per basis
+  //      branch by two X-bracketed controlled copies, leaving the previous
+  //      register untouched. A latch incoming that is some OTHER fresh tainted
+  //      rail — `acc = acc + q`, the classic accumulator — is a DIFFERENT circuit
+  //      with a different argument and is NOT this kind.
+  //
+  //      ⚠ IT IS ASKED BY THE RECORD WHEREVER THE RECORD EXISTS, AND BY SHAPE
+  //      ONLY WHERE IT CANNOT. `taint.ControlOwnedRails` is what every Phase-4
+  //      merge emitter writes at its own `Tainted.insert(rail)` site, and it is
+  //      the ONLY thing the promotion accepts — but two of this predicate's four
+  //      slots run at ROUND-1 taint, BEFORE `lowerControlRegions` has emitted
+  //      anything, where that record is necessarily empty. There the question is
+  //      asked of the SHAPE those emitters claim.
+  //
+  //      ⚠ AND THE SHAPE HALF IS ONLY EVER ALLOWED TO **DEFER**, never to
+  //      accept — which is why a second spelling of an emitter's claim condition
+  //      is admissible here and would not be at an accepting site (the drbq
+  //      Inc-3 (b′) defect). The promotion asks the record, and an unpromoted φ
+  //      declines at `declineClassicalMuxes`.
+  //
+  //      ⚠ WITHOUT IT THIS PREDICATE COSTS A **DIAGNOSTIC**, MEASURED: the
+  //      `i32` spelling of `lowering_reject_loop_cross_iter.ll`'s accumulator
+  //      (`$SES/probes/a14c_accum_i32.ll`) went from the accurate
+  //      `cq loop lowering: loop-carried tainted value crosses iterations` to
+  //      the misleading `cq taint escape: tainted value muxed by a
+  //      classical-condition phi`. Both are declines and the direction is safe,
+  //      but a structural guard wearing the wrong label is CLAUDE.md's L6 and is
+  //      exactly the defect bd `8h7d.12` is open for.
+  if (!latchIsControlMergeRail(LatV, taint))
+    return std::nullopt;
+  // (Z7) THE TRIP COUNT IS CLASSICAL. This is the whole safety argument for
+  //      accepting a φ that `declineClassicalMuxes` would otherwise refuse:
+  //      WHICH incoming is live on a given trip is decided by the loop's own
+  //      exit test, and if that test is classical the choice is classical — a
+  //      handle variable, not a no-cloning data mux. A tainted exit is the Q1
+  //      quantum-bounded loop and stays a permanent decline (Rule 18; the bound
+  //      derivation is NOT built). Asked by CALLING `taintedExit`.
+  if (taintedExit(const_cast<Loop *>(L), taint))
+    return std::nullopt;
+  // (Z8) EVERY OUT-OF-LOOP READER OF THE VARIABLE READS A HANDLE.
+  //      The promotion makes TRIP 1 name a register; it cannot make the
+  //      ZERO-TRIP path name one, because the `cqrt_alloc` it mints lives in the
+  //      PREHEADER and a ROTATED loop's zero-trip GUARD edge bypasses it. Such a
+  //      loop has an exit φ muxing the CLASSICAL seed with the handle, which is a
+  //      genuine `declineClassicalMuxes` refusal either way — so this conjunct
+  //      does not change WHETHER the module declines, only WHICH owner speaks.
+  //      MEASURED (`$SES/probes/a17_guarded.ll`): without it the accurate
+  //      `cq loop lowering: loop-carried tainted value crosses iterations`
+  //      became `cq taint escape: tainted value muxed by a classical-condition
+  //      phi`, anchored at the EXIT φ instead of at the loop — CLAUDE.md's L6, a
+  //      structural guard wearing the wrong label, and exactly the defect class
+  //      bd `8h7d.12` is open for.
+  //      ⚠ IT IS A DECLINE-DIRECTION CONJUNCT AND IT IS NOT THE CAPABILITY.
+  //      Hoisting the alloc ABOVE the guard and rewriting the exit φ would make
+  //      the guarded loop lower too; that is an ACCEPT-direction widening with
+  //      its own Rule-13 round and its own zero-trip question (an allocation the
+  //      program may never use), and it is FILED, not smuggled in here.
+  for (Value *V : {static_cast<Value *>(&P), LatV})
+    for (User *U : V->users()) {
+      auto *OP = dyn_cast<PHINode>(U);
+      if (!OP || L->contains(OP->getParent()))
+        continue;
+      for (Value *In : OP->incoming_values())
+        if (In != V && !taint.Tainted.count(In))
+          return std::nullopt;
+    }
+  Pf.Phi = &P;
+  Pf.LatchVal = LatV;
+  Pf.Preheader = Pre;
+  return Pf;
+}
+
+// bd `test_C_libtooling-zujr` — THE CHAIN the escape walk must not count.
+//
+// (c3) asks *"does an ITERATION-LOCAL TEMP escape `L`?"*. A loop-carried handle
+// variable is by definition NOT a temp: it crosses the back edge on purpose and
+// its exit value is what the program measures. Counting it made clause (c3)
+// refuse the owner's cascade for a register the region does not even rotate —
+// bd `8h7d.11`, and the owner's 2026-09-11 ruling makes an over-decline a defect
+// to remove, not a safety margin.
+//
+// THE CHAIN IS THE φ AND ITS LATCH INCOMING, plus the in-place steps between
+// them — i.e. the SSA names the ONE variable wears inside one activation, walked
+// with `peelInPlaceStep`, the same edges `peelInPlaceBase` walked to prove (Z5).
+// It is deliberately NOT the transitive operand cone: `h_op = a − 3` is a TEMP
+// that happens to READ the variable, it is not the variable, and exempting it
+// would be exactly the over-accept (c3) exists to stop.
+void collectCarriedHandleChains(const Loop *L, const TaintSet &taint,
+                                SmallPtrSetImpl<const Value *> &Out) {
+  if (!L || !L->getHeader())
+    return;
+  SmallPtrSet<CallInst *, 32> GateCalls;
+  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  for (PHINode &P : L->getHeader()->phis()) {
+    std::optional<CarriedHandleProof> Pf =
+        loopCarriedHandlePhi(P, L, taint, GateCalls);
+    if (!Pf)
+      continue;
+    Out.insert(&P);
+    for (Value *V = Pf->LatchVal; V;
+         V = peelInPlaceStep(V, GateCalls, taint, /*AsLowered=*/false)) {
+      if (!Out.insert(V).second)
+        break;  // already seen — a cycle through a φ ends the walk.
+      if (V == &P)
+        break;
+    }
+  }
+}
+
+namespace {
+
 // ── Phase 7.4 (epic y05j) — single value-arm `break` recognition ────────────
 //
 // All analysis below is PURE SSA/CFG identity on the still-unmutated IR (Rule 9);
@@ -2139,6 +2431,22 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
       // X1 only when the latch carries a genuine tainted dirty rail across the
       // backedge (an `acc=acc+q` fresh-rail accumulator). A header phi we cannot
       // classify either way is left for downstream (conservative).
+      //
+      // ── bd `test_C_libtooling-zujr` / bd `ej5w` — THE LOOP-CARRIED HANDLE
+      //    VARIABLE IS THE THIRD KIND AND IS NOT THIS DECLINE'S.
+      // A φ `loopCarriedHandlePhi` admits is a register that is RE-MINTED every
+      // trip, not a dirty rail dragged across the back edge: the promotion gives
+      // it a preheader `cqrt_alloc_<W>` and the merge gives it a fresh `%out` per
+      // activation. Leave the whole loop unclaimed — `return false`, NOT an
+      // accept — so nothing here collapses a loop-variant handle, and so the
+      // module still declines loudly at `declineClassicalMuxes` if the promotion
+      // later refuses it (this site is not the last owner).
+      // ⚠ SCOPE_L1a: this site and `collapseRailPhisIn`'s twin MUST move
+      // together, or round 2 re-declines what round 1 accepted. The predicate is
+      // STRUCTURAL precisely so both can ask it — here at ROUND-1 taint, before
+      // any merge emitter has run, where `taint.ControlOwnedRails` is still empty.
+      if (loopCarriedHandlePhi(P, L, taint, GateCalls))
+        return false;
       Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
       if (taint.Tainted.count(LatBase)) {
         diagnose(&P, kMsgCrossIter);
@@ -2591,6 +2899,13 @@ RailRound2 collapseRailPhisIn(Loop *L, Function &F, TaintSet &taint,
     // dirty rail, and it declines LOUDLY here rather than silently collapsing a
     // loop-variant handle.
     if (peelInPlaceBase(LatV, GateCalls, taint) != &P) {
+      // bd `test_C_libtooling-zujr` / bd `ej5w` — the ROUND-2 twin of `tryCaseA`'s
+      // X1 widening, and it MUST move with it (SCOPE_L1a). `continue` leaves the φ
+      // uncollapsed for `promoteLoopCarriedHandleSeeds`, which runs after this
+      // stage and is the only granter of the `declineClassicalMuxes` accept — so
+      // an unpromotable φ still declines, loudly, one stage later.
+      if (loopCarriedHandlePhi(P, L, taint, GateCalls))
+        continue;
       Value *LatBase = peelInPlaceBase(LatV, GateCalls, taint);
       if (taint.Tainted.count(LatBase)) {
         diagnose(&P, kMsgCrossIter);
@@ -3382,9 +3697,34 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
   //     `collapseRailPhisIn` step (4) (it RAUWs each to its root mint and erases
   //     after all RAUWs), so this loop sees only the UNCLAIMED remainder, which
   //     is exactly the set that must still refuse.
-  for (PHINode &P : Header->phis())
-    if (taint.Tainted.count(&P))
+  // ⚠ WITH ONE EXEMPTION, bd `test_C_libtooling-zujr`: THE LOOP-CARRIED HANDLE
+  // VARIABLE. "A surviving tainted header φ means a rail DOES cross the back
+  // edge and nobody proved it" is the premise, and for this φ the second half is
+  // FALSE — `loopCarriedHandlePhi` proves it, and `promoteLoopCarriedHandleSeeds`
+  // makes trip 1 name a register. It is not the collapse's to claim (the latch
+  // incoming is a FRESH merge `%out`, not a closed self-cycle), so waiting for a
+  // claim that can never come refused the marking for the whole loop — and then
+  // `declineUnmarkedRolledIterLocal`'s conjunct 2 refused the module.
+  //
+  // ITS CHAIN GOES INTO `RootsOut`, NOT PAST IT. That is CLAUDE.md's L2 caught in
+  // this very edit, and it is the same lesson clause (0) below records in
+  // capitals: widening the SKIP alone would leave `markIfRailLocal` a `Roots`
+  // without the carried register, so its "accumulating loop-invariant tainted
+  // input" and "iteration-local temp escaping the loop" clauses would refuse on
+  // the variable's own SSA names and nothing would be marked — the extension
+  // returns TRUE and the leak stands.
+  bool AnyCarried = false;
+  for (PHINode &P : Header->phis()) {
+    if (!taint.Tainted.count(&P))
+      continue;
+    if (!loopCarriedHandlePhi(P, L, taint, GateCalls))
       return false;
+    SmallPtrSet<const Value *, 8> Chain;
+    collectCarriedHandleChains(L, taint, Chain);
+    for (const Value *V : Chain)
+      RootsOut.insert(const_cast<Value *>(V));
+    AnyCarried = true;
+  }
 
   SmallPtrSet<Value *, 4> Cands;
   for (BasicBlock *BB : L->blocks())
@@ -3399,7 +3739,14 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
           continue;  // defined in the loop; `markIfRailLocal` handles it.
         Cands.insert(Op);
       }
-  if (Cands.empty())
+  // ⚠ `AnyCarried` IS THE SECOND REASON THIS PATH CAN HAVE WORK TO DO (bd
+  // `test_C_libtooling-zujr`). The early-out reads "no invariant register read —
+  // nothing this path is for", and that is true of the shape this function was
+  // built for. A loop-carried HANDLE variable supplies its roots from the header
+  // φ instead of from a loop-invariant read, and the owner's cascade has no
+  // invariant register at all: bailing here left `markIfRailLocal` unasked and
+  // conjunct 2 refused the module.
+  if (Cands.empty() && !AnyCarried)
     return false;  // no invariant register read — nothing this path is for.
 
   // (0-pre) F-C1-1 — commit each candidate's PREHEADER dtzb `add`/`xor` chain
@@ -3691,13 +4038,46 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
       continue;
     }
     for (Instruction &I : *BB) {
-      if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I))
-        for (Value *Op : I.operands())
-          if (taint.Tainted.count(Op))
-            return refuse(&I);  // (L3) tainted-index memory — kMsgQramLoop's.
+      // (L3) tainted-index memory — kMsgQramLoop's.
+      //
+      // ⚠ WITH ONE EXEMPTION, bd `test_C_libtooling-zujr`: A STORE THAT PARKS A
+      // RAIL IN A PROVEN RAIL BANK (bd `xdu2`). `bool b0[N]` promoted by
+      // `RailBankPromote` leaves `store i32 %h, ptr %cq.bank.addr` in the body,
+      // whose VALUE operand is a tainted HANDLE by construction — so the blanket
+      // form refused every banked loop, which is the owner's own cascade. The
+      // exemption is narrow in exactly the way the clause's name is: the
+      // POINTER operand must still be untainted (a CLASSICAL cell index — a
+      // tainted one is genuinely QRAM and keeps the refusal), the bank must be
+      // the `!cq.railbank` record `markRailBankAllocas` minted (asked by CALLING
+      // `railBankOfPointer`/`isRailBankAlloca`, never re-derived — Rule 14), and
+      // the only tainted operand admitted is the value.
+      // It does not hand the spine anything new: a rail parked in a bank is
+      // already FROZEN against adjoint and free by `railStoredToRailBank`, the
+      // D1/D6 predicate, so marking the block cannot make the spine touch it.
+      if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I)) {
+        auto *ST = dyn_cast<StoreInst>(&I);
+        const bool BankPark =
+            ST && !taint.Tainted.count(ST->getPointerOperand()) &&
+            isRailBankAlloca(railBankOfPointer(ST->getPointerOperand()));
+        for (Value *Op : I.operands()) {
+          if (!taint.Tainted.count(Op))
+            continue;
+          if (BankPark && Op == ST->getValueOperand())
+            continue;
+          return refuse(&I);
+        }
+      }
       const bool TI = taint.Tainted.count(&I) != 0;
-      if (TI && isa<PHINode>(I) && BB == Header)
-        return refuse(&I);  // an unclaimed loop-carried rail — no collapse ran.
+      // An unclaimed loop-carried rail — no collapse ran.
+      // ⚠ EXCEPT A PROVEN LOOP-CARRIED HANDLE VARIABLE (bd
+      // `test_C_libtooling-zujr`), which is unclaimed ON PURPOSE: it is not a
+      // rail dragged across the back edge but a register RE-MINTED every trip,
+      // and `invariantRegisterRootsImpl` put its chain in `Roots` so `onRail`
+      // below already names it. Asked by CALLING the one predicate, at the same
+      // FINAL taint that stage asked it at (Rule 14).
+      if (TI && isa<PHINode>(I) && BB == Header &&
+          !loopCarriedHandlePhi(cast<PHINode>(I), L, taint, GateCalls))
+        return refuse(&I);
       if (TI && !onRail(&I)) {
         AnyLocalOut = true;
         for (User *U : I.users())
@@ -5333,9 +5713,35 @@ BasicBlock *loopExitDischargePoint(const Loop *L) {
 Instruction *iterationLocalTaintEscape(const Loop *L, const TaintSet &taint) {
   if (!L)
     return nullptr;
+  // ── bd `test_C_libtooling-zujr` / bd `8h7d.11` — THE LOOP-CARRIED HANDLE
+  //    VARIABLE IS NOT AN ITERATION-LOCAL TEMP.
+  //
+  // This walk answers *"does an ITERATION-LOCAL TEMP escape `L`?"* — it is
+  // `markIfRailLocal`'s own escape clause asked with the EMPTY exemption set, and
+  // the monotonicity argument above ("a larger `Roots` exempts strictly MORE
+  // values") is exactly why the empty set can only OVER-decline. THIS IS THAT
+  // OVER-DECLINE, MEASURED: the owner's rolled cascade was refused because `a` —
+  // a register the region does not even rotate — is `cq_measure`d after the loop.
+  // Per the owner's 2026-09-11 ruling an over-decline is a defect to remove, not a
+  // free safety margin.
+  //
+  // The exemption is the loop-carried HANDLE CHAIN and nothing else: the φ and the
+  // SSA names it wears inside one activation. A temp that merely READS the
+  // variable (`h_op = a − 3`) is still a temp and is still counted — exempting the
+  // operand cone would be precisely the over-accept this clause exists to stop.
+  //
+  // ⚠ IT IS DONE HERE, IN THE ONE BODY, AND NOT AT EITHER CALL SITE (CLAUDE.md
+  // L2): the SAME question is asked at DETECTION with round-1 taint (R7-loop
+  // clause (c3)) and again after the round-2 fixpoint (`declineUnmarkedRolledIterLocal`
+  // conjunct 1). A widening applied to one caller and not the other is a round-2
+  // decline of what round 1 accepted.
+  SmallPtrSet<const Value *, 8> Carried;
+  collectCarriedHandleChains(L, taint, Carried);
   for (BasicBlock *BB : L->blocks())
     for (Instruction &I : *BB) {
       if (!taint.Tainted.count(&I))
+        continue;
+      if (Carried.count(&I))
         continue;
       for (User *U : I.users()) {
         auto *UI = dyn_cast<Instruction>(U);
@@ -5560,6 +5966,116 @@ static bool bodyHasSpineDischargeCandidate(const Loop *L,
 // however many regions recorded it — in TWO separate sets, because the
 // conjuncts cover different entries and one shared set lets the cheaper entry
 // suppress the stricter one's check.
+// bd `test_C_libtooling-zujr` — THE PROMOTION. Contract + slot in LoopPlan.h.
+//
+// THE ONLY MUTATION this increment makes, and it is the owner's ruling (1):
+// materialise `cqrt_alloc_<W>(seed)` in the PREHEADER of every proven
+// loop-carried handle φ and rewrite the φ's entry incoming to that handle. Trip 1
+// then names a REGISTER where the un-promoted module would pass the classical
+// literal into a gate slot that wants a handle.
+//
+// THE THREE THINGS IT ASKS THAT THE STRUCTURAL PREDICATE CANNOT, because they are
+// only true (or only knowable) at FINAL taint, after the merge emitters have run:
+//
+//   (P1) THE LATCH INCOMING IS A CONTROL-MERGE `%out` RAIL, asked by reading
+//        `taint.ControlOwnedRails` — the record every Phase-4 merge emitter writes
+//        at its own `Tainted.insert(rail)` site. This is the SCOPE bd `zujr`
+//        names: *"a latch incoming that is a controlled-copy merge `%out` (fresh
+//        rail per activation)"*. It is what makes the per-trip unitary argument
+//        at `loopCarriedHandlePhi` true — a merge `%out` is a FRESH `|0⟩` rail
+//        written once per basis branch by two X-bracketed controlled copies, with
+//        the previous register left untouched. A latch incoming that is some OTHER
+//        fresh tainted rail (a `cq_template_add_i32_qq` accumulator, say) is a
+//        different circuit with a different argument and is NOT promoted here; it
+//        keeps the X1 decline it has always had.
+//        ⚠ AND THE RAIL MUST BE MINTED INSIDE `L`. `ControlOwnedRails` is
+//        module-scoped; a merge out-rail minted OUTSIDE the loop and merely read
+//        inside it is loop-INVARIANT, not re-minted per trip, and the "fresh
+//        register every activation" half of the argument would be false for it.
+//
+//   (P2) `cqrt_alloc_<W>` RESOLVES for the rail's ABI width. Resolved BEFORE any
+//        mutation so a resolution failure leaves the module untouched and the
+//        unpromoted φ declines at `declineClassicalMuxes` (detect-before-mutate).
+//
+//   (P3) THE SEED DOMINATES THE PREHEADER TERMINATOR. A `Constant`/`Argument`
+//        trivially does; an `Instruction` outside `L` needs the real question
+//        asked, and asking it needs a `DominatorTree` this stage builds itself
+//        (Rule 11 — the round-1 trees are long invalid; the control flatten
+//        spliced and erased blocks).
+//
+// IT NEVER DECLINES. Every refusal here is a SKIP that leaves the φ unpromoted,
+// and an unpromoted tainted φ is precisely what `declineClassicalMuxes` — the very
+// next stage — refuses loudly. Adding a second loud owner for that shape would
+// give one module two diagnostics for one defect (`LLVMContext::diagnose` EXITS on
+// the first `DS_Error` anyway, bd `br4a`, so the second would be dead text).
+//
+// ⚠ THE PROMOTED HANDLE IS NOT ADDED TO `taint.Tainted`, DELIBERATELY. It is a
+// materialised CLASSICAL copy source, exactly what `materializeCopySource` mints
+// for a constant select arm (`%selop = cqrt_alloc_i32(2)` in the flat twin), and
+// that function is what mints it here too (Rule 14 — one spelling of "make this
+// classical value a register"). Tainting it would offer the whole-DAG spine a
+// terminal it must not select, and the φ stays tainted regardless because its
+// latch incoming is.
+//
+// ⚠ AND IT IS LEFT ALLOCATED, never freed. On a zero-trip loop the φ's exit value
+// IS this register, holding |seed⟩, and the program measures it; on a ≥1-trip loop
+// it is the trip-1 which-path record the merge copies out of — the same accepted
+// Rule-6 leak the flat twin takes on its own `cqrt_alloc_i32(5)` copy source.
+void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
+                                   TaintSet &taint) {
+  SmallPtrSet<CallInst *, 32> GateCalls;
+  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    bool AnyTainted = false;
+    for (Value *V : taint.Tainted)
+      if (auto *I = dyn_cast<Instruction>(V))
+        if (I->getFunction() == &F) {
+          AnyTainted = true;
+          break;
+        }
+    if (!AnyTainted)
+      continue;
+    DominatorTree DT(F);
+    LoopInfo LI(DT);
+    if (LI.empty())
+      continue;
+    for (Loop *L : LI.getLoopsInPreorder()) {
+      BasicBlock *Hdr = L->getHeader();
+      if (!Hdr)
+        continue;
+      for (PHINode &P : Hdr->phis()) {
+        std::optional<CarriedHandleProof> Pf =
+            loopCarriedHandlePhi(P, L, taint, GateCalls);
+        if (!Pf)
+          continue;
+        // (P1) — a control-merge `%out` rail, minted INSIDE `L`.
+        auto *LatI = dyn_cast<Instruction>(Pf->LatchVal);
+        if (!LatI || !taint.ControlOwnedRails.count(Pf->LatchVal) ||
+            !L->contains(LatI->getParent()))
+          continue;
+        // (P2) — resolve the allocator before touching anything.
+        FunctionCallee Alloc = wd.allocFn(Pf->Abi);
+        if (!Alloc)
+          continue;
+        // (P3) — the seed is available at the promotion point.
+        Instruction *PreTerm = Pf->Preheader->getTerminator();
+        if (auto *SI = dyn_cast<Instruction>(Pf->Seed))
+          if (!DT.dominates(SI, PreTerm))
+            continue;
+        // ---- MUTATION STARTS HERE. Nothing below may refuse.
+        IRBuilder<> B(PreTerm);
+        Value *H = materializeCopySource(Pf->Seed, Alloc, taint, B,
+                                         P.getDebugLoc(), "cq.carried");
+        P.setIncomingValue(Pf->ExtIdx, H);
+        taint.PromotedCarriedHandlePhis.insert(&P);
+      }
+    }
+  }
+}
+
 void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
   if (taint.RolledLoopRegionGates.empty())
     return;

@@ -1617,6 +1617,25 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
           // path-dependent and unproven.
           if (liftOneRegisterMergePhi(Phi, taint, GateCalls, DT))
             continue;
+          // ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ──
+          //
+          // A header φ that `promoteLoopCarriedHandleSeeds` ACTUALLY PROMOTED
+          // muxes two `i32` HANDLES — a preheader `cqrt_alloc_<W>(seed)` and the
+          // merge `%out` of the previous activation — under the loop's own
+          // CLASSICAL exit test. Exactly one incoming is live per trip and WHICH
+          // one is a classical fact the hardware already has, so this is a handle
+          // VARIABLE, not the no-cloning data mux this guard exists to refuse. The
+          // owner's ruling of 2026-09-17: *"the runtime needs nothing — a handle
+          // is an `i32` and a loop-carried `i32` is ordinary classical data"*.
+          //
+          // ⚠ THE SET IS THE PROMOTION'S OWN RECORD OF A MUTATION IT MADE, never a
+          // prediction and never re-derived here (Rule 14). That is the whole
+          // safety argument for every earlier site in this increment: the
+          // structural predicate at the two X1 sites and at clause (c3) only
+          // DEFERS, and a φ the promotion refused arrives here UNPROMOTED and
+          // declines — loudly, with this same string, as it always did.
+          if (taint.PromotedCarriedHandlePhis.count(Phi))
+            continue;
           diagnoseEscape(Phi, kMsgClassicalPhi);
           continue;
         }

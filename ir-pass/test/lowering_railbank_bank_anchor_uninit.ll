@@ -81,10 +81,81 @@
 ; this file's decline moves again — to `cq loop lowering: loop-carried tainted
 ; value crosses iterations` (X1 / bd `ej5w` / W3), MEASURED on this module's own
 ; `noAmeasure` variant.  Re-derive it then; do NOT delete it.
-; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; ⚠⚠ THE L8 RETIREMENT TRIGGER BELOW HAS FIRED — bd `test_C_libtooling-zujr`
+; landed the LOOP-CARRIED HANDLE VARIABLE (8h7d.11 + ej5w + 832l together), and
+; this file was RE-DERIVED, not deleted, in the same change.  READ THE VERDICT
+; AS AN ACCEPT, AND READ THE TRIGGER'S OWN WORDS AGAINST IT: it predicted
+; *"`cq loop lowering: loop-carried tainted value crosses iterations` (X1 / bd
+; `ej5w` / W3)"*, and that is a DECLINE.  It was written when (c3) and X1 were
+; expected to land separately; they landed in ONE increment, because X1 was never
+; the last wall either — behind it stood `declineUnmarkedRolledIterLocal`'s
+; conjunct 2 and then `declineClassicalMuxes`.  **A trigger that names the NEXT
+; wall is only ever a lower bound on how many are left.**
+;
+; WHAT THE ACCEPT IS, in one line: `a` is a LOOP-CARRIED HANDLE VARIABLE — a
+; register that crosses the back edge AND is re-minted every trip — and the four
+; sites that used to refuse it now CALL `loopCarriedHandlePhi`, while
+; `promoteLoopCarriedHandleSeeds` materialises the TRIP-1 register
+; `%cq.carried = cqrt_alloc_i32(5)` in the preheader (the owner's ruling (1) of
+; 2026-09-17).  The FLAT twin already did exactly that, as the `cqrt_alloc_i32(5)`
+; copy source inside its trip-1 mux.
+;
+; THE STREAM BELOW IS READ BY THESE INVARIANTS: the phi muxes two HANDLES under
+; the loop's CLASSICAL exit test; `%5` (the register `a` names this trip) is read
+; only as a compare operand, an `add` operand and a COPY SOURCE — never
+; `cqrt_x`-bracketed, never freed; every `cqrt_x` sits on an ancilla returned to
+; |0> before its free; and the `a - 3` chain rail `%h_op` is LEFT ALLOCATED, which
+; is what the flat twin leaves too (6 undischarged rails in each form — measured,
+; `tests/e2e/slice_control_cascade_loop_carried_handle{,_unrolled}.c`).
+;
+; ⚠ NEXT L8 RETIREMENT TRIGGER: the day the promotion learns to hoist its
+; `cqrt_alloc` ABOVE a rotated loop's zero-trip GUARD (clause (Z8) refuses that
+; shape today, so a RUNTIME trip bound still declines `kMsgCrossIter`), a guarded
+; spelling of this module becomes an accept too.  This one is unguarded and does
+; not move.  Re-derive it then; do NOT delete it.
+; RUN: env CQ_CTRL_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='cq rail bank:'
-; CHECK: CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3 at:
-; CHECK: cq controlled lowering: control flow inside a loop body under quantum control
+; RUN: env CQ_CTRL_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck --check-prefix=NOREG %s
+; CHECK: CQ_CTRL_DBG: railbank [Bank] cells={{[0-9]+}} abi={{i[0-9]+}} trips={{[0-9]+}} at:
+;
+; THE TRIP-1 PROMOTION, in the PREHEADER and nowhere else.
+; CHECK: %cq.carried = call i32 @cqrt_alloc_i32(i32 5)
+;
+; THE PHI IS A HANDLE MUX: the promoted preheader register, and the previous
+; activation's merge `%out`.
+; CHECK: = phi i32 [ %cq.carried, %{{[0-9a-zA-Z._]+}} ], [ %out{{[0-9]*}}, %{{[0-9a-zA-Z._]+}} ]
+;
+; ONE ACTIVATION, in order: the compare flag, the controlled prep of this trip's
+; bank rail, the flag's own `_unc` strip and its proven-|0> free.
+; CHECK: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[A:[0-9]+]], i32 2)
+; CHECK: %h = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK: call void @cqrt_ry_i1_controlled(i32 %h_cmp, i32 %h, double 5.000000e-01)
+; CHECK: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %[[A]], i32 2)
+; CHECK: call void @cqrt_free(i32 %h_cmp)
+;
+; THE VALUE ARM, merged by CONTROLLED COPY into a FRESH |0> rail.  `%h_op` (the
+; `a - 3` chain) is a copy SOURCE and is LEFT ALLOCATED; the ancilla `%bf` is
+; CNOT-copied from the rail, X-bracketed and freed at |0>.
+; CHECK: %h_op = call i32 @cq_template_add_i32_hl(i32 %[[A]], i32 -3)
+; CHECK: %bf = call i32 @cqrt_alloc_i1(i1 false)
+; CHECK: call void @cqrt_cnot(i32 %h, i32 %bf)
+; CHECK: %out = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %h_op, i32 %out)
+; CHECK: call void @cqrt_x(i32 %bf)
+; CHECK: call void @cqrt_copy_i32_controlled(i32 %bf, i32 %[[A]], i32 %out)
+; CHECK: call void @cqrt_x(i32 %bf)
+; CHECK: call void @cqrt_cnot(i32 %h, i32 %bf)
+; CHECK: call void @cqrt_free(i32 %bf)
+;
+; THE REGISTER IS NEVER BRACKETED AND NEVER FREED — the two facts a stream of
+; this shape can get wrong, pinned as negatives in their own whole-file prefix
+; (Rule 12 hygiene defect (a): a positive above a negative WINDOWS it).
+; NOREG-NOT: cqrt_x(i32 %cq.carried)
+; NOREG-NOT: cqrt_x(i32 %out{{[0-9]*}})
+; NOREG-NOT: cqrt_free(i32 %cq.carried)
+; NOREG-NOT: cqrt_free(i32 %out{{[0-9]*}})
+; NOREG-NOT: cqrt_free(i32 %h)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

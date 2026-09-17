@@ -467,6 +467,23 @@ struct TaintSet {
   // no tainted control flow.
   llvm::SmallPtrSet<llvm::Value *, 8> ControlOwnedRails;
 
+  // ── bd `test_C_libtooling-zujr` — THE PROMOTED LOOP-CARRIED HANDLE PHIS ────
+  //
+  // Every header φ `promoteLoopCarriedHandleSeeds` ACTUALLY promoted: its entry
+  // incoming is now a preheader `cqrt_alloc_<W>(seed)` handle, so the φ muxes two
+  // HANDLES under CLASSICAL loop control and is a handle variable, not a
+  // no-cloning data mux. `declineClassicalMuxes` accepts exactly this set and
+  // nothing else — a φ the structural predicate admits but the promotion refused
+  // is NOT in it and declines there, loudly, which is what makes every earlier
+  // site decline-safe.
+  //
+  // ⚠ IT RECORDS A MUTATION THAT HAPPENED, NEVER A PREDICTION, which is why it
+  // owes no L1 re-ask: the fact it asserts ("this φ's entry incoming is a handle")
+  // is written by the same stage that made it true, at FINAL taint, one stage
+  // before its only reader. A PREDICTION here would be the `RailCondReads` shape
+  // and would owe the round-2 question.
+  llvm::SmallPtrSet<const llvm::PHINode *, 4> PromotedCarriedHandlePhis;
+
   // ── M-B INCREMENT 6, clause (d2) — the EMITTER-RECORDED FLAG STRIP (bd
   //    test_C_libtooling-160a) ────────────────────────────────────────────────
   //

@@ -6261,6 +6261,29 @@ add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge-unrolled
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge_unrolled.expected.log")
 
+# ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ───────────
+# The owner's `example/grover/grover_oracle_uncompute.c` IN ITS LOOP FORM, and
+# its hand-unrolled twin.  50 lines against 45; the five are accounted for one by
+# one in the twin's own header (the owner ruled byte-identity an INSTRUMENT here,
+# not the target — `-O1` const-folds the flat form's first two trips and cannot
+# fold anything in the rolled one).  Read the rolled slice's header for the
+# invariants the golden is read by.
+add_test(NAME e2e-slice-control-cascade-loop-carried-handle
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_loop_carried_handle.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_loop_carried_handle.expected.log")
+
+add_test(NAME e2e-slice-control-cascade-loop-carried-handle-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_loop_carried_handle_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_cascade_loop_carried_handle_unrolled.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

@@ -36,11 +36,44 @@
 ; controlled lowering: control flow inside a loop body under quantum control`,
 ; `iterationLocalRollable`'s conjunct (c3), bd `8h7d.11`, which is
 ; bank-independent and not W1's.
-; RUN: env CQ_RAILBANK_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
-; RUN:     -S %s > /dev/null 2> %t.dbg
+
+; ⚠⚠ THE L8 RETIREMENT TRIGGER ABOVE HAS FIRED — bd `test_C_libtooling-zujr`
+; landed the LOOP-CARRIED HANDLE VARIABLE, and this file was RE-DERIVED, not
+; deleted, in the same change.  ⚠ READ THE TRIGGER'S OWN WORDS AGAINST THE
+; RESULT: it predicted the decline would MOVE to `cq loop lowering: loop-carried
+; tainted value crosses iterations` (X1 / bd `ej5w` / W3).  It did not move — it
+; is GONE.  The trigger was written when (c3) and X1 were expected to land
+; separately; they landed in ONE increment, because X1 was never the last wall
+; either: behind it stood `declineUnmarkedRolledIterLocal`'s conjunct 2 and then
+; `declineClassicalMuxes`.  **A trigger that names the NEXT wall is only ever a
+; LOWER BOUND on how many are left.**
+;
+; WHAT THE ACCEPT IS: `a` is a LOOP-CARRIED HANDLE VARIABLE — a register that
+; crosses the back edge AND is re-minted every trip, because the merge emitter
+; mints a FRESH `%out = cqrt_alloc_<W>` per activation.  The four sites that
+; refused it now CALL `loopCarriedHandlePhi`, and `promoteLoopCarriedHandleSeeds`
+; materialises the TRIP-1 register `%cq.carried = cqrt_alloc_i32(5)` in the
+; preheader — the owner's ruling (1) of 2026-09-17.  The FLAT twin already did
+; exactly that, as the `cqrt_alloc_i32(5)` copy source inside its trip-1 mux.
+;
+; ⚠ THE `DBG` AND `NOTS` PREFIXES BELOW ARE UNTOUCHED, AND THAT IS THE POINT:
+; the PROMOTED SHAPE this file exists to pin did not move one character.  What
+; moved is what happens to it afterwards.  The `DECLINE` prefix is replaced by
+; `ACCEPT`, which reads the LOWERED IR on stdout — a thing a `DS_Error` module
+; never had (Rule 12 hygiene defect (b): a decline fixture's IR-text checks are
+; vacuous because stdout is 0 bytes).
+;
+; ⚠ NEXT L8 RETIREMENT TRIGGER: the day the promotion learns to hoist its
+; `cqrt_alloc` ABOVE a rotated loop's zero-trip GUARD — clause (Z8) refuses that
+; shape today, so a RUNTIME trip bound still declines `kMsgCrossIter` — a guarded
+; spelling of this module becomes an accept too.  This one is unguarded and does
+; not move.  Re-derive it then; do NOT delete it.
+; RUN: env CQ_RAILBANK_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering \
+; RUN:     -S %s > %t.ll 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG       --input-file=%t.dbg %s
 ; RUN: %filecheck --check-prefix=NOTS      --input-file=%t.dbg %s
-; RUN: %filecheck --check-prefix=DECLINE   --input-file=%t.dbg %s
+; RUN: %filecheck --check-prefix=ACCEPT    --input-file=%t.ll %s
+; RUN: %filecheck --check-prefix=NOREG     --input-file=%t.ll %s
 ; RUN: %filecheck --check-prefix=NOMD      --input-file=%t.dbg %s
 
 declare zeroext i1 @cq_theta_i1(i1 zeroext, double)
@@ -96,7 +129,35 @@ out:
 ; NOTS-NOT: load i32, ptr %g0
 ; NOTS-NOT: load i32, ptr %g1
 
-; DECLINE: cq controlled lowering: control flow inside a loop body under quantum control
+; ── THE ACCEPT, read off stdout (bd `test_C_libtooling-zujr`). ───────────────
+; The trip-1 promotion, in the PREHEADER:
+; ACCEPT: %cq.carried = call i32 @cqrt_alloc_i32(i32 5)
+; The header phi is a HANDLE MUX — the promoted register and the previous
+; activation's merge `%out` — under the loop's own CLASSICAL exit test:
+; ACCEPT: = phi i32 [ %cq.carried, %{{[0-9a-zA-Z._]+}} ], [ %out{{[0-9]*}}, %{{[0-9a-zA-Z._]+}} ]
+; ONE ACTIVATION, in order: flag, controlled prep, `_unc` strip, proven-|0> free;
+; then the arm's chain, the CNOT-copied ancilla, the fresh `|0>` merge rail, the
+; two X-bracketed controlled copies, and the ancilla's free at |0>.
+; ACCEPT: %h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[A:[0-9a-zA-Z._]+]], i32 2)
+; ACCEPT: %h = call i32 @cqrt_alloc_i32(i32 0)
+; ACCEPT: call void @cqrt_ry_i32_controlled(i32 %h_cmp, i32 %h, double 5.000000e-01)
+; ACCEPT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %[[A]], i32 2)
+; ACCEPT: call void @cqrt_free(i32 %h_cmp)
+; ACCEPT: %h_op = call i32 @cq_template_add_i32_hl(i32 %[[A]], i32 -3)
+; ACCEPT: %h_cmp1 = call i32 @cq_template_icmp_ne_i32_hl(i32 %h, i32 0)
+; ACCEPT: %out{{[0-9]*}} = call i32 @cqrt_alloc_i32(i32 0)
+; ACCEPT: call void @cqrt_copy_i32_controlled(i32 %h_cmp1, i32 %h_op, i32 %out
+; ACCEPT: call void @cqrt_x(i32 %h_cmp1)
+; ACCEPT: call void @cqrt_copy_i32_controlled(i32 %h_cmp1, i32 %[[A]], i32 %out
+; ACCEPT: call void @cqrt_x(i32 %h_cmp1)
+; ACCEPT: call void @cq_template_icmp_ne_i32_hl_unc(i32 %h_cmp1, i32 %h, i32 0)
+; ACCEPT: call void @cqrt_free(i32 %h_cmp1)
+;
+; THE REGISTER IS NEVER BRACKETED AND NEVER FREED, in its OWN whole-file prefix
+; (Rule 12 hygiene defect (a): a positive above a negative WINDOWS it).
+; NOREG-NOT: cqrt_x(i32 %cq.carried)
+; NOREG-NOT: cqrt_free(i32 %cq.carried)
+; NOREG-NOT: cqrt_free(i32 %h)
 
 ; ⚠ ITS OWN WHOLE-FILE PREFIX, AND THAT IS THE POINT.  A positive `CHECK-COUNT`
 ; inside a negative prefix WINDOWS every negative after it — FileCheck only scans

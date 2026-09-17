@@ -36,6 +36,8 @@
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
 
+#include <optional>  // loopCarriedHandlePhi (bd zujr)
+
 namespace llvm {
 class Module;
 class Loop;
@@ -651,6 +653,63 @@ llvm::BasicBlock *loopExitDischargePoint(const llvm::Loop *L);
 // owners for one diagnostic. It CLEARS the ledger, so a second call reads an empty
 // one and silently reports success, and an earlier call reads a forecast.
 bool declineUndischargedMarkedBodyRails(llvm::Module &M);
+
+// ── bd `test_C_libtooling-zujr` — THE LOOP-CARRIED HANDLE VARIABLE ──────────
+//
+// The THIRD kind of loop-carried register, beside (b)/(b′) the rail that crosses
+// the back edge IN PLACE and (c) the ITERATION-LOCAL rail: a register that
+// crosses the back edge AND is re-minted every trip, because the merge emitter
+// mints a FRESH `%out = cqrt_alloc_<W>` per activation. The full argument, the
+// per-trip unitary proof, the four slots that ask it and the reason byte-identity
+// with the hand-unrolled twin is an INSTRUMENT rather than the target all live at
+// `loopCarriedHandlePhi`'s definition in `LoopLowering.cpp`.
+//
+// `Abi` is the ABI width of the rail; `Seed` is the CLASSICAL entry incoming the
+// promotion materialises as `cqrt_alloc_<W>(Seed)` in `Preheader`.
+struct CarriedHandleProof {
+  llvm::PHINode *Phi = nullptr;
+  unsigned ExtIdx = 0;          // the preheader incoming's index in `Phi`
+  llvm::Value *Seed = nullptr;  // classical, available in `Preheader`
+  llvm::Value *LatchVal = nullptr;
+  llvm::BasicBlock *Preheader = nullptr;
+  llvm::StringRef Abi;
+};
+
+// THE ONE SPELLING of "is this header φ a loop-carried HANDLE variable?" (Rule
+// 14). STRUCTURAL and decline-SAFE: it is asked before the merge emitters have
+// run, so it cannot ask whether the latch incoming really is a control-merge
+// `%out` — `promoteLoopCarriedHandleSeeds` asks that at FINAL taint and is the
+// ONLY granter of the `declineClassicalMuxes` accept. A φ this admits and the
+// promotion refuses reaches that guard UNPROMOTED and declines LOUDLY.
+std::optional<CarriedHandleProof> loopCarriedHandlePhi(
+    llvm::PHINode &P, const llvm::Loop *L, const TaintSet &taint,
+    const llvm::SmallPtrSetImpl<llvm::CallInst *> &GateCalls);
+
+// The SSA names the one carried variable wears inside one activation — the φ, its
+// latch incoming, and the in-place steps between them. Consumed by
+// `iterationLocalTaintEscape` (R7-loop clause (c3) / conjunct 1), which must not
+// count a deliberately-carried register as an ITERATION-LOCAL TEMP escaping the
+// loop (bd `8h7d.11`). Deliberately NOT the transitive operand cone: a temp that
+// merely READS the variable is still a temp.
+void collectCarriedHandleChains(const llvm::Loop *L, const TaintSet &taint,
+                                llvm::SmallPtrSetImpl<const llvm::Value *> &Out);
+
+// THE PROMOTION — the owner's ruling (1) of 2026-09-17 (bd memory
+// `owner-ruling-loop-carried-handle-2026-09-17`): materialise `cqrt_alloc_<W>(C)`
+// in the preheader for a proven carried-handle φ whose entry incoming is the
+// CLASSICAL seed `C`, so trip 1 names a register instead of passing a literal
+// where every gate wants a handle. The flat twin already does exactly this, as
+// the `cqrt_alloc_i32(5)` copy source inside its trip-1 mux.
+//
+// SLOT: after `repropagateControlMerges` (the latch incoming must be the FINAL
+// merge `%out` and `taint.ControlOwnedRails` must be filled) and immediately
+// BEFORE `declineClassicalMuxes` (whose accept it grants, by recording the φ in
+// `taint.PromotedCarriedHandlePhis`), in BOTH entry points.
+// ⚠ RETIREMENT TRIGGER: moving it below `lowerRotations` makes it mint an alloc
+// for a φ whose users are already laundered; moving it above the fixpoint makes
+// it read a latch incoming that is still the pre-emission `select`.
+void promoteLoopCarriedHandleSeeds(llvm::Module &M, WidthDispatch &wd,
+                                   TaintSet &taint);
 
 }  // namespace cq
 
