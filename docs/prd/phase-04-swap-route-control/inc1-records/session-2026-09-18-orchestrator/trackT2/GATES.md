@@ -55,3 +55,10 @@ NOT RUN by me, by role (PROTOCOL gate matrix): the full `ctest -j6`, `^e2e-` as 
 matrix, `cq-opt-equivalence-full`. `e2e-loop-twin-matrix` is the merge-and-gate agent's and Track V
 owns its files — see `QUARANTINE_HANDOFF.md` for what this branch is EXPECTED to move there and why
 the numbers are not in it.
+
+## Coordinator request, 2026-09-17 — build the P0+P3 branch for the independent reviewer
+
+p0p3 SIBLING worktree built (`-j2`, BOTH targets) | e951d5d1bc072902 | `/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/p0p3/build/ir-pass/cq-opt` = `e951d5d1bc072902e28bc0fd8a5d2adf1468bab100c4f1164c4e8f5f5ed21a7e`, `libCQPass.so` = `4de7a269d91f4419…`. ⚠ **BIT-IDENTICAL to the binary every P0+P3 measurement in the records was taken on** — so the `P0P3_STATUS.md` table is a fact about the reviewer's own binary | impl | 2026-09-17 19:10
+delivered worktree `cq-opt` UNCHANGED by the sibling build | 7c1163ad94d06320 | re-measured AFTER the p0p3 build: `7c1163ad94d0632007566867a4a71bc7de9377352cddc4158425e41532594326`. The delivered checkout and its `build/` were not touched | impl | 2026-09-17 19:11
+the 8 movers RE-MEASURED on the reviewer's binary | e951d5d1bc072902 | 7 ACCEPT (exit 0) + 1 DECLINE at `cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged` — matches the P0+P3 column exactly | impl | 2026-09-17 19:14
+**`declineRound2FalsifiedRailGrants` PINNING-FIXTURE COUNT** | 7c1163ad94d06320 | `grep -rln "round-1 iteration-local marking falsified" ir-pass/test/` → **1**; `grep -rln "declineRound2FalsifiedRailGrants" ir-pass/test/` → **1**; both hits are the SAME file. ⇒ after P0+P3 that fence has **ZERO** pins. By contrast the dephasing fence keeps **6 of 9** RUN-line declines and `ControlDetect`'s in-loop refusal keeps **24 of 25** | impl | 2026-09-17 19:00
