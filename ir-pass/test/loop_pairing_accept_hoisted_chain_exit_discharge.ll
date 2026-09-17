@@ -71,6 +71,7 @@
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 ;
 ; The chain is hoisted into the preheader, ABOVE the `br` into the loop.
 ; CHECK-LABEL: define i32 @slice
@@ -114,6 +115,15 @@
 ; measurement (Rule 6).
 ; FCNT-COUNT-4: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
+;
+; THE ROTATION CENSUS, its own prefix. Added because the injection matrix
+; MEASURED this file MISSING an injected `cqrt_ry`. THREE uncontrolled ones:
+; the two source preps and the post-loop interference. The per-trip
+; `cqrt_ry_i32_controlled` is a DIFFERENT symbol and is deliberately not in this
+; pattern — it is the arm's gate, and counting it here would make the census move
+; with the trip count.
+; RYCNT-COUNT-3: call void @cqrt_ry_i32(
+; RYCNT-NOT: call void @cqrt_ry_i32(
 
 ; ModuleID = 'docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/a1_apost.c'
 source_filename = "docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/a1_apost.c"

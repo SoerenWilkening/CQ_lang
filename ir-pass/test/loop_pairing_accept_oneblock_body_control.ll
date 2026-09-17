@@ -30,6 +30,8 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=COUNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @slice
 ; CHECK: %h_op = call i32 @cq_template_ashr_i32_hl(i32 %h, i32 %5)
@@ -41,6 +43,19 @@
 ; COUNT-COUNT-1: call i32 @cq_template_ashr_i32_hl(
 ; COUNT-COUNT-1: call void @cq_template_ashr_i32_hl_unc(
 ; COUNT-COUNT-1: call void @cqrt_free(
+;
+; THE FREE AND ROTATION CENSUSES, each in its OWN whole-file prefix with a
+; trailing `-NOT` that bounds the tail. Added because the injection matrix
+; MEASURED this file MISSING an injected `cqrt_ry` and an injected `_unc`+free
+; pair: its only positives were an ordered chain, and an ordered chain windows
+; nothing after its last match (Rule 12 fixture-hygiene defect (a), from the
+; other side). An EXTRA free is a hidden measurement (Rule 6); an EXTRA
+; uncontrolled `cqrt_ry` on a register under quantum control is a different
+; unitary.
+; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-NOT: call void @cqrt_free(
+; RYCNT-COUNT-4: call void @cqrt_ry_
+; RYCNT-NOT: call void @cqrt_ry_
 
 ; ModuleID = 'docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/t5i_straddle_nobreak_rot.c'
 source_filename = "docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/t5i_straddle_nobreak_rot.c"
