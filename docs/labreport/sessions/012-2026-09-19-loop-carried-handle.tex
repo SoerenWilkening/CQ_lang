@@ -1,0 +1,99 @@
+\labsessionheader{2026-09-19}{The loop-carried handle variable: the owner's rolled Grover cascade compiles}%
+  {e2fd1a16}{f7470aeb-8222-4499-94df-fe0b1a412365}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-19-orchestrator/}
+
+\subsection*{Goal}
+\bd{zujr}: make \texttt{example/grover/grover\_oracle\_uncompute.c} compile \emph{in its loop form} ---
+\texttt{int a = 5; bool b0[3]; for (i<3) \{ if (a>=3) b0[i]=cq\_theta(b0[i],.5); if (b0[i]) a-=3; \}}
+--- with no source change. It had declined at line 91 since the file was written. The previous session
+cleared the debt in front of it and named its first two walls; this session found four.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \bd{zujr} --- \texttt{loopCarriedHandlePhi} (eight conjuncts, one spelling, four call sites
+        over two taint sets) and \texttt{promoteLoopCarriedHandleSeeds}, the trip-1 promotion the
+        owner ruled on 2026-09-17. \bd{8h7d.11}, \bd{ej5w} and \bd{8h7d.12} closed with it.
+  \item the \texttt{railLocalQualifies} (L3) rail-bank-store exemption --- the one widening \emph{not}
+        gated on that predicate, without which no banked loop could ever be marked.
+  \item 11 shipped fixtures re-derived, 6 new fixtures, 4 e2e slices + goldens, 1 new
+        \texttt{twin-identical} gate; the twin-matrix table regenerated with its reason.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \foverdecline\ The shape is a \textbf{third kind} of loop-carried register, and the loop layer
+        knew two. \texttt{clang -O1} if-converts the second \texttt{if} into a 4.4 data select whose
+        emitter mints a \emph{fresh} \texttt{\%out} per activation, so \texttt{a} crosses the back edge
+        \emph{and} is re-minted every trip --- neither the rail that crosses in place nor the
+        iteration-local one. \texttt{ControlDetect.cpp} had said so in words for the value arm since
+        before the loop layer existed.
+  \item \foverdecline\ Four walls, not two: clause (c3), X1 at round 2,
+        \texttt{declineUnmarkedRolledIterLocal}'s \emph{conjunct 2} and \texttt{declineClassicalMuxes}.
+        Conjunct 2 is a \emph{postcondition}, which is why reading decline strings could not find it;
+        the ladder was mapped with an env-gated peel instrument, because
+        \texttt{LLVMContext::diagnose} exits on the first \texttt{DS\_Error} and otherwise each wall
+        costs a rebuild.
+  \item \fconfirmed\ Two of the eight conjuncts exist \emph{only} to protect a diagnostic, and both
+        were found by probe rather than by review: without (Z6) the \texttt{i32} accumulator lost
+        \texttt{kMsgCrossIter}; without (Z8) the rotated zero-trip-guarded loop reported about the exit
+        $\varphi$ instead of the loop. Both are declines either way --- the conjuncts decide
+        \emph{which owner speaks}.
+  \item \fconfirmed\ Rule-13 round 1 (independent, \texttt{CLEAR-WITH-ITEMS}, no P1, no P2, six P3s).
+        Its sharpest: the (L3) exemption's safety argument named \texttt{railStoredToRailBank}, which
+        guards the \emph{terminal} partition, while the marking unlocks the \emph{interior} one --- a
+        true conclusion on the wrong ground. Also: the new stage's prescan used an idiom the
+        neighbouring stage refuses in writing thirty lines away. Both fixed in source.
+  \item \fconfirmed\ Every one of the eleven moved fixtures carried a retirement trigger predicting
+        this increment, and \emph{every trigger named the wrong next wall}: each said the decline would
+        move to \texttt{kMsgCrossIter}; it is gone instead. \textbf{A retirement trigger that names the
+        next wall is only ever a lower bound on how many are left.}
+  \item \foverdecline\ \bd{832l} was closed and \emph{reopened the same day, by measurement}: its
+        literal subject (a loop-carried \texttt{\_Bool} mutated in place by a chained theta) is refused
+        by two conjuncts and is unmoved on both binaries. The charter named it as this increment's
+        item 1; the increment built the promotion for a different kind.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries & 464 & \measured{ctest --test-dir build -N | tail -1} \\
+full suite & 464/464 in 561.64 s & \measured{ctest --test-dir build -j6} \\
+equivalence & 2106 / 0 mismatch & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+fixtures & 2106 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+goldens & 398 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+corpus A/B movers & 15, all accept-direction & \measured{python3 \$SES/probes/sweep.py} \\
+\quad of which ACCEPT$\rightarrow$DECLINE & 0 & \measured{python3 \$SES/probes/sweep.py} \\
+owner's program & 50 trace lines, 2b clean & \measured{bash tests/e2e/run\_slice.sh ...} \\
+its hand-unrolled twin & 45 trace lines & \measured{bash tests/e2e/run\_slice.sh ...} \\
+K-independence & 75 lowered lines at K=3 and K=1000 & \measured{grep -c . k\{3,1000\}.s2.ll} \\
+conjunct mutant matrix & 1:1, MISSED 0 & four scratch mutant builds \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Full \texttt{ctest -j6} green (464/464, 561.64 s, load 6.5) on the closing binary
+\texttt{cq-opt e7bbfd69a9e25d38\ldots}; \texttt{cq-opt-equivalence-full} 2106/0; the twin matrix all-match
+with 70 quarantined cells at their pinned signatures and 4/4 boundary controls; a corpus A/B over every
+shipped fixture. The twin-matrix regeneration preserved 493 header lines byte-for-byte (the \bd{gfsk}
+hazard, checked rather than assumed).
+
+\textbf{Not run:} the Rule-13 round-1 reviewer ran no ctest entry and no full suite, by instruction, so
+it could not perturb the binaries it was measuring --- its corroborations are IR-level and
+slice-level. \textbf{Rounds 2 and 3 of \bd{zujr}'s own $\geq$3-round budget did not run} and are filed
+as \bd{h7ee}, which is why \bd{zujr} stays open.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{h7ee} --- Rule-13 rounds 2 and 3, including the composition against \bd{tu9q}'s parked
+        P0+P3 and \bd{drbq.12}. \emph{A composition is not cleared by clearing its parts} --- filed in
+        three consecutive sessions now.
+  \item \bd{h1ip} --- the guarded / rotated loop (a \emph{runtime} trip bound): hoist the promotion's
+        \texttt{cqrt\_alloc} above the zero-trip guard. Owner question attached: it allocates a
+        register a zero-trip loop never uses.
+  \item \bd{11qv} --- the narrow-width carried handle; \bd{832l} depends on it.
+  \item \bd{3slt} --- the Rule-8 tripwire: the day \bd{r903}/\bd{fg9k} moves the 4.4 select wall, the
+        owner's cascade plus a post-loop S$^\dagger$ accepts, and what it accepts is \bd{s82e}'s class.
+  \item \bd{hyhl} --- five further declines degraded to the generic string.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
