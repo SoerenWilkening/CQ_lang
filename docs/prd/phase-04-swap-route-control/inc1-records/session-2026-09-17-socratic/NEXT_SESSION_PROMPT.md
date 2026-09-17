@@ -29,6 +29,9 @@ build.** This session prepares for it, per the owner's instruction of 2026-09-17
    `ti5o`). What remains of that cluster is ONE increment: **tu9q's hoisted-template half**.
 3. **Every independent issue goes to a parallel agent.** Independence is decided **by file**, not by
    topic (PROTOCOL §S1).
+4. **Parallel agents NEVER run redundant tests** (owner instruction, 2026-09-17). No two agents may run
+   the same gate at the same time, and no agent re-runs a gate another agent has already recorded for
+   the same binary hash. §6 says how this is enforced.
 
 Owner rulings of 2026-09-17 that govern this session (`$THIS/DECISIONS.md`, bd memory
 `owner-ruling-loop-carried-handle-2026-09-17`): trip-1 promotion is accepted; byte-identity with the
@@ -183,6 +186,37 @@ collision by construction.
 `shasum -a 256` it before you use it; if it differs, STOP and report. ⚠ Before that rebuild the
 primary `cq-opt` had been the 2026-09-14 oracle (`0e280fc6…`) for three landings — a decline the owner
 measured by hand before 2026-09-17 may have been measured on it.
+
+### 6.1 — NO REDUNDANT TESTS ACROSS PARALLEL AGENTS (owner instruction 2026-09-17, binding)
+
+The 2026-09-15 protocol already says *cite, don't re-run* for a gate recorded at the same hash. This
+extends it to **concurrency**: **no two agents run the same test at the same time, and no agent runs
+a test whose result another agent is producing.** Mechanism, which the orchestrator enforces at
+spawn and every agent follows:
+
+* **Every gate has exactly ONE owner per binary hash**, named in the brief. The gate matrix in
+  `$PREV/PROTOCOL.md` is the default assignment: the implementer owns `lit --filter` and single
+  slices on its own fixtures, plus ONE `ir-pass-lit` at hand-off; the reviewer owns nothing that
+  spawns a suite; the group's merge-and-gate agent owns the full `ctest -j6`, the equivalence sweep,
+  the twin matrices and the corpus sweep. **Two tracks in one group share ONE merge-and-gate agent,
+  so the group's suite runs once.**
+* **Announce before you run.** Before starting any gate that takes longer than a single fixture
+  (`ir-pass-lit`, any `ctest -R` over more than one entry, a corpus sweep, a matrix), append
+  `IN-FLIGHT | <gate> | <hash16> | <who> | <HH:MM>` to `$SES/GATES_INFLIGHT.md` (one shared file in
+  the MAIN checkout, append-only, one line per gate). Replace it with the result line in your own
+  `GATES.md` when it finishes and mark the in-flight line `DONE`. An agent that finds a matching
+  IN-FLIGHT line at its own hash **waits and cites**; it does not start a second run.
+* **Same hash ⇒ same result.** A gate recorded in ANY track's `GATES.md` at the binary hash on your
+  disk is cited, never re-run — including across groups. The orchestrator points each agent at the
+  other tracks' `GATES.md` files at spawn.
+* **Different hash ⇒ your own inner loop only.** A rebuild changes the hash and licenses only the
+  gates the matrix assigns to your role; it never licenses a full suite.
+* **The full `ctest -j6` runs at most ONCE per group landing and at most ONE at a time on the box**
+  (already binding); with this rule it also runs at most once per binary hash, period.
+* **Report the redundancy check.** Every hand-off report states, for each gate it cites, whose line
+  it cited, and for each gate it ran, that no IN-FLIGHT line existed for it at that hash when it
+  started. A gate that turns out to have been run twice at one hash is a protocol FINDING to record
+  in `$SES/MERGE_FILINGS.md`, not a footnote.
 
 Everything else in `$PREV/PROTOCOL.md` carries forward unchanged and binding: hash-keyed `GATES.md`
 per track (`$THIS/GATES.md` is the format, with this session's cited lines); the gate matrix (the
