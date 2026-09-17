@@ -767,6 +767,175 @@ bool recordLivePerActivation(Value *M, const Instruction *U,
   return everyPathReExecutes(BI, U, D);
 }
 
+// ---- bd test_C_libtooling-x5fp — THE §3c CLOBBER, ASKED PER ACTIVATION -------
+//
+// `condProvenance` WITH EXACTLY ONE PRUNING RULE: at a `PHINode` the walk does
+// not enter an incoming value that arrives on a BACK EDGE OF THE LOOP THAT
+// CONTAINS THE REGION'S BRANCH. Everything else — the collection rule, the
+// theta stop, the `cq_phi` arg-1 angle exclusion — is `condProvenance`
+// expression for expression, and with `L == nullptr` this IS `condProvenance`,
+// byte for byte.
+//
+// ⚠ IT IS A SECOND SET, NOT A NARROWER `condProvenance` (the bd's L2
+// obligation: *narrow both or neither*). `condProvenance` is the completeness
+// carrier for R4, for F2's `CondWire`, for gate 2c, for the rail ladder and for
+// `CompareLowering`'s record, and its own header states that the two directions
+// fail OPPOSITELY — narrowing it makes **R4 vacuous**, which is an over-ACCEPT
+// (a flag stripped against a relabelled register, Rules 6/8). So it keeps its
+// full backward closure and every one of its callers keeps the identical set.
+// This set has exactly ONE consumer, `clobberHoldsPerActivation` below, and it
+// is used only to REFUSE the PERMANENT §3c string — never to grant anything on
+// its own.
+//
+// WHY THE EDGE TEST IS SCOPED TO THE REGION'S OWN LOOP, which is the whole
+// soundness argument for the pruning. "Per activation" means one trip of the
+// loop the REGION is in. Pruning a back edge of some other loop — one the
+// region merely sits after — would say nothing about the region's own
+// activation, and would turn the ordinary sequential overlap (`int s = q + 1;
+// if (s > 5) q = q + 3;`, whose condition's derivation chain the arm's rewrite
+// invalidates) into an accept. That shape has no back edge in the region's loop
+// because it has no loop, so it keeps the full cone and keeps declining.
+void condProvenanceInActivation(Value *Cond, TaintSet &Taint, const Loop *L,
+                                const DominatorTree &DT,
+                                SmallPtrSetImpl<Value *> &Out) {
+  SmallVector<Value *, 16> Work;
+  SmallPtrSet<Value *, 16> Seen;
+  Work.push_back(Cond);
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (Taint.Tainted.count(V))
+      Out.insert(V);
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      continue;
+    if (isThetaCall(I))
+      continue;  // source: collected V already; do NOT enter the classical seed.
+    if (auto *P = dyn_cast<PHINode>(I)) {
+      // A `PHINode`'s operands ARE its incoming values (the blocks live
+      // elsewhere), so this branch is `condProvenance`'s operand loop with the
+      // back-edge incomings dropped. `DT.dominates(Header, Pred)` is the
+      // standard back-edge test; both endpoints must be inside `L` so that an
+      // ENTRY edge (from the preheader, which the header also dominates only
+      // when the preheader is unreachable) can never be mistaken for one.
+      for (unsigned i = 0, e = P->getNumIncomingValues(); i != e; ++i) {
+        BasicBlock *IB = P->getIncomingBlock(i);
+        if (L && L->contains(IB) && L->contains(P->getParent()) &&
+            DT.dominates(P->getParent(), IB))
+          continue;  // previous activation of the region's own loop.
+        Work.push_back(P->getIncomingValue(i));
+      }
+      continue;
+    }
+    const bool IsPhi = isPhiCall(I);
+    for (unsigned Idx = 0, E = I->getNumOperands(); Idx < E; ++Idx) {
+      Value *Op = I->getOperand(Idx);
+      if (IsPhi) {
+        auto *CI = cast<CallInst>(I);
+        if (CI->arg_size() >= 2 && Op == CI->getArgOperand(1) &&
+            Op != CI->getArgOperand(0))
+          continue;
+      }
+      Work.push_back(Op);
+    }
+  }
+}
+
+// "Is the §3c overlap named by `Evidence` a WITHIN-ACTIVATION clobber?"
+//
+// `true` means the fence must fire with its PERMANENT string, and it is the
+// answer for every acyclic region, for every region whose loop the pruning
+// cannot identify, and for every overlap the condition can still see in this
+// activation. `false` means the only evidence is an overlap around the back
+// edge of the region's own loop — which CLAUDE.md L6 calls a structural guard
+// wearing a semantic label: within one activation the flag is minted strictly
+// before the arm writes, and (P3) proves the two do not share a physical rail.
+//
+// THREE CONJUNCTS, AND (P3) IS NOT BELT-AND-BRACES.
+//
+//   (P1) the region is IN a loop and that loop is identifiable. Anything else
+//        keeps the full cone (see `condProvenanceInActivation`'s scoping note).
+//   (P2) the evidence is absent from the in-activation provenance — i.e. the
+//        overlap exists ONLY around the back edge.
+//   (P3) RAIL DISJOINTNESS. `Routed`'s rail closure must not meet the rail
+//        closure of any value the condition still reads in this activation.
+//
+// (P3) closes a hole (P1)+(P2) would otherwise open into an ALREADY-OPEN P1.
+// Construction: a loop-carried rail φ `%p`, the condition `icmp sgt %p, 2` at
+// the top of the body, a dtzb IN-PLACE `%p2 = add %p, 1` between the compare
+// and the branch, and the region routing `%p2`. `%p2` reaches the condition's
+// cone only through the back edge, so (P1)+(P2) would grant — yet `%p2` names
+// the SAME PHYSICAL RAIL as `%p`, the flag was minted from a basis the `addc`
+// has already relabelled, and the arm relabels it again. Gate 2c does NOT catch
+// that: its walker is spelled over `thetaOnPathTo`, which counts a `cq_theta`
+// and does NOT count the dtzb in-place `add`/`xor` — the vocabulary gap
+// `WireWalk.h` records and bd `a3z7` (P1) owns. Today the §3c fence catches the
+// shape BY ACCIDENT, through the back-edge path; (P3) keeps it caught, and it
+// keeps it caught by CALLING `railWireClosure`, the one owner of physical-rail
+// identity, rather than writing a second spelling of it (Rule 14, the drbq
+// Inc-3 (b′) defect).
+//
+// ⚠ NOTHING HERE PRODUCES AN ACCEPT, AND THE REASON IS STRUCTURAL RATHER THAN
+// MERELY MEASURED (bd x5fp, session 2026-09-18, `trackX/FILE_SURFACE.md` §2 and
+// `IMPL_X.md` §5 R1-A). `false` is reachable only under (P1), i.e. only for an
+// IN-LOOP region; the only site whose outer test this answer can open is the
+// VALUE-arm prong, whose fall-through either declines further down the same
+// ladder or reaches the value ACCEPT and sets `ClassArm`/`ClassArmFalse =
+// Value` — and `ControlDetect::handleBranchRegion`'s "IN-LOOP SCOPE FENCE,
+// part 2" declines exactly that pair `(InLoop, Value)` on the line after
+// `classifyArms` returns. So every path through `false` still declines, IN THE
+// SAME ROUND, which is also why this predicate owes no L1 round-2 record: it
+// commits nothing and no later stage consumes its answer.
+// The isolating pair is `h1_inloop_diamond_value_backedge.ll` (this fence)
+// versus `h2b_inloop_diamond_value_onecond_control.ll` (ONE operand apart,
+// `control flow inside a loop body`). So this is a DIAGNOSTIC correction — the
+// fence stops branding a shape information-theoretically impossible on unproven
+// evidence, which is the rule its own §3c comment block states — and the ACCEPT
+// arrives with bd `3qlq.6` / bd `1dbk`, not here.
+//
+// ⚠ RETIREMENT TRIGGER (CLAUDE.md L8). THE DAY THE IN-LOOP VALUE ARM LANDS, THE
+// PARAGRAPH ABOVE STOPS BEING TRUE AND THIS PREDICATE BECOMES LOAD-BEARING FOR A
+// REAL ACCEPT. Re-derive all three conjuncts then — in particular (P3), whose
+// only discriminating fixture (`control_swap_reject_value_inloop_dtzb_same_rail.ll`)
+// is today a decline on BOTH sides of its own mutation and becomes a genuine
+// over-accept guard at that moment — and give the widening its own Rule-13
+// round in that light.
+bool clobberHoldsPerActivation(Value *Evidence, Value *Routed,
+                               const ControlRegion &Region, TaintSet &Taint,
+                               const DominatorTree *DT, const LoopInfo *LI) {
+  if (!Evidence || !Routed || !Region.Condition)
+    return true;
+  // (P1). `InLoop` is `false` by default and is set only by
+  // `ControlDetect::handleBranchRegion` AFTER `flatRegionRollableInLoop` has
+  // proved the region sits wholly inside ONE reducible single-latch loop at one
+  // depth — so an irreducible, multi-latch or NESTED loop never reaches here and
+  // keeps the full cone. `classifyArms` has exactly one caller, so there is no
+  // second entry point that could leave the flag unset and mean something else.
+  if (!Region.InLoop || !DT || !LI || !Region.Pred)
+    return true;
+  const Loop *L = LI->getLoopFor(Region.Pred);
+  if (!L)
+    return true;
+  // (P2).
+  SmallPtrSet<Value *, 16> ProvAct;
+  condProvenanceInActivation(Region.Condition, Taint, L, *DT, ProvAct);
+  if (ProvAct.count(Evidence))
+    return true;  // the condition still reads it in THIS activation.
+  // (P3). `WireDir::BackwardOnly` and the null arm bounds are R4's own call
+  // convention for the same question about the same object.
+  SmallPtrSet<Value *, 16> RoutedRail;
+  railWireClosure(Routed, Taint, WireDir::BackwardOnly, nullptr, nullptr,
+                  RoutedRail);
+  SmallPtrSet<Value *, 16> CondRail;
+  for (Value *M : ProvAct)
+    railWireClosure(M, Taint, WireDir::BackwardOnly, nullptr, nullptr, CondRail);
+  for (Value *W : CondRail)
+    if (RoutedRail.count(W))
+      return true;  // one physical rail — a real clobber, whatever the SSA path.
+  return false;
+}
+
 // The angle operand of a rotation call, tainted? ONE spelling, shared with
 // `taintedAngleGate`'s own lambda below (Rule 14) — the arg-1 angle is classical
 // by Rule 3, and a quantum-derived one has no fixed unitary.
@@ -5771,14 +5940,31 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //     merely shares the physical wire post-RAUW — lowerable in
         //     principle under a binding strip-after-R† order, so declined
         //     revisitably, not permanently (see diagonalAliasHit).
+        //
+        // ---- bd test_C_libtooling-x5fp — ASKED PER ACTIVATION. The overlap
+        // this prong reads off `Prov` is a POSITION-FREE fact about the SSA
+        // graph, and inside a loop the graph says "the condition reads what the
+        // arm writes" for an overlap that exists only around the BACK EDGE:
+        // within one activation the flag is minted strictly before the arm
+        // writes, and the rails are disjoint. `clobberHoldsPerActivation` is
+        // that question (its header carries the three conjuncts, the rail-
+        // disjointness one that keeps bd `a3z7`'s dtzb shape caught, and the
+        // measurement that says NO ACCEPT is recovered here). It never grants —
+        // when it answers `false` the region simply falls through to the rest
+        // of this ladder and, being an in-loop VALUE arm, to `ControlDetect`'s
+        // "IN-LOOP SCOPE FENCE, part 2".
         if (Value *Hit = diagonalAliasHit(Routed, Prov)) {
-          if (StraightThrough && Hit == Routed) {
-            declineArm(Chain.Ops.front(),
-                                 "arm rewrites a condition operand");
-          } else {
-            declineArm(declAnchor(Region), "control flow");
+          const bool Permanent = StraightThrough && Hit == Routed;
+          if (!Permanent ||
+              clobberHoldsPerActivation(Hit, Routed, Region, Taint, DT, LI)) {
+            if (Permanent) {
+              declineArm(Chain.Ops.front(),
+                                   "arm rewrites a condition operand");
+            } else {
+              declineArm(declAnchor(Region), "control flow");
+            }
+            return ArmDisposition::Declined;
           }
-          return ArmDisposition::Declined;
         }
         // Criterion 3: the routed slot must be a tainted quantum register.
         if (!Taint.Tainted.count(Routed)) {
@@ -5897,8 +6083,21 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // fallback is RETIRED (PRD §8.3): without a straight-through there is
       // no §3c evidence here — keep the deferred value-arm string (a safe
       // decline either way; acceptance always requires an IN-ARM chain).
+      //
+      // ---- bd test_C_libtooling-x5fp. BOTH BRANCHES OF THIS SITE DECLINE, so
+      // `Clobber` chooses only WHICH STRING — and that makes the per-activation
+      // reading a DIAGNOSTIC correction, never an accept (measured: it is this
+      // site, not the `diagonalAliasHit` prong above, that the owner's
+      // `_Bool`-carried loop cascade reaches, because `walkValueChain` follows
+      // `BinaryOperator`s only and the arm's `zext i1 … to i8` leaves
+      // `Chain.Ops` EMPTY). The PERMANENT string brands a shape
+      // information-theoretically impossible; a back-edge-only overlap is
+      // exactly the "unproven evidence" this block's own §8-review note forbids
+      // branding, so it falls back to the deferred `value-arm swap-route`.
       const bool Clobber =
-          StraightThrough && Prov.count(StraightThrough) != 0;
+          StraightThrough && Prov.count(StraightThrough) != 0 &&
+          clobberHoldsPerActivation(StraightThrough, StraightThrough, Region,
+                                    Taint, DT, LI);
       declineArm(cast<Instruction>(Base),
                            Clobber ? "arm rewrites a condition operand"
                                    : "value-arm swap-route");
