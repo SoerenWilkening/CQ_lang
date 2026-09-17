@@ -434,6 +434,30 @@ pin — different renderings, never comparable, so the trigger misfired. Re-meas
 divergence is byte-identical to pass 1, so the adjudication stands and the value to pin is the
 matrix's `d81485c481c5ad07`, never my `3fa9d45cd851c1b3`.
 
-### 15d. Corpus re-sweep at the pass-2 hash
+### 15d. Corpus re-sweep + blast-radius re-scan — **IN FLIGHT, recorded as an ABSENCE with their partial readings**
 
-*(launched 17:06 over 7041 rows; recorded when complete)*
+Both were launched at the pass-2 hash and were **still running when this record was written**. Per
+the protocol an unfinished gate is recorded as an absence — **never a green, never a red** — so what
+follows is a partial reading with its denominator, not a result.
+
+**Corpus sweep** (ORACLE `9bd01598` vs PASS-2 `07d93784`), list rebuilt at **7041 rows** (pass 1 was
+7012; +29 from the four landings' new fixtures and probe dirs). At **2215 of 7041 scored**:
+
+| bucket | partial | attribution so far |
+|---|---|---|
+| **A→D** | **2** | **both are Group 1's OWN new decline fixtures** — `loop_leak_dephase_reject_arm_minted_interior_rail.ll` and `loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`, each on `cq loop lowering: rolled body leaks a rail entangled with a rotated register` (the **existing** s82e string — the fix adds none). The intended direction of the F-1 fix, and its own pins |
+| D→A | 9 | Track D's P4 |
+| A→A md5 | 6 | Group 1's P2 |
+| A→A stderr | 1 | warnings disappearing as rails discharge |
+| D→D | 0 | — |
+
+⚠ **This is 31 % of the corpus. The full attribution — and any unattributable mover — is NOT
+established**, and the pass-1 figure (6981 rows, 137 movers, 0 unattributable, A→D 0) must **not** be
+quoted for pass 2: different binary, different denominator.
+
+**Blast-radius re-scan**, scoped to the **386 shipped e2e slices** (the decisive set — only these have
+goldens). At **67 of 386**: **0 G8-SHAPE**. The two pass-1 hits were re-measured DIRECTLY at the
+pass-2 hash instead and are recorded in §12 (rolled DECLINES, unrolled still ACCEPTS).
+
+Partial outputs are committed as `gate/corpus_07d93784_partial.txt` and `gate/blast_p2_partial.txt`
+so the next agent can resume rather than restart.
