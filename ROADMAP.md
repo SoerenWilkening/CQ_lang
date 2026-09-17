@@ -210,6 +210,39 @@ phase, not in advance.
    > *a retirement trigger that names the next wall is only ever a LOWER BOUND on how many are left.*
    > Records: `inc1-records/session-2026-09-19-orchestrator/`; lab entry 012.
 
+   > **SESSION 2026-09-20 — bd `h7ee` (the owed Rule-13 rounds) + bd `11qv` + bd `h1ip`: the carried
+   > handle AT EVERY WIDTH and BEHIND A RUNTIME TRIP GUARD.** bd `zujr`'s ≥3-round budget is **MET** —
+   > rounds 2 and 3 ran, by two independent agents that did not write the code, both
+   > `CLEAR-WITH-ITEMS` with **0 P1** (round 1 was the same), so the measured hit rate that motivated
+   > the budget — three consecutive sessions finding a P1 on round 1 of a loop change — did **not**
+   > repeat across three rounds by three agents. **bd `11qv`**: clause (Z3) no longer gates the
+   > carried φ to `i32`; the promotion RETYPES it (`mutateType`, the `RailBankPromote` idiom) and —
+   > the half that is the SAFETY ARGUMENT rather than bookkeeping — RECORDS the logical width in
+   > `taint.HandleWidth`, the side-table `logicalOperandWidth` consults BEFORE the laundered type.
+   > Without it a Q+Q compare over two retyped `i16` φs would recover `i32` and mint an `i32`
+   > template symbol for two `i16` registers: verify-clean and wrong. ⚠ **Reachability is NOT
+   > claimed** — every Q+Q-under-control shape probed declines identically at both widths and the
+   > peel moved 0 of 2107 fixtures, so the record is DEFENSIVE and the source says so. The whole
+   > width axis (`_Bool`/`char`/`short`/`long long`) moves D→A, including the owner's own cascade at
+   > `short a` (50 trace lines, STRICT 2b clean). **bd `h1ip`** (owner ruling Q1, *hoist it and
+   > accept the dead alloc*): the mint point for a GUARDED loop is the guard's own terminator, and
+   > every out-of-loop φ incoming carrying the SEED on the guard's edge is rewritten to that handle —
+   > so a RUNTIME trip bound lowers, and on the zero-trip path the exit φ NAMES that register, which
+   > is the right answer. ⚠ **bd `h1ip` NAMED (Z8) AND (Z1) WAS IN FRONT OF IT**: measured,
+   > `clang -O1` emits **NO PREHEADER AT ALL** for the C spelling, so CLAUDE.md §4e's round-1
+   > correction (*"false — `-O1` emits one"*) is **itself over-general**; (Z1) is relaxed to a SINGLE
+   > EXTERNAL ENTRY BLOCK, and because that relaxation moved **zero** of 2107 fixtures it got a
+   > fixture of its own. Also landed: clause **(P0)**, round 2's R2-1 — a `use_empty()` header φ is
+   > no longer promoted (the promotion was the LAST owner for a dead φ and minted a qubit for a value
+   > nothing reads). **Measured: 0 A→D, 2 D→A, 0 string moves, 1 stream move over 2107 fixtures**;
+   > three peel-mutation matrices at 0 movers each with a null-tag boundary control.
+   > ⚠ **Round 3 exhibited a NON-EMPTY COMPOSED ACCEPT SURFACE by construction** (bd `4jok`, now a
+   > GATE on the bd `tu9q` P0+P3 landing): nine C programs compile only with bd `zujr` **and** bd
+   > `tu9q` P0+P3 present — one is the owner's cascade plus one line — while the 2106-fixture corpus
+   > A/B, the 382-cell twin matrix and all 390 e2e slices report **zero**. Fifth consecutive session
+   > to file *a composition is not cleared by clearing its parts*; first to show the surface.
+   > Records: `inc1-records/session-2026-09-20-orchestrator/`; lab entry 013.
+
 
 8. **Width-only runtime ABI.** Signedness is implicit in the LLVM opcode
    (`add nsw` vs `add nuw`, `icmp slt` vs `icmp ult`); the frontend

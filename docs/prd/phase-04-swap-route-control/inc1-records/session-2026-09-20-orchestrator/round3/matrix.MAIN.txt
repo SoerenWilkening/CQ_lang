@@ -1,0 +1,382 @@
+m_add_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_add_der_add            TRACE-DIVERGENCE
+m_add_der_none           ACCEPT-IDENTICAL
+m_add_der_none_bodyread  ACCEPT-IDENTICAL
+m_add_der_none_postmark  ACCEPT-IDENTICAL
+m_add_der_none_premark   ACCEPT-IDENTICAL
+m_add_der_ry             ACCEPT-IDENTICAL
+m_add_der_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_der_ry_postmark    DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_add_der_ry_premark     DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_add_der_rz             ACCEPT-IDENTICAL
+m_add_eq0_add            ACCEPT-IDENTICAL
+m_add_eq0_none           ACCEPT-IDENTICAL
+m_add_eq0_ry             ACCEPT-IDENTICAL
+m_add_eq0_rz             ACCEPT-IDENTICAL
+m_add_eq_add             ACCEPT-IDENTICAL
+m_add_eq_none            ACCEPT-IDENTICAL
+m_add_eq_none_bodyread   ACCEPT-IDENTICAL
+m_add_eq_none_postmark   ACCEPT-IDENTICAL
+m_add_eq_none_premark    ACCEPT-IDENTICAL
+m_add_eq_ry              ACCEPT-IDENTICAL
+m_add_eq_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_add_eq_ry_postmark     DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_add_eq_ry_premark      DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_add_eq_rz              ACCEPT-IDENTICAL
+m_add_gt_add             ACCEPT-IDENTICAL
+m_add_gt_none            ACCEPT-IDENTICAL
+m_add_gt_ry              ACCEPT-IDENTICAL
+m_add_gt_rz              ACCEPT-IDENTICAL
+m_add_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_ifelse_ry          DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_add_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_add_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+m_add_oder_none_none_none ACCEPT-IDENTICAL
+m_add_oeq_none_none_none ACCEPT-IDENTICAL
+m_add_one_none_none_none ACCEPT-IDENTICAL
+m_add_range_add          TRACE-DIVERGENCE
+m_add_range_none         ACCEPT-IDENTICAL
+m_add_range_ry           ACCEPT-IDENTICAL
+m_add_range_rz           ACCEPT-IDENTICAL
+m_add_rder_add_none_none TRACE-DIVERGENCE
+m_add_rder_none_none_none ACCEPT-IDENTICAL
+m_add_rder_ry_none_none  ACCEPT-IDENTICAL
+m_add_req0_none_none_none ACCEPT-IDENTICAL
+m_add_req_add_none_none  ACCEPT-IDENTICAL
+m_add_req_none_none_none ACCEPT-IDENTICAL
+m_add_req_ry_none_none   ACCEPT-IDENTICAL
+m_add_rne_none_none_none ACCEPT-IDENTICAL
+m_add_rrange_none_none_none ACCEPT-IDENTICAL
+m_add_ryrz_none_none_none ACCEPT-IDENTICAL
+m_add_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_addpre_bphi_none_none_binv ACCEPT-IDENTICAL
+m_addpre_bry_none_none_binv ACCEPT-IDENTICAL
+m_addpre_pbit_none_none_rypost ACCEPT-IDENTICAL
+m_addpre_pbitd_none_none_rypost ACCEPT-IDENTICAL
+m_addpresel_pbit_none_none_rypost ACCEPT-IDENTICAL
+m_addpresel_pbitd_none_none_rypost ACCEPT-IDENTICAL-WARN	cq rotation lowering: non-diagonal gate over a live derived record
+m_none_ablphi_none_none_binv UNROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_abphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_abphi_none_none_binv ACCEPT-IDENTICAL
+m_none_abprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abprep_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abry_none_none_bcar DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_abry_none_none_binv DECLINE-BOTH	cq controlled lowering: control flow under quantum control
+m_none_absphi_none_none_binv DECLINE-BOTH	cq controlled lowering: nested control flow under quantum control
+m_none_abval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_abval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_bil2_none_none_binv ACCEPT-IDENTICAL
+m_none_bilprep_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
+m_none_bilprep_none_none_binv ACCEPT-IDENTICAL
+m_none_bilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
+m_none_bilry_none_none_binv ACCEPT-IDENTICAL
+m_none_bphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_bphi_none_none_binv ACCEPT-IDENTICAL
+m_none_bphi_ry_none_binv ACCEPT-IDENTICAL
+m_none_bprep_none_bpremark_bcar DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_bpremark_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_none_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bprep_ry_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_bry_none_bpremark_bcar ACCEPT-IDENTICAL
+m_none_bry_none_bpremark_binv ACCEPT-IDENTICAL
+m_none_bry_none_none_bcar ACCEPT-IDENTICAL
+m_none_bry_none_none_binv ACCEPT-IDENTICAL
+m_none_bry_ry_none_binv  ACCEPT-IDENTICAL
+m_none_bval_add_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_bval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
+m_none_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_ddilry_none_none_binv ACCEPT-IDENTICAL
+m_none_der_add           TRACE-DIVERGENCE
+m_none_der_none          TRACE-DIVERGENCE
+m_none_der_none_bodyread TRACE-DIVERGENCE
+m_none_der_none_postmark TRACE-DIVERGENCE
+m_none_der_none_premark  TRACE-DIVERGENCE
+m_none_der_ry            ACCEPT-IDENTICAL
+m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_der_ry_postmark   DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_der_ry_premark    DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_der_rz            TRACE-DIVERGENCE
+m_none_dilesc_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: iteration-local value read after the loop under quantum control	cq controlled lowering: nested control flow under quantum control
+m_none_dilry_none_none_binv ACCEPT-IDENTICAL
+m_none_eq0_add           ACCEPT-IDENTICAL
+m_none_eq0_none          TRACE-DIVERGENCE
+m_none_eq0_ry            ACCEPT-IDENTICAL
+m_none_eq0_rz            TRACE-DIVERGENCE
+m_none_eq_add            ACCEPT-IDENTICAL
+m_none_eq_none           TRACE-DIVERGENCE
+m_none_eq_none_bodyread  TRACE-DIVERGENCE
+m_none_eq_none_postmark  TRACE-DIVERGENCE
+m_none_eq_none_premark   TRACE-DIVERGENCE
+m_none_eq_ry             ACCEPT-IDENTICAL
+m_none_eq_ry_bodyread    UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_none_eq_ry_postmark    DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_eq_ry_premark     DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_eq_rz             TRACE-DIVERGENCE
+m_none_gt_add            ACCEPT-IDENTICAL
+m_none_gt_none           TRACE-DIVERGENCE
+m_none_gt_ry             ACCEPT-IDENTICAL
+m_none_gt_rz             TRACE-DIVERGENCE
+m_none_ifelse_add        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_ifelse_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_ifelse_ry         DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ifelse_rz         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
+m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_kcond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
+m_none_kicond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
+m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
+m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
+m_none_kiprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kover_none_none_kflat UNROLLED-ONLY	cq rail bank: array has cells no iteration writes
+m_none_kover_none_none_kloop DECLINE-BOTH-DIFFERENT	cq rail bank: array has cells no iteration writes	cq taint escape: tainted value stored to memory
+m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
+m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+m_none_kread_none_none_kflat ACCEPT-IDENTICAL
+m_none_kread_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
+m_none_l2b_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2b_none_none_l2im TRACE-DIVERGENCE
+m_none_l2b_none_none_l2iu TRACE-DIVERGENCE
+m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2c_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2c_none_none_l2im TRACE-DIVERGENCE
+m_none_l2c_none_none_l2iu TRACE-DIVERGENCE
+m_none_l2cd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2d3d_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2inv_none_none_none ACCEPT-IDENTICAL
+m_none_l2invd_none_none_none ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2n_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2nd_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2sib_none_none_none ACCEPT-IDENTICAL
+m_none_l2sibd_none_none_none ACCEPT-IDENTICAL
+m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
+m_none_nbilry_none_none_binv ACCEPT-IDENTICAL
+m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL
+m_none_nbphi_none_none_binv ACCEPT-IDENTICAL
+m_none_nbprep_none_none_bcar DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_nbprep_none_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_nbry_none_none_bcar ACCEPT-IDENTICAL
+m_none_nbry_none_none_binv ACCEPT-IDENTICAL
+m_none_nbval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
+m_none_nbval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
+m_none_oder_add_none_addpost TRACE-DIVERGENCE
+m_none_oder_add_none_none TRACE-DIVERGENCE
+m_none_oder_add_none_rypost TRACE-DIVERGENCE
+m_none_oder_add_none_rypre TRACE-DIVERGENCE
+m_none_oder_add_none_rzpost TRACE-DIVERGENCE
+m_none_oder_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_add_rpostmark_none TRACE-DIVERGENCE
+m_none_oder_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_oder_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_none_none_addpost TRACE-DIVERGENCE
+m_none_oder_none_none_none TRACE-DIVERGENCE
+m_none_oder_none_none_rypost TRACE-DIVERGENCE
+m_none_oder_none_none_rypre TRACE-DIVERGENCE
+m_none_oder_none_none_rzpost TRACE-DIVERGENCE
+m_none_oder_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oder_none_rpostmark_none TRACE-DIVERGENCE
+m_none_oder_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_oder_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oder_ry_none_none ACCEPT-IDENTICAL
+m_none_oeq_add_none_addpost ACCEPT-IDENTICAL
+m_none_oeq_add_none_none ACCEPT-IDENTICAL
+m_none_oeq_add_none_rypost ACCEPT-IDENTICAL
+m_none_oeq_add_none_rypre ACCEPT-IDENTICAL
+m_none_oeq_add_none_rzpost ACCEPT-IDENTICAL
+m_none_oeq_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_add_rpostmark_none ACCEPT-IDENTICAL
+m_none_oeq_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_oeq_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_none_bodyread_none ACCEPT-IDENTICAL
+m_none_oeq_none_none_addpost ACCEPT-IDENTICAL
+m_none_oeq_none_none_none ACCEPT-IDENTICAL
+m_none_oeq_none_none_rypost ACCEPT-IDENTICAL
+m_none_oeq_none_none_rypre ACCEPT-IDENTICAL
+m_none_oeq_none_none_rzpost ACCEPT-IDENTICAL
+m_none_oeq_none_postmark_none ACCEPT-IDENTICAL
+m_none_oeq_none_premark_none ACCEPT-IDENTICAL
+m_none_oeq_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_oeq_none_rpostmark_none ACCEPT-IDENTICAL
+m_none_oeq_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_oeq_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_oeq_ry_none_none  ACCEPT-IDENTICAL
+m_none_one_add_none_none ACCEPT-IDENTICAL
+m_none_one_none_none_none ACCEPT-IDENTICAL
+m_none_one_none_none_rypost ACCEPT-IDENTICAL
+m_none_one_ry_none_none  ACCEPT-IDENTICAL
+m_none_pbit_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbit_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitd_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitd_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitd_none_premark_rypost DECLINE-BOTH	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_pbitd_none_rpremark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_pbitne_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitne_none_none_rypre ACCEPT-IDENTICAL
+m_none_pbitned_none_none_rypost ACCEPT-IDENTICAL
+m_none_pbitned_none_none_rypre ACCEPT-IDENTICAL
+m_none_range_add         TRACE-DIVERGENCE
+m_none_range_none        TRACE-DIVERGENCE
+m_none_range_ry          ACCEPT-IDENTICAL
+m_none_range_rz          TRACE-DIVERGENCE
+m_none_rcond_none_none_none DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_none_rder_add_none_none TRACE-DIVERGENCE
+m_none_rder_none_none_addpost TRACE-DIVERGENCE
+m_none_rder_none_none_none TRACE-DIVERGENCE
+m_none_rder_none_none_rypost TRACE-DIVERGENCE
+m_none_rder_none_none_rypre TRACE-DIVERGENCE
+m_none_rder_none_none_rzpost TRACE-DIVERGENCE
+m_none_rder_ry_none_none ACCEPT-IDENTICAL
+m_none_req0_add_none_none ACCEPT-IDENTICAL
+m_none_req0_none_none_none ACCEPT-IDENTICAL
+m_none_req0_none_none_rypost ACCEPT-IDENTICAL
+m_none_req0_ry_none_none ACCEPT-IDENTICAL
+m_none_req_add_none_none ACCEPT-IDENTICAL
+m_none_req_none_none_addpost ACCEPT-IDENTICAL
+m_none_req_none_none_none ACCEPT-IDENTICAL
+m_none_req_none_none_rypost ACCEPT-IDENTICAL
+m_none_req_none_none_rypre ACCEPT-IDENTICAL
+m_none_req_none_none_rzpost ACCEPT-IDENTICAL
+m_none_req_ry_none_none  ACCEPT-IDENTICAL
+m_none_rifelse_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rne_add_none_none ACCEPT-IDENTICAL
+m_none_rne_none_none_none ACCEPT-IDENTICAL
+m_none_rne_none_none_rypost ACCEPT-IDENTICAL
+m_none_rne_ry_none_none  ACCEPT-IDENTICAL
+m_none_rrange_add_none_none TRACE-DIVERGENCE
+m_none_rrange_none_none_none TRACE-DIVERGENCE
+m_none_rrange_none_none_rypost TRACE-DIVERGENCE
+m_none_rrange_ry_none_none ACCEPT-IDENTICAL
+m_none_ryrz_add_none_none ACCEPT-IDENTICAL
+m_none_ryrz_none_none_none ACCEPT-IDENTICAL
+m_none_ryrz_none_none_rypost ACCEPT-IDENTICAL
+m_none_ryrz_ry_none_none ACCEPT-IDENTICAL
+m_none_rzry_add_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_none_rzry_none_none_none UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rzry_none_none_rypost UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rzry_ry_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_ry_bphi_none_none_binv ACCEPT-IDENTICAL
+m_ry_bprep_none_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
+m_ry_bry_none_none_binv  ACCEPT-IDENTICAL
+m_ry_der_add             ACCEPT-IDENTICAL
+m_ry_der_none            ACCEPT-IDENTICAL
+m_ry_der_none_bodyread   ACCEPT-IDENTICAL
+m_ry_der_none_postmark   ACCEPT-IDENTICAL
+m_ry_der_none_premark    ACCEPT-IDENTICAL
+m_ry_der_ry              ACCEPT-IDENTICAL
+m_ry_der_ry_bodyread     UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_der_ry_postmark     DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_ry_der_ry_premark      DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_ry_der_rz              ACCEPT-IDENTICAL
+m_ry_eq0_add             ACCEPT-IDENTICAL
+m_ry_eq0_none            ACCEPT-IDENTICAL
+m_ry_eq0_ry              ACCEPT-IDENTICAL
+m_ry_eq0_rz              ACCEPT-IDENTICAL
+m_ry_eq_add              ACCEPT-IDENTICAL
+m_ry_eq_none             ACCEPT-IDENTICAL
+m_ry_eq_none_bodyread    ACCEPT-IDENTICAL
+m_ry_eq_none_postmark    ACCEPT-IDENTICAL
+m_ry_eq_none_premark     ACCEPT-IDENTICAL
+m_ry_eq_ry               ACCEPT-IDENTICAL
+m_ry_eq_ry_bodyread      UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
+m_ry_eq_ry_postmark      DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_ry_eq_ry_premark       DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_ry_eq_rz               ACCEPT-IDENTICAL
+m_ry_gt_add              ACCEPT-IDENTICAL
+m_ry_gt_none             ACCEPT-IDENTICAL
+m_ry_gt_ry               ACCEPT-IDENTICAL
+m_ry_gt_rz               ACCEPT-IDENTICAL
+m_ry_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_ry_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_kprep_none_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
+m_ry_oder_none_none_none ACCEPT-IDENTICAL
+m_ry_oeq_none_none_none  ACCEPT-IDENTICAL
+m_ry_one_none_none_none  ACCEPT-IDENTICAL
+m_ry_range_add           ACCEPT-IDENTICAL
+m_ry_range_none          ACCEPT-IDENTICAL
+m_ry_range_ry            ACCEPT-IDENTICAL
+m_ry_range_rz            ACCEPT-IDENTICAL
+m_ry_rder_add_none_none  ACCEPT-IDENTICAL
+m_ry_rder_none_none_none ACCEPT-IDENTICAL
+m_ry_rder_ry_none_none   ACCEPT-IDENTICAL
+m_ry_req0_none_none_none ACCEPT-IDENTICAL
+m_ry_req_add_none_none   ACCEPT-IDENTICAL
+m_ry_req_none_none_none  ACCEPT-IDENTICAL
+m_ry_req_ry_none_none    ACCEPT-IDENTICAL
+m_ry_rne_none_none_none  ACCEPT-IDENTICAL
+m_ry_rprep_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: state prep merged with a quantum register under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_ry_rrange_none_none_none ACCEPT-IDENTICAL
+m_ry_ryrz_none_none_none ACCEPT-IDENTICAL
+m_ry_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_rz_der_add             TRACE-DIVERGENCE
+m_rz_der_none            TRACE-DIVERGENCE
+m_rz_der_ry              ACCEPT-IDENTICAL
+m_rz_der_rz              TRACE-DIVERGENCE
+m_rz_eq0_add             ACCEPT-IDENTICAL
+m_rz_eq0_none            TRACE-DIVERGENCE
+m_rz_eq0_ry              ACCEPT-IDENTICAL
+m_rz_eq0_rz              TRACE-DIVERGENCE
+m_rz_eq_add              ACCEPT-IDENTICAL
+m_rz_eq_none             TRACE-DIVERGENCE
+m_rz_eq_ry               ACCEPT-IDENTICAL
+m_rz_eq_rz               TRACE-DIVERGENCE
+m_rz_gt_add              ACCEPT-IDENTICAL
+m_rz_gt_none             TRACE-DIVERGENCE
+m_rz_gt_ry               ACCEPT-IDENTICAL
+m_rz_gt_rz               TRACE-DIVERGENCE
+m_rz_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_rz_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_rz_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_rz_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_rz_range_add           TRACE-DIVERGENCE
+m_rz_range_none          TRACE-DIVERGENCE
+m_rz_range_ry            ACCEPT-IDENTICAL
+m_rz_range_rz            TRACE-DIVERGENCE
+m_xor_der_add            TRACE-DIVERGENCE
+m_xor_der_none           TRACE-DIVERGENCE
+m_xor_der_ry             ACCEPT-IDENTICAL
+m_xor_der_rz             TRACE-DIVERGENCE
+m_xor_eq0_add            UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq0_none           DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control
+m_xor_eq0_ry             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq0_rz             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_add             UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_none            DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control
+m_xor_eq_ry              UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_eq_rz              UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
+m_xor_gt_add             ACCEPT-IDENTICAL
+m_xor_gt_none            TRACE-DIVERGENCE
+m_xor_gt_ry              ACCEPT-IDENTICAL
+m_xor_gt_rz              TRACE-DIVERGENCE
+m_xor_ifelse_add         UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_ry          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_ifelse_rz          UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_xor_range_add          TRACE-DIVERGENCE
+m_xor_range_none         TRACE-DIVERGENCE
+m_xor_range_ry           ACCEPT-IDENTICAL
+m_xor_range_rz           TRACE-DIVERGENCE

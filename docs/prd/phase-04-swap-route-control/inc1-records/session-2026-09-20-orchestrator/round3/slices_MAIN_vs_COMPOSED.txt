@@ -1,0 +1,35 @@
+DONE MAIN (390 slices)
+DONE COMPOSED (390 slices)
+
+== slices whose (verdict, golden) differ between MAIN / COMPOSED ==
+differing: 0 of 390
+
+== GOLD-DIFF / non-ACCEPT rows per binary ==
+ MAIN: 13
+    slice_control_inplace_ry_loop_leak.c                           DECLINE loop lowering: rolled body leaks a rail entangled with a rotated regis
+    slice_control_inplace_ry_loop_leak_unrolled.c                  ACCEPT no-golden:83ad12b10eb0
+    slice_control_phase_onward_perbit_loop_mixed.c                 DECLINE controlled lowering: control flow under quantum control
+    slice_control_phase_onward_perbit_loop_mixed_unrolled.c        DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_bool_round2_window.c                      DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_bool_round2_window_lib.c                  LINKFAIL 
+    slice_control_select_cmp_round2_window.c                       DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_cmp_round2_window_lib.c                   LINKFAIL 
+    slice_control_switch_phase.c                                   DECLINE QRAM access: const-global table read under tainted control: index not 
+    slice_freeze_passthrough.c                                     LINKFAIL 
+    slice_multi_caller.c                                           LINKFAIL 
+    slice_multi_lib.c                                              CLANGFAIL 
+    slice_railbank_owner_cascade.c                                 ACCEPT no-golden:cb81da90e11b
+ COMPOSED: 13
+    slice_control_inplace_ry_loop_leak.c                           DECLINE loop lowering: rolled body leaks a rail entangled with a rotated regis
+    slice_control_inplace_ry_loop_leak_unrolled.c                  ACCEPT no-golden:83ad12b10eb0
+    slice_control_phase_onward_perbit_loop_mixed.c                 DECLINE controlled lowering: control flow under quantum control
+    slice_control_phase_onward_perbit_loop_mixed_unrolled.c        DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_bool_round2_window.c                      DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_bool_round2_window_lib.c                  LINKFAIL 
+    slice_control_select_cmp_round2_window.c                       DECLINE controlled lowering: control flow under quantum control
+    slice_control_select_cmp_round2_window_lib.c                   LINKFAIL 
+    slice_control_switch_phase.c                                   DECLINE QRAM access: const-global table read under tainted control: index not 
+    slice_freeze_passthrough.c                                     LINKFAIL 
+    slice_multi_caller.c                                           LINKFAIL 
+    slice_multi_lib.c                                              CLANGFAIL 
+    slice_railbank_owner_cascade.c                                 ACCEPT no-golden:cb81da90e11b
