@@ -6229,22 +6229,29 @@ add_test(NAME e2e-inloop-hoisted-cond-twin-identical
 # written out in both slice headers. Owner ruling S3 (2026-09-17): byte identity is
 # an INSTRUMENT, not the target.
 #
-# ⚠ The ROLLED half runs with `--allow-unproven` and the reason is STRUCTURAL, not
-# a concession: `free_pairing_check.py` analyses per straight-line STREAM, so a
-# discharge placed at a LOOP EXIT is `U3-extern-rail` UNPROVEN *by construction*.
-# Measured, and the asymmetry is the measurement of the instrument's reach rather
-# than of the rail: rolled `1 verified, 0 violation(s), 3 unproven`; twin, whose
-# discharge is in the mint's own stream, `5 verified, 0 unproven` under STRICT 2b.
-# The rail identities are pinned POSITIONALLY by
-# `ir-pass/test/loop_pairing_accept_hoisted_chain_exit_discharge.ll` instead.
+# ⚠ THE ROLLED HALF USED TO RUN WITH `--allow-unproven`, AND IT NO LONGER DOES
+# (2026-09-18, Track C's (T4) loop-exit discharge rule). The exception was never a
+# concession — it was the INSTRUMENT's reach: `free_pairing_check.py` analysed per
+# straight-line STREAM, so a discharge placed at a LOOP EXIT was `U3-extern-rail`
+# UNPROVEN *by construction*. (T4) proves that shape instead of excusing it, so the
+# slice now runs STRICT like every other one. MEASURED, both at the gate:
+#
+#   BEFORE (cq-opt 96d74fe6…, pre-(T4) checker):
+#     1 verified, 0 violation(s), 3 unproven   [3x U3-extern-rail: %h_intr by
+#     cq_template_sqrt_f64, %h_op by …fadd_f64_hl, %h_cast by …sitofp_i32_to_f64]
+#   AFTER  (cq-opt 07d93784…, (T4) checker):
+#     4 verified, 0 violation(s), 0 unproven   — STRICT rc=0
+#
+# The rail identities remain pinned POSITIONALLY by
+# `ir-pass/test/loop_pairing_accept_hoisted_chain_exit_discharge.ll` as well; that
+# pin is belt-and-braces now rather than the only witness.
 add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
     "${CMAKE_SOURCE_DIR}/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge.expected.log"
-    "--allow-unproven")   # loop-exit discharge is cross-STREAM by construction; see above
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge.expected.log")
 
 add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge-unrolled
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

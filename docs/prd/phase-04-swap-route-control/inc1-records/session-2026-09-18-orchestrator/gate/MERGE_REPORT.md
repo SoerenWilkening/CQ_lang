@@ -256,38 +256,133 @@ fence only for a later fence to refuse it.
 
 ---
 
-# PASS 2 — the Group-1 fix for `review_r13_group1` F-1
+# PASS 2 — SUBJECT `07d937842bfb5135fe068d1b9bfb1b2cd501e67c152bf4932d9408d5c9fed6b4`
 
-⚠ **NOTHING IN THIS SECTION MAY BE MERGED WITH PASS 1's NUMBERS.** Every figure above is a fact about
-`96d74fe6008133b8`; every figure below is a fact about pass 2's own hash.
+`libCQPass.so` `19dcfde08ffbb69c2c0df50ef5ac318e925288ff37c4b53e24dcc472a2b91040`.
+ORACLE unchanged: `9bd01598d574b344…`.
 
-**Status at the time PASS 1 was recorded: the fix had NOT landed.** `tu9q-hoisted-template` was at
-`84f4ff8a`, and `git diff --stat f1a7857a tu9q-hoisted-template -- ir-pass/src ir-pass/include` was
-**EMPTY** — the only new commit since the merged `f1a7857a` was `84f4ff8a`, a records-only
-`P0P3_STATUS` doc. So pass 2 is **PENDING**, and its absence is recorded as an absence, never as a
-green.
+> ⚠ **PASS 2's HASH IS NOT GROUP 1's `df2445fcaf82cf00`, AND THAT IS CORRECT.** Group 1 built that on
+> *their* branch, which carries no Track D. Mine is the COMBINED binary — Group 1 (P1+P2+fix) **plus**
+> Track D's `ArmClassify.cpp` **plus** Track C. **Consequence, and it is the protocol's whole point:
+> Group 1's gate lines at `df2445fcaf82cf00` are NOT facts about this binary, so every number below is
+> RE-MEASURED here, never cited from their hand-off.**
 
-**What PASS 1 establishes about F-1, and it carries into pass 2 as the baseline:**
+## 10. The pass-2 merges — five, zero conflicts
 
-* `g8` **ACCEPTS on the combined binary** with `4 template rail mint(s) of which 2 left dirty`,
-  `0 cqrt_free site(s)`, `0 _unc`, and four `cq_template_ashr_i32_hl(h0,k)` copies alive across
-  `cqrt_ry_i32(h0, 0.9)` before `cqrt_measure_i32(h0)` — the P1 is **LIVE after the merge**, and
-  Track D's half neither causes nor cures it.
-* `g8a` (one token deleted) moves to `0 left dirty` / 2 free sites ⇒ the discriminant is **the arm
-  minting an INTERIOR rail**.
-* `g8k` (marking refused) **DECLINES** ⇒ **the marking is the door**.
-* The blast radius of that hazard over the shipped-slice set is **2 of 383, both registered goldens**
-  (`BLAST_RADIUS_g8.md`), reached through a *different* door (the drbq Inc-1 structural freeze).
+| # | commit | branch tip | what |
+|---|---|---|---|
+| 1 | `c81f70e0` | `f1a7857a` | Group 1: bd `6n1s` + P1 + P2 |
+| 2 | `bba8ecaa` | `460ecefe` | Track D: bd `drbq.12` |
+| 3 | `5822ed42` | `22a0ab11` | **Group 1's F-1 fix** — conjunct (1)'s suppression becomes a PROMISE VERIFIED after uncompute |
+| 4 | `7fd47544` | `26dff90e` | **Track C** — stage 2b (T4) proves the loop-exit discharge |
+| 5 | `a506728d` | `592fa164` | Track D records (`RZ_CELLS.md`), **records-only** |
 
-**The procedure pass 2 will follow, so it is on record before it runs:**
+**Post-union checks, re-run after every merge and again after the G-4 edit:** 0 duplicate `add_test`
+names · **449** `add_test` (452 − Group 1's 3 unregistered; their branch's 449→446 differs by exactly
+Track D's +3, so it reconciles) · sweep still LAST.
+**L8 duplicate-body scan:** 2099 fixtures, 9 pre-existing groups, **0 contradictory-verdict**.
+**Counts:** fixtures 2095 → **2099** (+4 new fixtures); goldens 396 → **394** (−2 deleted).
 
-1. Merge the new `tu9q-hoisted-template` tip onto `session-2026-09-18-gate` (pass 1's tip
-   `dac4ec39`); re-run the three post-union checks and the L8 duplicate-body scan if fixtures moved.
-2. Rebuild BOTH targets; record `shasum -a 256` of `cq-opt` and `libCQPass.so` — pass 2's hash.
-3. **Announce in `GATES_INFLIGHT.md` first** (§6.1), then run, at the new hash only:
-   the g8 triple (`g8` must now DECLINE or discharge; `g8a`/`g8k` are the isolating controls),
-   `dD1`/`dD4`/`dD5` **again** (the R20 composition must survive the fix), `a1_apost` and the
-   `6n1s` triple, ONE full `ctest -j6`, the twin-matrix entry, and a corpus re-sweep.
-4. **`cq-opt-equivalence-full` is CITED from pass 1 only if the fix touches no decline string and no
-   analysis site; otherwise it is RE-RUN.** A decline-direction backstop almost certainly adds a
-   string, so the default expectation is **re-run**.
+⚠ **A SELF-CORRECTION, recorded because it is the failure mode this gate exists to catch.** Before
+merging Track D's records-only tip I ran a check that printed `[empty = safe]` — from an
+**unconditional `echo`**, next to a diff taken in the wrong basis that actually listed 30 files. The
+label was meaningless. I re-verified properly (`HEAD~1..HEAD`): **610 insertions, 0 deletions, and
+nothing under `ir-pass`/`include`/`runtime`/`tools`/`tests`** — records-only confirmed, nothing
+reverted. Same species as the blast detector's false CLEAN: *an instrument that reports a pass it did
+not measure.*
+
+## 11. G-4 — Track C PROVES it; the `--allow-unproven` exception is REMOVED
+
+Run first, because it is cheap and it gates a `CMakeLists` edit.
+
+| | STRICT stage 2b on `slice_loop_hoisted_chain_exit_discharge.c` |
+|---|---|
+| **BEFORE** (`96d74fe6…`, pre-(T4) checker) | `1 verified, 0 violation(s), 3 unproven`, **rc=1** — 3× `U3-extern-rail`: `%h_intr` by `cq_template_sqrt_f64`, `%h_op` by `…fadd_f64_hl`, `%h_cast` by `…sitofp_i32_to_f64` |
+| **AFTER** (`07d93784…`, (T4) checker) | **`4 verified, 0 violation(s), 0 unproven`, rc=0** |
+
+**All three `U3-extern-rail` unprovens are proven, so the flag came off**, together with its reason
+paragraph (replaced by a BEFORE/AFTER block at the site). Actual flag count **5 → 4**, and all four
+survivors are the `dtzb whole-loop reverse-play` loop-break entries — **so CLAUDE.md's "Four
+`e2e-slice-loop-break*` entries pass `--allow-unproven`" sentence is TRUE again** and filing G-4 is
+resolved rather than carried. `ctest -R '^e2e-slice-loop-hoisted-chain-exit-discharge'`: **2/2 Passed**
+(1.09 s + 1.06 s) running STRICT.
+
+## 12. The g8 family — F-1's P1 is CLOSED, and its controls are unmoved
+
+| probe | PASS 1 (`96d74fe6`) | **PASS 2 (`07d93784`)** |
+|---|---|---|
+| `g8_arm_use_derived_owned_rot` | ACCEPT, `2 left dirty`, `0 free`, warning only | **DECLINE exit 1** — `cq loop lowering: rolled body leaks a rail entangled with a rotated register` |
+| `g8b_interior_gate_in_header_control` | (not run) | **DECLINE exit 1**, same string |
+| `g8a_arm_measured_directly_control` (control) | ACCEPT, `0 dirty` | **ACCEPT** — unmoved |
+| `g8k_arm_use_derived_unmarked_control` (control) | DECLINE | **DECLINE** — unmoved |
+
+**The two shipped goldens my blast radius found:**
+
+| slice | PASS 2 |
+|---|---|
+| `slice_control_inplace_ry_loop_leak.c` (ROLLED) | **DECLINE exit 1** — the Rule-8 wrong unitary no longer compiles |
+| `…_unrolled.c` (the TWIN) | **ACCEPT exit 0** — ⚠ **the identical hazard still compiles, loop-free.** New P1, filed by Group 1 |
+
+⚠ **The blast-radius finding is HALF closed.** G-6 reported 2 shipping goldens carrying the hazard;
+the rolled one now declines and is pinned by `loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`,
+and **the unrolled one still compiles it**. Both are unregistered and both goldens deleted, so the
+surviving hazard is now observed by **no gate at all** — which is the *correct* disposition (pinning
+it would pin a known-wrong stream, exactly what CLAUDE.md forbids for the three `*_leak_control.ll`
+fixtures) but means the P1 is **unwitnessed until its fence lands**. The `.c` is kept with a
+conversion header carrying an L8 retirement trigger.
+
+⚠ **One limit of my own G-6 report is now CLOSED in the strengthening direction.** I wrote that the
+detector *"cannot see whether `cqrt_tape_write_i32` has measurement-like semantics that would collapse
+`h3`; if it does, the two hits weaken."* Group 1's fixture header answers it: the tape write **COPIES
+and does NOT collapse**, and *"only the tape-write RESULT (h4, h7) is an `OutputRails` member; its
+OPERAND h3 is an ordinary interior template rail, so 'it is the program's own output' does NOT excuse
+it."* The hits were real.
+
+## 13. The composition SURVIVES the fix — and Track C improves it
+
+| probe | PASS 1 | **PASS 2** |
+|---|---|---|
+| `dD1` | exit 0, stderr 0 B, `0 left dirty`, `1 verified, 0 violation(s), **1 unproven**`, 22 lines | exit 0, stderr 0 B, `0 left dirty`, **`2 verified, 0 violation(s), 0 unproven`**, 22 lines |
+| `dD4` (twin) | `0 dirty`, `3 verified, 0 unproven`, 22 lines | `0 dirty`, `3 verified, 0 unproven`, **22 lines** |
+| `dD5` (pre-existing reference) | exit 0, stderr 0 B, `0 dirty`, **1 unproven** | exit 0, stderr 0 B, `0 dirty`, **`2 verified, 0 unproven`** |
+| `a1_apost` vs twin | 28 == 28, MULTISET IDENTICAL | **28 == 28, MULTISET IDENTICAL** — unmoved |
+
+**R20's verdict holds after the fix: D still lands.** And the `1 unproven` residue I had to caveat in
+pass 1 as "the instrument's stream model, not the rail" is now **0** — Track C's (T4) rule proves it,
+so the caveat is retired rather than repeated.
+
+**The `6n1s` triple:** `t5j` exit 0, `3 template rail mint(s) of which 0 left dirty`, 2 unproven, 26
+lines, still warning-only · `t5i` exit 0, stderr 0 B, **0 unproven**, 32 lines · `t5k` DECLINE. All
+three unmoved in verdict from pass 1.
+
+## 14. The owner's loop program (coordinator addendum) — UNCHANGED, and the README is about a different file
+
+`example/grover/grover_oracle_uncompute.c` (**local-only, untracked; `example/` not edited**):
+
+```
+opt exit=1
+error: example/grover/grover_oracle_uncompute.c:91:15: in function main i32 ():
+       cq controlled lowering: control flow inside a loop body under quantum control
+CQ_CTRL_DBG: railbank [Bank] cells=3 abi=i8 trips=3 at: store i8 %cq.bank.stg, ptr %cq.bank.addr…
+CQ_CTRL_DBG: decline [control flow inside a loop body] at: %24 = icmp sgt i32 %23, 2
+```
+
+**Same string and same site (91:15) as the 2026-09-17 measurement on `9bd01598` — UNCHANGED** by any
+of this session's four landings. The rail bank IS recognised first (`cells=3 abi=i8 trips=3`); the
+decline then fires at the body's `icmp sgt`.
+
+⚠ **`example/grover/README.md` says this file "is now written as a `for` loop and it RUNS" (bd
+`8h7d.5`). That is NOT a contradiction of the measurement above — it is about a DIFFERENT PROGRAM.**
+The owner's file is untracked and has since gained a rail bank the README never mentions; the README
+describes the committed history of that *filename*. **Do not read the README's tick as a claim about
+the file on disk today.**
+
+**The hand-unrolled twin:** `grover_loop_frontier.c` is NOT it (the README calls it the frontier
+marker, and it declines). The README names the real pair —
+`tests/e2e/slice_control_grover_loop_derived{,_unrolled}.c` — and both **ACCEPT at exit 0 with
+45 == 45 trace lines**, `0 left dirty`, `0 unproven` (rolled `5 verified`, unrolled `10 verified`).
+⚠ That pair is the twin of the README's version, **not** of the owner's current local file.
+
+## 15. Suite / matrix / equivalence / corpus at the pass-2 hash
+
+*(recorded below as each completes)*
