@@ -348,3 +348,58 @@ Greening it is **one large deliberate operation**, not a command: 33 hand-author
 `tools/loop_twin_matrix.expected.txt` / `.quarantine.txt` are **byte-unchanged on this branch** — as
 they were after pass 1. The arguments needed for all of it are written above and in
 `PASS2_PREP.md`; what is missing is the authoring, not the reasoning.
+
+---
+
+# PASS-2 RESOLUTION — what was AUTHORED, and the exact red that remains
+
+Authorised by the orchestrator (Track V's R14 exclusivity lifted; V's landing done).
+⚠ **The matrix is NOT green, and the reason is a deliberate refusal of mine that the tool then
+enforced.** Every category I could legitimately resolve is at **0**.
+
+## What I wrote
+
+| action | result |
+|---|---|
+| `q_armoncond` **RE-PINNED** `dbf4c162d1de5139` → `d81485c481c5ad07` | boundary-control failures **1 → 0** |
+| its stale comment **CORRECTED IN THE SAME CHANGE** | the paragraph claiming *"the rolled side LEAVES THE TOP RAIL ALLOCATED"* is **removed** — P2 fixed exactly that, and leaving it would be L7-with-a-twist verbatim |
+| **class F** authored — 12 cells, bd `test_C_libtooling-svoi` | the per-trip flag mint vs `-O1`'s CSE (owner S3) |
+| **class G** authored — 3 cells, bd `test_C_libtooling-42yv` | the `m_rz`×`_rz` fusion pair, Δ = 2π both sides, **verified against a non-cancelling control** |
+| class paragraphs added to the **PRESERVED** header | 303 header lines kept byte-for-byte by the tool |
+| `--refresh-quarantine` | `re-pinned 52 quarantined signature(s)` — **every digest MEASURED, none hand-typed** |
+| the 6 class-A `oder` cells | `QUARANTINED SIGNATURE CHANGED` **6 → 0** |
+| the 15 duplicated **expected-table rows removed** | `IN BOTH FILES` **15 → 0** (see below) |
+
+**Quarantine 37 → 52 cells. Accounting reconciles exactly: expected 330 + quarantine 52 = 382.**
+
+⚠ **THE INSTRUMENT CAUGHT AN ERROR OF MINE, AND THAT IS THE HEADLINE.** `--refresh-quarantine`
+re-pins signatures but does **not** remove a newly-quarantined cell's expected-table row, and
+`--regenerate` (which would) correctly refuses while the 18 stand — so after authoring, 15 cells sat
+**IN BOTH FILES**, which the contract forbids. The arithmetic said so before the message did: 345 + 52
+= **397** against 382 cells. Filed as **G-12**; fixed by removing exactly those 15 rows by first-field
+match, nothing else touched.
+
+## The red that remains, and it is the right red
+
+```
+ROLLED AND UNROLLED TRACES DIFFER   18     ← the class-H cells I REFUSED to bless
+verdict changed                     34     ← blocked behind them
+IN BOTH FILES 0 · QUARANTINED SIGNATURE CHANGED 0 · QUARANTINE STALE 0
+BOUNDARY CONTROL moved 0 · HARNESS-ERROR 0
+```
+
+**`--regenerate` cannot write while the 18 stand**, verified in source rather than asserted
+(`loop_twin_matrix.py:3303`: `blocking = [hard not in quarantined_ok] + qfails + ctlfails` →
+*"REGENERATION REFUSED TO HIDE %d HARD FAILURE(S) — … is UNCHANGED"*). That refusal is the F-R2-1
+protection, and it is doing its job on my behalf.
+
+**Why the 18 are unblessed: 16 of them have DIFFERENT `(_unc, free, mint)` counts between the halves**,
+two with the ROLLED side discharging FEWER than its twin (`m_rz_der_rz` 5 vs 6, `m_rz_range_rz` 3 vs 4)
+— the deficient-rolled signature class A had before P2 fixed it. They were `HARNESS-ERROR` on the
+ORACLE and at pass 1, so **nobody has ever adjudicated them**; Track C's (T4) is what made them
+visible. A quarantine row over an unexplained count asymmetry is the F-4 error this file exists to
+catch. Full measurement and disposition: **G-11**.
+
+⚠ **`tools/loop_twin_matrix.expected.txt` has NO content edit** — the only change is the removal of 15
+rows for cells that moved to the quarantine, which the contract requires. No verdict was rewritten, and
+`--regenerate` was never run.

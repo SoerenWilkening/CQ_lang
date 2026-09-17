@@ -331,3 +331,31 @@ quarantine row. ⚠ Note the shape overlap: `m_rz_der_rz` / `m_rz_range_rz` carr
 `_rz` prefix/suffix combination** as class G, whose answer was *"the uncontrolled `cq_phi` are global
 phases deleted on the rolled side"* — so the benign reading is available and must be **measured, not
 assumed**.
+
+## G-12 — **NEW (P2, my own error, CAUGHT BY THE INSTRUMENT): quarantining a cell also requires REMOVING its expected-table row, and `--refresh-quarantine` does not do it**
+
+After authoring 15 quarantine blocks and running `--refresh-quarantine` (which succeeded: *"re-pinned
+52 quarantined signature(s)"*), the matrix reported **15 × `IN BOTH FILES`** —
+
+> *"the expected table records a verdict (`UNROLLED-ONLY …`) AND the quarantine pins a signature. A
+> cell belongs to exactly one of them; remove the expected-table row."*
+
+**The arithmetic said so before the message did, and I should have checked it first:** expected 345 +
+quarantine 52 = **397**, against the matrix's **382 cells**. A sum that exceeds the cell count is a
+duplicate by construction. After removing the 15 rows: 330 + 52 = **382**, exact.
+
+**Why the gap exists, and it is not a tool defect:** `--refresh-quarantine` only *re-pins signatures*;
+the write mode that maintains the expected table is `--regenerate`, and `--regenerate` **correctly
+REFUSED** because 18 unquarantined divergences stand (`blocking = hard-not-quarantined + qfails +
+ctlfails`, verified in source at `loop_twin_matrix.py:3303`). So the two write modes do not compose
+into "quarantine a cell" — the row removal has to be done deliberately, and it is the step a hurried
+author drops.
+
+⚠ **This is the third instrument finding of mine this session and the only one the tool caught for
+me** (the blast detector's false CLEAN and the parser's dropped line I caught myself). It is worth
+recording in that order: **the quarantine contract earned its keep here exactly as L10 says it
+should** — it refused to accept a state I had created and named the fix in one sentence.
+
+**Recommendation for `PROTOCOL.md`:** when a cell is quarantined by hand, the check is arithmetic and
+takes one command — `expected + quarantine == total cells`. Any excess is a both-files violation
+before the matrix is ever re-run.

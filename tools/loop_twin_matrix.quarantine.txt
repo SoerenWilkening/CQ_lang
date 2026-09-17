@@ -334,6 +334,142 @@ digest   4a2e8dfbe0311684
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h9
 
+cell     m_none_eq0_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   c8ea51166531eb5c
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 0)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_eq0_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   2c5ae939412ba238
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 0)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
+
+cell     m_none_eq_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   c38ecfae78285e71
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_eq_none_bodyread
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   c0503c5628aa3fff
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_eq_none_postmark
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   cfe1a4e760a313e4
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_eq_none_premark
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   cfe1a4e760a313e4
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_eq_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   d34a8bce47da1331
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
+
+cell     m_none_gt_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   66341e9470be4d4f
+rolled   cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1.921fb54442d18p+1)
+
+cell     m_none_gt_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   b7b508091ebe80a9
+rolled   cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
+
+cell     m_none_l2b_none_none_l2ic
+class    D+E
+bd       test_C_libtooling-s82e
+owner    class D (rolled drops the outer rail's _unc/free) AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
+digest   601697b915f73b57
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_lshr_i32_hl(h0, 1) -> h1
+
+cell     m_none_l2b_none_none_l2im
+class    D
+bd       test_C_libtooling-s82e
+owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
+digest   7229a10446735aa2
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2b_none_none_l2iu
+class    D
+bd       test_C_libtooling-s82e
+owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
+digest   f3d53ec1d933729a
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2c_none_none_l2ic
+class    D+E
+bd       test_C_libtooling-s82e
+owner    class D on the `icmp`-as-data outer rail AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
+digest   5fc7f27dad90b03d
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+
+cell     m_none_l2c_none_none_l2im
+class    D
+bd       test_C_libtooling-s82e
+owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
+digest   1fa777e95e6195c4
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2c_none_none_l2iu
+class    D
+bd       test_C_libtooling-s82e
+owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
+digest   b88ffe183e9bfc16
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2n_none_none_l2ic
+class    E
+bd       test_C_libtooling-s82e
+owner    markIfRailLocal's invariant-input clause is a silent REFUSAL, so the hoisted `a & 1` rail is never discharged; rolled hoists out of BOTH loops and mints 1, flat mints 2 — NEITHER side deficient in discharge
+digest   38a5a790cdb8fe60
+rolled   cqrt_alloc_i32(6) -> h8
+unrolled cq_template_and_i32_hl(h0, 1) -> h8
+
+cell     m_none_l2nd_none_none_l2ic
+class    E
+bd       test_C_libtooling-s82e
+owner    class E with the post-loop non-diagonal gate present — the fence does not reach this column either, so the interference changes the trace and not the verdict
+digest   870aab2dc1afe204
+rolled   cqrt_alloc_i32(6) -> h8
+unrolled cq_template_and_i32_hl(h0, 1) -> h8
+
 cell     m_none_oder_add_none_addpost
 class    B
 bd       test_C_libtooling-a3z7
@@ -386,31 +522,31 @@ cell     m_none_oder_none_none_addpost
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   7552cd99e0393129
-rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
-unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+digest   afcaf2aa86e7f897
+rolled   cqrt_free(h6)
+unrolled cq_template_sqrt_f64_unc(h4, h3)
 
 cell     m_none_oder_none_none_none
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   23e11d73657198da
-rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
-unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+digest   17f21f2edcd9a4fb
+rolled   cqrt_free(h6)
+unrolled cq_template_sqrt_f64_unc(h4, h3)
 
 cell     m_none_oder_none_none_rypost
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   11842cbce6a00e18
-rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
-unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+digest   71e9a767fb912760
+rolled   cqrt_free(h6)
+unrolled cq_template_sqrt_f64_unc(h4, h3)
 
 cell     m_none_oder_none_none_rypre
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   bc142bbbe0faac7a
+digest   f8e3004fd962ea30
 rolled   cq_template_sitofp_i32_to_f64(h0) -> h2
 unrolled cqrt_ry_i32(h1, 0x1p-2)
 
@@ -418,17 +554,17 @@ cell     m_none_oder_none_none_rzpost
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   23e11d73657198da
-rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
-unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+digest   17f21f2edcd9a4fb
+rolled   cqrt_free(h6)
+unrolled cq_template_sqrt_f64_unc(h4, h3)
 
 cell     m_none_oder_none_rpostmark_none
 class    A
 bd       test_C_libtooling-1m5p
 owner    Uncomputation/FreePoint — ROLLED deficient (leaves the entangled hoisted-chain rail h4 allocated)
-digest   23e11d73657198da
-rolled   cq_template_fadd_f64_hl_unc(h3, h2, 0x1.8p+1)
-unrolled cq_template_fcmp_ugt_f64_hl(h4, 0x1.8p+1) -> h5
+digest   e5d69f54631305a2
+rolled   cqrt_free(h6)
+unrolled cq_template_sqrt_f64_unc(h4, h3)
 
 cell     m_none_range_add
 class    B
@@ -461,6 +597,54 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   4a2e8dfbe0311684
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_rz_eq0_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   c28b96c0d083a635
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 0)
+unrolled cqrt_rz_i1(h1, 0x1p-3)
+
+cell     m_rz_eq0_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   1581f8083b1731bc
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 0)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
+
+cell     m_rz_eq_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   f6f0d2a588e9895a
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1p-3)
+
+cell     m_rz_eq_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   ed9c2f3b8319c1eb
+rolled   cq_template_icmp_eq_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
+
+cell     m_rz_gt_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   341e31e2fd6e56c2
+rolled   cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, 0x1p-3)
+
+cell     m_rz_gt_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   52b46e1f4e41ceac
+rolled   cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
+unrolled cqrt_rz_i1(h1, -0x1p-3)
 
 cell     m_rz_range_add
 class    B
@@ -533,189 +717,4 @@ owner    the GENERATOR: -O1 folds the FLAT spelling's xor mask 9 -> 8 under the 
 digest   7c31a377ffbfc95f
 rolled   cqrt_xorc_i32(h0, 9)
 unrolled cq_template_xor_i32_hl(h0, 8) -> h1
-
-
-cell     m_none_l2b_none_none_l2im
-class    D
-bd       test_C_libtooling-s82e
-owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
-digest   7229a10446735aa2
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
-
-cell     m_none_l2b_none_none_l2iu
-class    D
-bd       test_C_libtooling-s82e
-owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
-digest   f3d53ec1d933729a
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
-
-cell     m_none_l2b_none_none_l2ic
-class    D+E
-bd       test_C_libtooling-s82e
-owner    class D (rolled drops the outer rail's _unc/free) AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
-digest   601697b915f73b57
-rolled   cq_template_and_i32_hl(h0, 1) -> h1
-unrolled cq_template_lshr_i32_hl(h0, 1) -> h1
-
-cell     m_none_l2c_none_none_l2im
-class    D
-bd       test_C_libtooling-s82e
-owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
-digest   1fa777e95e6195c4
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
-
-cell     m_none_l2c_none_none_l2iu
-class    D
-bd       test_C_libtooling-s82e
-owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
-digest   b88ffe183e9bfc16
-rolled   cqrt_measure_i32(h2) -> 0
-unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
-
-cell     m_none_l2c_none_none_l2ic
-class    D+E
-bd       test_C_libtooling-s82e
-owner    class D on the `icmp`-as-data outer rail AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
-digest   5fc7f27dad90b03d
-rolled   cq_template_and_i32_hl(h0, 1) -> h1
-unrolled cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
-
-cell     m_none_l2n_none_none_l2ic
-class    E
-bd       test_C_libtooling-s82e
-owner    markIfRailLocal's invariant-input clause is a silent REFUSAL, so the hoisted `a & 1` rail is never discharged; rolled hoists out of BOTH loops and mints 1, flat mints 2 — NEITHER side deficient in discharge
-digest   38a5a790cdb8fe60
-rolled   cqrt_alloc_i32(6) -> h8
-unrolled cq_template_and_i32_hl(h0, 1) -> h8
-
-cell     m_none_l2nd_none_none_l2ic
-class    E
-bd       test_C_libtooling-s82e
-owner    class E with the post-loop non-diagonal gate present — the fence does not reach this column either, so the interference changes the trace and not the verdict
-digest   870aab2dc1afe204
-rolled   cqrt_alloc_i32(6) -> h8
-unrolled cq_template_and_i32_hl(h0, 1) -> h8
-
-cell     m_none_eq_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq_none_bodyread
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq_none_postmark
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq_none_premark
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq_rz
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq0_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_eq0_rz
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_gt_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_none_gt_rz
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_eq_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_eq0_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_gt_none
-class    F
-bd       test_C_libtooling-svoi
-owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_eq_rz
-class    G
-bd       test_C_libtooling-42yv
-owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_eq0_rz
-class    G
-bd       test_C_libtooling-42yv
-owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
-
-cell     m_rz_gt_rz
-class    G
-bd       test_C_libtooling-42yv
-owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
-digest   0000000000000000
-rolled   <pending --refresh-quarantine>
-unrolled <pending --refresh-quarantine>
 

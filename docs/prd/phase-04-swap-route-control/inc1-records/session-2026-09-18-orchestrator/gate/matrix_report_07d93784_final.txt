@@ -1,0 +1,306 @@
+Test project /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-ac2acfdde3461becc/build
+    Start 318: e2e-loop-twin-matrix
+1/1 Test #318: e2e-loop-twin-matrix .............***Failed  333.62 sec
+loop_twin_matrix [--phi-surface void]: 382 cells — 183 ACCEPT-IDENTICAL, 79 DECLINE, 120 other; 52 quarantined (pinned signatures), 4 boundary controls
+    ACCEPT-IDENTICAL                   182
+    ACCEPT-IDENTICAL-WARN              1
+    DECLINE-BOTH                       37
+    DECLINE-BOTH-DIFFERENT             42
+    ROLLED-ONLY                        3
+    TRACE-DIVERGENCE                   70
+    UNROLLED-ONLY                      47
+    control q_armoncond                TRACE-DIVERGENCE
+    control q_nestinline               ACCEPT-IDENTICAL
+    control q_nestinlineplain          ACCEPT-IDENTICAL
+    control q_noregion                 ACCEPT-IDENTICAL
+
+FAILED (52):
+m_none_der_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 24 lines
+    unrolled : (4, 4, 5) over 19 lines
+
+m_none_der_none_bodyread: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 26 lines
+    unrolled : (4, 4, 6) over 21 lines
+
+m_none_der_none_postmark: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 25 lines
+    unrolled : (4, 4, 5) over 20 lines
+
+m_none_der_none_premark: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 25 lines
+    unrolled : (4, 4, 5) over 20 lines
+
+m_none_der_rz: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, -0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 24 lines
+    unrolled : (4, 4, 5) over 23 lines
+
+m_none_range_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 6:
+    rolled   : cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+    unrolled : cqrt_rz_i1(h2, 0x1.921fb54442d18p+1)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 4) over 14 lines
+    unrolled : (2, 2, 3) over 11 lines
+
+m_none_range_rz: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 6:
+    rolled   : cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+    unrolled : cqrt_rz_i1(h2, -0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 4) over 14 lines
+    unrolled : (2, 2, 3) over 15 lines
+
+m_none_rder_none_none_addpost: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 8:
+    rolled   : cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+    unrolled : cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 29 lines
+    unrolled : (5, 5, 7) over 25 lines
+
+m_none_rder_none_none_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 8:
+    rolled   : cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+    unrolled : cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 27 lines
+    unrolled : (5, 5, 7) over 23 lines
+
+m_none_rder_none_none_rypost: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 8:
+    rolled   : cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+    unrolled : cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 29 lines
+    unrolled : (5, 5, 7) over 25 lines
+
+m_none_rder_none_none_rypre: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 5:
+    rolled   : cq_template_sitofp_i32_to_f64(h0) -> h2
+    unrolled : cqrt_ry_i32(h1, 0x1p-2)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 29 lines
+    unrolled : (5, 5, 7) over 25 lines
+
+m_none_rder_none_none_rzpost: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 8:
+    rolled   : cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+    unrolled : cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 7) over 27 lines
+    unrolled : (5, 5, 7) over 23 lines
+
+m_none_rrange_none_none_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 13:
+    rolled   : cqrt_free(h4)
+    unrolled : cq_template_add_i32_hl_unc(h2, h0, -6)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 5) over 17 lines
+    unrolled : (3, 3, 5) over 17 lines
+
+m_none_rrange_none_none_rypost: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 14:
+    rolled   : cqrt_free(h4)
+    unrolled : cq_template_add_i32_hl_unc(h2, h0, -6)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 5) over 19 lines
+    unrolled : (3, 3, 5) over 19 lines
+
+m_rz_der_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, 0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 24 lines
+    unrolled : (4, 4, 5) over 23 lines
+
+m_rz_der_rz: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 9:
+    rolled   : cqrt_x(h4)
+    unrolled : cqrt_rz_i1(h4, -0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (5, 5, 6) over 24 lines
+    unrolled : (6, 6, 7) over 33 lines
+
+m_rz_range_none: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 6:
+    rolled   : cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+    unrolled : cqrt_rz_i1(h2, 0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 4) over 14 lines
+    unrolled : (2, 2, 3) over 15 lines
+
+m_rz_range_rz: ROLLED AND UNROLLED TRACES DIFFER (this is the F-4 class)
+  first differing line 6:
+    rolled   : cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+    unrolled : cqrt_rz_i1(h2, -0x1p-3)
+  counts (_unc, cqrt_free, handle mints):
+    rolled   : (3, 3, 4) over 14 lines
+    unrolled : (4, 4, 5) over 25 lines
+
+m_none_der_none: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_der_none_bodyread: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_der_none_postmark: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_der_none_premark: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_der_rz: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_kcond_none_none_kflat: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+
+m_none_kcond_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+
+m_none_kicond_none_none_kloop: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+    got     : DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+
+m_none_range_none: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_range_rz: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rder_none_none_addpost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rder_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rder_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rder_none_none_rypre: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rder_none_none_rzpost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_req0_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req0_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req_none_none_addpost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req_none_none_rypre: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_req_none_none_rzpost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_rne_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_rne_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_rrange_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_rrange_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_none_ryrz_none_none_none: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_ryrz_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : ACCEPT-IDENTICAL
+
+m_none_rzry_none_none_none: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+
+m_none_rzry_none_none_rypost: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+
+m_rz_der_none: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_rz_der_rz: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_rz_range_none: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+m_rz_range_rz: verdict changed
+    expected: UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+    got     : TRACE-DIVERGENCE
+
+
+
+0% tests passed, 1 tests failed out of 1
+
+Total Test time (real) = 333.66 sec
+
+The following tests FAILED:
+	318 - e2e-loop-twin-matrix (Failed)
+Errors while running CTest
