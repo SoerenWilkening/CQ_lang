@@ -5136,3 +5136,120 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrato
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.c|A:53457b49|A:53457b49
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.s1.ll|A:9784eede|A:9784eede
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.s2.ll|A:9784eede|A:9784eede
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p01_diamond.c|A:2a30107b|A:2a30107b
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p02_negated.c|A:13157037|A:13157037
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p03_ifelse.c|A:abc27e9c|A:abc27e9c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p04_dead.c|A:49aaf6e1|A:49aaf6e1
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p05_chained.c|A:c4695048|A:c4695048
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p06_and_cmp.c|A:cef8b71a|A:cef8b71a
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p07_and_bb.c|A:4f6be51c|A:4f6be51c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p08_select_const.c|A:59cac64e|A:59cac64e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p09_value_arm.c|A:8dca6c58|A:8dca6c58
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p10_inplace_ry.c|A:84f8dbd5|A:84f8dbd5
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p11_stateprep.c|A:6fc99803|A:6fc99803
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p12_angle_select.c|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p13_loop_perbit.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p14_nest.c|A:7366326a|A:7366326a
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p15_after_ry.c|A:df51c1f6|A:df51c1f6
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p16_cascade_bool.c|A:3a56bb29|A:3a56bb29
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p17_i8.c|A:647eab63|A:647eab63
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p18_bool_eq_bool.c|A:da7921ea|A:da7921ea
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p19_trunc.c|A:f61d3fae|A:f61d3fae
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/p20_tail.c|A:da6dbd94|A:da6dbd94
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q01_loop_invariant_rail.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q02_two_regions_one_rail.c|A:913afd9e|A:913afd9e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q03_cross_block_rail.c|A:8571ea0d|A:8571ea0d
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q04_anglesel_then_ry.c|A:77a4ac5c|A:77a4ac5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q05_rail_and_cmp_negated.c|A:0d5bfc6e|A:0d5bfc6e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q06_not_b_and_cmp.c|A:f0b19ca0|A:f0b19ca0
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q07_rail_or_cmp.c|A:90c7788d|A:90c7788d
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q08_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q09_rail_used_in_arith.c|A:cea6940c|A:cea6940c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q10_grover_bool_loop.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q11_grover_bool_flat.c|A:6413b121|A:6413b121
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q12_nest_inner_rail.c|A:f70376e4|A:f70376e4
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q13_nest_outer_negated.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q14_rail_in_clone.c|A:644cc3b1|A:644cc3b1
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/q15_bool_from_cmp.c|A:53d13635|A:53d13635
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/r01_loop_invariant_int_twin.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/r02_loop_invariant_rail_const.c|A:0a224cfa|A:0a224cfa
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/r03_loop_invariant_rail_const_unrolled.c|A:2a27aa6f|A:2a27aa6f
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/probes/r04_loop_invariant_rail_negated.c|A:437bf8f0|A:437bf8f0
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h01_sidepath_theta.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:15:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:15:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h02_select_routed_theta.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h03_inplace_xor_i1.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h04_sidepath_measure.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:7:17: error: use of undefined va|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:7:17: error: use of undefined va
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h05_two_alias_rails_xor.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h06_dead_post_theta.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:6:13: error: use of undefined va|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:6:13: error: use of undefined va
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h07_tainted_angle_neg.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h10_value_arm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:17: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:17: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h11_empty_arm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:8:16: error: use of undefined va|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:8:16: error: use of undefined va
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h12_ry_arm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:17: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:17: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h13_ifelse_multi.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:13:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:13:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h14_tail_phi_diamond_neg.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h15_return_arm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:9:17: error: use of undefined va|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:9:17: error: use of undefined va
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h16_store_arm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h20_nest_rail_in_mid.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:14:17: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:14:17: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h21_sibling_theta_template_rail.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h22_merge_other_phi.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h23_loop_exit_rail.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:11:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h24_nine_rail_leaves.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:25:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:25:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h25_sibling_theta_cmp_twin.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:14:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:14:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h26_crossblock_sibling.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:17:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:17:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h30_and_const_child.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:10:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h31_not_complement_select.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:12:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/h32_shared_rail_subtree.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:15:16: error: use of undefined v|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:15:16: error: use of undefined v
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/h/hdr.ll|A:05f80b24|A:05f80b24
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p01_dead.c|A:c0e8d638|A:c0e8d638
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p02_measured.c|A:604de804|A:604de804
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p03_zext_data.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p04_later_cmp.c|A:c6a8dec5|A:c6a8dec5
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p05_two_regions.c|A:ea45e2af|A:ea45e2af
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p06_arith_after.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p07_chained_after.c|A:405ccde4|A:405ccde4
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p08_chained_before.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p09_dead_no_measure_q.c|A:91e1ff4c|A:91e1ff4c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p10_negated.c|A:8dfcc103|A:8dfcc103
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p11_chained_parent_measure.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p12_chained_leaf.c|A:8b1b45cc|A:8b1b45cc
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p13_two_angle_selects.c|A:ef2afa97|A:ef2afa97
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p14_select_plus_region.c|A:7681f4b3|A:7681f4b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p15_runtime_angle_neg.c|A:76123a38|A:76123a38
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p16_runtime_angle_select.c|A:ac9f90f5|A:ac9f90f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p17_tainted_angle.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p18_tail_phi.c|A:1891e13e|A:1891e13e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p20_measure_sidepath.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p21_measure_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p22_measure_after.c|A:f67d74e3|A:f67d74e3
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p23_and_rail_cmp.c|A:aedb0ac0|A:aedb0ac0
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p24_or_rail_cmp.c|A:3667d333|A:3667d333
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p25_and_two_rails.c|A:a7126eae|A:a7126eae
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p26_xor_two_rails.c|A:c38fd542|A:c38fd542
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p27_not_rail.c|A:49e73dd5|A:49e73dd5
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p28_same_rail_twice.c|A:28fc2fdf|A:28fc2fdf
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p29_ctrl_ry_then_rail.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p30_int_twin_measure_sidepath.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p31_loop_carried_rail.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p32_loop_body_theta_after.c|A:d5aab007|A:d5aab007
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p32u_unrolled.c|A:30d5ae24|A:30d5ae24
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p33_loop_data_use.c|A:9fc1a843|A:9fc1a843
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p33u_unrolled.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p34_nest_rail_both.c|A:68da10bc|A:68da10bc
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p35_nest_rail_inner_neg.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p36_nest_rail_outer_neg.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p37_seq_rail_regions_diff.c|A:6ee9f86d|A:6ee9f86d
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p40_abort_then_rail.c|D:cq controlled lowering: nested control flow under quantum control|D:cq controlled lowering: nested control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p41_break_rail.c|D:cq loop lowering: early break preserves a phase answer|D:cq loop lowering: early break preserves a phase answer
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p42_volatile_angle.c|A:59b46bbe|A:59b46bbe
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p43_volatile_angle_select.c|A:eb8e684c|A:eb8e684c
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p44_fn_arg_rail.c|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p45_tail_phi_neg.c|A:93dcb275|A:93dcb275
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p46_two_gates_each_arm.c|A:02a99e1e|A:02a99e1e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p47_rail_and_classical.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p48_rail_in_qram.c|A:6c105e4e|A:6c105e4e
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p50_loop_local_rail.c|A:d2bad5c2|A:d2bad5c2
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p50u_unrolled.c|A:badec7bf|A:badec7bf
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p51_loop_neg_rail.c|A:18f53bdf|A:18f53bdf
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p51u_unrolled.c|A:96f42a9d|A:96f42a9d
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p52_loop_two_rails.c|A:4afe76a5|A:4afe76a5
+docs/prd/phase-04-swap-route-control/inc1-records/session-3qlq4/review_1b_r1_probes/p/p52u_unrolled.c|A:c890ca5d|A:c890ca5d
