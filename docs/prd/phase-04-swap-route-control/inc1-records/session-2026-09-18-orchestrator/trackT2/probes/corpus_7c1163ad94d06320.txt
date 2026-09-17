@@ -4082,3 +4082,150 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/tr
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region_un.ssub.ll|A:21654376|A:21654376
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region_un.ssub.s1.ll|A:21654376|A:21654376
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region.sora.ll|A:5b27fd15|A:5b27fd15
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region.sora.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s2_live_derived_region.ssub.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region_un.c|A:6856f98b|A:6856f98b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region_un.ssub.ll|A:c72e876a|A:c72e876a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region_un.ssub.s1.ll|A:c72e876a|A:c72e876a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region.c|A:317aea4e|A:317aea4e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region.sora.ll|A:b19de723|A:b19de723
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region.sora.s1.ll|A:b19de723|A:b19de723
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region.ssub.ll|A:b19de723|A:b19de723
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s3_live_rootmint_region.ssub.s1.ll|A:b19de723|A:b19de723
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s4_inplace_accum_live.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s4_inplace_accum_live.sora.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/s4_inplace_accum_live.ssub.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread_un.c|A:0127f498|A:0127f498
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread_un.ssub.ll|A:b067b7cb|A:b067b7cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread_un.ssub.s1.ll|A:b067b7cb|A:b067b7cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread.c|A:144ad090|A:144ad090
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread.ssub.ll|A:e3c2574d|A:e3c2574d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h_phase_inloop_invread.ssub.s1.ll|A:d7396ae8|A:d7396ae8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread_un.c|A:bdbe2bb1|A:bdbe2bb1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread_un.ssub.ll|A:05aee9e8|A:05aee9e8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread_un.ssub.s1.ll|A:05aee9e8|A:05aee9e8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread.c|A:513edb6b|A:513edb6b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread.ssub.ll|A:df4886fb|A:df4886fb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2h3_select_iterlocal_invread.ssub.s1.ll|A:58395da1|A:58395da1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread_un.c|A:81895c93|A:81895c93
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread_un.ssub.ll|A:865c512e|A:865c512e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread_un.ssub.s1.ll|A:865c512e|A:865c512e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread.c|A:899e8362|A:899e8362
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread.ssub.ll|A:f797270b|A:f797270b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackS/probes/w2k_noregion_invread.ssub.s1.ll|A:a5492ba8|A:a5492ba8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/a1_nonphi_mdesc_at_arm_slot_INVALID.ll|D:|D:
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/a2_nonphi_mdesc_at_pred_slot_INVALID.ll|D:|D:
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c2_inloop_acyclic_bypass_nondominated_phi_live.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c2_inloop_acyclic_bypass_nondominated_phi.ll|D:cq uncompute: dead chain would free a measured register|D:cq uncompute: dead chain would free a measured register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c2c_inloop_bypass_phi_DOMINATED_by_merge_live.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c2c_inloop_bypass_phi_DOMINATED_by_merge.ll|D:cq uncompute: dead chain would free a measured register|D:cq uncompute: dead chain would free a measured register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c2d_inloop_acyclic_bypass_no_phi.ll|D:cq uncompute: dead chain would free a measured register|D:cq uncompute: dead chain would free a measured register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/c4_arm_block_phi_taking_M_INVALID.ll|D:|D:
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_m28.c|A:1b3853cd|A:1b3853cd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_m28.s2.ll|A:04211b76|A:04211b76
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_r19.c|A:38890edf|A:38890edf
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_r19.s2.ll|A:e50e0e81|A:e50e0e81
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x1_value_consumer_nonvacuous.c|A:1e9226b8|A:1e9226b8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x2_or_tree.c|A:eae9a192|A:eae9a192
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x3_two_preps_two_phi_leaves.c|A:ca526aa1|A:ca526aa1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x4_inloop_phi_leaf_FxPxW.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x5_m28_positive_polarity.c|A:a0c33ec7|A:a0c33ec7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x5b_m28_positive_delta3.c|A:cb4ce2bd|A:cb4ce2bd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x6_twofn_cross_function.c|A:23554a40|A:23554a40
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x7_negated_prep_or_tree.c|A:ae003758|A:ae003758
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/fp_x8_gate_between_prep_and_kickback.c|A:c46c9a6d|A:c46c9a6d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1_inloop_prep_backedge_phidesc_collider.ll|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1_railcond_inloop_prep_backedge_phidesc.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1b_inloop_prep_only_nonphi_mdesc.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1b_railcond_inloop_prep_nophi_only_nonphi_desc.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1c_inloop_prep_only_nonmdesc.ll|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w1d_cmpcond_inloop_prep_minimal.ll|A:e0b50289|A:e0b50289
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w2_railcond_inloop_prep_backedge_phidesc_collider.ll|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w2b_railcond_inloop_prep_only_nonphi_mdesc.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w2c_railcond_inloop_prep_only_nonmdesc.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w2d_railcond_inloop_prep_minimal.ll|A:e5585883|A:e5585883
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w3_railcond_inloop_prep_backedge_phidesc_collider.ll|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w3b_railcond_inloop_prep_only_nonphi_mdesc.ll|D:cq uncompute: dead chain would free a measured register|D:cq uncompute: dead chain would free a measured register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14c-xdu2-w1/trackX/probes/w3c_railcond_inloop_prep_only_nonmdesc.ll|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control|D:cq controlled lowering: state prep seed is proven equal to the condition register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/a00_canonical.c|A:57a92deb|A:57a92deb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/a01_load_ret.c|D:cq taint escape: tainted value returned at non-i32 width|D:cq taint escape: tainted value returned at non-i32 width
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/a02_load_select.c|D:cq rail bank: unsupported reader of a rail-bank cell|D:cq rail bank: unsupported reader of a rail-bank cell
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/a03_load_twice_measured.c|D:cq rail bank: unsupported reader of a rail-bank cell|D:cq rail bank: unsupported reader of a rail-bank cell
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/a04_load_to_opaque_call.c|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/b01_cond_classical_bank.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/b02_cond_classical_int_bank.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/c01_tainted_cond_bank.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/c02_tainted_cond_int_bank.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/d01_bank_whichpath_then_interfere.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/d02_bank_whichpath_int.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/d03_bank_copy_of_q_then_interfere.c|A:0fcc16c9|A:0fcc16c9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/d04_scalar_twin_of_d03.c|A:e31d64e1|A:e31d64e1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/e03_load_theta_arg0.c|D:cq rail bank: unsupported reader of a rail-bank cell|D:cq rail bank: unsupported reader of a rail-bank cell
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/e04_bank_initialized_nonzero.c|D:cq rail bank: array escapes to an unsupported user|D:cq rail bank: array escapes to an unsupported user
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f01_bank_stale_reader.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f02_register_twin_of_f01.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f03_bank_stale_bool.c|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f04_bank_stale_controlled.c|D:cq controlled lowering: rotation arm shares the condition flag under quantum control|D:cq controlled lowering: rotation arm shares the condition flag under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f05_bank_stale_prep_inside.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f06_bank_legit_order.c|A:97f0fab4|A:97f0fab4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f07_register_legit_order.c|A:126b1729|A:126b1729
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f08_bank_stale_bool_proper.c|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f09_bank_legit_bool_proper.c|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f10_bool_bank_chained_invariant.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f11_int_bank_chained_invariant.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f12_register_twin_of_f11.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f13_two_banks_one_stale.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f14_two_banks_both_clean.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/f15_split_reads_one_stale.c|D:cq rail bank: array mixes a rail cell access with an unrecognized one|D:cq rail bank: array mixes a rail cell access with an unrecognized one
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/g01_load_ret_i32.c|D:cq rail bank: array mixes a rail cell access with an unrecognized one|D:cq rail bank: array mixes a rail cell access with an unrecognized one
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/g02_load_to_other_memory.c|D:cq rail bank: array escapes to an unsupported user|D:cq rail bank: array escapes to an unsupported user
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/g03_bank_plus_dead_terminal.c|A:f707249a|A:f707249a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h01_mc_bank_parked_derived.c|A:e2ccfa6e|A:e2ccfa6e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h02_mc_bank_parked_derived_q_measured.c|A:0b11631b|A:0b11631b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h03_register_twin_of_h02.c|A:13e15320|A:13e15320
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h04_register_twin_of_h01.c|A:c069edbe|A:c069edbe
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h05_mc_inplace_over_bank_read.c|A:075c3a9b|A:075c3a9b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/h06_register_twin_of_h05.c|A:1b1d045e|A:1b1d045e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/i01_nonmain_canonical.c|A:b6ad0070|A:b6ad0070
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/i02_nonmain_stale.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/o01_percell_theta_int.c|A:cebc76d1|A:cebc76d1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/o02_percell_theta_bool.c|A:9cd9bb47|A:9cd9bb47
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/o03_owner_inner_loop.c|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/o04_percell_theta_other_reg_rotated.c|A:61f70d63|A:61f70d63
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/bfix/probes/o05_percell_theta_constidx.c|A:de0bfef8|A:de0bfef8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/dbgloc/nobank_classical_mux.c|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/dbgloc/nobank_crossiter_a.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/dbgloc/nobank_crossiter_b.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/m_add_kprep_none_none_kflat.rolled.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/m_none_kprep_none_none_kflat.rolled.c|A:6833e5b4|A:6833e5b4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/m_none_kprep_ry_none_kflat.rolled.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/m_ry_kprep_none_none_kflat.rolled.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/nobank_add.c|A:32ceccb6|A:32ceccb6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/nobank_ry.c|A:57ef433d|A:57ef433d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/baseline/k3_composition/nobank_rypost.c|A:dcf29420|A:dcf29420
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5a.c|A:465a066c|A:465a066c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5b.c|A:8fb818aa|A:8fb818aa
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5c.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5d.c|A:bb612b92|A:bb612b92
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5e.c|A:cdd5ac47|A:cdd5ac47
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/f5/f5f.c|D:cq rail bank: unsupported reader of a rail-bank cell|D:cq rail bank: unsupported reader of a rail-bank cell
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/rolledonly/ro_rolled.c|A:b687258a|A:b687258a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/finalgate/probes/rolledonly/ro_unrolled.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/a9_nested_loop.c|A:bba76451|A:bba76451
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/c1_cmp_rail_data_un.c|A:b7c699f9|A:b7c699f9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/c1_cmp_rail_data.c|A:2df121ae|A:2df121ae
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/c2_inloop_rotation_un.c|A:64a21244|A:64a21244
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/c2_inloop_rotation.c|A:fa5e43d3|A:fa5e43d3
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n1_nested_marked_inner_un.c|A:8fc5a6c5|A:8fc5a6c5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n1_nested_marked_inner.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n2_nested_unmarked_inner_un.c|A:b74e83a6|A:b74e83a6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n2_nested_unmarked_inner.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n3_nested_iic_inner_un.c|A:dcdd8f4e|A:dcdd8f4e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n3_nested_iic_inner.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r1_triple_nest_mid_rail_un.c|A:59181749|A:59181749
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r1_triple_nest_mid_rail.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r2_outer_marked_inner_rail_un.c|A:ef519188|A:ef519188
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r2_outer_marked_inner_rail.c|A:4a5f93d7|A:4a5f93d7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r3_nested_cmp_rail_outer_un.c|A:ea3cdcf6|A:ea3cdcf6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r3_nested_cmp_rail_outer.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register

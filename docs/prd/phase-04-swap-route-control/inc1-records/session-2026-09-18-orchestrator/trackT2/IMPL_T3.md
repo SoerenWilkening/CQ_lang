@@ -333,15 +333,22 @@ returns **true**, because the commit that would make it false has been refused b
 1. **No suite beyond two gates was run by me.** `ir-pass-lit` once and one corpus sweep, both at
    hand-off, both in `GATES.md`. NOT run: the full `ctest`, `^e2e-`, the twin matrices, the
    equivalence sweep. A skipped layer is a deferred cost.
-2. **No e2e slice was added.** The landed prefix has no e2e witness of its own; its witnesses are
-   the lit fixtures and the per-probe trace comparisons. This is a real gap against SCOPE_T2 §5 and
-   against Rule 16's done-criteria, and it is stated rather than glossed. §7 files it.
+2. **ONE e2e slice PAIR was added, not the two pairs SCOPE_T2 §5 asks for.**
+   `e2e-slice-loop-hoisted-chain-exit-discharge{,-unrolled}` is the Rule-16 witness for P2 and for
+   the `a1_apost` closure (rolled **28** == unrolled **28**, goldens byte-DIVERGENT and
+   MULTISET-IDENTICAL, generated with `run_slice.sh`'s own stage-1 flags rather than a near-miss of
+   them). ⚠ The scope's SECOND pair is P3's (`slice_loop_pairing_hoisted_template{,_unrolled}`)
+   and **is not here, because P3 is not here.** ⚠ **An earlier revision of this file said "No e2e
+   slice was added"; that was true when written and is now false** — corrected at the site rather
+   than left to a reader to reconcile (`CLAUDE.md` L7-with-a-twist).
 3. **Stage 2b cannot witness the landed capability**, and it is structural: `free_pairing_check.py`
    analyses per straight-line STREAM, so a discharge at a JOIN or a LOOP EXIT is `U3-extern-rail`
-   UNPROVEN by construction. Measured: the two-block witness reports `0 verified, 2 unproven` where
-   its single-block control reports `2 verified`. **Any e2e slice of these shapes will need
-   `--allow-unproven` with that reason written at the entry.** No slice was added, so no
-   `--allow-unproven` was added either.
+   UNPROVEN by construction. Measured twice: the two-block lit witness reports `0 verified, 2
+   unproven` where its single-block control reports `2 verified`; the new rolled slice reports
+   `1 verified, 0 violation(s), 3 unproven` where its hand-unrolled twin reports `5 verified, 0
+   unproven` under STRICT 2b. **That asymmetry measures the instrument's reach, not the rail.** The
+   rolled slice therefore carries `--allow-unproven` with that reason and a retirement trigger
+   written at its registration; the twin runs STRICT.
 4. **The fence half does not close the general hole** (§1.2). It models the post-dominator
    sub-case; clause-(d) and `preservesBasisUnderRecord` refusals still leak with the marking
    granted.

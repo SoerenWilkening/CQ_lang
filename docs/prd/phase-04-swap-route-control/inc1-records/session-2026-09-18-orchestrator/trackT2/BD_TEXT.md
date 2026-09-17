@@ -168,11 +168,14 @@ checkout to apply. ⚠ `bd update --notes` **REPLACES** notes — use `--append-
    guard `RotationLowering.cpp` owns. **Deliberately not fixed there** — a second spelling of
    another owner's predicate is the drbq Inc-3 (b′) defect (Rule 14).
 
-3. **P3 (test debt)** — *the landed prefix has NO e2e slice*. SCOPE_T2 §5 asks for two slice PAIRS
-   and four goldens; none was added. ⚠ And any such slice will need `--allow-unproven` with a
-   written reason: `free_pairing_check.py` analyses per straight-line STREAM, so a discharge at a
-   JOIN or a LOOP EXIT is `U3-extern-rail` UNPROVEN **by construction** (measured: the two-block
-   witness reports `0 verified, 2 unproven` where its single-block control reports `2 verified`).
+3. **P3 (test debt)** — *ONE e2e slice pair landed where SCOPE_T2 §5 asks for TWO*.
+   `e2e-slice-loop-hoisted-chain-exit-discharge{,-unrolled}` is the Rule-16 witness for P2 and for
+   the `a1_apost` closure (rolled 28 == unrolled 28, goldens byte-divergent and MULTISET-identical).
+   The scope's second pair is P3's and is not here because **P3 is not here**. ⚠ The rolled half
+   runs with `--allow-unproven` for a STRUCTURAL reason written at its registration:
+   `free_pairing_check.py` analyses per straight-line STREAM, so a loop-exit discharge is
+   `U3-extern-rail` UNPROVEN **by construction** (measured: rolled `1 verified, 3 unproven`, twin
+   `5 verified, 0 unproven`).
 
 4. **P3 (instrument)** — *`free_pairing_check.py`'s stream model cannot witness a per-trip or
    loop-exit discharge*. Not a defect in the circuit and not a new one, but it is now load-bearing:
