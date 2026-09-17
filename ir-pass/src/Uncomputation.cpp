@@ -29,6 +29,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CFG.h"       // isPotentiallyReachable (bd 6n1s use side)
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/BasicBlock.h"
@@ -174,6 +175,131 @@ private:
   LoopInfo &LI;
   DenseMap<BasicBlock *, bool> Cache;
 };
+
+// ── THE MULTIPLICITY KEY (bd `test_C_libtooling-tu9q` P1; the gap it closes is
+//    recorded verbatim at §4 of `planInteriorComponent` under bd
+//    `test_C_libtooling-8h7d.10`) ──────────────────────────────────────────────
+//
+// `nullptr` means "this block runs AT MOST ONCE per function activation". A
+// non-null value is the HEADER of the marked body whose TRIP the block runs once
+// per.
+//
+// WHAT IT IS FOR, IN ONE SENTENCE. §4 and §2.9 each ask ONE endpoint whether IT
+// repeats; neither asks whether the forward GATE and the DISCHARGE repeat the
+// SAME NUMBER OF TIMES. A pairing that does not is a WRONG UNITARY — K adjoints
+// against one forward gate, or one adjoint against K forward gates — and not
+// merely a leak, so it is the one hazard in this file that cannot be absorbed by
+// the Rule-6 fallback.
+//
+// `LoopInfo`, NOT `canRepeat`, AND THAT DOES NOT REOPEN bd
+// `test_C_libtooling-4p7j`. The repeat ORACLE is still `RepeatOracle` /
+// `blockCanRepeat` and is untouched. `LoopInfo` is used here only to build a
+// KEY, and only for blocks ALREADY in `IterationLocalBlocks`. An IRREDUCIBLE
+// cycle is never marked — both writers of that set are `LoopInfo`-gated
+// (`LoopLowering.cpp`'s `markIfIterationLocal` and `markIfRailLocal`, and
+// `bodyBlocksMarked`'s own enumeration proves there are exactly two) — so
+// `markedHeaderOf` returns `nullptr` for every irreducible block, and the
+// PRE-EXISTING `canRepeat` test has already refused it before this one is asked.
+//
+// ⚠ THE NULL×NULL CELL IS THE ONE TO ATTACK, and it is sound only because of a
+// test that runs FIRST. Two UNMARKED blocks in two DIFFERENT loops both key to
+// `nullptr` and compare EQUAL. That is not a claim that they repeat alike — it is
+// a claim that the per-endpoint `canRepeat` tests BESIDE this one have ALREADY
+// refused any repeating unmarked block, so by the time this predicate is asked
+// `nullptr` can only mean "runs at most once per activation". **If either of
+// those tests is ever narrowed or reordered to run after this one, this
+// predicate becomes an OVER-ACCEPT.** Stated here rather than left for the
+// reader to reconstruct.
+//
+// ⚠ RETIREMENT TRIGGER: a THIRD `IterationLocalBlocks.insert` site, or a marker
+// that is not `LoopInfo`-gated, invalidates the null-key reading. It is the SAME
+// trigger `LoopLowering::bodyBlocksMarked` carries, which is why the two must be
+// re-derived together.
+const BasicBlock *markedHeaderOf(const BasicBlock *BB, LoopInfo &LI,
+                                 const TaintSet &taint) {
+  if (!taint.IterationLocalBlocks.count(BB))
+    return nullptr;
+  // INNERMOST, deliberately. The question here is "how often does THIS block
+  // run", and that is the innermost enclosing cycle's trip count. The OTHER walk
+  // this increment adds — P2's anchor walk — asks "is the mint inside this cycle
+  // AT ALL" and therefore uses `Loop::contains`, which DOES include subloops.
+  // Two different questions, two different quantifiers, stated at both sites
+  // (`CLAUDE.md` L2; bd `test_C_libtooling-emkg` is the filing that exists
+  // because one predicate answered the other's question).
+  const Loop *L = LI.getLoopFor(BB);
+  return L ? L->getHeader() : nullptr;
+}
+
+bool multiplicityAgrees(const Instruction *G, const Instruction *At,
+                        LoopInfo &LI, const TaintSet &taint) {
+  return markedHeaderOf(G->getParent(), LI, taint) ==
+         markedHeaderOf(At->getParent(), LI, taint);
+}
+
+// ── THE USE SIDE OF THE DISCHARGE PROOF, FOR A USE THAT NEED NOT EXECUTE
+//    (bd `test_C_libtooling-6n1s`, the P1 over-accept of 2026-09-18) ───────────
+//
+// `provablyBeforePerActivation(U, At, R, DT)` bundles `DT.dominates(U, At)`,
+// which asks the USE to run on EVERY path that reaches the discharge. A use
+// inside a classical `if` arm of a marked loop body does not, and a rail whose
+// uses STRADDLE two body blocks was therefore DROPPED from `Owned` and leaked —
+// while conjunct (1) of `LoopLowering::declineDephasingUnmarkedLoopRails` read
+// the body's MARKING as a proof that it had discharged. Measured on the
+// 2026-09-18 ORACLE `9bd01598d574b344`, `t5j_twoblock_noexit_rot.c`: four
+// `cq_template_ashr_i32_hl(h0,k)` mints, ZERO `_unc`, ZERO `cqrt_free`, then
+// `cqrt_ry_i32(h0,0.9)` and `cqrt_measure_i32(h0)` — a COHERENT which-path
+// record standing at a non-diagonal gate on the register it copies (Rule 8), at
+// `opt` exit 0 with only a warning.
+//
+// WHAT THE DROPPED CONJUNCT WAS ACTUALLY BUYING, AND WHY THE ANSWER IS "NOTHING
+// THIS SCAN NEEDS". The obligation at this point is exactly
+//
+//     (‡) no execution of `U` lies between the discharge `At` and the NEXT
+//         execution of the rail's own mint `R`.
+//
+// A use that did not run cannot violate (‡). A use that DID run violates it only
+// by running after `At` without an intervening `R`, and that is precisely what
+// the barrier walk refuses. Dominance is a sufficient condition for a DIFFERENT
+// statement ("U ran before At on every path to At") which this scan does not owe.
+//
+// ⚠ THE HALF THAT MAKES IT SAFE LIVES IN §4 AND MUST NOT BE READ AS PART OF THIS
+// RELAXATION. Every gate whose ADJOINT will be emitted is re-proved in §4 under
+// the FULL `DT.dominates(G, At)` — unchanged by this increment. So a conditional
+// in-place gate on the rail (which `recoverDataDag` walks into `D.Calls`) still
+// refuses the component outright; what is relaxed here is only a READER the
+// reversal never touches. The two are different sets and the file now says so at
+// both sites. If §4's dominance test is ever weakened, THIS relaxation must be
+// re-derived from scratch rather than kept "for symmetry".
+//
+// ⚠ SCOPED TO ONE MARKED BODY, DELIBERATELY, AND THE RESIDUAL IS FILED RATHER
+// THAN TAKEN. All three of `U`, `At` and `R` must key to the SAME marked header.
+// The identical argument would admit an ACYCLIC diamond-use interior rail (minted
+// in `entry`, read in both arms, discharged at the merge), which leaks today;
+// that is a real over-decline and it is FILED, not fixed here, because it moves
+// modules with no loop in them and this increment's witness set is the loop
+// family. The scoping also makes the change byte-inert for every acyclic module
+// in the tree — measured, not assumed.
+//
+// ⚠ NEITHER VACUITY TRAP OF `everyPathReExecutes` IS REACHABLE HERE, and both are
+// named because its header says every caller must name them. (1) `Barrier == To`
+// would be `R == U`; `U` is drawn from `R->users()`, and an instruction is not
+// its own operand, so they are distinct. (2) "`From`'s own block entered mid-way"
+// is the INTENDED reading — `R` re-executing is exactly what closes the previous
+// activation — and `At` is the point whose next activation we are bounding, which
+// is the configuration the header calls sound.
+bool useCompleteBeforeDischarge(const Instruction *U, const Instruction *At,
+                                const Instruction *R, const DominatorTree &DT,
+                                LoopInfo &LI, const TaintSet &taint) {
+  if (provablyBeforePerActivation(U, At, R, DT))
+    return true;  // the shipped proof, unchanged and asked first.
+  const BasicBlock *K = markedHeaderOf(At->getParent(), LI, taint);
+  if (!K || markedHeaderOf(U->getParent(), LI, taint) != K ||
+      markedHeaderOf(R->getParent(), LI, taint) != K)
+    return false;  // outside one marked body — today's behaviour exactly.
+  if (!isPotentiallyReachable(At, U, /*ExclusionSet=*/nullptr, &DT))
+    return true;  // `U` is unreachable from the discharge — (‡) holds trivially.
+  return everyPathReExecutes(At, U, R);
+}
 
 // The single insertion point for the whole-DAG reversal: the nearest common
 // POST-dominator of every terminal's last-use anchor, after the latest anchor in
@@ -561,6 +687,20 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   if (blockCanRepeat(At->getParent()) &&
       !(IterLocal && taint.IterationLocalBlocks.count(At->getParent())))
     return;  // safe leak — never a once-minted reversal on a per-iteration path.
+  // bd `test_C_libtooling-tu9q` P1 — THE MULTIPLICITY TEST, MIRRORED HERE AS
+  // DEFENCE IN DEPTH, and it is EXPECTED NEVER TO FIRE on this partition. The
+  // dead-terminal driver already refuses the same pairing by MEMBERSHIP a few
+  // lines up (`if (InLoop) { … !taint.IterationLocalBlocks.count(G->getParent())
+  // → return; }`), which for an `IterLocal` group forces every recovered gate
+  // into a marked block, and the clause directly above forces `At` into one too.
+  // Equal keys therefore follow — but "follow" is an argument about two other
+  // tests, and this file already makes the same trade for the four ownership sets
+  // it re-checks rather than infers. A refusal here is a LEAK (Rule 6), never a
+  // diagnostic, so the cost of the redundancy is zero and the cost of being wrong
+  // about the inference would be a wrong unitary.
+  for (CallInst *G : D.Calls)
+    if (!multiplicityAgrees(G, At, LI, taint))
+      return;
 
   // 5. Reverse the whole DAG once at `At`.
   emitDagReversal(D, At, wd, taint);
@@ -857,7 +997,7 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
 // over-accept).
 bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                            DominatorTree &DT, PostDominatorTree &PDT,
-                           RepeatOracle &canRepeat,
+                           LoopInfo &LI, RepeatOracle &canRepeat,
                            const SmallPtrSetImpl<const CallInst *> &ReversedGates,
                            const SmallPtrSetImpl<Value *> &ReversedRails,
                            DataDag &D, Instruction *&At) {
@@ -888,7 +1028,15 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
         // this one's discharge. Outside a loop the barrier walk is never
         // consulted (the plain reachability half already succeeds), so this is
         // byte-inert for every acyclic module.
-        if (!provablyBeforePerActivation(cast<Instruction>(U), At, R, DT)) {
+        //
+        // bd `test_C_libtooling-6n1s` — ASKED THROUGH `useCompleteBeforeDischarge`
+        // SINCE 2026-09-18, which opens with this exact call and then admits ONE
+        // further shape: a use that need not EXECUTE, inside the SAME marked body
+        // as the mint and the discharge. See that helper for why dominance is not
+        // the obligation here, and for the §4 half that keeps the ADJOINTED gates
+        // under the full test.
+        if (!useCompleteBeforeDischarge(cast<Instruction>(U), At, R, DT, LI,
+                                        taint)) {
           Owned.erase(R);  // reachable by construction — the anchor scan above
                            // returns outright on an unreachable or non-instruction
                            // user, so this `cast` cannot be the vacuous case.
@@ -978,27 +1126,43 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     if (canRepeat(G->getParent()) &&
         !taint.IterationLocalBlocks.count(G->getParent()))
       return false;
-    // THE MULTIPLICITY THIS CHECK DOES *NOT* CATCH, AND WHY IT IS CURRENTLY
-    // UNREACHABLE — a STRUCTURAL COINCIDENCE, not an invariant anyone stated
-    // (bd 8h7d.5, Rule-13 round-5 cleanup; tracked as its own issue). The test
-    // above and §2.9's twin below each ask ONE endpoint whether IT repeats. They
-    // do not ask whether the two endpoints repeat the SAME NUMBER OF TIMES. A
-    // recovered gate `G` in the loop PREHEADER passes here (a preheader does not
-    // repeat) while `At` sits in an ITERATION-LOCAL body and passes §2.9 (a
-    // marked body is the affirmative exception) — and the adjoint would then be
-    // emitted in-body and run K times against ONE forward execution of `G`: an
-    // over-reversed rail, i.e. a wrong unitary, not merely a leak.
+    // ── THE MULTIPLICITY TEST (bd `test_C_libtooling-tu9q` P1, 2026-09-18) ────
     //
-    // Nothing here refuses that pairing. It cannot arise today for a reason that
-    // lives in ANOTHER FILE: `markIfRailLocal` (`LoopLowering.cpp`) refuses to
-    // mark any body that reads a tainted value DEFINED OUTSIDE `L` and not on the
-    // rail — "an accumulating loop-invariant tainted input" — so a preheader-
-    // defined `G` feeding an in-body component means the body is never marked,
-    // `At`'s block is not iteration-local, and §2.9 leaks instead. WIDEN THAT
-    // MARKING AND THIS BECOMES REACHABLE with no test to catch it. If you are
-    // here because you relaxed it, the obligation is a real multiplicity test
-    // (same enclosing marked body, or equal trip multiplicity), not a re-reading
-    // of these two.
+    // ⚠⚠ **THE PARAGRAPH THAT STOOD HERE PREDICTED THIS CODE AND IS NOW
+    // SUPERSEDED BY IT** (bd `test_C_libtooling-8h7d.5` round-5 cleanup wrote it;
+    // bd `test_C_libtooling-8h7d.10` tracked it). It said, correctly: the test
+    // above and §2.9's twin below each ask ONE endpoint whether IT repeats, never
+    // whether the two repeat the SAME NUMBER OF TIMES — a recovered gate `G` in
+    // the loop PREHEADER passes here (a preheader does not repeat) while `At`
+    // sits in an ITERATION-LOCAL body and passes §2.9 (a marked body is the
+    // affirmative exception), and the adjoint would then run K times against ONE
+    // forward execution of `G`: an over-reversed rail, a WRONG UNITARY, not
+    // merely a leak. It then said the pairing could not arise because
+    // `markIfRailLocal` refuses to mark a body that reads an outside-`L` tainted
+    // non-rail value, and ended: *"If you are here because you relaxed it, the
+    // obligation is a real multiplicity test (same enclosing marked body, or
+    // equal trip multiplicity), not a re-reading of these two."*
+    //
+    // We are here because of that, twice over. bd `tu9q`'s P2 loop-EXIT anchor
+    // creates the MIRROR pairing the old note did not name — a body gate `G` with
+    // an `At` at the loop EXIT, i.e. ONE adjoint against K forward executions —
+    // and bd `tu9q`'s clause (ii-d) widens the marking the old argument leaned on.
+    // Both directions are refused by ONE line, which is the multiplicity test the
+    // note asked for, spelled as "same enclosing marked body" via a NULLABLE key.
+    //
+    // ⚠ IT IS A BACKSTOP, NOT THE PLACEMENT. A refusal here LEAKS the component
+    // (Rule 6's fallback), which is the safe direction and never a diagnostic;
+    // the correct placement is P2's business. Read the two together: P2 proposes
+    // a point, this refuses every pairing whose endpoints do not repeat alike.
+    //
+    // ⚠ THE PREHEADER DIRECTION IS STILL UNREACHABLE TODAY, and that is stated so
+    // nobody reads a green suite as evidence the test is dead: the convergence
+    // loop above DROPS a preheader-minted rail whose consumer is in the body
+    // (`provablyBeforePerActivation` succeeds on the back-edge path, the helper
+    // returns false, `Owned.erase`), so the pairing never reaches §4. P2 changes
+    // that for the rails it re-anchors, which is why the two land together.
+    if (!multiplicityAgrees(G, At, LI, taint))
+      return false;
     if (!DT.dominates(G, At))
       return false;  // a gate on one arm of a diamond — Phase 4's job, not this one.
     // ...AND `At` MUST POST-DOMINATE THE GATE. Dominance alone says the gate ran
@@ -1025,6 +1189,16 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   if (blockCanRepeat(At->getParent()) &&
       !taint.IterationLocalBlocks.count(At->getParent()))
     return false;
+  // bd `test_C_libtooling-tu9q` P1 — THE SAME MULTIPLICITY TEST ON THE FINAL
+  // `At`, against every recovered gate. §4 above ran it too, but `At` is
+  // re-derived by the convergence loop and a component that converged on a
+  // SMALLER `Owned` set can reach here with a different point than the one §4
+  // saw, so the property is re-asked where it is FINAL. The "affirmative
+  // exception" the clause above grants is exactly the one this narrows: a marked
+  // `At` is admissible only against gates that repeat with it.
+  for (CallInst *G : D.Calls)
+    if (!multiplicityAgrees(G, At, LI, taint))
+      return false;
 
   // 5. CLAUSE (d) — the straight-line no-mutation scan (d1). Every borrowed
   //    parent must hold, at each emitted `_unc`, the value it held when the
@@ -1547,7 +1721,7 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
   for (SmallVector<CallInst *, 8> &Comp : Components) {
     ComponentPlan P;
     P.At = nullptr;
-    if (planInteriorComponent(Comp, taint, DT, PDT, canRepeat, ReversedGates,
+    if (planInteriorComponent(Comp, taint, DT, PDT, LI, canRepeat, ReversedGates,
                               ReversedRails, P.D, P.At))
       Plans.push_back(std::move(P));
   }

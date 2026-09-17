@@ -41,6 +41,7 @@
 #include "llvm/ADT/StringRef.h"
 #include "llvm/Analysis/AssumptionCache.h"
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"  // bd 6n1s — conjunct (1)'s 2nd half
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
 #include "llvm/Analysis/TargetLibraryInfo.h"
@@ -4432,6 +4433,21 @@ bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint) {
 // answer in BEFORE it is added, because the argument above is written for the
 // suppressing direction only (`CLAUDE.md` L3-mirror: a shared predicate acquires a
 // caller its argument does not reach, and the callee's trigger is what stops it).
+//
+// ⚠⚠ **THE TRIGGER THIS HEADER DID NOT CARRY, ADDED 2026-09-18 (bd
+// `test_C_libtooling-6n1s`, review finding F-2).** The three triggers above are
+// all about WHICH BLOCKS and WHICH POLARITY. None was about **WHAT THE MARKING
+// PROVES**, and that is the one that cost a P1: a caller read `true` as *"this
+// body's interior rails are discharged in-body"*, which holds for a SINGLE-BLOCK
+// body and fails for a multi-block one, because `markIfRailLocal` marks all of
+// `L`'s own blocks while `Uncomputation` places a rail's discharge at the
+// POST-DOMINATOR of its consumers — membership, not same-block-as-the-mint.
+// **This predicate answers "are the blocks marked" and NOTHING ELSE.** A caller
+// that needs the discharge property must ask
+// `markedBodyRailsHaveInBodyDischargePoint` (below) as a SECOND conjunct, which
+// is what `declineDephasingUnmarkedLoopRails` conjunct (1) now does; a caller
+// that needs "may the spine place an in-body free here" must ask
+// `Uncomputation` rather than infer it from this.
 bool bodyBlocksMarked(const Loop *L, const LoopInfo &LI, const TaintSet &taint) {
   bool Any = false;
   for (BasicBlock *BB : L->blocks()) {
@@ -4442,6 +4458,130 @@ bool bodyBlocksMarked(const Loop *L, const LoopInfo &LI, const TaintSet &taint) 
     Any = true;
   }
   return Any;
+}
+
+// ── bd `test_C_libtooling-6n1s` (P1 OVER-ACCEPT, found by the Rule-13 review of
+//    2026-09-18; closed 2026-09-18) ────────────────────────────────────────────
+//
+// **"MARKED" IS NOT "DISCHARGED", AND READING IT AS ONE WAS A WRONG UNITARY.**
+// This is the second half of conjunct (1)'s suppression and it exists because
+// the first half's argued premise — *"a marked body discharges in-body, once per
+// trip"* — is a statement about a SINGLE-BLOCK body and was shipped as if it
+// were a statement about every marked body.
+//
+// THE WITNESS, measured on the session ORACLE `9bd01598d574b344`
+// (`trackT2/probes/t5j_twoblock_noexit_rot.c`): a 4-trip loop whose body is split
+// by a RE-JOINING classical `if` — no break, no early exit — leaves all four
+// `cq_template_ashr_i32_hl(h0,k)` rails undischarged (ZERO `_unc`, ZERO
+// `cqrt_free`) across a trailing `cqrt_ry_i32(h0,0.9)` and `cqrt_measure_i32(h0)`.
+// Only one or two bits of each 32-bit rail are measured, so the rest stay
+// ENTANGLED with `h0` at the interference: `CLAUDE.md` Rule 8, not a Rule-6
+// accepted leak. `opt` exit 0, a WARNING only, and `t5k_twoblock_unmarked_control.c`
+// — the SAME two blocks with the marking refused — declines here with the exact
+// string, which is what makes the MARKING the door by measurement rather than by
+// reading.
+//
+// ⚠ IT WAS A REGRESSION, AND THE MEASUREMENT NAMES THE CHANGE. On the 2026-09-14
+// pre-group binary `0e280fc62a91cec2` the same module DECLINES (with that
+// release's spelling, *"…entangled with a register rotated after the loop"*).
+// At `74eabd2c` `markIfRailLocal` had exactly TWO call sites, both inside
+// `collapseFlattenedLoopRails`, which returns early unless
+// `taint.InLoopFlattenedPreds` is non-empty — and `t5j` has no tainted control
+// flow at all, so nothing marked it. bd `test_C_libtooling-tu9q`'s round-1
+// root-mint escape added the THIRD call site (`lowerLoops`, below), which marks a
+// body with no region in it; the suppression then fired on a body the spine had
+// never been asked to discharge.
+//
+// WHAT THIS ASKS, AND WHY IT IS THE RIGHT QUESTION. `Uncomputation`'s M-B interior
+// partition anchors a rail's discharge at `dagInsertPoint` — the nearest common
+// POST-dominator of its consumers — and §2.9 there refuses any final point that
+// repeats without being marked. So the property conjunct (1) needs is not *"is the
+// body marked"* but *"does every interior rail this body mints have a per-trip
+// point to be discharged at"*, and that is the post-dominator question, asked here
+// in the vocabulary this stage has (pre-`lowerOps`, so `mintsOutOfPlaceTemplateRail`
+// rather than a `cq_template_*` callee — the same predicate conjunct (3) uses, by
+// CALLING it, never by re-spelling it; Rule 14).
+//
+// ⚠ IT IS A SUFFICIENT CONDITION, NOT AN ORACLE, AND THE APPROXIMATION IS JOINT
+// **ON PURPOSE**. The fold below runs over the union of EVERY interior rail's
+// block and its users' blocks, not per rail, because `collectInteriorPlans` merges
+// rails joined by a producer edge into ONE component with ONE `At`, and a per-rail
+// answer would be blind to that merge in the ACCEPT direction (two rails each with
+// an in-body point, whose union's point escapes the loop). Folding the union is an
+// upper bound on any component's `At`. The price is an OVER-DECLINE whenever two
+// genuinely independent components sit in one body and only one of them escapes —
+// measured at ZERO shipped fixtures, and FILED rather than absorbed.
+//
+// ⚠ IT IS A SUPPRESSION-SIDE CONJUNCT: `false` here ARMS a decline. Read with
+// `bodyBlocksMarked`'s own retirement trigger, which is why this predicate is a
+// separate function with its own name rather than another clause inside that one —
+// the two answer different questions and `CLAUDE.md` L3's mirror is explicit that a
+// shared predicate must not quietly acquire a caller its argument does not reach.
+//
+// ⚠ RETIREMENT TRIGGER, and it is the one a widening will trip first: this
+// predicate models `Uncomputation::planInteriorComponent`'s PLACEMENT from another
+// TU and another stage. The day `dagInsertPoint`, the convergence loop's
+// `useCompleteBeforeDischarge`, or §2.9's marked-`At` exception changes what point
+// a marked body's rail is discharged at, THIS MUST BE RE-DERIVED — it is not
+// enough to re-read it. The more total alternative, deliberately NOT taken here
+// because it moves the diagnostic's site, is the `declineSurvivingIntrinsicCalls`
+// pattern: record the suppression and VERIFY the discharge at the tail of
+// `uncompute`, where it is a fact rather than a prediction.
+bool markedBodyRailsHaveInBodyDischargePoint(Loop *L, const LoopInfo &LI,
+                                             TaintSet &taint,
+                                             PostDominatorTree &PDT) {
+  SmallVector<BasicBlock *, 8> Blocks;
+  for (BasicBlock *BB : L->blocks()) {
+    if (LI.getLoopFor(BB) != L)
+      continue;  // a strictly-deeper subloop's block — not `L`'s to mint in.
+                 // `railLocalQualifies` refuses any body with a TAINTED subloop
+                 // outright, so this skip cannot hide a rail that reaches here.
+    for (Instruction &I : *BB) {
+      if (!taint.Tainted.count(&I))
+        continue;
+      if (!mintsOutOfPlaceTemplateRail(&I, taint))
+        continue;  // mints nothing, or relabels the rail IN PLACE — no discharge
+                   // is owed and none is placed.
+      if (!railIsInterior(&I))
+        continue;  // measure-owned: left allocated by the rolled form AND by the
+                   // hand-unrolled twin, and a measured copy is not a coherent
+                   // which-path record (`measureOwnedInvariantRail`'s physics
+                   // half states the same ground from the other side).
+      Blocks.push_back(BB);
+      for (User *U : I.users()) {
+        auto *UI = dyn_cast<Instruction>(U);
+        if (!UI)
+          return false;  // an unclassifiable user — absence of proof, and the
+                         // safe direction here is to ARM the fence.
+        if (!L->contains(UI->getParent()))
+          return false;  // the rail ESCAPES `L`; no per-trip point can exist.
+                         // `Loop::contains` — "is this user inside this cycle AT
+                         // ALL" — INCLUDES subloops, which is the right
+                         // quantifier for THIS question and deliberately not the
+                         // own-blocks one the loop above uses for "whose block is
+                         // this to mint in" (`CLAUDE.md` L2; bd
+                         // `test_C_libtooling-emkg` is the filing that exists
+                         // because one predicate answered the other's question).
+        Blocks.push_back(UI->getParent());
+      }
+    }
+  }
+  if (Blocks.empty())
+    return true;  // no interior rail at all — nothing for the suppression to be
+                  // wrong about, and `loop_leak_dephase_accept_*` live here.
+  BasicBlock *Common = Blocks.front();
+  for (BasicBlock *B : ArrayRef<BasicBlock *>(Blocks).drop_front()) {
+    Common = PDT.findNearestCommonDominator(Common, B);
+    if (!Common)
+      return false;  // the consumers do not reconverge — `dagInsertPoint` would
+                     // return null and the component leaks.
+  }
+  // The point must be one of `L`'s OWN blocks AND marked: `L`'s own, because a
+  // point in a strictly-deeper subloop repeats N times per outer trip against a
+  // once-per-trip mint; marked, because that is the exact exception
+  // `planInteriorComponent`'s §2.9 grants and this predicate exists to model.
+  return LI.getLoopFor(Common) == L &&
+         taint.IterationLocalBlocks.count(Common) != 0;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -4714,13 +4854,42 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
     LoopInfo LI(DT);
     if (LI.empty())
       continue;
+    // bd `test_C_libtooling-6n1s` — conjunct (1)'s second half asks a
+    // POST-dominator question (does a marked body's interior rail have an
+    // in-body point to be discharged at?), so the tree is built once per
+    // function that has a loop at all, beside the two this stage already builds.
+    PostDominatorTree PDT(F);
 
     for (Loop *L : LI.getLoopsInPreorder()) {
-      // (1) THE BODY MUST BE UNMARKED. A marked body discharges in-body, once
-      //     per trip, against a once-per-trip forward stream — the affirmative
-      //     7.3 exception — and is byte-identical to its hand-unrolled twin.
-      //     `s3_live_rootmint_region` is exactly that and is the positive
-      //     control: it has the SAME post-loop `Ry` and MUST stay accepting.
+      // (1) THE BODY MUST BE UNMARKED **OR ITS RAILS MUST HAVE A PER-TRIP
+      //     DISCHARGE POINT**. A marked body whose interior rails all reconverge
+      //     at an in-body post-dominator discharges in-body, once per trip,
+      //     against a once-per-trip forward stream — the affirmative 7.3
+      //     exception. `s3_live_rootmint_region` is exactly that and is the
+      //     positive control: it has the SAME post-loop `Ry` and MUST stay
+      //     accepting.
+      //
+      //     ⚠⚠ **THE SECOND CONJUNCT IS NOT DECORATION AND THE SENTENCE THAT
+      //     STOOD HERE WITHOUT IT WAS FALSE** (bd `test_C_libtooling-6n1s`, P1
+      //     OVER-ACCEPT, 2026-09-18). It read *"A marked body discharges in-body,
+      //     once per trip … and is byte-identical to its hand-unrolled twin"* —
+      //     TRUE of a single-block body, FALSE of a multi-block one, and the
+      //     counter-example is a plain re-joining classical `if` with no break at
+      //     all. `markIfRailLocal` marks **every** own block of `L`, so a body
+      //     with internal classical control flow is marked WHOLESALE; whether its
+      //     rails are then discharged is a question about
+      //     `Uncomputation::dagInsertPoint`, which this conjunct now asks
+      //     (`markedBodyRailsHaveInBodyDischargePoint`, above) instead of
+      //     assuming. `CLAUDE.md` L7-with-a-twist: the correction is applied HERE,
+      //     at the site, and not only in the review that found it.
+      //
+      //     ⚠ ALSO NOTE WHAT THE OLD SENTENCE PROMISED AND COULD NOT KEEP: byte
+      //     identity with the hand-unrolled twin is an INSTRUMENT, not the claim
+      //     (owner ruling S3, 2026-09-17). A rolled body that discharges at its
+      //     own in-body post-dominator is MULTISET-identical to its twin and
+      //     ORDER-divergent by construction, and quoting byte identity as the
+      //     property is how a stability measurement gets read as a correctness
+      //     one (`CLAUDE.md` §5, the three `*_leak_control` headers).
       //
       //     ⚠ `L`'s OWN BLOCKS, AND IT IS ASKED BY CALLING THE ONE OWNER OF THAT
       //     QUESTION (`bodyBlocksMarked`, above; Rule 14). THE SPELLING THAT USED
@@ -4743,7 +4912,8 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       //     `cqrt_free` pairs, standing at a `cqrt_ry_*` on the register they
       //     copy — `opt` exit 0, verify-clean, stage-2b structurally blind
       //     (template-minted rails have no `cqrt_alloc` to count).
-      if (bodyBlocksMarked(L, LI, taint))
+      if (bodyBlocksMarked(L, LI, taint) &&
+          markedBodyRailsHaveInBodyDischargePoint(L, LI, taint, PDT))
         continue;
 
       // (2) A NON-DIAGONAL GATE ON AN EXISTING REGISTER, ON OR AFTER THE LOOP.
