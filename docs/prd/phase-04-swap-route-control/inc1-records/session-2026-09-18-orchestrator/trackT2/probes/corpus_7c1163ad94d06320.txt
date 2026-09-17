@@ -4826,3 +4826,313 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrato
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a5_inplace_on_invariant.sub.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1_un.ora.ll|A:d3caddff|A:d3caddff
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1_un.ora.s1.ll|A:d3caddff|A:d3caddff
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1_un.s1.ll|A:d3caddff|A:d3caddff
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1_un.sub.ll|A:d3caddff|A:d3caddff
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1_un.sub.s1.ll|A:d3caddff|A:d3caddff
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1.ora.ll|A:95def43f|A:95def43f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1.ora.s1.ll|A:95def43f|A:95def43f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1.s1.ll|A:95def43f|A:95def43f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1.sub.ll|A:95def43f|A:95def43f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a6_k1.sub.s1.ll|A:95def43f|A:95def43f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers_un.ora.ll|A:6d31f008|A:6d31f008
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers_un.ora.s1.ll|A:6d31f008|A:6d31f008
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers_un.s1.ll|A:6d31f008|A:6d31f008
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers_un.sub.ll|A:6d31f008|A:6d31f008
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers_un.sub.s1.ll|A:6d31f008|A:6d31f008
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers.ora.s1.ll|A:1b42cb6a|A:1b42cb6a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers.s1.ll|A:1b42cb6a|A:1b42cb6a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers.sub.ll|A:1b42cb6a|A:1b42cb6a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a7_two_registers.sub.s1.ll|A:1b42cb6a|A:1b42cb6a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp_un.ora.ll|A:198eecd9|A:198eecd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp_un.ora.s1.ll|A:198eecd9|A:198eecd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp_un.s1.ll|A:198eecd9|A:198eecd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp_un.sub.ll|A:198eecd9|A:198eecd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp_un.sub.s1.ll|A:198eecd9|A:198eecd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp.ora.ll|A:6f40f2b6|A:6f40f2b6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp.ora.s1.ll|A:6f40f2b6|A:6f40f2b6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp.s1.ll|A:6f40f2b6|A:6f40f2b6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp.sub.ll|A:6f40f2b6|A:6f40f2b6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a8_escaping_temp.sub.s1.ll|A:6f40f2b6|A:6f40f2b6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop_un.ora.ll|A:94d1abb8|A:94d1abb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop_un.ora.s1.ll|A:94d1abb8|A:94d1abb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop_un.s1.ll|A:94d1abb8|A:94d1abb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop_un.sub.ll|A:94d1abb8|A:94d1abb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop_un.sub.s1.ll|A:94d1abb8|A:94d1abb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop.ora.s1.ll|A:cc954188|A:cc954188
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop.s1.ll|A:cc954188|A:cc954188
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop.sub.ll|A:cc954188|A:cc954188
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/a9_nested_loop.sub.s1.ll|A:cc954188|A:cc954188
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive_un.ora.ll|A:645b4cf1|A:645b4cf1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive_un.ora.s1.ll|A:645b4cf1|A:645b4cf1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive_un.s1.ll|A:ea70c4ac|A:ea70c4ac
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive_un.sub.ll|A:645b4cf1|A:645b4cf1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive_un.sub.s1.ll|A:645b4cf1|A:645b4cf1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive.ora.ll|A:507b32c5|A:507b32c5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive.ora.s1.ll|A:507b32c5|A:0919498d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive.s1.ll|A:033ed8d3|A:0d21f2e1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive.sub.ll|A:507b32c5|A:507b32c5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b1_mixed_nonlive.sub.s1.ll|A:507b32c5|A:0919498d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive_un.ora.ll|A:718833bb|A:718833bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive_un.ora.s1.ll|A:718833bb|A:718833bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive_un.s1.ll|A:6c5b1d0b|A:6c5b1d0b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive_un.sub.ll|A:718833bb|A:718833bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive_un.sub.s1.ll|A:718833bb|A:718833bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive.ora.ll|A:838b670f|A:838b670f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive.ora.s1.ll|A:838b670f|A:838b670f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive.s1.ll|A:973e9315|A:973e9315
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive.sub.ll|A:838b670f|A:838b670f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/b2_readafter_nonlive.sub.s1.ll|A:838b670f|A:838b670f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/c1_round2_grow_65arm.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r1_break_loop_un.s1.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r1_break_loop_un.sub.s1.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r1_break_loop.s1.ll|A:b2013a0c|A:b2013a0c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r1_break_loop.sub.ll|A:b2013a0c|A:b2013a0c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r1_break_loop.sub.s1.ll|A:b2013a0c|A:b2013a0c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions_un.s1.ll|A:f96ea2ca|A:f96ea2ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions_un.sub.ll|A:f96ea2ca|A:f96ea2ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions_un.sub.s1.ll|A:f96ea2ca|A:f96ea2ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions.s1.ll|A:91401970|A:7b07c627
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions.sub.ll|A:91401970|A:91401970
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r2_two_functions.sub.s1.ll|A:91401970|A:7b07c627
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register_un.s1.ll|A:d5505c38|A:d5505c38
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register_un.sub.ll|A:d5505c38|A:d5505c38
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register_un.sub.s1.ll|A:d5505c38|A:d5505c38
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register.s1.ll|A:b6b8c2ea|A:b6b8c2ea
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register.sub.ll|A:b6b8c2ea|A:b6b8c2ea
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r3_two_loops_one_register.sub.s1.ll|A:b6b8c2ea|A:b6b8c2ea
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r4_qram_body_un.s1.ll|A:6a4df5d1|A:6a4df5d1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r4_qram_body_un.sub.ll|A:6a4df5d1|A:6a4df5d1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r4_qram_body_un.sub.s1.ll|A:6a4df5d1|A:6a4df5d1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r4_qram_body.s1.ll|D:cq QRAM access: tainted-index memory access inside a loop|D:cq QRAM access: tainted-index memory access inside a loop
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r4_qram_body.sub.s1.ll|D:cq QRAM access: tainted-index memory access inside a loop|D:cq QRAM access: tainted-index memory access inside a loop
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body_un.s1.ll|A:316f7110|A:316f7110
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body_un.sub.ll|A:316f7110|A:316f7110
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body_un.sub.s1.ll|A:316f7110|A:316f7110
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body.s1.ll|A:7cc46d0b|A:7cc46d0b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body.sub.ll|A:7cc46d0b|A:7cc46d0b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/r5_switch_in_body.sub.s1.ll|A:7cc46d0b|A:7cc46d0b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body_un.s1.ll|A:e1439505|A:e1439505
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body_un.sub.ll|A:f5f8f94a|A:f5f8f94a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body_un.sub.s1.ll|A:f5f8f94a|A:f5f8f94a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body.s1.ll|A:97fa5ed0|A:97fa5ed0
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body.sub.ll|A:001fbfb8|A:001fbfb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x1_xorc_inplace_in_body.sub.s1.ll|A:001fbfb8|A:001fbfb8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x2_xorc_plus_outofplace_un.s1.ll|A:e21f7b96|A:e21f7b96
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x2_xorc_plus_outofplace_un.sub.ll|A:219f46d0|A:219f46d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x2_xorc_plus_outofplace_un.sub.s1.ll|A:219f46d0|A:219f46d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x2_xorc_plus_outofplace.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/out/x2_xorc_plus_outofplace.sub.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r1_break_loop_un.c|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r1_break_loop.c|A:2c15bd88|A:2c15bd88
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r2_two_functions_un.c|A:4427a5bb|A:4427a5bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r2_two_functions.c|A:b1c778d7|A:bbe70398
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r3_two_loops_one_register_un.c|A:77116dbf|A:77116dbf
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r3_two_loops_one_register.c|A:95498b05|A:95498b05
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r4_qram_body_un.c|A:62d7e861|A:62d7e861
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r4_qram_body.c|D:cq QRAM access: tainted-index memory access inside a loop|D:cq QRAM access: tainted-index memory access inside a loop
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r5_switch_in_body_un.c|A:2b9315c8|A:2b9315c8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r5_switch_in_body.c|A:173f90d9|A:173f90d9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/x1_xorc_inplace_in_body_un.c|A:8606b8aa|A:8606b8aa
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/x1_xorc_inplace_in_body.c|A:9de24d92|A:9de24d92
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/x2_xorc_plus_outofplace_un.c|A:016b3f72|A:016b3f72
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/x2_xorc_plus_outofplace.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift_un.ora.ll|A:c04649ca|A:c04649ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift_un.ora.s1.ll|A:c04649ca|A:c04649ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift_un.sub.ll|A:c04649ca|A:c04649ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift_un.sub.s1.ll|A:c04649ca|A:c04649ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift.ora.s1.ll|A:dc463f28|A:dc463f28
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift.sub.ll|A:dc463f28|A:dc463f28
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s1_live_shift.sub.s1.ll|A:dc463f28|A:dc463f28
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region_un.ora.ll|A:05236e57|A:05236e57
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region_un.ora.s1.ll|A:05236e57|A:05236e57
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region_un.sub.ll|A:05236e57|A:05236e57
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region_un.sub.s1.ll|A:05236e57|A:05236e57
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region.ora.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s2_live_derived_region.sub.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region_un.ora.ll|A:78ce35cc|A:78ce35cc
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region_un.ora.s1.ll|A:78ce35cc|A:78ce35cc
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region_un.sub.ll|A:78ce35cc|A:78ce35cc
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region_un.sub.s1.ll|A:78ce35cc|A:78ce35cc
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region.ora.ll|A:d83041c4|A:d83041c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region.ora.s1.ll|A:d83041c4|A:d83041c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region.sub.ll|A:d83041c4|A:d83041c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/s3_live_rootmint_region.sub.s1.ll|A:d83041c4|A:d83041c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify_un.ora.ll|A:2da9e09f|A:2da9e09f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify_un.ora.s1.ll|A:2da9e09f|A:2da9e09f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify_un.sub.ll|A:2da9e09f|A:2da9e09f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify_un.sub.s1.ll|A:2da9e09f|A:2da9e09f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify.ora.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t1_round2_falsify.sub.s1.ll|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift_un.ora.ll|A:811c7038|A:811c7038
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift_un.ora.s1.ll|A:811c7038|A:811c7038
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift_un.sub.ll|A:811c7038|A:811c7038
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift_un.sub.s1.ll|A:811c7038|A:811c7038
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift.ora.ll|A:ce5887b9|A:ce5887b9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift.ora.s1.ll|A:ca1fbcf6|A:ca1fbcf6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift.sub.ll|A:ca1fbcf6|A:ca1fbcf6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t2_nonlive_shift.sub.s1.ll|A:ca1fbcf6|A:ca1fbcf6
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data_un.ora.ll|A:1fcd552d|A:1fcd552d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data_un.ora.s1.ll|A:1fcd552d|A:1fcd552d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data_un.sub.ll|A:1fcd552d|A:1fcd552d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data_un.sub.s1.ll|A:1fcd552d|A:1fcd552d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data.ora.s1.ll|A:e6af7e0a|A:e6af7e0a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data.sub.ll|A:e6af7e0a|A:e6af7e0a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/t3_cmp_rail_data.sub.s1.ll|A:e6af7e0a|A:e6af7e0a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread_un.ora.ll|A:b376cabd|A:b376cabd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread_un.ora.s1.ll|A:b376cabd|A:b376cabd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread_un.sub.ll|A:b376cabd|A:b376cabd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread_un.sub.s1.ll|A:b376cabd|A:b376cabd
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread.ora.ll|A:c8454ddf|A:c8454ddf
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread.ora.s1.ll|A:decac588|A:decac588
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread.sub.ll|A:decac588|A:decac588
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h_phase_inloop_invread.sub.s1.ll|A:decac588|A:decac588
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread_un.ora.ll|A:938e5410|A:938e5410
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread_un.ora.s1.ll|A:938e5410|A:938e5410
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread_un.sub.ll|A:938e5410|A:938e5410
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread_un.sub.s1.ll|A:938e5410|A:938e5410
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread.ora.ll|A:89d2c6e9|A:89d2c6e9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread.ora.s1.ll|A:05395e23|A:05395e23
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread.sub.ll|A:05395e23|A:05395e23
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2h3_select_iterlocal_invread.sub.s1.ll|A:05395e23|A:05395e23
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread_un.ora.ll|A:1b45b996|A:1b45b996
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread_un.ora.s1.ll|A:1b45b996|A:1b45b996
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread_un.sub.ll|A:1b45b996|A:1b45b996
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread_un.sub.s1.ll|A:1b45b996|A:1b45b996
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread.ora.ll|A:673d6153|A:673d6153
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread.ora.s1.ll|A:a5e5f0cb|A:a5e5f0cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread.sub.ll|A:a5e5f0cb|A:a5e5f0cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/out/w2k_noregion_invread.sub.s1.ll|A:a5e5f0cb|A:a5e5f0cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s1_live_shift_un.c|A:886aa1c7|A:886aa1c7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s1_live_shift.c|A:5b34f600|A:5b34f600
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s2_live_derived_region_un.c|A:3f9a808d|A:3f9a808d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s2_live_derived_region.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s3_live_rootmint_region_un.c|A:760ceec5|A:760ceec5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/s3_live_rootmint_region.c|A:46ac4758|A:46ac4758
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t1_round2_falsify_un.c|A:ef1bc9c4|A:ef1bc9c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t1_round2_falsify.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t2_nonlive_shift_un.c|A:126cb00e|A:126cb00e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t2_nonlive_shift.c|A:b7d12046|A:b7d12046
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t3_cmp_rail_data_un.c|A:5f4f89f8|A:5f4f89f8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/t3_cmp_rail_data.c|A:db60c7a8|A:db60c7a8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2h_phase_inloop_invread_un.c|A:62344be8|A:62344be8
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2h_phase_inloop_invread.c|A:e4681a40|A:e4681a40
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2h3_select_iterlocal_invread_un.c|A:071a72b3|A:071a72b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2h3_select_iterlocal_invread.c|A:bc1541d1|A:bc1541d1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2k_noregion_invread_un.c|A:c596004f|A:c596004f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/src/w2k_noregion_invread.c|A:7b2a57df|A:7b2a57df
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a1_c1_two_postloop_rots_un.c|A:aa7826bf|A:aa7826bf
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a1_c1_two_postloop_rots.c|A:aa313a41|A:aa313a41
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a2_c1_rail_alive_at_rot_un.c|A:f2140359|A:f2140359
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a2_c1_rail_alive_at_rot.c|A:14d968a4|A:14d968a4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a3_c1_one_loop_deeper_un.c|A:8e100e06|A:8e100e06
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a3_c1_one_loop_deeper.c|A:06315b23|A:06315b23
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a4_c1_parent_gated_in_body_un.c|A:a2be12e7|A:a2be12e7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a4_c1_parent_gated_in_body.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a5_c1_second_reader_postloop_un.c|A:07f4d231|A:07f4d231
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/a5_c1_second_reader_postloop.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b1_c2_postloop_rot_on_y_un.c|A:b5d3c1b2|A:b5d3c1b2
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b1_c2_postloop_rot_on_y.c|A:c2b94b1a|A:c2b94b1a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b2_c2_rail_unmeasured_un.c|A:f19c3ceb|A:f19c3ceb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b2_c2_rail_unmeasured.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b3_c2_one_loop_deeper_un.c|A:f975b56a|A:f975b56a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b3_c2_one_loop_deeper.c|A:002d8d70|A:002d8d70
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b4_c2_parent_gated_in_body_un.c|A:71853309|A:71853309
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b4_c2_parent_gated_in_body.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b5_c2_second_reader_postloop_un.c|A:0921f8e9|A:0921f8e9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b5_c2_second_reader_postloop.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b6_c2_deeper_postloop_rot_un.c|A:437ff2ca|A:437ff2ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/b6_c2_deeper_postloop_rot.c|A:e19ee32e|A:e19ee32e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/r1_triple_deeper.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/r3_outer_rail_inner_marked_nodeeper.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5c_classical_break_taken.c|A:7b881c0a|A:7b881c0a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5c_ref_three_trips.c|A:8fc610f2|A:8fc610f2
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5c_ref_two_trips.c|A:6772b986|A:6772b986
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5d_classical_break_split.c|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5d_ref.c|A:492d01eb|A:492d01eb
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5e_classical_break_midgroup.c|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5f_break_split_norot.c|A:778ba183|A:778ba183
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5f_ref_lim2.c|A:a6c7065e|A:a6c7065e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5g_break_midgroup_norot.c|A:a6a30040|A:a6a30040
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5h_rail_straddles_break_rot.c|A:e396a867|A:835a0ed5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5h_rail_straddles_break.c|A:4729428a|A:7459e60c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5h_ref_lim2.c|A:873175a0|A:873175a0
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5i_straddle_nobreak_rot.c|A:fe6b51e7|A:fe6b51e7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5i_straddle_nobreak_un.c|A:84488cff|A:84488cff
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5i_straddle_nobreak.c|A:c6ec7a01|A:c6ec7a01
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5j_twoblock_noexit_rot.c|A:e28cddbf|A:dbf1a133
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/review_r13_loopconv/probes/t5k_twoblock_unmarked_control.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/a1_apost_un.c|A:86c04e99|A:86c04e99
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/a1_apost.c|A:924f405b|A:f9fb3ab9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/ht_rolled.c|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register|D:cq loop lowering: rolled body leaks a rail entangled with a rotated register
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/ht_un.c|A:2f7a26ca|A:2f7a26ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/m_none_oder_none_none_none_un.c|A:4611b929|A:4611b929
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/m_none_oder_none_none_none.c|A:82dd8295|A:3caf91f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/m_none_oder_none_none_rypost_un.c|A:39f56279|A:39f56279
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackT2/probes/m_none_oder_none_none_rypost.c|A:2199648d|A:d803341a
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h1_inloop_diamond_value_backedge.ll|D:cq controlled lowering: arm rewrites a condition operand under quantum control|D:cq controlled lowering: arm rewrites a condition operand under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h2_inloop_diamond_value_nobackedge.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h2b_inloop_diamond_value_onecond_control.ll|D:cq controlled lowering: control flow inside a loop body under quantum control|D:cq controlled lowering: control flow inside a loop body under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h3_flat_diamond_value_clobber.ll|D:cq controlled lowering: arm rewrites a condition operand under quantum control|D:cq controlled lowering: arm rewrites a condition operand under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h4_flat_diamond_value_noclobber.ll|A:6aadda09|A:6aadda09
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h5_inloop_i1_carried_theta_arm.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h6_inloop_dtzb_same_rail_backedge.ll|D:cq controlled lowering: arm rewrites a condition operand under quantum control|D:cq controlled lowering: arm rewrites a condition operand under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/h7_inloop_mixed_evidence.ll|D:cq controlled lowering: arm rewrites a condition operand under quantum control|D:cq controlled lowering: arm rewrites a condition operand under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x01_owner_scalar.c|D:cq controlled lowering: arm rewrites a condition operand under quantum control|D:cq controlled lowering: arm rewrites a condition operand under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x02_classical_carrier_value.c|A:70433f79|A:70433f79
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x03_no_clobber_control.c|A:9be7e396|A:9be7e396
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x04_flat_value_arm_control.c|A:d66766f0|A:d66766f0
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x05_flat_backedge_free_clobber.c|A:893ce6a5|A:893ce6a5
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x06_inloop_value_noclobber_minimal.c|A:899706f1|A:899706f1
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x07_flat_diamond_chain_clobber.c|A:acac3d69|A:acac3d69
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x08_inloop_chain_backedge_clobber.c|A:14776b2f|A:14776b2f
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/trackX/probes/x09_inloop_chain_no_backedge.c|A:66a5b125|A:66a5b125
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.c|A:dcb4bb50|A:dcb4bb50
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.nog.body.ll|A:a99b3322|A:a99b3322
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.nog.s1.ll|A:ee5a9f16|A:ee5a9f16
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.nog.s2.ll|A:ee5a9f16|A:ee5a9f16
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.norm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:26:54: error: use of undefined m|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:26:54: error: use of undefined m
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.s1.ll|A:e8bae13c|A:e8bae13c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_direct.s2.ll|A:e8bae13c|A:e8bae13c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_quantum.c|A:94729e26|A:94729e26
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_quantum.s1.ll|A:c0db4346|A:c0db4346
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_quantum.s2.ll|A:c0db4346|A:c0db4346
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_zerotwin.c|A:a080663e|A:a080663e
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_zerotwin.s1.ll|A:a741c4ce|A:a741c4ce
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_e9_zerotwin.s2.ll|A:a741c4ce|A:a741c4ce
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_phi_zero.c|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_phi_zero.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_phi.c|A:80fadad7|A:80fadad7
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_phi.s1.ll|A:1b623c5c|A:1b623c5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_phi.s2.ll|A:1b623c5c|A:1b623c5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.c|A:b93febd9|A:b93febd9
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.nog.body.ll|A:a99b3322|A:a99b3322
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.nog.s1.ll|A:4c6a20a4|A:4c6a20a4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.nog.s2.ll|A:4c6a20a4|A:4c6a20a4
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.norm.ll|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:27:54: error: use of undefined m|D:cq-opt: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmp.KdWl3Tqq9L/s1.ll:27:54: error: use of undefined m
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.s1.ll|A:33d4a665|A:33d4a665
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/fve8_zero.s2.ll|A:33d4a665|A:33d4a665
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/h6.s1.ll|A:ab2120db|A:ab2120db
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/h6.s2.ll|A:ab2120db|A:ab2120db
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k100.c|A:18862f44|A:18862f44
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k100.nog.s1.ll|A:b4309e5b|A:b4309e5b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k100.nog.s2.ll|A:b4309e5b|A:b4309e5b
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k100.s1.ll|A:7e24b488|A:7e24b488
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k100.s2.ll|A:7e24b488|A:7e24b488
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k1000.c|A:e5642559|A:e5642559
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k1000.s1.ll|A:6686b66d|A:6686b66d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_k1000.s2.ll|A:6686b66d|A:6686b66d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs_all.c|A:c55934b2|A:c55934b2
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs_all.s1.ll|A:9da8a073|A:9da8a073
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs_all.s2.ll|A:9da8a073|A:9da8a073
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs.c|A:ea85c114|A:ea85c114
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs.s1.ll|A:e04e3288|A:e04e3288
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_obs.s2.ll|A:e04e3288|A:e04e3288
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_rt.c|A:c3add59d|A:c3add59d
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_rt.s1.ll|A:78d660ef|A:78d660ef
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_rt.s2.ll|A:78d660ef|A:78d660ef
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_unobs.c|A:f7f87101|A:f7f87101
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_unobs.s1.ll|A:905bb049|A:905bb049
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc_unobs.s2.ll|A:905bb049|A:905bb049
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.c|A:53457b49|A:53457b49
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.s1.ll|A:9784eede|A:9784eede
+docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/wave0/probes/p58tc.s2.ll|A:9784eede|A:9784eede

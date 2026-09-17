@@ -238,6 +238,15 @@ about the attack and not about the code.
   once per OUTER trip against a once-executed mint; §2.9 would then refuse it and the rail would
   leak. **The OUTERMOST choice is therefore measured, not only argued** — and this was listed in an
   earlier revision of §8 as an attack I had NOT done, which is now false and is corrected here.
+* **FOUND (F-R2-5) — the reviewer's closing lens, "a rail minted in ONE ARM of an in-body classical
+  `if`", is CLEAN and the reason is the half that did NOT change.** That shape is the one where
+  being wrong is a wrong unitary rather than a leak: the mint runs on one path, so a discharge at
+  the JOIN would adjoint a gate that never fired. `p2h_arm_minted_rail` declines earlier at bd
+  `3d8q`'s fence; with the post-loop rotation removed, `p2i_arm_minted_rail_norot` ACCEPTS and the
+  mint, its `_unc` and its `cqrt_free` are **all three in the ARM BLOCK itself** (`%8`), STRICT 2b
+  `2 verified, 0 unproven`. The relaxation touches only the USE side; §4's unrelaxed
+  `DT.dominates(G, At)` is what keeps the discharge on the mint's own path, which is F-R1-3's case
+  split confirmed by construction rather than by reading.
 * **FOUND (F-R2-3)**: **the warning does NOT go silent on `t5j`**, and the reason is a different
   guard. `recordIsExemptAt` clause 4 exempts a record measured before the gate via
   `provablyBeforePerActivation`, whose dominance conjunct FAILS for the CONDITIONALLY-executed
