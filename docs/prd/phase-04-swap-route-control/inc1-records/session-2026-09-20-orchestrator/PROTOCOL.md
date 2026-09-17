@@ -63,3 +63,27 @@ a finding.
    Held: bd `h1ip`'s own pinned fixture was the first thing run after the build,
    and bd `11qv`'s width axis was measured on the oracle before a line was
    written.
+
+
+7. **SEAL THE LAB ENTRY AFTER `git pull --rebase`, NEVER BEFORE** (bd `6hy4`).
+   The close hash is read from `HEAD`, and a rebase rewrites every unpushed
+   commit — so a hash read before the pull names a commit that will not exist.
+   ⚠ **Three instances, two of them in THIS session**: entry 012 had it, entry
+   013 carried the erratum for entry 012 and then repeated it ninety seconds
+   after sealing. **An erratum describes the symptom and prevents nothing.**
+   Order: `pull --rebase` → read `HEAD` → write the header → `--seal` → commit →
+   `push`. Then run `git merge-base --is-ancestor <recorded hash> main`; a
+   `false` is an erratum owed **immediately**, not next session.
+
+8. **ASK THE QUESTION YOU MEAN, NOT A PROXY FOR IT** — round 4's P1, and the
+   session's sharpest lesson. (P4) asked a callee's NAME where it meant its
+   DECLARED TYPE, and the name it chose was literally the exemption list of
+   another guard, so the second list trusted what the first merely tolerated.
+   ⚠ **And the first CORRECTION was another proxy**: a curated membership list,
+   which refused the merge emitter's own `cqrt_copy_<W>_controlled` — also
+   `cqrt_*`, but with an `i32` slot where the retype is the REPAIR — and broke
+   the increment's own headline. This project already had the lesson at
+   `ChainWalk` (*"asked as membership of the instruction, never by name"*) and it
+   did not transfer. When you reach for a name, a prefix or a curated list, write
+   down the question you actually mean first and check whether it is answerable
+   directly.

@@ -11,6 +11,22 @@ PREV = docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-20-orch
 LLVM = /usr/local/opt/llvm@19/bin        # NOT on PATH
 ```
 
+## ⚠ 0a. AN ERRATUM IS OWED TO LAB ENTRY 013 — WRITE IT IN ENTRY 014
+
+Entry 013's header records the close hash as `286b53f7`; `git pull --rebase`
+rewrote it during the closing push and it is **not reachable from `main`**. The
+correct hash is **`4f752e06`** (sealing commit `fd0d01b7`).
+
+⚠ **THIS IS THE THIRD INSTANCE AND THE SECOND IN ONE SESSION.** Entry 012 had it,
+entry 013 carried that erratum and then **repeated it ninety seconds after
+sealing**. Writing the erratum prevented nothing, because the cause is ORDERING,
+not care: the hash is read before the rebase that rewrites it. **Do not simply
+write a third erratum — apply the fix** (bd `6hy4`, full write-up in
+`$PREV/ERRATUM_OWED_TO_ENTRY_013.md`): `pull --rebase` FIRST, then read `HEAD`,
+then seal, then commit, then push; and after the push run
+`git merge-base --is-ancestor <recorded hash> main` — one second, and it is the
+only step that actually closes this loop.
+
 ## 0. STATE AT CLOSE
 
 See `$PREV/GATES.md` for the hash-keyed rows. Full `ctest -j6` **466/466 in
@@ -21,6 +37,13 @@ ctest 466 · twin matrix 312+70.
 ⚠ **`shasum -a 256 build/ir-pass/cq-opt` BEFORE believing any decline you see by
 hand.** A stale `cq-opt` makes a fixed program look broken and a broken pass look
 green in lit.
+
+⚠ **AND READ `$PREV/GATES.md`'s ROUND-4 SECTION BEFORE ANYTHING ELSE.** Round 4
+found a **P1 in the gate this session added** — the clause written to stop `opt`
+aborting caused `opt` to abort, from plain C, because it asked a NAME where it
+meant a TYPE. Rounds 1–3 on bd `zujr` as shipped found 0 P1; the first round on
+NEW code found one on its first pass. **Read those together; do not average
+them.**
 
 ## 1. THE FIRST THING TO DO: bd `4jok` — THE COMPOSITION GATE
 
