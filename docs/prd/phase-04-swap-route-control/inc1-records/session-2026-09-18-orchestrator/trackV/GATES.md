@@ -24,8 +24,15 @@ gate | cq-opt | result verbatim | who | when
 `python3 tools/loop_twin_matrix_quarantine_test.py` | 9bd01598 | `58 case(s), 0 failure(s)` (52 on `main`, measured on both trees) | trackV | 2026-09-17 12:15
 `probes/mutants.py` (L10 — made to fail on purpose) | 9bd01598 | `13 applied, 13 CAUGHT, 0 MISSED, 0 NOT-APPLIED` | trackV | 2026-09-17 12:15
 `ctest --test-dir build -R '^e2e-loop-twin-quarantine-selftest$'` | 9bd01598 | `1/1 Test #295 … Passed 1.72 sec — 100% tests passed, 0 tests failed out of 1` | trackV | 2026-09-17 12:21
-`loop_twin_matrix.py --phi-surface void --jobs 6 --regenerate` (382 cells) | 9bd01598 | PENDING | trackV | —
-`ctest --test-dir build -R '^e2e-loop-twin-matrix$'` | 9bd01598 | PENDING | trackV | —
+`loop_twin_matrix.py --phi-surface void --jobs 6 --regenerate` (382 cells) | 9bd01598 | `regenerated … loop_twin_matrix.expected.txt (345 cells; 37 quarantined and omitted)` / `preserved 493 header line(s) … byte-for-byte`, exit 0; ~21 min wall at load 32–100 | trackV | 2026-09-17 12:37
+`ctest --test-dir build -R '^e2e-loop-twin-matrix$'` | 9bd01598 | `1/1 Test #318: e2e-loop-twin-matrix … Passed 618.77 sec` — `100% tests passed, 0 tests failed out of 1`; 618.84 s total at load 32–52 | trackV | 2026-09-17 12:42
+
+⚠ **The `--regenerate` line is a GATE in its own right, not just a write.** It REFUSES to write while
+any un-quarantined cell diverges, while any quarantined cell's pinned digest is wrong, or while any
+boundary control has moved. Exit 0 therefore means, measured on all 382 cells: the eight hand-written
+class-D/E digests all matched, both NEW boundary controls matched their pins, and no cell outside the
+quarantine diverged. It also means the bd `gfsk` header contract preserved the hand-added axis note —
+493 lines, byte-for-byte, and the writer said so.
 
 ## CITED, not re-run (PROTOCOL §6.1 — same hash ⇒ same result)
 
@@ -74,7 +81,8 @@ Why it is very probably harmless, and why "probably" is not good enough on its o
 
 **The authoritative check is the one that runs afterwards, not the argument above**: the
 `ctest -R '^e2e-loop-twin-matrix$'` line re-measures all 382 cells against the committed table with
-the FINAL file, so a table that disagreed with the final module would be a red there. Recorded here
+the FINAL file, so a table that disagreed with the final module would be a red there. **It ran and it
+is GREEN** (`Passed 618.77 sec`, 0 failed), so the table matches the committed module. Recorded here
 rather than left as an unexplained coincidence if it ever is.
 
 ## Load, recorded with every timing (Rule 19)

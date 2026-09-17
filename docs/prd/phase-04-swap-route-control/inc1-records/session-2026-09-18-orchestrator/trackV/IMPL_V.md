@@ -259,6 +259,21 @@ a quarantine pointing at a closed bead is a quarantine nobody will retire.
 
 ---
 
+### 3.4 The committed table, after `--regenerate`
+
+```
+grep -c '^m_'    tools/loop_twin_matrix.expected.txt    345
+grep -c '^cell ' tools/loop_twin_matrix.quarantine.txt   37      -> 382 cells
+```
+
+⚠ **`--regenerate` is a GATE, not just a write, and exit 0 is the strongest single line in this
+record.** It REFUSES to write while any un-quarantined cell diverges, while any quarantined cell's
+pinned digest is wrong, or while any boundary control has moved. So `regenerated … (345 cells; 37
+quarantined and omitted)` + `preserved 493 header line(s) … byte-for-byte` at exit 0 means, measured
+over all 382 cells at once: the eight hand-written class-D/E digests ALL matched what the run
+measured, both NEW boundary controls matched their pins, no cell outside the quarantine diverged,
+and the bd `gfsk` header contract kept the hand-added axis note intact.
+
 ## 4. THE 359 PRE-EXISTING CELLS — 0 MOVED, proven
 
 `probes/source_identity.py`, carried from `$PREV/trackI/probes/` with ONE change (`--tools <DIR>`, so
@@ -343,6 +358,13 @@ when it started): the worktree build; `probes/nest_cells_only.py` (23 cells); `p
 `probes/nest_diverge_detail.py`; `probes/source_identity.py`; `probes/mutants.py`; the quarantine
 selftest; ONE `loop_twin_matrix.py --regenerate` over all 382 cells; ONE
 `ctest -R '^e2e-loop-twin-matrix$'`; ONE `ctest -R '^e2e-loop-twin-quarantine-selftest$'`.
+
+**The two ctest gates are GREEN on the committed tree**:
+`e2e-loop-twin-matrix … Passed 618.77 sec`, `100% tests passed, 0 tests failed out of 1` (load
+32–52 — a LOADED figure, not comparable with `CLAUDE.md`'s ~180–400 s quiet-box band), and
+`e2e-loop-twin-quarantine-selftest … Passed 1.72 sec`. The matrix gate is the one that matters: it
+re-measures all 382 cells against the committed table, all 37 quarantine signatures and all four
+boundary controls, on the FINAL file.
 
 NOT run, and not claimed: the full `ctest -j6`, `ir-pass-lit`, `^e2e-`, the equivalence sweep, any
 corpus sweep. None of them can witness a `tools/`-only change whose compiler is byte-identical to
