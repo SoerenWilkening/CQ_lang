@@ -1,0 +1,95 @@
+\labsessionheader{2026-09-17}{Quantum operations in classical loops: it is rail identity, not taint}%
+  {79bd7af9}{810862a9-f4d5-4c21-9347-964476ac628d}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-17-socratic/}
+
+\subsection*{Goal}
+A design discussion with the owner, no tracks and no pass code. The owner was not
+satisfied with the in-loop results of the previous sessions and proposed a runtime
+\emph{taint flag}: for a value whose taint is not known at compile time, branch on a
+classical flag between a classical op and a \texttt{cq\_template} op. The session
+assessed that proposal against the compiler as it stands, measured the owner's loop
+program on a fresh build, and turned the answer into a filed increment and a prompt.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item No code. The primary \texttt{build/} was reconfigured in place after the
+        repository moved to \texttt{\textasciitilde/Desktop/Projects/CQ\_lang}: its
+        \texttt{CMakeCache.txt} still named the old source directory and refused to build.
+  \item \bd{zujr} (P1) filed: the \emph{loop-carried handle variable} --- a loop-carried
+        register that crosses the back edge and is re-minted every trip. It subsumes
+        \bd{832l}, \bd{ej5w}, \bd{x5fp}, \bd{8h7d.11}/\bd{8h7d.12} on one line of the
+        owner's program and is the next headline.
+  \item Ten stale tracker entries closed after re-measurement on the fresh binary:
+        \bd{hn29}, \bd{leyd}, \bd{52og} (their own probes accept); \bd{hrts}, \bd{l3i1},
+        \bd{dpau} (6/6 tripwire fixtures); \bd{7845}, \bd{c767}, \bd{2g52} (rolled equals
+        twin); \bd{ti5o} (duplicate of the closed \bd{emkg}).
+  \item Owner rulings recorded (bd memory \texttt{owner-ruling-loop-carried-handle-2026-09-17},
+        \texttt{DECISIONS.md} S1--S4): trip-1 promotion accepted; byte-identity with the
+        hand-unrolled twin is an instrument, not the target; \bd{tu9q}'s hoisted-template
+        half is wanted now.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ The taint-flag proposal is redundant. Taint is a may-analysis at fixpoint and
+        a basis-state rail through reversible templates computes the classical function
+        exactly, so a maybe-tainted value can always be lowered as tainted; the flag's
+        classical select between handles is already free at runtime, since a handle is an
+        \texttt{i32}. What a rolled loop does not know at compile time is \emph{which
+        allocation a header $\varphi$ denotes on trip $i$}.
+  \item \foverdecline\ The owner's loop program declines at 91:15 (\texttt{control flow
+        inside a loop body}, \texttt{ArmClassify.cpp:5478}) while its hand-unrolled twin
+        accepts at 45 lines. Read off the stage-1 IR: the header $\varphi$ of \texttt{a}
+        has a constant entry incoming (no rail mint, \bd{832l}) and a fresh select-merge
+        \texttt{\%out} per trip on its back edge, so \texttt{a} lives on four different
+        rails in the flat twin. Neither of the loop layer's two kinds --- a rail crossing
+        the back edge in place, or an iteration-local rail --- names it.
+  \item \fdoc\ Clang at \texttt{-O1} emits one uniform body (\texttt{llvm.loop.unroll.disable}
+        stamped, no peeling), so the rolled form must emit a real compare and strip on trip 1
+        where the flat twin's compare is folded to \texttt{true}, and on trip 2 where it is
+        folded to $\neg b_0$. Same unitary, different bytes: the witness for this work is a
+        per-trip unitary argument plus a quarantined divergence, not identity.
+  \item \fconfirmed\ The primary \texttt{cq-opt} was the 2026-09-14 oracle
+        (\texttt{0e280fc6}) for three landings before this session's rebuild; a decline
+        measured by hand in that window was measured on a stale binary
+        (\texttt{CLAUDE.md} \S4c already records this trap from the other side).
+  \item \fdoc\ \texttt{bd update --notes} replaces existing notes; one bead's history had to
+        be restored from \texttt{dolt\_history\_issues}. Use \texttt{--append-notes}.
+\end{itemize}
+
+\subsection*{Measurements}
+All on \texttt{cq-opt} \texttt{9bd01598} (rebuild of \texttt{main} \texttt{79bd7af9}, pass
+source unchanged since \texttt{95949550}); per-probe pipeline of the 2026-09-15 protocol;
+full hash-keyed table in the session's \texttt{GATES.md}.
+\begin{tabular}{@{}lll@{}}\toprule
+Program & rolled & hand-unrolled twin \\ \midrule
+owner's loop cascade (\texttt{bool b0[3]}) & DECLINE 91:15 & ACCEPT 45 lines, 4 frees verified \\
+\texttt{s1\_live\_shift} (\bd{tu9q} first half) & 14 & 14 \\
+\texttt{s2\_live\_derived\_region} (\bd{tu9q} second half) & DECLINE & 25 \\
+\texttt{w2k\_noregion\_invread} (\bd{s82e}) & 20 & 20 \\
+\texttt{b7b\_w2k}, \texttt{b7c\_w2h} interfered (\bd{c767}) & 24, 42 & 24, 42 \\
+\texttt{b11\_cmp\_rail\_data} (\bd{7845}) & 14 & 14 \\
+\texttt{n1}/\texttt{n2}/\texttt{n3} nested (\bd{emkg}) & DECLINE $\times 3$ & 42 / 34 / 48 \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Ran: the per-probe pipeline on 34 probe programs (stage 1 at \texttt{-O1}, \texttt{cq-opt},
+STRICT \texttt{free\_pairing\_check.py}, link, run), and
+\measured{lit ir-pass/test --filter 'acyclic\_nondominated|backedge\_.*desc\_collider'}
+= 6 passed. NOT run: any \texttt{ctest} layer, \texttt{ir-pass-lit}, the twin matrix, the
+equivalence sweep --- no code changed.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Next session (prompt in the session directory): close every done-but-open bead by
+        measurement; build \bd{tu9q}'s hoisted-template half and close \bd{tu9q},
+        \bd{s82e}, \bd{1m5p}; in parallel by file, \bd{x5fp}, \bd{drbq.12}, \bd{vsr6}.
+  \item Then \bd{zujr}: preheader promotion, the fresh-\texttt{\%out} latch incoming at both
+        X1 sites, the per-activation \S3c fence, the (c3) widening. Ruling E5 of 2026-09-15
+        warns the four-wall table was ``the first four I could reach''; a wall 5 is expected.
+  \item Owner questions carried: \bd{bbu0} (A/B/C after the (D) number), \bd{dnqo},
+        \bd{yiid}.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
