@@ -455,16 +455,25 @@ follows is a partial reading with its denominator, not a result.
 established**, and the pass-1 figure (6981 rows, 137 movers, 0 unattributable, A→D 0) must **not** be
 quoted for pass 2: different binary, different denominator.
 
-**Blast-radius re-scan**, scoped to the **386 shipped e2e slices** (the decisive set — only these have
-goldens). At **180 of 386: exactly ONE G8-SHAPE**, and it is
-`slice_control_inplace_ry_loop_leak_unrolled.c` — **the twin I already report in §12 as still
-compiling the hazard, not a new hit.** Its partner `slice_control_inplace_ry_loop_leak.c` has dropped
-out of the hit set because it now DECLINES.
+**Blast-radius re-scan — COMPLETE, not an absence.** Scoped to the **386 shipped e2e slices** (the
+decisive set — only these have goldens); **383 scored** in **11 m 30 s** (3 skipped as `*_lib.c`
+halves swept with their caller).
 
-⚠ **So the sweep independently reproduces §12's direct measurement**: pass 1's **2** shipped hits
-become **1**, the survivor being the loop-free twin. That is the blast-radius half of *"G-6 is half
-closed"*, measured a second way — and the surviving hit is a slice that is now **unregistered with
-its golden deleted**, so no gate observes it.
+| verdict | PASS 1 (`96d74fe6`) | **PASS 2 (`07d93784`)** |
+|---|---|---|
+| CLEAN | 223 | **223** |
+| DIRTY-NO-TRAILING-GATE | 152 | **152** |
+| DECLINE | 6 | **7** |
+| **G8-SHAPE** | **2** | **1** |
 
-Partial outputs are committed as `gate/corpus_07d93784_partial.txt` and `gate/blast_p2_partial.txt`
-so the next agent can resume rather than restart.
+**The two numbers that moved are the same event seen twice**: `DECLINE` 6 → 7 and `G8-SHAPE` 2 → 1,
+because `slice_control_inplace_ry_loop_leak.c` left the hit set by becoming a DECLINE. The single
+survivor is `slice_control_inplace_ry_loop_leak_unrolled.c`, the loop-free twin — **the cell §12
+already reports, not a new hit**, and nothing else in the shipped set acquired the shape.
+
+⚠ So **G-6 is exactly half closed, measured two independent ways** (directly in §12 and by this
+sweep), and the surviving half is a slice that is now **unregistered with its golden deleted** — no
+gate observes it until the P1's fence lands.
+
+The completed blast output is `gate/blast_g8_07d93784_e2e_complete.txt`; the corpus sweep's partial
+is `gate/corpus_07d93784_partial.txt` so the next agent resumes rather than restarts.

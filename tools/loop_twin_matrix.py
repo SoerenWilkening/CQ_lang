@@ -1914,13 +1914,6 @@ SURFACE_CONTROL_VERDICTS = {
     "void": {
         "q_noregion": "ACCEPT-IDENTICAL",
         # ⚠ IT DIVERGES, AND IT IS A CLASS-A INSTANCE RATHER THAN A CONTROL.
-        # MEASURED, subject build, 2026-09-05: the rolled side discharges the
-        # `sitofp` and `fadd` interior rails immediately after the `sqrt` and
-        # LEAVES THE TOP RAIL `h3 = sqrt((double)a + 3.0)` ALLOCATED; the flat
-        # side discharges all three LIFO at the end. That is bd
-        # test_C_libtooling-1m5p class A verbatim — the same LIFO-inverted
-        # interior placement, in the simplest shape the wrapper can build.
-        #
         # Why it happens HERE and not on the register surface is the whole
         # point: class A needs `a` loop-INVARIANT so LICM can hoist the chain,
         # and on the register surface this control's arm (`a = cq_phi(a, M_PI)`)
@@ -1933,7 +1926,32 @@ SURFACE_CONTROL_VERDICTS = {
         # worth its milliseconds: it is the smallest class-A reproducer in the
         # tree and it fails on any change to the class. But it does NOT bound
         # the quarantine any more, and no run may be quoted as if it did.
-        "q_armoncond": ("TRACE-DIVERGENCE", "dbf4c162d1de5139"),
+        #
+        # ⚠ RE-PINNED 2026-09-18 (`dbf4c162d1de5139` -> `d81485c481c5ad07`), and
+        # THE PARAGRAPH THAT USED TO STAND HERE IS NOW FALSE, SO IT IS GONE
+        # rather than left to be read off a stale comment (CLAUDE.md L7-with-a-
+        # twist). It said the rolled side "LEAVES THE TOP RAIL `h3 =
+        # sqrt((double)a + 3.0)` ALLOCATED" while the flat side discharged all
+        # three LIFO. **bd test_C_libtooling-tu9q's P2 loop-exit discharge fixed
+        # exactly that.** MEASURED at the group gate, cq-opt `07d93784…`: rolled
+        # 24 == unrolled 24 lines, gate-symbol MULTISET EQUAL, and STRICT stage
+        # 2b clean on BOTH halves (rolled `8 verified, 0 violation(s), 0
+        # unproven`; unrolled `10 verified, 0 unproven`).
+        #
+        # WHAT REMAINS IS POSITIONAL AND THE PER-TRIP ARGUMENT IS ONE LINE: the
+        # only difference is WHERE `cqrt_free(h5)` sits — the rolled form frees
+        # the compare flag immediately after its own
+        # `cq_template_fcmp_ugt_f64_hl_unc` strip, the twin after
+        # `cqrt_free(h1)`. It therefore crosses only
+        # `cq_template_sqrt_f64_unc(h3, h2)` and `cqrt_free(h1)`, which touch
+        # DISJOINT rails (`h3`/`h2` and `h1`), so the two orders COMMUTE and the
+        # unitary is identical; `h5` is proven-|0> by its own `_unc` on both
+        # sides, so both frees are Rule-6 legal.
+        #
+        # ⚠ The class-A STORY this control carries is now "ROLLED IS NO LONGER
+        # DEFICIENT", not "rolled leaks the top rail". Anyone quoting it for the
+        # old claim is quoting a fixed defect.
+        "q_armoncond": ("TRACE-DIVERGENCE", "d81485c481c5ad07"),
         # bd vsr6's two. MEASURED on the ORACLE `9bd01598…`, 2026-09-17, through
         # `control_sources` and not by hand — the nest-only driver reported
         # `BOUNDARY CONTROL has NO PINNED VERDICT … It was measured

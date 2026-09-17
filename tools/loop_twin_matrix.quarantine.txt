@@ -240,6 +240,64 @@
 #    leaks one more.
 #    Measurements: `$SES/trackV/probes/attribution_9bd01598.txt` and
 #    `nest_divergences_9bd01598.txt`.
+#
+# ── CLASS F — 12 cells, bd test_C_libtooling-svoi. THE PER-TRIP FLAG MINT vs
+#    -O1's CSE OF THE FLAT TWIN'S. Door: bd test_C_libtooling-drbq.12 (Track D's
+#    P4 widening) — every one of these DECLINED on the ORACLE with `cq controlled
+#    lowering: condition predates a non-diagonal gate under quantum control` on
+#    the ROLLED side and compiles now, which is why they are new.
+#    The ROLLED body mints a FRESH flag every trip: a real `cq_template_icmp_*`,
+#    its `cqrt_rz_i1`, its `_unc` strip and its `cqrt_free`, once per repetition.
+#    The FLAT twin's two textually identical compares are CSE'd by `clang -O1`
+#    into ONE flag, with the repetitions' `rz` stacked on it and `cqrt_x`-
+#    bracketed wherever the arm is the ¬flag one. Owner ruling S3 (2026-09-17)
+#    names exactly this shape: *rolled emits a real compare+strip every trip,
+#    -O1 folds the flat twin's; same unitary*.
+#    NEITHER SIDE IS DEFICIENT. The flag is DIAGONAL, minted from the SAME
+#    predicate on both sides and stripped to |0> on both, so the accumulated
+#    conditional phase is equal per path; the divergence is rail COUNT (two flags
+#    against one) and nothing else. `h0` is never `cqrt_x`-bracketed and never
+#    freed on either side. Attribution MEASURED on 3 of the 12 by running both
+#    halves on both binaries (gate/probes/cellora.py), not inferred from names.
+#
+# ── CLASS G — 3 cells, bd test_C_libtooling-42yv. `-O1` DIAMOND FUSION WITH
+#    ANGLE PHIS, and it is NOT class F's fold. These are the `m_rz` prefix ×
+#    `_rz` suffix corner: rolled 11 lines against the twin's 22, because the twin
+#    emits a WHOLE EXTRA FLAG GROUP and `cqrt_x`-bracketed prefix/suffix
+#    rotations the rolled side never emits at all.
+#    The matrix's rz prefix and suffix are UNCONTROLLED `cq_phi` — global phases,
+#    which Rule 3 DELETES on the rolled side (they are absent from its stream).
+#    On the flat side `-O1` FUSES the two diamonds into one carrying two angle
+#    phis, so those same slots become an Rz-stem angle-select KICKBACK PAIR.
+#    ROLLED IS NOT DEFICIENT: Δ_rolled = Δ_unrolled = 2·PI per path, exactly —
+#    rolled `h1:PI + h2:PI`; twin `(PI−0.125) + (+0.25) + (PI−0.125)`. The extra
+#    angles cancel PAIRWISE across adjacent flag groups (each appears once
+#    unbracketed and once X-bracketed on the next), so the cancellation holds for
+#    ARBITRARY angles — VERIFIED with a NON-CANCELLING control (+0.125 / +0.3,
+#    trackD2/probes/rz_cells/nc_{rolled,unrolled}.c): relative Δ is 2·PI on BOTH
+#    sides there too. No FP rounding is involved; the compiler never sums angles.
+#    ⚠ READ WITH ITS LIMIT: Δ = 2·PI means the marked phase is e^(i2PI) = 1, so
+#    these three are PHASE-NEUTRAL — they witness rail STRUCTURE, not a
+#    non-trivial marked phase (the §0 Grover lesson in miniature). The
+#    NON-CANCELLING control carries the structural weight; do not cite these
+#    three as evidence that a non-trivial phase survives the roll.
+#    RETIREMENT TRIGGER (trackD2/RZ_CELLS.md §5): the blessing rests on
+#    `cqrt_rz_i1` being DIAGONAL and on X·P(θ)·X ≡ P(−θ) up to a global phase.
+#    The day a phase arm emits anything NON-diagonal on a flag, or `cqrt_x` lands
+#    on `h0` rather than an ancilla, Δ stops being additive and this must be
+#    re-derived FROM THE STREAMS, not re-read.
+#
+# ── ⚠ NOT QUARANTINED, AND DELIBERATELY SO: the 18 `der`/`rder`/`range`/`rrange`
+#    cells that this run made visible for the first time. They were
+#    HARNESS-ERROR on the ORACLE and at the 2026-09-18 pass-1 gate, so NO ONE HAS
+#    EVER ADJUDICATED THEM; Track C's (T4) loop-exit-discharge rule is what let
+#    them reach a verdict at all. **16 of the 18 show DIFFERENT (_unc, free,
+#    mint) counts between the two halves**, several with the ROLLED side
+#    discharging FEWER than its twin (`m_rz_der_rz` 5 vs 6, `m_rz_range_rz` 3 vs
+#    4) — the deficient-rolled signature, which is what class A looked like
+#    before P2 fixed it. A quarantine row says "this divergence is blessed"; one
+#    written over an unexplained count asymmetry is the F-4 error this file
+#    exists to catch. They stay RED until someone measures them.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -540,3 +598,124 @@ owner    class E with the post-loop non-diagonal gate present — the fence does
 digest   870aab2dc1afe204
 rolled   cqrt_alloc_i32(6) -> h8
 unrolled cq_template_and_i32_hl(h0, 1) -> h8
+
+cell     m_none_eq_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq_none_bodyread
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq_none_postmark
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq_none_premark
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq0_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_eq0_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_gt_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_none_gt_rz
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_eq_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_eq0_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_gt_none
+class    F
+bd       test_C_libtooling-svoi
+owner    per-trip flag mint vs -O1's CSE of the twin's — neither side deficient; same predicate, diagonal flag, equal per-path phase (owner S3)
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_eq_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_eq0_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
+cell     m_rz_gt_rz
+class    G
+bd       test_C_libtooling-42yv
+owner    -O1 fuses the flat twin's diamonds into an angle-select pair; delta = 2*PI BOTH sides, verified with a non-cancelling control. PHASE-NEUTRAL
+digest   0000000000000000
+rolled   <pending --refresh-quarantine>
+unrolled <pending --refresh-quarantine>
+
