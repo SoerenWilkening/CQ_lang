@@ -103,7 +103,62 @@ ORACLE with `cq controlled lowering: condition predates a non-diagonal gate` and
 combined binary, while the unrolled half already accepted — the `UNROLLED-ONLY → TRACE-DIVERGENCE`
 transition, door = **Track D's P4**.
 
-### C-2. ⚠ THREE CELLS WHOSE ARGUMENT I CANNOT WRITE — leave UNQUARANTINED and RED
+### C-2. ⚠ RESOLVED — Track D supplied the argument, and I VERIFIED IT INDEPENDENTLY FROM THE TRACES
+
+**Superseded: these three are now QUARANTINE-READY, not red.** Track D adjudicated them as
+**(a) SAME UNITARY** in `trackD2/RZ_CELLS.md` at `592fa164` — verified records-only here (`git diff
+--stat 460ecefe 592fa164 -- ir-pass include runtime tools tests` is **EMPTY**; 610 insertions, all
+under `trackD2/`).
+
+⚠ **I did not take the adjudication on trust.** Track D read the **stage-1 IR**; I have the **emitted
+traces**, which is the independent instrument, and the arithmetic closes.
+
+**Measured, `m_rz_eq_rz` on the combined binary** (full traces, not diff fragments). Every flag on
+both sides is minted by the SAME predicate `cq_template_icmp_eq_i32_hl(h0, 5)`, stripped by its own
+`_unc` and freed; **`h0` is never `cqrt_x`-bracketed and never freed** — Rule 6/7 invariants hold on
+both sides. Using `X·P(θ)·X ≡ P(−θ)` up to a global phase:
+
+| side | per-group relative phase | total |
+|---|---|---|
+| ROLLED (11) | `h1: π` · `h2: π` | **2π** |
+| UNROLLED (22) | `h1: π − 0.125` · `h2: +0.125 + 0.125` · `h3: −0.125 + π` | **2π** |
+
+The ±0.125 terms cancel to exactly 0. **Δ_rolled = Δ_unrolled = 2π**, and 0 on the `a≠5` path.
+
+**The discriminating check is Track D's NON-CANCELLING control** (`nc_rolled.c`/`nc_unrolled.c`:
+prefix `+0.125`, suffix `+0.3`, which do NOT sum to zero — it tests whether the agreement is
+structural or an artifact of the matrix's ±0.125). Run here on the combined binary:
+
+| side | a==5 path | a≠5 path | **relative Δ** |
+|---|---|---|---|
+| ROLLED (11) | 2π | 0 | **2π** |
+| UNROLLED (22) | `(π+0.3) + 0.125 + π` | `0 + 0.3 + 0.125` | **2π** (common `0.425` is a GLOBAL phase, discarded) |
+
+**It agrees with non-cancelling angles too, so the equality is STRUCTURAL.** The mechanism is visible
+in the stream: each extra angle appears once **unbracketed** on one flag group and once
+**X-bracketed** on the next, so adjacent groups cancel pairwise **for arbitrary angles** — exactly
+what "the fused flat diamond becomes an Rz-stem angle-select kickback pair" predicts. And the
+uncontrolled `cq_phi(0.125)` / `cq_phi(0.3)` are **absent from the rolled stream entirely**,
+confirming Rule 3's global-phase deletion on that side.
+
+⚠ **No floating-point rounding is involved**: the compiler never SUMS these angles — each is a
+separate gate carrying the identical `f64` bit pattern in its positive and bracketed-negative slots,
+so the cancellation is exact even for `0.3`, which is not exactly representable.
+
+⚠ **ONE CAVEAT THE BLESSING SHOULD CARRY, and neither track's text states it.** Δ = **2π** means the
+marked phase is `e^{i2π} = 1` — **these cells are phase-NEUTRAL, so they witness rail STRUCTURE and
+not a non-trivial marked phase.** That is CLAUDE.md §0's lesson about the shipped Grover goldens in
+miniature. It does **not** weaken the equality (both sides are 2π, so equivalence holds), but a reader
+must not cite these three as evidence that a *non-trivial* phase survives the roll. Track D's
+non-cancelling control is what carries the structural weight, and it should be named in the
+quarantine row beside the cells.
+
+**Quarantine with `RZ_CELLS.md` §5's `class:` / `owner:` text and its retirement trigger** (the
+blessing rests on `cqrt_rz_i1` being DIAGONAL and on `X·P(θ)·X ≡ P(−θ)`; it fails the day a phase arm
+emits anything non-diagonal on a flag, or `cqrt_x` lands on `h0` rather than an ancilla).
+Signatures **freshly measured at pass 2**.
+
+### C-2 (historical) — the reading this replaced, kept because the direction matters
 
 `m_rz_eq_rz` · `m_rz_eq0_rz` · `m_rz_gt_rz` — exactly the cells carrying **both** the `m_rz` prefix
 rotation **and** the `_rz` suffix rotation. Pass-1 signatures `8b1393ee69a8d196`,
@@ -131,9 +186,13 @@ counts on the flag wire**, and whether the rolled side legitimately folds the `m
 or is **dropping** them is a question I cannot answer from the trace. Asserting "same unitary" here
 would be an unearned clearance of exactly the kind Rule 2 forbids.
 
-**Disposition per the plan: these three stay UNQUARANTINED and RED, listed here.** They need either
-the owning track's per-trip record or an independent reading before any pin. ⚠ If the rolled side is
-dropping the prefix/suffix rotations, this is **not** a quarantine item at all — it is a P1.
+**Disposition at the time of writing: RED, pending the owning track's record.** ⚠ Kept verbatim
+because the DIRECTION was right: I refused to assert "same unitary" from a diff I could not explain,
+and the question I could not answer — *is the rolled side folding those rotations or DROPPING them?* —
+is exactly the question Track D's record answers (**folding**: they are uncontrolled `cq_phi`, deleted
+as global phases on the rolled side per Rule 3, and re-expressed as an angle-select kickback pair on
+the fused flat side). Had the answer been "dropping", this would have been a P1 and not a quarantine
+row. **Superseded by C-2 above.**
 
 ---
 
