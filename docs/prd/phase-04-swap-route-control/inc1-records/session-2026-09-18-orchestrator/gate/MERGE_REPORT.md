@@ -383,6 +383,57 @@ marker, and it declines). The README names the real pair —
 45 == 45 trace lines**, `0 left dirty`, `0 unproven` (rolled `5 verified`, unrolled `10 verified`).
 ⚠ That pair is the twin of the README's version, **not** of the owner's current local file.
 
-## 15. Suite / matrix / equivalence / corpus at the pass-2 hash
+## 15. Suite / matrix / equivalence at the pass-2 hash
 
-*(recorded below as each completes)*
+### 15a. Full `ctest -j6` — **458/459 in 1059.19 s**, the one failure is the twin matrix
+
+```
+99% tests passed, 1 tests failed out of 459
+Total Test time (real) = 1059.19 sec
+The following tests FAILED:
+	318 - e2e-loop-twin-matrix (Failed)
+```
+
+Started at load **7.09** and ran to **33** — a quieter box than pass 1's, and quoted with its load
+per Rule 19. Announced in `GATES_INFLIGHT.md` before starting; no IN-FLIGHT line existed at this hash.
+**Run ONCE**, as the plan requires. Both selftests green inside it:
+`e2e-loop-twin-quarantine-selftest` **Passed 1.23 s**, `e2e-free-pairing-selftest` **Passed 2.00 s**.
+
+⚠ **Track C's final tip `d9b0f49f` did NOT require a re-run.** I merged `26dff90e`; the delta to
+`d9b0f49f` leaves `tools/free_pairing_check.py` **byte-identical** (`7ee74c6c2b257d2c` in both) and
+changes only `free_pairing_check_test.py` (+29, one more mutant) and records. **So the running suite
+was already measuring C's final checker** — the only entry the delta can witness is
+`e2e-free-pairing-selftest`, which is a single `-R`. I deliberately held that merge while the suite
+ran rather than editing a script a running measurement imports (this session's own F-8 lesson, and
+Track C's own self-disclosure).
+
+### 15b. `cq-opt-equivalence-full` — **2099 fixtures, 0 mismatches**
+
+Exit 0, **2 m 53 s** (17:02:57 → 17:05:50). **RE-RUN rather than cited**: Group 1's fix added no new
+decline string, but it and Track D both moved ANALYSIS SITES, which the plan's own rule licenses.
+Hash re-verified immediately after: `07d937842bfb5135` — unchanged, so the line is a fact about the
+binary the rest of this section describes.
+
+### 15c. The twin matrix — RED, adjudicated in full: `MATRIX_ADJUDICATION.md` (PASS 2)
+
+**The cause of pass 1's red is GONE**: `HARNESS-ERROR` 24 → **0** and `QUARANTINE STALE` 6 → **0**,
+because Track C's (T4) proves the loop-exit discharge. **bd `1m5p` class A is FIXED and the instrument
+now says so itself** — all six `oder` cells report rolled `(5, 5, 7)` == unrolled `(5, 5, 7)` at equal
+line counts, where the ORACLE was `(4, 4, N)` vs `(6, 6, N)` with the rolled side deficient.
+
+What is red now: **49** verdict changed · **33** genuinely unquarantined divergences (two mechanism
+groups, both argued) · **6** `QUARANTINED SIGNATURE CHANGED` (the class-A cells — a refresh) · **1**
+boundary-control re-pin. Greening it is one large deliberate operation — 33 hand-authored blocks each
+needing a bd id, a refresh, a re-pin and a regenerate — and **I did not perform it**;
+`expected.txt`/`.quarantine.txt` are byte-unchanged on this branch.
+
+⚠ **Two instrument defects of MINE, both self-caught:** my matrix parser labelled the six class-A
+cells `(not quarantined)` (it missed the matrix's second line, `QUARANTINED SIGNATURE CHANGED`), and
+`PASS2_PREP` (B)'s retirement trigger compared **my** tool's diff signature against **the matrix's**
+pin — different renderings, never comparable, so the trigger misfired. Re-measured, the control's
+divergence is byte-identical to pass 1, so the adjudication stands and the value to pin is the
+matrix's `d81485c481c5ad07`, never my `3fa9d45cd851c1b3`.
+
+### 15d. Corpus re-sweep at the pass-2 hash
+
+*(launched 17:06 over 7041 rows; recorded when complete)*
