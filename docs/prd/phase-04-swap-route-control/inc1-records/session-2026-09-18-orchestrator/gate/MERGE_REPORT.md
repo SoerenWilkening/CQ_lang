@@ -456,8 +456,15 @@ established**, and the pass-1 figure (6981 rows, 137 movers, 0 unattributable, A
 quoted for pass 2: different binary, different denominator.
 
 **Blast-radius re-scan**, scoped to the **386 shipped e2e slices** (the decisive set — only these have
-goldens). At **67 of 386**: **0 G8-SHAPE**. The two pass-1 hits were re-measured DIRECTLY at the
-pass-2 hash instead and are recorded in §12 (rolled DECLINES, unrolled still ACCEPTS).
+goldens). At **180 of 386: exactly ONE G8-SHAPE**, and it is
+`slice_control_inplace_ry_loop_leak_unrolled.c` — **the twin I already report in §12 as still
+compiling the hazard, not a new hit.** Its partner `slice_control_inplace_ry_loop_leak.c` has dropped
+out of the hit set because it now DECLINES.
+
+⚠ **So the sweep independently reproduces §12's direct measurement**: pass 1's **2** shipped hits
+become **1**, the survivor being the loop-free twin. That is the blast-radius half of *"G-6 is half
+closed"*, measured a second way — and the surviving hit is a slice that is now **unregistered with
+its golden deleted**, so no gate observes it.
 
 Partial outputs are committed as `gate/corpus_07d93784_partial.txt` and `gate/blast_p2_partial.txt`
 so the next agent can resume rather than restart.
