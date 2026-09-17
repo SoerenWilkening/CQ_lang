@@ -2782,25 +2782,24 @@ enum class CondWireDisp {
 // same and it is a pattern, not a prediction"*). Equally, the day any caller
 // passes a `TaintSet` that is already FINAL, delete this paragraph rather than
 // leaving a stale warning in front of a closed hole (L7-with-a-twist).
-bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
-                                     const BasicBlock *Pred,
-                                     const Instruction *Term, TaintSet &Taint) {
-  // The predicate is the old loop's, verbatim: a `cq_theta_*` whose arg-0 is
-  // TAINTED is an IN-PLACE, NON-DIAGONAL Ry on a live handle. A source theta
-  // (arg-0 classical) allocates a FRESH rail and relabels nothing, which is why
-  // the two-prep customer (bd `hn29`/`leyd`) is an accept and not a lucky one.
-  auto isChainedTheta = [&](const Instruction &I) {
-    const auto *CI = dyn_cast<CallInst>(&I);
-    if (!CI)
-      return false;
-    const Function *F = CI->getCalledFunction();
-    return F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
-           Taint.Tainted.count(CI->getArgOperand(0));
-  };
+// ⚠ THE WALK ITSELF IS NOW SHARED, AND THE EXTRACTION IS A RULE-14 MOVE, NOT A
+// TIDY-UP (bd `test_C_libtooling-drbq.12`, 2026-09-17). `anyInstructionInGap` is
+// the ONE spelling of *"which program points can execute after `Def` and before
+// an activation of `Term`?"*; `IsEvidence` is the ONLY thing its two callers
+// differ in. The walk below is Track P′'s, moved line-for-line — the block
+// bounds, the `Cyclic` re-scan, the `isPotentiallyReachable` push filter, the
+// `B == Pred ? Term : nullptr` stop and the 512-block budget whose exhaustion
+// DECLINES are all unchanged, so `chainedThetaBetweenDefAndBranch` is
+// behaviour-identical for every pre-existing caller. Adding a THIRD question
+// over this gap must extend this function, never copy it: two walks over one
+// gap is how the two halves start to disagree about which points are in it.
+template <typename FnT>
+bool anyInstructionInGap(const Instruction *Def, const BasicBlock *Pred,
+                         const Instruction *Term, FnT IsEvidence) {
   // `[From, Stop)` within one block; a null `Stop` means "to the end".
   auto scanRange = [&](const Instruction *From, const Instruction *Stop) {
     for (const Instruction *I = From; I && I != Stop; I = I->getNextNode())
-      if (isChainedTheta(*I))
+      if (IsEvidence(*I))
         return true;
     return false;
   };
@@ -2841,6 +2840,230 @@ bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
   return false;
 }
 
+// The predicate is the old loop's, verbatim: a `cq_theta_*` whose arg-0 is
+// TAINTED is an IN-PLACE, NON-DIAGONAL Ry on a live handle. A source theta
+// (arg-0 classical) allocates a FRESH rail and relabels nothing, which is why
+// the two-prep customer (bd `hn29`/`leyd`) is an accept and not a lucky one.
+bool isChainedThetaCall(const Instruction &I, TaintSet &Taint) {
+  const auto *CI = dyn_cast<CallInst>(&I);
+  if (!CI)
+    return false;
+  const Function *F = CI->getCalledFunction();
+  return F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
+         Taint.Tainted.count(CI->getArgOperand(0)) != 0;
+}
+
+bool chainedThetaBetweenDefAndBranch(const Instruction *Def,
+                                     const BasicBlock *Pred,
+                                     const Instruction *Term, TaintSet &Taint) {
+  return anyInstructionInGap(Def, Pred, Term, [&](const Instruction &I) {
+    return isChainedThetaCall(I, Taint);
+  });
+}
+
+// ---- bd `test_C_libtooling-drbq.12` — THE LICM-HOISTED / CSE'd LOOP-INVARIANT
+//      COMPARE (PRD §13.2 row W, §13.10 Q1; owner ruling 2026-09-11 that an
+//      over-decline of a valid circuit is a DEFECT, not a safety margin).
+//
+// THE PROGRAM. `for (…) { if (q == 5) r = cq_theta(r, .9); }` with `r` disjoint
+// from `q` and NO gate on `q` — the simplest thing a user writes, and PRD §13.11
+// worry 7's own headline. `q` is loop-INVARIANT, so `clang -O1` LICM-hoists the
+// compare into the preheader (and, in the hand-unrolled twin, CSEs the two
+// copies into the entry block so the SECOND region's `Pred` is the FIRST
+// region's merge). Either way `Cond->getParent() != R.Pred`, P4 returns
+// `DeclineNow` before anything else runs, and **the arm's own Ry plays no part
+// in the decline at all**. 16 twin-matrix cells × 2 halves are this shape.
+//
+// WHY P4 EXISTED AND WHY IT NO LONGER HAS TO. Its own comment says it: the P5
+// positional scan *"walks off the end of `Def`'s block and returns `false`
+// VACUOUSLY"* outside `Pred`, *"which is precisely why the callers paired it
+// with an unconditional `getParent() != Pred → DeclineNow`"*. Track P′ (bd
+// `hn29`/`leyd`/`52og`) made that scan a REAL CFG-bounded walk and then flipped
+// the pairing off for exactly ONE species — a claimed prep merge φ. This is the
+// same flip for a COMPARE, and it pays a price P′ did not have to: P′'s walk is
+// WIRE-BLIND, and a hoisted compare's gap contains the loop body, hence THE
+// ARM'S OWN `cq_theta` ON A DISJOINT RAIL. MEASURED: with the wire-blind walk
+// and no filter, all 16 cells trade a P4 decline for a P5 decline and move ZERO
+// (`trackD2/IMPL_D2b.md` §4). So the gap question here is asked WIRE-SCOPED,
+// which is PRD §13.10 Q1's remedy in its own words — *"admit a compare that
+// DOMINATES `Pred` when nothing on the CONDITION's wire stands between it and
+// `BI`"*.
+//
+// ⚠ THE RE-DERIVATION `chainedThetaBetweenDefAndBranch` DEMANDS OF THIS CALLER,
+// DONE AND NOT INHERITED. That function's header carries a trigger naming this
+// exact arrival: *"the day this helper gains a caller whose `Def` is NOT a
+// region merge φ — a plain compare leaf, say … re-derive it. A compare is a
+// snapshot, not a register, and neither half of the argument above transfers
+// unexamined."* It does not transfer, in both halves:
+//   * P′'s availability half — *"the only names of the condition rail available
+//     in the gap are the φ itself and values derived from it"* — is FALSE here.
+//     A compare's tainted operand is an ordinary register that DOMINATES the
+//     compare, so `%q2 = add i32 %q, 1` in the gap is valid SSA, not an
+//     "Instruction does not dominate all uses" verifier reject.
+//   * P′'s G6 half — the φ *"is ALWAYS READ LATER"*, so M-C refuses the in-place
+//     conversion — does not transfer either: the compare reads `%q` BEFORE the
+//     gap, and the branch reads the COMPARE, not `%q`.
+// The answer is an INTERLOCK, and it is MEASURED rather than assumed: control
+// emission runs BEFORE `lowerOps`, so by the time M-C decides in-place-vs-out,
+// the flag mint / `_unc` strip / controlled gate already read the condition's
+// handle and already sit after anything in the gap, and G6 refuses the in-place
+// conversion for a parent with a use it cannot prove earlier.
+// `railRelabellingGateOn` below carries the measurement, the probe that showed
+// the ALTERNATIVE (a fence on the `add`) to be a pure OVER-DECLINE, and the
+// retirement trigger -- which is the one `railCondWireDisposition`'s header
+// already owns rather than a new one.
+//
+// ⚠ THIS IS A THIRD CALLER OF `railWireClosure` AND IT IS DELIBERATELY **NOT**
+// THE F2/R4 `CondRails`/`CondWire` SPELLING. Those two are `BackwardOnly`; this
+// one is `BothWays`. That is not drift and it does not fire CLAUDE.md §4's
+// *"`railWireClosure` as called by F2 diverges from R4's `CondRails`"* trigger,
+// because NEITHER of those call sites is touched here and the three ask
+// different questions whose failure directions are OPPOSITE: widening F2's
+// exclusion set is an OVER-ACCEPT (21 recorded confirmed miscompiles), widening
+// this GATE set is an OVER-DECLINE. A gate test wants the whole rail — including
+// the forward members a diagonal `cq_phi` or a chained theta adds — while an
+// exclusion set wants the provable core. Folding all three into one helper would
+// put the strictly-safe direction of one in charge of the strictly-unsafe
+// direction of the others, so it is refused IN WRITING here rather than left to
+// a later tidy-up (Rule 14 cuts this way too: one SPELLING per QUESTION, not one
+// spelling per callee).
+void condRailMembers(Value *Cond, TaintSet &Taint,
+                     SmallPtrSetImpl<Value *> &Out) {
+  SmallPtrSet<Value *, 16> Prov;
+  condProvenance(Cond, Taint, Prov);
+  railWireClosure(Cond, Taint, WireDir::BothWays, nullptr, nullptr, Out);
+  for (Value *P : Prov)
+    railWireClosure(P, Taint, WireDir::BothWays, nullptr, nullptr, Out);
+}
+
+// Is `I` a gate that RELABELS the basis of a rail in `Members`? ONE species: a
+// CHAINED `cq_theta` (an in-place, NON-DIAGONAL Ry) whose arg-0 NAMES the rail.
+// Rz (`cq_phi`) is deliberately absent -- it is DIAGONAL, it preserves the basis
+// the mint reads, and that is the whole ground the stale-condition accept has
+// always stood on.
+//
+// THE dtzb IN-PLACE `add`/`sub`/`xor` IS DELIBERATELY **NOT** HERE, AND IT WAS
+// BUILT, MEASURED AND REMOVED RATHER THAN NEVER CONSIDERED. The re-derivation
+// above owes an answer for it (the availability half of Track P-prime's ground
+// does not transfer to a compare), and the first answer written here was a
+// FENCE: "an `add`/`sub`/`xor` with one tainted operand naming the rail is
+// evidence", the same conservative both-roots reading `railWireClosure`'s own
+// hop takes. **Measured, it is a pure OVER-DECLINE.** On
+// `trackD2/probes/dtzb_flat_red.ll` -- the CSE'd two-region customer with
+// `%u = add nsw i32 %1, 1` in the shared merge block, i.e. squarely in the gap
+// -- the fence declined, and with the fence deleted the module ACCEPTS and emits
+// `%h_op = cq_template_add_i32_hl(i32 %h, i32 1)`: an **OUT-OF-PLACE** add on a
+// FRESH rail. It relabels nothing, so there was nothing to fence.
+//
+// AND THE REASON IT IS OUT OF PLACE IS STRUCTURAL FOR THIS SHAPE, NOT LUCK. By
+// the time `classifyInPlaceReassignment` (M-C, `ArithLowering.h` -- the ONE owner
+// of the in-place decision, Rule 14) runs inside `lowerOps`, CONTROL EMISSION HAS
+// ALREADY HAPPENED: the flag mint, the `_unc` strip and the controlled gate are
+// real instructions reading the condition's handle, and they sit AFTER anything
+// in the gap. G6 refuses the in-place conversion for any parent carrying a data
+// use it cannot prove earlier than the site, and it bails unconditionally inside
+// a loop besides. So an in-place candidate in the gap is exactly a candidate M-C
+// refuses. Asking M-C from HERE instead would be worse than useless: its answer
+// is taken at FINAL taint over a FINAL CFG, so a `false` read at round-1
+// detection could become `true` later -- a decline traded for an OVER-ACCEPT,
+// which is the unforgivable direction.
+//
+// RETIREMENT TRIGGER -- and it is NOT A NEW ONE, which is the point. This rests on
+// the SAME pin `railCondWireDisposition`'s and `chainedThetaBetweenDefAndBranch`'s
+// headers already carry: *"If M-C's G6 ever admits an in-place op on a rail with
+// a later read, this ground is gone."* Add this caller to that list rather than
+// starting a second one. The day it fires, the fence measured and removed here is
+// the shape to re-derive -- but re-derive it against G6's new answer, not against
+// the both-roots reading, which is what made it an over-decline.
+bool railRelabellingGateOn(const Instruction &I, TaintSet &Taint,
+                           const SmallPtrSetImpl<Value *> &Members) {
+  const auto *CI = dyn_cast<CallInst>(&I);
+  if (!CI)
+    return false;
+  const Function *F = CI->getCalledFunction();
+  if (!F || !F->getName().starts_with("cq_theta_") || CI->arg_size() < 1)
+    return false;
+  Value *A0 = CI->getArgOperand(0);
+  return Taint.Tainted.count(A0) && Members.count(A0);
+}
+
+// May a COMPARE defined OUTSIDE `Pred` still have its flag minted at `Term`?
+// The ONE spelling, CALLED by both consumers (`condWireDisposition`'s P4 and
+// `classifyPhaseKickback`'s step-5a tree leaf) and re-derived by neither.
+//
+// FOUR CONJUNCTS, and the first is the one a reader will think is decoration:
+//   (1) `isa<CmpInst>` — this admits a COMPARE only. A φ has its own route
+//       (`CondIsClaimedRailPhi`, whose ground is a claimed prep region) and a
+//       RAIL has `railCondWireDisposition`; neither ground is re-used here.
+//   (2) `DT->dominates(C, Term)` — the mint reads `C`'s OPERANDS at `Term`, so
+//       they must be available there. ⚠ It is VACUOUSLY TRUE for every module
+//       LLVM will accept — `C` feeds `Term`'s condition through an SSA chain, so
+//       it dominates `Term` by the verifier's own rule — and it is written
+//       anyway because it is the PRECONDITION, not the test: the day a caller
+//       passes a `C` that does not feed `Term`, this line is what refuses it.
+//       A null `DT` refuses too (no tree, no proof).
+//   (3) the gap carries no rail-relabelling gate on the condition's OWN rail.
+//   (4) — at the CALLERS — the region must not be `ShareCondFlag`. That path
+//       mints at `Cond->getNextNode()` (`SwapRouteEmit.cpp`) rather than at
+//       `BI` and SKIPS the strip+free, so a cross-block condition would put the
+//       flag mint in a different block from the rest of the stream and, in a
+//       loop, mint ONCE for a stream that fires per trip. Kept on the
+//       unconditional decline; it is a different emission contract, not a
+//       different position.
+//
+// ⚠ WHAT THIS DOES **NOT** RELAX: the wire walk. `condWireDisposition` still
+// runs `wireGainsNonDiagonalGate` over the condition's provenance, position-free
+// first and then position-aware against `BI`, and that is what catches the
+// dangerous half of this family — a body gate that relabels the condition's rail
+// under a loop-INVARIANT SSA name. Such a gate can reach `BI` around the back
+// edge, so `provablyBefore(BI, G)`'s second conjunct fails and the region
+// declines. The two fences are complementary and neither is redundant: the walk
+// covers FORWARD/diagonal descendants the backward closure never reaches, and
+// this scan covers the in-place `add`/`xor` hop the walk deliberately refuses to
+// cross.
+// THE L1 ITEM, AND IT JOINS AN EXISTING ONE RATHER THAN OPENING A NEW ONE
+// (self-adversarial round 2, 2026-09-17). Both halves of this predicate decide on
+// **ROUND-1 TAINT**: `condRailMembers` builds `Members` from `condProvenance` +
+// `railWireClosure` over `Taint.Tainted` as it stands before
+// `repropagateControlMerges` re-seeds from the 6.5/4.5 merge `%out` rails, and
+// `railRelabellingGateOn` reads the same set. A `cq_theta` whose arg-0 becomes
+// tainted only in ROUND 2 therefore reads as a SOURCE theta here (not evidence) and
+// as a CHAINED one to `lowerRotations`, which decides at FINAL taint - CLAUDE.md's
+// L1 **PREDICATE** species, verbatim. That is EXACTLY the residual
+// `chainedThetaBetweenDefAndBranch`'s own header already documents for the prong
+// this one replaces on the cross-block path; this caller widens that residual's
+// POPULATION (a class that was an unconditional decline now rests on a round-1
+// test) without changing its species.
+//
+// WHAT IS RE-ASKED, MEASURED IN SOURCE: the WIRE and MEASURE rungs ARE. The flag
+// mint calls `markCmpCondRead` from `lowerCompareImpl` with `WireRuled` on this
+// path, and that record is keyed on the MINT's position - not on the source
+// compare's block - so a hoisted compare gets the same record an in-`Pred` one does
+// and `reverifyCmpCondReads` re-asks rungs (ii)/(iii) at FINAL taint in BOTH entry
+// points. The POSITIONAL question is the one nothing re-asks.
+//
+// RETIREMENT TRIGGER, by name and shared: `reverifyCmpCondReads` /
+// `reverifyRailCondReads`. The day either gains a POSITIONAL rung, this prong owes
+// it too - record the question at this call site and re-ask it after the round-2
+// fixpoint, declining loudly. Equally, the day any caller passes a `TaintSet` that
+// is already FINAL, delete this paragraph rather than leave a stale warning in front
+// of a closed hole (L7-with-a-twist).
+bool crossBlockCompareMintable(Instruction *C, const BasicBlock *Pred,
+                               const Instruction *Term, TaintSet &Taint,
+                               const DominatorTree *DT) {
+  if (!C || !Pred || !Term || !DT)
+    return false;  // cannot reason about the gap (Prime Directive).
+  if (!isa<CmpInst>(C))
+    return false;
+  if (!DT->dominates(C, Term))
+    return false;
+  SmallPtrSet<Value *, 16> Members;
+  condRailMembers(C, Taint, Members);
+  return !anyInstructionInGap(C, Pred, Term, [&](const Instruction &I) {
+    return railRelabellingGateOn(I, Taint, Members);
+  });
+}
+
 CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
                                  const SmallPtrSetImpl<Value *> &Prov,
                                  const DominatorTree *DT,
@@ -2868,16 +3091,49 @@ CondWireDisp condWireDisposition(const ControlRegion &R, TaintSet &Taint,
   // prong-free treatment onto the φ: that ground is an argument about M-C's G6
   // over a `cq_theta_i1` NAME, and bd `4aiu` refused to transplant it unmeasured.
   // This change does not transplant it either — it keeps the prong.
-  if (!CondIsClaimedRailPhi && Cond->getParent() != R.Pred)
-    return CondWireDisp::DeclineNow;  // unbounded gap across blocks.
+  //
+  // ⚠ bd `drbq.12` (2026-09-17) — AND A COMPARE THAT **DOMINATES** `Pred` WITH A
+  // CLEAN WIRE-SCOPED GAP. The paragraph above says every COMPARE *"keeps the
+  // unconditional decline, INCLUDING the LICM-hoisted loop-invariant compare
+  // that CLAUDE.md §2 names as the reason 'Grover's condition register must be
+  // loop-variant'"*. THAT SENTENCE IS NOW HISTORY and is deliberately left
+  // standing above so the two readings can be compared: what made a compare
+  // different from a claimed φ was never the species, it was that P′'s
+  // cross-block walk is WIRE-BLIND and a compare's gap routinely contains the
+  // arm's own Ry on a DISJOINT rail. `crossBlockCompareMintable` is the
+  // wire-scoped answer to exactly that, with the availability re-derivation the
+  // callee's own trigger demands of a non-φ caller — see its header.
+  // `ShareCondFlag` is NOT admitted: that path mints the flag at
+  // `Cond->getNextNode()`, so it is a different emission contract.
   const Instruction *BI = R.Pred->getTerminator();
+  const bool CrossBlockCompare = !CondIsClaimedRailPhi &&
+                                 Cond->getParent() != R.Pred;
+  if (CrossBlockCompare &&
+      (R.ShareCondFlag ||
+       !crossBlockCompareMintable(Cond, R.Pred, BI, Taint, DT)))
+    return CondWireDisp::DeclineNow;  // unbounded gap across blocks.
   // The POSITIONAL scan (P5) is unconditional and runs first: a tainted-operand
   // theta between the compare and the branch is a decline even on another wire,
   // and no position-aware proof can reach it (it is not dominated by `BI`
   // anyway, but the scan also covers wires the walk never sees). For a condition
   // in `R.Pred` this call IS the old single-block loop, expression-for-
   // expression; for a claimed φ elsewhere it is the CFG-bounded walk.
-  if (chainedThetaBetweenDefAndBranch(Cond, R.Pred, BI, Taint))
+  //
+  // ⚠ bd `drbq.12` — AND IT IS SKIPPED, EXACTLY ONCE, FOR THE CROSS-BLOCK
+  // COMPARE THE PRONG ABOVE ADMITTED. Reaching here with `CrossBlockCompare`
+  // means `crossBlockCompareMintable` has ALREADY walked this same gap with
+  // `anyInstructionInGap` — the same walk, the same blocks, the same budget —
+  // and found no relabelling gate ON THE CONDITION'S RAIL. Asking the WIRE-BLIND
+  // question here would re-decline what it proved, on the one piece of evidence
+  // this whole bead is about: the arm's own `cq_theta` on a DISJOINT rail, which
+  // for a hoisted loop-invariant compare sits inside the gap because the body
+  // reaches `Pred` around the back edge. ONE question, asked ONCE, at the site
+  // that decides admission.
+  // ⚠ NOTHING ELSE LOSES THE SCAN. An in-`Pred` compare, a claimed prep merge φ
+  // (P′'s own customer, which needs the CFG walk precisely because it has no
+  // wire-scoped admission of its own) and a rail all take it unchanged.
+  if (!CrossBlockCompare &&
+      chainedThetaBetweenDefAndBranch(Cond, R.Pred, BI, Taint))
     return CondWireDisp::DeclineNow;  // chained Ry on a live handle after the compare.
   // Position-FREE first: no gate at all is the ordinary accept path, and it
   // must not pay for a dominator query.
@@ -6451,7 +6707,20 @@ PhaseKickbackDisp classifyPhaseKickback(
     // forward to the branch, which is only a BOUNDED window when the leaf is in
     // `Pred`. A cross-block leaf declines conservatively — exactly what
     // `RegionTreeDetect::staleCond` does for the same reason.
-    if (Leaf->getParent() != Region.Pred) {
+    //
+    // ⚠ bd `drbq.12` (2026-09-17) — UNLESS `crossBlockCompareMintable` HAS
+    // WALKED THE GAP. The customer is the twin-matrix cell
+    // `m_none_ablphi_none_none_binv`, `for (…) { if (b && a == 5) cq_phi(π); }`,
+    // whose FLAT twin ACCEPTS on the oracle while the rolled form dies HERE —
+    // `a` is loop-invariant, so LICM hoists the `a == 5` leaf out of `Pred`
+    // while the `_Bool b` rail leaf stays. This is the SAME question
+    // `condWireDisposition`'s P4 asks about a single compare, so it CALLS the
+    // same predicate (Rule 14: the drbq Inc-3 (b′) defect is a SECOND SPELLING
+    // of a predicate the tree already owned). `ShareCondFlag` needs no clause
+    // here — it *"cannot be set for a tree"* (step 5d's own note).
+    if (Leaf->getParent() != Region.Pred &&
+        !crossBlockCompareMintable(Leaf, Region.Pred,
+                                   Region.Pred->getTerminator(), Taint, DT)) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return PhaseKickbackDisp::Declined;
     }
@@ -6969,21 +7238,30 @@ PhaseKickbackDisp classifyPhaseKickback(
   // (Prime Directive); the measured customers scan an empty-or-pure window.
   if (IsTree) {
     const Instruction *Term = Region.Pred->getTerminator();
-    auto scanForward = [&](const Instruction *From) {
-      for (const Instruction *I = From->getNextNode(); I && I != Term;
-           I = I->getNextNode()) {
-        const auto *CI = dyn_cast<CallInst>(I);
-        if (!CI)
-          continue;
-        const Function *F = CI->getCalledFunction();
-        if (F && F->getName().starts_with("cq_theta_") && CI->arg_size() >= 1 &&
-            Taint.Tainted.count(CI->getArgOperand(0)))
-          return true;
-      }
-      return false;
-    };
+    // ⚠ bd `drbq.12` (2026-09-17) — THE `scanForward` LAMBDA THAT STOOD HERE IS
+    // GONE, AND DELETING IT IS NOT A CLEANUP: it discharges the L8 RETIREMENT
+    // TRIGGER Track P′ wrote into this block in these words — *"the day step 5a's
+    // cross-block compare-leaf decline is widened, delete `scanForward` and give
+    // BOTH loops this helper — a single window must not survive as the weaker of
+    // two spellings of one question (L2)."* Step 5a is now widened, so the
+    // trigger has fired and is honoured: there is ONE window helper and both
+    // loops call it.
+    //
+    // ⚠ AND THE `getParent() == Region.Pred` GUARD IS THE OTHER HALF OF
+    // HONOURING IT, not a re-introduction of the weaker spelling. A CROSS-BLOCK
+    // compare leaf reaches this loop only because step 5a ADMITTED it, and step
+    // 5a admitted it by walking THIS SAME GAP with
+    // `crossBlockCompareMintable` — the CFG-bounded walk with the RAIL-SCOPED
+    // vocabulary. Asking the wire-BLIND walk again here would re-decline exactly
+    // what 5a proved, on evidence 5a measured and dismissed (the arm's own Ry on
+    // a disjoint rail). One question, asked ONCE, at the site that decides
+    // admission. For an in-`Pred` leaf — every leaf that reaches this loop today
+    // — `chainedThetaBetweenDefAndBranch` IS `scanForward`
+    // expression-for-expression (Track P′'s own measurement), so nothing that
+    // lowered before can move.
     for (CmpInst *Leaf : Tree.Leaves)
-      if (scanForward(Leaf)) {
+      if (Leaf->getParent() == Region.Pred &&
+          chainedThetaBetweenDefAndBranch(Leaf, Region.Pred, Term, Taint)) {
         diagnoseUnderControl(declAnchor(Region),
                              "condition predates a non-diagonal gate");
         return PhaseKickbackDisp::Declined;
@@ -6994,20 +7272,22 @@ PhaseKickbackDisp classifyPhaseKickback(
     // `Pred` (expression-for-expression — so every shipped in-`Pred` φ accept and
     // decline is unmoved) and is the CFG-bounded walk for one outside it.
     //
-    // ⚠ THE COMPARE LEAVES ABOVE KEEP `scanForward`, AND THAT IS NOT AN
-    // OVERSIGHT: a cross-block COMPARE leaf never reaches this loop at all —
-    // step 5a declines it `control flow` on the identical "only a BOUNDED window
-    // when the leaf is in `Pred`" ground. Giving compare leaves the CFG scan too
-    // is a SEPARATE widening of a SEPARATE decline string (filed, not built
-    // here): it would flip `control flow` fixtures this track never measured, and
-    // Rule 16 says do not implement out-of-scope shapes. The two prongs are the
-    // same question; only the φ half had a bead.
+    // ⚠ THE PARAGRAPH THAT STOOD HERE IS HISTORY AND ITS TRIGGER HAS FIRED (bd
+    // `drbq.12`, 2026-09-17). It said the compare leaves above *"keep
+    // `scanForward`"* because *"a cross-block COMPARE leaf never reaches this
+    // loop at all"*, and carried the retirement trigger *"the day step 5a's
+    // cross-block compare-leaf decline is widened, delete `scanForward` and give
+    // BOTH loops this helper"*. That day is here: step 5a now admits a
+    // cross-block compare leaf whose gap `crossBlockCompareMintable` has walked,
+    // `scanForward` is deleted, and both loops call this helper. The compare loop
+    // additionally guards on `getParent() == Region.Pred` — see its own note for
+    // why that is the second half of honouring the trigger rather than a
+    // re-introduction of the weaker spelling.
     //
-    // ⚠ RETIREMENT TRIGGER: the day step 5a's cross-block compare-leaf decline is
-    // widened, delete `scanForward` and give BOTH loops this helper — a single
-    // window must not survive as the weaker of two spellings of one question (L2:
-    // when you widen a set, ask what OTHER set was computed over the same
-    // closure).
+    // ⚠ RETIREMENT TRIGGER, REPLACED: the day a φ leaf gains a wire-scoped
+    // cross-block admission of its own (the φ analogue of
+    // `crossBlockCompareMintable`), this loop owes the same `getParent()` split
+    // for the same reason — one question, asked once, at the site that admits.
     for (PHINode *P : Tree.RailPhiLeaves)
       if (chainedThetaBetweenDefAndBranch(P, Region.Pred, Term, Taint)) {
         diagnoseUnderControl(declAnchor(Region),
