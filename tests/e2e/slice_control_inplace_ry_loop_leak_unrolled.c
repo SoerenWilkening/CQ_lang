@@ -1,3 +1,58 @@
+/* ══════════════════════════════════════════════════════════════════════════
+   UNREGISTERED AND CONVERTED 2026-09-18 — bd `test_C_libtooling-6n1s` F-1.
+   THE HEADER BELOW IS KEPT VERBATIM AS HISTORY; ITS CENTRAL CLAIM IS FALSE.
+
+   This slice used to assert "IT IS RULE-6 CORRECT". CLAUDE.md §5's Q-R1-1
+   correction ruled that exact sentence FALSE for three sibling fixtures, and it
+   is false here for the same reason: **Rule 6 governs whether a dirty rail may
+   be FREED. It says nothing about whether leaving one ENTANGLED is semantically
+   free, and Rule 8 says it is not.**
+
+   THE HAZARD, read off the (now deleted) golden — identical in the rolled and
+   the unrolled half:
+
+       cq_template_mul_i32_hl(h2, 7) -> h3     <- a COHERENT copy of h2's label
+       cqrt_tape_write_i32(t0, h3) -> h4       <- a COPY into the output tape:
+                                                  h3 is NOT collapsed and stays
+                                                  entangled with h2
+       cqrt_ry_i32_controlled(h5, h2, 0.9)     <- NON-DIAGONAL, on h2
+       ... and again, h6 / h7 ...
+       cqrt_measure_i32(h2)                    <- h2 IS the observable
+
+   h3/h6 are never _unc'd and never freed. A which-path record of h2 therefore
+   stands at a non-diagonal gate on h2, and h2 is measured — Rule 8 verbatim.
+   NOTE: only the tape-write RESULT (h4, h7) is an OutputRails member; its
+   OPERAND h3 is an ordinary interior template rail, so "it is the program's own
+   output" does NOT excuse it.
+
+   THE TWIN-IDENTICAL GATE COULD NOT SEE THIS, and that is the instrument
+   lesson. e2e-inplace-ry-loop-leak-twin-identical compared the two goldens and
+   PASSED — because BOTH halves are wrong in the same way. CLAUDE.md L10 has the
+   general form: "a cell whose two halves agreed because BOTH were wrong is
+   precisely what ACCEPT-IDENTICAL cannot see; only a fence can."
+
+   BOTH goldens are DELETED (not regenerated) and all three ctest entries are
+   unregistered — the 2026-09-14 stale-reader precedent. The .c files are KEPT,
+   because a renamed-or-deleted fixture can be resurrected by a merge (L8, bd
+   gahu).
+
+   L8 RETIREMENT TRIGGER: the day the which-path leak of this family gains a
+   real placement, both files become ACCEPTs again and the twin gate can be
+   restored — re-derive both streams then against the hand-unrolled twin's
+   MULTISET (owner ruling S3, 2026-09-17: byte identity is the INSTRUMENT, not
+   the claim), and do NOT restore the deleted goldens, which pin the leaking
+   stream.
+
+   THIS (UNROLLED) HALF STILL COMPILES THE HAZARD AT EXIT 0, AND NOTHING REFUSES
+   IT. declineUndischargedMarkedBodyRails is LOOP-SCOPED by construction — it
+   verifies a promise conjunct (1) makes about a MARKED LOOP BODY — and this
+   module has no loop at all. So the fix that refuses the rolled twin
+   structurally CANNOT reach this one. That is a NEW P1, filed in
+   trackT2/BD_TEXT.md ("two shipped goldens pinned a Rule-8 wrong unitary under a
+   green twin-identical gate"), and it is NOT something this increment closed. It
+   is kept unregistered so the program survives for that bead's red-green pair.
+   ══════════════════════════════════════════════════════════════════════════ */
+
 /* ⚠ REWRITTEN PROGRAM (3qlq Inc 1, OQ-3 / prep-b2): one statement ADDED —
    `q = cq_theta(q, 0.05);` immediately after each `cq_phi(0.1);`. The golden
    below is therefore a NEW PROGRAM's trace, not an audit substitution of the

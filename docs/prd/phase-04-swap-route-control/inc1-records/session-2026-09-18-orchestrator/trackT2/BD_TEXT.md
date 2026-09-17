@@ -6,10 +6,63 @@ checkout to apply. ⚠ `bd update --notes` **REPLACES** notes — use `--append-
 
 ---
 
-## bd `test_C_libtooling-6n1s` — **CLOSE**
+## bd `test_C_libtooling-6n1s` — **CLOSE** (⚠ in TWO commits, not one)
 
-> **CLOSED 2026-09-18**, commit `f6713c0e` on branch `tu9q-hoisted-template`, `cq-opt`
-> `7c1163ad94d06320`.
+> ⚠⚠ **THE FIRST COMMIT DID NOT CLOSE THIS BEAD, AND AN EARLIER REVISION OF THIS ENTRY SAID IT
+> DID.** The independent Rule-13 round of 2026-09-18 (`review_r13_group1/REVIEW.md`, finding F-1)
+> measured `g8_arm_use_derived_owned_rot.c` — `t5j` with the ARM minting an INTERIOR rail, ONE TOKEN
+> from the witness `f6713c0e` closes — still ACCEPTING at exit 0 with four coherent which-path
+> records alive across `cqrt_ry_i32(h0,0.9)` and `cqrt_measure_i32(h0)`, on the ORACLE, on
+> `f6713c0e`'s subject **and** on the P0+P3 branch. It DECLINES on the pre-group `0e280fc6`, so it
+> is the same regression from bd `tu9q`.1's third `markIfRailLocal` call site.
+>
+> **CLOSED 2026-09-18 by `f6713c0e` PLUS the F-1 fix** on branch `tu9q-hoisted-template`,
+> `cq-opt df2445fcaf82cf00`.
+>
+> **WHY THE FIRST FIX MISSED IT.** Conjunct (1) suppressed on `bodyBlocksMarked &&
+> markedBodyRailsHaveInBodyDischargePoint`, and BOTH are true for that module: the body is marked
+> and the post-dominator fold is the join, an own marked block. The rails still leak because
+> `planInteriorComponent` §4 abandons the WHOLE component on its per-gate `DT.dominates(G, At)` —
+> the ARM's producer does not dominate the join. **The fence modelled ONE refusal mechanism and a
+> multi-block body produces a DIFFERENT one by construction. A prediction about another file's
+> placement is not a fence.**
+>
+> **THE FIX IS PREDICT-AND-VERIFY.** Conjunct (1) now RECORDS the suppression (at conjunct (3), so a
+> loop with no post-loop rotation records nothing) and `declineUndischargedMarkedBodyRails` checks
+> it at the tail of the pass, after `uncompute`, in BOTH entry points, using the EXISTING bd `s82e`
+> string. A rail counts as discharged if it is adjointed+freed **or MEASURED** in-body — the second
+> clause was forced by a measured over-decline (see below).
+>
+> ⚠ **THE PLACEMENT FIX — (a), which the round ranked first — IS NOT BUILT AND IS FILED.**
+> Discharging the arm-minted rail in the arm and the header rail at the join is sound and was traced
+> step by step, but it needs a component partition FINER than a component keyed on
+> CONTROL-EQUIVALENCE (bd `tu9q` P0's multiplicity key does not separate them — both rails are in the
+> SAME marked body) plus a PER-ACTIVATION cross-plan ordering check (P0's shipped
+> `provablyBefore(At_inner, At_outer)` fails here). That is a new increment with its own Rule-13
+> budget. **So the arm-minted shape now DECLINES where it is compilable in principle — an
+> over-decline by the owner's 2026-09-11 ruling, filed as such.**
+>
+> ⚠ **AN OVER-DECLINE THE FIRST CUT OF THE FIX CAUSED, recorded because it is the instructive part.**
+> Asking only "is there an `_unc`?" turned `lowering_reject_live_record_post_gate_record_loop.ll`
+> from its owner-ruled WARNING (bd `lyyf`) into a DECLINE: its rail is the WIRE `w = q*2`, rotated in
+> place and then `cq_measure`d, and `railIsInterior` calls it interior because it has a NON-measure
+> user — a different question from "is it measured". Caught by lit, fixed by the MEASURED clause.
+>
+> **RED-GREEN by BINARY MUTATION over three binaries.** RED
+> `loop_leak_dephase_reject_arm_minted_interior_rail.ll` fails on the ORACLE **and** on P0+P3
+> (`opt` exit 0 where a decline is expected) and passes on the fix; GREEN
+> `loop_pairing_accept_arm_minted_measure_owned_control.ll` (ONE token — the arm's rail
+> measure-owned) fails three prefixes on the ORACLE and passes on the fix; CONTROL
+> `loop_leak_dephase_reject_arm_minted_unmarked_control.ll` DECLINES on every binary, UNMOVED.
+>
+> **F-2 and F-3 are landed AT THE SITE in the same change** (`CLAUDE.md` L7-with-a-twist): the
+> predicate's header now records that it returned `true` on all 19 of the round's probes and
+> declined nothing in a 6566-row sweep — **the P1 was closed, for the shapes it is closed for, by
+> the USE-SIDE relaxation alone** — and its "refusals I do not model" list now names §4's per-gate
+> dominance on an ARM-MINTED rail, the one a multi-block body produces by construction.
+>
+> ⚠ **Do not re-close this bead on a green suite.** Both misses so far were one token from a witness
+> the suite was green on.
 >
 > **THE OWED MEASUREMENT IS IN, AND IT IS A REGRESSION.** The pre-group tree `74eabd2c` was
 > rebuilt in a scratch dir and reproduces the 2026-09-14 oracle exactly
@@ -194,3 +247,73 @@ checkout to apply. ⚠ `bd update --notes` **REPLACES** notes — use `--append-
    NON-null key, and a non-null key can only make `multiplicityAgrees` return **false** where the
    other endpoint keys null, so the added population's failure mode at the new site is a REFUSAL
    (a leak), not a grant. The scrub itself is cross-TU and out of scope here.
+
+---
+
+## NEW BEAD — **P1**: *two shipped goldens pinned a Rule-8 wrong unitary under a green `twin-identical` gate, and only the ROLLED half is now fenced*
+
+> **P1 OVER-ACCEPT, straight-line (NO loop, NO tainted control flow needed on the surviving
+> half).** Found 2026-09-18 by the merge gate's blast-radius sweep of the bd `6n1s` F-1 fix, and
+> MEASURED by Group 1 on the fixed binary `df2445fcaf82cf00` rather than assumed.
+>
+> **WHAT SHIPPED.** `tests/e2e/slice_control_inplace_ry_loop_leak.c` and
+> `…_unrolled.c` were REGISTERED e2e slices with committed goldens and a GREEN
+> `e2e-inplace-ry-loop-leak-twin-identical` gate. Both goldens contain, per trip / per copy:
+>
+> ```
+> cq_template_mul_i32_hl(h2, 7) -> h3      <- a COHERENT copy of h2's basis label
+> cqrt_tape_write_i32(t0, h3) -> h4        <- a COPY into the output tape; h3 is NOT
+>                                             collapsed and stays entangled with h2
+> cqrt_ry_i32_controlled(h5, h2, 0.9)      <- NON-DIAGONAL, on h2
+> cqrt_measure_i32(h2)                     <- h2 IS the observable
+> ```
+>
+> `h3`/`h6` are never `_unc`'d and never freed. **That is `CLAUDE.md` Rule 8 verbatim and §5's
+> Q-R1-1 correction in its own words**, and BOTH slice headers asserted *"IT IS RULE-6 CORRECT"* —
+> the exact sentence that correction ruled FALSE for three sibling fixtures. ⚠ Only the tape-write
+> RESULT (`h4`, `h7`) is an `OutputRails` member; its OPERAND `h3` is an ordinary interior template
+> rail, so *"it is the program's own output"* does **not** excuse it.
+>
+> ⚠ **WHY NO GATE SAW IT, and this is the transferable half.** The twin-identical gate compares the
+> two goldens with `compare_files`. The unrolled twin leaks the SAME rail in the SAME place, so the
+> comparison PASSED. `CLAUDE.md` L10 already states the general form — *"a cell whose two halves
+> agreed because BOTH were wrong is precisely what ACCEPT-IDENTICAL cannot see; only a fence can"* —
+> and this is a second measured instance of it, on a REGISTERED e2e pair rather than a matrix cell.
+> Stage 2b could not see it either: every leaked rail here is TEMPLATE-minted, and the checker has
+> no `cqrt_alloc` to count.
+>
+> **WHAT IS CLOSED AND WHAT IS NOT — say this halves-first, because the asymmetry IS the bead.**
+> The bd `6n1s` F-1 fix (`declineUndischargedMarkedBodyRails`) refuses the **ROLLED** half: measured
+> `opt` exit 1, `cq loop lowering: rolled body leaks a rail entangled with a rotated register`. That
+> fence is **LOOP-SCOPED by construction** — it verifies a promise conjunct (1) makes about a MARKED
+> LOOP BODY — so it **structurally cannot reach the UNROLLED twin**, which was re-measured on the
+> fixed binary as **byte-identical to its old golden, exit 0, unchanged**. **The straight-line
+> spelling of this hazard still compiles today and nothing refuses it.**
+>
+> **DISPOSITION TAKEN 2026-09-18** (coordinator option (ii), the 2026-09-14 stale-reader precedent):
+> both goldens DELETED rather than regenerated; all THREE ctest entries unregistered
+> (`e2e-slice-control-inplace-ry-loop-leak`, `…-unrolled`, `e2e-inplace-ry-loop-leak-twin-identical`
+> — 449 → 446 `add_test`, 0 duplicates, sweep still last); both `.c` files KEPT with conversion
+> headers and L8 triggers (a deleted fixture can be resurrected by a merge — L8, bd `gahu`). The
+> ROLLED decline is pinned by `ir-pass/test/loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`,
+> the slice's verbatim stage-1 module, **validated NON-VACUOUS by BINARY MUTATION** (on the ORACLE
+> `9bd01598` it reports `EXPECTED-DECLINE but opt exit 0 -> FAIL`; on `df2445fcaf82cf00` it passes).
+> **Net coverage for the rolled half: zero. For the unrolled half: this bead.**
+>
+> **WHAT THIS BEAD OWES**, in the order a fix should take them:
+> 1. a fence (or a placement) that reaches the **straight-line** which-path leak — the class bd
+>    `s82e` owns; this is a new REGISTERED-GOLDEN customer for it, not a new class;
+> 2. RED = `tests/e2e/slice_control_inplace_ry_loop_leak_unrolled.c` (kept unregistered for exactly
+>    this), GREEN = the same program with the trailing `cq_measure(r)` removed so nothing observes
+>    the rotated register, isolating control = the same program with `s = r * 7` deleted;
+> 3. when it lands, BOTH `.c` files become ACCEPTs and the twin-identical gate can be restored —
+>    re-derive both streams against the hand-unrolled twin's MULTISET (owner ruling S3, 2026-09-17),
+>    and do **not** restore the deleted goldens, which pin the leaking stream.
+>
+> ⚠ **DO NOT READ THIS AS "the F-1 fix caused a regression".** The hazard is PRE-EXISTING and
+> shipped; the fix removed one half of it and made the other half visible. *"'pre-existing' is true
+> of the defect and FALSE of its population"* cuts the other way here for once: the population
+> SHRANK by one spelling and the residue is now named.
+>
+> Cross-reference bd `s82e` (the class), bd `6n1s` (the fence that took the rolled half), bd `bbu0`
+> (whose twin pair these were), bd `1yeu` (the instrument-gap family this joins).
