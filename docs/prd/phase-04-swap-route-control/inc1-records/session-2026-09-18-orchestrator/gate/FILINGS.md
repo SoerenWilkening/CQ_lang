@@ -180,3 +180,71 @@ This is the same structural blindness CLAUDE.md records for the C-1 leak family 
 `N template rail mint(s) of which M left dirty` at `95949550`). **This gate used that census as its
 primary numeric witness** — `0 left dirty` is exactly the segment F-6 describes — so F-6's correction
 is load-bearing, not cosmetic.
+
+---
+
+# PASS-2 DISPOSITIONS — what the two extra landings did to the filings above
+
+Measured at SUBJECT `07d937842bfb5135` (Group 1 + D + Group 1's F-1 fix + Track C). ⚠ Every number
+here is re-measured at that hash; none is carried from pass 1 or cited from a track's hand-off.
+
+## G-4 — **RESOLVED.** The exception is gone, not widened
+
+Track C's (T4) rule proves all three `U3-extern-rail` rails, so the flag and its reason were removed:
+`1 verified / 3 unproven / rc=1` → **`4 verified / 0 unproven / rc=0`**. Actual `--allow-unproven`
+count **5 → 4**, and all four survivors are the `dtzb whole-loop reverse-play` loop-break entries —
+**CLAUDE.md's "Four `e2e-slice-loop-break*` entries" sentence is true again.** This is the good
+outcome the filing asked for: the instrument was taught to prove the shape rather than excuse it.
+
+## G-7 / G-7a — **RESOLVED for the cause, and the artefact question is retired with it**
+
+The 24 `HARNESS-ERROR` cells and the `q_armoncond` control were the checker's per-stream model
+meeting P2's loop-exit discharge. (T4) proves that shape, so those cells verdict normally again and
+the "QUARANTINE STALE — REMOVE IT" artefact cannot arise from this cause. ⚠ **G-7a's underlying
+instrument defect is NOT fixed** — the stale-quarantine check and the harness-error check are still
+not ordered defensively, so a cell that errors for some *other* reason would still be reported as
+"no longer diverging". It is filed as a bead against Track V's file and must not be closed by this
+gate's green.
+
+## G-6 — **HALF closed, and the surviving half is now under no gate at all**
+
+| the 2 shipping goldens | pass 2 |
+|---|---|
+| `slice_control_inplace_ry_loop_leak.c` (ROLLED) | **DECLINES** — pinned by `loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll` |
+| `…_unrolled.c` (TWIN) | **still ACCEPTS at exit 0**, identical hazard, loop-free |
+
+Both entries were unregistered and both goldens deleted, so **the surviving hazard is observed by
+nothing in the suite.** That is the *correct* disposition — pinning it would pin a known-wrong
+stream, which CLAUDE.md forbids for exactly this family — but it means the new P1 is **unwitnessed
+until its fence lands**, and a green suite from here on says nothing about it. The `.c` is kept with
+an L8 retirement trigger.
+
+⚠ **A limit I declared in G-6 is now closed in the STRENGTHENING direction.** I wrote that the
+detector could not tell whether `cqrt_tape_write_i32` collapses `h3`, and that "if it does, the two
+hits weaken". Group 1's fixture header settles it: the tape write **copies and does not collapse**,
+and only the *result* (`h4`/`h7`) is an `OutputRails` member while the *operand* `h3` is an ordinary
+interior template rail. **The hits were real, and the caveat is retired rather than left standing.**
+
+## G-1 — **UNCHANGED and now larger.** The composition still has no Rule-13 opinion
+
+Four landings now compose in one binary (Group 1 P1+P2, Group 1's F-1 fix, Track D's P4, Track C's
+(T4) checker). `review_r13_group1` reviewed Group 1 *before* its own fix; `review_r13_trackD` reviewed
+D on a binary where `dD1` leaked; **nobody has adversarially read the four together.** This gate's
+evidence — verdicts, multisets, STRICT 2b, byte-diffs — is what Rule 2 calls *necessary and not
+sufficient*. **Fourth consecutive session for this filing.**
+
+## G-2 / G-3 / G-5 — carried unchanged
+
+G-2 (F-1's scoping) is now historical for the ROLLED half. G-3 (the stale `QUARANTINE_HANDOFF` claim)
+and G-5 (stage 2b's structural blindness) stand — though G-5 is *narrower* than it was: (T4) removes
+the loop-exit case from the blind set, which is why `dD1`/`dD5` went `1 unproven → 0`.
+
+## G-8 — **NEW (P3, process): a check of mine printed a verdict it had not measured**
+
+Before merging Track D's records-only tip I ran a guard that printed `[empty = safe]` from an
+**unconditional `echo`**, beside a diff taken in the wrong basis that actually listed 30 files. The
+label was meaningless; the conclusion happened to be right, which is the dangerous case. Re-verified
+properly (`HEAD~1..HEAD`: 610 insertions, 0 deletions, nothing under `ir-pass`/`include`/`runtime`/
+`tools`/`tests`). Recorded because it is the same species as the blast detector's false CLEAN and as
+every instrument in CLAUDE.md L10: **a guard whose pass message is not computed from its own
+measurement is not a guard.**
