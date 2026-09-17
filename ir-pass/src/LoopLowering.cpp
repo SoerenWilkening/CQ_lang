@@ -1345,17 +1345,34 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
   //      THE WIDTH ITSELF IS NOT LOST, AND THAT IS THE WHOLE SAFETY ARGUMENT OF
   //      THE RETYPE. `Pf.Abi` is the LOGICAL width, read off the φ's type HERE,
   //      while the type still says it — and the promotion records it in
-  //      `taint.HandleWidth`, the side-table `logicalOperandWidth` consults
-  //      BEFORE the (possibly laundered `i32`) LLVM type. Without that record a
-  //      Q+Q compare over two retyped `i16` φs would recover `i32` from
-  //      `abiWidthFromType` and mint `cq_template_icmp_<pred>_i32(h,h)` for two
-  //      `i16` registers — a WRONG-WIDTH SYMBOL, verify-clean, which is the
-  //      silent-miscompile class `CompareLowering.cpp` names in writing
-  //      (*"NEVER default empty -> i32"*).
+  //      `taint.HandleWidth`, the side-table that WINS over a laundered `i32`
+  //      LLVM type.
+  //      ⚠ ITS CONSUMER IS `lowerOps`' UP-FRONT CAST CAPTURE
+  //      (`OpcodeLowering.cpp`, `taint.HandleWidth.lookup(Cast->getOperand(0))`),
+  //      MEASURED — a narrow carried φ with a `sext i16 %a to i32` user emits
+  //      `cq_template_sext_i16_to_i32(i32 %a)`, which is only spellable if the
+  //      SOURCE width survived the retype.
+  //      ⚠ AN EARLIER WORDING HERE NAMED `logicalOperandWidth` /
+  //      `qqSelectLeafWidth` INSTEAD, AND THAT CONSUMER IS STRUCTURALLY
+  //      UNREACHABLE (Rule-13 round 4, finding F-4): every caller of it runs
+  //      inside control detection/emission, which finishes at
+  //      `CQLoweringPass.cpp:616`, while this promotion runs at `:766`. The
+  //      other Q+Q path reads the table RAW and takes its loud bail when the
+  //      entry is absent — a decline, not a wrong symbol. **Right conclusion,
+  //      wrong ground**, which is CLAUDE.md L7, and it is corrected AT THE
+  //      SOURCE rather than only in a record — L7's twist cost three review
+  //      rounds on one sentence.
   if (!P.getType()->isIntegerTy())
     return std::nullopt;
   Pf.Abi = abiWidthFromType(P.getType());
-  if (Pf.Abi.empty())
+  // ⚠ `.empty()` IS NOT THE GATE — Rule-13 round 4, finding F-6, and
+  // `OpcodeSupport.h` says so in writing: *"a data-mux gate must use
+  // `widthHasReversibleCopy`, NEVER plain `.empty()`"*. `abiWidthFromType`
+  // answers non-empty for `i80` and `i128`, and `wd.allocFn` resolves BOTH to a
+  // `cqrt_alloc_i80` / `cqrt_alloc_i128` the runtime does not define — a phantom
+  // mint that links nowhere. Nothing in THIS file stopped it; only a predicate
+  // in another one happened to. Asked here, at the width, where it belongs.
+  if (!widthHasReversibleCopy(Pf.Abi))
     return std::nullopt;
   Pf.NeedsHandleRetype = !P.getType()->isIntegerTy(32);
   // (Z4) THE SEED IS CLASSICAL AND AVAILABLE IN THE PREHEADER. Untainted, so the
@@ -1474,10 +1491,29 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
       auto *OP = dyn_cast<PHINode>(U);
       if (!OP || L->contains(OP->getParent()))
         continue;
+      // ⚠ EVERY INCOMING OF A φ THIS PREDICATE IS ABOUT TO WHITELIST MUST BE
+      // PROVED, NOT JUST THE ONE BEING REWRITTEN — Rule-13 round 4, 2026-09-20,
+      // finding F-2 (P2). The `taint.Tainted.count(In) -> continue` below is
+      // PRE-EXISTING and was harmless while (Z8) only ever REFUSED; it stopped
+      // being harmless the moment the promotion began inserting the **φ**
+      // (not the incoming) into `taint.PromotedCarriedHandlePhis`, because
+      // `declineClassicalMuxes` accepts on that entry — and its own comment
+      // says what it is thereby refusing to refuse: *"distinct registers,
+      // derived fresh-rail incomings, cross-block chains"*. A φ over three
+      // quantum registers was being admitted on an argument covering ONE edge.
+      //
+      // So: a tainted incoming is admissible ONLY if it is one of the TWO SSA
+      // names this carried variable wears (`&P` or `LatV`, the `V` loop's own
+      // subjects). Any other tainted incoming is a THIRD register and the φ is
+      // refused — `std::nullopt`, the decline direction, so the module keeps
+      // the loud diagnostic it already had.
+      bool SawBypass = false;
       for (unsigned i = 0, e = OP->getNumIncomingValues(); i != e; ++i) {
         Value *In = OP->getIncomingValue(i);
-        if (In == V || taint.Tainted.count(In))
+        if (In == &P || In == LatV)
           continue;
+        if (taint.Tainted.count(In))
+          return std::nullopt;  // a THIRD register — F-2.
         // ⚠ POINTER IDENTITY ON A `Constant` IS UNIQUED, and this file's own
         // project records why that matters (CLAUDE.md §4c, the F1 MANUFACTURED
         // identity): `i32 5` is ONE `Value *` however many C objects the source
@@ -1491,8 +1527,20 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
         if (In != Pf.Seed || !Pf.GuardBB ||
             OP->getIncomingBlock(i) != Pf.GuardBB)
           return std::nullopt;
+        // ⚠ AND THE MINT POINT MUST NOT ITSELF BE RE-EXECUTED — Rule-13 round
+        // 4, finding F-3 (P2). Nothing required `GuardBB` to sit outside every
+        // ENCLOSING loop, so a nested nest lowered with the trip-1 register
+        // minted ONCE PER OUTER TRIP: a fresh rail each time, under a name the
+        // inner loop's φ already holds. `CLAUDE.md` lists nested loops as
+        // declining and this path had quietly left that list. The guarded form
+        // is therefore admitted only for an OUTERMOST loop; the unguarded path
+        // is untouched, which is why this costs no shipped accept.
+        if (L->getParentLoop())
+          return std::nullopt;
         Pf.BypassIncomings.emplace_back(OP, i);
+        SawBypass = true;
       }
+      (void)SawBypass;
     }
   Pf.Phi = &P;
   Pf.LatchVal = LatV;
@@ -6273,22 +6321,111 @@ void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
         //      later.
         if (Pf->NeedsHandleRetype) {
           bool AllRewritten = true;
-          for (User *U : P.users()) {
+          // ⚠ THE LATCH VALUE IS ASKED THE SAME TYPE QUESTION AS THE φ, AND FOR
+          // A DIFFERENT DEFECT — Rule-13 round 4, F-1's surviving half. The
+          // merge emitter mints `%out = cqrt_alloc_<W>(…)`, which is `i32` at
+          // EVERY width (Rule 15); a NARROW-typed external user of that rail
+          // (`extern void sink(short); sink(a);`) is therefore already
+          // ill-typed the moment the region lowers. **That defect is
+          // PRE-EXISTING and it is not this increment's** — its loop-free twin
+          // aborts identically on the ORACLE, measured. But the promotion is
+          // what lets this module's loop lower AT ALL, so without this check a
+          // program the oracle refused with a clean loud diagnostic would
+          // instead ABORT `opt` at exit 134. *"Pre-existing" is true of the
+          // defect and FALSE of its population*, and Rule 1 does not care
+          // whose defect it is: the answer must be a decline, not a crash.
+          // A SKIP here restores exactly the oracle's refusal.
+          SmallVector<Value *, 2> RetypeSubjects{&P, Pf->LatchVal};
+          for (Value *RS : RetypeSubjects)
+          for (User *U : RS->users()) {
             auto *UI = dyn_cast<Instruction>(U);
-            if (!UI || isa<PHINode>(UI)) {
+            if (!UI) {
               AllRewritten = false;
               break;
             }
-            if (taint.Tainted.count(UI))
+            // The carried φ ITSELF is a user of the latch value; it is the
+            // subject of the retype, not a hazard to it.
+            if (UI == &P)
               continue;
-            // An untainted user of a tainted value is a taint ESCAPE and is
-            // already refused upstream; the only untainted users that legally
-            // reach here are the `cq_*` SINK calls, whose own lowering stage
-            // rewrites the operand to the `i32` handle.
+            if (isa<PHINode>(UI)) {
+              AllRewritten = false;
+              break;
+            }
+            // ⚠ THE QUESTION IS "WILL A LATER STAGE REPLACE THIS USER?", AND IT
+            // IS ASKED BY **MEMBERSHIP OF THE INSTRUCTION**, NEVER BY NAME —
+            // which is the discipline `ChainWalk`'s `!cq.branchphase` record
+            // already states in writing for the same reason.
+            //
+            // ⚠ AN EARLIER SPELLING OF THIS CLAUSE ASKED BY NAME PREFIX
+            // (`cq_`/`cqrt_`) AND IT WAS A **P1** — Rule-13 round 4,
+            // 2026-09-20, finding F-1, reproduced from plain C. Those are
+            // EXACTLY the prefixes `declineTaintEscapes` EXEMPTS
+            // (`cqrt_`, `cq_template_`, `cq_invert_`), so every call that
+            // survived the escape guard through that exemption also passed
+            // here — **the second list trusted what the first one merely
+            // tolerated**. And none of the three is ever rewritten: `cqrt_*`
+            // IS the lowered ABI, a hand-written `cq_template_*` is a
+            // recognised input class, and `cq_invert_*` is an unbuilt Phase-8
+            // handoff. `P.mutateType(i32)` then ran under such a user and the
+            // module ended VERIFIER-INVALID: `opt` ABORTED at exit 134
+            // (`Call parameter type does not match function signature!`) where
+            // the ORACLE emitted a clean loud decline. That is the precise
+            // Rule-1 violation this clause exists to prevent, committed by the
+            // clause itself.
+            //
+            // The safe set is therefore the set of users a later stage
+            // PROVABLY replaces, and each is asked of a RECORD this pass owns:
+            //   * a tainted NON-CALL instruction — `lowerOps` / `CastLowering`
+            //     / `CompareLowering` rewrite tainted arithmetic, casts and
+            //     compares into `cq_template_*` calls taking `i32` handles;
+            //   * a `@cq_theta_*` call, by membership of `taint.ThetaCalls`,
+            //     which `lowerRotations` erases;
+            //   * a `@cq_measure_*` call, by membership of `taint.MeasureCalls`,
+            //     which `lowerMeasures` rewrites to `cqrt_measure_<W>(i32)`.
+            // Anything else — including every runtime and template call, and
+            // every φ — is a SKIP, so the module declines at
+            // `declineClassicalMuxes` one stage later instead of aborting.
+            if (taint.Tainted.count(UI) && !isa<CallInst>(UI))
+              continue;
             auto *CI = dyn_cast<CallInst>(UI);
-            Function *CF = CI ? CI->getCalledFunction() : nullptr;
-            if (CF && (CF->getName().starts_with("cq_") ||
-                       CF->getName().starts_with("cqrt_")))
+            if (!CI) {
+              AllRewritten = false;
+              break;
+            }
+            // A `@cq_theta_*` / `@cq_measure_*` call, BY MEMBERSHIP of the
+            // records this pass owns: `lowerRotations` erases the first and
+            // `lowerMeasures` rewrites the second, so neither survives to read
+            // the retyped operand.
+            if (llvm::is_contained(taint.ThetaCalls, CI) ||
+                llvm::is_contained(taint.MeasureCalls, CI))
+              continue;
+            // ⚠ EVERY OTHER CALL IS ASKED THE TYPE QUESTION DIRECTLY, WHICH IS
+            // THE ONLY QUESTION THAT WAS EVER BEING ASKED: *after the retype,
+            // is this operand still well-typed?* A merge emitter has ALREADY
+            // run by here and its `cqrt_copy_<W>_controlled(i32, i32, i32)`
+            // legitimately takes the φ in an `i32` slot — so for that call the
+            // retype is not a hazard, it is the REPAIR, and refusing it would
+            // decline this increment's own headline. `cqrt_probe_sink(i16)`,
+            // the round-4 P1 probe, is the opposite: its declared parameter is
+            // narrow, so after the retype it is broken, and it must SKIP.
+            // A vararg slot and an indirect callee have no declared type to
+            // check, so both SKIP.
+            Function *CF = CI->getCalledFunction();
+            if (!CF || CF->isVarArg()) {
+              AllRewritten = false;
+              break;
+            }
+            bool EveryUseIsHandleSlot = true;
+            for (unsigned ai = 0, ae = CI->arg_size(); ai != ae; ++ai) {
+              if (CI->getArgOperand(ai) != RS)
+                continue;
+              if (ai >= CF->arg_size() ||
+                  !CF->getArg(ai)->getType()->isIntegerTy(32)) {
+                EveryUseIsHandleSlot = false;
+                break;
+              }
+            }
+            if (EveryUseIsHandleSlot)
               continue;
             AllRewritten = false;
             break;
@@ -6320,16 +6457,17 @@ void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
         //
         // ⚠ THE `HandleWidth` RECORD IS NOT BOOKKEEPING — IT IS THE SAFETY
         // ARGUMENT, and `RailBankPromote`'s spelling of this idiom ERASES where
-        // this one must WRITE. `logicalOperandWidth` (CompareLowering.cpp)
-        // consults this side-table BEFORE the LLVM type precisely because the
-        // type may have been laundered to `i32`; with no entry, a Q+Q compare
-        // over two retyped `i16` φs recovers `i32` from `abiWidthFromType` and
-        // mints `cq_template_icmp_<pred>_i32(h,h)` for two `i16` registers — a
-        // wrong-width symbol that is verify-clean and runs. That is the exact
-        // silent miscompile `CompareLowering.cpp` refuses in writing (*"NEVER
-        // pick one width on disagreement … NEVER default empty -> i32"*).
-        // `Pf->Abi` was read off the φ's type at (Z3), while the type still
-        // said it.
+        // this one must WRITE. Its MEASURED consumer is `lowerOps`' up-front
+        // CAST CAPTURE (`OpcodeLowering.cpp`,
+        // `taint.HandleWidth.lookup(Cast->getOperand(0))`): a narrow carried φ
+        // with a `sext i16 %a to i32` user emits
+        // `cq_template_sext_i16_to_i32(i32 %a)`, and the SOURCE width in that
+        // symbol exists only because this line ran. `Pf->Abi` was read off the
+        // φ's type at (Z3), while the type still said it.
+        // ⚠ AN EARLIER WORDING NAMED `logicalOperandWidth` INSTEAD —
+        // STRUCTURALLY UNREACHABLE from here (Rule-13 round 4, F-4: its callers
+        // all run inside control emission, which finishes long before this
+        // stage). Right conclusion, wrong ground; corrected at the source.
         if (Pf->NeedsHandleRetype) {
           P.mutateType(Type::getInt32Ty(M.getContext()));
           P.setMetadata(LLVMContext::MD_range, nullptr);
