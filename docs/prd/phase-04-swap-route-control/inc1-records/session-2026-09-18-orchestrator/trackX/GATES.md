@@ -67,7 +67,19 @@ Subject-binary rows are appended in the sections below as they are run.
 | `lit ir-pass/test --filter` (5 new fixtures) | `Total Discovered Tests: 2087 … Passed: 5` | trackX | 2026-09-17 13:5x |
 | `ctest -R ir-pass-lit` | `1/1 Test #8: ir-pass-lit Passed 82.53 sec — 100% tests passed, 0 tests failed out of 1` (2087 fixtures = main 2082 + trackX 5) | trackX | 2026-09-17 14:0x |
 | `python3 tools/negative_vacuity_check.py` over the 5-fixture batch | `5 fixture(s), 0 directive(s) evaluated, 0 VACUOUS, … 5 declining module(s)`, exit 2 — **N/A, not a pass and not a red**: the batch is five DECLINE fixtures with no `CHECK-NOT`, pinned by the `not` inversion (Rule 12(b)). Reported, not worked around | trackX | 2026-09-17 14:0x |
-| corpus sweep ORACLE-vs-SUBJECT | see the row appended below | trackX | — |
+| corpus sweep ORACLE-vs-SUBJECT, SERIAL run, read at 564 of 6446 rows before it was superseded | **7 movers, ALL `D:arm rewrites a condition operand` → `D:value-arm swap-route`**, every one a member of the S-1 peel-ladder family: `trackL/probes/s_loop_n{2,3,8}.c`, `trackL/probes/t_loop_n{2,3,8}.c`, `session-2026-09-11-orchestrator/review_integration_probes/N7_loop.c`. **0 `A→D`, 0 `D→A`, 0 `A→A` md5 changes.** ⚠ PARTIAL — an ABSENCE for the other 5882 rows, not a green | trackX | 2026-09-17 14:2x |
+| corpus sweep, PARALLEL re-run (fixtures first) | ⚠ **DID NOT COMPLETE.** 6446 files; throughput ~37 rows/min and NOT improved by `xargs -P 6`, because `uptime` reported **load averages 639 / 692** from the session's other tracks. Left running at hand-off; partial output `probes/corpus_677472eb.txt` with its own row count. Recorded as an ABSENCE (PROTOCOL.md: *"record an unfinished gate as an ABSENCE, never a green or a red"*) | trackX | 2026-09-17 14:3x |
+
+⚠ **THE SHIPPED-FIXTURE HALF OF THE CORPUS IS COVERED BY A STRONGER INSTRUMENT, so the absence above
+is bounded.** `ctest -R ir-pass-lit` green at this hash runs all **2087** fixtures and checks each
+against the verdict its own RUN line pins — including all 22 that pin `arm rewrites a condition
+operand`. A sweep would say a verdict CHANGED; lit says it did not change away from what is pinned.
+What the sweep alone can see is the UNPINNED probe corpus, and that is what the 564-row sample
+above covers. **The definitive sweep is the GROUP GATE's, on the merged binary** (PROTOCOL.md's
+matrix). This track's two expected mover strings for attribution are
+`arm rewrites a condition operand` → `value-arm swap-route` and
+`arm rewrites a condition operand` → `control flow inside a loop body`; **any other mover
+attributable to this branch is a FINDING.**
 
 ⚠ **PROTOCOL INCIDENT, recorded rather than buried.** A corpus sweep announced at `33bba13b` was
 still running when the SUBJECT-2 rebuild relinked `cq-opt` under it (CLAUDE.md: *"never relink a

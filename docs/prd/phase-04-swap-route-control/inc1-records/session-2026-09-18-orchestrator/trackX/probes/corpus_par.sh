@@ -19,12 +19,21 @@ OUT=${1:?}
 JOBS=${2:-6}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
+# ⚠ THE ORDER IS DELIBERATE AND IS NOT COSMETIC. The two halves are sorted
+# SEPARATELY and concatenated — shipped fixtures FIRST — rather than globally
+# `sort -u`'d, so that a sweep which has to be stopped early still yields a
+# COMPLETE fixture half (2087 `.ll` rows, no `clang`, the population a merge
+# gate actually adjudicates) instead of a uniformly partial one. A partial
+# sweep is not a slow result, it is a weaker one; this at least makes the part
+# that completed a self-contained statement. `sort -u` still runs within each
+# half, so no file is measured twice.
 {
-  ls "$SUBJ"/ir-pass/test/*.ll 2>/dev/null
+  ls "$SUBJ"/ir-pass/test/*.ll 2>/dev/null | sort -u
   find "$SUBJ/docs/prd/phase-04-swap-route-control/inc1-records" \
        -type d \( -name probes -o -name 'review_*_probes' \) 2>/dev/null |
-    while read -r d; do find "$d" \( -name '*.c' -o -name '*.ll' \) 2>/dev/null; done
-} | sort -u > "$OUT.list"
+    while read -r d; do find "$d" \( -name '*.c' -o -name '*.ll' \) 2>/dev/null; done |
+    sort -u
+} > "$OUT.list"
 
 echo "# corpus: $(wc -l < "$OUT.list" | tr -d ' ') file(s); jobs=$JOBS"
 echo "# ORACLE  $(shasum -a 256 "$ORC/build/ir-pass/cq-opt" | cut -c1-16)"

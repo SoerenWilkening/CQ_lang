@@ -39,6 +39,13 @@ decline string, nothing under `include/`, `runtime/`, `tools/`, `tests/`.
 | 3 | the `diagonalAliasHit` §3c prong gains the per-activation conjunct | `:5959` (was `:5774`) |
 | 4 | the hoisted/leaf `Clobber` twin gains the same conjunct, by CALLING the same predicate | `:6099` (was `:5901`) |
 
+**The `switch` twin (`SwitchArmProve.cpp:238`) is deliberately UNTOUCHED.** It is the third emitter
+of the same string, and it is unreachable in a loop: `ControlDetect.cpp:821` declines a
+tainted-scrutinee `switch` on a cycle BEFORE the G-ladder runs, so a back-edge-only overlap can
+never reach it. Giving it a copy of this predicate would add a second call site with no subject and
+no fixture — a prediction, not a capability (Rule 12). When the in-loop `switch` is ever widened,
+that is the moment to give it the SAME predicate by CALLING it (Rule 14), not a second spelling.
+
 Fixtures, 5 new under `ir-pass/test/`:
 `control_swap_reject_value_inloop_backedge_clobber.ll`,
 `…_backedge_clobber_control.ll`, `…_inloop_dtzb_same_rail.ll`,
@@ -282,9 +289,40 @@ records (*"never relink a binary under a running measurement"*). It was stopped 
 and the sweep was re-run from scratch at the final hash with no build in flight. A partial sweep
 across two binaries is not a slow result; it is a wrong one.
 
-### 9.1 Corpus sweep result
+### 9.1 Corpus sweep — what ran, what did not, and why the conclusion still holds
 
-See `GATES.md` for the verbatim line and `probes/corpus_677472eb.txt` for the rows.
+⚠ **THE FULL SWEEP DID NOT COMPLETE, AND THAT IS REPORTED AS AN ABSENCE, NOT A GREEN** (PROTOCOL.md:
+*"record an unfinished gate as an ABSENCE, never a green or a red"*). PROTOCOL.md's corpus is
+`ir-pass/test/*.ll` **plus** every session dir's `track*/probes` and `review_*_probes` — measured
+here at **6446 files** (2087 fixtures + 4359 probe files). Throughput was ~37 rows/min and did not
+improve at `xargs -P 6`, because the box was saturated by the session's other tracks: `uptime`
+reported **load averages 639 / 692** while the sweep ran. At that rate the full corpus is ~3 h.
+
+**What was measured, and it is enough to carry the claim this branch makes:**
+
+1. **Every SHIPPED FIXTURE is covered, and by a stronger instrument than the sweep.**
+   `ctest -R ir-pass-lit` is green at `677472eb` over all **2087** fixtures. A corpus sweep tells you
+   a fixture's verdict CHANGED; lit tells you it changed *away from what the fixture pins*. Since
+   every one of the 22 pre-existing fixtures that pin `arm rewrites a condition operand` is in that
+   run and none went red, no shipped §3c verdict moved.
+2. **A 564-row sample of the PROBE corpus, at this exact binary.** The first (serial) sweep at
+   `677472eb` was read at 564 rows before it was superseded by the parallel one: **7 movers, every
+   one of them `D:arm rewrites a condition operand` → `D:value-arm swap-route`**, and every one of
+   them a member of the S-1 peel-ladder family the increment targets —
+   `trackL/probes/s_loop_n{2,3,8}.c`, `trackL/probes/t_loop_n{2,3,8}.c`, and
+   `session-2026-09-11-orchestrator/review_integration_probes/N7_loop.c` (the two-`_Bool` scalar-loop
+   cascade). **Zero `A→D`, zero `D→A`, zero `A→A` md5 changes.** That is the predicted population and
+   nothing else. ⚠ The file itself was deleted when the sweep was restarted; the row count and the
+   mover list above are the run's own output, quoted, not reconstructed.
+3. The parallel re-run (fixtures first, deliberately — see `probes/corpus_par.sh`'s note) was left
+   running at hand-off; its partial output is `probes/corpus_677472eb.txt` with its row count.
+
+**The definitive sweep is the GROUP GATE's** (PROTOCOL.md's matrix: the merge-and-gate agent runs
+ONE corpus sweep on the MERGED binary, with movers attributed per track BY STRING). This track's
+expected strings for that attribution are exactly two:
+`arm rewrites a condition operand` → `value-arm swap-route` (the `:6099` site) and
+`arm rewrites a condition operand` → `control flow inside a loop body` (the `:5959` site).
+**Any other mover attributable to this branch is a FINDING.**
 
 ---
 
