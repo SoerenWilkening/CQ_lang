@@ -650,6 +650,15 @@ bool isMeasureCall(const Instruction *I) {
 constexpr char kMsgRailRecordStale[] =
     "cq loop lowering: rail record read past an in-place gate on the same rail";
 
+// bd `test_C_libtooling-tu9q` clause (ii-d)'s POSTCONDITION — see
+// `declineUndischargedExitObligations`. It fires only where clause (ii-d) granted
+// a marking on a forecast that `Uncomputation` then did not keep, which is the
+// ONE outcome in this area that cannot be absorbed by the Rule-6 leak fallback
+// (the marking has already silenced conjunct (1)).
+constexpr char kMsgExitObligation[] =
+    "cq loop lowering: hoisted invariant rail admitted for in-loop discharge was "
+    "not discharged";
+
 // Does re-executing `Def` REFRESH the record — i.e. does the value `Def` produces
 // on its next activation name the state the register holds right then? The
 // `railGateBetween` walk below cuts every path that re-runs `Def` on exactly that
@@ -3368,6 +3377,80 @@ bool measureOwnedInvariantRail(Value *V) {
   return AnyUser;
 }
 
+// ── bd `test_C_libtooling-tu9q` clause (ii-d)'s OBLIGATION LEDGER ────────────
+//
+// **WHY A LEDGER EXISTS AT ALL, and it is the reason clause (ii-d) is TOTAL
+// rather than a prediction.** That clause grants a MARKING on a forecast about a
+// PLACEMENT that a DIFFERENT FILE makes several stages later, over facts
+// (`ControlOwnedRails`, borrowed-parent mutations, the convergence fixpoint) that
+// are not final at marking time. If `Uncomputation` then refuses, the invariant
+// rail LEAKS **and conjunct (1) of `declineDephasingUnmarkedLoopRails` has
+// already been silenced by the marking** — the §0.1(b) shape, with no diagnostic
+// anywhere. No fence in THIS file can see that outcome, because the outcome is
+// produced after this file has finished.
+//
+// So the grant is RECORDED here and VERIFIED at the tail of `uncompute`, where
+// the discharge is a FACT and not a forecast. That is the
+// `declineSurvivingIntrinsicCalls` pattern (Rule 1: make a postcondition a
+// CHECKED, LOUD property rather than a comment) — and, exactly as there, it is a
+// diagnostic and not an `assert`, because Release builds have assertions off and
+// Release is what every gate here runs.
+//
+// ⚠ `WeakTrackingVH`, and it is load-bearing in BOTH directions. `lowerOps` RAUWs
+// the `mul`/`sext`/… this clause admitted to the `cq_template_*` CALL that
+// replaces it, and a `WeakTrackingVH` FOLLOWS a RAUW — so the ledger names the
+// LOWERED rail by the time the postcondition reads it, with no second lookup and
+// no name-matching. A handle that goes NULL is a root that no longer exists
+// (deleted, not lowered), and the postcondition treats that as DISCHARGED rather
+// than as a violation: there is no rail left to leak. That is the same reasoning
+// `recordRound1RailGrant`'s header gives for its own `WeakTrackingVH` roots.
+//
+// ⚠ NO NEW `TaintSet` FIELD, DELIBERATELY. A new member in the MIDDLE of that
+// struct is the ODR/layout divergence that segfaulted `cq-opt` while
+// `libCQPass.so` lowered correctly (bd `tu9q` IMPL_T2 §13). A function-local
+// static is the pattern this file already uses for `deferredDephasingSlot`.
+//
+// ⚠ CLEARED AT BOTH ENDS, for the reason bd `bbu0` gives for its own slot: a
+// second module in the same process must never inherit the first one's ledger.
+// `lowerLoops` clears it on entry (it is the FIRST writer's owner and runs once
+// per module in BOTH pipeline entry points, `CQLoweringPass.cpp:500` and `:1171`),
+// and the postcondition clears it after reading. Either alone would do; both is
+// cheap and neither depends on the other having run.
+std::vector<WeakTrackingVH> &exitDischargeObligations() {
+  static std::vector<WeakTrackingVH> Ledger;
+  return Ledger;
+}
+
+// bd `test_C_libtooling-tu9q` clause (ii-d) — FORWARD DECLARATION ONLY. The
+// definition is at `:~4400`, inside a LATER anonymous-namespace block of this same
+// TU; all unnamed-namespace blocks in one TU name the SAME namespace, so this is
+// legal and sufficient. ⚠ DO NOT MOVE THE DEFINITION UP: Track S′ owns that
+// function and moving it manufactures a merge conflict in the one file two
+// sessions have already fought over.
+bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint);
+
+// bd `test_C_libtooling-tu9q` clause (ii-d) — "is this rail read ONLY by `L`?"
+// `Loop::contains` (subloops included) is the right quantifier: the question is
+// whether any reader sits outside the cycle whose EXIT the rail is to be
+// discharged at. A non-`Instruction` user is unclassifiable and REFUSES, which is
+// the safe direction for a GRANTING clause.
+bool allUsersInside(const Value *V, const Loop *L) {
+  for (const User *U : V->users()) {
+    const auto *UI = dyn_cast<Instruction>(U);
+    if (!UI || !L->contains(UI->getParent()))
+      return false;
+  }
+  return true;
+}
+
+void recordExitDischargeObligation(Value *Root) {
+  for (const WeakTrackingVH &H : exitDischargeObligations())
+    if (H == Root)
+      return;  // idempotent: the three `invariantRegisterRoots` call sites can
+               // each re-derive the same root for the same loop.
+  exitDischargeObligations().emplace_back(Root);
+}
+
 bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
                                 const DominatorTree &DT, const LoopInfo &LI,
                                 const SmallPtrSetImpl<CallInst *> &GateCalls,
@@ -3501,6 +3584,95 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
       RootsOut.insert(Root);
       continue;
     }
+    // (ii-d) OR A HOISTED OUT-OF-PLACE TEMPLATE RAIL — bd
+    //        `test_C_libtooling-tu9q`, the half that increment left. `int p = y*3;`
+    //        LICM-hoisted into the preheader and read by the body's condition.
+    //
+    //        ⚠ **THE MULTIPLICITY ARGUMENT THAT LICENSES (ii), (ii-b) AND (ii-c)
+    //        DOES NOT CARRY HERE, AND THAT IS THE WHOLE POINT OF THE CLAUSE.**
+    //        Each of those three rests on the rail being a shape
+    //        `ChainWalk::isInteriorTerminalHandle` (I1) CANNOT admit — a root mint
+    //        and a merge out-rail are `cqrt_alloc_<W>` calls, a measure-owned rail
+    //        is refused by (I3) — so no preheader forward gate can ever be paired
+    //        with an in-body `At`. A hoisted `cq_template_*` rail is EXACTLY what
+    //        (I1) admits. The comment two clauses up says so in those words and
+    //        refuses it for that reason; it is admitted here for a DIFFERENT one.
+    //
+    //        THE LICENCE IS **PLACEMENT**, AND IT LIVES IN ANOTHER FILE.
+    //        `Uncomputation::anchorForConsumer` (piece P2) discharges such a rail
+    //        ONCE, at the loop's unique exit, and `multiplicityAgrees` (piece P1)
+    //        refuses every other pairing — including the preheader-gate /
+    //        in-body-`At` one this clause would otherwise open. Both halves are
+    //        REQUIRED. `loopExitDischargePoint` is the SAME predicate P2's anchor
+    //        walk calls (Rule 14, declared in `LoopPlan.h`): if there is no
+    //        once-per-mint point, there is no licence, and the root is refused.
+    //
+    //        ⚠ **L3-MIRROR OBLIGATION, DISCHARGED IN WRITING BECAUSE THE CALLEE'S
+    //        TRIGGER DEMANDS IT.** `mintsOutOfPlaceTemplateRail`'s header says:
+    //        *"this is a SUPPRESSION at both call sites — a `true` here silences a
+    //        decline. Any third caller must state which direction it reads the
+    //        answer in BEFORE it is added."* **This is that third caller and it
+    //        reads the answer in the GRANTING direction**: `true` ⇒ admit a Root ⇒
+    //        `markIfRailLocal` may mark the body ⇒ MORE discharge AND a silenced
+    //        conjunct (1). Re-derived for that direction, its two `false` arms are
+    //        both SAFE here and for the same reason they are safe there — an
+    //        IN-PLACE op relabels the register rather than minting a rail, so
+    //        there is nothing for (ii-d) to place, and the STALE-MARKING CEDE at
+    //        `:~4430` hands the module to `lowerOps`' eqpx tripwire, which
+    //        DECLINES it outright. In the granting direction a `false` is a
+    //        refusal (safe) and the cede's module never reaches emission at all.
+    //        ⚠ RE-AIMED TRIGGER FOR THE NEXT READER: the danger for THIS caller is
+    //        the opposite of the danger for the other two. A widening of that
+    //        predicate that made it answer `true` for an op `lowerOps` then lowers
+    //        IN PLACE would admit a Root with no rail to discharge — re-derive
+    //        this clause, do not narrow it.
+    //
+    //        ⚠ `RootsOut` takes **`Root`, not `V`**, for the reason (ii-c)'s own
+    //        comment gives: `markIfRailLocal`'s `onRail` matches on
+    //        `peelInPlaceBase(Op, AsLowered=true)`, and a second key would make the
+    //        two sets disagree about one value (Rule 14 / `CLAUDE.md` L2). For a
+    //        template rail there is nothing to peel through and the two coincide;
+    //        it is written this way so a future peelable spelling does not silently
+    //        fall out of the set.
+    //        ⚠ **AND EVERY USER MUST BE INSIDE `L`. THIS CONJUNCT IS NOT
+    //        CONSERVATISM — IT IS THE CLAUSE'S SUBJECT** (added by this
+    //        increment's own round 1, after MEASURING what happened without it).
+    //        The rail this clause is about is one `-O1` HOISTED OUT OF THE BODY:
+    //        `int p = y*3;` whose only reader is the body's condition. A rail that
+    //        is ALSO read AFTER the loop is a function-scope value the body
+    //        happens to read, and admitting it as a Root is a different claim with
+    //        a different placement: `Uncomputation` anchors it past its LAST user,
+    //        which is outside the loop, so the loop-exit licence above does not
+    //        describe it at all.
+    //        MEASURED, and both rows are shipped fixtures that SCOPE_T2 §4 named
+    //        as controls that must not move: without this conjunct
+    //        `loop_pairing_reject_root_invariant_read_after_loop` (an `and` rail
+    //        measured in-loop AND read as DATA after it — clause (ii-c)'s "EVERY
+    //        user" quantifier, pinned) and
+    //        `lowering_uncompute_interior_loop_consumer_and_after` (a rail read K
+    //        times inside and once after) BOTH moved. Neither is the shape this
+    //        clause was built for, and for the first one the marking would have
+    //        silenced a fence that — its header says so explicitly — has no
+    //        post-loop rotation to fire on anyway.
+    //        ⚠ **A NARROWING THAT WAS TRIED, MEASURED AND REJECTED — RECORDED SO
+    //        THE NEXT AGENT DOES NOT RE-DERIVE IT AS AN IMPROVEMENT.** "Refuse a
+    //        loop that CARRIES a claimed rail across its back edge" looks like the
+    //        right multiplicity regime and is WRONG: two of this clause's three
+    //        intended customers (`…_hoisted_template_leak_control` and
+    //        `…_short_sext_leak_control`) have exactly that — their bodies end
+    //        `r = cq_theta(r, 0.1);` — and the conjunct returned both to a decline
+    //        while ALSO flipping `loop_pairing_reject_round2_falsified` to exit 0.
+    //        A carried rail and a hoisted rail are INDEPENDENT regimes; the one
+    //        this clause reasons about is the hoisted one, and the carried one is
+    //        `collapseRailPhisIn`'s, already proved by its own fences.
+    if (auto *VI = dyn_cast<Instruction>(V))
+      if (!L->contains(VI->getParent()) &&
+          mintsOutOfPlaceTemplateRail(VI, taint) &&
+          loopExitDischargePoint(L) && allUsersInside(V, L)) {
+        RootsOut.insert(Root);
+        recordExitDischargeObligation(Root);
+        continue;
+      }
     auto *Mint = dyn_cast<CallInst>(Root);
     if (!Mint)
       return false;
@@ -5096,6 +5268,95 @@ void emitDeferredDephasingDecline(Module &M) {
       DiagnosticInfoUnsupported(*F, kMsgLoopLeakDephases, S.Loc));
 }
 
+// ── bd `test_C_libtooling-tu9q` — THE (ii-d) POSTCONDITION ───────────────────
+// Contract and the reason it exists at all are at the ledger's definition above.
+// Called from the TAIL of `uncompute`, which is the FIRST point at which "was
+// this rail discharged?" is a FACT rather than a forecast.
+//
+// ⚠ IT IS A LOUD DECLINE, NOT A LEAK, AND THAT ASYMMETRY IS THE DESIGN. Every
+// other unprovable step in this area leaves the rail allocated (Rule 6's
+// fallback) — but here the marking has ALREADY silenced conjunct (1) of
+// `declineDephasingUnmarkedLoopRails`, so a leak at this point is a leak WITH the
+// fence for its own hazard class disarmed. There is nothing left to fall back on,
+// and Rule 1 says the postcondition must then speak.
+//
+// ⚠ WHAT COUNTS AS DISCHARGED, and the definition is deliberately GENEROUS in the
+// accept direction: any `..._unc` call anywhere in the module naming the rail as
+// its out-operand (argument 0), or any `cqrt_free` of it. Being generous is the
+// right direction here because this is a BACKSTOP behind a real placement, not
+// the placement's own proof — Rule 6 and the `free_pairing_check` gate own
+// "freed at |0⟩", and `multiplicityAgrees` owns "adjointed the right number of
+// times". Narrowing it to a positional test would make it a SECOND SPELLING of
+// `Uncomputation`'s placement (the drbq Inc-3 (b′) defect, Rule 14).
+//
+// ⚠ A NULLED HANDLE IS NOT A VIOLATION — see the ledger's header: the root was
+// deleted rather than lowered, so there is no rail to leak.
+bool declineUndischargedExitObligations(Module &M) {
+  std::vector<WeakTrackingVH> &Ledger = exitDischargeObligations();
+  if (Ledger.empty())
+    return false;
+  // Collect every discharged rail in ONE walk, rather than re-scanning the module
+  // per obligation: the ledger is small but the module need not be.
+  SmallPtrSet<const Value *, 16> Discharged;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *CI = dyn_cast<CallInst>(&I);
+        if (!CI || CI->arg_size() == 0)
+          continue;
+        const Function *Callee = CI->getCalledFunction();
+        StringRef N = Callee ? Callee->getName() : StringRef();
+        if (N.ends_with("_unc") || N == "cqrt_free")
+          Discharged.insert(CI->getArgOperand(0));
+      }
+  }
+  Instruction *Offender = nullptr;
+  for (const WeakTrackingVH &H : Ledger) {
+    Value *R = H;
+    if (!R)
+      continue;  // the root no longer exists — nothing to discharge.
+    // ⚠ **THE OBLIGATION IS VACUOUS IF `lowerOps` LOWERED THE OP IN PLACE, AND
+    // THIS IS NOT A LOOPHOLE — IT IS THE CLAUSE'S OWN QUESTION, RE-ASKED IN THE
+    // POST-LOWERING VOCABULARY.** Clause (ii-d) admits a root on
+    // `mintsOutOfPlaceTemplateRail`, which is a FORECAST made BEFORE
+    // `commitOutOfLoopInPlaceOps` and `lowerOps` have finished deciding. The
+    // measured case is `q = q + off` with a VOLATILE-LOAD immediate: the (1a)
+    // fence (`isa<Constant>(Imm)`) refuses to COMMIT it at `lowerLoops`, so the
+    // forecast says "out of place" — and then M-C lowers it IN PLACE anyway, as
+    // `cqrt_addc_i32(%h, %off)`. There is no separate rail in the emitted module,
+    // so there is nothing to discharge and nothing to leak: the REGISTER is the
+    // rail, and the register is the user's to keep.
+    //
+    // A `WeakTrackingVH` follows RAUW, so the handle now names whatever `lowerOps`
+    // put in the op's place: a `cq_template_*` CALL for an out-of-place lowering,
+    // and the pre-existing register handle for an in-place one. Asking WHICH is
+    // therefore asking the forecast's own question against the fact.
+    //
+    // ⚠ DIRECTION, because this is the conjunct most likely to be read as a
+    // weakening: it narrows the postcondition to the population the clause was
+    // ABOUT, and it cannot hide a leaked template rail — a template rail names a
+    // `cq_template_*` call by construction, so every module this skips has no such
+    // rail at all. ⚠ RETIREMENT TRIGGER: if `lowerOps` ever lowers an op in place
+    // while STILL minting a separate rail, this conjunct becomes an over-accept —
+    // re-derive it against that emitter rather than narrowing it further.
+    auto *RC = dyn_cast<CallInst>(R);
+    const Function *RF = RC ? RC->getCalledFunction() : nullptr;
+    if (!RF || !RF->getName().starts_with("cq_template_"))
+      continue;
+    if (Discharged.count(R))
+      continue;
+    Offender = RC;
+    break;
+  }
+  Ledger.clear();  // see the ledger's header: cleared at BOTH ends.
+  if (!Offender)
+    return false;
+  diagnose(Offender, kMsgExitObligation);
+  return true;
+}
+
 // bd `test_C_libtooling-tu9q` — THE ONE SPELLING of the loop-exit discharge
 // point. Contract, both customers and the GRANTING-direction note in LoopPlan.h.
 // Pure analysis; mutates nothing.
@@ -5540,6 +5801,14 @@ void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
 }
 
 void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
+  // bd `test_C_libtooling-tu9q` — clause (ii-d)'s obligation ledger is cleared
+  // HERE, unconditionally and before anything can write it, so a second module in
+  // the same process never inherits the first one's obligations. This is the
+  // FIRST of the three `invariantRegisterRoots` owners to run, in BOTH pipeline
+  // entry points (`CQLoweringPass.cpp:500` and `:1171`); the postcondition clears
+  // it again after reading, and neither clear depends on the other having run.
+  // Same discipline, and the same reason, as bd `bbu0`'s deferred slot.
+  exitDischargeObligations().clear();
   // The collected rotation call sites — the in-place-gate wire vocabulary the
   // peel + closure consult (same seed as `declineClassicalMuxes`).
   SmallPtrSet<CallInst *, 32> GateCalls;

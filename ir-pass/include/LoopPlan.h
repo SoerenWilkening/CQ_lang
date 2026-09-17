@@ -629,6 +629,23 @@ void lowerBreakReversePlay(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // (`getFirstInsertionPt() != end()`), so a caller never has to re-check it.
 llvm::BasicBlock *loopExitDischargePoint(const llvm::Loop *L);
 
+// ── bd `test_C_libtooling-tu9q` clause (ii-d)'s POSTCONDITION ────────────────
+// **THE ONLY TOTAL ANSWER FOR THAT CLAUSE, AND IT CANNOT LIVE IN `LoopLowering`.**
+// Clause (ii-d) grants a MARKING on a forecast about a PLACEMENT that
+// `Uncomputation` makes several stages later, over facts that are not final at
+// marking time. If that placement is then refused the rail LEAKS *and* conjunct
+// (1) of `declineDephasingUnmarkedLoopRails` has already been SILENCED by the
+// marking — a leak with the fence for its own hazard class disarmed, and no
+// diagnostic anywhere. So the grant is recorded at the clause and VERIFIED HERE,
+// from the TAIL of `uncompute`, which is the first point at which "was this rail
+// discharged?" is a FACT rather than a forecast.
+//
+// Returns `true` and emits the loud `DS_Error` when an obligation is unmet.
+// ⚠ It CLEARS the ledger, so it is called exactly once per module, at the tail of
+// `uncompute` in BOTH pipeline entry points. Calling it earlier reads a forecast;
+// calling it twice reads an empty ledger and silently reports success.
+bool declineUndischargedExitObligations(llvm::Module &M);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_LOOP_PLAN_H_
