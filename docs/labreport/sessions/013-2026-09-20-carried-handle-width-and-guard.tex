@@ -3,7 +3,7 @@
   {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-20-orchestrator/}
 
 \subsection*{Goal}
-Two things. First, \bd{h7ee}: rounds 2 and 3 of the three \ruleref{13} rounds \bd{zujr}'s own
+Two things. First, \bd{h7ee}: rounds 2 and 3 of the three Rule~13 rounds \bd{zujr}'s own
 done-means asks for. One had run and found no P1, and the three sessions before it each found a P1
 on round~1 of a loop change --- so the rounds were the way to tell good work from a round that
 looked in the wrong places. Second, the two over-declines \bd{zujr} filed at its landing:
@@ -39,9 +39,9 @@ both at session open.
   \item \foverdecline\ \textbf{A bead that names the next wall is a lower bound, three times in one
         session.} \bd{11qv} named one wall for \texttt{\_Bool}; there are two, and the second
         (\texttt{\_Bool} read as the region's own \emph{condition}) still declines. \bd{h1ip} named
-        clause (Z8); clause (Z1) was in front of it. This is \commitref{CLAUDE.md} protocol item~2,
+        clause (Z8); clause (Z1) was in front of it. This is \fpath{CLAUDE.md} protocol item~2,
         carried from the previous session, holding again.
-  \item \fconfirmed\ \textbf{A correction in \commitref{CLAUDE.md}~\S4e is itself over-general.}
+  \item \fconfirmed\ \textbf{A correction in \fpath{CLAUDE.md}~\S4e is itself over-general.}
         Round~1 of \bd{zujr} recorded that clause (Z1)'s comment was ``false --- \texttt{-O1} emits
         [a preheader] with a single successor''. Measured on the C spelling of a runtime trip bound,
         \texttt{-O1} emits \emph{no preheader at all}: the guard branches straight into the header.
@@ -54,7 +54,7 @@ both at session open.
         the 382-cell twin matrix's verdict tables are byte-identical, and all 390 e2e slices agree.
         The fifth consecutive session to file \emph{a composition is not cleared by clearing its
         parts}; the first to exhibit the surface by construction.
-  \item \fconfirmed\ \textbf{Pre-existing, not this session's:} a narrow-width \texttt{\_hl} template
+  \item \fpreexisting\ \textbf{Not this session's:} a narrow-width \texttt{\_hl} template
         literal reaches the runtime zero-extended (\texttt{253} for $-3$ at \texttt{i8}) because the
         pass emits the operand with no \texttt{signext} while the runtime's C definition takes an
         \texttt{int8\_t} that Clang's ABI marks \texttt{signext}. Attributed by measurement: it
@@ -78,18 +78,18 @@ e2e goldens & 400 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
 \bottomrule\end{tabular}
 
 \subsection*{Verification run}
-Full \texttt{ctest -j6} on the subject: \textbf{466/466 in 594.30\,s} (box under concurrent agent load, so not comparable with a quiet-box figure --- quoted with its load per \ruleref{19}). Corpus A/B over all 2107 fixtures,
+Full \texttt{ctest -j6} on the subject: \textbf{466/466 in 594.30\,s} (box under concurrent agent load, so not comparable with a quiet-box figure --- quoted with its load per Rule~19). Corpus A/B over all 2107 fixtures,
 oracle versus subject, comparing exit code, stderr and lowered IR. A peel-mutation matrix over the
 corpus for each of the three new clauses, each with a null-tag boundary control.
 
-\emph{Not run, and it matters:} neither \ruleref{13} round 2 nor round 3 ran any suite --- by
+\emph{Not run, and it matters:} neither Rule~13 round 2 nor round 3 ran any suite --- by
 instruction, so they could not perturb the binaries they were measuring --- and round~3 ran no lit
 either, so no \texttt{FileCheck} line was executed in it. Both said so themselves.
 
 \emph{One instrument lied before it told the truth.} The first peel sweep reported 2065 movers of
 2106, because \texttt{rc=\$?} after a pipeline captured \texttt{grep}'s status rather than
 \texttt{cq-opt}'s. It was caught by the null-tag control, which now runs on every invocation ---
-\commitref{CLAUDE.md} L10, on this session's own instrument, in the session that was reading it.
+\fpath{CLAUDE.md} L10, on this session's own instrument, in the session that was reading it.
 
 \subsection*{Open questions and next steps}
 \begin{itemize}
