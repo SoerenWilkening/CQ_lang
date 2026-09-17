@@ -241,6 +241,20 @@ phase, not in advance.
    > `tu9q` P0+P3 present — one is the owner's cascade plus one line — while the 2106-fixture corpus
    > A/B, the 382-cell twin matrix and all 390 e2e slices report **zero**. Fifth consecutive session
    > to file *a composition is not cleared by clearing its parts*; first to show the surface.
+   > ⚠ **AND ROUND 4, ON THIS SESSION'S OWN TWO INCREMENTS, RETURNED `FINDINGS` — 1 P1, 2 P2
+   > over-accepts.** The P1 was **in the gate the increment added**, and it was the precise failure
+   > that gate's own comment claimed to prevent: (P4) allowed a user by callee NAME PREFIX
+   > (`cq_`/`cqrt_`) — **exactly the three prefixes `declineTaintEscapes` EXEMPTS** — so `opt`
+   > **ABORTED at exit 134 from plain C** where the ORACLE declined cleanly. **THE QUESTION WAS NEVER
+   > THE NAME**: it is *"after `mutateType(i32)`, is this operand still well-typed?"*, read off the
+   > callee's DECLARED PARAMETER TYPE. ⚠ A name test could not have separated the two cases that
+   > decide it — the merge emitter's own `cqrt_copy_<W>_controlled(i32,i32,i32)` is ALSO `cqrt_*` and
+   > its slot IS `i32`, where the retype is the **REPAIR** — and an intermediate membership-list fix
+   > refused it and broke the increment's own headline. All fixed in `7db573b4` and re-measured
+   > (corpus 0 A→D / 3 D→A; full `ctest` **466/466 in 482.00 s**).
+   > ⚠ **READ THE FOUR ROUNDS TOGETHER AND DO NOT AVERAGE THEM**: rounds 1–3, on bd `zujr` AS
+   > SHIPPED, found **0 P1**; the FIRST round on the NEW code found one on its first pass. The
+   > measured hit rate held.
    > Records: `inc1-records/session-2026-09-20-orchestrator/`; lab entry 013.
 
 

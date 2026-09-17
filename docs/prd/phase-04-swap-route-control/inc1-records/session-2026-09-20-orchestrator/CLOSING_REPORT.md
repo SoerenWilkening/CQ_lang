@@ -43,7 +43,7 @@ See `GATES.md`; every row is hash-keyed. The headline numbers:
 |---|---|---|---|
 | 2 | residuals: break loops, the two backstop escapes, `AsLowered` | `CLEAR-WITH-ITEMS` | **0** |
 | 3 | the COMPOSITION vs bd `tu9q` P0+P3, `drbq.12`, `xdu2` | `CLEAR-WITH-ITEMS` | **0** |
-| 4 | this session's own bd `11qv` + bd `h1ip` | *(see `round4/`)* | |
+| 4 | this session's own bd `11qv` + bd `h1ip` | **`FINDINGS`** | **1** |
 
 ⚠ **Round 2 closed residual escape B by construction** (`liftOneRegisterMergePhi`
 can never take a carried-handle φ — a structural mutual exclusion:
@@ -54,6 +54,31 @@ same blocks). Its R2-1 was **fixed in this session** as clause (P0).
 ⚠ **NEITHER ROUND RAN A SUITE, BY INSTRUCTION**, and round 3 ran no lit either —
 **no `FileCheck` line was executed in it**. Both said so themselves. Read each
 round's own "what I did not do" before citing it.
+
+## ⚠ ROUND 4 FOUND A P1 IN THE GATE THIS SESSION ADDED — READ THIS BEFORE THE REST
+
+`FINDINGS`: 1 P1, 2 P2 over-accepts, 3 P3, **all on this session's own two
+increments**, all fixed in `7db573b4` and re-measured. The full table is in
+`GATES.md`; the sentence that matters:
+
+> **(P4) — the clause written to stop `opt` aborting — caused `opt` to abort.**
+> It allowed a user by callee NAME PREFIX (`cq_`/`cqrt_`), and those are
+> **exactly the three prefixes `declineTaintEscapes` EXEMPTS**, so the second
+> list trusted what the first merely tolerated. From plain C: exit 134 where the
+> ORACLE gave a clean loud decline. **Rule 1 violated by the clause upholding it.**
+
+**THE QUESTION WAS NEVER THE NAME.** It is *"after `mutateType(i32)`, is this
+operand still well-typed?"* — the callee's DECLARED PARAMETER TYPE. ⚠ And a name
+test **could not** have separated the two cases that decide it: the merge
+emitter's own `cqrt_copy_<W>_controlled(i32,i32,i32)` is ALSO `cqrt_*`, takes the
+φ in an `i32` slot, and for it the retype is the **REPAIR**. An intermediate
+membership-list fix refused that call and **broke this increment's own
+headline** — caught by the corpus sweep, one measurement later.
+
+⚠ **AND READ THE FOUR ROUNDS TOGETHER WITHOUT AVERAGING THEM.** Rounds 1–3, on
+bd `zujr` as shipped, found **0 P1** between them. Round 4, the FIRST round on
+NEW code, found a P1 on its first pass. That is the project's measured hit rate
+holding, not being refuted.
 
 ## THE FIVE THINGS WORTH CARRYING FORWARD
 
@@ -80,7 +105,13 @@ round's own "what I did not do" before citing it.
    record, which moved zero too — they are recorded as **defensive and
    unreachable on today's corpus**, in those words, so neither is ever cited as a
    tested fence.
-5. **L10 LANDED ON THIS SESSION'S OWN INSTRUMENT.** The first peel sweep reported
+5. **ASK THE QUESTION YOU MEAN, NOT A PROXY FOR IT** — the round-4 P1 in one
+   line. A NAME is a proxy; a DECLARED TYPE is the question. This project has the
+   same lesson at `ChainWalk` (*"asked as membership of the instruction, never by
+   name"*) and it was not transferred. ⚠ Its corollary cost a measurement of its
+   own: the FIRST correction (a membership list) was a different proxy and broke
+   the increment's headline.
+6. **L10 LANDED ON THIS SESSION'S OWN INSTRUMENT.** The first peel sweep reported
    **2065 movers of 2106** because `rc=$?` after a pipeline captured `grep`'s
    status. Caught by a **null-tag boundary control**, which now runs on every
    invocation. Write the control before the first real measurement, not after the

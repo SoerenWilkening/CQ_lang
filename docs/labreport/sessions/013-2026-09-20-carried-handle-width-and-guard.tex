@@ -47,6 +47,23 @@ both at session open.
         \texttt{-O1} emits \emph{no preheader at all}: the guard branches straight into the header.
         Both the original sentence and its correction were over-general; a predicate may not depend
         on which.
+  \item \fconfirmed\ \textbf{Round~4 found a P1 in the gate this session added, and it was the
+        failure that gate existed to prevent.} (P4) allowed a user by callee \emph{name prefix}
+        (\texttt{cq\_}/\texttt{cqrt\_}) --- which are exactly the three prefixes
+        \texttt{declineTaintEscapes} exempts, so the second list trusted what the first merely
+        tolerated. From plain C, \texttt{opt} \emph{aborted} at exit 134 where the oracle declined
+        cleanly: Rule~1 violated by the clause upholding it. The question was never the name but
+        \emph{after \texttt{mutateType(i32)}, is this operand still well-typed?} --- the callee's
+        declared parameter type. A name test could not have separated the two cases that decide it:
+        the merge emitter's own \texttt{cqrt\_copy\_<W>\_controlled(i32,i32,i32)} is also
+        \texttt{cqrt\_*} and its slot \emph{is} \texttt{i32}, so there the retype is the repair.
+        An intermediate membership-list fix refused it and broke this increment's own headline.
+        Round~4 also filed two P2 over-accepts (a $\phi$ whitelisted on one proved incoming; a
+        guard block inside an enclosing loop), both fixed.
+  \item \fconfirmed\ \textbf{Four rounds, read together and not averaged.} Rounds 1--3, on
+        \bd{zujr} as shipped, found \textbf{0 P1} between them. Round~4, the first round on
+        \emph{new} code, found a P1 on its first pass --- the project's measured hit rate holding,
+        not being refuted.
   \item \fconfirmed\ \textbf{The composed accept surface is not empty, and the tree's three
         strongest instruments report zero on it} (\bd{4jok}, round~3). Nine C programs compile only
         when \bd{zujr} and \bd{tu9q} P0+P3 are both present --- one of them the owner's own rolled
@@ -78,7 +95,7 @@ e2e goldens & 400 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
 \bottomrule\end{tabular}
 
 \subsection*{Verification run}
-Full \texttt{ctest -j6} on the subject: \textbf{466/466 in 594.30\,s} (box under concurrent agent load, so not comparable with a quiet-box figure --- quoted with its load per Rule~19). Corpus A/B over all 2107 fixtures,
+Full \texttt{ctest -j6}, twice: \textbf{466/466 in 594.30\,s} before round~4's findings and \textbf{466/466 in 482.00\,s} on the fixed binary (box under concurrent agent load, so not comparable with a quiet-box figure --- quoted with its load per Rule~19). Corpus A/B over all 2107 fixtures,
 oracle versus subject, comparing exit code, stderr and lowered IR. A peel-mutation matrix over the
 corpus for each of the three new clauses, each with a null-tag boundary control.
 
@@ -93,6 +110,7 @@ either, so no \texttt{FileCheck} line was executed in it. Both said so themselve
 
 \subsection*{Open questions and next steps}
 \begin{itemize}
+  \item Round~4's P1 and two P2s are fixed in \commit{7db573b4}; its F-5 was already \bd{ix2v}. Its L1 dead-$\phi$ residual is recorded as \emph{not attacked to completion}, not cleared.
   \item \bd{4jok} now \emph{gates} the \bd{tu9q} P0+P3 landing: nine composed-only accepts to
         adjudicate as a family, plus that branch over-accepting the \bd{6n1s} g8 shape on its own.
   \item \bd{ix2v} --- the narrow-literal ABI attribute. Fixing it moves goldens across the tree.

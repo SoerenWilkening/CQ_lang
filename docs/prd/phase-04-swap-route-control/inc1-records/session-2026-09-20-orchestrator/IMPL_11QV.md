@@ -124,3 +124,41 @@ run on every invocation. CLAUDE.md L10, on my own instrument, within one session
 of the file saying so.
 
 Results: see `GATES.md`.
+
+
+## 4. ⚠ WHAT RULE-13 ROUND 4 FOUND IN THIS INCREMENT — a P1, in gate (P4)
+
+**(P4)'s first spelling allowed a user by callee NAME PREFIX** (`cq_`/`cqrt_`),
+on the ground that *"their own lowering stage rewrites the operand"*. That ground
+is false for all three families the prefix admits, and — the part that makes it a
+finding rather than a slip — **they are exactly the three prefixes
+`declineTaintEscapes` EXEMPTS** (`cqrt_`, `cq_template_`, `cq_invert_`). The
+second list trusted what the first merely tolerated. From plain C, `opt` **ABORTED
+at exit 134** where the ORACLE emitted a clean loud decline: **Rule 1 violated by
+the clause written to uphold it.**
+
+**THE FIX IS THE QUESTION ITSELF.** Not *what is this called* but *after
+`mutateType(i32)`, is this operand still well-typed?* — read off the callee's
+**declared parameter type**, plus membership of `taint.ThetaCalls` /
+`taint.MeasureCalls` for the two families lowering erases.
+
+⚠ **AND A NAME TEST COULD NOT HAVE SEPARATED THE TWO CASES THAT DECIDE IT.** The
+merge emitter's own `cqrt_copy_<W>_controlled(i32, i32, i32)` is ALSO `cqrt_*`
+and takes the φ in an `i32` slot — for that call the retype is the **REPAIR**,
+not the hazard. An intermediate fix that asked MEMBERSHIP of a curated list
+refused it and **declined this increment's own headline fixture**; the corpus
+sweep caught it one measurement later. *A proxy for the question is still a
+proxy, however carefully curated.*
+
+⚠ **THE LATCH-VALUE HALF IS A DIFFERENT, PRE-EXISTING DEFECT.** The merge `%out`
+is `i32` at every width, so a narrow-typed external user of that rail is
+ill-typed the moment the region lowers — and its **loop-free twin aborts
+identically on the ORACLE**, verified here rather than taken on report. Not this
+increment's defect; but the promotion is what lets such a loop lower at all, so
+without the check a program the oracle refused cleanly would ABORT. *"Pre-existing"
+is true of the defect and FALSE of its population*, and **Rule 1 does not care
+whose defect it is.**
+
+Red-green: `loop_carried_handle_reject_narrow_untyped_call_user.ll`. ⚠ Its two
+`CHECK-NOT`s are the load-bearing half — a `RUN: not` line cannot tell a DECLINE
+from an ABORT, because both are non-zero exits.
