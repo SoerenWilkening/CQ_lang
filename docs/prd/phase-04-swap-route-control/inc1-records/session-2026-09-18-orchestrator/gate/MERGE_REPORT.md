@@ -253,3 +253,41 @@ still declines, at an earlier/different fence, e.g.
 `condition predates a non-diagonal gate` → `value-arm swap-route` or
 `control flow inside a loop body`), which is Track D's widening letting a module past the condition
 fence only for a later fence to refuse it.
+
+---
+
+# PASS 2 — the Group-1 fix for `review_r13_group1` F-1
+
+⚠ **NOTHING IN THIS SECTION MAY BE MERGED WITH PASS 1's NUMBERS.** Every figure above is a fact about
+`96d74fe6008133b8`; every figure below is a fact about pass 2's own hash.
+
+**Status at the time PASS 1 was recorded: the fix had NOT landed.** `tu9q-hoisted-template` was at
+`84f4ff8a`, and `git diff --stat f1a7857a tu9q-hoisted-template -- ir-pass/src ir-pass/include` was
+**EMPTY** — the only new commit since the merged `f1a7857a` was `84f4ff8a`, a records-only
+`P0P3_STATUS` doc. So pass 2 is **PENDING**, and its absence is recorded as an absence, never as a
+green.
+
+**What PASS 1 establishes about F-1, and it carries into pass 2 as the baseline:**
+
+* `g8` **ACCEPTS on the combined binary** with `4 template rail mint(s) of which 2 left dirty`,
+  `0 cqrt_free site(s)`, `0 _unc`, and four `cq_template_ashr_i32_hl(h0,k)` copies alive across
+  `cqrt_ry_i32(h0, 0.9)` before `cqrt_measure_i32(h0)` — the P1 is **LIVE after the merge**, and
+  Track D's half neither causes nor cures it.
+* `g8a` (one token deleted) moves to `0 left dirty` / 2 free sites ⇒ the discriminant is **the arm
+  minting an INTERIOR rail**.
+* `g8k` (marking refused) **DECLINES** ⇒ **the marking is the door**.
+* The blast radius of that hazard over the shipped-slice set is **2 of 383, both registered goldens**
+  (`BLAST_RADIUS_g8.md`), reached through a *different* door (the drbq Inc-1 structural freeze).
+
+**The procedure pass 2 will follow, so it is on record before it runs:**
+
+1. Merge the new `tu9q-hoisted-template` tip onto `session-2026-09-18-gate` (pass 1's tip
+   `dac4ec39`); re-run the three post-union checks and the L8 duplicate-body scan if fixtures moved.
+2. Rebuild BOTH targets; record `shasum -a 256` of `cq-opt` and `libCQPass.so` — pass 2's hash.
+3. **Announce in `GATES_INFLIGHT.md` first** (§6.1), then run, at the new hash only:
+   the g8 triple (`g8` must now DECLINE or discharge; `g8a`/`g8k` are the isolating controls),
+   `dD1`/`dD4`/`dD5` **again** (the R20 composition must survive the fix), `a1_apost` and the
+   `6n1s` triple, ONE full `ctest -j6`, the twin-matrix entry, and a corpus re-sweep.
+4. **`cq-opt-equivalence-full` is CITED from pass 1 only if the fix touches no decline string and no
+   analysis site; otherwise it is RE-RUN.** A decline-direction backstop almost certainly adds a
+   string, so the default expectation is **re-run**.
