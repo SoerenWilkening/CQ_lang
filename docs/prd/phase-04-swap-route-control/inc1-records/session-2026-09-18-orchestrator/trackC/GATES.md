@@ -163,18 +163,27 @@ was reading the same file**. Those sweep results were discarded and the sweep
 restarted after the source was final. Same class as *"never relink a binary under
 a running measurement"*, one layer down.
 
-### G-C5 — corpus verdict diff, **PARTIAL, recorded as an ABSENCE**
+### G-C5 — corpus verdict diff, **COMPLETE**
 
 ```
 cited: 96d74fe6008133b8 / oracle 10e95a52
-IN PROGRESS AT HAND-OFF: 231 of ~386 tests/e2e/*.c lowered modules compared,
-full finding list (not exit codes), 0 MOVED.
+CORPUS SWEEP DONE: 381 lowered modules compared, 1 MOVED, 42 not lowerable
+full finding list compared, not exit codes
 ```
 
-This is the measurement that bears on **false positives** — the expensive
-direction for a gate — and it is **incomplete**. Do not quote it as a clean
-sweep; quote it as *"231 modules, 0 moved, the rest not measured"*. The runner is
-`scratchpad/corpus.sh`; throughput ~35 modules/min under this session's load.
+The measurement that bears on **false positives** — the expensive direction for
+a gate. Exactly one verdict moves, and it is the slice that exists to carry the
+shape:
+
+```
+=== slice_loop_hoisted_chain_exit_discharge
+ORACLE   1 verified, 0 violation(s), 3 unproven  (3 x U3-extern-rail)
+SUBJECT  4 verified, 0 violation(s), 0 unproven
+```
+
+⚠ That row is also this sweep's **POSITIVE CONTROL**: an instrument that reports
+"0 moved" proves nothing unless something was capable of moving. 380 unmoved is a
+measurement because the 381st moved.
 
 ---
 

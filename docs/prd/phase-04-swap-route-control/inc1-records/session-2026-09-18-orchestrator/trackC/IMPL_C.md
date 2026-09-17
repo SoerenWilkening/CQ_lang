@@ -340,11 +340,24 @@ and never had a reversal in the free's stream ((T4b)) — they report
   (the dtzb family) keeps its historic text exactly.
 * A **corpus verdict diff** over every `tests/e2e/*.c` lowered on `96d74fe6`,
   ORACLE checker vs SUBJECT, comparing the FULL finding list rather than exit
-  codes, was started after the source was final. ⚠ **At hand-off it is PARTIAL
-  and is recorded as an absence, not as a pass: 129 of ~386 modules compared,
-  0 moved.** It is the measurement that bears on false positives — the expensive
-  direction for a gate — and whoever picks this up should finish it
-  (`scratchpad/corpus.sh`, ~35 modules/min under this session's load).
+  codes. **COMPLETE: 381 lowered modules compared, exactly 1 MOVED** (42 sources
+  do not lower on this binary and are not in the denominator). False positives
+  are the expensive direction for a GATE, and this is the only measurement that
+  bears on them.
+
+  **The one mover is the one that had to move**, and it is also the sweep's own
+  POSITIVE CONTROL — without it, "380 unmoved" would be indistinguishable from a
+  broken instrument:
+
+  ```
+  === slice_loop_hoisted_chain_exit_discharge
+  ORACLE   4 cqrt_free site(s): 1 verified, 0 violation(s), 3 unproven
+           (3 × UNPROVEN U3-extern-rail on %h_intr / %h_op / %h_cast)
+  SUBJECT  4 cqrt_free site(s): 4 verified, 0 violation(s), 0 unproven
+  ```
+
+  So on the whole shipped e2e corpus this change moves **one** verdict, in the
+  intended direction, on the one slice that exists to carry the shape.
 
 ---
 
@@ -455,5 +468,5 @@ session-2026-09-18-orchestrator/trackC/IMPL_C.md"
    and order-divergent**, i.e. bd `1m5p` fixed in substance with a positional
    residue, and its disposition is **RE-PIN, do not remove**. `tools/loop_twin_matrix*`
    is Track V's exclusively (R14), so this track neither ran nor edited it.
-3. **Finish the corpus verdict diff** (§6) — 129 of ~386 modules compared, 0
-   moved, recorded as an absence.
+3. ~~Finish the corpus verdict diff~~ — **DONE** (§6): 381 modules, 1 mover, and
+   the mover is the slice item 1 is about.
