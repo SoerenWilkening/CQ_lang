@@ -6149,6 +6149,49 @@ add_test(NAME e2e-railbank-register-twin-selftest
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory
 # — it must stay the LAST statement in this file for that sweep to be complete.
+# ── bd `test_C_libtooling-tu9q` piece P2 / bd `test_C_libtooling-1m5p` ────────
+# THE HOISTED-CHAIN LOOP-EXIT DISCHARGE, and the program it closes was a LIVE,
+# SHIPPING, VERIFY-CLEAN Rule-8 OVER-ACCEPT: on the 2026-09-18 ORACLE
+# `9bd01598d574b344` the rolled form compiled at `opt` exit 0 with the LICM-hoisted
+# `sqrt((double)a + 3.0)` rail left allocated and ENTANGLED across a non-diagonal
+# `cq_theta(a, 0.7)` on the register it copies, which is then measured — 26 trace
+# lines against the twin's 28, `cq_template_sqrt_f64_unc` 0 against 1.
+#
+# ⚠ **NO `*-twin-identical` GATE FOR THIS PAIR, AND THAT IS A DECISION.** The two
+# goldens are MULTISET-IDENTICAL and ORDER-DIVERGENT by construction — the rolled
+# form discharges the chain at the LOOP EXIT, the twin at function scope after the
+# last copy — so a `compare_files` gate would be RED, and a gate expected to be red
+# is a gate people stop reading (CLAUDE.md L10). The claim the pair carries is
+# COUNT + MULTISET + a commutation argument (everything between the two positions
+# READS the chain's members and writes only its own ancillas — disjoint support),
+# written out in both slice headers. Owner ruling S3 (2026-09-17): byte identity is
+# an INSTRUMENT, not the target.
+#
+# ⚠ The ROLLED half runs with `--allow-unproven` and the reason is STRUCTURAL, not
+# a concession: `free_pairing_check.py` analyses per straight-line STREAM, so a
+# discharge placed at a LOOP EXIT is `U3-extern-rail` UNPROVEN *by construction*.
+# Measured, and the asymmetry is the measurement of the instrument's reach rather
+# than of the rail: rolled `1 verified, 0 violation(s), 3 unproven`; twin, whose
+# discharge is in the mint's own stream, `5 verified, 0 unproven` under STRICT 2b.
+# The rail identities are pinned POSITIONALLY by
+# `ir-pass/test/loop_pairing_accept_hoisted_chain_exit_discharge.ll` instead.
+add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge.expected.log"
+    "--allow-unproven")   # loop-exit discharge is cross-STREAM by construction; see above
+
+add_test(NAME e2e-slice-loop-hoisted-chain-exit-discharge-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_hoisted_chain_exit_discharge_unrolled.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
