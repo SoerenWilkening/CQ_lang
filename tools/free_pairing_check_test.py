@@ -963,6 +963,11 @@ POSITIVE = [
     # The shipped e2e slice's own lowered IR — the control for the two slot
     # mutants below (round-1 Rule-13 review, lens L5).
     ("ctl-ry-slice-emitted-stream", CTL_RY_SLICE),
+    # ⚠ (T4)'s two shipped-lowering fixtures are APPENDED to this list where
+    # they are defined (search `POSITIVE.append`), because they sit below the
+    # mutation helpers this file's later sections need. They are in POSITIVE so
+    # that layer 3 blanks the lines (T4)'s proof rests on — its mint and its
+    # reversal — and requires the proof to break.
 ]
 
 
@@ -2269,6 +2274,360 @@ CENSUS_LINE_CASES = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# (T4) THE LOOP-EXIT / CROSS-STREAM DISCHARGE  (Track C, 2026-09-18)
+#
+# WHY THESE EXIST. Group 1's P2 anchor discharges a rail minted OUTSIDE a loop
+# at that loop's unique EXIT, so the mint and the reversal land in two different
+# STREAMS and `check_free` reported `U3-extern-rail` on a rail that is provably
+# |0>. That is not one slice's inconvenience: `e2e-loop-twin-matrix` runs this
+# checker STRICT per side, so 24 twin cells plus the pinned boundary control
+# `q_armoncond` became `HARNESS-ERROR` and stopped having a verdict at all — and
+# that matrix is the only instrument in the tree that can see a leaked
+# TEMPLATE-minted rail. (T4) is the rule that verifies the shape instead.
+#
+# ⚠ (T4) IS THE FIRST RULE HERE THAT READS OUTSIDE ITS OWN STREAM, so it is the
+# one most able to over-accept, and the mutant table below is sized for that:
+# every conjunct (T4a)/(T4b)/(T4c)/(T4d)/(T4f-mint)/(T4f-free)/(T4g) plus the
+# undef arm has its OWN row, and each row is ASSERTED to be refused by the arm
+# it was built for (the harness matches the refusal text, not just the finding
+# code) — because a mutant caught one arm earlier proves nothing about the arm
+# it was written for. That is not hypothetical here: the FIRST two-exit-block
+# mutant (`t4-two-exit-blocks-two-reversals`) is caught by (T4c), not by (T4d),
+# because a second exit block carries a second `_unc`; isolating (T4d) needed
+# `t4-one-reversal-two-frees`, where ONE reversal dominates two free sites.
+#
+# The two POSITIVE fixtures are verbatim stage-2 output on the 2026-09-18
+# combined binary (cq-opt 96d74fe6008133b8):
+#   * T4_RANGE_SLICE — twin-matrix cell `m_none_range_none`, ROLLED side, the
+#     1-rail shape (`cq_template_add_i32_hl`). One of the 24.
+#   * T4_HOISTED_CHAIN — `tests/e2e/slice_loop_hoisted_chain_exit_discharge.c`,
+#     the 3-rail LICM chain `sitofp -> fadd -> sqrt`. This is the e2e slice
+#     Group 1 had to register with `--allow-unproven`; with (T4) it reports
+#     `4 verified, 0 violation(s), 0 unproven` STRICT.
+# Both are in POSITIVE as well, so the proof-targeted SWEEP blanks (T4)'s
+# witness lines — the mint and the reversal — and requires the proof to break.
+# ---------------------------------------------------------------------------
+
+T4_RANGE_SLICE = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 -6)
+  br label %2
+
+1:                                                ; preds = %2
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)
+  call void @cqrt_free(i32 %h_op)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+
+2:                                                ; preds = %2, %0
+  %3 = phi i32 [ 0, %0 ], [ %4, %2 ]
+  %h_cmp = call i32 @cq_template_icmp_ult_i32_hl(i32 %h_op, i32 14)
+  call void @cqrt_rz_i1(i32 %h_cmp, double 0x400921FB54442D18), !cq.branchphase !6
+  call void @cq_template_icmp_ult_i32_hl_unc(i32 %h_cmp, i32 %h_op, i32 14)
+  call void @cqrt_free(i32 %h_cmp)
+  %4 = add nuw nsw i32 %3, 1
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %2, label %1, !llvm.loop !7
+}
+"""
+
+T4_HOISTED_CHAIN = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h1 = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h1, double 3.000000e-01)
+  %h_cast = call i32 @cq_template_sitofp_i32_to_f64(i32 %h)
+  %h_op = call i32 @cq_template_fadd_f64_hl(i32 %h_cast, double 3.000000e+00)
+  %h_intr = call i32 @cq_template_sqrt_f64(i32 %h_op)
+  br label %3
+
+1:                                                ; preds = %3
+  call void @cq_template_sqrt_f64_unc(i32 %h_intr, i32 %h_op)
+  call void @cqrt_free(i32 %h_intr)
+  call void @cq_template_fadd_f64_hl_unc(i32 %h_op, i32 %h_cast, double 3.000000e+00)
+  call void @cqrt_free(i32 %h_op)
+  call void @cq_template_sitofp_i32_to_f64_unc(i32 %h_cast, i32 %h)
+  call void @cqrt_free(i32 %h_cast)
+  call void @cqrt_ry_i32(i32 %h, double 0x3FE6666666666666)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %m2 = call i32 @cqrt_measure_i32(i32 %h1)
+  %2 = add nsw i32 %m2, %m
+  ret i32 %2
+
+3:                                                ; preds = %3, %0
+  %4 = phi i32 [ 0, %0 ], [ %7, %3 ]
+  %5 = load volatile i32, ptr @off, align 4, !tbaa !6
+  %6 = sitofp i32 %5 to double
+  %h_cmp = call i32 @cq_template_fcmp_ugt_f64_hl(i32 %h_intr, double %6)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cqrt_ry_i32_controlled(i32 %h_cmp, i32 %h1, double 9.000000e-01)
+  call void @cqrt_x(i32 %h_cmp)
+  call void @cq_template_fcmp_ugt_f64_hl_unc(i32 %h_cmp, i32 %h_intr, double %6)
+  call void @cqrt_free(i32 %h_cmp)
+  %7 = add nuw nsw i32 %4, 1
+  %8 = icmp eq i32 %4, 0
+  br i1 %8, label %3, label %1, !llvm.loop !10
+}
+"""
+
+# -- the (T4d) isolating pair: ONE reversal, TWO free sites -------------------
+# The two-exit-block spelling (`t4-two-exit-blocks-two-reversals`, below) is
+# caught by (T4c) because each exit block carries its own `_unc`. To reach
+# (T4d) the reversal has to DOMINATE both frees, so there is only ever one
+# write to the rail and only the free COUNT is wrong.
+T4_ONE_UNC_TWO_FREES = """
+define i32 @slice(i32 %esc) local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 -6)
+  br label %2
+
+1:                                                ; preds = %2
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)
+  call void @cqrt_free(i32 %h_op)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  %6 = icmp eq i32 %esc, 3
+  br i1 %6, label %8, label %9
+
+8:                                                ; preds = %1
+  call void @cqrt_free(i32 %h_op)
+  ret i32 0
+
+9:                                                ; preds = %1
+  ret i32 %m
+
+2:                                                ; preds = %2, %0
+  %3 = phi i32 [ 0, %0 ], [ %4, %2 ]
+  %h_cmp = call i32 @cq_template_icmp_ult_i32_hl(i32 %h_op, i32 14)
+  call void @cqrt_rz_i1(i32 %h_cmp, double 0x400921FB54442D18), !cq.branchphase !6
+  call void @cq_template_icmp_ult_i32_hl_unc(i32 %h_cmp, i32 %h_op, i32 14)
+  call void @cqrt_free(i32 %h_cmp)
+  %4 = add nuw nsw i32 %3, 1
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %2, label %1, !llvm.loop !7
+}
+"""
+# Its CONTROL: the same module with the stray second free removed. It must
+# VERIFY, so (T4d) cannot be faked by refusing every multi-successor exit.
+T4_ONE_UNC_ONE_FREE = T4_ONE_UNC_TWO_FREES.replace(
+    """8:                                                ; preds = %1
+  call void @cqrt_free(i32 %h_op)
+  ret i32 0""",
+    """8:                                                ; preds = %1
+  ret i32 0""")
+
+# -- two exit blocks, each with its own reversal + free (caught by (T4c)) -----
+T4_TWO_EXIT_BLOCKS = """
+define i32 @slice(i32 %esc) local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 -6)
+  br label %2
+
+1:                                                ; preds = %7
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)
+  call void @cqrt_free(i32 %h_op)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+
+6:                                                ; preds = %7
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)
+  call void @cqrt_free(i32 %h_op)
+  ret i32 0
+
+2:                                                ; preds = %2, %0
+  %3 = phi i32 [ 0, %0 ], [ %4, %2 ]
+  %h_cmp = call i32 @cq_template_icmp_ult_i32_hl(i32 %h_op, i32 14)
+  call void @cqrt_rz_i1(i32 %h_cmp, double 0x400921FB54442D18), !cq.branchphase !6
+  call void @cq_template_icmp_ult_i32_hl_unc(i32 %h_cmp, i32 %h_op, i32 14)
+  call void @cqrt_free(i32 %h_cmp)
+  %4 = add nuw nsw i32 %3, 1
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %2, label %7, !llvm.loop !7
+
+7:                                                ; preds = %2
+  %8 = icmp eq i32 %esc, 3
+  br i1 %8, label %1, label %6
+}
+"""
+
+# -- the MINT inside the loop, reversal + free outside: (T4f), mint side ------
+T4_MINT_IN_LOOP = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  br label %2
+
+1:                                                ; preds = %2
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)
+  call void @cqrt_free(i32 %h_op)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+
+2:                                                ; preds = %2, %0
+  %3 = phi i32 [ 0, %0 ], [ %4, %2 ]
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 -6)
+  %4 = add nuw nsw i32 %3, 1
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %2, label %1, !llvm.loop !7
+}
+"""
+
+# -- an ALLOC rail in the same cross-stream bracket shape: (T4a) --------------
+# `xorc(%r,5) … xorc(%r,5)` genuinely reduces to identity, so this is a
+# DELIBERATE over-decline and it is the point: an alloc rail's soundness is a
+# REDUCTION of its whole write history, and reducing one across a back edge is
+# exactly what the stream model refuses to do.
+T4_ALLOC_RAIL = """
+define i32 @slice() local_unnamed_addr #0 {
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_op = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_xorc_i32(i32 %h_op, i32 5)
+  br label %2
+
+1:                                                ; preds = %2
+  call void @cqrt_xorc_i32(i32 %h_op, i32 5)
+  call void @cqrt_free(i32 %h_op)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+
+2:                                                ; preds = %2, %0
+  %3 = phi i32 [ 0, %0 ], [ %4, %2 ]
+  %h_cmp = call i32 @cq_template_icmp_ult_i32_hl(i32 %h_op, i32 14)
+  call void @cqrt_rz_i1(i32 %h_cmp, double 0x400921FB54442D18), !cq.branchphase !6
+  call void @cq_template_icmp_ult_i32_hl_unc(i32 %h_cmp, i32 %h_op, i32 14)
+  call void @cqrt_free(i32 %h_cmp)
+  %4 = add nuw nsw i32 %3, 1
+  %5 = icmp eq i32 %3, 0
+  br i1 %5, label %2, label %1, !llvm.loop !7
+}
+"""
+
+# The K:1 shape P2's own anchor walk exists to avoid: minted ONCE outside,
+# reversed AND freed PER TRIP inside. (T4f), free side.
+_T4_K1 = insert_after(
+    drop(drop(T4_RANGE_SLICE, "add_i32_hl_unc"), "cqrt_free(i32 %h_op)"),
+    "cqrt_rz_i1",
+    "  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)\n"
+    "  call void @cqrt_free(i32 %h_op)")
+
+# The adjoint inside the loop with the free outside — the other half of K:1.
+_T4_UNC_IN_LOOP = insert_after(
+    drop(T4_RANGE_SLICE, "add_i32_hl_unc"), "cqrt_rz_i1",
+    "  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %h, i32 -6)")
+
+# The free ABOVE the adjoint in the exit block.
+def _swap_lines(text, a, b):
+    lines = text.split("\n")
+    i = next(k for k, l in enumerate(lines) if a in l)
+    j = next(k for k, l in enumerate(lines) if b in l)
+    lines[i], lines[j] = lines[j], lines[i]
+    return "\n".join(lines)
+
+
+_T4_FREE_BEFORE_UNC = _swap_lines(T4_RANGE_SLICE, "add_i32_hl_unc",
+                                  "cqrt_free(i32 %h_op)")
+
+# (name, module, expected finding code, a fragment of the refusal text that
+#  identifies WHICH arm refused it — or None when the shape is refused BEFORE
+#  (T4) is ever consulted, which is itself a fact worth pinning.)
+T4_MUTANTS = [
+    # (T4c) — a write to the rail inside the loop body.
+    ("t4-write-to-rail-inside-the-loop",
+     insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
+                  "  call void @cqrt_x(i32 %h_op)"),
+     "U3-extern-rail", "also writes %h_op"),
+    # (T4c) — the same arm reached by a MEASUREMENT, which is the conjunct that
+    # keeps (T4) from bypassing `F8-free-after-measure`: the `extern` branch
+    # returns before F8 runs, so if (T4c) ever stopped counting a measure as a
+    # write, a measured rail would be VERIFIED here.
+    ("t4-rail-measured-then-freed",
+     insert_after(T4_RANGE_SLICE, "add_i32_hl_unc",
+                  "  %mm = call i32 @cqrt_measure_i32(i32 %h_op)"),
+     "U3-extern-rail", "also writes %h_op"),
+    # (T4c) — and by a non-diagonal ROTATION, the conjunct that keeps (T4) from
+    # bypassing `R1-recorded-rotated-rail` for the same structural reason.
+    ("t4-rail-rotated-inside-the-loop",
+     insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
+                  "  call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)"),
+     "U3-extern-rail", "also writes %h_op"),
+    # (T4b) — the adjoint recomputes a DIFFERENT value.
+    ("t4-adjoint-with-a-different-literal",
+     sub(T4_RANGE_SLICE, "add_i32_hl_unc", "i32 -6", "i32 -7"),
+     "U3-extern-rail", "no `@cq_template_add_i32_hl_unc"),
+    # (T4b) — `undef` text is not a value (bd 1739 hole 2), so a pairing that
+    # matches only through it is not a cancellation.
+    ("t4-undef-forward-operand",
+     sub(sub(T4_RANGE_SLICE, "add_i32_hl(", "i32 -6", "i32 undef"),
+         "add_i32_hl_unc", "i32 -6", "i32 undef"),
+     "U3-extern-rail", "`undef`/`poison`"),
+    # (T4f), FREE side — the K:1 shape: minted once outside, reversed and freed
+    # per trip inside. Every other conjunct passes; only this one refuses.
+    ("t4-k1-reversal-and-free-inside-the-loop", _T4_K1,
+     "U3-extern-rail", "can execute more than once"),
+    # (T4f), MINT side.
+    ("t4-mint-inside-the-loop", T4_MINT_IN_LOOP,
+     "U3-extern-rail", "can execute more than once, so the mint is not a single"),
+    # (T4d) — ONE reversal dominating TWO free sites.
+    ("t4-one-reversal-two-frees", T4_ONE_UNC_TWO_FREES,
+     "U3-extern-rail", "`cqrt_free(%h_op)` site(s) in this function"),
+    # (T4c), reached by the two-exit-block spelling. Recorded with the arm it
+    # ACTUALLY hits, not the one it was written for — see the section header.
+    ("t4-two-exit-blocks-two-reversals", T4_TWO_EXIT_BLOCKS,
+     "U3-extern-rail", "also writes %h_op"),
+    # (T4g) — a forward operand of the mint moves inside the loop, so the
+    # reversal recomputes a different value.
+    ("t4-forward-operand-moved-inside-the-loop",
+     insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
+                  "  call void @cqrt_ry_i32(i32 %h, double 2.500000e-01)"),
+     "U3-extern-rail", "is written by `call void @cqrt_ry_i32(i32 %h"),
+    # (T4a) — an ALLOC rail in the same shape. A deliberate over-decline.
+    ("t4-alloc-rail-cross-stream-bracket", T4_ALLOC_RAIL,
+     "U3-extern-rail", "not a reversible out-of-place template mint"),
+    # Refused BEFORE (T4): the adjoint is in the loop, so the exit stream has no
+    # write to the rail at all and it never becomes an `extern` record.
+    ("t4-adjoint-in-loop-free-outside", _T4_UNC_IN_LOOP,
+     "U1-cross-stream", None),
+    # Refused BEFORE (T4) as well, and loudly: with the free above the reversal
+    # the rail is not yet in the stream's table at the free, and the reversal is
+    # then a use-after-free.
+    ("t4-free-above-the-adjoint", _T4_FREE_BEFORE_UNC,
+     "F2-use-after-free", None),
+]
+
+# Shapes (T4) must stay SILENT on, each one operand away from a mutant above.
+T4_POSITIVES = [
+    # The 1-rail twin-matrix cell and the 3-rail e2e chain. The counts are the
+    # T4 proofs only — each module ALSO verifies its per-trip flag through the
+    # ordinary (T1) in-stream rule, which is not this rule's business.
+    ("t4-range-cell-rolled", T4_RANGE_SLICE, 1),
+    ("t4-hoisted-chain-rolled", T4_HOISTED_CHAIN, 3),
+    # (T4d)'s control: the same multi-successor exit, one free.
+    ("t4-one-reversal-one-free", T4_ONE_UNC_ONE_FREE, 1),
+    # The DIAGONAL exclusion, which is (T4)'s write model agreeing with
+    # `StreamAnalysis.run`'s: an `rz` on the rail inside the loop is not a write
+    # in either, so this must still verify where the `ry` twin above refuses.
+    # ⚠ It inherits this file's standing Rz blindness (see the checker's WHAT IT
+    # DOES **NOT** WITNESS): the phase really is applied K times and no rule
+    # here can see that. The pair pins the two models AGREEING, not the physics.
+    ("t4-diagonal-rz-on-the-rail-inside-the-loop",
+     insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
+                  "  call void @cqrt_rz_i32(i32 %h_op, double 5.000000e-01)"), 1),
+]
+
+# The two SHIPPED lowerings also go into POSITIVE, which is what puts them
+# through layer 3 (blank every line a verified proof consumed and require the
+# module to stop verifying clean). For a (T4) proof those lines are the MINT and
+# the REVERSAL, the only two instructions the rule reads for content.
+POSITIVE.append(("t4-range-cell-rolled", T4_RANGE_SLICE))
+POSITIVE.append(("t4-hoisted-chain-rolled", T4_HOISTED_CHAIN))
+
+
 UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
                           "@cqrt_teleport_i32", 0)
 
@@ -2342,7 +2701,7 @@ def main():
     verbose = "-v" in sys.argv
     fails = []
     n_pos = n_mut = n_sweep = n_neg = n_pair = n_mem = 0
-    n_census = 0
+    n_census = n_t4 = 0
 
     # ---- layer 1: the shipped lowerings must verify clean -----------------
     for name, text in POSITIVE + DEEP_POSITIVE:
@@ -2490,6 +2849,58 @@ def main():
         elif verbose:
             print(f"  ok  control   {name:32s} -> clean")
 
+    # ---- layer 2g: (T4), the loop-EXIT / cross-stream discharge ----------
+    # ⚠ THE ARM IS ASSERTED, NOT JUST THE CODE. Every mutant here would report
+    # `U3-extern-rail` if (T4) simply stopped working, so matching the finding
+    # code alone would let ELEVEN of these twelve rows pass against a rule with
+    # one conjunct left. Each row therefore also names a fragment of the
+    # refusal text that identifies WHICH conjunct spoke — and the two rows whose
+    # shape is refused BEFORE (T4) is consulted carry `None` and assert the
+    # ABSENCE of a (T4) clause, so they cannot drift into fake arm coverage.
+    for name, text, want, arm in T4_MUTANTS:
+        n_t4 += 1
+        got = findings(text)
+        codes = [x.code for x in got]
+        if want not in codes:
+            fails.append(f"T4 MUTANT {name}: expected {want}, got "
+                         + (", ".join(codes) if codes else "NOTHING (survived)"))
+            continue
+        msgs = [x.msg for x in got if x.code == want]
+        clause = "(T4) loop-exit discharge refused:"
+        if arm is None:
+            if any(clause in m for m in msgs):
+                fails.append(f"T4 MUTANT {name}: this shape is meant to be "
+                             f"refused BEFORE (T4) is consulted, but a (T4) "
+                             f"refusal clause was printed")
+            elif verbose:
+                print(f"  ok  t4        {name:44s} -> {want} (pre-T4)")
+            continue
+        if not any(clause in m and arm in m for m in msgs):
+            fails.append(
+                f"T4 MUTANT {name}: got {want}, but no (T4) refusal naming "
+                f"{arm!r} — some OTHER conjunct caught it, so the arm this "
+                f"mutant exists for is untested. Got: "
+                + " | ".join(m[-220:] for m in msgs))
+        elif verbose:
+            print(f"  ok  t4        {name:44s} -> {want} / {arm[:34]!r}")
+
+    for name, text, want_t4 in T4_POSITIVES:
+        n_t4 += 1
+        got = findings(text)
+        if got:
+            fails.append(f"T4 POSITIVE {name}: expected 0 findings, got "
+                         + "; ".join(str(x) for x in got))
+            continue
+        n = sum(1 for _fn, _l, _h, rule, _w in proofs_of(text)
+                if rule == "T4-loop-exit-discharge")
+        if n != want_t4:
+            # A fixture that verifies clean through some OTHER rule proves
+            # nothing about (T4); count the proofs, do not assume them.
+            fails.append(f"T4 POSITIVE {name}: expected {want_t4} site(s) "
+                         f"discharged by T4-loop-exit-discharge, got {n}")
+        elif verbose:
+            print(f"  ok  t4        {name:44s} -> {n} T4 proof(s)")
+
     # ---- layer 2e: the CENSUS (bd rixk, bd 19vy, bd 1739 hole 1) ---------
     # No other layer can see this: the census is not a finding, so a census
     # reporting twice the truth scores as a pass everywhere above.
@@ -2561,7 +2972,8 @@ def main():
     print(f"free_pairing_check_test: {n_pos} positive fixture(s), {n_pair} "
           f"free-order pair(s), {n_cost} cost bound(s), {n_mut} named "
           f"mutant(s), {n_mem} memory mutant(s)/refusal(s), {n_neg} Case-A "
-          f"negative(s), {n_census} census case(s), {n_sweep} proof-targeted "
+          f"negative(s), {n_census} census case(s), {n_t4} T4 loop-exit "
+          f"case(s), {n_sweep} proof-targeted "
           f"mutant(s) ({exempt} exempt by rule), {len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)
