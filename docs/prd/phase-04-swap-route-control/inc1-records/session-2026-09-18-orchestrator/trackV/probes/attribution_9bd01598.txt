@@ -1,0 +1,79 @@
+single_bitrail               ACCEPT-IDENTICAL
+    counts rolled (2, 2, 5) over 13 lines / unrolled (2, 2, 5) over 13 lines
+single_bitrail_interfered    ACCEPT-IDENTICAL
+    counts rolled (2, 2, 5) over 14 lines / unrolled (2, 2, 5) over 14 lines
+inline_noninterfered         ACCEPT-IDENTICAL
+    counts rolled (4, 4, 15) over 35 lines / unrolled (4, 4, 15) over 35 lines
+inline_iic                   TRACE-DIVERGENCE
+    counts rolled (2, 2, 12) over 30 lines / unrolled (2, 2, 12) over 30 lines
+    digest 41d5696622232535 | rolled cq_template_and_i32_hl(h0, 1) -> h1 | unrolled cqrt_alloc_i32(6) -> h1
+        --- rolled
+        +++ unrolled
+        @@ -2,8 +2,8 @@
+         cqrt_ry_i32(h0, 0x1p-1)
+        -cq_template_and_i32_hl(h0, 1) -> h1
+        -cqrt_alloc_i32(6) -> h2
+        -cqrt_ry_i32(h2, 0x1.999999999999ap-2)
+        -cq_template_and_i32_hl(h2, 1) -> h3
+        +cqrt_alloc_i32(6) -> h1
+        +cqrt_ry_i32(h1, 0x1.999999999999ap-2)
+        +cq_template_and_i32_hl(h1, 1) -> h2
+        +cqrt_measure_i32(h2) -> 0
+        +cq_template_and_i32_hl(h0, 1) -> h3
+         cqrt_measure_i32(h3) -> 0
+        -cqrt_measure_i32(h1) -> 0
+         cqrt_alloc_i32(6) -> h4
+        @@ -15,3 +15,3 @@
+         cqrt_measure_i32(h6) -> 0
+        -cqrt_measure_i32(h1) -> 0
+        +cqrt_measure_i32(h3) -> 0
+         cqrt_alloc_i32(6) -> h7
+        @@ -20,3 +20,3 @@
+         cqrt_measure_i32(h8) -> 0
+        -cqrt_measure_i32(h1) -> 0
+        +cqrt_measure_i32(h3) -> 0
+         cqrt_alloc_i32(6) -> h9
+        @@ -28,3 +28,3 @@
+         cqrt_measure_i32(h11) -> 0
+        -cqrt_measure_i32(h1) -> 0
+        +cqrt_measure_i32(h3) -> 0
+         cqrt_measure_i32(h0) -> 0
+single_iic_loop              TRACE-DIVERGENCE
+    counts rolled (2, 2, 8) over 20 lines / unrolled (1, 1, 7) over 17 lines
+    digest 9c0737f015e2f3b3 | rolled cq_template_and_i32_hl(h0, 1) -> h1 | unrolled cqrt_alloc_i32(6) -> h1
+        --- rolled
+        +++ unrolled
+        @@ -2,19 +2,16 @@
+         cqrt_ry_i32(h0, 0x1p-1)
+        -cq_template_and_i32_hl(h0, 1) -> h1
+        -cqrt_alloc_i32(6) -> h2
+        -cqrt_ry_i32(h2, 0x1.999999999999ap-2)
+        -cq_template_lshr_i32_hl(h2, 0) -> h3
+        -cq_template_and_i32_hl(h3, 1) -> h4
+        -cq_template_lshr_i32_hl_unc(h3, h2, 0)
+        -cqrt_free(h3)
+        -cqrt_measure_i32(h4) -> 0
+        -cqrt_measure_i32(h1) -> 0
+        -cqrt_alloc_i32(6) -> h5
+        -cqrt_ry_i32(h5, 0x1.999999999999ap-2)
+        -cq_template_lshr_i32_hl(h5, 1) -> h6
+        -cq_template_and_i32_hl(h6, 1) -> h7
+        -cq_template_lshr_i32_hl_unc(h6, h5, 1)
+        -cqrt_free(h6)
+        -cqrt_measure_i32(h7) -> 0
+        -cqrt_measure_i32(h1) -> 0
+        +cqrt_alloc_i32(6) -> h1
+        +cqrt_ry_i32(h1, 0x1.999999999999ap-2)
+        +cq_template_and_i32_hl(h1, 1) -> h2
+        +cqrt_measure_i32(h2) -> 0
+        +cq_template_and_i32_hl(h0, 1) -> h3
+        +cqrt_measure_i32(h3) -> 0
+        +cqrt_alloc_i32(6) -> h4
+        +cqrt_ry_i32(h4, 0x1.999999999999ap-2)
+        +cq_template_lshr_i32_hl(h4, 1) -> h5
+        +cq_template_and_i32_hl(h5, 1) -> h6
+        +cq_template_lshr_i32_hl_unc(h5, h4, 1)
+        +cqrt_free(h5)
+        +cqrt_measure_i32(h6) -> 0
+        +cqrt_measure_i32(h3) -> 0
+         cqrt_measure_i32(h0) -> 0

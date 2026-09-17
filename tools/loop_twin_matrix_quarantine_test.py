@@ -65,10 +65,25 @@ point is that its negatives have IDENTICAL traces on both sides:
   POS-8  a NON-bank cell with the same thin trace is NOT flagged — the floor is
          scoped, or it would have reddened 338 committed cells
 
-plus the all-good CONTROL, which must PASS, four standalone guards
+and bd test_C_libtooling-vsr6's NESTED-LOOP axis, whose bead is the sharpest
+statement of why this file exists — bd `emkg` was a P1 OVER-ACCEPT about two
+loops, and the one instrument that could have seen it had 359 cells and not one
+second `for`:
+
+  NEG-20 a nested cell whose ROLLED side drops the outer rail's `_unc`/`free`
+         while the inner loop keeps its own -> FAIL, with the dropped discharge
+         and the per-side counts in the report
+  POS-9  the same pair pinned to its own measured signature -> PASS
+  NEG-21 the same pair pinned to somebody else's digest -> FAIL
+
+plus the all-good CONTROL, which must PASS, seven standalone guards
 (`write_preserving_header` made to fail twice, the four COMMITTED tables carry
-the marker, `BANK_FLOOR` covers the whole axis non-emptily, an EMPTY matrix
-exits 2), and the surface guards. 51 cases.
+the marker, `BANK_FLOOR` covers the whole axis non-emptily, the NESTED-LOOP axis
+is wired into `cells_of_matrix` and its twin unrolls EXACTLY the subject loop,
+every boundary control is pinned or declared unmeasurable, every quarantined
+cell is a cell of the matrix, an EMPTY matrix exits 2), and the surface guards.
+58 cases — MEASURED by running it, not counted by reading it (the predecessor of
+this line said 51 while the file printed 52).
 
 Six of them assert on FILE BYTES, not just on the exit code: a refusal that
 still wrote the file is exactly the defect F-R2-1 was, and it printed a non-zero
@@ -104,6 +119,14 @@ CELLS = ["m_a", "m_b", "m_c", "m_d"]
 # disarming the very fence the cases exist to prove.
 _REAL_CELL_NAME = M.cell_name
 _REAL_CELLS_OF_MATRIX = M.cells_of_matrix
+# ⚠ THE SAME TRAP ONE TABLE OVER, and it was MISSED by this file's own mutant
+# harness before it was closed (bd vsr6 mutant M11): `install()` REPLACES
+# `SURFACE_CONTROL_VERDICTS` with a stub in which every control is pinned, so a
+# guard that reads the module attribute after any case has run is reading the
+# stub and would pass over a SHIPPED control with no pin at all. The committed
+# tables are captured here, before any stubbing, exactly as `cell_name` is.
+_REAL_CONTROL_VERDICTS = M.SURFACE_CONTROL_VERDICTS
+_REAL_CONTROL_UNMEASURED = M.CONTROL_UNMEASURED
 
 # m_a and m_b diverge (the quarantine candidates); m_c and m_d agree.
 BASE = {
@@ -161,9 +184,17 @@ def install(control_diverges=False):
     # produces: this file validates the quarantine's SEMANTICS and deliberately
     # not its measurements (see the module docstring), and the real pins are
     # measured by the 274-cell run.
+    # ⚠ EVERY control gets a stub pin, DERIVED from `QUARANTINE_CONTROLS` rather
+    # than listed: `run_boundary_controls` treats a control with no pin on this
+    # surface as a LOUD FAILURE (bd vsr6), which is right for the real gate and
+    # would make every case in this file red for a reason that has nothing to do
+    # with the quarantine's semantics. Deriving it also means a NEW control
+    # cannot silently escape the stub — which is exactly what a hand-written
+    # two-entry dict did when `q_nestinline` arrived.
     M.SURFACE_CONTROL_VERDICTS = dict(M.SURFACE_CONTROL_VERDICTS)
-    M.SURFACE_CONTROL_VERDICTS["void"] = {"q_noregion": "ACCEPT-IDENTICAL",
-                                          "q_armoncond": "ACCEPT-IDENTICAL"}
+    M.SURFACE_CONTROL_VERDICTS["void"] = {
+        c: "ACCEPT-IDENTICAL" for c in M.QUARANTINE_CONTROLS}
+    M.CONTROL_UNMEASURED = {}
     if control_diverges:
         M.build_side = lambda cfg, work, name, src: _side(
             "ctl\n" if name.endswith("_u") else "ctl-DIFFERENT\n")
@@ -466,8 +497,9 @@ def install_bank(rolled, unrolled, cell=BANK_CELL):
     M.control_sources = lambda n, surface="register": ("", "")
     M.SURFACE_CONTROL_VERDICTS = dict(M.SURFACE_CONTROL_VERDICTS)
     for s in ("void", "register"):
-        M.SURFACE_CONTROL_VERDICTS[s] = {"q_noregion": "ACCEPT-IDENTICAL",
-                                         "q_armoncond": "ACCEPT-IDENTICAL"}
+        M.SURFACE_CONTROL_VERDICTS[s] = {
+            c: "ACCEPT-IDENTICAL" for c in M.QUARANTINE_CONTROLS}
+    M.CONTROL_UNMEASURED = {}
     M.build_side = lambda cfg, work, n, src: _side("ctl\n")
     return name
 
@@ -573,6 +605,265 @@ def case_floor_covers_the_axis():
         bad.append("%d bank cell(s) are defined but NOT in cells_of_matrix() — "
                    "the axis would never run: %s"
                    % (len(absent), absent[:3]))
+    return bad
+
+
+# ── THE NESTED-LOOP AXIS (bd test_C_libtooling-vsr6) ────────────────────────
+# ⚠ WHY THESE EXIST, IN THE SHAPE THE BEAD WAS FILED IN. bd `emkg` was a P1
+# over-accept whose entire content is TWO LOOPS, and it passed every gate in the
+# tree because `loop_twin_matrix.py` — the ONE instrument that can see a leaked
+# TEMPLATE-minted rail — had 359 cells and not one of them contained a second
+# `for`. The axis closes that. These cases close the NEXT one: an axis can be
+# defined, complete and perfectly named while `cells_of_matrix()` never runs it,
+# or while `_wrap` quietly unrolls the WRONG loop, and both of those look exactly
+# like a green run. That is `case_floor_covers_the_axis`'s argument (bd rpkr's
+# mutation M5) applied one axis over, and it is the same argument as
+# `free_pairing_check_test.py`'s: a checker nobody has tried to fool is a checker
+# nobody should trust.
+NEST_CELL = ("none", "l2b", "none", "none", "l2im")
+# The trace a CORRECT nested cell emits for its first trip: the outer loop's own
+# rail `h1` is minted, consumed by the `and`, then UNCOMPUTED and FREED.
+_NEST_FAT = ("cqrt_alloc_i32(0) -> h0\n"
+             "cqrt_ry_i32(h0, 0x1p-1)\n"
+             "cq_template_lshr_i32_hl(h0, 1) -> h1\n"
+             "cq_template_and_i32_hl(h1, 1) -> h2\n"
+             "cq_template_lshr_i32_hl_unc(h1, h0, 1)\n"
+             "cqrt_free(h1)\n"
+             "cqrt_measure_i32(h2) -> 0\n")
+# THE DEFECT, hand-edited: the INNER loop's rail is still discharged and the
+# OUTER loop's `h1` is not. It is the real class-D shape measured on the ORACLE
+# (`$SES/trackV/probes/nest_divergences_9bd01598.txt`), reduced to the two lines
+# that carry it, and it is what a nested cell has to REPORT rather than absorb.
+_NEST_LEAK = ("cqrt_alloc_i32(0) -> h0\n"
+              "cqrt_ry_i32(h0, 0x1p-1)\n"
+              "cq_template_lshr_i32_hl(h0, 1) -> h1\n"
+              "cq_template_and_i32_hl(h1, 1) -> h2\n"
+              "cqrt_measure_i32(h2) -> 0\n")
+
+
+def case_nest_axis_is_wired():
+    """⚠ THE `checked 0` HOLE AND THE WRONG-LOOP HOLE, in this axis's own shape.
+
+    Four claims, each of which a one-token edit makes false while every other
+    case in this file stays green:
+
+      1. `nest_cells()` produces the asserted 23 and they are all IN
+         `cells_of_matrix()` — an axis that is defined but never run witnesses
+         nothing, which is bd rpkr's measured mutation M5 one axis over.
+      2. EVERY nest cell's ROLLED source contains at least TWO `for (`. A cell
+         with one loop is not a nested-loop cell whatever it is called, and the
+         bead's whole subject is the second one.
+      3. THE SUBJECT-LOOP INVARIANT, and it is the one case here that had to be
+         MEASURED rather than written down: the twin loses the SUBJECT `for`,
+         REPEATS every `for` inside the body `TRIPS` times, and emits every
+         `for` outside the repetition (an enclosure, a sibling) exactly once —
+         so `nu == nr - 1 + body_fors * (TRIPS - 1)`, with `body_fors` read off
+         `GATE_ALL[rgate]` rather than hard-coded. ⚠ The obvious spelling
+         `nu == nr - 1` is WRONG and was measured wrong on all 19 core cells:
+         the inner loop is body text, so the twin carries two of it. Writing the
+         weaker sentence down first would have made this case red against a
+         correct axis, which is the other way an instrument lies.
+         It is the single property that separates "the outer loop is the
+         subject" from "both loops were unrolled", "none was", or "the inner one
+         was".
+      4. The two `d`/interference columns really differ from their plain twins,
+         and the difference is the non-diagonal gate. A `d` column that has
+         silently collapsed onto its sibling doubles a verdict instead of
+         measuring a second one.
+    """
+    bad = []
+    M.cell_name = _REAL_CELL_NAME
+    cells = M.nest_cells()
+    if len(cells) != 23:
+        bad.append("nest_cells() returned %d cells, expected 23" % len(cells))
+    names = {M.cell_name(c) for c in cells}
+    wired = {M.cell_name(c) for c in _REAL_CELLS_OF_MATRIX()}
+    absent = sorted(names - wired)
+    if absent:
+        bad.append("%d nest cell(s) are defined but NOT in cells_of_matrix() — "
+                   "the axis would never run: %s" % (len(absent), absent[:3]))
+    for cell in cells:
+        n = M.cell_name(cell)
+        rgate = cell[4]
+        g = M.GATE_ALL[rgate]
+        body_fors = (g["pre"] + g["post"]).count("for (")
+        rolled, unrolled = M.sources(*cell, surface="void")
+        nr, nu = rolled.count("for ("), unrolled.count("for (")
+        if nr < 2:
+            bad.append("%s: the ROLLED source has %d `for (` — a nested-loop "
+                       "cell needs at least two" % (n, nr))
+        want = nr - 1 + body_fors * (M.TRIPS - 1)
+        if nu != want:
+            bad.append("%s: rolled has %d `for (` and the twin %d, expected %d "
+                       "(the subject loop gone, %d body loop(s) x %d trips, "
+                       "every enclosing/sibling loop once) — the twin does not "
+                       "unroll EXACTLY the subject loop"
+                       % (n, nr, nu, want, body_fors, M.TRIPS))
+    # (4) each interference column differs from its plain sibling by the gate.
+    # ⚠ The pairs and their rgates are DERIVED from the axis, not listed: a
+    # hard-coded list raises `KeyError` on a renamed region and aborts this case
+    # before the guards below it ever run — measured while closing mutant M12,
+    # where the crash masked `case_quarantined_cells_exist` entirely.
+    rgate_of = {c[1]: c[4] for c in cells}
+    pairs = [(r, r + "d") for r in M.N_REGION if r + "d" in M.N_REGION]
+    if not pairs:
+        bad.append("no plain/interfered region pair — the interference column "
+                   "has no sibling to be compared against")
+    for plain, interfered in pairs:
+        g = rgate_of.get(plain, "none")
+        p = M.sources("none", plain, "none", "none", g, surface="void")[0]
+        i = M.sources("none", interfered, "none", "none", g, surface="void")[0]
+        if p == i:
+            bad.append("%s and %s generate the SAME source — the interference "
+                       "column has collapsed onto its sibling" % (plain,
+                                                                  interfered))
+        elif "cq_theta" not in i.replace(p, ""):
+            bad.append("%s adds something other than a rotation to %s"
+                       % (interfered, plain))
+    # (5) THE INNER AXIS IS THREE THINGS, not one thing named three times, and
+    # this was a MISSED mutant before it was a case (M10: `l2iu`'s inner loop
+    # given `l2im`'s body, so the UNMARKED column silently became a second copy
+    # of the MARKED one and every other check here stayed green). The axis's
+    # whole content is WHAT `markIfIterationLocal` DOES WITH EACH, so the
+    # discriminator is the mint and the outer-register read, not the text:
+    #   l2im  fully iteration-local: it MINTS its own register and reads no
+    #         outer one -> the marker marks it, which is what silenced the
+    #         outer fence in bd emkg.
+    #   l2iu  reads the OUTER register `a` and mints NOTHING -> refused.
+    #   l2ic  mints AND reads `a` -> marked only by clause (ii-c).
+    texts = {k: v["pre"] + v["post"] for k, v in M.N_INNER.items()}
+    if len(set(texts.values())) != len(texts):
+        bad.append("two N_INNER kinds generate the SAME body — the inner axis "
+                   "has collapsed and one column is a duplicate")
+    want = {"l2im": (1, False), "l2iu": (0, True), "l2ic": (1, True)}
+    for k, (mints, reads_a) in want.items():
+        t = texts.get(k, "")
+        got_mints = t.count("cq_theta")
+        got_reads = ("(a >>" in t) or ("(a &" in t) or ("a & 1" in t)
+        if got_mints != mints:
+            bad.append("N_INNER[%r] mints %d cq_theta, expected %d — it is no "
+                       "longer the %s column"
+                       % (k, got_mints, mints,
+                          "iteration-local" if mints else "outer-reading"))
+        if got_reads != reads_a:
+            bad.append("N_INNER[%r] %s the OUTER register, expected it %s"
+                       % (k, "reads" if got_reads else "does not read",
+                          "to" if reads_a else "not to"))
+    return bad
+
+
+def case_nest_divergence_is_reported():
+    """The hand-edited stream the bead asks for: the INNER loop's rail is
+    discharged and the OUTER's is not.
+
+    ⚠ It is run through the SAME `main()` the gate runs, with synthetic traces
+    and no clang, so what is being tested is the VERDICT PATH for a nest cell —
+    that such a pair is a hard failure when un-quarantined, passes when pinned to
+    its own digest, and still fails when pinned to somebody else's.
+    """
+    out = []
+    name = M.cell_name(NEST_CELL)
+    q0, ok_e = QHDR + "\n", EHDR + "%s ACCEPT-IDENTICAL\n" % name
+
+    install_bank(_NEST_LEAK, _NEST_FAT, cell=NEST_CELL)
+    rc, rep, _, _ = run(q0, ok_e)
+    bad = []
+    if rc != 1:
+        bad.append("rc %d, expected 1 — an un-quarantined nested divergence "
+                   "must be a hard failure" % rc)
+    if "TRACES DIFFER" not in rep:
+        bad.append("the report does not name the divergence")
+    if "cq_template_lshr_i32_hl_unc(h1, h0, 1)" not in rep:
+        bad.append("the report does not name the discharge the ROLLED side "
+                   "dropped")
+    # The `(_unc, cqrt_free, mints)` triple is what makes a dropped DISCHARGE
+    # readable as one; a report that printed only the first differing line would
+    # leave a reader guessing which side is short.
+    if "(0, 0, 3)" not in rep or "(1, 1, 3)" not in rep:
+        bad.append("the report does not show the per-side (_unc, free, mint) "
+                   "counts that identify a dropped discharge")
+    out.append(("NEG-20   a nested cell whose ROLLED side drops the outer "
+                "rail's discharge", bad, rep))
+
+    sig = M.divergence_signature(_NEST_LEAK, _NEST_FAT)
+    install_bank(_NEST_LEAK, _NEST_FAT, cell=NEST_CELL)
+    rc, rep, _, _ = run(QHDR + "\n" + block(name, *sig), EHDR)
+    bad = []
+    if rc != 0:
+        bad.append("rc %d, expected 0 — pinned to its own signature it passes"
+                   % rc)
+    out.append(("POS-9    the same cell, pinned to its measured signature",
+                bad, rep))
+
+    install_bank(_NEST_LEAK, _NEST_FAT, cell=NEST_CELL)
+    rc, rep, _, _ = run(QHDR + "\n" + block(name, "0" * 16, sig[1], sig[2]),
+                        EHDR)
+    bad = []
+    if rc != 1:
+        bad.append("rc %d, expected 1 — a WRONG pinned digest must red" % rc)
+    if "QUARANTINED SIGNATURE CHANGED" not in rep:
+        bad.append("the report does not say the signature moved")
+    out.append(("NEG-21   the same cell pinned to somebody else's signature",
+                bad, rep))
+    return out
+
+
+def case_every_control_is_gated():
+    """⚠ A BOUNDARY CONTROL WITH NO PIN IS DECORATION THAT LOOKS LIKE A
+    MEASUREMENT, and adding one is a two-line edit.
+
+    Every `QUARANTINE_CONTROLS` key must, on the SHIPPED `void` surface, either
+    carry a pinned verdict or be named in `CONTROL_UNMEASURED` with a surface it
+    cannot be measured on. Neither list may be empty of the other's members, and
+    the `register` surface's `None` (the stronger ACCEPT-IDENTICAL rule) may not
+    silently acquire a control nobody has run.
+    """
+    bad = []
+    # ⚠ THE COMMITTED TABLES, captured before any `install()` stubbed them. A
+    # guard that reads `M.SURFACE_CONTROL_VERDICTS` here reads a stub in which
+    # every control is pinned by construction, and passes over a shipped control
+    # that has no pin at all — measured as mutant M11.
+    pins = _REAL_CONTROL_VERDICTS.get("void") or {}
+    for c in sorted(M.QUARANTINE_CONTROLS):
+        if c in pins:
+            continue
+        if c in _REAL_CONTROL_UNMEASURED.get("void", ()):
+            continue
+        bad.append("%s: no pinned verdict on the void surface and not declared "
+                   "unmeasurable — it is built, compared and never checked" % c)
+    for surface, names in _REAL_CONTROL_UNMEASURED.items():
+        for c in names:
+            if c not in M.QUARANTINE_CONTROLS:
+                bad.append("CONTROL_UNMEASURED[%r] names %s, which is not a "
+                           "boundary control" % (surface, c))
+    if not M.QUARANTINE_CONTROLS:
+        bad.append("there are NO boundary controls — the quarantine's class "
+                   "story is a paragraph again")
+    return bad
+
+
+def case_quarantined_cells_exist():
+    """Every cell named in the COMMITTED quarantine must be a cell
+    `cells_of_matrix()` produces.
+
+    `main()` already fails on this at run time ("QUARANTINED but not a cell in
+    this run"), but only when the gate runs — ~11 minutes, and only if somebody
+    runs it. Here it costs milliseconds and it catches the one edit that makes it
+    likely: renaming an axis's cells.
+    """
+    bad = []
+    M.cell_name = _REAL_CELL_NAME
+    names = {M.cell_name(c) for c in _REAL_CELLS_OF_MATRIX()}
+    for surface, (_exp, quar) in M.SURFACE_TABLES.items():
+        path = os.path.join(os.path.dirname(os.path.abspath(M.__file__)), quar)
+        if not os.path.exists(path):
+            continue
+        if surface != "void":
+            continue          # the register surface is retired; its cells are history
+        for cell in sorted(M.load_quarantine(path)):
+            if cell not in names:
+                bad.append("%s: quarantined in %s but not a cell of the matrix"
+                           % (cell, quar))
     return bad
 
 
@@ -779,6 +1070,12 @@ def main():
                        case_committed_tables_are_marked),
                       ("BANK_FLOOR covers the whole bank axis",
                        case_floor_covers_the_axis),
+                      ("the NESTED-LOOP axis is wired and unrolls ONE loop",
+                       case_nest_axis_is_wired),
+                      ("every boundary control is pinned or declared",
+                       case_every_control_is_gated),
+                      ("every quarantined cell is a cell of the matrix",
+                       case_quarantined_cells_exist),
                       ("an EMPTY matrix exits 2, never 0",
                        case_no_cells_is_not_a_pass)):
         bad = fn()
@@ -791,6 +1088,14 @@ def main():
     for label, bad, rep in case_bank_floor():
         total += 1
         print("[floor   ] %-46s %s"
+              % (label, "ok" if not bad else "FAILED: " + "; ".join(bad)))
+        if bad:
+            failures += 1
+            print(rep)
+
+    for label, bad, rep in case_nest_divergence_is_reported():
+        total += 1
+        print("[nest    ] %-46s %s"
               % (label, "ok" if not bad else "FAILED: " + "; ".join(bad)))
         if bad:
             failures += 1

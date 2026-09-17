@@ -456,6 +456,38 @@
 #
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
+#
+# ── THE NESTED-LOOP AXIS, 23 cells, `m_none_l2*_none_none_*` (bd
+#    test_C_libtooling-vsr6, 2026-09-17). ADDED BY HAND, ABOVE THE MARKER, WHICH
+#    IS THE POINT: the header contract (bd gfsk) exists so a note like this one
+#    survives the next `--regenerate`, and the paragraph it recovered was deleted
+#    by a write mode that reported success.
+#
+#    WHY THE AXIS EXISTS. bd `emkg` was a P1 OVER-ACCEPT whose entire content is
+#    TWO LOOPS — a MARKED INNER loop silenced `declineDephasingUnmarkedLoopRails`
+#    for its ENCLOSING OUTER one — and it passed every gate in this tree. No
+#    shipped fixture had the shape, `free_pairing_check.py` is blind to
+#    TEMPLATE-minted rails by construction, and this file, the ONE instrument
+#    that can see a leaked template rail, had 359 cells and NOT ONE of them
+#    contained a second `for`. `nest` in this script has always meant a nested
+#    CONTROL REGION; these are named `l2*` so the two can never be confused.
+#
+#    HOW TO READ A ROW. The SUBJECT is the OUTER loop and the inner one stays
+#    rolled on BOTH sides, so `ACCEPT-IDENTICAL` here says "the outer loop rolled
+#    emits what the outer loop written out flat emits, with the inner loop
+#    untouched in both". The three inner columns are `l2im` (fully
+#    iteration-local, hence MARKED — the emkg silencer), `l2iu` (reads the outer
+#    register, hence unmarked — the control), `l2ic` (marked only by clause
+#    (ii-c)). The trailing `d` on a region adds the POST-LOOP non-diagonal gate.
+#    Sub-grids N2/N3/N4 invert, un-nest and deepen the geometry: `l2inv*` makes
+#    the INNER loop the subject under a rolled enclosure, `l2sib*` makes the
+#    marked loop a PEER, `l2d3d` puts the subject in the MIDDLE of three.
+#
+#    ⚠ THE `l2bd`/`l2cd` COLUMN IS THE `n1`/`n2`/`n3` PROGRAM and it is
+#    `UNROLLED-ONLY`: the emkg fix declines the rolled side there. The plain
+#    column is NOT covered by that fence and 8 cells DIVERGE on the oracle —
+#    they are in the QUARANTINE, classes D and E, with their root causes and
+#    their isolation measurements. Read that file before reading these rows.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -598,6 +630,21 @@ m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored t
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
 m_none_kread_none_none_kflat UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_kread_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2d3d_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2inv_none_none_none ACCEPT-IDENTICAL
+m_none_l2invd_none_none_none ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2sib_none_none_none ACCEPT-IDENTICAL
+m_none_l2sibd_none_none_none ACCEPT-IDENTICAL
 m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_nbilry_none_none_binv ACCEPT-IDENTICAL
 m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL

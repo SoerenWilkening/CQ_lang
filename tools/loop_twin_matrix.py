@@ -290,6 +290,26 @@ and this epic adds none — PRD D3). MEASURED on the pre-3qlq oracle 52d7764:
 in the output at exit 0. The side is recorded `PHI-UNLOWERED` and stages 2b/3/4
 are skipped for it; calling that a link failure would file the pre-increment
 disposition as a harness error. After Increment 1 the verdict must not appear.
+
+THE NESTED-LOOP AXIS (bd test_C_libtooling-vsr6) — and it is the sharpest
+instance of L10 this file carries, because the defect it could not see was a P1
+OVER-ACCEPT that had already shipped. bd test_C_libtooling-emkg is entirely
+about TWO LOOPS: a MARKED INNER loop silenced `declineDephasingUnmarkedLoopRails`
+for its ENCLOSING OUTER one, whose per-trip which-path rails still leaked at a
+later non-diagonal gate. It passed every gate in this tree — no fixture had the
+shape, `free_pairing_check.py` is blind to TEMPLATE-minted rails by construction,
+and this file, the only instrument that CAN see a leaked template rail, had 359
+cells and not one of them contained a second `for`. Every axis above is a product
+over ONE loop, and the token `nest` in them means a nested CONTROL REGION.
+
+The cells are named `l2*` and NOT `nest*` for exactly that reason. The SUBJECT is
+the outer loop; every other `for` is emitted on both spellings, a BODY one once
+per repetition and an ENCLOSING or SIBLING one exactly once. ⚠ The twin of a core
+cell therefore carries TWO loops, not one — the inner one is body text — and the
+tempting sentence "rolled two, twin one" is FALSE. The real invariant is asserted
+cell by cell in `loop_twin_matrix_quarantine_test.py`. See the `N_*` tables for
+the three axes, the four sub-grids, the `enclose` geometry sub-grids N2/N4
+needed, and what the axis cannot witness.
 """
 
 import argparse
@@ -993,6 +1013,17 @@ SECOND = {
     "classical": {"decl": "    int r = 7;\n", "seed": "",
                   "pre": "", "post": "", "tail": " + cq_measure(r)",
                   "scope": False},
+    # ── bd test_C_libtooling-vsr6, the NESTED-LOOP axis. A classical
+    # accumulator and NOTHING ELSE: no second quantum register, no seed, no
+    # body text. The nested family's measurements all land in `s` (`s +=
+    # cq_measure(...)`, exactly as the committed `loopfix/probes/n{1,2,3}*.c`
+    # write them), so the kind's whole job is to declare it and put it in the
+    # `return`. `scope` is False — a nested body redeclares nothing at its own
+    # level (`for (int j …)` and an `int u` inside the inner loop's own braces
+    # are each scoped by the braces the body already has), so it takes the
+    # ordinary dedent path and the twin is the body text verbatim.
+    "acc": {"decl": "    int s = 0;\n", "seed": "",
+            "pre": "", "post": "", "tail": " + s", "scope": False},
     # ── the ITERATION-LOCAL kinds. The register is declared and minted INSIDE
     # the body and consumed INSIDE it, which is the whole point: nothing tainted
     # defined in the loop is read outside it, so clause (c3) is satisfied. `s` is
@@ -1378,6 +1409,204 @@ def _bank_text(region, read):
     return decl, post, " + ks"
 
 
+# ── THE NESTED-LOOP AXIS (bd test_C_libtooling-vsr6) ────────────────────────
+# WHY IT EXISTS, AND IT IS THE SHARPEST INSTANCE OF L10 THIS FILE HAS. bd
+# test_C_libtooling-emkg was a P1 OVER-ACCEPT whose whole content is TWO LOOPS:
+# `declineDephasingUnmarkedLoopRails`' conjunct (1) asked "is this loop's body
+# marked iteration-local?" over `L->blocks()`, which INCLUDES every strictly
+# deeper subloop's blocks, while conjunct (3) asked its question over `L`'s OWN
+# blocks. A MARKED INNER loop therefore silenced the fence for its ENCLOSING
+# OUTER loop, whose per-trip which-path rails still leaked at a later
+# non-diagonal gate (Rule 8). One face of it reproduced on the ORACLE.
+#
+# It passed EVERY gate in the tree. No shipped fixture had the shape;
+# `free_pairing_check.py` is blind to TEMPLATE-minted rails by construction (no
+# `cqrt_alloc` to count); and THIS FILE — the only instrument in the tree that
+# can see a leaked template rail — had 359 cells and not one of them contained a
+# second `for`. `cells_of_matrix()` is a PREFIX x REGION x SUFFIX product over a
+# SINGLE loop, and the token `nest` in it means a nested CONTROL REGION
+# (`if (b && a == off)`), never a nested LOOP. *An instrument is only ever blind
+# in the shape nobody has pointed it at yet.*
+#
+# ⚠ THE NAMES ARE DELIBERATELY `l2*` AND NOT `nest*`, for exactly that reason:
+# `nest` is taken, it means something else in this file, and a cell called
+# `m_none_nest…` would be read as a condition-tree cell by everyone who has read
+# the rest of this module. `l2` = "a second loop".
+#
+# THE SUBJECT IS THE OUTER LOOP AND THE INNER ONE STAYS ROLLED. That is the
+# whole geometry and it is what makes the twin faithful: `_wrap` unrolls exactly
+# ONE loop — the `for` it writes — and every other `for` is emitted on both
+# sides, a BODY one once per repetition and an ENCLOSING or SIBLING one exactly
+# once. ⚠ SO THE TWIN OF A CORE CELL HAS **TWO** `for`s, NOT ONE: the inner loop
+# is body text and the twin carries `TRIPS` copies of it. The obvious sentence
+# ("rolled two, twin one") is FALSE and was measured false on all 19 core cells
+# while it stood in a guard. `loop_twin_matrix_quarantine_test.py` asserts the
+# real invariant cell by cell — `nu == nr - 1 + body_fors * (TRIPS - 1)` — rather
+# than trusting either sentence.
+#
+# THE THREE AXES ARE THE BEAD'S, and each value is a committed probe from
+# `$PREV/loopfix/probes/` rather than a shape invented here:
+#
+#   INNER (the `<rgate>` slot — the inner loop rides in `GATE_ALL[rgate]["post"]`,
+#   which is the body position immediately after the region text, i.e. after the
+#   outer loop's own rail, exactly as `n1` writes it):
+#     `l2im`  MARKED — fully iteration-local (`int u = cq_theta(6, 0.4);` minted
+#             and consumed inside the inner body). `markIfIterationLocal` marks
+#             it, which is what silenced the outer fence. `n1`'s inner.
+#     `l2iu`  UNMARKED — the inner loop READS the outer register `a`, so the
+#             marker refuses it and NOTHING in `L_outer->blocks()` is marked.
+#             `n2`'s inner, and it is `n1`'s CONTROL, not a variant of it.
+#     `l2ic`  ITERATION-LOCAL BY CLAUSE (ii-c) ONLY — marked solely because the
+#             hoisted measure-owned `a & 1` is admitted. `n3`'s inner, the
+#             COMPOSITION instance.
+#
+#   OUTER-OWN-RAIL (the REGION token, crossed with the post-loop column below):
+#     `l2n`   NONE — the outer body is the inner loop and nothing else. The
+#             containment control: an outer loop with no rail of its own has
+#             nothing to leak, so a decline here is about something else.
+#     `l2b`   the per-trip TEMPLATE rail off the invariant register,
+#             `(a >> (i+1)) & 1` — `n1`/`n2`/`n3`'s outer rail, and the one that
+#             actually leaks. MEASURED on the oracle: it is a PAIR of template
+#             rails per trip, `cq_template_lshr_i32_hl(h0, k) -> h` then
+#             `cq_template_and_i32_hl(h, 1) -> h'`; the `and` result is owned by
+#             the `cq_measure`, and it is the `lshr` INTERMEDIATE that the flat
+#             twin discharges and the rolled form does not (quarantine class D).
+#             Both are TEMPLATE-minted, which is the class stage 2b cannot count.
+#     `l2c`   the `icmp` USED AS DATA rail, `a > (i+1)` — bd
+#             test_C_libtooling-7845's membership question (`r3`'s outer rail).
+#             It is NOT a `BinaryOperator`, so it reaches conjunct (3) by a
+#             different route, and before the emkg fix the outer never reached
+#             conjunct (3) at all through a nest.
+#     ⚠ THE BEAD SPELLS THIS AXIS "none / root mint / cmp-rail data" AND THE
+#       MIDDLE TERM IS AMBIGUOUS IN THE TREE'S OWN VOCABULARY — "root mint" is
+#       `railPhiRootMint`'s `cq_theta` allocation, and NONE of the three seed
+#       probes puts one in the outer body; all three put the TEMPLATE bit rail
+#       there. Both readings are covered rather than guessed between: the
+#       template-rail reading is `l2b` (and it is the seeds' own), and the
+#       root-mint-in-the-OTHER-loop reading is sub-grid N2 below, whose
+#       enclosing loop mints `w` per trip. Recorded as an ambiguity resolved by
+#       measurement, not as a reading.
+#
+#   POST-LOOP INTERFERENCE (the trailing `d` on the region token): `a` is
+#   rotated by a non-diagonal gate after the nest and then measured. It is what
+#   turns a leaked per-trip which-path rail from a Rule-6 accepted leak into a
+#   WRONG UNITARY (Rule 8 — *a permutation that leaves a rail dirty AND
+#   entangled still dephases under later interference*), so it is a column and
+#   not a default. Every `d` cell is the corresponding non-`d` cell plus one
+#   line, which is what lets a reader attribute a verdict change to the
+#   interference alone.
+N_INNER = {
+    "l2im": {"pre": "", "post":
+             "        for (int j = 0; j < 2; ++j) {\n"
+             "            int u = cq_theta(6, 0.4);\n"
+             "            s += cq_measure((u >> j) & 1);\n"
+             "        }\n"},
+    "l2iu": {"pre": "", "post":
+             "        for (int j = 0; j < 2; ++j)\n"
+             "            s += cq_measure((a >> (j + 8)) & 1);\n"},
+    "l2ic": {"pre": "", "post":
+             "        for (int j = 0; j < 2; ++j) {\n"
+             "            int u = cq_theta(6, 0.4);\n"
+             "            s += cq_measure((u >> j) & 1) + cq_measure(a & 1);\n"
+             "        }\n"},
+}
+# The outer loop's OWN rail, per region token. The `d` twin of each carries the
+# identical text — the trailing `d` moves `POSTLOOP_FOR_REGION`, never the body.
+_N_BIT = "        s += cq_measure((a >> (i + 1)) & 1);\n"
+_N_CMP = "        s += cq_measure(a > (i + 1));\n"
+N_REGION = {
+    "l2n": "", "l2nd": "",
+    "l2b": _N_BIT, "l2bd": _N_BIT,
+    "l2c": _N_CMP, "l2cd": _N_CMP,
+    # ── N2, the INVERTED nesting (`r2_outer_marked_inner_rail`). The SUBJECT is
+    # the INNER loop and the ENCLOSING one stays rolled; the enclosing body
+    # MINTS `w` per outer trip (a genuine ROOT MINT) and the subject loop copies
+    # its bits. It asks the emkg conjunct from the other side — does a marking
+    # that COVERS the subject silence the fence FOR the subject — and `r2`'s own
+    # header argues that direction is SOUND (a marked block means the spine
+    # discharges IN that block, i.e. per INNER trip). A cell that pins a verdict
+    # an argument says is right is still a cell: the argument is not the gate.
+    "l2inv": "        s += cq_measure((w >> (i + 1)) & 1);\n",
+    "l2invd": "        s += cq_measure((w >> (i + 1)) & 1);\n",
+    # ── N3, SIBLING loops (`r5_sibling_loops_one_marked`). The marked loop is a
+    # PEER of the subject, not an ancestor and not a descendant, so neither the
+    # old conjunct (1) nor the fixed one can be silenced by it. THE CONTROL THAT
+    # SAYS THE DEFECT WAS ABOUT CONTAINMENT and not about "some marked block
+    # exists in this function" — without it every N1 verdict is equally
+    # explained by a function-wide marking bug.
+    "l2sib": _N_BIT, "l2sibd": _N_BIT,
+    # ── N4, DEPTH THREE (`r1_triple_nest_mid_rail`). The SUBJECT is the MIDDLE
+    # loop: an enclosing loop above it, a fully iteration-local one below it,
+    # and the rail in the middle. `r1` became a fixture because its rolled and
+    # unrolled TRACE LINE COUNTS AGREE (72 = 72) while the gate MULTISET does
+    # not — i.e. it is a shape a line-count comparison cannot see and a
+    # byte-diff can, which is this file's entire reason to exist. One cell, at
+    # the interfered column, because depth is the axis and not a product.
+    "l2d3d": _N_BIT,
+}
+# The ENCLOSING loop, emitted VERBATIM on both spellings around the subject
+# `for`. It is the one piece of geometry `_wrap` could not previously express:
+# `preloop`/`postloop` sit outside the repetition but cannot BRACKET it, and a
+# brace-unbalanced `preloop` would be a trick rather than a mechanism. See
+# `_wrap`'s `enclose` parameter.
+#
+# ⚠ THE INTERFERENCE FOR N2 IS INSIDE THE ENCLOSING LOOP, NOT AFTER THE NEST,
+# and that is not a stylistic choice: the register the subject loop copies is
+# `w`, which is DECLARED in the enclosing body, so a post-loop gate on `a` would
+# interfere with a register no rail in this cell records. `r2` writes it the
+# same way and for the same reason.
+N_ENCLOSE = {
+    "l2inv": ("    for (int io = 0; io < 2; ++io) {\n"
+              "        int w = cq_theta(7, 0.3);\n",
+              "        s += cq_measure(w);\n"
+              "    }\n"),
+    "l2invd": ("    for (int io = 0; io < 2; ++io) {\n"
+               "        int w = cq_theta(7, 0.3);\n",
+               "        w = cq_theta(w, 0.9);\n"
+               "        s += cq_measure(w);\n"
+               "    }\n"),
+    "l2d3d": ("    for (int io = 0; io < 2; ++io) {\n", "    }\n"),
+}
+# The SIBLING loop, emitted before the subject on both spellings. It rides in
+# `preloop`, which is ALREADY documented as "a line emitted BEFORE the loop and
+# before the flat repetitions … OUTSIDE the repetition on both sides" — exactly
+# the property a faithful sibling needs — so N3 needs no new mechanism at all
+# (Rule 14: ask the slot that already owns the position).
+_N_SIBLING = ("    for (int jj = 0; jj < 2; ++jj) {\n"
+              "        int u = cq_theta(6, 0.4);\n"
+              "        s += cq_measure((u >> jj) & 1);\n"
+              "    }\n")
+N_PRELOOP = {"l2sib": _N_SIBLING, "l2sibd": _N_SIBLING}
+# The post-loop interference, on `a`, for every `d` region EXCEPT `l2invd` (see
+# the N_ENCLOSE note: its interfered register is `w`, inside the enclosure).
+POSTLOOP_FOR_REGION.update(
+    {r: "    a = cq_theta(a, 0.9);\n"
+     for r in ("l2nd", "l2bd", "l2cd", "l2sibd", "l2d3d")})
+# The inner loop contributes nothing outside the body, so it rides in the
+# `<rgate>` name slot the way bd uq96 put the carry key and bd rpkr the read
+# shape there. `GATE_ALL` is the ONE dict `sources` indexes for that slot.
+GATE_ALL.update(N_INNER)
+# Every nested region except the two `l2n*` reads the loop counter `i`, so the
+# unrolled twin must bind it. `l2n*` does not (its body is the inner loop alone),
+# and it is left OUT rather than swept in — a dead `i` in two of twenty-three
+# sources is the harness noise that later reads as a shape (the `kidx` lesson).
+#
+# ⚠ DERIVED FROM THE REGION TEXT, not from a token prefix. `startswith("l2n")`
+# would be right today and silently wrong for the next region whose name happens
+# to begin that way, and a region wrongly marked indexed gets a DEAD `i` in its
+# twin while one wrongly left out does not COMPILE. Asking `\bi\b` of the text is
+# the question itself. (The enclosures' counter is `io`, which `\bi\b` does not
+# match — correct, since an enclosure is emitted identically on both sides and
+# never needs binding.)
+INDEXED_REGION = INDEXED_REGION + tuple(
+    r for r, t in N_REGION.items() if re.search(r"\bi\b", t))
+assert set(N_REGION) & (set(REGION) | set(RY_REGION) | set(B_REGION)
+                        | set(K_REGION)) == set(), \
+    "an `l2*` region token collides with another family's"
+assert set(N_INNER) & (set(RGATE) | set(BCARRY) | set(K_READ)) == set(), \
+    "an `l2i*` inner token collides with another family's rgate slot"
+
+
 def sources(prefix, region, suffix, record="none", rgate="none",
             surface="register"):
     """(rolled, unrolled) C for one cell.
@@ -1405,6 +1634,14 @@ def sources(prefix, region, suffix, record="none", rgate="none",
         # head and tail differ from a pre-rpkr cell's only by the bank text
         # `_bank_text` mints — which is `("", "", "")` for every other cell.
         region_text, second, bcond = K_REGION[region], "none", False
+    elif region in N_REGION:
+        # bd vsr6: the NESTED-LOOP axis is the FIFTH region family and, exactly
+        # as the three before it, it is recognised by WHICH DICT HOLDS THE KEY —
+        # never by the cell's arity or by a token spelling. It declares no second
+        # quantum register and no `_Bool b`; `acc` gives it the classical
+        # accumulator its measurements land in and nothing else, so its head and
+        # tail differ from a pre-vsr6 cell's by `int s = 0;` and ` + s` alone.
+        region_text, second, bcond = N_REGION[region], "acc", False
     else:
         region_text, second, bcond = REGION[region], "none", False
     S = SECOND[second]
@@ -1417,14 +1654,19 @@ def sources(prefix, region, suffix, record="none", rgate="none",
     return _wrap(body, second, R, surface,
                  index=region in INDEXED_REGION,
                  postloop=POSTLOOP_FOR_REGION.get(region, ""),
-                 preloop=PRELOOP.get(prefix, ""),
+                 # bd vsr6: the SIBLING loop rides in the slot that already owns
+                 # "before the loop, outside the repetition on both sides". The
+                 # concatenation is `"" + ""` for every pre-vsr6 cell, so no
+                 # generated source moves by one byte.
+                 preloop=PRELOOP.get(prefix, "") + N_PRELOOP.get(region, ""),
                  prehead=PREHEAD.get(prefix, ""),
                  bcond=bcond,
-                 bank=_bank_text(region, rgate) if region in K_REGION else None)
+                 bank=_bank_text(region, rgate) if region in K_REGION else None,
+                 enclose=N_ENCLOSE.get(region))
 
 
 def _wrap(body, second, R, surface="register", index=False, postloop="",
-          preloop="", prehead="", bcond=False, bank=None):
+          preloop="", prehead="", bcond=False, bank=None, enclose=None):
     """The rolled/unrolled pair around ONE body. Shared by `sources` and by the
     quarantine's boundary controls so that a control can never drift into being
     a differently-shaped program than the cells it bounds.
@@ -1474,9 +1716,23 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
     cell/surface pairs. The read block is APPENDED to `postloop` rather than
     given a placement of its own, because `postloop` is already the one position
     that sits outside the repetition on BOTH spellings, which is the property
-    that makes a bank read faithful between them."""
+    that makes a bank read faithful between them.
+
+    `enclose` (bd test_C_libtooling-vsr6) is the NESTED-LOOP axis's `(open,
+    close)` pair, or `None`. It BRACKETS the subject loop — and the flat
+    repetitions that stand in for it — with text emitted VERBATIM and IDENTICALLY
+    on both spellings, which is what an ENCLOSING rolled loop needs and what no
+    existing slot could give it: `preloop`/`postloop` sit outside the repetition
+    but on ONE side of it each, so spelling an enclosure with them would mean
+    putting an unmatched `{` in a slot documented as "a line". The `open` text
+    lands BEFORE the `int i = 0;` the `index` path emits, so the counter is
+    re-initialised on every enclosing trip exactly as the subject `for` does on
+    the rolled side. `None` unpacks to two empty strings and every one of the 359
+    pre-vsr6 cells takes it — PROVEN, the same way `bank` and `bcond` were, by
+    hashing every generated source before and after the edit."""
     S = SECOND[second]
     bdecl, bpost, btail = bank if bank else ("", "", "")
+    eopen, eclose = enclose if enclose else ("", "")
     postloop = postloop + bpost
     head = ("int slice(void){\n    int a = 0;\n" + S["decl"] + bdecl
             + ("    _Bool b = 0;\n" if bcond else "") + R["decl"]
@@ -1489,9 +1745,10 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
         + head
         + prehead
         + preloop
+        + eopen
         + "    for (int i = 0; i < %d; ++i) {\n" % TRIPS
         + body
-        + "    }\n" + postloop + tail
+        + "    }\n" + eclose + postloop + tail
         + "int main(void){(void)slice();return 0;}\n"
     )
     # The unrolled twin is the SAME TEXT, dedented one level and repeated — never
@@ -1520,8 +1777,10 @@ def _wrap(body, second, R, surface="register", index=False, postloop="",
         + head
         + prehead
         + preloop
+        + eopen
         + ("    int i = 0;\n" if index else "")
         + (one + "    i = i + 1;\n" if index else one) * TRIPS
+        + eclose
         + postloop
         + tail
         + "int main(void){(void)slice();return 0;}\n"
@@ -1556,7 +1815,66 @@ QUARANTINE_CONTROLS = {
     # sqrt` chain and the two spellings agree.
     "q_armoncond": "        if (sqrt(a + 3.) <= (double)off)"
                    " { a = cq_phi(a, M_PI); }\n",
+    # ── bd test_C_libtooling-vsr6, the NESTED-LOOP axis's control. It is
+    # `m_none_l2bd_none_none_l2im` — the n1 cell — WITH THE INNER LOOP WRITTEN
+    # OUT FLAT: the same rails, the same mints, the same interference, and no
+    # subloop for `markIfIterationLocal` to mark. It isolates the one half of
+    # that axis's class story that is NOT expressible as a cell of it (every
+    # nested cell has an inner loop by construction, which is what makes it a
+    # nested cell): *the verdicts in the `l2*` sub-grid are about the SUBLOOP,
+    # not about the gates the subloop contains.*
+    #
+    # ⚠ THERE ARE TWO OF THEM AND THE SECOND IS NOT A DUPLICATE: the axis has an
+    # INTERFERENCE COLUMN, the two columns land on opposite verdicts (the
+    # interfered one DECLINES on the rolled side, the plain one DIVERGES), and a
+    # control that speaks for only one of them bounds only one of them. The
+    # other edges of the class ARE cells and were designed to be — "no outer
+    # rail" is `l2n*`, "the inner loop is not markable" is `l2iu`, "the marked
+    # loop is a peer rather than an ancestor" is sub-grid N3 — so no third
+    # control is added: inventing one that duplicates a cell buys a
+    # stronger-sounding sentence and no measurement, which is the failure mode
+    # `IMPL_I` §1.6 names for the bank axis one axis over.
+    "q_nestinline": "        s += cq_measure((a >> (i + 1)) & 1);\n"
+                    "        { int u = cq_theta(6, 0.4);"
+                    " s += cq_measure((u >> 0) & 1); }\n"
+                    "        { int u = cq_theta(6, 0.4);"
+                    " s += cq_measure((u >> 1) & 1); }\n",
+    # The same body with the post-loop interference REMOVED — the isolation for
+    # the PLAIN column, where the quarantine's class C lives. `m_none_l2b_none_
+    # none_l2im` DIVERGES (the rolled side loses the outer rail's `_unc`/`free`
+    # pair on every trip); this program is the SAME GATES with the inner loop
+    # written out flat, and it is ACCEPT-IDENTICAL. That pair of measurements is
+    # what makes "class C needs the SUBLOOP" a fact rather than a reading.
+    "q_nestinlineplain": "        s += cq_measure((a >> (i + 1)) & 1);\n"
+                         "        { int u = cq_theta(6, 0.4);"
+                         " s += cq_measure((u >> 0) & 1); }\n"
+                         "        { int u = cq_theta(6, 0.4);"
+                         " s += cq_measure((u >> 1) & 1); }\n",
 }
+
+# Per-control overrides for `control_sources`' `_wrap` call. EVERY KEY DEFAULTS
+# TO THE PRE-vsr6 VALUE, so the two original controls' generated text is
+# byte-unchanged — which their own pinned verdicts would catch if it were not.
+# `q_nestinline` needs three of them: the classical accumulator its measurements
+# land in, the bound loop counter its rail reads, and the post-loop interference
+# that makes the leak a wrong unitary rather than an accepted leak.
+QUARANTINE_CONTROL_OPTS = {
+    "q_nestinline": {"second": "acc", "index": True,
+                     "postloop": "    a = cq_theta(a, 0.9);\n"},
+    "q_nestinlineplain": {"second": "acc", "index": True},
+}
+
+# ⚠ A CONTROL WHOSE VERDICT NOBODY CAN MEASURE ON A SURFACE IS PRINTED, NEVER
+# GATED. The `register` surface is RETIRED (bd 3qlq Inc 1) and no
+# register-surface `CQ.h` exists anywhere in the tree, so `q_nestinline` cannot
+# be measured there — and `SURFACE_CONTROL_VERDICTS["register"]` is `None`,
+# whose rule is the STRONGER "must be ACCEPT-IDENTICAL". Asserting that for a
+# program nobody has run would be this instrument claiming a measurement it does
+# not have, which is the exact failure `CLAUDE.md` L10 says an instrument fails
+# by. So the control is built, compared and PRINTED on that surface and its
+# verdict gates nothing there. On `void` — the shipped surface, the one the
+# ctest entry runs — it is pinned like every other control.
+CONTROL_UNMEASURED = {"register": ("q_nestinline", "q_nestinlineplain")}
 
 # ── WHAT THE CONTROLS MEAN ON EACH SURFACE, PINNED. ────────────────────────
 # bd 3qlq Increment 1, and this is the one place the surface change genuinely
@@ -1616,6 +1934,18 @@ SURFACE_CONTROL_VERDICTS = {
         # tree and it fails on any change to the class. But it does NOT bound
         # the quarantine any more, and no run may be quoted as if it did.
         "q_armoncond": ("TRACE-DIVERGENCE", "dbf4c162d1de5139"),
+        # bd vsr6's two. MEASURED on the ORACLE `9bd01598…`, 2026-09-17, through
+        # `control_sources` and not by hand — the nest-only driver reported
+        # `BOUNDARY CONTROL has NO PINNED VERDICT … It was measured
+        # (ACCEPT-IDENTICAL)` and this is that value written down. They are the
+        # quarantine's class-C bound: the n1 program with its inner loop written
+        # out FLAT agrees with its own twin, in BOTH interference columns, while
+        # the same program with the inner loop ROLLED diverges (plain) or
+        # declines (interfered). If either of these starts diverging, class C is
+        # no longer "the sub-loop is necessary" and the four blocks that say so
+        # stop meaning it.
+        "q_nestinline": "ACCEPT-IDENTICAL",
+        "q_nestinlineplain": "ACCEPT-IDENTICAL",
     },
 }
 
@@ -1625,8 +1955,16 @@ def control_sources(name, surface="register"):
     record — deliberately the plainest shape the wrapper can make. `"none"`
     rather than `False` since bd uq96 made `second` three-valued; the generated
     text is byte-unchanged, which the boundary controls' own pinned verdicts
-    would have caught had it not been."""
-    return _wrap(QUARANTINE_CONTROLS[name], "none", RECORD["none"], surface)
+    would have caught had it not been.
+
+    `QUARANTINE_CONTROL_OPTS` (bd vsr6) overrides `_wrap`'s arguments per
+    control, and every default is the pre-vsr6 value — so the two original
+    controls still go through the identical call."""
+    o = QUARANTINE_CONTROL_OPTS.get(name, {})
+    return _wrap(QUARANTINE_CONTROLS[name], o.get("second", "none"),
+                 RECORD["none"], surface,
+                 index=o.get("index", False),
+                 postloop=o.get("postloop", ""))
 
 
 def run_boundary_controls(cfg):
@@ -1656,8 +1994,22 @@ def run_boundary_controls(cfg):
             shutil.rmtree(work, ignore_errors=True)
         v, report = verdict(cname, cr, cu)
         got.append((cname, v.split("\t")[0]))
+        if cname in CONTROL_UNMEASURED.get(cfg.phi_surface, ()):
+            # Measured and printed; not gated. See `CONTROL_UNMEASURED`.
+            continue
         pins = SURFACE_CONTROL_VERDICTS[cfg.phi_surface]
         if pins is not None:
+            if cname not in pins:
+                # A control with no pin is an UNGATED control, and an ungated
+                # control is decoration that looks like a measurement. Loud.
+                fails.append(
+                    "%s: BOUNDARY CONTROL has NO PINNED VERDICT on the `%s` "
+                    "surface.\n    It was measured (%s) and nothing checked it. "
+                    "Add it to SURFACE_CONTROL_VERDICTS\n    with the measured "
+                    "value, or to CONTROL_UNMEASURED with the reason nobody can "
+                    "measure it."
+                    % (cname, cfg.phi_surface, v.split("\t")[0]))
+                continue
             want_v = pins[cname]
             want_sig = None
             if isinstance(want_v, tuple):
@@ -2083,11 +2435,15 @@ def cell_name(cell):
     disjoint from every `RY_REGION` token), with the carry key in the `<rgate>`
     slot — so adding the axis renames NOTHING. The bd rpkr BANK cells do the
     same again: a `K_REGION` token (always `k*`, disjoint from all three of the
-    others) with the READ SHAPE in the `<rgate>` slot. All keep the `m_` prefix,
-    so `grep -c '^m_'` still counts cells.
+    others) with the READ SHAPE in the `<rgate>` slot. The bd vsr6 NESTED-LOOP
+    cells make it five: an `N_REGION` token (always `l2*`, disjoint from all four
+    of the others — and NOT spelled `nest*`, because in this file `nest` already
+    means a nested CONTROL REGION) with the INNER LOOP in the `<rgate>` slot.
+    All keep the `m_` prefix, so `grep -c '^m_'` still counts cells.
     """
     prefix, region, suffix, record, rgate = cell
-    if region in RY_REGION or region in B_REGION or region in K_REGION:
+    if (region in RY_REGION or region in B_REGION or region in K_REGION
+            or region in N_REGION):
         return "m_%s_%s_%s_%s_%s" % cell
     if record == "none":
         return "m_%s_%s_%s" % (prefix, region, suffix)
@@ -2415,6 +2771,46 @@ def bank_cells():
     return out
 
 
+# The NESTED-LOOP sub-grids, declared rather than producted, exactly as every
+# axis above is. Sizes are asserted in `cells_of_matrix`.
+#
+#   N1  CORE — the bead's own product: 3 outer-own-rail x 2 post-loop
+#       interference x 3 inner-loop kinds                                   18
+#   N2  INVERTED — the enclosing loop is the marked one and the SUBJECT is
+#       the inner (`r2`), x the interference column                          2
+#   N3  SIBLING — the marked loop is a PEER (`r5`), x the same column        2
+#   N4  DEPTH-3 — the subject is the MIDDLE loop (`r1`), interfered          1
+# 23 cells. The cost was measured before it was committed (IMPL_V §5), because
+# this gate is the suite's long pole and nothing goes in here without a named
+# conjunct it is the witness for.
+N_CORE_REGION = ("l2n", "l2nd", "l2b", "l2bd", "l2c", "l2cd")
+
+
+def nest_cells():
+    """The NESTED-LOOP sub-grids (bd test_C_libtooling-vsr6). See the NESTED-LOOP
+    AXIS block above the `N_*` tables for what this axis can and cannot witness.
+
+    23 cells. Every one carries the five-segment name with an `N_REGION` token,
+    so no committed cell is renamed and `grep -c '^m_'` keeps counting cells.
+    """
+    out = []
+    # N1 — the CORE product. The SUBJECT is the OUTER loop; the inner one is
+    # emitted verbatim on both spellings and stays rolled on both.
+    out += [("none", r, "none", "none", g)
+            for r in N_CORE_REGION for g in N_INNER]
+    # N2 — the INVERTED nesting (`r2`). The `<rgate>` slot is `none`: this
+    # family's second loop is the ENCLOSURE, which `N_ENCLOSE` mints, not a body
+    # gate. Putting it in the rgate slot instead would have made a cell whose
+    # name says "inner loop kind" carry an enclosure, which is the kind of
+    # quiet re-pointing `cell_name`'s own docstring exists to prevent.
+    out += [("none", r, "none", "none", "none") for r in ("l2inv", "l2invd")]
+    # N3 — SIBLING loops, the CONTAINMENT control.
+    out += [("none", r, "none", "none", "none") for r in ("l2sib", "l2sibd")]
+    # N4 — DEPTH THREE, the subject in the middle, at the interfered column.
+    out += [("none", "l2d3d", "none", "none", "l2im")]
+    return out
+
+
 # ── THE NON-VACUITY FLOOR — the half of this axis that is not a disposition ──
 # ⚠ THE BANK'S WORST FAILURE IS A TRACE THAT IS TOO SHORT, AND `ACCEPT-IDENTICAL`
 # CANNOT SEE ONE. `SCOPE_L1a` §4.4 (D) measures the hole precisely:
@@ -2481,8 +2877,12 @@ def cells_of_matrix():
     bd uq96, owner-ruled 2026-09-14 to land BEFORE the in-loop bool work; its
     B7 sub-grid is bd wx8g clause (c)'s ITERATION-LOCAL rail), plus the 21-cell
     RAIL-BANK sub-grid (see `K_*` and `bank_cells` — bd rpkr, landed BEFORE
-    bd xdu2 / L-1a's accept for the same reason uq96 landed before wx8g).
-    359 cells.
+    bd xdu2 / L-1a's accept for the same reason uq96 landed before wx8g), plus
+    the 23-cell NESTED-LOOP sub-grid (see `N_*` and `nest_cells` — bd vsr6, the
+    axis 359 cells did not have and the reason bd emkg, a P1 over-accept, passed
+    every gate in this tree; landed BEFORE the accept it exists to watch, for the
+    third time and for the same reason).
+    382 cells.
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -2498,11 +2898,12 @@ def cells_of_matrix():
     f = f_cells()
     b = bool_cells()
     k = bank_cells()
-    assert (len(base), len(rec), len(ry), len(f), len(b), len(k)) \
-        == (120, 36, 118, 14, 50, 21), \
-        "sub-grid sizes moved: %d/%d/%d/%d/%d/%d" % (
-            len(base), len(rec), len(ry), len(f), len(b), len(k))
-    cells = base + rec + ry + f + b + k
+    n = nest_cells()
+    assert (len(base), len(rec), len(ry), len(f), len(b), len(k), len(n)) \
+        == (120, 36, 118, 14, 50, 21, 23), \
+        "sub-grid sizes moved: %d/%d/%d/%d/%d/%d/%d" % (
+            len(base), len(rec), len(ry), len(f), len(b), len(k), len(n))
+    cells = base + rec + ry + f + b + k + n
     names = [cell_name(c) for c in cells]
     assert len(set(names)) == len(names), "duplicate cell name"
     return cells
@@ -2967,9 +3368,10 @@ def main():
     declines = sum(1 for v in got.values() if v.startswith("DECLINE"))
     print("loop_twin_matrix [--phi-surface %s]: %d cells — %d ACCEPT-IDENTICAL, "
           "%d DECLINE, %d other; %d quarantined (pinned signatures), "
-          "2 boundary controls"
+          "%d boundary controls"
           % (cfg.phi_surface, len(got), accepts, declines,
-             len(got) - accepts - declines, len(quar)))
+             len(got) - accepts - declines, len(quar),
+             len(QUARANTINE_CONTROLS)))
     tal = {}
     for v in got.values():
         tal[v.split("\t")[0]] = tal.get(v.split("\t")[0], 0) + 1
@@ -2983,11 +3385,22 @@ def main():
             print(r)
             print()
         return 1
+    # ⚠ THE COUNT OF GATED CONTROLS IS DERIVED AND THE UNGATED ONES ARE NAMED.
+    # "both boundary controls as pinned" was true of two and would have gone on
+    # reading as a measurement of all of them; a control that `CONTROL_UNMEASURED`
+    # excuses on this surface is measured and printed but gates nothing, and a
+    # success line that does not say so is the instrument overstating itself.
+    _unm = [c for c in sorted(QUARANTINE_CONTROLS)
+            if c in CONTROL_UNMEASURED.get(cfg.phi_surface, ())]
     print("all cells match %s; all %d quarantined cells diverge with their "
-          "pinned signature (%s); both boundary controls as pinned for the `%s` "
-          "surface"
+          "pinned signature (%s); %d of %d boundary controls as pinned for the "
+          "`%s` surface%s"
           % (os.path.basename(cfg.expected), len(quar),
-             os.path.basename(cfg.quarantine), cfg.phi_surface))
+             os.path.basename(cfg.quarantine),
+             len(QUARANTINE_CONTROLS) - len(_unm), len(QUARANTINE_CONTROLS),
+             cfg.phi_surface,
+             "" if not _unm else
+             " (UNMEASURABLE here, printed not gated: %s)" % ", ".join(_unm)))
     return 0
 
 

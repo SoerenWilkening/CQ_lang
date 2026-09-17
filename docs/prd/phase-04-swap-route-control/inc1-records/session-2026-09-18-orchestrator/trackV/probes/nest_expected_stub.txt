@@ -1,0 +1,4 @@
+# stub table for the nest-only driver
+# ==== END OF HEADER — everything BELOW this line is generated and is rewritten
+# ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
+# ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).

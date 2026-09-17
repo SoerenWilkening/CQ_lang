@@ -172,6 +172,74 @@
 #    `loop_twin_matrix.expected.register.txt`'s note on the three `xor`/`none`
 #    ROLLED-ONLY cells.
 #    OWNER: the GENERATOR (`REGION["range"]` x `PREFIX["xor"]`), not the compiler.
+#
+# ── CLASS D — 6 cells, bd test_C_libtooling-s82e. THE NESTED-LOOP AXIS'S OWN
+#    FINDING, and it is the reason bd test_C_libtooling-vsr6 was filed: these
+#    six diverge on the ORACLE `9bd01598…`, i.e. on `main`'s own compiler with
+#    the pass source untouched, and until this axis existed NO instrument in the
+#    tree could see them. `free_pairing_check.py` is blind by construction (the
+#    rails are TEMPLATE-minted, so there is no `cqrt_alloc` to count), no shipped
+#    fixture has the shape, and all 359 previous cells are products over ONE
+#    loop. ROLLED IS THE DEFICIENT SIDE.
+#    SHAPE: an OUTER loop with its own per-trip rail off the loop-invariant
+#    register — `(a >> (i+1)) & 1` for the three `l2b*` cells, the `icmp`-as-data
+#    `a > (i+1)` for the three `l2c*` ones — and an INNER loop left rolled. The
+#    FLAT twin discharges the outer rail's intermediate every repetition
+#    (`cq_template_lshr_i32_hl_unc(h1, h0, 1); cqrt_free(h1)`, resp.
+#    `cq_template_icmp_sgt_i32_hl_unc`); the ROLLED form emits neither, on any
+#    trip. Counts: rolled `(4, 4, N)` against flat `(6, 6, N)` — two `_unc` and
+#    two `cqrt_free` missing, one per trip.
+#    ⚠ IT NEEDS BOTH LOOPS, AND THAT IS MEASURED RATHER THAN ARGUED. Three
+#    isolations on the same binary, all ACCEPT-IDENTICAL: the outer bit rail
+#    ALONE in one loop (`single_bitrail`, 13 == 13); the SAME program with the
+#    inner loop written out FLAT and no interference (the boundary control
+#    `q_nestinlineplain`, 35 == 35); and the same with the interference (the
+#    boundary control `q_nestinline`). So the sub-loop is necessary, and the two
+#    controls are what keep that sentence a measurement.
+#    ⚠ AND IT IS THE COLUMN THE bd emkg FIX DOES NOT REACH. Add the post-loop
+#    non-diagonal gate — the `l2bd`/`l2cd` column, which is `n1`/`n2`/`n3`
+#    verbatim — and the compiler DECLINES on the rolled side
+#    (`cq loop lowering: rolled body leaks a rail entangled with a rotated
+#    register`, `UNROLLED-ONLY`). Without it the same leak is silent. Rule-6
+#    formally safe today (left allocated, never freed dirty) and NOT a wrong
+#    unitary in these six programs, because nothing interferes with `a`
+#    afterwards; the rails are still entangled which-path records of `a`'s bits,
+#    so this is the Rule-8 hazard one line of C away.
+#    OWNER: the leak side of `markIfRailLocal` / the per-activation discharge of
+#    an OUTER loop's own chain when a sub-loop is present. bd `s82e` is the filed
+#    class ("an in-loop leak of entangled which-path rails … THE WITNESS IS THE
+#    ROLLED-VS-HAND-UNROLLED TRACE PAIR"); its own six-line reproducer has ONE
+#    loop, so the nesting-specific face below is a NEW population of it and is
+#    owed a bead of its own — requested in `$SES/trackV/IMPL_V.md` §bd rather
+#    than invented here, because a quarantine may not name an id that does not
+#    exist.
+#    ⚠ The two `*_l2ic` cells in this class carry CLASS E as well (their `class`
+#    field says `D+E`); their digests cover both and must not be read as class D
+#    alone.
+#
+# ── CLASS E — 2 cells, bd test_C_libtooling-s82e. THE HOISTED LOOP-INVARIANT
+#    (ii-c) READ, and unlike class D it is NOT about the nesting — it is the
+#    `x1`/`x8`/`x9` family (`$PREV/loopfix/probes/`) and `CLAUDE.md`'s Q-R1-1
+#    item arriving through a nest. NEITHER SIDE DISCHARGES IT; they differ in
+#    POSITION and, only when two loops are present, in COUNT.
+#    SHAPE: the inner loop additionally measures the loop-INVARIANT `a & 1`
+#    (clause (ii-c)'s subject). `clang -O1` hoists the `cq_template_and_i32_hl(h0,
+#    1)` rail out of every loop that encloses it: on the ROLLED side that is BOTH
+#    loops, so it is minted ONCE; on the FLAT side the outer loop is gone, so it
+#    is minted once per repetition. Counts `(4, 4, 14)` against `(4, 4, 15)` —
+#    same discharge, ONE extra rail on the flat side.
+#    ⚠ IT DOES NOT NEED THE NESTING, and that too is measured: `inline_iic` (no
+#    loop around it at all) diverges 30 == 30 lines with IDENTICAL counts
+#    `(2, 2, 12)` — a pure POSITION divergence — and `single_iic_loop` (one loop)
+#    diverges `(2, 2, 8)`/20 against `(1, 1, 7)`/17. The nesting adds the COUNT
+#    difference on top of a position difference that is there without it.
+#    OWNER: `markIfRailLocal`'s "accumulating loop-invariant tainted input"
+#    clause is a silent REFUSAL rather than a decline (bd `s82e`'s own root
+#    cause), so the hoisted rail is emitted and never discharged on either side.
+#    DIRECTION: NEITHER side is deficient in discharge; the flat side simply
+#    leaks one more.
+#    Measurements: `$SES/trackV/probes/attribution_9bd01598.txt` and
+#    `nest_divergences_9bd01598.txt`.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -408,3 +476,67 @@ digest   7c31a377ffbfc95f
 rolled   cqrt_xorc_i32(h0, 9)
 unrolled cq_template_xor_i32_hl(h0, 8) -> h1
 
+
+cell     m_none_l2b_none_none_l2im
+class    D
+bd       test_C_libtooling-s82e
+owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
+digest   7229a10446735aa2
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2b_none_none_l2iu
+class    D
+bd       test_C_libtooling-s82e
+owner    the outer loop's own per-trip template rail is discharged FLAT and never ROLLED; needs the sub-loop (3 controls identical) — ROLLED deficient
+digest   f3d53ec1d933729a
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_lshr_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2b_none_none_l2ic
+class    D+E
+bd       test_C_libtooling-s82e
+owner    class D (rolled drops the outer rail's _unc/free) AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
+digest   601697b915f73b57
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_lshr_i32_hl(h0, 1) -> h1
+
+cell     m_none_l2c_none_none_l2im
+class    D
+bd       test_C_libtooling-s82e
+owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
+digest   1fa777e95e6195c4
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2c_none_none_l2iu
+class    D
+bd       test_C_libtooling-s82e
+owner    same as the l2b cells with the outer rail spelled as an `icmp` USED AS DATA (bd 7845's membership question) — ROLLED deficient
+digest   b88ffe183e9bfc16
+rolled   cqrt_measure_i32(h2) -> 0
+unrolled cq_template_icmp_sgt_i32_hl_unc(h1, h0, 1)
+
+cell     m_none_l2c_none_none_l2ic
+class    D+E
+bd       test_C_libtooling-s82e
+owner    class D on the `icmp`-as-data outer rail AND class E (the hoisted invariant `a & 1` is minted once rolled, twice flat)
+digest   5fc7f27dad90b03d
+rolled   cq_template_and_i32_hl(h0, 1) -> h1
+unrolled cq_template_icmp_sgt_i32_hl(h0, 1) -> h1
+
+cell     m_none_l2n_none_none_l2ic
+class    E
+bd       test_C_libtooling-s82e
+owner    markIfRailLocal's invariant-input clause is a silent REFUSAL, so the hoisted `a & 1` rail is never discharged; rolled hoists out of BOTH loops and mints 1, flat mints 2 — NEITHER side deficient in discharge
+digest   38a5a790cdb8fe60
+rolled   cqrt_alloc_i32(6) -> h8
+unrolled cq_template_and_i32_hl(h0, 1) -> h8
+
+cell     m_none_l2nd_none_none_l2ic
+class    E
+bd       test_C_libtooling-s82e
+owner    class E with the post-loop non-diagonal gate present — the fence does not reach this column either, so the interference changes the trace and not the verdict
+digest   870aab2dc1afe204
+rolled   cqrt_alloc_i32(6) -> h8
+unrolled cq_template_and_i32_hl(h0, 1) -> h8

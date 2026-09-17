@@ -1,0 +1,23 @@
+m_none_l2b_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2b_none_none_l2im TRACE-DIVERGENCE
+m_none_l2b_none_none_l2iu TRACE-DIVERGENCE
+m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2c_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2c_none_none_l2im TRACE-DIVERGENCE
+m_none_l2c_none_none_l2iu TRACE-DIVERGENCE
+m_none_l2cd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2cd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2d3d_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
+m_none_l2inv_none_none_none ACCEPT-IDENTICAL
+m_none_l2invd_none_none_none ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2n_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2n_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2ic TRACE-DIVERGENCE
+m_none_l2nd_none_none_l2im ACCEPT-IDENTICAL
+m_none_l2nd_none_none_l2iu ACCEPT-IDENTICAL
+m_none_l2sib_none_none_none ACCEPT-IDENTICAL
+m_none_l2sibd_none_none_none ACCEPT-IDENTICAL
