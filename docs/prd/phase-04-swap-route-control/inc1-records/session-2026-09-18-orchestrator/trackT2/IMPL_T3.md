@@ -383,9 +383,18 @@ returns **true**, because the commit that would make it false has been refused b
 
 ## §6 — WHAT IS **NOT** CLAIMED
 
-1. **No suite beyond two gates was run by me.** `ir-pass-lit` once and one corpus sweep, both at
-   hand-off, both in `GATES.md`. NOT run: the full `ctest`, `^e2e-`, the twin matrices, the
-   equivalence sweep. A skipped layer is a deferred cost.
+1. **Four gates were run by me, and no more.** `ir-pass-lit` (twice at the same hash — once at
+   15:07 and again at the delivered tip, because four fixtures were edited in between), ONE corpus
+   sweep, the two new e2e slice entries, and the per-fixture/per-probe inner loop. NOT run: the
+   full `ctest -j6`, `^e2e-` as a layer, any twin matrix, `cq-opt-equivalence-full`. A skipped
+   layer is a deferred cost, not a saved one.
+   ⚠ **The corpus sweep is the number to read**: **6566 rows, 16 movers, ZERO VERDICT FLIPS.**
+   Every mover is `ACCEPT → ACCEPT` with a different lowered-IR md5 and every one is an expected P2
+   customer. No `A→D` and no `D→A` anywhere in the tree.
+   ⚠ And the gates are facts about the DELIVERED binary, not a near-miss of it: the two
+   comment-only commits made after the sweep rebuild `cq-opt` **BIT-IDENTICALLY**
+   (`7c1163ad94d06320` before and after), verified independently by a non-comment line diff of both
+   commits (0 lines).
 2. **ONE e2e slice PAIR was added, not the two pairs SCOPE_T2 §5 asks for.**
    `e2e-slice-loop-hoisted-chain-exit-discharge{,-unrolled}` is the Rule-16 witness for P2 and for
    the `a1_apost` closure (rolled **28** == unrolled **28**, goldens byte-DIVERGENT and

@@ -6033,3 +6033,534 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/ir/d_
 docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/ir/d2_condwire.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
 docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/ir/e2_emptyarm.ll|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
 docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/ir/f_undefangle.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/multi/w1_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/multi/w1c_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/multi/w2_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/multi/w3_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/o1_owner_second_region.c|A:240f5210|A:240f5210
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p1_sibling_theta_real.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p2_chained_between.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p3_rival_on_cond_wire.c|D:cq controlled lowering: state prep merged with a quantum register under quantum control|D:cq controlled lowering: state prep merged with a quantum register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p4_opaque_seed.c|A:a865c6cf|A:a865c6cf
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p5_classical_call_arm_rail.c|A:8686ac2d|A:8686ac2d
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/p6_eqfold_rail.c|A:fbf0b6b8|A:fbf0b6b8
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/impl/V0_owner_file_2026-09-11.c|A:ea0063d5|A:ea0063d5
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t1_inplace_ry_rail.c|A:843cf9ee|A:843cf9ee
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t10_sibling_theta.c|A:7449e989|A:7449e989
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t11_dead_register.c|A:d7447946|A:d7447946
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t11c_dead_register_cmp.c|A:1706fdc1|A:1706fdc1
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t12_inloop_variant_cond.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t13_two_regions.c|A:94c1ed67|A:94c1ed67
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t14_rail_data_use.c|A:cb3800b3|A:cb3800b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t15_derived_base.c|A:de614296|A:de614296
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t16_i1_stateprep.c|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t16b_i1_stateprep.c|A:0867c42a|A:0867c42a
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t17_f64_register.c|A:494566ac|A:494566ac
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t18_compound_cond.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t18c_compound_cmp.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t19_two_rotation_arms.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t1c_inplace_ry_cmp.c|A:67cc8b38|A:67cc8b38
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t2_angle_select_rail.c|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t20_crossblock_rail_select.c|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t21_inloop_angle_select.c|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t22_runtime_arms_select.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t23_rail_measure_after.c|A:17d311be|A:17d311be
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t24_stale_record.c|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t24c_stale_record_cmp.c|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t2c_angle_select_cmp.c|A:547d3b9d|A:547d3b9d
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t3_stateprep_rail.c|A:96b2942a|A:96b2942a
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t3c_stateprep_cmp.c|A:27d68ea5|A:27d68ea5
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t4_i1_rotated_register.c|A:164a227c|A:164a227c
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t5_inloop_ry_rail.c|A:1450570e|A:1450570e
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t5c_inloop_ry_cmp.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t6_ry_on_cond_wire.c|D:cq controlled lowering: state prep merged with a quantum register under quantum control|D:cq controlled lowering: state prep merged with a quantum register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t6c_ry_on_cond_wire_cmp.c|D:cq controlled lowering: state prep merged with a quantum register under quantum control|D:cq controlled lowering: state prep merged with a quantum register under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t7_negated_rail.c|A:d2236d25|A:d2236d25
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t7c_negated_cmp.c|A:37401939|A:37401939
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t8_sdagger_after_region.c|A:15288f80|A:15288f80
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t8c_sdagger_cmp.c|A:f3d88dff|A:f3d88dff
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/probes/t9_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/f01_seed_eq_other_i1.c|D:cq controlled lowering: state prep seed does not match the merge incoming under quantum control|D:cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/f02_seed_is_b.c|D:cq controlled lowering: state prep seed does not match the merge incoming under quantum control|D:cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/f03_i32_seed_pinned.c|A:3bd5887d|A:3bd5887d
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/g01_neg_prep_dead.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/g02_two_regions_neg_first.c|A:983591f5|A:983591f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/g03_neg_then_kickback.c|A:b77d8b65|A:b77d8b65
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/g04_prep_neg_int_seed.c|A:7b9a5d1f|A:7b9a5d1f
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/h01_order_rail_last.c|A:bae1dc0f|A:bae1dc0f
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/h02_order_chain.c|A:55658b56|A:55658b56
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/h03_control_theta_qangle.c|D:cq rotation lowering: unsupported quantum-derived rotation angle|D:cq rotation lowering: unsupported quantum-derived rotation angle
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/i01_invert.c|A:2e2102af|A:2e2102af
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/i01c_invert_cmp.c|A:17397dba|A:17397dba
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/i02_invert_after.c|A:6be0178e|A:6be0178e
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/multi/w4_prep_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/multi/w5_prep_neg_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/multi/w6_neg_inplace_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/n10_neg_data_after.c|A:61888e45|A:61888e45
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/n11_neg_runtime_angle.c|A:11c6443d|A:11c6443d
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/n12_neg_zero_angle.c|A:0c0fc2c4|A:0c0fc2c4
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/r01_b_dead.c|A:9fbcc24c|A:9fbcc24c
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/r02_b_measured.c|A:1235ce85|A:1235ce85
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/r03_b_zext_data.c|A:b5e63ded|A:b5e63ded
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/r04_b_zext_dead.c|A:ae7202c9|A:ae7202c9
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/r05_b_chained.c|A:2850cf96|A:2850cf96
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/s01_both_dead.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/s02_b_dead_chain_terminal.c|A:591c1edf|A:591c1edf
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/u01_borrow_before.c|A:a9fc30ae|A:a9fc30ae
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/v01_b_target_then_control.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_f32.c|A:b9195155|A:b9195155
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_f64.c|A:b5203e04|A:b5203e04
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_f80.c|A:03f4ceaf|A:03f4ceaf
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_i16.c|A:df7113d7|A:df7113d7
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_i64.c|A:153645b4|A:153645b4
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/wd_i8.c|A:e745dc72|A:e745dc72
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/x01_neg_inf_angle.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/x01c_neg_inf_cmp.c|A:061e0951|A:061e0951
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/x02_neg_nan_angle.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/y01_rotate_ancestor.c|A:2641297a|A:2641297a
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/y01c_rotate_ancestor_cmp.c|A:b186b3d5|A:b186b3d5
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/y02_derived_live_across.c|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/y03_derived_dead_after.c|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/y04_neg_stale_record.c|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/z01_specialized_callee.c|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/z01c_specialized_cmp.c|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-l4x4/review_l4x4b_r1_probes/z02_later_region_compare.c|A:f7ac75c0|A:f7ac75c0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/e1_b_eq_c.c|A:1e037345|A:1e037345
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/e2_b_ne_c.c|A:9d77df47|A:9d77df47
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g0_b_and_cmp.c|A:8ac9abcf|A:8ac9abcf
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g1_notb_and_cmp.c|A:0452898b|A:0452898b
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g2_notb_or_cmp.c|A:effe17ab|A:effe17ab
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g3_notb_and_c.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g4_b_and_notc.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g5_notb_or_c.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g6_notb_and_notc_and_d.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g7_notb_and_cmp_ne.c|A:cab323aa|A:cab323aa
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/g8_flat_notb.c|A:9b511fec|A:9b511fec
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/m1_cmp_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/m2_select_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/m3_rail_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/m4_cmp_measured_before_crossblock.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n0_nest_plain.c|A:b0548c4c|A:b0548c4c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n1_nest_neg_outer.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n2_nest_neg_inner.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n3_nest_neg_outer_cmp_twin.c|A:1243acc9|A:1243acc9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n4_nest_neg_outer_tree_root.c|A:292e4c95|A:292e4c95
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/n5_nest_neg_inner_cmp_outer_rail.c|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control|D:cq controlled lowering: branch phase on a bare i1 condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t1_int_and1.c|A:18da1be9|A:18da1be9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t2_bool_from_int.c|A:ba273da9|A:ba273da9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t3_boolcast.c|A:84ff0a2f|A:84ff0a2f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t4_bool_and1.c|A:319e9f92|A:319e9f92
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t5_zext_bool_to_int_cond.c|A:680e29dd|A:680e29dd
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t6_bool_xor1.c|A:4bd152f5|A:4bd152f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t7_bool_array.c|A:e1025d2a|A:e1025d2a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t8_uchar_lsb.c|A:dab0438e|A:dab0438e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/t9_trunc_i1_data.ll|A:14cd9652|A:14cd9652
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w0_loop_plain_control.c|A:6bfbd759|A:6bfbd759
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w1_loop_sibling_template.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w2_loop_sibling_chained_control.c|D:cq loop lowering: rail record read past an in-place gate on the same rail|D:cq loop lowering: rail record read past an in-place gate on the same rail
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w3_loop_sibling_and_parent.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w4_loop_sibling_mul_parent.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w5_loop_sibling_and_chained_control.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w6_loop_sibling_sub_parent.ll|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w7_loop_sibling_add_parent_control.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w8_sub_sibling_nomeasure.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/w9_add_sibling_nomeasure.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/x1_select_complement_false_arm.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/x2_select_complement_true_arm.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r903/probes/x3_xor_rail_true_child.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/k1_loop_stale.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/k2_loop_stale_measure_out.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/k3_flat_sdagger.c|A:d6ffe9ef|A:d6ffe9ef
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/k4_flat_stale_after.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/m1_inloop_select_measure_after.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/m2_inloop_select_measure_after_compare_twin.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/m3_inloop_select_measure_downstream.c|A:a7b4e922|A:a7b4e922
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/m4_inloop_constarm_hoisted.c|A:fb2112c1|A:fb2112c1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/n01_measured_parent_name.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/n02_measured_parent_before_chain.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/n03_kickback_measured_parent_name.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/n04_measured_template_parent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/n05_other_register_measured.c|A:9b8bf98a|A:9b8bf98a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/p08_select_const.c|A:8c7255c2|A:8c7255c2
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/p09_value_arm.c|A:3954df4b|A:3954df4b
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/p12_angle_select.c|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/p16_cascade_bool.c|A:b521e83d|A:b521e83d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/q08_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s01_rail_const.c|A:46041860|A:46041860
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s02_rail_quantum_arm.c|A:fc0fee7b|A:fc0fee7b
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s03_rail_qq_arms.c|A:2747bb44|A:2747bb44
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s04_rail_post_ry.c|A:0fe2af25|A:0fe2af25
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s05_rail_measure_after.c|A:98ceeea2|A:98ceeea2
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s06_rail_cross_block.c|A:5fccfc66|A:5fccfc66
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s07_rail_two_regions.c|A:e55f2d07|A:e55f2d07
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s08_rail_then_select.c|A:1a28ce32|A:1a28ce32
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s09_rail_in_xor_tree.c|A:84922e2c|A:84922e2c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s10_rail_fp_data.c|A:0892fe7d|A:0892fe7d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s11_rail_i1_data.c|A:8a12ce64|A:8a12ce64
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s12_rail_inloop_invariant.c|A:ef008363|A:ef008363
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s13_rail_dead_register.c|A:89b58c5f|A:89b58c5f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s14_reject_measured_before.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s15_reject_measured_sidepath.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s16_reject_sibling_theta.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s17_reject_chained_between.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s18_reject_inloop_stale_theta.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s19_reject_trunc_cond.c|A:72dba436|A:72dba436
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/s20_reject_phi_cond.c|D:cq loop lowering: loop-carried tainted value crosses iterations|D:cq loop lowering: loop-carried tainted value crosses iterations
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w1_kickback_window_merge_block.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w2_kickback_window_merge_block_nosibling.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w3_kickback_window_second_block.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w4_kickback_window_second_block_nosibling.ll|A:3ee973e9|A:3ee973e9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w5_nest_conjunction_window.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/probes/w6_nest_conjunction_window_nosibling.ll|A:54598582|A:54598582
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r01_baseline.c|A:817c9d5c|A:817c9d5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r02_measure_parent_chained.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r03_measure_sibling_wire.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r04_measure_after_flat.c|A:fdf18308|A:fdf18308
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r05_sdagger_after.c|A:d2fef3d2|A:d2fef3d2
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r06_theta_between.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r07_two_selects.c|A:9d96c21d|A:9d96c21d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r08_select_then_kickback.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r09_kickback_then_select.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r10_dead_register.c|A:c209b313|A:c209b313
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r11_borrow_parent_add.c|A:2cab1ba9|A:2cab1ba9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r12_quantum_arm.c|A:b34e1302|A:b34e1302
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r13_qq_arms.c|A:e6fd6a21|A:e6fd6a21
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r14_arm_is_rail.c|A:410a3737|A:410a3737
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r15_fp_data.c|A:adfef6b9|A:adfef6b9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r16_inloop_invariant.c|A:2bc958f3|A:2bc958f3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r17_inloop_measure_after.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r18_xor_tree.c|A:0ce3535f|A:0ce3535f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r19_and_mixed_tree.c|A:649212c5|A:649212c5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r20_mixed_then_theta_on_rail.c|A:e8d8b244|A:e8d8b244
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r21_kickback_measure_parent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r22_measure_parent_before_chain.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r23_inplace_xor_before.c|A:b321136c|A:b321136c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r24_inplace_xor_after.c|A:a80a5326|A:a80a5326
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r25_select_feeds_theta.c|A:2844a63c|A:2844a63c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r26_cross_block_rail.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r27_select_preheader_theta_body.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r28_select_after_loop_theta_body.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r29_theta_guarded_after.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r30_theta_guard_before_select.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r31_measure_sidepath.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r32_invert_bracket.c|A:18396b6f|A:18396b6f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r33_qram_arm.c|A:e03ba2eb|A:e03ba2eb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r34_out_written_to_alloca.c|A:d314108b|A:d314108b
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r35_select_in_specialized_call.c|A:e8695ad2|A:e8695ad2
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r36_two_rails_two_selects.c|A:be785edb|A:be785edb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r37_or_tree.c|A:6a3761ce|A:6a3761ce
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r38_widths.c|A:40ed2e34|A:40ed2e34
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r39_select_in_kickback_arm.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r40_derived_arm_from_rail.c|A:0bf8994e|A:0bf8994e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r41_kb_measure_then_rotate.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r42_bare_measure_then_rotate.c|A:32428bd1|A:32428bd1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r43_cmp_select_feeds_theta.c|A:d3de91c1|A:d3de91c1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r44_cmp_invert_bracket.c|A:840c73ba|A:840c73ba
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r45_noinline_call.c|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r46_noinline_call_twice.c|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r47_measure_derived_before.c|A:bd127ca1|A:bd127ca1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r48_dead_register_chained.c|A:63908c20|A:63908c20
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r49_dead_register_derived_root.c|A:454eceae|A:454eceae
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r50_out_returned.c|A:67a723a1|A:67a723a1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r51_round2_arm_call.c|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r52_round2_arm_call_cmp_twin.c|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r53_round2_arm_bare.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r54_round2_arm_bare_cmp_twin.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r55_clone_rail_select.c|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r56_clone_cmp_select.c|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r57_sibling_after_select.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r58_sibling_after_kickback_twin.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r59_int_compare_twin_of_baseline.c|A:fc40b655|A:fc40b655
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r60_loop_carried_arm.c|A:30c3fbf7|A:30c3fbf7
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r61_loop_carried_rail_cond.c|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r62_loop_k32.c|A:775b35c1|A:775b35c1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r63_tape_write.c|A:31da9fd4|A:31da9fd4
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r64_qram_store.c|A:10692733|A:10692733
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/c/r65_nested_bool_selects.c|A:e6a7412d|A:e6a7412d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h01.ll|A:74a78edb|A:74a78edb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h02.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h03.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h04.ll|A:f0060986|A:f0060986
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h05.ll|A:bd1f5260|A:bd1f5260
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h06.ll|A:cf2694e8|A:cf2694e8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h07.ll|A:aef722d9|A:aef722d9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h08.ll|A:6d0120a0|A:6d0120a0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h10.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h11.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h13.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h14.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h16.ll|A:b7e0f86e|A:b7e0f86e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h17.ll|A:8525f5f3|A:8525f5f3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/h19.ll|A:d2d3cf91|A:d2d3cf91
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/v01.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/v02.ll|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/v03.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w01.ll|A:bb4c42b8|A:bb4c42b8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w02.ll|A:1b0cd130|A:1b0cd130
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w03.ll|A:978f8041|A:978f8041
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w04.ll|A:d5a53bab|A:d5a53bab
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w05.ll|A:28dbf6ee|A:28dbf6ee
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w06.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w07.ll|A:9906d7b8|A:9906d7b8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w08.ll|A:7f806512|A:7f806512
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w09.ll|A:dda9fa8a|A:dda9fa8a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w10.ll|A:c97c9c28|A:c97c9c28
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w11.ll|A:6a467ce7|A:6a467ce7
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w12.ll|A:4630eb83|A:4630eb83
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w13.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w14.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w15.ll|A:6fd93dbc|A:6fd93dbc
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w16.ll|A:9668ff00|A:9668ff00
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w17.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w18.ll|A:c68f4e8f|A:c68f4e8f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w19.ll|A:ac2f447f|A:ac2f447f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w20.ll|A:088ffad0|A:088ffad0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w21.ll|A:9241f128|A:9241f128
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/w22.ll|A:f5102595|A:f5102595
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/x01.ll|A:f3458e70|A:f3458e70
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/x02.ll|A:90ced217|A:90ced217
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r1_probes/ll/x03.ll|A:412801e3|A:412801e3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a01_baseline_owner.c|A:bbd8bc24|A:bbd8bc24
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a02_measure_parent_chained.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a03_measure_grandparent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a04_measure_xor_parent_result.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a05_measure_xor_source.c|A:a4de8f0a|A:a4de8f0a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a06_measure_trunc_parent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a07_measure_trunc_source.c|A:6e90e487|A:6e90e487
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a08_depth2_cast_middle_measured.c|A:eb84de82|A:eb84de82
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a09_inplace_xor_parent_measure_before.c|A:675a7bfb|A:675a7bfb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a10_forward_theta_measure_after.c|A:fa9352a8|A:fa9352a8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a11_forward_theta_loop_remint.c|A:5978b494|A:5978b494
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a12_forward_theta_loop_invariant.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a13_measure_parent_after_select.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a14_measure_parent_guarded_sidepath.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a15_int_twin_measure_parent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a16_loop_remint_measure_parent.c|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/a17_loop_remint_forward_only.c|A:f1d2d71d|A:f1d2d71d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/e01_round2_taint_sibling_theta.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/e02_round2_taint_measure_parent.c|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/e03_round1_taint_sibling_control.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h01_io_sink_under_rail.c|D:cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond|D:cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h02_invert_around_rail_select.c|A:3b04e6d9|A:3b04e6d9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h03_loop_rail_select_k32.c|A:b56b7290|A:b56b7290
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h04_out_escapes_ret.c|A:e1f54dd2|A:e1f54dd2
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h05_rail_select_guarded_block.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/c/h06_borrow_chain_and_select.c|A:049c1b52|A:049c1b52
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b01_value_arm_bare_rail.ll|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b02_value_arm_compound_rail.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b03_datamux_bare_rail.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b04_classicalcall_arm_bare_rail.ll|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b05_dead_out.ll|A:142cb41d|A:142cb41d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b06_out_chain_measured.ll|A:b207b373|A:b207b373
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b07_out_chain_dead.ll|A:12251f33|A:12251f33
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/b08_out_chain_dead_cmp_twin.ll|A:2a24aef5|A:2a24aef5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c01_mixed_tree_post_rail_theta.ll|A:9410e899|A:9410e899
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c02_mixed_tree_post_cmp_theta.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c03_mixed_tree_shared_register.ll|A:03b8ae03|A:03b8ae03
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c04_mixed_tree_rail_parent_measured.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c05_two_rails_one_parent_measured.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/c06_fp_rail_post_theta.ll|A:97802638|A:97802638
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/d01_borrow_chain_dead.ll|A:db2bc157|A:db2bc157
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/d02_two_selects_chained_between.ll|A:050b5aff|A:050b5aff
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/d03_two_selects_theta_after.ll|A:2d41c38a|A:2d41c38a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/d04_select_then_kickback_then_theta.ll|A:c68ea6d0|A:c68ea6d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e04_round2_window_sibling_theta.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e05_round1_window_sibling_control.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e06_round2_window_measure_parent.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e07_round2_window_sibling_after.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e08_round2_window_sibling_cmp_twin.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e09_round2_window_sibling_kickback.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e10_round2_window_sibling_cmp_i1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e11_classical_seed_sibling_accept_control.ll|A:ab3982d0|A:ab3982d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e14_rail_select_arm_is_out.ll|A:0cb8655d|A:0cb8655d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/e15_cmp_select_arm_is_out.ll|A:67f5d209|A:67f5d209
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f01_out_parent_measured.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f02_qrom_parent_measured.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f04_loop_phi_parent_measured.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f06_measure_unreachable_block.ll|A:bdc72019|A:bdc72019
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f12_two_rails_other_measured.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/f13_parent_measured_unreachable_from_select.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/g05_i64_rail_select.ll|A:5d105cdc|A:5d105cdc
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/g06_logical_and_rail_cmp.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/g08_rail_is_cond_and_arm.ll|A:722008d5|A:722008d5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i01_borrow_chain_dead_cmp_twin.ll|A:ed4b3284|A:ed4b3284
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i02_kickback_parent_measured_after.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i03_select_of_rails_parent.ll|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i04_measure_after_unreachable_abort.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i05_two_chained_rails_shared_grandparent.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i06_clone_rail_select.ll|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i07_clone_rail_theta_inside.ll|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/i08_rail_select_out_feeds_second_rail_select.ll|A:414d2321|A:414d2321
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/j01_loop_carried_forward_measure.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/ll/j02_forward_name_measured_before_select.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/multi/e12_caller.c|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/multi/e13_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/multi/e16_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a01_baseline_owner.s1.ll|A:43a97049|A:43a97049
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a01_baseline_owner.s2.ll|A:43a97049|A:43a97049
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a02_measure_parent_chained.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a03_measure_grandparent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a04_measure_xor_parent_result.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a05_measure_xor_source.s1.ll|A:01d7dbf8|A:01d7dbf8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a05_measure_xor_source.s2.ll|A:01d7dbf8|A:01d7dbf8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a06_measure_trunc_parent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a07_measure_trunc_source.s1.ll|A:9e4f3a00|A:9e4f3a00
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a07_measure_trunc_source.s2.ll|A:9e4f3a00|A:9e4f3a00
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a08_depth2_cast_middle_measured.s1.ll|A:a3a3005f|A:a3a3005f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a08_depth2_cast_middle_measured.s2.ll|A:a3a3005f|A:a3a3005f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a09_inplace_xor_parent_measure_before.s1.ll|A:97f5b2d3|A:97f5b2d3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a09_inplace_xor_parent_measure_before.s2.ll|A:97f5b2d3|A:97f5b2d3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a10_forward_theta_measure_after.s1.ll|A:485174b1|A:485174b1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a10_forward_theta_measure_after.s2.ll|A:485174b1|A:485174b1
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a11_forward_theta_loop_remint.s1.ll|A:d5b13d0d|A:d5b13d0d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a11_forward_theta_loop_remint.s2.ll|A:d5b13d0d|A:d5b13d0d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a12_forward_theta_loop_invariant.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a13_measure_parent_after_select.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a13_measure_parent_after_select.s2.ll|A:64235598|A:64235598
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a14_measure_parent_guarded_sidepath.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a15_int_twin_measure_parent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a15_int_twin_measure_parent.s2.ll|A:a03ad7ec|A:a03ad7ec
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a16_loop_remint_measure_parent.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a17_loop_remint_forward_only.s1.ll|A:7df5830d|A:7df5830d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/a17_loop_remint_forward_only.s2.ll|A:7df5830d|A:7df5830d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b01_value_arm_bare_rail.s1.ll|D:cq controlled lowering: bare i1 register condition under quantum control|D:cq controlled lowering: bare i1 register condition under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b02_value_arm_compound_rail.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b03_datamux_bare_rail.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b04_classicalcall_arm_bare_rail.s1.ll|D:cq controlled lowering: value-arm swap-route under quantum control|D:cq controlled lowering: value-arm swap-route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b05_dead_out.s1.ll|A:142cb41d|A:142cb41d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b05_dead_out.s2.ll|A:4e09234d|A:4e09234d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b06_out_chain_measured.s1.ll|A:b207b373|A:b207b373
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b06_out_chain_measured.s2.ll|A:1d179293|A:1d179293
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b07_out_chain_dead.s1.ll|A:12251f33|A:12251f33
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b07_out_chain_dead.s2.ll|A:c51edf02|A:c51edf02
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b08_out_chain_dead_cmp_twin.s1.ll|A:2a24aef5|A:2a24aef5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/b08_out_chain_dead_cmp_twin.s2.ll|A:5170592e|A:5170592e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c01_mixed_tree_post_rail_theta.s1.ll|A:9410e899|A:9410e899
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c01_mixed_tree_post_rail_theta.s2.ll|A:b0a07a67|A:b0a07a67
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c02_mixed_tree_post_cmp_theta.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c03_mixed_tree_shared_register.s1.ll|A:03b8ae03|A:03b8ae03
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c03_mixed_tree_shared_register.s2.ll|A:5e5df779|A:5e5df779
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c04_mixed_tree_rail_parent_measured.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c05_two_rails_one_parent_measured.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c06_fp_rail_post_theta.s1.ll|A:97802638|A:97802638
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/c06_fp_rail_post_theta.s2.ll|A:bff11957|A:bff11957
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d01_borrow_chain_dead.s1.ll|A:db2bc157|A:db2bc157
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d01_borrow_chain_dead.s2.ll|A:25abf2ab|A:25abf2ab
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d02_two_selects_chained_between.s1.ll|A:050b5aff|A:050b5aff
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d02_two_selects_chained_between.s2.ll|A:0fe15a12|A:0fe15a12
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d03_two_selects_theta_after.s1.ll|A:2d41c38a|A:2d41c38a
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d03_two_selects_theta_after.s2.ll|A:954f4835|A:954f4835
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d04_select_then_kickback_then_theta.s1.ll|A:c68ea6d0|A:c68ea6d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/d04_select_then_kickback_then_theta.s2.ll|A:a747d32e|A:a747d32e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e01_round2_taint_sibling_theta.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e02_round2_taint_measure_parent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e03_round1_taint_sibling_control.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e04_round2_window_sibling_theta.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e04_round2_window_sibling_theta.s2.ll|A:d1047ffa|A:d1047ffa
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e05_round1_window_sibling_control.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e06_round2_window_measure_parent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e06_round2_window_measure_parent.s2.ll|A:db99df77|A:db99df77
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e07_round2_window_sibling_after.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e07_round2_window_sibling_after.s2.ll|A:fd62b4fe|A:fd62b4fe
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e08_round2_window_sibling_cmp_twin.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e08_round2_window_sibling_cmp_twin.s2.ll|A:381709df|A:381709df
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e09_round2_window_sibling_kickback.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e10_round2_window_sibling_cmp_i1.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e11_classical_seed_sibling_accept_control.s1.ll|A:ab3982d0|A:ab3982d0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e11_classical_seed_sibling_accept_control.s2.ll|A:c757c903|A:c757c903
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e14_rail_select_arm_is_out.s1.ll|A:0cb8655d|A:0cb8655d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e14_rail_select_arm_is_out.s2.ll|A:fcc80f7f|A:fcc80f7f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e15_cmp_select_arm_is_out.s1.ll|A:67f5d209|A:67f5d209
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/e15_cmp_select_arm_is_out.s2.ll|A:ca5c4b37|A:ca5c4b37
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f01_out_parent_measured.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f02_qrom_parent_measured.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f04_loop_phi_parent_measured.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f06_measure_unreachable_block.s1.ll|A:bdc72019|A:bdc72019
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f06_measure_unreachable_block.s2.ll|A:04c769e5|A:04c769e5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f12_two_rails_other_measured.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f12_two_rails_other_measured.s2.ll|A:9e88decb|A:9e88decb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f13_parent_measured_unreachable_from_select.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/f13_parent_measured_unreachable_from_select.s2.ll|A:ab47984d|A:ab47984d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/g05_i64_rail_select.s1.ll|A:5d105cdc|A:5d105cdc
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/g05_i64_rail_select.s2.ll|A:3023eed6|A:3023eed6
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/g06_logical_and_rail_cmp.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/g08_rail_is_cond_and_arm.s1.ll|A:722008d5|A:722008d5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/g08_rail_is_cond_and_arm.s2.ll|A:b9e04b65|A:b9e04b65
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h01_io_sink_under_rail.s1.ll|D:cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond|D:cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h02_invert_around_rail_select.s1.ll|A:4b0d956f|A:4b0d956f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h02_invert_around_rail_select.s2.ll|A:4b0d956f|A:4b0d956f
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h03_loop_rail_select_k32.s1.ll|A:9bce1e40|A:9bce1e40
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h03_loop_rail_select_k32.s2.ll|A:9bce1e40|A:9bce1e40
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h04_out_escapes_ret.s1.ll|A:21f315c3|A:21f315c3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h04_out_escapes_ret.s2.ll|A:21f315c3|A:21f315c3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h05_rail_select_guarded_block.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h06_borrow_chain_and_select.s1.ll|A:8050f8b3|A:8050f8b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/h06_borrow_chain_and_select.s2.ll|A:8050f8b3|A:8050f8b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i01_borrow_chain_dead_cmp_twin.s1.ll|A:ed4b3284|A:ed4b3284
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i01_borrow_chain_dead_cmp_twin.s2.ll|A:8555d415|A:8555d415
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i02_kickback_parent_measured_after.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i02_kickback_parent_measured_after.s2.ll|A:222e5e96|A:222e5e96
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i03_select_of_rails_parent.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i04_measure_after_unreachable_abort.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i04_measure_after_unreachable_abort.s2.ll|A:565f72c8|A:565f72c8
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i05_two_chained_rails_shared_grandparent.s1.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i06_clone_rail_select.s1.ll|D:cq specialization: floating-point quantum argument or return has no reversible copy|D:cq specialization: floating-point quantum argument or return has no reversible copy
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i07_clone_rail_theta_inside.s1.ll|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i08_rail_select_out_feeds_second_rail_select.s1.ll|A:414d2321|A:414d2321
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/i08_rail_select_out_feeds_second_rail_select.s2.ll|A:01d2461e|A:01d2461e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/j01_loop_carried_forward_measure.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition phi|D:cq taint escape: tainted value muxed by a classical-condition phi
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r2_probes/out/POST/j02_forward_name_measured_before_select.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/c/p01.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/c/p02.c|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted|D:cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/c/p03.c|A:4e9ed65e|A:4e9ed65e
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/c/p04.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r01.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r02.ll|A:ef04c0ac|A:ef04c0ac
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r03.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r04.ll|A:7bec79ca|A:7bec79ca
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r05.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r06.ll|A:e9ca2834|A:e9ca2834
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r07.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r08.ll|A:636dd3bb|A:636dd3bb
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r09.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r10.ll|A:88096fd3|A:88096fd3
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r11.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r12.ll|D:cq QRAM store: alloca array mixes a tainted-index and a classical access|D:cq QRAM store: alloca array mixes a tainted-index and a classical access
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r13.ll|D:cq QRAM store: alloca array mixes a tainted-index and a classical access|D:cq QRAM store: alloca array mixes a tainted-index and a classical access
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r14.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r15.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r16.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r17.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r18.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r19.ll|A:18d769d5|A:18d769d5
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r20.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r21.ll|A:c196a3b9|A:c196a3b9
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r22.ll|A:d3c26b78|A:d3c26b78
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r23.ll|A:43fa7d6d|A:43fa7d6d
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r24.ll|A:c83907ee|A:c83907ee
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r25.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r26.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r27.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r29.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r30.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r31.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r32.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r33.ll|D:cq controlled lowering: condition measured before the control route under quantum control|D:cq controlled lowering: condition measured before the control route under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r34.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r35.ll|A:e6203fa0|A:e6203fa0
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r36.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r37.ll|A:19da5427|A:19da5427
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/r38.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/x01.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/x02.ll|A:66d49011|A:66d49011
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/ll/x03.ll|A:aae2ee5c|A:aae2ee5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m01_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m02_caller.c|D:cq taint escape: tainted value reaches an unsupported instruction|D:cq taint escape: tainted value reaches an unsupported instruction
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m03_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m04_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m05_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m06_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m07_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m08_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m10_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-r9e5/review_b1_r3_probes/multi/m11_caller.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
