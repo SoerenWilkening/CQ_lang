@@ -434,26 +434,25 @@ pin — different renderings, never comparable, so the trigger misfired. Re-meas
 divergence is byte-identical to pass 1, so the adjudication stands and the value to pin is the
 matrix's `d81485c481c5ad07`, never my `3fa9d45cd851c1b3`.
 
-### 15d. Corpus re-sweep + blast-radius re-scan — **IN FLIGHT, recorded as an ABSENCE with their partial readings**
+### 15d. Corpus re-sweep — **COMPLETE: 7010 rows, 156 movers, 0 UNATTRIBUTABLE**
 
-Both were launched at the pass-2 hash and were **still running when this record was written**. Per
-the protocol an unfinished gate is recorded as an absence — **never a green, never a red** — so what
-follows is a partial reading with its denominator, not a result.
+Ran 17:06:05 → 17:28:45 (**22 m 40 s**) at `-P 4` over **7041** list entries (pass 1 was 7012; +29
+from the four landings' new fixtures and probe dirs); **7010 rows written**, **7001 scored**,
+2 `CLANGERR`, 7 `EMPTYMOD` (the `empty-module-accepts` trap, bucketed and never scored as ACCEPT).
+Output: `gate/corpus_07d93784.txt`.
 
-**Corpus sweep** (ORACLE `9bd01598` vs PASS-2 `07d93784`), list rebuilt at **7041 rows** (pass 1 was
-7012; +29 from the four landings' new fixtures and probe dirs). At **2215 of 7041 scored**:
-
-| bucket | partial | attribution so far |
+| bucket | rows | attribution |
 |---|---|---|
-| **A→D** | **2** | **both are Group 1's OWN new decline fixtures** — `loop_leak_dephase_reject_arm_minted_interior_rail.ll` and `loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`, each on `cq loop lowering: rolled body leaks a rail entangled with a rotated register` (the **existing** s82e string — the fix adds none). The intended direction of the F-1 fix, and its own pins |
-| D→A | 9 | Track D's P4 |
-| A→A md5 | 6 | Group 1's P2 |
-| A→A stderr | 1 | warnings disappearing as rails discharge |
-| D→D | 0 | — |
+| **A→D** | **6** | **ALL Group 1's F-1 fix**, every one on the SAME existing string `cq loop lowering: rolled body leaks a rail entangled with a rotated register` — the fix adds no new string. They are: the two new decline fixtures (`loop_leak_dephase_reject_arm_minted_interior_rail.ll`, `…_inplace_ry_loop_leak_slice.ll`), the `g8`/`g8b` F-1 reproducers, `trackT2`'s own `g8` copy, and a stage-1 copy of the leak slice under `trackD/review_r1_probes`. **The intended direction, and its own pins.** |
+| **D→A** | **87** | **ALL Track D**, RE-MEASURED on the ORACLE in full rather than read off the truncated row: **83** `condition predates a non-diagonal gate` + **4** `control flow`. **UNATTRIBUTABLE: 0** |
+| A→A md5 | 37 | Group 1's P2 |
+| A→A stderr | 5 | warnings disappearing as rails discharge |
+| D→D string | 14 | Track D — module still declines, at a later fence |
+| D→D stderr-only | 7 | ditto |
+| **TOTAL** | **156** | **0 unattributable** |
 
-⚠ **This is 31 % of the corpus. The full attribution — and any unattributable mover — is NOT
-established**, and the pass-1 figure (6981 rows, 137 movers, 0 unattributable, A→D 0) must **not** be
-quoted for pass 2: different binary, different denominator.
+⚠ Pass 1's figures (6981 rows, 137 movers, A→D 0) are a different binary and a different denominator
+and **must not be quoted for pass 2**. The A→D bucket going 0 → 6 is the whole point of the F-1 fix.
 
 **Blast-radius re-scan — COMPLETE, not an absence.** Scoped to the **386 shipped e2e slices** (the
 decisive set — only these have goldens); **383 scored** in **11 m 30 s** (3 skipped as `*_lib.c`
