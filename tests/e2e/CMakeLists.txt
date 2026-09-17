@@ -6145,6 +6145,44 @@ add_test(NAME e2e-railbank-register-twin-selftest
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/railbank_register_twin_gate_test.py"
     --build "${CMAKE_BINARY_DIR}")
 
+# bd `test_C_libtooling-drbq.12` (2026-09-17) - THE LICM-HOISTED LOOP-INVARIANT
+# CONDITION. The customer's simplest C spelling, `for (...) { if (q == 5) r =
+# cq_theta(r, .9); }` with `r` disjoint from `q`: `q` is loop-invariant, `clang
+# -O1` hoists the compare out of the region's `Pred`, and until this bead
+# `condWireDisposition`'s P4 precondition refused it before the arm was looked at
+# (PRD 13.2 row W, 13.11 worry 7). Registered here because e2e is the only layer
+# that LINKS: it proves the newly-admitted program's stream resolves and
+# signature-matches, and stage 2b proves its rails pair.
+add_test(NAME e2e-slice-control-inplace-ry-inloop-hoisted-cond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond.expected.log")
+
+# The HAND-UNROLLED twin of the same source. It is a customer of the SAME fence for
+# a DIFFERENT reason - no loop at all, but `-O1` CSEs its two compares into one in
+# the entry block, so the SECOND region's `Pred` is the FIRST region's merge. Half
+# of row W's sixteen twin-matrix cells are this acyclic shape.
+add_test(NAME e2e-slice-control-inplace-ry-inloop-hoisted-cond-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond_twin.expected.log")
+
+# The witness: `cmp` over the two committed goldens - no clang, no opt, no plugin.
+# ROLLED == HAND-UNROLLED, byte for byte. Read it for what it is (owner ruling S3,
+# 2026-09-17): identity says the two spellings emit the same gate sequence, NOT that
+# either is the right unitary. What it uniquely catches is a rolled/flat DIVERGENCE
+# - one source compiling to two different circuits - which no single golden can see.
+add_test(NAME e2e-inloop-hoisted-cond-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_inloop_hoisted_cond_twin.expected.log")
+
 # Pin the interpreter run_slice.sh / run_slice_multi.sh use for stage 2b to the
 # one CMake resolved, so the gate cannot silently fall back to a different (or
 # missing) `python3` on PATH. Applied to every test registered in this directory
