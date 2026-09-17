@@ -220,7 +220,7 @@ refused by (T4c) whichever loop carries it.
 
 ## 4. L10 — the mutant table, with its MISSED count
 
-13 named mutants + 4 positives = **17 T4 cases**; proof-targeted sweep
+14 named mutants + 4 positives = **18 T4 cases**; proof-targeted sweep
 **315 → 329** (blanking (T4)'s own witness lines — its mint and its reversal —
 is required to break the proof).
 
@@ -244,12 +244,24 @@ clause, so they cannot drift into fake arm coverage.
 | `t4-two-exit-blocks-two-reversals` | `U3-extern-rail` | **(T4c)** — *not* the arm it was written for; see below |
 | `t4-forward-operand-moved-inside-the-loop` | `U3-extern-rail` | (T4g) |
 | `t4-alloc-rail-cross-stream-bracket` | `U3-extern-rail` | (T4a) |
+| `t4-non-lifo-discharge-order` | `U3-extern-rail` | (T4g) — **a real miscompile**, see below |
 | `t4-adjoint-in-loop-free-outside` | `U1-cross-stream` | **pre-(T4)** — no write in the exit stream, so no extern record |
 | `t4-free-above-the-adjoint` | `F2-use-after-free` | **pre-(T4)**, and loudly |
 | POSITIVE `t4-range-cell-rolled` | 0 findings | 1 T4 proof |
 | POSITIVE `t4-hoisted-chain-rolled` | 0 findings | 3 T4 proofs |
 | POSITIVE `t4-one-reversal-one-free` | 0 findings | 1 T4 proof — (T4d)'s control |
 | POSITIVE `t4-diagonal-rz-…-inside-the-loop` | 0 findings | 1 T4 proof — the write-model-agreement control |
+
+**(T4g) CATCHES A REAL MISCOMPILE, not just a structural near-miss.**
+`t4-non-lifo-discharge-order` discharges the 3-rail chain FIFO instead of LIFO —
+`%h_cast`'s reversal is hoisted above the others, so `%h_op`'s reversal reads a
+`%h_cast` that is already back at |0> and recomputes a DIFFERENT value. No
+`cqrt_free` moves, so `F2-use-after-free` does not fire and (T4g) is the only
+thing that speaks. This is bd `1m5p`'s own *"LIFO-INVERTED … `h3` is freed while
+`h4`, derived from it, is still live"* hazard in its adjoint form. ⚠ The other
+two rails still VERIFY, correctly — `%h_cast`'s reversal reads `%h` (untouched)
+and `%h_intr`'s reads `%h_op` (written only later). A rule that refused the whole
+module would be hiding its own precision.
 
 **A mutant caught one arm earlier proves nothing about the arm it was written
 for.** `t4-two-exit-blocks-two-reversals` was written for (T4d) and is caught by
@@ -271,7 +283,7 @@ Each conjunct deleted individually from the source, the committed selftest re-ru
 | (T4d) one-free test | **RED** 1 | `t4-one-reversal-two-frees` |
 | (T4f) mint-stream acyclic | **RED** 1 | `t4-mint-inside-the-loop` |
 | (T4f) free-stream acyclic | **RED** 1 | `t4-k1-reversal-and-free-inside-the-loop` |
-| (T4g) forward-operand test | **RED** 1 | `t4-forward-operand-moved-inside-the-loop` |
+| (T4g) forward-operand test | **RED** 2 | `t4-forward-operand-moved-inside-the-loop`, `t4-non-lifo-discharge-order` |
 
 **The survivor, and why it is not deleted.** `w.vals[0] == name` in (T4b)
 survives because it **restates the key it is searching**: `r.writes` is appended
@@ -328,11 +340,24 @@ and never had a reversal in the free's stream ((T4b)) — they report
   (the dtzb family) keeps its historic text exactly.
 * A **corpus verdict diff** over every `tests/e2e/*.c` lowered on `96d74fe6`,
   ORACLE checker vs SUBJECT, comparing the FULL finding list rather than exit
-  codes, was started after the source was final. ⚠ **At hand-off it is PARTIAL
-  and is recorded as an absence, not as a pass: 129 of ~386 modules compared,
-  0 moved.** It is the measurement that bears on false positives — the expensive
-  direction for a gate — and whoever picks this up should finish it
-  (`scratchpad/corpus.sh`, ~35 modules/min under this session's load).
+  codes. **COMPLETE: 381 lowered modules compared, exactly 1 MOVED** (42 sources
+  do not lower on this binary and are not in the denominator). False positives
+  are the expensive direction for a GATE, and this is the only measurement that
+  bears on them.
+
+  **The one mover is the one that had to move**, and it is also the sweep's own
+  POSITIVE CONTROL — without it, "380 unmoved" would be indistinguishable from a
+  broken instrument:
+
+  ```
+  === slice_loop_hoisted_chain_exit_discharge
+  ORACLE   4 cqrt_free site(s): 1 verified, 0 violation(s), 3 unproven
+           (3 × UNPROVEN U3-extern-rail on %h_intr / %h_op / %h_cast)
+  SUBJECT  4 cqrt_free site(s): 4 verified, 0 violation(s), 0 unproven
+  ```
+
+  So on the whole shipped e2e corpus this change moves **one** verdict, in the
+  intended direction, on the one slice that exists to carry the shape.
 
 ---
 
@@ -443,5 +468,5 @@ session-2026-09-18-orchestrator/trackC/IMPL_C.md"
    and order-divergent**, i.e. bd `1m5p` fixed in substance with a positional
    residue, and its disposition is **RE-PIN, do not remove**. `tools/loop_twin_matrix*`
    is Track V's exclusively (R14), so this track neither ran nor edited it.
-3. **Finish the corpus verdict diff** (§6) — 129 of ~386 modules compared, 0
-   moved, recorded as an absence.
+3. ~~Finish the corpus verdict diff~~ — **DONE** (§6): 381 modules, 1 mover, and
+   the mover is the slice item 1 is about.

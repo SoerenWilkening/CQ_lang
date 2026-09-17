@@ -2533,6 +2533,23 @@ def _swap_lines(text, a, b):
 _T4_FREE_BEFORE_UNC = _swap_lines(T4_RANGE_SLICE, "add_i32_hl_unc",
                                   "cqrt_free(i32 %h_op)")
 
+
+def _hoist_line(text, needle, before):
+    """Move the line containing `needle` to just above the one containing
+    `before`, leaving every other line — the `cqrt_free`s included — put."""
+    lines = text.split("\n")
+    moved = lines.pop(next(k for k, l in enumerate(lines) if needle in l))
+    lines.insert(next(k for k, l in enumerate(lines) if before in l), moved)
+    return "\n".join(lines)
+
+
+# The 3-rail chain discharged FIFO instead of LIFO: `%h_cast`'s reversal is
+# hoisted to the top of the exit block, so `%h_op`'s reversal then reads a
+# `%h_cast` that is already back at |0>. No free moves, so this is NOT a
+# use-after-free — only a forward operand that did not hold still.
+_T4_NON_LIFO = _hoist_line(T4_HOISTED_CHAIN, "sitofp_i32_to_f64_unc",
+                           "sqrt_f64_unc")
+
 # (name, module, expected finding code, a fragment of the refusal text that
 #  identifies WHICH arm refused it — or None when the shape is refused BEFORE
 #  (T4) is ever consulted, which is itself a fact worth pinning.)
@@ -2589,6 +2606,18 @@ T4_MUTANTS = [
     # (T4a) — an ALLOC rail in the same shape. A deliberate over-decline.
     ("t4-alloc-rail-cross-stream-bracket", T4_ALLOC_RAIL,
      "U3-extern-rail", "not a reversible out-of-place template mint"),
+    # (T4g) again, and this one is a REAL MISCOMPILE rather than a structural
+    # near-miss: the chain is discharged FIFO instead of LIFO, so the middle
+    # rail's reversal reads a `%h_cast` that an earlier `_unc` already zeroed and
+    # recomputes a DIFFERENT value. This is bd `test_C_libtooling-1m5p`'s own
+    # "LIFO-INVERTED … `h3` is freed while `h4`, derived from it, is still live"
+    # hazard, in its adjoint form — and no `cqrt_free` moved, so
+    # `F2-use-after-free` does NOT fire and (T4g) is the only thing that speaks.
+    # ⚠ The other two rails STILL VERIFY here, correctly: `%h_cast`'s reversal
+    # reads `%h` (untouched) and `%h_intr`'s reads `%h_op` (written only later).
+    # A rule that refused the whole module would be hiding its own precision.
+    ("t4-non-lifo-discharge-order", _T4_NON_LIFO,
+     "U3-extern-rail", "forward operand %h_cast of"),
     # Refused BEFORE (T4): the adjoint is in the loop, so the exit stream has no
     # write to the rail at all and it never becomes an `extern` record.
     ("t4-adjoint-in-loop-free-outside", _T4_UNC_IN_LOOP,

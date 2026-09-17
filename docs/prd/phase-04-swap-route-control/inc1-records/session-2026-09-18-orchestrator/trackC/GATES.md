@@ -37,11 +37,11 @@ Selftest summary line at that run, **re-run, not copied**:
 ```
 free_pairing_check_test: 32 positive fixture(s), 2 free-order pair(s),
   1 cost bound(s), 77 named mutant(s), 10 memory mutant(s)/refusal(s),
-  5 Case-A negative(s), 19 census case(s), 17 T4 loop-exit case(s),
+  5 Case-A negative(s), 19 census case(s), 18 T4 loop-exit case(s),
   329 proof-targeted mutant(s) (4 exempt by rule), 0 failure(s)
 ```
 
-Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 17**,
+Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 18**,
 proof-targeted sweep **315 → 329**. Every other count is unchanged, which is the
 non-churn statement.
 
@@ -147,7 +147,10 @@ T4c-single-write-in-the-function   RED  4   write-in-loop / measured / rotated /
 T4d-exactly-one-free               RED  1   t4-one-reversal-two-frees
 T4f-mint-stream-acyclic            RED  1   t4-mint-inside-the-loop
 T4f-free-stream-acyclic            RED  1   t4-k1-reversal-and-free-inside-the-loop
-T4g-forward-operands-held-still    RED  1   t4-forward-operand-moved-inside-the-loop
+T4g-forward-operands-held-still    RED  2   t4-forward-operand-moved-inside-the-loop
+                                           t4-non-lifo-discharge-order (a REAL miscompile: FIFO
+                                           instead of LIFO discharge, so the middle rail's
+                                           reversal recomputes from an already-zeroed operand)
 ```
 
 **MISSED 1 of 9.** The survivor restates the key it searches (`r.writes` is keyed
@@ -160,18 +163,27 @@ was reading the same file**. Those sweep results were discarded and the sweep
 restarted after the source was final. Same class as *"never relink a binary under
 a running measurement"*, one layer down.
 
-### G-C5 — corpus verdict diff, **PARTIAL, recorded as an ABSENCE**
+### G-C5 — corpus verdict diff, **COMPLETE**
 
 ```
 cited: 96d74fe6008133b8 / oracle 10e95a52
-IN PROGRESS AT HAND-OFF: 231 of ~386 tests/e2e/*.c lowered modules compared,
-full finding list (not exit codes), 0 MOVED.
+CORPUS SWEEP DONE: 381 lowered modules compared, 1 MOVED, 42 not lowerable
+full finding list compared, not exit codes
 ```
 
-This is the measurement that bears on **false positives** — the expensive
-direction for a gate — and it is **incomplete**. Do not quote it as a clean
-sweep; quote it as *"231 modules, 0 moved, the rest not measured"*. The runner is
-`scratchpad/corpus.sh`; throughput ~35 modules/min under this session's load.
+The measurement that bears on **false positives** — the expensive direction for
+a gate. Exactly one verdict moves, and it is the slice that exists to carry the
+shape:
+
+```
+=== slice_loop_hoisted_chain_exit_discharge
+ORACLE   1 verified, 0 violation(s), 3 unproven  (3 x U3-extern-rail)
+SUBJECT  4 verified, 0 violation(s), 0 unproven
+```
+
+⚠ That row is also this sweep's **POSITIVE CONTROL**: an instrument that reports
+"0 moved" proves nothing unless something was capable of moving. 380 unmoved is a
+measurement because the 381st moved.
 
 ---
 
