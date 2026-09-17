@@ -67,9 +67,13 @@ a third signature would mean Group 1's fix moved it again and this text would no
 
 ---
 
-## (C) + (D) The 15 new divergences — all 15 now probed, and they are NOT one class
+## (C) + (D) The 15 new divergences — all 15 probed, and ALL 15 ARE NOW QUARANTINE-READY
 
-12 share one mechanism; **3 do not, and I will not assert an argument for those 3.**
+Two mechanisms, not one. **12** are the owner's S3 fold (C-1). **3** are a different shape
+(`m_rz`×`_rz`) which I initially refused to argue and which **Track D then adjudicated and I verified
+independently from the traces** (C-2). ⚠ The two groups need **different `class:`/`owner:` text** in
+the quarantine — writing one blanket row over all 15 would mis-describe whichever group it did not
+come from.
 
 ### C-1. The 12 cells the owner's S3 ruling already covers
 
