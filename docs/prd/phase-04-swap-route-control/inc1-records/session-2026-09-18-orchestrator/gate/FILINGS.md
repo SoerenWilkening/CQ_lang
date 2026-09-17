@@ -285,3 +285,49 @@ pair and the counts, which WERE stable and would have given the right answer).
 ⚠ Direction: **safe but costly** — a misfiring trigger spends a re-derivation, where a missing one
 would have shipped a stale argument. It is the correct failure direction, and the fix is to make the
 key honest rather than to weaken the trigger.
+
+## G-11 — **NEW, P1-CANDIDATE: Track C's checker fix made 18 rolled-vs-unrolled divergences VISIBLE FOR THE FIRST TIME, and 16 of them are COUNT asymmetries, not positions**
+
+**This is the most consequential thing the group gate found, and it exists only because an
+INSTRUMENT improved.** The `der` / `rder` / `range` / `rrange` cells returned `HARNESS-ERROR` on the
+ORACLE and again at pass 1 — the matrix could not *speak for* them, so **no one has ever adjudicated
+them**. Track C's (T4) loop-exit-discharge rule let them reach a verdict, and the verdict is a
+divergence in 18 of them.
+
+**Measured at the group gate (`07d93784`), all 18, `(_unc, cqrt_free, handle mints)`:**
+
+| cell family | rolled | unrolled | |
+|---|---|---|---|
+| `m_none_der_none{,_bodyread,_postmark,_premark}`, `m_none_der_rz` | `(5,5,6/7)` | `(4,4,5/6)` | **rolled discharges MORE** |
+| `m_rz_der_none` | `(5,5,6)` /24 | `(4,4,5)` /23 | **differ** |
+| **`m_rz_der_rz`** | **`(5,5,6)` /24** | **`(6,6,7)` /33** | ⚠ **rolled discharges FEWER** |
+| `m_none_range_{none,rz}`, `m_rz_range_none` | `(3,3,4)` | `(2,2,3)` | **differ** |
+| **`m_rz_range_rz`** | **`(3,3,4)` /14** | **`(4,4,5)` /25** | ⚠ **rolled discharges FEWER** |
+| `m_none_rder_none_none_{none,addpost,rypost,rypre,rzpost}` | `(5,5,7)` /27–29 | `(5,5,7)` /23–25 | counts equal, **LINES differ** |
+| `m_none_rrange_none_none_{none,rypost}` | `(3,3,5)` | `(3,3,5)` | EQUAL — positional only |
+
+**16 of 18 differ in counts. Two do so in the direction that matters**: the ROLLED side discharging
+fewer rails than its twin is the *deficient-rolled* signature — precisely what bd `1m5p` class A
+looked like before P2 fixed it (`(4,4,N)` against `(6,6,N)`).
+
+**Verified independently, not read off the report.** `gate/probes/cellprobe.py` on `m_rz_der_rz`:
+rolled **24** vs unrolled **33** lines, **MULTISET NOT EQUAL**, the twin emitting an entire extra flag
+group (`h6`) plus bracketed rotations the rolled side never emits.
+
+⚠ **I REFUSED TO QUARANTINE THESE, AND THE REFUSAL IS THE POINT.** A quarantine row says *"this
+divergence is blessed, in exactly this shape"*. Writing one over an unexplained count asymmetry is
+the F-4 error the file exists to catch, and it is the same trap I avoided in pass 1 for the
+`m_rz`×`_rz` cells — which then needed Track D's dedicated analysis to clear, and turned out to be a
+*different mechanism* from the one I would have guessed. **They stay RED and listed.**
+
+**Consequence, stated plainly: the matrix CANNOT go green at this hash**, because `--regenerate`
+refuses while any unquarantined divergence stands — correctly. The red surface is reduced from 55
+cells to these 18.
+
+**What they need:** one measurement pass per family (`der`, `rder`, `range`, `rrange`), asking the
+question `m_rz_der_rz` makes unavoidable — *is the rolled side folding work the twin duplicates, or
+is it DROPPING a discharge?* If the latter, this is a P1 in the same class as bd `s82e`, not a
+quarantine row. ⚠ Note the shape overlap: `m_rz_der_rz` / `m_rz_range_rz` carry the **same `m_rz`×
+`_rz` prefix/suffix combination** as class G, whose answer was *"the uncontrolled `cq_phi` are global
+phases deleted on the rolled side"* — so the benign reading is available and must be **measured, not
+assumed**.
