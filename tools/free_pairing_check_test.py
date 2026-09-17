@@ -2550,6 +2550,140 @@ def _hoist_line(text, needle, before):
 _T4_NON_LIFO = _hoist_line(T4_HOISTED_CHAIN, "sitofp_i32_to_f64_unc",
                            "sqrt_f64_unc")
 
+# ---------------------------------------------------------------------------
+# bd `t4sw` — THE `switch` BACK EDGE (P1, the 2026-09-18 composition Rule-13
+# round). Verbatim from `$SES/review_r13_composition/probes/`; the third is
+# this file's, and the reviewer asked for it BY NAME.
+#
+# THE DEFECT WAS IN THE PARSER, NOT IN THE RULE, which is exactly what the pair
+# proves: two modules one TERMINATOR SPELLING apart, where the `br i1` one was
+# refused correctly all along and the `switch` one VERIFIED the K:1 shape (T4f)
+# exists to refuse. `parse_module` recorded `term = ln.strip()` — the FIRST line
+# of a terminator — so a textual `switch`'s case targets never reached
+# `fn.succ`, `cyclic_blocks()` could not see the back edge, and a block that
+# plainly repeats answered `stream_runs_at_most_once() == True`.
+#
+# ⚠ WHY THE THIRD FIXTURE IS NOT OPTIONAL. The RED goes green under a fix that
+# gives up — "any function containing a `switch` is cyclic everywhere" passes
+# `t4-switch-backedge-k1` and `t4-br-backedge-k1` both, and silently refuses
+# every future module that mixes a switch with a loop-exit discharge.
+# `t4-acyclic-switch-still-verifies` is the fixture that fails under that fix:
+# its `switch` is in the FREE's own block and is NOT a back edge, so the
+# discharge must still VERIFY.
+#
+# ⚠ AND THE LESSON THE ARM-KILL MATRIX EARNED HERE, recorded because it is worth
+# more than the fix: (T4)'s matrix killed eight of nine arms — including (T4f)
+# twice — and every one of those mutants spelled its CFG with `br`. An arm-kill
+# that never varies the SPELLING of the construct it tests measures the rule and
+# not the parser underneath it.
+T4_SWITCH_BACKEDGE_K1 = """
+define i32 @f(i32 %x) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %r = call i32 @cq_template_and_i32_hl(i32 %h, i32 1)
+  br label %body
+
+body:
+  %c = call i32 @cq_template_icmp_eq_i32_hl(i32 %r, i32 0)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %c, i32 %r, i32 0)
+  call void @cqrt_free(i32 %c)
+  call void @cq_template_and_i32_hl_unc(i32 %r, i32 %h, i32 1)
+  call void @cqrt_free(i32 %r)
+  switch i32 %x, label %out [
+    i32 0, label %body
+  ]
+
+out:
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
+# The SAME module with the back edge spelled `br i1`. It was refused correctly
+# before the parser fix and must stay refused after it — the pair is what pins
+# the defect to the terminator spelling.
+T4_BR_BACKEDGE_K1 = """
+define i32 @f(i32 %x) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %r = call i32 @cq_template_and_i32_hl(i32 %h, i32 1)
+  br label %body
+
+body:
+  %c = call i32 @cq_template_icmp_eq_i32_hl(i32 %r, i32 0)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %c, i32 %r, i32 0)
+  call void @cqrt_free(i32 %c)
+  call void @cq_template_and_i32_hl_unc(i32 %r, i32 %h, i32 1)
+  call void @cqrt_free(i32 %r)
+  %p = icmp eq i32 %x, 0
+  br i1 %p, label %body, label %out
+
+out:
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+}
+"""
+
+# THE ANTI-BLANKET CONTROL. A genuine loop-exit discharge whose FREE'S OWN BLOCK
+# ends in a `switch` — multi-target, multi-line, and NOT a back edge. The rail is
+# minted once in the preheader, read per trip, and reversed+freed once at the
+# exit, so (T4) must still VERIFY it. A fix that answered "cyclic" for every
+# block of any function containing a `switch` would refuse this.
+T4_ACYCLIC_SWITCH = """
+define i32 @f(i32 %x) {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %r = call i32 @cq_template_and_i32_hl(i32 %h, i32 1)
+  br label %body
+
+body:
+  %c = call i32 @cq_template_icmp_eq_i32_hl(i32 %r, i32 0)
+  call void @cq_template_icmp_eq_i32_hl_unc(i32 %c, i32 %r, i32 0)
+  call void @cqrt_free(i32 %c)
+  %p = icmp eq i32 %x, 0
+  br i1 %p, label %body, label %exit
+
+exit:
+  call void @cq_template_and_i32_hl_unc(i32 %r, i32 %h, i32 1)
+  call void @cqrt_free(i32 %r)
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  switch i32 %x, label %out [
+    i32 0, label %alt
+  ]
+
+alt:
+  ret i32 %m
+
+out:
+  ret i32 %m
+}
+"""
+
+# An `invoke` is a CALL and a TERMINATOR at once and this file models neither
+# half, so it is a LOUD REFUSAL rather than a half-parse — the same reasoning
+# one layer out from `Unclassified`. Verbatim shape from
+# `ir-pass/test/spec_reject_eh.ll`, which the PASS declines (so no lowered
+# module reaches the checker with one).
+T4_INVOKE_REFUSED = """
+define i32 @f(i32 %x) personality ptr @__gxx_personality_v0 {
+entry:
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  invoke void @may_throw() to label %ok unwind label %lpad
+
+ok:
+  %m = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 %m
+
+lpad:
+  %l = landingpad { ptr, i32 } cleanup
+  resume { ptr, i32 } %l
+}
+"""
+
+
 # (name, module, expected finding code, a fragment of the refusal text that
 #  identifies WHICH arm refused it — or None when the shape is refused BEFORE
 #  (T4) is ever consulted, which is itself a fact worth pinning.)
@@ -2606,6 +2740,13 @@ T4_MUTANTS = [
     # (T4a) — an ALLOC rail in the same shape. A deliberate over-decline.
     ("t4-alloc-rail-cross-stream-bracket", T4_ALLOC_RAIL,
      "U3-extern-rail", "not a reversible out-of-place template mint"),
+    # (T4f) through a `switch` BACK EDGE — bd `t4sw`, the P1. Same shape as
+    # `t4-k1-reversal-and-free-inside-the-loop`, one terminator spelling apart.
+    ("t4-switch-backedge-k1", T4_SWITCH_BACKEDGE_K1,
+     "U3-extern-rail", "can execute more than once"),
+    # Its `br i1` twin: refused correctly BEFORE the parser fix and after it.
+    ("t4-br-backedge-k1", T4_BR_BACKEDGE_K1,
+     "U3-extern-rail", "can execute more than once"),
     # (T4g) again, and this one is a REAL MISCOMPILE rather than a structural
     # near-miss: the chain is discharged FIFO instead of LIFO, so the middle
     # rail's reversal reads a `%h_cast` that an earlier `_unc` already zeroed and
@@ -2647,6 +2788,11 @@ T4_POSITIVES = [
     ("t4-diagonal-rz-on-the-rail-inside-the-loop",
      insert_after(T4_RANGE_SLICE, "cqrt_rz_i1",
                   "  call void @cqrt_rz_i32(i32 %h_op, double 5.000000e-01)"), 1),
+    # bd `t4sw`, THE ANTI-BLANKET CONTROL. The free's own block ends in a
+    # multi-line `switch` that is NOT a back edge, so the discharge must still
+    # VERIFY. A "any function with a switch is cyclic" fix passes both mutants
+    # above and turns THIS red — which is the whole reason it exists.
+    ("t4-acyclic-switch-still-verifies", T4_ACYCLIC_SWITCH, 1),
 ]
 
 # The two SHIPPED lowerings also go into POSITIVE, which is what puts them
@@ -2655,6 +2801,13 @@ T4_POSITIVES = [
 # the REVERSAL, the only two instructions the rule reads for content.
 POSITIVE.append(("t4-range-cell-rolled", T4_RANGE_SLICE))
 POSITIVE.append(("t4-hoisted-chain-rolled", T4_HOISTED_CHAIN))
+
+
+# A REFUSAL, not a finding: the model cannot decide a module containing one.
+INVOKE_STOP_MUTANTS = [
+    ("t4-invoke-is-a-call-and-a-terminator", T4_INVOKE_REFUSED,
+     "P1-invoke-is-a-call-and-a-terminator"),
+]
 
 
 UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
@@ -2827,7 +2980,7 @@ def main():
                          + (", ".join(codes) if codes else "NOTHING (survived)"))
         elif verbose:
             print(f"  ok  memory    {name:38s} -> {want}")
-    for name, text, want in MEM_STOP_MUTANTS:
+    for name, text, want in MEM_STOP_MUTANTS + INVOKE_STOP_MUTANTS:
         n_mem += 1
         got = findings(text)
         codes = [x.code for x in got]

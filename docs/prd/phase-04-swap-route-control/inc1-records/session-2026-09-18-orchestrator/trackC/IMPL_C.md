@@ -1,8 +1,8 @@
 # Track C — (T4), the LOOP-EXIT DISCHARGE for `tools/free_pairing_check.py`
 
 **Branch** `freepair-loop-exit-discharge`, forked from the gate tip `10e95a52`.
-**Tip** `43039a28`. **Files touched: two, and only two** —
-`tools/free_pairing_check.py` (+390) and `tools/free_pairing_check_test.py` (+416).
+**Tip** `<t4sw>`. **Files touched: two, and only two** —
+`tools/free_pairing_check.py` and `tools/free_pairing_check_test.py`.
 The pass source, `tools/loop_twin_matrix*`, every fixture, every golden and
 `tests/e2e/CMakeLists.txt` are **untouched** (`git diff --stat` at the commit:
 `2 files changed, 798 insertions(+), 8 deletions(-)`).
@@ -218,9 +218,125 @@ refused by (T4c) whichever loop carries it.
 
 ---
 
+## 3a. bd `t4sw` — THE P1 THE COMPOSITION ROUND FOUND, AND IT WAS IN THE PARSER
+
+An independent Rule-13 composition round (`$SES/review_r13_composition/REVIEW.md`
+F-1) filed a **P1 against (T4)**: it **VERIFIED the exact K:1 stream (T4f) exists
+to refuse**, when the loop's back edge is a `switch` case.
+
+**Reproduced on this branch before any fix** (`probes/t4_switch_backedge_k1.ll`):
+`2 verified, 0 violation(s), 0 unproven`, **rc=0** — while the byte-identical
+`br i1` control (`t4_br_backedge_k1_control.ll`) was refused correctly with
+(T4f)'s own message, rc=1.
+
+**THE DEFECT WAS IN THE PARSER, NOT IN THE RULE**, and the pair is what proves
+it — two modules one TERMINATOR SPELLING apart. `parse_module` recorded
+`term = ln.strip()`, the **FIRST line** of a terminator, and `TERM_TARGETS_RE`
+then matched `label %x` in that one line. LLVM prints a `switch`'s case targets
+on the FOLLOWING lines, so `fn.succ` held only the DEFAULT target,
+`cyclic_blocks()` could not see the back edge, and `stream_runs_at_most_once()`
+answered `True` for a block that plainly repeats. `fn.preds` was incomplete the
+same way, and `build_streams` merges blocks on a single-predecessor test.
+
+Confirmed on a SHIPPED fixture, `lowering_classical_mux_phi_onereg_switch_nway.ll`:
+before, `succ['%entry'] = ['%merge']` and `preds['%arm1'] = preds['%arm2'] = []`;
+after, `succ['%entry'] = ['%merge','%arm1','%arm2']` and `preds['%arm1'] = ['%entry']`.
+
+**THE FIX is the one the reviewer preferred**, not the conservative one.
+`read_terminator` accumulates terminator lines by **bracket balance** — exactly
+the set LLVM wraps (`switch`, `indirectbr`); every other terminator is complete
+on its first line, leaves `depth == 0`, and is returned unchanged. The rejected
+alternative — *"any function containing a `switch` answers cyclic everywhere"* —
+passes both K:1 mutants and silently refuses every future module that mixes a
+switch with a loop-exit discharge, which is why `t4-acyclic-switch-still-verifies`
+exists and why it is in the arm-kill matrix in the ANTI direction.
+
+**`invoke` is a LOUD REFUSAL rather than a half-parse.** It is a call AND a
+terminator and this file models **neither** half — `CALL_RE` requires `call`, so
+an `invoke`d `cqrt_*` never enters the effect model, and `TERM_START_RE` does not
+list it, so a block whose successors are unknown would read as ACYCLIC, the same
+(T4f) defeat through a second door. New refusal code
+`P1-invoke-is-a-call-and-a-terminator`. MEASURED: the only two `invoke`s in the
+tree are in `lowering_reject_intrinsic_invoke_phi.ll` and `spec_reject_eh.ll`,
+**both of which the PASS declines**, so no lowered module reaches the checker with
+one and this costs nothing today.
+
+**MEASURED AFTER THE FIX:**
+
+| module | before | after |
+|---|---|---|
+| `t4_switch_backedge_k1.ll` (RED) | `2 verified, 0 unproven`, **rc=0** | **`1 verified, 1 unproven`, rc=1**, naming (T4f) |
+| `t4_br_backedge_k1_control.ll` (GREEN control) | `1 verified, 1 unproven`, rc=1 | **unchanged** |
+
+**Corpus, targeted and the targeting is the argument.** The fix can only change a
+module whose LOWERED IR contains a multi-line terminator or an `invoke`; every
+other module parses byte-identically, so a full sweep would be measuring
+unchanged inputs. Both populations were enumerated and A/B'd in full against the
+pre-fix checker (`43039a28`):
+
+* **`ir-pass/test`: 2095 fixtures, 1044 accepted by `cq-opt`, exactly 1 with the
+  construct in lowered IR** (`lowering_classical_mux_phi_onereg_switch_nway` —
+  the fixture the reviewer named), **0 MOVED.** Its CFG is now correct; its
+  verdict cannot move because it has 0 free sites.
+* **e2e: 25 `.c` sources mention `switch`, exactly 1 reaches the construct in
+  lowered IR** (`slice_classical_switch_gate`), **0 MOVED.**
+
+So the P1 is closed with **zero** shipped verdict movement — it was latent, as
+the filing says, and it is closed on the instrument rather than on the corpus.
+
+⚠ **THE LESSON, and it is worth more than the fix.** (T4)'s arm-kill matrix
+killed eight of nine arms — **including (T4f) twice** — and every one of those
+mutants spelled its CFG with `br`. *An arm-kill that never varies the SPELLING of
+the construct it tests measures the rule and not the parser underneath it.*
+(T4f) now has **three** killers, two of them `switch`-spelled.
+
+---
+
+## 3b. RESIDUALS — stated, not fixed
+
+### F-2 (P3, filed by the composition Rule-13 round) — (T4g) is STREAM-LOCAL
+
+`(T4g)` accepts a write to a forward operand only when
+`wsid == self.stream_id and wpos > rev_pos` — the **free's own** stream. A
+trailing gate that `-O1` places in a **SUCCESSOR** block is therefore
+*"neither before the mint in the mint's own stream nor after the reversal in
+this one"*, and a discharge that is genuinely proven reports UNPROVEN.
+
+**Probes:** `$SES/review_r13_composition/probes/x1_multiexit_hoisted_cond_then_ry.c`
+and `x2_twoexit_goto.c`. Both report `2 template rail mint(s) of which 0 left
+dirty` **and** `1 verified, 0 violation(s), 1 unproven`, rc=1, naming
+`cqrt_ry_i32(%h, 0.9)` — a gate in a block that is a successor of the free's and
+therefore strictly after the reversal on every path. `dD1`, the same circuit with
+that gate in the reversal's own block, reports `0 unproven`, rc=0.
+
+**Direction: SAFE** — UNPROVEN, never VERIFIED. **Deliberately NOT widened
+here**, on the coordinator's instruction and because widening it to *dominated
+successors* is a real increment with its own Rule-13 obligation: it needs a
+dominance/post-dominance relation this file does not have, which is the same
+machinery bd `j31l` names. I reproduced it independently while building (T4d)'s
+control — the first draft of `t4-one-reversal-one-free` put the `cqrt_measure` of
+`%h` in a sibling successor block and was refused at (T4g); moving it into the
+free's own block is what made the control verify.
+
+**Cost, stated because it is the half that matters:** an e2e slice of the
+`x1`/`x2` shape could not be registered without `--allow-unproven` — the flag
+this track has just finished driving from 5 back to 4. So the exception is gone
+for the shipped SLICE and not for the SHAPE.
+
+### The parser residual that came with the bd `t4sw` fix
+
+`read_terminator` stops accumulating at `}` or at a label rather than running to
+the end of the module. On the textual grammar `llvm-as` accepts that boundary is
+never reached; on a malformed or truncated block it truncates the terminator,
+which loses targets, which makes `cyclic_blocks()` **under**-report — the
+over-accept direction. It is refused-by-truncation rather than diagnosed, and it
+is written at the function rather than assumed.
+
+---
+
 ## 4. L10 — the mutant table, with its MISSED count
 
-14 named mutants + 4 positives = **18 T4 cases**; proof-targeted sweep
+17 named mutants + 5 positives = **21 T4 cases**, plus 1 refusal; proof-targeted sweep
 **315 → 329** (blanking (T4)'s own witness lines — its mint and its reversal —
 is required to break the proof).
 

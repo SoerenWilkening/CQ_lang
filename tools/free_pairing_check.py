@@ -843,6 +843,58 @@ CALL_RE = re.compile(
 TERM_BR_UNCOND_RE = re.compile(r"^\s*br\s+label\s+%([-\w.$]+)\s*$")
 TERM_TARGETS_RE = re.compile(r"label\s+%([-\w.$]+)")
 TERM_START_RE = re.compile(r"^\s*(br|switch|ret|unreachable|indirectbr|resume)\b")
+# An `invoke` is a CALL and a TERMINATOR at once, and this file models neither
+# half of it — see the loud refusal in `parse_module`.
+INVOKE_RE = re.compile(r"^\s*(?:%[-\w.$]+\s*=\s*)?invoke\b")
+
+
+def read_terminator(lines, i):
+    """(the WHOLE terminator's text, index of the first line after it).
+
+    WHY THIS IS NOT `lines[i].strip()` (bd `t4sw`, P1, 2026-09-18)
+    =============================================================
+    LLVM prints a `switch` across several lines:
+
+        switch i32 %x, label %out [
+          i32 0, label %body
+        ]
+
+    so the first line names only the DEFAULT successor. `parse_module` used to
+    record exactly that line, and `TERM_TARGETS_RE` then found one target, so
+    `fn.succ[%block]` lost every case edge and `fn.preds` lost the matching
+    incoming edges. The independent Rule-13 composition round turned that into a
+    VERIFY of the one shape rule (T4f) exists to refuse — a rail minted ONCE
+    outside a loop and reversed-and-freed PER TRIP inside it, with the loop's
+    back edge spelled as a `switch` case (`t4-switch-backedge-k1`). The
+    `br i1`-spelled twin of the same module was refused correctly, which is what
+    makes it a parser defect rather than a rule defect.
+
+    THE RULE HERE IS BRACKET BALANCE, which is exactly the set of terminators
+    LLVM wraps: `switch` and `indirectbr` are the two that open a `[ ... ]`
+    operand list, and every other terminator is complete on its first line and
+    leaves `depth == 0` so this returns it unchanged. A bracketed TYPE on the
+    line (`ret [4 x i32] %v`) balances on that same line and is likewise a no-op.
+
+    It stops at `}` or at a label rather than running to the end of the module,
+    so a malformed or truncated block cannot swallow the rest of the function —
+    the safe direction, since a terminator that loses targets can only make
+    `cyclic_blocks()` under-report, which is the direction that over-accepts.
+    ⚠ That is a real residual and it is stated rather than assumed: this reads
+    the textual grammar `llvm-as` accepts, and an input that is not that is
+    refused-by-truncation, not diagnosed.
+    """
+    first = lines[i]
+    parts = [first.strip()]
+    depth = first.count("[") - first.count("]")
+    j = i + 1
+    while depth > 0 and j < len(lines):
+        nxt = lines[j]
+        if nxt.startswith("}") or LABEL_RE.match(nxt):
+            break
+        parts.append(nxt.strip())
+        depth += nxt.count("[") - nxt.count("]")
+        j += 1
+    return " ".join(parts), j
 
 
 def split_args(s):
@@ -1055,8 +1107,44 @@ def parse_module(text):
                 cur_calls.append(Call(i + 1, cm.group(1),
                                       cm.group(2).strip('"'),
                                       split_args(ln[open_at + 1:j]), ln.strip()))
+            elif INVOKE_RE.match(ln):
+                # bd `t4sw` F-1's neighbour, and it is refused rather than
+                # half-parsed. An `invoke` is BOTH a call and a terminator, and
+                # this file models NEITHER half of it: `CALL_RE` requires
+                # `call`, so an `invoke`d `cqrt_*` never enters the effect model
+                # at all, and `TERM_START_RE` does not list it, so its `to` /
+                # `unwind` edges never enter `fn.succ` — which would make
+                # `cyclic_blocks()` answer "acyclic" for a block that plainly
+                # branches, the exact (T4f) defeat F-1 found through `switch`.
+                # Two unsound halves, so the model cannot render a verdict about
+                # the module (the `Unclassified` discipline, one layer out).
+                # MEASURED: the only two `invoke`s in the tree are in
+                # `lowering_reject_intrinsic_invoke_phi.ll` and
+                # `spec_reject_eh.ll`, BOTH of which the pass declines, so no
+                # lowered module reaches here with one and this costs nothing
+                # today.
+                raise Undecidable(
+                    "P1-invoke-is-a-call-and-a-terminator", fn.name, i + 1,
+                    f"`{ln.strip()}` is an `invoke`. This file models calls via "
+                    f"`CALL_RE` (which requires `call`) and successors via the "
+                    f"terminator text, and an `invoke` is BOTH — so its callee's "
+                    f"read/write effects and its `to`/`unwind` edges are both "
+                    f"invisible here. A block whose successors are unknown would "
+                    f"be read as ACYCLIC by `cyclic_blocks()`, which is what "
+                    f"rule (T4f) rests on. Model the invoke before trusting any "
+                    f"verdict from this file")
             elif TERM_START_RE.match(ln):
-                term = ln.strip()
+                # ⚠ MULTI-LINE. Do NOT go back to `term = ln.strip()`: LLVM
+                # prints a `switch`'s case targets on the lines AFTER its first,
+                # so the first line alone names only the DEFAULT successor. That
+                # was a P1 (bd `t4sw`, the 2026-09-18 composition Rule-13 round):
+                # `fn.succ` lost every case edge, `cyclic_blocks()` could not see
+                # a `switch` BACK EDGE, and (T4f) — the conjunct whose whole job
+                # is to refuse the K:1 "minted once, reversed-and-freed per trip"
+                # shape — VERIFIED it. `fn.preds` was incomplete the same way,
+                # and `build_streams` merges blocks on a single-predecessor test.
+                term, i = read_terminator(lines, i)
+                continue
             i += 1
         fn.blocks.append((cur_label, cur_calls, term))
         for label, _, t in fn.blocks:
