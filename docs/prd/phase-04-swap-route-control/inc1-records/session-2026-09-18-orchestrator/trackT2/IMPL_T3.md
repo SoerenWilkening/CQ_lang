@@ -405,6 +405,36 @@ returns **true**, because the commit that would make it false has been refused b
 
 ---
 
+## §7a — THE GENERALISABLE FINDING: **THREE artefacts predicted this flip and ALL THREE named the wrong cause**
+
+Not a defect in anything, and the most transferable thing this increment produced.
+
+The 2026-09-15 work left three separate written predictions that a hoisted template rail would one
+day gain a `_unc`, and each attributed that future flip to **widening the ROOT ADMISSION**:
+
+* `ir-pass/test/loop_pairing_reject_root_hoisted_template_data.ll` — *"IF A `_unc` OR A `cqrt_free`
+  EVER APPEARS IN THIS FILE, clause (ii-c) has over-widened and the multiplicity miscompile above is
+  LIVE"*, with an L8 trigger naming bd `tu9q`'s root-mint half;
+* `ir-pass/test/control_phase_kickback_inloop_reject_hoisted_temp.ll` — *"These are the lines that
+  FIRE if `invariantRegisterRoots` is ever widened to admit a hoisted template rail"*;
+* `trackT/probes/adv/b1_mixed_nonlive.c` — *"If a `_unc` appears here, (ii-c) over-widened and the
+  K-adjoints-against-one-forward-gate multiplicity miscompile is live."*
+
+**All three fired. All three were wrong about the mechanism, and the third is wrong in the
+strongest possible way**: `invariantRegisterRoots` is COMPLETELY UNCHANGED by the landed prefix, the
+loop bodies are UNMARKED, and the multiplicity is **1 : 1** (one mint in the preheader, one adjoint
+at the loop exit) — the exact opposite of the K : 1 it predicts. The flip is a **PLACEMENT**.
+
+**The lesson is not "write fewer triggers"** — L8 says triggers work, and these three correctly
+predicted the VERDICT years of reviews would otherwise have had to rediscover. It is this: **a
+retirement trigger predicts a verdict, and a verdict has more than one cause.** When one fires,
+re-derive the mechanism from the binary instead of reading the cause off the trigger — otherwise the
+next agent converts a fixture with a confident and false explanation attached, and that explanation
+outlives the measurement. Two of the three are corrected in place on this branch; the third is a
+probe in another session's directory and is recorded here instead.
+
+---
+
 ## §8 — FOR THE INDEPENDENT REVIEWER: the three most dangerous things, in order
 
 1. **`useCompleteBeforeDischarge`'s case split (F-R1-3).** The relaxation is sound *because* every
