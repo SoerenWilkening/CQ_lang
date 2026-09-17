@@ -314,8 +314,15 @@ reported **load averages 639 / 692** while the sweep ran. At that rate the full 
    cascade). **Zero `A→D`, zero `D→A`, zero `A→A` md5 changes.** That is the predicted population and
    nothing else. ⚠ The file itself was deleted when the sweep was restarted; the row count and the
    mover list above are the run's own output, quoted, not reconstructed.
-3. The parallel re-run (fixtures first, deliberately — see `probes/corpus_par.sh`'s note) was left
-   running at hand-off; its partial output is `probes/corpus_677472eb.txt` with its row count.
+3. **The parallel re-run (fixtures first, deliberately — see `probes/corpus_par.sh`'s note) was
+   STOPPED at hand-off and its partial output committed as
+   `probes/corpus_677472eb.partial.txt`: 1744 of 6446 rows, ALL of them `ir-pass/test/*.ll`, i.e.
+   1744 of the 2087 shipped fixtures (84%). TWO movers, and BOTH are this track's own NEW fixtures**
+   (`control_swap_reject_value_bool_loop_hoisted_clobber.ll` → `value-arm swap-route`,
+   `control_swap_reject_value_inloop_backedge_clobber.ll` → `control flow inside a loop body`) —
+   files that did not exist on the oracle to flip. **ZERO PRE-EXISTING FIXTURES MOVED**, 0 `A→D`,
+   0 `D→A`, 0 `A→A` md5 changes; 15 rows of the sample carry the §3c string. It was stopped rather
+   than left running unattended, because a sweep nobody owns burns a box the group gate needs.
 
 **The definitive sweep is the GROUP GATE's** (PROTOCOL.md's matrix: the merge-and-gate agent runs
 ONE corpus sweep on the MERGED binary, with movers attributed per track BY STRING). This track's
