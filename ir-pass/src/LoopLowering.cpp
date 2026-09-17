@@ -5096,6 +5096,25 @@ void emitDeferredDephasingDecline(Module &M) {
       DiagnosticInfoUnsupported(*F, kMsgLoopLeakDephases, S.Loc));
 }
 
+// bd `test_C_libtooling-tu9q` — THE ONE SPELLING of the loop-exit discharge
+// point. Contract, both customers and the GRANTING-direction note in LoopPlan.h.
+// Pure analysis; mutates nothing.
+BasicBlock *loopExitDischargePoint(const Loop *L) {
+  if (!L)
+    return nullptr;
+  // ⚠ `getUniqueExitBlock`, NOT `getExitBlock`/`getExitingBlock`, and the
+  // difference decides a unitary. The question is *"is there ONE place the loop
+  // is finished at"*, which is about EXIT blocks (the destinations); an
+  // EXITING-block query would answer about the sources and would happily return
+  // a single block for a loop that lands in two different places.
+  BasicBlock *Exit = const_cast<Loop *>(L)->getUniqueExitBlock();
+  if (!Exit)
+    return nullptr;  // multi-exit — today's behaviour: the rail LEAKS (Rule 6).
+  // A landing pad or a block that is all-φ has no insertion point; the caller is
+  // promised it never has to re-check, so the check lives here.
+  return Exit->getFirstInsertionPt() == Exit->end() ? nullptr : Exit;
+}
+
 // bd `test_C_libtooling-wx8g` — R7-loop CLAUSE (c3). Contract in LoopPlan.h.
 // Pure analysis; mutates nothing (Rule 9). `L->blocks()` deliberately INCLUDES
 // strictly-deeper subloop blocks — a subloop's temp escaping `L` is the same

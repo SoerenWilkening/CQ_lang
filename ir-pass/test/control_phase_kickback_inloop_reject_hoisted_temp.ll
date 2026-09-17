@@ -58,8 +58,10 @@
 ; RUN: %filecheck %s --check-prefix=FCNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=ACNT < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=RYCNT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=EXITD < %t.cqd0.ll
 
-; The region lowers; the condition chain's rails do NOT discharge.
+; The region lowers; the PER-TRIP condition chain's rails do NOT discharge (the
+; HOISTED `mul` rail does, at the loop exit — see the EXITD prefix below).
 ; CHECK: %[[P:.*]] = call i32 @cq_template_mul_i32_hl(i32 %h, i32 3)
 ; CHECK: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %[[P]], i32 %{{.*}})
 ; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
@@ -76,12 +78,47 @@
 ; RYCNT-COUNT-1: call void @cqrt_ry_
 ; RYCNT-NOT: call void @cqrt_ry_
 
-; WHOLE-FILE PURE-NEGATIVE: no discharge of the derived chain anywhere. These are
-; the lines that FIRE if `invariantRegisterRoots` is ever widened to admit a
-; hoisted template rail — which is precisely the shipped comment's warning, now
-; with a test behind it.
+; ── CONVERTED IN PLACE, 2026-09-18 (bd `test_C_libtooling-tu9q`, piece P2) ────
+;
+; ⚠⚠ **THIS BLOCK USED TO BE A WHOLE-FILE PURE NEGATIVE CLAIMING "no discharge of
+; the derived chain anywhere", AND IT NAMED THE WRONG MECHANISM.** Verbatim, so
+; the correction is legible: *"These are the lines that FIRE if
+; `invariantRegisterRoots` is ever widened to admit a hoisted template rail —
+; which is precisely the shipped comment's warning, now with a test behind it."*
+; It listed `@cq_template_and_i32_hl_unc` and `@cq_template_mul_i32_hl_unc`
+; together, as one property.
+;
+; THEY ARE TWO PROPERTIES AND ONLY ONE OF THEM MOVED. The `mul` rail is minted in
+; the PREHEADER; the `and` rail is minted PER TRIP. bd `tu9q`'s P2 gives the first
+; one a loop-EXIT anchor — with `invariantRegisterRoots` COMPLETELY UNCHANGED and
+; the loop body UNMARKED, so the prediction above is falsified twice over: the
+; root admission did not widen, and the flip is a placement. The `and` rail still
+; leaks, because an in-body `At` needs the marking that P0/P3 supply.
+;
+; THE FLIP IS CORRECT, and the argument is on the operands rather than by analogy:
+; `%h_op` (= `%h * 3`) is minted once, its only in-loop users READ it (the per-trip
+; `and`), nothing writes `%h` between the mint and the loop exit, so
+; `cq_template_mul_i32_hl_unc(%h_op, %h, 3)` at the exit returns `%h_op` to |0⟩ on
+; every branch and its `cqrt_free` is a proven-|0⟩ one (Rule 6). The adjoint runs
+; ONCE against ONE forward execution — `multiplicityAgrees` is asked and both
+; endpoints key to `nullptr`, since neither the preheader nor the exit is marked.
+;
+; ⚠ L8 RETIREMENT TRIGGER, RE-AIMED: the `and` negative below is what fires when
+; the P0/P3 half lands, and THEN the cause really will be the root admission
+; (clause (ii-d)) plus the component partition. Re-derive against the
+; hand-unrolled twin's MULTISET at that point (owner ruling S3: byte identity is
+; the instrument, not the claim). The four structural negatives are UNMOVED and
+; keep their original meaning.
+;
+; THE HOISTED RAIL NOW DISCHARGES AT THE LOOP EXIT — in its own prefix.
+; EXITD: call void @cq_template_mul_i32_hl_unc(i32 %h_op, i32 %h, i32 3)
+; EXITD-NEXT: call void @cqrt_free(i32 %h_op)
+; EXITD-NEXT: %m = call i32 @cqrt_measure_i32(i32 %h)
+;
+; WHOLE-FILE PURE-NEGATIVE, narrowed to the property that still holds: the
+; PER-TRIP chain does not discharge, and no route/controlled/phase machinery
+; appears anywhere.
 ; NOROUTE-NOT: @cq_template_and_i32_hl_unc
-; NOROUTE-NOT: @cq_template_mul_i32_hl_unc
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: _controlled
 ; NOROUTE-NOT: @cq_phi
@@ -103,7 +140,14 @@
 ; XCNT-NOT: call void @cqrt_x(i32
 
 ; The `cqrt_free` census. An EXTRA free is a hidden measurement (Rule 6).
-; FCNT-COUNT-1: call void @cqrt_free(
+; ⚠ **THE COUNT MOVED 1 → 2 ON 2026-09-18 (bd `tu9q` P2), AND THE SECOND FREE IS
+; NOT IN THE BODY.** Free #1 is the per-trip condition FLAG (`%h_cmp`, minted and
+; stripped inside the loop); free #2 is the HOISTED `mul` rail at the LOOP EXIT,
+; which the `EXITD` prefix above pins positionally. The census stays a census — it
+; is still the line that catches an injected free — but a reader must not read
+; `COUNT-2` as "two frees per trip". Re-derive it, do not relax it, if P0/P3 adds
+; the per-trip chain's own pair.
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
 

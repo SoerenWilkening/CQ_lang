@@ -17,6 +17,8 @@
 #include "Uncomputation.h"
 
 #include "ChainWalk.h"          // isTerminalHandle
+#include "LoopPlan.h"           // loopExitDischargePoint (bd tu9q P2 — the ONE
+                                // spelling, shared with clause (ii-d))
 #include "DagTraversal.h"       // recoverDataDag / DataDag
 #include "EmitInverse.h"        // emitInverseCall
 #include "FreePoint.h"          // computeFreePoint
@@ -287,6 +289,73 @@ bool multiplicityAgrees(const Instruction *G, const Instruction *At,
 // is the INTENDED reading — `R` re-executing is exactly what closes the previous
 // activation — and `At` is the point whose next activation we are bounding, which
 // is the configuration the header calls sound.
+// ── P2, THE LOOP-EXIT ANCHOR (bd `test_C_libtooling-tu9q`; closes bd
+//    `test_C_libtooling-1m5p` and the `a1_apost` over-accept) ─────────────────
+//
+// WHERE SHOULD A CONSUMER ANCHOR THE DISCHARGE OF A RAIL THAT WAS MINTED OUTSIDE
+// THE CYCLE THE CONSUMER RUNS IN? Not at its own `getNextNode()`: that point
+// REPEATS while the forward gate does not, so the adjoint would run K times
+// against ONE forward execution — a wrong unitary, not a leak.
+//
+// ⚠ AND THAT IS NOT WHAT SHIPPED — WHAT SHIPPED IS A SILENT LEAK, which is why
+// this had no failing test. The convergence loop below asks
+// `provablyBeforePerActivation(U, At, R)` with the rail's own MINT as the
+// barrier; for a PREHEADER-minted rail with an in-body consumer and an in-body
+// `At`, every path `At ⇝ U` goes round the back edge and never re-executes the
+// preheader, so the barrier walk finds a barrier-free path, the helper returns
+// false and the rail is DROPPED from `Owned` — it leaks forever. MEASURED on the
+// ORACLE `9bd01598d574b344` (`trackT2/probes/m_none_oder_none_none_none.c`, bd
+// `1m5p`'s own quarantined class-A cell): the LICM-hoisted `sitofp → fadd → sqrt`
+// chain has `h2`/`h3` discharged IN THE PREHEADER and `h4`, the `sqrt` rail the
+// body's condition reads, never discharged at all — `h3` is freed while `h4`,
+// derived from it, is still live, which is the LIFO inversion bd `1m5p` records.
+//
+// THE ANSWER IS THE POINT AT WHICH THE CONSUMER IS FINISHED FOR GOOD: the exit of
+// the OUTERMOST loop enclosing the consumer that does NOT contain the mint.
+//
+// ⚠ **OUTERMOST, AND `Loop::contains`, AND BOTH CHOICES ARE LOAD-BEARING IN
+// OPPOSITE DIRECTIONS** (`CLAUDE.md` L2; bd `test_C_libtooling-emkg` is the
+// filing that exists because one predicate answered another's question).
+//   * OUTERMOST, not innermost: a rail minted outside a NEST and read in its
+//     innermost body must be discharged after the WHOLE nest. Anchoring at the
+//     inner exit would put a once-only discharge on a point that repeats once per
+//     OUTER trip — §2.9's `blockCanRepeat(At->getParent())` would then refuse it,
+//     which is the right verdict reached as a LEAK instead of as the right
+//     placement.
+//   * `Loop::contains`, which DOES include subloops, because the question is *"is
+//     the mint inside this cycle AT ALL"*. The OTHER walk this increment adds —
+//     `markedHeaderOf` — asks *"how often does this block run"* and therefore uses
+//     `LI.getLoopFor`, the INNERMOST. Two questions, two quantifiers, and this
+//     comment is at one site while the other is at the other.
+//
+// NOTHING DOWNSTREAM IS RELAXED. The placement simply gets a better CANDIDATE and
+// every existing proof is re-run at it: the convergence test, §4's per-gate
+// dominance and post-dominance, §2.9's at-most-once, P1's multiplicity and clause
+// (d)'s borrowed-parent scan all run unchanged on the new `At`. That is the whole
+// safety argument, and it is why this is a dozen lines.
+//
+// ⚠ A NULL RESULT IS A LEAK, NOT A DIAGNOSTIC. `loopExitDischargePoint` returns
+// null for a MULTI-EXIT loop, and the caller then abandons the component exactly
+// as today (`loop_pairing_accept_break_latch_folded.ll` and `tu9q.1`'s
+// `r1_break_loop` are unmoved BY CONSTRUCTION, and are owed a fixture that says
+// so). Inventing a multi-exit discharge point is a separate capability with its
+// own post-dominance obligation.
+Instruction *anchorForConsumer(Instruction *U, const Instruction *R,
+                               LoopInfo &LI) {
+  const Loop *LOut = nullptr;
+  for (const Loop *L = LI.getLoopFor(U->getParent()); L; L = L->getParentLoop())
+    if (!L->contains(R->getParent()))
+      LOut = L;  // keep walking: the LAST one that qualifies is the outermost.
+  if (!LOut)
+    return U->getNextNode();  // the shipped anchor, byte-inert for every module
+                              // whose consumer shares a cycle with its mint (and
+                              // for every acyclic one).
+  BasicBlock *Exit = loopExitDischargePoint(LOut);
+  if (!Exit)
+    return nullptr;
+  return &*Exit->getFirstInsertionPt();
+}
+
 bool useCompleteBeforeDischarge(const Instruction *U, const Instruction *At,
                                 const Instruction *R, const DominatorTree &DT,
                                 LoopInfo &LI, const TaintSet &taint) {
@@ -1008,8 +1077,15 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
     for (CallInst *R : Comp) {
       if (!Owned.count(R))
         continue;
-      for (User *U : R->users())
-        Anchors.push_back(cast<Instruction>(U)->getNextNode());
+      for (User *U : R->users()) {
+        // bd `test_C_libtooling-tu9q` P2 — see `anchorForConsumer`. For a
+        // consumer that shares a cycle with the mint (and for every acyclic
+        // module) this IS `U->getNextNode()`, expression for expression.
+        Instruction *A = anchorForConsumer(cast<Instruction>(U), R, LI);
+        if (!A)
+          return false;  // no usable once-per-mint point — LEAK (Rule 6).
+        Anchors.push_back(A);
+      }
     }
     if (Anchors.empty())
       return false;

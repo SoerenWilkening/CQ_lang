@@ -39,9 +39,48 @@
 ; `tu9q` is built, this file becomes an ACCEPT that DISCHARGES — re-derive its
 ; stream then; do not delete it.
 ;
+; ── the historical header ENDS here; what follows is the CONVERSION ───────────
+;
+; ⚠⚠ **THE TRIGGER ABOVE FIRED ON 2026-09-18 AND THE FILE IS CONVERTED IN PLACE**
+; (bd `test_C_libtooling-tu9q`, the hoisted-template half, piece P2). It is NOT
+; renamed: a `git mv`'d fixture can be resurrected by a merge, leaving one module
+; under two names with contradictory verdicts (`CLAUDE.md` L8, bd `gahu`).
+;
+; ⚠ **AND THE TRIGGER NAMED THE WRONG MECHANISM, WHICH IS THE PART WORTH
+; CARRYING.** The header above predicts the flip comes from widening the ROOT
+; admission (clause (ii-c)/(ii-d)). It does not. The `mul` rail below discharges
+; with clause (ii) UNCHANGED and the loop body UNMARKED, because the flip is a
+; PLACEMENT: `Uncomputation::anchorForConsumer` now anchors a rail minted OUTSIDE
+; the cycle its consumer runs in at that cycle's unique EXIT, instead of at the
+; consumer's own `getNextNode()` — a point that repeats while the forward gate
+; does not. Nothing marks anything, and the `At` at the exit does not repeat, so
+; §2.9 passes without the iteration-local exception. **A retirement trigger can
+; be right about the verdict and wrong about the cause; re-derive, do not assume.**
+;
+; WHAT IS PINNED NOW, and the distinction is the whole file: the HOISTED rail
+; (`%h_op`, minted once in the preheader) is discharged ONCE at the loop exit,
+; while the PER-TRIP rails (`lshr`, `and`) are STILL LEAKED — the body is not
+; marked, so `planInteriorComponent` §2.9 refuses an in-body `At` for them. That
+; residual is the P0/P3 half of the same increment and is deliberately visible
+; here rather than hidden: this file is the boundary between the two pieces.
+;
+; ⚠ RULE 6 IS NOT WEAKENED BY THE NEW FREE. `%h_op`'s only in-loop users READ it
+; (`lshr`, and a hoisted `and`), so the `mul_unc` at the exit returns it to |0⟩ on
+; every branch and the `cqrt_free` is a proven-|0⟩ one. `%h` carries no gate
+; between the mint and the exit, so the adjoint reads the basis the forward gate
+; read (clause (d)'s LEFT disjunct).
+;
+; ⚠ NEW L8 RETIREMENT TRIGGER: when the P0/P3 half lands, the per-trip `lshr`/`and`
+; rails gain an IN-BODY `_unc` + `cqrt_free` each and `LEAKBODY` below becomes
+; wrong. Re-derive this file then against the hand-unrolled twin's MULTISET (owner
+; ruling S3, 2026-09-17: byte identity is the instrument, not the claim); do not
+; delete it, and do not restore the whole-file `LEAK` prefix, which pinned a
+; stream where the HOISTED rail leaked too.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=LEAK < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=EXITD < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=LEAKBODY < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @slice
 ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 5)
@@ -50,10 +89,17 @@
 ; CHECK: call i32 @cq_template_lshr_i32_hl(
 ; CHECK-LABEL: define i32 @main
 ;
-; the whole-file negative, in its OWN prefix so no positive above windows it
-; (Rule 12 fixture-hygiene defect (a)):
-; LEAK-NOT: call void @cq_template_{{.*}}_unc
-; LEAK-NOT: call void @cqrt_free(
+; THE HOISTED RAIL'S DISCHARGE, in its own prefix, and it must be the loop-EXIT
+; block: the `_unc`/`free` pair is IMMEDIATELY followed by the post-loop measure
+; of `%h`, which no in-body placement could produce.
+; EXITD: call void @cq_template_mul_i32_hl_unc(i32 %h_op, i32 %h, i32 3)
+; EXITD-NEXT: call void @cqrt_free(i32 %h_op)
+; EXITD-NEXT: %m = call i32 @cqrt_measure_i32(i32 %h)
+;
+; THE PER-TRIP RAILS STILL LEAK — a PURE negative prefix (Rule 12
+; fixture-hygiene (a): no positive above it, so nothing windows these):
+; LEAKBODY-NOT: call void @cq_template_lshr_i32_hl_unc(
+; LEAKBODY-NOT: call void @cq_template_and_i32_hl_unc(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"
