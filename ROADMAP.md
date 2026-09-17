@@ -184,6 +184,32 @@ phase, not in advance.
    > `i8` wire (bd `r903`); the rail-array wall is gone. Two shipped goldens pinned a Rule-8 wrong unitary
    > under a green `twin-identical` gate (bd `jlf8`; the loop-free half is still open). 13 tracker entries
    > closed by measurement, 28 filed. Records: `inc1-records/session-2026-09-18-orchestrator/`; lab entry 011.
+   > **SESSION 2026-09-19 — bd `zujr`: THE LOOP-CARRIED HANDLE VARIABLE, and the owner's ROLLED cascade
+   > compiles.** `example/grover/grover_oracle_uncompute.c` IN ITS LOOP FORM — `int a`, `bool b0[3]`, three
+   > trips, no source change — lowers at `opt` exit 0, stderr 0 bytes, **50 trace lines**, STRICT stage 2b
+   > `2 verified, 0 violation(s), 0 unproven`, and the lowered module is **K-INDEPENDENT** (75 lines at K=3
+   > and at K=1000). The shape is a **THIRD kind of loop-carried register**: `a` crosses the back edge **and**
+   > is re-minted every trip, because `-O1` if-converts `if (b0[i]) a -= 3;` into a 4.4 DATA SELECT whose
+   > emitter mints a FRESH `%out = cqrt_alloc_i32(0)` per activation. It is neither (b)/(b′) the rail that
+   > crosses IN PLACE nor (c) the ITERATION-LOCAL rail. **The runtime needs nothing** (owner ruling
+   > 2026-09-17): a handle is an `i32` and a loop-carried `i32` under CLASSICAL loop control is classical
+   > data; the only thing missing was the TRIP-1 register, and `promoteLoopCarriedHandleSeeds` materialises
+   > `cqrt_alloc_<W>(seed)` in the preheader — which the FLAT twin already does inside its trip-1 mux.
+   > **FOUR walls, not the two the brief named**: R7-loop clause (c3) (bd `8h7d.11`), X1 at
+   > `collapseRailPhisIn` (bd `ej5w`), `declineUnmarkedRolledIterLocal` **conjunct 2** — a POSTCONDITION,
+   > which is why reading decline strings could not find it — and `declineClassicalMuxes` (bd `832l`). The
+   > §3c clobber (bd `x5fp`) never fires on this program. **ONE predicate at four slots** with eight
+   > conjuncts; two of them (Z6)/(Z8) exist only to keep an accurate DIAGNOSTIC (bd `8h7d.12`, also landed:
+   > clause (c3) now says `iteration-local value read after the loop`, blast radius ONE fixture in 2104).
+   > **One widening is NOT gated on the predicate and is named as its own thing**: `railLocalQualifies`'
+   > (L3) clause exempts a store parking a rail in a proven `!cq.railbank` alloca with an UNTAINTED pointer —
+   > witnessed by a new BYTE-IDENTICAL twin pair on a DERIVED per-trip condition, where the ORACLE declined
+   > the rolled half, so it **closes a leak the decline was hiding**. **Measured: 11 movers in 2099 shipped
+   > fixtures, ALL accept-direction, ZERO A→D**; 5 twin-matrix cells, all accept-direction. ⚠ Every one of
+   > the 11 carried an L8 trigger predicting this increment and **every trigger named the WRONG next wall** —
+   > *a retirement trigger that names the next wall is only ever a LOWER BOUND on how many are left.*
+   > Records: `inc1-records/session-2026-09-19-orchestrator/`; lab entry 012.
+
 
 8. **Width-only runtime ABI.** Signedness is implicit in the LLVM opcode
    (`add nsw` vs `add nuw`, `icmp slt` vs `icmp ult`); the frontend
