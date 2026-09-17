@@ -66,6 +66,17 @@ undone:
   (T3) the rail itself is unchanged between mint and reversal (the `¬flag`
        `cqrt_x` bracket is such a self-cancelling pair) and is NOT written at
        all between the reversal and the free.
+  (T4) THE LOOP-EXIT DISCHARGE, and it is the one rule here that reads outside
+       its own STREAM. T1-T3 need the mint and the reversal in one straight-line
+       run; Group 1's P2 anchor (2026-09-18) mints a rail OUTSIDE a loop, reads
+       it per trip, and reverses and frees it at the loop EXIT — a different
+       stream, so the free arrived at `U3-extern-rail` on a rail that is
+       provably |0>. (T4) proves it instead, from facts that need no execution
+       order across the loop: a unique template mint, the `_unc` in the free's
+       own stream, EXACTLY ONE write to the rail in the WHOLE function (so every
+       in-loop use is a read), exactly one free, no cycle through the mint's or
+       the free's stream, and every forward operand written only before the mint
+       or after the reversal. See `StreamAnalysis.loop_exit_discharge`.
 
 ALLOCATED rails — `%r = cqrt_alloc_<W>(v)`: the conjunction ancillas
 (`cqrt_alloc_i1` + the toffoli/cnot flag network), the swap-route work rails,
@@ -313,6 +324,19 @@ UNPROVEN, never silently passed (`U1-cross-stream`, or `U3-extern-rail` when it
 is also written here). Writes to a handle that arrives from outside ARE
 recorded, so "this operand has no writes in this interval" is a fact about the
 stream rather than an absence of information.
+
+  ⚠ SINCE 2026-09-18 THAT PARAGRAPH HAS ONE EXCEPTION, AND IT IS THE ONLY ONE:
+  rule (T4), the LOOP-EXIT DISCHARGE (`StreamAnalysis.loop_exit_discharge`,
+  reached from the `U3-extern-rail` arm of `check_free`). It verifies a rail
+  minted in a dominating stream, read-only inside the loop, and reversed and
+  freed at the loop exit — the shape Group 1's P2 anchor emits. It does NOT
+  linearize anything across a back edge: every fact it uses is either
+  path-insensitive (a write COUNT over the whole function) or a position
+  comparison INSIDE one stream, and it REFUSES any cycle through the mint's or
+  the free's own stream. The dtzb rails stay exactly as this paragraph says —
+  MEASURED, all four `e2e-slice-loop-break*` slices byte-identical in verdict
+  and in UNPROVEN class before and after. Read `loop_exit_discharge`'s docstring
+  for the seven conjuncts, the arm-kill matrix, and what it does not prove.
 
 EXIT STATUS. 0 iff every free site VERIFIED. Non-zero on any VIOLATION, on any
 UNPROVEN site (unless `--allow-unproven`), and on any UNCLASSIFIED runtime
@@ -1079,6 +1103,112 @@ def build_streams(fn):
 
 
 # ---------------------------------------------------------------------------
+# THE CROSS-STREAM INDEX — the whole-FUNCTION rail facts rule (T4) needs
+# (bd test_C_libtooling-j31l / the 2026-09-18 Group-1 P2 loop-EXIT anchor).
+#
+# Everything else in this file reasons inside ONE stream, because a stream is
+# the only place execution order is knowable without a simulator. (T4) does not
+# relax that: it reasons about a rail whose write history is a SINGLETON over
+# the whole function, which is a PATH-INSENSITIVE fact and therefore true on
+# every path, however the blocks between the mint and the free are ordered.
+#
+# So this index answers exactly four questions, all of them quantified over the
+# WHOLE function and none of them over an execution order:
+#   * where was `%h` minted, and by what?      (`mint`)
+#   * what writes `%h` — ANYWHERE?             (`writes`)
+#   * how many `cqrt_free(%h)` sites are there? (`frees`)
+#   * can this block execute more than once?   (`cyclic_blocks`)
+# The first three are keyed by SSA name and carry `(stream id, position)` so
+# (T4g) can place a write relative to the mint and the reversal WITHOUT ever
+# ordering two different streams against each other — it only ever compares two
+# positions INSIDE one stream, which is the one comparison this file's model
+# licenses.
+#
+# THE WRITE MODEL IS `StreamAnalysis.run`'s, COPIED IN ITS EXACT SPELLING and
+# not re-derived (Rule 14 — one spelling of one population): a write is a
+# non-`diagonal` Effect write slot, a `cqrt_measure_<W>` counts as one, and a
+# `cqrt_free` counts as none. If that rule moves in `run()` it must move here in
+# the same change, or (T4c) starts proving a rail is untouched while the stream
+# model says it was written. There is a committed mutant for exactly that
+# divergence (`t4-write-model-drift`, tools/free_pairing_check_test.py).
+# ---------------------------------------------------------------------------
+
+
+class CrossStreamIndex:
+    """Whole-function rail facts, computed once per function.
+
+    `classify()` may raise `Unclassified` from here rather than from the stream
+    scan; that is the same loud stop one step earlier, exactly as
+    `check_module`'s mint scan already does.
+    """
+
+    __slots__ = ("fn", "streams", "mint", "writes", "frees", "_cyclic")
+
+    def __init__(self, fn, streams):
+        self.fn = fn
+        self.streams = streams
+        self.mint = {}        # %name -> (sid, pos, Call, Effect)
+        self.writes = {}      # %name -> [(sid, pos, Call)]
+        self.frees = {}       # %name -> [(sid, pos, Call)]
+        self._cyclic = None
+        for sid, (_chain, calls) in enumerate(streams):
+            for pos, c in enumerate(calls):
+                eff = classify(c.sym)
+                if eff is None:
+                    continue
+                if eff.role == "free":
+                    if c.vals:
+                        self.frees.setdefault(c.vals[0], []).append((sid, pos, c))
+                    continue
+                if c.res and eff.mints == "rail":
+                    # SSA gives uniqueness for free: a value is defined once.
+                    self.mint[c.res] = (sid, pos, c, eff)
+                if eff.diagonal:
+                    continue      # `run()`'s own test: a diagonal gate relabels
+                for wi in eff.writes:                        # nothing, so it is
+                    if wi < len(c.vals):                     # not a write here
+                        self.writes.setdefault(c.vals[wi],
+                                               []).append((sid, pos, c))
+
+    def cyclic_blocks(self):
+        """Block labels reachable from THEMSELVES, i.e. able to execute twice.
+
+        Computed LAZILY and memoised: nothing asks for it unless a (T4)
+        candidate exists, which on the 2026-09-18 corpus is a handful of
+        modules. A self-loop latch (`br i1 %c, label %3, label %1` in block %3)
+        is caught because `%3 in succ[%3]`, so the seeding is over SUCCESSORS
+        rather than over `{start}`.
+        """
+        if self._cyclic is not None:
+            return self._cyclic
+        succ, out = self.fn.succ, set()
+        for start in succ:
+            seen, work = set(), list(succ.get(start, ()))
+            while work:
+                b = work.pop()
+                if b in seen:
+                    continue
+                seen.add(b)
+                work.extend(succ.get(b, ()))
+            if start in seen:
+                out.add(start)
+        self._cyclic = out
+        return out
+
+    def stream_runs_at_most_once(self, sid):
+        """No block of stream `sid` can execute twice.
+
+        Checked over EVERY block of the chain, not just its head. A stream's
+        non-head blocks have a single predecessor by construction, so a cycle
+        through one of them has to come back through the head — but that is an
+        argument about `build_streams`, and this is a Rule-6 gate, so the
+        property is CHECKED rather than inherited.
+        """
+        cyc = self.cyclic_blocks()
+        return not any(b in cyc for b in self.streams[sid][0])
+
+
+# ---------------------------------------------------------------------------
 # Numeric helpers for adjoint matching (negated angle / negated immediate).
 # ---------------------------------------------------------------------------
 
@@ -1218,9 +1348,16 @@ class Rail:
 
 class StreamAnalysis:
     def __init__(self, fnname, calls, module_defs, params=frozenset(),
-                 rail_defs=frozenset(), recorded=frozenset()):
+                 rail_defs=frozenset(), recorded=frozenset(),
+                 xstream=None, stream_id=-1):
         self.fnname, self.calls = fnname, calls
         self.module_defs = module_defs
+        # (T4): the whole-function rail index, and WHICH stream this is inside
+        # it. Both default to "absent", and with them absent this class behaves
+        # exactly as it did before the rule existed — which is what lets the
+        # selftest construct a StreamAnalysis directly without one.
+        self.xstream = xstream
+        self.stream_id = stream_id
         self.params = params
         self.rail_defs = rail_defs
         # bd 261j(b): names correlated with a kept output carrier. Computed per
@@ -1475,10 +1612,17 @@ class StreamAnalysis:
                                      msg))
 
     def ok(self, c, r, rule, witness):
-        """Record a discharged free site plus the lines its proof consumed."""
+        """Record a discharged free site plus the lines its proof consumed.
+
+        `r.origin` is None for an EXTERN rail — the mint is in another stream,
+        so this record cannot reach for it. Rule (T4) puts the mint's line into
+        its own witness set instead, which is what keeps the proof-targeted
+        sweep able to blank it.
+        """
         self.verified += 1
+        origin = {r.origin.line} if r.origin is not None else set()
         self.proofs.append((self.fnname, c.line, r.name, rule,
-                            tuple(sorted(set(witness) | {r.origin.line}))))
+                            tuple(sorted(set(witness) | origin))))
 
     # -- reduction to identity --------------------------------------------
     def writes_in(self, name, lo, hi):
@@ -1952,11 +2096,22 @@ class StreamAnalysis:
                          f"linearly ordered here")
             return
         if r.kind == "extern":
+            # (T4) the rail may still be provably |0> here: a LOOP-EXIT (or any
+            # cross-stream) discharge of a rail minted in a dominating stream.
+            ok, rule, wit, why = self.loop_exit_discharge(pos, c, r)
+            if ok:
+                self.ok(c, r, rule, wit)
+                return
             where = self.module_defs.get(name)
             self.add(UNPROVEN, "U3-extern-rail", c, name,
                      f"handle is written in this stream but minted outside it"
                      + (f" (by @{where[1]})" if where else "")
-                     + "; its state on entry to this stream is unknown")
+                     + "; its state on entry to this stream is unknown"
+                     # Only a NEAR MISS says why. A rail with no cross-stream
+                     # mint at all (the dtzb `cq.brk.*` family) keeps this
+                     # finding's text byte-for-byte as it has always read.
+                     + (f". (T4) loop-exit discharge refused: {why}"
+                        if why else ""))
             return
         if r.kind in ("array", "tape"):
             self.add(VIOLATION, "F9-free-of-nonrail", c, name,
@@ -1996,6 +2151,247 @@ class StreamAnalysis:
             self.check_alloc_rail(pos, c, r)
         else:
             self.check_minted_rail(pos, c, r)
+
+    # -- (T4) the LOOP-EXIT / cross-stream discharge -------------------------
+    def loop_exit_discharge(self, pos, c, r):
+        """(ok, rule, witness, why) — is this cross-stream free provably |0>?
+
+        THE SHAPE, AND WHY THE REST OF THIS FILE CANNOT SEE IT
+        =====================================================
+        Group 1's P2 anchor (bd `test_C_libtooling-tu9q`, 2026-09-18) discharges
+        a rail minted OUTSIDE a loop at that loop's unique EXIT:
+
+            entry:   %h_cast = cq_template_sitofp_i32_to_f64(%h)     ; MINT
+                     %h_op   = cq_template_fadd_f64_hl(%h_cast, 3.0) ; MINT
+                     %h_intr = cq_template_sqrt_f64(%h_op)           ; MINT
+                     br label %body
+            body:    %h_cmp = cq_template_fcmp_ugt_f64_hl(%h_intr, %6)  ; a READ
+                     ... ; %h_cmp minted, stripped and freed per trip
+                     br i1 %8, label %body, label %exit
+            exit:    cq_template_sqrt_f64_unc(%h_intr, %h_op)        ; REVERSAL
+                     cqrt_free(%h_intr)
+                     ...
+
+        The mint is in one stream and the reversal and free are in another, so
+        `check_minted_rail` never runs: the free arrives at `check_free` with an
+        `extern` rail record and reports `U3-extern-rail`. MEASURED at the
+        landing, and the asymmetry is the instrument's and not the rail's: the
+        rolled slice reported `1 verified, 0 violation(s), 3 unproven` where its
+        hand-unrolled twin — the SAME circuit with the discharge in the mint's
+        own stream — reported `5 verified, 0 unproven`. The cost is not one
+        slice's flag: `e2e-loop-twin-matrix` runs this checker STRICT per side,
+        so 24 twin cells plus the pinned boundary control `q_armoncond` became
+        `HARNESS-ERROR` and STOPPED HAVING A VERDICT AT ALL — and that matrix is
+        the only instrument in the tree that can see a leaked TEMPLATE-minted
+        rail. All 25, and all 101 of their UNPROVEN lines, are this one class.
+
+        THE PROOF, AND WHY IT NEEDS NO EXECUTION ORDER
+        =============================================
+        The mint writes `f(args)` into a fresh |0> rail; the reversal writes
+        `f(args')` into it, where `args'` are the argument rails' labels AT THE
+        REVERSAL. So the rail is |0> at the free iff (1) nothing else ever
+        writes it, and (2) `args' == args`.
+
+        This file cannot linearize a loop — that is the whole reason the stream
+        model exists, and reducing a write history that spans a back edge is
+        exactly the dtzb hazard `U1-cross-stream` refuses. (T4) never tries: it
+        establishes (1) and (2) from facts that are PATH-INSENSITIVE, hence true
+        on every path, whatever the blocks between mint and free do:
+
+          (T4a) `%h` has a UNIQUE rail MINT in this function (SSA gives
+                uniqueness), it is a `role == "mint"` template/qram forward, and
+                it is not a `cqrt_tape_write_<W>`. An `alloc` rail is REFUSED —
+                its soundness rests on (A1)/(A2), a REDUCTION of its whole write
+                history, and a reduction across a loop is the thing this rule
+                exists not to do. An `_inv` mint is refused too: it is
+                `implicit-rail`, i.e. the ABI does not name the rail it acts on.
+          (T4b) the REVERSAL is in the FREE's OWN stream, before the free: an
+                `@<base>_unc(%h, <the forward's operands>)`, the (T1a) test
+                verbatim. The (T1b) `_inv` arm is deliberately NOT admitted
+                here — an `_inv` names no rail, so its pool and its one-to-one
+                claim are per-stream bookkeeping and a cross-stream claim would
+                need a global pool with its own (W) argument. `undef`/`poison`
+                in the forward operands is refused exactly as (T1u) refuses it:
+                a textual operand match is not a value match (bd 1739 hole 2).
+          (T4c) `%h` IS WRITTEN NOWHERE IN THE FUNCTION BUT THAT REVERSAL. This
+                is the load-bearing conjunct and it is the one that makes the
+                loop body safe without looking at the loop: every use of `%h`
+                inside the cycle is a READ operand, and a read relabels nothing
+                in this file's effect model. It is also what makes the rule
+                SUBSUME two checks the `extern` branch returns in front of:
+                a `cqrt_measure_<W>(%h)` is a write here, so `F8-free-after-
+                measure` cannot be bypassed, and `R1-recorded-rotated-rail`
+                needs a `cqrt_ry_` ON the rail, which is a write too. Both are
+                refused function-wide rather than stream-locally, which is
+                STRICTLY stronger than the checks being skipped.
+          (T4d) there is EXACTLY ONE `cqrt_free(%h)` in the function.
+                `F1-double-free` is per-stream and cannot see a rail freed once
+                in each of two exit blocks — that is a double free of a rail
+                minted once, and this conjunct is the only thing refusing it.
+          (T4f) NO BLOCK of the mint's stream, and no block of the free's
+                stream, can execute twice. This is what forbids the K:1 shape
+                (mint once outside, reverse-and-free K times inside) that P2's
+                own anchor walk exists to avoid: put the reversal and the free
+                in the loop body and this conjunct refuses, where every other
+                conjunct still passes. With it, `M`, `R` and `F` each execute at
+                most once, and each stream is a linear trace, so a position
+                comparison INSIDE one stream is a real execution order.
+          (T4g) every forward operand of the mint holds still from the mint to
+                the reversal: each write to it in the function is either in the
+                MINT's stream strictly before the mint, or in the FREE's stream
+                strictly after the reversal. Nothing in the loop body, nothing
+                in a third stream, nothing in the window.
+
+        Then, on every path: `M` runs, nothing writes `%h` or moves `args`, `R`
+        runs and computes the same `f(args)`, so `%h` is |0>; nothing writes it
+        before `F`. SSA supplies the missing dominance for free — every use of
+        `%h` is dominated by its definition, so `B_mint` dominates `B_free` and
+        no path reaches the reversal without the mint.
+
+        WHAT (T4) DOES **NOT** PROVE — read this before widening it
+        ==========================================================
+          * ANY write to `%h` inside the loop. Not "a write that cancels", not
+            an `X` bracket, not an `A B A B` route: (T4c) is a COUNT, and that
+            is deliberate. A cancelling bracket inside a cycle would have to be
+            reduced across a back edge, which is the `U1-cross-stream` refusal.
+          * An `alloc` rail in this shape (T4a). The dtzb `%cq.brk.idx` /
+            `%cq.brk.R` rails are exactly that and stay `U1-cross-stream` /
+            `A-not-reducible`; MEASURED — the four `e2e-slice-loop-break*`
+            entries' `--allow-unproven` verdicts are unmoved by this rule.
+          * An IRREDUCIBLE cycle, or any cycle at all through the mint's or the
+            free's stream (T4f). It does not classify the cycle, it refuses it.
+          * A NESTED loop is not reasoned about AT ALL, and it does not need to
+            be: the question "is `%h` written between the mint and the
+            reversal?" is answered over the whole function, so an inner loop's
+            trip count cannot matter. A read that runs K times is K reads, and
+            reads commute with reads and relabel nothing — whereas a WRITE that
+            runs K times is refused by (T4c) no matter which loop carries it.
+            The rule is per-activation-safe because it never counts activations.
+          * A rail READ after its free from another block. `F2-use-after-free`
+            is per-stream and stays so; that gap is pre-existing and untouched.
+          * The ENTANGLEMENT half of Rule 8, as everywhere else here: the rail
+            this rule clears is |0> and unentangled AT THE FREE, which says
+            nothing about a which-path record the loop body may have copied
+            onto some OTHER carrier (bd s82e's question, not this file's).
+
+        THE ARM-KILL MATRIX, AND THE ONE ARM IT COULD NOT KILL
+        ======================================================
+        A predicate with N accept-arms and one probe lets N-1 be deleted with a
+        green suite (the bd az1h lesson), so each conjunct was deleted
+        INDIVIDUALLY and the committed selftest re-run. NINE arms, EIGHT killed,
+        each by a DIFFERENT fixture and each naming its own arm:
+
+          (T4a) the template-mint test    -> t4-alloc-rail-cross-stream-bracket
+          (T4b) the undef test            -> t4-undef-forward-operand
+          (T4b) the operand-list match    -> t4-adjoint-with-a-different-literal
+          (T4c) the single-write test     -> FOUR fixtures (write-in-loop,
+                measured-then-freed, rotated-inside-the-loop, two-exit-blocks)
+          (T4d) the one-free test         -> t4-one-reversal-two-frees
+          (T4f) the mint-stream test      -> t4-mint-inside-the-loop
+          (T4f) the free-stream test      -> t4-k1-reversal-and-free-inside-the-loop
+          (T4g) the forward-operand test  -> t4-forward-operand-moved-inside-the-loop
+
+        THE SURVIVOR IS `w.vals[0] == name` IN (T4b), AND IT SURVIVED BECAUSE IT
+        RESTATES THE KEY IT IS SEARCHING. `r.writes` is appended by
+        `rail_for_write(c.vals[wi])` for each `wi in eff.writes`, and a `_unc`
+        Effect has `writes=(0,)` — so every `w` in THIS rail's write list already
+        has `name` at `w.vals[0]`, and deleting the test changes no input's
+        answer. It is kept as an explicit statement of what the rule reads
+        rather than as a live filter, and the honest record is that its probe is
+        not merely too weak: no input can distinguish the two versions while the
+        `_unc` write slot is 0. ⚠ RETIREMENT TRIGGER, which is exactly when that
+        stops being true: the day `classify()` gives any `role == "unc"` Effect a
+        write slot other than 0 — a `..._controlled_unc` twin that shifted `out`,
+        say — this conjunct becomes LOAD-BEARING and needs a real mutant. Do not
+        delete it "because the matrix says it is redundant"; that is the bd 0gwl
+        mistake, where "redundant by construction" was refuted by a runnable
+        stream one round later.
+        """
+        x = self.xstream
+        name = r.name
+        if x is None:                       # no index (a direct-construction
+            return False, None, None, None  # caller); behave exactly as before
+        m = x.mint.get(name)
+        if m is None:
+            # Not a near miss — no rail mint anywhere in the function. Keep the
+            # historic `U3-extern-rail` text unchanged for this case.
+            return False, None, None, None
+        msid, mpos, fwd, meff = m
+
+        # (T4a) a reversible template/qram forward mint, never an alloc.
+        if meff.role != "mint" or _TAPE_MINT.fullmatch(fwd.sym):
+            return False, None, None, (
+                f"the mint `{fwd.text}` (line {fwd.line}) is an @{fwd.sym}, not "
+                f"a reversible out-of-place template mint; an alloc rail's "
+                f"soundness is a REDUCTION of its whole write history (A1/A2) "
+                f"and reducing one across a loop is what the stream model "
+                f"refuses to do")
+        if any(carries_undef(a) for a in fwd.args):
+            return False, None, None, (
+                f"forward operand of `{fwd.text}` (line {fwd.line}) is "
+                f"`undef`/`poison`, so a matching reversal would match by TEXT "
+                f"and not by VALUE (bd 1739 hole 2)")
+
+        # (T4b) the `_unc` reversal, in THIS stream, before the free.
+        fwd_args = tuple(fwd.args)
+        rev_pos = None
+        for p, w in r.writes:
+            if p < pos and w.eff.role == "unc" and w.eff.base == fwd.sym and \
+                    w.vals and w.vals[0] == name and \
+                    tuple(w.args[1:]) == fwd_args:
+                rev_pos = p
+        if rev_pos is None:
+            return False, None, None, (
+                f"no `@{fwd.sym}_unc({name}, <the operands of `{fwd.text}` at "
+                f"line {fwd.line}>)` appears in this stream before the free")
+        rev = self.calls[rev_pos]
+
+        # (T4c) nothing else in the FUNCTION writes it.
+        for _wsid, _wpos, w in x.writes.get(name, ()):
+            if w is rev:
+                continue
+            return False, None, None, (
+                f"`{w.text}` (line {w.line}) also writes {name}; (T4) admits "
+                f"EXACTLY ONE write to the rail in the whole function — its "
+                f"reversal — because any other one would have to be cancelled "
+                f"across a back edge")
+
+        # (T4d) one free site, function-wide.
+        fr = x.frees.get(name, ())
+        if len(fr) != 1:
+            return False, None, None, (
+                f"{len(fr)} `cqrt_free({name})` site(s) in this function; a "
+                f"rail minted once outside a region and freed at two of its "
+                f"exits is a double free that the per-stream `F1-double-free` "
+                f"cannot see")
+
+        # (T4f) neither the mint's nor the free's stream can repeat.
+        if not x.stream_runs_at_most_once(msid):
+            return False, None, None, (
+                f"the block minting {name} (`{fwd.text}`, line {fwd.line}) can "
+                f"execute more than once, so the mint is not a single event")
+        if not x.stream_runs_at_most_once(self.stream_id):
+            return False, None, None, (
+                f"the block carrying the reversal (line {rev.line}) and the "
+                f"free can execute more than once — a rail minted ONCE and "
+                f"reversed-and-freed PER TRIP is the K:1 shape, and it is a "
+                f"use-after-free from the second trip on")
+
+        # (T4g) the forward's operands hold still across [mint, reversal].
+        for v in fwd.vals:
+            for wsid, wpos, w in x.writes.get(v, ()):
+                if wsid == msid and wpos < mpos:
+                    continue           # strictly before the mint reads it
+                if wsid == self.stream_id and wpos > rev_pos:
+                    continue           # strictly after the reversal reads it
+                return False, None, None, (
+                    f"forward operand {v} of `{fwd.text}` (line {fwd.line}) is "
+                    f"written by `{w.text}` (line {w.line}), which is neither "
+                    f"before the mint in the mint's own stream nor after the "
+                    f"reversal in this one, so the reversal may recompute a "
+                    f"different value")
+
+        return True, "T4-loop-exit-discharge", {fwd.line, rev.line}, None
 
     def check_alloc_rail(self, pos, c, r):
         ws = [(p, w) for p, w in r.writes if r.pos < p < pos]
@@ -2720,13 +3116,19 @@ def check_module(text):
     census = census_of(funcs, text)
     findings, verified, sites, proofs = [], 0, 0, []
     for fn in funcs:
-        for _chain, calls in build_streams(fn):
+        # ONE `build_streams` per function, shared with the (T4) index, so the
+        # stream ids the index hands out and the ones the scan runs under are
+        # the same numbers by construction rather than by agreement.
+        streams = build_streams(fn)
+        xstream = CrossStreamIndex(fn, streams)
+        for sid, (_chain, calls) in enumerate(streams):
             if not calls:
                 continue
             ensure_recursion_headroom(len(calls))
             sa = StreamAnalysis(fn.name, calls, module_defs, fn.params,
                                 rail_defs.get(fn.name, frozenset()),
-                                recorded.get(fn.name, frozenset()))
+                                recorded.get(fn.name, frozenset()),
+                                xstream, sid)
             findings.extend(sa.run())
             verified += sa.verified
             sites += sa.sites
