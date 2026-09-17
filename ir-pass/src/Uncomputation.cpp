@@ -346,11 +346,25 @@ bool multiplicityAgrees(const Instruction *G, const Instruction *At,
 // safety argument, and it is why this is a dozen lines.
 //
 // ⚠ A NULL RESULT IS A LEAK, NOT A DIAGNOSTIC. `loopExitDischargePoint` returns
-// null for a MULTI-EXIT loop, and the caller then abandons the component exactly
-// as today (`loop_pairing_accept_break_latch_folded.ll` and `tu9q.1`'s
-// `r1_break_loop` are unmoved BY CONSTRUCTION, and are owed a fixture that says
-// so). Inventing a multi-exit discharge point is a separate capability with its
+// null for a MULTI-EXIT loop and the caller then abandons the component exactly as
+// today. Inventing a multi-exit discharge point is a separate capability with its
 // own post-dominance obligation.
+//
+// ⚠ **DO NOT READ THAT AS "A `break` LOOP IS UNMOVED", WHICH IS THE OBVIOUS AND
+// WRONG COROLLARY.** `-O1` IF-CONVERTS a `break` into one extra disjunct on the
+// LATCH (measured: `%15 = select i1 %12, i1 true, i1 %14`), leaving **ONE** exit
+// block — so a latch-folded break loop is NOT multi-exit and IS reached by this
+// walk. `trackT2/probes/t5h_rail_straddles_break_rot.c` moves for exactly that
+// reason. The break is a SPELLING, not a cause.
+// `loop_pairing_accept_break_latch_folded.ll` and `tu9q.1`'s `r1_break_loop` are
+// unmoved for a DIFFERENT reason, and it is worth stating so nobody cites them as
+// evidence about multi-exit: their rails (`(y >> k) & 1`) are minted **IN THE
+// BODY**, so the condition this walk tests — *the consumer's loop does not contain
+// the mint* — is FALSE for them and the anchor is unchanged.
+// ⚠ The genuinely MULTI-EXIT path is owed a fixture and has none: three C shapes
+// were built for it and `-O1` renormalised or declined every one (recorded in
+// `trackT2/IMPL_T3.md` §3 F-R2-1). It is the conservative branch, and it is a
+// PREDICTION rather than a test until something reaches it (`8h7d.10`'s lesson).
 Instruction *anchorForConsumer(Instruction *U, const Instruction *R,
                                LoopInfo &LI) {
   const Loop *LOut = nullptr;
