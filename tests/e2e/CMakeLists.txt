@@ -6311,6 +6311,34 @@ add_test(NAME e2e-loop-bank-derived-cond-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_bank_derived_cond.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_bank_derived_cond_twin.expected.log")
 
+# bd `test_C_libtooling-11qv` (2026-09-20) — THE NARROW-WIDTH CARRIED HANDLE.
+# The owner's rolled cascade with `int a` spelled `short a`, which DECLINED
+# (`iteration-local value read after the loop`) until `loopCarriedHandlePhi`
+# clause (Z3) stopped gating the carried phi to `i32` and the promotion started
+# RETYPING it. Read the slice header for what to look at in the golden: every
+# width-bearing symbol is `i16` while every handle is `i32`, and an `i32` suffix
+# on any of the four would be the wrong-width silent miscompile.
+add_test(NAME e2e-slice-loop-carried-handle-narrow
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_carried_handle_narrow.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_carried_handle_narrow.expected.log")
+
+# bd `test_C_libtooling-h1ip` (2026-09-20, owner ruling Q1) — THE GUARDED CARRIED
+# HANDLE, i.e. a RUNTIME trip bound. The golden is the ONE-TRIP run (argc == 1);
+# the zero-trip and two-trip paths of the same binary were exercised by hand at
+# the landing and are recorded in the slice header. Read that header for the
+# accepted cost: a zero-trip loop still allocates its seed register.
+add_test(NAME e2e-slice-loop-carried-handle-guarded
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_carried_handle_guarded.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_carried_handle_guarded.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

@@ -34,6 +34,7 @@
 
 #include "llvm/ADT/DenseMap.h"  // collapseFlattenedLoopRails (count snapshot)
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
+#include "llvm/ADT/SmallVector.h"  // CarriedHandleProof::BypassIncomings (bd h1ip)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
 
 #include <optional>  // loopCarriedHandlePhi (bd zujr)
@@ -673,6 +674,24 @@ struct CarriedHandleProof {
   llvm::Value *LatchVal = nullptr;
   llvm::BasicBlock *Preheader = nullptr;
   llvm::StringRef Abi;
+  // bd `test_C_libtooling-11qv` — the φ's LLVM type is NOT the handle type.
+  // `cqrt_alloc_<W>` returns `i32` at EVERY width (Rule 15), so a carried φ of
+  // any other integer width must be RETYPED to `i32` by the promotion before the
+  // module is verifier-valid. True iff that retype is owed. `Abi` remains the
+  // LOGICAL width and is what the promotion records in `taint.HandleWidth`.
+  bool NeedsHandleRetype = false;
+  // bd `test_C_libtooling-h1ip` — THE GUARDED (rotated) LOOP. Non-null when the
+  // preheader has a unique predecessor whose CONDITIONAL terminator branches to
+  // it: the zero-trip GUARD. The promotion then puts the `cqrt_alloc` here,
+  // ABOVE the guard, instead of in the preheader — because the preheader is
+  // BYPASSED on the zero-trip edge and the exit φ would otherwise mux the
+  // classical seed against a handle.
+  llvm::BasicBlock *GuardBB = nullptr;
+  // The out-of-loop φ incomings that carry the SEED on the guard's bypass edge,
+  // as (φ, incoming index). The promotion rewrites exactly these to the hoisted
+  // handle and records each φ in `PromotedCarriedHandlePhis`. EMPTY for an
+  // unguarded loop, which is why that path is byte-identical to before.
+  llvm::SmallVector<std::pair<llvm::PHINode *, unsigned>, 2> BypassIncomings;
 };
 
 // THE ONE SPELLING of "is this header φ a loop-carried HANDLE variable?" (Rule

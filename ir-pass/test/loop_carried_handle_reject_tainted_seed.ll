@@ -20,10 +20,25 @@
 ; deleting each of the four conjuncts in turn from a scratch build and running the
 ; whole `loop_carried_handle` family against each:
 ;
-;     MUTANT Z3 (drop `isIntegerTy(32)`)      KILLS reject_narrow_width   and nothing else
+;     MUTANT Z3 (drop the width test)         KILLS accept_narrow_width   and nothing else
+;       ⚠ THAT ROW IS HISTORY AS WRITTEN AND IS KEPT FOR ITS REASON, NOT ITS
+;       VERDICT.  bd `test_C_libtooling-11qv` (2026-09-20) RETIRED the `i32` test:
+;       the promotion now RETYPES the phi (`mutateType(i32)` + the `HandleWidth`
+;       record), so the narrow width is an ACCEPT and its file is
+;       `loop_carried_handle_accept_narrow_width.ll`.  What the Z3 mutant showed
+;       still stands as the reason the retype is owed: dropping the width test
+;       WITHOUT the retype emitted `PHI node operands are not the same type as
+;       the result!` and `opt` aborted with exit 134.
 ;     MUTANT Z4 (drop the classical-seed test) KILLS reject_tainted_seed  and nothing else
 ;     MUTANT Z6 (drop latchIsControlMergeRail) KILLS reject_accumulator   and nothing else
-;     MUTANT Z8 (drop the reader walk)         KILLS reject_guarded       and nothing else
+;     MUTANT Z8 (drop the reader walk)         KILLS accept_guarded       and nothing else
+;       ⚠ ALSO HISTORY AS WRITTEN.  bd `test_C_libtooling-h1ip` (2026-09-20,
+;       owner ruling Q1) RETIRED the guarded DECLINE: the promotion now mints the
+;       trip-1 register in the GUARD'S OWN block and rewrites the exit phi's
+;       zero-trip incoming, so the file is `loop_carried_handle_accept_guarded.ll`.
+;       What the Z8 mutant showed still stands as the reason the hoist is owed:
+;       without it the guarded module declined at the EXIT PHI, a true sentence
+;       about the wrong instruction (CLAUDE.md L6).
 ;
 ; A 1:1 matrix, MISSED 0.  THIS FILE IS THE ONE `MUTANT Z4` KILLS.
 ; (The Z3 mutant does not merely change a string: it emits

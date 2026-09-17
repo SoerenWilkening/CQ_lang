@@ -1264,10 +1264,45 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
   //      edge, which is a statement about the loop's READERS, not about whether
   //      a preheader exists. MEASURED on `loop_carried_handle_reject_guarded.ll`,
   //      whose mutant matrix kills it on (Z8) and on nothing else.
-  if (!L || !L->getLoopLatch() || !L->getLoopPreheader())
+  if (!L || !L->getLoopLatch() || !L->getHeader())
     return std::nullopt;
   BasicBlock *Latch = L->getLoopLatch();
+  // bd `test_C_libtooling-h1ip` — THE LOOP'S SINGLE EXTERNAL ENTRY BLOCK, which
+  // is the PREHEADER when there is one and the GUARD BLOCK ITSELF when there is
+  // not.
+  //
+  // ⚠ BOTH THE ORIGINAL (Z1) COMMENT AND ITS ROUND-1 CORRECTION WERE
+  // OVER-GENERAL, AND THIS IS THE MEASUREMENT THAT SETTLES IT. The original said
+  // a rotated loop *has no preheader*; Rule-13 round 1 called that FALSE because
+  // `clang -O1` gave `entry -> for.body.preheader -> header`. Measured
+  // 2026-09-20 on `probes/h1e_guarded_live.c`, `-O1` emits **NO PREHEADER AT
+  // ALL** — the guard branches straight into the header
+  // (`br i1 %3, label %header, label %exit`) — so `getLoopPreheader()` returns
+  // null and (Z1) refused before (Z8) was ever asked. The truth is that `-O1`
+  // emits a preheader SOMETIMES, and a predicate may not depend on which.
+  //
+  // The requirement is therefore stated as what the promotion actually needs: a
+  // SINGLE out-of-loop predecessor of the header, which is where the trip-1
+  // register is minted. A second external predecessor is a multi-entry shape and
+  // is refused as it always was.
   BasicBlock *Pre = L->getLoopPreheader();
+  if (!Pre) {
+    for (BasicBlock *PB : predecessors(L->getHeader())) {
+      if (L->contains(PB))
+        continue;
+      if (Pre)
+        return std::nullopt;  // more than one external entry — multi-entry.
+      Pre = PB;
+    }
+    if (!Pre)
+      return std::nullopt;
+    // Without a preheader the entry block necessarily ends in the GUARD's own
+    // conditional branch; anything else reaching a header directly is a shape
+    // this predicate has never claimed.
+    auto *EB = dyn_cast<BranchInst>(Pre->getTerminator());
+    if (!EB || !EB->isConditional())
+      return std::nullopt;
+  }
   if (P.getParent() != L->getHeader() || !taint.Tainted.count(&P))
     return std::nullopt;
   // (Z2) EXACTLY TWO INCOMINGS: the latch and the preheader. A third edge is a
@@ -1288,24 +1323,41 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
   }
   if (!LatV || !Pf.Seed)
     return std::nullopt;
-  // (Z3) THE φ CARRIES A HANDLE, AND THE HANDLE ABI IS `i32` (Rule 15: *"a
-  //      runtime handle is ALWAYS `i32` regardless of width"*). `cqrt_alloc_<W>`
-  //      RETURNS `i32` at every width, and so does every merge `%out`, so an
-  //      `i16`/`i1`/`i64` φ would mux two `i32` values through a φ of the wrong
-  //      type — `report_fatal_error`, MEASURED (a `short a` spelling of the
-  //      owner's program crashes a build that skips this test). `lowerRotations`
-  //      gets away with the same mismatch only because *"that mismatch is
-  //      transient and laundered by erasure of the tainted users"* — and a φ is
-  //      the one tainted user that is NOT erased.
-  //      A `mutateType(i32)` here (the `RailBankPromote` idiom) would widen this,
-  //      and it is DELIBERATELY NOT DONE in this increment: it is an
-  //      ACCEPT-direction change to a value every later stage reads, and it owes
-  //      its own Rule-13 round. Follow-on: bd `zujr` narrow-width spelling.
-  if (!P.getType()->isIntegerTy(32))
+  // (Z3) THE φ CARRIES A HANDLE, AND A HANDLE IS `i32` AT EVERY WIDTH (Rule 15:
+  //      *"a runtime handle is ALWAYS `i32` regardless of width"*).
+  //      `cqrt_alloc_<W>` RETURNS `i32` at every width, and so does every merge
+  //      `%out`, so an `i1`/`i8`/`i16`/`i64` φ muxes two `i32` values through a
+  //      φ of the wrong type. `lowerRotations` gets away with the same mismatch
+  //      only because *"that mismatch is transient and laundered by erasure of
+  //      the tainted users"* — and a φ is the one tainted user that is NOT
+  //      erased, so for a φ the laundering has to be DONE rather than waited for.
+  //
+  //      ⚠ UNTIL bd `test_C_libtooling-11qv` (2026-09-20) THIS CLAUSE READ
+  //      `isIntegerTy(32)` AND THE NARROW WIDTHS DECLINED. That was the
+  //      CRASH FENCE, not a taste preference: a build that merely deleted the
+  //      test emitted `PHI node operands are not the same type as the result!`
+  //      and `opt` aborted with **exit 134**, MEASURED (bd `zujr` conjunct
+  //      mutant matrix). The fence is retired only because the promotion now
+  //      performs the retype the fence existed to make unnecessary — see
+  //      `promoteLoopCarriedHandleSeeds` gates (P4)/(P5). DO NOT widen this
+  //      clause again without checking that BOTH still stand.
+  //
+  //      THE WIDTH ITSELF IS NOT LOST, AND THAT IS THE WHOLE SAFETY ARGUMENT OF
+  //      THE RETYPE. `Pf.Abi` is the LOGICAL width, read off the φ's type HERE,
+  //      while the type still says it — and the promotion records it in
+  //      `taint.HandleWidth`, the side-table `logicalOperandWidth` consults
+  //      BEFORE the (possibly laundered `i32`) LLVM type. Without that record a
+  //      Q+Q compare over two retyped `i16` φs would recover `i32` from
+  //      `abiWidthFromType` and mint `cq_template_icmp_<pred>_i32(h,h)` for two
+  //      `i16` registers — a WRONG-WIDTH SYMBOL, verify-clean, which is the
+  //      silent-miscompile class `CompareLowering.cpp` names in writing
+  //      (*"NEVER default empty -> i32"*).
+  if (!P.getType()->isIntegerTy())
     return std::nullopt;
   Pf.Abi = abiWidthFromType(P.getType());
   if (Pf.Abi.empty())
     return std::nullopt;
+  Pf.NeedsHandleRetype = !P.getType()->isIntegerTy(32);
   // (Z4) THE SEED IS CLASSICAL AND AVAILABLE IN THE PREHEADER. Untainted, so the
   //      promotion is materialising a CLASSICAL value into a register and not
   //      re-allocating something that is already a handle; and not `undef`
@@ -1386,14 +1438,61 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
   //      the guarded loop lower too; that is an ACCEPT-direction widening with
   //      its own Rule-13 round and its own zero-trip question (an allocation the
   //      program may never use), and it is FILED, not smuggled in here.
+  //      ⚠ THE GUARDED LOOP IS NO LONGER REFUSED HERE — bd
+  //      `test_C_libtooling-h1ip`, OWNER RULING Q1 of 2026-09-20: *hoist the
+  //      alloc above the guard and ACCEPT THE DEAD ALLOC*. A `for (i < n)` with
+  //      a RUNTIME `n` is what `clang -O1` rotates into
+  //      `entry -(guard)-> preheader -> header`, and the guard's false edge
+  //      BYPASSES the preheader — so the trip-1 register the promotion mints
+  //      there does not exist on the zero-trip path and the exit φ muxes the
+  //      CLASSICAL seed against a handle. The fix is to mint it ABOVE the guard
+  //      and REWRITE that one incoming, which is what `GuardBB` /
+  //      `BypassIncomings` carry to the promotion.
+  //      ⚠ THE COST IS THE OWNER'S, TAKEN EXPLICITLY AND NOT HIDDEN: a loop
+  //      that runs ZERO times now allocates a register it never uses. It is
+  //      left allocated, never freed dirty (Rule 6), and in the
+  //      qubits-not-scarce regime that is the accepted trade.
+  //      ⚠ AND THE RECORDED INCOMING IS STILL PROVED, NOT ASSUMED. Only an
+  //      incoming that (a) belongs to a φ OUTSIDE `L` that reads this variable,
+  //      (b) is pointer-identical to the SEED, and (c) arrives on the GUARD's
+  //      own edge is rewritable. Anything else is still `std::nullopt`.
+  // The guard is the block whose CONDITIONAL branch decides whether the loop runs
+  // at all. With a preheader it is that preheader's unique predecessor; WITHOUT
+  // one the entry block IS the guard (it branches straight into the header), and
+  // in both cases the mint point is that block's terminator — above the branch
+  // that can skip the loop.
+  if (Pre->getTerminator()->getNumSuccessors() > 1) {
+    Pf.GuardBB = Pre;
+  } else if (BasicBlock *UP = Pre->getUniquePredecessor()) {
+    if (auto *GB = dyn_cast<BranchInst>(UP->getTerminator()))
+      if (GB->isConditional() &&
+          (GB->getSuccessor(0) == Pre || GB->getSuccessor(1) == Pre))
+        Pf.GuardBB = UP;
+  }
   for (Value *V : {static_cast<Value *>(&P), LatV})
     for (User *U : V->users()) {
       auto *OP = dyn_cast<PHINode>(U);
       if (!OP || L->contains(OP->getParent()))
         continue;
-      for (Value *In : OP->incoming_values())
-        if (In != V && !taint.Tainted.count(In))
+      for (unsigned i = 0, e = OP->getNumIncomingValues(); i != e; ++i) {
+        Value *In = OP->getIncomingValue(i);
+        if (In == V || taint.Tainted.count(In))
+          continue;
+        // ⚠ POINTER IDENTITY ON A `Constant` IS UNIQUED, and this file's own
+        // project records why that matters (CLAUDE.md §4c, the F1 MANUFACTURED
+        // identity): `i32 5` is ONE `Value *` however many C objects the source
+        // had. It is admissible HERE and the reason is not "it is the same
+        // object" — it is that the rewrite gives this incoming a register
+        // holding |seed⟩, which is the value the zero-trip path carries
+        // WHATEVER object it came from. Two source objects that were both the
+        // seed constant end up sharing one register holding their common value;
+        // no fence is deceived about a value the program actually wrote, and the
+        // rival reading has no lowering to be robbed of (it declines today).
+        if (In != Pf.Seed || !Pf.GuardBB ||
+            OP->getIncomingBlock(i) != Pf.GuardBB)
           return std::nullopt;
+        Pf.BypassIncomings.emplace_back(OP, i);
+      }
     }
   Pf.Phi = &P;
   Pf.LatchVal = LatV;
@@ -6114,15 +6213,129 @@ void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
         if (!Alloc)
           continue;
         // (P3) — the seed is available at the promotion point.
-        Instruction *PreTerm = Pf->Preheader->getTerminator();
+        // ⚠ bd `test_C_libtooling-h1ip`: FOR A GUARDED LOOP THE MINT POINT IS
+        // THE GUARD'S OWN TERMINATOR, NOT THE PREHEADER'S — the preheader is
+        // BYPASSED on the zero-trip edge, so a register minted there does not
+        // exist for the exit φ to name. The dominance question below is
+        // therefore asked about THAT point, whichever it is.
+        Instruction *PreTerm = Pf->BypassIncomings.empty()
+                                   ? Pf->Preheader->getTerminator()
+                                   : Pf->GuardBB->getTerminator();
         if (auto *SI = dyn_cast<Instruction>(Pf->Seed))
           if (!DT.dominates(SI, PreTerm))
             continue;
+        // (P0) bd `test_C_libtooling-h7ee` Rule-13 ROUND 2, finding R2-1 — A DEAD
+        //      φ IS NOT PROMOTED. `declineClassicalMuxes` opens with its own
+        //      `if (Phi->use_empty()) continue;`, so a header φ nothing reads is
+        //      never refused there — which means the promotion is the LAST owner
+        //      for it, and until this clause it MUTATED: it minted a
+        //      `cqrt_alloc_<W>(seed)` qubit, and a trace line, for a value the
+        //      program does not read, and renumbered every downstream handle.
+        //      No unitary was wrong (an `alloc` is neither a measurement nor a
+        //      non-diagonal gate, and Rule 6 already accepts a left-allocated
+        //      rail), which is why the round filed it P3 — but a qubit minted
+        //      for a dead value is a mutation with no customer.
+        //      ⚠ IT IS A MUTATION-AVOIDANCE CLAUSE, NOT A FENCE. Nothing is
+        //      being made safe; a promotion that does not happen for a value
+        //      with no readers changes no verdict. Measured by the round: the
+        //      same module with the dead φ deleted (`e1c`) already ACCEPTS.
+        //      ⚠ AND IT IS AN IR-LEVEL SHAPE ONLY — `clang -O1` deletes a dead
+        //      φ, so no C spelling reaches it. Stated rather than implied, per
+        //      the bd `hrts` caveat (CLAUDE.md §5): an IR-level result is not a
+        //      C-level one.
+        if (P.use_empty())
+          continue;
+        // (P4) bd `test_C_libtooling-11qv` — EVERY USER OF A φ WE ARE ABOUT TO
+        //      RETYPE IS ONE THE LOWERING REWRITES. Asked ONLY when the retype
+        //      is owed; an `i32` φ is unaffected and this gate is vacuous for it.
+        //
+        //      WHY IT EXISTS. `mutateType(i32)` changes the φ UNDER ITS USERS.
+        //      Every later stage that consumes a tainted narrow value REPLACES
+        //      the consuming instruction — `lowerOps` rewrites a tainted
+        //      `add nsw i16 %φ, -3` into `cq_template_add_i16_hl(i32 %φ, i16 -3)`,
+        //      `lowerMeasures` rewrites `@cq_measure_si16(i16 %φ)` into
+        //      `cqrt_measure_16(i32 %φ)` — so the transient mismatch this retype
+        //      opens is closed by the SAME laundering-by-erasure `RotationLowering`
+        //      relies on. A user that is NOT rewritten keeps reading a value whose
+        //      type moved under it, and the module ends the pass VERIFIER-INVALID:
+        //      `opt` ABORTS (exit 134), which is a crash, not a decline — and
+        //      Rule 1 says the answer to "unsure" is a LOUD DECLINE, never an abort.
+        //
+        //      ⚠ A φ USER IS REFUSED EVEN THOUGH IT IS TAINTED, and that is the
+        //      one deliberate narrowing here. A second φ carrying this one (an
+        //      LCSSA exit φ is the shape that occurs) keeps its NARROW type and
+        //      nothing retypes it, so admitting it would just move the invalid
+        //      edge one φ outward. Widening to a transitive φ closure is an
+        //      ACCEPT-direction change of its own and is FILED, not smuggled in.
+        //
+        //      IT IS A SKIP, NOT A DECLINE (D2): the un-retyped φ reaches
+        //      `declineClassicalMuxes` and is refused there, loudly, one stage
+        //      later.
+        if (Pf->NeedsHandleRetype) {
+          bool AllRewritten = true;
+          for (User *U : P.users()) {
+            auto *UI = dyn_cast<Instruction>(U);
+            if (!UI || isa<PHINode>(UI)) {
+              AllRewritten = false;
+              break;
+            }
+            if (taint.Tainted.count(UI))
+              continue;
+            // An untainted user of a tainted value is a taint ESCAPE and is
+            // already refused upstream; the only untainted users that legally
+            // reach here are the `cq_*` SINK calls, whose own lowering stage
+            // rewrites the operand to the `i32` handle.
+            auto *CI = dyn_cast<CallInst>(UI);
+            Function *CF = CI ? CI->getCalledFunction() : nullptr;
+            if (CF && (CF->getName().starts_with("cq_") ||
+                       CF->getName().starts_with("cqrt_")))
+              continue;
+            AllRewritten = false;
+            break;
+          }
+          if (!AllRewritten)
+            continue;
+        }
         // ---- MUTATION STARTS HERE. Nothing below may refuse.
         IRBuilder<> B(PreTerm);
         Value *H = materializeCopySource(Pf->Seed, Alloc, taint, B,
                                          P.getDebugLoc(), "cq.carried");
         P.setIncomingValue(Pf->ExtIdx, H);
+        // bd `test_C_libtooling-h1ip` — THE ZERO-TRIP PATH NAMES THE SAME
+        // REGISTER. Each recorded bypass incoming is the SEED arriving at an
+        // out-of-loop φ on the GUARD's own edge; rewriting it to `H` makes that
+        // φ mux two `i32` HANDLES under the loop's own CLASSICAL guard — the
+        // identical argument the header φ already stands on: exactly one incoming
+        // is live, and WHICH one is a classical fact the hardware already has.
+        // The φ is recorded in the promotion's own set for the same reason the
+        // header φ is — it is A MUTATION THIS STAGE MADE, never a prediction and
+        // never re-derived at the guard (Rule 14).
+        for (auto &BI : Pf->BypassIncomings) {
+          BI.first->setIncomingValue(BI.second, H);
+          taint.PromotedCarriedHandlePhis.insert(BI.first);
+        }
+        // bd `test_C_libtooling-11qv` — THE RETYPE, and the width record that
+        // makes it safe. `mutateType` is the `RailBankPromote.cpp` idiom (*"the
+        // load IS a rail name now"*); here the φ IS a rail name now.
+        //
+        // ⚠ THE `HandleWidth` RECORD IS NOT BOOKKEEPING — IT IS THE SAFETY
+        // ARGUMENT, and `RailBankPromote`'s spelling of this idiom ERASES where
+        // this one must WRITE. `logicalOperandWidth` (CompareLowering.cpp)
+        // consults this side-table BEFORE the LLVM type precisely because the
+        // type may have been laundered to `i32`; with no entry, a Q+Q compare
+        // over two retyped `i16` φs recovers `i32` from `abiWidthFromType` and
+        // mints `cq_template_icmp_<pred>_i32(h,h)` for two `i16` registers — a
+        // wrong-width symbol that is verify-clean and runs. That is the exact
+        // silent miscompile `CompareLowering.cpp` refuses in writing (*"NEVER
+        // pick one width on disagreement … NEVER default empty -> i32"*).
+        // `Pf->Abi` was read off the φ's type at (Z3), while the type still
+        // said it.
+        if (Pf->NeedsHandleRetype) {
+          P.mutateType(Type::getInt32Ty(M.getContext()));
+          P.setMetadata(LLVMContext::MD_range, nullptr);
+          P.setMetadata(LLVMContext::MD_tbaa, nullptr);
+          taint.HandleWidth[&P] = Pf->Abi;
+        }
         taint.PromotedCarriedHandlePhis.insert(&P);
       }
     }

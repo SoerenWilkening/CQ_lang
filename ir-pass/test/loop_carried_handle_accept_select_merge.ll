@@ -20,9 +20,13 @@
 ; ONE-EDIT mutation of THIS module:
 ;   loop_carried_handle_reject_accumulator.ll   (Z6) the latch incoming is a
 ;                                               template rail, not a merge `%out`
-;   loop_carried_handle_reject_guarded.ll       (Z8) a zero-trip GUARD bypasses
-;                                               the preheader the alloc lives in
-;   loop_carried_handle_reject_narrow_width.ll  (Z3) an `i16` carried phi
+;   loop_carried_handle_accept_guarded.ll      (Z8) a zero-trip GUARD bypasses
+;                                              the preheader — ACCEPTS since bd
+;                                              `h1ip` (2026-09-20): the mint moved
+;                                              into the guard's own block
+;   loop_carried_handle_accept_narrow_width.ll (Z3) an `i16` carried phi — ACCEPTS
+;                                              since bd `11qv` (2026-09-20); it is the
+;                                              RETYPE's positive, not a reject any more
 ;   loop_carried_handle_reject_tainted_seed.ll  (Z4) the seed is already a rail
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
