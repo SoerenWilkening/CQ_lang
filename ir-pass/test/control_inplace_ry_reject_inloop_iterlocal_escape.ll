@@ -36,7 +36,20 @@
 ; ⚠ A `DS_Error` decline writes ZERO bytes to stdout, so an IR-text `CHECK-NOT`
 ; here would be VACUOUS; what pins "no silent lowering" is the `not` INVERSION on
 ; the RUN line plus the string below, mirrored character-for-character.
-; CHECK: error{{.*}}control flow inside a loop body under quantum control
+; ⚠ THE STRING MOVED — bd `test_C_libtooling-8h7d.12`, landed with bd `zujr`
+; (2026-09-19), and the VERDICT did not move one bit.  It used to read
+; `control flow inside a loop body under quantum control`, which is CLAUDE.md's
+; L6 in one line: a structural label on a semantic fence.  In-loop control flow
+; SHIPS; what this module does wrong is read a value THIS ITERATION MINTS after
+; the loop, and that is now what it is told.  The anchor moved with it, to the
+; ESCAPING VALUE where it carries a `!dbg` — the source line the user has to
+; change.
+; ⚠ BLAST RADIUS, MEASURED over all 2104 fixtures: THIS FILE AND NO OTHER.  The
+; two sites that own the string (clause (c3) at detection and its conjunct-1
+; re-ask at final taint) moved together, by Rule 14 — one question must not have
+; two names — and every other `control flow inside a loop body` decline is a
+; different clause and is UNCHANGED.
+; CHECK: error{{.*}}iteration-local value read after the loop under quantum control
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

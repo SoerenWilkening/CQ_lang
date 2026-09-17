@@ -4384,7 +4384,8 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 static bool iterationLocalRollable(
     const llvm::Loop *L, const BasicBlock *LHdr, ArrayRef<Value *> BaseWireOrder,
     const PHINode *MergePhi, CallInst *T, bool StatePrep, Value *RotBase,
-    const SmallPtrSetImpl<CallInst *> &GateCalls, const TaintSet &Taint) {
+    const SmallPtrSetImpl<CallInst *> &GateCalls, const TaintSet &Taint,
+    Instruction **EscOut = nullptr) {
   if (!L || !LHdr || !T)
     return false;  // no loop, no header, no gate — no proof (Prime Directive).
   if (!L->getLoopLatch())
@@ -4427,7 +4428,17 @@ static bool iterationLocalRollable(
   //        question is re-asked at FINAL taint after the round-2 fixpoint by
   //        `declineUnmarkedRolledIterLocal`. One body, two taint sets — never a
   //        second spelling that agrees today (the drbq Inc-3 (b′) defect).
-  return iterationLocalTaintEscape(L, Taint) == nullptr;
+  // bd `test_C_libtooling-8h7d.12` — REPORT THE ESCAPE, do not merely fail on
+  // it. Every other conjunct above is a SHAPE the caller cannot name for the
+  // user; this one has a concrete offending instruction and a concrete sentence
+  // ("a value this iteration mints is read after the loop"), and reporting it as
+  // the generic `control flow inside a loop body` reads as *"in-loop control flow
+  // is unsupported"* when in-loop control flow SHIPS. CLAUDE.md L6: a structural
+  // guard wearing a semantic label.
+  Instruction *Esc = iterationLocalTaintEscape(L, Taint);
+  if (Esc && EscOut)
+    *EscOut = Esc;
+  return Esc == nullptr;
 }
 
 ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
@@ -5724,14 +5735,36 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //      proves a rail that does NOT cross it is re-minted every trip.
         //      `iterationLocalRollable` carries the full argument and the
         //      measured discriminating pair.
+        Instruction *IterEsc = nullptr;
         if (!Rollable && L && LHdr && DT &&
             iterationLocalRollable(L, LHdr, BaseWireOrder, MergePhi, T,
-                                   StatePrep, RotBase, GateCalls, Taint)) {
+                                   StatePrep, RotBase, GateCalls, Taint,
+                                   &IterEsc)) {
           Rollable = true;
           GrantIterLocal = true;
         }
         if (!Rollable) {
-          declineArm(declAnchor(Region), "control flow inside a loop body");
+          // bd `test_C_libtooling-8h7d.12` — THE HONEST STRING FOR THE ONE
+          // CLAUSE THAT HAS A SUBJECT. `IterEsc` is non-null only when every
+          // other (c) conjunct held and (c3) found a value THIS ITERATION MINTS
+          // being read OUTSIDE the loop; that is a sentence about the user's
+          // program, and the generic message is not. Anchored at the ESCAPING
+          // VALUE when it carries a `!dbg` — the source line that reads it — and
+          // at the region otherwise, the `anchorIsLocated` discipline the
+          // conjunct-1 twin already uses (a lost `!dbg` reports `<unknown>:0:0`
+          // and is invisible to every gate but a full-stderr hash).
+          // ⚠ ROUTED THROUGH `declineArm`, like every other decline below the
+          // wire gate, so a region that ALSO carries a DEFERRED wire gate keeps
+          // that message — the wrapper's whole purpose, and the reason this
+          // change moves no `condition predates a non-diagonal gate` fixture.
+          // ⚠ BLAST RADIUS, MEASURED over all 2104 fixtures: ONE file,
+          // `control_inplace_ry_reject_inloop_iterlocal_escape.ll`, and it is the
+          // clause's own pin.
+          if (IterEsc)
+            declineArm(anchorIsLocated(IterEsc) ? IterEsc : declAnchor(Region),
+                       "iteration-local value read after the loop");
+          else
+            declineArm(declAnchor(Region), "control flow inside a loop body");
           return ArmDisposition::Declined;
         }
         // ---- THE RECORD HALF (bd `test_C_libtooling-wx8g`; contract in

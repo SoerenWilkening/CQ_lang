@@ -13,6 +13,22 @@
 ; no-op here rather than a refusal — and a no-op that leaves the phi
 ; UNPROMOTED while `PromotedCarriedHandlePhis` records it would hand
 ; `declineClassicalMuxes` an accept it was never owed.
+; ⚠ MUTANT-VALIDATED, AND IT HAD TO BE (Rule-13 round 1, F-6; CLAUDE.md L10 —
+; *an instrument is worth citing only once it has been made to fail on purpose*).
+; THIS FILE PRINTS THE SAME STRING ON THE ORACLE, so no RUN line of its own
+; discriminates the conjunct it names; what does is a SOURCE MUTANT.  Measured by
+; deleting each of the four conjuncts in turn from a scratch build and running the
+; whole `loop_carried_handle` family against each:
+;
+;     MUTANT Z3 (drop `isIntegerTy(32)`)      KILLS reject_narrow_width   and nothing else
+;     MUTANT Z4 (drop the classical-seed test) KILLS reject_tainted_seed  and nothing else
+;     MUTANT Z6 (drop latchIsControlMergeRail) KILLS reject_accumulator   and nothing else
+;     MUTANT Z8 (drop the reader walk)         KILLS reject_guarded       and nothing else
+;
+; A 1:1 matrix, MISSED 0.  THIS FILE IS THE ONE `MUTANT Z4` KILLS.
+; (The Z3 mutant does not merely change a string: it emits
+; `PHI node operands are not the same type as the result!` and `opt` aborts with
+; exit 134 — a verifier-invalid module, which is what the conjunct exists to stop.)
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
 

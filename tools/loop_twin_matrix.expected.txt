@@ -457,6 +457,52 @@
 # REGENERATE DELIBERATELY: `--regenerate`, then state in the commit message which
 # cells moved and why (Rule 12). Regeneration will not overwrite a hard failure.
 #
+# ── THE bd `test_C_libtooling-zujr` REGENERATION, 2026-09-19, NINE CELLS, and
+#    they are TWO DIFFERENT EVENTS that must never be netted (CLAUDE.md's rule
+#    about a correction and compiler work being different events).
+#
+#    (A) FOUR CELLS CHANGED ONLY THEIR **STRING**, keeping their verdict:
+#        `m_none_{bilprep,bilry,nbilry}_none_none_bcar` (UNROLLED-ONLY) and
+#        `m_none_dilesc_none_none_binv` (DECLINE-BOTH-DIFFERENT). The R7-loop
+#        clause (c3) escape now says `iteration-local value read after the loop`
+#        instead of the generic `control flow inside a loop body` — bd
+#        `8h7d.12`, landed with `zujr`. NO VERDICT MOVED IN THIS GROUP, and that
+#        is the whole content of the change: a structural label replaced by the
+#        semantic one, CLAUDE.md L6. Blast radius over the 2106 fixtures: ONE.
+#
+#    (B) FIVE CELLS CHANGED **VERDICT**, all in the ACCEPT direction, all on the
+#        BANK axis, and none of them by the carried-handle predicate — they are
+#        `railLocalQualifies`' (L3) rail-bank-store exemption, without which no
+#        banked loop could ever be MARKED and
+#        `declineUnmarkedRolledIterLocal`'s conjunct 2 refused the module:
+#          `m_none_kread_none_none_kflat`  UNROLLED-ONLY -> **ACCEPT-IDENTICAL**
+#          `m_none_kcond_none_none_kflat`  DECLINE-BOTH-DIFFERENT -> ROLLED-ONLY
+#          `m_none_kcond_none_none_kloop`  DECLINE-BOTH-DIFFERENT -> ROLLED-ONLY
+#          `m_none_kicond_none_none_kloop` DECLINE-BOTH-DIFFERENT -> ROLLED-ONLY
+#          `m_none_kread_none_none_kloop`  DECLINE-BOTH-DIFFERENT -> ROLLED-ONLY
+#
+#    ⚠ READ THE FOUR `ROLLED-ONLY` ROWS WITH THIS FILE'S OWN WARNING IN HAND —
+#    *"`ROLLED-ONLY` here is not a disposition mismatch to shrug at, it is that
+#    leak"* — AND THEN READ WHY IT DOES NOT APPLY. On the `il*` axis that
+#    sentence is about a rolled form that ACCEPTS while leaking what its twin
+#    discharges. Here the UNROLLED side declines for a reason that has nothing to
+#    do with the loop: `RailBankPromote` is LOOP-SHAPED (it needs a header), so an
+#    unrolled bank is NEVER PROMOTED and dies at `cq taint escape: tainted value
+#    stored to memory` — a PRE-EXISTING asymmetry of bd `xdu2`, present on the
+#    ORACLE, and not something `zujr` caused or can move. There is no twin to
+#    compare against in those four cells, which is exactly why the (L3)
+#    exemption's real witness is a PAIR BUILT FOR IT:
+#    `e2e-slice-loop-bank-derived-cond` against `…-twin`, goldens BYTE-IDENTICAL
+#    at 36 lines, on a DERIVED per-trip condition — the only condition kind whose
+#    chain is the SPINE's to discharge. The ORACLE declined that rolled half, so
+#    the exemption CLOSES a leak rather than opening one.
+#
+#    ⚠ AND `m_none_kread_none_none_kflat` IS THE ONE TO CITE, not the four: it is
+#    `ACCEPT-IDENTICAL`, the strongest statement this instrument makes, and per
+#    this file's own `kflat` note it means *"the rolled bank emits byte-for-byte
+#    what the equivalent SCALAR cascade emits"* (SROA scalarises the twin
+#    completely). It says nothing about a defect the scalar path shares.
+#
 # ── THE NESTED-LOOP AXIS, 23 cells, `m_none_l2*_none_none_*` (bd
 #    test_C_libtooling-vsr6, 2026-09-17). ADDED BY HAND, ABOVE THE MARKER, WHICH
 #    IS THE POINT: the header contract (bd gfsk) exists so a note like this one
@@ -557,9 +603,9 @@ m_none_absphi_none_none_binv DECLINE-BOTH	cq controlled lowering: nested control
 m_none_abval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_abval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_bil2_none_none_binv ACCEPT-IDENTICAL
-m_none_bilprep_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilprep_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
 m_none_bilprep_none_none_binv ACCEPT-IDENTICAL
-m_none_bilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_bilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
 m_none_bilry_none_none_binv ACCEPT-IDENTICAL
 m_none_bphi_none_none_bcar ACCEPT-IDENTICAL
 m_none_bphi_none_none_binv ACCEPT-IDENTICAL
@@ -582,7 +628,7 @@ m_none_der_ry            ACCEPT-IDENTICAL
 m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_der_ry_postmark   DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_der_ry_premark    DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-m_none_dilesc_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: nested control flow under quantum control
+m_none_dilesc_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: iteration-local value read after the loop under quantum control	cq controlled lowering: nested control flow under quantum control
 m_none_dilry_none_none_binv ACCEPT-IDENTICAL
 m_none_eq0_add           ACCEPT-IDENTICAL
 m_none_eq0_ry            ACCEPT-IDENTICAL
@@ -601,10 +647,10 @@ m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
 m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
-m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
-m_none_kcond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kflat ROLLED-ONLY	cq controlled lowering: control flow under quantum control
+m_none_kcond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
-m_none_kicond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+m_none_kicond_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
@@ -614,8 +660,8 @@ m_none_kover_none_none_kloop DECLINE-BOTH-DIFFERENT	cq rail bank: array has cell
 m_none_kprep_none_none_kflat ACCEPT-IDENTICAL
 m_none_kprep_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_kprep_ry_none_kflat UNROLLED-ONLY	cq taint escape: tainted value muxed by a classical-condition phi
-m_none_kread_none_none_kflat UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
-m_none_kread_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
+m_none_kread_none_none_kflat ACCEPT-IDENTICAL
+m_none_kread_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_l2bd_none_none_l2ic UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2im UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
 m_none_l2bd_none_none_l2iu UNROLLED-ONLY	cq loop lowering: rolled body leaks a rail entangled with a rotated register
@@ -631,7 +677,7 @@ m_none_l2nd_none_none_l2im ACCEPT-IDENTICAL
 m_none_l2nd_none_none_l2iu ACCEPT-IDENTICAL
 m_none_l2sib_none_none_none ACCEPT-IDENTICAL
 m_none_l2sibd_none_none_none ACCEPT-IDENTICAL
-m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_nbilry_none_none_bcar UNROLLED-ONLY	cq controlled lowering: iteration-local value read after the loop under quantum control
 m_none_nbilry_none_none_binv ACCEPT-IDENTICAL
 m_none_nbphi_none_none_bcar ACCEPT-IDENTICAL
 m_none_nbphi_none_none_binv ACCEPT-IDENTICAL

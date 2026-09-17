@@ -1200,13 +1200,35 @@ Instruction *taintedExit(Loop *L, const TaintSet &taint) {
 // SCOPE_L1a: the two X1 sites MUST move together or round 2 re-declines what
 // round 1 accepted.
 //
-// ⚠ THE PREDICATE IS DELIBERATELY NOT THE WHOLE PROOF. It is STRUCTURAL and is
-// asked BEFORE the merge emitters have run, so it cannot ask whether the latch
-// incoming really is a control-merge `%out`. `promoteLoopCarriedHandleSeeds` asks
-// that (`taint.ControlOwnedRails`) at FINAL taint and is the ONLY granter of the
-// `declineClassicalMuxes` accept — so a φ this predicate admits but the promotion
-// refuses reaches that guard UNPROMOTED and DECLINES LOUDLY. Every site below is
-// therefore decline-SAFE on its own: none of them is the last owner.
+// ⚠ THE PREDICATE IS DELIBERATELY NOT THE WHOLE PROOF. Two of its four slots run
+// at ROUND-1 taint, BEFORE any merge emitter has run, where `ControlOwnedRails`
+// is necessarily empty — so clause (Z6) answers by SHAPE there and by the RECORD
+// everywhere else. `promoteLoopCarriedHandleSeeds` asks the record at FINAL taint
+// and is the ONLY granter of the `declineClassicalMuxes` accept, so a φ this
+// predicate admits but the promotion refuses reaches that guard UNPROMOTED and
+// DECLINES LOUDLY.
+//
+// ⚠ "THE SHAPE HALF ONLY EVER DEFERS" IS THE WRONG SENTENCE AND IT IS CORRECTED
+// HERE RATHER THAN REPEATED (Rule-13 round 1, F-4). TWO of the four sites DEFER
+// and TWO GRANT, and a future widening will lean on knowing which:
+//
+//   DEFER — nothing is permitted, a later owner still speaks:
+//     * `tryCaseA`'s X1 (round 1): `return false` leaves the loop unclaimed;
+//     * `collapseRailPhisIn`'s X1 (round 2): `continue` leaves the φ.
+//   GRANT — a permission is handed out on round-1 evidence:
+//     * `iterationLocalTaintEscape` via R7-loop clause (c3): removing an escape
+//       lets the REGION through `classifyArms`;
+//     * `railLocalQualifies`' header-φ exemption + `invariantRegisterRootsImpl`
+//       clause (i), via `lowerLoops`: they grant `markIfRailLocal`, i.e. the
+//       SPINE's in-body discharge permission.
+//
+// WHAT BACKSTOPS THE GRANTS, and it is ONE thing: every path from either grant to
+// an emitted module still passes the promotion's record half and then
+// `declineClassicalMuxes`, one stage later. The residual escapes from that
+// backstop are a `use_empty()` φ (no reader, no mux) and `liftOneRegisterMergePhi`
+// succeeding on a header φ — which that function documents itself as refusing for
+// "loop-reachable merges". Neither was constructible in the Rule-13 round; both
+// are where a widening must look first.
 // bd `test_C_libtooling-zujr` clause (Z6) — WILL THIS VALUE BE A CONTROL-MERGE
 // `%out` RAIL? Contract at the clause. Pure analysis.
 static bool latchIsControlMergeRail(Value *LatV, const TaintSet &taint) {
@@ -1232,11 +1254,16 @@ std::optional<CarriedHandleProof> loopCarriedHandlePhi(
     const SmallPtrSetImpl<CallInst *> &GateCalls) {
   // (Z1) A REDUCIBLE, SINGLE-LATCH LOOP WITH A REAL PREHEADER. The preheader is
   //      where the promotion has to put the `cqrt_alloc`, and "there is a block
-  //      that runs exactly once, immediately before the header" is precisely
-  //      what `getLoopPreheader()` answers. A ROTATED loop with a zero-trip
-  //      GUARD has none (the guard block has two successors) — that is a real
-  //      `-O1` shape and it DECLINES here rather than acquiring a promotion slot
-  //      nobody proved runs once (Prime Directive).
+  //      that runs exactly once per ENTRY to the loop, immediately before the
+  //      header" is precisely what `getLoopPreheader()` answers.
+  //      ⚠ IT IS NOT WHAT HANDLES THE ZERO-TRIP GUARD, and an earlier wording
+  //      here said it was (Rule-13 round 1). `clang -O1` gives a ROTATED loop
+  //      `entry -> for.body.preheader -> header`, and that preheader has ONE
+  //      successor, so `getLoopPreheader()` returns it happily. The guard is
+  //      (Z8)'s subject: the alloc in that preheader is BYPASSED on the zero-trip
+  //      edge, which is a statement about the loop's READERS, not about whether
+  //      a preheader exists. MEASURED on `loop_carried_handle_reject_guarded.ll`,
+  //      whose mutant matrix kills it on (Z8) and on nothing else.
   if (!L || !L->getLoopLatch() || !L->getLoopPreheader())
     return std::nullopt;
   BasicBlock *Latch = L->getLoopLatch();
@@ -4051,9 +4078,23 @@ bool railLocalQualifies(Loop *L, TaintSet &taint, LoopInfo &LI,
       // the `!cq.railbank` record `markRailBankAllocas` minted (asked by CALLING
       // `railBankOfPointer`/`isRailBankAlloca`, never re-derived — Rule 14), and
       // the only tainted operand admitted is the value.
-      // It does not hand the spine anything new: a rail parked in a bank is
-      // already FROZEN against adjoint and free by `railStoredToRailBank`, the
-      // D1/D6 predicate, so marking the block cannot make the spine touch it.
+      // ⚠ IT DOES NOT HAND THE SPINE ANYTHING NEW, AND THE GROUND IS THE
+      // INTERIOR PARTITION'S, NOT THE TERMINAL ONE'S. An earlier wording here
+      // cited `railStoredToRailBank` — TRUE CONCLUSION, WRONG PARTITION, and
+      // CLAUDE.md L7's exact shape (Rule-13 round 1, F-1). That predicate guards
+      // `ChainWalk::isTerminalHandle`; what the marking unlocks is
+      // `planInteriorComponent`'s §2.9 exception, and `isInteriorTerminalHandle`
+      // NEVER CALLS IT. What actually excludes a banked rail there is clause
+      // **(I3)** (a `store` user is not an interior terminal) together with
+      // **(I1)** (an alloc-minted producer is excluded outright) — and every
+      // rail a bank can hold today IS alloc-minted, so (I1) alone suffices.
+      // ⚠ RETIREMENT TRIGGER: the day a bank cell can hold a TEMPLATE-minted
+      // rail (bd `xdu2`'s second half), (I1) stops covering it and only (I3)
+      // does. Re-derive this exemption then. MEASURED that the gap is EMPTY
+      // today: four constructions of a template-minted bank rail all die at
+      // `RailBankPromote`'s own fences on BOTH binaries (`cq rail bank: cell
+      // type rewrite failed on a proven bank` / `array mixes a rail cell access
+      // with an unrecognized one`).
       if (isa<GetElementPtrInst>(I) || isa<LoadInst>(I) || isa<StoreInst>(I)) {
         auto *ST = dyn_cast<StoreInst>(&I);
         const bool BankPark =
@@ -6029,13 +6070,25 @@ void promoteLoopCarriedHandleSeeds(Module &M, WidthDispatch &wd,
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
+    // ⚠ THE CHEAP SKIP WALKS THE FUNCTION, NOT `taint.Tainted`, AND THE
+    // DIFFERENCE IS THE ONE `declineDephasingUnmarkedLoopRails` SPELLS OUT
+    // THIRTY LINES AWAY (Rule-13 round 1, F-3). `lowerLoops`' own prescan
+    // iterates the SET and dereferences each member, which is sound THERE
+    // because it runs before any region flatten; THIS stage runs after BOTH of
+    // them and after four lowering stages, and `taint.Tainted` can then hold an
+    // ERASED merge phi whose `getFunction()` is a use-after-free. The neighbour
+    // ends its note with *"Do not 'simplify' it back"* — so this one does not
+    // start there. Same answer, no dereference of a possibly-dead pointer.
     bool AnyTainted = false;
-    for (Value *V : taint.Tainted)
-      if (auto *I = dyn_cast<Instruction>(V))
-        if (I->getFunction() == &F) {
+    for (BasicBlock &BB : F) {
+      for (Instruction &I : BB)
+        if (taint.Tainted.count(&I)) {
           AnyTainted = true;
           break;
         }
+      if (AnyTainted)
+        break;
+    }
     if (!AnyTainted)
       continue;
     DominatorTree DT(F);
@@ -6193,8 +6246,11 @@ void declineUnmarkedRolledIterLocal(Module &M, TaintSet &taint) {
       // drift.
       if (G.IterationLocal && AskedEscape.insert(Hdr).second)
         if (Instruction *Esc = iterationLocalTaintEscape(L, taint)) {
+          // bd `test_C_libtooling-8h7d.12` — THE SAME STRING ITS DETECTION-TIME
+          // TWIN USES. This is (c3) re-asked at FINAL taint; one question must
+          // not have two names (Rule 14).
           diagnoseUnderControl(anchorIsLocated(Esc) ? Esc : I,
-                               "control flow inside a loop body");
+                               "iteration-local value read after the loop");
           return;
         }
       // CONJUNCT 2 — the MARKING postcondition, asked of EVERY grant (finding
