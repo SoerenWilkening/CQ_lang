@@ -174,3 +174,39 @@ protect.
   day bd `r903`/`fg9k` moves the select wall, that program accepts and what it
   accepts is the bd `s82e` dephasing class. Filed against `s82e`, NOT closed here
   (Rule 14).
+
+## 8. The (L3) bank exemption, attacked on its own terms
+
+It is the one widening in this change that is NOT gated on the new predicate, so
+it was probed separately, with the condition kind that can actually witness a
+missing spine discharge — a DERIVED per-trip condition `(q >> i) & 1`, the only
+one that mints `cq_template_*` rails the SPINE (rather than an emitter) must
+reverse. `probes/l3a_bank_derived.c` against `probes/l3b_bank_derived_unrolled.c`:
+
+```
+ORACLE   l3a (rolled)   DECLINE  control flow inside a loop body
+SUBJECT  l3a (rolled)   ACCEPT   36 trace lines
+ORACLE   l3b (unrolled) ACCEPT   36 trace lines
+SUBJECT  l3b (unrolled) ACCEPT   36 trace lines
+diff(l3a.SUBJECT, l3b.SUBJECT) -> EMPTY, BYTE-IDENTICAL
+```
+
+and the per-trip stream shows the full discharge —
+`and → icmp → x → ry_controlled → x → icmp_unc → and_unc → free → free`. So the
+exemption does not merely fail to break anything: **it closes a leak the ORACLE's
+decline was hiding**, and the rolled form now emits what the hand-unrolled twin
+emits, byte for byte. That is the 19-vs-27 shape (`iterationLocalRollable`'s (c3)
+comment) coming out equal.
+
+Other categories attacked, with results:
+
+| probe | what it attacks | ORACLE | SUBJECT |
+|---|---|---|---|
+| `a1_taintedidx.c` | (L3) must not open the tainted-INDEX half | `cq QRAM access: tainted-index memory access inside a loop` | same |
+| `e1_round2.c` | L1 — a seed classical at round 1, tainted at round 2 | decline | same decline |
+| `g2_nested.c` | nested loops around the carried handle | `cq rail bank: the cell walk is re-executed by an enclosing loop` | same |
+| `a14c_accum_i32.ll` | (Z6) — the accumulator keeps `kMsgCrossIter` | `kMsgCrossIter` | `kMsgCrossIter` |
+| `a17_guarded.ll` | (Z8) — the rotated/guarded loop keeps `kMsgCrossIter` | `kMsgCrossIter` | `kMsgCrossIter` |
+| `a18_two_carried.ll` | TWO carried handles in one loop | decline | ACCEPT, two independent preheader allocs, 2 verified frees |
+| `g1_twofn.c` | bd `1yeu` — TWO FUNCTIONS in one module | decline | ACCEPT, 96 lines, 4 verified frees, 0 violations |
+| `d1_postloop_rot.c` | Rule 8 — a non-diagonal gate after the loop | decline | decline (different owner; see `loop_carried_handle_reject_postloop_rotation.ll`) |
