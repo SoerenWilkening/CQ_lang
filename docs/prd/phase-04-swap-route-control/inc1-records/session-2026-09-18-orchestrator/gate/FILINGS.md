@@ -248,3 +248,40 @@ properly (`HEAD~1..HEAD`: 610 insertions, 0 deletions, nothing under `ir-pass`/`
 `tools`/`tests`). Recorded because it is the same species as the blast detector's false CLEAN and as
 every instrument in CLAUDE.md L10: **a guard whose pass message is not computed from its own
 measurement is not a guard.**
+
+## G-9 — **NEW (P2, instrument): my matrix parser reported a quarantine verdict it did not read**
+
+`gate/probes/parse_matrix.py` labelled the six class-A `oder` cells `(not quarantined)`. The matrix
+prints **two** lines for those cells — first `ROLLED AND UNROLLED TRACES DIFFER`, then
+`QUARANTINED SIGNATURE CHANGED — this is a red, not a refresh` — and my parser keyed on the first and
+never read the second.
+
+**Consequence had I acted on it:** six NEW quarantine blocks authored for cells that already have
+blocks and need only `--refresh-quarantine`, i.e. duplicate rows for one defect — and, worse, the
+*wrong operation*, since a refresh re-pins a known class while a new block asserts a new one.
+
+Caught by reading the matrix's own raw text instead of trusting my summary of it. **The general form
+is the one this gate keeps re-learning: a parser is an instrument, and an instrument that summarises
+a report can drop the half of the report that matters.**
+
+## G-10 — **NEW (P2, method): a signature from one renderer is not comparable to a signature from another**
+
+`PASS2_PREP` (B) recorded my `ctlprobe.py` signature `3fa9d45cd851c1b3` for `q_armoncond` and made it
+the **retirement trigger's comparison key** — *"if the pass-2 signature differs … re-derive."* The
+matrix reported `d81485c481c5ad07`, the trigger fired, and I re-derived.
+
+**The trigger had misfired.** Re-measured at pass 2, the control's divergence is **byte-identical to
+pass 1** — same 24 == 24, same multiset equality, same first differing line, and my tool returns
+`3fa9d45cd851c1b3` again. The two numbers were never comparable: both call themselves "sha-256 of the
+unified diff", but mine is over `difflib`'s rendering at `n=1` and the matrix's is over its own. **I
+had even written "none of these signatures may be pinned" — and then used one as a comparison key
+anyway**, which is the same mistake one sentence later.
+
+Same species as PROTOCOL S3's *"lowered-IR md5s are NOT comparable ACROSS sweeps"*, one layer up.
+**Recommendation for the next PROTOCOL:** a retirement trigger keyed on a digest must name the
+renderer that produced it, or key on something renderer-independent (here: the first differing line
+pair and the counts, which WERE stable and would have given the right answer).
+
+⚠ Direction: **safe but costly** — a misfiring trigger spends a re-derivation, where a missing one
+would have shipped a stale argument. It is the correct failure direction, and the fix is to make the
+key honest rather than to weaken the trigger.
