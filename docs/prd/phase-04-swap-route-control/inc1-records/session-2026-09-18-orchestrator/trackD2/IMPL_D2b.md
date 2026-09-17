@@ -44,15 +44,27 @@ block: *"the day step 5a's cross-block compare-leaf decline is widened, delete
 the weaker of two spellings of one question (L2)."* The stale paragraph that carried
 that trigger is rewritten in place, not left standing (L7-with-a-twist).
 
-**What Track X must know:** I do not read or write `condProvenance`'s body and I do
-not touch the §3c clobber prong. I *call* `condProvenance` unchanged. If Track X
-narrows or widens it, my `condRailMembers` seed set moves with it in the
-decline-safe direction in BOTH cases — narrowing shrinks the set (fewer members,
-fewer… no: fewer members means fewer gates count, which is the ACCEPT direction, so
-a narrowing of `condProvenance` is an over-ACCEPT risk for me exactly as it is for
-R4, and CLAUDE.md already calls narrowing it a Rule-13 change to R4). Stated
-precisely rather than comfortably: **`condProvenance` is now load-bearing for a
-FOURTH consumer**, and narrowing it is a Rule-13 change to this prong too.
+**What Track X must know** (⚠ rewritten at the independent Rule-13 round's F-2; the
+sentence that stood here reached the right answer only by catching itself
+mid-sentence, and its twin in `FILE_SURFACE.md` §1 stated the narrowing direction
+BACKWARDS and is now fixed IN PLACE — `FILE_SURFACE.md` §6 E4 quotes the false text
+so the correction can be scored): I do not read or write `condProvenance`'s body and
+I do not touch the §3c clobber prong. I *call* it unchanged.
+
+`condRailMembers` builds a **GATE** set, so the two directions are NOT symmetric:
+
+* **NARROWING `condProvenance` is the ACCEPT direction for this prong** — fewer seeds
+  ⇒ a smaller `Members` ⇒ fewer gap instructions count as evidence ⇒ more modules
+  admitted. An over-ACCEPT risk, exactly the one CLAUDE.md already records for **R4**.
+* **WIDENING it is the DECLINE direction here**, and the over-ACCEPT direction for
+  **F2**.
+
+So `condProvenance` is now load-bearing for a **FOURTH** consumer, its three consumers
+fail in DIFFERENT directions, and **narrowing it is a Rule-13 change to this prong
+too**. ⚠ The source comment at `condRailMembers` is correct about widening and SILENT
+about narrowing; the one sentence that closes it is recorded as an owed ABSENCE in
+`FILE_SURFACE.md` §1 — not applied here, because this follow-up is records-and-headers
+only (`ir-pass/src` stays byte-frozen so the gates cited at `cq-opt 5ee9d144…` hold).
 
 ---
 
@@ -261,6 +273,73 @@ shipped negative.
 
 ---
 
+---
+
+## 9. Review items applied (independent Rule-13 round, `$SES/review_r13_trackD/REVIEW.md`, verdict CLEAR-WITH-ITEMS)
+
+One follow-up commit on `drbq12-hoisted-compare-p4`, **records and headers only** —
+`git diff 832ce900..HEAD -- ir-pass/src` is EMPTY, `cq-opt` stays `5ee9d14420c3533a…`, so every
+gate line cited at that hash remains citable and no suite re-run was licensed or performed. Five
+lines of what changed:
+
+1. **F-1 — NO FENCE ADDED, by instruction and by Rule 14.** The round's P1 is a POPULATION widening
+   of bd `s82e` / `7845` / `1m5p`, not a defect in `crossBlockCompareMintable`; its fence belongs to
+   that bead and a second spelling of it is the drbq Inc-3 (b′) defect. `dD1` / `dD4` / `dD5` are
+   copied into `probes/` with `probes/README_dD_s82e.md`, whose verdict table was **RE-MEASURED by
+   this track on both binaries, not inherited** (Rule 11): `dD1` DECLINE→ACCEPT with `1 template
+   rail left dirty` and the live-derived-record warning; `dD4`, its hand-unrolled twin at the same
+   K, ACCEPT with `0 dirty` and NO warning — the same program, two circuits; `dD5` (loop-VARIANT
+   condition) accepts on BOTH with a byte-identical lowered md5, which is what makes the class
+   pre-existing and the population new. The landing is SEQUENCED BEHIND Group 1 (see §bd).
+2. **F-2 — the narrowing direction was stated BACKWARDS, and the correction landed where the claim
+   lives.** `FILE_SURFACE.md` §1's "What Track X must know" said *"a narrowing is an over-DECLINE
+   for me (safe) … decline-safe in BOTH directions"*. `condRailMembers` is a **GATE** set, so a
+   NARROWING of `condProvenance` shrinks it, scores fewer gap instructions as evidence, and is the
+   **ACCEPT** direction — an over-accept risk, exactly as for R4. §1 is rewritten IN PLACE (not
+   merely errata'd — L7-with-a-twist), §6 gains **E4** quoting the false text so the correction can
+   be scored, and §2 here is rewritten to stop catching itself mid-sentence. ⚠ The reviewer's
+   companion ask — one sentence at `condRailMembers`' own source header, which is correct about
+   widening and SILENT about narrowing — is recorded as an **owed ABSENCE with its exact text** in
+   `FILE_SURFACE.md` §1, because `ir-pass/src` had to stay byte-frozen.
+3. **F-3 — three in-tree claims asserted a fence that was BUILT, MEASURED and REMOVED.** The two
+   converted fixture headers (`control_{inplace_ry,phase_kickback}_reject_inloop_invariant_cond_hoisted.ll`)
+   and `FILE_SURFACE.md` §2 all said the gap walk's *"vocabulary WIDENED to the dtzb in-place
+   `add`/`sub`/`xor`"*, which points in the DANGEROUS direction (a reader concludes the in-place add
+   is fenced here). All three now state the **G6/G7 ORDER interlock** instead, each with a
+   retirement trigger naming what would break the ORDER rather than the semantics: **(a)** control
+   emission ceasing to precede `lowerOps`, or **(b)** a pre-loop `taint.InPlaceRailOps` commitment
+   (`commitOutOfLoopInPlaceOps`) reaching an op inside the gap — that op then has an owner and G5's
+   self-marking clause stops G6 re-asking the position question. Joined to the existing G6 pin, not
+   a new trigger. `FILE_SURFACE.md` §6 gains **E5**.
+4. **F-4 — the two most-cited gate lines under-reported the tree by exactly one file, and it is the
+   one that matters most.** RE-COUNTED, not re-run: `ls ir-pass/test/*.ll | wc -l` = **2091**, the
+   corpus sweep has **2090** rows, and the absentee is
+   `control_inplace_ry_reject_crossblock_cond_theta_behind_add.ll` — §5 R-3's sole individual pin of
+   the gap scan, written after both gates ran. `GATES.md` gains an F-4 correction block saying both
+   halves (a fixture created on this branch has no oracle row to flip, so its absence cannot conceal
+   a mover; and the FINAL `ir-pass-lit` line already covers 2091) and **citing the reviewer's own
+   Rule-11 spot check** (`filter 'crossblock'`, 2091 discovered, 13/13 PASS, that file included)
+   rather than re-running anything at an unmoved binary.
+5. **F-5 — L8 triggers added to the three fixtures that had none, PLUS the one the round's §5
+   flagged as pointing the wrong way.** The R-2 discriminating PAIR
+   (`..._reject_crossblock_cond_wire_gate_in_gap.ll` / `..._crossblock_cond_wire_gate_after_loop.ll`)
+   now carries triggers about the PAIR — including the standing warning that on the ORACLE both
+   halves decline for the same reason, so the pair is evidence only on a binary where the prong
+   exists; `..._reject_crossblock_shared_cond_flag.ll` gains triggers led by *"`SwapRouteEmit` stops
+   minting the shared flag at `Cond->getNextNode()`"*, since that mint POSITION is the whole ground
+   for the conjunct. ⚠ **And one item BEYOND the four listed**, taken because it is a header edit in
+   the same class and silently omitting a named defect would be worse:
+   `control_swap_reject_seq_shared_cond.ll`'s trigger named only the bookkeeping direction; it now
+   leads with the UNITARY one the round supplied — *"if ANY phase-arm emitter ever again puts a gate
+   on the USER'S REGISTER"* — because CLAUDE.md records three earlier phase-arm forms that did
+   exactly that, and all three made every shipped Grover golden the identity.
+
+⚠ **What this commit did NOT do**, so the absence is a statement and not an oversight: no source
+change, no rebuild, no suite run (only `lit --filter` on each touched fixture, singly), no new
+corpus sweep, no twin matrix, and **no fence for F-1**.
+
+---
+
 ## §bd — exact text for the orchestrator to apply (bd writes only from the MAIN checkout)
 
 ```
@@ -281,4 +360,21 @@ bd remember "drbq12-crossblock-compare-mintable-2026-09-17" "bd drbq.12: P4's un
 
 ```
 bd remember "filecheck-count-prefix-scans-forward-2026-09-17" "Two fixture-hygiene facts measured while writing the bd drbq.12 batch, both of which would otherwise ship green. (1) Consecutive COUNT directives under a SHARED prefix scan FORWARD from where the previous one stopped, so N INTERLEAVED symbols cannot be counted under one prefix - and at COUNT-1 the later ones silently match the trailing `declare` lines instead of the calls. ONE PREFIX PER SYMBOL, each COUNT-n followed by its own -NOT (which is what turns 'at least n' into 'exactly n'). (2) A bare negative on a symbol name matches the DECLARATION: cq-lowering leaves `declare void @cqrt_x(i32)` in every module whether or not anything calls it, so `-NOT: cqrt_x` (or --implicit-check-not=cqrt_x) is a RED on a correct stream. Every negative must name the CALL. Same class as bd qta2. Also: lit scrapes RUN: out of PROSE, so quoting the directive token inside a comment mints a bogus run line and the fixture dies with a shell syntax error."
+```
+
+⚠ **SEQUENCING, added after the independent round (F-1) and NOT discretionary.** This landing is
+**sequenced BEHIND Group 1** under one combined merge-and-gate. The reason is F-1: the cross-block
+admission hands new members to bd `s82e` / `7845` / `1m5p`'s in-loop dephasing-leak class — `dD1`
+goes DECLINE→ACCEPT leaving an entangled which-path TEMPLATE rail alive under a trailing
+non-diagonal gate, and its hand-unrolled twin `dD4` gets a DIFFERENT circuit — and **Group 1's
+loop-exit anchor (P2) is the capability designated to discharge it**. No fence is added here (Rule
+14: the fence is that bead's, and a second spelling of another track's fence is the drbq Inc-3 (b′)
+defect). ⚠ **`dD1` / `dD4` / `dD5` are a REQUIRED measurement on the COMBINED binary** at that gate,
+not an optional re-check: they are the only instrument in this track that can see the class, and
+`probes/README_dD_s82e.md` records why every gate D2 itself ran was structurally blind to it.
+
+Append to the `drbq.12` close note:
+
+```
+bd update test_C_libtooling-drbq.12 --append-notes "2026-09-17 (Track D2, follow-up after the independent Rule-13 round, verdict CLEAR-WITH-ITEMS, \$SES/review_r13_trackD/REVIEW.md): items F-2..F-5 applied as ONE records-and-headers commit (git diff 832ce900..HEAD -- ir-pass/src is EMPTY; cq-opt unchanged at 5ee9d14420c3533a, so no suite re-run was licensed). F-1 is a P1 OVER-ACCEPT of POPULATION, not of this predicate: the landing hands new members to bd s82e / 7845 / 1m5p's in-loop dephasing-leak class (dD1_hoisted_template_cond_then_ry.c DECLINE->ACCEPT, 1 template rail left dirty under a trailing non-diagonal cqrt_ry on the register it copies; its hand-unrolled twin dD4 ACCEPTS with 0 dirty and no warning - the same program, two circuits; dD5 with a loop-VARIANT condition accepts byte-identically on BOTH binaries, so the class is pre-existing and only the population is new). NO FENCE ADDED HERE (Rule 14 - it belongs to bd s82e). THIS LANDING IS SEQUENCED BEHIND GROUP 1 under one combined merge-and-gate, because Group 1's loop-exit anchor (P2) is the capability that discharges the class, and dD1/dD4/dD5 are a REQUIRED measurement on the combined binary. Probes + re-measured verdict table: trackD2/probes/README_dD_s82e.md."
 ```

@@ -29,8 +29,30 @@
 ; |0>. What was missing was a clause that could SAY so, and that clause is
 ; `crossBlockCompareMintable` (`ArmClassify.cpp`): the SAME CFG-bounded gap walk
 ; Track P′ built for a claimed prep merge φ, run with the evidence narrowed to a
-; RAIL-RELABELLING gate on the CONDITION's own rail (`railWireClosure`, BothWays)
-; and its vocabulary WIDENED to the dtzb in-place `add`/`sub`/`xor`.
+; RAIL-RELABELLING gate on the CONDITION's own rail (`railWireClosure`, BothWays).
+;
+; ⚠ AND THE dtzb IN-PLACE `add`/`sub`/`xor` IS **NOT** IN THAT VOCABULARY. An earlier
+; draft of this header said it was; that fence was BUILT, MEASURED as a pure
+; OVER-DECLINE (`trackD2/probes/dtzb_flat_red.ll` declines with it and, without it,
+; ACCEPTS emitting `cq_template_add_i32_hl` — OUT of place, on a FRESH rail) and
+; REMOVED. `railRelabellingGateOn`'s own header says so in capitals. The real ground
+; is the G6/G7 ORDER INTERLOCK: control emission runs BEFORE `lowerOps`, so when M-C
+; decides, the flag mint / `_unc` strip / controlled gate are already real
+; instructions reading the condition's handle and already sit AFTER anything in the
+; gap — and G6 refuses the in-place conversion for a parent carrying a use it cannot
+; prove earlier (G7 refuses the prior-producer variant). An in-place candidate in the
+; gap is exactly a candidate M-C refuses.;
+; ⚠ RETIREMENT TRIGGER FOR THAT INTERLOCK, and it is an ORDER property rather than a
+; semantic one, so name what would break the ORDER: (a) the day control emission no
+; longer precedes `lowerOps` in `CQLoweringPass::run`, or (b) the day a PRE-LOOP
+; `taint.InPlaceRailOps` commitment (`commitOutOfLoopInPlaceOps`) reaches an op inside
+; the gap — that op then carries an owner and G5's self-marking clause stops G6 from
+; re-asking the position question about it. Either one, and the removed fence is the
+; shape to re-derive, against G6's answer at that point and NOT against the
+; both-roots reading that made it an over-decline. This trigger is JOINED to the
+; existing G6 pin (`railCondWireDisposition` / `chainedThetaBetweenDefAndBranch`
+; headers: *"if M-C's G6 ever admits an in-place op on a rail with a later read, this
+; ground is gone"*) rather than starting a second one.
 ;
 ; THE STREAM IS THE ALREADY-CLEARED ONE. The `if (a == off)` twin with a
 ; `volatile int off` (which defeats both LICM and CSE) has lowered since drbq Inc 3

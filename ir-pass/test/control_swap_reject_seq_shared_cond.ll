@@ -41,9 +41,22 @@
 ; `swap_` in the name is older history still (the route is retired; CLAUDE.md's
 ; Hallucination-Risk callouts).
 ;
-; RETIREMENT TRIGGER (L8): if `condWireDisposition`'s cross-block prong is narrowed
-; back, this file returns to its inverted form expecting
-; `cq controlled lowering: condition predates a non-diagonal gate under quantum control`.
+; ⚠ RETIREMENT TRIGGERS (L8), and the FIRST one is NOT the obvious one — it was
+; supplied by the independent Rule-13 round (§5, "the single most dangerous accept
+; among the 14 movers"), which observed that this file's correctness is now
+; **contingent on a convention that lives in another file**:
+;   (a) **THE DIRECTION THAT ACTUALLY ENDANGERS THIS FILE: if ANY phase-arm emitter
+;       ever again puts a gate on the USER'S REGISTER.** The accept above rests on
+;       Rule 7 — a phase arm emits mint → `cqrt_rz_i1` on the FLAG → strip → free and
+;       NOTHING on `q`, so region 1 leaves the wire exactly as it found it. CLAUDE.md
+;       records that THREE earlier phase-arm forms did put a tensored Rz on `q`, and
+;       that all three made every shipped Grover golden the IDENTITY. If one returns,
+;       this fixture becomes a silent miscompile with no fence tying the two files
+;       together. Re-derive from `SwapRouteEmit`'s emission contract, not from here.
+;   (b) if `condWireDisposition`'s cross-block prong is narrowed back, this file
+;       returns to its inverted form expecting
+;       `cq controlled lowering: condition predates a non-diagonal gate under quantum control`.
+; Trigger (b) is the bookkeeping one; trigger (a) is the unitary one.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

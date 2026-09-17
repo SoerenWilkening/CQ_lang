@@ -36,13 +36,42 @@ Other files: `ir-pass/test/*.ll` (new fixtures + two pinned over-decline fixture
 `tests/e2e/slice_*.c` + `.expected.log` + the ONE tail anchor in `tests/e2e/CMakeLists.txt`, and
 `$SES/trackD2/` records.
 
-**What Track X must know:** I do not read or write `condProvenance`'s body, and I do not touch the
-§3c clobber prong. I *call* `condProvenance` (unchanged) from a new helper at `:~2800`. If Track X
-narrows or widens `condProvenance`, my `condRailMembers` seed set moves with it in the SAME direction
-as R4's and F2's already do — a narrowing is an over-DECLINE for me (safe), a widening is an
-over-DECLINE for me too (a bigger rail set means more gap gates count as evidence). My prong is the
-one consumer of that cone whose failure direction is decline-safe in BOTH directions; R4's and F2's
-are not. That asymmetry is stated in `IMPL_D2b.md` §3 and in the source comment.
+**What Track X must know** (⚠ **CORRECTED — this paragraph said the opposite in its narrowing half
+until the independent Rule-13 round F-2; the false text is quoted in §6 E4 so the correction can be
+scored, and it is fixed HERE, in the paragraph Track X actually reads**): I do not read or write
+`condProvenance`'s body, and I do not touch the §3c clobber prong. I *call* `condProvenance`
+(unchanged) from a new helper at `:~2800`.
+
+`condRailMembers` builds a **GATE** set — the SSA names that may denote the condition's rail, against
+which an instruction in the gap is scored as evidence. So the directions are **NOT** symmetric and
+**NOT** both safe:
+
+* **NARROWING `condProvenance` is the ACCEPT direction and is an OVER-ACCEPT RISK for this prong.**
+  Fewer seeds ⇒ a smaller `Members` ⇒ fewer gap instructions count as evidence ⇒ more modules are
+  admitted. That is exactly the direction CLAUDE.md already calls a Rule-13 change to **R4**
+  (*"NARROWING `condProvenance` IS A RULE-13 CHANGE TO R4 … would make R4 VACUOUS with every fixture
+  still green"*), and after this landing that cone has a FOURTH consumer with the same exposure.
+* **WIDENING it is the DECLINE direction for this prong** (a bigger rail set means more gap gates
+  count) — which is safe here and is the direction that is an **over-ACCEPT for F2**, whose exclusion
+  set fails the other way.
+
+So the cone's three consumers now fail in different directions and no single sentence covers them:
+narrowing endangers R4 **and this prong**, widening endangers F2. `IMPL_D2b.md` §2 already carried the
+corrected reading; §1 did not, which is what F-2 found.
+
+⚠ **Composition with Track X as parked (`99269301`), measured by the reviewer and not by me:** Track X
+leaves `condProvenance` untouched and adds a file-local narrower sibling
+(`condProvenanceInActivation`, used only by `clobberHoldsPerActivation`), so the two compose today
+with no shared-cone change. The hazard is the NEXT agent, not this merge.
+
+⚠ **OWED, and deliberately NOT taken in this commit:** the reviewer's F-2 fix also asks for one
+sentence at `condRailMembers`' own header, whose comment is correct about *widening* and SILENT about
+*narrowing*. This follow-up commit is records-and-headers only — `ir-pass/src` must stay byte-frozen
+so the gates cited at `cq-opt 5ee9d144…` remain citable — so that edit is recorded here as an
+ABSENCE with its exact text, to be applied by the next change that touches this file:
+*"⚠ NARROWING `condProvenance` is the ACCEPT direction for THIS caller (a smaller Members set scores
+fewer gap instructions as evidence) and is therefore a Rule-13 change to this prong exactly as
+CLAUDE.md already says it is to R4 — the same cone, the opposite direction from F2's."*
 
 ---
 
@@ -59,9 +88,13 @@ flips it for a compare, and pays the price P′ deliberately did not: P′'s cro
 WIRE-BLIND, and the gap for a hoisted loop-invariant compare contains **the arm's own `cq_theta` on a
 disjoint rail** (measured: without a wire filter the 16 row-W cells trade a P4 decline for a P5
 decline and move ZERO). So the new prong is the PRD §13.10 Q1 remedy verbatim — *"admit a compare
-that DOMINATES `Pred` when nothing on the CONDITION's wire stands between it and `BI`"* — with the
-gap walk's **vocabulary widened** to the dtzb in-place `add`/`sub`/`xor`, which is the re-derivation
-`chainedThetaBetweenDefAndBranch`'s own availability trigger demands of a non-φ caller (§4).
+that DOMINATES `Pred` when nothing on the CONDITION's wire stands between it and `BI`"*.
+
+⚠ **CORRECTED — §6 E3 and E5.** The sentence that stood here said the gap walk's *"vocabulary
+[is] **widened** to the dtzb in-place `add`/`sub`/`xor`"*. That fence was BUILT, MEASURED as a pure
+over-decline and REMOVED; the shipped ground for the `add` is the **G6/G7 ORDER interlock**, with its
+own retirement trigger. §4 below is corrected by E3 and this paragraph by E5 — read both before
+quoting §4.
 
 ---
 
@@ -239,6 +272,26 @@ rather than by my scoping read.** `control_phase_kickback_reject_tree_cross_bloc
 records that *"the 4.4 select LIFTED the equivalent blanket cross-block decline (bd
 `9ymx`, owner decision 2026-07-03)."* So PRD §13.10 Q1's "four callers" line is stale
 in at least one of its four, and the residue §5 files is smaller than §5 claims.
+
+**(E4) §1's "What Track X must know" stated `condProvenance`'s NARROWING direction BACKWARDS, and
+§6 did not correct it** — found by the independent Rule-13 round (F-2), which calls it
+L7-with-a-twist *"in its exact shape: a record correction that is not applied where the claim lives
+is not a correction."* The false sentence was:
+
+> *"a narrowing is an over-DECLINE for me (safe) … My prong is the one consumer of that cone whose
+> failure direction is decline-safe in BOTH directions."*
+
+`condRailMembers` is a **GATE** set, so a NARROWING shrinks it, scores fewer gap instructions as
+evidence, and is the **ACCEPT** direction — an over-accept risk, exactly as for R4. `IMPL_D2b.md` §2
+already said so (catching itself mid-sentence); §1 did not, and §1 is the paragraph Track X and the
+orchestrator read. **§1 is now fixed in place**, not merely errata'd. The reviewer's companion ask —
+one sentence at `condRailMembers`' own header — is recorded in §1 as an explicit ABSENCE with its
+exact text, because this follow-up is records-and-headers only.
+
+**(E5) §2 carried the same stale dtzb claim E3 corrects in §4**, and the round (F-3) found it in two
+shipped fixture headers as well. All three are rewritten to the G6/G7 ORDER interlock, with a
+retirement trigger naming what would break the ORDER: control emission ceasing to precede
+`lowerOps`, or a pre-loop `taint.InPlaceRailOps` commitment reaching the gap.
 
 **(E3) §4's shipped answer is NOT the fence §4 describes.** §4 said the availability
 re-derivation would be answered by *"WIDEN[ing] the gap walk's vocabulary … to the

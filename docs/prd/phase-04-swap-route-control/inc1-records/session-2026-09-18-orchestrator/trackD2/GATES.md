@@ -33,12 +33,12 @@ lit --filter (10-fixture batch) | 5ee9d14420c3533a | 18 of 2090 run (filter), 18
 ctest -R '^e2e-.*inloop-hoisted-cond' | 5ee9d14420c3533a | 3/3 Passed (slice 5.08s, twin 2.42s, twin-identical 0.04s) — 100% tests passed, 0 failed out of 3 | impl | 13:0x
 ctest -R ir-pass-lit (1st) | 5ee9d14420c3533a | FAILED — 2 pre-existing decline fixtures flipped: `control_phase_kickback_reject_tree_cross_block_leaf.ll`, `control_swap_reject_seq_shared_cond.ll`. ⚠ RECORDED AS A RED, not as noise; both were then converted deliberately (each names this round in its own header) | impl | 13:1x
 ctest -R ir-pass-lit (2nd, after the 2 conversions) | 5ee9d14420c3533a | 1/1 Test #8 Passed 59.42 sec — 100% tests passed, 0 failed out of 1 | impl | 13:13
-ctest -R ir-pass-lit (3rd, RE-RUN: same binary, fixture batch CHANGED by the mutation-matrix hardening) | 5ee9d14420c3533a | 1/1 Test #8 Passed 110.66 sec — 100% tests passed, 0 failed out of 1 (2090 fixtures; under concurrent agent load, not comparable with the 59 s figure) | impl | 13:32
+ctest -R ir-pass-lit (3rd, RE-RUN: same binary, fixture batch CHANGED by the mutation-matrix hardening) | 5ee9d14420c3533a | 1/1 Test #8 Passed 110.66 sec — 100% tests passed, 0 failed out of 1 (⚠ **2090** fixtures AT THE MOMENT IT RAN — see the F-4 correction block below) | impl | 13:32
 negative_vacuity_check.py (10-fixture batch) | 5ee9d14420c3533a | 10 fixture(s), 42 directive(s) evaluated, 0 VACUOUS, 0 decline-stdout note(s), 0 latent header collision(s), 3 declining module(s), 0 unparsed, 6 front-end-intrinsic exemption(s), 9 resolved by the universe, 0 undecidable, universe 7 module(s); rc=0 | impl | 13:0x
 inject_D2 matrix (1st) | 5ee9d14420c3533a | 9 fixture(s), 108 mutation(s), 67 caught, **MISSED 21**, n/a-HOLE 20 | impl | 13:2x
 inject_D2 matrix (2nd, after hardening) | 5ee9d14420c3533a | 9 fixture(s), 108 mutation(s), 88 caught, **MISSED 0**, n/a-HOLE 20 (every hole is a gate the module legitimately does not contain) | impl | 13:33
 inject_D2 self-check (no argument) | 5ee9d14420c3533a | exits rc=2 with "refusing to report '0 mutations, MISSED 0'" | impl | 13:2x
-corpus sweep ORACLE-vs-SUBJECT, `ir-pass/test/*.ll` | 5ee9d14420c3533a | 2090 rows, 2081 unchanged, **9 movers ALL D→A** (5 are trackD2's own NEW fixtures, 4 pre-existing conversions), **0 A→D**, **0 A→A md5 change** | impl | 13:2x
+corpus sweep ORACLE-vs-SUBJECT, `ir-pass/test/*.ll` | 5ee9d14420c3533a | **2090 rows of the 2091 in the tree** — 2081 unchanged, **9 movers ALL D→A** (5 are trackD2's own NEW fixtures, 4 pre-existing conversions), **0 A→D**, **0 A→A md5 change**. The one absent row is the F-4 correction below | impl | 13:2x
 corpus sweep ORACLE-vs-SUBJECT, session probe `.ll` corpus | 5ee9d14420c3533a | 2464 rows, 2459 unchanged, **5 movers ALL D→A**, 0 A→D, 0 A→A md5 change | impl | 13:27
 
 ## Mutant measurements (evidence, discarded binaries)
@@ -48,6 +48,36 @@ mutant-gap-scan-removed → `r1c_flat_behind_add.ll` | mutant | **exit=0 ACCEPT*
 mutant-gap-scan-removed → `r1a_alias.ll` / `r1b_behind_add.ll` / `..._wire_gate_in_gap.ll` | mutant | all three STILL DECLINE (caught by `wireGainsNonDiagonalGate` or by bd `3d8q`) — recorded because it means those three do NOT pin the scan | impl | 13:4x
 mutant-condRailMembers-BackwardOnly → `r1a_alias.ll`, `n1base.ll` | mutant | both still DECLINE — the `BothWays` choice is not individually pinned by these two probes (bd `e1gr` class) | impl | 13:4x
 mutant-ShareCondFlag-conjunct-deleted → `share_phase.ll` | mutant | **exit=0 ACCEPT**, emitting TWO flag rails from ONE source compare, neither stripped nor freed → the conjunct IS load-bearing; pinned by `control_phase_kickback_reject_crossblock_shared_cond_flag.ll` | impl | 13:1x
+
+## F-4 CORRECTION — the two most-cited lines above under-report the tree by exactly ONE file, and it is the one that matters most
+
+⚠ Found by the independent Rule-13 round (F-4), not by this track. **Re-counted, not re-run**
+(`ls ir-pass/test/*.ll | wc -l` → **2091**; `wc -l < probes/corpus_5ee9d144.txt` → **2090**;
+`grep -c theta_behind_add probes/corpus_5ee9d144.txt` → **0**).
+
+The file present in the tree and absent from both is
+**`control_inplace_ry_reject_crossblock_cond_theta_behind_add.ll`** — by this track's own account
+(`IMPL_D2b.md` §5 R-3) **the ONE fixture that individually pins `crossBlockCompareMintable`'s gap
+scan**. It was written AFTER both gates ran.
+
+**Nothing is wrong and nothing is hidden, but say both halves:**
+* the corpus sweep's 2090 rows are still a complete ORACLE-vs-SUBJECT comparison of every fixture
+  that EXISTED on the oracle — a fixture created by this branch has no oracle row to flip, so its
+  absence cannot conceal a mover;
+* the `ir-pass-lit` line's "2090" is simply the count at the moment it ran, and the FINAL
+  `ir-pass-lit` line below it (`Passed 108.43 sec`, 2091 fixtures) is the one that covers the whole
+  tree.
+
+**No gate is re-run for this.** The reviewer's own Rule-11 spot check is CITED instead, from
+`$SES/review_r13_trackD/GATES.md`:
+`lit -v ir-pass/test --filter 'crossblock'` | `5ee9d14420c3533a` | *Total Discovered Tests: 2091 /
+Excluded 2078 / Passed 13* — 13 of 13 PASS, **including the late-added
+`control_inplace_ry_reject_crossblock_cond_theta_behind_add.ll`* | review | 2026-09-17.
+
+⚠ Re-running the corpus sweep to add one row would change nothing measurable (the row would read
+`O:1 … S:1`, a non-mover on both sides), and re-running `ir-pass-lit` is not licensed: the binary
+did not move. **Recorded as a corrected count plus a cited spot check, which is what the protocol
+asks for.**
 
 ## Not run (an ABSENCE, never a green)
 

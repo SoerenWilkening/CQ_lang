@@ -40,6 +40,21 @@
 ; flag under quantum control` — a dedicated rotation-arm refusal that fires before
 ; `condWireDisposition` is reached, so the conjunct would have no subject there.
 ;
+; ⚠ RETIREMENT TRIGGERS (L8), and the FIRST is the one that matters because it would
+; make this file's accept-direction mutant measurement stale rather than merely
+; out-of-date:
+;   (a) `SwapRouteEmit` stops minting the shared flag at `Cond->getNextNode()` — the
+;       whole ground for excluding `ShareCondFlag` from the cross-block admission is
+;       that mint POSITION, not anything about the wire. If the share path ever mints
+;       at `BI` like every other path, re-derive the conjunct from scratch; it may
+;       become an over-decline.
+;   (b) `condDataUseDisposition` stops returning `ShareOk` for a `zext`-then-measure
+;       lineage — this module would then decline for a different reason and pin
+;       nothing. Check the string, not just the exit code.
+;   (c) the cross-block prong is narrowed back — this file returns to declining for
+;       the ORACLE's reason and its mutant measurement stops isolating anything.
+; Re-derive, never delete.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error: {{.*}}cq controlled lowering: condition predates a non-diagonal gate under quantum control
 ;

@@ -20,6 +20,22 @@
 ; ⚠ DO NOT "TIDY" THE TWO MODULES APART. Every other token must stay identical or the
 ; pair stops isolating one variable, which is the only thing it is for.
 ;
+;
+; ⚠ RETIREMENT TRIGGERS (L8) — this file is HALF A PAIR, so its triggers are about the
+; PAIR, not about itself. It stops discriminating, and the pair stops being evidence,
+; the day ANY of these is true; re-derive BOTH files then, do not delete either:
+;   (a) `condWireDisposition`'s cross-block prong is narrowed back — both halves
+;       return to declining for the ORACLE's reason and the pair says nothing;
+;   (b) `wireGainsNonDiagonalGate`'s position-aware prong stops refusing a gate that
+;       can reach `BI` around a BACK EDGE (`provablyBefore`'s second conjunct) — the
+;       in-gap half would then accept and the pair would invert its meaning;
+;   (c) either module stops being `-O1`-shaped for the other reason — e.g. if the
+;       exit-block half's gate were ever sunk or hoisted, the two would differ in more
+;       than the ONE instruction position that is the whole point.
+; ⚠ AND THE STANDING WARNING: on the ORACLE both halves DECLINE, for the same P4
+; reason. The pair is evidence ONLY on a binary where the cross-block prong exists. A
+; future reader who runs it on one binary alone learns nothing.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck --check-prefix=CNTCRY %s < %t.cqd0.ll

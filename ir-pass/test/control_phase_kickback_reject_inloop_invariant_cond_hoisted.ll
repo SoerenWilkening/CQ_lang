@@ -36,8 +36,29 @@
 ; Rule-13 core and moving it is its own increment with its own adversarial round."*
 ; bd `drbq.12` IS that increment. P4 now admits a cross-block COMPARE whose gap
 ; `crossBlockCompareMintable` has walked with the evidence narrowed to a
-; RAIL-RELABELLING gate on the CONDITION's own rail (`railWireClosure`, BothWays) and
-; its vocabulary widened to the dtzb in-place `add`/`sub`/`xor`. Only this paragraph
+; RAIL-RELABELLING gate on the CONDITION's own rail (`railWireClosure`, BothWays).
+;
+; ⚠ AND THE dtzb IN-PLACE `add`/`sub`/`xor` IS **NOT** IN THAT VOCABULARY. An earlier
+; draft of this header said it was; that fence was BUILT, MEASURED as a pure
+; OVER-DECLINE (`trackD2/probes/dtzb_flat_red.ll`) and REMOVED —
+; `railRelabellingGateOn`'s own header says so in capitals. The real ground is the
+; G6/G7 ORDER INTERLOCK: control emission runs BEFORE `lowerOps`, so when M-C decides,
+; the flag mint and `_unc` strip already read the condition's handle and already sit
+; AFTER anything in the gap, and G6 refuses in-place for a parent with a use it cannot
+; prove earlier.;
+; ⚠ RETIREMENT TRIGGER FOR THAT INTERLOCK, and it is an ORDER property rather than a
+; semantic one, so name what would break the ORDER: (a) the day control emission no
+; longer precedes `lowerOps` in `CQLoweringPass::run`, or (b) the day a PRE-LOOP
+; `taint.InPlaceRailOps` commitment (`commitOutOfLoopInPlaceOps`) reaches an op inside
+; the gap — that op then carries an owner and G5's self-marking clause stops G6 from
+; re-asking the position question about it. Either one, and the removed fence is the
+; shape to re-derive, against G6's answer at that point and NOT against the
+; both-roots reading that made it an over-decline. This trigger is JOINED to the
+; existing G6 pin (`railCondWireDisposition` / `chainedThetaBetweenDefAndBranch`
+; headers: *"if M-C's G6 ever admits an in-place op on a rail with a later read, this
+; ground is gone"*) rather than starting a second one.
+;
+; Only this paragraph
 ; and the directive block below moved; the module is byte-identical to the decline
 ; version, so the flip is pinned against unchanged input.
 ;
