@@ -140,6 +140,18 @@ m_none_gt_rz     m_rz_eq_none             m_rz_eq_rz               m_rz_eq0_none
 m_rz_eq0_rz      m_rz_gt_none             m_rz_gt_rz
 ```
 
+**The attribution is MEASURED, not inferred** (`gate/probes/cellora.py`, 3 cells sampled — the rolled
+and unrolled halves run on BOTH binaries):
+
+| cell | ROLLED on ORACLE | ROLLED on COMBINED | UNROLLED on ORACLE |
+|---|---|---|---|
+| `m_none_eq_none` | **DECLINE** `condition predates a non-diagonal gate` | **ACCEPT** | ACCEPT |
+| `m_none_gt_rz` | **DECLINE**, same string | **ACCEPT** | ACCEPT |
+| `m_rz_eq0_none` | **DECLINE**, same string | **ACCEPT** | ACCEPT |
+
+That is the `UNROLLED-ONLY → TRACE-DIVERGENCE` transition exactly, and the door is **Track D's P4
+widening** — the rolled side could not compile before it and can now.
+
 **Measured mechanism (4 of 15 probed directly; uniform across the sample):**
 
 | cell | rolled | unrolled | multiset | signature |
