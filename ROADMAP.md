@@ -167,6 +167,23 @@ phase, not in advance.
    > needs no `_controlled` twin per gate — the one controlled gate it emits is a
    > basis COPY, not a controlled arm gate), and adjoints are still DERIVED, never
    > hand-authored. See Phase 4's status banner.
+   > **SESSION 2026-09-18 (2026-09-17, orchestrated) — THE DEBT IN FRONT OF bd `zujr`, HALF CLEARED; the
+   > first COMPOSITION Rule-13 round that ran BEFORE the landing.** On `main` `014b4381` (`cq-opt`
+   > `07d93784…`, 459/459, equivalence 2099/0): (1) **bd `vsr6` `b1b1dc02`** the nested-loop twin-matrix
+   > axis, 359 → 382 cells. (2) **bd `6n1s` + bd `tu9q` P1/P2 + bd `1m5p`** — the real MULTIPLICITY test and
+   > the LOOP-EXIT anchor in `Uncomputation.cpp` (a hoisted which-path chain is discharged once at the exit;
+   > 16 A→A movers, 0 verdict flips), and a marked multi-block body no longer leaks its rails (a P1
+   > regression from 2026-09-15, found by review; its arm-minted door closed by a predict-and-verify
+   > BACKSTOP). **P0+P3 of `tu9q` are BUILT and NOT LANDED** (`tu9q-p0-p3-wip`): they retire the only fixture
+   > of `declineRound2FalsifiedRailGrants` — owner question. (3) **bd `drbq.12`** the LICM-hoisted compare
+   > admitted at P4 (87 D→A, 0 A→D) — ⚠ **G-13: D ALONE over-accepts** (the hoisted chain left entangled);
+   > only the composition with (2) is correct, and it was sequenced and reviewed as one. (4) **bd `lc6b`**
+   > stage-2b rule (T4) proves the loop-exit discharge; `--allow-unproven` back to 4. (5) **bd `x5fp` BUILT
+   > and PARKED** — no program has the §3c clobber as its only wall. **The owner's loop program still declines
+   > at 91:15**; its first two walls are the in-loop `_Bool` VALUE arm (bd `ej5w` + bd `3qlq.6`) and the
+   > `i8` wire (bd `r903`); the rail-array wall is gone. Two shipped goldens pinned a Rule-8 wrong unitary
+   > under a green `twin-identical` gate (bd `jlf8`; the loop-free half is still open). 13 tracker entries
+   > closed by measurement, 28 filed. Records: `inc1-records/session-2026-09-18-orchestrator/`; lab entry 011.
 
 8. **Width-only runtime ABI.** Signedness is implicit in the LLVM opcode
    (`add nsw` vs `add nuw`, `icmp slt` vs `icmp ult`); the frontend

@@ -50,3 +50,4 @@ demo/
 # Lab report: sources are committed, the PDF is built locally (owner 2026-09-10)
 docs/labreport/build/
 docs/labreport/labreport.pdf
+.aider*

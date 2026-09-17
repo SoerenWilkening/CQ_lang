@@ -678,8 +678,9 @@ with the hand-unrolled twin (**40** `*-twin-identical` ctest gates today, **29**
 of them named `*loop*`) plus K-independence of the lowered IR.
 `e2e-loop-twin-matrix` (**338** cells since bd `uq96` gave it an `i1` axis,
 `49b7f7bc`) is the only instrument in the tree that can see a **leaked
-TEMPLATE-minted rail** — stage 2b is structurally blind to those, having no
-`cqrt_alloc` to count. ⚠ Before `uq96` the matrix had **no `i1` axis at all**, so
+TEMPLATE-minted rail** — stage 2b's VIOLATION layer is structurally blind to those,
+having no `cqrt_alloc` to count (since `95949550` its CENSUS line does report
+`N template rail mint(s) of which M left dirty`, but it does not gate on it). ⚠ Before `uq96` the matrix had **no `i1` axis at all**, so
 the witness of record for in-loop work could not see the width of the owner's
 whole cascade; and the first 40 `i1` cells still could not see the
 iteration-local rail, because every `B_ARM` declares its second register
@@ -1373,6 +1374,36 @@ declines by the ruling, but the clause deletes the undef before `MeasureLowering
 rows, all byte-identical to the written-zero twin, and the DIRECT spelling still declines. (c) the
 **X5 re-derivation**, recorded as OWED above.
 
+### 4d. The 2026-09-18 landing — the debt in front of `zujr`, half cleared; and the first composition round that ran BEFORE the landing
+
+(`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/`: `CLOSING_REPORT.md`,
+`DECISIONS.md` Q1–Q4/O1, `MERGE_FILINGS.md` F-1…F-16, `gate/FILINGS.md` G-1…G-13.) On `main` `014b4381`
+(`cq-opt` `07d93784…`): **bd `tu9q`'s hoisted-template half is HALF landed** — bd `6n1s` (a marked multi-block
+body leaked its which-path rails; the `g8` arm-minted door is closed by the BACKSTOP
+`declineUndischargedMarkedBodyRails`, a predict-AND-verify postcondition after `uncompute` in both entry
+points), **P1** the real multiplicity test `markedHeaderOf(G) == markedHeaderOf(At)`, **P2** the loop-exit
+anchor (closes bd `1m5p` and the live `a1_apost` Rule-8 over-accept; 16 A→A movers, 0 verdict flips);
+**P0+P3 are BUILT and NOT LANDED** (`tu9q-p0-p3-wip` @ `30b80d7f`) because they retire the ONLY fixture of
+`declineRound2FalsifiedRailGrants` — six obligations, owner question Q4. **bd `drbq.12` LANDED** (P4 →
+`crossBlockCompareMintable`, 87 D→A). **bd `vsr6`** the nested-loop matrix axis (359 → 382). **Rule (T4)
+`loop_exit_discharge`** in `free_pairing_check.py` (bd `lc6b`; its switch-back-edge parser trap bd `5aan`
+closed the same day). **bd `x5fp` BUILT and PARKED** (`x5fp-clobber-per-activation` @ `69414276`): no program
+has S-1 as its only wall — the wall behind it is `ControlDetect`'s in-loop scope fence (bd `3qlq.6`), and on
+the owner's program the clobber is an artefact of the `i8` `_Bool` wire (bd `r903`).
+
+⚠ **G-13, the session's composition result: Track D ALONE over-accepts.** On D's own binary the rolled
+half of every der/rder/range/rrange twin cell leaves the hoisted which-path chain entangled across the
+trailing `cqrt_ry` (`sqrt_f64_unc` rolled 0 / unrolled 1); Group 1's P2 is what discharges it. Neither
+track's gates could see it. The class-H quarantine header (bd `z0cv`) carries the trigger *re-measure on a
+D-without-G1 binary before ever shipping D alone*. **An accept-direction widening of a CONDITION fence owes
+one rolled-vs-unrolled probe with a trailing non-diagonal gate on every register the condition reads.**
+
+⚠ **Two shipped goldens pinned a Rule-8 wrong unitary under a GREEN `twin-identical` gate** (bd `jlf8`,
+`slice_control_inplace_ry_loop_leak{,_unrolled}`; both headers said *"IT IS RULE-6 CORRECT"*): the rolled
+half is now a pinned decline; **the loop-free unrolled twin still compiles the hazard and is under no gate**.
+L10's `m_none_pbitd` cell, on a registered pair. Twelve beads closed by measurement in Wave 0, 28 filed;
+five independent Rule-13 rounds, every loop round finding a P1 on round 1.
+
 ### 5. Open follow-ons, by bd id
 
 ⚠ **bd `3d8q` is CLOSED** (`81c55430`, 2026-09-14 — §4c), and so are the other
@@ -1417,7 +1448,7 @@ is pinned rolled-vs-unrolled byte-identical and K-independent (44 lowered lines 
 arm immediately followed by a flat region declines at the `hcrg` precedence graph
 — `reorderable()` admits only `BranchRegion`/`PhaseKickback`); bd `onq1` and the three `il*`×`bcar`
 twin cells (`MERGE_FILINGS.md` §3) as the residue inside `wx8g`'s capability;
-bd `1ro3`, bd `58tc`, bd `x5fp`, bd `832l`,
+bd `1ro3`, bd `58tc` (⚠ an over-WARN, not an over-decline — the M-A guard is a WARNING by bd `lyyf`; two source comments claiming `8h7d.5` closed it are false, measured 2026-09-17), bd `x5fp` (built and PARKED 2026-09-17: no reachable accept until bd `ej5w`), bd `832l`,
 bd `hqor`; the `a3` residual of leg 1b (a guard that runs once but **not on the
 first trip** — the leg proves "false on every latch arrival", strictly narrower
 than "true on at most one iteration", and widening it is an ACCEPT-direction
@@ -1580,6 +1611,14 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
 
+**Counts, measured 2026-09-17 at the session-2026-09-18 close (`main` `014b4381`, primary rebuilt once,
+`cq-opt` `07d93784…` bit-identical to the gated worktree binary; re-run, not copied).** ctest **459** ·
+`^e2e-` **449** · `^e2e-slice-` **392** · `twin-identical` **43** · `ls ir-pass/test/*.ll | wc -l` **2099** ·
+`ls tests/e2e/*.expected.log | wc -l` **394** · twin matrix **312** expected + **70** quarantine = **382**
+cells (bd `vsr6`'s nested-loop axis + 33 blocks authored at the gate: classes F/G/H) · `--allow-unproven`
+**4** usages. Full `ctest -j6` on that tree: **459/459 in 515.58 s** at load 47→5 (gate worktree, cited by
+S2 for the closing primary). `cq-opt-equivalence-full`: **2099/0**. Earlier chain follows.
+
 **Counts, measured 2026-09-15 at the ARM group gate (`arm-group-gate`, `cq-opt` `7916923f…`; re-run,
 not copied).** ctest **442** · `^e2e-` **432** · `^e2e-slice-` **381** · `twin-identical` **40** · `ls
 ir-pass/test/*.ll | wc -l` **2047** · `ls tests/e2e/*.expected.log | wc -l` **383** · twin matrix
@@ -1676,10 +1715,16 @@ they link, because **the golden byte-diff cannot witness "freed at `|0⟩`"** �
 trace label can answer whether a rail was actually `|0⟩` when freed, at any ABI.
 The two gates are **complementary**: the trace sees the angles and not the rail
 identities; the checker sees the rail identities and not the angles (`cqrt_rz` is
-deliberately transparent to it, being diagonal). ⚠ **It is structurally blind to
-a leaked TEMPLATE-minted rail** — there is no `cqrt_alloc` to count — and
-reported `0 violation(s)` on every circuit in the C-1 leak family; do not cite it
-as clearance for that class. Read the file header for exactly what it does and
+deliberately transparent to it, being diagonal). ⚠ **Its VIOLATION layer is
+structurally blind to a leaked TEMPLATE-minted rail** — there is no `cqrt_alloc` to
+count — and reported `0 violation(s)` on every circuit in the C-1 leak family; do not
+cite it as clearance for that class. Since `95949550` its CENSUS line does report
+`N template rail mint(s) of which M left dirty` (bd `8h7d.6`/`19vy`/`1739`) — a
+number to READ, not a gate. Since 2026-09-17 rule **(T4) `loop_exit_discharge`**
+(Track C, bd `lc6b`) PROVES the loop-exit discharge Group 1's P2 emits (a template
+rail minted outside a loop, read-only inside it, `_unc`+freed once at the exit; 8 of 9
+conjuncts mutant-killed) — it deliberately does NOT prove the dtzb reverse-play, an
+in-loop write to the rail, an `alloc` rail, or any cross-stream use-after-free. Read the file header for exactly what it does and
 does not witness. Its own mutant validation is `free_pairing_check_test.py`
 (ctest `e2e-free-pairing-selftest`). **Four** `e2e-slice-loop-break*` entries pass
 `--allow-unproven` with a written reason (the dtzb whole-loop reverse-play is a
