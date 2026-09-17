@@ -11,7 +11,9 @@
 
 `libCQPass.so` `f9acb293a76af15a09a65b7f8c7ff69ef525849da48e5a897dc330e22ca77a74`
 ORACLE `9bd01598d574b344646281a144cf628ed4ed947d6d20df61cfcb717d321a13b3` — re-verified on disk
-**twice** during the gate (open and mid-run), unchanged, equal to `PROTOCOL.md`'s block.
+**three times** during the gate (at open, mid-run, and after both sweeps), unchanged every time and
+equal to `PROTOCOL.md`'s block. The SUBJECT hash was re-verified with it at the end, so **both
+sweeps provably ran against the intended binaries from first row to last.**
 
 ## 1. The merge
 
@@ -173,9 +175,22 @@ nested-loop class.
   The **full** sweep is §8.
 * **0 gates run twice at one hash.**
 
-## 8. `cq-opt-equivalence-full`
+## 8. `cq-opt-equivalence-full` — **2095 fixtures, 0 mismatches**
 
-*(see GATES.md for the verbatim line)*
+```
+[100%] cq-opt vs stock opt: full all-fixture equivalence sweep
+cq_opt_equivalence: compared 2095 fixtures, 0 mismatch(es)
+```
+
+Exit 0, **3 m 36 s** (15:28:20 → 15:31:56). Licensed by the brief because **Track D moved an analysis
+site and Group 1 moved a discharge placement** — either alone would license it. It compares stdout,
+stderr **and** exit code for every fixture under stock `opt -load-pass-plugin` versus `cq-opt`.
+
+⚠ Its output begins `Built target cq-opt` / `Built target CQPass`. **Those were up-to-date no-ops, not
+a relink** — verified by re-hashing immediately after: `cq-opt` `96d74fe6008133b8…` and `libCQPass.so`
+`f9acb293a76af15a…`, both **unchanged**. This matters because Rule 19 forbids relinking under a
+running measurement and because every gate line in `GATES.md` is keyed to that hash; had it moved,
+those lines would have needed re-taking.
 
 ## 9. Corpus sweep, ORACLE `9bd01598` vs SUBJECT `96d74fe6` — **6981 rows, 137 movers, 0 unattributable, A→D = 0**
 
