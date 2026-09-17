@@ -281,6 +281,23 @@ about the attack and not about the code.
 * **FOUND (F-R3-2)**: the landed prefix **cannot silence Track S′'s fence**, structurally: it marks
   no body, and conjunct (1)'s suppression is now strictly NARROWER than before (a second conjunct
   was added, never relaxed). The composition risk SCOPE_T2 §6 lens 9 names belongs to P3.
+* **FOUND (F-R3-2b) — the JOINT fold's subset step, argued rather than left for the reviewer to
+  reconstruct** (§8 item 3 asks for exactly this, so here is the argument to attack).
+  `markedBodyRailsHaveInBodyDischargePoint` folds ONE post-dominator over the union `S` of every
+  interior rail's block and its users' blocks, and claims that is an upper bound on any single
+  component's `At` (the component's block set `T` is a subset of `S`). The step that needs care is:
+  **does `pdom(S) ∈ OwnBlocks(L)` imply `pdom(T) ∈ OwnBlocks(L)` for `T ⊆ S`?**
+  It does, and the reason is the contrapositive rather than a tree-path argument: if ANY block in
+  `S` exits `L`, then a common post-dominator of that block must post-dominate BOTH its in-loop and
+  its out-of-loop successor, so it lies outside `L` — and `pdom(S)` is therefore NOT an own block,
+  and the predicate has already returned `false`. So reaching the `true` branch means **no block in
+  `S` exits the loop**, and every post-dominator of a subset of non-exiting own blocks is itself
+  reached without leaving `L`. A user inside a SUBLOOP is handled by the other conjunct
+  (`LI.getLoopFor(Common) == L` fails), which is also the conservative direction.
+  ⚠ What this argument does NOT cover, and the reviewer should push there: a loop whose EXIT BLOCK
+  is itself inside an OUTER loop. `pdom` can then be an own block of the outer loop, the
+  `LI.getLoopFor(Common) == L` conjunct refuses it, and the fence arms — believed conservative, and
+  **not constructed**.
 * **FOUND (F-R3-3)**: `taint.IterationLocalBlocks`' raw-`BasicBlock *` exposure (§5.1 of the
   scope) gains a NEW KIND of consumer here — `markedHeaderOf` makes the set decide a
   MULTIPLICITY question, not only a suppression. The asymmetry that keeps it safe is written at
