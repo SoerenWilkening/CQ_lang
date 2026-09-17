@@ -260,3 +260,91 @@ Prime-Directive-safe but is an over-decline candidate on the rolled side.
 **The matrix ends this gate RED, deliberately and with every cell accounted for.** Nothing was
 regenerated, nothing was re-pinned, no quarantine block was added or deleted, and
 `tools/loop_twin_matrix.expected.txt` / `.quarantine.txt` are **byte-unchanged** on this branch.
+
+---
+
+# PASS 2 — SUBJECT `07d937842bfb5135`. The matrix is STILL RED, and the reasons have CHANGED COMPLETELY
+
+`462/462 … 318 - e2e-loop-twin-matrix (Failed)` inside a **458/459 in 1059.19 s** suite.
+**382 cells — 183 ACCEPT-IDENTICAL, 79 DECLINE, 120 other; 37 quarantined, 4 boundary controls.**
+
+```
+ACCEPT-IDENTICAL 182 · ACCEPT-IDENTICAL-WARN 1 · DECLINE-BOTH 37 ·
+DECLINE-BOTH-DIFFERENT 42 · ROLLED-ONLY 3 · TRACE-DIVERGENCE 70 · UNROLLED-ONLY 47
+control q_armoncond TRACE-DIVERGENCE · q_nestinline / q_nestinlineplain / q_noregion ACCEPT-IDENTICAL
+```
+
+## ⚠ THE TWO HEADLINES, AND THE FIRST IS AN INSTRUMENT REPAIR
+
+**1. `HARNESS-ERROR` is GONE: 24 → 0, and `QUARANTINE STALE` is GONE: 6 → 0.** Track C's (T4) rule
+proves the loop-exit discharge, so the 24 cells that could not be *spoken for* in pass 1 now carry
+real verdicts, and the pass-1 artefact (six cells told to "REMOVE IT" because the 2b abort preempted
+their trace comparison) **cannot arise from this cause any more**. Filing G-7 is resolved at the cause.
+
+**2. bd `1m5p` CLASS A IS FIXED, AND THE INSTRUMENT NOW SAYS SO ITSELF.** In pass 1 I had to
+hand-measure past the abort to claim it. Pass 2's own report, all six cells:
+
+| cell | rolled | unrolled |
+|---|---|---|
+| `m_none_oder_none_none_none` | **(5, 5, 7) over 27 lines** | **(5, 5, 7) over 27 lines** |
+| `…_addpost` / `…_rypost` / `…_rypre` | (5, 5, 7) over 29 | (5, 5, 7) over 29 |
+| `…_rzpost` | (5, 5, 7) over 27 | (5, 5, 7) over 27 |
+| `…_rpostmark_none` | (5, 5, 7) over 28 | (5, 5, 7) over 28 |
+
+The quarantine header records the ORACLE as `(4, 4, N)` against `(6, 6, N)` with *"ROLLED IS THE
+DEFICIENT SIDE"*. **Counts are now EQUAL on every one.** The residue is the single positional
+`cqrt_free(h6)` crossing `cq_template_sqrt_f64_unc(h4, h3)` — disjoint rails, commuting, same unitary.
+
+## What is red now, by the matrix's OWN messages (not my parser's labels)
+
+| message | count | what it needs |
+|---|---|---|
+| `verdict changed` | **49** | `--regenerate` |
+| `ROLLED AND UNROLLED TRACES DIFFER` | **39** (incl. the 6 below, which print both) ⇒ **33 genuinely unquarantined** | 33 NEW quarantine blocks — *a human decision with a bd issue attached*, which the tool cannot author |
+| `QUARANTINED SIGNATURE CHANGED` | **6** — exactly the class-A `oder` cells | `--refresh-quarantine` with a written reason |
+| `BOUNDARY CONTROL still diverges but DIFFERENTLY` | **1** — `q_armoncond` | the O1 re-pin |
+
+⚠ **MY PARSER MISLABELLED THE SIX.** It reported them as `(not quarantined)` because it keyed on the
+first message; the matrix prints a *second* line, `QUARANTINED SIGNATURE CHANGED — this is a red, not
+a refresh`, which is the real verdict. Acting on my parser would have authored six NEW blocks for
+cells that already have blocks and need only a refresh. Recorded as an instrument defect of mine.
+
+The 33 new cells by region token: `eq` 7 · `der` 7 · `rder` 5 · `range` 4 · `gt` 4 · `eq0` 4 ·
+`rrange` 2. **Two mechanism groups**, both already argued:
+* `eq`/`gt`/`eq0` (15) — **Track D's P4**, the per-trip flag mint vs `-O1` CSE (PASS2_PREP C-1/C-2).
+* `der`/`rder`/`range`/`rrange` (18) — the cells that were HARNESS-ERROR in pass 1. They are the
+  class-A shape: **Group 1's P2 loop-exit discharge**, counts now equal, positional residue.
+
+## (B) `q_armoncond` — THE RE-PIN IS JUSTIFIED, AND MY OWN TRIGGER FIRED ON A FALSE COMPARISON
+
+`PASS2_PREP` (B) said: *"If the pass-2 signature differs from `3fa9d45cd851c1b3`, re-derive the
+argument before pinning — a third signature would mean Group 1's fix moved it again."* The matrix
+reported `d81485c481c5ad07`, so I re-derived. **The conclusion is that the trigger misfired, and the
+reason is worth more than the trigger:**
+
+Re-measured at the pass-2 hash (`gate/probes/ctlprobe.py`): **24 == 24 lines, MULTISET-EQUAL, the
+SAME first differing line and the SAME `cqrt_free(h5)` position as pass 1, and my tool's signature is
+`3fa9d45cd851c1b3` — BYTE-IDENTICAL TO PASS 1.** The divergence did **not** move between pass 1 and
+pass 2.
+
+⚠ **`3fa9d45cd851c1b3` was never comparable to the quarantine's pins.** It is *my* tool's sha over
+*its* unified-diff rendering (`difflib`, `n=1`); the matrix computes its own over its own rendering.
+Two numbers that both call themselves "sha256 of the unified diff" are **not** the same key. I wrote
+"none of these may be pinned" and was right — and then used one as a comparison key anyway, which was
+the error. Same species as PROTOCOL S3's *"md5s are NOT comparable ACROSS sweeps"*.
+
+**So the adjudication stands unchanged** (track = Group 1's P2 by string; verdict `TRACE-DIVERGENCE`
+unchanged; per-trip argument = one `cqrt_free(h5)` crossing instructions on disjoint rails, `h5`
+proven-`|0⟩` by its own `_unc` on both sides), and the authoritative value to pin is **the matrix's
+`d81485c481c5ad07`**, never mine. Both halves now also run STRICT 2b clean: rolled `8 verified,
+0 violation(s), 0 unproven`; unrolled `10 verified, 0 unproven`.
+
+## Verdict: the matrix is handed off RED, deliberately
+
+Greening it is **one large deliberate operation**, not a command: 33 hand-authored quarantine blocks
+(each needing a bd id and a per-trip argument — the tool *"can neither add nor remove a cell"*), a
+`--refresh-quarantine` for the six class-A cells, the `q_armoncond` re-pin, a `--regenerate` for the
+49 verdict changes, and a ~10-minute re-run to confirm. **I did not perform it**, and
+`tools/loop_twin_matrix.expected.txt` / `.quarantine.txt` are **byte-unchanged on this branch** — as
+they were after pass 1. The arguments needed for all of it are written above and in
+`PASS2_PREP.md`; what is missing is the authoring, not the reasoning.
