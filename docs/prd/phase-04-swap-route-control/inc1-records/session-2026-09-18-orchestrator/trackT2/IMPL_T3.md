@@ -224,6 +224,20 @@ about the attack and not about the code.
   true, i1 %14`), so the body is three blocks with one exit, exactly as the no-break shape. *The
   break is a spelling, not a cause*, which is the review's own §C.3 conclusion reproduced on the
   subject.
+* **FOUND (F-R2-4) — the OUTERMOST walk IS exercised, and it took THREE probes to reach it.**
+  `p2e_nest_outermost` (a 2-deep nest with a tainted region in the innermost body) declines at the
+  **2c condition-wire fence**; removing the post-loop rotation (`p2f_nest_outermost_norot`) moves
+  the decline to `cq controlled lowering: control flow inside a loop body under quantum control` —
+  the nested-loop wall `CLAUDE.md` §2 lists. **So a nest with in-loop tainted CONTROL can never
+  reach `Uncomputation` at all**, which is why lens 5 looked unreachable. The third shape,
+  `p2g_nest_datarail`, has NO tainted control flow: `int p = a*3;` minted outside BOTH loops and
+  read as DATA in the innermost body. It ACCEPTS, **both loops survive as rolled `!llvm.loop` back
+  edges** (checked in the lowered IR — the 4-iteration trace is the runtime, not an unroll), and
+  `cq_template_mul_i32_hl_unc(h1, h0, 3)` + `cqrt_free(h1)` appear **exactly once, after the WHOLE
+  nest**. Had the walk taken the INNERMOST loop the discharge would sit at the inner exit and fire
+  once per OUTER trip against a once-executed mint; §2.9 would then refuse it and the rail would
+  leak. **The OUTERMOST choice is therefore measured, not only argued** — and this was listed in an
+  earlier revision of §8 as an attack I had NOT done, which is now false and is corrected here.
 * **FOUND (F-R2-3)**: **the warning does NOT go silent on `t5j`**, and the reason is a different
   guard. `recordIsExemptAt` clause 4 exempts a record measured before the gate via
   `provablyBeforePerActivation`, whose dominance conjunct FAILS for the CONDITIONALLY-executed
@@ -393,12 +407,19 @@ returns **true**, because the commit that would make it false has been refused b
    of a diamond inside a marked body. That is a wrong unitary, not a leak, and nothing else in the
    change would notice.
 
-2. **P2's OUTERMOST walk against a NEST, and the `Loop::contains` / `LI.getLoopFor` asymmetry.**
-   SCOPE_T2 §6 lens 5 says *"one of the two is wrong in exactly one of the two sites"* — and **I
-   did not build a nested customer**. The anchor walk uses `Loop::contains` (subloops INCLUDED:
-   "is the mint inside this cycle at all") and `markedHeaderOf` uses `LI.getLoopFor` (INNERMOST:
-   "how often does this block run"). Both are argued at their sites and neither is measured against
-   a 3-deep nest. `r1_triple_nest_mid_rail` is the seed the scope names.
+2. **P2's OUTERMOST walk at DEPTH ≥ 3, and the `Loop::contains` / `LI.getLoopFor` asymmetry.**
+   SCOPE_T2 §6 lens 5 says *"one of the two is wrong in exactly one of the two sites"*. ⚠ **An
+   earlier revision of this section said I had built no nested customer; that is now false** —
+   `p2g_nest_datarail` is a real 2-deep nest (both loops survive as rolled `!llvm.loop` back edges)
+   whose hoisted `mul` rail is discharged exactly ONCE after the WHOLE nest (§3 F-R2-4). What is
+   still owed is **DEPTH 3** and the deliberate attack on the asymmetry itself: the anchor walk uses
+   `Loop::contains` (subloops INCLUDED — "is the mint inside this cycle at all") while
+   `markedHeaderOf` uses `LI.getLoopFor` (INNERMOST — "how often does this block run"), and only one
+   depth has been measured. `r1_triple_nest_mid_rail` is the seed the scope names.
+   ⚠ Carry the reason the first two attempts failed, or the next agent repeats them: a nest with
+   in-loop tainted CONTROL cannot reach `Uncomputation` at all — it is claimed first by the 2c
+   condition-wire fence and then by `control flow inside a loop body under quantum control`. The
+   customer has to be a DATA rail.
 
 3. **`markedBodyRailsHaveInBodyDischargePoint` models another file's placement.** It predicts
    `dagInsertPoint`'s answer, from `LoopLowering.cpp`, BEFORE `lowerOps`, using a JOINT
