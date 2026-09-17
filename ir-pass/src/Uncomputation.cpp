@@ -203,15 +203,26 @@ private:
 // `markedHeaderOf` returns `nullptr` for every irreducible block, and the
 // PRE-EXISTING `canRepeat` test has already refused it before this one is asked.
 //
-// ⚠ THE NULL×NULL CELL IS THE ONE TO ATTACK, and it is sound only because of a
-// test that runs FIRST. Two UNMARKED blocks in two DIFFERENT loops both key to
-// `nullptr` and compare EQUAL. That is not a claim that they repeat alike — it is
-// a claim that the per-endpoint `canRepeat` tests BESIDE this one have ALREADY
+// ⚠ THE NULL×NULL CELL IS THE ONE TO ATTACK, and it is sound only because of
+// tests that run STRICTLY BEFORE it. Two UNMARKED blocks in two DIFFERENT loops
+// both key to `nullptr` and compare EQUAL. That is not a claim that they repeat
+// alike — it is a claim that the per-endpoint `canRepeat` tests have ALREADY
 // refused any repeating unmarked block, so by the time this predicate is asked
-// `nullptr` can only mean "runs at most once per activation". **If either of
-// those tests is ever narrowed or reordered to run after this one, this
-// predicate becomes an OVER-ACCEPT.** Stated here rather than left for the
-// reader to reconstruct.
+// `nullptr` can only mean "runs at most once per activation".
+//
+// **THE ORDERING IS THE PROOF, SO IT IS MEASURED AND NOT ASSERTED.** At each of
+// the three call sites the gate-side test and the `At`-side test both precede
+// this one in program order:
+//   * `planInteriorComponent` §4  — `canRepeat(G->getParent()) &&
+//     !IterationLocalBlocks.count(…)` sits IMMEDIATELY above `multiplicityAgrees`,
+//     which sits immediately above `DT.dominates(G, At)`;
+//   * `planInteriorComponent` §2.9 — `blockCanRepeat(At->getParent()) &&
+//     !IterationLocalBlocks.count(…)` sits IMMEDIATELY above the final-`At` loop;
+//   * `reverseTerminalGroup` — the `InLoop` membership re-confirmation and the
+//     `blockCanRepeat(At->getParent())` clause both precede the mirror.
+// **If either family of tests is ever narrowed, OR REORDERED TO RUN AFTER THIS
+// ONE, this predicate becomes an OVER-ACCEPT.** Reordering is the cheaper
+// mistake and the one a tidy-up makes, which is why it is named first.
 //
 // ⚠ RETIREMENT TRIGGER: a THIRD `IterationLocalBlocks.insert` site, or a marker
 // that is not `LoopInfo`-gated, invalidates the null-key reading. It is the SAME

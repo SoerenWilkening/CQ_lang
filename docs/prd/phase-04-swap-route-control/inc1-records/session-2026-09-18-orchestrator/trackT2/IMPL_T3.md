@@ -188,7 +188,23 @@ about the attack and not about the code.
 * **FOUND (F-R1-2)**: the null×null cell is sound **only because the per-endpoint `canRepeat`
   tests run FIRST**. Written at the definition with the over-accept it becomes if either is ever
   narrowed or reordered.
-* **FIXED**: both, in prose at the site. No code change.
+* **FOUND (F-R1-3) — the relaxation's own soundness argument, checked rather than
+  asserted.** §1.1 claims *"what is relaxed is only a READER the reversal never touches"*. That is
+  an argument about a CASE SPLIT over `R->users()`, so the split was enumerated: (a) a template
+  producer whose own rail IS owned by this component is in `D.Calls` and §4's unrelaxed
+  `DT.dominates(G, At)` refuses it; (b) an IN-PLACE gate on `R` writes `R`, so `recoverDataDag`
+  must have it in `D.Calls` for the adjoint to be correct at all — §4 refuses it too; (c) a
+  template producer whose rail is NOT owned (measure-owned, which is `t5j`'s `and`) is a pure
+  reader and is the only case the relaxation admits; (d) a measure would have made `R` a
+  non-candidate. **So a CONDITIONAL in-place gate cannot reach the relaxed leg**, which is the
+  attack that would have broken it.
+* **FOUND (F-R1-4) — the null×null premise is an ORDERING claim, so the order was MEASURED.** At
+  all three call sites the per-endpoint `canRepeat` tests precede `multiplicityAgrees` in program
+  order (`Uncomputation.cpp` §4 `:1202` → `:1240` → `:1242`; §2.9 `:1265` → `:1276`;
+  `reverseTerminalGroup` `:633` / `:756` → `:771`). The comment was corrected from *"BESIDE this
+  one"* to name the ordering and to say that **REORDERING** — the cheaper mistake, and the one a
+  tidy-up makes — is what turns the predicate into an over-accept.
+* **FIXED**: all four, in prose at the site. No behavioural change.
 
 ### Round 2 — the loop shapes (lens 4-7)
 
@@ -356,3 +372,35 @@ returns **true**, because the commit that would make it false has been refused b
   new KIND of reader (§3 F-R3-3);
 * the **e2e gap** (§6.2) and the **stage-2b stream-model limitation** (§6.3);
 * the **P0/P3 dispositions** — movers 7 and 8 (§5).
+
+---
+
+## §8 — FOR THE INDEPENDENT REVIEWER: the three most dangerous things, in order
+
+1. **`useCompleteBeforeDischarge`'s case split (F-R1-3).** The relaxation is sound *because* every
+   user that the reversal will ADJOINT is re-proved under the unrelaxed `DT.dominates(G, At)` in
+   §4. That rests on one claim: **an in-place gate on the owned rail is always in `D.Calls`.**
+   Attack it. If `recoverDataDag` can ever fail to walk an in-place gate on an owned rail — a
+   width-punned one, one behind a `!cq.branchphase` membership refusal, one the 7.4 break teardown
+   minted — then a CONDITIONAL such gate reaches the relaxed leg and the adjoint fires on one arm
+   of a diamond inside a marked body. That is a wrong unitary, not a leak, and nothing else in the
+   change would notice.
+
+2. **P2's OUTERMOST walk against a NEST, and the `Loop::contains` / `LI.getLoopFor` asymmetry.**
+   SCOPE_T2 §6 lens 5 says *"one of the two is wrong in exactly one of the two sites"* — and **I
+   did not build a nested customer**. The anchor walk uses `Loop::contains` (subloops INCLUDED:
+   "is the mint inside this cycle at all") and `markedHeaderOf` uses `LI.getLoopFor` (INNERMOST:
+   "how often does this block run"). Both are argued at their sites and neither is measured against
+   a 3-deep nest. `r1_triple_nest_mid_rail` is the seed the scope names.
+
+3. **`markedBodyRailsHaveInBodyDischargePoint` models another file's placement.** It predicts
+   `dagInsertPoint`'s answer, from `LoopLowering.cpp`, BEFORE `lowerOps`, using a JOINT
+   post-dominator fold over all interior rails (an upper bound on any single component's `At`).
+   Two things to attack: the fold's SUBSET argument — is `pdom(T) ∈ OwnBlocks(L)` really implied by
+   `pdom(S) ∈ OwnBlocks(L)` for `T ⊆ S`, in a loop with an exit block inside an outer loop? — and
+   the fact that it has **no `false`-answering customer**, so its decline path is a prediction
+   validated only by mutation (17 fixtures depend on its `true`).
+
+**And one that is not a defect but will mislead a reader**: `t5j_twoblock_noexit_rot.c` still emits
+the M-A warning after the fix. It is NOT about the `ashr` rails (all four are discharged) — it is
+`recordIsExemptAt` clause 4 failing on a CONDITIONALLY-executed measure. §3 F-R2-3, filed.
