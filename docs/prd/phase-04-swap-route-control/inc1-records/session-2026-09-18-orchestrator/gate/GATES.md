@@ -70,3 +70,27 @@ D→A attribution RE-MEASURED on the ORACLE (not read off the truncated sweep ro
 **g8 BLAST RADIUS over the shipped-slice set** | 96d74fe6008133b8 | **383 of 386 slices scored** (3 `*_lib.c` halves skipped): `CLEAN 223 · DIRTY-NO-TRAILING-GATE 152 · DECLINE 6 · **G8-SHAPE 2**`. **Both hits are REGISTERED SHIPPING GOLDENS.** Probe half: 227 of ~2449 then STOPPED (task `bkgwiuf3r`; orphan killed by recorded PID 66488) — recorded as an ABSENCE. ⚠ The detector reported a FALSE CLEAN on its first run (`-q` suppresses the census) and was caught by a known positive | m&g | 2026-09-17 15:22
 **`cmake --build build --target cq-opt-equivalence-full`** | 96d74fe6008133b8 | `cq_opt_equivalence: compared 2095 fixtures, 0 mismatch(es)` — exit 0, **3 m 36 s** (15:28:20→15:31:56). Licensed because Track D moved an ANALYSIS SITE and Group 1 moved a PLACEMENT. ⚠ Its `Built target cq-opt` lines were up-to-date NO-OPS, not a relink: re-hashed immediately after and both binaries are **unchanged**, so every line in this file stays a fact about the binary on disk | m&g | 2026-09-17 15:32
 ORACLE re-verified on disk, 3rd time, after all sweeps | 9bd01598d574b344 | `9bd01598d574b344` — unchanged; SUBJECT `96d74fe6008133b8` — unchanged. Both sweeps ran against the intended binaries throughout | m&g | 2026-09-17 15:27
+
+## PASS 2 — SUBJECT `07d937842bfb5135` / libCQPass `19dcfde08ffbb69c`
+
+⚠ **NOT Group 1's `df2445fcaf82cf00`** — theirs has no Track D. Their gate lines are therefore not
+facts about this binary and NOTHING below is cited from their hand-off; every line is re-measured.
+
+gate | cq-opt | result | who | when
+--- | --- | --- | --- | ---
+five merges, 0 conflicts | — | `c81f70e0` (G1) · `bba8ecaa` (D) · `5822ed42` (G1 fix `22a0ab11`) · `7fd47544` (Track C `26dff90e`) · `a506728d` (D records `592fa164`) | m&g | 2026-09-17 16:40
+post-union checks (re-run after every merge AND after the G-4 edit) | — | 0 duplicate `add_test`; **449** (452 − G1's 3 unregistered; reconciles with their 449→446 by exactly D's +3); sweep still LAST | m&g | 16:44
+L8 duplicate-body scan | — | **2099 fixtures, 9 pre-existing groups, 0 CONTRADICTORY-VERDICT** | m&g | 16:38
+counts | — | fixtures 2095→**2099** (+4); goldens 396→**394** (−2 deleted) | m&g | 16:38
+⚠ records-only merge RE-VERIFIED after a bad check | — | my first check printed `[empty = safe]` from an **unconditional echo** beside a diff in the wrong basis. Re-done properly (`HEAD~1..HEAD`): **610 insertions, 0 deletions, nothing under ir-pass/include/runtime/tools/tests** | m&g | 16:39
+**G-4 — STRICT 2b on `slice_loop_hoisted_chain_exit_discharge`** | 07d937842bfb5135 | **BEFORE** (96d74fe6, pre-T4): `1 verified, 0 violation(s), 3 unproven`, rc=1, 3× `U3-extern-rail`. **AFTER**: `4 verified, 0 violation(s), 0 unproven`, **rc=0**. ⇒ `--allow-unproven` + its reason REMOVED; actual flag count **5→4**, all four survivors the loop-break dtzb entries | m&g | 16:44
+`ctest -R '^e2e-slice-loop-hoisted-chain-exit-discharge'` after the flag removal | 07d937842bfb5135 | **2/2 Passed** (1.09 s + 1.06 s), running STRICT | m&g | 16:44
+**g8 / g8b — F-1's P1** | 07d937842bfb5135 | **g8 exit 1**, `cq loop lowering: rolled body leaks a rail entangled with a rotated register`; **g8b exit 1**, same string. **A→D, the P1 is CLOSED** | m&g | 16:43
+g8a / g8k (the isolating controls) | 07d937842bfb5135 | g8a **ACCEPT** (`0 dirty`), g8k **DECLINE** — both UNMOVED | m&g | 16:43
+the two shipped leak slices (blast-radius G-6) | 07d937842bfb5135 | ROLLED `slice_control_inplace_ry_loop_leak` **DECLINE exit 1**; UNROLLED twin **ACCEPT exit 0** — ⚠ the identical hazard still compiles, loop-free, and is now under NO gate | m&g | 16:43
+composition `dD1`/`dD4`/`dD5` | 07d937842bfb5135 | all exit 0, stderr 0 B, **`0 left dirty`**; dD1 **`2 verified, 0 unproven`** (pass 1: 1 unproven), 22 lines · dD4 `3 verified, 0 unproven`, 22 lines · dD5 **`2 verified, 0 unproven`** (pass 1: 1 unproven), 18 lines. **R20 holds: D still lands** | m&g | 16:43
+`a1_apost` vs twin | 07d937842bfb5135 | **28 == 28, MULTISET IDENTICAL** — unmoved | m&g | 16:43
+`6n1s` triple | 07d937842bfb5135 | t5j exit 0, `0 left dirty`, 2 unproven, 26 lines, warning-only · t5i exit 0, stderr 0 B, `0 unproven`, 32 lines · t5k DECLINE — all unmoved in verdict | m&g | 16:43
+**the owner's loop program** (coordinator addendum; `example/` NOT edited) | 07d937842bfb5135 | **exit 1**, `cq controlled lowering: control flow inside a loop body under quantum control` at **91:15**; `CQ_CTRL_DBG` shows `railbank [Bank] cells=3 abi=i8 trips=3` recognised FIRST, then `decline [control flow inside a loop body] at: %24 = icmp sgt i32 %23, 2`. **SAME string and site as the 2026-09-17 measurement on `9bd01598` — UNCHANGED** | m&g | 16:44
+the owner program's twin, per `example/grover/README.md` | 07d937842bfb5135 | `grover_loop_frontier.c` is NOT it. The README names `slice_control_grover_loop_derived{,_unrolled}` — both **exit 0, 45 == 45 trace lines**, `0 dirty`, `0 unproven` (5 / 10 verified). ⚠ twin of the README's version, not of the owner's untracked current file | m&g | 16:45
+⚠ Track C's FINAL tip `d9b0f49f` vs the `26dff90e` I merged | — | **`tools/free_pairing_check.py` is BYTE-IDENTICAL** (`7ee74c6c2b257d2c` in both); the delta is `free_pairing_check_test.py` (+29, one more mutant) + records. **So the running full suite IS measuring C's final checker and needs no re-run** — only `e2e-free-pairing-selftest` does | m&g | 16:45
