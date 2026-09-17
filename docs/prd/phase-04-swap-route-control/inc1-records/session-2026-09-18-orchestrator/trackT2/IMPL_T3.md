@@ -265,6 +265,19 @@ about the attack and not about the code.
   `:3891-3907` runs before `repropagateControlMerges` with **no** `recordRound1RailGrant`) is
   **PRE-EXISTING and is NOT widened by the landed prefix** — it is widened by P3, which did not
   land. bd `0kjo` keeps its pre-existing population and gains none.
+* **FOUND (F-R3-1b) — the new conjunct-(1) call reaches loops the old one never did, so "does it
+  MUTATE `taint`?" had to be answered, not assumed.** `markedBodyRailsHaveInBodyDischargePoint`
+  calls `mintsOutOfPlaceTemplateRail`, which conjunct (3) also calls — but conjunct (1) used to
+  `continue` BEFORE conjunct (3) ran, so the new call fires on marked loops that predicate had
+  never been asked about. If it wrote anything into `taint` this would be a new mutation on a new
+  population, at a stage inside the round-2 window. **Checked in source**: it takes `TaintSet &`
+  but every use is a read — `inPlaceValueRailOperand(BO, const TaintSet &)` and
+  `railValueConsumerDisposition(BO, V, const TaintSet &, …)` both take it **by CONST reference**,
+  and the only direct touches are `taint.InPlaceRailIdx.find(BO)` and `taint.InPlaceRailOps.count(BO)`.
+  It is PURE with respect to `taint`; the non-const parameter is a signature artefact.
+  ⚠ RETIREMENT TRIGGER worth carrying: the day either of those two helpers takes `taint` by
+  non-const reference, this conjunct becomes a WRITER on a new population and F-R3-1 has to be
+  re-derived.
 * **FOUND (F-R3-2)**: the landed prefix **cannot silence Track S′'s fence**, structurally: it marks
   no body, and conjunct (1)'s suppression is now strictly NARROWER than before (a second conjunct
   was added, never relaxed). The composition risk SCOPE_T2 §6 lens 9 names belongs to P3.

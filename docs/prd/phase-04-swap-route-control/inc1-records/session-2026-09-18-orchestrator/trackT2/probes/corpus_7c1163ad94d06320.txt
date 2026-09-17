@@ -5530,3 +5530,192 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_pr
 docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/d02_tail_twophi.s1.ll|A:6e9cab19|A:6e9cab19
 docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f01_angle_only.c|A:8703ba58|A:8703ba58
 docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f01_angle_only.s.ll|A:ae8de0b7|A:ae8de0b7
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f01_angle_only.s1.ll|A:ae8de0b7|A:ae8de0b7
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f02_angle_and_data.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f02_angle_and_data.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f03_angle_two_consumers.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f03_angle_two_consumers.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f04_angle_theta.c|A:bb433662|A:bb433662
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f04_angle_theta.s.ll|A:bf6a9ecb|A:bf6a9ecb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f04_angle_theta.s1.ll|A:bf6a9ecb|A:bf6a9ecb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f05_ry_runtime_arm.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f05_ry_runtime_arm.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f06_rz_runtime_arm.c|A:cc71f261|A:cc71f261
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f06_rz_runtime_arm.s.ll|A:ef651c9b|A:ef651c9b
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f06_rz_runtime_arm.s1.ll|A:ef651c9b|A:ef651c9b
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f07_quantum_angle.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/f07_quantum_angle.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g01_guarded_store_2phi.c|D:cq controlled lowering: guarded store with a merge value under quantum control|D:cq controlled lowering: guarded store with a merge value under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g01_guarded_store_2phi.s.ll|A:48e27958|A:48e27958
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g01_guarded_store_2phi.s1.ll|D:cq controlled lowering: guarded store with a merge value under quantum control|D:cq controlled lowering: guarded store with a merge value under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g02_guarded_ctrl.c|A:5d666601|A:5d666601
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g02_guarded_ctrl.o.ll|A:cb9f6a9d|A:cb9f6a9d
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g02_guarded_ctrl.s.ll|A:cb9f6a9d|A:cb9f6a9d
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/g02_guarded_ctrl.s1.ll|A:cb9f6a9d|A:cb9f6a9d
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/k01_clone_stalemask.c|A:b9e0229e|A:b9e0229e
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/k01_clone_stalemask.s.ll|A:fd5bcf22|A:fd5bcf22
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/k01_clone_stalemask.s1.ll|A:fd5bcf22|A:fd5bcf22
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/m01_rz_eq_rz_unrolled.c|A:7bbcf63d|A:7bbcf63d
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/m01_rz_eq_rz_unrolled.s.ll|A:4f7be1b9|A:4f7be1b9
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/m01_rz_eq_rz_unrolled.s1.ll|A:4f7be1b9|A:4f7be1b9
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/n01_alias_rail_mux.c|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/n01_alias_rail_mux.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r02_escape_sink.c|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r02_escape_sink.s.ll|A:8bb744a5|A:8bb744a5
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r02_escape_sink.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r03_handpeel_escape.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r04_escape_store.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r04_escape_store.s.ll|A:57c365cb|A:57c365cb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r04_escape_store.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r05_handpeel_store.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r07_escape_clone2.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r07_escape_clone2.s.ll|A:ff095e8b|A:ff095e8b
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r07_escape_clone2.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r08_handpeel_clone.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r09_escape_ret64.c|D:cq taint escape: tainted value returned at non-i32 width|D:cq taint escape: tainted value returned at non-i32 width
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r09_escape_ret64.s1.ll|D:cq taint escape: tainted value returned at non-i32 width|D:cq taint escape: tainted value returned at non-i32 width
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r10_escape_printf.c|D:cq I/O output sink: tainted argument is not a lowerable integer scalar|D:cq I/O output sink: tainted argument is not a lowerable integer scalar
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r10_escape_printf.s1.ll|D:cq I/O output sink: tainted argument is not a lowerable integer scalar|D:cq I/O output sink: tainted argument is not a lowerable integer scalar
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r11_escape_ptrstore.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r11_escape_ptrstore.s.ll|A:0cca94d6|A:0cca94d6
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r11_escape_ptrstore.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r16_predmux_escape.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r16_predmux_escape.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r17_predmux_escape1.c|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r17_predmux_escape1.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r20_clone_measured.c|A:b15c1ea8|A:b15c1ea8
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r20_clone_measured.s.ll|A:05a82e7c|A:05a82e7c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r20_clone_measured.s1.ll|A:05a82e7c|A:05a82e7c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r23_clone_handpeel.o.ll|A:05a82e7c|A:05a82e7c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r23_clone_handpeel.s.ll|A:05a82e7c|A:05a82e7c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/r23_clone_handpeel.s1.ll|A:05a82e7c|A:05a82e7c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/s01_stale_record_mux.c|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/s01_stale_record_mux.s1.ll|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control|D:cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u01_sdiv.c|A:b4e07606|A:b4e07606
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u01_sdiv.s.ll|A:f85281c8|A:f85281c8
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u01_sdiv.s1.ll|A:f85281c8|A:f85281c8
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u02_switch.c|A:038e893c|A:038e893c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u02_switch.s.ll|A:3310dd60|A:3310dd60
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u02_switch.s1.ll|A:3310dd60|A:3310dd60
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u03_index.c|A:81d23afb|A:81d23afb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u03_index.s.ll|A:9ca474ae|A:9ca474ae
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u03_index.s1.ll|A:9ca474ae|A:9ca474ae
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u04_newbranch.c|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u04_newbranch.s1.ll|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control|D:cq controlled lowering: condition predates a non-diagonal gate under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u05_shift.c|A:26117247|A:26117247
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u05_shift.s.ll|A:58d54c32|A:58d54c32
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u05_shift.s1.ll|A:58d54c32|A:58d54c32
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u06_alloca.c|A:7a00be5c|A:7a00be5c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u06_alloca.s.ll|A:b7188433|A:b7188433
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/u06_alloca.s1.ll|A:b7188433|A:b7188433
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/w03_r1peel_out_arm.c|A:774c9183|A:774c9183
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/w03_r1peel_out_arm.s.ll|A:6c98e12a|A:6c98e12a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/w03_r1peel_out_arm.s1.ll|A:6c98e12a|A:6c98e12a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/x01_switch_in_merge.c|A:a215b256|A:a215b256
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/x01_switch_in_merge.s.ll|A:dd197b98|A:dd197b98
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/x01_switch_in_merge.s1.ll|A:dd197b98|A:dd197b98
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/x02_poison_incoming.s1.ll|D:cq controlled lowering: control flow under quantum control|D:cq controlled lowering: control flow under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r1_probes/x03_freeze_incoming.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/A01_angle_to_clone.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/A01_angle_to_clone.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/A02_angle_phi_consumer.c|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/A02_angle_phi_consumer.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/A01_angle_to_clone.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/A02_angle_phi_consumer.s1.ll|D:cq controlled lowering: rotation angle under quantum control|D:cq controlled lowering: rotation angle under quantum control
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C01_fcmp_cond.s.ll|A:8948b086|A:8948b086
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C01_fcmp_cond.s1.ll|A:8948b086|A:8948b086
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C01_fcmp_condt_handpeel.s1.ll|A:89ff96b3|A:89ff96b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C01_fcmp_condt.o.ll|A:89ff96b3|A:89ff96b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C02_invert.s1.ll|A:08132370|A:08132370
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C02_invertt_handpeel.s1.ll|A:e9d12673|A:e9d12673
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C02.s.ll|A:08132370|A:08132370
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/C02t.o.ll|A:e9d12673|A:e9d12673
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/CF1_freeze_derived.s.ll|A:2043c829|A:2043c829
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/CF1_freeze_derived.s1.ll|A:2043c829|A:2043c829
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/CF1_freeze_derivedt_handpeel.s1.ll|A:81c83675|A:81c83675
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/CF1_freeze_derivedt.o.ll|A:81c83675|A:81c83675
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/d02_tail_twophi.s.ll|A:cc645111|A:cc645111
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/d02_tail_twophi.s1.ll|A:cc645111|A:cc645111
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/d02_tail_twophit_handpeel.s1.ll|A:51a16c62|A:51a16c62
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/d02_tail_twophit.o.ll|A:51a16c62|A:51a16c62
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f01_angle_only.s.ll|A:98ef8d17|A:98ef8d17
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f01_angle_only.s1.ll|A:98ef8d17|A:98ef8d17
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f01_angle_onlyt_handpeel.s1.ll|A:d20ab0a8|A:d20ab0a8
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f01_angle_onlyt.o.ll|A:d20ab0a8|A:d20ab0a8
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f04_angle_theta.s.ll|A:caac0023|A:caac0023
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f04_angle_theta.s1.ll|A:caac0023|A:caac0023
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f04_angle_thetat_handpeel.s1.ll|A:6fb12a5e|A:6fb12a5e
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f04_angle_thetat.o.ll|A:6fb12a5e|A:6fb12a5e
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/f06_rz_runtime_arm.s1.ll|A:5736f25c|A:5736f25c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/k01_clone_stalemask.s1.ll|A:a9d678ee|A:a9d678ee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K01_later_phi.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K01_later_phit_handpeel.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K02_switch_on_mux.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K02_switch_on_muxt_handpeel.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K03_bswap.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K03_bswapt_handpeel.s1.ll|D:cq taint escape: tainted value consumed by an unknown callee|D:cq taint escape: tainted value consumed by an unknown callee
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K05_gep_store.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K05_gep_storet_handpeel.s1.ll|D:cq taint escape: tainted value stored to memory|D:cq taint escape: tainted value stored to memory
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K07_ret_escape.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K07_ret_escapet_handpeel.s1.ll|D:cq taint escape: tainted value muxed by a classical-condition select|D:cq taint escape: tainted value muxed by a classical-condition select
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K08_tape_terminal.s1.ll|D:cq I/O output sink: tainted argument has continued lineage (only a terminal or measured value may be taped)|D:cq I/O output sink: tainted argument has continued lineage (only a terminal or measured value may be taped)
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/K08_tape_terminalt_handpeel.s1.ll|D:cq I/O output sink: tainted argument has continued lineage (only a terminal or measured value may be taped)|D:cq I/O output sink: tainted argument has continued lineage (only a terminal or measured value may be taped)
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/m01_rz_eq_rz_unrolled.s1.ll|A:a9a8c31e|A:a9a8c31e
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p09_owner_int.s.ll|A:7ba51528|A:7ba51528
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p09_owner_int.s1.ll|A:7ba51528|A:7ba51528
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p09_owner_intt_handpeel.s1.ll|A:a2905d28|A:a2905d28
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p09_owner_intt.o.ll|A:a2905d28|A:a2905d28
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p22_peel_int_sel_first.s.ll|A:8a2ec3b5|A:8a2ec3b5
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p22_peel_int_sel_first.s1.ll|A:8a2ec3b5|A:8a2ec3b5
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p22_peel_int_sel_firstt_handpeel.s1.ll|A:7447f978|A:7447f978
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p22_peel_int_sel_firstt.o.ll|A:7447f978|A:7447f978
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p31_three_phi.s.ll|A:10545fe6|A:10545fe6
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p31_three_phi.s1.ll|A:10545fe6|A:10545fe6
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p31_three_phit_handpeel.s1.ll|A:a114059c|A:a114059c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p31_three_phit.o.ll|A:a114059c|A:a114059c
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p50_fp_extra_phi.s.ll|A:4f6a1277|A:4f6a1277
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p50_fp_extra_phi.s1.ll|A:4f6a1277|A:4f6a1277
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p50_fp_extra_phit_handpeel.s1.ll|A:bb98d3f5|A:bb98d3f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p50_fp_extra_phit.o.ll|A:bb98d3f5|A:bb98d3f5
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p71_call_arm_opaque.s1.ll|A:d1e8b24a|A:d1e8b24a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p80_round2_out_cond.s1.ll|A:f6e023ef|A:f6e023ef
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/p90_qq_mux.s1.ll|A:1e4c9014|A:1e4c9014
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R01_two_tainted_args.s.ll|A:a241331a|A:a241331a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R01_two_tainted_args.s1.ll|A:a241331a|A:a241331a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R01_two_tainted_argst_handpeel.s1.ll|A:c6e0eb3f|A:c6e0eb3f
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R01_two_tainted_argst.o.ll|A:c6e0eb3f|A:c6e0eb3f
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R03_inlinable.s.ll|A:badd34e4|A:badd34e4
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R03_inlinable.s1.ll|A:badd34e4|A:badd34e4
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R03_inlinablet_handpeel.s1.ll|A:792babc1|A:792babc1
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R03_inlinablet.o.ll|A:792babc1|A:792babc1
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R04_measure_mux_direct.s.ll|A:c97333a1|A:c97333a1
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R04_measure_mux_direct.s1.ll|A:c97333a1|A:c97333a1
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R04_measure_mux_directt_handpeel.s1.ll|A:41051136|A:41051136
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R04_measure_mux_directt.o.ll|A:41051136|A:41051136
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R05_nested_helper.s.ll|A:fdce306a|A:fdce306a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R05_nested_helper.s1.ll|A:fdce306a|A:fdce306a
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R05_nested_helpert_handpeel.s1.ll|A:9507e0b3|A:9507e0b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/R05_nested_helpert.o.ll|A:9507e0b3|A:9507e0b3
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/r20_clone_measured.s1.ll|A:67850a88|A:67850a88
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S02_stale_mux_record.s1.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S02_stale_mux_recordt_handpeel.s1.ll|D:cq opcode lowering: operand predates a non-diagonal gate|D:cq opcode lowering: operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S03_stale_mux_sibling.s.ll|A:81dd5fd7|A:81dd5fd7
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S03_stale_mux_sibling.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S03_stale_mux_siblingt_handpeel.s1.ll|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate|D:cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/S03_stale_mux_siblingt.o.ll|A:033e197f|A:033e197f
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u01_sdiv.s.ll|A:65e6d9eb|A:65e6d9eb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u01_sdiv.s1.ll|A:65e6d9eb|A:65e6d9eb
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u01_sdivt_handpeel.s1.ll|A:09b18ce7|A:09b18ce7
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u01_sdivt.o.ll|A:09b18ce7|A:09b18ce7
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u02_switch.s.ll|A:c1b8b4aa|A:c1b8b4aa
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u02_switch.s1.ll|A:c1b8b4aa|A:c1b8b4aa
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u02_switcht_handpeel.s1.ll|A:7a861e7f|A:7a861e7f
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u02_switcht.o.ll|A:7a861e7f|A:7a861e7f
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u03_index.s.ll|A:735abd56|A:735abd56
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u03_index.s1.ll|A:735abd56|A:735abd56
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u03_indext_handpeel.s1.ll|A:a45a4536|A:a45a4536
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u03_indext.o.ll|A:a45a4536|A:a45a4536
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u05_shift.s.ll|A:6f33a99b|A:6f33a99b
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u05_shift.s1.ll|A:6f33a99b|A:6f33a99b
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u05_shiftt_handpeel.s1.ll|A:86c1428e|A:86c1428e
+docs/prd/phase-04-swap-route-control/inc1-records/session-b6ap/review_b6ap_r2_probes/auto/u05_shiftt.o.ll|A:86c1428e|A:86c1428e
