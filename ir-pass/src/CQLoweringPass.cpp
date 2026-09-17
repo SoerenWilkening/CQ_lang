@@ -936,6 +936,22 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // only vacuity guard); omitted here and a gated module would exit ZERO, the one
   // outcome the instrument must never produce.
   emitDeferredDephasingDecline(M);
+  // bd `test_C_libtooling-6n1s` F-1 — THE MARKED BODY'S POSTCONDITION. Contract in
+  // `LoopPlan.h`. `declineDephasingUnmarkedLoopRails` (above) no longer SUPPRESSES
+  // its fence on a marked body; it RECORDS the promise that the body's interior
+  // rails will be discharged in-body, and this is where that promise is checked
+  // against the emitted module. It is the first point at which "was this rail
+  // discharged?" is a FACT rather than a forecast — `uncompute` has run.
+  //
+  // ⚠ IN BOTH ENTRY POINTS, and that is a contract rather than a convenience: a
+  // fence added to one of two entry points is a hole with no diagnostic anywhere
+  // (`CLAUDE.md` L1's cure names "in BOTH entry points" for exactly this reason).
+  // ⚠ AFTER `emitDeferredDephasingDecline`, so bd `bbu0`'s deferred verdict still
+  // speaks first when its env gate is on — `LLVMContext::diagnose` EXITS on the
+  // first `DS_Error` (bd `br4a`), so ORDER is what keeps one module from having
+  // two owners for one diagnostic. It re-uses that fence's own message string.
+  if (declineUndischargedMarkedBodyRails(M))
+    return PreservedAnalyses::none();
   // THE POSTCONDITION BACKSTOP (bd 3qlq Inc 1 part A, round-1 F-L6-1) — see the
   // function's own header. Runs BEFORE `eraseDeadDecls`, which only erases the
   // declarations that are already unused and is therefore blind to a surviving
@@ -1329,6 +1345,22 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // and never drains it hands back a module with `opt` exit 0 on a program this
   // fence refused. See run() for the full rationale.
   emitDeferredDephasingDecline(M);
+  // bd `test_C_libtooling-6n1s` F-1 — THE MARKED BODY'S POSTCONDITION. Contract in
+  // `LoopPlan.h`. `declineDephasingUnmarkedLoopRails` (above) no longer SUPPRESSES
+  // its fence on a marked body; it RECORDS the promise that the body's interior
+  // rails will be discharged in-body, and this is where that promise is checked
+  // against the emitted module. It is the first point at which "was this rail
+  // discharged?" is a FACT rather than a forecast — `uncompute` has run.
+  //
+  // ⚠ IN BOTH ENTRY POINTS, and that is a contract rather than a convenience: a
+  // fence added to one of two entry points is a hole with no diagnostic anywhere
+  // (`CLAUDE.md` L1's cure names "in BOTH entry points" for exactly this reason).
+  // ⚠ AFTER `emitDeferredDephasingDecline`, so bd `bbu0`'s deferred verdict still
+  // speaks first when its env gate is on — `LLVMContext::diagnose` EXITS on the
+  // first `DS_Error` (bd `br4a`), so ORDER is what keeps one module from having
+  // two owners for one diagnostic. It re-uses that fence's own message string.
+  if (declineUndischargedMarkedBodyRails(M))
+    return true;
   // The postcondition backstop, mirrored in this entry point too (twin-pipeline
   // parity is MANDATORY, WI-1.12) — see run() for the F-L6-1 rationale.
   if (declineSurvivingIntrinsicCalls(M, wd))

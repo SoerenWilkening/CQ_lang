@@ -4523,10 +4523,80 @@ bool bodyBlocksMarked(const Loop *L, const LoopInfo &LI, const TaintSet &taint) 
 // TU and another stage. The day `dagInsertPoint`, the convergence loop's
 // `useCompleteBeforeDischarge`, or §2.9's marked-`At` exception changes what point
 // a marked body's rail is discharged at, THIS MUST BE RE-DERIVED — it is not
-// enough to re-read it. The more total alternative, deliberately NOT taken here
-// because it moves the diagnostic's site, is the `declineSurvivingIntrinsicCalls`
-// pattern: record the suppression and VERIFY the discharge at the tail of
-// `uncompute`, where it is a fact rather than a prediction.
+// enough to re-read it.
+//
+// ⚠⚠ **F-2 (2026-09-18): THIS PREDICATE HAS NO MEASURED CUSTOMER IN EITHER
+// DIRECTION, AND THE SOURCE MUST SAY SO** (`CLAUDE.md` L10 — *"a fence with no
+// reachable customer and no failing fixture is a prediction, not a test"*).
+// Measured by the independent Rule-13 round: it returned **`true` on all 19 of its
+// probes**, including the F-1 witness where `true` is a FALSE NEGATIVE; and the
+// implementer's hand-off corpus sweep is **6566 rows, 16 movers, ZERO VERDICT
+// FLIPS**, so it declined nothing new anywhere in the tree. **bd `6n1s`'s P1 was
+// closed, for the shapes it IS closed for, by the USE-SIDE relaxation alone**
+// (`useCompleteBeforeDischarge` makes the rails actually discharge, so conjunct
+// (3) never needs to fire). This conjunct contributed nothing measurable. It is
+// KEPT because a sufficient condition that is sound in the decline direction costs
+// nothing — but do not read it as the fix's fence. The fence is the obligation
+// ledger below.
+//
+// ⚠⚠ **F-3 (2026-09-18): THE LIST OF REFUSALS THIS PREDICATE DOES NOT MODEL WAS
+// INCOMPLETE, AND IT OMITTED THE ORDINARY ONE.** It used to name *"clause (d),
+// `preservesBasisUnderRecord`, or a `ReversedGates` overlap"* — three exotic
+// mechanisms — while leaving out **`planInteriorComponent` §4's per-gate
+// `DT.dominates(G, At)` on an ARM-MINTED interior rail, which is the refusal a
+// MULTI-BLOCK BODY PRODUCES BY CONSTRUCTION**, i.e. the one this predicate's own
+// shape class generates. The list read as exhaustive over rare cases while missing
+// the common one; that is F-1's whole mechanism.
+//
+// **WHICH IS WHY THE SUPPRESSION IS NOW VERIFIED AND NOT TRUSTED.** The more total
+// alternative this comment used to name and decline — the
+// `declineSurvivingIntrinsicCalls` pattern: record the suppression and VERIFY the
+// discharge at the tail of the pass, where it is a fact rather than a prediction —
+// **is now what ships** (`markedBodyRailObligations` /
+// `declineUndischargedMarkedBodyRails`). This predicate is the cheap early answer;
+// the ledger is what makes conjunct (1) total.
+// ── bd `test_C_libtooling-6n1s` F-1 (2026-09-18) — THE MARKED BODY'S OBLIGATION
+//    LEDGER, and the reason conjunct (1) stopped being a plain suppression ─────
+//
+// **A PREDICTION ABOUT ANOTHER FILE'S PLACEMENT IS NOT A FENCE.** Conjunct (1)
+// suppresses the dephasing decline when a body is marked and its interior rails
+// have an in-body post-dominator to be discharged at. Both halves are true of the
+// F-1 witness and the rails are still NOT discharged, because
+// `Uncomputation::planInteriorComponent` §4 abandons the whole component on the
+// per-gate `DT.dominates(G, At)` when the ARM mints one of them. So the record
+// below carries the suppression forward and
+// `declineUndischargedMarkedBodyRails` decides on the FACT.
+//
+// ⚠ `WeakTrackingVH`, and it is load-bearing exactly as it is for
+// `recordRound1RailGrant`: `lowerOps` RAUWs the `ashr`/`add`/… this stage sees to
+// the `cq_template_*` CALL that replaces it, and a `WeakTrackingVH` FOLLOWS a
+// RAUW — so the ledger names the LOWERED rail by the time the verifier reads it,
+// with no second lookup and no name matching. A handle that goes NULL is a rail
+// that no longer exists (deleted, not lowered) and is treated as DISCHARGED:
+// there is nothing left to leak.
+//
+// ⚠ NO NEW `TaintSet` FIELD. A new member in the MIDDLE of that struct is the
+// ODR/layout divergence that segfaulted `cq-opt` while `libCQPass.so` lowered
+// correctly (bd `tu9q` IMPL_T2 §13). A function-local static is the pattern this
+// file already uses for `deferredDephasingSlot`.
+//
+// ⚠ CLEARED AT BOTH ENDS, for bd `bbu0`'s reason: a second module in the same
+// process must never inherit the first one's ledger.
+// `declineDephasingUnmarkedLoopRails` clears it on entry (it is the only writer
+// and runs once per module in BOTH pipeline entry points), and the verifier
+// clears it after reading. Either alone would do; neither depends on the other.
+std::vector<WeakTrackingVH> &markedBodyRailObligations() {
+  static std::vector<WeakTrackingVH> Ledger;
+  return Ledger;
+}
+
+void recordMarkedBodyRailObligation(Value *Rail) {
+  for (const WeakTrackingVH &H : markedBodyRailObligations())
+    if (H == Rail)
+      return;  // idempotent.
+  markedBodyRailObligations().emplace_back(Rail);
+}
+
 bool markedBodyRailsHaveInBodyDischargePoint(Loop *L, const LoopInfo &LI,
                                              TaintSet &taint,
                                              PostDominatorTree &PDT) {
@@ -4816,6 +4886,11 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
   // same process can never inherit the previous one's armed verdict. Cheap
   // enough to be unconditional, which is better than correct-only-under-the-gate.
   deferredDephasingSlot() = DeferredDephasing{};
+  // bd `test_C_libtooling-6n1s` F-1 — the marked-body obligation ledger is cleared
+  // HERE, unconditionally and before anything can write it (this stage is its only
+  // writer), so a second module in the same process never inherits the first's
+  // obligations. Same discipline and same reason as the slot above.
+  markedBodyRailObligations().clear();
   if (taint.Tainted.empty())
     return;
   SmallPtrSet<CallInst *, 32> GateCalls;
@@ -4912,9 +4987,41 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
       //     `cqrt_free` pairs, standing at a `cqrt_ry_*` on the register they
       //     copy — `opt` exit 0, verify-clean, stage-2b structurally blind
       //     (template-minted rails have no `cqrt_alloc` to count).
-      if (bodyBlocksMarked(L, LI, taint) &&
-          markedBodyRailsHaveInBodyDischargePoint(L, LI, taint, PDT))
-        continue;
+      //     ⚠⚠ **THE SUPPRESSION IS NO LONGER A `continue`. IT IS A PROMISE THAT
+      //     IS KEPT OR THE MODULE DECLINES** (bd `test_C_libtooling-6n1s`, the
+      //     independent Rule-13 round of 2026-09-18, finding F-1).
+      //
+      //     The first version of this conjunct suppressed the fence outright on
+      //     `bodyBlocksMarked && markedBodyRailsHaveInBodyDischargePoint`. That
+      //     PREDICTS a placement another file makes several stages later, and the
+      //     prediction is WRONG for a shape a multi-block body produces BY
+      //     CONSTRUCTION: when the ARM mints an interior rail, the component
+      //     contains a gate in the arm, and `planInteriorComponent` §4 abandons
+      //     the WHOLE component on `DT.dominates(G, At)` — the `At` is the join,
+      //     which the arm does not dominate. MEASURED on
+      //     `trackT2/probes/g8_arm_use_derived_owned_rot.c`: 4 `ashr` mints, ZERO
+      //     `_unc`, ZERO `cqrt_free`, then `cqrt_ry_i32(h0,0.9)` and
+      //     `cqrt_measure_i32(h0)` — four coherent which-path records at a
+      //     non-diagonal gate on the register they copy (Rule 8), at `opt` exit 0.
+      //     ONE TOKEN away (`g8a`, the arm's rail measure-owned instead of
+      //     interior) the same body discharges 4/4.
+      //
+      //     So the suppression now RECORDS an obligation and
+      //     `declineUndischargedMarkedBodyRails` VERIFIES it at the tail of the
+      //     pass, where the discharge is a FACT rather than a forecast. This is
+      //     the `declineSurvivingIntrinsicCalls` pattern (Rule 1: make a
+      //     postcondition a CHECKED, LOUD property, not a comment) — and it is
+      //     the alternative `markedBodyRailsHaveInBodyDischargePoint`'s own header
+      //     named and declined to take. F-1 is the measured reason to take it.
+      //
+      //     ⚠ THE RECORD IS TAKEN AT CONJUNCT (3), NOT HERE, and that is the
+      //     whole reason this is not a mass over-decline: the hazard needs
+      //     conjuncts (2) AND (3) as well, so a loop with no post-loop chained
+      //     rotation records NOTHING and is unaffected. Suppressing here only
+      //     means "do not decline YET".
+      const bool SuppressedByMarking =
+          bodyBlocksMarked(L, LI, taint) &&
+          markedBodyRailsHaveInBodyDischargePoint(L, LI, taint, PDT);
 
       // (2) A NON-DIAGONAL GATE ON AN EXISTING REGISTER, ON OR AFTER THE LOOP.
       //     `cq_theta` is the only non-diagonal gate the surface can express
@@ -5025,6 +5132,18 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
             continue;  // measure-owned — left allocated by BOTH forms.
           if (!taintedAncestryReaches(&I, Rots, taint))
             continue;  // copies a register nothing interferes later.
+          // ── bd `test_C_libtooling-6n1s` F-1: THE MARKED BODY'S PROMISE ──────
+          // Every conjunct has now fired, so this rail WOULD decline but for the
+          // marking. Record it and decide at the tail of the pass on the FACT.
+          // ⚠ `continue`, NOT `return`: unlike the two decline paths below (one
+          // diagnostic per module, because `diagnose` EXITS on the first
+          // `DS_Error`), a recorded obligation is not a verdict yet, so every
+          // offending rail in every marked loop of every function must be
+          // recorded — the verifier decides which, if any, speaks.
+          if (SuppressedByMarking) {
+            recordMarkedBodyRailObligation(&I);
+            continue;
+          }
           if (deferDephasingDecline()) {
             // bd `bbu0` (D) — RECORD and carry on, so that
             // `warnLiveRecordRotations` at the late slot gets to run on this
@@ -5064,6 +5183,98 @@ void declineDephasingUnmarkedLoopRails(Module &M, TaintSet &taint) {
 // `loop_leak_dephase_reject_inloop_rotation.ll`'s `DEFER` prefix and by
 // `$SES/trackD/probes/bbu0_measure.sh`; a drift between the three is a Rule-12
 // failure, not a cosmetic one.
+// ── bd `test_C_libtooling-6n1s` F-1 — THE MARKED BODY'S POSTCONDITION ─────────
+// Contract in `LoopPlan.h`; the reason it exists is at the ledger's definition.
+// Called at the LATE slot in BOTH pipeline entry points, AFTER `uncompute`, which
+// is the first program point at which "was this rail discharged?" is a FACT.
+//
+// ⚠ IT REUSES `kMsgLoopLeakDephases`, THE EXISTING bd `s82e` STRING, DELIBERATELY.
+// A new string would take the verdict away from a fence that six shipped fixtures
+// still pin, and `CQLoweringPass.cpp` records in those words what that costs
+// ("…takes the message away from 68 shipped negative fixtures"). The module is
+// refused for the reason that fence has always refused this class; only the POINT
+// at which the question is asked has moved, from a forecast to a fact.
+//
+// ⚠ "DISCHARGED" MEANS *PER TRIP*, NOT MERELY *SOMEWHERE*. A body-minted rail
+// adjointed once at the loop EXIT would be ONE adjoint against K forward gates —
+// a wrong unitary, not a fix — so the discharge must sit INSIDE the loop that
+// contains the mint. `Loop::contains` (subloops included) is the right quantifier:
+// the question is "does the discharge run inside the cycle the mint runs in".
+// ⚠ It is asked on a FRESHLY BUILT `LoopInfo` rather than on
+// `taint.IterationLocalBlocks`, on purpose: that set is a raw `BasicBlock *` set
+// nothing scrubs, and a stale-TRUE there would be the GRANTING direction here.
+//
+// ⚠ A NULLED handle is a rail that no longer exists and counts as discharged —
+// see the ledger's header.
+bool declineUndischargedMarkedBodyRails(Module &M) {
+  std::vector<WeakTrackingVH> &Ledger = markedBodyRailObligations();
+  if (Ledger.empty())
+    return false;
+  Instruction *Offender = nullptr;
+  for (const WeakTrackingVH &H : Ledger) {
+    Value *R = H;
+    if (!R)
+      continue;
+    auto *RI = dyn_cast<Instruction>(R);
+    if (!RI)
+      continue;
+    Function *F = RI->getFunction();
+    if (!F || F->isDeclaration())
+      continue;
+    DominatorTree DT(*F);
+    LoopInfo LI(DT);
+    const Loop *L = LI.getLoopFor(RI->getParent());
+    if (!L)
+      continue;  // the mint is no longer in a loop — nothing repeats, nothing to
+                 // promise. (`-O1` had one here; a later stage removed it.)
+    // ⚠ THE QUESTION IS "IS THIS RAIL STILL A **COHERENT** WHICH-PATH RECORD AT
+    // THE END OF THE TRIP?", NOT "DOES IT HAVE AN `_unc`". There are TWO
+    // dispositions that answer it, and reading only the first is an over-decline
+    // measured on a shipped fixture:
+    //   (a) it is ADJOINTED and FREED in-body — returned to |0⟩ per trip;
+    //   (b) it is **MEASURED** in-body — the measurement projects it in the
+    //       computational basis, so the joint state is a product and the record
+    //       is not coherent. Rule 6 says the measurement OWNS such a handle,
+    //       `FreePoint` calls the kind `Measured` rather than `Leaked`, and
+    //       `measureOwnedInvariantRail`'s header states the same physics from the
+    //       other side: *"a MEASURED rail is not a COHERENT which-path record …
+    //       the Rule-8 hazard needs the rail ENTANGLED at the interference"*.
+    // ⚠ MEASURED, not assumed: without clause (b) this postcondition turned
+    // `lowering_reject_live_record_post_gate_record_loop.ll` from its ruled
+    // WARNING (bd `lyyf`: the dephasing-by-leftover-record class is the USER's
+    // circuit, reported and LOWERED) into a DECLINE. That rail is the WIRE
+    // `w = q*2` — rotated in place and then `cq_measure`d — and `railIsInterior`
+    // calls it interior because it has a NON-measure user (the `cqrt_ry`), which
+    // is a different question from "is it measured".
+    // ⚠ IN-BODY for both, for the same reason: a disposition that runs once per
+    // FUNCTION says nothing about a rail re-minted once per TRIP.
+    bool Discharged = false;
+    for (User *U : RI->users()) {
+      auto *CI = dyn_cast<CallInst>(U);
+      if (!CI || CI->arg_size() == 0 || CI->getArgOperand(0) != RI)
+        continue;  // an adjoint/sink takes its target at ARG 0; else it READS.
+      if (!L->contains(CI->getParent()))
+        continue;  // not per-trip — see above.
+      const Function *Callee = CI->getCalledFunction();
+      StringRef N = Callee ? Callee->getName() : StringRef();
+      if (!N.ends_with("_unc") && N != "cqrt_free" &&
+          !N.starts_with("cqrt_measure_"))
+        continue;
+      Discharged = true;
+      break;
+    }
+    if (!Discharged) {
+      Offender = RI;
+      break;
+    }
+  }
+  Ledger.clear();  // cleared at BOTH ends — see the ledger's header.
+  if (!Offender)
+    return false;
+  diagnose(Offender, kMsgLoopLeakDephases);
+  return true;
+}
+
 void emitDeferredDephasingDecline(Module &M) {
   DeferredDephasing &S = deferredDephasingSlot();
   if (!S.Armed)

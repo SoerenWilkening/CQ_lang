@@ -4601,21 +4601,47 @@ add_test(NAME e2e-slice-control-inplace-ry-loop-grover-unrolled
 #    warning is PER STATIC GATE while the hazard occurs K times at run time. That
 #    asymmetry is expected here and is written up in the notes; do not "fix" it
 #    by regenerating one side.
-add_test(NAME e2e-slice-control-inplace-ry-loop-leak
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.expected.log")
-
-add_test(NAME e2e-slice-control-inplace-ry-loop-leak-unrolled
-  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.expected.log")
+# ── UNREGISTERED 2026-09-18 — bd `test_C_libtooling-6n1s` F-1, the coordinator's
+#    blast-radius item. THE THREE ENTRIES THAT STOOD HERE PINNED A Rule-8 WRONG
+#    UNITARY AS EXPECTED OUTPUT, and their own headers called it "RULE-6 CORRECT".
+#
+#    `e2e-slice-control-inplace-ry-loop-leak`,
+#    `e2e-slice-control-inplace-ry-loop-leak-unrolled` and
+#    `e2e-inplace-ry-loop-leak-twin-identical` are removed; BOTH goldens are
+#    DELETED rather than regenerated, and both `.c` files are KEPT unregistered
+#    with a conversion header — the 2026-09-14 stale-reader precedent, which is
+#    itself the `slice_control_switch_phase.c` precedent of 2026-09-05.
+#
+#    WHY, read straight off the deleted goldens (identical in both halves):
+#      cq_template_mul_i32_hl(h2, 7) -> h3      <- a COHERENT copy of h2
+#      cqrt_tape_write_i32(t0, h3) -> h4        <- a COPY into the tape; h3 is
+#                                                  NOT collapsed and stays
+#                                                  entangled with h2
+#      cqrt_ry_i32_controlled(h5, h2, 0.9)      <- NON-DIAGONAL, on h2
+#      ...                                         (and again for h6)
+#      cqrt_measure_i32(h2)                     <- h2 IS the observable
+#    `h3`/`h6` are never `_unc`'d and never freed, so a which-path record of `h2`
+#    stands at a non-diagonal gate on `h2`. That is `CLAUDE.md` Rule 8 verbatim and
+#    §5's Q-R1-1 correction in its own words. ⚠ Only the tape-write RESULT (`h4`,
+#    `h7`) is an `OutputRails` member; its OPERAND `h3` is an ordinary interior
+#    template rail, so "it is the program's own output" does NOT excuse it.
+#
+#    ⚠ ONLY THE ROLLED HALF IS CAUGHT BY A FENCE, and that asymmetry is the whole
+#    filing. `declineUndischargedMarkedBodyRails` is LOOP-SCOPED, so it refuses the
+#    rolled slice and CANNOT reach the unrolled one, which still compiles the same
+#    hazard at exit 0. The unrolled half is therefore a NEW P1 (bd text in
+#    `trackT2/BD_TEXT.md`), not something this increment closed.
+#
+#    ⚠ L8 RETIREMENT TRIGGER: the day the arm-minted / straight-line which-path
+#    leak gains a real placement, BOTH `.c` files become ACCEPTs again and the
+#    twin-identical gate can be restored — re-derive both streams then against the
+#    hand-unrolled twin's MULTISET (owner ruling S3), and do NOT restore these
+#    goldens, which pin the leaking stream.
+#
+#    Net coverage: the ROLLED decline is pinned by
+#    `ir-pass/test/loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`
+#    (the slice's own stage-1 module, validated non-vacuous by binary mutation).
+#    The UNROLLED hazard is pinned by NOTHING and that is the bead.
 
 # THE TWIN GATES — `cmp` over the two committed goldens, no clang, no opt, no
 # plugin, milliseconds each.
@@ -4644,10 +4670,8 @@ add_test(NAME e2e-inplace-ry-loop-grover-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_grover_unrolled.expected.log")
 
-add_test(NAME e2e-inplace-ry-loop-leak-twin-identical
-  COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak.expected.log"
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_leak_unrolled.expected.log")
+# (`e2e-inplace-ry-loop-leak-twin-identical` unregistered 2026-09-18 — see the
+#  banner above; both goldens are deleted, so there is nothing to compare.)
 
 # ---------------------------------------------------------------------------
 # bd test_C_libtooling-drbq Increment 4 — CONTROLLED STATE PREP (PRD §14).

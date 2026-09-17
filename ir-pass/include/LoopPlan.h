@@ -629,6 +629,29 @@ void lowerBreakReversePlay(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 // (`getFirstInsertionPt() != end()`), so a caller never has to re-check it.
 llvm::BasicBlock *loopExitDischargePoint(const llvm::Loop *L);
 
+// ── bd `test_C_libtooling-6n1s` F-1 (2026-09-18) ─────────────────────────────
+// **WHAT MAKES `declineDephasingUnmarkedLoopRails`' CONJUNCT (1) TOTAL.** That
+// conjunct suppresses the dephasing decline when a loop body is MARKED and its
+// interior rails have an in-body post-dominator. Both halves can be true while the
+// rails are still never discharged — `planInteriorComponent` §4 abandons the whole
+// component on its per-gate `DT.dominates(G, At)` the moment the ARM mints one of
+// them, which is a refusal a MULTI-BLOCK body produces BY CONSTRUCTION. The result
+// was a measured Rule-8 wrong unitary at `opt` exit 0
+// (`trackT2/probes/g8_arm_use_derived_owned_rot.c`: four coherent which-path
+// records alive across `cqrt_ry_i32(h0,0.9)` and then `cqrt_measure_i32(h0)`).
+//
+// So the suppression RECORDS and this VERIFIES, at the late slot, after
+// `uncompute`, where the discharge is a FACT. `true` ⇒ it emitted the loud
+// `DS_Error`; the message is the EXISTING bd `s82e` string, not a new one, so the
+// fence keeps its verdict and its six shipped pins.
+//
+// ⚠ Called exactly ONCE per module, in BOTH pipeline entry points, immediately
+// after `emitDeferredDephasingDecline` — AFTER it, so bd `bbu0`'s deferred verdict
+// (when its env gate is on) still speaks first and one module never produces two
+// owners for one diagnostic. It CLEARS the ledger, so a second call reads an empty
+// one and silently reports success, and an earlier call reads a forecast.
+bool declineUndischargedMarkedBodyRails(llvm::Module &M);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_LOOP_PLAN_H_

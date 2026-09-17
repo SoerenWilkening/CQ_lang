@@ -13,7 +13,7 @@ command in `GATES.md`; nothing is copied from a record.
 
 | piece | status | branch | what it buys |
 |---|---|---|---|
-| **bd `6n1s`** (the review's P1 over-accept) | **LANDED** `f6713c0e` | `tu9q-hoisted-template` | a MARKED multi-block body discharges its interior rails; conjunct (1) stops reading "marked" as "discharged" |
+| **bd `6n1s`** (the P1 over-accept) | **LANDED in TWO commits** — `f6713c0e` + the F-1 fix | `tu9q-hoisted-template` | a MARKED multi-block body discharges its interior rails, and conjunct (1)'s suppression is a PROMISE VERIFIED after `uncompute` rather than a prediction. ⚠ The first commit did **not** close the bead — see §9 |
 | **P1** — the real multiplicity test | **LANDED** `f6713c0e` | same | the backstop `Uncomputation.cpp` §4's own comment has been asking for since bd `8h7d.5` round 5 |
 | **P2** — the loop-EXIT anchor | **LANDED** `bfb809be` | same | closes bd `1m5p` **and** the LIVE `a1_apost` Rule-8 over-accept |
 | **P0** — the component partition | **BUILT, MEASURED, NOT LANDED** | `tu9q-p0-p3-wip` `30b80d7f` | see §5 |
@@ -104,10 +104,25 @@ F-2 is landed in the same change (`CLAUDE.md` L7-with-a-twist): conjunct (1)'s a
 `bodyBlocksMarked`'s retirement triggers are corrected **at the site**, including the trigger that
 header did not carry — *what the marking proves*.
 
-⚠ **It is a SUFFICIENT condition, not an oracle, and it does not close the general hole.** It
-models the post-dominator sub-case only. A marked body whose rail is refused by clause (d), by
-`preservesBasisUnderRecord`, or by a `ReversedGates` overlap still leaks with the fence silenced.
-The TOTAL answer is the postcondition pattern — built on the WIP branch (§5), not here.
+⚠⚠ **THAT CONJUNCT WAS A PREDICTION AND IT WAS WRONG, AND THE LIST BELOW USED TO OMIT THE ONE
+THAT MATTERS** (independent Rule-13 round, 2026-09-18, F-1 / F-3; corrected here and at the source
+site in the same change — `CLAUDE.md` L7-with-a-twist).
+
+The conjunct is a SUFFICIENT condition, not an oracle: it models only the "is there an in-body
+post-dominator" refusal. An earlier revision of this section listed the refusals it does **not**
+model as *"clause (d), `preservesBasisUnderRecord`, or a `ReversedGates` overlap"* — three exotic
+mechanisms — and **left out `planInteriorComponent` §4's per-gate `DT.dominates(G, At)` on an
+ARM-MINTED interior rail, which is the refusal a MULTI-BLOCK BODY PRODUCES BY CONSTRUCTION**, i.e.
+the one this predicate's own shape class generates. The list read as exhaustive over rare cases
+while missing the ordinary one, and that omission **is** F-1's mechanism: `g8_arm_use_derived_owned_rot.c`
+has `bodyBlocksMarked` true, the post-dominator fold true, and four coherent which-path records
+leaked at a non-diagonal gate at `opt` exit 0.
+
+**SO THE SUPPRESSION IS NO LONGER TRUSTED — IT IS VERIFIED.** Conjunct (1) RECORDS the promise and
+`declineUndischargedMarkedBodyRails` checks it at the tail of the pass, after `uncompute`, in BOTH
+entry points, where the discharge is a FACT. It declines with the EXISTING bd `s82e` string, so the
+fence keeps its verdict and its pins. That is the `declineSurvivingIntrinsicCalls` pattern the
+predicate's own header used to name and decline; F-1 is the measured reason to take it.
 
 ---
 
@@ -411,12 +426,20 @@ returns **true**, because the commit that would make it false has been refused b
    unproven` under STRICT 2b. **That asymmetry measures the instrument's reach, not the rail.** The
    rolled slice therefore carries `--allow-unproven` with that reason and a retirement trigger
    written at its registration; the twin runs STRICT.
-4. **The fence half does not close the general hole** (§1.2). It models the post-dominator
-   sub-case; clause-(d) and `preservesBasisUnderRecord` refusals still leak with the marking
-   granted.
+4. **The fence half NEVER closed the general hole, and as of 2026-09-18 it is no longer asked to.**
+   It models the post-dominator sub-case; §4's per-gate dominance on an ARM-MINTED rail (the one a
+   multi-block body produces by construction), clause (d), `preservesBasisUnderRecord` and a
+   `ReversedGates` overlap are all outside it. What closes the hole is the POSTCONDITION
+   (`declineUndischargedMarkedBodyRails`), which asks the question on the emitted module instead of
+   predicting it. ⚠ An earlier revision of this item omitted §4's dominance from that list; that
+   omission was F-1's mechanism and is corrected at the site as well as here.
 5. **No module was constructed on which `markedBodyRailsHaveInBodyDischargePoint` answers
-   `false`.** It is validated by MUTATION (17 fixtures depend on its `true`), which shows it is
-   live code, not that it has a customer.
+   `false`, and the independent round measured it returning `true` on ALL 19 of its probes** —
+   including the F-1 witness, where `true` is a FALSE NEGATIVE. Combined with the 6566-row corpus
+   sweep's ZERO verdict flips, the conjunct declined nothing anywhere in the tree: **bd `6n1s`'s P1
+   was closed, for the shapes it is closed for, by the USE-SIDE relaxation alone.** The conjunct is
+   kept because a sufficient condition sound in the decline direction costs nothing, but it must not
+   be read as the fix's fence (F-2; stated at the source site too).
 6. **`loopExitDischargePoint`'s null path has no constructed customer** (§3 F-R2-1).
 7. **The warning still fires on `t5j`** for an unrelated, now-understood reason (§3 F-R2-3).
 8. **No injection (mutation) matrix was run over the new accept fixtures**, and no
@@ -476,9 +499,16 @@ probe in another session's directory and is recorded here instead.
 
 ## §8 — FOR THE INDEPENDENT REVIEWER: the three most dangerous things, in order
 
-1. **`useCompleteBeforeDischarge`'s case split (F-R1-3).** The relaxation is sound *because* every
-   user that the reversal will ADJOINT is re-proved under the unrelaxed `DT.dominates(G, At)` in
-   §4. That rests on one claim: **an in-place gate on the owned rail is always in `D.Calls`.**
+1. **`useCompleteBeforeDischarge`'s case split (F-R1-3) — AND THE SCOPE THAT SPLIT DOES NOT COVER.**
+   ⚠ **F-3(2), 2026-09-18:** the split is written over `R->users()`, i.e. *what the reversal
+   touches*. F-1's mechanism is a gate that is **not a user of `R` at all** — the ARM's producer of a
+   SECOND interior rail. **State the split's scope when reading it**: it argues the relaxation does
+   not admit a *bad adjoint*; it says **nothing** about whether the component the relaxation keeps
+   alive will be PLANNED at all, and conjunct (1) has already promised the fence that it will be.
+   That gap is now covered by the postcondition, not by the split.
+   The split itself is sound *because* every user the reversal will ADJOINT is re-proved under the
+   unrelaxed `DT.dominates(G, At)` in §4. That rests on one claim: **an in-place gate on the owned
+   rail is always in `D.Calls`.**
    Attack it. If `recoverDataDag` can ever fail to walk an in-place gate on an owned rail — a
    width-punned one, one behind a `!cq.branchphase` membership refusal, one the 7.4 break teardown
    minted — then a CONDITIONAL such gate reaches the relaxed leg and the adjoint fires on one arm
@@ -510,3 +540,139 @@ probe in another session's directory and is recorded here instead.
 **And one that is not a defect but will mislead a reader**: `t5j_twoblock_noexit_rot.c` still emits
 the M-A warning after the fix. It is NOT about the `ashr` rails (all four are discharged) — it is
 `recordIsExemptAt` clause 4 failing on a CONDITIONALLY-executed measure. §3 F-R2-3, filed.
+
+---
+
+## §9 — THE INDEPENDENT ROUND'S F-1 / F-2 / F-3, FIXED (2026-09-18, `cq-opt df2445fcaf82cf00`)
+
+> **The round's own headline, kept because it frames the fix:** *"The landed code is a net
+> improvement and I found no module it makes worse … 10 of 16 accepting probes MOVED and all 10
+> moved `leak → discharge`. **F-1 is not a regression introduced by this branch.** F-1 is that the
+> branch does not close the bead it is named for."* That is exactly right, and §0's status line
+> ("bd `6n1s` LANDED") was therefore **wrong** and is corrected here: bd `6n1s` is closed **now**.
+
+### §9.1 — F-1, and why fix (a) was attempted first and then filed
+
+`g8_arm_use_derived_owned_rot.c` is `t5j` with the arm minting an **interior** rail
+(`int e = d + 7; s += cq_measure(e & 2);` instead of a direct measure). Reproduced on the delivered
+SUBJECT before any edit: ACCEPT exit 0, 19 lines, `2 left dirty`, **0 `cqrt_free`**, four coherent
+which-path copies of `y >> k` alive across `cqrt_ry_i32(h0,0.9)` and `cqrt_measure_i32(h0)`.
+
+**Root cause, confirmed in the emitted module** (`%4` header / `%9` arm / `%11` join): the component
+is `{%h_op, %h_op2}`, `At` is the join `%11`, and §4's per-gate `DT.dominates(G, At)` is FALSE for
+the ARM's producer `%h_op2` — so `planInteriorComponent` abandons the **whole** component. Conjunct
+(1) had meanwhile suppressed the fence, because `bodyBlocksMarked` **and**
+`markedBodyRailsHaveInBodyDischargePoint` are both `true` here.
+
+**Fix (a), the placement, was traced and is a SEPARATE INCREMENT — recorded so the next agent starts
+from a design and not a sketch.** Discharging `{h_op2}` in the arm and `{h_op}` at the join is
+sound and I verified each step, but it needs (i) a component partition **finer than a component**
+keyed on **control-equivalence** — bd `tu9q` P0's multiplicity key does **not** separate them,
+because both rails are in the SAME marked body — and (ii) a **per-activation** cross-plan ordering
+check, because P0's shipped `provablyBefore(At_inner, At_outer)` FAILS here (`%9` does not dominate
+`%11`) while the property that actually holds is "no execution of the inner adjoint lies after the
+outer free within an activation". A new partition key plus a new ordering predicate is a new
+increment with its own Rule-13 budget, inside a one-fix scope. **FILED.**
+
+### §9.2 — fix (b) as landed: the suppression is a PROMISE, verified after `uncompute`
+
+Conjunct (1) no longer `continue`s. It computes `SuppressedByMarking`, lets conjuncts (2) and (3)
+run, and at conjunct (3)'s hit **records** the offending rail instead of declining
+(`markedBodyRailObligations`, `WeakTrackingVH` so it follows `lowerOps`' RAUW).
+`declineUndischargedMarkedBodyRails` checks the ledger at the late slot — after `uncompute`, in
+**BOTH** entry points, immediately after `emitDeferredDephasingDecline` so bd `bbu0`'s verdict still
+speaks first — and declines with the **EXISTING bd `s82e` string**, so the fence keeps its verdict
+and its pins rather than starting a new family.
+
+⚠ **The record is taken at conjunct (3), NOT at conjunct (1), and that is what keeps it from being a
+mass over-decline**: the hazard needs conjuncts (2) and (3) too, so a loop with no post-loop chained
+rotation records nothing. Suppressing at (1) now only means *"do not decline YET"*.
+
+### §9.3 — an over-decline the FIRST cut caused, and how it was caught
+
+The first cut asked only *"is there an `_unc`/`cqrt_free` in the loop?"* and turned
+`lowering_reject_live_record_post_gate_record_loop.ll` from its **owner-ruled WARNING** (bd `lyyf`:
+the dephasing-by-leftover-record class is the USER's circuit, reported and LOWERED) into a DECLINE.
+Read in the emitted module: the offending rail is the WIRE `w = q*2`, rotated in place and then
+**`cq_measure`d**. `railIsInterior` calls it interior because it has a NON-measure user (the
+`cqrt_ry`) — **which is a different question from "is it measured"**.
+
+So the postcondition asks the question it means: a rail is not a **coherent** record if it is either
+(a) adjointed+freed in-body **or** (b) **MEASURED** in-body. Clause (b) is the physics
+`measureOwnedInvariantRail`'s header already states from the other side, and it is written at the
+site with the measurement that forced it. `g8` still declines (its rails' users are template
+producers, not measures), so the clause does not weaken the fix.
+
+### §9.4 — F-2 and F-3, landed AT THE SITE and not only here (`CLAUDE.md` L7-with-a-twist)
+
+* **F-2** — `markedBodyRailsHaveInBodyDischargePoint`'s header now says it has **no measured customer
+  in either direction**: the round measured it returning `true` on **all 19** of its probes
+  (including the F-1 witness, where `true` is a false negative), and this branch's 6566-row sweep had
+  **zero verdict flips**, so it declined nothing anywhere. **bd `6n1s`'s P1 was closed, for the
+  shapes it is closed for, by the USE-SIDE relaxation alone.** It is kept (sound in the decline
+  direction, costs nothing) but must not be read as the fix's fence.
+* **F-3(1)** — the list of refusals the predicate does not model omitted **§4's per-gate dominance on
+  an ARM-MINTED rail, the one a multi-block body produces BY CONSTRUCTION**. Corrected at the source
+  site and in §1.2 / §6.4 here.
+* **F-3(2)** — §8 item 1's case split is written over `R->users()`; F-1's mechanism is a gate that is
+  **not a user of `R` at all**. The split's SCOPE is now stated: it argues the relaxation admits no
+  bad *adjoint*; it says nothing about whether the component it keeps alive is **planned at all**.
+
+### §9.5 — what §9 does NOT claim
+
+1. **Fix (a) is not built.** The arm-minted interior rail still DECLINES; the placement is filed with
+   its design (§9.1). This is a decline of a program that is compilable in principle, i.e. an
+   over-decline by the owner's 2026-09-11 ruling — **filed as such, not presented as the answer**.
+2. **`declineUndischargedMarkedBodyRails` has exactly ONE constructed customer** (`g8`, plus `g8k`'s
+   family via the pre-existing route). Its other decline paths — a NULL handle, a rail whose mint
+   left its loop — are conservative branches with no constructed customer.
+3. Gates run at `df2445fcaf82cf00`: `ir-pass-lit` (1/1 Passed), the two e2e slice entries (2/2), the
+   targeted lit filter (985 + 1 XFAIL, 0 FAIL), the vacuity check, the injection matrix (8
+   mutations, MISSED 0, N/A 0) and a **PROBES-ONLY** corpus sweep. **NOT** run: the full `ctest`,
+   `^e2e-` as a layer, the twin matrices, `cq-opt-equivalence-full`, and the full `ir-pass/test` half
+   of the corpus sweep — that half is covered by `ir-pass-lit` at the same hash, and re-sweeping it
+   would be the redundant gate PROTOCOL §6.1 forbids.
+
+### §9.6 — THE BLAST RADIUS: two SHIPPED goldens pinned the same Rule-8 hazard, and only ONE half is now fenced
+
+The merge gate asked Group 1 to **measure, not assume**, whether the F-1 fix moves
+`tests/e2e/slice_control_inplace_ry_loop_leak{,_unrolled}` — bd `bbu0`'s byte-identical twin pair,
+whose headers both asserted *"IT IS RULE-6 CORRECT"*. Measured on `df2445fcaf82cf00`:
+
+| half | verdict on the fix | disposition |
+|---|---|---|
+| `…_loop_leak.c` (ROLLED) | **DECLINES** — `rolled body leaks a rail entangled with a rotated register` | case **(ii)**, converted |
+| `…_loop_leak_unrolled.c` | **byte-IDENTICAL to its old golden, exit 0, UNCHANGED** | case **(iii)**, NEW P1 bead |
+
+**The decline is CORRECT, and the argument is on the operands.** From the (now deleted) golden:
+`cq_template_mul_i32_hl(h2, 7) -> h3` is a COHERENT copy of `h2`'s basis label;
+`cqrt_tape_write_i32(t0, h3) -> h4` COPIES it into the output tape and does **not** collapse it;
+`h3` is never `_unc`'d and never freed; `cqrt_ry_i32_controlled(h5, h2, 0.9)` — **non-diagonal, on
+`h2`** — then runs with that record standing, and `h2` is the measured observable. Rule 8 verbatim.
+⚠ **Only the tape-write RESULT (`h4`, `h7`) is an `OutputRails` member**; its OPERAND `h3` is an
+ordinary interior template rail, so *"it is the program's own output"* does **not** excuse it — a
+reading I checked in `TaintPropagation.h`'s contract before acting on it.
+
+⚠ **THE `twin-identical` GATE WAS GREEN THROUGHOUT, AND COULD NOT HAVE BEEN OTHERWISE.** It
+`compare_files`s the two goldens; the unrolled twin leaks the SAME rail in the SAME place, so the
+comparison passed. `CLAUDE.md` L10 already states the general form — *"a cell whose two halves
+agreed because BOTH were wrong is precisely what ACCEPT-IDENTICAL cannot see; only a fence can"* —
+and this is a **second measured instance, on a REGISTERED e2e pair** rather than a matrix cell.
+Stage 2b was equally blind: every leaked rail here is TEMPLATE-minted.
+
+**What was done** (coordinator option (ii), the 2026-09-14 stale-reader precedent): both goldens
+**DELETED** rather than regenerated; all three ctest entries unregistered (**449 → 446** `add_test`,
+**0** duplicate names, sweep still LAST, `ctest -N -R inplace-ry-loop-leak` → `Total Tests: 0`);
+both `.c` files **KEPT** with conversion headers and L8 triggers (a deleted fixture can be
+resurrected by a merge — L8, bd `gahu`); the rolled decline pinned by
+`ir-pass/test/loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll`, the slice's verbatim stage-1
+module, **validated NON-VACUOUS by binary mutation** (ORACLE: `EXPECTED-DECLINE but opt exit 0 ->
+FAIL`; fix: `DECLINE + message matches -> PASS`).
+
+⚠ **THE ASYMMETRY IS THE FILING, AND IT IS NOT A THING THIS INCREMENT CLOSED.**
+`declineUndischargedMarkedBodyRails` is **LOOP-SCOPED by construction** — it verifies a promise
+conjunct (1) makes about a MARKED LOOP BODY — so it structurally **cannot** reach the unrolled twin,
+which has no loop and still compiles the identical hazard at exit 0. **Net: the hazard's population
+shrank by one spelling and the residue is now named**, as a new P1 in `BD_TEXT.md` with its
+red-green pair (RED = the kept unrolled `.c`, GREEN = the same program with the trailing
+`cq_measure(r)` removed, control = the same with `s = r * 7` deleted). Do not read §9 as covering it.
