@@ -37,11 +37,11 @@ Selftest summary line at that run, **re-run, not copied**:
 ```
 free_pairing_check_test: 32 positive fixture(s), 2 free-order pair(s),
   1 cost bound(s), 77 named mutant(s), 10 memory mutant(s)/refusal(s),
-  5 Case-A negative(s), 19 census case(s), 17 T4 loop-exit case(s),
+  5 Case-A negative(s), 19 census case(s), 18 T4 loop-exit case(s),
   329 proof-targeted mutant(s) (4 exempt by rule), 0 failure(s)
 ```
 
-Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 17**,
+Deltas against the pre-change file: positives **30 → 32**, T4 cases **0 → 18**,
 proof-targeted sweep **315 → 329**. Every other count is unchanged, which is the
 non-churn statement.
 
@@ -147,7 +147,10 @@ T4c-single-write-in-the-function   RED  4   write-in-loop / measured / rotated /
 T4d-exactly-one-free               RED  1   t4-one-reversal-two-frees
 T4f-mint-stream-acyclic            RED  1   t4-mint-inside-the-loop
 T4f-free-stream-acyclic            RED  1   t4-k1-reversal-and-free-inside-the-loop
-T4g-forward-operands-held-still    RED  1   t4-forward-operand-moved-inside-the-loop
+T4g-forward-operands-held-still    RED  2   t4-forward-operand-moved-inside-the-loop
+                                           t4-non-lifo-discharge-order (a REAL miscompile: FIFO
+                                           instead of LIFO discharge, so the middle rail's
+                                           reversal recomputes from an already-zeroed operand)
 ```
 
 **MISSED 1 of 9.** The survivor restates the key it searches (`r.writes` is keyed
