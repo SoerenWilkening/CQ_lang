@@ -111,3 +111,30 @@ Track C FINAL tip `d9b0f49f` merged | 07d937842bfb5135 | `tools/free_pairing_che
 matrix after authoring (run 2) | 07d937842bfb5135 | `FAILED (67)` — ⚠ **15 × IN BOTH FILES**, my own error: refresh re-pins but does not remove the expected row. Arithmetic said so first: 345 + 52 = 397 vs 382 cells | m&g | 17:35
 15 duplicated expected rows removed by exact first-field match | — | expected **345 → 330**; **330 + 52 = 382**, reconciles exactly | m&g | 17:37
 **matrix FINAL (run 3)** | 07d937842bfb5135 | `FAILED (52)` — **IN BOTH FILES 0 · QUARANTINED SIGNATURE CHANGED 0 · QUARANTINE STALE 0 · BOUNDARY CONTROL 0 · HARNESS-ERROR 0.** Remaining: **18 ROLLED-AND-UNROLLED-TRACES-DIFFER** (the class-H cells I REFUSED — G-11) + **34 verdict changed** blocked behind them. `--regenerate` refuses by `loop_twin_matrix.py:3303`, verified in source. **`expected.txt` carries NO rewritten verdict; `--regenerate` was never run** | m&g | 17:43
+
+## CLASS-H ADJUDICATION (bd `test_C_libtooling-z0cv`) — three binaries, one checker
+
+⚠ Every row below uses the **COMBINED tree's (T4) `free_pairing_check.py`** regardless of which
+`cq-opt` produced the IR (`gate/probes/hcell.py`), so the ORACLE's rolled ledger is measurable for
+the first time.
+
+measurement | cq-opt | result | who | when
+--- | --- | --- | --- | ---
+(1) PRE-EXISTENCE, 6 representatives | **9bd01598** | the **ROLLED half DECLINES for every one** — `cq controlled lowering: condition predates a non-diagonal gate` (Track D's P4 string). `rder`/`rrange` decline on BOTH halves. **No oracle rolled stream exists, so the asymmetry cannot be pre-existing: it is NEW, door = Track D's P4** | m&g | 2026-09-17 17:47
+(2) MECHANISM, per family | 07d937842bfb5135 | **FOLD.** `der` `(5,5,6)/24` vs `(4,4,5)/19` (rolled has MORE — per-trip compare+strip vs `-O1` CSE) · `rder` `(5,5,7)/27` vs `(5,5,7)/23` (**counts EQUAL**; delta is `fcmp_ugt`+`cqrt_x` vs `fcmp_ole` — polarity) · `range` `(3,3,4)` vs `(2,2,3)` · `rrange` `(3,3,5)/17` vs `(3,3,5)/17` (**counts AND multiset EQUAL**). ⚠ **EVERY half of EVERY representative: `0 left dirty`, all frees verified, `0 unproven`** | m&g | 17:49
+(2b) the two "rolled discharges FEWER" cells | 07d937842bfb5135 | `m_rz_der_rz` `(5,5,6)` vs `(6,6,7)`, `m_rz_range_rz` `(3,3,4)` vs `(4,4,5)`. Source carries `cq_phi(0.125); if(COND) cq_phi(M_PI); cq_phi(-0.125);` — prefix/suffix are **UNCONTROLLED**, DELETED rolled by Rule 3, FUSED flat by `-O1` into an angle-select pair with one EXTRA flag rail. Per path `X·P(θ)·X ≡ P(−θ)`: rolled `π+π` = **2π**; twin `(π−0.125)+0.125+π` = **2π**, non-arm `−0.125+0.125` = **0**. **Δ equal; nothing dropped** | m&g | 17:50
+⚠⚠ **(3) THE COMPOSITION RESULT — G-13** | **5ee9d144 (D ALONE)** | rolled **`1 LEFT DIRTY`**, multiset names the rail: `cq_template_sqrt_f64_unc rolled 0 / unrolled 1` (`…_add_i32_hl_unc` for `range`). **Track D's P4 ALONE never discharges the hoisted chain** | m&g | 17:51
+same cells | **07d93784 (COMBINED)** | **`0 LEFT DIRTY`**, that `_unc` present, all frees verified. **Group 1's P2 loop-exit discharge is what closes D's leak.** R20's routing was load-bearing for CORRECTNESS, not bookkeeping | m&g | 17:51
+`--refresh-quarantine` after authoring class H | 07d937842bfb5135 | `re-pinned 70 quarantined signature(s)` · `preserved 358 header line(s) byte-for-byte`; 0 placeholders | m&g | 17:57
+**`--regenerate`** | 07d937842bfb5135 | `regenerated …expected.txt (312 cells; 70 quarantined and omitted)` · `preserved 493 header line(s) byte-for-byte`. **312 + 70 = 382**, reconciles | m&g | 18:02
+Track C `f2caac78` merged (bd `5aan`, the composition round's P1) | — | ⚠ **this one DOES change the checker**: `7ee74c6c2b257d2c` → `32a8f5eb01ec24d1` (multi-line terminators by bracket balance; `invoke` a loud refusal). Every e2e slice runs stage 2b, so it forces a full re-run — unlike `26dff90e`, which was byte-identical | m&g | 18:03
+
+## ⬛ FINAL GATE — the suite is GREEN
+
+gate | cq-opt | result | who | when
+--- | --- | --- | --- | ---
+**FINAL full `ctest -j6`** (after Track C `f2caac78` changed the CHECKER) | **07d937842bfb5135** | **`100% tests passed, 0 tests failed out of 459`** · **`Total Test time (real) = 515.58 sec`** · load 47→5. ⚠ Run because the checker sha moved `7ee74c6c…` → `32a8f5eb…` and EVERY e2e slice runs stage 2b — nothing cited from the pass-2 run for the e2e layer | m&g | 2026-09-17 18:12
+**`e2e-loop-twin-matrix`** | 07d937842bfb5135 | **`Passed 280.63 sec`** — 382 cells, **312 expected + 70 quarantined**, 4 boundary controls, **0 failures** | m&g | 18:12
+`e2e-free-pairing-selftest` (new checker + new mutants) | 07d937842bfb5135 | **Passed 0.96 s** | m&g | 18:12
+`e2e-loop-twin-quarantine-selftest` | 07d937842bfb5135 | **Passed 0.55 s** | m&g | 18:12
+binaries at the final gate | — | `cq-opt` **07d937842bfb5135…** and `libCQPass.so` **19dcfde08ffbb69c…** — **UNCHANGED** since the pass-2 build; Track C's three merges are python-only | m&g | 18:12
