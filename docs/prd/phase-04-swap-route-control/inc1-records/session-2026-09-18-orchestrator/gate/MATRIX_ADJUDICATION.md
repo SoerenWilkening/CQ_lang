@@ -403,3 +403,78 @@ catch. Full measurement and disposition: **G-11**.
 ⚠ **`tools/loop_twin_matrix.expected.txt` has NO content edit** — the only change is the removal of 15
 rows for cells that moved to the quarantine, which the contract requires. No verdict was rewritten, and
 `--regenerate` was never run.
+
+---
+
+# CLASS H — bd `test_C_libtooling-z0cv`, adjudicated per family. **VERDICT: FOLD. Quarantined.**
+
+The orchestrator's three-step method, run on 6 representatives across the four families
+(`der` 7 · `rder` 5 · `range` 4 · `rrange` 2 = 18) with `gate/probes/hcell.py`, which runs either
+binary but **always with the COMBINED tree's (T4) checker** so the oracle's rolled ledger is
+measurable for the first time.
+
+## (1) PRE-EXISTENCE — there is no oracle rolled stream, so the asymmetry cannot be pre-existing
+
+**On the ORACLE `9bd01598`, the ROLLED half DECLINES for every representative:**
+`cq controlled lowering: condition predates a non-diagonal gate under quantum control` — **Track D's
+P4 string**. (For `rder` and `rrange` the *unrolled* half declines too, so the whole cell is new.)
+A count asymmetry cannot pre-exist a circuit that does not exist. **The asymmetry is NEW, and the
+landing that admits the rolled side is Track D's P4** — confirmed on the single-track binaries below.
+
+## (2) MECHANISM — **FOLDING**, and the ledger says so where the gate tally could not
+
+⚠ **THE DECIDING NUMBER IS THE DISCHARGE LEDGER, NOT THE TRACE-GATE TALLY.** On the combined binary
+**every half of every representative is `0 left dirty`, every `cqrt_free` verified, `0 unproven`**. A
+dropped discharge presents as a DIRTY rail; there is none anywhere.
+
+| family | rolled | unrolled | reading |
+|---|---|---|---|
+| `der` (`m_none_der_none`) | `(5,5,6)`/24 | `(4,4,5)`/19 | rolled has **MORE** — a real `fcmp`+strip PER TRIP where `-O1` CSEs the flat side's |
+| `rder` (`…_none_none_none`) | `(5,5,7)`/27 | `(5,5,7)`/23 | **counts EQUAL**; sole delta `fcmp_ugt`+`cqrt_x` vs `fcmp_ole` unbracketed — **predicate polarity** |
+| `range` (`m_none_range_none`) | `(3,3,4)`/14 | `(2,2,3)`/11 | the same per-trip mint |
+| `rrange` (`…_none_none_none`) | `(3,3,5)`/17 | `(3,3,5)`/17 | counts **and multiset EQUAL** — purely positional |
+
+**The two "rolled discharges FEWER" cells, with the rail named.** `m_rz_der_rz` `(5,5,6)` vs
+`(6,6,7)` and `m_rz_range_rz` `(3,3,4)` vs `(4,4,5)`. Both sources carry, inside the loop:
+
+```c
+cq_phi(0.125);  if (COND) { cq_phi(M_PI); }  cq_phi(-0.125);
+```
+
+The prefix and suffix are **UNCONTROLLED `cq_phi`** — global phases, **DELETED on the rolled side by
+Rule 3** — while on the flat side `-O1` **FUSES** them into the diamonds as an Rz-stem angle-select
+pair, manufacturing **one extra flag rail (`h6`)** to carry them. **The twin has more rails because it
+was given more work, not because the rolled side skipped any.** Per path, with `X·P(θ)·X ≡ P(−θ)`:
+
+| | arm path | non-arm |
+|---|---|---|
+| ROLLED | `π + π` = **2π** | 0 |
+| UNROLLED | `(π − 0.125) + 0.125 + π` = **2π** | `−0.125 + 0.125` = **0** |
+
+**Δ = 2π on both sides. No rail is left entangled on either side.** Nothing is dropped; the rolled
+side's hoisted chain (`sitofp → fadd → sqrt`) is `_unc`'d and freed **at the loop exit**, which is
+Group 1's P2.
+
+## (3) DISPOSITION — **fold ⇒ QUARANTINED under bd `z0cv` as class H**, 18 cells
+
+…and one result that belongs to the orchestrator, not to the cells:
+
+⚠⚠ **TRACK D'S P4 ALONE LEAKS A TEMPLATE RAIL ON EVERY CLASS-H FAMILY; GROUP 1's P2 IS WHAT CLOSES
+IT.** Measured on the single-track binaries, all four families agreeing:
+
+| binary | rolled half |
+|---|---|
+| ORACLE `9bd01598` | DECLINES (no circuit) |
+| **TRACK D ALONE `5ee9d144`** | **ACCEPTS with `1 LEFT DIRTY`** — multiset names the rail: `cq_template_sqrt_f64_unc rolled 0 / unrolled 1` (`…_add_i32_hl_unc` for `range`). **The hoisted chain is never discharged.** |
+| COMBINED `07d93784` | **`0 LEFT DIRTY`**, that `_unc` present, all frees verified |
+
+**So D shipped alone would admit a program whose rolled form leaves a hoisted which-path rail
+entangled.** Neither track's Rule-13 round could see it — D's gate ran without G1, G1's without D —
+which is exactly why R20 routed them into ONE combined gate. **That routing was load-bearing for
+CORRECTNESS, not bookkeeping.** Filed as **G-13**; the class-H header carries the retirement trigger
+*"re-measure on a D-without-G1 binary before shipping D alone, ever."*
+
+⚠ **This also CORRECTS my own G-11**, which read "the ROLLED side discharging FEWER" as a deficiency
+signature. It is not, on the shipped binary. I refused to bless on a count asymmetry, which was the
+right call — but the number I refused on could not have answered the question either way, and the one
+that does was in the same `free_pairing_check` line I was already printing.

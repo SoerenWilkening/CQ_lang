@@ -359,3 +359,60 @@ should** — it refused to accept a state I had created and named the fix in one
 **Recommendation for `PROTOCOL.md`:** when a cell is quarantined by hand, the check is arithmetic and
 takes one command — `expected + quarantine == total cells`. Any excess is a both-files violation
 before the matrix is ever re-run.
+
+## G-13 — **NEW, and it is the session's most important measurement: TRACK D's P4 ALONE LEAKS A TEMPLATE RAIL ON EVERY CLASS-H FAMILY; GROUP 1's P2 IS WHAT CLOSES IT**
+
+Found while adjudicating bd `test_C_libtooling-z0cv` per the orchestrator's three-step method. It is a
+**composition** fact, and no single track's Rule-13 round could have produced it.
+
+**Measured, same cells, three binaries, all four families agreeing:**
+
+| binary | rolled half of `m_none_der_none` / `m_rz_der_rz` / `m_none_range_none` / `m_none_rrange_…` |
+|---|---|
+| **ORACLE `9bd01598`** | **DECLINES** — `cq controlled lowering: condition predates a non-diagonal gate` (Track D's P4 string). No rolled circuit exists |
+| **TRACK D ALONE `5ee9d144`** | **ACCEPTS with `1 LEFT DIRTY`** — and the multiset names the rail: `cq_template_sqrt_f64_unc rolled 0 / unrolled 1` (`…_add_i32_hl_unc` for the `range` family). **The hoisted chain is NEVER DISCHARGED on the rolled side.** |
+| **COMBINED `07d93784`** | **`0 LEFT DIRTY`**, that `_unc` present, every `cqrt_free` verified, `0 unproven` |
+
+**So D's P4 widening, shipped alone, would admit a program whose rolled form leaves a hoisted
+which-path rail entangled — and Group 1's P2 loop-exit discharge is precisely what closes it.**
+
+⚠ **This is why R20 routed D BEHIND Group 1 under ONE combined gate, and it means that routing was
+LOAD-BEARING rather than bookkeeping.** Track D's own gate ran on a binary without Group 1; Group 1's
+ran on a binary without Track D. **Each track's clearance was measured on a binary that does not
+ship.** It is the fourth consecutive session in which *a composition is not cleared by clearing its
+parts* costs a filing — and the first in which the composition is load-bearing for **correctness**,
+not merely for an accept.
+
+**Consequences, stated as obligations rather than observations:**
+
+1. **These two tracks must land together, permanently.** A future revert, cherry-pick or bisect that
+   puts `drbq.12`'s P4 on a tree without `tu9q`'s P2 re-opens the leak. The class-H quarantine header
+   carries that as a retirement trigger: *"re-measure on a D-without-G1 binary before shipping D
+   alone, ever."*
+2. **The `1 left dirty` on D-alone was invisible to every gate D ran**, because stage 2b's census
+   counts it without failing (a dirty TEMPLATE rail is Rule-6 legal to leave allocated), and the twin
+   matrix could not verdict these cells at all before Track C's (T4).
+3. ⚠ **It is NOT a shipped defect.** The binary being landed is `07d93784`, where it is closed.
+   Recorded so nobody reads this as a live P1 against the landing.
+
+## G-11 — **CORRECTED BY MEASUREMENT. My alarm was wrong, and in the safe direction**
+
+G-11 said 16 of 18 class-H cells showed count asymmetries "several with the ROLLED side discharging
+FEWER — the deficient-rolled signature". **That inference was from TRACE-GATE COUNTS, and the trace
+gate tally is not the discharge ledger.** Measured per family on the combined binary, **every half of
+every representative is `0 left dirty`, every `cqrt_free` verified, `0 unproven`.** Nothing is
+dropped anywhere.
+
+The two "rolled discharges fewer" cells (`m_rz_der_rz`, `m_rz_range_rz`) are a **FOLD**, and naming
+the rail proves it: both carry `cq_phi(0.125); if (COND) cq_phi(M_PI); cq_phi(-0.125);` in the loop.
+The prefix/suffix are **UNCONTROLLED** `cq_phi` — global phases Rule 3 DELETES on the rolled side —
+while `-O1` fuses them into the flat side's diamonds as an Rz-stem angle-select pair, manufacturing
+one extra flag rail to carry them. **The twin has more rails because it was given more work.** Δ per
+path is **2π on both sides** (rolled `π + π`; twin `(π−0.125) + 0.125 + π`, non-arm `−0.125 + 0.125 =
+0`).
+
+**The lesson, and it is the one worth keeping:** I refused to bless these on a count asymmetry, which
+was right — but the number I refused on could not have answered the question either way. **The
+discharge ledger answers it; the gate tally only raises it.** Refusing on the weaker number was the
+correct call for the wrong reason, and the correct reason turned out to be available in the same
+`free_pairing_check` line I was already printing.

@@ -578,15 +578,10 @@ m_none_bval_add_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted v
 m_none_bval_none_none_bcar DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq controlled lowering: control flow under quantum control
 m_none_bval_none_none_binv UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_ddilry_none_none_binv ACCEPT-IDENTICAL
-m_none_der_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_der_none_bodyread UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_der_none_postmark UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_der_none_premark  UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_der_ry            ACCEPT-IDENTICAL
 m_none_der_ry_bodyread   UNROLLED-ONLY	cq opcode lowering: operand predates a non-diagonal gate
 m_none_der_ry_postmark   DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
 m_none_der_ry_premark    DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-m_none_der_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_dilesc_none_none_binv DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: nested control flow under quantum control
 m_none_dilry_none_none_binv ACCEPT-IDENTICAL
 m_none_eq0_add           ACCEPT-IDENTICAL
@@ -606,10 +601,10 @@ m_none_k2b_none_none_kflat ACCEPT-IDENTICAL
 m_none_k2b_none_none_kloop ROLLED-ONLY	cq taint escape: tainted value stored to memory
 m_none_karith_none_none_kflat UNROLLED-ONLY	cq loop lowering: loop-carried tainted value crosses iterations
 m_none_karith_none_none_kloop DECLINE-BOTH-DIFFERENT	cq loop lowering: loop-carried tainted value crosses iterations	cq taint escape: tainted value stored to memory
-m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq controlled lowering: control flow under quantum control
-m_none_kcond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+m_none_kcond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
+m_none_kcond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
 m_none_kicond_none_none_kflat DECLINE-BOTH-DIFFERENT	cq rail bank: array mixes a rail cell access with an unrecognized one	cq controlled lowering: control flow under quantum control
-m_none_kicond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: condition predates a non-diagonal gate under quantum control	cq taint escape: tainted value stored to memory
+m_none_kicond_none_none_kloop DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq taint escape: tainted value stored to memory
 m_none_kidx_none_none_kflat DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kidx_none_none_kloop DECLINE-BOTH	cq QRAM access: array address has aliasing fan-out
 m_none_kiprep_none_none_kflat UNROLLED-ONLY	cq rail bank: array mixes a rail cell access with an unrecognized one
@@ -697,42 +692,33 @@ m_none_pbitne_none_none_rypost ACCEPT-IDENTICAL
 m_none_pbitne_none_none_rypre ACCEPT-IDENTICAL
 m_none_pbitned_none_none_rypost ACCEPT-IDENTICAL
 m_none_pbitned_none_none_rypre ACCEPT-IDENTICAL
-m_none_range_none        UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_range_ry          ACCEPT-IDENTICAL
-m_none_range_rz          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_rcond_none_none_none DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
-m_none_rder_none_none_addpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rder_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rder_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rder_none_none_rypre DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rder_none_none_rzpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_rder_ry_none_none ACCEPT-IDENTICAL
 m_none_req0_add_none_none ACCEPT-IDENTICAL
-m_none_req0_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_req0_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req0_none_none_none ACCEPT-IDENTICAL
+m_none_req0_none_none_rypost ACCEPT-IDENTICAL
 m_none_req0_ry_none_none ACCEPT-IDENTICAL
 m_none_req_add_none_none ACCEPT-IDENTICAL
-m_none_req_none_none_addpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_req_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_req_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_req_none_none_rypre DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_req_none_none_rzpost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_req_none_none_addpost ACCEPT-IDENTICAL
+m_none_req_none_none_none ACCEPT-IDENTICAL
+m_none_req_none_none_rypost ACCEPT-IDENTICAL
+m_none_req_none_none_rypre ACCEPT-IDENTICAL
+m_none_req_none_none_rzpost ACCEPT-IDENTICAL
 m_none_req_ry_none_none  ACCEPT-IDENTICAL
 m_none_rifelse_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_none_rne_add_none_none ACCEPT-IDENTICAL
-m_none_rne_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rne_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rne_none_none_none ACCEPT-IDENTICAL
+m_none_rne_none_none_rypost ACCEPT-IDENTICAL
 m_none_rne_ry_none_none  ACCEPT-IDENTICAL
-m_none_rrange_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rrange_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_none_rrange_ry_none_none ACCEPT-IDENTICAL
 m_none_ryrz_add_none_none ACCEPT-IDENTICAL
-m_none_ryrz_none_none_none DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_ryrz_none_none_rypost DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_ryrz_none_none_none ACCEPT-IDENTICAL
+m_none_ryrz_none_none_rypost ACCEPT-IDENTICAL
 m_none_ryrz_ry_none_none ACCEPT-IDENTICAL
 m_none_rzry_add_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
-m_none_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
-m_none_rzry_none_none_rypost DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rzry_none_none_none UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rzry_none_none_rypost UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
 m_none_rzry_ry_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
 m_ry_bphi_none_none_binv ACCEPT-IDENTICAL
 m_ry_bprep_none_none_binv DECLINE-BOTH	cq controlled lowering: state prep merged with a quantum register under quantum control
@@ -789,9 +775,7 @@ m_ry_rprep_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: state p
 m_ry_rrange_none_none_none ACCEPT-IDENTICAL
 m_ry_ryrz_none_none_none ACCEPT-IDENTICAL
 m_ry_rzry_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: control flow under quantum control
-m_rz_der_none            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_der_ry              ACCEPT-IDENTICAL
-m_rz_der_rz              UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_eq0_add             ACCEPT-IDENTICAL
 m_rz_eq0_ry              ACCEPT-IDENTICAL
 m_rz_eq_add              ACCEPT-IDENTICAL
@@ -802,9 +786,7 @@ m_rz_ifelse_add          UNROLLED-ONLY	cq controlled lowering: control flow insi
 m_rz_ifelse_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
 m_rz_ifelse_ry           DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_ifelse_rz           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
-m_rz_range_none          UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_rz_range_ry            ACCEPT-IDENTICAL
-m_rz_range_rz            UNROLLED-ONLY	cq controlled lowering: condition predates a non-diagonal gate under quantum control
 m_xor_der_ry             ACCEPT-IDENTICAL
 m_xor_eq0_add            UNROLLED-ONLY	cq loop lowering: rail record read past an in-place gate on the same rail
 m_xor_eq0_none           DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: control flow under quantum control

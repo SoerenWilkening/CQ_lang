@@ -298,6 +298,61 @@
 #    before P2 fixed it. A quarantine row says "this divergence is blessed"; one
 #    written over an unexplained count asymmetry is the F-4 error this file
 #    exists to catch. They stay RED until someone measures them.
+#
+# ── CLASS H — 18 cells, bd test_C_libtooling-z0cv. THE HOISTED-CHAIN LOOP-EXIT
+#    DISCHARGE, seen for the first time. Families: `der` (7) · `rder` (5) ·
+#    `range` (4) · `rrange` (2). Door: bd test_C_libtooling-drbq.12 (Track D's
+#    P4) — on the ORACLE the ROLLED half DECLINES for every representative with
+#    `cq controlled lowering: condition predates a non-diagonal gate under
+#    quantum control`, so there was NO rolled circuit to compare against and the
+#    asymmetry cannot be "pre-existing". These cells returned HARNESS-ERROR at
+#    the 2026-09-18 pass-1 gate; Track C's (T4) rule is what let them verdict.
+#
+#    ⚠ THE MEASUREMENT THAT DECIDES IT, AND IT IS NOT THE TRACE COUNTS. Read the
+#    DISCHARGE LEDGER, not the gate tally. On the COMBINED binary every half of
+#    every representative is `0 left dirty` with every `cqrt_free` VERIFIED and
+#    `0 unproven`. A dropped discharge shows up as a DIRTY rail; there is none.
+#    Per-family, rolled vs unrolled on cq-opt 07d93784:
+#      der    m_none_der_none  (5,5,6)/24 vs (4,4,5)/19 — rolled has MORE: it
+#             emits a real fcmp+strip PER TRIP where -O1 CSEs the flat side's.
+#      rder   m_none_rder_..._none  (5,5,7)/27 vs (5,5,7)/23 — counts EQUAL; the
+#             only delta is `fcmp_ugt`+cqrt_x brackets against `fcmp_ole`
+#             unbracketed. PREDICATE POLARITY, not a rail.
+#      range  m_none_range_none (3,3,4)/14 vs (2,2,3)/11 — the same per-trip mint.
+#      rrange m_none_rrange_..._none (3,3,5)/17 vs (3,3,5)/17 — counts AND
+#             multiset EQUAL; purely positional.
+#
+#    ⚠ THE TWO "ROLLED DISCHARGES FEWER" CELLS ARE A FOLD, AND NAMING THE RAIL IS
+#    THE PROOF. `m_rz_der_rz` (5,5,6) vs (6,6,7) and `m_rz_range_rz` (3,3,4) vs
+#    (4,4,5) both carry `cq_phi(0.125); if (COND) cq_phi(M_PI); cq_phi(-0.125);`
+#    inside the loop. The prefix/suffix are UNCONTROLLED `cq_phi` — global phases,
+#    DELETED on the rolled side by Rule 3 — while on the flat side -O1 FUSES them
+#    into the diamonds as an Rz-stem angle-select pair, manufacturing one EXTRA
+#    FLAG RAIL (h6) to carry them. So the twin has more rails because it was given
+#    more work, not because the rolled side skipped any. Per-path phase,
+#    X·P(t)·X = P(-t): ROLLED arm = pi + pi = 2*PI, non-arm 0. UNROLLED arm =
+#    (pi-0.125) + 0.125 + pi = 2*PI, non-arm = -0.125 + 0.125 = 0. Delta = 2*PI on
+#    BOTH sides. NO RAIL IS LEFT ENTANGLED ON EITHER SIDE.
+#
+#    ⚠⚠ AND THE FACT THAT MAKES THIS A COMPOSITION RESULT RATHER THAN A CELL
+#    STORY — MEASURED ON THE SINGLE-TRACK BINARIES, ALL FOUR FAMILIES AGREE:
+#      Track D ALONE (cq-opt 5ee9d144, P4 without Group 1):
+#          rolled `4 template rail mint(s) of which 1 LEFT DIRTY`, and the
+#          multiset shows `cq_template_sqrt_f64_unc rolled 0 / unrolled 1`
+#          (`..._add_i32_hl_unc` for the range family) — THE ROLLED SIDE NEVER
+#          DISCHARGES THE HOISTED RAIL.
+#      COMBINED (07d93784, P4 + Group 1's P2):
+#          the same cells are `0 LEFT DIRTY` with that `_unc` present.
+#    **Track D's P4 alone leaks exactly one template rail on every class-H family;
+#    Group 1's P2 loop-exit discharge is what closes it.** Neither track's own
+#    Rule-13 round could see this — D's gate ran without G1 and G1's without D —
+#    which is why R20 routed them into ONE combined gate. That routing was
+#    LOAD-BEARING, not bookkeeping.
+#
+#    RETIREMENT TRIGGER: the blessing is "the rolled side discharges the hoisted
+#    chain at the loop exit". The day Group 1's P2 anchor moves, or `cq_phi`
+#    stops being deleted uncontrolled (Rule 3), re-derive these FROM THE STREAMS
+#    — and re-measure on a D-without-G1 binary before shipping D alone, ever.
 # ==== END OF HEADER — everything BELOW this line is generated and is rewritten
 # ==== by --regenerate / --refresh-quarantine. Everything ABOVE it is PRESERVED
 # ==== byte-for-byte, including prose you add by hand (bd test_C_libtooling-gfsk).
@@ -333,6 +388,46 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   4a2e8dfbe0311684
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_none_der_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   d60160c591b55628
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+
+cell     m_none_der_none_bodyread
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   0ea35c3578e6e5c8
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+
+cell     m_none_der_none_postmark
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   7aefc36d4745c223
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+
+cell     m_none_der_none_premark
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   7aefc36d4745c223
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, 0x1.921fb54442d18p+1)
+
+cell     m_none_der_rz
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   a7f282c4928463c1
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, -0x1p-3)
 
 cell     m_none_eq0_none
 class    F
@@ -574,6 +669,22 @@ digest   3196feecb00f9eee
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h5
 
+cell     m_none_range_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   57860ddebdaadd39
+rolled   cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+unrolled cqrt_rz_i1(h2, 0x1.921fb54442d18p+1)
+
+cell     m_none_range_rz
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   1df1299689fbb930
+rolled   cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+unrolled cqrt_rz_i1(h2, -0x1p-3)
+
 cell     m_none_rder_add_none_none
 class    B
 bd       test_C_libtooling-a3z7
@@ -581,6 +692,46 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   b116e741a03c8b71
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h10
+
+cell     m_none_rder_none_none_addpost
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   039554553ae7f49c
+rolled   cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+unrolled cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+
+cell     m_none_rder_none_none_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   3c6585f980487680
+rolled   cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+unrolled cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+
+cell     m_none_rder_none_none_rypost
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   ffc10db16dbf726b
+rolled   cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+unrolled cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
+
+cell     m_none_rder_none_none_rypre
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   8e45c569ac2e7219
+rolled   cq_template_sitofp_i32_to_f64(h0) -> h2
+unrolled cqrt_ry_i32(h1, 0x1p-2)
+
+cell     m_none_rder_none_none_rzpost
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   3c6585f980487680
+rolled   cq_template_fcmp_ugt_f64_hl(h4, 0x1.cp+1) -> h5
+unrolled cq_template_fcmp_ole_f64_hl(h4, 0x1.cp+1) -> h5
 
 cell     m_none_rrange_add_none_none
 class    B
@@ -590,6 +741,22 @@ digest   3cab7f1fd3f74d82
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h6
 
+cell     m_none_rrange_none_none_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   ad8d41aa0944fb10
+rolled   cqrt_free(h4)
+unrolled cq_template_add_i32_hl_unc(h2, h0, -6)
+
+cell     m_none_rrange_none_none_rypost
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   475b4990d4db19b2
+rolled   cqrt_free(h4)
+unrolled cq_template_add_i32_hl_unc(h2, h0, -6)
+
 cell     m_rz_der_add
 class    B
 bd       test_C_libtooling-a3z7
@@ -597,6 +764,22 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   4a2e8dfbe0311684
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h9
+
+cell     m_rz_der_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   f4304c7d5c17ffdf
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, 0x1p-3)
+
+cell     m_rz_der_rz
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   054d41918ad75db4
+rolled   cqrt_x(h4)
+unrolled cqrt_rz_i1(h4, -0x1p-3)
 
 cell     m_rz_eq0_none
 class    F
@@ -653,6 +836,22 @@ owner    ArithLowering M-C G6/G7 vs collapseRailPhisIn (3) — FLAT deficient (l
 digest   3196feecb00f9eee
 rolled   cqrt_addc_i32(h0, 3)
 unrolled cq_template_add_i32_hl(h0, 3) -> h5
+
+cell     m_rz_range_none
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   12731cab517ecbdd
+rolled   cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+unrolled cqrt_rz_i1(h2, 0x1p-3)
+
+cell     m_rz_range_rz
+class    H
+bd       test_C_libtooling-z0cv
+owner    rolled discharges the hoisted chain at the LOOP EXIT (Group 1 P2); both halves 0 left dirty, every free verified. The delta is -O1's fold of the FLAT side, not a leak
+digest   f628bb6630085cca
+rolled   cq_template_icmp_ult_i32_hl_unc(h2, h1, 14)
+unrolled cqrt_rz_i1(h2, -0x1p-3)
 
 cell     m_xor_der_add
 class    B
