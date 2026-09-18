@@ -70,7 +70,11 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/InstructionSimplify.h"
+#include "llvm/Analysis/AssumptionCache.h"   // bd fn1q inc 4 (E4 classical read)
+#include "llvm/Analysis/Loads.h"             // isDereferenceableAndAligned*
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/ScalarEvolution.h"   // bd fn1q inc 4
+#include "llvm/Analysis/TargetLibraryInfo.h" // bd fn1q inc 4
 #include "llvm/Analysis/PostDominators.h"
 #include "llvm/IR/Argument.h"    // bd 615s — the poison-generating param attrs
 #include "llvm/IR/Attributes.h"  // bd 615s
@@ -2277,6 +2281,202 @@ bool regionStrictlyInsideLoopBody(const PredMuxRegion &R, LoopInfo &LInfo,
   return true;
 }
 
+// bd fn1q increment 4 — E4's CLASSICAL CONST-TABLE READ.
+//
+// THE SHAPE, and it is NOT QROM. `if (cond) { Z -= z[i]; P += p[i]; }` where `z`
+// and `p` are ordinary arrays and `i` is the CLASSICAL loop counter.
+//
+// ⚠ THE TWO-ASSIGNMENT FORM IS NOT AN ILLUSTRATION, IT IS THE ACCEPT SURFACE, and
+// the first draft of this line wrote the ONE-assignment form as "THE SHAPE" while
+// the build declines it (Rule-13 round 2, R4R2-6). Measured, identically on both
+// binaries: `if (q > 2) { Z -= z[i]; }` leaves at `gate=W-witness` and declines
+// `value-arm swap-route under quantum control`. This increment widened **E4**; it
+// did not widen the **claim witness**, and with one merge phi of two incomings no
+// witness fires, so E4 is never consulted.
+//
+// That residual is an OVER-DECLINE by the owner's 2026-09-11 ruling and it is a
+// real follow-on, not a note: W4 already makes a claimable QROM read its own
+// witness on the argument that no shipped owner accepts a load-bearing arm
+// (`ArmClassify`'s `walkValueChain` breaks on a `LoadInst` — measured: the flat
+// one-accumulator form declines `impure value arm under quantum control`), and
+// the identical argument holds for a classical table read. ⚠ Widening W is a
+// change to the claim witness with its own accept surface — a mutant measured
+// `D->A=35, stream-moves=11` for bypassing it — so it is NOT a side edit here.
+// ⚠ Every fixture and the e2e slice use the TWO-assignment form, so nothing in
+// the tree can see this residual. That is why it is written down. `classifyQromReadUnderControl`
+// is deliberately not the way in and must not be widened to cover it: QROM is a
+// QUANTUM-indexed table read that lowers to `cqrt_qram_load_<W>`, and its
+// index-TAINT gate is load-bearing, not incidental (measured at the 2026-09-23
+// bisection: a power-of-two table still declines, so the refusal is the taint
+// gate and not the table size). Here the index is classical, the loaded value is
+// classical, and it stays classical all the way down — in a mixed Q+C op it
+// occupies the sanctioned `_hl` LITERAL slot and is not promoted to a qubit
+// handle (`quantum-classical-handling.md` §5.2, non-negotiable).//
+// ⚠ AND THE PRECISE FORM OF THAT CLAIM MATTERS, BECAUSE ITS FIRST DRAFT WAS
+// MEASURABLY FALSE (Rule-13 round 1, R4-P2-2). "The loaded value is NEVER
+// promoted to a qubit handle" is true of the OPERAND SLOT OF A MIXED Q+C OP,
+// which is what §5.2 governs — `cq_template_sub_i32_hl(%Z, %z)` passes `%z`
+// through as the literal. It is FALSE as an unconditional statement: when the
+// loaded value is an ARM OF THE MERGE (`c ? tbl[i] : 7`), the 4.4 data mux
+// materialises it on a rail — measured, `cqrt_alloc_i32(i32 %z)` — because a
+// controlled copy has to have something to copy FROM. That is the ordinary merge
+// idiom, identical to what happens to a literal arm (`cqrt_alloc_i32(i32 5)`) and
+// to a classical function ARGUMENT on the pre-increment ORACLE. Sound, and NOT
+// the §5.2 hazard; say "in the `_hl` slot of a mixed op", never "never".
+//
+// SO THE ONLY QUESTION IS WHETHER SPECULATING THE LOAD IS SAFE, and the owner
+// ruled it on 2026-09-23: admit **only with a PROOF** of in-bounds-ness; failure
+// to prove keeps today's loud decline. That makes an undersized bound
+// UNREACHABLE rather than UNDETECTED, which is the same asymmetry Rule 18's
+// narrowing rests on.
+//
+// TWO OBLIGATIONS, AND ONLY THE FIRST NEEDS A PROOF HERE:
+//   (1) THE LOAD MUST NOT FAULT where the source did not perform it. That is
+//       what `isDereferenceableAndAligned*` answers. In a loop the flatten makes
+//       the arm body run EVERY TRIP, so the question is per-iteration and
+//       `isDereferenceableAndAlignedInLoop` is exactly the predicate for it
+//       ("would access only dereferenceable memory … on every iteration
+//       regardless of its placement within the loop"). Outside a loop the hoist
+//       point is the entry terminator and the context-sensitive pointer form
+//       answers it.
+//   (2) NO INTERVENING STORE may change the value between the hoist point and
+//       the load's original position. ⚠ THIS NEEDS NO PROOF AND THAT IS NOT AN
+//       OVERSIGHT: E4 already refuses any `StoreInst` in the region
+//       (`isSpeculatableDataflow` is false for one -> `E4-dataflow`), the hoist
+//       target is before `R.Entry`'s terminator so nothing already in `R.Entry`
+//       is crossed, and E3 makes the region single-entry/single-exit so no
+//       out-of-region block lies between. A store elsewhere in the loop body runs
+//       either wholly before or wholly after the region in each trip. ⚠ RETIREMENT
+//       TRIGGER: the day E4 admits a store, obligation (2) becomes real and this
+//       predicate must grow a memory-dependence proof.
+//
+// ⚠ IMMUTABILITY IS NOT REQUIRED BY ARM (1a) AND IS REQUIRED BY ARM (1b), AND
+// THE FIRST DRAFT OF THIS PARAGRAPH CLAIMED IT WAS REQUIRED BY NEITHER. Measured,
+// per arm, because the difference is not visible from this file:
+//   * (1a), SCEV-in-loop, calls LLVM directly and asks only about
+//     dereferenceability, so a MUTABLE global is fine — `loop2phi_cmp.c` reads
+//     `int g_z[3]` (`@g_z = global`, no `constant`) and ACCEPTS.
+//   * (1b), known-bits, goes through `classicalTableIndexKnownInBounds` ->
+//     `matchQramAccess`, which requires `Origin.GV->isConstant()` because it is
+//     QROM's matcher. So (1b) proves a VARIABLE index only for a CONSTANT global.
+// ⚠ "THE LOOP-FREE ARM ADMITS A CONSTANT GLOBAL ONLY" IS WHAT THIS PARAGRAPH USED
+// TO SAY AND IT IS FALSE (Rule-13 round 1, R4-P3-1): arm (1c) admits plenty that
+// (1b) cannot, and it does not care about mutability — measured accepts include a
+// MUTABLE `[4 x i32]` at a CONSTANT index, a bare `load i32, ptr @m` on a mutable
+// global with no gep at all, and an UNINITIALISED alloca (dereferenceable, so no
+// fault; the value is as undefined as the source's own read of it). What the
+// constant-global requirement really bounds is (1b)'s VARIABLE-index case.
+// The asymmetry is inherited, not designed, and it is in the SAFE direction. ⚠ If
+// you widen it, do it by giving `matchQramAccess` the option — NOT by growing a
+// second bounds proof here (Rule 14; the drbq Inc-3 (b') defect).
+bool classicalTableReadIsSpeculatable(
+    LoadInst *LI, const TaintSet &Taint, DominatorTree &DT, LoopInfo &LInfo,
+    ScalarEvolution &SE, AssumptionCache &AC,
+    const SmallPtrSetImpl<BasicBlock *> &Region, BasicBlock *Entry) {
+  // Simple = not volatile, not atomic. A volatile read is an observable event the
+  // flatten may not duplicate or move; an atomic one carries ordering.
+  if (!LI->isSimple())
+    return false;
+  // CLASSICAL, on both wires, NOW.
+  if (Taint.Tainted.count(LI) || Taint.Tainted.count(LI->getPointerOperand()))
+    return false;
+  // ⚠ AND CLASSICAL AFTER THE FLATTEN. THE SENTENCE THAT USED TO STAND HERE —
+  // "the taint test keeps the two admissions disjoint by construction rather than
+  // by call order" — WAS FALSE AND IT WAS A P1 (Rule-13 round 1).
+  //
+  // This predicate is reached EXACTLY when `classifyQromReadUnderControl`
+  // returned `No`, and QROM says `No` for SIX reasons — not only "the index is
+  // classical". One of them is the `coherentlyEscapesToReturn` NO-CLONING fence,
+  // where the load IS a genuine QROM read whose value escapes coherently to a
+  // `ret`. Such a read's index is frequently UNTAINTED at round-1 taint and
+  // becomes tainted only once the flatten rewrites a region-internal phi into a
+  // select — so the test above passed and the read was laundered through this arm.
+  // Measured witness: a plain-`CQ.h` C program, ORACLE exit 1 `nested control flow
+  // under quantum control`, SUBJECT exit 0 with 0 BYTES of stderr, emitting
+  // `cqrt_qram_load_i32` on a superposed index rail built by two
+  // `cqrt_copy_i64_controlled` and NEVER freed. `free_pairing_check.py` is
+  // structurally blind to it.
+  //
+  // The fix is to ask QROM's OWN question instead of a proxy for it (Rule 14) —
+  // and to ask it at the FLATTEN's taint, not round 1 (CLAUDE.md L1, the
+  // "PREDICATE species": a fence keyed on round-1 taint while the lowering decides
+  // at final taint). Refusing here is always safe: if the index will taint, the
+  // read belongs to QROM, and QROM has already declined it for a reason of its own.
+  //
+  // ⚠ TWO QUESTIONS, AND THE FIRST ONE IS VACUOUS INSIDE A LOOP. Rule-13 round 2
+  // measured this: `qromShapedReadTaintsIndexAfterFlatten` goes through
+  // `matchQramAccess`, which returns `nullopt` UNCONDITIONALLY for any memop in a
+  // loop ("a QRAM access in a loop needs 7.3 unroll"). So for every IN-LOOP load —
+  // i.e. exactly the half of this accept surface increment 3 opened — that call
+  // answers `false` at its first `if` and fences nothing. The in-loop family was
+  // closed only by OTHER owners (`kMsgQramLoop`, and `unrollConstTripLoops`' U2b),
+  // which is a CONTINGENT closure and not the stated reason — CLAUDE.md's bd
+  // `xt20` class.
+  //
+  // So ask the will-taint question DIRECTLY as well, on the pointer operand, with
+  // no QROM matcher and therefore no loop gate. `valueWillTaintAfterFlatten` is
+  // the exported spelling of the SAME predicate QROM's index gate uses (Rule 14),
+  // and a pointer that will taint after the flatten is, by construction, not the
+  // classical read this arm exists for.
+  if (valueWillTaintAfterFlatten(LI->getPointerOperand(), Taint, Region, Entry))
+    return false;
+  if (qromShapedReadTaintsIndexAfterFlatten(LI, Taint, DT, LInfo, Region, Entry))
+    return false;
+  // A width the templates can carry, so a claimed region can never half-lower
+  // (the same detect-before-mutate discipline E7 applies to merges).
+  // ⚠ `abiWidthFromType` NON-EMPTY IS THE RIGHT TEST *HERE* AND IS THE WRONG ONE
+  // ONE LINE OVER. CLAUDE.md L9 records "never key DATA-MUX lowering on
+  // `abiWidthFromType()` being non-empty — f64 has a valid width yet is an ANGLE;
+  // that was the f64 silent miscompile". Do not copy this line into a merge or
+  // condition test.
+  //
+  // ⚠ THE JUSTIFICATION THAT USED TO STAND HERE — "this value is never muxed and
+  // never an angle" — IS FALSE ON BOTH HALVES, and it was the SIXTH copy of a
+  // claim the previous round corrected in five other places while missing this,
+  // the load-bearing, one (Rule-13 round 2, R4R2-2; two comments in one function
+  // contradicting each other, 92 lines apart — the same class §4i records from one
+  // increment ago).
+  //   * "never muxed": measured FALSE. A table value used as an arm of the merge
+  //     IS muxed, at f64, emitting `cqrt_alloc_f64(double %z)` +
+  //     `cqrt_copy_f64_controlled`. That is the shipped, Rule-13-cleared 4.4 fp
+  //     data select, so it is sound — but it is a mux.
+  //   * "never an angle": not established by the cited ground. A loaded `double`
+  //     CAN reach `cq_theta`'s arg-1; what saves it is a DIFFERENT fence
+  //     (`rotation angle under quantum control`), not the taint test above.
+  // The width gate is still correct — it keeps a claimed region from half-lowering
+  // — but its reason is "the templates must be able to carry this width", full
+  // stop. Do not restore a reason that names muxing or angles.
+  if (abiWidthFromType(LI->getType()).empty())
+    return false;
+  const DataLayout &DL = LI->getModule()->getDataLayout();
+  // (1a), in a loop: per-iteration, placement-independent. This is the arm that
+  // fires on the shape this increment exists for — a table indexed by the loop
+  // COUNTER, where the bound is the trip count and only SCEV can see it.
+  if (const Loop *L = LInfo.getLoopFor(Entry))
+    if (isDereferenceableAndAlignedInLoop(LI, const_cast<Loop *>(L), SE, DT, &AC))
+      return true;
+  // (1b), the KNOWN-BITS proof — the same one QROM's `Provable` verdict uses,
+  // asked through the exported wrapper so there is ONE spelling of "is this index
+  // in bounds" (Rule 14). It catches the masked index (`i & 3` into `[4 x i32]`)
+  // that has no loop to bound it.
+  if (classicalTableIndexKnownInBounds(LI, Taint, DT, LInfo))
+    return true;
+  // (1c), the pointer-level fallback: is the address dereferenceable AT THE HOIST
+  // POINT? `CtxI` is the entry terminator because that is exactly where
+  // `moveBody` will put the load.
+  //
+  // ⚠ THIS ARM IS WEAKER THAN IT LOOKS AND MUST NOT BE READ AS THE GENERAL CASE.
+  // LLVM's `isDereferenceableAndAlignedPointer` walks a gep by ACCUMULATING A
+  // CONSTANT OFFSET, so a VARIABLE index defeats it outright — measured: a masked
+  // `i & 3` into a 4-element table returns false here and is admitted by (1b)
+  // instead. What this arm adds is the constant-index and whole-object cases.
+  APInt Size(DL.getIndexTypeSizeInBits(LI->getPointerOperand()->getType()),
+             DL.getTypeStoreSize(LI->getType()).getFixedValue());
+  return isDereferenceableAndAlignedPointer(LI->getPointerOperand(),
+                                            LI->getAlign(), Size, DL,
+                                            Entry->getTerminator(), &AC, &DT);
+}
+
 // bd 20xt.5 (d) — the merge for an entry `E` whose STANDARD post-dominator is
 // the PDT virtual root PURELY because some path from `E` reaches an
 // `unreachable` block (a switch default `clang -O1` proved dead — e.g. atan2l's
@@ -2383,9 +2583,53 @@ BasicBlock *mergeIgnoringUnreachable(BasicBlock *E) {
 }
 
 // The full E-ladder. Pure analysis; returns false to LEAVE (never diagnoses).
+// bd fn1q increment 4 — the E4 classical-read proof needs SCEV and an assumption
+// cache, and BOTH are expensive to build. They are constructed LAZILY, on the
+// first load a candidate region actually reaches, and then reused for the rest of
+// the function: the PredMux fixpoint calls `recoverRegion` once per tainted
+// terminator per round, and the overwhelming majority of regions contain no load
+// at all, so building them eagerly would put a SCEV construction on every
+// iteration of a fixpoint that runs three times per module.
+struct LazyLoadAnalyses {
+  Function &F;
+  DominatorTree &DT;
+  LoopInfo &LInfo;
+  std::unique_ptr<AssumptionCache> AC;
+  std::unique_ptr<TargetLibraryInfoImpl> TLII;
+  std::unique_ptr<TargetLibraryInfo> TLI;
+  std::unique_ptr<ScalarEvolution> SE;
+
+  LazyLoadAnalyses(Function &F, DominatorTree &DT, LoopInfo &LInfo)
+      : F(F), DT(DT), LInfo(LInfo) {}
+
+  // ⚠ Built once per FUNCTION and handed out by reference. The safety argument is
+  // that NOTHING QUERIES THE BUNDLE AFTER A MUTATION — `recoverRegion` is pure
+  // analysis (detect-before-mutate, Rule 9) and every use is inside it.
+  //
+  // ⚠ IT IS *NOT* "the caller discards the bundle before `RegionFlattener::run()`
+  // touches a block", which is what this comment used to say and is false
+  // (Rule-13 round 2, R4R2-8): the bundle is declared in the per-function loop
+  // body and stays ALIVE through `RegionFlattener::run()`,
+  // `foldConstantConesInFunction` and `simplifyFlattenResiduesInFunction`, all of
+  // which erase instructions and blocks. Benign — SCEV's `SCEVUnknown` are
+  // `CallbackVH`s that absorb erasure, and nothing asks it anything by then — but
+  // the correct ground is "nothing queries it", and a future caller that DOES
+  // query it after a flatten would be reading a stale SCEV.
+  void ensure() {
+    if (SE)
+      return;
+    AC = std::make_unique<AssumptionCache>(F);
+    TLII = std::make_unique<TargetLibraryInfoImpl>(
+        Triple(F.getParent()->getTargetTriple()));
+    TLI = std::make_unique<TargetLibraryInfo>(*TLII, &F);
+    SE = std::make_unique<ScalarEvolution>(F, *TLI, *AC, DT, LInfo);
+  }
+};
+
 bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
                    LoopInfo &LInfo, const SmallPtrSetImpl<BasicBlock *> &OnCycle,
-                   const TaintSet &Taint, PredMuxRegion &R, bool ClaimAll) {
+                   const TaintSet &Taint, PredMuxRegion &R, bool ClaimAll,
+                   LazyLoadAnalyses *Loads = nullptr) {
   BasicBlock *E = T->getParent();
   auto *Node = PDT.getNode(E);
   BasicBlock *Mg = nullptr;
@@ -3039,8 +3283,23 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         QromClaim QC = classifyQromReadUnderControl(
             LI2, Taint, DT, LInfo, &Count, &R.InRegion,
             /*inBennettClone=*/ClaimAll, &IndexBecomesOpaque);
-        if (QC == QromClaim::No)
-          return leave("E4-load", &I);
+        if (QC == QromClaim::No) {
+          // bd fn1q increment 4 — QROM said No. Before declining, ask the
+          // SECOND, DISJOINT question: is this a CLASSICAL table read whose
+          // speculation is PROVED safe? QROM owns the quantum-indexed read and
+          // is asked first; this owns the classical-indexed one and can only be
+          // reached after QROM declined, so the two can never both claim a load.
+          // Failure to PROVE keeps today's decline verbatim — the owner's
+          // 2026-09-23 ruling, and increment 1's `flat_qc_load` ruling stands
+          // unchanged because an unprovable index still lands on this `leave`.
+          if (!Loads)
+            return leave("E4-load", &I);
+          Loads->ensure();
+          if (!classicalTableReadIsSpeculatable(LI2, Taint, DT, LInfo, *Loads->SE,
+                                                *Loads->AC, R.InRegion, R.Entry))
+            return leave("E4-load", &I);
+          continue;  // a proved classical read: pure speculatable dataflow.
+        }
         // bd 20xt.7: a PROVABLE clone read on a pow2 table whose index BECOMES
         // OPAQUE after the flatten ALSO gets the (identity) mask, not only a
         // NeedsMask one. `and idx, N-1` is the IDENTITY on a provable-in-bounds
@@ -3069,12 +3328,40 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
       if (auto *GEP = dyn_cast<GetElementPtrInst>(&I)) {
         if (GEP->hasOneUse())
           if (auto *LU = dyn_cast<LoadInst>(GEP->user_back()))
-            if (LU->getPointerOperand() == GEP &&
-                classifyQromReadUnderControl(LU, Taint, DT, LInfo,
-                                             /*OutCount=*/nullptr, &R.InRegion,
-                                             /*inBennettClone=*/ClaimAll) !=
-                    QromClaim::No)
-              continue;  // the claimable read's address gep (load re-checked).
+            if (LU->getPointerOperand() == GEP) {
+              if (classifyQromReadUnderControl(LU, Taint, DT, LInfo,
+                                               /*OutCount=*/nullptr, &R.InRegion,
+                                               /*inBennettClone=*/ClaimAll) !=
+                  QromClaim::No)
+                continue;  // the claimable read's address gep (load re-checked).
+              // bd fn1q increment 4 — the address gep of a PROVED CLASSICAL
+              // read. `hasOneUse` + the pointer-operand identity are what make
+              // this safe to wave through: the gep has exactly one consumer and
+              // it is the load the predicate just proved, so admitting the
+              // address can never admit a second, unproven access. The load is
+              // re-checked on its own iteration (it is a separate instruction in
+              // this same walk), which is why this arm does not need to record
+              // anything.
+              // ⚠ THE LOAD MUST BE IN THE REGION — AND THIS CLAUSE IS PROVABLY
+              // DEAD, WHICH IS RECORDED RATHER THAN HIDDEN. Round 1 added it
+              // (P3-4) against "a gep in the region whose sole user is a load in
+              // the MERGE (or below)". Round 2 showed E3 makes that shape
+              // unreachable: E3 runs BEFORE this walk and forces every region
+              // block's successors into region ∪ {Mg} and every `Mg` predecessor
+              // into the region, and `Mg` is never dominated by a non-entry region
+              // block — so a single-use gep's load cannot sit outside. Measured:
+              // dropping the guard moves 0 of 2149 fixtures.
+              // Kept as defence in depth (it costs one set lookup and it fails
+              // closed), NOT because it is holding anything. ⚠ It becomes live the
+              // day E3's successor or merge-predecessor rule is relaxed.
+              if (Loads && R.InRegion.count(LU->getParent())) {
+                Loads->ensure();
+                if (classicalTableReadIsSpeculatable(LU, Taint, DT, LInfo,
+                                                     *Loads->SE, *Loads->AC,
+                                                     R.InRegion, R.Entry))
+                  continue;
+              }
+            }
         return leave("E4-gep", &I);
       }
       // bd adia (Lever C) — a PENDING-SPECIALIZATION call is speculatable
@@ -4519,6 +4806,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
     PDT.recalculate(F);
     DominatorTree DT(F);
     LoopInfo LInfo(DT);  // for the Inc-3 QROM-read claim (shared carve predicate)
+    LazyLoadAnalyses Loads(F, DT, LInfo);  // bd fn1q inc 4 — built on first load
     SmallPtrSet<BasicBlock *, 16> OnCycle;
     collectCycleBlocks(F, OnCycle);
 
@@ -4527,7 +4815,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
       if (!isTaintedCtrlTerm(T, Taint))
         continue;
       PredMuxRegion R;
-      if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R, ClaimAll))
+      if (!recoverRegion(T, PDT, DT, LInfo, OnCycle, Taint, R, ClaimAll, &Loads))
         continue;  // leave: today's loud declines own it
       // bd 7udx — at CLAIM, before `RegionFlattener::run()` erases
       // `R.Topo \ {R.Entry}`. `BasicBlock::~BasicBlock()` replaces every

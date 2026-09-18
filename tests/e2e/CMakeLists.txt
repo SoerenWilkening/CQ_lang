@@ -6499,6 +6499,25 @@ add_test(NAME e2e-predmux-inloop-value-diamond-twin-identical
     "-DAREN=h4=hA;h3=hB;h2=hC;h1=hD" "-DBREN=h1=hA;h2=hB;h3=hC;h4=hD"
     -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
 
+# bd test_C_libtooling-fn1q increment 4 — PREDMUX E4's CLASSICAL CONST-TABLE READ,
+# the bead's headline over-decline end to end. Two classical tables indexed by the
+# loop counter, read inside a tainted-condition value arm. The only layer that
+# LINKS; stage 2b (STRICT) proves the rail pairing.
+#
+# ⚠ WHAT THE GOLDEN SHOWS AND WHY IT IS THE POINT: `cq_template_sub_i32_hl(h0, 1)`
+# — the table VALUE (1 == g_z[0]) occupies the `_hl` LITERAL slot of a mixed Q+C
+# op. That is the §5.2 non-negotiable, visible in the trace, and it is what
+# separates this from a QROM read. (§5.2 governs the operand SLOT; a table value
+# used as an arm of the MERGE is materialised on a rail by the ordinary 4.4 data
+# mux, which is sound — Rule-13 round 1 R4-P2-2.)
+add_test(NAME e2e-slice-predmux-classical-table
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_classical_table.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_classical_table.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

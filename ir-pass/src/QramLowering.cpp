@@ -1669,6 +1669,71 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
 
 }  // namespace
 
+// bd fn1q increment 4, Rule-13 round 1 finding P1 — THE LAUNDERING FENCE.
+//
+// ⚠ WHY THIS EXISTS. PredMux's E4 classical-table admission is reached EXACTLY
+// when `classifyQromReadUnderControl` returned `No`, and the first version of
+// that admission claimed its own taint test made the two "disjoint by
+// construction". THAT WAS FALSE AND IT WAS A P1. QROM returns `No` for SIX
+// reasons, and one of them is the `coherentlyEscapesToReturn` NO-CLONING fence —
+// where the load IS a genuine QROM read, refused because its value escapes
+// coherently to a `ret`. Such a read's index is often UNTAINTED AT ROUND-1 TAINT
+// and becomes tainted only once the flatten turns a region-internal phi into a
+// select. The classical arm's `Taint.Tainted.count(...)` test therefore passed,
+// the region was claimed and flattened, and `cqrt_qram_load_<W>` was emitted on a
+// SUPERPOSED index rail that is never uncomputed and never freed — a
+// verify-clean silent miscompile, measured: ORACLE exit 1 with a loud decline,
+// subject exit 0 with 0 bytes of stderr.
+//
+// THAT IS CLAUDE.md's L1 "PREDICATE species" verbatim: a fence asked at ROUND-1
+// taint while the lowering decides at FINAL taint. The cure is the standing one —
+// ask the question QROM itself asks, by CALLING its predicate rather than
+// re-deriving it (Rule 14).
+//
+// ⚠ AND THE EMITTER-SIDE BACKSTOP DOES NOT COVER IT. By the time `lowerQramReads`
+// runs, the select merge is already `cqrt_copy_*_controlled` VOID calls, so
+// `coherentlyEscapesToReturn`'s forward SSA walk stops at the merge and never
+// reaches the `ret`. The CLAIM-TIME fence is the only effective one.
+bool qromShapedReadTaintsIndexAfterFlatten(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    const SmallPtrSetImpl<BasicBlock *> &Region, const BasicBlock *RegionEntry) {
+  auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true,
+                           /*allowUntaintedIndex=*/true);
+  if (!M.has_value() || M->IsStore || !M->RawIndex)
+    return false;  // not a table-access shape at all — not QROM's business.
+  if (taint.Tainted.count(M->RawIndex))
+    return true;   // tainted NOW: unambiguously QROM's.
+  // Tainted AFTER the flatten — the case the P1 turned on. Same predicate QROM's
+  // own index gate uses, so the two cannot drift.
+  return indexWillTaintAfterFlatten(M->RawIndex, taint, Region, RegionEntry);
+}
+
+// bd fn1q increment 4 — exported wrapper over the SAME known-bits bounds proof
+// `classifyQromReadUnderControlImpl` uses for its `Provable` verdict, so
+// PredMux's E4 CLASSICAL-table admission and the QROM index gate ask ONE
+// question with ONE answer (Rule 14). A second spelling of "is this index in
+// bounds" is the drbq Inc-3 (b') defect.
+//
+// ⚠ WHAT IS DELIBERATELY *NOT* ASKED HERE, and the difference is the whole point
+// of the separate entry point: this wrapper does NOT require the index to be
+// TAINTED and does NOT require `widthHasQramCell`. Those two are QROM's
+// preconditions because QROM mints a `cqrt_qram_load_<W>` on a quantum index.
+// The PredMux caller is asking about a CLASSICAL read whose value never becomes
+// a qubit — it occupies an `_hl` literal slot (§5.2) — so neither applies.
+// Everything that IS asked is the bounds proof itself, unchanged, including its
+// pointer-index-width gate and its total (poison-aware) obligation.
+bool classicalTableIndexKnownInBounds(LoadInst *LI, const TaintSet &taint,
+                                      DominatorTree &DT, LoopInfo &LInfo) {
+  auto M = matchQramAccess(LI, taint, DT, LInfo, /*allowTaintedControl=*/true,
+                           /*allowUntaintedIndex=*/true);
+  if (!M.has_value() || M->IsStore || M->Origin.Kind != OriginResult::Global)
+    return false;
+  if (!M->Gep || !M->RawIndex || M->Count == 0)
+    return false;
+  return qromIndexKnownInBounds(M->RawIndex, M->Gep, M->Count,
+                                LI->getModule()->getDataLayout());
+}
+
 // bd q2wk (3c6m.14 Inc 5) — exported wrapper over the Inc-3 predicate so
 // PredMux's E6 gate and the QROM index gate ask the SAME question with the SAME
 // answer (Rule 14: one predicate, one meaning). See the definition above for the

@@ -161,6 +161,27 @@ QromClaim classifyQromReadUnderControl(
 // So: a caller that passes an entry gets "admitted ⇒ tainted after the flatten"
 // as a real invariant (up to the two documented over-declines); a caller that
 // passes null does NOT, and must not lean on it.
+// bd fn1q increment 4, Rule-13 round 1 P1 — "is this load a QROM-SHAPED table read
+// whose index is tainted NOW or WILL BE tainted once the flatten converts the
+// region's phis to selects?" PredMux's classical-table admission must refuse every
+// such load: it is reached only after `classifyQromReadUnderControl` said No, and
+// one of QROM's No reasons is the coherent-escape NO-CLONING fence. Without this,
+// a QROM read refused for no-cloning is laundered through the classical arm and
+// `cqrt_qram_load_<W>` is emitted on a superposed, never-freed index rail. See the
+// definition for the measured witness.
+bool qromShapedReadTaintsIndexAfterFlatten(
+    llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
+    llvm::LoopInfo &LInfo, const llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Region,
+    const llvm::BasicBlock *RegionEntry);
+
+// bd fn1q increment 4 — the SAME known-bits in-bounds proof QROM's `Provable`
+// verdict uses, exported for PredMux's E4 CLASSICAL-table-read admission. It does
+// NOT require a tainted index or a qram cell width (see the definition): those are
+// QROM's own preconditions, not the bounds proof's. Rule 14 — one spelling.
+bool classicalTableIndexKnownInBounds(llvm::LoadInst *LI, const TaintSet &taint,
+                                      llvm::DominatorTree &DT,
+                                      llvm::LoopInfo &LInfo);
+
 bool valueWillTaintAfterFlatten(
     const llvm::Value *V, const TaintSet &taint,
     const llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Region,
