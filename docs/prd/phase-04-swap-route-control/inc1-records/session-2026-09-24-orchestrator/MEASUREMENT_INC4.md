@@ -2,7 +2,7 @@
 
 ```
 ORACLE   main 4db66534  cq-opt a0e31e03…   (predates increments 3 AND 4)
-INC-3    main da8aedc9  (landed this session)
+INC-3    main 76d2949b  (landed this session)
 ```
 
 ## 1. THE SHAPE, AND WHY QROM IS NOT THE WAY IN
