@@ -1,0 +1,66 @@
+g3_bank_mixed_one_loop|COMPOSED|ACCEPT|ll=87 tr=34 warn=0 2b=0 [6 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 0 left dirty]
+g3_bank_mixed_one_loop|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+grover_oracle_uncompute|COMPOSED|ACCEPT|ll=85 tr=50 warn=0 2b=0 [2 verified, 0 violation(s), 0 unproven] [2 template rail mint(s) of which 1 left dirty]
+grover_oracle_uncompute|MAIN|ACCEPT|ll=85 tr=50 warn=0 2b=0 [2 verified, 0 violation(s), 0 unproven] [2 template rail mint(s) of which 1 left dirty]
+p1_outer_earlyret|COMPOSED|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+p1_outer_earlyret|MAIN|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+p2_inner_preheader_mint|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+p2_inner_preheader_mint|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+p3_break_latchfold_hoisted|COMPOSED|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+p3_break_latchfold_hoisted|MAIN|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+p4_two_loops_one_rail|COMPOSED|DECLINE(1)|cq taint escape: tainted value stored to memory
+p4_two_loops_one_rail|MAIN|DECLINE(1)|cq taint escape: tainted value stored to memory
+q1_ht_nested|COMPOSED|ACCEPT|ll=75 tr=66 warn=0 2b=0 [3 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 0 left dirty]
+q1_ht_nested|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q2_ht_earlyret|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q2_ht_earlyret|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q3_ht_break|COMPOSED|ACCEPT|ll=74 tr=40 warn=0 2b=0 [3 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 0 left dirty]
+q3_ht_break|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q3b_ht_break_runtime|COMPOSED|ACCEPT|ll=74 tr=40 warn=0 2b=0 [3 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 0 left dirty]
+q3b_ht_break_runtime|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q4_ht_read_after|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q4_ht_read_after|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q5_ht_two_loops|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q5_ht_two_loops|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q6_ht_inner_preheader|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q6_ht_inner_preheader|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+q7_ht_runtime_trip|COMPOSED|DECLINE(1)|cq controlled lowering: condition predates a non-diagonal gate
+q7_ht_runtime_trip|MAIN|DECLINE(1)|cq controlled lowering: condition predates a non-diagonal gate
+u1_parent_mutated_inloop|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+u1_parent_mutated_inloop|MAIN|ACCEPT|ll=62 tr=34 warn=0 2b=0 [1 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 2 left dirty]
+u2_parent_mutated_add|COMPOSED|ACCEPT|ll=68 tr=40 warn=0 2b=0 [3 verified, 0 violation(s), 0 unproven] [4 template rail mint(s) of which 0 left dirty]
+u2_parent_mutated_add|MAIN|ACCEPT|ll=65 tr=34 warn=0 2b=0 [2 verified, 0 violation(s), 0 unproven] [4 template rail mint(s) of which 1 left dirty]
+u3_parent_mutated_after_body|COMPOSED|ACCEPT|ll=68 tr=40 warn=0 2b=0 [3 verified, 0 violation(s), 0 unproven] [4 template rail mint(s) of which 0 left dirty]
+u3_parent_mutated_after_body|MAIN|ACCEPT|ll=65 tr=34 warn=0 2b=0 [2 verified, 0 violation(s), 0 unproven] [4 template rail mint(s) of which 1 left dirty]
+u4_parent_xor_index|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+u4_parent_xor_index|MAIN|ACCEPT|ll=63 tr=9007 warn=0 2b=0 [1 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 2 left dirty]
+v1_bank_cell_from_hoisted|COMPOSED|DECLINE(1)|cq rail bank: cell type rewrite failed on a proven bank
+v1_bank_cell_from_hoisted|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+v2_bank_cell_xor_hoisted|COMPOSED|DECLINE(1)|cq rail bank: cell type rewrite failed on a proven bank
+v2_bank_cell_xor_hoisted|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+v3_intbank_from_hoisted|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+v3_intbank_from_hoisted|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+x1_acc_then_exitobl|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+x1_acc_then_exitobl|MAIN|DECLINE(1)|cq controlled lowering: control flow inside a loop body under 
+x2_exitobl_then_acc|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+x2_exitobl_then_acc|MAIN|DECLINE(1)|cq controlled lowering: control flow inside a loop body under 
+x3_acc_then_g8|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+x3_acc_then_g8|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+x4_g8_then_acc|COMPOSED|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+x4_g8_then_acc|MAIN|DECLINE(1)|cq loop lowering: rolled body leaks a rail entangled with a ro
+x5_acc_both_offenders|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+x5_acc_both_offenders|MAIN|DECLINE(1)|cq controlled lowering: control flow inside a loop body under 
+y1_rot_merged_after|COMPOSED|DECLINE(1)|cq controlled lowering: control flow under quantum control
+y1_rot_merged_after|MAIN|DECLINE(1)|cq controlled lowering: control flow under quantum control
+y2_rot_merged_nohoist|COMPOSED|DECLINE(1)|cq controlled lowering: control flow under quantum control
+y2_rot_merged_nohoist|MAIN|DECLINE(1)|cq controlled lowering: control flow under quantum control
+y3_rot_merged_unrolled|COMPOSED|ACCEPT|ll=114 tr=73 warn=1 2b=0 [10 verified, 0 violation(s), 0 unproven] [9 template rail mint(s) of which 2 left dirty]
+y3_rot_merged_unrolled|MAIN|ACCEPT|ll=114 tr=73 warn=1 2b=0 [10 verified, 0 violation(s), 0 unproven] [9 template rail mint(s) of which 2 left dirty]
+z1_guarded_zerotrip|COMPOSED|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+z1_guarded_zerotrip|MAIN|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+z2_guarded_zerotrip_carried|COMPOSED|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+z2_guarded_zerotrip_carried|MAIN|DECLINE(1)|cq rail bank: cell index is not an injective per-iteration ind
+z3_guarded_measloop|COMPOSED|DECLINE(1)|cq loop lowering: hoisted invariant rail admitted for in-loop 
+z3_guarded_measloop|MAIN|ACCEPT|ll=55 tr=8 warn=1 2b=0 [0 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 2 left dirty]
+z4_fixedtrip_measloop|COMPOSED|ACCEPT|ll=60 tr=20 warn=0 2b=0 [2 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 0 left dirty]
+z4_fixedtrip_measloop|MAIN|ACCEPT|ll=57 tr=16 warn=0 2b=0 [1 verified, 0 violation(s), 0 unproven] [3 template rail mint(s) of which 1 left dirty]

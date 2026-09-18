@@ -672,6 +672,7 @@ per-bit loop `for (i…) if ((q>>i)&1) cq_phi(θ)`.
 | an in-place controlled **Ry** arm inside such a loop | ROLLED, with `cqrt_ry_<W>_controlled` where the phase path puts the kickback | drbq Inc 3 |
 | a **bare `_Bool` rail condition** (`br i1 %b` with no compare) at the kickback, the nest, the Rz-stem angle select, the 4.4 data select, the in-place Ry arm and the state prep — and since 2026-09-14 the **in-loop** form of the last two | the register **is** the flag; it is read only as a **control**, never `cqrt_x`-bracketed and never freed | bd `3qlq.4` / `r9e5` / `l4x4`.b / `wx8g` |
 | a **LOOP-CARRIED HANDLE VARIABLE** — a register that crosses the back edge **and** is re-minted every trip, because the merge emitter mints a FRESH `%out = cqrt_alloc_<W>` per activation | the entry incoming is PROMOTED to a `cqrt_alloc_<W>(seed)`, and the header φ then muxes two HANDLES under the loop's own CLASSICAL exit test; the per-trip stream IS the general trip of the hand-unrolled twin. **At EVERY integer ABI width** (bd `11qv`): the φ is RETYPED to the `i32` handle ABI at the promotion (`mutateType`, the `RailBankPromote` idiom) and its LOGICAL width is recorded in `taint.HandleWidth` — the side-table `logicalOperandWidth` consults BEFORE the now-laundered LLVM type. ⚠ That record is the SAFETY ARGUMENT, not bookkeeping: without it a Q+Q compare over two retyped `i16` φs recovers `i32` from `abiWidthFromType` and mints an `i32` template symbol for two `i16` registers — the wrong-width class `CompareLowering.cpp` refuses in writing. ⚠ **The consumer named in the first version of this sentence was WRONG** (Rule-13 round 4, F-4): `logicalOperandWidth` is STRUCTURALLY UNREACHABLE from the promotion — its callers all run inside control emission, which finishes long before it. The record's real, MEASURED consumer is `lowerOps`' up-front **cast capture**, where a narrow carried φ with a `sext i16 %a to i32` user emits `cq_template_sext_i16_to_i32(i32 %a)`. Right conclusion, wrong ground — L7, corrected at the source and not only in a record. **And BEHIND A ZERO-TRIP GUARD** (bd `h1ip`, owner ruling 2026-09-20): the mint point is then the GUARD's own terminator and every out-of-loop φ incoming carrying the SEED on the guard's edge is rewritten to that handle, so a RUNTIME trip bound lowers. A zero-trip loop allocates a register it never uses — the accepted cost — and on that path the exit φ NAMES it, which is the right answer | `loopCarriedHandlePhi` + `promoteLoopCarriedHandleSeeds` (bd `zujr`, `11qv`, `h1ip`) |
+| a **LICM-hoisted out-of-place `cq_template_*` rail** (`int p = q*3;`) read by a loop body's condition | admitted as a Root by `invariantRegisterRootsImpl` clause **(ii-d)**, which makes the body MARKABLE so the per-trip rails discharge in-body; the hoisted rail itself is discharged ONCE at the loop EXIT by `anchorForConsumer`, before any trailing non-diagonal gate. ⚠ **The licence is PLACEMENT and it is verified EX POST**: the clause's own `loopExitDischargePoint(L)` conjunct is a NECESSARY condition asked of the MARKED loop, while the anchor places at the OUTERMOST enclosing loop — in a nest those differ, and the total answer is the postcondition `declineUndischargedExitObligations`, never the clause (bd `4jok` round 5 F-1) | `invariantRegisterRootsImpl` (ii-d) + `Uncomputation::{multiplicityAgrees,anchorForConsumer}` + the postcondition (bd `tu9q` P0+P3) |
 | a diamond whose merge carries phis the region does not define | **normalised before detection**: each independent merge phi becomes a `select` with its own compare clone | `MergePhiPeel` (bd `b6ap`) |
 | a preceding state-prep region's **merge φ** as a condition-tree LEAF at the **phase kickback**, and at an **INTERIOR** position of the `and`/`or`/`xor` tree at **both** consumers (the 4.4 data select and the branch phase) | the φ IS the rail. ONE predicate — Track M's `preppedRailPhiRegionIdx`, **exported and CALLED** by each consumer, re-derived by neither (Rule 14) — so the widening adds an **ACCEPT, not a STREAM** (measured: the emitted stream is the shipped one) | bd `3qps` + `4aiu` (`71de13c2`) |
 | an in-place controlled **Ry** arm or controlled **state prep** on a bare `_Bool` **inside** a classically-bounded loop, and an **iteration-local** rolled rail for every condition kind | ROLLED. Measured: **8 of 8** accepting pairs BYTE-IDENTICAL to the hand-unrolled twin, and the lowered IR is K-independent (81 / 66 / 85 / 83 / 105 lines at K=3 **and** K=1000, measured without `-g`) | bd `wx8g` (`a2b86139`) |
@@ -1084,33 +1085,23 @@ decline you see by hand.
 
 ### 4d. The 2026-09-18 landing — the debt in front of `zujr`, half cleared; and the first composition round that ran BEFORE the landing
 
-(`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/`: `CLOSING_REPORT.md`,
-`DECISIONS.md` Q1–Q4/O1, `MERGE_FILINGS.md` F-1…F-16, `gate/FILINGS.md` G-1…G-13.) On `main` `014b4381`
-(`cq-opt` `07d93784…`): **bd `tu9q`'s hoisted-template half is HALF landed** — bd `6n1s` (a marked multi-block
-body leaked its which-path rails; the `g8` arm-minted door is closed by the BACKSTOP
-`declineUndischargedMarkedBodyRails`, a predict-AND-verify postcondition after `uncompute` in both entry
-points), **P1** the real multiplicity test `markedHeaderOf(G) == markedHeaderOf(At)`, **P2** the loop-exit
-anchor (closes bd `1m5p` and the live `a1_apost` Rule-8 over-accept; 16 A→A movers, 0 verdict flips);
-**P0+P3 are BUILT and NOT LANDED** (`tu9q-p0-p3-wip` @ `30b80d7f`) because they retire the ONLY fixture of
-`declineRound2FalsifiedRailGrants` — six obligations, owner question Q4. **bd `drbq.12` LANDED** (P4 →
-`crossBlockCompareMintable`, 87 D→A). **bd `vsr6`** the nested-loop matrix axis (359 → 382). **Rule (T4)
-`loop_exit_discharge`** in `free_pairing_check.py` (bd `lc6b`; its switch-back-edge parser trap bd `5aan`
-closed the same day). **bd `x5fp` BUILT and PARKED** (`x5fp-clobber-per-activation` @ `69414276`): no program
-has S-1 as its only wall — the wall behind it is `ControlDetect`'s in-loop scope fence (bd `3qlq.6`), and on
-the owner's program the clobber is an artefact of the `i8` `_Bool` wire (bd `r903`).
+⚠ **ARCHIVED VERBATIM to [`docs/CLAUDE-HISTORY.md`](docs/CLAUDE-HISTORY.md) on 2026-09-21** (the same
+treatment §4b and §4c received), to keep this file inside its post-compaction budget while §4g landed.
+**Moved, not deleted** — the Wave-0 measurements, the sixteen merge filings, the thirteen gate filings
+and the round-by-round record are all there. Per-increment records:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/`.
 
-⚠ **G-13, the session's composition result: Track D ALONE over-accepts.** On D's own binary the rolled
-half of every der/rder/range/rrange twin cell leaves the hoisted which-path chain entangled across the
-trailing `cqrt_ry` (`sqrt_f64_unc` rolled 0 / unrolled 1); Group 1's P2 is what discharges it. Neither
-track's gates could see it. The class-H quarantine header (bd `z0cv`) carries the trigger *re-measure on a
-D-without-G1 binary before ever shipping D alone*. **An accept-direction widening of a CONDITION fence owes
-one rolled-vs-unrolled probe with a trailing non-diagonal gate on every register the condition reads.**
-
-⚠ **Two shipped goldens pinned a Rule-8 wrong unitary under a GREEN `twin-identical` gate** (bd `jlf8`,
-`slice_control_inplace_ry_loop_leak{,_unrolled}`; both headers said *"IT IS RULE-6 CORRECT"*): the rolled
-half is now a pinned decline; **the loop-free unrolled twin still compiles the hazard and is under no gate**.
-L10's `m_none_pbitd` cell, on a registered pair. Twelve beads closed by measurement in Wave 0, 28 filed;
-five independent Rule-13 rounds, every loop round finding a P1 on round 1.
+**What survives here, because later sections depend on it.** bd `6n1s` landed the BACKSTOP
+`declineUndischargedMarkedBodyRails` (a predict-AND-verify postcondition after `uncompute` in both
+entry points) at `22a0ab11` — ⚠ **it is an ANCESTOR of `main`, which is what makes the bd `tu9q`
+P0+P3 merge-order obligation automatic rather than a rule someone must remember** (§4g). bd `drbq.12`
+landed (`crossBlockCompareMintable`, 87 D→A) and bd `vsr6` added the nested-loop matrix axis. Rule
+**(T4) `loop_exit_discharge`** entered `free_pairing_check.py`. ⚠ **G-13 stands and is quoted in §4g's
+lineage**: Track D ALONE over-accepted, and *"an accept-direction widening of a CONDITION fence owes
+one rolled-vs-unrolled probe with a trailing non-diagonal gate on every register the condition
+reads."* ⚠ **bd `jlf8` also stands**: two shipped goldens pinned a Rule-8 wrong unitary under a GREEN
+`twin-identical` gate, and **the loop-free unrolled twin still compiles the hazard and is under no
+gate**.
 
 ### 4e. The 2026-09-19 landing — the owner's ROLLED cascade compiles; the THIRD kind of loop-carried register
 
@@ -1249,11 +1240,87 @@ twin matrix's verdict tables are BYTE-IDENTICAL, all 390 e2e slices agree. *Fift
 session to file "a composition is not cleared by clearing its parts"; the first to show the surface
 rather than assert it.*
 
+### 4g. The 2026-09-21 landing — bd `tu9q` P0+P3, and the first COMPOSED accept surface to be adjudicated instead of asserted
+
+bd `4jok` was a GATE, not a defect report: **ten C programs compile only when bd `zujr` and bd `tu9q`
+P0+P3 are BOTH present** — one of them the owner's rolled cascade plus one line — because the two
+increments retire a DIFFERENT clause of `railLocalQualifies` and neither retires the other's. ⚠ **And
+the tree's three strongest instruments reported ZERO on it**: 0 composition-only movers over 2109
+fixtures, twin-matrix verdict tables byte-identical at 382 cells, all e2e slices identical. The
+surface was reachable only from C sources nobody had committed. **Six are committed now.**
+
+**Owner ruling Q1: *adjudicate, then land if clear*** — the evidence decides, not the disposition.
+Rule-13 round 5 (independent, wrote neither increment): **`CLEAR-WITH-ITEMS`, 0 P1**, 1 P2, 6 P3.
+Landed at `62b0b111`; full `ctest -j6` **472/472 in 529.58 s**, lit **2112 (2111 + 1 XFAIL)**, corpus
+A/B over 2109 fixtures **0 A→D** with the branch's declared 8 movers and a null control run first.
+
+**⚠ THE MULTIPLICITY TRIGGER WAS RE-DERIVED, NOT QUOTED.** `railLocalQualifies`' final clause had
+demanded, in writing, *"Re-derive the multiplicity there first … no shipped test would go red."*
+Measured on the NESTED shape (hoisted rail outside BOTH loops, read by the INNER, OUTER runs K): **ONE
+mint, ONE adjoint, before the interference** — `anchorForConsumer` walks to the OUTERMOST exit.
+
+**⚠ THE P2 IS THE PART TO READ, AND IT IS L7's SHAPE ONE BEAD OVER FROM bd `xt20`.** Clause (ii-d)'s
+comment claimed its own conjunct establishes the placement licence — *"if there is no once-per-mint
+point, there is no licence, and the root is refused."* **In a NEST that is false**: the clause asks
+`loopExitDischargePoint(L)` of the loop it MARKS, the anchor asks it of `LOut`, the OUTERMOST loop
+enclosing the consumer. Same predicate (Rule 14 satisfied), **different loop** (L2 not). In the shape
+where they differ the root IS granted and the anchor has nowhere to place the discharge; the only
+member left is `declineUndischargedExitObligations`, and it fires. **Safety is real; the stated reason
+was wrong.** The THIRD quantifier mismatch in that increment and the only one stated at neither site —
+corrected at the source, with the pinned pair `loop_pairing_{reject_nest_multiexit,accept_nest_singleexit}_hoisted.ll`,
+which is also the multi-exit fixture bd `tu9q`'s own record calls *"a PREDICTION rather than a test"*.
+⚠ On that shape the landing is strictly **STRICTER**: the pre-landing compiler accepts it with the
+rail live across the trailing `cqrt_ry` under the ruled `lyyf` warning.
+
+**⚠ AND THE INSTRUMENT THE ORCHESTRATOR CLEARED IT WITH WAS UNSOUND — ITS OWN NINE BOUNDARY CONTROLS
+AND FOUR REAL-TRACE MUTANTS DID NOT REACH THE DEFECT.** `dephase.py` built ancestry only from
+`cq_template_*` mint operands, so every PERMUTATION gate (`cqrt_cnot`/`toffoli`/`cswap`/`copy_<W>_controlled`)
+created **no edge** — and those are how every value-merge rail in the subject programs is built. It
+reported OK on all three canonical Rule-8 violations **and on a real program the compiler itself warns
+about**. (It had already lied once in the same direction and been fixed: a guard permitting deliberate
+Rule-6 leaks also permitted *freed but never uncomputed*.) **The standing lesson is not "more
+controls": an instrument's blind spot is shaped like its author's model, so the cure is an instrument
+built by someone else** — the round's edge-complete `entangle.py` (18 controls) re-established the
+clearance at **26 composed traces, ONE Rule-8 finding, and that one is a loop-free program
+byte-identical on both binaries carrying the ruled warning**. `dephase.py` is kept, marked SUPERSEDED,
+with both misses in its header.
+
+**Two shipped fixtures were a fence's last pin and one of them was recoverable.**
+`loop_pairing_reject_round2_falsified.ll` — the **only** pin in 2109 fixtures of
+`declineRound2FalsifiedRailGrants`, which stays LIVE — goes DECLINE → exit 0, its predicted *"K
+adjoints against ONE forward gate"* refuted (one preheader mint, one loop-exit adjoint). ⚠ **The
+replacement was CONSTRUCTED rather than the cost merely reported**: one post-loop read of the rail
+falsifies (ii-d)'s `allUsersInside` conjunct and the fence fires character-for-character on BOTH
+binaries. **Check a retired fixture's accept conjuncts for one you can falsify cheaply before filing
+a debt.**
+
+⚠ **THREE `*_leak_control` FIXTURES MOVE BACK TO ACCEPTS AND THAT IS A FIX, NOT A RESTORATION** — see
+the corrected §5 paragraph below, which is the text most likely to be misread at the next landing.
+
 ### 5. Open follow-ons, by bd id
 
 ⚠ **bd `3d8q` is CLOSED** (`81c55430`, 2026-09-14 — `docs/CLAUDE-HISTORY.md` §4c), and so are the other
 five of that session: `z9t1`, `om35`, `3qps`/`4aiu`, `wx8g`, `uq96`. What follows
 is what is still open.
+
+⚠ **bd `4jok` is CLOSED and bd `tu9q` P0+P3 LANDED (`62b0b111`, 2026-09-21 — §4g)**,
+under owner ruling Q1 *"adjudicate, then land if clear"* and an independent Rule-13
+round 5 (`CLEAR-WITH-ITEMS`, **0 P1**). ⚠ **Read that with what the round DID find**:
+a **P2 in the increment's own argument** — clause (ii-d)'s comment named the wrong
+member as its safety licence — which neither the orchestrator nor round 3 reached,
+and a **P3 showing the orchestrator's own clearance instrument unsound on its main
+axis**. *Four consecutive sessions have now filed "a composition is not cleared by
+clearing its parts"; this is the first in which the composition was adjudicated and
+the first in which the adjudicator's instrument was the thing that failed.*
+**NEW and open from that round:** bd `a945` (bd `zujr` (L3)'s retirement trigger is
+DUE — on a composed binary the bank/template-rail gap is held closed by
+`rewriteRailBankCellTypes`, **not** by the `(I1)` ground its comment gives; L7's
+shape, the second instance in this area and the third in three sessions), and bd
+`46oo` (**a probe-design trap that invalidates a prior round's coverage claim**:
+every round-3 probe ends `main(){ return slice(4); }`, so `-O1` const-propagates the
+argument and a `break` or guard written in terms of it is DELETED before the pass
+sees it — round 3's *"multi-exit … all decline at earlier walls"* row is unevidenced,
+and multi-exit is exactly where round 5 then found its P2 by hand-writing the IR).
 
 ⚠ **bd `11qv` and bd `h1ip` are CLOSED (2026-09-20)** and bd `zujr`'s ≥3-round
 Rule-13 budget is **MET** (bd `h7ee`: rounds 2 and 3 ran, independent agents,
@@ -1361,8 +1428,27 @@ is the trap worth naming: *"byte-identical rolled traces, `diff` empty — that 
 IS the assertion"* compares the rolled form **across two binaries**, not rolled
 against unrolled, while the `3/0` vs `3/3` on the same line is exactly the
 rolled-vs-unrolled divergence. **A stability measurement was read as a correctness
-one.** All three are converted to declines by bd `s82e`; do not restore their old
+one.** All three were converted to declines by bd `s82e`; do not restore their old
 `CHECK` prefixes, which pinned the leaking stream.
+
+⚠⚠ **AND ON 2026-09-21 TWO OF THOSE THREE WENT BACK TO ACCEPTS, WHICH IS A FIX AND
+NOT A REVERSAL — THIS IS THE PARAGRAPH MOST LIKELY TO BE MISREAD, SO READ BOTH
+SENTENCES.** bd `tu9q` P0+P3 (§4g) makes the body markable, so the per-bit rails
+are now `_unc`'d and freed IN THE BODY and the hoisted rail is discharged at the
+loop EXIT **before** the trailing `cqrt_ry`. Measured: `3/3 ROLLED`, against the
+`3/0 rolled` this paragraph records. **The hazard is removed, not re-admitted.**
+`…_{hoisted_template,short_sext}_leak_control.ll` are ACCEPTS again;
+`…_preheader_volatile_imm_leak_control.ll` still declines (its preheader rail is a
+`volatile` immediate that M-C lowers IN PLACE, so clause (ii-d) has no rail to
+place) and is now the host of the bd `bbu0` DEFER instrument.
+
+⚠ **THE INSTRUCTION ABOVE STILL STANDS AND IT IS NARROWER THAN IT LOOKS.** *"Do not
+restore their old `CHECK` prefixes"* forbids the prefixes whose PROPERTY was *the
+per-trip chain does not discharge*. It does **not** forbid an accept prefix over
+the stream where it DOES — that is the opposite property, and it is what those
+files now carry. Rule-13 round 5 (F-5) flags getting this backwards as the single
+easiest mistake at that landing, in both directions: deleting the negative, or
+keeping it.
 
 **Capabilities filed, not built:** bd `xqgx` (the **A.2** widenings — the S†
 after a compare select via the DT prong, the P1 `SawValueArm` retirement under a
@@ -1494,6 +1580,20 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
     -passes=cq-lowering -S ir-pass/test/lowering_basic.ll \
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
+
+**Counts, measured 2026-09-21 at the bd `4jok` close (`cq-opt` `3368af1262695d7e4c…`, `libCQPass.so`
+`48b8b4db61777082e9…`; the PRIMARY tree rebuilt at the close and **BIT-IDENTICAL to the gated
+worktree binary** — re-measured, not copied).** ctest **472** · `^e2e-` **462** · `^e2e-slice-` **404**
+· `twin-identical` **44** · `ls ir-pass/test/*.ll | wc -l` **2112** · `ls tests/e2e/*.expected.log |
+wc -l` **406** · twin matrix **312** expected + **70** quarantine = **382** cells (unchanged; the
+landing added no matrix cell). Full `ctest -j6`: **472/472 in 505.80 s** on the primary tree, and
+**472/472 in 529.58 s** on the gated worktree — two trees, same verdict.
+`lit ir-pass/test`: **2112 discovered, 2111 passed, 1 XFAIL**.
+⚠ The fixture count moved **+3** (two new `loop_pairing_*_nest_*_hoisted.ll`, one
+`…_round2_falsified_postloop_read.ll`) and the golden count **+6**, all six of them the bd `4jok`
+composition slices. **Eight existing fixtures were RE-DERIVED, not added** — four of them changing
+verdict — so a diff of the fixture count understates the change by a factor of three. Earlier chain
+follows.
 
 **Counts, measured 2026-09-19 at the bd `zujr` close (`cq-opt` `e7bbfd69a9e25d38…`, `libCQPass.so`
 `84061321f9d6f974…`; re-measured, not copied).** ctest **464** · `^e2e-` **454** · `^e2e-slice-`

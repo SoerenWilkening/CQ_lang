@@ -3521,3 +3521,44 @@ shipped golden — bd `u7z9`), **no conjunct was added**, and the ruling is bd `
 declines by the ruling, but the clause deletes the undef before `MeasureLowering` sees it; 4 of 710
 rows, all byte-identical to the written-zero twin, and the DIRECT spelling still declines. (c) the
 **X5 re-derivation**, recorded as OWED above.
+
+
+---
+
+## ARCHIVED FROM `CLAUDE.md` ON 2026-09-21 — §4d, the 2026-09-18 landing
+
+Moved, never deleted, when `CLAUDE.md` needed room for §4g (the bd `4jok` landing).
+Verbatim as it stood at `main` `62b0b111`. What survives inline there is a pointer
+naming the three items later sections still depend on: bd `6n1s`'s BACKSTOP
+`declineUndischargedMarkedBodyRails`, the G-13 composition result, and the two
+goldens bd `jlf8` pinned a Rule-8 wrong unitary under.
+
+### 4d. The 2026-09-18 landing — the debt in front of `zujr`, half cleared; and the first composition round that ran BEFORE the landing
+
+(`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-18-orchestrator/`: `CLOSING_REPORT.md`,
+`DECISIONS.md` Q1–Q4/O1, `MERGE_FILINGS.md` F-1…F-16, `gate/FILINGS.md` G-1…G-13.) On `main` `014b4381`
+(`cq-opt` `07d93784…`): **bd `tu9q`'s hoisted-template half is HALF landed** — bd `6n1s` (a marked multi-block
+body leaked its which-path rails; the `g8` arm-minted door is closed by the BACKSTOP
+`declineUndischargedMarkedBodyRails`, a predict-AND-verify postcondition after `uncompute` in both entry
+points), **P1** the real multiplicity test `markedHeaderOf(G) == markedHeaderOf(At)`, **P2** the loop-exit
+anchor (closes bd `1m5p` and the live `a1_apost` Rule-8 over-accept; 16 A→A movers, 0 verdict flips);
+**P0+P3 are BUILT and NOT LANDED** (`tu9q-p0-p3-wip` @ `30b80d7f`) because they retire the ONLY fixture of
+`declineRound2FalsifiedRailGrants` — six obligations, owner question Q4. **bd `drbq.12` LANDED** (P4 →
+`crossBlockCompareMintable`, 87 D→A). **bd `vsr6`** the nested-loop matrix axis (359 → 382). **Rule (T4)
+`loop_exit_discharge`** in `free_pairing_check.py` (bd `lc6b`; its switch-back-edge parser trap bd `5aan`
+closed the same day). **bd `x5fp` BUILT and PARKED** (`x5fp-clobber-per-activation` @ `69414276`): no program
+has S-1 as its only wall — the wall behind it is `ControlDetect`'s in-loop scope fence (bd `3qlq.6`), and on
+the owner's program the clobber is an artefact of the `i8` `_Bool` wire (bd `r903`).
+
+⚠ **G-13, the session's composition result: Track D ALONE over-accepts.** On D's own binary the rolled
+half of every der/rder/range/rrange twin cell leaves the hoisted which-path chain entangled across the
+trailing `cqrt_ry` (`sqrt_f64_unc` rolled 0 / unrolled 1); Group 1's P2 is what discharges it. Neither
+track's gates could see it. The class-H quarantine header (bd `z0cv`) carries the trigger *re-measure on a
+D-without-G1 binary before ever shipping D alone*. **An accept-direction widening of a CONDITION fence owes
+one rolled-vs-unrolled probe with a trailing non-diagonal gate on every register the condition reads.**
+
+⚠ **Two shipped goldens pinned a Rule-8 wrong unitary under a GREEN `twin-identical` gate** (bd `jlf8`,
+`slice_control_inplace_ry_loop_leak{,_unrolled}`; both headers said *"IT IS RULE-6 CORRECT"*): the rolled
+half is now a pinned decline; **the loop-free unrolled twin still compiles the hazard and is under no gate**.
+L10's `m_none_pbitd` cell, on a registered pair. Twelve beads closed by measurement in Wave 0, 28 filed;
+five independent Rule-13 rounds, every loop round finding a P1 on round 1.
