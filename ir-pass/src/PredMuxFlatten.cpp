@@ -88,7 +88,7 @@
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Module.h"
 #include "llvm/Support/MathExtras.h"  // isPowerOf2_64 (bd 20xt.7 Provable-pow2 mask)
-#include "llvm/Transforms/Utils/Local.h"  // RecursivelyDeleteTriviallyDeadInstructions
+#include "llvm/Transforms/Utils/Local.h"  // isInstructionTriviallyDead (bd cfmv)
 
 using namespace llvm;
 
@@ -4732,6 +4732,60 @@ static bool isFlattenResidue(const Instruction &I) {
   return false;
 }
 
+// bd `cfmv` — THE SECOND ERASER, GUARDED.
+//
+// ⚠ WHY THIS EXISTS. `PredMuxFlatten` has at least FOUR instruction erasers, and
+// bd `fn1q` increment 2 guarded exactly one of them (`sweepDead`). Rule-13 round 2
+// of that increment MEASURED this one reproducing the same P1 verbatim: a user's
+// `cq_theta` rail whose only surviving use after the flatten is a folded residue
+// (`and i1 %rail, false`) is deleted here, so the user's Ry VANISHES — `opt` exit
+// 0, 0 BYTES of stderr, no `cqrt_alloc_i1`, no `cqrt_ry_i1`. That is Rule 5 (the
+// compiler never removes a gate the user wrote) and the verify-clean
+// silent-miscompile class. `free_pairing_check.py` is structurally blind: there is
+// no rail left to count.
+//
+// ⚠ THE PRE-EXISTING SAFETY GROUND AT THIS SITE WAS WRONG, and it is the whole
+// lesson. It said `RecursivelyDelete` removes "never a cq_theta/phi/measure call —
+// those have side effects". That is a property of the DECLARATION, not of the
+// code: an attributed `declare i1 @cq_theta_i1(…) memory(none) nounwind
+// willreturn` IS trivially dead by LLVM's rules and IS deleted. Increment 1's (K5)
+// lesson, third instance — **the question was never the name or the attribute, it
+// is: DOES A CQ STAGE OWN THIS CALL?**
+//
+// LLVM's `RecursivelyDeleteTriviallyDeadInstructions` cannot be vetoed (its
+// callback only observes), so the walk is spelled out here. It is deliberately the
+// SAME SHAPE as LLVM's — `isInstructionTriviallyDead` + an operand worklist — with
+// exactly one added question, asked by CALLING the shipped predicates rather than
+// re-deriving them (Rule 14).
+//
+// ⚠ SCOPE, STATED SO IT IS NOT MISREAD AS A CLEARANCE OF THE OTHER TWO: this
+// guards eraser (2). `foldConstantConeAndBranches`' own `eraseFromParent` and
+// `removeUnreachableBlocksChecked` are erasers (3) and (4) and are NOT guarded
+// here. Neither has a measured subject; that is an absence of a probe, not a proof.
+void deleteDeadPreservingCqOwned(Instruction *Root) {
+  SmallVector<Instruction *, 16> Work{Root};
+  SmallPtrSet<Instruction *, 16> Seen{Root};
+  while (!Work.empty()) {
+    Instruction *I = Work.pop_back_val();
+    // THE ONE ADDED QUESTION. A register the USER wrote is never this stage's to
+    // erase, WHATEVER ITS USE COUNT and whatever attributes its declaration
+    // carries — the ruling `RegionFlatten.cpp` has carried since bd `3qlq.4`, and
+    // which did not propagate here by being true.
+    if (isCondRailLeaf(I) || isCondRailPhiShape(I))
+      continue;
+    if (!isInstructionTriviallyDead(I))
+      continue;
+    SmallVector<Instruction *, 4> Ops;
+    for (Value *O : I->operands())
+      if (auto *OI = dyn_cast<Instruction>(O))
+        Ops.push_back(OI);
+    I->eraseFromParent();
+    for (Instruction *OI : Ops)
+      if (Seen.insert(OI).second)
+        Work.push_back(OI);
+  }
+}
+
 static bool simplifyFlattenResiduesInFunction(Function &F) {
   const DataLayout &DL = F.getParent()->getDataLayout();
   SimplifyQuery SQ(DL);
@@ -4771,10 +4825,12 @@ static bool simplifyFlattenResiduesInFunction(Function &F) {
       // uncomputed / never freed — an entangled which-path flag left dangling on
       // a live rail (Rule 6/8 garbage; harmless to the measured answer but a
       // coherence hazard, and trivially avoidable since the op is DEAD).
-      // RecursivelyDelete removes only pure, use-free instructions (never a
-      // cq_theta/phi/measure call — those have side effects — nor a value with
-      // other live uses).
-      RecursivelyDeleteTriviallyDeadInstructions(I);
+      // ⚠ NOT `RecursivelyDeleteTriviallyDeadInstructions`. Its guarantee is
+      // "pure, use-free instructions only", and the sentence that used to stand
+      // here — "never a cq_theta/phi/measure call, those have side effects" — is a
+      // claim about the DECLARATION, which bd `cfmv` measured false. See
+      // `deleteDeadPreservingCqOwned` above for the witness and the ruling.
+      deleteDeadPreservingCqOwned(I);
       Changed = Any = true;
     }
   }
