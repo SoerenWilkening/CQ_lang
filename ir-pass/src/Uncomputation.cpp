@@ -1094,7 +1094,8 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                            LoopInfo &LI, RepeatOracle &canRepeat,
                            const SmallPtrSetImpl<const CallInst *> &ReversedGates,
                            const SmallPtrSetImpl<Value *> &ReversedRails,
-                           DataDag &D, Instruction *&At) {
+                           DataDag &D, Instruction *&At,
+                           SmallPtrSetImpl<Value *> &BorrowedOut) {
   SmallPtrSet<Value *, 16> Owned(Comp.begin(), Comp.end());
   bool Converged = false;
   for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
@@ -1183,6 +1184,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   InteriorPlan IP;
   IP.Owned = Owned;
   IP.Borrowed = Borrowed;
+  BorrowedOut.insert(Borrowed.begin(), Borrowed.end());  // P0's ordering check.
   SmallVector<Value *, 16> Terms;
   for (CallInst *R : Comp)
     if (Owned.count(R))
@@ -1577,6 +1579,11 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
 struct ComponentPlan {
   DataDag D;
   Instruction *At;
+  // bd `test_C_libtooling-tu9q` P0 — the component's BORROWED frontier, carried
+  // out of `planInteriorComponent` so the cross-plan ordering check below can ask
+  // *"does this plan's adjoint READ a rail another plan will free?"* without
+  // re-deriving the frontier (Rule 14: one spelling, computed where it is proved).
+  SmallPtrSet<Value *, 8> Borrowed;
 };
 
 void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
@@ -1794,9 +1801,45 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
     for (CallInst *R : Cand) {  // program order — FileCheck-stable
       if (!Anchorable.count(R))
         continue;
+      // ── P0 (bd `test_C_libtooling-tu9q`): DO NOT MERGE ACROSS A MULTIPLICITY
+      //    BOUNDARY, and this ARGUES WITH the written invariant twelve lines up
+      //    rather than waiving it ────────────────────────────────────────────
+      //
+      // That invariant says *"NEVER FINER THAN A COMPONENT. Two rails joined by a
+      // producer edge share a DAG and may share a borrowed parent whose interval
+      // is the UNION of theirs; splitting them would let one be freed while the
+      // other's adjoint still reads it (Rule 8's shared prefix)."* The partition
+      // below IS finer, so the hazard it names must be DISCHARGED, not ignored —
+      // it is, by the cross-plan ORDERING CHECK after the planning loop, and that
+      // check is what licenses this line.
+      //
+      // WHY THE SPLIT IS NEEDED AT ALL. Piece P3 admits a hoisted `cq_template_*`
+      // rail as a Root, which lets `markIfRailLocal` mark the body — and then a
+      // body-minted rail and a PREHEADER-minted one land in ONE component with ONE
+      // `At`, for which there is no right point: the preheader rail ran ONCE and
+      // the body rail ran K times. P1's multiplicity test then refuses the whole
+      // component and BOTH leak — which is §0.1(b)'s over-accept, since the
+      // marking has meanwhile silenced conjunct (1) of
+      // `declineDephasingUnmarkedLoopRails`. Split on the SAME key P1 refuses on
+      // (`markedHeaderOf`, ONE spelling, two customers — Rule 14) and each half
+      // gets the point that is right for it: the body half per trip, the preheader
+      // half once at the loop exit.
+      //
+      // ⚠ THE KEY IS THE MINT BLOCK'S, NOT THE GATE'S. Two rails belong together
+      // iff they REPEAT together, which is a property of where they are MINTED.
+      auto sameMultiplicity = [&](const Value *A, const Value *B) {
+        const auto *AI = dyn_cast<Instruction>(A);
+        const auto *BI = dyn_cast<Instruction>(B);
+        if (!AI || !BI)
+          return false;  // unclassifiable — do not merge (the finer, and here the
+                         // conservative, direction: an unmerged pair is planned
+                         // separately and each half re-proves everything).
+        return markedHeaderOf(AI->getParent(), LI, taint) ==
+               markedHeaderOf(BI->getParent(), LI, taint);
+      };
       auto link = [&](const CallInst *G) {
         for (Value *Op : G->args())
-          if (Op != R && Anchorable.count(Op))
+          if (Op != R && Anchorable.count(Op) && sameMultiplicity(R, Op))
             merge(idOf(R), idOf(Op));
       };
       idOf(R);
@@ -1823,8 +1866,67 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
     ComponentPlan P;
     P.At = nullptr;
     if (planInteriorComponent(Comp, taint, DT, PDT, LI, canRepeat, ReversedGates,
-                              ReversedRails, P.D, P.At))
+                              ReversedRails, P.D, P.At, P.Borrowed))
       Plans.push_back(std::move(P));
+  }
+
+  // ── P0's OBLIGATION (bd `test_C_libtooling-tu9q`): THE CROSS-PLAN ORDERING
+  //    CHECK THAT DISCHARGES "NEVER FINER THAN A COMPONENT" ──────────────────
+  //
+  // The multiplicity split above lets one rail be planned separately from a rail
+  // it BORROWS. The invariant it argues with names exactly one hazard: *"splitting
+  // them would let one be freed while the other's adjoint still reads it (Rule 8's
+  // shared prefix)"*. Concretely, for `int p = y*3; for(k) if ((p>>k)&1) …`: the
+  // BODY plan's per-trip `and_unc(h2, h1, …)` READS `h1`, and the PREHEADER plan's
+  // `cqrt_free(h1)` must follow EVERY execution of it. The split does not make
+  // that true; this check PROVES it, and DROPS the outer plan where it cannot.
+  //
+  // ⚠ IT IS `provablyBefore`, AND IT IS **NOT** "THE EXIT POST-DOMINATES THE
+  // BODY". That sentence is true here and it is NOT the property being relied on.
+  // A zero-trip guarded loop's body does not dominate its exit — and that case is
+  // FINE, because a body that never runs mints no rail for the outer adjoint to
+  // read. What is needed is the other direction: IF the inner adjoint runs, it
+  // runs BEFORE the outer one, and the outer one cannot get back to it. That is
+  // `DT.dominates(At_inner, At_outer) && !isPotentiallyReachable(At_outer,
+  // At_inner)` — `provablyBefore` exactly — and the code must say which property
+  // it relies on, because the two are confusable and only one is sound.
+  //
+  // ⚠ THE DROP IS THE **OUTER** PLAN, and the direction is not arbitrary: the
+  // outer plan is the one whose free would strand a live reader. Dropping it
+  // leaves that rail ALLOCATED (Rule 6's fallback) while the inner plan still
+  // discharges — strictly better than abandoning both, and never a dirty free.
+  //
+  // ⚠ WHY IT IS SAFE TO ASK AFTER PLANNING AND BEFORE EMISSION, and why a
+  // "plan, emit, then re-plan the dropped rails" spelling was CONSIDERED AND
+  // REJECTED (recorded so the next agent does not re-derive it as an
+  // optimisation): "PLAN ALL, THEN EMIT ALL" is what makes the split legal at all
+  // — at plan time the body plan's clause-(d) scan over `h1` sees only the FORWARD
+  // `and`, not the preheader plan's not-yet-emitted `mul_unc`/`free`. A second
+  // planning pass would see the first pass's `_unc`s as users of `h1` and refuse.
+  SmallPtrSet<const ComponentPlan *, 4> Dropped;
+  for (const ComponentPlan &Outer : Plans) {
+    for (const ComponentPlan &Inner : Plans) {
+      if (&Inner == &Outer || Dropped.count(&Outer))
+        continue;
+      // Does `Inner`'s adjoint READ a rail `Outer` owns and will free?
+      bool Reads = false;
+      for (Value *B : Inner.Borrowed)
+        if (Outer.D.Rails.count(B)) {
+          Reads = true;
+          break;
+        }
+      if (!Reads)
+        continue;
+      if (!provablyBefore(Inner.At, Outer.At, DT))
+        Dropped.insert(&Outer);
+    }
+  }
+  if (!Dropped.empty()) {
+    SmallVector<ComponentPlan, 4> Kept;
+    for (ComponentPlan &P : Plans)
+      if (!Dropped.count(&P))
+        Kept.push_back(std::move(P));
+    Plans = std::move(Kept);
   }
 }
 
@@ -1955,6 +2057,29 @@ void uncompute(Module &M, WidthDispatch &wd, TaintSet &taint) {
     reverseInteriorGroup(F, taint, wd, DT, PDT, LI, ReversedGates,
                          ReversedRails);
   }
+
+  // ── bd `test_C_libtooling-tu9q` clause (ii-d)'s POSTCONDITION ──────────────
+  // Contract in `LoopPlan.h`; the argument for why it exists is at the ledger's
+  // definition in `LoopLowering.cpp`.
+  //
+  // ⚠ THIS SLOT IS THE CONTRACT, not a convenience. It is the FIRST program point
+  // at which "was the hoisted rail discharged?" is a FACT: everything above it in
+  // this function is what PRODUCES the answer, and everything in `LoopLowering` —
+  // where the grant was made — ran stages earlier, over facts that were not final.
+  // It is also inside the MODULE-scoped `uncompute` rather than a new stage in
+  // `CQLoweringPass::run`, deliberately: a new stage would have to be added to BOTH
+  // entry points, and a fence added to one of two entry points is a hole with no
+  // diagnostic (`CLAUDE.md` L1's cure names "in BOTH entry points" for exactly
+  // this reason). Living here it inherits both call sites for free.
+  //
+  // ⚠ IT RUNS AFTER THE LOOP, NOT PER FUNCTION: the ledger is module-scoped and
+  // `declineUndischargedExitObligations` CLEARS it, so a per-function call would
+  // read an emptied ledger from the second function onwards and report success.
+  // RETIREMENT TRIGGER: if this call is ever moved inside the `for (Function &F)`
+  // above, the postcondition becomes vacuous for every module with more than one
+  // quantum function — and bd `1yeu` records that every corpus in this tree is
+  // effectively one function per module, so nothing here would go red.
+  declineUndischargedExitObligations(M);
 }
 
 InteriorDischargePlan planInteriorDischarges(Function &F, TaintSet &taint) {
