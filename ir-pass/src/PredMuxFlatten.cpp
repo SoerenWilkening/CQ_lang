@@ -61,6 +61,7 @@
 #include "LiteralIntegrity.h"  // valueCarriesUndef (lifted); declineAddressTakenBlocks
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
 #include "QramLowering.h"
+#include "SelectClassify.h"  // isCondRailLeaf (bd fn1q inc 2 — the ONE spelling, Rule 14)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/BitVector.h"
@@ -896,6 +897,48 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
                          const PhiCondScope *S = nullptr, bool Strict = false) {
   if (Depth > 8)
     return false;
+  // *** bd `test_C_libtooling-fn1q` INCREMENT 2 — THE BARE RAIL LEAF. ***
+  //
+  // The user's own `_Bool` REGISTER as the condition, with no compare anywhere:
+  // `bool b = cq_theta(b, .5); if (b) { … }`. Until this increment E6 was the last
+  // consumer in the tree that had not been told about the shape — the phase
+  // kickback, the depth-2 nest, the Rz-stem angle select, the 4.4 data select, the
+  // in-place Ry arm and the state prep have all admitted it since bd `3qlq.4` /
+  // `r9e5` / `l4x4`.b — so a multi-phi diamond on a rail condition left at
+  // `E6-condtree`, `MergePhiPeel` then peeled every (pred-available) phi, and the
+  // EMPTY zero-phi diamond that remained declined `control flow`. That is
+  // bd `test_C_libtooling-s9xi`, and it is the bookkeeping the hcrg bullet warns
+  // about, not a unitary.
+  //
+  // ⚠ RULE 14: `isCondRailLeaf` (SelectClassify.h) is THE spelling of this
+  // question — a `cq_theta_i1` CALL returning `i1`. It is CALLED here, never
+  // re-derived, because a second spelling of a predicate the tree already owns is
+  // the drbq Inc-3 (b') defect. Two properties come with it for free and both are
+  // load-bearing: such a value is ALWAYS TAINTED (Rule 3 — `cq_theta` is the sole
+  // taint source), so this leaf can never smuggle a classical value into a tainted
+  // cond tree the way an opaque-`i1` test would; and it is ALREADY an `i1`, so the
+  // edge predicate needs no flag mint at all — `collectCondTree` carries it into
+  // the 4.4 substrate as a `RailLeaves` entry read only as a CONTROL.
+  //
+  // ⚠ IT IS REFUSED UNDER `Strict`, DELIBERATELY. `Strict` is the xor sub-tree's
+  // forced descent into `collectCondTree`'s grammar, and relaxing it is the
+  // separate accept widening the head of this function refuses in writing. A rail
+  // leaf under an xor therefore keeps declining — the safe direction, and nothing
+  // measured wants it.
+  //
+  // ⚠ AND IT IS NOT A ONE-LINE WIDENING: `buildNegation` ends in an UNCHECKED
+  // `cast<BinaryOperator>(V)`, which a rail leaf reaches on the false edge. Its
+  // arm lands in the SAME change (see the `¬rail` note there) — the standing
+  // lesson that a grammar widening owes an audit of everything that CONSUMES the
+  // grammar, paid here rather than by the next round.
+  //
+  // ⚠ THE RAIL PHI (`isCondRailPhiShape`, the `_Bool` bank cell `%cq.bank1` a
+  // preceding state-prep region leaves behind) is a DISTINCT and deliberately
+  // SEPARATE increment: that predicate is weak by design and its consumers prove
+  // it through `preppedRailPhiRegionIdx` / `AllowRailPhi`, none of which is asked
+  // here. Admitting it in passing would be widening two axes at once.
+  if (!Strict && isCondRailLeaf(V))
+    return true;
   if (const auto *P = dyn_cast<PHINode>(V))
     return !Strict && isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
   if (isa<ConstantInt>(V))
@@ -3541,6 +3584,49 @@ private:
       return track(B.CreateAnd(buildNegation(Sel->getCondition()),
                                buildNegation(Sel->getFalseValue())));
     }
+    // *** bd `test_C_libtooling-fn1q` INCREMENT 2 — ¬rail. ***
+    //
+    // THIS ARM IS THE OTHER HALF OF THE E6 RAIL-LEAF ADMISSION, not a defensive
+    // extra. Every line below this point assumes `V` is a `BinaryOperator`, and
+    // the `cast<>` on the next line is UNCHECKED — an assert in a `+Asserts`
+    // build and a bad cast in the RELEASE build every gate in this tree runs
+    // (verbatim the hazard `isConvertiblePhiCond`'s condition 2 exists to prevent
+    // for a `PHINode`). A rail-conditioned region reaches it the moment `-O1` puts
+    // the gate arm on the FALSE successor, which is half the time (Rule 9).
+    //
+    // A rail is an OPAQUE `i1`, so there is no leaf compare to invert and no
+    // De Morgan step to take: its negation is the one-node `xor %rail, true`,
+    // which is the grammar's own NOT spelling (`isSupportedCondTree`'s xor-true
+    // arm admits it, and `buildNegation` consumes it above as ¬¬x = x). Nothing is
+    // duplicated and the negation stays at a leaf, so the no-NOT invariant is
+    // untouched.
+    //
+    // ⚠ AND `collectCondTree` DOES **NOT** ACCEPT THE RESULT — an earlier draft of
+    // this comment said it reads it "as an `xor` node over one `RailLeaves` entry
+    // and one i1 constant, the shape it has carried since bd `3qlq.4`", and that
+    // is FALSE (Rule-13 round 2, P2-2). `SelectClassify.cpp`'s node walk refuses
+    // an `xor` with a CONSTANT operand outright, and says so beside the code; bd
+    // `3qlq.4`'s rail-in-xor shape is `xor i1 %b, %c`, TWO NON-CONSTANT operands,
+    // a different node.
+    //
+    // What makes this arm safe is therefore NOT a downstream consumer — it is the
+    // ARM-SWAP FOLD at the flatten's select site, which removes the `xor` before
+    // `collectCondTree` ever sees it. **The fold is load-bearing, not cosmetic**,
+    // and a reader who believed the old sentence would conclude it is removable —
+    // which round 1 measured turns the negated polarity into a claim-then-decline.
+    //
+    // ⚠ `track(V)` above IS reached for a rail, and an earlier draft of this
+    // comment gave a FALSE reason for why that is safe — "the rail is the USER'S
+    // register, it is live at their `cq_measure`, so tracking it is inert". That
+    // is an assumption about the PROGRAM, not a property of the code: a user need
+    // not measure `b`. Rule-13 round 1 (P1-1) measured the consequence — the
+    // user's Ry DELETED, `opt` exit 0, stderr empty, where the oracle declined
+    // loudly. It was also not the only tracking site; `run()`'s
+    // `track(BI->getCondition())` reaches it at the polarity this function never
+    // sees. The real fix is the exclusion in `sweepDead` (read its comment), and
+    // the track here is genuinely inert ONLY because of that exclusion.
+    if (isCondRailLeaf(V))
+      return track(B.CreateXor(V, ConstantInt::getTrue(V->getContext())));
     auto *BO = cast<BinaryOperator>(V);
     if (BO->getOpcode() == Instruction::Xor) {
       if (auto *C = dyn_cast<ConstantInt>(BO->getOperand(1)); C && C->isOne())
@@ -3732,7 +3818,81 @@ private:
           if (In[I].second == Acc)
             continue;
           Value *EP = edgePred(In[I].first, D);
-          Acc = track(B.CreateSelect(EP, In[I].second, Acc));
+          // *** bd `test_C_libtooling-fn1q` INCREMENT 2 — ¬c IS AN ARM SWAP, NOT
+          // AN `xor` NODE, AND THIS IS WHERE THE RAIL-LEAF ADMISSION IS PAID FOR.
+          // ***
+          //
+          // `select(¬c, T, F) == select(c, F, T)`, unconditionally. The fold looks
+          // cosmetic and is not: it is what keeps the E6 rail-leaf widening a
+          // PRE-CLAIM decline AT THIS SITE instead of a claim-then-decline.
+          //
+          // ⚠ READ "AT THIS SITE" LITERALLY — an earlier draft said "everywhere it
+          // is not supported" and that was FALSE (Rule-13 round 1, P2-2a). Three
+          // claim-then-decline shapes survive and are known: a ¬rail nested inside
+          // an and/or tree (`buildNegation` returns `or(xor(%rail,true), ¬cmp)` and
+          // only a TOP-LEVEL xor is folded here), the BoolAlg composer's
+          // `and(¬rail, X)`, and a region whose downstream owner declines for an
+          // unrelated reason (measured: `control flow` -> `condition predates a
+          // non-diagonal gate`). All are loud, non-zero and consume nothing.
+          //
+          // MEASURED, and it is the reason this exists. A rail-conditioned region
+          // whose arm sits on the FALSE successor (Rule 9 — `clang -O1` picks that
+          // polarity about half the time) takes its arm's edge predicate through
+          // `buildNegation`, whose rail arm has no leaf compare to invert and so
+          // spells ¬ the only way an opaque `i1` can be spelled: `xor %rail, true`.
+          // `collectCondTree` then walks that node and hits the `i1` CONSTANT
+          // child, which is off-grammar — so the module was FLATTENED and only
+          // then declined `control flow` at `SelectClassify`, where before this
+          // increment it declined at `E6-condtree` before anything was touched.
+          // Same verdict, worse owner: this file's own bd `3c6m.67` self-operand
+          // lesson says a claim it makes about its own grammar should hold
+          // exactly, and a pre-claim decline is strictly cleaner.
+          //
+          // The swap removes the node entirely rather than teaching a second
+          // consumer to parse it (Rule 14): `SelectMergeEmit` already spells ¬ for
+          // a bare rail condition with its `cqrt_x` BRACKET on the CNOT-copied
+          // ancilla — never on the user's register — so the swapped select is the
+          // substrate's own negation spelling, and the emitted stream for the two
+          // polarities is the same one with its two controlled copies exchanged.
+          //
+          // ⚠ SCOPE, AND IT IS A FILTER BECAUSE AN EARLIER DRAFT'S "BY
+          // CONSTRUCTION" WAS MEASURED FALSE (Rule-13 round 1, P2-1). That draft
+          // enumerated `buildNegation`'s four behaviours and concluded `xor X,
+          // true` could reach this site from nothing else. It omitted the OTHER
+          // producer of the value here: `literal()` is `canonicalizePred(cond)`,
+          // and `canonicalizePred` has NO xor arm — it returns such a condition
+          // unchanged. E6 admits `xor X, 1` in its own right (the no-NOT
+          // invariant's negation spelling), so a region whose entry condition IS a
+          // surviving `xor %cmp, true`, arm on successor(0), delivers a bare xor
+          // here with NO RAIL IN THE MODULE AT ALL. Unfiltered, the fold took that
+          // module from the ORACLE's loud `control flow` decline to an ACCEPT —
+          // semantically correct, and still an accept-direction widening outside
+          // this increment's scope, with no fixture, no probe family and no round.
+          // The corpus could not see it: of 2126 fixtures, exactly ONE carries an
+          // `xor i1 …, true` feeding a `br` and none on a claimable region (L10 —
+          // an instrument is blind in the shape nobody pointed it at).
+          //
+          // So the operand is REQUIRED to be a rail leaf. That keeps the fold
+          // exactly as wide as the `buildNegation` arm it exists to pay for. A
+          // deliberate widening to a general `xor X, true` is a separate
+          // increment and owes its own red-green pair.
+          //
+          // ⚠ The dead `xor` is already tracked by `buildNegation`'s own `track()`
+          // (bd `qesi`), so `sweepDead`'s `use_empty` fixpoint collects it. It must
+          // not be left untracked here — an orphan i1 op lowers to a forward
+          // `cq_template_*` gate that is never uncomputed and never freed, and
+          // `free_pairing_check.py` is structurally blind to a TEMPLATE-minted rail
+          // (bd `1739`).
+          Value *SwapT = In[I].second;
+          Value *SwapF = Acc;
+          if (auto *NotBO = dyn_cast<BinaryOperator>(EP))
+            if (NotBO->getOpcode() == Instruction::Xor)
+              if (auto *C1 = dyn_cast<ConstantInt>(NotBO->getOperand(1)))
+                if (C1->isOne() && isCondRailLeaf(NotBO->getOperand(0))) {
+                  EP = NotBO->getOperand(0);
+                  std::swap(SwapT, SwapF);
+                }
+          Acc = track(B.CreateSelect(EP, SwapT, SwapF));
         }
       }
       P->replaceAllUsesWith(Acc);
@@ -3844,12 +4004,91 @@ private:
   // Erase any moved/minted instruction that ended up unused (e.g. the unused
   // fallback edge-predicate) so no dead tainted producer reaches lowerOps.
   // All tracked values are pure, so this is a plain use_empty fixpoint.
+  //
+  // *** bd `test_C_libtooling-fn1q` INCREMENT 2, Rule-13 ROUND 1 (P1-1) — THIS
+  // SWEEP MUST NEVER ERASE THE USER'S RAIL, AND THE PROJECT HAD ALREADY RULED SO
+  // IN THE SIBLING STAGE. ***
+  //
+  // `RegionFlatten.cpp`'s teardown carries the identical conjunct with the
+  // decision written out (bd `3qlq.4`): *"a RAIL-LEAF condition is the USER'S
+  // `cq_theta_i1` — never this stage's to erase, WHATEVER ITS USE COUNT."* This
+  // stage had no such conjunct, and until increment 2 it did not need one: the
+  // E6 grammar admitted `ConstantInt`/`CmpInst`/`and`/`or`/`xor`/short-circuit
+  // `select`/convertible `PHINode` and **no `CallInst` at all**, so no CQ
+  // front-end intrinsic could ever become a CONDITION-TREE NODE and reach
+  // `track()`. The rail leaf makes one. THREE sites then put it in `MaybeDead`:
+  // `run()`'s `track(BI->getCondition())` (both polarities), `buildNegation`'s
+  // `track(V)` (false polarity), and `canonicalizePred`'s `trackCondCone` (true
+  // polarity).
+  //
+  // ⚠ "CONDITION-TREE NODE" IS LOAD-BEARING IN THAT SENTENCE AND AN EARLIER DRAFT
+  // BLURRED IT (Rule-13 round 2, P3-2). `run()` ALSO does
+  // `track(SI->getCondition())` for a SWITCH SCRUTINEE, with NO grammar check at
+  // all — E6 asks a switch only `Taint.Tainted.count` + `isMuxableType` — so a
+  // `@cq_theta_si32` CALL can reach `track()` without ever being a cond-tree node,
+  // and `isCondRailLeaf` is `cq_theta_i1`-ONLY, so this clause would not protect
+  // it. Whether such a scrutinee can actually end up `use_empty()` here is
+  // **UNPROVEN IN BOTH DIRECTIONS** — round 2 could not construct a module where
+  // it dies. Say "unproven"; do not upgrade it to "safe", do not downgrade it to
+  // "a hole".
+  //
+  // MEASURED before the fix, on a rail-conditioned diamond whose merge phis the
+  // BoolAlg composer drops and whose rail is read nowhere else: the ORACLE
+  // declined loudly (exit 1, `control flow`) and the subject exited **0 with 0
+  // bytes of stderr and NO `cqrt_alloc_i1` and NO `cqrt_ry_i1` in the stream** —
+  // the user's Ry deleted outright. `opt -verify` clean; `free_pairing_check.py`
+  // reports `0 violation(s), 0 unproven` because it is structurally blind to a
+  // rail that no longer exists. A VANISHING USER GATE (Rule 5), and the exact
+  // failure increment 1's (K5) closed one stage over.
+  //
+  // ⚠ THE CONTROL IS WHAT MAKES IT A DEFECT RATHER THAN A POLICY: the SAME dead
+  // `cq_theta_i1` with no region at all lowers on BOTH binaries (forward Ry +
+  // `_unc`). The deletion is not a general dead-code rule the pass applies; it is
+  // this sweep reaching a value it was never meant to own.
+  //
+  // ⚠ GUARDED HERE, AT THIS ERASER, RATHER THAN AT THE THREE `track()` SITES —
+  // deliberately, and it is the `markBranchPhaseGate` lesson inverted. A per-site
+  // fence is only as complete as its most-forgotten site, and a fourth tracker
+  // added later would re-open this with no diagnostic anywhere.
+  //
+  // ⚠ AN EARLIER DRAFT JUSTIFIED THAT CHOICE WITH "THERE IS EXACTLY ONE PLACE THIS
+  // PASS ERASES", AND THAT SENTENCE IS FALSE (Rule-13 round 2, P2-1). It is the
+  // only place THIS SWEEP erases. The pass has at least three more instruction
+  // erasers downstream of a flatten — `simplifyFlattenResiduesInFunction`'s
+  // `RecursivelyDeleteTriviallyDeadInstructions`, `foldConstantConeAndBranches`'
+  // own `eraseFromParent`, and `removeUnreachableBlocksChecked` — and the FIRST of
+  // them was MEASURED to reproduce the round-1 P1 verbatim: a rail whose only
+  // surviving use after the flatten is a folded residue is deleted there, `opt`
+  // exit 0, 0 bytes of stderr, no `cqrt_alloc_i1`, no `cqrt_ry_i1`. THIS CLAUSE
+  // DOES NOT REACH IT.
+  //
+  // Two measurements cap that at a filed follow-on rather than a blocker, and both
+  // belong in the same breath as the hole: it needs an attributed
+  // `declare i1 @cq_theta_i1(…) memory(none)`, which `CQ.h` CANNOT produce (with
+  // the shipped bare declaration the rail survives); and it is **PRE-EXISTING** —
+  // the same probe with a COMPARE-conditioned region, a shape the oracle already
+  // claims, deletes the rail ON THE ORACLE TOO. ⚠ But "pre-existing" is true of
+  // the DEFECT and FALSE of its POPULATION: the rail leaf adds customers. Filed
+  // with its probes; do not read this paragraph as a clearance.
+  //
+  // ⚠ And note what the pre-existing comment at that site gives as its safety
+  // ground — "never a cq_theta/phi/measure call — those have side effects". That
+  // is a property of the DECLARATION, not of the code, which is increment 1's own
+  // (K5) lesson: the question was never the name or the attribute, it is *does a
+  // CQ stage OWN this call?*
+  //
+  // ⚠ `isCondRailPhiShape` is excluded TOO, ahead of its own increment, for the
+  // reason `RegionFlatten`'s comment gives: the first widening that hands a
+  // φ-conditioned region a flatten must not re-open this in silence. It has no
+  // subject at E6 today (the rail-φ leaf is deliberately not admitted).
   void sweepDead() {
     bool Changed = true;
     while (Changed) {
       Changed = false;
       for (WeakTrackingVH &H : MaybeDead) {
         auto *I = dyn_cast_or_null<Instruction>(H.operator Value *());
+        if (I && (isCondRailLeaf(I) || isCondRailPhiShape(I)))
+          continue;  // the USER'S register — never this stage's to erase.
         if (I && I->use_empty()) {
           I->eraseFromParent();
           H = nullptr;

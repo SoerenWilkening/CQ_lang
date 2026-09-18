@@ -1,0 +1,95 @@
+\labsessionheader{2026-09-23}{A corrected bisection is still a bisection --- and a second vanishing gate}%
+  {PENDING}{d9542657-7eae-4089-ae6b-77dc3ed77cc3}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-23-orchestrator/}
+
+\subsection*{Goal}
+Continue \bd{fn1q}: make the owner's own program compile. The previous session had corrected three
+false claims in the bead and written a four-fence map in their place; this session was briefed to
+build the next three increments behind three of those fences.
+
+\subsection*{What the session found before it built anything}
+The \emph{corrected} map is also wrong at its first fence, and that changes what the work is.
+
+\begin{itemize}
+  \item \textbf{The named first wall is not a wall.} A bypass build that removes the clause entirely
+        changes the owner's program not at all --- same decline, same diagnostic. The stage that
+        refused it cannot fix the shape in a loop or out of one: both of the merge nodes the region
+        must mux are defined inside the arm, and that stage's own written contract is that it must
+        never hoist one out. The loop-free twin declines identically, which is what settles it.
+  \item \textbf{The stage that actually owns the shape names itself} --- in a comment one screen
+        above the clause the brief proposed to retire. It refuses the owner's program at
+        \emph{three} independent gates: the region lies inside a loop; its condition is a bare
+        boolean register rather than a comparison; and its arm reads a constant table at a run-time
+        index.
+  \item \textbf{The route was proved, not proposed.} With all three gates bypassed the owner's
+        program compiles verbatim --- exit 0, empty stderr, 106 lowered lines and still \emph{rolled},
+        strict rail-pairing clean, and a per-trip gate stream that is the already-shipped merge idiom
+        twice over with no new runtime symbol.
+\end{itemize}
+
+The standing lesson is new and it is general: \textbf{a corrected bisection is still a bisection and
+inherits the same burden.} The previous map was read off the code; it was never measured by removing
+the clause. The session that files a correction is not exempt from the rule it is enforcing.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \bd{fn1q} increment 2 of 5 --- a tainted-condition region whose condition is the user's own
+        boolean register may now be claimed by the flattening stage, so a multi-value merge over it
+        becomes the straight-line program the shipped substrate has lowered for years. Closes
+        \bd{s9xi}. Ten fixtures and one end-to-end slice.
+  \item The re-derived fence map, with its probes committed, so the next session inherits evidence
+        rather than prose.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \textbf{A vanishing user gate.} Admitting the register as a condition node made
+        it reachable by the stage's dead-value sweep, which erased it: the compiler exited zero with
+        an empty error stream and emitted \emph{no allocation and no rotation at all} for a rotation
+        the user wrote, where the previous binary had declined loudly. The verifier was clean and the
+        rail-pairing checker reported no violations --- it is structurally blind to a rail that no
+        longer exists. No gate in the tree could have seen it. Found by the independent review, not
+        by the implementer, the corpus, or any suite.
+  \item \textbf{The project had already ruled on it, in the sibling stage, and the ruling had not
+        been carried across.} The teardown of the neighbouring stage carries the identical exclusion
+        with its reason written out. A ruling written in one stage does not propagate to its sibling
+        by being true.
+  \item \fconfirmed\ An accompanying simplification was justified by a scope claim that was measured
+        false: a second producer existed, so a module containing no quantum register at all moved
+        from a loud decline to an accept. The corpus was \emph{structurally incapable} of showing it
+        --- exactly one fixture carries the shape and only inside its expected output.
+  \item Two comments in the same change contradicted each other, and the false one was the
+        justification for a load-bearing edit. A reader who believed it would have removed that edit.
+  \item Test-hygiene, measured: every count assertion read ``at least $N$'', so an injected extra
+        gate slipped past all four prefixes; and an assertion claiming the user's register is read
+        only as a control missed an injected rotation on that very register.
+\end{itemize}
+
+\subsection*{Verification run}
+Two independent adversarial rounds by two different agents. Round one returned \textsc{blocked};
+round two, on the fixes, returned clear with items and no top-severity finding --- but found the same
+class of defect one eraser further along, which is filed rather than fixed because it is pre-existing
+and not reachable from the user-facing header. Full suite green at 474 entries, twice, both under
+heavy concurrent load and quoted with it. Corpus A/B over every fixture: no accepts lost, four gained,
+all four the increment's own new files, no stream and no diagnostic moved; null control run first.
+\textbf{Not run:} no simulation and no backend, per the standing project rule. Neither review ran the
+full suite, and round two built no mutant binary, so its coverage claims about future relaxations are
+asserted rather than measured.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{fn1q} increments 3--5 remain and the owner's program does not compile yet. Increment 3 is
+        measurably \emph{not} a one-line widening: the downstream proves the shape through a claimed
+        preparation region, so one spelling accepts and a neighbouring one does not.
+  \item \bd{cfmv} (new, top severity) --- the same erasure class one stage further on. Pre-existing,
+        and the increment adds customers to it.
+  \item The accepted circuit leaves per-trip rails entangled with what a later rotation reads. That
+        class is pre-existing and shipped; this work adds customers, which is recorded rather than
+        netted away.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 015 records a four-fence map for \bd{fn1q}. Its first fence is falsified above: removing that
+clause changes the program's verdict not at all, and the stage it names cannot lower the shape in any
+form. The remaining two fences it lists are real over-declines but are reached by other programs, not
+by the owner's.

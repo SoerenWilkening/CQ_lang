@@ -6421,6 +6421,29 @@ add_test(NAME e2e-slice-control-value-arm-cone
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_arm_cone.expected.log")
 
+# bd test_C_libtooling-fn1q increment 2 — THE BARE `_Bool` RAIL AS A MULTI-VALUE
+# REGION'S CONDITION, from C. `bool b = cq_theta(b,.5); if (b) { A-=3; B-=4; C-=5;
+# D-=6; }` declined `control flow` before the increment: `PredMuxFlatten` — the
+# stage that owns a multi-phi tainted merge — refused it at E6 because
+# `isSupportedCondTree`'s grammar is compare leaves and and/or/xor/select nodes,
+# and a bare rail is none of those. E6 was the LAST consumer in the tree that had
+# not been told about the shape. This is bd test_C_libtooling-s9xi's exhibit.
+#
+# ⚠ THE SLICE'S OWN BLIND SPOT, stated so nobody has to rediscover it: it depends
+# on `clang -O1` REFUSING to if-convert a four-variable arm. If a future -O1
+# if-converted it, this test would keep PASSING while silently exercising the
+# already-shipped `select` path instead of the new `br` one. The IR fixtures
+# control_predmux_accept_rail_leaf_{cond,negation}.ll pin the `br` shape directly
+# and are what would still catch that; this slice pins C-level reachability and
+# that every emitted symbol links and signature-matches.
+add_test(NAME e2e-slice-control-predmux-rail-leaf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_predmux_rail_leaf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_predmux_rail_leaf.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

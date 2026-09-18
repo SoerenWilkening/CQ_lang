@@ -59,8 +59,8 @@ decline** (merge-gate sweep, `MERGE_REPORT.md` §5a). ⚠ **That is not "no
 correctness debt", and do not quote it as such.** The same Rule-13 rounds filed a
 NEW P1 over-accept of their own (a rail φ carrying a dtzb-mutated `cq_theta`
 result IN PLACE — `IMPL_D.md` §15.4, cross-referenced to bd `a3z7` / bd `0njv`),
-and bd `lo7u`, bd `s82e` and bd `yiid` are open P1s today. Count the known ones;
-never claim zero.
+and bd `lo7u`, bd `s82e`, bd `yiid` and bd `cfmv` are open P1s today. Count the
+known ones; never claim zero.
 
 ⚠ **Phase 4 has had THREE generations, and the first two are traps.** The
 controlled-op generation shipped and was **removed wholesale** (`7cde677`). The
@@ -1078,7 +1078,7 @@ written (35 trace lines, stderr 0 bytes, STRICT 2b `3 verified, 0 violation(s), 
 project's one KNOWN verify-clean silent miscompile — a `cq_theta` arg-0 or `cq_measure` operand reading a
 STALE rail name — was CLOSED by the stale-reader fence (bd `3d8q`, `81c55430`), at a measured cost of **104
 corpus modules moving ACCEPT → DECLINE**. ⚠ That is **not** "no correctness debt": the same rounds filed a
-NEW P1 of their own (bd `a3z7`), and bd `lo7u`, bd `s82e` and bd `yiid` are open P1s today. **Count the
+NEW P1 of their own (bd `a3z7`), and bd `lo7u`, bd `s82e`, bd `yiid` and bd `cfmv` (§4i) are open P1s today. **Count the
 known ones; never claim zero.** Six increments landed under one group gate (`uq96`, `z9t1`, `om35`,
 `3qps`/`4aiu`, `wx8g`, `3d8q`). ⚠ The owner measured that same file DECLINING on that same tree and the
 cause was a **STALE BUILD**, not a regression — `shasum -a 256 build/ir-pass/cq-opt` before believing any
@@ -1168,75 +1168,95 @@ makes the merge-order obligation automatic. ⚠ Two of the three `*_leak_control
 ACCEPTS and **that is a fix, not a restoration** — see the §5 Q-R1-1 correction block, which is the
 text most likely to be misread at the next landing.
 
-### 4h. The 2026-09-22 landing — the value arm's CLASSICAL CONE, and a bead whose bisection was wrong in three places
+### 4h. The 2026-09-22 landing — the value arm's CLASSICAL CONE
 
-⚠ **THE FIRST THING TO CARRY IS NOT THE INCREMENT, IT IS THAT bd `fn1q`'s RECORDED BISECTION IS
-FALSE AND WAS BUILT ON FOR A SESSION.** Re-measured on a clean-worktree rebuild of the binary the
-bead names — **bit-identical** to the recorded hash, so the disagreement is real: (1) its "Va — the
-array-valued THRESHOLD `if (Z >= z[i])` declines" is **FALSE**, it ACCEPTS at 120 lowered lines, so
-**there is no condition wall**; (2) its two decline strings are two fences reached by different
-variants, not one per axis; (3) its load-bearing proof — *"hand-unroll either and it COMPILES"* —
-**proves nothing**: `-O1` const-folds a LOCAL `int p[]={3,2,1}` at a now-constant index and
-if-converts the result, so the unrolled IR holds `select i1 %1, i32 4, i32 5` and **no value-arm
-branch at all**. Swap in a GLOBAL array at a runtime index and the **loop-free** form declines too.
+⚠ **ARCHIVED VERBATIM to [`docs/CLAUDE-HISTORY.md`](docs/CLAUDE-HISTORY.md) on 2026-09-23** (the same
+treatment §4b–§4g received), when this file crossed 150 k at the bd `fn1q` increment-2 landing.
+**Moved, not deleted** — the three falsified bead claims, the five (K1)–(K5) conjuncts, the (K5)
+vanishing-`cq_phi` finding and the round-2 L1 fence are all there. Per-increment record:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-22-orchestrator/`.
 
-**THE AXIS IS `br` VS `select`, AND `-O1` PICKS IT** (bd memory
-[`value-arm-br-vs-select-axis-2026-09-22`]). Every accepting neighbour in the value family accepts
-because `-O1` if-converted the arm; every decline is `-O1` refusing to. It is **not loop-, array- or
-memory-specific**: a flat, loop-free, **all-constant, four-variable** arm declines `control flow`
-while its two-variable sibling accepts at 69 lines (bd `s9xi`). The owner's program sits behind
-**FOUR** fences — `MergePhiPeel` P9 (no in-loop peel), `walkValueChain`'s empty-chain classical
-accumulator (`:6193`), `valueArmIsPureChain`'s stray rule (`:6133`), and clause (c3) — not two.
+**What survives here, because §4i depends on it.** A tainted-condition VALUE arm may hold its pure
+CLASSICAL CONE — five conjuncts at `valueArmIsPureChain`, recorded on the region and hoisted by
+`emitValueRegion` ahead of the chain, emitting NO gate. ⚠ **(K5) is the row to carry**: CQ's own
+front-end calls were kept out of a value arm **STRUCTURALLY** (any non-chain arm op declined), four
+conjuncts replaced that structure, **none named those calls**, and a `speculatable`-marked `cq_phi`
+was then hoisted into the pred and **DELETED** — exit 0, no `cqrt_rz_i1`, a vanishing user gate.
+**THE STANDING LESSON: when you replace a STRUCTURAL containment with a set of predicates,
+ENUMERATE WHAT THE STRUCTURE WAS HOLDING** — and see §4i, where the same class landed again ONE
+INCREMENT LATER, one stage over. ⚠ Also surviving: the axis is **`br` vs `select` and `-O1` picks
+it** (bd memory [`value-arm-br-vs-select-axis-2026-09-22`]); and `tools/show_pipeline.sh` now
+prints `STAGE 2 · DECLINED`.
 
-**WHAT LANDED (increment 1 of four): the value arm may hold its CLASSICAL CONE.** Five conjuncts at
-`valueArmIsPureChain` — (K1) untainted, (K2) no write/side effect, (K3) no use outside the arm,
-(K4) `isSafeToSpeculativelyExecute`, (K5) not a call the lowering owns — RECORDED on the region and
-hoisted by `emitValueRegion` ahead of the chain. ⚠ **The load-hoist argument is about PLACEMENT, not
-purity, and it is by CONSTRUCTION**: the only instructions between the hoist point and a hoisted
-load's old position are the `br`, the arm's other cone members ((K2): no writes) and its chain links
-(`BinaryOperator`s only) — **if either fact changes, rebuild the argument, do not re-quote it.**
+### 4i. The 2026-09-23 landing — bd `fn1q`'s fence map re-derived AGAIN, and a second vanishing user gate
 
-⚠ **(K5) EXISTS BECAUSE A REVIEWER MEASURED THE HOLE THE OTHER FOUR LEFT.** Before the increment,
-CQ's own front-end calls were kept out of a value arm **STRUCTURALLY** — any non-chain arm op
-declined — so no predicate named them; four conjuncts replaced that structure and none did. A
-`declare void @cq_phi(double) speculatable memory(none) nounwind willreturn` then passed all four,
-was HOISTED into the pred where it is uncontrolled, and `deleteGlobalPhases` **DELETED** it: `opt`
-exit 0, **no `cqrt_rz_i1` in the stream**, a vanishing user gate (Rule 5). Same for `cq_measure` and
-the invert brackets. **(K5) asks the question it means** — *does a CQ stage OWN this call?*, answered
-by *declared external vs `@llvm.*` intrinsic*, **never by a name prefix** — which is the bd `11qv`
-round-4 (P4) lesson verbatim. **The standing lesson: when you replace a STRUCTURAL containment with
-a set of predicates, enumerate what the structure was holding.**
+⚠ **THE FIRST THING TO CARRY IS THAT §4h's OWN CORRECTED FENCE MAP WAS ALSO WRONG, AND THAT IS NOW
+A NAMED FAILURE MODE: A CORRECTED BISECTION IS STILL A BISECTION AND INHERITS THE SAME BURDEN.**
+§4h named **`MergePhiPeel` P9** as the owner's program's first wall. Measured on a bypass build,
+**removing P9 changes `owner.c` not at all** — and the peel *structurally cannot* fix the shape in a
+loop or out of one, because both of the owner's merge φ are **ARM-DEFINED** and `phiPeelable`'s own
+contract is that the peel must *never* hoist one out. The **loop-free twin declines identically**,
+which is what settles it. §4h's map was read off the code; it was never measured by removing the
+clause.
 
-⚠ **THE INCREMENT OWED THE L1 QUESTION ABOUT ITSELF, AND ITS OWN RECORD'S "NOT REACHABLE" WAS WRONG.**
-(K1) is asked at ROUND-1 taint; `repropagateControlMerges` can taint a cone member that reads a
-6.5/4.5 merge φ, leaving a region already hoisted, merged and FLATTENED on a Q+C premise while
-`lowerOps` sees **Q+Q** — a shape `classifyArms` DEFERS by design. Fenced by
-`declineRound2TaintedArmCone`, the **FOURTH re-ask** in the post-fixpoint slot, in BOTH entry points.
-The implementer wrote *"reachability is NOT claimed, no probe produced it"*; **Rule-13 round 1 built
-it**, and the transferable part is *why it was missed*: the probe needs a **BLOCK BETWEEN** the 6.5
-merge and the value region's branch, or the pair declines earlier at bd `35t0`'s precedence check —
-**a probe that reaches the wrong fence first measures the wrong fence.** Corrected at BOTH sites in
-the same change (L7).
+**The stage that owns a multi-φ tainted merge is `PredMuxFlatten`** — named as such, in writing, one
+screen above the clause §4h proposed to retire — and it refuses the owner's program at **THREE**
+gates: **E2-cycle** (the region is in a loop), **E6-condtree** (a bare `_Bool` bank-cell rail
+condition) and **E4-gep** (a classical runtime-index const-table load; the existing QROM admission
+refuses at its index-**TAINT** gate, not on table size). ⚠ **ROUTE PROVED, NOT PROPOSED:** with all
+three bypassed, the owner's program compiles verbatim — exit 0, stderr empty, **106 lines and still
+ROLLED**, STRICT 2b `3 verified, 0 violation(s), 0 unproven`, 88 trace lines, the shipped
+controlled-copy idiom twice per trip, **no new symbol**. **Owner ruling 2026-09-23:** take that
+route, and admit the E4 load **only with a proof** of in-bounds-ness — an unprovable index keeps
+today's decline, so §4h's `flat_qc_load` ruling stands unchanged.
 
-⚠ **AND IT FALSIFIED A MEASURED CLAIM ELSEWHERE THAT ITS OWN TRIGGER DEMANDED BE RE-PROVED.**
-`SwapRouteEmit.cpp`'s cross-region select pre-flight argued that an `AngleSelectRegion`'s select can
-never sit in an erased arm because *"a `select` cannot satisfy `valueArmIsPureChain`"*. A `select` now
-CAN. Re-proved by construction rather than re-worded: the hazard is closed by **(K5)** when the
-angle's consumer is inside the arm and by **(K3)** when it is outside, measured on both binaries.
+**LANDED — increment 2 of 4, the BARE RAIL LEAF at E6** (closes bd `s9xi`): `isSupportedCondTree`
+admits `isCondRailLeaf` (a `cq_theta_i1` CALL) as a LEAF when `!Strict`; `buildNegation` gains the
+`¬rail = xor rail, true` arm; the flatten's select site folds `select(¬c,T,F) == select(c,F,T)`,
+**fenced to a rail operand**; `sweepDead` gains the rail exclusion. Rule 14 — `isCondRailLeaf` is
+CALLED, never re-derived, and a rail is ALWAYS tainted (Rule 3), so the narrow predicate is also
+the one needing no taint argument.
 
-**Measured at the close** (ORACLE `3368af12…` vs SUBJECT `1b396ed0…`, all **2121** fixtures):
-**0 A→D · 1 D→A · 1 decline-string move · 0 stream moves** — both movers are the increment's own new
-fixtures, and the string mover DECLINES on both. Null control **0 of 2121**, run first; positive
-control 1. Twin identity asserted **mechanically** by a `diff` RUN line and mutation-validated.
-Protocol item 5: rolled, unrolled and flat with a trailing non-diagonal gate on the condition's
-register **all decline identically on both binaries** at the 2c wire fence. Rule-13 round 1
-`CLEAR-WITH-ITEMS`, **0 P1**, 2 P2 (both fixed at the source), 6 P3.
+⚠ **AND THE ROUND FOUND A SECOND VANISHING USER GATE — §4h's (K5) LESSON, ONE INCREMENT LATER AND
+ONE STAGE OVER.** E6's grammar admitted **no `CallInst` at all**; *that* is what kept CQ's
+intrinsics out of `PredMuxFlatten`'s dead-sweep. The rail leaf made one, three `track()` sites put
+it in `MaybeDead`, and **`sweepDead` ERASED the user's `cq_theta_i1`**: `opt` **exit 0**, **0 bytes
+of stderr**, **no `cqrt_alloc_i1` and no `cqrt_ry_i1`** in the stream, where the oracle declined
+loudly. `opt -verify` clean; `free_pairing_check.py` `0 violation(s)` **because it is structurally
+blind to a rail that no longer exists**. ⚠ **`RegionFlatten.cpp:107` ALREADY CARRIED THE CONJUNCT
+AND THE RULING** (bd `3qlq.4` — *"never this stage's to erase, WHATEVER ITS USE COUNT"*) and nothing
+had carried it across. **A RULING WRITTEN IN ONE STAGE DOES NOT PROPAGATE TO ITS SIBLING BY BEING
+TRUE.** Fixed at the SINGLE eraser, not at the three trackers.
 
-⚠ **`tools/show_pipeline.sh` NOW SAYS `STAGE 2 · DECLINED`.** It ran under `set -euo pipefail` with
-no failure banner, so a loud `DiagnosticInfoUnsupported` — the Prime Directive's whole mechanism —
-killed it after a full IR dump and left one bare `error:` line. It was reported as *"the script fails
-again"*, and **the decline itself went unexamined for days**. A gate whose failure mode is
-indistinguishable from a bug in the gate trains people to stop reading it.
+⚠ **TWO ROUNDS, AND BOTH EARNED THEIR BUDGET.** Round 1 **BLOCKED** (1 P1, 2 P2, 3 P3): besides the
+P1 it measured the fold's *"narrow by construction"* scope claim **FALSE** (`canonicalizePred` is a
+second producer, so a module with **no rail anywhere** flipped decline→accept — and the corpus was
+**structurally incapable** of showing it: of 2130 fixtures exactly ONE carries an `xor i1 …, true`
+feeding a `br`, and only on `CHECK:` lines), that the BoolAlg surface shipped unfixtured, and that
+every `CHECK-COUNT` was *"at least N"* — an injected **ninth** controlled copy **missed by all four
+prefixes**. Round 2 on the fixes: **CLEAR-WITH-ITEMS, 0 P1**, but it found the same P1 class **ONE
+ERASER OVER** (`RecursivelyDeleteTriviallyDeadInstructions`), filed as **bd `cfmv`** — capped at P2
+by two measurements (it needs a `memory(none)` attribute `CQ.h` cannot emit, and the ORACLE deletes
+the rail too for a compare-conditioned region), ⚠ **but "pre-existing" is true of the DEFECT and
+FALSE of its POPULATION**. It also caught **two comments in the same change contradicting each
+other**, and a `RAIL` prefix claiming *"read ONLY as a control"* while **missing an injected
+rotation on the user's own register** (the Rule-7 class).
+
+⚠ **PROTOCOL ITEM 5 MOVED IN THE ACCEPT DIRECTION, and the argument is a CONTROL, not an absence.**
+With a trailing `cq_theta(b,−0.5)` on the condition's own register the flat 4-variable form declines
+on the oracle and ACCEPTS here — and the already-shipped **TWO-variable** sibling accepts the
+identical program **on the ORACLE**, silently, with the same gate kinds and the **same `cqrt_ry_i1`
+count**. The class is pre-existing; this increment **adds customers to bd `s82e` / Q-R1-1**, and
+`entangle.py` flags it **identically on both binaries** — say that, never *"no findings"*.
+
+⚠ **STILL OPEN, and the owner's `example/grover/grover_oracle_uncompute.c` DOES NOT COMPILE YET**:
+increment 3 = the RAIL φ (⚠ measured: admitting `isCondRailPhiShape` at E6 is **not sufficient
+alone** — the downstream proves a rail φ through `preppedRailPhiRegionIdx`, so a **TAINTED**-prep φ
+accepts while a **CLASSICAL**-prep φ does not); increment 4 = E2; increment 5 = the proof-gated E4.
+Two instrument lessons worth carrying: **naming a FileCheck directive in PROSE creates one** (a
+backticked count token failed a fixture), and a re-validation harness that derives prefixes from
+comment lines instead of RUN lines **measures itself, not the fixtures** — caught by its own null
+control.
 
 ### 5. Open follow-ons, by bd id
 
@@ -1328,17 +1348,22 @@ first `return`, the old loop expression-for-expression), which is what makes eve
 ACCEPT-direction one. The `52og` half — a **rolled Grover phase kickback on a bool-controlled prep** —
 is pinned rolled-vs-unrolled byte-identical and K-independent (44 lowered lines at K=3 and at K=1000).
 
-⚠ **bd `fn1q` is OPEN and its recorded bisection is WRONG** — §4h has the three
-falsified claims and the FOUR fences the owner's program actually sits behind.
-Increment 1 (the value arm's CLASSICAL CONE) landed 2026-09-22; **F1 `MergePhiPeel`
-P9, F2 `walkValueChain`'s empty-chain classical accumulator and F4 clause (c3)
-remain**, and P9 in particular is a DELIBERATE deferral carrying a written
-`BreakRegions` dangling-φ obligation, so retiring it is an increment with its own
-rounds. **NEW and open from that landing:** bd `s9xi` (⚠ **the exhibit that says
-this family is not about loops, arrays or memory**: a flat, loop-free,
-ALL-CONSTANT, FOUR-variable value arm declines `control flow` while its
-two-variable sibling accepts at 69 lines — `MergePhiPeel` peels every φ and leaves
-an EMPTY tainted diamond nothing claims), bd `vyne` (the if/else TWO-CONE shape is
+⚠ **bd `fn1q` is OPEN, and BOTH of its recorded fence maps are WRONG** — the bead's
+own (§4h) and §4h's correction of it (§4i). ⚠ **`MergePhiPeel` P9 is NOT a wall for
+the owner's program and must not be worked on as one**: removing it changes nothing,
+measured, and the peel cannot fix the shape at all (both merge φ are ARM-DEFINED and
+`phiPeelable`'s contract forbids hoisting one out). Likewise `walkValueChain`'s
+empty-chain accumulator and clause (c3) are reached by OTHER probes, not by
+`owner.c`. **The real fences are `PredMuxFlatten`'s E2-cycle / E6-condtree / E4-gep**,
+and the owner ruled that route on 2026-09-23 (§4i). Increment 1 landed 2026-09-22,
+increment 2 (the E6 rail LEAF) on 2026-09-23; **increment 3 = the rail φ, 4 = E2,
+5 = the proof-gated E4 remain, and the owner's program does not compile yet.**
+⚠ bd `s9xi` is **CLOSED by increment 2**. **NEW and open:** bd `cfmv` (**P1** — a
+user's `cq_theta` rail ERASED by `simplifyFlattenResiduesInFunction`'s
+`RecursivelyDeleteTriviallyDeadInstructions`, the same vanishing-gate class one
+eraser past the one increment 2 guards; PRE-EXISTING and not reachable from `CQ.h`
+today, ⚠ but *"pre-existing" is true of the defect and FALSE of its population*).
+Also still open: bd `vyne` (the if/else TWO-CONE shape is
 twin-identical only at the GATE STREAM, and no fixture pins it — a coverage gap,
 not a known defect: the reviewer checked the hoist order directly and it is valid),
 bd `2uz1` (**Rule 14 debt**: the stray-op rule now has TWO spellings and they
@@ -1541,6 +1566,17 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
     -passes=cq-lowering -S ir-pass/test/lowering_basic.ll \
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
+
+**Counts, measured 2026-09-23 at the bd `fn1q` increment-2 close (`cq-opt`
+`a0e31e0316496f71a684…`, `libCQPass.so` `7920b44cc1ac809b8c51…`; re-measured, not copied).** ctest
+**474** · `^e2e-` **464** · `^e2e-slice-` **406** · `ls ir-pass/test/*.ll | wc -l` **2130** ·
+`ls tests/e2e/*.expected.log | wc -l` **408** · twin matrix **312** + **70** = **382** cells
+(unchanged — the increment adds no matrix cell). `lit ir-pass/test`: **2130 discovered, 2129
+passed, 1 XFAIL**. Corpus A/B over all 2130: **0 A→D · 4 D→A · 0 decline-string moves · 0 stream
+moves**, and **all four movers are the increment's own new accept fixtures**; null control **0 of
+2130**, run first. ⚠ The full `ctest -j6` figures for this landing are quoted **with their load**
+in the session `GATES.md` and were taken under heavy concurrent agent load throughout — not
+comparable with a quiet-box figure (Rule 19). Earlier chain follows.
 
 **Counts, measured 2026-09-22 at the bd `fn1q` increment-1 close (`cq-opt`
 `1b396ed08b01b8ecac7…`, `libCQPass.so` `f3a372fc275bcf15f2b…`; re-measured, not copied).** ctest

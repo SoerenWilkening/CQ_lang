@@ -3794,3 +3794,81 @@ a debt.**
 ⚠ **THREE `*_leak_control` FIXTURES MOVE BACK TO ACCEPTS AND THAT IS A FIX, NOT A RESTORATION** — see
 the corrected §5 paragraph below, which is the text most likely to be misread at the next landing.
 
+---
+
+## ARCHIVED 2026-09-23 — CLAUDE.md §4h, verbatim (the 2026-09-22 landing)
+
+Moved here, not deleted, when `CLAUDE.md` crossed 150 k at the bd `fn1q` increment-2
+landing. Every claim, measurement and retirement trigger below is as it stood; read it
+the way Rule 11 says to read any dated block. Per-increment record:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-22-orchestrator/`.
+
+### 4h. The 2026-09-22 landing — the value arm's CLASSICAL CONE, and a bead whose bisection was wrong in three places
+
+⚠ **THE FIRST THING TO CARRY IS NOT THE INCREMENT, IT IS THAT bd `fn1q`'s RECORDED BISECTION IS
+FALSE AND WAS BUILT ON FOR A SESSION.** Re-measured on a clean-worktree rebuild of the binary the
+bead names — **bit-identical** to the recorded hash, so the disagreement is real: (1) its "Va — the
+array-valued THRESHOLD `if (Z >= z[i])` declines" is **FALSE**, it ACCEPTS at 120 lowered lines, so
+**there is no condition wall**; (2) its two decline strings are two fences reached by different
+variants, not one per axis; (3) its load-bearing proof — *"hand-unroll either and it COMPILES"* —
+**proves nothing**: `-O1` const-folds a LOCAL `int p[]={3,2,1}` at a now-constant index and
+if-converts the result, so the unrolled IR holds `select i1 %1, i32 4, i32 5` and **no value-arm
+branch at all**. Swap in a GLOBAL array at a runtime index and the **loop-free** form declines too.
+
+**THE AXIS IS `br` VS `select`, AND `-O1` PICKS IT** (bd memory
+[`value-arm-br-vs-select-axis-2026-09-22`]). Every accepting neighbour in the value family accepts
+because `-O1` if-converted the arm; every decline is `-O1` refusing to. It is **not loop-, array- or
+memory-specific**: a flat, loop-free, **all-constant, four-variable** arm declines `control flow`
+while its two-variable sibling accepts at 69 lines (bd `s9xi`). The owner's program sits behind
+**FOUR** fences — `MergePhiPeel` P9 (no in-loop peel), `walkValueChain`'s empty-chain classical
+accumulator (`:6193`), `valueArmIsPureChain`'s stray rule (`:6133`), and clause (c3) — not two.
+
+**WHAT LANDED (increment 1 of four): the value arm may hold its CLASSICAL CONE.** Five conjuncts at
+`valueArmIsPureChain` — (K1) untainted, (K2) no write/side effect, (K3) no use outside the arm,
+(K4) `isSafeToSpeculativelyExecute`, (K5) not a call the lowering owns — RECORDED on the region and
+hoisted by `emitValueRegion` ahead of the chain. ⚠ **The load-hoist argument is about PLACEMENT, not
+purity, and it is by CONSTRUCTION**: the only instructions between the hoist point and a hoisted
+load's old position are the `br`, the arm's other cone members ((K2): no writes) and its chain links
+(`BinaryOperator`s only) — **if either fact changes, rebuild the argument, do not re-quote it.**
+
+⚠ **(K5) EXISTS BECAUSE A REVIEWER MEASURED THE HOLE THE OTHER FOUR LEFT.** Before the increment,
+CQ's own front-end calls were kept out of a value arm **STRUCTURALLY** — any non-chain arm op
+declined — so no predicate named them; four conjuncts replaced that structure and none did. A
+`declare void @cq_phi(double) speculatable memory(none) nounwind willreturn` then passed all four,
+was HOISTED into the pred where it is uncontrolled, and `deleteGlobalPhases` **DELETED** it: `opt`
+exit 0, **no `cqrt_rz_i1` in the stream**, a vanishing user gate (Rule 5). Same for `cq_measure` and
+the invert brackets. **(K5) asks the question it means** — *does a CQ stage OWN this call?*, answered
+by *declared external vs `@llvm.*` intrinsic*, **never by a name prefix** — which is the bd `11qv`
+round-4 (P4) lesson verbatim. **The standing lesson: when you replace a STRUCTURAL containment with
+a set of predicates, enumerate what the structure was holding.**
+
+⚠ **THE INCREMENT OWED THE L1 QUESTION ABOUT ITSELF, AND ITS OWN RECORD'S "NOT REACHABLE" WAS WRONG.**
+(K1) is asked at ROUND-1 taint; `repropagateControlMerges` can taint a cone member that reads a
+6.5/4.5 merge φ, leaving a region already hoisted, merged and FLATTENED on a Q+C premise while
+`lowerOps` sees **Q+Q** — a shape `classifyArms` DEFERS by design. Fenced by
+`declineRound2TaintedArmCone`, the **FOURTH re-ask** in the post-fixpoint slot, in BOTH entry points.
+The implementer wrote *"reachability is NOT claimed, no probe produced it"*; **Rule-13 round 1 built
+it**, and the transferable part is *why it was missed*: the probe needs a **BLOCK BETWEEN** the 6.5
+merge and the value region's branch, or the pair declines earlier at bd `35t0`'s precedence check —
+**a probe that reaches the wrong fence first measures the wrong fence.** Corrected at BOTH sites in
+the same change (L7).
+
+⚠ **AND IT FALSIFIED A MEASURED CLAIM ELSEWHERE THAT ITS OWN TRIGGER DEMANDED BE RE-PROVED.**
+`SwapRouteEmit.cpp`'s cross-region select pre-flight argued that an `AngleSelectRegion`'s select can
+never sit in an erased arm because *"a `select` cannot satisfy `valueArmIsPureChain`"*. A `select` now
+CAN. Re-proved by construction rather than re-worded: the hazard is closed by **(K5)** when the
+angle's consumer is inside the arm and by **(K3)** when it is outside, measured on both binaries.
+
+**Measured at the close** (ORACLE `3368af12…` vs SUBJECT `1b396ed0…`, all **2121** fixtures):
+**0 A→D · 1 D→A · 1 decline-string move · 0 stream moves** — both movers are the increment's own new
+fixtures, and the string mover DECLINES on both. Null control **0 of 2121**, run first; positive
+control 1. Twin identity asserted **mechanically** by a `diff` RUN line and mutation-validated.
+Protocol item 5: rolled, unrolled and flat with a trailing non-diagonal gate on the condition's
+register **all decline identically on both binaries** at the 2c wire fence. Rule-13 round 1
+`CLEAR-WITH-ITEMS`, **0 P1**, 2 P2 (both fixed at the source), 6 P3.
+
+⚠ **`tools/show_pipeline.sh` NOW SAYS `STAGE 2 · DECLINED`.** It ran under `set -euo pipefail` with
+no failure banner, so a loud `DiagnosticInfoUnsupported` — the Prime Directive's whole mechanism —
+killed it after a full IR dump and left one bare `error:` line. It was reported as *"the script fails
+again"*, and **the decline itself went unexamined for days**. A gate whose failure mode is
+indistinguishable from a bug in the gate trains people to stop reading it.
