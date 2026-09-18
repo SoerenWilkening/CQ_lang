@@ -1,0 +1,113 @@
+\labsessionheader{2026-09-21}{The composed accept surface, adjudicated instead of asserted}%
+  {PENDING}{c86f7833-769b-4bc3-ae64-6d72ca196fd5}%
+  {docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-21-orchestrator/}
+
+\subsection*{Goal}
+Discharge \bd{4jok}, which was a gate rather than a defect report. Two increments --- \bd{zujr}
+(shipped) and \bd{tu9q} P0+P3 (parked on a branch) --- each retire a different clause of one
+predicate, and neither retires the other's, so their \emph{conjunction} compiles programs that
+neither compiles alone. One of them is the program this project ships, plus one line. The previous
+session's independent reviewer exhibited that surface by construction and recorded that every
+instrument in the tree reports zero on it: no composition-only movers across 2109 fixtures, the
+382-cell twin matrix byte-identical, all end-to-end slices identical. The surface was reachable only
+from C sources nobody had committed. The question was whether those programs get a compiler or a
+fence.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{46def906} --- \bd{tu9q} P0+P3 merged and its composition adjudicated: six e2e slices
+        with goldens, three new lit fixtures, eight existing fixtures re-derived (four changing
+        verdict), two source comments corrected.
+  \item \commit{62b0b111} --- the merge into \texttt{main}.
+  \item \fpath{tools/labreport/seal_and_push.sh} --- \bd{6hy4}'s ordering fix, written as a script
+        rather than as a third erratum.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ \textbf{The increment's stated reason for being safe was the wrong reason.} Clause
+        (ii-d)'s comment claimed its own \texttt{loopExitDischargePoint} conjunct establishes the
+        placement licence. In a nest that is false: the clause asks the predicate of the loop it is
+        marking, while the code that actually places the discharge asks it of the outermost enclosing
+        loop. The independent reviewer built the shape where those differ --- the grant is made, the
+        placement has nowhere to go, and the only thing left standing between that and a silent leak
+        is a postcondition in another file, which fires. Safety is real; the argument pointed at the
+        wrong member. Corrected at the source, with a fixture pair that is also the multi-exit test
+        \bd{tu9q}'s own record calls ``a prediction rather than a test''. On that shape the landing
+        is strictly \emph{stricter} than the compiler it replaces.
+  \item \fconfirmed\ \textbf{The clearance instrument was unsound, and nine boundary controls did not
+        catch it.} The trace checker written for this adjudication built its entanglement graph only
+        from arithmetic-template operands, so every permutation gate --- the gates from which every
+        merge rail in these programs is built --- produced no edge. It reported ``clean'' on all three
+        canonical violations of the no-cloning rule \emph{and} on a real compiled program about which
+        the compiler itself emits a warning. It had already reported clean on a real injected defect
+        earlier the same day and been fixed once. The reviewer rebuilt it edge-complete with eighteen
+        controls and re-established the clearance: 26 traces, one finding, and that one is a loop-free
+        program identical on both compilers carrying an already-ruled warning.
+  \item \fpreexisting\ A fixture retired by this landing was the only test in 2109 of a fence that
+        remains live. One added line to a copy of it restores the test on both compilers.
+  \item \foverdecline\ The surface was ten programs, not nine; the tenth had been recorded as
+        declining by the previous round on a different pair of binaries.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries              & 472    & \measured{ctest --test-dir build -N} \\
+ctest, primary tree        & 472/472 in 505.80\,s & \measured{ctest --test-dir build -j6} \\
+ctest, gated worktree      & 472/472 in 529.58\,s & \measured{ctest --test-dir build -j6} \\
+lit fixtures               & 2112 (2111 + 1 XFAIL) & \measured{lit ir-pass/test} \\
+corpus A/B, A$\rightarrow$D & 0 of 2109 & \measured{probes/corpus.py} \\
+corpus A/B, movers         & 8      & \measured{probes/corpus.py} \\
+e2e goldens                & 406    & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+Rule-13 round 5, P1 count  & 0      & \fpath{round5/REVIEW.md} \\
+\bottomrule\end{tabular}
+
+\medskip\noindent
+The nested multiplicity shape --- the hazard the retired clause's own comment demanded be re-derived
+before any widening --- emits one forward gate and one adjoint, in that order, before the
+interference. Lowered size is independent of the trip count (84, 103 and 111 lines at $K=3$, $64$ and
+$1000$).
+
+\subsection*{Verification run}
+Full \texttt{ctest -j6} was run twice on two trees and passed 472/472 both times; the binary built in
+the throwaway worktree and the binary rebuilt in the primary tree after the merge are bit-identical,
+as are the binaries either side of the two comment-only source corrections. A 2109-fixture A/B sweep
+ran with a null control (same binary against itself) and a positive control executed before the first
+real measurement. Every new golden was checked non-vacuous: the pre-landing compiler declines all six.
+
+\medskip\noindent
+Not run, and it matters: there is no simulator, so no claim here is a statement about a unitary that
+was executed. The independent round ran no suite and no lit by instruction, so that it could not
+perturb the binaries it measured --- which means no assertion line was executed inside it --- and it
+records that it had only two binaries and therefore cannot certify anything as composition-only.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{a945} --- a retirement trigger is now due: on this tree the closure it protects holds for
+        a different reason than the one its comment gives. Third instance of that shape in three
+        sessions.
+  \item \bd{46oo} --- a prior round's coverage claim is unevidenced: its probes passed a constant
+        argument, so the optimiser deleted the control flow they were built to exercise before the
+        compiler saw it.
+  \item \bd{11qv} residue, carried from last session --- the boolean carried handle compiles as an
+        accumulator and still declines as a condition. Owner question, and it must land with the
+        related leak work rather than before it.
+  \item Four of the five shipped examples do not compile against the current frontend; they use a
+        spelling retired a fortnight ago and nothing in the suite compiles them.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 013, header: the close hash is recorded as \texttt{286b53f7}, read from \texttt{HEAD} before
+\texttt{git pull --rebase} rewrote it during the closing push. That object is not reachable from
+\texttt{main}. The correct close hash is \texttt{4f752e06}; the sealing commit is \texttt{fd0d01b7}.
+Verified with \texttt{git merge-base --is-ancestor 286b53f7 main} (false) and the same check on
+\texttt{4f752e06} (true). Entry 013 is sealed and is not edited.
+
+\medskip\noindent
+This is the third consecutive entry to carry this erratum and the second time the entry carrying one
+has committed the same error itself. The cause is ordering, not care: the hash is read before the
+rebase that rewrites it, so no attention at the writing step can fix a value computed too early.
+Rather than write a third erratum alone, this session added \fpath{tools/labreport/seal_and_push.sh},
+which performs the steps in the only order that works and then verifies the recorded hash is an
+ancestor of \texttt{main}, failing loudly if it is not. Entry 014 was sealed with it.
