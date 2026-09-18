@@ -119,6 +119,36 @@
 ;  fixture-hygiene defect (b). Mirrored character-for-character with
 ;  `kMsgLoopLeakDephases` in `LoopLowering.cpp`.)
 ; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
+;
+; ⚠⚠ THE bd `bbu0` DEFER INSTRUMENT MOVED HERE ON 2026-09-21 (bd
+; `test_C_libtooling-4jok`), AND IT MOVED BECAUSE ITS PREVIOUS HOST STOPPED BEING
+; ONE.  It lived in `loop_leak_dephase_reject_region_derivedbase_live.ll`, which
+; bd `tu9q` P0+P3 converts to an ACCEPT — under the env gate that module now
+; exits 0, so the three-line ordering below had nowhere to be observed.  That
+; file's own header left the instruction and it is being followed verbatim:
+; *"`RUN`/`DEFER` block again then, to whichever module still declines at
+; `declineDephasingUnmarkedLoopRails`; do not silently drop it."*
+;
+; ⚠ WHY THIS FILE IS THE HOST.  It is the THIRD member of the `CLAUDE.md` §5 trio
+; and the only one bd `tu9q` does NOT move: its preheader rail is a `volatile`
+; immediate, so `mintsOutOfPlaceTemplateRail`'s forecast is followed by an M-C
+; IN-PLACE lowering and clause (ii-d) has no rail to place.  It therefore still
+; reaches `declineDephasingUnmarkedLoopRails`, which is the whole requirement.
+; MEASURED on `cq-opt` 3368af12…: exit 1, all three lines, in this order.
+;
+; WHAT THE INSTRUMENT PINS: with the env gate set, bd `bbu0`'s deferred verdict
+; speaks AFTER the `lyyf` warning and BEFORE the dephasing decline — one module,
+; one owner per diagnostic, in a fixed order.  Five other fixtures still decline
+; at that fence today (`loop_leak_dephase_reject_nested_{depth3_middle_rail,
+; iterlocal_inner,iic_inner,marked_inner}.ll`, `…_arm_minted_unmarked_control.ll`),
+; so if THIS file ever moves, re-home the block again rather than dropping it.
+;
+; RUN: env CQ_BBU0_DEFER_DEPHASE_FENCE=1 not %cq-opt -load-pass-plugin %cq-pass \
+; RUN:     -passes=cq-lowering -S %s 2>&1 | %filecheck %s --check-prefix=DEFER
+;
+; DEFER: cq rotation lowering: non-diagonal gate over a live derived record
+; DEFER: cq bbu0 instrument: dephasing decline DEFERRED past the warn stage
+; DEFER: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 
 
 source_filename = "p/z21_preadd_volatile_imm.c"

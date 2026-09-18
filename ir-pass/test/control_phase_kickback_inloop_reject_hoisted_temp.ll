@@ -51,6 +51,31 @@
 ; the reverse: before the fix its `UCNT` count was ZERO and every other directive
 ; in it still passed. One change, two shapes, opposite dispositions.
 ;
+;
+; ⚠⚠ RE-DERIVED 2026-09-21 — bd `test_C_libtooling-4jok`, WHEN bd `tu9q` P0+P3
+; LANDED.  The PER-TRIP `and` rail now gains an IN-BODY `_unc` + `cqrt_free`,
+; because the body is MARKED and `planInteriorComponent` §2.9 will place an
+; in-body `At` for it.  Three directives moved and each moved for that ONE
+; reason: the `CHECK-NEXT` chain (two lines now sit between the flag's
+; `icmp_eq_unc` and its `cqrt_free`), the pure-negative on
+; `@cq_template_and_i32_hl_unc` (which is now PRESENT and is the POINT), and the
+; `cqrt_free` census, 2 -> 3.
+;
+; ⚠ THE NEGATIVE IS NOT DELETED, IT IS INVERTED, AND THAT DISTINCTION IS THE
+; WHOLE RE-DERIVATION.  The old line asserted the per-trip chain does NOT
+; discharge — `CLAUDE.md` §5 calls that stream *"the ACCEPT was the defect"* and
+; says *"do not restore their old `CHECK` prefixes, which pinned the leaking
+; stream."*  Read literally that forbids the old prefix; it does not forbid a
+; POSITIVE prefix over the DISCHARGING stream, which is the opposite property.
+; Getting that backwards — deleting the line, or keeping it — is the single
+; easiest mistake at this landing and Rule-13 round 5 (F-5) says so in writing.
+;
+; ⚠ THE FREE CENSUS IS NOW 3 AND EACH ONE IS NAMED, because an EXTRA free is a
+; hidden measurement (Rule 6) and a census whose members are not named stops
+; being a census: (1) the per-trip condition FLAG `%h_cmp`, `cqrt_x`-bracketed
+; and returned by its `icmp_eq_unc`; (2) the per-trip `and` RAIL, returned by the
+; `and_i32_hl_unc` immediately above it — THE NEW ONE; (3) the HOISTED rail at
+; the loop EXIT, whose `EXITD` prefix pins it positionally.
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll
@@ -69,6 +94,8 @@
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 3.000000e-01), !cq.branchphase
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
 ; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
+; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[A]], i32 %[[P]], i32 %{{.*}})
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
 
 ; bd 3qlq, the FOURTH C-1 round, lens finding F-C1D-4: the Ry budget.
@@ -118,7 +145,6 @@
 ; WHOLE-FILE PURE-NEGATIVE, narrowed to the property that still holds: the
 ; PER-TRIP chain does not discharge, and no route/controlled/phase machinery
 ; appears anywhere.
-; NOROUTE-NOT: @cq_template_and_i32_hl_unc
 ; NOROUTE-NOT: @cqrt_cswap
 ; NOROUTE-NOT: _controlled
 ; NOROUTE-NOT: @cq_phi
@@ -147,7 +173,7 @@
 ; is still the line that catches an injected free — but a reader must not read
 ; `COUNT-2` as "two frees per trip". Re-derive it, do not relax it, if P0/P3 adds
 ; the per-trip chain's own pair.
-; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-COUNT-3: call void @cqrt_free(
 ; FCNT-NOT: call void @cqrt_free(
 
 

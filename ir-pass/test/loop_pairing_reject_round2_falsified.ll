@@ -46,13 +46,77 @@
 ; never marked there at all); on this branch it declines with the string below,
 ; which is only emitted when a round-1 grant was really made and really falsified.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
 ; ⚠ THE `not` INVERSION ON THE RUN LINE IS WHAT PINS THE DECLINE. A `DS_Error`
 ; decline writes 0 bytes to stdout, so an IR-text `CHECK-NOT` here would be VACUOUS
 ; (Rule 12 fixture-hygiene defect (b)); the property is the non-zero exit plus the
 ; character-for-character message below.
-; CHECK: cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+
+; ⚠⚠ CONVERTED DECLINE -> ACCEPT, 2026-09-21, bd `test_C_libtooling-4jok`, WHEN
+; bd `tu9q` P0+P3 LANDED.  READ THIS BLOCK FIRST; EVERYTHING BELOW IT IS KEPT
+; VERBATIM AND ITS CENTRAL ARGUMENT IS NOW HISTORY.
+;
+; THE OLD GROUND, verbatim from below: *"`%m2`'s forward gate is in the loop
+; PREHEADER and runs ONCE, while a marked body's discharge point runs K times …
+; leaving the grant standing is **K adjoints against ONE forward gate** — an
+; over-reversed rail, a wrong unitary, not a leak."*
+;
+; ⚠ THAT WAS TRUE OF A TREE WITHOUT P1 AND P2, AND IT IS THE POINT OF THE FILE
+; THAT IT WAS TRUE.  bd `tu9q`'s P1 (`multiplicityAgrees`) is exactly the missing
+; test the old header says `Uncomputation.cpp:982-1000` specifies, and P2
+; (`anchorForConsumer`'s loop-exit placement) is exactly the right point.
+; MEASURED on `cq-opt` 3368af12…:
+;
+;     entry:  %h_op = call i32 @cq_template_mul_i32_hl(i32 %out1, i32 2)    <- ONE mint
+;     loop:   … the per-trip `lshr` rail minted, `_unc`'d and freed each trip …
+;     out:    call void @cq_template_mul_i32_hl_unc(i32 %h_op, i32 %out1, i32 2)  <- ONE adjoint
+;             call void @cqrt_free(i32 %h_op)
+;
+; ONE forward, ONE adjoint, in the loop's unique EXIT block.  Stage 2b:
+; `4 template rail mint(s) of which 0 left dirty`.  The predicted over-reversal
+; does not occur, so the decline had to go.
+;
+; ⚠⚠ BUT `declineRound2FalsifiedRailGrants` DID NOT GO, AND THIS FILE WAS ITS ONLY
+; PIN IN 2109 FIXTURES.  It is still called at BOTH entry points
+; (`CQLoweringPass.cpp:829` / `:1313`).  The old header names a SECOND job that
+; this accept destroys — *"AND IT PROVES THE WINDOW IS REACHABLE.  A fence written
+; for an L1 window nobody can construct is a prediction, not a test
+; (`CLAUDE.md` L10)"* — and an L1 cure is the class this project keeps losing to.
+; **THE REPLACEMENT IS `loop_pairing_reject_round2_falsified_postloop_read.ll`**,
+; which is this module plus one post-loop read of `%m2` (so (ii-d)'s
+; `allUsersInside` conjunct is false, the root is refused, and the grant stays
+; falsified).  It fires character-for-character on BOTH binaries.  **Do not delete
+; that file while this one is an accept**; independently constructed and measured
+; by the orchestrator and by Rule-13 round 5 (F-4), which is why it is one file
+; and not two.
+;
+; ⚠ THE SIBLING CONTROL IS UNCHANGED and still matters: the old header pairs this
+; with `trackT/probes/adv/l1_round2_grow_65arm.ll` (*"one file pins the refusal
+; and the other pins that the refusal is not indiscriminate"*).  That module
+; ACCEPTS at exit 0 on both binaries, as it did before.  The pair is now
+; replacement-file / sibling rather than this-file / sibling.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.r0.ll
+; RUN: %filecheck %s --check-prefix=MINT < %t.r0.ll
+; RUN: %filecheck %s --check-prefix=EXITD < %t.r0.ll
+; RUN: %filecheck %s --check-prefix=MCNT < %t.r0.ll
+;
+; THE MINT IS OUTSIDE THE LOOP — in `entry`, immediately after the merge that
+; produces its operand, and nothing in the loop re-mints it:
+; MINT: %[[P:.*]] = call i32 @cq_template_mul_i32_hl(i32 %[[O:.*]], i32 2)
+;
+; THE ADJOINT IS IN THE LOOP-EXIT BLOCK, once, paired with its free.  This is P2's
+; placement and it is the ONLY thing that makes the accept defensible:
+; EXITD: call void @cq_template_mul_i32_hl_unc(
+; EXITD-NEXT: call void @cqrt_free(
+;
+; THE MULTIPLICITY CENSUS, whole-file, its own prefix so nothing windows the
+; negative (Rule 12 fixture-hygiene (a)).  **A SECOND `mul` ADJOINT IS THE EXACT
+; WRONG UNITARY THIS FILE USED TO PREDICT**, so this line is the old header's
+; hazard turned into a live assertion rather than deleted with it:
+; MCNT-COUNT-1: call void @cq_template_mul_i32_hl_unc(
+; MCNT-NOT: call void @cq_template_mul_i32_hl_unc(
+;
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

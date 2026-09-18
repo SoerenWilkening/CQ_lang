@@ -4121,12 +4121,41 @@ bool invariantRegisterRootsImpl(Loop *L, TaintSet &taint, WidthDispatch &wd,
     //
     //        THE LICENCE IS **PLACEMENT**, AND IT LIVES IN ANOTHER FILE.
     //        `Uncomputation::anchorForConsumer` (piece P2) discharges such a rail
-    //        ONCE, at the loop's unique exit, and `multiplicityAgrees` (piece P1)
-    //        refuses every other pairing — including the preheader-gate /
-    //        in-body-`At` one this clause would otherwise open. Both halves are
-    //        REQUIRED. `loopExitDischargePoint` is the SAME predicate P2's anchor
-    //        walk calls (Rule 14, declared in `LoopPlan.h`): if there is no
-    //        once-per-mint point, there is no licence, and the root is refused.
+    //        ONCE, at a loop exit, and `multiplicityAgrees` (piece P1) refuses
+    //        every other pairing — including the preheader-gate / in-body-`At`
+    //        one this clause would otherwise open. Both halves are REQUIRED.
+    //
+    //        ⚠ **AND THE CONJUNCT BELOW IS A NECESSARY CONDITION, NOT THE
+    //        LICENCE. AN EARLIER WORDING HERE SAID IT WAS, AND IN A NEST THAT IS
+    //        FALSE** (bd `test_C_libtooling-4jok`, Rule-13 round 5 finding F-1,
+    //        2026-09-21). It read: *"`loopExitDischargePoint` is the SAME
+    //        predicate P2's anchor walk calls (Rule 14): if there is no
+    //        once-per-mint point, there is no licence, and the root is refused."*
+    //        It IS the same predicate — and it is asked of a DIFFERENT LOOP.
+    //        This clause asks it of `L`, the loop being MARKED.
+    //        `anchorForConsumer` asks it of `LOut`, the OUTERMOST loop enclosing
+    //        the CONSUMER that does not contain the mint
+    //        (`Uncomputation.cpp:369-381`). In a nest whose INNER loop has a
+    //        unique exit and whose OUTER loop does not, this clause GRANTS and
+    //        records an obligation while the anchor returns `nullptr` and has
+    //        nowhere to place the discharge. MEASURED:
+    //        `loop_pairing_reject_nest_multiexit_hoisted.ll` (grant made, anchor
+    //        abandons, the POSTCONDITION declines loudly) against
+    //        `loop_pairing_accept_nest_singleexit_hoisted.ll` (one conjunct of
+    //        difference — the OUTER loop's exit uniqueness, which this clause
+    //        never asks about — and the `_unc` lands at the outer exit BEFORE the
+    //        interference). ⚠ `CLAUDE.md` L2: this is the THIRD quantifier
+    //        mismatch in this increment and the file states the other two at both
+    //        their sites (`markedHeaderOf`'s innermost `LI.getLoopFor` against the
+    //        anchor's outermost `Loop::contains`, bd `emkg`); "which loop's exit"
+    //        was stated at neither. It is stated here now.
+    //
+    //        ⚠ **SO THE TOTAL ANSWER IS `declineUndischargedExitObligations`, AND
+    //        IT IS LOAD-BEARING RATHER THAN BELT-AND-BRACES.** Do NOT narrow,
+    //        move or drop it on the reading that "the clause already refuses" —
+    //        the clause cannot, because it cannot see which loop the anchor will
+    //        choose. The ledger's own header says the same thing from the other
+    //        end: *"no fence in THIS file can see that outcome."*
     //
     //        ⚠ **L3-MIRROR OBLIGATION, DISCHARGED IN WRITING BECAUSE THE CALLEE'S
     //        TRIGGER DEMANDS IT.** `mintsOutOfPlaceTemplateRail`'s header says:
@@ -7046,9 +7075,19 @@ void lowerLoops(Module &M, WidthDispatch &wd, TaintSet &taint) {
       // (I1) excludes from the M-B interior partition OUTRIGHT — so neither can
       // ever BE that preheader gate. A hoisted loop-invariant TEMPLATE rail
       // (`int p = q * 3;`) is exactly what (I1) admits and is exactly what clause
-      // (ii) refuses; it is UNCHANGED here and still leaks (still declines, under
-      // bd `s82e`). Widening clause (ii) to it needs the real multiplicity test
-      // `Uncomputation.cpp:982-1000` specifies, and is NOT part of this change.
+      // (ii) refuses.
+      // ⚠ **THE NEXT SENTENCE USED TO SAY IT IS "UNCHANGED HERE AND STILL LEAKS
+      // (still declines, under bd `s82e`)" AND THAT IS FALSE AS OF THIS COMMIT**
+      // (bd `test_C_libtooling-4jok`, Rule-13 round 5 finding F-6). Clause
+      // **(ii-d)**, ~2800 lines up in this same file, IS that widening: it admits
+      // the hoisted template rail as a Root, licensed by PLACEMENT (P2's anchor)
+      // and made total by `declineUndischargedExitObligations`. The old sentence
+      // also called for "the real multiplicity test `Uncomputation.cpp:982-1000`
+      // specifies" — that test is `multiplicityAgrees` (P1) and it is built.
+      // Corrected AT THE SOURCE in the landing commit rather than in a record,
+      // because `CLAUDE.md` L7's twist is that a correction which does not land in
+      // the source is not a correction: the same false clause was found three
+      // times in one session for exactly that reason.
       //
       // ⚠ L1 — this slot is ROUND-1 TAINT. `lowerLoops` runs before
       // `repropagateControlMerges` in BOTH entry points, so every clause asked

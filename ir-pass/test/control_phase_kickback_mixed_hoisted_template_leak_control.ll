@@ -114,14 +114,80 @@
 
 ; WHOLE-FILE PURE-NEGATIVE.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ;
 ; (a `DS_Error` decline writes 0 BYTES to stdout, so the property is pinned by the
 ;  `not` inversion on the RUN line plus this one message match — Rule 12
 ;  fixture-hygiene defect (b). Mirrored character-for-character with
 ;  `kMsgLoopLeakDephases` in `LoopLowering.cpp`.)
-; CHECK: cq loop lowering: rolled body leaks a rail entangled with a rotated register
 
+
+; ⚠⚠ CONVERTED DECLINE -> ACCEPT, 2026-09-21, bd `test_C_libtooling-4jok`, WHEN
+; bd `tu9q` P0+P3 LANDED.  READ THIS BLOCK BEFORE EVERYTHING BELOW IT, WHICH IS
+; KEPT VERBATIM AND IS NOW PARTLY HISTORY.
+;
+; ⚠ THIS FILE'S OWN L8 TRIGGER PREDICTED THIS EXACTLY, AND IT WAS RIGHT ABOUT THE
+; VERDICT AND ABOUT THE STREAM: *"when `tu9q` lands this becomes an ACCEPT again,
+; and the stream to re-derive is the HAND-UNROLLED twin's — `3/3`, not the `3/0`
+; this file used to pin.  … do NOT restore them verbatim, because they pinned the
+; LEAKING stream and that is the thing `tu9q` removes."*  Measured on `cq-opt`
+; 3368af12…: **3 forwards / 3 adjoints ROLLED**, matching the twin.  The old
+; prefixes are NOT restored.
+;
+; ⚠ AND THE DISTINCTION `CLAUDE.md` §5 DRAWS MUST NOT BE READ AS A BAN ON AN
+; ACCEPT PREFIX.  §5 says of this family *"the ACCEPT was the defect"* and *"do
+; not restore their old `CHECK` prefixes, which pinned the leaking stream."*  That
+; forbids the OLD prefixes, whose property was *the per-trip chain does not
+; discharge*.  The prefixes below pin the OPPOSITE property — that it DOES — over
+; a stream where every per-trip rail is `_unc`'d and freed in the body and the
+; hoisted rail is discharged at the loop EXIT **before** the trailing
+; `cqrt_ry`.  Rule-13 round 5 (F-5) flags getting this backwards as the single
+; easiest mistake at this landing.
+;
+; WHY THE ACCEPT IS SOUND, and it is a PLACEMENT argument, not a leak argument.
+; The old decline was correct for a tree without bd `tu9q`'s P1/P2: the per-bit
+; rails were which-path copies of the rotated register, left standing across the
+; trailing non-diagonal gate — Rule 8, a wrong unitary.  P1 (`multiplicityAgrees`)
+; and P2 (`anchorForConsumer`'s loop-exit placement) make the body markable, the
+; spine then places an in-body `At` per trip, and nothing entangled with the
+; register survives to the interference.
+;
+; ⚠ WHAT IS *NOT* CLAIMED HERE.  This is `opt` exit code, stage-2b rail identities
+; and an emitted trace — there is no simulator (Rule 2), and this project's own
+; history records every shipped Grover golden passing exactly this bar while being
+; the identity.  The independent clearance is Rule-13 round 5
+; (`session-2026-09-21-orchestrator/round5/REVIEW.md`, `CLEAR-WITH-ITEMS`, 0 P1),
+; which re-ran this family under an edge-complete entanglement checker after
+; finding the orchestrator's own instrument blind to permutation-gate edges.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.a0.ll
+; RUN: %filecheck %s < %t.a0.ll
+; RUN: %filecheck %s --check-prefix=EXITD < %t.a0.ll
+; RUN: %filecheck %s --check-prefix=UCNT < %t.a0.ll
+;
+; THE PER-TRIP CHAIN, DISCHARGED IN THE BODY.  Positional, because the property is
+; an ORDER: the `_unc` must sit between the rail's last reader and the next trip.
+; CHECK: %[[A:.*]] = call i32 @cq_template_and_i32_hl(i32 %h_op, i32 %{{.*}})
+; CHECK-NEXT: %[[F:.*]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[A]], i32 0)
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[F]], double 2.000000e-01), !cq.branchphase
+; CHECK-NEXT: call void @cqrt_x(i32 %[[F]])
+; CHECK-NEXT: call void @cq_template_icmp_eq_i32_hl_unc(i32 %[[F]], i32 %[[A]], i32 0)
+; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[A]], i32 %h_op, i32 %{{.*}})
+; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+;
+; THE HOISTED RAIL, DISCHARGED AT THE LOOP EXIT **BEFORE** THE INTERFERENCE.  This
+; ordering IS the Rule-8 claim and nothing else in the file states it:
+; EXITD: call void @cq_template_mul_i32_hl_unc(i32 %h_op, i32 %h, i32 3)
+; EXITD-NEXT: call void @cqrt_free(i32 %h_op)
+; EXITD-NEXT: call void @cqrt_ry_i32(i32 %h, double 9.000000e-01)
+;
+; THE ADJOINT CENSUS — exactly one per forward, whole-file, its own prefix so no
+; positive above it windows the negative (Rule 12 fixture-hygiene (a)).  A SECOND
+; `and` adjoint would be the over-reversed rail `railLocalQualifies`' multiplicity
+; trigger names; a ZERO would be the leak this file used to pin.
+; UCNT-COUNT-1: call void @cq_template_and_i32_hl_unc(
+; UCNT-NOT: call void @cq_template_and_i32_hl_unc(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

@@ -48,7 +48,32 @@
 ; here would be VACUOUS (Rule 12 hygiene (b)); the property is pinned by the
 ; `not` INVERSION on the RUN line plus the string below, mirrored
 ; character-for-character against `ir-pass/src`.
-; CHECK: error{{.*}}control flow inside a loop body under quantum control
+; ⚠⚠ THE OWNER OF THIS DECLINE CHANGED ON 2026-09-21 (bd
+; `test_C_libtooling-4jok`, when bd `tu9q` P0+P3 landed).  THE VERDICT DID NOT.
+; The module still declines — the safe direction, and the reason this is a
+; re-derivation and not a capability change — but the string moves from
+; `ControlDetect`'s `control flow inside a loop body under quantum control` to
+; clause (ii-d)'s POSTCONDITION.  `CLAUDE.md` L6: the conjuncts decide WHICH OWNER
+; SPEAKS, and a fixture that swaps a string without saying so stops describing its
+; own subject.
+;
+; WHY THE OWNER MOVED.  Clause (ii-d) now admits this module's hoisted rail as a
+; Root and records an exit-discharge obligation; `markIfRailLocal` marks the body,
+; so `ControlDetect` no longer refuses it on the in-loop scope fence and the module
+; runs on to `uncompute`, where the obligation is not met and
+; `declineUndischargedExitObligations` declines.  ⚠ The measurement the branch
+; recorded and that still holds: **with the postcondition removed this module
+; COMPILES**, so the postcondition is holding a verdict, not decorating a message.
+;
+; ⚠ WHAT THIS COSTS, stated rather than absorbed: the shape this file was built to
+; pin (bd `wx8g` F-W1-2, a bare-`_Bool` rail region on a loop-carried rotated
+; register granted by R7-loop clause (b')) is now guarded by a DIFFERENT fence than
+; the one it was written for.  The old string still has 28 other pins in the corpus,
+; so nothing is unpinned — but if the postcondition is ever narrowed, THIS module is
+; the one that silently becomes an accept, and that is what its L8 trigger below now
+; means.
+;
+; CHECK: error{{.*}}hoisted invariant rail admitted for in-loop discharge was not discharged
 ;
 ; ModuleID = 'docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/review_r1_probes/d3_invariant_read.c'
 source_filename = "docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackW/review_r1_probes/d3_invariant_read.c"
