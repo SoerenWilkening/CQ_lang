@@ -2100,7 +2100,14 @@ void collectCycleBlocks(Function &F, SmallPtrSetImpl<BasicBlock *> &OnCycle) {
 
 // Kahn topological order of the region subgraph (edges into Merge ignored).
 // Returns false on any anomaly (should be unreachable once E2/E3 hold).
+//
+// bd fn1q inc 3 — IDEMPOTENT (`R.Topo.clear()`), because E2's in-loop admission
+// calls it as its REGION-ACYCLICITY proof and the tail of `recoverRegion` calls
+// it again for the order itself. Rule 14: one spelling of "is this region a
+// DAG, and in what order", two callers — not a second hand-rolled walk. (It is
+// pure: `R.Topo` is per-candidate and every `leave` discards the whole `R`.)
 bool topoOrderRegion(PredMuxRegion &R) {
+  R.Topo.clear();
   DenseMap<BasicBlock *, unsigned> InDeg;
   for (BasicBlock *B : R.InRegion)
     InDeg.try_emplace(B, 0);
@@ -2123,6 +2130,151 @@ bool topoOrderRegion(PredMuxRegion &R) {
     }
   }
   return R.Topo.size() == R.InRegion.size();
+}
+
+// bd fn1q increment 3 — E2's IN-LOOP admission: is `R` an acyclic region lying
+// STRICTLY INSIDE one natural loop's body?
+//
+// ⚠ WHAT THE OLD STRUCTURE WAS HOLDING. The gate this replaces was the single
+// clause `for (B : R.InRegion) if (OnCycle.count(B)) leave("E2-cycle")`, and
+// increments 1 and 2 of this bead each paid for replacing a STRUCTURAL
+// containment with predicates without enumerating what the structure held (a
+// `cq_phi` hoisted and deleted; a `cq_theta_i1` swept and deleted). So, by
+// name, `OnCycle` was refusing FIVE distinct things:
+//
+//   (a) a region that CONTAINS a whole loop — entry outside it, an arm being
+//       the loop. `lowering_ctlz_idiom_guarded_no_preshift.ll` is that shape.
+//       Refused below because `L` is taken from `R.Entry`: an entry outside
+//       every loop gives `L == nullptr`.
+//   (b) a region containing the loop HEADER as a NON-ENTRY block — the header
+//       then has a reaching edge (the preheader's, or the latch's) that the
+//       flatten does not predicate. `E2-loopheader`.
+//       ⚠ THIS CLAUSE IS REACHED, AND THE FIRST VERSION OF THIS PARAGRAPH SAID
+//       IT WAS NOT. It claimed "no probe reaches this clause AS THE SOLE
+//       REFUSAL, and the argument says none can", on a single-latch construction
+//       that lands on (c). Rule-13 round 1 falsified it with a MULTI-LATCH loop
+//       (`control_predmux_reject_inloop_header_nonentry.ll`): entry `%A` is a
+//       non-header block, `%L1a`/`%L1b` branch back to the header `%H`, so `%H`
+//       enters the region as a NON-ENTRY block and this clause fires by name.
+//       ⚠ It is still not the SOLE refusal — with clause (b) deleted and the
+//       tree rebuilt, that module declines at `E2-regioncycle` instead and NO
+//       shipped fixture changes verdict (measured on a mutant binary). So the
+//       honest statement is: REACHED, FIRST-FIRING, and BACKSTOPPED — not
+//       unreachable, and not load-bearing. Keep it for the gate name; do not
+//       cite it as the thing that makes a header-in-region region safe.
+//       ⚠ THE ENTRY ITSELF MAY BE THE HEADER, and refusing that was this
+//       increment's own first draft — measured wrong on its own subject, where
+//       `-O1` puts the `cq_theta` and the `br` in the header block, so the
+//       shape this increment exists for IS a header-entry region. It is safe
+//       for the same reason every other entry is: the flatten appends to the
+//       entry's body and rewrites only its TERMINATOR, so the header keeps its
+//       phis, its incoming edges and its position. What a header entry could
+//       additionally reach — a region that swallows the latch, hence the back
+//       edge — is refused by the acyclicity proof below (the back edge makes
+//       `InDeg[Entry] != 0`), and a header entry whose branch is the loop's own
+//       tainted EXIT is refused by (d) on the merge.
+//   (c) a region whose MERGE is a loop HEADER — then the entry->merge edge the
+//       flatten makes UNCONDITIONAL is a BACK EDGE, so a loop that exited
+//       through an arm would stop exiting. `E2-loopbackedge`.
+//   (d) a region that STRADDLES a loop boundary: a block in an inner loop, a
+//       block outside `L`, or a MERGE outside `L`. ⚠ The merge half is the one
+//       that matters most — it is how a TAINTED LOOP-EXIT branch presents
+//       (the exit target is outside `L`), and flattening one would delete a
+//       quantum-bounded exit that `LoopLowering`'s Q1 decline exists to refuse,
+//       BEFORE Q1 ever runs. `E2-loopstraddle`. ⚠ MEASURED on BOTH halves,
+//       because this paragraph's first draft asserted the loop-exit half with
+//       no probe behind it and the first probe written for it never reached the
+//       clause at all (it left at `W-witness`):
+//       `control_predmux_reject_inloop_tainted_exit.ll` pins the merge half and
+//       `control_predmux_reject_inloop_inner_loop.ll` the block half.
+//   (e) an IRREDUCIBLE cycle, which `LoopInfo` does not model at all: one lying
+//       wholly inside `L` reports `L` for EVERY one of its blocks, so every
+//       `getLoopFor` test above PASSES on it and only an acyclicity proof sees
+//       it. Reachable and pinned by TWO fixtures that are not the same shape:
+//       `control_predmux_reject_inloop_irreducible.ll` (cycle entered from
+//       outside the region) and `…_reject_inloop_irreducible_inregion.ll` (BOTH
+//       entries in-region and every terminator tainted, so E3 and E6 are blind
+//       to it — the shape this clause actually exists for).
+//       ⚠ WHAT THE `topoOrderRegion` CALL HERE BUYS IS A GATE NAME, NOT A FENCE,
+//       and an earlier version of this paragraph said the opposite ("THE CLAUSE
+//       THAT MUST NOT BE DROPPED AS REDUNDANT") two lines above a sentence that
+//       said the right thing — two comments in one change contradicting each
+//       other, which is a defect this bead's Rule-13 rounds have now caught
+//       twice. MEASURED on a mutant with this call deleted: BOTH fixtures still
+//       decline, from the unconditional `return topoOrderRegion(R)` at the tail
+//       of `recoverRegion`. The call is here so the refusal is a NAMED gate a
+//       fixture can pin instead of a silent `return false`. That is a real but
+//       MODEST benefit — weigh it as that if you ever move this line.
+//
+// WHAT SURVIVES, and why it is the SAME transformation the acyclic path makes.
+// With this predicate true AND E3 (SESE) true, the region is entered only at
+// `R.Entry`, left only at `R.Merge`, and both lie in `L`'s body with no back
+// edge and no exit edge inside it (a back edge targets `H`, which is neither in
+// the region nor the merge, so E3-escape owns it; an exit edge targets a block
+// outside `L`, which E3-escape owns for the same reason). So the region runs
+// exactly once per trip and the flatten is the per-trip identity of the acyclic
+// case. ⚠ That is a STRUCTURAL argument about the region, not a claim about
+// what the loop layer downstream does with the result — the witness for that is
+// the `?:` twin, which `-O1` writes into exactly this post-flatten shape and
+// which the shipped select substrate already lowers (bd fn1q inc 3 records).
+//
+// ⚠⚠ READ THIS BEFORE YOU QUOTE ANY CLAUSE ABOVE AS A FENCE. Rule-13 round 2
+// deleted THE WHOLE CALL to this predicate (keeping only the `topoOrderRegion`
+// acyclicity proof) and swept all 2140 fixtures: **`A->D=0 D->A=0
+// decline-string-moves=0 stream-moves=0`**. Deleting clause (a) alone: the same
+// four zeros. Every module anyone has constructed that this predicate refuses is
+// ALSO refused, with the identical diagnostic, by `E3-mergepred`,
+// `E3-sideentry` or `E2-regioncycle`. Per-clause, measured on single-clause
+// mutants: (c)'s own fixture falls to `E3-mergepred`; (b)'s, (d)'s and both
+// irreducible fixtures fall to `E2-regioncycle` or `E3-sideentry`.
+//
+// So the (a)-(e) paragraphs above describe WHAT EACH CLAUSE IS ABOUT — the
+// hazard it is written to refuse — and NOT what is holding that hazard shut
+// today. In particular the sentences "(c) … a loop that exited through an arm
+// would stop exiting" and "(d) … flattening one would delete a quantum-bounded
+// exit that Q1 exists to refuse, BEFORE Q1 ever runs" are the RATIONALE, and on
+// every module in the tree the refusal is E3's or Kahn's. The three
+// `lowering_reject_loop_quantum_bound*` fixtures that (d) names by class decline
+// identically without (d).
+//
+// THE PREDICATE IS THEREFORE DEFENCE IN DEPTH, AND IT IS KEPT FOR TWO REASONS,
+// neither of which is "it is the fence": it fails CLOSED (an in-loop region it
+// cannot classify is left for an existing loud owner), and it gives each hazard
+// a NAMED gate a fixture can pin, where the backstops give one shared name.
+// ⚠ That is a MODEST benefit — weigh it as that, and do not let a green fixture
+// here be read as evidence that the clause it names is load-bearing. CLAUDE.md
+// L3 is the reason it is not deleted for being redundant: a closure table is
+// worth its most-missing row, and E3/Kahn are not written to answer this
+// question. ⚠ RETIREMENT TRIGGER: if E3's merge-pred or side-entry rule, or the
+// acyclicity proof, is ever relaxed, this predicate stops being redundant and
+// every clause above needs a real fixture — bd `e1gr`'s class exactly.
+bool regionStrictlyInsideLoopBody(const PredMuxRegion &R, LoopInfo &LInfo,
+                                  const char **Why) {
+  const Loop *L = LInfo.getLoopFor(R.Entry);
+  if (!L) {
+    *Why = "E2-cycle";  // (a) / (e): on a cycle that is no natural loop of E's
+    return false;
+  }
+  const BasicBlock *H = L->getHeader();
+  if (R.Merge == H) {
+    *Why = "E2-loopbackedge";  // (c)
+    return false;
+  }
+  if (LInfo.getLoopFor(R.Merge) != L) {
+    *Why = "E2-loopstraddle";  // (d) — incl. the tainted loop-EXIT branch
+    return false;
+  }
+  for (const BasicBlock *B : R.InRegion) {
+    if (B == H && B != R.Entry) {
+      *Why = "E2-loopheader";  // (b) — the header as a NON-ENTRY region block
+      return false;
+    }
+    if (LInfo.getLoopFor(B) != L) {
+      *Why = "E2-loopstraddle";  // (d) — an inner loop, or outside L
+      return false;
+    }
+  }
+  return true;
 }
 
 // bd 20xt.5 (d) — the merge for an entry `E` whose STANDARD post-dominator is
@@ -2251,8 +2403,31 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     // behaviour change is the virtual-root decline subset, where an
     // unreachable-poisoned region may now flatten (fully E-ladder-gated) — the
     // intended feature — or still leave. (The helper also runs on non-unreachable
-    // virtual roots — infinite loops, disjoint multi-ret — but E2 declines the
-    // former and `mergeIgnoringUnreachable` returns nullptr for the latter.)
+    // virtual roots — infinite loops, disjoint multi-ret — and
+    // `mergeIgnoringUnreachable` returns nullptr for the latter.)
+    // ⚠ CORRECTED (bd fn1q increment 3, Rule-13 round 1 F-2): this used to say
+    // "but E2 declines the former". It no longer does. In a function with NO
+    // reachable `ret` the post-dominator sets never receive an exit seed, so the
+    // "merge" this returns is an arbitrary block (measured `merge=arm`), and such
+    // a region now travels past E2 to `W-witness` or, when phis sit on every
+    // candidate merge, all the way to `E2-regioncycle`. MEASURED: four
+    // infinite-loop spellings decline. ⚠ AND A FIFTH ONE CLAIMS: Rule-13 round 2
+    // built `control_predmux_accept_noreturn_degenerate_merge.ll` — no reachable
+    // `ret` anywhere — where this path picks the merge by the degenerate
+    // first-discovered rule, the region is CLAIMED and flattened, and stage 2b is
+    // STRICT-clean. The sentence that stood here, "NOBODY HAS CONSTRUCTED ONE
+    // THAT CLAIMS", is retracted.
+    //
+    // IT IS SOUND, AND THE ARGUMENT DOES NOT DEPEND ON THE MERGE BEING THE REAL
+    // JOIN: whatever block the degenerate post-dominance names, E3 then requires
+    // successors ⊆ region ∪ {Mg}, every non-entry pred in region, and
+    // `preds(Mg)` ⊆ region, and the Kahn proof requires acyclicity — which
+    // together force a genuinely SESE acyclic region. The `select` spelling of
+    // that same program already compiles on the ORACLE with the same gate
+    // stream. ⚠ What is NOT established is the converse: nobody has tried to
+    // build a non-returning function where the arbitrary merge is not the real
+    // join AND E3 still passes. The SESE argument says it cannot exist; it has
+    // not been attacked.
     Mg = mergeIgnoringUnreachable(E);
     if (!Mg)
       return false;
@@ -2440,8 +2615,34 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
     //     (`isSpeculatableDataflow` is false for a `StoreInst`); `classifyAbortPark`
     //     additionally needs an `unreachable` arm, which leaves `preds(Mg) = {E}`
     //     so no 2-incoming merge phi exists at all, failing clause (a).
-    // Switch owners are unreachable from this `br` arm of the witness, and E2
-    // excludes every loop owner. So W7, like every other witness, claims only
+    // Switch owners are unreachable from this `br` arm of the witness.
+    // ⚠ CORRECTED (bd fn1q increment 3, Rule-13 round 1 F-1): this sentence used
+    // to continue "and E2 excludes every loop owner", which E2's in-loop
+    // admission FALSIFIES. The clause was load-bearing for the anti-overlap
+    // argument and it is now simply wrong — E2 admits a region lying strictly
+    // inside a loop body.
+    //
+    // ⚠ WHAT ACTUALLY HOLDS THE LINE IS **`W-witness`**, AND THE FIRST ATTEMPT
+    // AT THIS CORRECTION SAID **E4**, WHICH IS ALSO WRONG. Rule-13 round 2
+    // measured it: over every `*loop*` fixture that ACCEPTS and produces a
+    // PredMux leave, **100 leave at `W-witness` and 0 at E4**. The W witness
+    // claims only shapes today's detection DECLINES, so a shipped in-loop owner
+    // is never claimed in the first place and E4 is never consulted for it.
+    //
+    // E4 is the COUNTERFACTUAL fence, not the live one: on a mutant with the W
+    // witness bypassed, 8 of 10 sampled in-loop owners are then refused by
+    // `E4-dataflow` (they hold a `cq_phi`/`cq_theta` CALL in the arm) — but the
+    // 7.4 BREAK owners (`lowering_loop_break_{add,value}`) have no `cq_*` call in
+    // the arm at all and are refused by E2's own clause (d). So there is no
+    // single fence behind W; there are two, and neither is E4 alone.
+    //
+    // ⚠ RETIREMENT TRIGGER — AND IT POINTS AT W, NOT AT E4. The direction that
+    // actually matters is a **`W-witness` widening**: measured on that same
+    // mutant, bypassing W moves **35 fixtures DECLINE->ACCEPT and 11 emitted
+    // streams**. Anyone widening the claim witness must rebuild this anti-overlap
+    // argument from scratch rather than patch it. A future E4 widening, by
+    // itself, changes nothing here.
+    // So W7, like every other witness, claims only
     // shapes that decline today — with ONE deliberate exception recorded in
     // control_predmux_accept_straightthrough_value_arm.ll: the a8c0 VALUE-arm sibling
     // (`if (q != 0) q1 = q + 1` merged against the folded literal) was an
@@ -2698,10 +2899,27 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
   if (!ClaimAll && !Claim)
     return leave("W-witness");
 
-  // --- E2: acyclic, not in/around a loop ------------------------------------
+  // --- E2: acyclic; in-loop only STRICTLY INSIDE one loop body --------------
+  // bd fn1q increment 3. `OnCycle` still decides whether the question is even
+  // asked, so a region with no block on any cycle is byte-identical to today
+  // (the predicate is not consulted). See `regionStrictlyInsideLoopBody` above
+  // for the enumeration of what the old single clause was holding.
+  bool AnyOnCycle = false;
   for (BasicBlock *B : R.InRegion)
-    if (OnCycle.count(B))
-      return leave("E2-cycle");
+    if (OnCycle.count(B)) {
+      AnyOnCycle = true;
+      break;
+    }
+  if (AnyOnCycle) {
+    const char *Why = "E2-cycle";
+    if (!regionStrictlyInsideLoopBody(R, LInfo, &Why))
+      return leave(Why);
+    // (e): an irreducible cycle wholly inside `L` reports `L` for every block,
+    // so `LoopInfo` cannot see it. Kahn can. Asked HERE — not left to the tail
+    // call — so the refusal is a NAMED gate and not a silent `return false`.
+    if (!topoOrderRegion(R))
+      return leave("E2-regioncycle");
+  }
 
   // --- E3: single-entry / single-exit ---------------------------------------
   for (BasicBlock *B : R.InRegion) {

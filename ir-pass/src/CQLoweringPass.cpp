@@ -357,9 +357,17 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // their normal entry points (the 2qyz full-re-run lesson holds by
   // construction: the guards below simply run after the fixpoint). ACCEPT-
   // ONLY: an ineligible shape is left byte-untouched and falls through to the
-  // existing loud declines; regions with cq_* calls / stores / loads / loops
-  // are never claimed, so every shipped accept shape reaches its owner
-  // byte-identically. One region per iteration + a full re-propagate (the
+  // existing loud declines; regions with cq_* calls / stores / loads are never
+  // claimed, so every shipped accept shape reaches its owner byte-identically.
+  // ⚠ "/ loops" WAS IN THAT LIST AND IS NOW FALSE (bd fn1q increment 3): E2
+  // admits a region lying STRICTLY INSIDE one loop body. The conclusion is
+  // unchanged — corpus A/B over all ir-pass fixtures, 0 A->D and 0 stream moves
+  // — and the reason it is unchanged is the **claim witness**: measured, 100 of
+  // the accepting `*loop*` fixtures leave PredMux at `W-witness`, which claims
+  // only shapes today's detection declines. ⚠ Round 1's correction of this
+  // sentence said the reason was E4; round 2 measured 0 leaves at E4 and that
+  // claim is withdrawn. See the W7 block in `PredMuxFlatten.cpp` for the
+  // counterfactual fences and the retirement trigger. One region per iteration + a full re-propagate (the
   // lowerByRefInline fixpoint precedent) so each claim sees fresh
   // dominance/taint state and sequential siblings compose without any cached
   // block identity crossing an erasure (Rule 9).

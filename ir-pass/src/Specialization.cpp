@@ -502,7 +502,16 @@ void normalizeReturnMerge(Function &Clone) {
 // cq_theta/cq_phi), so a claimed diamond is ALWAYS a value/data-mux — never a
 // phase arm. After the fixpoint NO tainted control may survive: a surviving
 // tainted conditional `br` is an off-pattern shape PredMux declined to claim
-// (multi-exit — the I2 controlled-return shape; loop; compound) — LOUD-decline it
+// (multi-exit — the I2 controlled-return shape; compound; a loop shape E2 still
+// refuses — ⚠ since bd fn1q increment 3 "loop" is NOT a blanket member of this
+// list: E2 admits a region strictly inside one loop body, so with `claimAll=true`
+// (which bypasses the W witness) a clone body containing a loop now gets its
+// in-loop diamonds FLATTENED. The verdict is unchanged — the `Clone.size() != 1`
+// backstop below still declines any clone whose body does not collapse to one
+// block, and round 2 measured a clone hosting an in-loop diamond emitting a gate
+// stream BYTE-IDENTICAL to the oracle's, 103 calls — but the ENUMERATION was
+// wrong and is corrected here rather than in a record, per CLAUDE.md L7)
+// — LOUD-decline it
 // source-located (Prime Directive; never a partial clone). Returns true on a
 // clean flatten (or a body with no tainted control at all), false if control
 // survives (the caller declines + retargets to keep the site consistent).
@@ -554,7 +563,16 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // declined to claim — multi-exit (the I2 controlled-return shape), a loop
   // (classical OR tainted condition — the size check catches BOTH, where a
   // tainted-only conditional-br check would miss a classical loop), or a compound
-  // shape. LOUD-decline (Prime Directive; never a partial clone). Point at a
+  // shape. ⚠ THIS BACKSTOP IS WHY THE LOOP HALF IS STILL SOUND after bd fn1q
+  // increment 3 gave E2 an in-loop admission: PredMux may now flatten a diamond
+  // INSIDE a clone's loop, but the loop itself survives, so `Clone.size() != 1`
+  // still fires. It is the SIZE check that holds the line, not E2 (Rule-13 round
+  // 1 F-1). Round 2 DID probe it: a clone hosting an in-loop diamond emits a
+  // gate stream byte-identical to the oracle's (103 calls), and both
+  // `spec_reject_clone_loop.ll` and `lowering_ctlz_idiom_reject_callee_arg_taint.ll`
+  // still decline.
+  //
+  // LOUD-decline (Prime Directive; never a partial clone). Point at a
   // surviving conditional `br` for the best `!dbg`, else the entry terminator.
   if (Clone.size() != 1) {
     Instruction *Where = nullptr;

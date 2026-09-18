@@ -6444,6 +6444,61 @@ add_test(NAME e2e-slice-control-predmux-rail-leaf
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_predmux_rail_leaf.expected.log")
 
+# bd test_C_libtooling-fn1q increment 3 — PREDMUX E2's IN-LOOP ADMISSION. A
+# tainted-condition VALUE diamond lying strictly inside a bounded loop body.
+# Before this increment E2 refused any region with a block on a CFG cycle, so
+# the `br` spelling declined `control flow under quantum control` while the `?:`
+# spelling of the same program compiled. THE ONLY LAYER THAT LINKS: it proves
+# every emitted symbol resolves and signature-matches, and stage 2b (STRICT)
+# proves the rail pairing.
+#
+# ⚠ THE SLICE'S OWN BLIND SPOT, stated so nobody rediscovers it: it depends on
+# `clang -O1` REFUSING to if-convert a FOUR-variable arm (measured on this exact
+# program: two and three variables ARE if-converted). If a future -O1 if-converted
+# four, this test would keep PASSING while silently exercising the already-shipped
+# `select` path. control_predmux_accept_inloop_value_diamond.ll pins the `br`
+# shape directly and is what would still catch that.
+add_test(NAME e2e-slice-predmux-inloop-value-diamond
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond.expected.log")
+
+# The `?:` twin — the ALREADY-SHIPPED spelling, which compiles on the
+# PRE-INCREMENT ORACLE and reaches 4.4 `SelectMergeEmit` + bd `zujr` without
+# PredMux being consulted at all.
+add_test(NAME e2e-slice-predmux-inloop-value-diamond-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond_twin.expected.log")
+
+# THE TWIN GATE — "an ACCEPT, not a STREAM". `cmp` over committed goldens: no
+# clang, no opt, no plugin, milliseconds.
+#
+# ⚠ LINES 7..118, NOT 1..118, AND THE REASON IS NAMED SO IT CANNOT BECOME A
+# WILDCARD — ⚠ AND THE REASON FIRST WRITTEN HERE WAS WRONG (Rule-13 round 1 F-7).
+# It said the four `cqrt_alloc_i32(5)` seed mints "come out permuted". MEASURED:
+# lines 1..6 of the two goldens are BYTE-IDENTICAL WITH NO RENAME AT ALL. The
+# mint ORDER is the same; what `clang -O1` permutes is which variable each handle
+# goes on to carry, so only the later USES differ. The prologue is excluded
+# because the rename map would rewrite those six lines' own targets and make
+# identical rows differ — not because they disagree. Excluded BY LINE RANGE, so
+# nothing can hide in the skipped rows, and they are covered anyway by the two
+# slices' own golden comparisons. After the rename the remaining 112 lines are
+# BYTE-IDENTICAL.
+add_test(NAME e2e-predmux-inloop-value-diamond-twin-identical
+  COMMAND "${CMAKE_COMMAND}"
+    "-DA=${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond.expected.log"
+    "-DB=${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_inloop_value_diamond_twin.expected.log"
+    -DAFROM=7 -DATO=118 -DBFROM=7 -DBTO=118
+    "-DAREN=h4=hA;h3=hB;h2=hC;h1=hD" "-DBREN=h1=hA;h2=hB;h3=hC;h4=hD"
+    -P "${CMAKE_CURRENT_SOURCE_DIR}/compare_twin_half.cmake")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
