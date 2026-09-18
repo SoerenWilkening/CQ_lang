@@ -26,8 +26,25 @@ cd "$(git rev-parse --show-toplevel)"
 ENTRY="${1:?usage: seal_and_push.sh docs/labreport/sessions/NNN-YYYY-MM-DD-slug.tex}"
 [ -f "$ENTRY" ] || { echo "no such entry: $ENTRY" >&2; exit 2; }
 
-echo "==> 1/6  git pull --rebase   (hashes are final only after this)"
-git pull --rebase
+echo "==> 1/6  integrate upstream   (hashes are final only after this)"
+# ⚠ `git pull --rebase` FLATTENS MERGE COMMITS, AND IT DOES SO EVEN WHEN THERE IS
+# NOTHING TO PULL.  Found on this script's FIRST REAL USE (2026-09-21): the branch
+# carried a `--no-ff` merge, `origin/main` was 0 commits ahead, and the rebase
+# still tried to replay the merge's second parent as an ordinary commit and
+# stopped on a conflict that had already been resolved once.  A close procedure
+# that rewrites the history it is recording is worse than the defect it fixes.
+#
+# So: integrate ONLY if there is something to integrate, and preserve merge
+# topology when doing it.
+git fetch origin
+UPSTREAM=$(git rev-parse --abbrev-ref '@{upstream}' 2>/dev/null || echo "origin/$(git rev-parse --abbrev-ref HEAD)")
+BEHIND=$(git rev-list --count "HEAD..$UPSTREAM" 2>/dev/null || echo 0)
+if [ "$BEHIND" -eq 0 ]; then
+  echo "         nothing upstream ($UPSTREAM is not ahead) — no rebase, no rewrite"
+else
+  echo "         $BEHIND commit(s) upstream; rebasing WITH merge topology preserved"
+  git rebase --rebase-merges "$UPSTREAM"
+fi
 
 H=$(git rev-parse --short=8 HEAD)
 echo "==> 2/6  close hash = $H"
