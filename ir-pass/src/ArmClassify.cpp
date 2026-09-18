@@ -2338,16 +2338,134 @@ namespace {
 //     the next link; the merge-feeding link's only user the merge `φ` itself.
 // The base handle the chain bottoms at is NOT in `ArmBB` (it is the live
 // routed register in the pred), so it is correctly never inspected here.
-bool valueArmIsPureChain(const BasicBlock *ArmBB,
-                         ArrayRef<Instruction *> ChainOps,
-                         const PHINode *MergePhi) {
+//
+// bd `test_C_libtooling-fn1q` INCREMENT 1 — THE CLASSICAL CONE IS NO LONGER A
+// STRAY. A non-chain arm instruction that is UNTAINTED, pure, non-escaping and
+// speculatable is the classical computation feeding a chain link's classical
+// operand (`if (c) p += (k*3+7)^5;` — `load @k`, `mul`, `add`, `xor`). It is
+// collected into `Cone` in BLOCK order and hoisted by `emitValueRegion` AHEAD of
+// the chain; anything else in the block is still a stray and still declines.
+//
+// ⚠ WHY THIS IS NOT A WIDENING OF THE STRAY RULE'S TWO HAZARDS. The rule above
+// exists because the emitter replays+erases only the chain while `RegionFlatten`
+// erases the arm BLOCK, so a stray is silently DROPPED (Rule 5) and its taint
+// work-list pointer dangles. A cone member is neither dropped nor dangling: it
+// is MOVED into the pred by the same hoist that moves the chain, before the
+// flatten, and it is UNTAINTED so no taint structure names it at all.
+//
+// ⚠ FOUR CONJUNCTS, AND EACH IS LOAD-BEARING FOR A DIFFERENT REASON:
+//   (K1) UNTAINTED. A tainted stray is a quantum value the chain does not
+//        thread — the Rule-3 wire-crossing and the original fan-out hazard.
+//        It ALSO makes the cone strictly independent of the chain: a classical
+//        op consuming a chain link would itself be tainted by forward
+//        propagation, so (K1) already implies "no cone member reads a chain
+//        link". The explicit operand test below is kept anyway, because that
+//        implication rests on the completeness of a DIFFERENT stage (L1: never
+//        let one stage's conclusion be another stage's unstated premise).
+//   (K2) NO WRITE, NO SIDE EFFECT. A `store` arm belongs to the 7.5 guarded-
+//        store owner and must keep declining here, exactly as before; and it is
+//        what makes (K4)'s memory argument true.
+//   (K3) EVERY USER INSIDE THE ARM. ⚠ STATE THIS ONE PRECISELY, BECAUSE IT IS
+//        DEFENSIVE AND HAS NO FIXTURE (L7 — an unruled bound that reads as a
+//        live fence is how agent prose hardens into a ruling). For every shape
+//        `recoverRegion` admits, an arm block dominates NOTHING but itself: its
+//        sole successor is the merge, which it does not dominate, so a use
+//        outside the arm can only be a merge φ — and a SECOND merge φ is
+//        already refused by `soleMergePhi` before this helper is reached.
+//        (K3) is therefore believed UNREACHABLE on the shipped accept surface,
+//        and it was MEASURED as such at the increment's mutation matrix
+//        (deleting it moves nothing over the corpus). It is kept because the
+//        containment argument above rests on `recoverRegion`'s shape, which is
+//        a DIFFERENT stage's property — exactly the premise L1 says not to
+//        leave unstated. RETIREMENT TRIGGER: the day a value region admits an
+//        arm with more than one successor, or a merge with a second φ, (K3)
+//        becomes live and owes a fixture.
+//   (K5) ⚠ NO NON-INTRINSIC CALL — added by Rule-13 round 1 (F-1), which
+//        MEASURED the hole rather than arguing it. Before this increment the
+//        containment of CQ's own front-end calls in a value arm was STRUCTURAL:
+//        any non-chain arm op declined, so nobody had to name them. The four
+//        conjuncts above replace that structure and NONE of them names a `cq_*`
+//        call. Measured on a hand-written `.ll` whose `declare void @cq_phi(double)`
+//        carries `speculatable memory(none) nounwind willreturn`: (K1) passes
+//        (`cq_phi` takes no tainted operand and is not a taint source), (K2)
+//        passes, (K3) passes, (K4) passes — the branch phase is HOISTED into the
+//        pred, where it is uncontrolled, and `deleteGlobalPhases` then DELETES
+//        it. A vanishing user gate, which is the stray rule's own named hazard
+//        (Rule 5). The same held for `cq_measure` (whose taint stops at the sink,
+//        so (K1) cannot see it) and `__cq_invert_begin/_end`.
+//
+//        ⚠ ASK THE QUESTION YOU MEAN, NOT A NAME — the bd `11qv` round-4 (P4)
+//        lesson, which cost a P1 there for exactly this shape. The question is
+//        "does some CQ stage OWN this call?", and the answer that does not drift
+//        is: a call the lowering owns is a DECLARED external (`cq_theta`,
+//        `cq_phi`, `cq_measure`, `cq_invert_*`, and every family added later),
+//        while a legitimate classical cone call is an `@llvm.*` INTRINSIC — which
+//        is what `clang -O1` leaves for `abs`/`smax`/`fshl`/`ctlz`. A name-prefix
+//        test would have to be re-edited for every future family; this one does
+//        not. MEASURED COST: nothing in the corpus moves, and a user's
+//        `__attribute__((const))` helper already declined at (K4) (clang emits
+//        `nounwind willreturn memory(none)` and never `speculatable`).
+//
+//        ⚠ (K1) INDEPENDENTLY COVERS `cq_theta` and `cq_invert_*` (both consume
+//        or produce taint), so (K5) is the SOLE fence only for `cq_phi`,
+//        `cq_measure` and the invert BRACKETS. Say that precisely: two fences on
+//        two of the families and one on the other three is not "belt and braces
+//        everywhere".
+//   (K4) `isSafeToSpeculativelyExecute`. The hoist runs the op UNCONDITIONALLY,
+//        which is not a choice: the condition is QUANTUM, so the emitted circuit
+//        has no classical branch to hide behind. This is LLVM's own predicate —
+//        the SAME call `emitValueRegion`'s speculation-totality fence already
+//        makes on the chain (Rule 14: one spelling, asked in lockstep), in its
+//        NO-CONTEXT form in BOTH places so the two cannot disagree.
+//
+// ⚠ AND THE HAZARD `isSafeToSpeculativelyExecute` DOES **NOT** COVER, stated
+// here because it is the one a reader will look for: a hoisted LOAD is only
+// sound if nothing between the hoist point and the load's old position can
+// WRITE the location. That holds by CONSTRUCTION rather than by analysis — the
+// only instructions on that path are the region's `br`, the arm's other cone
+// members (K2: no writes) and its chain links (`walkValueChain` admits only
+// `BinaryOperator`s, which write nothing). If either of those two facts ever
+// changes, this argument must be rebuilt, not re-quoted.
+//
+// `Cone` is a REFERENCE, not an optional out-parameter: there is exactly one
+// caller and it always wants the cone, so a nullable spelling would carry a
+// branch nothing reaches. On a FALSE return the cone is CLEARED — a partially
+// filled vector from an arm this function rejected must never be readable as a
+// proven set, even though today's caller declines before looking.
+bool valueArmIsPureChain(BasicBlock *ArmBB, ArrayRef<Instruction *> ChainOps,
+                         const PHINode *MergePhi, TaintSet &Taint,
+                         SmallVectorImpl<Instruction *> &Cone) {
   SmallPtrSet<const Instruction *, 8> OnChain(ChainOps.begin(),
                                               ChainOps.end());
-  for (const Instruction &I : *ArmBB) {
+  auto Reject = [&]() {
+    Cone.clear();
+    return false;
+  };
+  for (Instruction &I : *ArmBB) {
     if (I.isTerminator())
       continue;
-    if (!OnChain.count(&I))
-      return false;  // a stray op / DAG sibling beside the chain.
+    if (OnChain.count(&I))
+      continue;
+    if (isa<PHINode>(&I))
+      return Reject();  // an arm-block φ is off-pattern for every value shape.
+    if (Taint.Tainted.count(&I))
+      return Reject();  // (K1)
+    if (I.mayWriteToMemory() || I.mayHaveSideEffects())
+      return Reject();  // (K2)
+    for (const User *U : I.users()) {
+      auto *UI = dyn_cast<Instruction>(U);
+      if (!UI || UI->getParent() != ArmBB)
+        return Reject();  // (K3)
+    }
+    for (const Value *Op : I.operands())
+      if (auto *OpI = dyn_cast<Instruction>(Op))
+        if (OnChain.count(OpI))
+          return Reject();  // (K1), asked directly — see the note above.
+    if (!isSafeToSpeculativelyExecute(&I))
+      return Reject();  // (K4)
+    if (isa<CallInst>(&I) && !isa<IntrinsicInst>(&I))
+      return Reject();  // (K5)
+    Cone.push_back(&I);  // BLOCK order ⇒ operand-before-user by construction.
   }
   for (size_t Idx = 0; Idx < ChainOps.size(); ++Idx) {
     const Instruction *I = ChainOps[Idx];
@@ -2355,7 +2473,7 @@ bool valueArmIsPureChain(const BasicBlock *ArmBB,
                                ? cast<User>(ChainOps[Idx + 1])
                                : cast<const User>(MergePhi);
     if (!I->hasOneUse() || *I->user_begin() != Expected)
-      return false;  // fan-out, or a link consumed out of chain order.
+      return Reject();  // fan-out, or a link consumed out of chain order.
   }
   return true;
 }
@@ -3621,6 +3739,45 @@ void markRailCondRead(TaintSet &Taint, Value *Rail, Instruction *FirstRead) {
 // today; for a MIXED tree the COMPARE leaves' wires are asked at round 1 only —
 // that is the compare half of the window, bd `test_C_libtooling-9pum`, and the
 // record's extension to compare seeds is where it closes.
+// bd `test_C_libtooling-fn1q` increment 1 — the hoisted value-arm cone, re-asked
+// at FINAL taint. See `TaintSet::ValueArmConeOps` for the hazard this closes and
+// why it is a checked property rather than an argued-empty residual.
+//
+// ⚠ IT GUARDS A REACHABLE HOLE. `control_swap_value_reject_arm_cone_round2_quantum.ll`
+// is the shape, built by Rule-13 round 1 after the increment's own record claimed
+// it could not be exhibited; the fence is backtrace-confirmed as the one that
+// fires on it.
+//
+// ⚠ WHAT IT WITNESSES AND WHAT IT DOES NOT. It witnesses exactly one thing: that
+// no instruction `emitValueRegion` hoisted as CLASSICAL is tainted once the
+// round-2 fixpoint has made the taint final. It does NOT witness that the hoist
+// was otherwise well-placed, that the cone was speculatable (that is (K4), asked
+// twice before the mutation) or that the region's merge is correct. A dead or
+// erased cone member is skipped rather than read — `lowerOps` and the spine may
+// legitimately have removed one by the time this runs, and a freed pointer is
+// not a finding.
+bool declineRound2TaintedArmCone(Module &M, TaintSet &Taint) {
+  if (Taint.ValueArmConeOps.empty())
+    return false;
+  for (Function &F : M) {
+    if (F.isDeclaration())
+      continue;
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        if (!Taint.ValueArmConeOps.count(&I))
+          continue;
+        if (!Taint.Tainted.count(&I))
+          continue;
+        // The anchor is the cone member itself: it is the instruction whose
+        // classicality the accept rested on, and it still carries the arm's
+        // `!dbg`, so the diagnostic points at the user's own expression.
+        diagnoseUnderControl(&I, "value arm classical operand became quantum");
+        return true;
+      }
+  }
+  return false;
+}
+
 bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
   if (Taint.RailCondReads.empty())
     return false;  // no rail was ever read as a control — every module until 1b.
@@ -6129,8 +6286,14 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
           return ArmDisposition::Declined;
         }
         // Rule 8 linearity + self-contained arm block (fan-out / stray op /
-        // DAG sibling — see valueArmIsPureChain).
-        if (!valueArmIsPureChain(ArmBB, Chain.Ops, MergePhi)) {
+        // DAG sibling — see valueArmIsPureChain). Since bd
+        // `test_C_libtooling-fn1q` increment 1 the helper ALSO collects the
+        // arm's CLASSICAL CONE, which `emitValueRegion` hoists ahead of the
+        // chain; the four conjuncts that make a cone member admissible are at
+        // the helper, which is the only place that proves them (L1 — the
+        // emitter must hoist exactly this set and re-derive nothing).
+        SmallVector<Instruction *, 4> ArmCone;
+        if (!valueArmIsPureChain(ArmBB, Chain.Ops, MergePhi, Taint, ArmCone)) {
           declineArm(declAnchor(Region), "impure value arm");
           return ArmDisposition::Declined;
         }
@@ -6156,9 +6319,11 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         if (ArmBB == Region.Arm) {
           Region.ClassArm = ArmClass::Value;
           Region.Shadow.assign(Chain.Ops.begin(), Chain.Ops.end());
+          Region.ShadowCone.assign(ArmCone.begin(), ArmCone.end());
         } else {
           Region.ClassArmFalse = ArmClass::Value;
           Region.ShadowFalse.assign(Chain.Ops.begin(), Chain.Ops.end());
+          Region.ShadowConeFalse.assign(ArmCone.begin(), ArmCone.end());
         }
         SawValueArm = true;
         continue;

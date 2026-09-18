@@ -281,6 +281,18 @@ void condCmpOperandSeeds(const llvm::CmpInst *Cmp, TaintSet &Taint,
 // argument and for why re-asking AFTER emission is sound.
 bool reverifyRailCondReads(llvm::Module &M, TaintSet &Taint);
 
+// bd `test_C_libtooling-fn1q` increment 1 — THE FOURTH RE-ASK IN THAT SLOT, and
+// it is about a HOIST rather than a read or a marking. `emitValueRegion` moved a
+// value arm's CLASSICAL cone into the pred on `classifyArms`' round-1 verdict
+// that every member is untainted (conjunct (K1)); this re-asks that verdict at
+// FINAL taint and declines LOUDLY if the round-2 re-seed from the 6.5/4.5 `%out`
+// rails has tainted one. Same placement rule as its three neighbours: AFTER the
+// round-2 fixpoint, BEFORE `lowerRotations`, in BOTH entry points.
+//
+// Returns true iff it declined. A no-op for every module with no hoisted cone —
+// which is every module that lowered before this increment.
+bool declineRound2TaintedArmCone(llvm::Module &M, TaintSet &Taint);
+
 // Whether a control/data `CmpInst`'s predicate has a lowering template — the
 // predicate axis of `compareInScope`, with the icmp/fcmp family derived from the
 // instruction. An out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,oge})

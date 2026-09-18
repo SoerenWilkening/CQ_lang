@@ -657,6 +657,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // cost of getting this wrong (two entangled which-path rails leaked per
   // activation, `opt` exit 0 and stage-2b clean).
   declineUnmarkedRolledIterLocal(M, taint);
+  // (bd `test_C_libtooling-fn1q` increment 1) THE FOURTH RE-ASK IN THIS SLOT, and
+  // it is about a HOIST. `emitValueRegion` moved a value arm's CLASSICAL cone
+  // into the pred on a ROUND-1 verdict that every member is untainted; the
+  // round-2 re-seed from the 6.5/4.5 `%out` rails can falsify that, which would
+  // leave a Q+Q chain link accepted under a Q+C premise — a shape `classifyArms`
+  // DEFERS by design. Same placement rule as its three neighbours: AFTER the
+  // fixpoint (nothing else makes the taint final), BEFORE `lowerRotations`.
+  declineRound2TaintedArmCone(M, taint);
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD §6.2 row P7, owner decision D2) —
   // DELETE every SURVIVING register-free `cq_phi`: an uncontrolled or
@@ -1239,6 +1247,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // cost of getting this wrong (two entangled which-path rails leaked per
   // activation, `opt` exit 0 and stage-2b clean).
   declineUnmarkedRolledIterLocal(M, taint);
+  // (bd `test_C_libtooling-fn1q` increment 1) THE FOURTH RE-ASK IN THIS SLOT, and
+  // it is about a HOIST. `emitValueRegion` moved a value arm's CLASSICAL cone
+  // into the pred on a ROUND-1 verdict that every member is untainted; the
+  // round-2 re-seed from the 6.5/4.5 `%out` rails can falsify that, which would
+  // leave a Q+Q chain link accepted under a Q+C premise — a shape `classifyArms`
+  // DEFERS by design. Same placement rule as its three neighbours: AFTER the
+  // fixpoint (nothing else makes the taint final), BEFORE `lowerRotations`.
+  declineRound2TaintedArmCone(M, taint);
   // bd test_C_libtooling-3qlq Inc 1 (P7) mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for why the ONLY
   // sound slot is AFTER `repropagateControlMerges` and not immediately after

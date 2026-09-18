@@ -227,6 +227,46 @@ struct TaintSet {
   // valid.
   llvm::SmallPtrSet<llvm::Instruction *, 4> StaleDeclined;
 
+  // bd `test_C_libtooling-fn1q` increment 1 — THE HOISTED VALUE-ARM CONE, as a
+  // ROUND-2 OBLIGATION rather than as bookkeeping. `emitValueRegion` records
+  // every classical cone instruction it moves into the pred;
+  // `declineRound2TaintedArmCone` re-asks after the fixpoint whether any of them
+  // has since become TAINTED, and declines loudly if one has.
+  //
+  // ⚠ WHY IT IS NEEDED, AND IT IS THE L1 PREDICATE SPECIES VERBATIM. The cone's
+  // admission conjunct (K1) — "classical" — is asked by `classifyArms` inside
+  // `detectControlRegions`, i.e. at ROUND-1 taint. `repropagateControlMerges`
+  // then re-seeds taint from the 6.5/4.5 merge `%out` rails, and a cone member
+  // that reads such a merge φ is UNTAINTED at round 1 and TAINTED after the
+  // fixpoint. In that window the region has already been classified, hoisted,
+  // merged and FLATTENED on the premise that its chain link was Q+C — while
+  // `lowerOps`, running at FINAL taint, would see a Q+Q link and mint the
+  // two-handle template. Q+Q in a value arm is a shape `classifyArms` DEFERS by
+  // design (`Chain.HasQQ` → `value-arm swap-route`), so round 1 would be
+  // shipping an unreviewed widening of exactly the class the Prime Directive
+  // refuses to widen silently.
+  //
+  // ⚠ RECORDED AT THE EMITTER, NOT AT THE CLASSIFIER, and that is deliberate: a
+  // region that is classified and then declined by a later fence never mutates
+  // anything, so it owes nothing. The hoist is the irreversible step.
+  //
+  // ⚠ IT IS REACHABLE, AND THE FIRST VERSION OF THIS PARAGRAPH SAID IT WAS NOT.
+  // Rule-13 round 1 (attack D) BUILT the shape the implementer's probes could not
+  // — `control_swap_value_reject_arm_cone_round2_quantum.ll` — and confirmed by
+  // backtrace that this fence is what fires. The probe's trick is a BLOCK BETWEEN
+  // the 6.5 merge and the value region's branch: without it the pair declines
+  // earlier at `lowerControlRegions`' `reorderable` precedence check (bd
+  // `test_C_libtooling-35t0`), which is the decline the implementer kept hitting
+  // and mistaking for "the shape does not occur". A probe that reaches the wrong
+  // fence first measures the wrong fence.
+  //
+  // So this is a fence in front of a real hole, not a defensive set walk — and
+  // the no-cone neighbours of that probe decline on both binaries, so it is not a
+  // fig leaf in front of an open hole of the same class. Read
+  // `declineRound2TaintedArmCone`'s own comment for what it does and does not
+  // witness.
+  llvm::SmallPtrSet<llvm::Instruction *, 4> ValueArmConeOps;
+
   // One-register merge-phi lift WITNESS (test_C_libtooling-2qyz). The lift
   // (`liftOneRegisterMergePhi`) RAUWs a proven pure-renaming merge phi to its
   // wire BASE and erases it — AFTER `declineStaleRecordOps` already ran — so a

@@ -6401,6 +6401,26 @@ add_test(NAME e2e-slice-4jok-bank-hoisted-carried
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_bank_hoisted_carried.expected.log")
 
+# bd test_C_libtooling-fn1q increment 1 — THE VALUE ARM'S CLASSICAL CONE, from C.
+# `if (q > 5) p += (k*3 + 7) ^ 5;` declined `impure value arm` before the
+# increment: the load/mul/add/xor computing the chain link's CLASSICAL operand were
+# stray ops. They are now proven classical, pure, non-escaping and speculatable,
+# recorded on the region and hoisted into the pred ahead of the chain — emitting NO
+# gate, which is why this trace is the pre-hoisted twin's exactly.
+#
+# ⚠ THIS SLICE IS THE ONLY C-LEVEL GATE ON THE INCREMENT. The IR pair
+# control_swap_value_accept_arm_cone{,_prehoisted_twin}.ll pins the stream
+# identity; this pins that clang -O1 still produces the shape at all (it SINKS the
+# classical computation into the arm — Rule 9 — and a future -O1 that stopped
+# would silently retire the increment's reachability from C).
+add_test(NAME e2e-slice-control-value-arm-cone
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_arm_cone.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_value_arm_cone.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

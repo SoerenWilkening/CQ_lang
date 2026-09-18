@@ -42,6 +42,8 @@
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 
+#include "llvm/Support/Signals.h"
+
 #include <optional>
 #include <string>
 
@@ -60,6 +62,21 @@ void diagnoseUnderControl(Instruction *Where, StringRef What) {
   if (::getenv("CQ_CTRL_DBG"))
     llvm::errs() << "CQ_CTRL_DBG: decline [" << What << "] at: " << *Where
                  << "\n";
+  // bd `test_C_libtooling-fn1q` — THE SITE LEVER, beside the bd `adia` value
+  // lever above. Env-gated and byte-neutral when unset.
+  //
+  // ⚠ IT EXISTS BECAUSE THE VALUE LEVER ALONE CANNOT ANSWER "WHICH FENCE FIRED".
+  // Several decline strings have MANY call sites — `control flow` has dozens,
+  // `value-arm swap-route` six — so `CQ_CTRL_DBG` naming the offending
+  // instruction still leaves the reader guessing which predicate refused it, and
+  // `LLVMContext::diagnose` EXITS on the first `DS_Error` (bd `br4a`), so the
+  // usual way to find out is one rebuild per hypothesis. Measured on the fn1q
+  // bisection: three probes that share two strings resolved to THREE DIFFERENT
+  // predicates, and the bead's recorded attribution for one of them was wrong.
+  // Read the frame below `diagnoseUnderControl`, then the symbol offset against
+  // the source.
+  if (::getenv("CQ_CTRL_BT"))
+    llvm::sys::PrintStackTrace(llvm::errs());
   Where->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
       *Where->getFunction(), Msg, Where->getDebugLoc()));
 }

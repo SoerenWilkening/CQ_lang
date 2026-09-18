@@ -369,6 +369,25 @@ struct ControlRegion {
   llvm::BasicBlock *ArmFalse = nullptr;
   llvm::SmallVector<llvm::Instruction *, 4> ShadowFalse;
 
+  // bd `test_C_libtooling-fn1q` increment 1 — THE ARM'S CLASSICAL CONE, in
+  // BLOCK order (so operand-before-user holds by construction), for `Arm` /
+  // `ArmFalse` respectively. These are the arm-block instructions that are NOT
+  // chain links: the pure, UNTAINTED computation feeding a chain link's
+  // classical operand (`if (c) p += (k*3+7)^5;` — the `load @k`, `mul`, `add`,
+  // `xor`). `emitValueRegion` hoists them into the pred AHEAD of the chain.
+  //
+  // ⚠ THIS IS A RECORD, NOT A HINT, AND THAT IS THE WHOLE POINT (standing
+  // lesson L1). `classifyArms` is the only place that PROVES a cone member is
+  // classical, side-effect-free, non-escaping and speculatable; the emitter
+  // must hoist exactly that proven set and re-derive nothing. A second spelling
+  // of "which arm ops may be hoisted" is the drbq Inc-3 (b') defect.
+  //
+  // EMPTY on every phase/rotation/prep arm and on a value arm whose chain is
+  // the arm's whole content — i.e. on every region that lowered before this
+  // increment, which is why the increment moves no shipped stream.
+  llvm::SmallVector<llvm::Instruction *, 4> ShadowCone;
+  llvm::SmallVector<llvm::Instruction *, 4> ShadowConeFalse;
+
   // ⚠ NOTHING POPULATES EITHER OF THESE, ANYWHERE — stated as a MEASURED FACT,
   // not a hedge (bd drbq Inc 2b; the same audit `InShadow` got in round 2).
   // `grep -rn "AnglePhi\|AngleConsumers" ir-pass/` finds this declaration, its

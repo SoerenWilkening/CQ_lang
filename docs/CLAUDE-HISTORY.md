@@ -3562,3 +3562,235 @@ one rolled-vs-unrolled probe with a trailing non-diagonal gate on every register
 half is now a pinned decline; **the loop-free unrolled twin still compiles the hazard and is under no gate**.
 L10's `m_none_pbitd` cell, on a registered pair. Twelve beads closed by measurement in Wave 0, 28 filed;
 five independent Rule-13 rounds, every loop round finding a P1 on round 1.
+
+
+---
+
+# APPENDED 2026-09-22 — `CLAUDE.md` §4e, VERBATIM
+
+Moved here when `CLAUDE.md` crossed 150 000 characters at the bd
+`test_C_libtooling-fn1q` increment-1 landing, under that file's own standing
+instruction: *"When a landing section ages out of this file's budget it is
+APPENDED THERE VERBATIM under a dated header and replaced here by a pointer that
+names what survives inline and why."* **Moved, never deleted.** Every
+cross-reference to §4e was repointed in the same change.
+
+Per-increment record of record:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-19-orchestrator/`.
+
+### 4e. The 2026-09-19 landing — the owner's ROLLED cascade compiles; the THIRD kind of loop-carried register
+
+`example/grover/grover_oracle_uncompute.c` **in its LOOP form** compiles as written — `int a`,
+`bool b0[3]`, three trips, no source change, no new `cq_*` function. On `cq-opt` `e7bbfd69…`: exit 0,
+**stderr 0 bytes**, **50 trace lines**, STRICT 2b `2 verified, 0 violation(s), 0 unproven`, and the
+lowered module is **K-INDEPENDENT** (75 lines at K=3 and at K=1000).
+
+**THE SHAPE IS A THIRD KIND AND THE TWO THE LOOP LAYER KNEW ARE THE TRAP.** After `-O1` the second
+`if` is a 4.4 DATA SELECT and `a` is a header φ `[ 5, %entry ], [ %out, %latch ]` — NOT **(b)/(b′)**
+(the latch incoming does not peel back to the φ: `SelectMergeEmit` mints a FRESH `%out` per
+activation) and NOT **(c)** the iteration-local rail. ⚠ `ControlDetect.cpp` already said so for the
+value arm — *"the loop-carried register is a different handle every trip"* — and **that sentence is
+this kind**. The runtime needs nothing (owner ruling 2026-09-17): a handle is an `i32` and a
+loop-carried `i32` under CLASSICAL loop control is classical data. The only thing missing was the
+TRIP-1 REGISTER, which `promoteLoopCarriedHandleSeeds` materialises as `cqrt_alloc_<W>(seed)` in the
+preheader — **the FLAT twin already does exactly that**, inside its trip-1 mux.
+
+**FOUR WALLS; THE PREVIOUS BRIEF NAMED TWO.** (c3) (bd `8h7d.11`) · X1 at `collapseRailPhisIn` (bd
+`ej5w`) · `declineUnmarkedRolledIterLocal` **conjunct 2**, a POSTCONDITION, which is why reading
+decline strings could not find it · `declineClassicalMuxes` (bd `832l`). The §3c clobber (bd `x5fp`)
+**never fires on this program**. Found with an env-gated peel instrument, because
+`LLVMContext::diagnose` EXITS on the first `DS_Error` and otherwise each wall costs a rebuild.
+
+**ONE PREDICATE AT FOUR SLOTS (Rule 14)**, eight conjuncts, pure analysis; the promotion is the only
+mutation and the **only granter** of the mux accept, so a φ it refuses declines loudly one stage
+later. ⚠ **TWO SLOTS DEFER AND TWO GRANT, and the first wording said all four deferred** (Rule-13
+round 1, F-4): the X1 pair defers; **(c3) and the marking pair GRANT** — the first lets the REGION
+through, the second hands the SPINE its in-body discharge permission. Residual escapes from the
+backstop: a `use_empty()` φ and `liftOneRegisterMergePhi` on a header φ. ⚠ **Two of the eight
+conjuncts exist ONLY to protect a DIAGNOSTIC** and both were found by probe: without (Z6) the `i32`
+accumulator lost `kMsgCrossIter`, without (Z8) the guarded loop reported about the EXIT φ. Both are
+declines either way — **the conjuncts decide WHICH OWNER SPEAKS** (L6). ⚠ (Z1)'s first comment claimed
+a rotated loop *has no preheader*; **false** (`-O1` emits one with a single successor) — (Z8) handles
+the guard.
+
+⚠ **ONE WIDENING IS NOT GATED ON THE PREDICATE**: `railLocalQualifies`' **(L3)** now exempts a store
+parking a rail in a proven `!cq.railbank` alloca with an UNTAINTED pointer, without which **no banked
+loop could ever be marked**. Witness: `e2e-slice-loop-bank-derived-cond` vs its twin on a DERIVED
+per-trip condition — **goldens BYTE-IDENTICAL at 36 lines**, where the ORACLE declined the rolled
+half, so it **closes a leak the decline was hiding**. Its ground is `isInteriorTerminalHandle`'s
+**(I3)+(I1)**, NOT `railStoredToRailBank` (that guards the TERMINAL partition; the marking unlocks the
+INTERIOR one — F-1, true conclusion, wrong ground, L7's shape). The tainted-INDEX half is untouched.
+
+**50 LINES AGAINST THE TWIN'S 45, AND BYTE-IDENTITY IS AN INSTRUMENT HERE, NOT THE TARGET** (owner
+ruling 2): `-O1` cannot fold the rolled form and folds the flat twin's trip-1 compare to TRUE and its
+trip-2 compare to `!b0[0]`. **TRIP 3 IS IDENTICAL GATE FOR GATE.** LEAK PARITY measured: **SIX
+undischarged rails in each form**, which is the claim conjunct 2 exists to protect.
+
+⚠ **ELEVEN MOVED FIXTURES EACH CARRIED AN L8 TRIGGER PREDICTING THIS INCREMENT, AND EVERY TRIGGER
+NAMED THE WRONG NEXT WALL** — each predicted a move to `kMsgCrossIter`; it is GONE. **A retirement
+trigger that names the NEXT wall is only ever a LOWER BOUND on how many are left.** All eleven were
+re-derived, none deleted, all validated non-vacuous against the ORACLE. **bd `8h7d.12` landed with
+it** (clause (c3) now says `iteration-local value read after the loop`, at both its sites; blast
+radius **ONE fixture in 2106**).
+
+**Measured at the close:** corpus A/B over 2106 fixtures — **15 movers, 12 D→A, 3 D→D with a moved
+string, ZERO A→D**; 9 twin-matrix cells (5 verdict flips, all accept-direction, one
+`UNROLLED-ONLY → ACCEPT-IDENTICAL`; 4 string-only). A conjunct mutant matrix is **1:1, MISSED 0**.
+Rule-13 round 1 `CLEAR-WITH-ITEMS`, **no P1, no P2, six P3s**, all addressed or filed — ⚠ **rounds 2
+and 3 of the bd's own ≥3-round budget are OWED** (`session-2026-09-19-orchestrator/REVIEW_R13.md`).
+
+
+
+---
+
+# APPENDED 2026-09-22 — `CLAUDE.md` §4f, VERBATIM
+
+Moved in the same change as §4e, for the same reason and under the same standing instruction.
+**Moved, never deleted.** Per-increment record:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-20-orchestrator/`.
+
+### 4f. The 2026-09-20 landing — the carried handle at every WIDTH and behind a runtime TRIP GUARD; and bd `zujr`'s round budget is MET
+
+**bd `11qv`** — clause (Z3) no longer gates the carried φ to `i32`. `promoteLoopCarriedHandleSeeds`
+RETYPES it (`mutateType(i32)` + the metadata scrub, the `RailBankPromote` idiom) and **records
+`taint.HandleWidth[φ] = Abi`**. ⚠ **THE RECORD IS THE SAFETY ARGUMENT AND `RailBankPromote`'s
+SPELLING OF THE SAME IDIOM ERASES WHERE THIS ONE MUST WRITE.** `logicalOperandWidth` consults that
+side-table BEFORE the LLVM type *precisely because* the type may be laundered to `i32`; with no
+entry, `qqSelectLeafWidth` recovers `i32` from `abiWidthFromType` and a Q+Q compare over two retyped
+`i16` φs mints `cq_template_icmp_<pred>_i32(h,h)` for two `i16` registers — verify-clean, links,
+runs, wrong, and exactly what `CompareLowering.cpp` refuses in writing (*"NEVER default empty ->
+i32"*). ⚠ **REACHABILITY IS NOT CLAIMED**: every Q+Q-under-control shape probed declines identically
+at both widths on both binaries, and the peel moved **0 of 2107**. It is DEFENSIVE and the source
+says so rather than claiming a fixed bug. Gate **(P4)** refuses to retype a φ whose users the
+lowering does not rewrite — a SKIP, so the module declines at `declineClassicalMuxes` instead of
+`opt` ABORTING at exit 134 (Rule 1: the answer to "unsure" is a loud decline, never a crash).
+
+Measured: the whole width axis (`_Bool`/`char`/`short`/`long long`) goes **D→A**, including the
+owner's own cascade at `short a` — 50 trace lines, STRICT 2b clean, the `i32` stream modulo the width
+token. ⚠ **The `_Bool` carried handle has TWO spellings and only one is this bead's**: `_Bool acc`
+updated under quantum control now lowers; `_Bool a` read as the region's own CONDITION still declines
+(`control flow under quantum control`, the bare-`i1` family, bd `r903`/`fg9k`/`boi6`).
+
+**bd `h1ip`** (owner ruling Q1: *hoist it and accept the dead alloc*) — the mint point for a GUARDED
+loop is the **guard's own terminator**, and every out-of-loop φ incoming carrying the SEED on the
+guard's edge is rewritten to that handle and recorded in `PromotedCarriedHandlePhis`. A zero-trip
+loop now allocates a register it never uses — the accepted cost — and on that path the exit φ NAMES
+it, which is **the right answer**: a loop that never runs leaves the variable at its seed. Measured
+on ONE binary at three trip counts: `n=0` → `cqrt_alloc_i32(7)` + `cqrt_measure_i32(h0)`; `n=1` → 14
+lines; `n=2` → the full per-trip chain twice, `h0→h3→h7`.
+
+⚠ **THE BEAD NAMED (Z8) AND (Z1) WAS IN FRONT OF IT, AND THAT FALSIFIES A CORRECTION IN §4e.** §4e
+records, as a Rule-13 round-1 fix, that clause (Z1)'s comment claiming a rotated loop *has no
+preheader* is **"false (`-O1` emits one with a single successor)"**. Measured 2026-09-20 on the C
+spelling of a runtime trip bound, `-O1` emits **NO PREHEADER AT ALL** — `br i1 %guard, label
+%header, label %exit` goes straight into the header — so `getLoopPreheader()` returns null and (Z1)
+refused before (Z8) was ever asked. **BOTH the original sentence and its correction are
+over-general**: `-O1` emits a preheader SOMETIMES, and a predicate may not depend on which. (Z1) is
+relaxed to a **SINGLE EXTERNAL ENTRY BLOCK**. ⚠ That relaxation moved **ZERO of 2107 fixtures**, so
+it is pinned by nothing the corpus had — `loop_carried_handle_accept_guarded_no_preheader.ll` holds
+the exact shape `-O1` produces. *A widening the corpus cannot see is a widening the corpus cannot
+defend.*
+
+**bd `h7ee` round 2 (R2-1)** also landed here as clause **(P0)**: a `use_empty()` header φ is not
+promoted. `declineClassicalMuxes` opens with its own `use_empty()` skip, so the promotion was the
+**LAST owner** for a dead φ and it MUTATED — a qubit and a trace line for a value nothing reads.
+A mutation-avoidance clause, not a fence; IR-level only (`-O1` deletes a dead φ).
+
+**Measured at the close** (ORACLE `e7bbfd69…` vs SUBJECT, all **2107** fixtures): **0 A→D · 2 D→A ·
+0 decline-string moves · 1 stream move**. Three peel-mutation matrices ((P4), (P0), the width record)
+at **0 movers, 0 crashes** each, with a **null-tag boundary control** at 0. Two fixtures re-derived
+per their own L8 triggers, which were character-for-character correct about the verdict **both
+times** — ⚠ and both beads still named the wrong NEXT wall, which is protocol item 2 holding for the
+third and fourth time.
+
+⚠ **THE ROUND BUDGET IS MET, AND THE FOURTH ROUND IS THE ONE TO READ.** bd `zujr` asked for ≥3
+Rule-13 rounds; rounds 2 and 3 ran on **bd `zujr` as shipped** (independent agents, neither wrote the
+code), both `CLEAR-WITH-ITEMS`, **0 P1** — as round 1 was. ⚠ **BUT ROUND 4, ON THIS SESSION'S OWN TWO
+INCREMENTS, RETURNED `FINDINGS`: ONE P1 AND TWO P2 OVER-ACCEPTS.** The P1 was **in the gate the
+increment added**, and it was the precise failure that gate's own comment claimed to prevent — `opt`
+ABORTING at exit 134, from plain C, where the ORACLE declined cleanly. **Read the two results
+together and do not average them**: three rounds found nothing in code that had already survived a
+round, and the first round on NEW code found a P1 on its first pass. That is the measured hit rate
+this project keeps rediscovering, not a refutation of it. ⚠ **Neither round ran a suite, by instruction**, so they
+could not perturb the binaries they measured, and round 3 ran no lit either — **no `FileCheck` line
+was executed in it**. Read each round's own "what I did not do".
+
+⚠ **ROUND 3 EXHIBITED THE COMPOSED ACCEPT SURFACE BY CONSTRUCTION** (bd `4jok`, now a GATE on the bd
+`tu9q` P0+P3 landing). Four binaries; **nine C programs decline on BASE, on the shipped MAIN and on
+TU9QONLY and compile ONLY on COMPOSED** — one is the owner's rolled cascade plus one line, and five
+decline today at the bd `s82e`/`6n1s` string. Both increments retire a **different** clause of
+`railLocalQualifies` and neither retires the other's. ⚠ **And the tree's three strongest instruments
+report ZERO on it**: the 2106-fixture 4-way corpus A/B finds 0 composition-only movers, the 382-cell
+twin matrix's verdict tables are BYTE-IDENTICAL, all 390 e2e slices agree. *Fifth consecutive
+session to file "a composition is not cleared by clearing its parts"; the first to show the surface
+rather than assert it.*
+
+
+
+---
+
+# APPENDED 2026-09-22 — `CLAUDE.md` §4g, VERBATIM
+
+Moved in the same change as §4e and §4f (the file crossed 150 000 characters again once §4h was
+written). ⚠ It is archived **one day after it landed**, which is early — and that is the protocol
+working as written: sections age out in order and are **moved, never cut**, because the alternative
+is trimming a paragraph and losing it. Per-increment record:
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-21-orchestrator/`.
+
+### 4g. The 2026-09-21 landing — bd `tu9q` P0+P3, and the first COMPOSED accept surface to be adjudicated instead of asserted
+
+bd `4jok` was a GATE, not a defect report: **ten C programs compile only when bd `zujr` and bd `tu9q`
+P0+P3 are BOTH present** — one of them the owner's rolled cascade plus one line — because the two
+increments retire a DIFFERENT clause of `railLocalQualifies` and neither retires the other's. ⚠ **And
+the tree's three strongest instruments reported ZERO on it**: 0 composition-only movers over 2109
+fixtures, twin-matrix verdict tables byte-identical at 382 cells, all e2e slices identical. The
+surface was reachable only from C sources nobody had committed. **Six are committed now.**
+
+**Owner ruling Q1: *adjudicate, then land if clear*** — the evidence decides, not the disposition.
+Rule-13 round 5 (independent, wrote neither increment): **`CLEAR-WITH-ITEMS`, 0 P1**, 1 P2, 6 P3.
+Landed at `62b0b111`; full `ctest -j6` **472/472 in 529.58 s**, lit **2112 (2111 + 1 XFAIL)**, corpus
+A/B over 2109 fixtures **0 A→D** with the branch's declared 8 movers and a null control run first.
+
+**⚠ THE MULTIPLICITY TRIGGER WAS RE-DERIVED, NOT QUOTED.** `railLocalQualifies`' final clause had
+demanded, in writing, *"Re-derive the multiplicity there first … no shipped test would go red."*
+Measured on the NESTED shape (hoisted rail outside BOTH loops, read by the INNER, OUTER runs K): **ONE
+mint, ONE adjoint, before the interference** — `anchorForConsumer` walks to the OUTERMOST exit.
+
+**⚠ THE P2 IS THE PART TO READ, AND IT IS L7's SHAPE ONE BEAD OVER FROM bd `xt20`.** Clause (ii-d)'s
+comment claimed its own conjunct establishes the placement licence — *"if there is no once-per-mint
+point, there is no licence, and the root is refused."* **In a NEST that is false**: the clause asks
+`loopExitDischargePoint(L)` of the loop it MARKS, the anchor asks it of `LOut`, the OUTERMOST loop
+enclosing the consumer. Same predicate (Rule 14 satisfied), **different loop** (L2 not). In the shape
+where they differ the root IS granted and the anchor has nowhere to place the discharge; the only
+member left is `declineUndischargedExitObligations`, and it fires. **Safety is real; the stated reason
+was wrong.** The THIRD quantifier mismatch in that increment and the only one stated at neither site —
+corrected at the source, with the pinned pair `loop_pairing_{reject_nest_multiexit,accept_nest_singleexit}_hoisted.ll`,
+which is also the multi-exit fixture bd `tu9q`'s own record calls *"a PREDICTION rather than a test"*.
+⚠ On that shape the landing is strictly **STRICTER**: the pre-landing compiler accepts it with the
+rail live across the trailing `cqrt_ry` under the ruled `lyyf` warning.
+
+**⚠ AND THE INSTRUMENT THE ORCHESTRATOR CLEARED IT WITH WAS UNSOUND — ITS OWN NINE BOUNDARY CONTROLS
+AND FOUR REAL-TRACE MUTANTS DID NOT REACH THE DEFECT.** `dephase.py` built ancestry only from
+`cq_template_*` mint operands, so every PERMUTATION gate (`cqrt_cnot`/`toffoli`/`cswap`/`copy_<W>_controlled`)
+created **no edge** — and those are how every value-merge rail in the subject programs is built. It
+reported OK on all three canonical Rule-8 violations **and on a real program the compiler itself warns
+about**. (It had already lied once in the same direction and been fixed: a guard permitting deliberate
+Rule-6 leaks also permitted *freed but never uncomputed*.) **The standing lesson is not "more
+controls": an instrument's blind spot is shaped like its author's model, so the cure is an instrument
+built by someone else** — the round's edge-complete `entangle.py` (18 controls) re-established the
+clearance at **26 composed traces, ONE Rule-8 finding, and that one is a loop-free program
+byte-identical on both binaries carrying the ruled warning**. `dephase.py` is kept, marked SUPERSEDED,
+with both misses in its header.
+
+**Two shipped fixtures were a fence's last pin and one of them was recoverable.**
+`loop_pairing_reject_round2_falsified.ll` — the **only** pin in 2109 fixtures of
+`declineRound2FalsifiedRailGrants`, which stays LIVE — goes DECLINE → exit 0, its predicted *"K
+adjoints against ONE forward gate"* refuted (one preheader mint, one loop-exit adjoint). ⚠ **The
+replacement was CONSTRUCTED rather than the cost merely reported**: one post-loop read of the rail
+falsifies (ii-d)'s `allUsersInside` conjunct and the fence fires character-for-character on BOTH
+binaries. **Check a retired fixture's accept conjuncts for one you can falsify cheaply before filing
+a debt.**
+
+⚠ **THREE `*_leak_control` FIXTURES MOVE BACK TO ACCEPTS AND THAT IS A FIX, NOT A RESTORATION** — see
+the corrected §5 paragraph below, which is the text most likely to be misread at the next landing.
+

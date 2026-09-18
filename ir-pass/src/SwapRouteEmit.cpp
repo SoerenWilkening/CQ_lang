@@ -211,6 +211,11 @@ Value *valueChainBase(ArrayRef<Instruction *> Chain, const TaintSet &taint) {
 struct ValueArmStream {
   bool Negated;
   ArrayRef<Instruction *> Chain;   // original IR links (erased in step 10)
+  // bd `test_C_libtooling-fn1q` increment 1 — the arm's CLASSICAL CONE in BLOCK
+  // order, as PROVEN and RECORDED by `valueArmIsPureChain`. Hoisted ahead of the
+  // chain in step 1; never re-derived here (L1 / Rule 14). Empty on every region
+  // that lowered before that increment.
+  ArrayRef<Instruction *> Cone = {};
   CallInst *Rail = nullptr;             // the arm's |0> work rail (chain head; freed)
   SmallVector<CallInst *, 6> Fwd = {};  // minted forward template calls (step 4)
 };
@@ -241,8 +246,18 @@ struct ValueArmStream {
 // the swap route also did (it replayed the chain "VERBATIM + UNCONTROLLED" on a
 // routed rail; on the inactive branch it computed `R(0)` garbage there). Three
 // things make the unconditional run harmless: (i) every link is a pure total
-// template with no memory and no call (`valueArmIsPureChain` refuses a stray op
-// and `walkValueChain` accepts only `binaryStem` opcodes), (ii) each link is
+// template with no memory and no call (`walkValueChain` accepts only
+// `binaryStem` opcodes) — ⚠ AND SINCE bd `test_C_libtooling-fn1q` INCREMENT 1
+// THE ARM MAY HOLD MORE THAN THE CHAIN: `valueArmIsPureChain` also admits a
+// CLASSICAL CONE (the untainted, side-effect-free, non-escaping, speculatable,
+// non-CQ-call computation feeding a link's classical operand), which this
+// function hoists ahead of the chain. The cone MAY read memory; what keeps that
+// sound is an argument about PLACEMENT rather than about purity, and it lives at
+// `valueArmIsPureChain` in full: the only instructions between the hoist point
+// and a hoisted load's old position are the region's `br`, the arm's other cone
+// members (which cannot write) and its chain links (`BinaryOperator`s), so
+// nothing on that path can change what the load sees. If either of those two
+// facts changes, that argument must be REBUILT, not re-quoted, (ii) each link is
 // `isSafeToSpeculativelyExecute` — the ONE new fence below, which refuses a
 // possibly-zero / possibly-overflowing tainted-context divisor (`sdiv`/`udiv`/
 // `srem`/`urem`), and (iii) the §3c clobber decline (ArmClassify) already
@@ -316,14 +331,14 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
       diagnoseUnderControl(Cond, "control flow");
       return;
     }
-    Arms.push_back({/*Negated=*/false, R.Shadow});
-    Arms.push_back({/*Negated=*/true, R.ShadowFalse});
+    Arms.push_back({/*Negated=*/false, R.Shadow, R.ShadowCone});
+    Arms.push_back({/*Negated=*/true, R.ShadowFalse, R.ShadowConeFalse});
   } else {
     if (R.ClassArm != ArmClass::Value || R.Shadow.empty()) {
       diagnoseUnderControl(Cond, "control flow");
       return;
     }
-    Arms.push_back({R.ArmNegated, R.Shadow});
+    Arms.push_back({R.ArmNegated, R.Shadow, R.ShadowCone});
   }
 
   // The routed register Q — re-derived per arm as the chain head's sole tainted
@@ -429,12 +444,22 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   // program reaches it — `clang -O1` folds `p / -1` to `sub i32 0, %p` before
   // the pass sees it (measured, round-1 probe `m2_div_neg1.c`), so only the
   // possibly-zero-divisor arm has a reproducer.
+  //
+  // ⚠ THE CONE IS ASKED THE SAME QUESTION IN THE SAME SPELLING (bd
+  // `test_C_libtooling-fn1q` increment 1). `valueArmIsPureChain` already proved
+  // it at classification; re-asking here is the LOCKSTEP idiom this file's two
+  // siblings use for `comparePredLowerable`/`compareFlagMintable`, and it is
+  // free. It must be the SAME call — `isSafeToSpeculativelyExecute` in its
+  // NO-CONTEXT form — or the two sites could disagree and a proven-admissible
+  // cone member would decline here, after the classifier had counted on it.
   for (const ValueArmStream &A : Arms)
-    for (Instruction *Op : A.Chain)
-      if (!isSafeToSpeculativelyExecute(Op)) {
-        diagnoseUnderControl(Op, "value arm op that cannot run unconditionally");
-        return;
-      }
+    for (ArrayRef<Instruction *> Ops : {A.Cone, A.Chain})
+      for (Instruction *Op : Ops)
+        if (!isSafeToSpeculativelyExecute(Op)) {
+          diagnoseUnderControl(Op,
+                               "value arm op that cannot run unconditionally");
+          return;
+        }
 
   // Q+Q CONDITION — keep the pre-3qlq decline. `emitSelectRegion` mints its flag
   // through `lowerCompareToFlag` with the 4.4 `qqSelectLeafWidth`, which SUPPORTS
@@ -497,9 +522,33 @@ void emitValueRegion(const ControlRegion &R, BranchInst *BI, CmpInst *Cond,
   //    the pre-hoisted select twin's, M-C in-place conversions included) and
   //    reversed by the whole-DAG LIFO spine. Nothing is retargeted: the head
   //    link keeps reading `Q`, which is exactly what the merge needs.
-  for (const ValueArmStream &A : Arms)
-    for (Instruction *Op : A.Chain)
-      Op->moveBefore(BI);
+  //
+  // ⚠ THE CONE GOES FIRST, AND THE ORDER IS AN ARGUMENT, NOT A HABIT (bd
+  // `test_C_libtooling-fn1q` increment 1). A cone member's in-arm operands are
+  // only ever other cone members (`valueArmIsPureChain`'s (K1) refuses a cone
+  // member that reads a chain link), and the cone is recorded in BLOCK order, so
+  // moving it first — in that order — keeps every definition ahead of its use.
+  // The chain then follows in its own base-first order, reading `Q` from the
+  // pred and its classical operands from the just-hoisted cone.
+  //
+  // The cone members stay ORDINARY UNTAINTED LLVM instructions in the pred:
+  // `lowerOps` never looks at them, the whole-DAG spine never reverses them, and
+  // they emit NO GATE. That is why the lowered stream is identical to the twin
+  // whose source already had them in the pred —
+  // `control_swap_value_accept_arm_cone{,_prehoisted_twin}.ll`.
+  for (const ValueArmStream &A : Arms) {
+    for (ArrayRef<Instruction *> Ops : {A.Cone, A.Chain})
+      for (Instruction *Op : Ops)
+        Op->moveBefore(BI);
+    // THE ROUND-2 OBLIGATION, recorded at the irreversible step (L1: record the
+    // question where it is ANSWERED, re-ask it where the answer is FINAL).
+    // `classifyArms` proved every cone member classical at ROUND-1 taint;
+    // `declineRound2TaintedArmCone` re-asks after the fixpoint. Recorded HERE
+    // and not at the classifier because a region that is classified and then
+    // declined by a later fence has mutated nothing and owes nothing.
+    for (Instruction *Op : A.Cone)
+      taint.ValueArmConeOps.insert(Op);
+  }
 
   // 2. BUILD THE MERGE SELECT. Polarity (Rule 9): a `select` always means "the
   //    TRUE operand when the condition is 1", so the arm value goes in the slot
@@ -2860,16 +2909,41 @@ void lowerControlRegions(Module &M, WidthDispatch &wd, TaintSet &taint,
       // the pred and survives — but one in an `Arm` would be FREED, and plan
       // order puts that region first, so this emitter's "re-validate by SSA
       // identity" would be reading freed memory rather than validating. It
-      // cannot happen at HEAD because EVERY region kind that erases an arm
-      // constrains that arm to a shape a `select` cannot satisfy
-      // (`armBlockIsPureSpine`, `valueArmIsPureChain`,
-      // `inPlaceRotationArmTheta`, `classifyClassicalCallArm`'s
-      // `Arm->size() != 2`, the guarded-store gep+store shape, `AbortPark`'s
-      // sink+`unreachable`) — measured on a hand-IR diamond carrying a pure
-      // classical call AND a tainted angle select in one arm: declines
-      // `control flow`, clean under `libgmalloc`. A future region kind that
-      // erases a block whose contents it does not fix must extend the pre-flight
-      // to this Kind or re-prove that purity.
+      // cannot happen at HEAD, and ⚠ THE REASON CHANGED AT bd
+      // `test_C_libtooling-fn1q` INCREMENT 1 — re-proved here rather than
+      // re-quoted, because that increment FALSIFIED the old one and this
+      // comment's own retirement trigger (below) is what demanded the re-proof
+      // (Rule-13 round 1, finding F-2).
+      //
+      // THE OLD REASON, NOW FALSE: "every region kind that erases an arm
+      // constrains that arm to a shape a `select` cannot satisfy", naming
+      // `valueArmIsPureChain` among the fences. `valueArmIsPureChain` now ADMITS
+      // a `select` in a value arm — as a CLASSICAL CONE member, hoisted into the
+      // pred — so a `select` can satisfy it, and an accept fixture exists
+      // (Rule-13 round-1 probe `P1_untainted_select_cone.ll`).
+      //
+      // THE CURRENT REASON, and it is about the ANGLE select specifically rather
+      // than about selects in general. An `AngleSelectRegion`'s select is a
+      // TAINTED-CONDITION select over a rotation ANGLE whose consumer is a
+      // `cq_theta`/`cq_phi` CALL. Two cone conjuncts close it, and which one
+      // fires depends on where that call sits:
+      //   * consumer INSIDE the arm  → the call is a non-intrinsic `CallInst`,
+      //     which cone conjunct **(K5)** refuses, so the whole ARM declines and
+      //     no region erases it (measured: `control flow`, identical on the
+      //     pre-increment oracle);
+      //   * consumer OUTSIDE the arm → the select escapes its block, which cone
+      //     conjunct **(K3)** refuses (measured: `rotation angle`, identical on
+      //     the oracle).
+      // The other listed fences (`armBlockIsPureSpine`, `inPlaceRotationArmTheta`,
+      // `classifyClassicalCallArm`'s `Arm->size() != 2`, the guarded-store
+      // gep+store shape, `AbortPark`'s sink+`unreachable`) are unchanged.
+      //
+      // ⚠ RETIREMENT TRIGGER, RESTATED BECAUSE IT JUST PAID FOR ITSELF: a future
+      // region kind that erases a block whose contents it does not fix — or any
+      // widening of (K3) or (K5) — must extend the pre-flight to this Kind or
+      // RE-PROVE this purity. Re-proving means building the shape and measuring
+      // both binaries, as the two measurements above were; it does not mean
+      // editing this paragraph.
       emitAngleSelectRegion(R, wd, taint);
       continue;
     }
