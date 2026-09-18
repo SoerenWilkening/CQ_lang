@@ -54,11 +54,17 @@ and a subset of the assertions. Both said so themselves.
 | `^e2e-` | **456** | 454 |
 | `^e2e-slice-` | **398** | 396 |
 | `twin-identical` | **44** | 44 (unchanged) |
-| `ls ir-pass/test/*.ll` | **2108** | 2106 |
+| `ls ir-pass/test/*.ll` | **2109** | 2106 |
 | `ls tests/e2e/*.expected.log` | **400** | 398 |
 | twin matrix | **312** expected + **70** quarantine = 382 | unchanged |
 
-⚠ The fixture count moved by **+2, not +4**: four files were ADDED and two were
+⚠ **RE-MEASURED AT THE PUSH, and it had moved again**: the table above first said
+**2108**, counted before round 4's red-green fixture
+(`loop_carried_handle_reject_narrow_untyped_call_user.ll`) landed. The corpus
+sweeps quoting 2107/2108 were each correct for the binary they ran on; the
+closing number is **2109**. Re-measure, never quote.
+
+⚠ The fixture count moved by **+3, not +5**: four files were ADDED and two were
 RE-DERIVED FROM REJECTS (`reject_narrow_width` → `accept_narrow_width`,
 `reject_guarded` → `accept_guarded`), which is a rename, not an addition. A
 duplicate-body scan after the renames found **9 groups, 0 with contradictory
