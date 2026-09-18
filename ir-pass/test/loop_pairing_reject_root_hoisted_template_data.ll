@@ -58,11 +58,12 @@
 ; be right about the verdict and wrong about the cause; re-derive, do not assume.**
 ;
 ; WHAT IS PINNED NOW, and the distinction is the whole file: the HOISTED rail
-; (`%h_op`, minted once in the preheader) is discharged ONCE at the loop exit,
-; while the PER-TRIP rails (`lshr`, `and`) are STILL LEAKED — the body is not
-; marked, so `planInteriorComponent` §2.9 refuses an in-body `At` for them. That
-; residual is the P0/P3 half of the same increment and is deliberately visible
-; here rather than hidden: this file is the boundary between the two pieces.
+; (`%h_op`, minted once in the preheader) is discharged ONCE at the loop EXIT,
+; and the per-trip `lshr` rail is discharged ONCE PER TRIP IN THE BODY.  The two
+; placements are different questions with different owners — the exit one is P2's
+; `anchorForConsumer`, the in-body one is `planInteriorComponent` §2.9 once the
+; body is MARKED — and this file is the boundary between them, which is why both
+; get their own prefix below.
 ;
 ; ⚠ RULE 6 IS NOT WEAKENED BY THE NEW FREE. `%h_op`'s only in-loop users READ it
 ; (`lshr`, and a hoisted `and`), so the `mul_unc` at the exit returns it to |0⟩ on
@@ -70,16 +71,36 @@
 ; between the mint and the exit, so the adjoint reads the basis the forward gate
 ; read (clause (d)'s LEFT disjunct).
 ;
-; ⚠ NEW L8 RETIREMENT TRIGGER: when the P0/P3 half lands, the per-trip `lshr`/`and`
+; ⚠⚠ THAT TRIGGER FIRED — bd `test_C_libtooling-4jok`, 2026-09-21, when bd `tu9q`
+; P0+P3 landed.  IT SAID: *"when the P0/P3 half lands, the per-trip `lshr`/`and`
 ; rails gain an IN-BODY `_unc` + `cqrt_free` each and `LEAKBODY` below becomes
-; wrong. Re-derive this file then against the hand-unrolled twin's MULTISET (owner
-; ruling S3, 2026-09-17: byte identity is the instrument, not the claim); do not
-; delete it, and do not restore the whole-file `LEAK` prefix, which pinned a
-; stream where the HOISTED rail leaked too.
+; wrong.  Re-derive this file then … do not delete it, and do not restore the
+; whole-file `LEAK` prefix, which pinned a stream where the HOISTED rail leaked
+; too."*  Re-derived, not deleted; the `LEAK` prefix is not back.
+;
+; ⚠ AND IT WAS RIGHT ABOUT THE `lshr` AND WRONG ABOUT THE `and` — which is why
+; the re-derivation is a MEASUREMENT and not an edit of the predicted shape
+; (session protocol item 4: a trigger that names the next wall is a LOWER BOUND,
+; and so is a trigger that names the next STREAM).  MEASURED on `cq-opt`
+; 3368af12…, body block `%3`:
+;
+;     %h_op2 = call i32 @cq_template_lshr_i32_hl(i32 %h_op, i32 %4)
+;     %h_op3 = call i32 @cq_template_and_i32_hl(i32 %h_op2, i32 1)
+;     call void @cq_template_lshr_i32_hl_unc(i32 %h_op2, i32 %h_op, i32 %4)
+;     call void @cqrt_free(i32 %h_op2)
+;     %m5   = call i32 @cqrt_measure_i32(i32 %h_op3)
+;
+; The `lshr` rail gains the predicted in-body pair.  The `and` rail does NOT, and
+; never could have: `%h_op3` is **MEASURED**, so the measurement owns it (Rule 6 —
+; never free a handle that Escaped or is Measured) and there is nothing for the
+; spine to adjoint.  Its absence from the stream was never the leak this file was
+; about; the `LEAKBODY-NOT` line that covered it was true for the wrong reason and
+; is kept below ONLY with that reason stated.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=EXITD < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=BODYD < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=LEAKBODY < %t.cqd0.ll
 ;
 ; CHECK-LABEL: define i32 @slice
@@ -96,9 +117,22 @@
 ; EXITD-NEXT: call void @cqrt_free(i32 %h_op)
 ; EXITD-NEXT: %m = call i32 @cqrt_measure_i32(i32 %h)
 ;
-; THE PER-TRIP RAILS STILL LEAK — a PURE negative prefix (Rule 12
-; fixture-hygiene (a): no positive above it, so nothing windows these):
-; LEAKBODY-NOT: call void @cq_template_lshr_i32_hl_unc(
+; THE PER-TRIP `lshr` RAIL'S IN-BODY DISCHARGE, in its own prefix.  It must be
+; the `_unc` + `free` pair sitting between the rail's last READER and the next
+; trip, which is what an in-body `At` looks like and what no exit placement could
+; produce:
+; BODYD: %[[S:.*]] = call i32 @cq_template_lshr_i32_hl(i32 %h_op, i32 %{{.*}})
+; BODYD-NEXT: call i32 @cq_template_and_i32_hl(i32 %[[S]], i32 1)
+; BODYD-NEXT: call void @cq_template_lshr_i32_hl_unc(i32 %[[S]], i32 %h_op, i32 %{{.*}})
+; BODYD-NEXT: call void @cqrt_free(i32 %[[S]])
+;
+; THE `and` RAILS ARE NEVER ADJOINTED, AND THE REASON IS NOT A LEAK — a PURE
+; negative prefix (Rule 12 fixture-hygiene (a): no positive above it, so nothing
+; windows it).  ⚠ It holds because BOTH `and` rails are MEASURED (`%m4`, `%m5`)
+; and a measured handle is the measurement's, never the spine's (Rule 6).  Stated
+; because this line survived the 2026-09-21 re-derivation while its neighbour did
+; not, and a negative kept for the wrong reason is how a fixture stops meaning
+; what its header says.
 ; LEAKBODY-NOT: call void @cq_template_and_i32_hl_unc(
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

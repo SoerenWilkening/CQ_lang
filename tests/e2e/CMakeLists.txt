@@ -6339,6 +6339,68 @@ add_test(NAME e2e-slice-loop-carried-handle-guarded
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_carried_handle_guarded.expected.log")
 
+# bd `test_C_libtooling-4jok` (2026-09-21) — THE COMPOSED ACCEPT SURFACE.
+# Five programs that DECLINE on the pre-landing compiler and compile only with bd
+# `zujr` AND bd `tu9q` P0+P3 both present, because the two increments retire
+# DIFFERENT clauses of `railLocalQualifies` and neither retires the other's.
+#
+# ⚠ THESE EXIST BECAUSE EVERY OTHER INSTRUMENT IN THE TREE REPORTS ZERO ON THEM.
+# The 2109-fixture corpus A/B finds 0 composition-only movers, the 382-cell twin
+# matrix's verdict tables are byte-identical, and the other e2e slices agree — the
+# surface was reachable only from C sources nobody had committed.  Each slice
+# header says what it is the witness FOR; read those, not this comment.
+#
+# ⚠ EACH GOLDEN WAS CHECKED NON-VACUOUS: the pre-landing `cq-opt` 8280ea8d…
+# DECLINES all five (exit 1).  A golden that its own oracle also accepts pins
+# nothing about this landing.
+add_test(NAME e2e-slice-4jok-hoisted-phasearm-rot
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_hoisted_phasearm_rot.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_hoisted_phasearm_rot.expected.log")
+
+add_test(NAME e2e-slice-4jok-owner-plus-hoisted
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_owner_plus_hoisted.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_owner_plus_hoisted.expected.log")
+
+add_test(NAME e2e-slice-4jok-nested-outer-carried
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_nested_outer_carried.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_nested_outer_carried.expected.log")
+
+add_test(NAME e2e-slice-4jok-twofn-hoisted-carried
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_twofn_hoisted_carried.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_twofn_hoisted_carried.expected.log")
+
+add_test(NAME e2e-slice-4jok-bank-cell-from-hoisted
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_bank_cell_from_hoisted.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_bank_cell_from_hoisted.expected.log")
+
+add_test(NAME e2e-slice-4jok-bank-hoisted-carried
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_bank_hoisted_carried.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_4jok_bank_hoisted_carried.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
