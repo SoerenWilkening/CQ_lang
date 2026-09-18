@@ -1,13 +1,13 @@
 # Session 2026-09-22 — start here
 
-**Owner ruling 2026-09-21: pay down P1 correctness debt, starting with bd `s82e`.**
+**Owner instruction 2026-09-21:** *"`./tools/show_pipeline.sh
+example/grover/grover_oracle_uncompute.c` fails again. We need to fix that first."*
+That is **bd `fn1q`**, and it comes before the bd `s82e` work (§4).
 
 Read `CLAUDE.md` (§4g is new; §4d moved to `docs/CLAUDE-HISTORY.md`; the §5 Q-R1-1
-paragraph has a correction block), then
-`$PREV/{CLOSING_REPORT,GATES,PROTOCOL,NEXT_SESSION_PROMPT}.md` where
+paragraph has a correction block), then `$PREV/{CLOSING_REPORT,GATES,PROTOCOL}.md`,
 `PREV = docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-21-orchestrator/`.
-Then `bd prime`, `bd show test_C_libtooling-s82e`, and
-`inc1-records/session-2026-09-14c-xdu2-w1/trackS/IMPL_S.md`.
+Then `bd prime` and `bd show test_C_libtooling-fn1q`.
 
 ```
 main e107a177 · cq-opt 3368af1262695d7e4c… · libCQPass.so 48b8b4db61777082e9…
@@ -16,70 +16,91 @@ LLVM = /usr/local/opt/llvm@19/bin   (NOT on PATH)
 ```
 ⚠ `shasum -a 256 build/ir-pass/cq-opt` before believing any decline you see by hand.
 
-## ⚠ DO NOT START BY WRITING A FIX. RE-MEASURE FIRST — THE BUG MAY HAVE LANDED ALREADY.
+## 1. WHAT IS ACTUALLY WRONG — and it is NOT a regression, and NOT the script
 
-bd `s82e` is a P1 over-accept: an in-loop leak of entangled which-path rails that
-needs **no tainted control flow at all**. Track S (2026-09-14) determined the class
-is **(R-diverge)** — different unitaries, not merely more rails left allocated —
-which **falsifies the premise of the owner's own "PROVE IT" ruling**, and Track S
-stopped there without writing a fix, as instructed.
+The owner **edited** `grover_oracle_uncompute.c` into a new, harder program: a
+knapsack-style loop with **two classical constant arrays** and **two carried
+handles**.
 
-**Measured 2026-09-21 on the binary above, AFTER bd `tu9q` P0+P3 landed:**
-
+```c
+int Z = 5, P = 0, n = 3;
+int p[] = {3,2,1}; int z[] = {1,2,3}; bool b0[n];
+for (int i = 0; i < n; ++i) {
+    if (Z >= z[i]) b0[i] = cq_theta(b0[i], 0.5);
+    if (b0[i]) { Z -= z[i]; P += p[i]; }
+}
 ```
-s1_live_shift      (rolled)  ACCEPT, 14 trace lines     <- Track S recorded 10
-s1_live_shift_un   (flat)    ACCEPT, 14 trace lines     <- Track S recorded 14
-diff                         BYTE-IDENTICAL
-```
 
-That is the **malign** half — the cell Track S said *"must NOT be blessed; it is a
-wrong unitary"*. The per-trip `lshr` rails are now `_unc`'d and freed in the body,
-so nothing entangled with `h0` survives to the trailing `cqrt_ry_i32(h0, 0.9)`.
-**bd `tu9q`'s own bead says it is "the CAPABILITY half of the bd `s82e` re-ruling
-… the end state that retires that decline", and on this one pair it did.**
-Nobody connected the two because s82e's exhibits live in a track record from
-2026-09-14, not in the corpus.
+⚠ **The old CLAUDE.md §4e cascade still compiles on this binary (exit 0, 90 lowered
+lines).** Nothing broke. Measured 2026-09-21:
 
-## The job, in order
+| variant | verdict |
+|---|---|
+| cascade + **array-valued threshold** `if (Z >= z[i])` | **DECLINE** — `iteration-local value read after the loop` (clause (c3)) |
+| cascade + **two carried handles in one arm** `{Z -= 3; P += 2;}` | **ACCEPT**, 89 lines — supported, not the problem |
+| cascade + **array value in the arm** `P += p[i]` | **DECLINE** — `value-arm swap-route under quantum control` |
 
-1. **Re-measure the WHOLE s82e exhibit set on this binary** — the three benign
-   (R-leak) programs named in the bead (`w2k_noregion_invread`,
-   `w2h_phase_inloop_invread`, `w2h3_select_iterlocal_invread`) and every
-   (R-diverge) program Track S's `IMPL_S.md` §0 tabulates, each against its
-   hand-unrolled twin. ⚠ **Capture `$?` immediately, never after a pipe** — that
-   trap cost time again on 2026-09-21.
-2. **Decide what is left.** Three outcomes and they are different sessions:
-   (a) the whole class is fixed → close bd `s82e`, close bd `tu9q`, and convert
-   Track S's exhibits into the fixtures and twin-matrix cells the class never had
-   (`IMPL_S.md` §402-403 already names the two cells and their expected verdicts);
-   (b) a residue survives → that residue is the new statement of the bug, and it
-   needs its own adversarial round before a fix;
-   (c) something got **worse** → stop and report.
-3. **Only then** consider a fix, and note the bead's own dispositions were
-   PROOF / DISCHARGE / DECLINE with DISCHARGE and DECLINE explicitly rejected by
-   the owner — but on a premise that is now falsified twice over, so **it returns
-   to the owner as a fresh decision** rather than being read off the old ruling.
+⚠⚠ **BOTH DECLINES ARE OVER-DECLINES, AND THE FLAT TWIN IS THE PROOF**: hand-unroll
+either one and it **compiles** (74 and 66 lowered lines). The compiler is refusing
+a circuit it can already build. By the owner's 2026-09-11 ruling that is a defect
+to remove, not a safety margin.
 
-⚠ **12 shipped fixtures pin the `s82e` decline string.** Whatever you conclude,
-they move together or not at all, and two of them changed owner on 2026-09-21.
+**What the values are, and why this should lower:** `z[i]` and `p[i]` are
+**classical compile-time constants at a classical index**. `-O1` leaves them as a
+per-trip `load i32, ptr getelementptr(@__const.main.p, …)` because the loop is
+rolled. There is no quantum content in either operand — this is **not** QRAM, and
+the tainted-index fence is not what fires.
 
-## Carried lessons that will bite here
+## 2. The job
 
-* **An instrument's blind spot is shaped like its author's model.** Use
-  `$PREV/probes/entangle.py` (edge-complete, 18 boundary controls), **not**
-  `$PREV/probes/dephase.py`, which is committed marked SUPERSEDED with its two
-  misses in its header.
-* **Stage 2b is structurally blind to this class** — it counts `cqrt_alloc` sites
-  and a rolled per-trip alloc reads as one rail. The rolled-vs-hand-unrolled trace
-  pair is the only instrument in the tree that sees it. Say so when you cite a gate.
-* **A probe for a control-flow shape must be checked at stage 1 for the shape it
-  claims** (bd `46oo`): `main(){ return slice(4); }` lets `-O1` delete the control
-  flow the probe was built to exercise.
-* **An e2e slice whose `main` returns nonzero fails with zero output and no diff**
-  (bd memory `e2e-slice-main-return-value-trap`).
+**Two separate increments, two separate fences. Do NOT fix them in one change.**
+Each is an accept-direction widening, so each owes its own Rule-13 round **and** the
+standing rolled-vs-unrolled probe with a trailing non-diagonal gate on every
+register the condition reads.
 
-## Also open, if s82e closes early
-bd `a945` (a retirement trigger now due — L7's shape, third instance in three
-sessions), then bd `a3z7` / bd `0njv` (the dtzb in-place family), bd `yiid` (an
-UNRULED boundary — `cq_measure` is not modelled as a wire event at all; owner
-decision), bd `lo7u`.
+1. **The condition wall** (clause (c3), `LoopLowering.cpp`): re-derive
+   "iteration-local value read after the loop" for a load whose **address** is
+   loop-invariant and whose **value** is classical and re-read per trip. Start by
+   asking whether the (c3) premise is about the VALUE or about the TEMP.
+2. **The value-arm wall**: ⚠ the string `value-arm swap-route under quantum control`
+   is one of the **two decline strings `CLAUDE.md` records as naming a mechanism
+   that no longer exists** (6 sites, 28 fixtures; renaming is bd `OQ-13`). The value
+   arm is a CONTROLLED-COPY MERGE today. **Read the predicate, not the message** —
+   and consider whether fixing bd `OQ-13` first makes this one legible.
+
+## 3. DO THIS FIRST — 15 minutes, and it is why this was reported as a script bug
+
+`tools/show_pipeline.sh` has `set -euo pipefail` and no failure banner, so a
+**compiler decline** at stage 2 kills the script after a full stage-1 IR dump,
+leaving one bare `error:` line on stderr. It reads as a broken script. Give stage 2
+a trap that prints a `STAGE 2 · DECLINED` banner with the diagnostic and says
+plainly that this is a compiler decline, not a script error.
+
+⚠ **And file-scope context worth knowing before you touch any of it:** `example/` is
+**not in the repository** (excluded via `.git/info/exclude`, `git ls-files example/`
+= 0). No gate, no corpus sweep and no reviewer can see these files — which is
+exactly why a fortnight-old frontend break (bd `1fev`) and this decline both
+surfaced only when the owner ran the script by hand. That is bd `zwtm`, and these
+two are its consequences.
+
+## 4. AFTER bd `fn1q` — the standing owner ruling
+
+Pay down P1 correctness debt, starting with **bd `s82e`**. ⚠ **Re-measure before
+writing any fix: it may already be fixed.** On this binary, after bd `tu9q` P0+P3
+landed, the **malign (R-diverge) half** — `trackS/IMPL_S.md`'s `s1_live_shift`, the
+cell it says *"must NOT be blessed; it is a wrong unitary"* — is now
+**byte-identical to its hand-unrolled twin at 14 trace lines**, up from the recorded
+10. One pair, not the class; re-measure the whole exhibit set first. Details in
+`bd show test_C_libtooling-s82e`.
+
+Then bd `a945`, bd `a3z7` / bd `0njv`, bd `yiid` (owner decision), bd `lo7u`.
+
+## 5. Carried lessons that will bite here
+* Use `$PREV/probes/entangle.py` (edge-complete, 18 controls), **not**
+  `$PREV/probes/dephase.py`, which ships marked SUPERSEDED with its two misses.
+* **Capture `$?` immediately, never after a pipe.** It cost time twice on 2026-09-21.
+* A probe for a control-flow shape must be checked **at stage 1 for the shape it
+  claims** (bd `46oo`).
+* An e2e slice whose `main` returns nonzero fails with **zero output and no diff**
+  (bd memory `e2e-slice-main-return-value-trap`) — and this program returns
+  `cq_measure(Z) + cq_measure(P)`, so watch for it when you turn it into a slice.
