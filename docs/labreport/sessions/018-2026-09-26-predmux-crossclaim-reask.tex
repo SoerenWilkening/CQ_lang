@@ -1,0 +1,119 @@
+\labsessionheader{2026-09-26}{M4's placement conjunct stops being point-in-time: the cross-claim re-ask}%
+  {357f2528}{9109b935}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-26-orchestrator/}
+
+\subsection*{Goal}
+Entry~017 landed the M4 placement conjunct at \texttt{PredMuxFlatten}'s E6 gate and closed a
+verify-clean silent wrong unitary, but its own Rule-13 round~3 filed two P2s against the ground
+that fix stands on. The first, \bd{test\_C\_libtooling-woa0}, is that the conjunct is a
+\emph{point-in-time} property: it promises ``a \(\varphi\) \emph{this} flatten will not
+convert'', which is true of the region being claimed and false of the pipeline, because one
+region is claimed per call inside a fixpoint and nothing re-asks E6 about a region already
+emitted. This session was to apply \texttt{CLAUDE.md}'s standing L1 cure to it.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item The \textbf{cross-claim re-ask} --- \bd{test\_C\_libtooling-woa0} --- in four pieces:
+        \emph{record} at the site that asks (the M4 conjunct), \emph{commit} at the claim rather
+        than at the admission, \emph{observe} at \texttt{convertPhis}, and \emph{re-ask} after
+        the fixpoint in both entry points plus inside \texttt{lowerCloneControl}, declining
+        loudly.
+  \item \texttt{control\_predmux\_reject\_rail\_phi\_converted\_by\_later\_claim.ll} --- the
+        red-green fixture, written first and watched failing.
+  \item \texttt{control\_predmux\_accept\_recorded\_railphi\_boolalg\_converted.ll} --- an
+        \emph{accept} fixture the mutation matrix demanded; see Findings.
+  \item Source-comment corrections at the three sites this change falsifies, and the
+        \texttt{CLAUDE.md} budget maintenance its own rules prescribe (\S4 and \S4i archived
+        verbatim to \texttt{docs/CLAUDE-HISTORY.md}, the two oldest counts links with them).
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ The composition reproduces on the shipping binary exactly as round~3
+        recorded it, and it lands on a loud decline only because \texttt{collectCondTree}
+        refuses the resulting \texttt{xor}-of-\texttt{select} --- round~2's ``a downstream
+        accident, not a fence'', verbatim. The re-ask replaces the accident with a named owner.
+        \textbf{Not one verdict moved} across seven probes; five decline \emph{strings} moved.
+  \item The fence \textbf{observes, it does not predict}. It fires on the select-chain
+        conversion of a recorded \(\varphi\), not on a re-derivation of where that \(\varphi\)
+        lives, so it can neither over-decline a \(\varphi\) that survives nor miss one that does
+        not --- and it covers \bd{test\_C\_libtooling-0fly}'s region-merge cell without asking a
+        placement question at all. \textbf{Covered is not closed}: 0fly asks for the unwritten
+        dominance argument to be written down \emph{at the conjunct}, and the conjunct is
+        unchanged.
+  \item \textbf{The mutation matrix found a missing fixture, which is what mutation is for.}
+        Two of three mutants pinned what was expected (drop the record, or drop the commit, and
+        the decline fixture goes red in both prefixes --- verified by \emph{running} FileCheck,
+        not by re-reading prefixes). The third reported that the \texttt{!BoolAlg} conjunct was
+        \textbf{unpinned}: removing it moves \textbf{0 of 2156} fixtures. Chasing that produced
+        a shipped accept fixture for a cell no sweep could have shown --- a recorded \(\varphi\)
+        converted by the boolean-algebra path, which must \emph{not} be a violation.
+  \item \fconfirmed\ \textbf{A probe that contains half its shape.} The first construction of
+        that witness recorded the \(\varphi\) and then never converted it: the outer region left
+        at \texttt{gate=W-witness}, because one merge \(\varphi\) with two incomings satisfies no
+        claim witness. Caught by reading the debug trace rather than the verdict
+        (\bd{test\_C\_libtooling-46oo}'s class); a second merge \(\varphi\) is what closes it,
+        and the fixture header says so.
+  \item \textbf{A control that reports a pass without reporting its denominator is not a
+        control.} The mutant null control first printed \texttt{divergent=0 of 1}: under
+        \texttt{zsh} an unquoted \texttt{\$FILES} is one word, so the loop ran once and ``0
+        divergent'' was true and worthless. Only the printed denominator caught it --- the same
+        class as round~3's \texttt{export -f} bashism, one shell feature over.
+  \item \textbf{\texttt{CLAUDE.md} \S5 was stale by three landings and is corrected by
+        measurement.} It still said the owner's \texttt{grover\_oracle\_uncompute.c} does not
+        compile and that increments 3, 4 and 5 remain. Measured on both binaries this session:
+        \texttt{opt} exit 0, \textbf{0 bytes of stderr}, 124 lowered lines, stage~2b \texttt{3
+        verified, 0 violation(s), 0 unproven}. The 2026-09-24 and 2026-09-25 landings have no
+        \S4 section of their own; their record of record is named in \S5 instead.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+Corpus A/B movers, oracle vs subject & 1 & \measured{ab.sh, own mktemp -d, null+positive first} \\
+\quad of which the increment's own fixture & 1 & --- \\
+Record commits, whole fixture corpus & 4 & \measured{CQ\_WOA0\_COMMITLOG=1, instrumented build} \\
+\quad plus the owner's program and its slice & 2 & --- \\
+Mutant \texttt{!BoolAlg} movers, whole corpus & 0 & \measured{ab.sh vs the env-gated mutant} \\
+lit fixtures & 2157 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+lit passed / XFAIL & 2156 / 1 & \measured{cd build \&\& lit ir-pass/test} \\
+e2e goldens & 412 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+ctest entries & 479 & \measured{ctest --test-dir build -N | tail -1} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Fixture written first and watched failing, then passing. Seven-probe matrix against an oracle
+rebuilt from \commit{18d18728} that came out \emph{bit-identical} to the hash the incoming brief
+recorded --- an unplanned build null control that happened to fire. Whole-corpus A/B over 2157
+fixtures with a null control and a positive control run before any row was believed. An
+instrumented build, with four of its own controls, to show the record is actually populated so
+the clean sweep is not vacuous. Three env-gated mutants in one binary, their shared null control
+measured over the whole corpus. \texttt{lit ir-pass/test}: 2157 discovered, 2156 passed, 1 XFAIL,
+quoted with its load. Full \texttt{ctest -j6}: \textbf{479/479 in 795.22\,s}, quoted with its load (248 falling to 13 --- it was started while this session's own \texttt{lit} run was still decaying, so it is not comparable with a quiet-box figure; every row was green, and a pass under contention is still a pass).
+
+\textbf{Not run:} no simulation and no statevector (Rule~2) --- every correctness claim here is a
+verdict, a string, a byte-diff or an event count. No \texttt{+Asserts} build (the tree still
+cannot have one; see below). The G-13 standing rolled-versus-unrolled probe \emph{was} run and
+\textbf{did not reach this fence}: both spellings decline identically on both binaries at earlier
+walls, so it is a non-divergence measured at the wrong wall, not a clearance.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \textbf{This change owes its own Rule-13 round}, by an agent that did not write it, and
+        the brief's standing advice is to budget two.
+  \item \bd{test\_C\_libtooling-0fly} --- the region-merge over-admission: now \emph{covered} by
+        the observation, but its dominance argument is still unwritten at the conjunct.
+  \item \bd{test\_C\_libtooling-41g3} stays open for the residual over-decline only. The route
+        that removes it rather than fencing it is to record the \(\varphi\) so
+        \texttt{convertPhis} cannot select-chain it; for a rail \(\varphi\) the boolean-algebra
+        path yields a shape already in the downstream grammar, which \emph{looks} cheap from
+        here --- and ``looks cheap'' is not a measurement.
+  \item The tree has still never had a \texttt{+Asserts} \texttt{cq-opt}, because building one
+        aborts on four committed \emph{accept} fixtures. That is the structural reason the
+        unchecked-\texttt{cast<>} family in this file has no gate at all, and it is the family
+        entry~017's P1 came from.
+  \item Increment 5b remains scoped and unbuilt; its route is proved and its predicate is not
+        designed.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
