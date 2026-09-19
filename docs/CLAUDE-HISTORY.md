@@ -4046,3 +4046,61 @@ ctest, `^e2e-`, the goldens and the twin matrix are unchanged because neither tr
 gave it an `i1` axis. **Re-measure rather than quote** — `ctest --test-dir build -N` and the
 `ls`/`grep` lines above are the source of truth, and these go stale on every fixture batch. The
 per-commit chain and every earlier figure are in `docs/CLAUDE-HISTORY.md`.
+
+
+---
+
+# ARCHIVED 2026-09-27 — the 2026-09-21 and 2026-09-19 counts links
+
+Moved VERBATIM out of `CLAUDE.md` at the bd `test_C_libtooling-u460` close (the Rule-13
+rounds on bd `woa0`'s cross-claim fence), when that file crossed its own 150 k budget.
+**Moved, never deleted** — this is the mechanism `CLAUDE.md` prescribes for itself, and
+it is the same treatment the 2026-09-17 and 2026-09-15 links received on 2026-09-26.
+The inline chain in `CLAUDE.md` now ends at 2026-09-22. **Re-measure, never quote** —
+every figure below is a record of a tree state, not a property of the compiler.
+
+**Counts, measured 2026-09-23 at the bd `fn1q` increment-2 close (`cq-opt`
+`a0e31e0316496f71a684…`, `libCQPass.so` `7920b44cc1ac809b8c51…`; re-measured, not copied).** ctest
+**474** · `^e2e-` **464** · `^e2e-slice-` **406** · `ls ir-pass/test/*.ll | wc -l` **2130** ·
+`ls tests/e2e/*.expected.log | wc -l` **408** · twin matrix **312** + **70** = **382** cells
+(unchanged — the increment adds no matrix cell). `lit ir-pass/test`: **2130 discovered, 2129
+passed, 1 XFAIL**. Corpus A/B over all 2130: **0 A→D · 4 D→A · 0 decline-string moves · 0 stream
+moves**, and **all four movers are the increment's own new accept fixtures**; null control **0 of
+2130**, run first. ⚠ The full `ctest -j6` figures for this landing are quoted **with their load**
+in the session `GATES.md` and were taken under heavy concurrent agent load throughout — not
+comparable with a quiet-box figure (Rule 19). Earlier chain follows.
+
+**Counts, measured 2026-09-22 at the bd `fn1q` increment-1 close (`cq-opt`
+`1b396ed08b01b8ecac7…`, `libCQPass.so` `f3a372fc275bcf15f2b…`; re-measured, not copied).** ctest
+**473** · `^e2e-` **463** · `^e2e-slice-` **405** · `twin-identical` **44** ·
+`ls ir-pass/test/*.ll | wc -l` **2121** · `ls tests/e2e/*.expected.log | wc -l` **407** · twin matrix
+**312** + **70** = **382** cells (unchanged — the increment adds no matrix cell). Full `ctest -j6`:
+**473/473 in 529.47 s**, load 2.9 → 72 (it rose under other agents mid-run; quote it with its load,
+Rule 19). `lit ir-pass/test`: **2121 discovered, 2120 passed, 1 XFAIL**.
+⚠ The fixture count moved **+9** and the golden count **+1**, and unlike the previous landing that is
+the whole change: **no existing fixture was re-derived**. Corpus A/B over all 2121: **0 A→D**, 1 D→A
+and 1 decline-string move, **both of them the increment's own new files**. Earlier chain follows.
+
+**Counts, measured 2026-09-21 at the bd `4jok` close (`cq-opt` `3368af1262695d7e4c…`, `libCQPass.so`
+`48b8b4db61777082e9…`; the PRIMARY tree rebuilt at the close and **BIT-IDENTICAL to the gated
+worktree binary** — re-measured, not copied).** ctest **472** · `^e2e-` **462** · `^e2e-slice-` **404**
+· `twin-identical` **44** · `ls ir-pass/test/*.ll | wc -l` **2112** · `ls tests/e2e/*.expected.log |
+wc -l` **406** · twin matrix **312** expected + **70** quarantine = **382** cells (unchanged; the
+landing added no matrix cell). Full `ctest -j6`: **472/472 in 505.80 s** on the primary tree, and
+**472/472 in 529.58 s** on the gated worktree — two trees, same verdict.
+`lit ir-pass/test`: **2112 discovered, 2111 passed, 1 XFAIL**.
+⚠ The fixture count moved **+3** (two new `loop_pairing_*_nest_*_hoisted.ll`, one
+`…_round2_falsified_postloop_read.ll`) and the golden count **+6**, all six of them the bd `4jok`
+composition slices. **Eight existing fixtures were RE-DERIVED, not added** — four of them changing
+verdict — so a diff of the fixture count understates the change by a factor of three. Earlier chain
+follows.
+
+**Counts, measured 2026-09-19 at the bd `zujr` close (`cq-opt` `e7bbfd69a9e25d38…`, `libCQPass.so`
+`84061321f9d6f974…`; re-measured, not copied).** ctest **464** · `^e2e-` **454** · `^e2e-slice-`
+**396** · `twin-identical` **44** · `ls ir-pass/test/*.ll | wc -l` **2106** ·
+`ls tests/e2e/*.expected.log | wc -l` **398** · twin matrix **312** expected + **70** quarantine =
+**382** cells (unchanged — 9 rows moved, no cell was added) · `--allow-unproven` **16** grep hits (4
+slices × 4 lines; unchanged). Full `ctest -j6`: **464/464 in 561.64 s** at load 6.5.
+`cq-opt-equivalence-full`: **2106/0**. ⚠ **The inline chain ENDS HERE** — the 2026-09-17 and
+2026-09-15 links were archived to `docs/CLAUDE-HISTORY.md` on 2026-09-26 to keep it bounded, along
+with every figure older than those. Re-measure, never quote.

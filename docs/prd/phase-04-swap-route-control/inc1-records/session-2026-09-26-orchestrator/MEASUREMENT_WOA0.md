@@ -301,3 +301,56 @@ adds no accept, which is why the pair lands short.
   groups, NONE of them involving this session's two files**. ⚠ Nine is more than
   the five bd `fn1q` recorded over 2149 — pre-existing, not measured further here,
   and not this change's.
+
+---
+
+## ⚠ ERRATA — 2026-09-27, from Rule-13 rounds A and B (bd `test_C_libtooling-u460`)
+
+The original text above is left VERBATIM; these are the corrections, dated, in the
+convention this project uses for a sealed record. Both rounds are at
+`../session-2026-09-27-orchestrator/REVIEW_R13_R{A,B}_WOA0.md`.
+
+**E1 — §1's mechanism is measurably FALSE (`F-RB-3`).** *"`collectCondTree` refusing
+the `xor`-of-`select` that `convertPhis` left behind"* names a node that does not
+exist: there is **no `xor` anywhere in the post-flatten module**, on either binary,
+for the committed decline fixture or its incoming-order-swapped twin —
+`convertPhis`' *"¬c IS AN ARM SWAP, NOT AN `xor` NODE"* fold sees to that. The
+downstream owner is **`SelectClassify`'s DATA-SELECT grammar** refusing a `select i1`
+condition, which it does because that grammar does not carry `AllowLogicalSelect`.
+The six sites carrying the `xor` wording inherited it from round 3's F-R3-1, which
+describes a different module; the four mutable ones are corrected at the source.
+
+**E2 — §3's probe matrix has ZERO cells in the quadrant where the over-decline lives
+(`F-RA-6`).** §3 correctly flags `w_d_allconst` as a weak negative control. It
+presents `x2_naturalorder` as an ordinary unchanged accept, and **the two are weak
+identically**: measured on `INSTR`, *both* accepting probes commit **0**. So the
+matrix contains no cell in which **the record is populated AND the module accepts**,
+and the over-decline surface was therefore unmeasured. §7's whole-corpus A/B cannot
+supply one either — 5 commit modules in 2157 and none converts. *A clean `A→D = 0`
+measured over a population with no members of the class is not evidence about the
+class*, which is this record's own standing caveat (§5), not applied to the row that
+needed it. What that cost is bd `test_C_libtooling-707a`.
+
+**E3 — §5's census number is stale by one (`F-RA-8`).** *"4, in 4 modules"* was taken
+over 2156 fixtures, i.e. **before this increment's own accept fixture landed**.
+Re-measured on the same `INSTR` binary over all **2157**: **5 modules**, the fifth
+being `control_predmux_accept_recorded_railphi_boolalg_converted.ll`
+(`phiblk=J phi=%cphi entry=J`). ⚠ **Both of §5's real claims survive** — every commit
+is the ENTRY-φ cell, and the `!InRegion` disjunct has no commit customer anywhere —
+but the number as printed is not reproducible at HEAD. Say **5 of 2157**.
+
+**E4 — §9's *"no `+Asserts` build; the tree still cannot have one"* is retired.**
+Round B built one and swept the corpus: **2157 swept, 4 aborts**, exactly round 3's
+four, and **woa0 adds none**. It is a four-fixture bill, not a structural
+impossibility — bd `test_C_libtooling-r4f6`.
+
+**E5 — §9's *"no independent Rule-13 round"* is discharged.** Two ran, concurrently
+on a frozen subject, both `CLEAR-WITH-ITEMS` with **0 P1**. They converged
+independently on one P2 that §3's matrix could not see (E2 above).
+
+**NOT corrected, because they were re-measured and held:** the ORACLE/SUBJECT hashes,
+the 7-probe verdict table (§3), the owner's program byte-identity and its live
+customership of the record (§4), §6's mutation matrix and its missing-fixture lesson,
+§7's `1 mover of 2157`, and §8's gate figures. Round A reproduced §7 independently
+(null control first) and round B reproduced it again; round A also swept a layer this
+record did not — **all 403 compilable `tests/e2e/slice_*.c`, 0 movers**.

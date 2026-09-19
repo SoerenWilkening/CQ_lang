@@ -1183,20 +1183,28 @@ one region is claimed per `flattenPredMuxRegions` call inside a `while` fixpoint
 re-asks E6 about a region already emitted, so an inner claim can flatten the φ's own block and an
 OUTER region's E6 loop (conditional terminators only) then stops seeing it, claims, and
 select-chains the φ out from under the inner region's already-emitted predicate tree. Before this
-it landed on a loud decline ONLY via `collectCondTree`'s refusal of the resulting
-`xor`-of-`select` — round 2's *"a downstream accident, not a fence"*.
+it landed on a loud decline ONLY as round 2's *"downstream accident, not a fence"* — ⚠ **whose
+mechanism this paragraph named WRONG**: there is no `xor` in the post-flatten module on either
+binary; the owner is `SelectClassify`'s data-select grammar refusing a `select i1` condition
+(measured, §4k `F-RB-3`).
 
 **CLAUDE.md L1's standing cure, applied literally in four pieces:** RECORD at the site that asks
 (`PhiCondScope::RailLeaves` at the M4 conjunct) · COMMIT at the CLAIM, never at the admission (a
 later gate's `leave` discards the whole `PredMuxRegion` — the `BoolAlgPhis` precedent) · OBSERVE at
-`convertPhis`, the only converter and the first point at which the conversion is a FACT · RE-ASK
+`convertPhis`, the only converter **in that file** (⚠ not pass-wide — `MergePhiPeel` and
+`SwapRouteEmit` also select-ify a φ, both AFTER the re-ask, hence outside the window BY
+CONSTRUCTION; moving the window must re-ask that) and the first point at which the
+conversion is a FACT · RE-ASK
 after the fixpoint in **both** entry points plus inside `lowerCloneControl`, loudly
 (`declineConvertedRailPhiLeaves`, the `declineSurvivingIntrinsicCalls` shape).
 
-⚠ **IT OBSERVES, IT DOES NOT PREDICT, AND THAT IS THE WHOLE SAFETY ARGUMENT** — it fires on the
-select-chain conversion of a recorded φ, not on a re-derivation of where that φ lives, so it can
-neither over-decline a φ that survives nor miss one that does not, and it covers bd `0fly`'s
-`{R.Merge}` cell without asking a placement question at all. ⚠ **The conjunct is STILL
+⚠ **IT OBSERVES, IT DOES NOT PREDICT, so it CANNOT MISS** a select-chain conversion of a recorded
+φ — it fires on the conversion, not on a re-derivation of where that φ lives — and it covers bd
+`0fly`'s `{R.Merge}` cell without asking a placement question at all. ⚠⚠ **THAT IS ONE-SIDED. The
+sentence that stood here — "it can neither over-decline a φ that survives nor miss one that does
+not" — is LITERALLY TRUE AND ANSWERS THE WRONG QUESTION**, and so is its source-comment twin: in
+all four exhibits of §4k's converged P2 the φ **was** converted and did **not** survive, and the
+decline is still spurious. Say "cannot MISS one"; never a two-sided form. ⚠ **The conjunct is STILL
 point-in-time; what is now total is the OUTCOME**, and both source comments that said "true only
 within one pass" now say exactly that.
 
@@ -1226,6 +1234,43 @@ the denominator caught it; same class as round 3's `export -f` bashism, one shel
 ⚠ The G-13 standing probe was RUN and **did not reach this fence** — rolled and unrolled decline
 identically on both binaries at EARLIER walls — so it is a non-divergence measured at the wrong
 wall, not a clearance.
+
+### 4k. The 2026-09-27 rounds — the fence is CLEARED, and both reviewers found the SAME over-decline
+
+bd `u460` CLOSED. Two rounds on disjoint surfaces, **concurrent on a frozen subject** (no fix landed
+between them, so what sequencing buys — round 2 auditing round 1's fix — was not in play), both `CLEAR-WITH-ITEMS`, **0 P1 each**.
+Records: `.../session-2026-09-27-orchestrator/`.
+
+⚠ **THEY CONVERGED INDEPENDENTLY ON ONE P2 AND IT IS AN OVER-DECLINE THE CHANGE'S OWN INSTRUMENTS
+COULD NOT SEE** (bd `707a`). `Leaves` is committed at the E6 **ADMISSION** while `run()` mints edge
+predicates **LAZILY** — `convertPhis` skips an incoming under `In[I].second == Acc`, and a merge
+with no φ demands no literal at all — so a region can RECORD a rail φ its emission never READS;
+`sweepDead`'s rail-φ exclusion keeps it alive and a later claim's **vacuous RAUW** declines a module
+the oracle compiled correctly. Four exhibits, two per round. ⚠ **The one-line
+`!P->use_empty()` gate is MEASURED INSUFFICIENT** — both rounds built it, both found it recovers the
+never-minted sub-class and **not** the minted-then-dead one — so the class has ≥2 members and the
+total fix records at the READ. Narrowing a decline is an ACCEPT-direction change and owes its own
+round.
+
+⚠ **WHY IT WAS INVISIBLE IS THE LESSON.** Of the change's 8 probes **both accepting rows
+commit nothing**, so the matrix had **no cell in the quadrant "record populated ∧ module accepts"**,
+and the corpus cannot supply one (5 commit modules in 2157, none converts). *A clean `A→D = 0` over
+a population with no members of the class is not evidence about the class* — this file's own
+caveat, unapplied to the row that needed it. Neither round reached the fence from C.
+
+Corrected **at the source** in the same change: the `xor` mechanism (§4j); `AtFn`'s window, three
+nested fixpoints and not "a few statements" (conclusion re-verified by enumerating every
+`eraseFromParent` in it); and `declineConvertedRailPhiLeaves` **silently accepting** on
+`Converted && !AtFn` — the *opposite* direction to the one its own trigger worried about (bd
+`qs5w`). Open: bd `tzw2` (the
+record is keyed on SSA identity across two **cloning** pre-passes — ARGUED, and the measurement that
+would close it free is written nowhere), bd `lit8`, bd `nkgt` (the pre-emptive slot
+**masks** a real `cq taint escape` — constructed; an owner question), bd `0ues` (G-13 is **live**
+here, not vacuous — the record spans three fixpoints — merely unreached).
+
+⚠ **`+Asserts` IS A FOUR-FIXTURE BILL, NOT A STRUCTURAL IMPOSSIBILITY** (bd `r4f6`): round B built
+one and swept 2157 — **4 aborts, exactly round 3's four, woa0 adds none**. That retires a claim
+three briefs carried, and it is the gate the unchecked-`cast<>` family has never had.
 
 ### 5. Open follow-ons, by bd id
 
@@ -1342,7 +1387,7 @@ OPEN** for what is still owed on it, not for the owner's program.
 Rule-13-cleared 2026-09-25) stays open for its RESIDUAL OVER-DECLINE only — the
 interior rail φ M4 refuses is REALIZABLE, and the route that removes rather than
 hides it is to RECORD the φ so `convertPhis` cannot select-chain it. ⚠ bd `woa0`
-is **CLOSED 2026-09-26** (§4j); bd `0fly` stays open — the observation now covers
+is **CLOSED 2026-09-26** (§4j) and its owed rounds are done (bd `u460`, §4k); bd `0fly` stays open — the observation now covers
 its `{R.Merge}` cell, but COVERED ≠ CLOSED: 0fly asks for the unwritten E3-derived
 dominance argument to be written down or fenced AT THE CONJUNCT, and the conjunct
 is unchanged. **NEW and open:** bd `cfmv` (**P1** — a
@@ -1569,51 +1614,10 @@ wrapping every `.ll`. Corpus A/B over all 2157: **0 A→D · 0 D→A · 1 declin
 moves**, and the one mover is the increment's own new decline fixture; null control **0 of 2156**
 run FIRST, positive control 1 of 1. Earlier chain follows.
 
-**Counts, measured 2026-09-23 at the bd `fn1q` increment-2 close (`cq-opt`
-`a0e31e0316496f71a684…`, `libCQPass.so` `7920b44cc1ac809b8c51…`; re-measured, not copied).** ctest
-**474** · `^e2e-` **464** · `^e2e-slice-` **406** · `ls ir-pass/test/*.ll | wc -l` **2130** ·
-`ls tests/e2e/*.expected.log | wc -l` **408** · twin matrix **312** + **70** = **382** cells
-(unchanged — the increment adds no matrix cell). `lit ir-pass/test`: **2130 discovered, 2129
-passed, 1 XFAIL**. Corpus A/B over all 2130: **0 A→D · 4 D→A · 0 decline-string moves · 0 stream
-moves**, and **all four movers are the increment's own new accept fixtures**; null control **0 of
-2130**, run first. ⚠ The full `ctest -j6` figures for this landing are quoted **with their load**
-in the session `GATES.md` and were taken under heavy concurrent agent load throughout — not
-comparable with a quiet-box figure (Rule 19). Earlier chain follows.
-
-**Counts, measured 2026-09-22 at the bd `fn1q` increment-1 close (`cq-opt`
-`1b396ed08b01b8ecac7…`, `libCQPass.so` `f3a372fc275bcf15f2b…`; re-measured, not copied).** ctest
-**473** · `^e2e-` **463** · `^e2e-slice-` **405** · `twin-identical` **44** ·
-`ls ir-pass/test/*.ll | wc -l` **2121** · `ls tests/e2e/*.expected.log | wc -l` **407** · twin matrix
-**312** + **70** = **382** cells (unchanged — the increment adds no matrix cell). Full `ctest -j6`:
-**473/473 in 529.47 s**, load 2.9 → 72 (it rose under other agents mid-run; quote it with its load,
-Rule 19). `lit ir-pass/test`: **2121 discovered, 2120 passed, 1 XFAIL**.
-⚠ The fixture count moved **+9** and the golden count **+1**, and unlike the previous landing that is
-the whole change: **no existing fixture was re-derived**. Corpus A/B over all 2121: **0 A→D**, 1 D→A
-and 1 decline-string move, **both of them the increment's own new files**. Earlier chain follows.
-
-**Counts, measured 2026-09-21 at the bd `4jok` close (`cq-opt` `3368af1262695d7e4c…`, `libCQPass.so`
-`48b8b4db61777082e9…`; the PRIMARY tree rebuilt at the close and **BIT-IDENTICAL to the gated
-worktree binary** — re-measured, not copied).** ctest **472** · `^e2e-` **462** · `^e2e-slice-` **404**
-· `twin-identical` **44** · `ls ir-pass/test/*.ll | wc -l` **2112** · `ls tests/e2e/*.expected.log |
-wc -l` **406** · twin matrix **312** expected + **70** quarantine = **382** cells (unchanged; the
-landing added no matrix cell). Full `ctest -j6`: **472/472 in 505.80 s** on the primary tree, and
-**472/472 in 529.58 s** on the gated worktree — two trees, same verdict.
-`lit ir-pass/test`: **2112 discovered, 2111 passed, 1 XFAIL**.
-⚠ The fixture count moved **+3** (two new `loop_pairing_*_nest_*_hoisted.ll`, one
-`…_round2_falsified_postloop_read.ll`) and the golden count **+6**, all six of them the bd `4jok`
-composition slices. **Eight existing fixtures were RE-DERIVED, not added** — four of them changing
-verdict — so a diff of the fixture count understates the change by a factor of three. Earlier chain
-follows.
-
-**Counts, measured 2026-09-19 at the bd `zujr` close (`cq-opt` `e7bbfd69a9e25d38…`, `libCQPass.so`
-`84061321f9d6f974…`; re-measured, not copied).** ctest **464** · `^e2e-` **454** · `^e2e-slice-`
-**396** · `twin-identical` **44** · `ls ir-pass/test/*.ll | wc -l` **2106** ·
-`ls tests/e2e/*.expected.log | wc -l` **398** · twin matrix **312** expected + **70** quarantine =
-**382** cells (unchanged — 9 rows moved, no cell was added) · `--allow-unproven` **16** grep hits (4
-slices × 4 lines; unchanged). Full `ctest -j6`: **464/464 in 561.64 s** at load 6.5.
-`cq-opt-equivalence-full`: **2106/0**. ⚠ **The inline chain ENDS HERE** — the 2026-09-17 and
-2026-09-15 links were archived to `docs/CLAUDE-HISTORY.md` on 2026-09-26 to keep it bounded, along
-with every figure older than those. Re-measure, never quote.
+**⚠ Only the CURRENT counts link is inline.** The 2026-09-23 / -22 / -21 / -19 links were
+archived VERBATIM to `docs/CLAUDE-HISTORY.md` on 2026-09-27 (the -17 and -15 links went the same
+way on 2026-09-26) — the mechanism this file prescribes for itself rather than cutting a
+paragraph. Every earlier figure is there. **Re-measure, never quote.**
 
 **Timing.** ~**130–230 s** at `-j6` on a **quiet** box (the spread tracks how
 warm the stage-1 content-addressed cache is), down from 825 s serial. **Under

@@ -444,8 +444,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // the first stage that could consume — or accidentally decline — what a later
   // claim converted. That ORDER is what makes the diagnostic name the real cause
   // instead of inheriting a downstream owner: before this fence the composition
-  // landed on `collectCondTree`'s refusal of an `xor`-of-`select`, which Rule-13
-  // round 2 named "a downstream accident, not a fence". `LLVMContext::diagnose`
+  // landed on `SelectClassify`'s data-select grammar refusing a `select i1`
+  // condition — Rule-13 round 2's "a downstream accident, not a fence". (⚠ this
+  // sentence said "`collectCondTree`'s refusal of an `xor`-of-`select`" and round
+  // B measured that there is no `xor` in the post-flatten module — `F-RB-3`.)
+  // `LLVMContext::diagnose`
   // EXITS on the first `DS_Error` (bd `br4a`), so being early is precisely what
   // buys the ownership.
   //

@@ -20,9 +20,12 @@
 ;      predicate tree was built from.
 ;
 ; ⚠ WHY A FENCE AND NOT AN ARGUMENT. Before this file the composition landed on a
-; loud decline ONLY because `collectCondTree` refuses the resulting
-; `xor`-of-`select` — which Rule-13 round 2 named "a downstream accident, not a
-; fence", verbatim, one round before round 3 built this shape. Round 3 argued
+; loud decline ONLY as a downstream accident — Rule-13 round 2's phrase, verbatim,
+; one round before round 3 built this shape. ⚠ THIS PARAGRAPH NAMED THAT ACCIDENT
+; AS "`collectCondTree` refuses the resulting `xor`-of-`select`" AND ROUND B
+; MEASURED THAT WRONG ON THIS MODULE (`F-RB-3`): there is no `xor` in the
+; post-flatten module on either binary; the owner is `SelectClassify`'s
+; data-select grammar refusing a `select i1` condition. Round 3 argued
 ; analytically that it cannot produce a wrong unitary (`convertPhis`' RAUW is
 ; value-preserving, and the unsound `buildNegation` select arm is intra-region)
 ; and both constructed instances declined — but it did not prove it exhaustively,

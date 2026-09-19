@@ -7,8 +7,21 @@
 //
 // The one non-negotiable here is the ACCEPT-ONLY discipline: every check
 // below LEAVES the region untouched on failure — the existing detection
-// declines it loudly exactly as today. Over-declining stays safe; PredMux can
-// only widen the accept surface, never replace a decline with silence.
+// declines it loudly exactly as today. PredMux never replaces a decline with
+// silence.
+//
+// ⚠ "OVER-DECLINING STAYS SAFE; PredMux CAN ONLY WIDEN THE ACCEPT SURFACE"
+// STOOD HERE AND THE SECOND HALF IS NOW MEASURABLY FALSE — Rule-13 rounds A and
+// B on bd `test_C_libtooling-woa0`, INDEPENDENTLY, `F-RA-1` / `F-RB-1`, four
+// hand-built exhibits between them. `declineConvertedRailPhiLeaves` can NARROW
+// the accept surface: the cross-claim record is committed at the E6 ADMISSION
+// while `run()` builds edge predicates LAZILY, so a region can record a rail φ
+// its emission never reads, and a later claim's VACUOUS RAUW then declines a
+// module the pre-woa0 oracle compiled correctly. The CLAIM path is still
+// accept-only; the POSTCONDITION is not. ⚠ AND NOTE WHICH HEADER THIS IS:
+// `357f2528` corrected the sibling sentence in `PredMuxFlatten.h` precisely
+// because "a correction not applied to the source is not a correction", and
+// left this one standing (CLAUDE.md L7-with-a-twist, one file, two headers).
 //
 // Eligibility (PRD §4.2, E-ladder) in brief:
 //   W  — claim witnesses: only shapes today's detection DECLINES are claimed
@@ -1049,9 +1062,17 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // UNCONDITIONAL, after which an OUTER region's E6 loop (conditional
   // terminators only) no longer sees the φ, claims, and `convertPhis`
   // select-chains it out from under the inner region's already-emitted predicate
-  // tree. Before the record below that landed on a loud decline ONLY because
-  // `collectCondTree` refuses the resulting `xor`-of-`select` — round 2's
-  // "a downstream accident, not a fence", verbatim.
+  // tree. Before the record below that landed on a loud decline ONLY as a
+  // downstream accident — round 2's "a downstream accident, not a fence",
+  // verbatim. ⚠ THE MECHANISM NAMED HERE USED TO BE "`collectCondTree` refuses
+  // the resulting `xor`-of-`select`" AND THAT IS MEASURABLY FALSE (Rule-13
+  // round B, `F-RB-3`, measured on the committed decline fixture's own module
+  // on both binaries): there is NO `xor` in the post-flatten module at all —
+  // `convertPhis`' "¬c IS AN ARM SWAP, NOT AN `xor` NODE" fold sees to that —
+  // and the owner is `SelectClassify`'s DATA-SELECT grammar refusing a
+  // `select i1` condition, which it does because that grammar does not carry
+  // `AllowLogicalSelect`. The six sites that said `xor` inherited it from round
+  // 3's F-R3-1, which describes a different module.
   //
   // SO THE ADMISSION IS RECORDED HERE AND RE-ASKED AFTER THE FIXPOINT (CLAUDE.md
   // L1's standing cure, in both entry points, declining loudly). The record is
@@ -2233,8 +2254,9 @@ struct PredMuxRegion {
   // candidate terminator), so a partial record can never reach the flatten.
   SmallPtrSet<PHINode *, 8> BoolAlgPhis;
   // bd `test_C_libtooling-woa0` — the rail φs E6 admitted as condition-tree
-  // LEAVES, i.e. the ones this flatten proved it will NOT convert and will
-  // therefore READ. Populated during E6 beside `BoolAlgPhis` and discarded with
+  // LEAVES, i.e. the ones this flatten proved it will NOT convert. ⚠ THIS SAID
+  // "and will therefore READ" AND THAT INFERENCE IS FALSE (`F-RA-1`/`F-RB-1`):
+  // `run()` mints edge predicates LAZILY, so an admitted φ may never be read. Populated during E6 beside `BoolAlgPhis` and discarded with
   // `R` on any later `leave`; COMMITTED into the caller's cross-claim
   // `PredMuxRailPhiRecord` only once the claim is final, immediately before
   // `RegionFlattener::run()`. Disjoint from `BoolAlgPhis` in practice but not by
@@ -4481,7 +4503,11 @@ private:
       //
       // This is the first point at which "a φ an EMITTED predicate tree reads as
       // a rail leaf is being SELECT-CHAINED" is a FACT rather than a forecast,
-      // and it is the only place in the pass where that conversion happens. E6's
+      // and it is the only place IN THIS FILE where that conversion happens (⚠
+      // NOT pass-wide: `MergePhiPeel.cpp` and `SwapRouteEmit.cpp` also mint a
+      // `select` from a φ and RAUW it — both AFTER the re-ask, hence outside
+      // this window BY CONSTRUCTION, which is a fact about the SLOT and not
+      // about this call. Rounds A/B `F-RA-3`/`F-RB-7`). E6's
       // placement conjunct predicted it would not; the prediction is
       // POINT-IN-TIME (see `isSupportedCondTree`) and a later claim can falsify
       // it, so the fact is recorded here and the CALLER re-asks after the
@@ -5158,8 +5184,14 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
 // as a leaf?") is RECORDED at the claim and re-asked here, after the fixpoint, in
 // BOTH entry points, declining loudly. What makes it a fence rather than an
 // argument is that it reports an OBSERVED conversion, not a re-derived placement
-// — so it cannot over-decline a φ that was never converted, and it cannot miss
-// one that was.
+// — so it cannot MISS a conversion of a φ the record holds.
+//
+// ⚠ THAT IS ONE-SIDED AND THE OTHER SIDE IS A MEASURED DEFECT. "It cannot
+// over-decline a φ that was never converted" is literally true and answers the
+// wrong question: the exhibits in Rule-13 rounds A and B (`F-RA-1`/`F-RB-1`) are
+// φs that WERE converted, having been RECORDED at the E6 admission and never
+// READ by the lazily-built edge predicates, so their RAUW was vacuous and the
+// decline spurious. See `PredMuxFlatten.h`.
 //
 // ⚠ THIS IS WHY THE FILE'S "PredMux NEVER DIAGNOSES" HEADLINE IS NOW QUALIFIED
 // RATHER THAN TRUE. The claim path is still accept-only: `recoverRegion` returns

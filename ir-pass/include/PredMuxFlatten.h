@@ -79,13 +79,35 @@ bool isMuxableType(llvm::Type *Ty);
 // BOTH entry points, declining loudly. `Leaves` is the record (committed at CLAIM,
 // never at admission — a later gate's `leave` discards the whole `PredMuxRegion`,
 // the `BoolAlgPhis` precedent); `Converted` is the OBSERVED violation, set at
-// `convertPhis`, which is the only converter and the first point at which the
-// conversion is a FACT rather than a forecast; `declineConvertedRailPhiLeaves` is
+// `convertPhis`, which is the only converter IN THIS FILE and the first point at
+// which the conversion is a FACT rather than a forecast (⚠ pass-wide it is not
+// the only one — `MergePhiPeel.cpp` and `SwapRouteEmit.cpp` also replace a φ
+// with a `select`; both run AFTER the re-ask, so they are outside this window BY
+// CONSTRUCTION and the next agent to move the window must re-ask that); `declineConvertedRailPhiLeaves` is
 // the re-ask.
 //
-// ⚠ IT OBSERVES, IT DOES NOT PREDICT, and that is the whole reason it cannot be
-// wrong in either direction: it fires on the SELECT-CHAIN conversion of a φ the
-// record holds, not on a re-derivation of where that φ lives. The BOOLEAN-ALGEBRA
+// ⚠ IT OBSERVES, IT DOES NOT PREDICT, so it CANNOT MISS a select-chain
+// conversion of a φ the record holds: it fires on the conversion, not on a
+// re-derivation of where that φ lives.
+//
+// ⚠⚠ THAT IS A ONE-SIDED GUARANTEE. AN EARLIER DRAFT OF THIS VERY SENTENCE SAID
+// "it cannot be wrong in EITHER direction" AND THAT IS FALSE — Rule-13 rounds A
+// and B, independently, `F-RA-1` / `F-RB-1`. `Leaves` is committed at the E6
+// ADMISSION, and `run()` mints edge predicates LAZILY (`convertPhis` skips an
+// incoming under `In[I].second == Acc`, and a merge with no φ demands no
+// literal at all), so a φ can be RECORDED AND NEVER READ; the vacuous RAUW of a
+// later claim then declines a module the pre-woa0 oracle compiled CORRECTLY.
+// ⚠ The two sibling sentences — "cannot over-decline a φ that was NEVER
+// CONVERTED" and CLAUDE.md's "cannot over-decline a φ that SURVIVES" — are each
+// literally TRUE and answer the WRONG QUESTION: in every exhibit the φ WAS
+// converted and did NOT survive, which is how the gap survived three careful
+// re-readings. Say "cannot MISS one"; never a two-sided form. ⚠ The one-line
+// `!P->use_empty()` gate is MEASURED INSUFFICIENT — it recovers the
+// never-minted sub-class and NOT the minted-then-dead one, so the over-decline
+// is at least TWO sub-classes and the total fix records at the READ
+// (`literal()`/`edgePred`), not at the admission. Open as a bead.
+//
+// The BOOLEAN-ALGEBRA
 // conversion of a recorded φ is deliberately NOT a violation — for an all-constant
 // `i1` φ (which `isStructuralRailPhi` also matches) it yields an in-grammar
 // and/or tree, and flagging it would re-introduce the exact 2-cell A→D regression
@@ -98,8 +120,28 @@ bool isMuxableType(llvm::Type *Ty);
 // (unlike `WeakTrackingVH`) does NOT follow RAUW, so it keeps naming the φ across
 // `convertPhis`' `replaceAllUsesWith` and stops naming anything the moment the φ
 // dies. The set is a handful of entries, so a linear scan is the right container.
+// (Round A measured both handle classes against LLVM 19 rather than reading this
+// comment; the comment is right.)
+//
+// ⚠ THE RECORD IS KEYED ON SSA IDENTITY AND SPANS TWO CLONING / LOOP-REWRITING
+// PRE-PASSES, AND NOTHING HERE ARGUES IDENTITY STABILITY ACROSS THEM — Rule-13
+// round A, `F-RA-2`, ARGUED and NOT CONSTRUCTED. `unrollConstTripLoops` fully
+// unrolls a const-trip loop, ERASING the body's φs and CLONING the body;
+// `recognizeCtlzIdiomLoops` erases the loop outright. A recorded φ inside such a
+// loop has its `WeakVH` nulled, and the CLONES are new `PHINode`s the record does
+// not hold — so a later claim converting a clone is UNOBSERVED and that module
+// falls back to the pre-woa0 downstream accident. Nulling is the SAFE half (a
+// nulled handle can never match a live φ, so no decline is manufactured); the
+// INCOMPLETENESS is the open half. RETIREMENT TRIGGER: a stage that ERASES or
+// CLONES a recorded φ inside this window makes the record INCOMPLETE, not wrong.
+// ⚠ The claim that would close this for free — that each pre-pass's OWN nested
+// PredMux re-fixpoint re-admits and re-records any surviving clone — is
+// MEASURABLE and is currently written nowhere. Do not assume it; measure it.
 struct PredMuxRailPhiRecord {
-  // φs that an EMITTED region's condition tree reads as a rail leaf.
+  // φs an EMITTED region's condition tree ADMITTED as a rail leaf at E6.
+  // ⚠ "reads as a rail leaf" is what this said and it is NOT what it holds
+  // (`F-RA-1`/`F-RB-1`): admission is not readership, because `run()` mints edge
+  // predicates lazily. The gap is the over-decline; see the header note above.
   llvm::SmallVector<llvm::WeakVH, 8> Leaves;
   // Set when `convertPhis` select-chains one of `Leaves`. Sticky.
   bool Converted = false;
@@ -107,16 +149,38 @@ struct PredMuxRailPhiRecord {
   // moments later, so neither it nor its block can be named afterwards).
   //
   // ⚠ `AtFn` IS A RAW POINTER WHERE `Leaves` IS NOT, AND THE ASYMMETRY IS
-  // ARGUED, NOT OVERLOOKED. Its window is the few statements between the
-  // conversion and the re-ask, and nothing in that window erases a FUNCTION:
-  // `flattenPredMuxRegions` erases `BasicBlock`s only, `propagate` is pure
-  // analysis, and the unroll / ctlz pre-passes rewrite loop bodies in place. The
-  // φ's window, by contrast, spans every later claim, which is exactly why that
-  // one needs a handle. RETIREMENT TRIGGER (L8): the day a function-erasing
-  // stage runs inside a PredMux fixpoint, or the re-ask is moved later than the
-  // fixpoint it belongs to, this must become a handle too — and the null case
-  // then needs a loud diagnostic that does not take a `Function &`, because
-  // returning true without a message is Rule 1's "third path".
+  // ARGUED, NOT OVERLOOKED. ⚠ ITS WINDOW IS NOT "a few statements", WHICH IS
+  // WHAT THIS COMMENT SAID (Rule-13 round B, `F-RB-5`): it is the remainder of
+  // the current flatten, then the rest of the top-level PredMux fixpoint, then
+  // the whole `unrollConstTripLoops` fixpoint WITH its nested PredMux fixpoint,
+  // then the whole `recognizeCtlzIdiomLoops` fixpoint with its own — THREE
+  // NESTED FIXPOINTS, potentially hundreds of claims, exactly as the
+  // `railPhiRec` comment in `CQLoweringPass.cpp` (correctly) says.
+  //
+  // THE CONCLUSION SURVIVES AND WAS RE-VERIFIED RATHER THAN INHERITED (round B,
+  // by enumerating every `eraseFromParent` in the window): `PredMuxFlatten.cpp`
+  // erases only `Instruction`s and `BasicBlock`s; `propagate()` is
+  // `resolveSources` + `collectAndSeed` + `propagateWorklist`, none of which
+  // erases; `CtlzIdiomPrepass` erases only `Instruction`s; `LoopUnrollPrepass`
+  // drives LLVM's unroller, which rewrites blocks inside one function and never
+  // touches the function list; `eraseDeadDecls` takes DECLARATIONS and runs far
+  // later. `AtFn` is always a definition (`D->getParent()` of a claimed block).
+  //
+  // RETIREMENT TRIGGER (L8): the day a function-erasing stage runs inside a
+  // PredMux fixpoint, or the re-ask is moved later than the fixpoint it belongs
+  // to, this must become a handle too.
+  //
+  // ⚠ AND THE TRIGGER USED TO WORRY ABOUT THE WRONG DIRECTION — it said the null
+  // case "needs a loud diagnostic that does not take a `Function &`, because
+  // returning true without a message is Rule 1's third path". The SHIPPED code
+  // takes the STRICTLY WORSE branch: `if (!Rec.Converted || !Rec.AtFn) return
+  // false;` means an OBSERVED violation with a null blame pointer is SILENTLY
+  // ACCEPTED, no diagnostic anywhere (rounds A and B, `F-RA-5`/`F-RB-5`).
+  // Unreachable today — `AtFn` is null only for a detached block — and filed;
+  // the fix is to split the test so `!Converted` returns false and a null
+  // `AtFn` still declines. Rule 12 can supply no fixture for an unreachable
+  // shape (the bd `e1gr` precedent), which is why this is a written trigger and
+  // not a red-green pair.
   const llvm::Function *AtFn = nullptr;
   llvm::DebugLoc AtLoc;
 };
