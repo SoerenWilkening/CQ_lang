@@ -528,8 +528,37 @@ bool lowerCloneControl(Function &Clone, Module &M, TaintSet &ct) {
   // SESE tainted diamond must flatten). Idempotent on a single-`ret` body.
   normalizeReturnMerge(Clone);
 
-  while (flattenPredMuxRegions(M, ct, /*claimAll=*/true))
+  // bd `test_C_libtooling-woa0` — the SEVENTH `flattenPredMuxRegions` call site,
+  // and it gets its OWN cross-claim record + its OWN re-ask rather than a
+  // `nullptr` and an argument.
+  //
+  // ⚠ THE ARGUMENT FOR A `nullptr` HERE IS AVAILABLE AND IS DELIBERATELY NOT
+  // TAKEN. It goes: `SpecializeReject`'s `buildIntrinsicSets` rejects any
+  // candidate whose body holds a `taint.{Theta,Phase,Measure}Calls` pointer, so
+  // `isCondRailLeaf` — a `cq_theta_i1` CALL — can never be true inside a clone
+  // body; the only φ `isStructuralRailPhi` can match here is therefore the
+  // ALL-CONSTANT `i1` one, which `convertPhis` takes down the boolean-algebra
+  // path, which is not the hazard. That argument is almost certainly sound and
+  // it is exactly the species CLAUDE.md's L7 says hardens into a ruling because
+  // nobody rules on it — and this bead exists because a different unwritten
+  // argument in the same predicate was the ground a P1 stood on. Four lines of
+  // fence cost less than the next round re-deriving it.
+  //
+  // It also closes the OTHER half, which the argument above does not reach at
+  // all: this driver runs with the DISJOINT `cloneTaint`, so it is argued never
+  // to claim in a non-clone function and therefore never to convert a φ the
+  // module-level record holds. Same species of argument, same disposition.
+  PredMuxRailPhiRecord cloneRailPhiRec;
+  while (flattenPredMuxRegions(M, ct, /*claimAll=*/true, &cloneRailPhiRec))
     reseedCloneTaintFromParams(Clone, TaintedParams, ct);
+  // The re-ask, immediately after this driver's own fixpoint — the only slot
+  // that can, since `specialize()` runs after `detectControlRegions` and after
+  // `repropagateControlMerges`, so the module-level re-ask is long past. Loud;
+  // the `false` return is what the caller's existing decline+retarget path
+  // expects, and it matters only on a host whose diagnostic handler does not
+  // exit (`opt`'s does — bd `br4a`).
+  if (declineConvertedRailPhiLeaves(cloneRailPhiRec))
+    return false;
 
   // PredMux replaces the merge phis with selects and rewrites the branch to an
   // UNCONDITIONAL edge into the (surviving) merge block, so a flattened diamond is

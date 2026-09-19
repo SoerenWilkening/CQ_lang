@@ -81,6 +81,7 @@
 #include "llvm/IR/BasicBlock.h"
 #include "llvm/IR/CFG.h"
 #include "llvm/IR/Constants.h"
+#include "llvm/IR/DiagnosticInfo.h"  // bd woa0 — the post-fixpoint re-ask
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
@@ -770,10 +771,19 @@ bool coneDefinedAfterFlagDrop(const Value *Root) {
 // as fenced under a null `Entry` — the safe direction (both scopes then answer
 // false and W6 cannot fire), and unreachable in practice since any phi in a
 // verified terminator's condition cone is parented.
+// ⚠ `RailLeaves` is bd `test_C_libtooling-woa0`'s HALF of the record and it is
+// NOT `Recorded`. `Recorded` names the φs the flatten will convert BY BOOLEAN
+// ALGEBRA (so claim and emit share one decision); `RailLeaves` names the φs the
+// flatten will NOT convert and therefore READS AS A LEAF of the predicate tree it
+// emits — the ones a LATER claim can pull out from under it. Two sets, two
+// questions, and the second one only became askable when M4 gave the first a
+// placement conjunct. Null for every non-claim scope (the two W6 witnesses), so a
+// witness walk records nothing.
 struct PhiCondScope {
   const SmallPtrSetImpl<BasicBlock *> *InRegion = nullptr;
   const BasicBlock *Entry = nullptr;
   SmallPtrSetImpl<PHINode *> *Recorded = nullptr;
+  SmallPtrSetImpl<PHINode *> *RailLeaves = nullptr;
 };
 
 bool isBooleanCondTree(const Value *V, unsigned Depth,
@@ -960,9 +970,15 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // `cast<ConstantInt>` returns a constant-FALSE predicate, the arm's cone is
   // dead-swept, and the module compiled at exit 0 with 0 BYTES of stderr and a WRONG
   // unitary where the oracle declined loudly. The placement conjunct at E6 is what
-  // makes the claim true again, and it is true only WITHIN ONE PASS (bd
-  // test_C_libtooling-woa0). Say "the verdict is preserved FOR A φ THIS FLATTEN WILL
-  // NOT CONVERT", never the unqualified form.
+  // makes the claim true again, and it was true only WITHIN ONE PASS until bd
+  // `test_C_libtooling-woa0` added the cross-claim RE-ASK
+  // (`declineConvertedRailPhiLeaves`). ⚠ THE CONJUNCT IS STILL POINT-IN-TIME —
+  // nothing here re-asks it — so do not read the re-ask as making this line
+  // total: what is total is the OUTCOME. Either this flatten does not convert
+  // the φ, or a later one does and the module declines LOUDLY at the re-ask
+  // instead of by `collectCondTree`'s accident. Say "the verdict is preserved",
+  // and if you need the mechanism say "because a conversion by a later flatten
+  // is OBSERVED and declined", never "because no later flatten converts it".
   // ⚠⚠ "SAME VERDICT, SAME STRING, SAME DIAGNOSTIC" IS WHAT THIS PARAGRAPH FIRST
   // CLAIMED, AND IT IS FALSE (Rule-13 round 1 F2). It was measured on ONE module at
   // ONE polarity. Two counterexamples, both measured:
@@ -1022,11 +1038,34 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // refuses is REALIZABLE — it is an over-decline by the 2026-09-11 owner ruling,
   // filed as such, NOT a physics wall. Making it lower means RECORDING the φ so
   // `convertPhis` does not select-chain it, which is its own increment.
+  //
+  // ⚠⚠ AND THE CONJUNCT IS A **POINT-IN-TIME** PROPERTY — bd
+  // `test_C_libtooling-woa0`, Rule-13 ROUND 3 on this very fix (F-R3-1),
+  // MEASURED FIRING on the shipped M4 binary. It says "a φ THIS flatten will not
+  // convert", which is true of the region being claimed and FALSE of the
+  // PIPELINE: one region is claimed per `flattenPredMuxRegions` call inside a
+  // `while (...)` fixpoint, and nothing re-asks E6 about a region already
+  // emitted. An inner claim can flatten the φ's own block, making its terminator
+  // UNCONDITIONAL, after which an OUTER region's E6 loop (conditional
+  // terminators only) no longer sees the φ, claims, and `convertPhis`
+  // select-chains it out from under the inner region's already-emitted predicate
+  // tree. Before the record below that landed on a loud decline ONLY because
+  // `collectCondTree` refuses the resulting `xor`-of-`select` — round 2's
+  // "a downstream accident, not a fence", verbatim.
+  //
+  // SO THE ADMISSION IS RECORDED HERE AND RE-ASKED AFTER THE FIXPOINT (CLAUDE.md
+  // L1's standing cure, in both entry points, declining loudly). The record is
+  // COMMITTED at CLAIM, not here: a later gate's `leave` discards the whole
+  // `PredMuxRegion`, exactly as it does for `BoolAlgPhis`, so an admission that
+  // never became an emission cannot make a later claim decline.
   if (!Strict && isStructuralRailPhi(V)) {
     const auto *RP = cast<PHINode>(V);
     BasicBlock *RPB = const_cast<BasicBlock *>(RP->getParent());
-    if (S && S->InRegion && (RPB == S->Entry || !S->InRegion->count(RPB)))
+    if (S && S->InRegion && (RPB == S->Entry || !S->InRegion->count(RPB))) {
+      if (S->RailLeaves)
+        S->RailLeaves->insert(const_cast<PHINode *>(RP));
       return true;
+    }
   }
   if (const auto *P = dyn_cast<PHINode>(V))
     return !Strict && isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
@@ -2154,6 +2193,25 @@ bool isSpeculatablePureCalleeBody(const Function *F) {
 // Region recovery
 // ---------------------------------------------------------------------------
 
+// bd `test_C_libtooling-woa0` — "is this φ one that an ALREADY-EMITTED region's
+// predicate tree reads as a rail leaf?", asked by linear scan over `WeakVH`.
+//
+// ⚠ THE HANDLE IS THE POINT, NOT THE CONTAINER. A recorded φ can be erased by a
+// path that is not `convertPhis` (its consuming cone dead-swept), and LLVM reuses
+// freed `Instruction` memory — a raw `PHINode *` set would then match a FRESH φ
+// allocated at the same address and manufacture a decline from nothing, which is
+// the worst kind of false red because it is not reproducible. A `WeakVH` nulls on
+// deletion, and (unlike `WeakTrackingVH`) does NOT follow RAUW, so it keeps
+// naming the φ right through `convertPhis`' `replaceAllUsesWith` and stops naming
+// anything the instant the φ dies. Linear is right: the set is a handful.
+bool recordHoldsRailPhiLeaf(const PredMuxRailPhiRecord &Rec, const PHINode *P) {
+  const Value *Needle = P;
+  for (const WeakVH &H : Rec.Leaves)
+    if (static_cast<const Value *>(H) == Needle)
+      return true;
+  return false;
+}
+
 struct PredMuxRegion {
   BasicBlock *Entry = nullptr;   // block whose tainted terminator roots the claim
   BasicBlock *Merge = nullptr;   // immediate post-dominator of Entry
@@ -2174,6 +2232,15 @@ struct PredMuxRegion {
   // later `leave` discards the whole `PredMuxRegion` (one fresh `R` per
   // candidate terminator), so a partial record can never reach the flatten.
   SmallPtrSet<PHINode *, 8> BoolAlgPhis;
+  // bd `test_C_libtooling-woa0` — the rail φs E6 admitted as condition-tree
+  // LEAVES, i.e. the ones this flatten proved it will NOT convert and will
+  // therefore READ. Populated during E6 beside `BoolAlgPhis` and discarded with
+  // `R` on any later `leave`; COMMITTED into the caller's cross-claim
+  // `PredMuxRailPhiRecord` only once the claim is final, immediately before
+  // `RegionFlattener::run()`. Disjoint from `BoolAlgPhis` in practice but not by
+  // construction — the two answer different questions and nothing needs them to
+  // partition.
+  SmallPtrSet<PHINode *, 4> RailPhiLeaves;
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -3281,7 +3348,8 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
 
   // --- E4 + E6 + E7 over the region body ------------------------------------
   // Inc 5 (bd q2wk) — the claim-time phi context (PRD §4.4b rule (A)).
-  const PhiCondScope Scope{&R.InRegion, R.Entry, &R.BoolAlgPhis};
+  const PhiCondScope Scope{&R.InRegion, R.Entry, &R.BoolAlgPhis,
+                           &R.RailPhiLeaves};
   for (BasicBlock *B : R.InRegion) {
     // E6: every conditional terminator tainted, with an invertible condition.
     const Instruction *Term = B->getTerminator();
@@ -3566,7 +3634,14 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
 
 class RegionFlattener {
 public:
-  RegionFlattener(PredMuxRegion &R, IRBuilder<> &B) : R(R), B(B) {}
+  // `Rec` (bd `test_C_libtooling-woa0`) is the CALLER's cross-claim record, not
+  // this region's: `convertPhis` reports into it when it select-chains a φ that
+  // an EARLIER claim (or this one, at `R.Merge` — bd `test_C_libtooling-0fly`)
+  // recorded as a condition-tree rail leaf. Null when the driver does not police
+  // the property; the flattener's behaviour is otherwise identical either way —
+  // it only ever WRITES a bool, never reads one back.
+  RegionFlattener(PredMuxRegion &R, IRBuilder<> &B, PredMuxRailPhiRecord *Rec)
+      : R(R), B(B), Rec(Rec) {}
 
   void run() {
     // Process arm blocks in topological order: convert phis to select
@@ -3629,6 +3704,7 @@ public:
 private:
   PredMuxRegion &R;
   IRBuilder<> &B;
+  PredMuxRailPhiRecord *Rec = nullptr;  // bd woa0 — write-only, may be null
   DenseMap<BasicBlock *, Value *> BlockPred;   // nullptr = ⊤ (entry)
   DenseMap<std::pair<BasicBlock *, unsigned>, Value *> LitCache;
   SmallVector<WeakTrackingVH, 32> MaybeDead;
@@ -4401,6 +4477,42 @@ private:
             BoolAlg = false;
             break;
           }
+      // *** bd `test_C_libtooling-woa0` — THE OBSERVATION. ***
+      //
+      // This is the first point at which "a φ an EMITTED predicate tree reads as
+      // a rail leaf is being SELECT-CHAINED" is a FACT rather than a forecast,
+      // and it is the only place in the pass where that conversion happens. E6's
+      // placement conjunct predicted it would not; the prediction is
+      // POINT-IN-TIME (see `isSupportedCondTree`) and a later claim can falsify
+      // it, so the fact is recorded here and the CALLER re-asks after the
+      // fixpoint.
+      //
+      // ⚠ IT IS DELIBERATELY GATED ON `!BoolAlg`, AND THAT IS NOT A
+      // CONSERVATISM — IT IS THE DIFFERENCE BETWEEN A FENCE AND A 2-CELL
+      // REGRESSION. `isStructuralRailPhi` also matches an ALL-CONSTANT 2-incoming
+      // `i1` φ, and for that shape `isBooleanCondTree` passes on every incoming,
+      // so the boolean-algebra path runs and yields an in-grammar and/or tree
+      // that every downstream consumer already accepts. Flagging it would decline
+      // exactly the cells the M4 reviewer's first spelling broke (A→D in neither
+      // the corpus nor round 1's probes, found only by a φ-incoming variant
+      // matrix). The hazard is the SELECT CHAIN and nothing else.
+      //
+      // ⚠ NOTHING IS ABANDONED HERE. `run()` must not bail mid-mutation — see the
+      // `declineAddressTakenBlocks` note in `flattenPredMuxRegions` for why an
+      // early return inside `run()` spins the caller's fixpoint on a host with a
+      // non-exiting diagnostic handler. Record and carry on; the module is
+      // declined by the re-ask.
+      if (!BoolAlg && Rec && recordHoldsRailPhiLeaf(*Rec, P)) {
+        if (!Rec->Converted) {
+          Rec->Converted = true;
+          Rec->AtFn = D->getParent();
+          Rec->AtLoc = P->getDebugLoc();
+        }
+        if (::getenv("CQ_PREDMUX_DBG"))
+          errs() << "CQ_PREDMUX_DBG: converted recorded rail phi @"
+                 << D->getParent()->getName() << " blk=" << D->getName()
+                 << " phi=%" << P->getName() << "\n";
+      }
       Value *Acc = nullptr;
       if (BoolAlg) {
         for (auto &IV : In) {
@@ -4953,7 +5065,8 @@ static bool simplifyFlattenResiduesInFunction(Function &F) {
   return Any;
 }
 
-bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
+bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
+                           PredMuxRailPhiRecord *Rec) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -5008,9 +5121,20 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
         if (declineAddressTakenBlocks(Doomed, T))
           continue;
       }
+      // bd `test_C_libtooling-woa0` — COMMIT the rail-φ leaves E6 admitted, and
+      // commit them HERE: the claim is final (every `leave` above discarded the
+      // whole `R`, the `BoolAlgPhis` precedent) and `run()` has not started, so
+      // the record is live before this region's OWN `convertPhis(R.Merge)` — which
+      // is the one cell M4's conjunct over-admits (bd `test_C_libtooling-0fly`).
+      // Committing at the E6 ADMISSION instead would record φs for regions that
+      // never emitted and turn a later, unrelated claim into a decline.
+      if (Rec)
+        for (PHINode *P : R.RailPhiLeaves)
+          if (!recordHoldsRailPhiLeaf(*Rec, P))
+            Rec->Leaves.emplace_back(P);
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
-      RegionFlattener(R, Builder).run();
+      RegionFlattener(R, Builder, Rec).run();
       // bd adia (3c6m.55 Lever C): collapse fold residues the flatten materialized
       // (a select chain over constant incomings folds to a constant, leaving
       // a constant-operand compare feeding a "classical" branch that would
@@ -5025,6 +5149,39 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll) {
     }
   }
   return false;
+}
+
+// bd `test_C_libtooling-woa0` — THE RE-ASK. Contract in `PredMuxFlatten.h`.
+//
+// CLAUDE.md L1's standing cure, applied one stage over from where it was written:
+// the question E6 asked ("will this flatten convert the rail φ I am about to read
+// as a leaf?") is RECORDED at the claim and re-asked here, after the fixpoint, in
+// BOTH entry points, declining loudly. What makes it a fence rather than an
+// argument is that it reports an OBSERVED conversion, not a re-derived placement
+// — so it cannot over-decline a φ that was never converted, and it cannot miss
+// one that was.
+//
+// ⚠ THIS IS WHY THE FILE'S "PredMux NEVER DIAGNOSES" HEADLINE IS NOW QUALIFIED
+// RATHER THAN TRUE. The claim path is still accept-only: `recoverRegion` returns
+// a `leave` for every shape it refuses, and this function is not on it. What
+// speaks here is a POSTCONDITION on a mutation that already happened, which is
+// the `declineSurvivingIntrinsicCalls` shape (Rule 1: make a postcondition a
+// CHECKED, LOUD property rather than a comment) and not a new claim gate.
+//
+// ⚠ LOUD, NOT AN `assert`. Release builds have assertions off and Release is what
+// every gate in this tree runs — and this whole finding family exists because an
+// assertion-only `cast<>` in this same file was a silent wrong unitary in
+// Release and a clean abort under `+Asserts`, a build the tree has never had.
+bool declineConvertedRailPhiLeaves(const PredMuxRailPhiRecord &Rec) {
+  if (!Rec.Converted || !Rec.AtFn)
+    return false;
+  auto *At = const_cast<Function *>(Rec.AtFn);
+  At->getContext().diagnose(DiagnosticInfoUnsupported(
+      *At,
+      "cq controlled lowering: emitted predicate tree's rail phi converted by a "
+      "later flatten",
+      Rec.AtLoc));
+  return true;
 }
 
 }  // namespace cq

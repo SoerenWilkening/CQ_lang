@@ -676,9 +676,15 @@ bool isCondRailPhiShape(const Value *V) {
 // `cast<ConstantInt>` returns a constant-FALSE predicate, the arm's cone is
 // dead-swept, and the module compiled at exit 0 with 0 BYTES of stderr and a WRONG
 // unitary where the oracle declined loudly. The placement conjunct at E6 is what
-// makes the claim true again, and it is true only WITHIN ONE PASS (bd
-// test_C_libtooling-woa0). Say "the verdict is preserved FOR A φ THIS FLATTEN WILL
-// NOT CONVERT", never the unqualified form.
+// makes the claim true again, and it was true only WITHIN ONE PASS until bd
+// `test_C_libtooling-woa0` added the cross-claim RE-ASK
+// (`declineConvertedRailPhiLeaves`). ⚠ THE CONJUNCT IS STILL POINT-IN-TIME —
+// nothing here re-asks it — so do not read the re-ask as making this line
+// total: what is total is the OUTCOME. Either this flatten does not convert
+// the φ, or a later one does and the module declines LOUDLY at the re-ask
+// instead of by `collectCondTree`'s accident. Say "the verdict is preserved",
+// and if you need the mechanism say "because a conversion by a later flatten
+// is OBSERVED and declined", never "because no later flatten converts it".
 //
 // ⚠ AN EARLIER DRAFT SAID "the SAME string and the SAME diagnostic", MEASURED ON
 // ONE MODULE AT ONE POLARITY, AND THAT IS FALSE (Rule-13 round 1 F2): with a

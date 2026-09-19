@@ -3872,3 +3872,177 @@ no failure banner, so a loud `DiagnosticInfoUnsupported` — the Prime Directive
 killed it after a full IR dump and left one bare `error:` line. It was reported as *"the script fails
 again"*, and **the decline itself went unexamined for days**. A gate whose failure mode is
 indistinguishable from a bug in the gate trains people to stop reading it.
+
+
+---
+
+## ARCHIVED 2026-09-26 — CLAUDE.md §4i, verbatim (the 2026-09-23 landing)
+
+Moved, never deleted, when `CLAUDE.md` crossed 150 k at the bd `test_C_libtooling-woa0`
+landing. Every cross-reference in `CLAUDE.md` was repointed in the same change.
+
+### 4i. The 2026-09-23 landing — bd `fn1q`'s fence map re-derived AGAIN, and a second vanishing user gate
+
+⚠ **THE FIRST THING TO CARRY IS THAT §4h's OWN CORRECTED FENCE MAP WAS ALSO WRONG, AND THAT IS NOW
+A NAMED FAILURE MODE: A CORRECTED BISECTION IS STILL A BISECTION AND INHERITS THE SAME BURDEN.**
+§4h named **`MergePhiPeel` P9** as the owner's program's first wall. Measured on a bypass build,
+**removing P9 changes `owner.c` not at all** — and the peel *structurally cannot* fix the shape in a
+loop or out of one, because both of the owner's merge φ are **ARM-DEFINED** and `phiPeelable`'s own
+contract is that the peel must *never* hoist one out. The **loop-free twin declines identically**,
+which is what settles it. §4h's map was read off the code; it was never measured by removing the
+clause.
+
+**The stage that owns a multi-φ tainted merge is `PredMuxFlatten`** — named as such, in writing, one
+screen above the clause §4h proposed to retire — and it refuses the owner's program at **THREE**
+gates: **E2-cycle** (the region is in a loop), **E6-condtree** (a bare `_Bool` bank-cell rail
+condition) and **E4-gep** (a classical runtime-index const-table load; the existing QROM admission
+refuses at its index-**TAINT** gate, not on table size). ⚠ **ROUTE PROVED, NOT PROPOSED:** with all
+three bypassed, the owner's program compiles verbatim — exit 0, stderr empty, **106 lines and still
+ROLLED**, STRICT 2b `3 verified, 0 violation(s), 0 unproven`, 88 trace lines, the shipped
+controlled-copy idiom twice per trip, **no new symbol**. **Owner ruling 2026-09-23:** take that
+route, and admit the E4 load **only with a proof** of in-bounds-ness — an unprovable index keeps
+today's decline, so §4h's `flat_qc_load` ruling stands unchanged.
+
+**LANDED — increment 2 of 4, the BARE RAIL LEAF at E6** (closes bd `s9xi`): `isSupportedCondTree`
+admits `isCondRailLeaf` (a `cq_theta_i1` CALL) as a LEAF when `!Strict`; `buildNegation` gains the
+`¬rail = xor rail, true` arm; the flatten's select site folds `select(¬c,T,F) == select(c,F,T)`,
+**fenced to a rail operand**; `sweepDead` gains the rail exclusion. Rule 14 — `isCondRailLeaf` is
+CALLED, never re-derived, and a rail is ALWAYS tainted (Rule 3), so the narrow predicate is also
+the one needing no taint argument.
+
+⚠ **AND THE ROUND FOUND A SECOND VANISHING USER GATE — §4h's (K5) LESSON, ONE INCREMENT LATER AND
+ONE STAGE OVER.** E6's grammar admitted **no `CallInst` at all**; *that* is what kept CQ's
+intrinsics out of `PredMuxFlatten`'s dead-sweep. The rail leaf made one, three `track()` sites put
+it in `MaybeDead`, and **`sweepDead` ERASED the user's `cq_theta_i1`**: `opt` **exit 0**, **0 bytes
+of stderr**, **no `cqrt_alloc_i1` and no `cqrt_ry_i1`** in the stream, where the oracle declined
+loudly. `opt -verify` clean; `free_pairing_check.py` `0 violation(s)` **because it is structurally
+blind to a rail that no longer exists**. ⚠ **`RegionFlatten.cpp:107` ALREADY CARRIED THE CONJUNCT
+AND THE RULING** (bd `3qlq.4` — *"never this stage's to erase, WHATEVER ITS USE COUNT"*) and nothing
+had carried it across. **A RULING WRITTEN IN ONE STAGE DOES NOT PROPAGATE TO ITS SIBLING BY BEING
+TRUE.** Fixed at the SINGLE eraser, not at the three trackers.
+
+⚠ **TWO ROUNDS, AND BOTH EARNED THEIR BUDGET.** Round 1 **BLOCKED** (1 P1, 2 P2, 3 P3): besides the
+P1 it measured the fold's *"narrow by construction"* scope claim **FALSE** (`canonicalizePred` is a
+second producer, so a module with **no rail anywhere** flipped decline→accept — and the corpus was
+**structurally incapable** of showing it: of 2130 fixtures exactly ONE carries an `xor i1 …, true`
+feeding a `br`, and only on `CHECK:` lines), that the BoolAlg surface shipped unfixtured, and that
+every `CHECK-COUNT` was *"at least N"* — an injected **ninth** controlled copy **missed by all four
+prefixes**. Round 2 on the fixes: **CLEAR-WITH-ITEMS, 0 P1**, but it found the same P1 class **ONE
+ERASER OVER** (`RecursivelyDeleteTriviallyDeadInstructions`), filed as **bd `cfmv`** — capped at P2
+by two measurements (it needs a `memory(none)` attribute `CQ.h` cannot emit, and the ORACLE deletes
+the rail too for a compare-conditioned region), ⚠ **but "pre-existing" is true of the DEFECT and
+FALSE of its POPULATION**. It also caught **two comments in the same change contradicting each
+other**, and a `RAIL` prefix claiming *"read ONLY as a control"* while **missing an injected
+rotation on the user's own register** (the Rule-7 class).
+
+⚠ **PROTOCOL ITEM 5 MOVED IN THE ACCEPT DIRECTION, and the argument is a CONTROL, not an absence.**
+With a trailing `cq_theta(b,−0.5)` on the condition's own register the flat 4-variable form declines
+on the oracle and ACCEPTS here — and the already-shipped **TWO-variable** sibling accepts the
+identical program **on the ORACLE**, silently, with the same gate kinds and the **same `cqrt_ry_i1`
+count**. The class is pre-existing; this increment **adds customers to bd `s82e` / Q-R1-1**, and
+`entangle.py` flags it **identically on both binaries** — say that, never *"no findings"*.
+
+⚠ **STILL OPEN, and the owner's `example/grover/grover_oracle_uncompute.c` DOES NOT COMPILE YET**:
+increment 3 = the RAIL φ (⚠ measured: admitting `isCondRailPhiShape` at E6 is **not sufficient
+alone** — the downstream proves a rail φ through `preppedRailPhiRegionIdx`, so a **TAINTED**-prep φ
+accepts while a **CLASSICAL**-prep φ does not); increment 4 = E2; increment 5 = the proof-gated E4.
+Two instrument lessons worth carrying: **naming a FileCheck directive in PROSE creates one** (a
+backticked count token failed a fixture), and a re-validation harness that derives prefixes from
+comment lines instead of RUN lines **measures itself, not the fixtures** — caught by its own null
+control.
+
+
+---
+
+## ARCHIVED 2026-09-26 — CLAUDE.md §4, verbatim (the 2026-09-11 landing)
+
+Moved, never deleted, in the same change as §4i, when `CLAUDE.md` crossed 150 k at the bd
+`test_C_libtooling-woa0` landing. This was the LAST full landing section still inline; §4a–§4i
+are all pointers now and §4j is the only narrative one.
+
+### 4. The 2026-09-11 landing — the owner's file compiles
+
+`example/grover/grover_oracle_uncompute.c` — `_Bool b0`, `_Bool b1`, no `int`
+workaround and no new `cq_*` function — compiles **as written**: `opt` exit 0,
+stderr empty, 19 trace lines, STRICT stage 2b `6 rail mint(s) of which 5 left
+allocated, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven`. It took
+four increments in one session because it had **three walls in order**: the
+multi-phi merge peel (bd `b6ap`, `3a3a2b9`) → the bare-`_Bool` controlled-Ry arm
+and state prep (bd `l4x4`.b, `e96f89c`) → F2's `CondWire` narrowing (bd
+`drbq.14`, `a9cc062`), alongside the compare-select fence parity (bd
+`9pum`+`r10v`+`r903`(b), `7203d1c`).
+
+The emitted stream, and the one invariant to read it by: `alloc_i1→h0;
+ry_i1(h0,.5)`; `alloc_i1→h1; ry_i1(h1,.5); ry_i1_controlled(h0,h1,−.5)`; the
+peeled `a`-mux as the rail-root CNOT-copy select merge (`alloc_i1→h2;
+cnot(h0,h2); alloc_i32(0)→h3; alloc_i32(2)→h4; copy_i32_controlled(h2,h4,h3);
+x(h2); alloc_i32(5)→h5; copy_i32_controlled(h2,h5,h3); x(h2); cnot(h0,h2);
+free(h2)`); then three measures. ⚠ **`h0` is read ONLY as a control** and
+measured once: never `cqrt_x`-bracketed, never freed. The two `cqrt_x` are on
+the ancilla `h2`, whose `x ⊕ x = 0` return makes its free a proven-`|0⟩` one.
+The emitted ORDER puts the negated prep before the peeled mux (swapped vs
+source) and that is the same unitary exactly — both are block-diagonal in `h0`'s
+basis and act on disjoint targets, so they commute — and it is STRUCTURAL, since
+`-O1` fused the two source regions and left no source order between them.
+
+**The owner's rulings from that session**, because they govern what comes next:
+*"our end-goal is to not decline any code that will lead to a valid quantum
+circuit"* (an over-decline is a defect); **option 1** for the compare-select work
+(fences first — A.1 — widenings second — A.2 — then bd `3d8q` on its own);
+**H-3 = ADMIT** (the S† after a VALUE region, refused at P1 on `SawValueArm`
+while the 6.5 arm has no P1 wrapper — decide once, in the admit direction; it is
+an A.2 widening and is **not built**); and the reversal of "the `i1` state-prep
+width is OUT" — *"WE DO NOT WANT TO WRITE `int b1`. also WE DO NOT WANT ANOTHER
+cq function … I dont see the need for the over-decline."*
+
+⚠ **What the F2 narrowing silently absorbs, in the words it must be said in.** A
+program that was LOUDLY REFUSED now receives the circuit for the *other* reading,
+with no diagnostic: **α** (15 of 19 flipped fixtures) an in-place Ry on the
+CONDITION's own register, which after `-O1` is **byte-identical** to the genuine
+prep; **β** (4) where the straight-through incoming was a live register `-O1`
+folded to the seed. No fence can separate them because after `-O1` there is one
+module, so the mitigation is **disclosure**, not a predicate — and a warning was
+deliberately NOT added (it would fire on every Grover state prep the ruling
+exists to enable). It is admissible because the rival has **no lowering to be
+robbed of**: `railWireClosure` inserts its seed before any gate, so
+`RotBase ∈ CondRails ⇒ R4 declines` for every chained rotation arm, and β is
+covered by a state-vector argument (on the pinned edge the register *is* the
+product basis state |seed⟩, so a controlled copy yields |seed⟩⊗|seed⟩ — nothing
+cloned). ⚠ **RETIREMENT TRIGGERS**: the narrowing must be re-derived from
+scratch if `railWireClosure` as called by F2 ever diverges from R4's
+`CondRails` (different helper, `WireDir`, seed set, `Exclude`, or one call site
+"tidied"), and it becomes an OVER-ACCEPT the day any chained rotation arm whose
+`RotBase` is in `CondRails` lowers — whose live door is **2c**, not R4.
+
+
+---
+
+## ARCHIVED 2026-09-26 — CLAUDE.md's two oldest COUNTS paragraphs (2026-09-17 and 2026-09-15), verbatim
+
+Moved in the same change as §4 and §4i, to keep the counts CHAIN bounded while a new link was
+added at the bd `test_C_libtooling-woa0` close. The inline chain in `CLAUDE.md` now runs
+2026-09-26 → 2026-09-19; everything older is here. Re-measure, never quote (Rule 11).
+
+**Counts, measured 2026-09-17 at the session-2026-09-18 close (`main` `014b4381`, primary rebuilt once,
+`cq-opt` `07d93784…` bit-identical to the gated worktree binary; re-run, not copied).** ctest **459** ·
+`^e2e-` **449** · `^e2e-slice-` **392** · `twin-identical` **43** · `ls ir-pass/test/*.ll | wc -l` **2099** ·
+`ls tests/e2e/*.expected.log | wc -l` **394** · twin matrix **312** expected + **70** quarantine = **382**
+cells (bd `vsr6`'s nested-loop axis + 33 blocks authored at the gate: classes F/G/H) · `--allow-unproven`
+**4** usages. Full `ctest -j6` on that tree: **459/459 in 515.58 s** at load 47→5 (gate worktree, cited by
+S2 for the closing primary). `cq-opt-equivalence-full`: **2099/0**. Earlier chain follows.
+
+**Counts, measured 2026-09-15 at the ARM group gate (`arm-group-gate`, `cq-opt` `7916923f…`; re-run,
+not copied).** ctest **442** · `^e2e-` **432** · `^e2e-slice-` **381** · `twin-identical` **40** · `ls
+ir-pass/test/*.ll | wc -l` **2047** · `ls tests/e2e/*.expected.log | wc -l` **383** · twin matrix
+`grep -c '^m_' tools/loop_twin_matrix.expected.txt` **309** + `grep -c '^cell '
+tools/loop_twin_matrix.quarantine.txt` **29** = **338** cells. Full `ctest -j6` on that tree:
+**442/442** in **832.29 s** — ⚠ **under concurrent agent load (29 at start, 168 at end); not
+comparable with a quiet-box figure, and quoted with its load per Rule 19**. `cq-opt-equivalence-full`:
+**2047/0**. ⚠ **Only the FIXTURE count moved** (1994 → 2047, the two ARM-group tracks' batches);
+ctest, `^e2e-`, the goldens and the twin matrix are unchanged because neither track touched `tests/`.
+(2026-09-14 at `66428ddc`: 442 · 432 · 381 · 40 · 1994 · 383 · 338; 442/442 in 436.73 s; 1993/0.
+2026-09-13 at `59ac5b7`: 420 · 410 · 365 · 34 · 1928 · 367 · 288; 1928/0. 2026-09-11 at `e96f89c`:
+403 · 393 · 353 · 30 · 1893 · 355 · 288; 1893/0.) The twin matrix moved 288 → 338 because bd `uq96`
+gave it an `i1` axis. **Re-measure rather than quote** — `ctest --test-dir build -N` and the
+`ls`/`grep` lines above are the source of truth, and these go stale on every fixture batch. The
+per-commit chain and every earlier figure are in `docs/CLAUDE-HISTORY.md`.

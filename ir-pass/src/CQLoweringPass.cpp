@@ -371,7 +371,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // lowerByRefInline fixpoint precedent) so each claim sees fresh
   // dominance/taint state and sequential siblings compose without any cached
   // block identity crossing an erasure (Rule 9).
-  while (flattenPredMuxRegions(M, taint))
+  //
+  // bd `test_C_libtooling-woa0` — `railPhiRec` is the CROSS-CLAIM record, and it
+  // is declared out here rather than inside the loop for the only reason that
+  // matters: the property it polices is violated BETWEEN claims, so a record
+  // scoped to one call would be structurally incapable of seeing it. It is
+  // threaded through all THREE fixpoints below (this one, the unroll pre-pass's
+  // and the ctlz pre-pass's) and re-asked once, after the last of them. See
+  // `PredMuxFlatten.h`.
+  PredMuxRailPhiRecord railPhiRec;
+  while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec))
     taint = propagate(M, wd);
 
   // bd 3c6m.55 Inc 2 (Lever B, ticket lf8s) — static-K force-unroll pre-pass
@@ -395,7 +404,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // claimable once the loop is gone.
   while (unrollConstTripLoops(M, taint)) {
     taint = propagate(M, wd);
-    while (flattenPredMuxRegions(M, taint))
+    while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec))
       taint = propagate(M, wd);
   }
 
@@ -424,9 +433,28 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // CtlzIdiomPrepass.h.
   while (recognizeCtlzIdiomLoops(M, taint)) {
     taint = propagate(M, wd);
-    while (flattenPredMuxRegions(M, taint))
+    while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec))
       taint = propagate(M, wd);
   }
+  // bd `test_C_libtooling-woa0` — THE RE-ASK, and its slot is the argument.
+  //
+  // CLAUDE.md L1's standing cure names "after the fixpoint, in BOTH entry
+  // points, declining loudly". HERE is after ALL THREE top-level PredMux
+  // fixpoints (:374, the unroll pre-pass's, and the ctlz pre-pass's) and BEFORE
+  // the first stage that could consume — or accidentally decline — what a later
+  // claim converted. That ORDER is what makes the diagnostic name the real cause
+  // instead of inheriting a downstream owner: before this fence the composition
+  // landed on `collectCondTree`'s refusal of an `xor`-of-`select`, which Rule-13
+  // round 2 named "a downstream accident, not a fence". `LLVMContext::diagnose`
+  // EXITS on the first `DS_Error` (bd `br4a`), so being early is precisely what
+  // buys the ownership.
+  //
+  // ⚠ IT DOES NOT COVER `Specialization.cpp`'s `claimAll=true` fixpoint, which
+  // runs inside `specialize()` — i.e. AFTER `detectControlRegions` and
+  // `repropagateControlMerges`, so no slot here can. That driver carries its own
+  // record and its own re-ask; see `lowerCloneControl`.
+  if (declineConvertedRailPhiLeaves(railPhiRec))
+    return PreservedAnalyses::none();
   // Debug lever (bd adia; env-gated, no behavior change): dump the module state
   // the Phase-6 spec-scan reads (post fp80/PredMux/unroll fixpoints).
   if (::getenv("CQ_SPEC_DBG")) {
@@ -1121,7 +1149,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // rebuilds module-wide work lists; the F-restriction below this point in
   // the original shim applies only to the rotation/measure lists, and this
   // shim is a documented DEAD entry point (AXIS-F) — parity is kept anyway.
-  while (flattenPredMuxRegions(M, taint)) {
+  //
+  // bd `test_C_libtooling-woa0` — the cross-claim record, mirrored here because
+  // "in BOTH entry points" is the cure's own wording and a fence added to one of
+  // two entry points is a hole with no diagnostic anywhere. See run().
+  PredMuxRailPhiRecord railPhiRec;
+  while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
@@ -1137,7 +1170,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
     onlyInF(taint.MeasureCalls);
-    while (flattenPredMuxRegions(M, taint)) {
+    while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec)) {
       taint = propagate(M, wd);
       onlyInF(taint.ThetaCalls);
       onlyInF(taint.PhiCalls);
@@ -1155,7 +1188,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
     onlyInF(taint.MeasureCalls);
-    while (flattenPredMuxRegions(M, taint)) {
+    while (flattenPredMuxRegions(M, taint, /*claimAll=*/false, &railPhiRec)) {
       taint = propagate(M, wd);
       onlyInF(taint.ThetaCalls);
       onlyInF(taint.PhiCalls);
@@ -1163,6 +1196,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     }
   }
 
+  // bd `test_C_libtooling-woa0` — the re-ask, mirrored in this entry point too
+  // (twin-pipeline parity is MANDATORY, WI-1.12). Same slot by the same
+  // argument: after all three top-level PredMux fixpoints and before the first
+  // stage that could inherit ownership of the decline. See run().
+  if (declineConvertedRailPhiLeaves(railPhiRec))
+    return false;
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
   // here would silently diverge, WI-1.12). See run() for the rationale.
