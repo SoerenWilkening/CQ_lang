@@ -1,0 +1,89 @@
+\labsessionheader{2026-09-25}{The rail \(\varphi\) at PredMux E6: a silent wrong unitary found, fixed and cleared}%
+  {84ba04ab}{202a23ab}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-25-orchestrator/}
+
+\subsection*{Goal}
+Increment 5a of \bd{test\_C\_libtooling-fn1q} (the rail \(\varphi\) at \texttt{PredMuxFlatten}'s
+E6 gate) had had exactly one Rule-13 round, which returned \texttt{BLOCKED} on a compiler
+crash. That crash was fixed but round 2 never ran, so the increment sat uncleared while the
+owner's \texttt{example/grover/grover\_oracle\_uncompute.c} depended on it. This session was
+to run round 2, then scope increment 5b.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item The \textbf{M4 placement conjunct} at E6 --- \bd{test\_C\_libtooling-41g3} --- fixing a
+        verify-clean silent wrong unitary, with a regression fixture and two source-comment
+        corrections at the sites round~2 measured false.
+  \item \texttt{control\_predmux\_reject\_rail\_phi\_interior\_convertible.ll}, mutation-validated
+        in both directions (passes on the fix, \emph{fails} on the defective binary).
+  \item Records: the round-2 and round-3 reviews, the M4 landing measurement, and the
+        increment-5b scope with its probes.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \textbf{P1, a silent wrong unitary} (\bd{test\_C\_libtooling-41g3}). E6 admitted a
+        rail \(\varphi\) \emph{before} the \texttt{dyn\_cast<PHINode>} arm, so it was never
+        recorded; for a \(\varphi\) in a non-entry region block \texttt{convertPhis} then
+        converts it by the select chain, and \texttt{buildNegation}'s \emph{assertion-only}
+        \texttt{cast<ConstantInt>} returns a constant-\texttt{false} predicate rather than
+        crashing. The arm's cone is dead-swept, so nothing off-grammar survives for a
+        downstream owner to object to: \textbf{the silence is structural, not lucky}. Six lines
+        of ordinary \texttt{CQ.h} C at the \texttt{-O1} floor; oracle declines loudly, subject
+        exits 0 with \textbf{0 bytes of stderr} and emits a circuit in which the inner compare
+        is absent and the rail is never a control. \texttt{opt -verify} clean;
+        \texttt{free\_pairing\_check.py} \texttt{0 violation(s), 0 unproven}. Fixed by gating the
+        admission on the \(\varphi\) being one this flatten will not convert.
+  \item \foverdecline\ The fix is a \emph{narrowing}: the interior rail \(\varphi\) it now refuses
+        is realizable, so by the 2026-09-11 ruling its decline is compiler structure, not
+        physics. The fixture carries the retirement trigger; the route that removes the defect
+        rather than hiding it is to \emph{record} the \(\varphi\).
+  \item \fconfirmed\ Two P2s on the same conjunct --- \bd{test\_C\_libtooling-woa0} (it is a
+        \emph{point-in-time} property: an inner region's flatten makes a terminator
+        unconditional, hiding the \(\varphi\) from the outer region's E6 loop on the next
+        fixpoint pass; L1's shape one stage over) and \bd{test\_C\_libtooling-0fly} (it
+        over-admits exactly the region merge phi, closed by an argument written nowhere).
+  \item Increment 5b is \textbf{two} customers, not one, split by \texttt{clang -O1} on whether
+        the user also measures the \texttt{bool}. The route was \emph{proved} for one shape
+        (a correct, 2b-clean stream built entirely from shipped idioms) and hits a second wall
+        in the uncompute spine for the other.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+lit fixtures & 2155 & \measured{lit ir-pass/test} \\
+lit passed / XFAIL & 2154 / 1 & \measured{lit ir-pass/test} \\
+SUBJECT $\leftrightarrow$ M4, all fixtures & 1 mover & A/B sweep, null + positive control \\
+ORACLE $\leftrightarrow$ M4, all fixtures & 1 mover & A/B sweep (round 3, independent) \\
+owner's program vs pre-fix & byte-identical & \measured{diff} on the lowered module \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Three independent Rule-13 rounds ran (round~2 on the increment, round~3 on the fix), each by an
+agent that did not write the change. Round~2 returned \texttt{BLOCKED}; round~3 returned
+\texttt{CLEAR-WITH-ITEMS} with \textbf{0 P1}. The orchestrator reproduced the P1 independently
+before any fix, and re-verified the fix rather than inheriting it: the M4 build came out
+bit-identical to the reviewer's. \texttt{lit} was run separately from the corpus sweeps because
+an A/B compares exit codes, strings and emitted IR and \emph{does not evaluate fixture
+directives} --- ``0 movers'' was never ``lit is green''. Full \texttt{ctest -j6} was run at the
+close. \emph{Not} run: any simulation or statevector (Rule 2), and no \texttt{-O2}/\texttt{-O3}
+pipeline.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-woa0} and \bd{test\_C\_libtooling-0fly} --- both P2, both the ground
+        the P1 was built on, neither a behavioural defect at HEAD.
+  \item Increment 5b: the admission predicate is undesigned, and the prototype's blast radius
+        shows why a permissive one reaches deep into unrelated machinery.
+  \item \textbf{The tree has never had a \texttt{+Asserts} \texttt{cq-opt}}, because building one aborts
+        on four committed \emph{accept} fixtures, all pre-existing. That is the structural reason
+        this whole unchecked-\texttt{cast<>} family has no gate.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None. Three claims made \emph{within this session} were corrected at their source before close:
+an overstated taint-growth obligation, an overstated ``must keep declining'' boundary that the
+cited fixture's own header refuted, and two corpus-sweep numbers retracted after two sweeps were
+found sharing scratch paths. A fourth, an \texttt{A\(\to\)D} row in the positive control, was
+retracted as contention after a serial re-run --- caused by starting \texttt{ctest} under the
+running sweep.
