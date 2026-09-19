@@ -159,6 +159,15 @@ bool isCondRailLeaf(const llvm::Value *V);
 // block-lifetime hole silently.
 bool isCondRailPhiShape(const llvm::Value *V);
 
+// bd `fn1q` increment 5a — `isCondRailPhiShape` AND every incoming is a rail
+// (`isCondRailLeaf`) or an `i1` constant. The refinement exists because
+// `PredMuxFlatten`'s E6 gate runs BEFORE `detectControlRegions` and so cannot ask
+// `preppedRailPhiRegionIdx`; this is the strongest thing provable there with no
+// plan and no taint. ⚠ NECESSARY, NOT SUFFICIENT — a φ it admits can still be
+// refused downstream, with the verdict and the string unchanged. Read the
+// definition before adding a caller.
+bool isStructuralRailPhi(const llvm::Value *V);
+
 // bd `boi6` (D-B) / Track M — THE SEMANTIC HALF, and THE ONE SPELLING OF RUNG 0
 // (Rule 14). Returns the INDEX in `plan.Regions` of the `BranchRegion` that
 // COMMITTED `P` as its `Merge` with an `InPlaceRotation` arm (the controlled

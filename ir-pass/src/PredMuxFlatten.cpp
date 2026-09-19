@@ -936,13 +936,98 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // lesson that a grammar widening owes an audit of everything that CONSUMES the
   // grammar, paid here rather than by the next round.
   //
-  // ⚠ THE RAIL PHI (`isCondRailPhiShape`, the `_Bool` bank cell `%cq.bank1` a
-  // preceding state-prep region leaves behind) is a DISTINCT and deliberately
-  // SEPARATE increment: that predicate is weak by design and its consumers prove
-  // it through `preppedRailPhiRegionIdx` / `AllowRailPhi`, none of which is asked
-  // here. Admitting it in passing would be widening two axes at once.
   if (!Strict && isCondRailLeaf(V))
     return true;
+  // bd `fn1q` increment 5a — THE RAIL PHI: the `_Bool` bank cell `%cq.bank1` that
+  // `promoteRailBankCells` leaves behind for `if (b0[i])`. This is the owner's
+  // program's LAST wall; with it admitted the program compiles (measured: exit 0,
+  // stage 2b STRICT `3 verified, 0 violation(s), 0 unproven`).
+  //
+  // ⚠ `isStructuralRailPhi`, NOT `isCondRailPhiShape`. The latter is any
+  // 2-incoming `i1` φ and is weak BY DESIGN, because its other consumers finish
+  // the proof with `preppedRailPhiRegionIdx` — which THIS GATE CANNOT ASK, PredMux
+  // running before `detectControlRegions`. The refinement asks the strongest thing
+  // provable here: every incoming is a rail CALL or an `i1` CONSTANT. See its
+  // definition for why the obvious taint fallback is refuted by measurement.
+  //
+  // ⚠ WHAT THIS ADMITS THAT THE DOWNSTREAM STILL REFUSES, stated because it is a
+  // real cost and not a gap: a prep under a CLASSICAL condition is not a REGION,
+  // so it has no prep index and the 4.4 select declines it. The VERDICT is
+  // preserved and no decline becomes silence.
+  // ⚠⚠ AND THAT SENTENCE WAS ITSELF MEASURED FALSE — Rule-13 ROUND 2 (R5aR2-1, P1).
+  // A DECLINE DID BECOME SILENCE: for a rail φ in a NON-ENTRY region block the flatten
+  // CONVERTS it by the select chain, `buildNegation`'s assertion-only
+  // `cast<ConstantInt>` returns a constant-FALSE predicate, the arm's cone is
+  // dead-swept, and the module compiled at exit 0 with 0 BYTES of stderr and a WRONG
+  // unitary where the oracle declined loudly. The placement conjunct at E6 is what
+  // makes the claim true again, and it is true only WITHIN ONE PASS (bd
+  // test_C_libtooling-woa0). Say "the verdict is preserved FOR A φ THIS FLATTEN WILL
+  // NOT CONVERT", never the unqualified form.
+  // ⚠⚠ "SAME VERDICT, SAME STRING, SAME DIAGNOSTIC" IS WHAT THIS PARAGRAPH FIRST
+  // CLAIMED, AND IT IS FALSE (Rule-13 round 1 F2). It was measured on ONE module at
+  // ONE polarity. Two counterexamples, both measured:
+  //   * the FALSE-successor polarity did not decline at all — it SIGSEGV'd
+  //     (`…_reject_rail_phi_false_edge.ll`, the round's P1, fixed in the same
+  //     change but only because the round found it);
+  //   * a classical-prep rail φ followed by a SECOND independent tainted region
+  //     moves the decline STRING: ORACLE `nested control flow under quantum
+  //     control`, SUBJECT `control flow under quantum control` — because the
+  //     flatten claims and mutates the first region, so the decline lands with a
+  //     different owner.
+  // THE CORRECT CLAIM IS NARROWER: the verdict (decline) is preserved, and no
+  // decline becomes silence. The STRING can move, and Rule 12 pins strings
+  // character-for-character, so a decline fixture in this class may change owner.
+  // What it costs is DETECT-BEFORE-MUTATE for that one shape: the
+  // region is flattened before the decline. That is exactly the cost bd `cfmv`'s
+  // round 2 filed as R4R2-1, and it is accepted here KNOWINGLY, under the owner's
+  // ruling that a construct with no PHYSICS reason to decline must compile — the
+  // classical-prep φ is a classical branch choosing between two circuits, which is
+  // realizable, so its decline is compiler structure and is bd `fn1q` increment 5b,
+  // not a wall.
+  // ⚠⚠ THE PLACEMENT CONJUNCT IS A P1 FIX, NOT A REFINEMENT (bd `fn1q` increment
+  // 5a, Rule-13 ROUND 2 finding R5aR2-1). WITHOUT IT THIS ARM ADMITS A φ THE
+  // FLATTEN WILL **CONVERT**, AND THE RESULT IS A SILENT WRONG UNITARY.
+  //
+  // THE MECHANISM, end to end. Admitting here happens BEFORE the
+  // `dyn_cast<PHINode>` arm below, so the φ is never inserted into `S->Recorded`.
+  // `run()` converts every region block's phis EXCEPT the entry's — so for a φ in
+  // a NON-ENTRY region block `convertPhis` DOES run, re-checks the BoolAlg grammar
+  // SCOPE-LESSLY, and a `cq_theta_i1` CALL incoming fails `isBooleanCondTree`. The
+  // φ therefore falls to the Inc-1 SELECT CHAIN, handing `buildNegation`
+  // `select(EP, %rail, true)` — and its select arm's `cast<ConstantInt>` is
+  // ASSERTION-ONLY (`(void)TC`), so Release does not crash: it returns
+  // `and(¬EP, ¬true)` = **false**. The arm's edge predicate goes CONSTANT-FALSE,
+  // its value is dropped from the merge, and its whole cone is dead-swept, so
+  // nothing off-grammar survives for a downstream owner to object to. ⚠ THE
+  // SILENCE IS STRUCTURAL, NOT LUCKY.
+  //
+  // MEASURED, from ordinary `CQ.h` C at the `-O1` floor with no `volatile` and no
+  // attribute `CQ.h` cannot emit: ORACLE declines loudly at `gate=E6-condtree`;
+  // the unfixed SUBJECT exits **0 with 0 BYTES of stderr** and emits a 29-line
+  // trace that links and runs, in which the inner `q > 5` compare is ABSENT, both
+  // table reads are gone, and the rail is allocated, rotated and measured but
+  // NEVER USED AS A CONTROL. `opt -verify` clean; `free_pairing_check.py`
+  // `0 violation(s), 0 unproven`. The Prime Directive's named failure mode
+  // verbatim, and NEITHER SHIPPED GATE SEES IT.
+  //
+  // ⚠ FALL THROUGH, DO NOT `return false`. The reviewer's FIRST spelling returned
+  // the conjunct and thereby DECLINED an all-constant 2-incoming `i1` φ at a
+  // region-interior block — a shape ORACLE and SUBJECT accept BYTE-IDENTICALLY —
+  // because such a φ also satisfies `isStructuralRailPhi`, and returning stopped
+  // it reaching `isConvertiblePhiCond`, which legitimately admits it (an `i1`
+  // `ConstantInt` IS in the strict grammar). Two A→D cells, in neither the corpus
+  // nor round 1's probes. A FIX IS A CHANGE.
+  //
+  // ⚠ THIS IS A NARROWING OF AN ACCEPT PREDICATE (L3). The interior rail φ it now
+  // refuses is REALIZABLE — it is an over-decline by the 2026-09-11 owner ruling,
+  // filed as such, NOT a physics wall. Making it lower means RECORDING the φ so
+  // `convertPhis` does not select-chain it, which is its own increment.
+  if (!Strict && isStructuralRailPhi(V)) {
+    const auto *RP = cast<PHINode>(V);
+    BasicBlock *RPB = const_cast<BasicBlock *>(RP->getParent());
+    if (S && S->InRegion && (RPB == S->Entry || !S->InRegion->count(RPB)))
+      return true;
+  }
   if (const auto *P = dyn_cast<PHINode>(V))
     return !Strict && isConvertiblePhiCond(P, S, Depth);  // Inc 5 (bd q2wk)
   if (isa<ConstantInt>(V))
@@ -4130,7 +4215,28 @@ private:
     // `track(BI->getCondition())` reaches it at the polarity this function never
     // sees. The real fix is the exclusion in `sweepDead` (read its comment), and
     // the track here is genuinely inert ONLY because of that exclusion.
-    if (isCondRailLeaf(V))
+    // ⚠ THE RAIL PHI IS HERE FOR THE SAME REASON THE RAIL LEAF IS, AND LEAVING IT
+    // OUT WAS A P1 (bd fn1q increment 5a, Rule-13 round 1 F1). E6 admits a rail φ
+    // via `isStructuralRailPhi`, and that admission is checked BEFORE the
+    // `dyn_cast<PHINode>` arm — so the φ never reaches `isConvertiblePhiCond` and
+    // is never RECORDED, so `convertPhis` never converts it, so `literal()` hands
+    // a raw `PHINode` to the `cast<BinaryOperator>` below. MEASURED: **exit 139,
+    // SIGSEGV**, from ORDINARY C at the `-O1` floor — the owner's own program with
+    // one operator changed (`if (!b0[i] && Z > 1)`) — where the oracle declines
+    // loudly. Rule 1's "no third path" postcondition violated: no diagnostic, no
+    // `!dbg`, an LLVM crash report instead of a decline. 12 of a 32-cell polarity
+    // matrix crashed; the trigger is simply "the false-edge literal is demanded",
+    // which `-O1` makes true about half the time (Rule 9).
+    //
+    // ⚠ `isConvertiblePhiCond` IS NOT THE ROUTE FOR THIS φ AND CANNOT BE MADE ONE.
+    // Its condition 3 names this crash in writing; but a rail φ fails its
+    // conditions by CONSTRUCTION, not by accident — the φ sits at the region
+    // ENTRY (it fails `PB != S->Entry`) and a `cq_theta_i1` CALL incoming is not
+    // in the STRICT `isBooleanCondTree` grammar (condition 4). A rail φ is not a
+    // path-predicate φ the flatten converts; it is an OPAQUE i1 REGISTER read as a
+    // CONTROL — the same kind of thing as a rail LEAF — so it takes the rail
+    // leaf's route.
+    if (isCondRailLeaf(V) || isStructuralRailPhi(V))
       return track(B.CreateXor(V, ConstantInt::getTrue(V->getContext())));
     auto *BO = cast<BinaryOperator>(V);
     if (BO->getOpcode() == Instruction::Xor) {
@@ -4393,7 +4499,17 @@ private:
           if (auto *NotBO = dyn_cast<BinaryOperator>(EP))
             if (NotBO->getOpcode() == Instruction::Xor)
               if (auto *C1 = dyn_cast<ConstantInt>(NotBO->getOperand(1)))
-                if (C1->isOne() && isCondRailLeaf(NotBO->getOperand(0))) {
+                // ⚠ BOTH HALVES OR NEITHER. This fold is what REMOVES the `xor`
+                // before `collectCondTree` sees it — `SelectClassify`'s node walk
+                // refuses an `xor` with a CONSTANT operand outright — so the
+                // `buildNegation` arm above is UNSOUND WITHOUT IT. Increment 2
+                // landed both halves for the rail LEAF and said so; increment 5a
+                // added the φ to the leaf's arm, and this operand test is the
+                // second half it owes (Rule-13 round 1 F4 named it before the
+                // fix was written). Widening the arm without widening this test
+                // turns the negated polarity into a claim-then-decline.
+                if (C1->isOne() && (isCondRailLeaf(NotBO->getOperand(0)) ||
+                                    isStructuralRailPhi(NotBO->getOperand(0)))) {
                   EP = NotBO->getOperand(0);
                   std::swap(SwapT, SwapF);
                 }

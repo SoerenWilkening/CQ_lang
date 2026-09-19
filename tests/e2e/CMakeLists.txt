@@ -6518,6 +6518,27 @@ add_test(NAME e2e-slice-predmux-classical-table
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_classical_table.expected.log")
 
+# ⚠⚠ THE OWNER'S OWN PROGRAM — bd test_C_libtooling-fn1q's exhibit, and the first
+# time any gate in this tree has compiled it. bd test_C_libtooling-5zwz records
+# that `example/` is excluded via .git/info/exclude, so
+# example/grover/grover_oracle_uncompute.c has never been under test; it was
+# reported three times as "the script fails again" while no suite could see it.
+#
+# At the start of the 2026-09-24 session it sat behind THREE PredMux gates —
+# E2-cycle (increment 3), E4-gep (increment 4) and E6-condtree (increment 5a).
+# All three now admit it: exit 0, 0 bytes of stderr, 88 trace lines, stage 2b
+# STRICT `3 verified, 0 violation(s), 0 unproven`, loop still ROLLED.
+#
+# THE ONLY LAYER THAT LINKS. If this ever goes red, the owner's file has stopped
+# compiling — which is the single most important regression this tree can have.
+add_test(NAME e2e-slice-grover-oracle-uncompute
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_grover_oracle_uncompute.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_grover_oracle_uncompute.expected.log")
+
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

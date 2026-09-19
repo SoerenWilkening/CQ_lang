@@ -646,6 +646,59 @@ bool isCondRailPhiShape(const Value *V) {
   return P && P->getType()->isIntegerTy(1) && P->getNumIncomingValues() == 2;
 }
 
+// bd `fn1q` increment 5a — `isCondRailPhiShape` REFINED to something a stage with
+// NO `ControlPlan` can prove for itself.
+//
+// ⚠ WHY A SECOND PREDICATE RATHER THAN A WIDER FIRST ONE. `isCondRailPhiShape` is
+// WEAK BY DESIGN — any 2-incoming `i1` φ — because its consumers finish the job
+// with `preppedRailPhiRegionIdx`, which asks whether a CLAIMED state-prep region
+// owns the φ. `PredMuxFlatten`'s E6 gate CANNOT ask that: PredMux runs at
+// `CQLoweringPass.cpp:374/398/427` and `detectControlRegions` at `:582`, so no
+// plan exists yet. And the obvious fallback — "is the φ's defining branch
+// TAINTED?" — is REFUTED BY MEASUREMENT: the owner's own prep branch prints
+// `condBr tainted=0` at that slot (its register is tainted only after the value
+// region seeds it in round 2), so a taint test at E6 would refuse the very
+// program this bead exists for.
+//
+// WHAT IS PROVABLE WITHOUT A PLAN AND WITHOUT TAINT: that every incoming is either
+// a RAIL (`isCondRailLeaf` — a `cq_theta_i1` CALL, hence always tainted by Rule 3)
+// or an `i1` CONSTANT (a known basis label on that edge). That is exactly the
+// shape `promoteRailBankCells` manufactures for a `_Bool` bank cell — measured on
+// the owner's program: `%cq.bank1 = phi i1 [ %31, %30 ], [ false, %23 ]`.
+//
+// ⚠ IT IS A NECESSARY CONDITION, NOT THE WHOLE PROOF, AND THAT IS DELIBERATE. A φ
+// this admits may still be refused downstream by `preppedRailPhiRegionIdx` — a
+// prep under a CLASSICAL condition is not a region at all, so it has no index.
+// The VERDICT (decline) is preserved and no decline becomes silence.
+// ⚠⚠ AND THAT SENTENCE WAS ITSELF MEASURED FALSE — Rule-13 ROUND 2 (R5aR2-1, P1).
+// A DECLINE DID BECOME SILENCE: for a rail φ in a NON-ENTRY region block the flatten
+// CONVERTS it by the select chain, `buildNegation`'s assertion-only
+// `cast<ConstantInt>` returns a constant-FALSE predicate, the arm's cone is
+// dead-swept, and the module compiled at exit 0 with 0 BYTES of stderr and a WRONG
+// unitary where the oracle declined loudly. The placement conjunct at E6 is what
+// makes the claim true again, and it is true only WITHIN ONE PASS (bd
+// test_C_libtooling-woa0). Say "the verdict is preserved FOR A φ THIS FLATTEN WILL
+// NOT CONVERT", never the unqualified form.
+//
+// ⚠ AN EARLIER DRAFT SAID "the SAME string and the SAME diagnostic", MEASURED ON
+// ONE MODULE AT ONE POLARITY, AND THAT IS FALSE (Rule-13 round 1 F2): with a
+// SECOND independent tainted region in the same function the string moves from
+// `nested control flow` to `control flow`, because the flatten mutates the first
+// region and the decline lands with a different owner. Rule 12 pins strings
+// character-for-character, so say "verdict preserved", never "string preserved".
+//
+// What it costs besides is DETECT-BEFORE-MUTATE for that shape (the region is
+// flattened first) — a real and filed cost, see the E6 call site.
+bool isStructuralRailPhi(const Value *V) {
+  const auto *P = dyn_cast_or_null<PHINode>(V);
+  if (!isCondRailPhiShape(P))
+    return false;
+  for (const Value *In : P->incoming_values())
+    if (!isCondRailLeaf(In) && !isa<ConstantInt>(In))
+      return false;
+  return true;
+}
+
 bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
                      bool AllowRailPhi) {
   SmallPtrSet<Value *, 8> Seen;

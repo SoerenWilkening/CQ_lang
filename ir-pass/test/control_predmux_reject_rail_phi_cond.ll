@@ -1,43 +1,44 @@
-; control_predmux_reject_rail_phi_cond.ll — DECLINE (bd test_C_libtooling-fn1q
-; increment 2). THE RAIL PHI IS THE **NEXT** INCREMENT, AND THIS FILE IS THE
-; RECORD THAT IT WAS LEFT OUT ON PURPOSE.
+; control_predmux_reject_rail_phi_cond.ll — DECLINE. ⚠ ITS RETIREMENT TRIGGER HAS
+; FIRED (bd fn1q increment 5a), AND THE TRIGGER WAS RIGHT.
 ;
-; The condition is a 2-incoming `i1` phi — a preceding controlled state-prep
-; region's merge phi, which after `RailBankPromote` is exactly what the owner's
-; `bool b0[n]` array becomes (`%cq.bank1 = phi i1 [ %31, %30 ], [ false, %23 ]`).
-; `isCondRailPhiShape` (SelectClassify.h) recognizes the SHAPE, and this increment
-; deliberately does NOT call it at E6.
+; This file was written at increment 2 to record that the rail φ was left out of E6
+; ON PURPOSE. Its corrected trigger said: a rail φ whose prep sits under a TAINTED
+; condition will ACCEPT when the rail-φ increment lands, while THIS module — prep
+; under a CLASSICAL condition — will STILL DECLINE, because the downstream proves a
+; rail φ through `preppedRailPhiRegionIdx`, which needs a CLAIMED state-prep region,
+; and a classical-condition prep is not a region at all.
 ;
-; ⚠ WHY NOT, and it is not timidity. `isCondRailPhiShape` is WEAK BY DESIGN — any
-; 2-incoming `i1` phi passes it — and its consumers do not rely on it alone: the
-; 4.4 select path gates it behind `AllowRailPhi` and PROVES it by asking
-; `preppedRailPhiRegionIdx` whether a claimed state-prep region actually owns that
-; phi (bd 3qps / 4aiu, and Track M's `AllowRailPhi` ROOT-ONLY scoping before it).
-; None of that machinery is asked here. Admitting the shape at E6 on the weak test
-; alone would claim and flatten regions whose phi no region owns, and the decline
-; would then land downstream instead of pre-claim — the bd 3c6m.67 self-operand
-; lesson. Widening two axes at once is what `MergePhiPeel`'s P9 refuses in writing
-; and the same refusal applies here.
+; MEASURED at increment 5a on the landed binary: exactly that. The tainted-prep
+; sibling is now `control_predmux_accept_rail_phi_cond.ll`; this module declines
+; with the SAME string it declined with before. ⚠ L8 works — a retirement trigger
+; written with its measurement was character-for-character correct about a binary
+; that did not exist yet. Write them.
 ;
-; ⚠ RETIREMENT TRIGGER (L8) — AND THE FIRST VERSION OF IT WAS WRONG, WHICH IS WHY
-; IT IS NOW WRITTEN WITH ITS MEASUREMENT. It said: "the rail-phi increment lands
-; exactly this shape; when it does, this file becomes an ACCEPT." **FALSE.**
-; Measured on an E6-bypassed build: a rail phi whose prep sits under a TAINTED
-; condition ACCEPTS, while THIS module — whose prep sits under a CLASSICAL
-; condition — STILL DECLINES, because the downstream 4.4 select path proves a rail
-; phi through `preppedRailPhiRegionIdx`, which needs a CLAIMED state-prep region to
-; own it, and a prep under a classical condition is not a region at all.
+; ⚠ WHAT CHANGED UNDER THIS FILE, AND IT IS A REAL COST, NOT A NO-OP. E6 now ADMITS
+; this shape (`isStructuralRailPhi`: every incoming is a rail call or an `i1`
+; constant — the strongest thing provable before `detectControlRegions` exists).
+; So the region is CLAIMED AND FLATTENED and the decline lands DOWNSTREAM, at the
+; 4.4 select, instead of pre-claim at E6. The VERDICT is unchanged — a decline
+; cannot become silence — but DETECT-BEFORE-MUTATE is lost for this one shape.
 ;
-; So this file pins TWO independent refusals, and the rail-phi increment retires
-; only the first. Its correct trigger is: when E6 admits `isCondRailPhiShape`,
-; RE-MEASURE this module — it is expected to keep declining, and if it starts
-; ACCEPTING then something has ALSO widened the prep-region proof and that is a
-; separate thing to go and read. The shape increment 3 actually has to take is the
-; TAINTED-prep spelling, kept beside this session's probes as
-; `probes/inc2/railphi_tainted_prep.ll`.
+; ⚠ THE **STRING** IS NOT GUARANTEED, and an earlier draft of this header said it
+; was (Rule-13 round 1 F2). Measured: put a SECOND independent tainted region in
+; the same function and the decline moves from `nested control flow under quantum
+; control` to `control flow under quantum control`, because the flatten mutates the
+; first region and the decline lands with a different owner. THIS module's string
+; is unchanged; the class's is not. That is the cost bd `cfmv`'s
+; Rule-13 round 2 filed as R4R2-1, and it is taken KNOWINGLY here.
 ;
-; Either way: RE-DERIVE, DO NOT DELETE — a decline fixture that goes green because
-; its subject no longer exists pins nothing (Rule 12 hygiene (c)).
+; ⚠ AND IT IS TAKEN BECAUSE THIS DECLINE IS NOT A PHYSICS DECLINE. Owner ruling:
+; a construct with no physics reason to decline must compile. `%c` here is
+; CLASSICAL, so this program is a classical branch choosing between two circuits —
+; rail-controlled on one path, constants on the other. There is no superposed
+; condition, no no-cloning problem and no dirty rail; it is realizable. Making it
+; compile is bd fn1q increment 5b, and the shape of that work is already visible:
+; promote the constant incoming to a `|0>` rail handle so the φ becomes a HANDLE
+; mux under a classical condition — the `RailBankPromote` idiom bd `zujr` already
+; uses for the loop-carried case, where a `|0>` control correctly means "this arm
+; never fires".
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare i1 @cq_theta_i1(i1, double)
