@@ -11,10 +11,10 @@ docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-26-orchestrato
     probes/woa0/
 docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-25-orchestrator/
     REVIEW_R13_R3_M4.md      <- F-R3-1 is what this session built; its OTHER items are
-                                mostly still unfiled-and-now-filed, see bd `mgvv`
+                                mostly still unfiled-and-now-filed, see bd `4hnu`
     MEASUREMENT_INC5B_SCOPE.md <- task 3, unchanged since last session
 ```
-Then `bd prime`, `bd show test_C_libtooling-fn1q`, and `u460`, `0fly`, `41g3`, `mgvv`.
+Then `bd prime`, `bd show test_C_libtooling-fn1q`, and `u460`, `0fly`, `41g3`, `4hnu`.
 
 ---
 
@@ -92,7 +92,7 @@ it is TWO customers; 5b-i has a SECOND wall (the uncompute spine does not recogn
 firing or a boundary violation — **undetermined**, settleable only by showing every consumer of
 the promoted φ reads it as a handle.
 
-### (4) bd `test_C_libtooling-mgvv` — six round-3 record corrections, none of them filed until today
+### (4) bd `test_C_libtooling-4hnu` — six round-3 record corrections, none of them filed until today
 
 Round 3 on the M4 fix returned `CLEAR-WITH-ITEMS` with seven P3s. **Only one of them (`juck`) had
 a bead.** The rest lived solely in a review file, which is precisely the failure mode
