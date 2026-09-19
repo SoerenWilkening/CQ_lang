@@ -1079,6 +1079,84 @@ bool isSupportedCondTree(const Value *V, unsigned Depth,
   // COMMITTED at CLAIM, not here: a later gate's `leave` discards the whole
   // `PredMuxRegion`, exactly as it does for `BoolAlgPhis`, so an admission that
   // never became an emission cannot make a later claim decline.
+  //
+  // *** bd `test_C_libtooling-0fly` — WHY THE `!InRegion` DISJUNCT IS SAFE, and
+  // *** EXACTLY HOW FAR THAT ARGUMENT REACHES. Written here because it was
+  // *** LOAD-BEARING AND UNWRITTEN, which is CLAUDE.md L7's shape, and because
+  // *** `isConvertiblePhiCond` reads the SAME test three arms down and fails
+  // *** CLOSED on the cell this one fails OPEN on.
+  //
+  // (1) THE OVER-ADMITTED SET IS EXACTLY `{φ : parent == R.Merge}`, and that is
+  //     derived, not estimated. `R.InRegion` is `{E}` plus everything reachable
+  //     from `E` WITHOUT CROSSING `Mg` (the collect loop `continue`s on
+  //     `B == Mg`), so `R.Merge ∉ R.InRegion`; `topoOrderRegion` returns only
+  //     when `R.Topo.size() == R.InRegion.size()`, so `Topo` and `InRegion` are
+  //     the same SET; and `run()` converts `(R.Topo \ {R.Entry}) ∪ {R.Merge}`.
+  //     Subtract: the test below admits `{R.Entry} ∪ ¬InRegion` where the
+  //     intended set is `¬((InRegion \ {Entry}) ∪ {Merge})`, and the difference
+  //     is the single block `R.Merge`.
+  //
+  // (2) THE CONJUNCT HAS EXACTLY ONE CONSUMER THAT CAN RECORD. The claim
+  //     `PhiCondScope` is built once and consulted once — at E6's
+  //     `isSupportedCondTree(BI->getCondition(), 0, &Scope)`, inside
+  //     `for (BasicBlock *B : R.InRegion)` over `B->getTerminator()`. So the
+  //     cell is reachable only if a φ parented at `R.Merge` appears in the
+  //     condition cone of a CONDITIONAL TERMINATOR OF AN IN-REGION BLOCK, which
+  //     by SSA availability requires `R.Merge` to DOMINATE that block.
+  //
+  // (3) LOOP-FREE, THAT IS REFUSED. Every `B ∈ R.InRegion` is reachable from
+  //     `R.Entry` by a path avoiding `R.Merge` (again, by construction in (1)),
+  //     so `R.Merge` dominates `B` only if it dominates `R.Entry`. `Mg` is
+  //     `E`'s IMMEDIATE POST-DOMINATOR, so it also post-dominates `R.Entry`;
+  //     distinct blocks that both dominate and post-dominate each other lie on
+  //     a cycle, and with no region block on a cycle E2 leaves at `E2-cycle`
+  //     before E6 ever runs.
+  //
+  // ⚠ (4) IN-LOOP, I COULD NOT CLOSE IT, AND SAYING SO IS THE POINT. Since bd
+  //     `fn1q` increment 3, E2 admits a region whose blocks ARE on a cycle when
+  //     `regionStrictlyInsideLoopBody` holds. That predicate refuses
+  //     `R.Merge == H` (`E2-loopbackedge`) and `getLoopFor(R.Merge) != L`
+  //     (`E2-loopstraddle`), which is what makes the first-iteration path
+  //     `preheader → H → … → R.Entry` reach `R.Entry` before `R.Merge` in the
+  //     ordinary reducible case. Closing the remaining case needs the
+  //     back-edge structure of an IRREDUCIBLE cycle through `R.Merge` — and
+  //     `topoOrderRegion` cannot see that one, because it orders `R.InRegion`,
+  //     which excludes `R.Merge`. **This is an ARGUED gap, not a proven
+  //     closure.** Do not upgrade this paragraph to a proof without building
+  //     the module.
+  //
+  // (5) THE W6 WITNESS SCOPES CANNOT BE FOOLED BY IT EITHER, derived the same
+  //     way: they pass `InRegion = {Mg}` with `Entry = nullptr` (Convertible)
+  //     and `Entry = Mg` (Downstream), and `StrandedCondPhi` is
+  //     `Convertible && !Downstream`. For a rail φ at `Mg`, Convertible is
+  //     FALSE and Downstream TRUE; for one elsewhere, both are TRUE. Either way
+  //     the conjunction is FALSE, so a rail φ can only ever SUPPRESS that
+  //     witness, never manufacture it — the safe direction. (Both scopes leave
+  //     `RailLeaves` null, so a witness walk records nothing regardless.)
+  //
+  // (6) MEASURED, FOUR TIMES, BY THREE INSTRUMENTS: round 3 found 22 firings in
+  //     18 modules with exactly ONE taking the `!InRegion` branch, in a W6
+  //     scope; bd `woa0`'s instrumented commit census found every commit in all
+  //     2157 fixtures plus the owner's program to be the ENTRY-φ cell; and the
+  //     two Rule-13 rounds of 2026-09-27 reproduced that zero independently.
+  //     ⚠ **NO CUSTOMER IN THE CORPUS IS NOT UNREACHABLE** — this file's own
+  //     standing caveat, and the reason (4) is written rather than waved away.
+  //
+  // (7) THE OUTCOME IS COVERED EVEN WHERE (4) IS OPEN. Since bd `woa0`, a
+  //     recorded φ that `convertPhis` SELECT-CHAINS — `R.Merge`'s included, and
+  //     `convertPhis(R.Merge)` runs inside this very region's `run()` — is
+  //     OBSERVED and declined loudly by `declineConvertedRailPhiLeaves`. So the
+  //     cell cannot be a silent wrong unitary; it can only be a decline.
+  //     COVERED IS NOT CLOSED: that is an argument about the OUTCOME, not about
+  //     this conjunct, which is unchanged.
+  //
+  // ⚠ RETIREMENT TRIGGER (L8): bd `test_C_libtooling-707a`'s route (b) — commit
+  // the leaves AFTER `run()`, filtered to the φs the emission actually read —
+  // REMOVES the coverage in (7) for this cell, because a φ at `R.Merge` is
+  // converted BY THIS REGION and would no longer be in the record at re-ask
+  // time. Whoever lands it owes (4) as a PROOF or a FENCE, in the same change.
+  // That is also why this is written and not fenced: a fence here would have to
+  // be undone by the very increment that makes it matter.
   if (!Strict && isStructuralRailPhi(V)) {
     const auto *RP = cast<PHINode>(V);
     BasicBlock *RPB = const_cast<BasicBlock *>(RP->getParent());
