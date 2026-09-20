@@ -9,7 +9,8 @@ add_library(cq_runtime STATIC
 )
 
 target_include_directories(cq_runtime PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include/cq/backend>
 )
 
 add_library(cq_templates STATIC
@@ -19,10 +20,18 @@ add_library(cq_templates STATIC
 )
 
 target_include_directories(cq_templates PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}
+    $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+    $<INSTALL_INTERFACE:include/cq/backend>
 )
 
 target_link_libraries(cq_templates PUBLIC cq_runtime)
+
+# The two archives together are one implementation of CQ's emitted backend
+# ABI.  Keep that relationship in a target so applications cannot accidentally
+# link only half of the trace backend.  Production backends such as libcqops
+# replace this target wholesale; they are never linked alongside it.
+add_library(cq_trace_backend INTERFACE)
+target_link_libraries(cq_trace_backend INTERFACE cq_templates)
 
 # test_trace drives the API and the ctest target diffs its stdout
 # against the golden trace, pinning the format before the IR pass or

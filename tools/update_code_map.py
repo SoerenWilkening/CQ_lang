@@ -37,8 +37,11 @@ def tracked_sources() -> list[Path]:
             capture_output=True, text=True,
         )
         paths = [ROOT / line for line in result.stdout.splitlines()]
-        # Include this newly added generator before its first commit as well.
-        paths.append(Path(__file__).resolve())
+        # Include this newly added generator before its first commit as well,
+        # without duplicating it after it becomes tracked.
+        this_file = Path(__file__).resolve()
+        if this_file not in paths:
+            paths.append(this_file)
     except (OSError, subprocess.CalledProcessError):
         paths = [p for root in SOURCE_ROOTS for p in (ROOT / root).rglob("*")]
     return sorted(

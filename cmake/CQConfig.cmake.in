@@ -1,0 +1,15 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/CQTargets.cmake")
+
+set(CQ_BACKEND_ABI_DESCRIPTOR
+    "${PACKAGE_PREFIX_DIR}/@CMAKE_INSTALL_DATADIR@/cq/abi/cq-backend-contract.json")
+set(CQ_LOWERING_PASS_TARGET CQ::lowering_pass)
+set(CQ_TRACE_BACKEND_TARGET CQ::trace_backend)
+
+# tools/install_cq.py writes this file only when the installer was asked to
+# choose a default backend.  A plain `cmake --install` intentionally leaves
+# CQ::backend undefined, forcing production users to make a link-time choice.
+include("${CMAKE_CURRENT_LIST_DIR}/CQBackendSelection.cmake" OPTIONAL)
+
+check_required_components(CQ)

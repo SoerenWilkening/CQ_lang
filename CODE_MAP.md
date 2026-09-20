@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 703 maintained source files, 5737 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 706 maintained source files, 5759 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -6621,6 +6621,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/frontend/run_lit.py:31` — `main`
 
+### `tests/package-consumer/main.c` (11 lines)
+
+- `tests/package-consumer/main.c:9` — `main`
+
 ### `tools/abi_codegen.py` (322 lines)
 
 - `tools/abi_codegen.py:125` — `arg_exprs`
@@ -6645,6 +6649,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/angle_select_twin_matrix.py:698` — `_difftxt`
 - `tools/angle_select_twin_matrix.py:704` — `_star`
 - `tools/angle_select_twin_matrix.py:708` — `main`
+
+### `tools/backend_contract.py` (234 lines)
+
+- `tools/backend_contract.py:31` — `repository_root`
+- `tools/backend_contract.py:35` — `strip_comments`
+- `tools/backend_contract.py:40` — `declarations`
+- `tools/backend_contract.py:53` — `contract`
+- `tools/backend_contract.py:97` — `nm_defined`
+- `tools/backend_contract.py:126` — `read_manifest`
+- `tools/backend_contract.py:136` — `write_json`
+- `tools/backend_contract.py:147` — `command_describe`
+- `tools/backend_contract.py:152` — `command_provider_manifest`
+- `tools/backend_contract.py:163` — `command_check`
+- `tools/backend_contract.py:199` — `parser`
+- `tools/backend_contract.py:224` — `main`
 
 ### `tools/control_flag_order_check.py` (229 lines)
 
@@ -6906,6 +6925,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py:1494` — `invariants`
 - `tools/inplace_twin_matrix.py:1579` — `_star`
 - `tools/inplace_twin_matrix.py:1583` — `main`
+
+### `tools/install_cq.py` (171 lines)
+
+- `tools/install_cq.py:14` — `source_root`
+- `tools/install_cq.py:18` — `run`
+- `tools/install_cq.py:24` — `cmake_quote`
+- `tools/install_cq.py:28` — `validate_external`
+- `tools/install_cq.py:46` — `selection_for_trace`
+- `tools/install_cq.py:54` — `selection_for_external`
+- `tools/install_cq.py:70` — `install_selection`
+- `tools/install_cq.py:99` — `parse_args`
+- `tools/install_cq.py:125` — `main`
 
 ### `tools/keepset_vendor_check.py` (244 lines)
 
@@ -7746,13 +7777,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/update_code_map.py` (218 lines)
+### `tools/update_code_map.py` (221 lines)
 
 - `tools/update_code_map.py:32` — `tracked_sources`
-- `tools/update_code_map.py:51` — `mask_cpp`
-- `tools/update_code_map.py:108` — `cpp_functions`
-- `tools/update_code_map.py:138` — `python_functions`
-- `tools/update_code_map.py:146` — `python_functions.visit`
-- `tools/update_code_map.py:161` — `file_functions`
-- `tools/update_code_map.py:166` — `render`
-- `tools/update_code_map.py:202` — `main`
+- `tools/update_code_map.py:54` — `mask_cpp`
+- `tools/update_code_map.py:111` — `cpp_functions`
+- `tools/update_code_map.py:141` — `python_functions`
+- `tools/update_code_map.py:149` — `python_functions.visit`
+- `tools/update_code_map.py:164` — `file_functions`
+- `tools/update_code_map.py:169` — `render`
+- `tools/update_code_map.py:205` — `main`

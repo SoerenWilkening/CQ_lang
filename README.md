@@ -38,6 +38,13 @@ qubit allocation at the first `cq_theta`, lowers tainted opcodes to
 runtime template calls, and links against `libcq_runtime`. There is no
 AST rewriter and no LLVM fork.
 
+For an installed toolchain, the linked backend is explicit. The bundled
+`CQ::trace_backend` remains the regression-test implementation; a precompiled
+production archive such as `libcqops.a` replaces it through `CQ::backend` and
+is reused across applications. See the [backend-provider contract](docs/backend-provider.md)
+and `python3 tools/install_cq.py --help`. A production backend and the trace
+archives must never share one link line.
+
 ## Demonstrator — standard-library coverage under tainted inputs
 
 <!-- MATHH-HEADLINE:START -->
@@ -186,6 +193,8 @@ floor above, not to injection (bd `libm-scoreboard-two-numbers`).
   Clang/`-O1` stage that prepares the IR
 - [`docs/backend.md`](docs/backend.md) — the IR pass, the runtime ABI,
   and how tainted opcodes become reversible templates
+- [`docs/backend-provider.md`](docs/backend-provider.md) — packaging,
+  validating, installing, and selecting interchangeable static backends
 - [`docs/quantum-classical-handling.md`](docs/quantum-classical-handling.md)
   — taint as the Q/C boundary; mixed-operand semantics
 - [`docs/example.md`](docs/example.md) — end-to-end worked walkthrough

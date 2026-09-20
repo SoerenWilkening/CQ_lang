@@ -1,6 +1,9 @@
 cmake_minimum_required(VERSION 3.20)
 project(cq_lang C CXX)
 
+include(GNUInstallDirs)
+include(CMakePackageConfigHelpers)
+
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -82,3 +85,107 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/e2e/CMakeLists.txt")
     add_subdirectory(tests/e2e)
 endif()
+
+# ---------------------------------------------------------------------------
+# Installable compiler + backend contract.
+#
+# CQ's own runtime is deliberately the trace implementation.  A real backend
+# supplies the same emitted C ABI and replaces cq_trace_backend at application
+# link time.  tools/backend_contract.py fingerprints that ABI and verifies that
+# a candidate archive defines the complete emit-capable symbol set.
+# ---------------------------------------------------------------------------
+set(_CQ_BACKEND_DESCRIPTOR
+    "${CMAKE_CURRENT_BINARY_DIR}/cq-backend-contract.json")
+execute_process(
+    COMMAND "${CQ_MAP_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/backend_contract.py"
+            --root "${CMAKE_CURRENT_SOURCE_DIR}" describe
+            --output "${_CQ_BACKEND_DESCRIPTOR}"
+    RESULT_VARIABLE _CQ_BACKEND_DESCRIPTOR_RV
+    ERROR_VARIABLE _CQ_BACKEND_DESCRIPTOR_ERR)
+if(NOT _CQ_BACKEND_DESCRIPTOR_RV EQUAL 0)
+    message(FATAL_ERROR
+        "Could not generate the CQ backend ABI descriptor: "
+        "${_CQ_BACKEND_DESCRIPTOR_ERR}")
+endif()
+
+if(TARGET cq_runtime AND TARGET cq_templates)
+    set_target_properties(cq_runtime PROPERTIES EXPORT_NAME trace_runtime)
+    set_target_properties(cq_templates PROPERTIES EXPORT_NAME trace_templates)
+    set_target_properties(cq_trace_backend PROPERTIES EXPORT_NAME trace_backend)
+    install(TARGETS cq_runtime cq_templates cq_trace_backend
+            EXPORT CQTargets
+            ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}")
+
+    add_test(
+        NAME backend_contract_trace
+        COMMAND "${CQ_MAP_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/backend_contract.py"
+                --root "${CMAKE_CURRENT_SOURCE_DIR}" check
+                --archive "$<TARGET_FILE:cq_templates>"
+                --archive "$<TARGET_FILE:cq_runtime>")
+    add_test(
+        NAME backend_contract_reject_incomplete
+        COMMAND "${CQ_MAP_PYTHON}"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/backend_contract.py"
+                --root "${CMAKE_CURRENT_SOURCE_DIR}" check
+                --archive "$<TARGET_FILE:cq_runtime>")
+    set_tests_properties(backend_contract_reject_incomplete PROPERTIES
+        WILL_FAIL TRUE)
+endif()
+
+if(TARGET CQPass)
+    set_target_properties(CQPass PROPERTIES EXPORT_NAME lowering_pass)
+    install(TARGETS CQPass EXPORT CQTargets
+            LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}/cq")
+endif()
+
+if(TARGET cq-opt)
+    install(TARGETS cq-opt RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+endif()
+
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/include/CQ.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
+install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/cq_runtime.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/cq_templates.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/cq_intrinsic_templates.h"
+        "${CMAKE_CURRENT_SOURCE_DIR}/runtime/cq_libm_templates.h"
+        DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}/cq/backend")
+install(FILES
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/opcode_table.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/intrinsic_table.yaml"
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/libm_table.yaml"
+        "${_CQ_BACKEND_DESCRIPTOR}"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/cq/abi")
+install(PROGRAMS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/backend_contract.py"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}"
+        RENAME cq-backend-contract)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/backend-provider.md"
+        DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/cq")
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/CQConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/CQConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/CQ")
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/CQConfigVersion.cmake"
+    VERSION 0.1.0
+    COMPATIBILITY SameMajorVersion)
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/CQConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/CQConfigVersion.cmake"
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/CQ")
+install(EXPORT CQTargets
+        FILE CQTargets.cmake
+        NAMESPACE CQ::
+        DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/CQ")
+
+add_test(
+    NAME package_install_trace
+    COMMAND "${CMAKE_COMMAND}"
+            -Dcq_source_dir=${CMAKE_CURRENT_SOURCE_DIR}
+            -Dcq_build_dir=${CMAKE_CURRENT_BINARY_DIR}
+            -Dcq_install_libdir=${CMAKE_INSTALL_LIBDIR}
+            -Dcq_config=$<CONFIG>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/package-consumer/run_test.cmake)
