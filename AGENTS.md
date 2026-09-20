@@ -23,6 +23,25 @@ Always use force/batch flags so an aliased interactive (`-i`) mode cannot hang t
 agent on a y/n prompt: `cp -f` · `mv -f` · `rm -f` · `rm -rf` ·
 `ssh`/`scp -o BatchMode=yes` · `apt-get -y` · `HOMEBREW_NO_AUTO_UPDATE=1`.
 
+## Code map and file-size budget
+
+Before using `rg`, `grep`, `find`, or another source search to locate a
+function, consult [`CODE_MAP.md`](CODE_MAP.md) first. It gives each named
+function's file and line. After adding, moving, renaming, or deleting a
+function, regenerate it in the same change:
+
+```bash
+python3 tools/update_code_map.py
+python3 tools/update_code_map.py --check
+```
+
+Maintained code files should stay at or below **400 physical lines**. If a
+change would cross that boundary, separate the cohesive concern into another
+file and update its build/source registration plus `CODE_MAP.md`. Generated
+artifacts, fixtures, tests, and tooling are still inventoried by the map, but
+their decomposition must be handled as explicit follow-up work when a split
+would alter generation or test semantics.
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:7510c1e2 -->
 ## Beads Issue Tracker
 

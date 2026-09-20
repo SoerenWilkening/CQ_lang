@@ -41,7 +41,6 @@
 
 #include "CompareLowering.h"     // emitEqFlag
 #include "ControlPlan.h"         // ControlRegion / SwitchArm / diagnoseUnderControl
-#include "ControlledSymbols.h"   // (unused by the kickback; kept for the ABI)
 #include "RegionFlatten.h"       // flattenSwitchRegion
 #include "TaintPropagation.h"    // TaintSet
 #include "ChainWalk.h"           // markBranchPhaseGate (3qlq Inc 1 F-L7-1)

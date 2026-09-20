@@ -41,6 +41,15 @@ message(STATUS "cq_lang: using LLVM ${LLVM_PACKAGE_VERSION} from ${LLVM_DIR}")
 
 enable_testing()
 
+# Keep the function-location index synchronized with source edits. The map is
+# generated from maintained files, so this catches moved or added functions
+# before an agent can hand off a stale navigation guide.
+find_program(CQ_MAP_PYTHON NAMES python3 python REQUIRED)
+add_test(
+    NAME code_map_drift
+    COMMAND ${CQ_MAP_PYTHON} ${CMAKE_SOURCE_DIR}/tools/update_code_map.py --check
+)
+
 # Conditional add_subdirectory: only the bits with a CMakeLists.txt are
 # wired in. The transpiler/ subdirectory was archived (see archive/transpiler/)
 # under the taint-driven design — users write cq_* primitives directly,

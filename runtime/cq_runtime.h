@@ -37,8 +37,8 @@
  *     cqrt_cnot, cqrt_toffoli — handle-typed, void, for internal use
  *     by the template library and Phase 11 passes. Declared + defined
  *     this phase but NOT yet emitted by the IR pass (Phase 8).
- *   - cqrt_free(handle): width-irrelevant lifetime hook; declared
- *     but unused (reserved for later lifetime work).
+ *   - cqrt_free(handle): width-irrelevant lifetime hook emitted only after
+ *     the compiler proves that the rail has returned to |0⟩.
  *
  * Plus the internal helper `cqrt_alloc_handle`, which is NOT one of
  * the 33 PRD-pinned symbols but is retained so templates (cq_templates)
@@ -673,8 +673,8 @@ void cqrt_qram_store_f64_controlled_unc(int32_t pred, int32_t arr, int32_t idx, 
 void cqrt_qram_store_f80_controlled_unc(int32_t pred, int32_t arr, int32_t idx, int32_t val);
 
 /* -----------------------------------------------------------------
- * Free — width-irrelevant (handle-typed only). Declared but unused;
- * reserved for later lifetime work.
+ * Free — width-irrelevant (handle-typed only). Compiler-emitted after the
+ * lowering proves that the rail is in |0⟩; never a user-facing primitive.
  * Trace: "cqrt_free(h<handle>)" (no return-value suffix).
  * ----------------------------------------------------------------- */
 void cqrt_free(int32_t handle);
