@@ -1,0 +1,46 @@
+\labsessionheader{2026-09-20}{Feature branches archived as tags}%
+  {5958d9e5}{n/a}{bd gt1z; archive manifest in figures/021/}
+
+\subsection*{Result}
+After the owner requested further cleanup, \bd{gt1z} archived the remaining
+39 local feature branch tips as tags under
+\texttt{archive/2026-09-20/}. The tags are available locally and on origin.
+All 39 local feature branches and their 22 remote counterparts were removed.
+The remaining branches are \texttt{main} locally, and \texttt{main} plus
+\texttt{\_\_dolt\_remote\_info\_\_} on origin. The metadata branch supports
+Beads synchronization.
+
+\subsection*{Verification}
+\texttt{git fetch --prune origin} refreshed the inventory, and
+\texttt{gh pr list --state open --limit 100} again returned no open pull
+requests. All feature branch tips matched entry 020's inventory;
+\texttt{git worktree list --porcelain} confirmed none was checked out.
+\texttt{git bundle verify} rechecked the earlier recovery bundle, and
+\texttt{git bundle list-heads} confirmed that it contained every candidate tip.
+
+One atomic push created the 39 archive tags and removed the 22 remote
+branches. Each deletion required the expected old tip, and each tag required
+that its name did not already exist. After the push,
+\texttt{git ls-remote origin} verified every archive tag's exact commit ID
+and the absence of the deleted remote branches. Only then were the local
+branch names removed. The mapping is recorded in
+\texttt{figures/021/archive-manifest.json}.
+
+No compiler tests were run because no source, fixture, golden, or harness
+changed. Existing detached worktrees and uncommitted files were retained.
+The lab-report manifest and page budget were checked before sealing, as
+required by \texttt{CLAUDE.md}'s session-close procedure.
+
+\subsection*{Recovery}
+For example, restore the former \texttt{3qlq-inc1} branch with:
+\begin{verbatim}
+git switch -c 3qlq-inc1 archive/2026-09-20/3qlq-inc1
+\end{verbatim}
+The original bundle remains at
+\texttt{.git/branch-cleanup-20260920/before.bundle}.
+Archiving preserves the divergent histories; it does not establish that
+their changes were merged into main.
+
+\subsection*{Update to entry 020}
+Entry 020 recorded these branches as retained pending review. This follow-up
+resolves their storage and branch-list cleanup through remote archive tags.

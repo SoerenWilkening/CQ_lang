@@ -1,0 +1,240 @@
+{
+  "base": "5958d9e580c86237b80d044c2d49426e55beafe1",
+  "branches": [
+    {
+      "branch": "3qlq-inc0",
+      "sha": "7454e816a06c994593a3b803eb332ed88dbbae38",
+      "tag": "archive/2026-09-20/3qlq-inc0",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1",
+      "sha": "542d58828e9cac07f04f574c5e4e4b93731ee185",
+      "tag": "archive/2026-09-20/3qlq-inc1",
+      "remote_branch": true
+    },
+    {
+      "branch": "3qlq-inc1-audit",
+      "sha": "5f06372b7b220f7a889af117b16b6f37481f9272",
+      "tag": "archive/2026-09-20/3qlq-inc1-audit",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1-fix-c1",
+      "sha": "c17c46643cbba63e664596cad163446aa0d8819a",
+      "tag": "archive/2026-09-20/3qlq-inc1-fix-c1",
+      "remote_branch": true
+    },
+    {
+      "branch": "3qlq-inc1-fix-r1",
+      "sha": "6a3a125d465fd2a7629feec37e4d02ca6df2962b",
+      "tag": "archive/2026-09-20/3qlq-inc1-fix-r1",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1-matrix",
+      "sha": "7f4776f54b9be26e369125a69482c17684642f4f",
+      "tag": "archive/2026-09-20/3qlq-inc1-matrix",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1-migration",
+      "sha": "2a4cc2bde84f617cfaefcd2baa1214efa81d8427",
+      "tag": "archive/2026-09-20/3qlq-inc1-migration",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1-slices",
+      "sha": "f38ef48dde45d82d1c3fc7d8584e9c2c160b4d79",
+      "tag": "archive/2026-09-20/3qlq-inc1-slices",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1b",
+      "sha": "71d4cce31a0cbb9c5aac44eb44996b9b852a1f2a",
+      "tag": "archive/2026-09-20/3qlq-inc1b",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc1b-rail-cond",
+      "sha": "dfd94ac227b576a001e012b85c390cef04c7ddb9",
+      "tag": "archive/2026-09-20/3qlq-inc1b-rail-cond",
+      "remote_branch": false
+    },
+    {
+      "branch": "3qlq-inc2",
+      "sha": "eba8c16022678ce34e17af358c1c72e60347c42a",
+      "tag": "archive/2026-09-20/3qlq-inc2",
+      "remote_branch": true
+    },
+    {
+      "branch": "3qlq-inc2-prerebase",
+      "sha": "87a90d7e8be722099d5c780d6b36d86df86327bd",
+      "tag": "archive/2026-09-20/3qlq-inc2-prerebase",
+      "remote_branch": false
+    },
+    {
+      "branch": "arm-group-gate",
+      "sha": "bf3d1b5c5d776f5e5269abee60b5d04a01fb91bc",
+      "tag": "archive/2026-09-20/arm-group-gate",
+      "remote_branch": true
+    },
+    {
+      "branch": "bbu0-warn-reorder",
+      "sha": "30e213a7239a667232ce6b1ba8c595cc1eff76e8",
+      "tag": "archive/2026-09-20/bbu0-warn-reorder",
+      "remote_branch": true
+    },
+    {
+      "branch": "c1-round4",
+      "sha": "6e13eace9f2351c4bcbcc8c95428bedd17dd06da",
+      "tag": "archive/2026-09-20/c1-round4",
+      "remote_branch": true
+    },
+    {
+      "branch": "dephase-fence-r2",
+      "sha": "6882685b86ad77a10e589845c20004c3c52c4d1a",
+      "tag": "archive/2026-09-20/dephase-fence-r2",
+      "remote_branch": true
+    },
+    {
+      "branch": "eqpx-fix",
+      "sha": "fe9f56f189a53562668e2d8655464cdca153c837",
+      "tag": "archive/2026-09-20/eqpx-fix",
+      "remote_branch": false
+    },
+    {
+      "branch": "f2-phidesc-precision",
+      "sha": "3637fdd221de2f528e86cc4a74c3ee0f00e792ac",
+      "tag": "archive/2026-09-20/f2-phidesc-precision",
+      "remote_branch": true
+    },
+    {
+      "branch": "fve8-fix",
+      "sha": "b36c814a2e37145f4c90c66c16816678969f97d9",
+      "tag": "archive/2026-09-20/fve8-fix",
+      "remote_branch": true
+    },
+    {
+      "branch": "fve8-undef-measure",
+      "sha": "8eed7a2de475a1427dae547d0e6bc6cc894dab8d",
+      "tag": "archive/2026-09-20/fve8-undef-measure",
+      "remote_branch": true
+    },
+    {
+      "branch": "inloop-pairing",
+      "sha": "c0029f2697eb04946efdba87978a1043ab1a1f8d",
+      "tag": "archive/2026-09-20/inloop-pairing",
+      "remote_branch": true
+    },
+    {
+      "branch": "instrument-fixes",
+      "sha": "7448fa2900e7040fcb409252da207d2e8b49dfde",
+      "tag": "archive/2026-09-20/instrument-fixes",
+      "remote_branch": true
+    },
+    {
+      "branch": "loop-group-fix",
+      "sha": "d70f47e9b6bc2d948b1e959a08879b3072a87e74",
+      "tag": "archive/2026-09-20/loop-group-fix",
+      "remote_branch": true
+    },
+    {
+      "branch": "loop-group-gate",
+      "sha": "79eb5b604046b99a7f5541b5f6e657010a0b8125",
+      "tag": "archive/2026-09-20/loop-group-gate",
+      "remote_branch": true
+    },
+    {
+      "branch": "merge-2026-09-14c",
+      "sha": "78ad9d618d3bc4bd8cb3f33675766568aea29347",
+      "tag": "archive/2026-09-20/merge-2026-09-14c",
+      "remote_branch": true
+    },
+    {
+      "branch": "prep-leaf-grammar",
+      "sha": "28b9eb01cab98de7959c4a75ad326239d0e8b209",
+      "tag": "archive/2026-09-20/prep-leaf-grammar",
+      "remote_branch": true
+    },
+    {
+      "branch": "r13-r1-alpha",
+      "sha": "5f688c5a46af07a0b69e0ab7bf4ad3df6e4c88ff",
+      "tag": "archive/2026-09-20/r13-r1-alpha",
+      "remote_branch": false
+    },
+    {
+      "branch": "r13-r1-beta",
+      "sha": "2800a1c0c8d586f6af82dd17b62c28807937df33",
+      "tag": "archive/2026-09-20/r13-r1-beta",
+      "remote_branch": false
+    },
+    {
+      "branch": "railbank-accept",
+      "sha": "3b9824596110ff2a7be172f0f193a00de20ec657",
+      "tag": "archive/2026-09-20/railbank-accept",
+      "remote_branch": true
+    },
+    {
+      "branch": "railbank-blockers",
+      "sha": "9e11f524f6b6fcf9e3b6c239635bd2709e93b6dc",
+      "tag": "archive/2026-09-20/railbank-blockers",
+      "remote_branch": true
+    },
+    {
+      "branch": "railbank-carve",
+      "sha": "44ba334576ad7a51940bd131d37ac81b2033b914",
+      "tag": "archive/2026-09-20/railbank-carve",
+      "remote_branch": false
+    },
+    {
+      "branch": "railbank-fix",
+      "sha": "a52f4d07e03d4e422c47f7a4668d65664fc4ff14",
+      "tag": "archive/2026-09-20/railbank-fix",
+      "remote_branch": true
+    },
+    {
+      "branch": "railbank-instruments",
+      "sha": "201745498d166ad995ee881fa8af4518afd9b8ef",
+      "tag": "archive/2026-09-20/railbank-instruments",
+      "remote_branch": false
+    },
+    {
+      "branch": "railbank-promoter",
+      "sha": "6a999d1a40deda9be78704466aac2bb8c2f67146",
+      "tag": "archive/2026-09-20/railbank-promoter",
+      "remote_branch": false
+    },
+    {
+      "branch": "s82e-raillocal-proof",
+      "sha": "8aa159b759855c0fb4adb6d0913caa45a2b900fb",
+      "tag": "archive/2026-09-20/s82e-raillocal-proof",
+      "remote_branch": false
+    },
+    {
+      "branch": "twinmatrix-bank-axis",
+      "sha": "2095ab442f40e27082c1d209a08992740aac7e80",
+      "tag": "archive/2026-09-20/twinmatrix-bank-axis",
+      "remote_branch": true
+    },
+    {
+      "branch": "verify-integration",
+      "sha": "e90248a363c749ddbdc0d758f4bfd2f2c73684a4",
+      "tag": "archive/2026-09-20/verify-integration",
+      "remote_branch": true
+    },
+    {
+      "branch": "x5-rederivation",
+      "sha": "c4c6ef77bf972d214718200751d90715a2d291ab",
+      "tag": "archive/2026-09-20/x5-rederivation",
+      "remote_branch": false
+    },
+    {
+      "branch": "x5fp-clobber-per-activation",
+      "sha": "69414276fa72476515e50da52a646a794ab97b59",
+      "tag": "archive/2026-09-20/x5fp-clobber-per-activation",
+      "remote_branch": true
+    }
+  ],
+  "backup": ".git/branch-cleanup-20260920/before.bundle"
+}
