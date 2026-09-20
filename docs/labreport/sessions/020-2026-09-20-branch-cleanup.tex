@@ -1,0 +1,43 @@
+\labsessionheader{2026-09-20}{Merged branch cleanup}%
+  {4b54f18a}{n/a}{bd dc4f; branch inventory in figures/020/}
+
+\subsection*{Result}
+\bd{dc4f}: removed 17 local branches and the remote branch
+\texttt{tu9q-p0-p3-wip}. Every removed tip was an ancestor of
+\texttt{origin/main} at \commit{4b54f18a}; local deletion used
+\texttt{git branch -d}, and remote deletion used an explicit expected-tip
+lease. No compiler source, fixture, golden, or harness changed.
+
+\subsection*{Evidence and retained work}
+After \texttt{git fetch --prune origin}, \texttt{git for-each-ref} counted
+57 local branches and 25 origin branches, excluding the symbolic
+\texttt{origin/HEAD}. GitHub reported no open pull requests via
+\texttt{gh pr list --state open --limit 100}. The cleanup leaves 40 local
+branches and 24 origin branches, including \texttt{main} and the remote
+Beads metadata branch \texttt{\_\_dolt\_remote\_info\_\_}.
+
+The retained feature branches number 39 locally and 22 on origin.
+\texttt{git rev-list --count <base>..<tip>} found commits outside main,
+and \texttt{git cherry origin/main <tip>} found no patch-equivalent
+non-merge commits in those divergent histories. This check cannot rule
+out squash merges or later reimplementations. Their disposition remains
+open under \bd{gt1z}. The full ref names, tips, results, and commands are
+recorded in \texttt{figures/020/branch-inventory.json}.
+
+\texttt{git worktree list --porcelain} showed seven detached worktrees.
+Running \texttt{git status --porcelain} in each found uncommitted changes
+in four. All seven were retained; \texttt{git worktree prune --verbose}
+removed no registrations. The stash list was empty. The main worktree's
+pre-existing untracked \texttt{.agents/} and \texttt{.codex/} directories
+were left intact.
+
+\subsection*{Recovery and verification}
+Before deletion, \texttt{git bundle create} with \texttt{--all} saved
+\texttt{.git/branch-cleanup-20260920/before.bundle};
+\texttt{git bundle verify} succeeded. The same directory contains the
+original inventory. Deleted branch names can be recreated from the recorded
+commit IDs, which remain reachable from main.
+
+No compiler tests were run: the work changed Git refs and this session
+record. The session-close procedure follows \texttt{CLAUDE.md}; the
+lab-report build checks its manifest and page budget before sealing.
