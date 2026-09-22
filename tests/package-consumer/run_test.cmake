@@ -16,6 +16,9 @@ execute_process(COMMAND ${install_command} RESULT_VARIABLE result)
 if(NOT result EQUAL 0)
   message(FATAL_ERROR "CQ package installation failed: ${result}")
 endif()
+if(NOT EXISTS "${prefix}/bin/cqc")
+  message(FATAL_ERROR "CQ package installation did not install bin/cqc")
+endif()
 
 set(package_dir "${prefix}/${cq_install_libdir}/cmake/CQ")
 file(WRITE "${package_dir}/CQBackendSelection.cmake"

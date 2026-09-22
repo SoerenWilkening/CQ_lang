@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 706 maintained source files, 5759 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 706 maintained source files, 5761 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -6926,17 +6926,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py:1579` — `_star`
 - `tools/inplace_twin_matrix.py:1583` — `main`
 
-### `tools/install_cq.py` (184 lines)
+### `tools/install_cq.py` (223 lines)
 
-- `tools/install_cq.py:14` — `source_root`
-- `tools/install_cq.py:18` — `run`
-- `tools/install_cq.py:24` — `cmake_quote`
-- `tools/install_cq.py:28` — `validate_external`
-- `tools/install_cq.py:46` — `selection_for_trace`
-- `tools/install_cq.py:54` — `selection_for_external`
-- `tools/install_cq.py:70` — `install_selection`
-- `tools/install_cq.py:99` — `parse_args`
-- `tools/install_cq.py:133` — `main`
+- `tools/install_cq.py:15` — `source_root`
+- `tools/install_cq.py:19` — `run`
+- `tools/install_cq.py:25` — `cmake_quote`
+- `tools/install_cq.py:29` — `validate_external`
+- `tools/install_cq.py:47` — `selection_for_trace`
+- `tools/install_cq.py:55` — `selection_for_external`
+- `tools/install_cq.py:71` — `driver_selection`
+- `tools/install_cq.py:86` — `driver_link_item`
+- `tools/install_cq.py:92` — `install_selection`
+- `tools/install_cq.py:138` — `parse_args`
+- `tools/install_cq.py:172` — `main`
 
 ### `tools/keepset_vendor_check.py` (244 lines)
 

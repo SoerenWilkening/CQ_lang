@@ -52,6 +52,10 @@ add_test(
     NAME code_map_drift
     COMMAND ${CQ_MAP_PYTHON} ${CMAKE_SOURCE_DIR}/tools/update_code_map.py --check
 )
+add_test(
+    NAME install_cq_unit
+    COMMAND ${CQ_MAP_PYTHON} ${CMAKE_SOURCE_DIR}/tools/install_cq_test.py
+)
 
 # Conditional add_subdirectory: only the bits with a CMakeLists.txt are
 # wired in. The transpiler/ subdirectory was archived (see archive/transpiler/)
@@ -161,6 +165,9 @@ install(PROGRAMS
         "${CMAKE_CURRENT_SOURCE_DIR}/tools/backend_contract.py"
         DESTINATION "${CMAKE_INSTALL_BINDIR}"
         RENAME cq-backend-contract)
+install(PROGRAMS
+        "${CMAKE_CURRENT_SOURCE_DIR}/tools/cqc"
+        DESTINATION "${CMAKE_INSTALL_BINDIR}")
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/backend-provider.md"
         DESTINATION "${CMAKE_INSTALL_DATADIR}/doc/cq")
 

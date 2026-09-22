@@ -81,28 +81,20 @@ selected backend with `find_package(CQ CONFIG REQUIRED)` and
 [`docs/backend-provider.md`](docs/backend-provider.md) for the backend archive
 and manifest contract.
 
-The installer records the selected archive as the package's default
-`CQ::backend`. CMake consumers can link that target, but `tools/cqc` does not
-yet read the installed selection: it still links the source-tree trace
-archives. Consequently there is currently no honest `tools/cqc` command that
-compiles a user program against the backend selected by `install_cq.py`; that
-driver integration is still required.
-
-The repository also includes [`tools/cqc`](tools/cqc), a single-command driver
-for compiling a CQ source file to an executable:
+The installer also installs `cqc`. It reads the backend selection written by
+`install_cq.py`, so compiling through the installed driver links exactly that
+backend:
 
 ```bash
-tools/cqc program.c -o program
+"$HOME/.local/bin/cqc" program.c -o program
 ./program
 ```
 
 It runs the validated `clang -O1` → `llvm-link` → `opt -passes=cq-lowering` →
-Clang link pipeline. The driver is currently a source-tree helper: it locates
-the in-tree/build trace archives directly and is not installed by
-`install_cq.py`. For an installed production backend, use the exported CMake
-target (`CQ::backend`) in your application link, or pass the backend archive
-through your own build integration; do not link a production backend together
-with the trace archives.
+Clang link pipeline. A production backend and the trace archives are never put
+on the same link line. The repository copy, [`tools/cqc`](tools/cqc), remains
+usable for source-tree development and falls back to the in-tree trace backend
+when no installer selection exists.
 
 ## Demonstrator — standard-library coverage under tainted inputs
 
