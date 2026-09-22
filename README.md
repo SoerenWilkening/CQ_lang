@@ -86,12 +86,16 @@ The installer also installs `cqc`. It reads the backend selection written by
 backend:
 
 ```bash
-export PATH="$HOME/.local/bin:$PATH"
+echo 'export PATH="$HOME/.local/bin:$PATH"' >> "$HOME/.zshrc"
+source "$HOME/.zshrc"
 cqc program.c -o program
 ./program
 ```
 
-If it is not on `PATH`, invoke the driver by its full path:
+The first two commands add the install directory to future zsh sessions. For
+bash, use `~/.bashrc` instead. Alternatively, set `PATH` only for the current
+shell with `export PATH="$HOME/.local/bin:$PATH"`. If it is not on `PATH`,
+invoke the driver by its full path:
 `"$HOME/.local/bin/cqc" program.c -o program`.
 
 It runs the validated `clang -O1` → `llvm-link` → `opt -passes=cq-lowering` →
