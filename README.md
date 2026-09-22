@@ -98,6 +98,19 @@ shell with `export PATH="$HOME/.local/bin:$PATH"`. If it is not on `PATH`,
 invoke the driver by its full path:
 `"$HOME/.local/bin/cqc" program.c -o program`.
 
+To remove CQ, run:
+
+```bash
+cqc --uninstall
+```
+
+The installed driver derives its prefix from its own location, checks the
+installer-generated ownership manifest, shows the prefix, and asks for
+confirmation before removing only CQ-owned files. Use `cqc --uninstall --yes`
+for a non-interactive uninstall. Installations created before ownership
+manifests were introduced must be reinstalled once before this command is
+available.
+
 It runs the validated `clang -O1` → `llvm-link` → `opt -passes=cq-lowering` →
 Clang link pipeline. A production backend and the trace archives are never put
 on the same link line. The repository copy, [`tools/cqc`](tools/cqc), remains

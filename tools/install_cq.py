@@ -89,9 +89,60 @@ def driver_link_item(item: str) -> str:
     return f"-l{item}"
 
 
-def install_selection(args: argparse.Namespace) -> None:
+def uninstall_manifest_path(args: argparse.Namespace) -> Path:
+    return args.prefix.resolve() / args.libdir / "cq" / "CQInstallManifest.txt"
+
+
+def validate_owned_path(path: Path, prefix: Path) -> Path:
+    absolute = path.resolve(strict=False)
+    if absolute == prefix or prefix not in absolute.parents:
+        raise RuntimeError(f"installed path escapes prefix {prefix}: {path}")
+    return absolute
+
+
+def write_uninstall_manifest(
+    args: argparse.Namespace, generated_paths: list[Path]
+) -> Path:
+    prefix = args.prefix.resolve()
+    destination = uninstall_manifest_path(args)
+    print(f"+ write {destination}")
+    if args.dry_run:
+        return destination
+
+    cmake_manifest = args.build_dir.resolve() / "install_manifest.txt"
+    try:
+        cmake_paths = [
+            Path(line)
+            for line in cmake_manifest.read_text(encoding="utf-8").splitlines()
+            if line
+        ]
+    except OSError as exc:
+        raise RuntimeError(f"cannot read CMake install manifest {cmake_manifest}: {exc}")
+
+    paths = cmake_paths + generated_paths
+    if destination.exists():
+        lines = destination.read_text(encoding="utf-8").splitlines()
+        if not lines or lines[0] != "# CQ install manifest v1":
+            raise RuntimeError(f"invalid existing CQ install manifest: {destination}")
+        paths.extend(Path(line) for line in lines[1:] if line)
+    paths.append(destination)
+
+    owned = sorted({validate_owned_path(path, prefix) for path in paths}, key=str)
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_suffix(".txt.tmp")
+    temporary.write_text(
+        "# CQ install manifest v1\n"
+        + "".join(f"{path}\n" for path in owned),
+        encoding="utf-8",
+    )
+    temporary.replace(destination)
+    return destination
+
+
+def install_selection(args: argparse.Namespace) -> list[Path]:
     prefix = args.prefix.resolve()
     package_dir = prefix / args.libdir / "cmake" / "CQ"
+    generated_paths: list[Path] = []
     if args.backend == "trace":
         selection = selection_for_trace()
         driver_items = [
@@ -114,6 +165,8 @@ def install_selection(args: argparse.Namespace) -> None:
             for source, destination in zip(args.backend_library, installed_archives):
                 shutil.copy2(source.resolve(), destination)
             shutil.copy2(args.backend_manifest.resolve(), installed_manifest)
+        generated_paths.extend(installed_archives)
+        generated_paths.append(installed_manifest)
 
     destination = package_dir / "CQBackendSelection.cmake"
     print(f"+ write {destination}")
@@ -122,6 +175,7 @@ def install_selection(args: argparse.Namespace) -> None:
         temporary = destination.with_suffix(".cmake.tmp")
         temporary.write_text(selection, encoding="utf-8")
         temporary.replace(destination)
+    generated_paths.append(destination)
 
     driver_destination = prefix / args.libdir / "cq" / "CQBackendSelection.sh"
     print(f"+ write {driver_destination}")
@@ -133,6 +187,8 @@ def install_selection(args: argparse.Namespace) -> None:
             driver_selection(args.backend, driver_items, llvm_bin), encoding="utf-8"
         )
         temporary.replace(driver_destination)
+    generated_paths.append(driver_destination)
+    return generated_paths
 
 
 def parse_args() -> argparse.Namespace:
@@ -211,7 +267,8 @@ def main() -> int:
             ["cmake", "--install", str(args.build_dir), "--config", args.build_type],
             args.dry_run,
         )
-        install_selection(args)
+        generated_paths = install_selection(args)
+        write_uninstall_manifest(args, generated_paths)
         print(f"CQ installed with explicit default backend: {args.backend}")
         return 0
     except (RuntimeError, subprocess.CalledProcessError, OSError) as exc:

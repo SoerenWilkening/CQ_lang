@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -23,6 +24,7 @@ class InstallerSelectionTest(unittest.TestCase):
             backend_manifest=None,
             backend_link_item=[],
             llvm_dir=Path("/opt/llvm/lib/cmake/llvm"),
+            build_dir=prefix.parent / "build",
             dry_run=False,
         )
 
@@ -87,6 +89,82 @@ class InstallerSelectionTest(unittest.TestCase):
                     "/opt/lib/libqec.a",
                 ],
             )
+
+    def test_uninstall_manifest_records_cmake_and_generated_files(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cq install manifest ") as raw:
+            root = Path(raw)
+            prefix = root / "prefix"
+            args = self.args(prefix, "trace")
+            args.build_dir.mkdir()
+            cmake_owned = prefix / "bin/cqc"
+            generated = prefix / "lib/cq/CQBackendSelection.sh"
+            (args.build_dir / "install_manifest.txt").write_text(
+                f"{cmake_owned}\n", encoding="utf-8"
+            )
+
+            manifest = install_cq.write_uninstall_manifest(args, [generated])
+            self.assertEqual(
+                manifest.read_text(encoding="utf-8").splitlines(),
+                [
+                    "# CQ install manifest v1",
+                    str(cmake_owned.resolve()),
+                    str(generated.resolve()),
+                    str(manifest.resolve()),
+                ],
+            )
+
+    def make_installed_driver(self, prefix: Path, extra_paths: list[Path]) -> Path:
+        driver = prefix / "bin/cqc"
+        driver.parent.mkdir(parents=True)
+        shutil.copy2(Path(__file__).resolve().parent / "cqc", driver)
+        manifest = prefix / "lib/cq/CQInstallManifest.txt"
+        manifest.parent.mkdir(parents=True)
+        paths = [driver.resolve(), *extra_paths, manifest.resolve()]
+        manifest.write_text(
+            "# CQ install manifest v1\n" + "".join(f"{path}\n" for path in paths),
+            encoding="utf-8",
+        )
+        return driver
+
+    def test_cqc_uninstall_removes_only_manifest_owned_files(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cq uninstall ") as raw:
+            prefix = Path(raw) / "prefix with spaces"
+            owned = prefix / "share/cq/owned.txt"
+            unrelated = prefix / "keep.txt"
+            owned.parent.mkdir(parents=True)
+            owned.write_text("owned\n", encoding="utf-8")
+            unrelated.write_text("keep\n", encoding="utf-8")
+            driver = self.make_installed_driver(prefix, [owned.resolve()])
+
+            result = subprocess.run(
+                [str(driver), "--uninstall", "--yes"],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            self.assertIn(f"CQ uninstalled from {prefix.resolve()}", result.stdout)
+            self.assertFalse(driver.exists())
+            self.assertFalse(owned.exists())
+            self.assertTrue(unrelated.exists())
+
+    def test_cqc_uninstall_rejects_path_outside_prefix(self) -> None:
+        with tempfile.TemporaryDirectory(prefix="cq uninstall unsafe ") as raw:
+            root = Path(raw)
+            prefix = root / "prefix"
+            outside = root / "outside.txt"
+            outside.write_text("keep\n", encoding="utf-8")
+            driver = self.make_installed_driver(prefix, [outside.resolve()])
+
+            result = subprocess.run(
+                [str(driver), "--uninstall", "--yes"],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 3)
+            self.assertIn("unsafe uninstall path outside", result.stderr)
+            self.assertTrue(driver.exists())
+            self.assertTrue(outside.exists())
 
 
 if __name__ == "__main__":

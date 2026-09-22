@@ -22,6 +22,8 @@
 #     --opt=<binary>          opt binary        (default: opt-19 / $LLVM_PREFIX)
 #     --clang=<binary>        clang binary      (default: clang-19 / $LLVM_PREFIX)
 #     --link=<binary>         llvm-link binary  (default: llvm-link-19 / $LLVM_PREFIX)
+#     --uninstall             remove this installed CQ distribution
+#     --yes                   skip the uninstall confirmation prompt
 #     -o <output>             output executable
 #     -h, --help              this message
 #
@@ -40,6 +42,8 @@ usage: cqc <cq_input.c> [lib.c ...] -o <output> [options]
   --opt=<binary>          opt binary        (default: opt-19)
   --clang=<binary>        clang binary      (default: clang-19)
   --link=<binary>         llvm-link binary  (default: llvm-link-19)
+  --uninstall            remove this installed CQ distribution
+  --yes                  skip the uninstall confirmation prompt
   -o <output>             output executable
   -h, --help              this message
 
@@ -48,8 +52,20 @@ positional is a plain classical C library (compiled WITHOUT CQ.h).
 EOF
 }
 
-inputs=(); output=""; keep=0; emit_ll=0
-prefix="$(cd "$(dirname "$0")/.." && pwd)"
+resolve_script_path() {
+    local target="$1" directory
+    while [[ -L "$target" ]]; do
+        directory="$(cd -P "$(dirname "$target")" && pwd)"
+        target="$(readlink "$target")"
+        [[ "$target" == /* ]] || target="$directory/$target"
+    done
+    directory="$(cd -P "$(dirname "$target")" && pwd)"
+    printf '%s/%s' "$directory" "$(basename "$target")"
+}
+
+self_path="$(resolve_script_path "$0")"
+inputs=(); output=""; keep=0; emit_ll=0; uninstall=0; assume_yes=0
+prefix="$(cd "$(dirname "$self_path")/.." && pwd)"
 opt_explicit=0; clang_explicit=0; link_explicit=0
 
 # Pick LLVM tool binaries with the same priority chain as archive/cqc:
@@ -86,10 +102,92 @@ while [[ $# -gt 0 ]]; do
         --clang)                clang_bin="$2"; clang_explicit=1; shift 2 ;;
         --link=*)               link_bin="${1#*=}"; link_explicit=1; shift ;;
         --link)                 link_bin="$2"; link_explicit=1; shift 2 ;;
+        --uninstall)            uninstall=1; shift ;;
+        --yes)                  assume_yes=1; shift ;;
         -*) echo "cqc: unknown flag: $1" >&2; usage >&2; exit 2 ;;
         *)  inputs+=("$1"); shift ;;
     esac
 done
+
+uninstall_cq() {
+    local manifest="" candidate marker owned canonical_parent answer directory
+    local self_listed=0
+    local -a owned_paths=()
+
+    for candidate in "$prefix"/*/cq/CQInstallManifest.txt; do
+        [[ -f "$candidate" ]] || continue
+        [[ -z "$manifest" ]] || {
+            echo "cqc: multiple uninstall manifests found under $prefix" >&2
+            return 3
+        }
+        manifest="$candidate"
+    done
+    [[ -n "$manifest" ]] || {
+        echo "cqc: no installer-owned manifest under $prefix; refusing to uninstall" >&2
+        return 3
+    }
+
+    IFS= read -r marker < "$manifest"
+    [[ "$marker" == "# CQ install manifest v1" ]] || {
+        echo "cqc: invalid uninstall manifest: $manifest" >&2
+        return 3
+    }
+    while IFS= read -r owned; do
+        [[ -n "$owned" ]] || continue
+        [[ "$owned" == /* && "$owned" == "$prefix"/* && "$owned" != *"/../"* && "$owned" != */.. ]] || {
+            echo "cqc: unsafe uninstall path outside $prefix: $owned" >&2
+            return 3
+        }
+        if [[ -e "$owned" || -L "$owned" ]]; then
+            canonical_parent="$(cd -P "$(dirname "$owned")" && pwd)" || {
+                echo "cqc: cannot validate uninstall path: $owned" >&2
+                return 3
+            }
+            [[ "$canonical_parent" == "$prefix" || "$canonical_parent" == "$prefix"/* ]] || {
+                echo "cqc: unsafe uninstall path through symlink: $owned" >&2
+                return 3
+            }
+        fi
+        [[ "$owned" == "$self_path" ]] && self_listed=1
+        owned_paths+=("$owned")
+    done < <(tail -n +2 "$manifest")
+    [[ "$self_listed" == "1" ]] || {
+        echo "cqc: uninstall manifest does not own this executable: $self_path" >&2
+        return 3
+    }
+
+    if [[ "$assume_yes" != "1" ]]; then
+        [[ -t 0 ]] || {
+            echo "cqc: confirmation requires a terminal; rerun with --uninstall --yes" >&2
+            return 2
+        }
+        read -r -p "Remove CQ from $prefix? [y/N] " answer
+        case "$answer" in y|Y|yes|YES) ;; *) echo "cqc: uninstall cancelled"; return 0 ;; esac
+    fi
+
+    for owned in "${owned_paths[@]}"; do
+        [[ ! -e "$owned" && ! -L "$owned" ]] || rm -f -- "$owned"
+    done
+    while IFS= read -r directory; do
+        while [[ "$directory" == "$prefix"/* ]]; do
+            rmdir "$directory" 2>/dev/null || break
+            directory="$(dirname "$directory")"
+        done
+    done < <(
+        for owned in "${owned_paths[@]}"; do dirname "$owned"; done | sort -ru
+    )
+    echo "CQ uninstalled from $prefix"
+}
+
+if [[ "$uninstall" == "1" ]]; then
+    [[ ${#inputs[@]} -eq 0 && -z "$output" ]] || {
+        echo "cqc: --uninstall cannot be combined with compilation inputs or -o" >&2
+        exit 2
+    }
+    uninstall_cq
+    exit $?
+fi
+[[ "$assume_yes" == "0" ]] || { echo "cqc: --yes requires --uninstall" >&2; exit 2; }
 
 [[ ${#inputs[@]} -gt 0 ]] || { echo "cqc: missing <cq_input.c>" >&2; usage >&2; exit 2; }
 [[ -n "$output"       ]] || { echo "cqc: missing -o <output>" >&2; usage >&2; exit 2; }
