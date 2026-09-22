@@ -47,7 +47,15 @@ archives must never share one link line.
 
 ## Install and run
 
-CQ requires LLVM 19. The installer builds and installs the pass, `cq-opt`, the
+CQ requires LLVM 19 and its development CMake package. On Homebrew macOS, set
+`LLVM_DIR` to the LLVM 19 package directory:
+
+```bash
+brew install llvm@19
+export LLVM_DIR="$(brew --prefix llvm@19)/lib/cmake/llvm"
+```
+
+The installer builds and installs the pass, `cq-opt`, the
 headers, runtime archives, and CMake package files. A production backend must be
 selected explicitly; the installer validates its archive and ABI manifest and
 records it as `CQ::backend`:
@@ -58,7 +66,8 @@ python3 tools/install_cq.py \
   --backend mybackend \
   --backend-library /absolute/path/libmybackend.a \
   --backend-manifest /absolute/path/backend-manifest.json \
-  --backend-link-item m
+  --backend-link-item m \
+  --llvm-dir "$LLVM_DIR"
 ```
 
 Use `--backend trace` when installing only the trace/test backend. There is no
