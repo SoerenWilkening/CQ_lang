@@ -68,26 +68,12 @@ selected backend with `find_package(CQ CONFIG REQUIRED)` and
 [`docs/backend-provider.md`](docs/backend-provider.md) for the backend archive
 and manifest contract.
 
-For a CMake application, the installed selection is the default backend:
-
-```cmake
-find_package(CQ CONFIG REQUIRED)
-
-add_executable(my_quantum_app main.c)
-target_link_libraries(my_quantum_app PRIVATE CQ::backend)
-```
-
-Configure with the installation prefix and build normally:
-
-```bash
-cmake -S . -B build-user -DCMAKE_PREFIX_PATH="$HOME/.local"
-cmake --build build-user
-```
-
-`CQ::backend` resolves to the backend selected by `install_cq.py`; the
-application must not also link CQ's trace archives. `tools/cqc` is still a
-source-tree convenience driver and does not yet consume this installed CMake
-target automatically.
+The installer records the selected archive as the package's default
+`CQ::backend`. CMake consumers can link that target, but `tools/cqc` does not
+yet read the installed selection: it still links the source-tree trace
+archives. Consequently there is currently no honest `tools/cqc` command that
+compiles a user program against the backend selected by `install_cq.py`; that
+driver integration is still required.
 
 The repository also includes [`tools/cqc`](tools/cqc), a single-command driver
 for compiling a CQ source file to an executable:
