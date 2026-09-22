@@ -86,9 +86,13 @@ The installer also installs `cqc`. It reads the backend selection written by
 backend:
 
 ```bash
-"$HOME/.local/bin/cqc" program.c -o program
+export PATH="$HOME/.local/bin:$PATH"
+cqc program.c -o program
 ./program
 ```
+
+If it is not on `PATH`, invoke the driver by its full path:
+`"$HOME/.local/bin/cqc" program.c -o program`.
 
 It runs the validated `clang -O1` → `llvm-link` → `opt -passes=cq-lowering` →
 Clang link pipeline. A production backend and the trace archives are never put
