@@ -6926,7 +6926,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py:1579` — `_star`
 - `tools/inplace_twin_matrix.py:1583` — `main`
 
-### `tools/install_cq.py` (171 lines)
+### `tools/install_cq.py` (184 lines)
 
 - `tools/install_cq.py:14` — `source_root`
 - `tools/install_cq.py:18` — `run`
@@ -6936,7 +6936,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/install_cq.py:54` — `selection_for_external`
 - `tools/install_cq.py:70` — `install_selection`
 - `tools/install_cq.py:99` — `parse_args`
-- `tools/install_cq.py:125` — `main`
+- `tools/install_cq.py:133` — `main`
 
 ### `tools/keepset_vendor_check.py` (244 lines)
 

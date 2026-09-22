@@ -114,6 +114,14 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--build-dir", type=Path, default=Path("build-install"))
     parser.add_argument("--build-type", default="Release")
+    parser.add_argument(
+        "--parallel",
+        "-j",
+        nargs="?",
+        const="native",
+        metavar="N",
+        help="parallel build jobs; omit N to use CMake's native default",
+    )
     parser.add_argument("--llvm-dir", type=Path)
     parser.add_argument("--cmake-arg", action="append", default=[])
     parser.add_argument("--libdir", default="lib")
@@ -154,7 +162,12 @@ def main() -> int:
             configure.append(f"-DLLVM_DIR={args.llvm_dir.resolve()}")
         configure.extend(args.cmake_arg)
         run(configure, args.dry_run)
-        run(["cmake", "--build", str(args.build_dir), "--config", args.build_type], args.dry_run)
+        build = ["cmake", "--build", str(args.build_dir), "--config", args.build_type]
+        if args.parallel is not None:
+            build.append("--parallel")
+            if args.parallel != "native":
+                build.append(args.parallel)
+        run(build, args.dry_run)
         run(
             ["cmake", "--install", str(args.build_dir), "--config", args.build_type],
             args.dry_run,

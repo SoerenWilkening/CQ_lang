@@ -67,8 +67,12 @@ python3 tools/install_cq.py \
   --backend-library /absolute/path/libmybackend.a \
   --backend-manifest /absolute/path/backend-manifest.json \
   --backend-link-item m \
-  --llvm-dir "$LLVM_DIR"
+  --llvm-dir "$LLVM_DIR" \
+  --parallel "$(sysctl -n hw.ncpu)"
 ```
+
+`--parallel N` forwards to `cmake --build --parallel N`; use `--parallel`
+without a number to let CMake choose its native default.
 
 Use `--backend trace` when installing only the trace/test backend. There is no
 implicit production-to-trace fallback. CMake applications can then use the
