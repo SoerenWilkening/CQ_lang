@@ -11,6 +11,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from llvm_discovery import discover_llvm_dir
+
 CQOPS_REPOSITORY = "https://github.com/SoerenWilkening/opcode_quantum_operations.git"
 CQOPS_REVISION = "c9707a3058db132f67b45164e26bdab8628dbafb"
 QEC_REPOSITORY = "https://github.com/SoerenWilkening/C_quantum_error_correction.git"
@@ -341,6 +343,8 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
+    if args.llvm_dir is None:
+        args.llvm_dir = discover_llvm_dir()
     root = source_root()
     try:
         if not re.fullmatch(r"[A-Za-z0-9_.+-]+", args.backend):

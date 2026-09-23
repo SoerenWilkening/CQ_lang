@@ -4,16 +4,25 @@
 from __future__ import annotations
 
 import argparse
+import os
 import shutil
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 import install_cq
+import llvm_discovery
 
 
 class InstallerSelectionTest(unittest.TestCase):
+    def test_llvm_dir_environment_is_preferred(self) -> None:
+        with mock.patch.dict(os.environ, {"LLVM_DIR": "/custom/llvm"}):
+            self.assertEqual(
+                llvm_discovery.discover_llvm_dir(), Path("/custom/llvm")
+            )
+
     def args(self, prefix: Path, backend: str) -> argparse.Namespace:
         return argparse.Namespace(
             prefix=prefix,

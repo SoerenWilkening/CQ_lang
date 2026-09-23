@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 707 maintained source files, 5775 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 708 maintained source files, 5778 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -6926,36 +6926,37 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/inplace_twin_matrix.py:1579` — `_star`
 - `tools/inplace_twin_matrix.py:1583` — `main`
 
-### `tools/install_cq.py` (395 lines)
+### `tools/install_cq.py` (399 lines)
 
-- `tools/install_cq.py:20` — `source_root`
-- `tools/install_cq.py:24` — `run`
-- `tools/install_cq.py:30` — `build_command`
-- `tools/install_cq.py:39` — `checkout_dependency`
-- `tools/install_cq.py:61` — `cmake_quote`
-- `tools/install_cq.py:65` — `validate_external`
-- `tools/install_cq.py:83` — `prepare_cqops`
-- `tools/install_cq.py:141` — `selection_for_trace`
-- `tools/install_cq.py:149` — `selection_for_external`
-- `tools/install_cq.py:165` — `driver_selection`
-- `tools/install_cq.py:180` — `driver_link_item`
-- `tools/install_cq.py:186` — `uninstall_manifest_path`
-- `tools/install_cq.py:190` — `validate_owned_path`
-- `tools/install_cq.py:197` — `write_uninstall_manifest`
-- `tools/install_cq.py:236` — `install_selection`
-- `tools/install_cq.py:294` — `parse_args`
-- `tools/install_cq.py:342` — `main`
+- `tools/install_cq.py:22` — `source_root`
+- `tools/install_cq.py:26` — `run`
+- `tools/install_cq.py:32` — `build_command`
+- `tools/install_cq.py:41` — `checkout_dependency`
+- `tools/install_cq.py:63` — `cmake_quote`
+- `tools/install_cq.py:67` — `validate_external`
+- `tools/install_cq.py:85` — `prepare_cqops`
+- `tools/install_cq.py:143` — `selection_for_trace`
+- `tools/install_cq.py:151` — `selection_for_external`
+- `tools/install_cq.py:167` — `driver_selection`
+- `tools/install_cq.py:182` — `driver_link_item`
+- `tools/install_cq.py:188` — `uninstall_manifest_path`
+- `tools/install_cq.py:192` — `validate_owned_path`
+- `tools/install_cq.py:199` — `write_uninstall_manifest`
+- `tools/install_cq.py:238` — `install_selection`
+- `tools/install_cq.py:296` — `parse_args`
+- `tools/install_cq.py:344` — `main`
 
-### `tools/install_cq_test.py` (177 lines)
+### `tools/install_cq_test.py` (186 lines)
 
-- `tools/install_cq_test.py:17` — `InstallerSelectionTest.args`
-- `tools/install_cq_test.py:31` — `InstallerSelectionTest.sourced_values`
-- `tools/install_cq_test.py:44` — `InstallerSelectionTest.test_trace_selection_drives_installed_archives`
-- `tools/install_cq_test.py:62` — `InstallerSelectionTest.test_external_selection_copies_archives_and_normalizes_libraries`
-- `tools/install_cq_test.py:99` — `InstallerSelectionTest.test_uninstall_manifest_records_cmake_and_generated_files`
-- `tools/install_cq_test.py:122` — `InstallerSelectionTest.make_installed_driver`
-- `tools/install_cq_test.py:135` — `InstallerSelectionTest.test_cqc_uninstall_removes_only_manifest_owned_files`
-- `tools/install_cq_test.py:156` — `InstallerSelectionTest.test_cqc_uninstall_rejects_path_outside_prefix`
+- `tools/install_cq_test.py:20` — `InstallerSelectionTest.test_llvm_dir_environment_is_preferred`
+- `tools/install_cq_test.py:26` — `InstallerSelectionTest.args`
+- `tools/install_cq_test.py:40` — `InstallerSelectionTest.sourced_values`
+- `tools/install_cq_test.py:53` — `InstallerSelectionTest.test_trace_selection_drives_installed_archives`
+- `tools/install_cq_test.py:71` — `InstallerSelectionTest.test_external_selection_copies_archives_and_normalizes_libraries`
+- `tools/install_cq_test.py:108` — `InstallerSelectionTest.test_uninstall_manifest_records_cmake_and_generated_files`
+- `tools/install_cq_test.py:131` — `InstallerSelectionTest.make_installed_driver`
+- `tools/install_cq_test.py:144` — `InstallerSelectionTest.test_cqc_uninstall_removes_only_manifest_owned_files`
+- `tools/install_cq_test.py:165` — `InstallerSelectionTest.test_cqc_uninstall_rejects_path_outside_prefix`
 
 ### `tools/keepset_vendor_check.py` (244 lines)
 
@@ -7373,6 +7374,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/link_smoke_selftest.py:48` — `build_archive`
 - `tools/link_smoke_selftest.py:62` — `try_link`
 - `tools/link_smoke_selftest.py:70` — `main`
+
+### `tools/llvm_discovery.py` (61 lines)
+
+- `tools/llvm_discovery.py:12` — `_cmakedir_from`
+- `tools/llvm_discovery.py:25` — `discover_llvm_dir`
 
 ### `tools/loop_twin_matrix.py` (4066 lines)
 

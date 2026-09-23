@@ -47,8 +47,10 @@ archives must never share one link line.
 
 ## Install and run
 
-CQ requires LLVM 19 and its development CMake package. On Homebrew macOS, set
-`LLVM_DIR` to the LLVM 19 package directory:
+CQ requires LLVM 19 and its development CMake package. The installer discovers
+LLVM automatically from `LLVM_DIR`, `llvm-config`, or Homebrew's `llvm@19` keg.
+You can still set `LLVM_DIR` explicitly when multiple LLVM versions are
+installed:
 
 ```bash
 brew install llvm@19
@@ -67,7 +69,6 @@ python3 tools/install_cq.py \
   --backend-library /absolute/path/libmybackend.a \
   --backend-manifest /absolute/path/backend-manifest.json \
   --backend-link-item m \
-  --llvm-dir "$LLVM_DIR" \
   --parallel "$(sysctl -n hw.ncpu)"
 ```
 
@@ -90,7 +91,6 @@ and installs the circuit backend plus its QEC archives into the same prefix:
 python3 tools/install_cq.py \
   --prefix "$HOME/.local" \
   --backend cqops \
-  --llvm-dir "$LLVM_DIR" \
   --parallel "$(sysctl -n hw.ncpu)"
 ```
 
