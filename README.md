@@ -90,8 +90,6 @@ and installs the circuit backend plus its QEC archives into the same prefix:
 python3 tools/install_cq.py \
   --prefix "$HOME/.local" \
   --backend cqops \
-  --qec-build build-cq-install \
-  --cqops-build-dir "$HOME/.cache/cq/build-cqops" \
   --llvm-dir "$LLVM_DIR" \
   --parallel "$(sysctl -n hw.ncpu)"
 ```
@@ -100,7 +98,9 @@ The installer automatically clones pinned revisions of both repositories into
 `~/.cache/cq/sources` (override with `--dependency-source-dir`) and builds the
 QEC repository's `qec/` subdirectory first. Existing checkouts can be supplied
 with `--cqops-dir` and `--qec-dir` for offline or development builds. The
-installed prefix contains `cqc`, `libCQPass.so`,
+default build directories are `qec/build-cq-install` in the QEC checkout and
+`build-cqops-install` in the current directory; override them only when needed.
+The installed prefix contains `cqc`, `libCQPass.so`,
 `libcqops.a`, `libqec.a`, `libtommath.a`, and `libcjson.a` under its `bin/` and
 `lib/cq/` directories. The installer validates the CQ ABI manifest and records
 the complete static-link order; CQ's trace archives are not linked.
