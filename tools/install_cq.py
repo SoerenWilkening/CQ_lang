@@ -295,7 +295,10 @@ def install_selection(args: argparse.Namespace) -> list[Path]:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--prefix", type=Path, required=True)
+    parser.add_argument(
+        "--prefix", type=Path, default=Path.home() / ".local",
+        help="installation prefix (default: ~/.local)",
+    )
     parser.add_argument(
         "--backend",
         required=True,

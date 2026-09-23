@@ -64,7 +64,6 @@ records it as `CQ::backend`:
 
 ```bash
 python3 tools/install_cq.py \
-  --prefix "$HOME/.local" \
   --backend mybackend \
   --backend-library /absolute/path/libmybackend.a \
   --backend-manifest /absolute/path/backend-manifest.json \
@@ -74,6 +73,9 @@ python3 tools/install_cq.py \
 
 `--parallel N` forwards to `cmake --build --parallel N`; use `--parallel`
 without a number to let CMake choose its native default.
+
+The default installation prefix is `~/.local`; use `--prefix PATH` to choose a
+different location.
 
 Use `--backend trace` when installing only the trace/test backend. There is no
 implicit production-to-trace fallback. CMake applications can then use the
@@ -89,7 +91,6 @@ and installs the circuit backend plus its QEC archives into the same prefix:
 
 ```bash
 python3 tools/install_cq.py \
-  --prefix "$HOME/.local" \
   --backend cqops \
   --parallel "$(sysctl -n hw.ncpu)"
 ```

@@ -7,6 +7,7 @@ import argparse
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest import mock
@@ -22,6 +23,10 @@ class InstallerSelectionTest(unittest.TestCase):
             self.assertEqual(
                 llvm_discovery.discover_llvm_dir(), Path("/custom/llvm")
             )
+
+    def test_installer_prefix_defaults_to_user_local(self) -> None:
+        with mock.patch.object(sys, "argv", ["install_cq.py", "--backend", "trace"]):
+            self.assertEqual(install_cq.parse_args().prefix, Path.home() / ".local")
 
     def args(self, prefix: Path, backend: str) -> argparse.Namespace:
         return argparse.Namespace(
