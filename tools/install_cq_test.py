@@ -64,26 +64,32 @@ class InstallerSelectionTest(unittest.TestCase):
             root = Path(raw)
             prefix = root / "prefix with spaces"
             archive = root / "libbackend.a"
+            dependency = root / "libdependency.a"
             manifest = root / "backend-manifest.json"
             archive.write_bytes(b"archive")
+            dependency.write_bytes(b"dependency")
             manifest.write_text("{}\n", encoding="utf-8")
 
             args = self.args(prefix, "external")
             args.backend_library = [archive]
+            args.backend_dependency = [dependency]
             args.backend_manifest = manifest
             args.backend_link_item = ["m", "-pthread", "/opt/lib/libqec.a"]
             install_cq.install_selection(args)
             prefix = prefix.resolve()
 
             installed = prefix / "lib/cq/backends/external/libbackend.a"
+            installed_dependency = prefix / "lib/cq/backends/external/libdependency.a"
             selection = prefix / "lib/cq/CQBackendSelection.sh"
             self.assertEqual(installed.read_bytes(), b"archive")
+            self.assertEqual(installed_dependency.read_bytes(), b"dependency")
             self.assertEqual(
                 self.sourced_values(selection),
                 [
                     "external",
                     "/opt/llvm/bin",
                     str(installed),
+                    str(installed_dependency),
                     "-lm",
                     "-pthread",
                     "/opt/lib/libqec.a",

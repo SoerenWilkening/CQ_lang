@@ -81,6 +81,40 @@ selected backend with `find_package(CQ CONFIG REQUIRED)` and
 [`docs/backend-provider.md`](docs/backend-provider.md) for the backend archive
 and manifest contract.
 
+For the complete production stack, `--backend cqops` builds
+[`opcode_quantum_operations`](https://github.com/SoerenWilkening/opcode_quantum_operations)
+with [`C_quantum_error_correction`](https://github.com/SoerenWilkening/C_quantum_error_correction)
+and installs the circuit backend plus its QEC archives into the same prefix:
+
+```bash
+python3 tools/install_cq.py \
+  --prefix "$HOME/.local" \
+  --backend cqops \
+  --qec-build build-cq-install \
+  --cqops-build-dir "$HOME/.cache/cq/build-cqops" \
+  --llvm-dir "$LLVM_DIR" \
+  --parallel "$(sysctl -n hw.ncpu)"
+```
+
+The installer automatically clones pinned revisions of both repositories into
+`~/.cache/cq/sources` (override with `--dependency-source-dir`) and builds the
+QEC repository's `qec/` subdirectory first. Existing checkouts can be supplied
+with `--cqops-dir` and `--qec-dir` for offline or development builds. The
+installed prefix contains `cqc`, `libCQPass.so`,
+`libcqops.a`, `libqec.a`, `libtommath.a`, and `libcjson.a` under its `bin/` and
+`lib/cq/` directories. The installer validates the CQ ABI manifest and records
+the complete static-link order; CQ's trace archives are not linked.
+
+The QEC sink is selected when the compiled program runs, because its code
+distance and device configuration are application-specific:
+
+```bash
+export CQOPS_SINK=qec
+export CQOPS_QEC_CONFIG=/absolute/path/to/qec-config.json
+cqc program.c -o program
+./program
+```
+
 The installer also installs `cqc`. It reads the backend selection written by
 `install_cq.py`, so compiling through the installed driver links exactly that
 backend:
