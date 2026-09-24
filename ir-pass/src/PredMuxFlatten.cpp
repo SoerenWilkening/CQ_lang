@@ -2349,7 +2349,7 @@ struct PredMuxRegion {
   // final (`guardSpeculatedClassicalRead`); an unrewritten entry would be an
   // introduced out-of-bounds read. Captured at E4 time, discarded with `R` on any
   // later `leave` (the `MaskLoads` precedent: analysis decides, flatten executes).
-  SmallVector<LoadInst *, 4> GuardedLoads;
+  SmallVector<std::pair<LoadInst *, Value *>, 4> GuardedLoads;  // (load, proved extent)
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -2641,8 +2641,8 @@ bool classicalTableReadIsSpeculatable(
     LoadInst *LI, const TaintSet &Taint, DominatorTree &DT, LoopInfo &LInfo,
     ScalarEvolution &SE, AssumptionCache &AC,
     const SmallPtrSetImpl<BasicBlock *> &Region, BasicBlock *Entry,
-    bool *NeedsGuard) {
-  *NeedsGuard = false;
+    Value **GuardExtent) {
+  *GuardExtent = nullptr;
   // Simple = not volatile, not atomic. A volatile read is an observable event the
   // flatten may not duplicate or move; an atomic one carries ordering.
   if (!LI->isSimple())
@@ -2762,10 +2762,8 @@ bool classicalTableReadIsSpeculatable(
   // above — simple, classical now and after the flatten, not QROM-shaped, a
   // template width — has already been asked of it. See GuardedClassicalRead.h.
   if (classicalRuntimeAllocaReadIsInBoundsUnderGuard(LI, Taint, DT, LInfo, SE,
-                                                     Region, Entry)) {
-    *NeedsGuard = true;
+                                                     Region, Entry, GuardExtent))
     return true;
-  }
   return false;
 }
 
@@ -3591,13 +3589,13 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
           if (!Loads)
             return leave("E4-load", &I);
           Loads->ensure();
-          bool NeedsGuard = false;
+          Value *GuardExtent = nullptr;
           if (!classicalTableReadIsSpeculatable(LI2, Taint, DT, LInfo, *Loads->SE,
                                                 *Loads->AC, R.InRegion, R.Entry,
-                                                &NeedsGuard))
+                                                &GuardExtent))
             return leave("E4-load", &I);
-          if (NeedsGuard)
-            R.GuardedLoads.push_back(LI2);  // bd xdu2.8 — the flatten owes the select
+          if (GuardExtent)
+            R.GuardedLoads.push_back({LI2, GuardExtent});  // bd xdu2.8 — the flatten owes the select
           continue;  // a proved classical read: pure speculatable dataflow.
         }
         // bd 20xt.7: a PROVABLE clone read on a pow2 table whose index BECOMES
@@ -3658,11 +3656,11 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
                 Loads->ensure();
                 // The load is re-asked (and, if guarded, RECORDED) on its own
                 // iteration of this walk; the gep only needs the verdict.
-                bool GepLoadNeedsGuard = false;
+                Value *GepLoadGuardExtent = nullptr;
                 if (classicalTableReadIsSpeculatable(LU, Taint, DT, LInfo,
                                                      *Loads->SE, *Loads->AC,
                                                      R.InRegion, R.Entry,
-                                                     &GepLoadNeedsGuard))
+                                                     &GepLoadGuardExtent))
                   continue;
               }
             }
@@ -3832,8 +3830,8 @@ public:
     // guard gets its bounds-checked address NOW, after `moveBody` put it at the
     // hoist point and before anything can observe the speculation. The replaced
     // gep is swept if nothing else reads it.
-    for (LoadInst *GL : R.GuardedLoads)
-      track(guardSpeculatedClassicalRead(GL));
+    for (auto &GL : R.GuardedLoads)
+      track(guardSpeculatedClassicalRead(GL.first, GL.second));
     // Entry terminator → unconditional branch to the merge; erase the arms.
     // The entry terminator's own condition/scrutinee joins the sweep set (a
     // Rule-13 clearance follow-up): it normally stays live as a predicate

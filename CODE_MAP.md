@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 711 maintained source files, 5845 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 715 maintained source files, 5870 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -17,7 +17,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9229 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 7110 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5354 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5352 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `tools/free_pairing_check.py` — 3423 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3205 physical lines
@@ -412,6 +412,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/FreePoint.cpp:151` — `blockCanRepeat`
 - `ir-pass/src/FreePoint.cpp:165` — `computeFreePoint`
 
+### `ir-pass/src/GuardedClassicalRead.cpp` (248 lines)
+
+- `ir-pass/src/GuardedClassicalRead.cpp:42` — `collectFacts`
+- `ir-pass/src/GuardedClassicalRead.cpp:73` — `sameCastChain`
+- `ir-pass/src/GuardedClassicalRead.cpp:94` — `knownNonNegativeAt`
+- `ir-pass/src/GuardedClassicalRead.cpp:105` — `factBoundsRead`
+- `ir-pass/src/GuardedClassicalRead.cpp:139` — `zeroCellFor`
+- `ir-pass/src/GuardedClassicalRead.cpp:161` — `classicalRuntimeAllocaReadIsInBoundsUnderGuard`
+- `ir-pass/src/GuardedClassicalRead.cpp:225` — `guardSpeculatedClassicalRead`
+
 ### `ir-pass/src/GuardedStoreArmEmit.cpp` (337 lines)
 
 - `ir-pass/src/GuardedStoreArmEmit.cpp:44` — `scrubTaint`
@@ -595,7 +605,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5354 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5352 lines)
 
 - `ir-pass/src/PredMuxFlatten.cpp:121` — `isTaintedCtrlTerm`
 - `ir-pass/src/PredMuxFlatten.cpp:140` — `isMuxableType`
@@ -615,28 +625,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PredMuxFlatten.cpp:2374` — `topoOrderRegion`
 - `ir-pass/src/PredMuxFlatten.cpp:2516` — `regionStrictlyInsideLoopBody`
 - `ir-pass/src/PredMuxFlatten.cpp:2640` — `classicalTableReadIsSpeculatable`
-- `ir-pass/src/PredMuxFlatten.cpp:2789` — `mergeIgnoringUnreachable`
-- `ir-pass/src/PredMuxFlatten.cpp:2910` — `ensure`
-- `ir-pass/src/PredMuxFlatten.cpp:2921` — `recoverRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:3797` — `run`
-- `ir-pass/src/PredMuxFlatten.cpp:3872` — `literal`
-- `ir-pass/src/PredMuxFlatten.cpp:4059` — `stripPoisonCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4094` — `canonicalizePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4270` — `buildNegation`
-- `ir-pass/src/PredMuxFlatten.cpp:4536` — `blockPred`
-- `ir-pass/src/PredMuxFlatten.cpp:4553` — `edgePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4586` — `convertPhis`
-- `ir-pass/src/PredMuxFlatten.cpp:4801` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4812` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:4878` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4978` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:5002` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5050` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5109` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5154` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5178` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5229` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5342` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:2787` — `mergeIgnoringUnreachable`
+- `ir-pass/src/PredMuxFlatten.cpp:2908` — `ensure`
+- `ir-pass/src/PredMuxFlatten.cpp:2919` — `recoverRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:3795` — `run`
+- `ir-pass/src/PredMuxFlatten.cpp:3870` — `literal`
+- `ir-pass/src/PredMuxFlatten.cpp:4057` — `stripPoisonCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4092` — `canonicalizePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4268` — `buildNegation`
+- `ir-pass/src/PredMuxFlatten.cpp:4534` — `blockPred`
+- `ir-pass/src/PredMuxFlatten.cpp:4551` — `edgePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4584` — `convertPhis`
+- `ir-pass/src/PredMuxFlatten.cpp:4799` — `moveBody`
+- `ir-pass/src/PredMuxFlatten.cpp:4810` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:4876` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4976` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5000` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5048` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5107` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5152` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5176` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5227` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5340` — `declineConvertedRailPhiLeaves`
 
 ### `ir-pass/src/QramLowering.cpp` (3205 lines)
 
@@ -4186,6 +4196,25 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:480` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:490` — `main`
 
+### `tests/e2e/railbank_guarded_vla_matrix.c` (222 lines)
+
+- `tests/e2e/railbank_guarded_vla_matrix.c:74` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:91` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:98` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:107` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:111` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:121` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:135` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:148` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:153` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:169` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:177` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:190` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:198` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:207` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:211` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:221` — `main`
+
 ### `tests/e2e/run_railbank_dynamic_matrix.py` (150 lines)
 
 - `tests/e2e/run_railbank_dynamic_matrix.py:35` — `run`
@@ -6339,6 +6368,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_predmux_fp_diamond_volatile.c:33` — `slice`
 - `tests/e2e/slice_predmux_fp_diamond_volatile.c:41` — `main`
+
+### `tests/e2e/slice_predmux_guarded_vla.c` (37 lines)
+
+- `tests/e2e/slice_predmux_guarded_vla.c:24` — `slice`
+- `tests/e2e/slice_predmux_guarded_vla.c:34` — `main`
 
 ### `tests/e2e/slice_predmux_inloop_value_diamond.c` (38 lines)
 

@@ -69,14 +69,17 @@ bool classicalRuntimeAllocaReadIsInBoundsUnderGuard(
     llvm::LoadInst *LI, const TaintSet &Taint, llvm::DominatorTree &DT,
     llvm::LoopInfo &LInfo, llvm::ScalarEvolution &SE,
     const llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Region,
-    llvm::BasicBlock *Entry);
+    llvm::BasicBlock *Entry, llvm::Value **OutExtent);
 
 // Obligation (B). The mutation, run by the flatten AFTER `LI` has been moved to
 // the region entry. Rewrites `LI`'s address to the bounds-checked select above and
 // returns the replaced address (the old gep, now possibly dead) so the caller can
-// hand it to its dead sweep. Fatal (never silent) if the load no longer has the
-// shape (A) proved.
-llvm::Value *guardSpeculatedClassicalRead(llvm::LoadInst *LI);
+// hand it to its dead sweep. `Extent` is the allocation extent (A) PROVED, carried
+// in the record — never re-derived here (Rule-13 round 1 P2-1: re-deriving the
+// allocation by `getUnderlyingObject` disagreed with (A)'s `walkPtrOrigin` on a
+// `select c, %p, %p` base and ABORTED where the oracle declined).
+llvm::Value *guardSpeculatedClassicalRead(llvm::LoadInst *LI,
+                                          llvm::Value *Extent);
 
 }  // namespace cq
 

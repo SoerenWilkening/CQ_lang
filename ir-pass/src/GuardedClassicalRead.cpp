@@ -9,7 +9,6 @@
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/ScalarEvolution.h"
 #include "llvm/Analysis/ScalarEvolutionExpressions.h"
-#include "llvm/Analysis/ValueTracking.h"  // getUnderlyingObject
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Dominators.h"
 #include "llvm/IR/GlobalVariable.h"
@@ -64,9 +63,13 @@ void collectFacts(Value *V, bool Want, unsigned Depth,
 }
 
 // Do `G1`/`G2` equal `C(F1)`/`C(F2)` for ONE cast chain `C` applied to both?
-// `Monotone` restricts `C` to zero-extensions, the only cast here that preserves
-// UNSIGNED order; without it sext/trunc are admitted too, which preserve
-// EQUALITY (a function maps equal inputs to equal outputs) and nothing else.
+// `Monotone` restricts `C` to zero-extensions. That is a CONSERVATIVE choice, not
+// the exact set: sext preserves unsigned order too (Rule-13 round-1 P3-7; an
+// earlier draft said zext was "the only" such cast) — only trunc does not.
+// Without `Monotone` sext/trunc are admitted, which preserve EQUALITY (a function
+// maps equal inputs to equal outputs). ⚠ RETIREMENT TRIGGER (round 1 P3-6): trunc
+// is shadowed today only because E6's leaf grammar refuses the i128 order facts
+// it would need; if E6 admits them, the `Monotone` fence becomes live.
 bool sameCastChain(const SCEV *G1, const SCEV *G2, const SCEV *F1,
                    const SCEV *F2, bool Monotone, unsigned Depth = 0) {
   if (G1 == F1 && G2 == F2)
@@ -158,7 +161,7 @@ GlobalVariable *zeroCellFor(Module &M, Type *T, Align A) {
 bool classicalRuntimeAllocaReadIsInBoundsUnderGuard(
     LoadInst *LI, const TaintSet &Taint, DominatorTree &DT, LoopInfo &LInfo,
     ScalarEvolution &SE, const SmallPtrSetImpl<BasicBlock *> &Region,
-    BasicBlock *Entry) {
+    BasicBlock *Entry, Value **OutExtent) {
   if (!LI || !Entry || !Region.count(LI->getParent()) ||
       LI->getParent() == Entry)
     return false;
@@ -209,28 +212,30 @@ bool classicalRuntimeAllocaReadIsInBoundsUnderGuard(
             valueWillTaintAfterFlatten(F.Cmp, Taint, Region, Entry) ||
             !F.Cmp->getOperand(0)->getType()->isIntegerTy())
           continue;
-        if (factBoundsRead(F, Trips, IdxS, ExtentS, SE, Ctx))
+        if (factBoundsRead(F, Trips, IdxS, ExtentS, SE, Ctx)) {
+          *OutExtent = Shape->Extent;
           return true;
+        }
       }
     }
   }
   return false;
 }
 
-Value *guardSpeculatedClassicalRead(LoadInst *LI) {
+Value *guardSpeculatedClassicalRead(LoadInst *LI, Value *Extent) {
+  // Both conjuncts were proved at admission (the single-index form by (A)'s own
+  // `getNumIndices() != 1` refusal, the extent by the shared shape half); this
+  // is a consistency check on the record, not a second derivation.
   auto *G = dyn_cast<GetElementPtrInst>(LI->getPointerOperand());
-  if (!G || G->getNumIndices() != 1)
+  if (!G || G->getNumIndices() != 1 || !Extent)
     report_fatal_error("cq: guarded classical read lost its address shape");
   Value *Base = G->getPointerOperand();
   Value *Idx = G->getOperand(1);
-  auto *AI = dyn_cast<AllocaInst>(getUnderlyingObject(Base));
-  if (!AI || !AI->isArrayAllocation())
-    report_fatal_error("cq: guarded classical read lost its allocation");
   Type *T = LI->getType();
   IRBuilder<> B(LI);
   B.SetCurrentDebugLocation(LI->getDebugLoc());
   Value *FIdx = B.CreateFreeze(Idx, "cq.gr.idx");
-  Value *FExt = B.CreateFreeze(AI->getArraySize(), "cq.gr.ext");
+  Value *FExt = B.CreateFreeze(Extent, "cq.gr.ext");
   FExt = B.CreateZExt(FExt, FIdx->getType());
   Value *InBounds = B.CreateICmpULT(FIdx, FExt, "cq.gr.inb");
   Value *Cell = B.CreateGEP(T, Base, FIdx, "cq.gr.cell");
