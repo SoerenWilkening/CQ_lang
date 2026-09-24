@@ -136,18 +136,21 @@ bool factBoundsRead(const ArmFact &F, const SCEV *Trips, const SCEV *IdxS,
          sameCastChain(IdxS, ExtentS, Lo, Hi, /*Monotone=*/true);
 }
 
-// The metadata kind that marks a zero cell THIS file created. Reuse is keyed on
-// it and never on the name (Rule-13 round 2 P3: the first spelling reused any
-// private zero constant whose NAME started with the prefix — a user's global
-// among them — and RAISED its alignment). A user global of the same name is now
-// genuinely left alone: LLVM uniques the new global's name.
-constexpr const char *kZeroCellMD = "cq.guarded.read.zero";
-
+// ONE FRESH ZERO CELL PER GUARDED READ, NEVER A REUSED ONE (Rule-13 round 3).
+// Two earlier spellings each trusted something the MODULE supplies: round 2's
+// P3 found reuse keyed on the NAME prefix (a user's global reused, its alignment
+// raised); round 3 found reuse keyed on a `!cq.guarded.read.zero` METADATA
+// marker, which a module can forge on an `extern_weak`, a mutable, a
+// `thread_local` or a written global — measured, an extern_weak forgery compiled
+// and the out-of-bounds run SEGFAULTED where the oracle declined. The cure is to
+// trust nothing: the cell is created here, by construction a `private constant`
+// zero in address space 0 at exactly the load's alignment, and nothing in the
+// pass ever LOOKS UP a cell. A module global of the same name, or carrying any
+// metadata, is inert — LLVM uniques the new name — so a forged marker needs no
+// reserved-name decline (the xdu2.4 forged-seed decline exists because that
+// marker was READ; this one is never read). The cost is one small constant per
+// guarded read.
 GlobalVariable *zeroCellFor(Module &M, Type *T, Align A) {
-  for (GlobalVariable &G : M.globals())
-    if (G.getMetadata(kZeroCellMD) && G.getValueType() == T &&
-        G.getAddressSpace() == 0 && G.getAlign().valueOrOne() >= A)
-      return &G;
   // ADDRESS SPACE 0, EXPLICITLY (Rule-13 round 2 sweep): the constructor's
   // default is the DataLayout's globals address space (`-G<n>`), and a zero cell
   // outside the load's address space makes the address `select` ill-typed — an
@@ -155,13 +158,13 @@ GlobalVariable *zeroCellFor(Module &M, Type *T, Align A) {
   // load whose pointer is not in address space 0, so 0 is the load's space.
   auto *G = new GlobalVariable(M, T, /*isConstant=*/true,
                                GlobalValue::PrivateLinkage,
-                               Constant::getNullValue(T), kZeroCellMD,
+                               Constant::getNullValue(T),
+                               "cq.guarded.read.zero",
                                /*InsertBefore=*/nullptr,
                                GlobalValue::NotThreadLocal,
                                /*AddressSpace=*/0u);
   G->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
   G->setAlignment(A);
-  G->setMetadata(kZeroCellMD, MDNode::get(M.getContext(), {}));
   return G;
 }
 
@@ -189,7 +192,7 @@ bool classicalRuntimeAllocaReadIsInBoundsUnderGuard(
   //   * load TYPE — a scalar int/fp equal to the allocated cell type (shape half),
   //     so `Constant::getNullValue` is a defined zero of it; no vector/pointer;
   //   * volatile / atomic — refused by `isSimple` (shape half);
-  //   * ALIGNMENT — the zero cell is created or reused at >= the load's own;
+  //   * ALIGNMENT — the zero cell is created fresh at exactly the load's own;
   //   * INDEX / EXTENT widths — address-width index (shape half), extent no wider
   //     (below), so `zext(freeze extent)` to the index type is well-formed.
   if (LI->getPointerAddressSpace() != 0)

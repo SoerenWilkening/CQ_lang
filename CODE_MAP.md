@@ -412,15 +412,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/FreePoint.cpp:151` — `blockCanRepeat`
 - `ir-pass/src/FreePoint.cpp:165` — `computeFreePoint`
 
-### `ir-pass/src/GuardedClassicalRead.cpp` (269 lines)
+### `ir-pass/src/GuardedClassicalRead.cpp` (272 lines)
 
 - `ir-pass/src/GuardedClassicalRead.cpp:42` — `collectFacts`
 - `ir-pass/src/GuardedClassicalRead.cpp:73` — `sameCastChain`
 - `ir-pass/src/GuardedClassicalRead.cpp:94` — `knownNonNegativeAt`
 - `ir-pass/src/GuardedClassicalRead.cpp:105` — `factBoundsRead`
-- `ir-pass/src/GuardedClassicalRead.cpp:146` — `zeroCellFor`
-- `ir-pass/src/GuardedClassicalRead.cpp:170` — `classicalRuntimeAllocaReadIsInBoundsUnderGuard`
-- `ir-pass/src/GuardedClassicalRead.cpp:246` — `guardSpeculatedClassicalRead`
+- `ir-pass/src/GuardedClassicalRead.cpp:153` — `zeroCellFor`
+- `ir-pass/src/GuardedClassicalRead.cpp:173` — `classicalRuntimeAllocaReadIsInBoundsUnderGuard`
+- `ir-pass/src/GuardedClassicalRead.cpp:249` — `guardSpeculatedClassicalRead`
 
 ### `ir-pass/src/GuardedStoreArmEmit.cpp` (337 lines)
 

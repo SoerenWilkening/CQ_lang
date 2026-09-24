@@ -2,13 +2,13 @@
 ; predmux_guarded_vla_accept_idx_guard.ll with the arm's read split BY HAND into two
 ; guarded reads of the same cell: the first `align 1`, the second `align 4`. The zero
 ; cell created for the first is `align 1`; reusing it for the second would make the
-; speculated `align 4` load of an under-aligned address UB. Reuse requires the cell's
-; alignment >= the load's, so a second, align-4 cell is created. Kills mutant M30.
+; speculated `align 4` load of an under-aligned address UB. Since round 3 every guarded read gets
+; its own fresh cell at exactly its own alignment. Kills mutant M30.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; CHECK-DAG: @[[Z1:cq.guarded.read.zero(\.[0-9]+)?]] = private unnamed_addr constant i32 0, align 1, !cq.guarded.read.zero
-; CHECK-DAG: @[[Z4:cq.guarded.read.zero(\.[0-9]+)?]] = private unnamed_addr constant i32 0, align 4, !cq.guarded.read.zero
+; CHECK-DAG: @[[Z1:cq.guarded.read.zero(\.[0-9]+)?]] = private unnamed_addr constant i32 0, align 1{{$}}
+; CHECK-DAG: @[[Z4:cq.guarded.read.zero(\.[0-9]+)?]] = private unnamed_addr constant i32 0, align 4{{$}}
 ; CHECK: select i1 %{{[a-z.0-9]+}}, ptr %{{[a-z.0-9]+}}, ptr @[[Z1]]
 ; CHECK-NEXT: load i32, ptr %{{[a-z.0-9]+}}, align 1
 ; CHECK: select i1 %{{[a-z.0-9]+}}, ptr %{{[a-z.0-9]+}}, ptr @[[Z4]]

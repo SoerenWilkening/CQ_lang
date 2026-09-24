@@ -8,7 +8,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
-; CHECK: @cq.guarded.read.zero = private unnamed_addr constant i32 0, align 4, !cq.guarded.read.zero
+; CHECK: @cq.guarded.read.zero = private unnamed_addr constant i32 0, align 4{{$}}
 ; CHECK: %cq.gr.addr = select i1 %cq.gr.inb, ptr %cq.gr.cell, ptr @cq.guarded.read.zero
 ; CHECK-NOT: addrspace(1)
 

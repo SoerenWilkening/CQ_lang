@@ -1,14 +1,14 @@
 ; predmux_guarded_vla_accept_user_zero_global.ll — ACCEPT (bd xdu2.8, Rule-13 round 2 P3).
 ; The module already holds a USER global `@cq.guarded.read.zero = private unnamed_addr
 ; constant i32 0, align 1`. On d505873f the pass REUSED it (reuse keyed on the name
-; prefix) and RAISED its alignment to 4. Reuse is now keyed on the pass's own
-; `!cq.guarded.read.zero` metadata marker, so the user's global is left untouched and
+; prefix) and RAISED its alignment to 4. Since Rule-13 round 3 the pass never
+; reuses a cell (it creates a fresh one per guarded read), so the user's global is left untouched and
 ; a fresh, marked cell is created beside it. Hand IR from the round-2 reviewer (h5.ll).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; CHECK: @cq.guarded.read.zero = private unnamed_addr constant i32 0, align 1{{$}}
-; CHECK: @[[Z:cq.guarded.read.zero.[0-9]+]] = private unnamed_addr constant i32 0, align 4, !cq.guarded.read.zero
+; CHECK: @[[Z:cq.guarded.read.zero.[0-9]+]] = private unnamed_addr constant i32 0, align 4{{$}}
 ; CHECK: %cq.gr.addr = select i1 %cq.gr.inb, ptr %cq.gr.cell, ptr @[[Z]]
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

@@ -252,3 +252,70 @@ pass 5: `lit pass=30 fail=0`). There are 4 new mutants:
 **Cumulative: 30 real mutants, 24 KILLED, 6 MISSED.** The six are M2, M3, M5, M7 and
 M8, all shadowed, and M25, which is contingent. Owned lit `Passed : 30`, owned ctest
 2/2, and `update_code_map.py --check` clean.
+
+## 9. Rule-13 round 3 (orchestrator-run, on `c9802fa7`) — fix and a note
+
+Verdict: **CLEAR-WITH-ITEMS, 0 P1, 0 P2** (76 C sources plus hand IR, no aborts). One
+P3 fixed and one note recorded. Final subject `cq-opt` `82b7656eb4f42b6f`.
+
+**P3 (fixed): §8's metadata-keyed reuse was itself trust in the module.**
+`zeroCellFor` reused any global carrying `!cq.guarded.read.zero` with a matching
+type, address space and alignment. It never checked linkage, initializer,
+constness or TLS. The reviewer's probes:
+- An `extern_weak` forgery compiled, and its out-of-bounds run SEGFAULTED (exit
+  139) where the oracle declined.
+- Forgeries on a mutable global initialised to 7, a `thread_local` global, and a
+  global written by another function also compiled.
+
+**Choice: no reuse at all, rather than a stricter reuse predicate.** Every guarded
+read gets a fresh `private unnamed_addr constant` zero cell, in address space 0, at
+exactly the load's alignment. Nothing in the pass ever looks a cell up, and the
+marker is no longer emitted. Why this instead of the alternatives:
+- A stricter reuse predicate (private or internal, constant, definitive null
+  initializer, not TLS, not externally initialised) would be the third
+  module-trusting spelling in three rounds.
+- A pass-local map would need state threaded through several
+  `flattenPredMuxRegions` invocations for a saving of a few bytes per read.
+- **A forged marker gets no reserved-name decline.** The xdu2.4 forged-seed
+  decline exists because that marker is READ. This one is never read, so a forgery
+  is inert. Declining it would refuse a valid program over a name.
+
+Round 2's "reuse keyed on the pass's own marker" is therefore **superseded**.
+
+**Fixtures.**
+- Three new ones from the reviewer's probes, all red on `c9802fa7`:
+  `…_accept_forged_marker_{extern_weak,mutable,tls}.ll`. Each asserts that the
+  select reads a fresh private constant zero cell and never the forged global.
+- The four fixtures that checked the retired marker now end their cell pattern at
+  `align N{{$}}`. Their headers are updated.
+
+**Mutation delta (pass 6: null control first, `lit pass=33 fail=0`, 0 movers).**
+M29 and M30 targeted code that no longer exists and are retired. Four mutants ran,
+four KILLED:
+
+| mutant | killed by |
+|---|---|
+| M31: reuse by name prefix | 4 fixtures |
+| M32: reuse any private null constant of the type, ignoring alignment | two-alignments + both user-global fixtures |
+| M33: reuse any marked global | all three forged-marker fixtures |
+| M28: zero cell in the default globals space (re-run) | `…_globals_addrspace.ll` |
+
+Cumulative: **31 real mutants, 25 killed, 6 missed**. The six are M2, M3, M5, M7 and
+M8, all shadowed, and M25, which is contingent.
+
+Owned tests on `82b7656e`:
+- lit (`predmux_guarded_vla|runtime_vla`): `Passed : 33`
+- owned ctest: 2/2
+- `update_code_map.py --check`: clean
+
+**N-1 (recorded for any future twin): a twin must spell the EMITTED select, not the
+guard.**
+- The emitted address is `idx <u extent ? &p[idx] : &zero`. It is NOT `guard ?
+  &p[idx] : &zero`.
+- Where the guard is false but the index is in bounds (for example proof (T)'s
+  `m == n` false, with `i < m`), the flattened program reads the REAL cell. That
+  value then goes into speculated arithmetic that a |0⟩ predicate discards.
+- So the unitary equals a guard-spelled twin's, but the `_hl` literals in the trace
+  do not. A byte-identity twin must spell `i <u m ? p[i] : 0`.
+- Matrix CASE 15 is safe as written: its guard IS `k <u m`, so the two spellings
+  coincide. A proof-(T) twin would not be.
