@@ -16,6 +16,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -45,6 +46,7 @@
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"  // bd zco4 (isAllocaPromotable / PromoteMemToReg)
 
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 
@@ -260,6 +262,309 @@ bool instReaches(const Instruction *From, const Instruction *To) {
     if (B == TB)
       return true;
     Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// ── C6 READ ORDER, asked SEMANTICALLY (bd xdu2.10) ────────────────────────────
+//
+// Per-query context for `readFollowsLoopOnEveryPath`. `InCycle` is computed ONCE
+// per query from LLVM's own SCC iterator (a block is in a cycle iff its SCC has
+// a cycle), and `SingleValued` memoises the closure verdict per condition.
+// ⚠ Rule-13 round 1 (P3-1) measured the first spelling QUADRATIC: it called the
+// per-instruction reachability walk `instReaches(I, I)` for every closure value
+// of every walked branch and every dominator — 7.7 s at 3000 diamonds between
+// the loops where the oracle took ~0.2 s. The cost is now O(blocks + edges ×
+// facts + conditions × closure-budget); the fixtures pin the verdict, not the
+// time, so this note is the only guard on the complexity.
+struct ReadOrderCtx {
+  const TaintSet &Taint;  // a TAINTED name is never a fact nor a prune (F-1).
+  SmallPtrSet<const Value *, 8> Measures;       // `taint.MeasureCalls`, as a set.
+  SmallPtrSet<const BasicBlock *, 32> Reached;  // reachable from entry.
+  SmallPtrSet<const BasicBlock *, 32> InCycle;  // reachable and in a CFG cycle.
+  DenseMap<const Value *, bool> SingleValued;
+
+  ReadOrderCtx(const Function &F, const TaintSet &T) : Taint(T) {
+    for (const CallInst *CI : T.MeasureCalls)
+      Measures.insert(CI);
+    for (scc_iterator<const Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
+      const bool Cyc = I.hasCycle();
+      for (const BasicBlock *B : *I) {
+        Reached.insert(B);
+        if (Cyc)
+          InCycle.insert(B);
+      }
+    }
+  }
+};
+
+// Is `Root` a CLASSICAL condition whose every SSA name denotes ONE run-time
+// value per function activation? False if ANY value in its backward operand
+// closure is TAINTED (Rule-13 round 2, F-1, P2 — see `readFollowsLoopOnEveryPath`
+// step (0)). Otherwise true when every instruction in the closure is
+// in a reachable block that no CFG cycle contains (so it executes at most once),
+// and no `undef`/`poison` appears in it. It guards reading an SSA-level
+// implication between two conditions (`isImpliedCondition`, whose matching
+// treats one SSA name as one value) as an implication between the values two
+// DIFFERENT branch executions saw. A closure over the budget answers "no".
+//
+// ⚠ THE TWO HALVES ARE NOT EQUALLY LOAD-BEARING, and saying which is which is
+// the point (L7). The `undef` half IS: every USE of `undef` may read a different
+// value, so `icmp ne undef, 0` twice can disagree at run time while matching
+// operand-for-operand (pinned: `railbank_readorder_reject_undef_condition.ll`,
+// mutant M4). The at-most-once half is a MARGIN, argued redundant and UNPINNED
+// (mutants M2/M3/M11 MISSED; the full argument is `TRACK_A.md` §"at-most-once").
+// Sketch (Rule-13 round 1 P3-3 corrected the first version, which argued from
+// the LAST pruned edge — whose source need not be walk-reachable): consider the
+// part of a counter-path AFTER the last re-execution of any definition shared
+// by the fact's compare and a pruned edge's compare, and induct on the FIRST
+// pruned edge that part takes. Its source is walk-reachable; the shared
+// definitions dominate both compares; and the fact must be RE-EVALUATED after
+// that last redefinition (splice the definition-free entry prefix onto the
+// remaining part: the result is a CFG path to the read, so it passes the
+// dominating fact edge). So both compares read the SAME values and the
+// SSA-level implication applies to that execution.
+// The at-most-once half is kept because it can only DECLINE; its cost is an
+// over-decline of a guard whose operand is computed inside a preceding
+// classical cycle.
+bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
+                         unsigned Budget = 64) {
+  if (auto It = Ctx.SingleValued.find(Root); It != Ctx.SingleValued.end())
+    return It->second;
+  auto Answer = [&](bool A) {
+    Ctx.SingleValued[Root] = A;
+    return A;
+  };
+  SmallVector<const Value *, 16> Work{Root};
+  SmallPtrSet<const Value *, 16> Seen;
+  while (!Work.empty()) {
+    const Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (Seen.size() > Budget)
+      return Answer(false);
+    // A `cq_measure` RESULT is CLASSICAL (the measurement is the sole sink), so
+    // it is a LEAF of the closure: its tainted operand is never walked into
+    // (Rule-13 round 3, F-2 — the round-2 binary did, and so refused every guard
+    // built from a measurement, a regression against round 1). It is still
+    // asked the at-most-once question like any instruction. Membership of
+    // `taint.MeasureCalls` is the one owner of "is this a measure call".
+    if (Ctx.Measures.count(V)) {
+      const auto *MI = cast<Instruction>(V);
+      if (!Ctx.Reached.count(MI->getParent()) ||
+          Ctx.InCycle.count(MI->getParent()))
+        return Answer(false);
+      continue;
+    }
+    if (Ctx.Taint.Tainted.count(const_cast<Value *>(V)))
+      return Answer(false);  // quantum: its branch is FLATTENED, not taken.
+    if (isa<UndefValue>(V))
+      return Answer(false);  // undef AND poison (PoisonValue derives from it).
+    if (auto *C = dyn_cast<Constant>(V)) {
+      // A ConstantExpr may carry an undef operand; walk it like an instruction.
+      for (const Use &U : C->operands())
+        Work.push_back(U.get());
+      continue;
+    }
+    if (isa<Argument>(V) || isa<BasicBlock>(V) || isa<MetadataAsValue>(V))
+      continue;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I || !Ctx.Reached.count(I->getParent()) ||
+        Ctx.InCycle.count(I->getParent()))
+      return Answer(false);  // re-executed by a cycle: one name, several values.
+    for (const Use &U : I->operands())
+      Work.push_back(U.get());
+  }
+  return Answer(true);
+}
+
+// Is every EXECUTION of `Read` preceded, on its own path, by an execution of
+// `L`'s header? `DT.dominates(Header, Read)` is the SYNTACTIC half of this and
+// used to be all C6 asked — and `clang -O1` defeats it on the plainest runtime
+// bank (`int b[n]` with no explicit `if (n <= 0) return`): each loop gets its
+// OWN `n > 0` guard, the read loop's guard block is reached both from the write
+// loop's exit and from the write guard's FALSE edge, so the write-loop header
+// no longer dominates the read — although the read runs iff `n > 0` iff the
+// write loop ran (L5: a syntactic answer to a semantic question).
+//
+// THE SEMANTIC QUESTION, asked with LLVM's own machinery:
+//   (0) THE PREMISE, and its scope. Everything below reasons about IR CFG
+//       paths, and treats an execution as one. That is true only of CLASSICAL
+//       control: a branch on a TAINTED condition is FLATTENED by control
+//       lowering — both successors execute, and a value arm's chain (loads
+//       included) is HOISTED into the predecessor — so a tainted edge is no
+//       evidence of what executes. ⚠ Rule-13 round 2 (F-1, P2) found the first
+//       version trusting a tainted fact (`if ((k>0) & c) x = … b[k&1] …`, with
+//       `c` a `cq_theta` result): the carve answered `Bank` for a read that runs
+//       on `k <= 0` too, and only an unrelated D5 wall declined the module. So
+//       a TAINTED condition is never a fact and never prunes an edge (its edges
+//       are FOLLOWED), and the CALLER gives a read that lies inside the region
+//       of a DOMINATING tainted branch (`readInsideTaintedRegion`: reachable
+//       from it without passing its immediate post-dominator) no semantic path
+//       at all — only header dominance. See that function for why its job is
+//       narrower than "no tainted control anywhere" (Rule-13 round 4). The taint set is the one the carve
+//       is handed; the round-2 re-ask is `adjudicateTaintDelta` →
+//       `declineTaintEscapes`, which re-runs the carve with the GROWN set after
+//       the onward control lowering.
+//   (1) FACTS. Every CLASSICAL conditional branch edge `B→S` that DOMINATES the
+//       read's block (`DT.dominates(BasicBlockEdge)`) is taken on every CFG path
+//       to the read, so — control being classical — its condition has that
+//       edge's polarity whenever the read executes. Only a classical,
+//       single-valued condition is kept as a fact.
+//   (2) PRUNED WALK. Walk the CFG forward from the entry block, never entering
+//       `L`'s header, and drop an edge `B→S` whose (single-valued) condition, at
+//       that edge's polarity, IMPLIES (`isImpliedCondition`) the NEGATION of
+//       some fact. Such an edge lies on no path that reaches the read (see
+//       `singleValuedClosure` for why the two SSA names agree in time).
+//   (3) If the read's block is NOT reached, every feasible path to the read
+//       passes the header. The caller has already proven that `L` has a SINGLE
+//       exiting block and an exact backedge count, so passing the header and
+//       then leaving `L` means a COMPLETE activation — all the old dominance
+//       test ever licensed. ⚠ That the exiting block IS the latch is NOT proven
+//       at C6; it is C7(b)'s `WriteIsTotalPerTrip` (and the promoter's), and
+//       nothing here depends on it (Rule-13 round 1, P3-2).
+// Anything unproven — a `switch` edge, a multi-valued condition, no fact that
+// contradicts the edge — is FOLLOWED, so the walk over-approximates the
+// feasible paths and a "reached" answer is the safe decline. It CANNOT turn a
+// read that some real path reaches around `L` into an accept.
+//
+// ⚠ WHAT THIS DOES NOT PROVE, and must not be read as proving: that the READ
+// loop's trip count equals the extent (the caller's per-read SCEV clause), or
+// that the write is total per trip (C7(b)). It replaces ONLY the ordering half.
+bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
+                                const DominatorTree &DT, const DataLayout &DL,
+                                const TaintSet &taint) {
+  const BasicBlock *Header = L->getHeader();
+  const BasicBlock *RB = Read->getParent();
+  if (DT.dominates(Header, RB))
+    return true;  // the syntactic case — a special case of the semantic one.
+
+  ReadOrderCtx Ctx(*RB->getParent(), taint);
+
+  // (1) FACTS — (condition, polarity) of every dominating conditional edge.
+  // Edge dominance is asked FIRST: a dominator whose edges do not dominate the
+  // read (every diamond head between the loops) never costs a closure walk.
+  SmallVector<std::pair<const Value *, bool>, 8> Facts;
+  for (const DomTreeNode *N = DT.getNode(RB); N; N = N->getIDom()) {
+    const BasicBlock *D = N->getBlock();
+    const auto *BI = dyn_cast<BranchInst>(D->getTerminator());
+    if (!BI || !BI->isConditional() ||
+        BI->getSuccessor(0) == BI->getSuccessor(1))
+      continue;
+    for (unsigned S = 0; S < 2; ++S)
+      if (DT.dominates(BasicBlockEdge(D, BI->getSuccessor(S)), RB) &&
+          singleValuedClosure(BI->getCondition(), Ctx))
+        Facts.push_back({BI->getCondition(), S == 0});
+  }
+  if (Facts.empty())
+    return false;  // no fact can refute any bypass edge — the walk would reach.
+
+  // (2) PRUNED WALK from entry, never entering `Header`.
+  auto EdgeRefutesAFact = [&](const Value *Cond, bool Taken) {
+    for (const auto &[FC, FPol] : Facts) {
+      std::optional<bool> Imp =
+          isImpliedCondition(Cond, FC, DL, /*LHSIsTrue=*/Taken);
+      if (Imp && *Imp != FPol)
+        return true;
+    }
+    return false;
+  };
+  const BasicBlock *Entry = &RB->getParent()->getEntryBlock();
+  SmallVector<const BasicBlock *, 32> Work{Entry};
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (B == Header || !Seen.insert(B).second)
+      continue;
+    if (B == RB)
+      return false;  // a path the proof could not refute bypasses `L`.
+    const auto *BI = dyn_cast<BranchInst>(B->getTerminator());
+    if (BI && BI->isConditional() &&
+        BI->getSuccessor(0) != BI->getSuccessor(1) &&
+        singleValuedClosure(BI->getCondition(), Ctx)) {
+      for (unsigned S = 0; S < 2; ++S)
+        if (!EdgeRefutesAFact(BI->getCondition(), /*Taken=*/S == 0))
+          Work.push_back(BI->getSuccessor(S));
+      continue;
+    }
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return true;
+}
+
+// Does `Read` lie inside the REGION of a DOMINATING tainted branch — i.e. is it
+// reachable from some tainted `br`/`switch` that DOMINATES it, WITHOUT passing
+// that branch's immediate post-dominator (its merge)? A branch with NO
+// immediate post-dominator (a tainted early return, an abort park) has no
+// merge, so everything it reaches is its region. The caller gives such a read
+// header dominance only.
+//
+// ⚠ ONLY DOMINATING TAINTED BRANCHES ARE EXAMINED — this is NOT "the read is
+// under no tainted control" (Rule-13 round 4, P3, L7). A NON-dominating tainted
+// branch in a multi-entry shape (`reviewA_r4/h01.ll`) is not examined: the
+// carve answers `Bank` and the module declines downstream (`control flow
+// under quantum control`). THE LOAD-BEARING REASON, stated narrowly:
+//   (1) the facts `readFollowsLoopOnEveryPath` relies on must remain REAL
+//       CLASSICAL branches in the lowered program — a classical fact edge
+//       nested inside a dominating tainted branch's region may be predicated
+//       away by the flatten (`…_classical_fact_under_tainted_arm.ll`), which is
+//       the case this function refuses; and
+//   (2) the bank's reads that survive the carve are only those D5
+//       (`isAdmittedRailBankReader`, `RailBankPromote.cpp`) admits — MEASURE
+//       readers (plus their storage `trunc`) — and a `cq_measure` is never
+//       speculated or hoisted out of its guard by the flatten.
+// So this check does NOT need to — and does not — claim full coverage of
+// tainted control; it guards the fact edges, and D5 guards the readers.
+// ⚠ RETIREMENT TRIGGER: the day D5 admits a bank reader that is NOT a
+// measurement (an arithmetic consumer, a condition, a `cq_theta` arg-0 — any
+// reader PredMux may speculate or hoist, e.g. its E4 classical-table read),
+// the region question re-opens IN THE SAME CHANGE: non-dominating tainted
+// branches must be examined and load speculation must be refused here.
+//
+// ⚠ DELIBERATELY NOT `instUnderTaintedControl` (Rule-13 round 3, F-1, P2). That
+// shared 7.5 predicate answers "dominated by a tainted branch AND does not
+// post-dominate it", which is NOT region membership (and not control
+// dependence either): a tainted `if (c) cq_phi(pi);` diamond that FULLY MERGES
+// before an unguarded runtime bank still counts, because `-O1` gives each bank
+// loop its own classical guard and the read then post-dominates nothing — the
+// Grover shape over-declined at this clause. The shared predicate is unchanged
+// (its 7.5 callers ask a different question); this is the carve's own, narrower
+// one. A read inside a region: `…_classical_fact_under_tainted_arm.ll`; a
+// merged diamond before the bank: `…_accept_merged_tainted_diamond.ll`.
+bool readInsideTaintedRegion(const Instruction *Read, const TaintSet &taint,
+                             const DominatorTree &DT) {
+  const BasicBlock *RB = Read->getParent();
+  const DomTreeNode *Node = DT.getNode(RB);
+  if (!Node)
+    return true;  // unreachable read — the caller refuses it anyway.
+  std::optional<PostDominatorTree> PDT;
+  for (const DomTreeNode *D = Node->getIDom(); D; D = D->getIDom()) {
+    const BasicBlock *B = D->getBlock();
+    const Instruction *T = B->getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional())
+        C = BI->getCondition();
+    } else if (const auto *SI = dyn_cast<SwitchInst>(T)) {
+      C = SI->getCondition();
+    }
+    if (!C || !taint.Tainted.count(const_cast<Value *>(C)))
+      continue;
+    if (!PDT)
+      PDT.emplace(*const_cast<Function *>(RB->getParent()));
+    const DomTreeNode *PN = PDT->getNode(B);
+    const BasicBlock *Merge =
+        (PN && PN->getIDom()) ? PN->getIDom()->getBlock() : nullptr;
+    SmallVector<const BasicBlock *, 16> Work(succ_begin(B), succ_end(B));
+    SmallPtrSet<const BasicBlock *, 32> Seen;
+    while (!Work.empty()) {
+      const BasicBlock *X = Work.pop_back_val();
+      if (X == Merge || !Seen.insert(X).second)
+        continue;
+      if (X == RB)
+        return true;
+      Work.append(succ_begin(X), succ_end(X));
+    }
   }
   return false;
 }
@@ -1741,8 +2046,10 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   }
   // Every read of the bank is either (i) of the cell THIS trip writes — the
   // per-trip seed read and the partially-available re-read, both of which the
-  // promoter (C5) removes — or (ii) after the loop, where C2′ + `Trips == N`
-  // proves every cell has been written. Anything else reads a cell in a state the
+  // promoter (C5) removes — or (ii) after the loop, i.e. every FEASIBLE path to it
+  // passes the loop header (bd xdu2.10: `readFollowsLoopOnEveryPath`, not header
+  // dominance), where C2′ + `Trips == N` proves every cell has been VISITED
+  // (written is C7(b)'s). Anything else reads a cell in a state the
   // rail model cannot name.
   // ⚠ REACHABILITY IS AN API PRECONDITION HERE, NOT AN OPTIMIZATION — the same
   // lesson `ArmClassify`'s F2 records for `LazyValueInfo` ("asking LVI about a value
@@ -1768,7 +2075,31 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
       AnyReadInsideL = true;  // C7(a) — see below; the read itself is admitted.
       continue;
     }
-    if (!DT.dominates(L->getHeader(), LD->getParent())) {
+    // ⚠ "PRECEDE" IS A SEMANTIC CLAIM ABOUT EXECUTIONS, not about dominance
+    // (bd xdu2.10). Dominance by the header was the old, syntactic spelling;
+    // `readFollowsLoopOnEveryPath` asks it with the guards' implied conditions
+    // and answers yes for dominance as a special case. See its header for what
+    // it proves and what it leaves to the clauses below.
+    // The semantic path is for reads under CLASSICAL control only (F-1, step
+    // (0) of `readFollowsLoopOnEveryPath`): a read inside a DOMINATING tainted
+    // branch's region (reachable from it before its merge) gets only header
+    // dominance, because the classical facts inside that region may not survive
+    // the flatten as real branches. It is NOT full tainted-control coverage —
+    // D5 admitting only never-speculated MEASURE readers is the other half; see
+    // `readInsideTaintedRegion` for both reasons and the retirement trigger. NOT
+    // `instUnderTaintedControl`, which also refuses a read after a fully-merged
+    // tainted diamond (round 3).
+    if (!DT.dominates(L->getHeader(), LD->getParent()) &&
+        (readInsideTaintedRegion(LD, taint, DT) ||
+         !readFollowsLoopOnEveryPath(LD, L, DT, DL, taint))) {
+      // ⚠ `kMsgBankTotality` is shared by six C6 sub-clauses, so a decline
+      // fixture's diagnostic cannot say WHICH one fired (Rule-13 round 1,
+      // P3-4). This env-gated anchor (the `CQ_CTRL_DBG` lever the carve's
+      // caller already uses for `railbank [Bank]`; byte-neutral when unset)
+      // names the read-order sub-clause so `railbank_readorder_reject_*` pin it
+      // by text, not only by mutation.
+      if (::getenv("CQ_CTRL_DBG"))
+        errs() << "CQ_CTRL_DBG: railbank C6 read-order refused: " << *LD << "\n";
       outMsg = kMsgBankTotality;  // a read the loop does not precede.
       return RailBankCarve::RejectTotality;
     }

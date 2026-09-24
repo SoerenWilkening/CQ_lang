@@ -477,7 +477,9 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //       the cell type through that address, and the bank has exactly ONE store.
 //   C6  TOTALITY. The fixed `N` or runtime extent equals the proven trip count,
 //       every in-loop read is of the cell THIS trip writes, and every other read
-//       is an exact full post-loop walk. *Why:* after handle-storage conversion a
+//       is an exact full post-loop walk — "post-loop" meaning every FEASIBLE path
+//       to it passes the walk-loop header, proven by the guards' implied
+//       conditions (bd xdu2.10), not by header dominance. *Why:* after handle-storage conversion a
 //       never-written cell reads as handle `0`, and `h0`
 //       is a LIVE RAIL in this runtime (`cqrt_alloc_i1(0) -> h0`).
 //       ⚠ C6 proves the index VISITS each cell once. It does NOT prove each cell is

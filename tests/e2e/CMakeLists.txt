@@ -6600,3 +6600,5 @@ add_test(NAME e2e-slice-predmux-guarded-vla
 set_tests_properties(e2e-railbank-guarded-vla-matrix e2e-slice-predmux-guarded-vla
   PROPERTIES ENVIRONMENT
   "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+# Track A (bd xdu2.10): C6 read order asked semantically — unguarded int b[n] accepts, unsound neighbours decline.
+cq_railbank_matrix(e2e-railbank-readorder-matrix railbank_readorder_matrix.c)
