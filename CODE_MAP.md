@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 711 maintained source files, 5843 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 720 maintained source files, 5918 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -42,8 +42,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp` — 1218 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1074 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1065 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1099 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1089 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -93,6 +93,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
+- `tests/e2e/railbank_stale_matrix.c` — 427 physical lines
 - `ir-pass/src/RegionTreeDetect.cpp` — 425 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `ir-pass/src/SelectMergeEmit.cpp` — 412 physical lines
@@ -141,7 +142,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1074 lines)
+### `ir-pass/src/ArithLowering.cpp` (1089 lines)
 
 - `ir-pass/src/ArithLowering.cpp:49` — `promote`
 - `ir-pass/src/ArithLowering.cpp:105` — `negateClassicalImmediate`
@@ -547,7 +548,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1065 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1099 lines)
 
 - `ir-pass/src/OpcodeLowering.cpp:78` — `diagnoseStaleRecord`
 - `ir-pass/src/OpcodeLowering.cpp:92` — `diagnosePreLoopCommitStale`
@@ -559,8 +560,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/OpcodeLowering.cpp:246` — `declineStaleRecordOps`
 - `ir-pass/src/OpcodeLowering.cpp:311` — `declineLiftedStaleRecordOps`
 - `ir-pass/src/OpcodeLowering.cpp:362` — `recordStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:669` — `declineRecordedStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:726` — `lowerOps`
+- `ir-pass/src/OpcodeLowering.cpp:703` — `declineRecordedStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:760` — `lowerOps`
 
 ### `ir-pass/src/OpcodeSupport.cpp` (343 lines)
 
@@ -4184,6 +4185,68 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:480` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:490` — `main`
 
+### `tests/e2e/railbank_stale_matrix.c` (427 lines)
+
+- `tests/e2e/railbank_stale_matrix.c:58` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:66` — `main`
+- `tests/e2e/railbank_stale_matrix.c:70` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:79` — `main`
+- `tests/e2e/railbank_stale_matrix.c:83` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:90` — `main`
+- `tests/e2e/railbank_stale_matrix.c:94` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:102` — `main`
+- `tests/e2e/railbank_stale_matrix.c:106` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:114` — `main`
+- `tests/e2e/railbank_stale_matrix.c:118` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:127` — `main`
+- `tests/e2e/railbank_stale_matrix.c:131` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:138` — `main`
+- `tests/e2e/railbank_stale_matrix.c:142` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:150` — `main`
+- `tests/e2e/railbank_stale_matrix.c:154` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:162` — `main`
+- `tests/e2e/railbank_stale_matrix.c:166` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:176` — `main`
+- `tests/e2e/railbank_stale_matrix.c:180` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:189` — `main`
+- `tests/e2e/railbank_stale_matrix.c:193` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:202` — `main`
+- `tests/e2e/railbank_stale_matrix.c:206` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:216` — `main`
+- `tests/e2e/railbank_stale_matrix.c:220` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:229` — `main`
+- `tests/e2e/railbank_stale_matrix.c:233` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:242` — `main`
+- `tests/e2e/railbank_stale_matrix.c:246` — `main`
+- `tests/e2e/railbank_stale_matrix.c:263` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:271` — `main`
+- `tests/e2e/railbank_stale_matrix.c:275` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:283` — `main`
+- `tests/e2e/railbank_stale_matrix.c:287` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:294` — `main`
+- `tests/e2e/railbank_stale_matrix.c:298` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:307` — `main`
+- `tests/e2e/railbank_stale_matrix.c:311` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:318` — `main`
+- `tests/e2e/railbank_stale_matrix.c:322` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:330` — `main`
+- `tests/e2e/railbank_stale_matrix.c:334` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:340` — `main`
+- `tests/e2e/railbank_stale_matrix.c:344` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:354` — `main`
+- `tests/e2e/railbank_stale_matrix.c:358` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:367` — `main`
+- `tests/e2e/railbank_stale_matrix.c:371` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:380` — `main`
+- `tests/e2e/railbank_stale_matrix.c:384` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:391` — `main`
+- `tests/e2e/railbank_stale_matrix.c:395` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:402` — `main`
+- `tests/e2e/railbank_stale_matrix.c:406` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:413` — `main`
+- `tests/e2e/railbank_stale_matrix.c:417` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:423` — `main`
+
 ### `tests/e2e/run_railbank_dynamic_matrix.py` (150 lines)
 
 - `tests/e2e/run_railbank_dynamic_matrix.py:35` — `run`
@@ -7726,6 +7789,46 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/railbank_twin_pairs/p08_nonmain_stale.reg.c:2` — `slice`
 - `tools/railbank_twin_pairs/p08_nonmain_stale.reg.c:8` — `main`
+
+### `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.bank.c` (13 lines)
+
+- `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.bank.c:4` — `slice`
+- `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.bank.c:13` — `main`
+
+### `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.reg.c` (11 lines)
+
+- `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.reg.c:3` — `slice`
+- `tools/railbank_twin_pairs/p09_rt_stale_invariant_park.reg.c:11` — `main`
+
+### `tools/railbank_twin_pairs/p10_parked_parent_add.bank.c` (13 lines)
+
+- `tools/railbank_twin_pairs/p10_parked_parent_add.bank.c:4` — `slice`
+- `tools/railbank_twin_pairs/p10_parked_parent_add.bank.c:13` — `main`
+
+### `tools/railbank_twin_pairs/p10_parked_parent_add.reg.c` (10 lines)
+
+- `tools/railbank_twin_pairs/p10_parked_parent_add.reg.c:3` — `slice`
+- `tools/railbank_twin_pairs/p10_parked_parent_add.reg.c:10` — `main`
+
+### `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.bank.c` (14 lines)
+
+- `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.bank.c:4` — `slice`
+- `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.bank.c:14` — `main`
+
+### `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.reg.c` (12 lines)
+
+- `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.reg.c:3` — `slice`
+- `tools/railbank_twin_pairs/p11_rt_parked_parent_add_loop.reg.c:12` — `main`
+
+### `tools/railbank_twin_pairs/p12_phase_between.bank.c` (12 lines)
+
+- `tools/railbank_twin_pairs/p12_phase_between.bank.c:4` — `slice`
+- `tools/railbank_twin_pairs/p12_phase_between.bank.c:12` — `main`
+
+### `tools/railbank_twin_pairs/p12_phase_between.reg.c` (9 lines)
+
+- `tools/railbank_twin_pairs/p12_phase_between.reg.c:3` — `slice`
+- `tools/railbank_twin_pairs/p12_phase_between.reg.c:9` — `main`
 
 ### `tools/record_census/census_01_guard_population.py` (1515 lines)
 
