@@ -1,0 +1,135 @@
+{
+  "_comment": "Expectations for railbank_dynamic_matrix.c, read by run_railbank_dynamic_matrix.py. accept=true rows must lower with !cq.railbank (unless a twin), no cqrt_qram_*, no literal handle 0; accept=false rows must exit non-zero with `diagnostic` in stderr. Twins are linked and byte-compared.",
+  "cases": {
+    "1": {
+      "accept": true,
+      "diagnostic": null,
+      "stage1_contains_in_order": [
+        "alloca i32, i64"
+      ],
+      "stage1_note": "clang -O1 did not preserve a runtime i32 VLA"
+    },
+    "2": {
+      "accept": true,
+      "diagnostic": null,
+      "stage1_contains_in_order": [
+        "\n8:",
+        "alloca [3 x i32]"
+      ],
+      "stage1_note": "clang -O1 no longer produced the non-entry bank"
+    },
+    "3": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "4": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "5": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value stored to memory"
+    },
+    "6": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array escapes to an unsupported user"
+    },
+    "7": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value reaches an unsupported instruction"
+    },
+    "8": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array element is not a reversible rail cell"
+    },
+    "9": {
+      "accept": false,
+      "diagnostic": "cq controlled lowering: control flow under quantum control"
+    },
+    "10": {
+      "accept": false,
+      "diagnostic": "cq rail bank: cell address has no bounded local-array provenance"
+    },
+    "11": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value stored to memory"
+    },
+    "12": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "13": {
+      "accept": false,
+      "diagnostic": "cq controlled lowering: control flow under quantum control"
+    },
+    "14": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "15": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "16": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "17": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "18": {
+      "accept": false,
+      "diagnostic": "cq controlled lowering: control flow under quantum control"
+    },
+    "19": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value stored to memory"
+    },
+    "20": {
+      "accept": false,
+      "diagnostic": "cq rail bank: a cell parks a value that is not a rail handle"
+    },
+    "21": {
+      "accept": false,
+      "diagnostic": "cq rail bank: a cell parks a value that is not a rail handle"
+    },
+    "22": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "23": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "24": {
+      "accept": false,
+      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+    },
+    "25": {
+      "accept": false,
+      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+    },
+    "26": {
+      "accept": false,
+      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+    },
+    "27": {
+      "accept": false,
+      "diagnostic": "cq rail bank: the cell walk is re-executed by an enclosing loop"
+    }
+  },
+  "twins": [
+    {
+      "rolled": 14,
+      "twin": 17,
+      "argv": [
+        "a",
+        "b"
+      ],
+      "dropped_twin_lines": [
+        "cqrt_ry_i32(h0, 0x0p+0)"
+      ]
+    }
+  ]
+}

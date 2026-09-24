@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 708 maintained source files, 5790 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 711 maintained source files, 5843 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -77,6 +77,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/RailBankPromote.h` — 497 physical lines
 - `ir-pass/src/CtlzIdiomPrepass.cpp` — 497 physical lines
 - `tests/e2e/slice_libm_real_lgamma.c` — 497 physical lines
+- `tests/e2e/railbank_dynamic_matrix.c` — 491 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 488 physical lines
 - `tools/gen_templates.py` — 473 physical lines
@@ -4133,6 +4134,63 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/predmux_purecallee_i80cmp_lib.c:54` — `leafl`
 
+### `tests/e2e/railbank_dynamic_matrix.c` (491 lines)
+
+- `tests/e2e/railbank_dynamic_matrix.c:43` — `measure_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:50` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:56` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:59` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:71` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:80` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:90` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:103` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:113` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:122` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:133` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:150` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:153` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:164` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:177` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:182` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:191` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:196` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:206` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:215` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:227` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:232` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:243` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:247` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:258` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:264` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:272` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:284` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:295` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:303` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:315` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:323` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:345` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:352` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:372` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:379` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:388` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:396` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:406` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:415` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:433` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:439` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:454` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:463` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:473` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:480` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:490` — `main`
+
+### `tests/e2e/run_railbank_dynamic_matrix.py` (150 lines)
+
+- `tests/e2e/run_railbank_dynamic_matrix.py:35` — `run`
+- `tests/e2e/run_railbank_dynamic_matrix.py:39` — `load_expectations`
+- `tests/e2e/run_railbank_dynamic_matrix.py:53` — `check_case`
+- `tests/e2e/run_railbank_dynamic_matrix.py:85` — `main`
+
 ### `tests/e2e/slice_4jok_bank_cell_from_hoisted.c` (57 lines)
 
 - `tests/e2e/slice_4jok_bank_cell_from_hoisted.c:32` — `slice`
@@ -6361,6 +6419,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_railbank_bool_prep_measureloop_zeroinit.c:50` — `slice`
 - `tests/e2e/slice_railbank_bool_prep_measureloop_zeroinit.c:58` — `main`
+
+### `tests/e2e/slice_railbank_dynamic_int.c` (48 lines)
+
+- `tests/e2e/slice_railbank_dynamic_int.c:18` — `run_bank`
+- `tests/e2e/slice_railbank_dynamic_int.c:43` — `main`
 
 ### `tests/e2e/slice_railbank_flat_twin.c` (36 lines)
 

@@ -6099,13 +6099,19 @@ add_test(NAME e2e-slice-railbank-dynamic-int
 # latch and at a flattened read, a loop-external guard that must still accept),
 # and the prep-before-branch shape whose rolled trace it LINKS and byte-compares
 # against a hand-unrolled twin.
-add_test(NAME e2e-railbank-dynamic-admission-matrix
-  COMMAND "${_E2E_PYTHON}"
-    "${CMAKE_CURRENT_SOURCE_DIR}/run_railbank_dynamic_matrix.py"
-    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
-    "${CMAKE_SOURCE_DIR}/include"
-    "${CMAKE_CURRENT_SOURCE_DIR}/railbank_dynamic_matrix.c"
-    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>")
+# One ctest entry per matrix SOURCE; its expectations are the JSON sidecar
+# `<source>.cases.json`, so parallel tracks each own a disjoint source + sidecar
+# and never re-run (or edit) each other's rows.
+function(cq_railbank_matrix test_name source)
+  add_test(NAME ${test_name}
+    COMMAND "${_E2E_PYTHON}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_railbank_dynamic_matrix.py"
+      "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${source}"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>")
+endfunction()
+cq_railbank_matrix(e2e-railbank-dynamic-admission-matrix railbank_dynamic_matrix.c)
 
 add_test(NAME e2e-slice-railbank-nonmain
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"

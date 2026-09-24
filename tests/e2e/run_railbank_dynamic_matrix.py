@@ -1,54 +1,85 @@
 #!/usr/bin/env python3
-"""Compile the xdu2.4 C admission matrix at clang -O1 and check each verdict."""
+"""Compile a rail-bank C admission matrix at clang -O1 and check each verdict.
+
+The expectations live in a JSON sidecar next to the matrix source,
+``<SOURCE>.cases.json``, so several matrix sources (one per track) can be
+registered as separate ctest entries without editing this runner:
+
+  {"cases": {"<id>": {"accept": bool, "diagnostic": str|null,
+                      "require_railbank": bool (default true),
+                      "stage1_contains_in_order": [str, ...] (optional),
+                      "stage1_note": str (optional)}},
+   "twins": [{"rolled": id, "twin": id, "argv": [str, ...],
+              "dropped_twin_lines": [str, ...]}]}
+
+An accept row must lower at exit 0, carry ``!cq.railbank`` (unless it is a
+twin's unrolled side or sets ``require_railbank: false``), emit no
+``cqrt_qram_*`` and never park literal handle 0.  A decline row must exit
+non-zero with ``diagnostic`` in stderr.  A twin pair is LINKED, run, and its
+rolled trace must be byte-identical to the hand-unrolled twin's after exactly
+the listed identity lines are dropped (CLAUDE.md §1 Witnesses).
+
+Every row is checked and every failure reported; the summary line prints the
+denominator so a vacuous run (0 cases) can never read as a pass (CLAUDE.md L10).
+"""
 
 from __future__ import annotations
 
+import json
 import pathlib
 import subprocess
 import sys
 import tempfile
 
 
-CASES = {
-    1: (True, None),
-    2: (True, None),
-    3: (False, "cq rail bank: array has cells no iteration writes"),
-    4: (False, "cq rail bank: array has cells no iteration writes"),
-    5: (False, "cq taint escape: tainted value stored to memory"),
-    6: (False, "cq rail bank: array escapes to an unsupported user"),
-    7: (False, "cq taint escape: tainted value reaches an unsupported instruction"),
-    8: (False, "cq rail bank: array element is not a reversible rail cell"),
-    9: (False, "cq controlled lowering: control flow under quantum control"),
-    10: (False, "cq rail bank: cell address has no bounded local-array provenance"),
-    11: (False, "cq taint escape: tainted value stored to memory"),
-    12: (False, "cq rail bank: array has cells no iteration writes"),
-    13: (False, "cq controlled lowering: control flow under quantum control"),
-    14: (True, None),
-    15: (True, None),
-    16: (True, None),
-    17: (True, None),
-    18: (False, "cq controlled lowering: control flow under quantum control"),
-    19: (False, "cq taint escape: tainted value stored to memory"),
-    20: (False, "cq rail bank: a cell parks a value that is not a rail handle"),
-    21: (False, "cq rail bank: a cell parks a value that is not a rail handle"),
-    22: (True, None),
-    23: (True, None),
-    24: (False, "cq rail bank: the cell walk is re-executed by an enclosing loop"),
-    25: (False, "cq rail bank: the cell walk is re-executed by an enclosing loop"),
-    26: (False, "cq rail bank: the cell walk is re-executed by an enclosing loop"),
-    27: (False, "cq rail bank: the cell walk is re-executed by an enclosing loop"),
-}
-
-# (rolled case, unrolled twin, argv tail, identity lines dropped from the twin).
-# The loop-twin discipline (CLAUDE.md §1 Witnesses): an in-loop accept is
-# witnessed by BYTE IDENTITY with its hand-unrolled twin.
-TWINS = [
-    (14, 17, ["a", "b"], {"cqrt_ry_i32(h0, 0x0p+0)"}),
-]
-
-
 def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(cmd, text=True, capture_output=True, check=False)
+
+
+def load_expectations(source: str) -> tuple[dict[int, dict], list[dict]]:
+    sidecar = pathlib.Path(source + ".cases.json")
+    doc = json.loads(sidecar.read_text())
+    cases = {int(k): v for k, v in doc["cases"].items()}
+    twins = doc.get("twins", [])
+    if not cases:
+        raise SystemExit(f"{sidecar}: no cases (a vacuous matrix is not a pass)")
+    for tw in twins:
+        for side in ("rolled", "twin"):
+            if tw[side] not in cases or not cases[tw[side]]["accept"]:
+                raise SystemExit(f"{sidecar}: twin {side} {tw[side]} is not an accept row")
+    return cases, twins
+
+
+def check_case(case_id: int, spec: dict, twin_sides: set[int],
+               stage1: pathlib.Path, lowered: pathlib.Path,
+               lower_result: subprocess.CompletedProcess[str]) -> list[str]:
+    errs: list[str] = []
+    if spec["accept"]:
+        if lower_result.returncode != 0:
+            return [f"CASE={case_id}: expected accept\n{lower_result.stderr}"]
+        stage1_text = stage1.read_text()
+        lowered_text = lowered.read_text()
+        pos = 0
+        for needle in spec.get("stage1_contains_in_order", []):
+            pos = stage1_text.find(needle, pos)
+            if pos < 0:
+                errs.append(f"CASE={case_id}: {spec.get('stage1_note', 'stage-1 shape moved')}"
+                            f" (missing {needle!r})")
+                break
+        require_bank = spec.get("require_railbank", True) and case_id not in twin_sides
+        if require_bank and "!cq.railbank" not in lowered_text:
+            errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
+        if "cqrt_qram_" in lowered_text:
+            errs.append(f"CASE={case_id}: rail bank emitted cqrt_qram_*")
+        if "store i32 0, ptr %cq.bank.addr" in lowered_text:
+            errs.append(f"CASE={case_id}: rail bank stored literal handle 0")
+    else:
+        if lower_result.returncode == 0:
+            errs.append(f"CASE={case_id}: expected a loud decline")
+        elif spec["diagnostic"] not in lower_result.stderr:
+            errs.append(f"CASE={case_id}: missing diagnostic: {spec['diagnostic']}\n"
+                        f"{lower_result.stderr}")
+    return errs
 
 
 def main() -> int:
@@ -57,10 +88,15 @@ def main() -> int:
               "SOURCE RUNTIME_LIB TEMPLATES_LIB", file=sys.stderr)
         return 2
     clang, cq_opt, plugin, include, source, runtime, templates = sys.argv[1:]
+    cases, twins = load_expectations(source)
+    # Only the UNROLLED side of a twin is bankless by design.
+    twin_sides = {tw["twin"] for tw in twins}
+    name = pathlib.Path(source).stem
+    errors: list[str] = []
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = pathlib.Path(temp_dir)
-        for case_id, (should_accept, diagnostic) in CASES.items():
+        for case_id, spec in sorted(cases.items()):
             stage1 = temp / f"case-{case_id}.ll"
             lowered = temp / f"case-{case_id}.lowered.ll"
             compile_result = run([
@@ -69,81 +105,45 @@ def main() -> int:
                 "-o", str(stage1),
             ])
             if compile_result.returncode != 0:
-                sys.stderr.write(compile_result.stderr)
-                return 1
-
+                errors.append(f"CASE={case_id}: clang failed\n{compile_result.stderr}")
+                continue
             lower_result = run([
                 cq_opt, "-load-pass-plugin", plugin, "-passes=cq-lowering",
                 "-S", str(stage1), "-o", str(lowered),
             ])
-            if should_accept:
-                if lower_result.returncode != 0:
-                    sys.stderr.write(
-                        f"CASE={case_id}: expected accept\n{lower_result.stderr}")
-                    return 1
-                stage1_text = stage1.read_text()
-                lowered_text = lowered.read_text()
-                if case_id == 1 and "alloca i32, i64" not in stage1_text:
-                    print("CASE=1: clang -O1 did not preserve a runtime i32 VLA",
-                          file=sys.stderr)
-                    return 1
-                if case_id == 2:
-                    nonentry_label = stage1_text.find("\n8:")
-                    bank_alloca = stage1_text.find("alloca [3 x i32]", nonentry_label)
-                    if nonentry_label < 0 or bank_alloca < 0:
-                        print("CASE=2: clang -O1 no longer produced the non-entry bank",
-                              file=sys.stderr)
-                        return 1
-                bankless = any(case_id == t for _r, t, _a, _d in TWINS)
-                if not bankless and "!cq.railbank" not in lowered_text:
-                    print(f"CASE={case_id}: accepted bank lacks !cq.railbank",
-                          file=sys.stderr)
-                    return 1
-                if "cqrt_qram_" in lowered_text:
-                    print(f"CASE={case_id}: rail bank emitted cqrt_qram_*",
-                          file=sys.stderr)
-                    return 1
-                if "store i32 0, ptr %cq.bank.addr" in lowered_text:
-                    print(f"CASE={case_id}: rail bank stored literal handle 0",
-                          file=sys.stderr)
-                    return 1
-            else:
-                if lower_result.returncode == 0:
-                    print(f"CASE={case_id}: expected a loud decline", file=sys.stderr)
-                    return 1
-                if diagnostic not in lower_result.stderr:
-                    print(f"CASE={case_id}: missing diagnostic: {diagnostic}",
-                          file=sys.stderr)
-                    sys.stderr.write(lower_result.stderr)
-                    return 1
+            errors += check_case(case_id, spec, twin_sides, stage1, lowered,
+                                 lower_result)
 
-        for rolled, twin, argv_tail, dropped in TWINS:
+        for tw in twins:
+            rolled, twin = tw["rolled"], tw["twin"]
+            dropped = set(tw.get("dropped_twin_lines", []))
             traces = []
             for case_id in (rolled, twin):
                 exe = temp / f"case-{case_id}.exe"
                 link = run([clang, str(temp / f"case-{case_id}.lowered.ll"),
                             templates, runtime, "-o", str(exe)])
                 if link.returncode != 0:
-                    sys.stderr.write(f"CASE={case_id}: link failed\n{link.stderr}")
-                    return 1
-                result = run([str(exe), *argv_tail])
-                traces.append(result.stdout.splitlines())
+                    errors.append(f"CASE={case_id}: link failed\n{link.stderr}")
+                    break
+                traces.append(run([str(exe), *tw.get("argv", [])]).stdout.splitlines())
+            if len(traces) != 2:
+                continue
             rolled_trace = traces[0]
             twin_trace = [ln for ln in traces[1] if ln not in dropped]
             if len(traces[1]) - len(twin_trace) != len(dropped):
-                print(f"TWIN {rolled}/{twin}: expected to drop exactly "
-                      f"{len(dropped)} identity line(s)", file=sys.stderr)
-                return 1
-            if not rolled_trace or rolled_trace != twin_trace:
-                print(f"TWIN {rolled}/{twin}: rolled trace is not byte-identical "
-                      "to the hand-unrolled twin", file=sys.stderr)
-                return 1
+                errors.append(f"TWIN {rolled}/{twin}: expected to drop exactly "
+                              f"{len(dropped)} identity line(s)")
+            elif not rolled_trace or rolled_trace != twin_trace:
+                errors.append(f"TWIN {rolled}/{twin}: rolled trace is not "
+                              "byte-identical to the hand-unrolled twin")
 
-    accepted = sum(1 for ok, _ in CASES.values() if ok)
-    print(f"railbank_dynamic_matrix: {accepted} accepted, "
-          f"{len(CASES) - accepted} declined, {len(TWINS)} twin(s) identical, "
-          "0 cqrt_qram_* operations")
-    return 0
+    for err in errors:
+        print(err, file=sys.stderr)
+    accepted = sum(1 for c in cases.values() if c["accept"])
+    print(f"{name}: {len(cases)} case(s): {accepted} accept, "
+          f"{len(cases) - accepted} decline; {len(twins)} twin(s); "
+          f"{len(errors)} failure(s)")
+    return 1 if errors else 0
 
 
 if __name__ == "__main__":
