@@ -455,5 +455,28 @@
    "lit:taint_reject_scrubbed_handle_mixed_select.ll"
   ],
   "desc": "l3oi: cq_template_ readers not checked"
+ },
+ "M48": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_scrubbed_handle_clone_arg.ll",
+   "lit:taint_reject_scrubbed_handle_clone_arg_branch.ll",
+   "lit:taint_reject_scrubbed_handle_clone_arg_mixed.ll"
+  ],
+  "desc": "F-R7-1: clone mask not recorded"
+ },
+ "M49": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_scrubbed_handle_clone_arg.ll",
+   "lit:taint_reject_scrubbed_handle_clone_arg_branch.ll",
+   "lit:taint_reject_scrubbed_handle_clone_arg_mixed.ll"
+  ],
+  "desc": "F-R7-1: clone reader never matched"
+ },
+ "M50": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "F-R7-1: mask ignored (every slot a reader; over-decline direction)"
  }
 }

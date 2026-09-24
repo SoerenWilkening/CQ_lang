@@ -24,14 +24,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2573 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2585 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1826 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1839 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1524 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
@@ -39,7 +39,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1438 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
-- `ir-pass/src/Specialization.cpp` — 1220 physical lines
+- `ir-pass/src/Specialization.cpp` — 1225 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1107 physical lines
@@ -115,7 +115,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1826 lines)
+### `ir-pass/include/TaintPropagation.h` (1839 lines)
 
 - `ir-pass/include/TaintPropagation.h:485` — `isPeelClone`
 
@@ -817,7 +817,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1220 lines)
+### `ir-pass/src/Specialization.cpp` (1225 lines)
 
 - `ir-pass/src/Specialization.cpp:56` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:73` — `isForwardQramLoad`
@@ -833,8 +833,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:792` — `retargetSite`
 - `ir-pass/src/Specialization.cpp:819` — `resolveSite`
 - `ir-pass/src/Specialization.cpp:830` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1149` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1156` — `specialize`
+- `ir-pass/src/Specialization.cpp:1154` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1161` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (254 lines)
 
@@ -928,7 +928,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2573 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2585 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:80` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:98` — `collectAndSeed`

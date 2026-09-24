@@ -79,6 +79,9 @@ MUTANTS = [
  ("M45", SP, "      taint.ScrubbedByReturnTaint.emplace_back(V);  // bd l3oi: the record.", "      (void)0;", "l3oi: scrub not recorded"),
  ("M46", [(QP, "  if (declineScrubbedHandleReads(M, taint))\n", "  if (false && declineScrubbedHandleReads(M, taint))\n")], None, None, "l3oi: postcondition not asked (both entry points)"),
  ("M47", TP, "      if (!N.starts_with(\"cqrt_\") && !N.starts_with(\"cq_template_\"))\n        continue;", "      if (!N.starts_with(\"cqrt_\"))\n        continue;", "l3oi: cq_template_ readers not checked"),
+ ("M48", SP, "  taint.SpecHandleArgMask[Clone] = Mask;", "  (void)Mask;", "F-R7-1: clone mask not recorded"),
+ ("M49", TP, "            if (CB->getArgOperand(A) == V && ((It->second >> A) & 1))", "            if (CB->getArgOperand(A) == V && false)", "F-R7-1: clone reader never matched"),
+ ("M50", TP, "            if (CB->getArgOperand(A) == V && ((It->second >> A) & 1))", "            if (CB->getArgOperand(A) == V)", "F-R7-1: mask ignored (every slot a reader; over-decline direction)"),
  ("M26", PM, "        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&", "        if (!Taint.Tainted.count(BI->getCondition()) &&", "rule-(B) record also in clone mode"),
 ]
 

@@ -2560,7 +2560,19 @@ bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
       if (!Callee)
         continue;
       StringRef N = Callee->getName();
-      if (!N.starts_with("cqrt_") && !N.starts_with("cq_template_"))
+      bool Reads = N.starts_with("cqrt_") || N.starts_with("cq_template_");
+      // Rule-13 round 7 F-R7-1: a call to a SPECIALIZED CLONE (or its `_unc`
+      // twin) built pre-scrub from a detection-time mask reads the value as a
+      // handle in every MASKED argument slot. Identified by the specializer's
+      // own record (`SpecHandleArgMask`), never by the `__cq_q_` name prefix.
+      if (!Reads) {
+        auto It = taint.SpecHandleArgMask.find(Callee);
+        if (It != taint.SpecHandleArgMask.end())
+          for (unsigned A = 0, E = CB->arg_size(); A < E && A < 64; ++A)
+            if (CB->getArgOperand(A) == V && ((It->second >> A) & 1))
+              Reads = true;
+      }
+      if (!Reads)
         continue;
       CB->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
           *CB->getFunction(), kMsgScrubbedHandle, CB->getDebugLoc()));

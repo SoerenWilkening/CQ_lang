@@ -615,9 +615,13 @@ accepted by E6), so it is fenced here, decline-only.
     `cq taint escape: classical call result used as a quantum register` if a
     recorded value, still untainted, is an operand of any emitted
     `cqrt_*`/`cq_template_*` call.
-  - Why the operand test is exact: every call of that kind that exists at this
-    slot was minted by a pre-`specialize` emitter, and at mint time the value
-    was tainted, so it went into a handle slot. The classical `_hl` literal
+  - ⚠ **CORRECTED in §6h (Rule-13 round 7 F-R7-1): the reader set was
+    INCOMPLETE, so "the operand test is exact" was false.** A call to a
+    SPECIALIZED CLONE is also a handle reader. The sentence below holds for
+    the runtime families only. Why the operand test is exact for them: every
+    call of that kind that exists at this slot was minted by a pre-`specialize`
+    emitter, and at mint time the value was tainted, so it went into a handle
+    slot. The classical `_hl` literal
     slots take only untainted values (CondLiteral conjunct (b)). Uses lowered
     AFTER the slot (`lowerOps`) see the value as classical and correctly use a
     literal.
@@ -648,6 +652,57 @@ accepted by E6), so it is fenced here, decline-only.
   | M45 | the record at the scrub | KILLED (3) |
   | M46 | the postcondition slot, both entry points | KILLED (3) |
   | M47 | the `cq_template_` reader check | KILLED (3) |
+
+## 6h. Rule-13 round 7 on `47f4b649`: CLEAR-WITH-ITEMS (can land); one decline-only extension
+
+- **F-R7-1 (P1, in l3oi's class and older than this change), fenced.**
+  - **The defect.** `declineScrubbedHandleReads` checked only callees in the
+    runtime families (`cqrt_*`, `cq_template_*`). But `specialize()` builds
+    EVERY top-level clone from DETECTION-time masks and scrubs only
+    afterwards. So a call to a clone whose argument slot was masked quantum
+    reads the scrubbed value as a handle too.
+  - **The reproducers** (linked two-TU modules; exit 0 and 2b clean on E7, E6
+    and preE):
+    - ya: `u = g(t)` produced `cq_template_mul_i32_hl(h5, 3)` inside
+      `__cq_q_g_1`, using an unallocated id.
+    - yb: `g2(t, q)` produced `add_i32(h0, h5)`.
+    - yc: `if (g(t) > 3)`.
+  - **The fix, decline-only.** `taint.SpecHandleArgMask` is the specializer's
+    OWN record of what it built:
+    - `buildClone` writes each clone's `SpecMask`;
+    - at the (inner) `ensureTwin` site, the `_unc` twin gets
+      `(mask << 1) | 1`, because arg 0 is the `out` handle.
+
+    The postcondition treats a call to a recorded function as a handle reader
+    in its MASKED slots. It never identifies a clone by the `__cq_q_` name
+    prefix (CLAUDE.md §4f (P4)).
+  - **Where the twin record applies.** At this slot no top-level twin call
+    exists yet, because `uncompute` runs last. The twin record only matters
+    for twin calls inside clone bodies, whose operands are clone-local. It is
+    recorded for completeness; it has no fixture subject, and no mutant of it
+    was run.
+  - **The claim corrected at the source and in §6g (L7).** "The operand test is
+    exact / every … call" was true only for the runtime families. The header
+    comment and §6g now say so.
+  - **Not attempted:** the better fix — scrub each top-level site as it
+    resolves and recompute the pending masks, as `buildClone` does
+    internally. The coordinator is filing it.
+- **Red-green.** `taint_reject_scrubbed_handle_{clone_arg,clone_arg_mixed,clone_arg_branch}.ll`
+  (ya, yb, yc), from the reviewer's llvm-linked modules, with headers that
+  explain the two-TU origin and how to regenerate. All three are red on
+  47f4b649.
+- **Sweeps vs aad63450.**
+  - lit: null control 0 of 40 first, then **2277 fixtures, 39 movers**. That is
+    the 36 from §6g plus the three new ones. **No pre-existing fixture moved.**
+  - The 22 `run_slice_multi.sh` modules: null control 0 of 22, **0 movers**.
+- **Mutation delta.** Null control first, 0 movers; denominators 122 lit and 4
+  ctest.
+
+  | mutant | removes | result |
+  |---|---|---|
+  | M48 | the clone-mask record | KILLED (3) |
+  | M49 | the clone reader match | KILLED (3) |
+  | M50 | the mask check (every slot a reader) | MISSED, **equivalent**: every clone is built before the scrub, from masks in which each still-tainted argument's slot is set, so no scrubbed value can sit in an unmasked slot at this point. It stops being equivalent the day the "better fix" builds clones after a scrub. |
 
 ## 7. What I did NOT test
 

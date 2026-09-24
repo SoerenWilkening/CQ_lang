@@ -774,6 +774,14 @@ struct TaintSet {
   // `declineScrubbedHandleReads` — the scrub-direction twin of CLAUDE.md L1.
   llvm::SmallVector<llvm::WeakVH, 4> ScrubbedByReturnTaint;
 
+  // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
+  // record of every function it built, with the argument slots that are QUANTUM
+  // HANDLES in it: a clone `__cq_q_*` maps to its detection-time `SpecMask`; its
+  // `_unc` twin to `(mask << 1) | 1` (arg 0 is the `out` handle). Written by
+  // `buildClone` / at `ensureTwin`, read by `declineScrubbedHandleReads` — never
+  // re-derived from a name prefix (CLAUDE.md §4f (P4)).
+  llvm::DenseMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal
@@ -1439,8 +1447,13 @@ bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
 
 // bd `test_C_libtooling-l3oi` — the POSTCONDITION after `specialize()`: a value
 // in `taint.ScrubbedByReturnTaint` that is an operand of an emitted
-// `cqrt_*`/`cq_template_*` call was read as a quantum HANDLE while it was still
-// tainted and is now proved classical — the integer used as a register id.
+// `cqrt_*`/`cq_template_*` call, OR a MASKED (quantum) argument of a call to a
+// specialized clone or its `_unc` twin (`taint.SpecHandleArgMask`, the
+// specializer's own record — Rule-13 round 7 F-R7-1; the first spelling checked
+// only the runtime families and was NOT exact: `specialize()` builds every
+// top-level clone from detection-time masks before it scrubs), was read as a
+// quantum HANDLE while it was still tainted and is now proved classical — the
+// integer used as a register id.
 // Fires `cq taint escape: classical call result used as a quantum register`
 // (DS_Error, source-located). Asked once per entry point, right after
 // `specialize()`; `lowerOps`/`lowerRotations` run after it and see the scrubbed
