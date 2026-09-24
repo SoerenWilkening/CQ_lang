@@ -33,6 +33,7 @@
 #include "LoopPlan.h"          // railPhiRootMint (Inc 3 R7-loop clause (b'))
 #include "OpcodeSupport.h"
 #include "PredMuxFlatten.h"
+#include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "RotationLowering.h"  // suffixFromName (2b angle-select S5)
 #include "SelectClassify.h"    // CondTree (2b angle-select S4)
 #include "TaintPropagation.h"
@@ -5241,6 +5242,8 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         return ArmDisposition::Declined;
       }
       Value *RotBase = T->getArgOperand(0);
+      const bool PreallocatedBankSeed =
+          isRailBankSeedAlloc(dyn_cast<CallInst>(RotBase));
 
       // ---- CONTROLLED STATE PREP (PRD §14, bd test_C_libtooling-drbq Inc 4) --
       //
@@ -5345,7 +5348,14 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // `ConstantInt` on type+bits and `ConstantFP` on the `APFloat` BITS — a
         // hand-written `APFloat` comparison would have to use `bitwiseIsEqual`
         // and NEVER `compare`/`==`, which calls `-0.0 == 0.0`.
-        if (!isa<ConstantInt>(RotBase) && !isa<ConstantFP>(RotBase)) {
+        // The one non-literal seed is compiler-owned: an exact preallocated
+        // runtime-i32 rail for a promoted bank cell. It is already |0>, and the
+        // faithful merge below must name that SAME handle on the skipped edge.
+        // No source value is inferred or cloned, so F2's folded-live-register
+        // rival has no subject. Every user-written/runtime argument spelling
+        // remains behind the literal-only fence.
+        if (!PreallocatedBankSeed && !isa<ConstantInt>(RotBase) &&
+            !isa<ConstantFP>(RotBase)) {
           declineArm(T, "state prep seed does not match the merge incoming");
           return ArmDisposition::Declined;
         }
@@ -5624,9 +5634,10 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // the same string, because a search that stopped looking is exactly the
         // "we stopped and accepted" shape this fence exists to stop. (`Truncated`
         // is NOT narrowed by `CondWire`; SCOPE H-8.)
-        Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
-                                            Taint, DT, CondWire, Truncated) ||
-                 Truncated;
+        if (!PreallocatedBankSeed)
+          Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
+                                              Taint, DT, CondWire, Truncated) ||
+                   Truncated;
         if (Pinned) {
           declineArm(declAnchor(Region),
                      "state prep seed is proven equal to the condition register");

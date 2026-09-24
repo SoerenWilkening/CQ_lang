@@ -1,0 +1,85 @@
+\labsessionheader{2026-09-24}{Runtime-sized rail bank (xdu2.4): Rule-13 findings closed}%
+  {b773347d (parent)}{n/a}{bd xdu2.4 notes; probes under the session scratchpad (not committed)}
+
+\subsection*{Goal}
+Finish \bd{test\_C\_libtooling-xdu2.4}: a runtime-sized stack \texttt{int b[n]}
+rail bank with classical extent and index, so that the owner's Grover program
+(\fpath{example/grover/main.c}, runtime \texttt{n} from \texttt{argv}) compiles
+without any \texttt{cqrt\_qram\_*} operation. The session opened on an
+uncommitted tree that an earlier Rule-13 round had blocked with seven items.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item the \bd{xdu2.4} commit on top of \commit{b773347d} --- runtime \texttt{alloca i32, \%n}
+    bank; the conditional in-arm preparation's compiler-owned seed rail; the
+    emptied-arm \texttt{select} fold (PASS H); the Rule-13 fences below; a
+    25-plus-case C-level matrix with a rolled-versus-unrolled twin gate; a
+    precise stage-2b provenance rule for the exact Grover customer.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ Forged \texttt{!cq.railbank.seed} on a hand-written
+    \texttt{cqrt\_alloc\_i32(0)} accepted with host arithmetic on the handle.
+    Fenced by a reserved-name decline in both entry points
+    (\fpath{lowering_reject_railbank_seed_forged.ll}).
+  \item \fconfirmed\ \fpreexisting\ A write loop re-executed through an
+    \emph{irreducible} cycle (no LoopInfo parent) accepted with a wrong
+    unitary --- fixed banks too on the HEAD oracle. Fenced by an exact
+    ``exit reaches header'' question; \texttt{setjmp} re-execution likewise
+    (matrix CASE 24--27).
+  \item \fconfirmed\ \fpreexisting\ A conditional bank store whose zero seed
+    made its own condition constant parked \emph{literal handle 0} after a
+    PredMux residue fold, and measured a freed rail three times --- fixed
+    banks too on the HEAD oracle. Fenced by a postcondition,
+    \texttt{declineNonHandleBankStores}, after every folder. An earlier source
+    comment claiming no path parks literal 0 was false and is corrected at the
+    source.
+  \item \foverdecline\ Removed: \texttt{t = cq\_theta(b[i]); if (c) b[i] = t;}
+    (fixed and runtime) now compiles and is byte-identical to its hand-unrolled
+    twin; a guard hoisted before the loop; a scoped temporary VLA; a large
+    acyclic body (LLVM's 32-block reachability budget had produced a false
+    ``cycle'' diagnostic).
+  \item \foverdecline\ Filed, not fixed: \bd{xdu2.8} (arm-local bounds proof
+    for a hoisted classical read), \bd{xdu2.9} (constant-dead conditional cell
+    store), \bd{xdu2.10} (read-order test is dominance-syntactic, so an
+    unguarded \texttt{int b[n]} declines).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries (all pass) & 486 & \measured{ctest --test-dir build -j6} \\
+lit fixtures (1 XFAIL) & 2170 & \measured{lit ir-pass/test} \\
+cq-opt equivalence mismatches & 0 of 2170 & \measured{--target cq-opt-equivalence-full} \\
+corpus A/B vs HEAD: A$\to$D / D$\to$A / stream & 2 / 10 / 0 & \measured{session A/B, null control 0} \\
+injection mutants killed & 23 of 27 & \measured{session inj.py, null control first} \\
+\bottomrule\end{tabular}
+
+The two A$\to$D moves are the two pre-existing miscompiles above. The four
+unkilled mutants are recorded as shadowed or unreachable: the exact-zero seed
+check (behind the forge fence), the carve's tainted-extent conjunct (behind
+\texttt{declineTaintEscapes}), PredMux's lifetime-start clause (only reachable
+when the source is already UB), and re-admitting \texttt{trunc} as a handle
+(nothing parks one). The null control moved nothing.
+
+\subsection*{Verification run}
+Two independent Rule-13 rounds, two reviewers each on disjoint surfaces.
+Round 1: two \texttt{BLOCK} verdicts, one P1 each (above), both fixed. Round 2:
+both \texttt{CLEAR-WITH-ITEMS}, 0 P1, 0 P2; its four P3 items were fixed and
+mutation-tested. No third round ran on those last P3 fences, which only add
+declines. The exact Grover program lowers, links and runs, and passes strict
+stage 2b: 3 verified, 0 violations, 0 unproven. That needed
+\fpath{tools/free_pairing_check.py} to decide an unresolved load
+(\texttt{argv[1]}) as non-bank when every bank's address is \emph{confined};
+it is kill-tested by four escape mutants and a module-scope-bank row.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{xdu2.5} \texttt{calloc} provenance, \bd{xdu2.6} a fresh bank per
+    outer activation, \bd{xdu2.7} dynamic \texttt{bool} storage, and
+    \bd{xdu2.8}--\bd{xdu2.10} above.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.

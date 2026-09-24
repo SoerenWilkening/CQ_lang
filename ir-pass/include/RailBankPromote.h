@@ -4,13 +4,16 @@
 // / `flattenPredMuxRegions` / `promoteVolatileScalarLocals` family): it forwards
 // a bounded rail BANK's cell to SSA WITHIN ONE ACTIVATION, so the loop body the
 // rest of the pass sees is register-resident and the existing control chain
-// applies unchanged. It mints NO gate, emits NO runtime symbol and NEVER
-// diagnoses; an off-pattern shape is left BYTE-UNTOUCHED for its existing loud
-// owner.
+// applies unchanged. It mints no gate and never diagnoses; the one runtime
+// symbol it may emit is a real `cqrt_alloc_i32(0)` seed for a conditional
+// runtime-i32 preparation whose skipped path still needs a physical |0> rail.
+// It never emits QRAM. An off-pattern shape is left BYTE-UNTOUCHED for its
+// existing loud owner.
 //
 // ── THE CONTRACT, PER ACTIVATION (`SCOPE_L1a.md` §2 clause C5) ──────────────
 //
-//   1. the SEED load becomes the proven initializer CONSTANT;
+//   1. the SEED load becomes the proven initializer CONSTANT, except that a
+//      conditional runtime-i32 preparation receives a real allocated |0> rail;
 //   2. every intra-activation load becomes the dominating store's VALUE — an SSA
 //      merge φ where the store is conditional;
 //   3. exactly ONE store per activation survives, at the activation's END.
@@ -55,7 +58,7 @@
 // site; the shape of it is:
 //
 //   * this stage is a NORMALISER, not a lowering (Rule 14 / L6). Its caller runs
-//     `while (promoteRailBankCells(M, taint)) taint = propagate(M, wd);` — a FULL
+//     `while (promoteRailBankCells(M, wd, taint)) taint = propagate(M, wd);` — a FULL
 //     re-propagation from scratch after every change, which is strictly stronger
 //     than a taint DELTA. So `adjudicateTaintDelta` is NOT owed;
 //   * and every stage that adjudicates CONSUMERS of tainted values runs AFTER
@@ -80,28 +83,34 @@
 // `adjudicateTaintDelta` exactly as the peel does, and the omission has NO
 // DIAGNOSTIC ANYWHERE.
 //
-// ── THE STAGED LANDING: THIS DOES NOT MAKE ANYTHING COMPILE ─────────────────
+// ── THE COMPLETED LOWERING CONTRACT ─────────────────────────────────────────
 //
-// W1 is three pieces and only two land this session. The TAINT RULE (a `load`
-// from a `!cq.railbank` alloca is tainted), the `[N x i1]` -> `[N x i32]` TYPE
-// REWRITE and the D5 ALLOW-LIST are deliberately deferred. Until they land, an
-// ACCEPTED bank is a SILENT MISCOMPILE and `SCOPE_L1a.md` §4.4(D) names the
-// mechanism exactly: `cq_measure(b[i])` on an UNTAINTED load takes
-// `MeasureLowering.cpp:151`'s classical split and emits NO GATE, NO SYMBOL AND
-// NO TRACE LINE — and the golden byte-diff cannot see a measurement that was
-// never emitted.
+// W1's taint rule, bank metadata, fixed-array type rewrite and D5 allow-list now
+// ship together downstream of this normalizer. xdu2.4 adds the runtime-i32
+// case, whose storage already matches the i32 handle ABI and therefore needs no
+// object-type rewrite. Two CONDITIONAL-store shapes are handled, disjointly:
 //
-// So after this promotion the program STILL DECLINES `cq taint escape: tainted
-// value stored to memory`, at the ONE surviving store per activation. The
-// observable blast radius is confined to programs that decline `kMsgStore`
-// today, and the confinement is STRUCTURAL rather than hoped for: the stage
-// fires only on an alloca whose stores Track A's carve calls `Bank`, and the
-// carve's C3 requires a TAINTED STORED VALUE. No classical array anywhere is a
-// candidate.
+//   * the IN-ARM runtime preparation (`if (c) b[i] = cq_theta(b[i], θ)`): the
+//     skipped path needs a real |0> cell, and a runtime bank has no literal
+//     seed the state-prep emitter could `cqrt_alloc`, so this stage mints ONE
+//     `cqrt_alloc_i32(0)` per activation, marked `!cq.railbank.seed`. Exact
+//     metadata plus symbol/prototype checks identify it; control detection
+//     treats it as a fresh state-prep seed, and rotation lowering adopts it.
+//     The marker is COMPILER-OWNED: an input that already carries it is a loud
+//     reserved-name decline (`declineForeignRailBankSeeds`, Rule-13 finding 4),
+//     and the plan admits a seed load with NO other user (finding 1).
+//   * the EMPTIED ARM, fixed or runtime (`t = cq_theta(b[i], θ); if (c) b[i] =
+//     t;`): the rewrite leaves an empty if-without-else arm, which PASS H folds
+//     to `select c, t, seed` exactly as `-O1` SimplifyCFG would. That is the
+//     flat twin's 4.4 data select, whose merge mints its own `%out`, so no seed
+//     is minted. Witnessed by byte identity with the hand-unrolled twin
+//     (`tests/e2e/railbank_dynamic_matrix.c` CASE 14 vs 17).
 //
-// ⚠ This is a STAGED LANDING of one capability, not Rule 17's punt. Rule 17
-// forbids substituting a decline for the hard work; it does not forbid landing a
-// multi-piece capability in the order that keeps the tree sound at every commit.
+// On the shapes they own, neither path parks literal handle 0 in a cell; but a
+// constant-folded COMPOSITION can (Rule-13 review A F-1), so the property is a
+// checked POSTCONDITION, `declineNonHandleBankStores`, not an argument about
+// these two paths. Off-pattern banks still remain untouched for the existing
+// loud decline.
 //
 // ── WHAT IT REFUSES, AND WHY EACH CLAUSE IS THE REWRITE'S AND NOT THE CARVE'S ─
 //
@@ -142,7 +151,7 @@
 //       two, and the split IS this stage's contract: **the promoter's INPUT is
 //       `BankRaw` and its OUTPUT is `Bank`.** `Bank` means "no read of the bank
 //       survives inside `L`, and the store is total per trip", which is exactly
-//       what `applyBank` produces and exactly what the deferred type rewrite may
+//       what `applyBank` produces and exactly what the bank type rewrite may
 //       consume. Requiring `BankRaw` narrows nothing that ever fired (B8 refuses a
 //       bank with no in-`L` load, and a `Bank` bank has none); it makes the
 //       contract checked at both ends, and gives the caller's fixpoint a SECOND
@@ -185,7 +194,8 @@
 // (`isRailBankAlloca` — the `!cq.railbank` record this stage MINTS)"*, and the
 // shipped stage mints NO metadata: `SCOPE_L1a.md` §4.3 designs the record as the
 // FREEZE's membership proof, the freeze is in the deferred half, and minted now it
-// would have no reader (Rule 12 hygiene defect (c)). `RailBankPromote.cpp`'s
+// would have no reader (Rule 12 hygiene defect (c)). [Since landed:
+// `markRailBankAllocas` is its minter; this stage mints only `!cq.railbank.seed`.] `RailBankPromote.cpp`'s
 // `applyBank` tail carries the correct statement, Track B's own injection round 4
 // (mutant M13, "re-add the mint") is CAUGHT by all seven accept fixtures through
 // their `NOMD` prefix, and `isRailBankAlloca` is not shipped at all
@@ -216,7 +226,8 @@
 //
 // ⚠ THE PROOF IS A THEOREM ONLY UNDER B2 + C2'. It says "this trip's cell was
 // never written before", and that is the carve's INJECTIVITY clause — an affine
-// `{0,+,1}` index with a constant exact trip count — plus B2's one-address rule.
+// `{0,+,1}` index with an exact fixed or runtime trip count — plus B2's
+// one-address rule.
 // Weaken either and the seed is a previous trip's live rail read as a classical
 // zero: a hidden `|0>` assertion on an entangled qubit, which no fence in the
 // tree would see (`SCOPE_L1a.md` §4.1: the rail/wire/uncompute machinery is
@@ -234,6 +245,7 @@
 
 namespace llvm {
 class AllocaInst;
+class CallInst;
 class Module;
 class StoreInst;
 class Type;
@@ -243,6 +255,7 @@ class Value;
 namespace cq {
 
 struct TaintSet;
+class WidthDispatch;
 
 // Promote ONE rail bank's cells to per-activation SSA. Returns true iff the
 // module was mutated; the caller drives it to a fixpoint and re-`propagate`s
@@ -263,10 +276,32 @@ struct TaintSet;
 //
 // Env lever `CQ_RAILBANK_DBG` (no behaviour change): one line per promotion,
 // plus a module dump at the call site once the fixpoint settles — the
-// `CQ_FP80_DBG` / `CQ_SPEC_DBG` precedent. It exists because every module this
-// stage fires on still DECLINES, and a `DS_Error` decline writes 0 bytes to
-// stdout, so the promotion is not observable on the lowered IR at all.
-bool promoteRailBankCells(llvm::Module &M, const TaintSet &taint);
+// `CQ_FP80_DBG` / `CQ_SPEC_DBG` precedent. It remains the structural anchor for
+// both accepted banks and off-pattern modules that later decline.
+bool promoteRailBankCells(llvm::Module &M, WidthDispatch &wd,
+                          const TaintSet &taint);
+
+// Exact recognition for the real |0> rail minted by the promoter when a
+// conditional runtime-i32 cell preparation has a skipped path. The compiler-
+// owned metadata is paired with the exact zero argument, runtime symbol and
+// prototype so an unrelated call cannot become a seed merely by sharing a name
+// prefix.
+bool isRailBankSeedAlloc(const llvm::CallInst *CI);
+
+// Reserved-name fence for the marker above: it is compiler-owned provenance, so
+// an input module that already carries `!cq.railbank.seed` on any instruction
+// is a loud decline (returns true after diagnosing). Called in BOTH entry points
+// after the passthrough early-out and BEFORE `promoteRailBankCells`, so every
+// marker `isRailBankSeedAlloc` later sees was minted by a proven promoter plan.
+bool declineForeignRailBankSeeds(llvm::Module &M);
+
+// POSTCONDITION (Rule-13 xdu2.4 review A F-1): after every lowering stage, each
+// store into a `!cq.railbank` object must park a PROVEN rail handle (a
+// `cqrt_alloc_*` / value-returning `cq_template_*` mint, or a φ/select/zext
+// of such). A literal — handle `0` is a live rail — or any other value is
+// a loud decline. Called in BOTH entry points beside
+// `declineSurvivingIntrinsicCalls`; returns true after diagnosing.
+bool declineNonHandleBankStores(llvm::Module &M);
 
 // ── bd `xdu2` / L-1a Increment W1, THE SECOND HALF (session 2026-09-15) ────
 //

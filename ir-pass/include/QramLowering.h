@@ -182,6 +182,18 @@ bool classicalTableIndexKnownInBounds(llvm::LoadInst *LI, const TaintSet &taint,
                                       llvm::DominatorTree &DT,
                                       llvm::LoopInfo &LInfo);
 
+// bd xdu2.4 — the runtime-alloca sibling of the bounds proof above, for a
+// CLASSICAL load speculated within its enclosing loop.  This is not QRAM: both
+// the address index and the loaded value remain classical.  The proof accepts
+// only a direct `alloca cell, extent`, allocated before the loop, with an
+// untainted extent and affine non-wrapping 0,+,1 index whose exact loop trip
+// count is semantically equal to that extent at the speculation point. Failure
+// to prove any conjunct leaves PredMux's existing loud E4 decline in place.
+bool classicalRuntimeAllocaReadIsInBounds(
+    llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
+    llvm::LoopInfo &LInfo, llvm::ScalarEvolution &SE,
+    const llvm::BasicBlock *RegionEntry);
+
 bool valueWillTaintAfterFlatten(
     const llvm::Value *V, const TaintSet &taint,
     const llvm::SmallPtrSetImpl<llvm::BasicBlock *> &Region,
@@ -372,34 +384,12 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //       if (b[i]) a -= 3;
 //     }
 //
-// Today that program declines `cq taint escape: tainted value stored to memory`
-// (`kMsgStore`) at the store, at every N — the ONE wall bd `xdu2` exists to
-// remove, and the owner's loop-form cascade, spelling (i).
-//
-// *** THIS IS A STAGED LANDING OF ONE CAPABILITY, AND THE `Bank` VERDICT STILL
-// DECLINES. *** L-1a is three pieces: this classifier, the per-activation
-// PROMOTER (clause C5, bd `xdu2` Track B), and — deliberately NOT in this
-// increment — the TAINT RULE (a `load` from a bank cell is tainted), the TYPE
-// REWRITE (`[N x i1]` → `[N x i32]` of handles) and the D5 consumer allow-list.
-// Until those land an ACCEPTED bank is a SILENT MISCOMPILE, and the mechanism is
-// named exactly (`SCOPE_L1a.md` §4.4(D)): `cq_measure(b[i])` on an UNTAINTED load
-// takes `MeasureLowering.cpp`'s classical split and emits **no gate, no symbol, no
-// trace line** — and the golden byte-diff cannot see a measurement that was never
-// emitted. So `RailBankCarve::Bank` FALLS THROUGH to the existing generic
-// `kMsgStore` decline, exactly as `QramCarve::NotQram` does today; what ships here
-// is a classifier plus a per-clause decline matrix, and the accept path is pinned
-// by an env-gated `CQ_CTRL_DBG` anchor rather than by a lowering.
-//
-// This is NOT Rule 17's punt. Rule 17 forbids substituting a decline for the hard
-// work; it does not forbid landing a multi-piece capability in the order that keeps
-// the tree sound at every commit.
-//
-// ⚠ L8 RETIREMENT TRIGGER (write it wherever this verdict is consumed):
-//   *"When the L-1a taint rule + type rewrite + D5 allow-list land (bd `xdu2`, the
-//   second half), the `Bank` verdict stops falling through to `kMsgStore` and the
-//   fixtures' RUN lines become ACCEPTs whose emitted stream is the per-trip
-//   `cqrt_alloc_<W>` / `cqrt_ry_<W>` cascade. Re-derive them then; do NOT delete
-//   them."*
+// The full L-1a pipeline now consumes `Bank`: the promoter removes partial cell
+// reads, the marker supplies the bank taint rule, fixed narrow cells are rewritten
+// to handle storage, and D5 admits the final parked-handle store. xdu2.4 extends
+// that same contract to an at-most-once runtime `alloca i32, extent`; i32 already
+// matches the handle ABI, so only the marker is needed. This remains a rail bank,
+// never QRAM: its extent and every cell index are classical.
 //
 // ⚠⚠ AND IT APPLIES TO `Bank` ONLY. `BankRaw` MUST KEEP DECLINING, IN EVERY FUTURE
 // HALF (bd `test_C_libtooling-de8n`, P1, closed 2026-09-15). Before clause C7
@@ -424,20 +414,23 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //
 // THE CLAUSES (SCOPE_L1a §2; C2′ and C6 are new and both are Prime-Directive
 // load-bearing):
-//   C1  a non-escaping, `isStaticAlloca()` `alloca [N x cell]` with a provable
-//       zero initializer or — owner ruling D1, 2026-09-14, composing with bd
-//       `z9t1` — NO initializer at all, whose EVERY user is a canonical cell
-//       access, a lifetime marker or that initializer. The `isStaticAlloca()` half
-//       is the second over-accept this increment caught itself: an `alloca` in a
-//       loop body is a FRESH OBJECT per outer trip, so "the bank" is not one
-//       object and no per-cell statement below means anything.
+//   C1  one non-escaping local object per function activation: either a fixed
+//       `alloca [N x cell]` or xdu2.4's `alloca i32, extent`, with a provable zero
+//       initializer or — owner ruling D1, 2026-09-14, composing with bd `z9t1` —
+//       NO initializer at all. EVERY user is a canonical cell access, a lifetime
+//       marker or that initializer. Entry placement is not required; allocation
+//       in a CFG cycle is refused because it creates a fresh object per cycle
+//       activation. Supporting that physically-valid case is increment C, not a
+//       permanent semantic boundary.
 //   C2  every access is a CLASSICAL-index cell access. A TAINTED index is 7.5's
 //       axis and keeps 7.5's own decline — enforced by ORDER (this verdict is
 //       consulted only after `qramCarveVerdict` has answered `NotQram`) AND by an
 //       explicit entry conjunct, so the two axes cannot merge by accident.
 //   C2′ INJECTIVITY. The cell index must be an affine, NON-SELF-WRAPPING `{0,+,1}`
-//       add-recurrence of the enclosing loop, whose proven CONSTANT trip count is
-//       ≤ N, AND that loop must not itself be re-executed by an enclosing one.
+//       add-recurrence of the enclosing loop. A fixed bank needs a proven constant
+//       trip count ≤ N; a runtime bank needs its exact symbolic trip count equal
+//       to its untainted extent. The walk loop must not itself be re-executed by
+//       an enclosing one.
 //       *Why it is load-bearing:* if two activations write one cell, a later trip's
 //       SEED load reads a previously-stored HANDLE and the promoter forwards the
 //       wrong value.
@@ -454,9 +447,10 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //       and no `cqrt_copy_f*`.
 //   C4  no aliasing fan-out: every user of a cell address is a simple load/store of
 //       the cell type through that address, and the bank has exactly ONE store.
-//   C6  TOTALITY. `N` equals the proven trip count, every in-loop read is of the
-//       cell THIS trip writes, and every other read is after the loop. *Why:* after
-//       the (later) type rewrite a never-written cell reads as handle `0`, and `h0`
+//   C6  TOTALITY. The fixed `N` or runtime extent equals the proven trip count,
+//       every in-loop read is of the cell THIS trip writes, and every other read
+//       is an exact full post-loop walk. *Why:* after handle-storage conversion a
+//       never-written cell reads as handle `0`, and `h0`
 //       is a LIVE RAIL in this runtime (`cqrt_alloc_i1(0) -> h0`).
 //       ⚠ C6 proves the index VISITS each cell once. It does NOT prove each cell is
 //       WRITTEN — a conditional arm store visits and writes nothing. That half is
@@ -471,7 +465,7 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 //             was written by the trip that owned it.
 //       Both hold by construction of the per-activation promoter's output, and
 //       neither is implied by C1–C6. `BankRaw` is the promoter's input; `Bank` is
-//       the deferred type rewrite's.
+//       the marker/type-rewrite input.
 //
 // ⚠ C4 DELIBERATELY ADMITS A CELL ADDRESS USED BY BOTH A LOAD AND THE STORE, where
 // `matchQramAccess`'s `GEP->hasOneUse()` would refuse it — and that deviation is
@@ -503,8 +497,8 @@ void lowerShadowMemory(llvm::Module &M, WidthDispatch &wd, TaintSet &taint);
 enum class RailBankCarve {
   NotBank,          // not a rail-bank cell write — fall through to the existing owners
   Bank,             // C1–C4, C2′, C6 AND C7 hold — the TYPE-REWRITABLE shape.
-                    // ⚠ STILL FALLS THROUGH TO kMsgStore this increment
-  BankRaw,          // C1–C4, C2′, C6 hold and C7 does NOT: a rail bank the deferred
+                    // A marked bank is owned by the rail-bank lowering.
+  BankRaw,          // C1–C4, C2′, C6 hold and C7 does NOT: a rail bank the
                     // TYPE REWRITE must not see. ⚠ NOT A DECLINE (`outMsg` is null,
                     // the caller keeps its generic `kMsgStore`) and ⚠ NEVER AN
                     // ACCEPT — it is the per-activation PROMOTER'S INPUT and
@@ -513,23 +507,25 @@ enum class RailBankCarve {
   RejectIndex,      // C2′ — index is not an injective {0,+,1} over the enclosing loop
   RejectWidth,      // C3  — the cell width has no reversible copy
   RejectAlias,      // C4  — the cell address fans out, or the bank has >1 store
-  RejectTotality,   // C6  — N != the proven trip count, or a cell no iteration visits
+  RejectTotality,   // C6  — extent != exact trips, or a cell no iteration visits
 };
 
 // The resolved bank on a `Bank` OR `BankRaw` verdict — handed back so no consumer
 // re-derives it (Rule 14: *"ask by CALLING the one owner, never by re-deriving its
 // answer"*; the drbq Inc-3 (b′) defect is a SECOND SPELLING of a predicate the tree
 // already owned). It is filled for BOTH accept-shaped verdicts because the
-// promoter's input is `BankRaw` and it needs the same seven fields. Meaningless for
+// promoter's input is `BankRaw` and it needs the same resolved facts. Meaningless for
 // every `Reject*` and for `NotBank`.
 struct RailBankShape {
   llvm::AllocaInst *Alloca = nullptr;  // the bank object
   llvm::Loop *L = nullptr;             // the loop whose {0,+,1} index walks the cells
   llvm::Value *RawIndex = nullptr;     // the store address's trailing classical index
+  llvm::Value *Extent = nullptr;       // VLA element count; null for fixed arrays
   llvm::Type *CellTy = nullptr;        // the cell scalar type
   llvm::StringRef ElemAbi;             // "i1" / "i8" / "i16" / "i32" / "i64"
-  uint64_t Count = 0;                  // N
-  uint64_t Trips = 0;                  // the proven constant trip count (== Count)
+  uint64_t Count = 0;                  // fixed N; 0 for a runtime-sized bank
+  uint64_t Trips = 0;                  // fixed trip count; 0 for runtime-sized
+  bool RuntimeSized = false;           // Extent is classical and equals loop trips
 };
 
 // The SINGLE rail-bank verdict — the `qramCarveVerdict` discipline, one entry point

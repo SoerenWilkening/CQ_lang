@@ -20,6 +20,7 @@
 set -euo pipefail
 CLANG=$1 OPT=$2 PASS=$3 INC=$4 SRC=$5 RT=$6 TPL=$7 GOLDEN=$8
 FREECHECK_FLAGS=${9:-}
+NO_QRAM=${10:-}
 PY=${CQ_PYTHON:-python3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
@@ -61,6 +62,14 @@ else
     "$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$SRC" -o "$TMP/s1.ll"
 fi
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$s1" -o "$TMP/s2.ll"          # Stage 2
+if [ "$NO_QRAM" = "--forbid-qram" ] && grep -q 'cqrt_qram_' "$TMP/s2.ll"; then
+    echo "run_slice: forbidden cqrt_qram_* operation in accepted rail-bank module" >&2
+    exit 1
+fi
+if [ "$NO_QRAM" = "--forbid-qram" ] && grep -Eq 'store i32 0, ptr %cq\.bank\.addr' "$TMP/s2.ll"; then
+    echo "run_slice: rail-bank cell was seeded with literal handle 0" >&2
+    exit 1
+fi
 # shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
 "$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"       # Stage 2b
 # Stage 3 (link) — deliberately NO -O flag (clang default -O0): the lowered IR

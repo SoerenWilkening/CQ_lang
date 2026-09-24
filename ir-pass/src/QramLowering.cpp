@@ -19,6 +19,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
+#include "llvm/Analysis/CFG.h"
 #include "llvm/Analysis/ConstantFolding.h"
 #include "llvm/Analysis/LoopInfo.h"
 #include "llvm/Analysis/ScalarEvolution.h"
@@ -35,6 +36,7 @@
 #include "llvm/IR/Function.h"
 #include "llvm/IR/GlobalVariable.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/IntrinsicInst.h"
 #include "llvm/IR/Intrinsics.h"
@@ -194,7 +196,7 @@ constexpr char kMsgQramCloneUnbounded[] =
 // Sharing a string would merge two decline populations whose fixtures pin opposite
 // accept shapes, and would make the injection census point at the wrong wall.
 //   * lowering_reject_railbank_global.ll        → kMsgBankShape
-//   * lowering_reject_railbank_vla.ll           → kMsgBankShape
+//   * lowering_reject_railbank_vla.ll           -> kMsgBankWidth
 //   * lowering_reject_railbank_escape.ll        → kMsgBankEscape
 //   * lowering_reject_railbank_mixed_access.ll  → kMsgBankMixed
 //   * lowering_reject_railbank_nonzero_init.ll  → kMsgBankInit
@@ -229,10 +231,116 @@ constexpr char kMsgBankTotality[] =
 // up — which is why they get their own strings rather than riding an existing one.
 //   * lowering_reject_railbank_nested_walk.ll   → kMsgBankNested
 //   * lowering_reject_railbank_dynamic_object.ll → kMsgBankDynamic
+//   * lowering_reject_railbank_dynamic_{lifetime_end,stackrestore}.ll
+//                                                 → kMsgBankLifetime
 constexpr char kMsgBankNested[] =
     "cq rail bank: the cell walk is re-executed by an enclosing loop";
 constexpr char kMsgBankDynamic[] =
-    "cq rail bank: array object is not a single function-lifetime allocation";
+    "cq rail bank: array allocation is re-executed by an enclosing cycle";
+constexpr char kMsgBankLifetime[] =
+    "cq rail bank: array storage is not live at every access";
+
+// EXACT CFG reachability, `From` executing and then `To` executing later on
+// some path (bd xdu2.4, Rule-13 round F-B2). LLVM's `isPotentiallyReachable`
+// gives up after 32 blocks and answers "reachable", which is safe for a fence
+// but turned the cycle question into a FALSE diagnostic on an ordinary acyclic
+// body with a dozen diamonds. This walk is linear in the function's edges and
+// has no budget, so its "no" and its "yes" are both facts.
+bool instReaches(const Instruction *From, const Instruction *To) {
+  const BasicBlock *FB = From->getParent();
+  const BasicBlock *TB = To->getParent();
+  if (FB == TB && From != To && From->comesBefore(To))
+    return true;
+  SmallVector<const BasicBlock *, 32> Work(succ_begin(FB), succ_end(FB));
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (!Seen.insert(B).second)
+      continue;
+    if (B == TB)
+      return true;
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return false;
+}
+
+// Can this `llvm.stackrestore` free `AI`'s storage? A restore pops back to its
+// SAVE point, so it frees exactly the allocas made after that save. When the
+// operand is an `llvm.stacksave` that `AI` dominates (and `AI` is in no cycle,
+// which every caller has proven), the save was taken after `AI` on every path
+// and the restore cannot free it — the scoped temporary VLA of F-B3. Any other
+// operand is refused conservatively.
+bool stackRestoreMayFree(const IntrinsicInst *Restore, const AllocaInst *AI,
+                         const DominatorTree &DT) {
+  const auto *Save = dyn_cast<IntrinsicInst>(
+      Restore->getArgOperand(0)->stripPointerCasts());
+  return !(Save && Save->getIntrinsicID() == Intrinsic::stacksave &&
+           DT.dominates(AI, Save));
+}
+
+// The cell index must be as wide as the address arithmetic (F-B5): a narrower
+// index is SIGN-extended by the gep while the extent is ZERO-extended by the
+// alloca, so "the walk visits 0..n-1" would not survive n >= 2^(w-1).
+bool indexIsAddressWidth(const Value *Idx, const Value *Ptr,
+                         const DataLayout &DL) {
+  return Idx->getType()->isIntegerTy(
+      DL.getIndexTypeSizeInBits(Ptr->getType()));
+}
+
+// Semantic SCEV equality at one program point. The direct predicate query owns
+// the general case. The narrow recursive arm handles clang's rotated-loop
+// spelling `zext(smax(n, 1))`: below a dominating source precondition `n > 0`,
+// the max is exactly n. Each unwrap is injective (matching zext source/result
+// types), and the max arm asks ScalarEvolution to prove every ordering fact at
+// `Ctx`; no syntactic resemblance is accepted as a proof.
+bool scevEqualAt(const SCEV *A, const SCEV *B, const Instruction *Ctx,
+                 ScalarEvolution &SE, unsigned Depth = 0) {
+  if (A == B || SE.isKnownPredicateAt(ICmpInst::ICMP_EQ, A, B, Ctx))
+    return true;
+  if (Depth == 4 || A->getType() != B->getType())
+    return false;
+
+  const auto *ZA = dyn_cast<SCEVZeroExtendExpr>(A);
+  const auto *ZB = dyn_cast<SCEVZeroExtendExpr>(B);
+  if (ZA && ZB && ZA->getOperand()->getType() == ZB->getOperand()->getType())
+    return scevEqualAt(ZA->getOperand(), ZB->getOperand(), Ctx, SE, Depth + 1);
+
+  auto MaxEquals = [&](const SCEV *MaybeMax, const SCEV *Other) {
+    const auto *Max = dyn_cast<SCEVSMaxExpr>(MaybeMax);
+    if (!Max)
+      return false;
+    bool FoundOther = false;
+    for (const SCEV *Op : Max->operands()) {
+      if (scevEqualAt(Op, Other, Ctx, SE, Depth + 1)) {
+        FoundOther = true;
+        continue;
+      }
+      if (!SE.isKnownPredicateAt(ICmpInst::ICMP_SGE, Other, Op, Ctx))
+        return false;
+    }
+    return FoundOther;
+  };
+  return MaxEquals(A, B) || MaxEquals(B, A);
+}
+
+// Equality of two SCEVs at every execution of a point inside loop `L`
+// (Rule-13 xdu2.4 finding 2). `Fallback` is the destination point itself (the
+// latch the promoted store moves to, or the region entry a flattened load is
+// hoisted to) and is always sound. When BOTH sides are invariant in `L`, a proof
+// at the preheader terminator is ALSO sound for every point in `L`: each loop
+// activation executes that terminator first and neither value can change before
+// the destination. It is the stronger query in practice, because SCEV's guard
+// walk from a multi-predecessor latch sees no dominating branch at all. What is
+// never sound is the ORIGINAL conditional store/load: its own guard is not in
+// force at the point the lowering moves execution to.
+bool scevEqualInLoop(const SCEV *A, const SCEV *B, const Loop *L,
+                     const Instruction *Fallback, ScalarEvolution &SE) {
+  if (const BasicBlock *PH = L->getLoopPreheader())
+    if (SE.isLoopInvariant(A, L) && SE.isLoopInvariant(B, L) &&
+        scevEqualAt(A, B, PH->getTerminator(), SE))
+      return true;
+  return scevEqualAt(A, B, Fallback, SE);
+}
 
 // Loud `DiagnosticInfoUnsupported(DS_Error)` with the offending load's `!dbg`
 // (source-located; `opt` exits non-zero, which the negative fixtures invert with
@@ -364,16 +472,21 @@ bool sameOrigin(const OriginResult &A, const OriginResult &B) {
 // the degenerate single-origin proof).
 constexpr unsigned kPtrWalkMaxDepth = 32;
 
-// Resolve `P` to its unique statically-shaped base object, following `bitcast`,
+// Resolve `P` to its unique base object, following `bitcast`,
 // `getelementptr` bases (gep chains), and pointer `phi`/`select` (ALL arms must
 // resolve to the SAME origin). Returns a named `Bad` for any shape that is not a
-// single statically-shaped origin — the Bennett signpost decline matrix.
-// Mutation-free.
-OriginResult walkPtrOrigin(Value *P, unsigned Depth = 0) {
+// single origin — the Bennett signpost decline matrix. Dynamic stack allocas
+// remain forbidden to QRAM callers; the rail-bank caller opts into seeing the
+// origin so it can apply its separate classical-extent proof. Mutation-free.
+OriginResult walkPtrOrigin(Value *P, unsigned Depth = 0,
+                           bool AllowDynamicAlloca = false) {
   if (Depth > kPtrWalkMaxDepth)
     return originBad(kMsgQramMultiOrigin);  // pathological / cyclic (loop) chain.
   if (auto *AI = dyn_cast<AllocaInst>(P)) {
-    if (AI->isArrayAllocation() || !isa<ArrayType>(AI->getAllocatedType()))
+    if (AI->isArrayAllocation())
+      return AllowDynamicAlloca ? originAlloca(AI)
+                                : originBad(kMsgQramDynN);
+    if (!isa<ArrayType>(AI->getAllocatedType()))
       return originBad(kMsgQramDynN);  // VLA / scalar alloca — no compile-time shape.
     return originAlloca(AI);
   }
@@ -383,9 +496,11 @@ OriginResult walkPtrOrigin(Value *P, unsigned Depth = 0) {
     return originGlobal(GV);
   }
   if (auto *GEP = dyn_cast<GetElementPtrInst>(P))
-    return walkPtrOrigin(GEP->getPointerOperand(), Depth + 1);  // gep chain.
+    return walkPtrOrigin(GEP->getPointerOperand(), Depth + 1,
+                         AllowDynamicAlloca);  // gep chain.
   if (auto *BC = dyn_cast<BitCastInst>(P))
-    return walkPtrOrigin(BC->getOperand(0), Depth + 1);
+    return walkPtrOrigin(BC->getOperand(0), Depth + 1,
+                         AllowDynamicAlloca);
   if (isa<AddrSpaceCastInst>(P))
     return originBad(kMsgQramAddrSpace);
   if (isa<IntToPtrInst>(P))
@@ -394,7 +509,7 @@ OriginResult walkPtrOrigin(Value *P, unsigned Depth = 0) {
     OriginResult Acc = originBad(kMsgQramMultiOrigin);
     bool First = true;
     for (Value *In : Phi->incoming_values()) {
-      OriginResult R = walkPtrOrigin(In, Depth + 1);
+      OriginResult R = walkPtrOrigin(In, Depth + 1, AllowDynamicAlloca);
       if (R.Kind == OriginResult::Bad)
         return R;  // propagate the most specific reason.
       if (First) { Acc = R; First = false; continue; }
@@ -404,10 +519,12 @@ OriginResult walkPtrOrigin(Value *P, unsigned Depth = 0) {
     return First ? originBad(kMsgQramProvenance) : Acc;
   }
   if (auto *Sel = dyn_cast<SelectInst>(P)) {
-    OriginResult T = walkPtrOrigin(Sel->getTrueValue(), Depth + 1);
+    OriginResult T =
+        walkPtrOrigin(Sel->getTrueValue(), Depth + 1, AllowDynamicAlloca);
     if (T.Kind == OriginResult::Bad)
       return T;
-    OriginResult F = walkPtrOrigin(Sel->getFalseValue(), Depth + 1);
+    OriginResult F =
+        walkPtrOrigin(Sel->getFalseValue(), Depth + 1, AllowDynamicAlloca);
     if (F.Kind == OriginResult::Bad)
       return F;
     return sameOrigin(T, F) ? T : originBad(kMsgQramMultiOrigin);
@@ -1271,23 +1388,25 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
                                     // reject_localarray_store.ll` untouched).
 
   // ── C1 — a non-escaping bounded LOCAL array.
-  OriginResult Origin = walkPtrOrigin(G->getPointerOperand());
+  OriginResult Origin = walkPtrOrigin(G->getPointerOperand(), /*Depth=*/0,
+                                      /*AllowDynamicAlloca=*/true);
   if (Origin.Kind != OriginResult::Alloca) {
-    // A `Bad` origin (VLA / heap / inttoptr / multi-origin / no provenance) and a
-    // GLOBAL array both land here: a rail bank must be a bounded FUNCTION-LOCAL
-    // object, because its cells are rails the pass has to be able to own.
+    // A `Bad` origin (heap / inttoptr / multi-origin / no provenance) and a
+    // GLOBAL array both land here. Runtime stack allocas reach the separate
+    // extent proof below; every other bank still needs a function-local object
+    // whose cells the pass can own.
     outMsg = kMsgBankShape;
     return RailBankCarve::RejectShape;
   }
   AllocaInst *AI = Origin.AI;
-  // ⚠ H-13, FOUND BY THIS INCREMENT'S OWN SELF-ATTACK AND MEASURED AS A `Bank`
-  // OVER-ACCEPT before this conjunct existed (`H13_alloca_in_loop.c`). A bank
-  // declared INSIDE an enclosing loop body is a FRESH OBJECT every outer trip, so
-  // "the bank" is not one object and none of C2′/C6's per-cell reasoning means
-  // anything. `isStaticAlloca()` is exactly the proof — entry block AND a
-  // non-array-allocation size — and `walkPtrOrigin`'s own `isArrayAllocation()`
-  // clause covers only the second half of that.
-  if (!AI->isStaticAlloca()) {
+  // The object must be allocated at most once on every function activation.
+  // Entry placement and constant extent are NOT that proof: clang -O1 emits a
+  // constant-folded source VLA after preceding code, and a genuine VLA is an
+  // `alloca T, i64 %n`.  Conversely, an alloca in any CFG cycle is re-executed
+  // even when LoopInfo cannot name an irreducible natural loop.  Asking whether
+  // the block terminator can reach back to the alloca is the execution-count
+  // question directly; the bounded reachability query fails conservatively.
+  if (instReaches(AI->getParent()->getTerminator(), AI)) {
     outMsg = kMsgBankDynamic;
     return RailBankCarve::RejectShape;
   }
@@ -1296,14 +1415,33 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     return RailBankCarve::RejectShape;
   }
   auto *AT = dyn_cast<ArrayType>(AI->getAllocatedType());
-  // The origin-array/cell agreement + `N != 0`, `matchQramAccess`'s two shape
-  // conjuncts (same retirement trigger as the pun fence above). A `[0 x iW]` bank
-  // has no cell, so every index is OOB — a degenerate shape, declined.
-  if (!AT || AT->getElementType() != CellTy || AT->getNumElements() == 0) {
-    outMsg = kMsgBankShape;
-    return RailBankCarve::RejectShape;
+  const bool RuntimeSized = AI->isArrayAllocation();
+  Value *Extent = RuntimeSized ? AI->getArraySize() : nullptr;
+  uint64_t N = 0;
+  if (RuntimeSized) {
+    // Increment A deliberately admits only `int b[n]`: its i32 cells already
+    // ARE handle storage.  `_Bool b[n]` is i8 and needs a dynamic object rewrite
+    // with a separately-proven byte extent; do not silently claim it here.
+    if (AI->getAllocatedType() != CellTy || !CellTy->isIntegerTy(32)) {
+      outMsg = kMsgBankWidth;
+      return RailBankCarve::RejectWidth;
+    }
+    if (!Extent || taint.Tainted.count(Extent) ||
+        !indexIsAddressWidth(RawIndex, G->getPointerOperand(),
+                             SI->getModule()->getDataLayout())) {
+      outMsg = kMsgBankIndex;
+      return RailBankCarve::RejectIndex;
+    }
+  } else {
+    // The origin-array/cell agreement + `N != 0`, `matchQramAccess`'s two shape
+    // conjuncts (same retirement trigger as the pun fence above). A `[0 x iW]`
+    // bank has no cell, so every index is OOB — a degenerate shape, declined.
+    if (!AT || AT->getElementType() != CellTy || AT->getNumElements() == 0) {
+      outMsg = kMsgBankShape;
+      return RailBankCarve::RejectShape;
+    }
+    N = AT->getNumElements();
   }
-  const uint64_t N = AT->getNumElements();
   const DataLayout &DL = SI->getModule()->getDataLayout();
 
   // The alloca-WIDE user scan — the reusable non-escape proof, modelled on
@@ -1315,6 +1453,8 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   SmallVector<StoreInst *, 4> Stores;
   SmallVector<LoadInst *, 8> Loads;
   SmallVector<Instruction *, 4> Inits;
+  SmallVector<IntrinsicInst *, 2> LifetimeStarts;
+  SmallVector<IntrinsicInst *, 2> LifetimeEnds;
   for (User *U : AI->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI) {
@@ -1364,7 +1504,7 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     }
     if (auto *ST = dyn_cast<StoreInst>(UI)) {
       if (ST->isSimple() && ST->getPointerOperand() == AI) {
-        if (wholeArrayConstantZero(DL, ST->getValueOperand(), AT)) {
+        if (AT && wholeArrayConstantZero(DL, ST->getValueOperand(), AT)) {
           Inits.push_back(ST);  // `= {0}` as `-O1` actually spells it.
           continue;
         }
@@ -1380,8 +1520,11 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     }
     if (auto *II = dyn_cast<IntrinsicInst>(UI)) {
       Intrinsic::ID Id = II->getIntrinsicID();
-      if (Id == Intrinsic::lifetime_start || Id == Intrinsic::lifetime_end)
+      if (Id == Intrinsic::lifetime_start || Id == Intrinsic::lifetime_end) {
+        (Id == Intrinsic::lifetime_start ? LifetimeStarts : LifetimeEnds)
+            .push_back(II);
         continue;
+      }
       if (Id == Intrinsic::memset || Id == Intrinsic::memset_inline) {
         // The `processShadowAlloca` §2.6 argument, verbatim in its rail form: the
         // model seeds every cell |0⟩, so ONLY a constant ZERO fill covering the
@@ -1390,7 +1533,7 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
         // un-overwritten cell would be 0 in the model and the fill in truth.
         auto *Fill = dyn_cast<ConstantInt>(II->getArgOperand(1));
         auto *Len = dyn_cast<ConstantInt>(II->getArgOperand(2));
-        if (Fill && Fill->isZero() && Len &&
+        if (AT && Fill && Fill->isZero() && Len &&
             Len->getZExtValue() == DL.getTypeStoreSize(AT).getFixedValue()) {
           Inits.push_back(II);
           continue;
@@ -1471,6 +1614,29 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     outMsg = kMsgBankNested;
     return RailBankCarve::RejectIndex;
   }
+  // ⚠ AND ITS IRREDUCIBLE TWIN (bd xdu2.4 Rule-13 F-B1, P1, pre-existing for
+  // FIXED banks on the HEAD oracle). An irreducible cycle has NO LoopInfo
+  // parent, so the line above cannot see it: a `goto` back into a do-while
+  // re-ran the walk, the second trip's theta read the rail stored by the first,
+  // and the promoter forwarded a fresh |0> seed instead — Ry·Ry on one rail
+  // compiled as Ry on a new one, exit 0, 2b clean. The question is the one the
+  // allocation clause asks: can control leave `L` and reach its header again?
+  {
+    SmallVector<BasicBlock *, 4> Exits;
+    L->getExitBlocks(Exits);
+    for (BasicBlock *E : Exits)
+      if (instReaches(&E->front(), &L->getHeader()->front())) {
+        outMsg = kMsgBankNested;
+        return RailBankCarve::RejectIndex;
+      }
+    // A `returns_twice` call (setjmp) re-runs code with NO CFG edge, so the
+    // reachability question above cannot see it (round-2 review B F-R2B-2,
+    // pre-existing for fixed banks): refuse the function outright.
+    if (AI->getFunction()->callsFunctionThatReturnsTwice()) {
+      outMsg = kMsgBankNested;
+      return RailBankCarve::RejectIndex;
+    }
+  }
   const SCEV *IdxS = SE.getSCEV(RawIndex);
   const auto *AR = dyn_cast<SCEVAddRecExpr>(IdxS);
   if (!AR || AR->getLoop() != L || !AR->isAffine()) {
@@ -1494,7 +1660,35 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     outMsg = kMsgBankIndex;
     return RailBankCarve::RejectIndex;
   }
-  // The proven CONSTANT trip count. ⚠ `CLAUDE.md` Rule 18 records
+  // The proven trip count. Fixed banks retain the constant proof below. A VLA
+  // instead requires the exact symbolic trip count + 1 to equal the classical
+  // alloca extent. Equal SSA spelling is neither required nor sufficient: pointer
+  // equality handles the canonical SCEV, and `isKnownPredicateAt` additionally
+  // admits context-proven forms such as `smax(n, 1) == n` below a dominating
+  // source guard `n > 0`.
+  const SCEV *ExactBTC = SE.getBackedgeTakenCount(L);
+  if (isa<SCEVCouldNotCompute>(ExactBTC) || !L->getExitingBlock() ||
+      !L->getLoopLatch()) {
+    outMsg = kMsgBankIndex;
+    return RailBankCarve::RejectIndex;
+  }
+  const SCEV *TripS =
+      SE.getAddExpr(ExactBTC, SE.getOne(ExactBTC->getType()));
+  const SCEV *ExtentS = nullptr;
+  uint64_t Trips = 0;
+  if (RuntimeSized) {
+    ExtentS = SE.getSCEV(Extent);
+    if (isa<SCEVCouldNotCompute>(ExtentS) ||
+        ExtentS->getType() != TripS->getType() ||
+        !scevEqualInLoop(ExtentS, TripS, L,
+                         L->getLoopLatch()->getTerminator(), SE)) {
+      outMsg = kMsgBankTotality;
+      return RailBankCarve::RejectTotality;
+    }
+  }
+
+  // The additional CONSTANT trip-count proof for fixed banks. Runtime banks
+  // already discharged the symbolic equality above. ⚠ `CLAUDE.md` Rule 18 records
   // `getSmallConstantMaxTripCount` returning 4294967295 on some vacuous bounds and
   // 0 on others — NEITHER return value distinguishes vacuity — so the bound is read
   // as an `APInt` AT ITS OWN WIDTH, and vacuity is excluded by three separate
@@ -1510,39 +1704,38 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   // cells the index visits.
   const auto *MaxC =
       dyn_cast<SCEVConstant>(SE.getConstantMaxBackedgeTakenCount(L));
-  const auto *ExactC = dyn_cast<SCEVConstant>(SE.getBackedgeTakenCount(L));
-  if (!MaxC || !ExactC || MaxC != ExactC) {
-    outMsg = kMsgBankIndex;
-    return RailBankCarve::RejectIndex;
-  }
-  const APInt &BT = MaxC->getAPInt();
-  if (BT.isAllOnes() || BT.getActiveBits() > 32) {
-    outMsg = kMsgBankIndex;
-    return RailBankCarve::RejectIndex;
-  }
-  if (!L->getExitingBlock() || !L->getLoopLatch()) {
-    outMsg = kMsgBankIndex;
-    return RailBankCarve::RejectIndex;
-  }
-  const uint64_t Trips = BT.getZExtValue() + 1;
-  if (Trips > N) {
-    outMsg = kMsgBankIndex;  // the index leaves the bank / revisits a cell.
-    return RailBankCarve::RejectIndex;
+  if (!RuntimeSized) {
+    const auto *ExactC = dyn_cast<SCEVConstant>(ExactBTC);
+    if (!MaxC || !ExactC || MaxC != ExactC) {
+      outMsg = kMsgBankIndex;
+      return RailBankCarve::RejectIndex;
+    }
+    const APInt &BT = MaxC->getAPInt();
+    if (BT.isAllOnes() || BT.getActiveBits() > 32) {
+      outMsg = kMsgBankIndex;
+      return RailBankCarve::RejectIndex;
+    }
+    Trips = BT.getZExtValue() + 1;
+    if (Trips > N) {
+      outMsg = kMsgBankIndex;  // the index leaves the bank / revisits a cell.
+      return RailBankCarve::RejectIndex;
+    }
   }
 
-  // ── C6 — TOTALITY (NEW). After the (deferred) type rewrite a never-written cell
+  // ── C6 — TOTALITY. After handle-storage conversion a never-written cell
   //    reads as handle `0`, and `h0` is a LIVE RAIL in this runtime
-  //    (`cqrt_alloc_i1(0) -> h0`). With C2′'s `{0,+,1}` index, a constant trip
-  //    count EQUAL to N and one exit, the index VISITS cells 0…N-1 exactly once.
+  //    (`cqrt_alloc_i1(0) -> h0`). With C2′'s `{0,+,1}` index, an exact trip
+  //    count equal to the fixed N or runtime extent and one exit, the index visits
+  //    every cell exactly once.
   // ⚠ CORRECTED 2026-09-15 (bd `test_C_libtooling-de8n`, F-α1's attached finding).
   //    This clause used to end *"cells 0…N-1 are each written exactly once"*, and
   //    that is a claim about WRITES which trip count alone cannot support: the
   //    owner's own program stores inside the `if (a >= 3)` ARM, so a trip whose
   //    condition is false VISITS its cell and writes nothing. The sentence was true
   //    of the PROMOTED shape and false of the RAW one, and it was load-bearing for
-  //    the deferred type rewrite. VISITING is what C6 proves; WRITING is C7(b)'s,
+  //    the handle-storage conversion. VISITING is what C6 proves; WRITING is C7(b)'s,
   //    below, and it is what separates `Bank` from `BankRaw`.
-  if (Trips != N) {
+  if (!RuntimeSized && Trips != N) {
     outMsg = kMsgBankTotality;
     return RailBankCarve::RejectTotality;
   }
@@ -1579,19 +1772,115 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
       outMsg = kMsgBankTotality;  // a read the loop does not precede.
       return RailBankCarve::RejectTotality;
     }
+    if (RuntimeSized) {
+      // Every surviving read of a runtime bank must itself be an exact 0..n-1
+      // walk.  This is the preparation/measurement-bound relation: the alloca,
+      // write loop and each read loop agree by SCEV, not by operand spelling.
+      auto *LG = dyn_cast<GetElementPtrInst>(LD->getPointerOperand());
+      Value *LIdx = nullptr;
+      Loop *RL = LI.getLoopFor(LD->getParent());
+      if (!LG || !railBankCellAddress(LG, taint, Origin, CellTy, LIdx) ||
+          !indexIsAddressWidth(LIdx, LG->getPointerOperand(), DL) ||
+          !RL || RL == L || RL->getParentLoop() || !RL->getExitingBlock() ||
+          !RL->getLoopLatch()) {
+        outMsg = kMsgBankTotality;
+        return RailBankCarve::RejectTotality;
+      }
+      const auto *LAR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(LIdx));
+      if (!LAR || LAR->getLoop() != RL || !LAR->isAffine() ||
+          !LAR->hasNoSelfWrap()) {
+        outMsg = kMsgBankTotality;
+        return RailBankCarve::RejectTotality;
+      }
+      const auto *LStart = dyn_cast<SCEVConstant>(LAR->getStart());
+      const auto *LStep = dyn_cast<SCEVConstant>(LAR->getStepRecurrence(SE));
+      const SCEV *LBTC = SE.getBackedgeTakenCount(RL);
+      if (!LStart || !LStart->getAPInt().isZero() || !LStep ||
+          !LStep->getAPInt().isOne() || isa<SCEVCouldNotCompute>(LBTC)) {
+        outMsg = kMsgBankTotality;
+        return RailBankCarve::RejectTotality;
+      }
+      const SCEV *LTrips =
+          SE.getAddExpr(LBTC, SE.getOne(LBTC->getType()));
+      if (LTrips->getType() != ExtentS->getType() ||
+          !scevEqualInLoop(LTrips, ExtentS, RL, LD, SE)) {
+        outMsg = kMsgBankTotality;
+        return RailBankCarve::RejectTotality;
+      }
+    }
+  }
+
+  // A runtime bank must be live at every access. Accept at most one explicit
+  // start/end interval, require the start to dominate every access, and refuse
+  // an end that can reach one. A dynamic stackrestore can end the VLA lifetime
+  // without naming the alloca, so apply the same reachability fence to it.
+  // Clang's normal lifetime end / restore after the measurement loop passes.
+  if (RuntimeSized) {
+    if (LifetimeStarts.size() > 1 || LifetimeEnds.size() > 1) {
+      outMsg = kMsgBankLifetime;
+      return RailBankCarve::RejectShape;
+    }
+    for (IntrinsicInst *Start : LifetimeStarts) {
+      // Dominance is not liveness: a start re-executed by a cycle (e.g. at the
+      // top of the write loop) kills the cells earlier trips wrote (round-2
+      // review B F-R2B-1). The start must run at most once, like the alloca.
+      if (instReaches(Start->getParent()->getTerminator(), Start)) {
+        outMsg = kMsgBankLifetime;
+        return RailBankCarve::RejectShape;
+      }
+      for (StoreInst *ST : Stores)
+        if (!DT.dominates(Start, ST)) {
+          outMsg = kMsgBankLifetime;
+          return RailBankCarve::RejectShape;
+        }
+      for (LoadInst *LD : Loads)
+        if (!DT.dominates(Start, LD)) {
+          outMsg = kMsgBankLifetime;
+          return RailBankCarve::RejectShape;
+        }
+    }
+    for (IntrinsicInst *End : LifetimeEnds) {
+      for (StoreInst *ST : Stores)
+        if (instReaches(End, ST)) {
+          outMsg = kMsgBankLifetime;
+          return RailBankCarve::RejectShape;
+        }
+      for (LoadInst *LD : Loads)
+        if (instReaches(End, LD)) {
+          outMsg = kMsgBankLifetime;
+          return RailBankCarve::RejectShape;
+        }
+    }
+    for (Instruction &I : instructions(*AI->getFunction()))
+      if (auto *II = dyn_cast<IntrinsicInst>(&I))
+        if (II->getIntrinsicID() == Intrinsic::stackrestore &&
+            DT.dominates(AI, II) && stackRestoreMayFree(II, AI, DT)) {
+          for (StoreInst *ST : Stores)
+            if (instReaches(II, ST)) {
+              outMsg = kMsgBankLifetime;
+              return RailBankCarve::RejectShape;
+            }
+          for (LoadInst *LD : Loads)
+            if (instReaches(II, LD)) {
+              outMsg = kMsgBankLifetime;
+              return RailBankCarve::RejectShape;
+            }
+        }
   }
 
   // Everything above holds for BOTH accept verdicts, so the shape is handed back
-  // for both: the PROMOTER consumes it on `BankRaw` (its input), the deferred type
+  // for both: the PROMOTER consumes it on `BankRaw` (its input), the marker/type
   // rewrite on `Bank`.
   if (outShape) {
     outShape->Alloca = AI;
     outShape->L = L;
     outShape->RawIndex = RawIndex;
+    outShape->Extent = Extent;
     outShape->CellTy = CellTy;
     outShape->ElemAbi = Abi;
     outShape->Count = N;
     outShape->Trips = Trips;
+    outShape->RuntimeSized = RuntimeSized;
   }
 
   // ── C7 — TYPE-REWRITABLE SHAPE. `Bank` vs `BankRaw`.
@@ -1732,6 +2021,101 @@ bool classicalTableIndexKnownInBounds(LoadInst *LI, const TaintSet &taint,
     return false;
   return qromIndexKnownInBounds(M->RawIndex, M->Gep, M->Count,
                                 LI->getModule()->getDataLayout());
+}
+
+// bd xdu2.4 — a classical runtime VLA can be just as safe to speculate as the
+// fixed table above, but LLVM's generic dereferenceability query does not carry
+// the relation between `alloca i32, i64 %n` and a separate loop's exact trip
+// count.  Prove that relation here beside the shared pointer-origin machinery.
+// This deliberately does NOT accept heap provenance, tainted extents/indices,
+// fixed allocas, offset bases, non-scalar cells, or an allocation that does not
+// dominate the region.  Those are different proof obligations and remain loud
+// declines.  No QRAM operation is involved or emitted.
+bool classicalRuntimeAllocaReadIsInBounds(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    ScalarEvolution &SE, const BasicBlock *RegionEntry) {
+  if (!LI || !RegionEntry || !LI->isSimple())
+    return false;
+  Loop *L = LInfo.getLoopFor(const_cast<BasicBlock *>(RegionEntry));
+  if (!L || !L->contains(LI->getParent()) || !L->getExitingBlock() ||
+      !L->getLoopLatch())
+    return false;
+
+  auto *G = dyn_cast<GetElementPtrInst>(LI->getPointerOperand());
+  if (!G)
+    return false;
+  Value *RawIndex = nullptr;
+  Type *CellTy = nullptr;
+  if (!matchAddressGep(G, taint, RawIndex, CellTy,
+                       /*requireTaintedIndex=*/false) ||
+      taint.Tainted.count(RawIndex) || LI->getType() != CellTy)
+    return false;
+
+  OriginResult Origin =
+      walkPtrOrigin(G->getPointerOperand(), /*Depth=*/0,
+                    /*AllowDynamicAlloca=*/true);
+  if (Origin.Kind != OriginResult::Alloca ||
+      !isDirectOriginPtr(G->getPointerOperand(), Origin))
+    return false;
+  AllocaInst *AI = Origin.AI;
+  Value *Extent = AI->isArrayAllocation() ? AI->getArraySize() : nullptr;
+  const DataLayout &DL = LI->getModule()->getDataLayout();
+  if (!Extent || AI->getAllocatedType() != CellTy ||
+      (!CellTy->isIntegerTy() && !CellTy->isFloatingPointTy()) ||
+      taint.Tainted.count(Extent) || !DT.dominates(AI, RegionEntry))
+    return false;
+  const uint64_t CellBytes = DL.getTypeAllocSize(CellTy).getFixedValue();
+  if (AI->getAlign() < LI->getAlign() ||
+      CellBytes % LI->getAlign().value() != 0)
+    return false;
+
+  // The allocation must still be live at the speculation point. A stackrestore
+  // can invalidate a dynamic alloca without naming it, and lifetime.end names it
+  // only through an intrinsic argument. If either can run after the allocation
+  // and before the region entry, the source may avoid the load on its false arm
+  // while flattening would execute it, so decline instead of treating source UB
+  // on the true arm as a licence to invent UB on the false one.
+  if (!indexIsAddressWidth(RawIndex, G->getPointerOperand(), DL))
+    return false;
+  for (Instruction &I : instructions(*AI->getFunction())) {
+    auto *II = dyn_cast<IntrinsicInst>(&I);
+    if (!II)
+      continue;
+    // F-B6: storage that is (re)started after the region entry can be reached
+    // is not live there either. Every lifetime.start must precede the hoist.
+    if (II->getIntrinsicID() == Intrinsic::lifetime_start &&
+        getUnderlyingObject(II->getArgOperand(1)) == AI &&
+        !DT.dominates(II, RegionEntry->getTerminator()))
+      return false;
+    if (!DT.dominates(AI, II) ||
+        !instReaches(II, RegionEntry->getTerminator()))
+      continue;
+    if (II->getIntrinsicID() == Intrinsic::stackrestore &&
+        stackRestoreMayFree(II, AI, DT))
+      return false;
+    if (II->getIntrinsicID() == Intrinsic::lifetime_end &&
+        getUnderlyingObject(II->getArgOperand(1)) == AI)
+      return false;
+  }
+
+  const auto *AR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(RawIndex));
+  if (!AR || AR->getLoop() != L || !AR->isAffine() || !AR->hasNoSelfWrap())
+    return false;
+  const auto *Start = dyn_cast<SCEVConstant>(AR->getStart());
+  const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
+  if (!Start || !Start->getAPInt().isZero() || !Step ||
+      !Step->getAPInt().isOne())
+    return false;
+
+  const SCEV *ExactBTC = SE.getBackedgeTakenCount(L);
+  if (isa<SCEVCouldNotCompute>(ExactBTC))
+    return false;
+  const SCEV *Trips =
+      SE.getAddExpr(ExactBTC, SE.getOne(ExactBTC->getType()));
+  const SCEV *ExtentS = SE.getSCEV(Extent);
+  return !isa<SCEVCouldNotCompute>(ExtentS) &&
+         Trips->getType() == ExtentS->getType() &&
+         scevEqualInLoop(Trips, ExtentS, L, RegionEntry->getTerminator(), SE);
 }
 
 // bd q2wk (3c6m.14 Inc 5) — exported wrapper over the Inc-3 predicate so

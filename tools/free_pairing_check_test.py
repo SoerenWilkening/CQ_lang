@@ -1864,6 +1864,15 @@ MEM_POSITIVE = [
     ("bank-plus-unmarked-classical-load", BANK_PLUS_CLASSICAL_LOAD),
     ("bank-global-constexpr-gep", BANK_GLOBAL_CONSTEXPR),
     ("bank-variable-index-in-loop", BANK_VARIABLE_INDEX),
+    # bd xdu2.4: the exact-Grover `argv` shape - an unresolvable load base
+    # while a CONFINED local bank is in scope (see the re-derived L2 rows).
+    ("bank-confined-param-rooted-load", UNDECIDABLE_LOAD_BASE),
+    ("bank-confined-with-lifetime-markers",
+     insert_after(
+         insert_after(UNDECIDABLE_LOAD_BASE, "%bank = alloca",
+                      "  call void @llvm.lifetime.start.p0(i64 4, ptr %bank)"),
+         "call void @cqrt_free(i32 %r)",
+         "  call void @llvm.lifetime.end.p0(i64 4, ptr %bank)")),
 ]
 
 # Layers 1 (must verify clean) and 3 (proof-targeted sweep) are generic, so the
@@ -1907,7 +1916,35 @@ MEM_STOP_MUTANTS = [
      sub(BANK_GLOBAL_CONSTEXPR, "@bank = internal global", ", !cq.railbank !0",
          ""),
      "L1-rail-stored-to-unmarked-memory"),
-    ("bank-in-scope-unresolvable-load-base", UNDECIDABLE_LOAD_BASE,
+    # bd xdu2.4 RE-DERIVED this row (L8: re-derive, never delete). The bare
+    # UNDECIDABLE_LOAD_BASE is now a POSITIVE: its bank's address is CONFINED,
+    # so `%p` has no bank provenance and `%v` is provably classical. The L2
+    # refusal is kept, and pinned three times over, for the exact escapes that
+    # break confinement - each is ONE line away from the positive, so each is
+    # also the kill test for its own clause of `bank_address_confined`.
+    ("bank-address-escapes-to-a-call",
+     insert_after(UNDECIDABLE_LOAD_BASE, "store i32 %hb, ptr %cell",
+                  "  call void @sink(ptr %bank)"),
+     "L2-undecidable-load-provenance"),
+    ("bank-address-stored-to-memory",
+     insert_after(UNDECIDABLE_LOAD_BASE, "store i32 %hb, ptr %cell",
+                  "  store ptr %cell, ptr %p, align 8"),
+     "L2-undecidable-load-provenance"),
+    ("bank-address-ptrtoint",
+     insert_after(UNDECIDABLE_LOAD_BASE, "store i32 %hb, ptr %cell",
+                  "  %pi = ptrtoint ptr %bank to i64"),
+     "L2-undecidable-load-provenance"),
+    # A MODULE-SCOPE bank is never exempted by confinement: any function may
+    # hold its address. Same unresolvable `%p` load, global bank in scope.
+    ("global-bank-in-scope-param-rooted-load",
+     sub(sub(BANK_GLOBAL_CONSTEXPR, "define i32 @slice()", "@slice()",
+             "@slice(ptr %p)"),
+         "%z = zext", "%z = zext i1 %m to i32",
+         "%z = zext i1 %m to i32\n  %pv = load i32, ptr %p, align 4"),
+     "L2-undecidable-load-provenance"),
+    ("bank-cell-address-merged-by-phi-free-select",
+     insert_after(UNDECIDABLE_LOAD_BASE, "store i32 %hb, ptr %cell",
+                  "  %q = select i1 true, ptr %cell, ptr %p"),
      "L2-undecidable-load-provenance"),
     # `select` and `phi` FORWARD no object: two bank cells merged by a select
     # is exactly the shape a rolled bank would take if the promoter emitted one,

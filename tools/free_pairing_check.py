@@ -995,6 +995,7 @@ class Function:
         self.bank_allocas = set()  # allocas carrying !cq.railbank
         self.loads = []           # [(line_no, %res, ptr_token, text)]
         self.stores = []          # [(line_no, value_token, ptr_token, text)]
+        self.insts = []           # [(line_no, text)] every body line (bd xdu2.4)
 
 
 def balanced(s, open_at):
@@ -1084,6 +1085,7 @@ def parse_module(text):
                 i += 1
                 continue
             # -- the MEMORY surface (bd 21re), recorded for EVERY instruction --
+            fn.insts.append((i + 1, ln))
             dm = DEF_OP_RE.match(ln)
             if dm:
                 fn.def_op[dm.group(1)] = (dm.group(2), ln, i + 1)
@@ -2822,6 +2824,70 @@ def resolve_object(fn, ptr, bank_globals, _seen=None):
     return None
 
 
+LIFETIME_CALL_RE = re.compile(r"\bcall\s+void\s+@llvm\.lifetime\.(?:start|end)\.p0\(")
+
+
+def bank_address_confined(fn, bank):
+    """bd xdu2.4 — does the bank's ADDRESS stay inside a provable derivation?
+
+    True iff every value derived from `bank` by a pointer-forwarding op
+    (`PTR_FORWARDING_OPS`) is used ONLY as: the pointer operand of another
+    forwarding op, the pointer operand of a `load`, the pointer operand (never
+    the value) of a `store`, or the object of a `llvm.lifetime.{start,end}`.
+    Any other mention - a phi/select merge, a call argument, a stored pointer,
+    `ptrtoint`, a compare, a `ret` - answers False.
+
+    Why that settles L2 for EVERY other pointer: under LLVM's provenance rules
+    a pointer into the bank must be DERIVED from the bank's address, and a
+    confined address flows nowhere but this derived set. So a load through a
+    pointer outside the set (a formal parameter such as `argv`, a call result,
+    anything) cannot read a bank cell, whatever its root. The only escapes
+    would be out-of-bounds arithmetic from another object or a guessed
+    `inttoptr`, both UB in the source, and an `inttoptr` of the bank's address
+    needs a `ptrtoint` of it, which is refused above.
+
+    Debug records (`#dbg_*`) are ignored: they carry no semantics.
+    """
+    derived = {bank}
+    changed = True
+    while changed:
+        changed = False
+        for _n, ln in fn.insts:
+            dm = DEF_OP_RE.match(ln)
+            if dm and dm.group(2) in PTR_FORWARDING_OPS and \
+                    dm.group(1) not in derived and \
+                    first_ptr_operand(ln[dm.end():]) in derived:
+                derived.add(dm.group(1))
+                changed = True
+    for _n, ln in fn.insts:
+        if ln.lstrip().startswith("#dbg_"):
+            continue
+        dm = DEF_OP_RE.match(ln)
+        body = ln[dm.end():] if dm else ln
+        toks = [t for t in SSA_NAME_RE.findall(body) if t in derived]
+        if not toks:
+            continue
+        # Defensive, and an EQUIVALENT mutant under LLVM's grammar (measured by
+        # deleting it): every two-derived-token line is already refused by the
+        # clause below that owns its opcode. Kept so a future clause cannot
+        # admit a line on its FIRST derived operand alone.
+        if len(toks) != 1:
+            return False
+        t = toks[0]
+        if dm and dm.group(2) in PTR_FORWARDING_OPS | {"load"} and \
+                first_ptr_operand(body) == t:
+            continue
+        sm = STORE_RE.match(ln)
+        if sm and sm.group(1) != t and \
+                first_ptr_operand(ln.split(",", 1)[1]) == t:
+            continue
+        if LIFETIME_CALL_RE.search(ln) and first_ptr_operand(
+                ln[ln.index("(") + 1:].split(",", 1)[1]) == t:
+            continue
+        return False
+    return True
+
+
 def adjudicate_memory(fn, mints, bank_globals):
     """bd 21re — the LOAD/STORE half of the model, and what it REFUSES.
 
@@ -2855,7 +2921,12 @@ def adjudicate_memory(fn, mints, bank_globals):
            rail reaches memory, or the memory it reaches is marked.
       (L2) with a bank in scope, a `load` whose object cannot be resolved is a
            LOUD STOP - it is the difference between a classical immediate and a
-           rail, and this file must not guess it.
+           rail, and this file must not guess it. EXCEPT (bd xdu2.4) when every
+           bank in scope is a local alloca whose address is CONFINED
+           (`bank_address_confined`): then no pointer outside the bank's own
+           derivation has bank provenance, so the load is DECIDED classical
+           rather than guessed. The exact-Grover `argv[1]` load is the customer;
+           a module-scope bank is never exempted.
       (L3) a BANK-LOAD result used in a slot `classify()` models as a RAIL slot
            (a read or a write index - NOT a `classical_imm` slot) at any symbol
            other than `cqrt_measure_<W>` is a LOUD STOP: `Rail.writes` is keyed
@@ -2926,9 +2997,19 @@ def adjudicate_memory(fn, mints, bank_globals):
     if not banks:
         return frozenset()          # premise holds: nothing changes
 
+    # bd xdu2.4: an UNRESOLVED load is provably not a bank load when every
+    # bank in scope is a local alloca whose address is CONFINED (see
+    # `bank_address_confined`). A module-scope bank is never exempted: its
+    # address is reachable from every function, which this per-function file
+    # cannot survey.
+    confined = not bank_globals.intersection(banks) and all(
+        bank_address_confined(fn, b) for b in fn.bank_allocas)
+
     bank_loads = set()
     for line, res, ptr, text in fn.loads:
         obj = resolve_object(fn, ptr, bank_globals)
+        if obj is None and confined:
+            continue
         if obj is None:
             raise Undecidable(
                 "L2-undecidable-load-provenance", fn.name, line,

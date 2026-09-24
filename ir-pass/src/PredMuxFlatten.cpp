@@ -2713,6 +2713,14 @@ bool classicalTableReadIsSpeculatable(
   // that has no loop to bound it.
   if (classicalTableIndexKnownInBounds(LI, Taint, DT, LInfo))
     return true;
+  // bd xdu2.4 — the exact Grover runtime-bank customer keeps its companion
+  // classical `p[n]` table dynamic too.  That is still increment 4's classical
+  // load, not QROM and not fn1q increment 5b: the index and extent remain
+  // classical, while the shared provenance proof relates the VLA extent to this
+  // loop's exact 0..n-1 walk.  This fallback cannot claim heap storage or any
+  // unproved/mismatched bound.
+  if (classicalRuntimeAllocaReadIsInBounds(LI, Taint, DT, LInfo, SE, Entry))
+    return true;
   // (1c), the pointer-level fallback: is the address dereferenceable AT THE HOIST
   // POINT? `CtxI` is the entry terminator because that is exactly where
   // `moveBody` will put the load.

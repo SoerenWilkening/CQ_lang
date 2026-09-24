@@ -1,25 +1,28 @@
 ; lowering_reject_railbank_dynamic_object.ll — DECLINE (bd `test_C_libtooling-xdu2` / L-1a W1).
 ;
-; clause C1 — the bank object is NOT a single function-lifetime allocation: the
-; `alloca` sits in a LOOP BODY, so each outer trip allocates a fresh object and "the
-; bank" is not one object at all. Every per-cell statement C2′ and C6 make is about
-; ONE object, so none of them means anything here.
+; Increment C boundary — the `alloca` sits in a LOOP BODY, so each outer trip
+; allocates a fresh bank activation. That is physically valid, but the current
+; bookkeeping cannot yet keep each activation's rail identities distinct or prove
+; Rule-6 cleanup for every exit. It is an implementation over-decline, not a
+; physics-based prohibition.
 ;
 ; ⚠ HAND IR, AND WHY — the C spelling of this program (`H13_alloca_in_loop.c`:
-; `for (k<2) { bool b[3] = {0}; … }`) is NOT this shape on the validated floor.
-; MEASURED: `clang -O1` HOISTS the alloca to the entry block and reuses the object,
-; so the C program becomes byte-for-byte the `H1_nested_outer_rewrite.c` shape and
-; declines at `lowering_reject_railbank_nested_walk.ll`'s clause instead. The
-; `isStaticAlloca()` conjunct is therefore not reachable from C — it is not dead
-; code, it is OFF THE `-O1` FLOOR, and hand IR is the only instrument that reaches
-; it. (SCOPE_L1a §8.1 records the same limit for C4's aliasing negative.)
+; `for (k<2) { bool b[3] = {0}; … }`) does not preserve this exact shape on the
+; validated floor: clang -O1 hoists and reuses that fixed object. Hand IR therefore
+; remains the direct instrument for the fresh-per-trip shape. But the old blanket
+; claim that the non-entry gate was unreachable from C was false: Grover's
+; constant-folded source VLA produces a fixed alloca after a preceding loop. xdu2.4
+; now admits that acyclic non-entry allocation.
 ;
-; ⚠ WHY THE CONJUNCT IS KEPT EVEN THOUGH `-O1` NEVER PRODUCES ITS SUBJECT. The pass
-; is a MODULE plugin: its input is whatever `opt` is handed, and the tree's own
-; fixtures are hand IR more often than not. `walkPtrOrigin`'s `isArrayAllocation()`
-; clause covers the VLA half of "not a static object" and says nothing about the
-; ENTRY-BLOCK half; `isStaticAlloca()` is exactly both halves, which is why the
-; clause is spelled with it rather than with a second `isArrayAllocation()` test.
+; ⚠ WHY THE CONJUNCT REMAINS WHILE INCREMENT C IS PENDING. The pass is a MODULE
+; plugin, so its input is whatever `opt` is handed, including this valid fresh-bank
+; shape. The replacement asks the actual implementation question: can the
+; allocation's block cycle back and execute it again? Acyclic non-entry and
+; runtime-sized stack banks pass this clause; this enclosing-cycle fixture does not.
+;
+; RETIREMENT TRIGGER: increment C may accept this only after the promoter models a
+; fresh bank per outer activation, prevents cross-activation handle reuse, and
+; discharges Rule 6 on every cleanup/exit path.
 ;
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY. On the frozen 2026-09-14 ORACLE
 ; (`cq-opt` sha256 5c6f7490…) this module declines the GENERIC `cq taint escape:
@@ -34,7 +37,7 @@
 ;
 ; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='railbank [Bank]'
-; CHECK: cq rail bank: array object is not a single function-lifetime allocation
+; CHECK: cq rail bank: array allocation is re-executed by an enclosing cycle
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

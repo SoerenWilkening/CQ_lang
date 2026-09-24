@@ -12,6 +12,7 @@
 #include "ControlledSymbols.h"
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd z9t1 — the ONE spelling)
 #include "OpcodeSupport.h"  // abiWidthFromType
+#include "RailBankPromote.h"  // isRailBankSeedAlloc
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
 #include "WireWalk.h"  // provablyBefore (the shared position-aware proof)
@@ -720,7 +721,9 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       Ctrl = It->second;
 
     Value *Handle;
-    const bool Chained = taint.Tainted.count(Op) != 0;
+    auto *PreallocatedBankSeed = dyn_cast<CallInst>(Op);
+    const bool AdoptBankSeed = isRailBankSeedAlloc(PreallocatedBankSeed);
+    const bool Chained = taint.Tainted.count(Op) != 0 || AdoptBankSeed;
     // ⚠ THE SUFFIX/WIDTH BAIL IS HOISTED HERE, ABOVE THE ALLOC, AND THAT IS A
     // FIX RATHER THAN A MOVE (PRD §14.4). It used to sit two lines below the
     // controlled mint, i.e. AFTER the `!Chained` arm had already emitted
@@ -795,6 +798,16 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
     if (Chained) {
       // Tainted operand (chained theta) → ry only on the existing handle.
       Handle = Op;
+      // The rail-bank promoter already emitted this exact runtime allocation so
+      // the skipped preparation path owns a real |0> rail. Detection kept it
+      // outside ordinary taint on purpose (it is a fresh state-prep seed, not a
+      // source register); from this point onward it is an ordinary live handle.
+      if (AdoptBankSeed) {
+        taint.Tainted.insert(Op);
+        if (!taint.BirthOrder.count(Op))
+          taint.BirthOrder[Op] = taint.NextBirth++;
+        taint.HandleWidth[Op] = "i32";
+      }
     } else {
       // Classical operand → mint a fresh handle, then ry on it.
       FunctionCallee Alloc = wd.allocFn(Abi);

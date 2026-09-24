@@ -148,6 +148,19 @@ void collectAndSeed(Function &F, const FnSet &ThetaFns, const FnSet &PhiFns,
       Function *Callee = CB->getCalledFunction();
       if (!Callee)
         continue;
+      // A conditional runtime-i32 rail-bank preparation needs a real |0> rail
+      // on its skipped path. Keep that preallocated handle OUT of ordinary SSA
+      // propagation until rotation lowering: detection must classify the theta
+      // as a fresh state preparation, not as an in-place rewrite of a register
+      // the source supplied. The emitter proved its only role is the theta seed
+      // plus the faithful merge incoming; `lowerRotations` adopts the handle
+      // into `Tainted` before replacing the theta. Record only the stable width
+      // and birth identity here. Exact recognition lives with the emitter.
+      if (auto *CI = dyn_cast<CallInst>(CB); isRailBankSeedAlloc(CI)) {
+        out.HandleWidth[CI] = "i32";
+        out.BirthOrder[CI] = out.NextBirth++;
+        continue;
+      }
       const bool IsTheta = ThetaFns.contains(Callee);
       const bool IsPhi = PhiFns.contains(Callee);
       const bool IsMeasure = MeasureFns.contains(Callee);
@@ -1100,11 +1113,19 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             // lever (bd adia; `ControlPlan.h`'s `diagnoseUnderControl` uses the same
             // variable) — byte-neutral when unset, and byte-ABSENT on the ORACLE,
             // which is what makes the `env CQ_CTRL_DBG=1` fixtures non-vacuous.
-            if (::getenv("CQ_CTRL_DBG"))
-              llvm::errs() << "CQ_CTRL_DBG: railbank [Bank] cells="
-                           << BShape.Count << " abi=" << BShape.ElemAbi
-                           << " trips=" << BShape.Trips << " at: " << *BankSI
-                           << "\n";
+            if (::getenv("CQ_CTRL_DBG")) {
+              llvm::errs() << "CQ_CTRL_DBG: railbank [Bank] cells=";
+              if (BShape.RuntimeSized)
+                llvm::errs() << "runtime(" << *BShape.Extent << ")";
+              else
+                llvm::errs() << BShape.Count;
+              llvm::errs() << " abi=" << BShape.ElemAbi << " trips=";
+              if (BShape.RuntimeSized)
+                llvm::errs() << "runtime";
+              else
+                llvm::errs() << BShape.Trips;
+              llvm::errs() << " at: " << *BankSI << "\n";
+            }
             // ⚠ THE L8 RETIREMENT TRIGGER ABOVE HAS FIRED (bd `xdu2` W1 second
             // half, 2026-09-15): the `Bank` arm no longer falls through to
             // `kMsgStore` — the bank OWNS this store, and the rail it parks is
@@ -1157,11 +1178,19 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
             // sees a byte-identical diagnostic. What changes is only the anchor,
             // and the anchor is the point: it is the observable that says *"this
             // bank is NOT the one the type rewrite may have"*.
-            if (::getenv("CQ_CTRL_DBG"))
-              llvm::errs() << "CQ_CTRL_DBG: railbank [BankRaw] cells="
-                           << BShape.Count << " abi=" << BShape.ElemAbi
-                           << " trips=" << BShape.Trips << " at: " << *BankSI
-                           << "\n";
+            if (::getenv("CQ_CTRL_DBG")) {
+              llvm::errs() << "CQ_CTRL_DBG: railbank [BankRaw] cells=";
+              if (BShape.RuntimeSized)
+                llvm::errs() << "runtime(" << *BShape.Extent << ")";
+              else
+                llvm::errs() << BShape.Count;
+              llvm::errs() << " abi=" << BShape.ElemAbi << " trips=";
+              if (BShape.RuntimeSized)
+                llvm::errs() << "runtime";
+              else
+                llvm::errs() << BShape.Trips;
+              llvm::errs() << " at: " << *BankSI << "\n";
+            }
             break;  // ⚠ MUST STAY A BREAK FOREVER — see the L8 note above.
           case RailBankCarve::RejectShape:
           case RailBankCarve::RejectIndex:

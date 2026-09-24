@@ -1,16 +1,19 @@
 ; lowering_reject_railbank_vla.ll — DECLINE (bd `test_C_libtooling-xdu2` / L-1a Increment W1).
 ;
-; clause C1 — a VLA has no compile-time shape, so it is not a bounded rail bank.
+; Increment A boundary — a runtime `_Bool b[n]` needs a dynamic i8-to-i32
+; storage rewrite, which this increment deliberately does not claim.
 ;
-; `walkPtrOrigin` rejects `isArrayAllocation()` (a `alloca i8, i64 %n`): there is no
-; static cell count, so C2′ has nothing to compare a trip count against and C6 has no
-; N. The clause is CALLED, never re-spelled (Rule 14).
+; Runtime `int b[n]` is now admitted when its classical extent equals the exact
+; preparation and measurement bounds. This fixture remains a loud decline because
+; its `alloca i8, i64 %n` cannot hold i32 rail handles without a separately-proven
+; dynamic object rewrite. It is the explicit `_Bool b[n]` follow-up boundary.
 ;
 ; ⚠ RED-GREEN, AND THE RED HALF IS A BINARY. MEASURED: on the frozen 2026-09-14
 ; ORACLE (`cq-opt` sha256 5c6f7490…, from `c8007c37`) this exact module declines the
 ; GENERIC `cq taint escape: tainted value stored to memory`; on the subject
 ; (bc886235…) it declines the per-clause string below. BOTH ARE DECLINES — bd
-; `xdu2` Increment W1 is a decline→decline STRING change and never an accept.
+; `xdu2` Increment W1 originally made a decline→decline STRING change. xdu2.4
+; moves runtime i32 VLAs to accept while retaining this i8 width decline.
 ;
 ; ⚠ WHY THERE ARE NO IR-TEXT `CHECK-NOT`s. A `DS_Error` decline writes ZERO BYTES
 ; TO STDOUT, so an IR-text negative here would be VACUOUS (Rule 12 hygiene defect
@@ -23,20 +26,20 @@
 ; ⚠ L8 RETIREMENT TRIGGER, character-for-character as the thing that will fire:
 ;   "When the L-1a taint rule + type rewrite + D5 allow-list land (bd `xdu2`, the
 ;   second half), the `Bank` verdict stops falling through to `kMsgStore`. THIS
-;   file is a REJECT and is unaffected by that — but if its clause is ever
-;   relaxed, its RUN line becomes an ACCEPT whose emitted stream is the per-trip
-;   `cqrt_alloc_<W>` / `cqrt_ry_<W>` cascade. Re-derive it then; do NOT delete it."
+;   file stays a REJECT until a dynamic i8 object can be widened to i32 handle
+;   storage without changing its byte extent or lifetime. Re-derive the allocation,
+;   GEP, lifetime, and stackrestore proof together; do NOT inherit the int path."
 ;
 ;
 ; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, VERBATIM, of
 ; `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackL/probes/N1_vla_bound.c`:
-;   /* clause 1 negative: a VLA — no compile-time shape */
+;   /* dynamic-bool boundary: i8 storage cannot yet carry i32 handles */
 ;   #include "CQ.h"
 ;   __attribute__((noinline)) int slice(int n){ int a=5; bool b[n]; for(int i=0;i<n;++i){ b[i]=0; if(a>=3) b[i]=cq_theta(b[i],0.5); if(b[i]) a-=3; } return cq_measure(a)+cq_measure(b[0]); }
 ;   int main(void){ return slice(3); }
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail bank: cell address has no bounded local-array provenance
+; CHECK: cq rail bank: array element is not a reversible rail cell
 ; CHECK-NOT: tainted value stored to memory
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

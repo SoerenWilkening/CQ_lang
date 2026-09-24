@@ -156,15 +156,16 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // scalar source (`trackL/probes/L1_promoted_store.c`), so everything after it
   // is SSA and the existing control chain applies unchanged.
   //
-  // ⚠ IT DOES NOT MAKE ANYTHING COMPILE, AND THAT IS THE STAGING, NOT A PUNT.
-  // W1 is three pieces; the taint rule (a load from a `!cq.railbank` alloca is
-  // tainted), the `[N x i1]` -> `[N x i32]` type rewrite and the D5 allow-list
-  // are deliberately DEFERRED, because until they land an ACCEPTED bank is a
-  // silent miscompile: `cq_measure(b[i])` on an UNTAINTED load takes
-  // `MeasureLowering.cpp`'s classical split and emits no gate, no symbol and NO
-  // TRACE LINE (SCOPE_L1a §4.4(D)), which the golden byte-diff cannot see. The
-  // promoted module therefore still declines `kMsgStore`, at the one surviving
-  // store. See RailBankPromote.h.
+  // The rest of L-1a now ships downstream of this call: the taint rule (a load
+  // from a `!cq.railbank` alloca is tainted), the fixed `[N x i1]` -> `[N x i32]`
+  // type rewrite and the D5 allow-list — so a promoted bank LOWERS. bd xdu2.4
+  // adds the runtime `alloca i32, %n` bank (already handle-typed), a real |0>
+  // seed for its conditional in-arm preparation, and the emptied-arm `select`
+  // fold (PASS H). Off-pattern banks are left untouched and still decline at
+  // their existing owner. See RailBankPromote.h.
+  //
+  // ⚠ The seed marker is compiler-owned: `declineForeignRailBankSeeds` below
+  // refuses an input that already carries it, BEFORE the promoter can mint one.
   //
   // ⚠ THE SLOT IS THE L1 ARGUMENT, AND IT IS WHY THIS IS *FIRST*. This stage
   // GROWS THE TAINT SET — a bank `load` is untainted today (taint is SSA-only;
@@ -193,15 +194,17 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // owner. ONE bank per call + a full re-propagate (the `flattenPredMuxRegions` /
   // `promoteVolatileScalarLocals` precedent) so each claim sees fresh taint and
   // fresh dominance and no cached block identity crosses an erasure (Rule 9).
-  while (promoteRailBankCells(M, taint))
+  if (declineForeignRailBankSeeds(M))
+    return PreservedAnalyses::none();
+  while (promoteRailBankCells(M, wd, taint))
     taint = propagate(M, wd);
 
   // Debug lever (bd `xdu2`; env-gated, no behaviour change): dump the module
   // after the promotion fixpoint settles — the CQ_FP80_DBG / CQ_SPEC_DBG
-  // precedent. It exists because EVERY module this stage fires on still
-  // DECLINES, and a `DS_Error` decline writes 0 bytes to stdout, so the
-  // promotion is not observable on the lowered IR at all and an IR-text CHECK
-  // there would be vacuous (Rule 12 hygiene defect (b)).
+  // precedent. It exists because a promoted module that later DECLINES writes 0
+  // bytes to stdout (`DS_Error`), so for that population the promotion is not
+  // observable on the lowered IR and an IR-text CHECK there would be vacuous
+  // (Rule 12 hygiene defect (b)). Accepted banks are observable directly.
   if (::getenv("CQ_RAILBANK_DBG")) {
     llvm::errs()
         << "=== CQ_RAILBANK_DBG: module after promoteRailBankCells fixpoint ===\n";
@@ -1010,6 +1013,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // CALL.
   if (declineSurvivingIntrinsicCalls(M, wd))
     return PreservedAnalyses::none();
+  // Rail-bank cell postcondition (bd xdu2.4 review A F-1): no bank cell may park
+  // a literal. Asked once every folder has run, because the literal arrives by
+  // COMPOSITION (promoter fold, then a PredMux residue fold), not from one stage.
+  if (declineNonHandleBankStores(M))
+    return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);
 
   return PreservedAnalyses::none();
@@ -1071,11 +1079,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
 
   // bd `xdu2` / L-1a clause C5 — the rail-bank per-activation promoter, mirrored
   // in this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). See
-  // run() for the contract, the staged landing, and — the part that must not be
+  // run() for the contract, the completed pipeline, and — the part that must not be
   // separated from the call — the L1 SLOT ARGUMENT: this stage grows the taint
   // set, so it is sound ONLY because it runs above every stage that adjudicates
   // consumers of tainted values, `foldIdentityBitcasts` included.
-  while (promoteRailBankCells(M, taint)) {
+  if (declineForeignRailBankSeeds(M))
+    return false;
+  while (promoteRailBankCells(M, wd, taint)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
@@ -1440,6 +1450,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // The postcondition backstop, mirrored in this entry point too (twin-pipeline
   // parity is MANDATORY, WI-1.12) — see run() for the F-L6-1 rationale.
   if (declineSurvivingIntrinsicCalls(M, wd))
+    return true;
+  if (declineNonHandleBankStores(M))
     return true;
   eraseDeadDecls(M, wd);
   return true;

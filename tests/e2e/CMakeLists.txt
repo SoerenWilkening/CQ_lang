@@ -6077,6 +6077,36 @@ add_test(NAME e2e-slice-railbank-int-cells-measureloop
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_int_cells_measureloop.expected.log")
 
+# bd test_C_libtooling-xdu2.4 — runtime-sized `int b[n]`, with `n=argc` still
+# dynamic in clang -O1 IR. The harness runs with argc=1, so the trace is stable;
+# the tenth runner argument also pins that this rail bank never routes through
+# the semantically unrelated QRAM ABI.
+add_test(NAME e2e-slice-railbank-dynamic-int
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_dynamic_int.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_railbank_dynamic_int.expected.log"
+    "" "--forbid-qram")
+
+# The C-level red/green matrix compiles every row through clang -O1. It pins the
+# fixed-but-non-entry C shape plus mismatched bounds, partial writes, early exit,
+# escape, tainted extent, the dynamic `_Bool` boundary, and a companion
+# classical VLA whose extent does not equal the quantum-controlled walk bound,
+# plus the explicitly deferred calloc provenance boundary (xdu2.5), the Rule-13
+# red/green probes (seed host arithmetic, guarded extent/trip mismatch at the
+# latch and at a flattened read, a loop-external guard that must still accept),
+# and the prep-before-branch shape whose rolled trace it LINKS and byte-compares
+# against a hand-unrolled twin.
+add_test(NAME e2e-railbank-dynamic-admission-matrix
+  COMMAND "${_E2E_PYTHON}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/run_railbank_dynamic_matrix.py"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/railbank_dynamic_matrix.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>")
+
 add_test(NAME e2e-slice-railbank-nonmain
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
