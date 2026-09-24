@@ -264,6 +264,147 @@ bool instReaches(const Instruction *From, const Instruction *To) {
   return false;
 }
 
+// ── C6 READ ORDER, asked SEMANTICALLY (bd xdu2.10) ────────────────────────────
+//
+// Does every SSA name in `V`'s backward operand closure denote ONE run-time
+// value per function activation? True when every instruction in the closure
+// executes at most once (no CFG cycle reaches it back — `instReaches(I, I)`),
+// and no `undef`/`poison` appears in it. It guards reading an SSA-level
+// implication between two conditions (`isImpliedCondition`, whose matching
+// treats one SSA name as one value) as an implication between the values two
+// DIFFERENT branch executions saw. A closure over the budget answers "no".
+//
+// ⚠ THE TWO HALVES ARE NOT EQUALLY LOAD-BEARING, and saying which is which is
+// the point (L7). The `undef` half IS: every USE of `undef` may read a different
+// value, so `icmp ne undef, 0` twice can disagree at run time while matching
+// operand-for-operand (pinned: `railbank_readorder_reject_undef_condition.ll`,
+// mutant M4). The at-most-once half is a MARGIN, argued redundant and UNPINNED
+// (mutants M2/M3/M11 MISSED, `TRACK_A.md`): an operand's definition DOMINATES
+// every compare that reads it, so re-executing it after a fact edge was taken
+// forces the path back through that dominating fact edge before the read, and
+// re-executing it after the walk's last pruned edge would revisit a
+// walk-reachable block, which by construction the rest of that path does not.
+// It is kept because it can only DECLINE; its cost is an over-decline of a
+// guard whose operand is computed inside a preceding classical cycle.
+bool singleValuedClosure(const Value *Root, unsigned Budget = 64) {
+  SmallVector<const Value *, 16> Work{Root};
+  SmallPtrSet<const Value *, 16> Seen;
+  while (!Work.empty()) {
+    const Value *V = Work.pop_back_val();
+    if (!Seen.insert(V).second)
+      continue;
+    if (Seen.size() > Budget)
+      return false;
+    if (isa<UndefValue>(V))
+      return false;  // undef AND poison (PoisonValue derives from UndefValue).
+    if (auto *C = dyn_cast<Constant>(V)) {
+      // A ConstantExpr may carry an undef operand; walk it like an instruction.
+      for (const Use &U : C->operands())
+        Work.push_back(U.get());
+      continue;
+    }
+    if (isa<Argument>(V) || isa<BasicBlock>(V) || isa<MetadataAsValue>(V))
+      continue;
+    const auto *I = dyn_cast<Instruction>(V);
+    if (!I || instReaches(I, I))
+      return false;  // re-executed by a cycle: one name, several values.
+    for (const Use &U : I->operands())
+      Work.push_back(U.get());
+  }
+  return true;
+}
+
+// Is every EXECUTION of `Read` preceded, on its own path, by an execution of
+// `L`'s header? `DT.dominates(Header, Read)` is the SYNTACTIC half of this and
+// used to be all C6 asked — and `clang -O1` defeats it on the plainest runtime
+// bank (`int b[n]` with no explicit `if (n <= 0) return`): each loop gets its
+// OWN `n > 0` guard, the read loop's guard block is reached both from the write
+// loop's exit and from the write guard's FALSE edge, so the write-loop header
+// no longer dominates the read — although the read runs iff `n > 0` iff the
+// write loop ran (L5: a syntactic answer to a semantic question).
+//
+// THE SEMANTIC QUESTION, asked with LLVM's own machinery:
+//   (1) FACTS. Every conditional branch edge `B→S` that DOMINATES the read's
+//       block (`DT.dominates(BasicBlockEdge)`) is taken on every path to the
+//       read, so its condition has that edge's polarity whenever the read
+//       executes. Only a single-valued condition is kept as a fact.
+//   (2) PRUNED WALK. Walk the CFG forward from the entry block, never entering
+//       `L`'s header, and drop an edge `B→S` whose (single-valued) condition, at
+//       that edge's polarity, IMPLIES (`isImpliedCondition`) the NEGATION of
+//       some fact. Such an edge lies on no path that reaches the read: after
+//       taking it the fact is false for the rest of the activation (both names
+//       are single-valued), while every path to the read makes it true.
+//   (3) If the read's block is NOT reached, every feasible path to the read
+//       passes the header. With `L`'s single exiting block (the latch) and its
+//       exact backedge count — both already proven by the caller — passing the
+//       header and then leaving `L` means a COMPLETE activation, which is all the
+//       old dominance test ever licensed.
+// Anything unproven — a `switch` edge, a multi-valued condition, no fact that
+// contradicts the edge — is FOLLOWED, so the walk over-approximates the
+// feasible paths and a "reached" answer is the safe decline. It CANNOT turn a
+// read that some real path reaches around `L` into an accept.
+//
+// ⚠ WHAT THIS DOES NOT PROVE, and must not be read as proving: that the READ
+// loop's trip count equals the extent (the caller's per-read SCEV clause), or
+// that the write is total per trip (C7(b)). It replaces ONLY the ordering half.
+bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
+                                const DominatorTree &DT,
+                                const DataLayout &DL) {
+  const BasicBlock *Header = L->getHeader();
+  const BasicBlock *RB = Read->getParent();
+  if (DT.dominates(Header, RB))
+    return true;  // the syntactic case — a special case of the semantic one.
+
+  // (1) FACTS — (condition, polarity) of every dominating conditional edge.
+  SmallVector<std::pair<const Value *, bool>, 8> Facts;
+  for (const DomTreeNode *N = DT.getNode(RB); N; N = N->getIDom()) {
+    const BasicBlock *D = N->getBlock();
+    const auto *BI = dyn_cast<BranchInst>(D->getTerminator());
+    if (!BI || !BI->isConditional() ||
+        BI->getSuccessor(0) == BI->getSuccessor(1))
+      continue;
+    if (!singleValuedClosure(BI->getCondition()))
+      continue;
+    for (unsigned S = 0; S < 2; ++S)
+      if (DT.dominates(BasicBlockEdge(D, BI->getSuccessor(S)), RB))
+        Facts.push_back({BI->getCondition(), S == 0});
+  }
+  if (Facts.empty())
+    return false;  // no fact can refute any bypass edge — the walk would reach.
+
+  // (2) PRUNED WALK from entry, never entering `Header`.
+  auto EdgeRefutesAFact = [&](const Value *Cond, bool Taken) {
+    for (const auto &[FC, FPol] : Facts) {
+      std::optional<bool> Imp =
+          isImpliedCondition(Cond, FC, DL, /*LHSIsTrue=*/Taken);
+      if (Imp && *Imp != FPol)
+        return true;
+    }
+    return false;
+  };
+  const BasicBlock *Entry = &RB->getParent()->getEntryBlock();
+  SmallVector<const BasicBlock *, 32> Work{Entry};
+  SmallPtrSet<const BasicBlock *, 32> Seen;
+  while (!Work.empty()) {
+    const BasicBlock *B = Work.pop_back_val();
+    if (B == Header || !Seen.insert(B).second)
+      continue;
+    if (B == RB)
+      return false;  // a path the proof could not refute bypasses `L`.
+    const auto *BI = dyn_cast<BranchInst>(B->getTerminator());
+    if (BI && BI->isConditional() &&
+        BI->getSuccessor(0) != BI->getSuccessor(1) &&
+        singleValuedClosure(BI->getCondition())) {
+      for (unsigned S = 0; S < 2; ++S)
+        if (!EdgeRefutesAFact(BI->getCondition(), /*Taken=*/S == 0))
+          Work.push_back(BI->getSuccessor(S));
+      continue;
+    }
+    Work.append(succ_begin(B), succ_end(B));
+  }
+  return true;
+}
+
 // Can this `llvm.stackrestore` free `AI`'s storage? A restore pops back to its
 // SAVE point, so it frees exactly the allocas made after that save. When the
 // operand is an `llvm.stacksave` that `AI` dominates (and `AI` is in no cycle,
@@ -1741,8 +1882,10 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
   }
   // Every read of the bank is either (i) of the cell THIS trip writes — the
   // per-trip seed read and the partially-available re-read, both of which the
-  // promoter (C5) removes — or (ii) after the loop, where C2′ + `Trips == N`
-  // proves every cell has been written. Anything else reads a cell in a state the
+  // promoter (C5) removes — or (ii) after the loop, i.e. every FEASIBLE path to it
+  // passes the loop header (bd xdu2.10: `readFollowsLoopOnEveryPath`, not header
+  // dominance), where C2′ + `Trips == N` proves every cell has been VISITED
+  // (written is C7(b)'s). Anything else reads a cell in a state the
   // rail model cannot name.
   // ⚠ REACHABILITY IS AN API PRECONDITION HERE, NOT AN OPTIMIZATION — the same
   // lesson `ArmClassify`'s F2 records for `LazyValueInfo` ("asking LVI about a value
@@ -1768,7 +1911,12 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
       AnyReadInsideL = true;  // C7(a) — see below; the read itself is admitted.
       continue;
     }
-    if (!DT.dominates(L->getHeader(), LD->getParent())) {
+    // ⚠ "PRECEDE" IS A SEMANTIC CLAIM ABOUT EXECUTIONS, not about dominance
+    // (bd xdu2.10). Dominance by the header was the old, syntactic spelling;
+    // `readFollowsLoopOnEveryPath` asks it with the guards' implied conditions
+    // and answers yes for dominance as a special case. See its header for what
+    // it proves and what it leaves to the clauses below.
+    if (!readFollowsLoopOnEveryPath(LD, L, DT, DL)) {
       outMsg = kMsgBankTotality;  // a read the loop does not precede.
       return RailBankCarve::RejectTotality;
     }

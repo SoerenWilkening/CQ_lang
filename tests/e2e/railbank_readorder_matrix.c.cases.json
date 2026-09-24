@@ -1,0 +1,84 @@
+{
+  "_comment": "Expectations for railbank_readorder_matrix.c (bd xdu2.10, Track A), read by run_railbank_dynamic_matrix.py. Rows 1,3,11,12,13 declined 'array has cells no iteration writes' on the pre-change oracle (cq-opt sha256 c6f61f80...) and accept now; row 2 accepted on both (its early return already makes n > 0 dominate, so -O1 emits no per-loop guard); rows 5,7-10,14 are unsound neighbours that must keep the C6 decline. Row 6 (partial write) moved from the C6 string to the classical-mux string: that is the string its EXPLICIT-GUARD twin already declines with on the oracle, because a partial write is the promoter's (C7) business, not C6's.",
+  "cases": {
+    "1": {
+      "accept": true,
+      "diagnostic": null,
+      "stage1_contains_in_order": [
+        "alloca i32, i64",
+        "icmp sgt i32 %0, 0",
+        "icmp sgt i32 %0, 0"
+      ],
+      "stage1_note": "clang -O1 no longer emits two separate n > 0 loop guards; the row no longer exercises the non-dominated read"
+    },
+    "2": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "3": {
+      "accept": true,
+      "diagnostic": null,
+      "stage1_contains_in_order": [
+        "alloca i32, i64",
+        "icmp sgt i32 %0, 0",
+        "icmp sgt i32 %0, 0"
+      ],
+      "stage1_note": "clang -O1 no longer emits two separate n > 0 loop guards around the large body"
+    },
+    "4": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "5": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "6": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "7": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "8": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "9": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "10": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    },
+    "11": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "12": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "13": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "14": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array has cells no iteration writes"
+    }
+  },
+  "twins": [
+    {
+      "rolled": 1,
+      "twin": 4,
+      "argv": [
+        "a",
+        "b"
+      ],
+      "dropped_twin_lines": []
+    }
+  ]
+}

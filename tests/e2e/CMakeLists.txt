@@ -6578,3 +6578,5 @@ add_test(NAME e2e-slice-grover-oracle-uncompute
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+# Track A (bd xdu2.10): C6 read order asked semantically — unguarded int b[n] accepts, unsound neighbours decline.
+cq_railbank_matrix(e2e-railbank-readorder-matrix railbank_readorder_matrix.c)
