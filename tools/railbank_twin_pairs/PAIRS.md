@@ -45,6 +45,20 @@ red is the source-mutation matrix in `TRACK_B.md` §4.
 | `p11_rt_parked_parent_add_loop` | `p10` on a runtime bank with a runtime-trip add loop on the parked parent. | ok-identical |
 | `p12_phase_between` | a register-free `cq_phi` (diagonal) between park and read — must NOT count as a relabel. | ok-identical |
 
+Rows added by bd `xdu2.1`'s Rule-13 round-2 finding F-1 (Track B, 2026-09-24):
+a parked rail relabelled by an IN-PLACE `xor` the rolled in-loop collapse
+commits. **These three were VIOLATIONs on the pre-fix binary** (`cq-opt`
+`c6f61f80a5d524c6`, main `e36d9df4`: bank ACCEPTS, register twin declines
+`rail record read past an in-place gate on the same rail`). That is the
+review's measurement; this track re-measured it on the reviewer's probes.
+
+| row | the claim | pre-fix | after the fix |
+|---|---|---|---|
+| `p13_inloop_xor_park` | `q` parked, then `for(k){ if(q>k) cq_phi(.3); q ^= 3; }`, then the cells measured (reviewer `P1_bank.c`). | **VIOLATION** | ok-both-decline |
+| `p14_inloop_xor_park_other_cond` | `p13` with the loop condition on a different register `r` (`P1_bank_ry.c`). | **VIOLATION** | ok-both-decline |
+| `p15_inloop_xor_const_trip` | constant trip count (3) and a trip-dependent immediate `q ^= k` (`r_qxk3_bank.c`). | **VIOLATION** | ok-both-decline |
+| `p16_inloop_xor_read_before_and_after` | the bank read in one loop BEFORE the xor loop (legitimate) and one AFTER it (stale). Found by Track B's mutation matrix: a fence that asks only the first cell load passes it. | **VIOLATION** | ok-both-decline |
+
 ⚠ **Two shapes were measured and deliberately NOT added**, because their pair is
 not a twin at the `-O1` floor rather than because the compiler is wrong
 (`TRACK_B.md` §2): `q` parked, then `q = q + 3` / `q ^= 5`, then the cells

@@ -55,6 +55,7 @@
 #define CASE_RUNTIME_INLOOP_XOR_KDEP 37
 #define CASE_RUNTIME_INLOOP_XOR_LEGIT 38
 #define CASE_FIXED_INLOOP_XOR_LEGIT 39
+#define CASE_RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER 42
 #define CASE_TWIN_OF_28 40
 #define CASE_TWIN_OF_29 41
 #define CASE_TWIN_OF_31 42
@@ -510,6 +511,18 @@ __attribute__((noinline)) int slice(int seed) {
  return s + cq_measure(q) + cq_measure(r);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER
+/* DECLINE — F-1 with the bank read BEFORE and AFTER the xor loop -- every cell load must be asked, not the first. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0; int r = cq_theta(seed, .2);
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ for (int k = 0; k < n; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
 
 #elif CASE == CASE_TWIN_OF_28
 /* ACCEPT — hand-unrolled n=3 twin of 28. */
