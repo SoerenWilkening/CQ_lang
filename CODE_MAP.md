@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 711 maintained source files, 5843 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 711 maintained source files, 5845 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -17,11 +17,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9229 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 7110 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5305 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5354 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `tools/free_pairing_check.py` — 3423 physical lines
+- `ir-pass/src/QramLowering.cpp` — 3205 physical lines
 - `tools/free_pairing_check_test.py` — 3203 physical lines
-- `ir-pass/src/QramLowering.cpp` — 3175 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
@@ -37,7 +37,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CQLoweringPass.cpp` — 1460 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `ir-pass/src/SelectClassify.cpp` — 1388 physical lines
+- `ir-pass/src/SelectClassify.cpp` — 1393 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `ir-pass/src/Specialization.cpp` — 1218 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
@@ -68,7 +68,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_asinhl.c` — 581 physical lines
 - `tests/e2e/slice_hybrid_lgammal.c` — 578 physical lines
 - `tests/e2e/slice_libm_real_acoshl.c` — 575 physical lines
-- `ir-pass/include/QramLowering.h` — 545 physical lines
+- `ir-pass/include/QramLowering.h` — 573 physical lines
 - `ir-pass/src/CompareLowering.cpp` — 535 physical lines
 - `ir-pass/include/ChainWalk.h` — 527 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 518 physical lines
@@ -595,50 +595,50 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5305 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5354 lines)
 
-- `ir-pass/src/PredMuxFlatten.cpp:120` — `isTaintedCtrlTerm`
-- `ir-pass/src/PredMuxFlatten.cpp:139` — `isMuxableType`
-- `ir-pass/src/PredMuxFlatten.cpp:154` — `isTemplateWidthType`
-- `ir-pass/src/PredMuxFlatten.cpp:165` — `isSupportedCompareLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:255` — `definedOpAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:342` — `classifyConeNode`
-- `ir-pass/src/PredMuxFlatten.cpp:738` — `coneDefinedAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:829` — `isConvertiblePhiCond`
-- `ir-pass/src/PredMuxFlatten.cpp:923` — `isSupportedCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1359` — `isBooleanCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1538` — `isSpeculatableDataflow`
-- `ir-pass/src/PredMuxFlatten.cpp:1931` — `isSpeculatablePureCalleeBodyImpl`
-- `ir-pass/src/PredMuxFlatten.cpp:2260` — `isSpeculatablePureCalleeBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2306` — `recordHoldsRailPhiLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:2348` — `collectCycleBlocks`
-- `ir-pass/src/PredMuxFlatten.cpp:2365` — `topoOrderRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:2507` — `regionStrictlyInsideLoopBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2624` — `classicalTableReadIsSpeculatable`
-- `ir-pass/src/PredMuxFlatten.cpp:2757` — `mergeIgnoringUnreachable`
-- `ir-pass/src/PredMuxFlatten.cpp:2878` — `ensure`
-- `ir-pass/src/PredMuxFlatten.cpp:2889` — `recoverRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:3754` — `run`
-- `ir-pass/src/PredMuxFlatten.cpp:3823` — `literal`
-- `ir-pass/src/PredMuxFlatten.cpp:4010` — `stripPoisonCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4045` — `canonicalizePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4221` — `buildNegation`
-- `ir-pass/src/PredMuxFlatten.cpp:4487` — `blockPred`
-- `ir-pass/src/PredMuxFlatten.cpp:4504` — `edgePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4537` — `convertPhis`
-- `ir-pass/src/PredMuxFlatten.cpp:4752` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4763` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:4829` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4929` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:4953` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5001` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5060` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5105` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5129` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5180` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5293` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:121` — `isTaintedCtrlTerm`
+- `ir-pass/src/PredMuxFlatten.cpp:140` — `isMuxableType`
+- `ir-pass/src/PredMuxFlatten.cpp:155` — `isTemplateWidthType`
+- `ir-pass/src/PredMuxFlatten.cpp:166` — `isSupportedCompareLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:256` — `definedOpAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:343` — `classifyConeNode`
+- `ir-pass/src/PredMuxFlatten.cpp:739` — `coneDefinedAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:830` — `isConvertiblePhiCond`
+- `ir-pass/src/PredMuxFlatten.cpp:924` — `isSupportedCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1360` — `isBooleanCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1539` — `isSpeculatableDataflow`
+- `ir-pass/src/PredMuxFlatten.cpp:1932` — `isSpeculatablePureCalleeBodyImpl`
+- `ir-pass/src/PredMuxFlatten.cpp:2261` — `isSpeculatablePureCalleeBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2307` — `recordHoldsRailPhiLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:2357` — `collectCycleBlocks`
+- `ir-pass/src/PredMuxFlatten.cpp:2374` — `topoOrderRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:2516` — `regionStrictlyInsideLoopBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2640` — `classicalTableReadIsSpeculatable`
+- `ir-pass/src/PredMuxFlatten.cpp:2789` — `mergeIgnoringUnreachable`
+- `ir-pass/src/PredMuxFlatten.cpp:2910` — `ensure`
+- `ir-pass/src/PredMuxFlatten.cpp:2921` — `recoverRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:3797` — `run`
+- `ir-pass/src/PredMuxFlatten.cpp:3872` — `literal`
+- `ir-pass/src/PredMuxFlatten.cpp:4059` — `stripPoisonCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4094` — `canonicalizePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4270` — `buildNegation`
+- `ir-pass/src/PredMuxFlatten.cpp:4536` — `blockPred`
+- `ir-pass/src/PredMuxFlatten.cpp:4553` — `edgePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4586` — `convertPhis`
+- `ir-pass/src/PredMuxFlatten.cpp:4801` — `moveBody`
+- `ir-pass/src/PredMuxFlatten.cpp:4812` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:4878` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4978` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5002` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5050` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5109` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5154` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5178` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5229` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5342` — `declineConvertedRailPhiLeaves`
 
-### `ir-pass/src/QramLowering.cpp` (3175 lines)
+### `ir-pass/src/QramLowering.cpp` (3205 lines)
 
 - `ir-pass/src/QramLowering.cpp:249` — `instReaches`
 - `ir-pass/src/QramLowering.cpp:273` — `stackRestoreMayFree`
@@ -671,22 +671,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp:1342` — `railBankCarveVerdictImpl`
 - `ir-pass/src/QramLowering.cpp:1986` — `qromShapedReadTaintsIndexAfterFlatten`
 - `ir-pass/src/QramLowering.cpp:2014` — `classicalTableIndexKnownInBounds`
-- `ir-pass/src/QramLowering.cpp:2034` — `classicalRuntimeAllocaReadIsInBounds`
-- `ir-pass/src/QramLowering.cpp:2125` — `valueWillTaintAfterFlatten`
-- `ir-pass/src/QramLowering.cpp:2150` — `qromReadShapeInScope`
-- `ir-pass/src/QramLowering.cpp:2196` — `qramCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2206` — `railBankCarveVerdict`
-- `ir-pass/src/QramLowering.cpp:2215` — `guardedShadowStoreShape`
-- `ir-pass/src/QramLowering.cpp:2220` — `classifyQromReadUnderControl`
-- `ir-pass/src/QramLowering.cpp:2234` — `foldVolatileConstGlobalLoads`
-- `ir-pass/src/QramLowering.cpp:2316` — `foldVolatileConstAllocaLoads`
-- `ir-pass/src/QramLowering.cpp:2431` — `eraseDeadVolatileScalarStores`
-- `ir-pass/src/QramLowering.cpp:2526` — `everyLoadIsStoreDefined`
-- `ir-pass/src/QramLowering.cpp:2575` — `promoteVolatileScalarLocals`
-- `ir-pass/src/QramLowering.cpp:2672` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:2864` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:2908` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:3144` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:2040` — `runtimeAllocaReadShape`
+- `ir-pass/src/QramLowering.cpp:2109` — `unitCounterTrips`
+- `ir-pass/src/QramLowering.cpp:2131` — `classicalRuntimeAllocaReadIsInBounds`
+- `ir-pass/src/QramLowering.cpp:2155` — `valueWillTaintAfterFlatten`
+- `ir-pass/src/QramLowering.cpp:2180` — `qromReadShapeInScope`
+- `ir-pass/src/QramLowering.cpp:2226` — `qramCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2236` — `railBankCarveVerdict`
+- `ir-pass/src/QramLowering.cpp:2245` — `guardedShadowStoreShape`
+- `ir-pass/src/QramLowering.cpp:2250` — `classifyQromReadUnderControl`
+- `ir-pass/src/QramLowering.cpp:2264` — `foldVolatileConstGlobalLoads`
+- `ir-pass/src/QramLowering.cpp:2346` — `foldVolatileConstAllocaLoads`
+- `ir-pass/src/QramLowering.cpp:2461` — `eraseDeadVolatileScalarStores`
+- `ir-pass/src/QramLowering.cpp:2556` — `everyLoadIsStoreDefined`
+- `ir-pass/src/QramLowering.cpp:2605` — `promoteVolatileScalarLocals`
+- `ir-pass/src/QramLowering.cpp:2702` — `lowerQramReads`
+- `ir-pass/src/QramLowering.cpp:2894` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:2938` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:3174` — `lowerShadowMemory`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1833 lines)
 
@@ -758,7 +760,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:1914` — `recordIsExemptAt`
 - `ir-pass/src/RotationLowering.cpp:2030` — `warnLiveRecordRotations`
 
-### `ir-pass/src/SelectClassify.cpp` (1388 lines)
+### `ir-pass/src/SelectClassify.cpp` (1393 lines)
 
 - `ir-pass/src/SelectClassify.cpp:41` — `isCallToPrefix`
 - `ir-pass/src/SelectClassify.cpp:67` — `isPhiCall`

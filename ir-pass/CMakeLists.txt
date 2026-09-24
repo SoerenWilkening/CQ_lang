@@ -59,6 +59,8 @@ add_library(CQPass MODULE
   src/CtlzIdiomPrepass.cpp
   src/DagTraversal.cpp
   src/GuardedStoreArmEmit.cpp
+  # bd xdu2.8: the arm-guarded classical runtime-VLA read (PredMux E4 (1d)).
+  src/GuardedClassicalRead.cpp
   src/CQLoweringPass.cpp
   src/EmitInverse.cpp
   src/EqFoldArm.cpp

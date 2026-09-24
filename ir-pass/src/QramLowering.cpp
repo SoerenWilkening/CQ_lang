@@ -2031,43 +2031,44 @@ bool classicalTableIndexKnownInBounds(LoadInst *LI, const TaintSet &taint,
 // fixed allocas, offset bases, non-scalar cells, or an allocation that does not
 // dominate the region.  Those are different proof obligations and remain loud
 // declines.  No QRAM operation is involved or emitted.
-bool classicalRuntimeAllocaReadIsInBounds(
-    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
-    ScalarEvolution &SE, const BasicBlock *RegionEntry) {
+// bd xdu2.8 — the SHAPE half of the proof below, split out so the guarded
+// sibling (`GuardedClassicalRead.cpp`) asks the same structural question with the
+// same answer (Rule 14): a direct `alloca cell, extent` origin, untainted extent
+// and index, scalar cell, alignment, address-width index, and the allocation still
+// LIVE at the region entry terminator (the speculation point). Everything here is
+// independent of WHICH bound relation the caller then proves.
+std::optional<RuntimeAllocaRead> runtimeAllocaReadShape(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT,
+    const BasicBlock *RegionEntry) {
   if (!LI || !RegionEntry || !LI->isSimple())
-    return false;
-  Loop *L = LInfo.getLoopFor(const_cast<BasicBlock *>(RegionEntry));
-  if (!L || !L->contains(LI->getParent()) || !L->getExitingBlock() ||
-      !L->getLoopLatch())
-    return false;
-
+    return std::nullopt;
   auto *G = dyn_cast<GetElementPtrInst>(LI->getPointerOperand());
   if (!G)
-    return false;
+    return std::nullopt;
   Value *RawIndex = nullptr;
   Type *CellTy = nullptr;
   if (!matchAddressGep(G, taint, RawIndex, CellTy,
                        /*requireTaintedIndex=*/false) ||
       taint.Tainted.count(RawIndex) || LI->getType() != CellTy)
-    return false;
+    return std::nullopt;
 
   OriginResult Origin =
       walkPtrOrigin(G->getPointerOperand(), /*Depth=*/0,
                     /*AllowDynamicAlloca=*/true);
   if (Origin.Kind != OriginResult::Alloca ||
       !isDirectOriginPtr(G->getPointerOperand(), Origin))
-    return false;
+    return std::nullopt;
   AllocaInst *AI = Origin.AI;
   Value *Extent = AI->isArrayAllocation() ? AI->getArraySize() : nullptr;
   const DataLayout &DL = LI->getModule()->getDataLayout();
   if (!Extent || AI->getAllocatedType() != CellTy ||
       (!CellTy->isIntegerTy() && !CellTy->isFloatingPointTy()) ||
       taint.Tainted.count(Extent) || !DT.dominates(AI, RegionEntry))
-    return false;
+    return std::nullopt;
   const uint64_t CellBytes = DL.getTypeAllocSize(CellTy).getFixedValue();
   if (AI->getAlign() < LI->getAlign() ||
       CellBytes % LI->getAlign().value() != 0)
-    return false;
+    return std::nullopt;
 
   // The allocation must still be live at the speculation point. A stackrestore
   // can invalidate a dynamic alloca without naming it, and lifetime.end names it
@@ -2076,7 +2077,7 @@ bool classicalRuntimeAllocaReadIsInBounds(
   // while flattening would execute it, so decline instead of treating source UB
   // on the true arm as a licence to invent UB on the false one.
   if (!indexIsAddressWidth(RawIndex, G->getPointerOperand(), DL))
-    return false;
+    return std::nullopt;
   for (Instruction &I : instructions(*AI->getFunction())) {
     auto *II = dyn_cast<IntrinsicInst>(&I);
     if (!II)
@@ -2086,33 +2087,62 @@ bool classicalRuntimeAllocaReadIsInBounds(
     if (II->getIntrinsicID() == Intrinsic::lifetime_start &&
         getUnderlyingObject(II->getArgOperand(1)) == AI &&
         !DT.dominates(II, RegionEntry->getTerminator()))
-      return false;
+      return std::nullopt;
     if (!DT.dominates(AI, II) ||
         !instReaches(II, RegionEntry->getTerminator()))
       continue;
     if (II->getIntrinsicID() == Intrinsic::stackrestore &&
         stackRestoreMayFree(II, AI, DT))
-      return false;
+      return std::nullopt;
     if (II->getIntrinsicID() == Intrinsic::lifetime_end &&
         getUnderlyingObject(II->getArgOperand(1)) == AI)
-      return false;
+      return std::nullopt;
   }
+  return RuntimeAllocaRead{RawIndex, Extent, AI};
+}
 
-  const auto *AR = dyn_cast<SCEVAddRecExpr>(SE.getSCEV(RawIndex));
+// bd xdu2.8 — the LOOP half: `RawIndex` is the affine non-wrapping {0,+,1}
+// counter of the loop `L` enclosing `RegionEntry` (which must contain the load,
+// with one exiting block and a latch), and the return value is that loop's exact
+// trip count `BTC + 1`, so every execution of a block of `L` sees an index in
+// `[0, Trips)`. Null when any conjunct fails. One spelling for both callers.
+const SCEV *unitCounterTrips(const LoadInst *LI, const Value *RawIndex,
+                             LoopInfo &LInfo, ScalarEvolution &SE,
+                             const BasicBlock *RegionEntry) {
+  Loop *L = LInfo.getLoopFor(const_cast<BasicBlock *>(RegionEntry));
+  if (!L || !L->contains(LI->getParent()) || !L->getExitingBlock() ||
+      !L->getLoopLatch())
+    return nullptr;
+  const auto *AR =
+      dyn_cast<SCEVAddRecExpr>(SE.getSCEV(const_cast<Value *>(RawIndex)));
   if (!AR || AR->getLoop() != L || !AR->isAffine() || !AR->hasNoSelfWrap())
-    return false;
+    return nullptr;
   const auto *Start = dyn_cast<SCEVConstant>(AR->getStart());
   const auto *Step = dyn_cast<SCEVConstant>(AR->getStepRecurrence(SE));
   if (!Start || !Start->getAPInt().isZero() || !Step ||
       !Step->getAPInt().isOne())
-    return false;
-
+    return nullptr;
   const SCEV *ExactBTC = SE.getBackedgeTakenCount(L);
   if (isa<SCEVCouldNotCompute>(ExactBTC))
+    return nullptr;
+  return SE.getAddExpr(ExactBTC, SE.getOne(ExactBTC->getType()));
+}
+
+bool classicalRuntimeAllocaReadIsInBounds(
+    LoadInst *LI, const TaintSet &taint, DominatorTree &DT, LoopInfo &LInfo,
+    ScalarEvolution &SE, const BasicBlock *RegionEntry) {
+  if (!LI || !RegionEntry)
+    return false;
+  std::optional<RuntimeAllocaRead> Shape =
+      runtimeAllocaReadShape(LI, taint, DT, RegionEntry);
+  if (!Shape)
     return false;
   const SCEV *Trips =
-      SE.getAddExpr(ExactBTC, SE.getOne(ExactBTC->getType()));
-  const SCEV *ExtentS = SE.getSCEV(Extent);
+      unitCounterTrips(LI, Shape->RawIndex, LInfo, SE, RegionEntry);
+  if (!Trips)
+    return false;
+  const Loop *L = LInfo.getLoopFor(const_cast<BasicBlock *>(RegionEntry));
+  const SCEV *ExtentS = SE.getSCEV(Shape->Extent);
   return !isa<SCEVCouldNotCompute>(ExtentS) &&
          Trips->getType() == ExtentS->getType() &&
          scevEqualInLoop(Trips, ExtentS, L, RegionEntry->getTerminator(), SE);

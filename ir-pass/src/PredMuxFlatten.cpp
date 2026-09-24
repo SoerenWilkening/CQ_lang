@@ -73,6 +73,7 @@
 #include "PoisonFacts.h"  // curatedIntrinsicCanBePoison (lifted, bd s6ao)
 #include "LiteralIntegrity.h"  // valueCarriesUndef (lifted); declineAddressTakenBlocks
 #include "OpcodeSupport.h"  // abiWidthFromType, binaryStem, castInScope, i80BinaryInScope
+#include "GuardedClassicalRead.h"  // bd xdu2.8 — the arm-guarded runtime-VLA read
 #include "QramLowering.h"
 #include "SelectClassify.h"  // isCondRailLeaf (bd fn1q inc 2 — the ONE spelling, Rule 14)
 #include "TaintPropagation.h"
@@ -2341,6 +2342,14 @@ struct PredMuxRegion {
   // construction — the two answer different questions and nothing needs them to
   // partition.
   SmallPtrSet<PHINode *, 4> RailPhiLeaves;
+  // bd xdu2.8 — classical runtime-VLA reads E4 admitted ONLY because a classical
+  // conjunct of the arm's own path condition bounds the index
+  // (`classicalRuntimeAllocaReadIsInBoundsUnderGuard`). The flatten must rewrite
+  // each one's address to the bounds-checked select before the speculation is
+  // final (`guardSpeculatedClassicalRead`); an unrewritten entry would be an
+  // introduced out-of-bounds read. Captured at E4 time, discarded with `R` on any
+  // later `leave` (the `MaskLoads` precedent: analysis decides, flatten executes).
+  SmallVector<LoadInst *, 4> GuardedLoads;
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -2581,6 +2590,13 @@ bool regionStrictlyInsideLoopBody(const PredMuxRegion &R, LoopInfo &LInfo,
 // to prove keeps today's loud decline. That makes an undersized bound
 // UNREACHABLE rather than UNDETECTED, which is the same asymmetry Rule 18's
 // narrowing rests on.
+// ⚠ bd xdu2.8 — ARMS (1a)-(1c) ANSWER IT FOR THE HOIST POINT; ARM (1d) DOES NOT,
+// AND DOES NOT NEED TO. (1d) proves the SOURCE's read in bounds only under a
+// classical conjunct of the arm's own path condition, and the flatten then makes
+// the SPECULATED read safe BY CONSTRUCTION (a bounds-checked address select,
+// `guardSpeculatedClassicalRead`). Obligation (1) below is still met — by the
+// rewrite, not by a proof at the hoist point — and the ruling's "failure to prove
+// declines" still holds: (1d) without its proof leaves exactly as before.
 //
 // TWO OBLIGATIONS, AND ONLY THE FIRST NEEDS A PROOF HERE:
 //   (1) THE LOAD MUST NOT FAULT where the source did not perform it. That is
@@ -2624,7 +2640,9 @@ bool regionStrictlyInsideLoopBody(const PredMuxRegion &R, LoopInfo &LInfo,
 bool classicalTableReadIsSpeculatable(
     LoadInst *LI, const TaintSet &Taint, DominatorTree &DT, LoopInfo &LInfo,
     ScalarEvolution &SE, AssumptionCache &AC,
-    const SmallPtrSetImpl<BasicBlock *> &Region, BasicBlock *Entry) {
+    const SmallPtrSetImpl<BasicBlock *> &Region, BasicBlock *Entry,
+    bool *NeedsGuard) {
+  *NeedsGuard = false;
   // Simple = not volatile, not atomic. A volatile read is an observable event the
   // flatten may not duplicate or move; an atomic one carries ordering.
   if (!LI->isSimple())
@@ -2732,9 +2750,23 @@ bool classicalTableReadIsSpeculatable(
   // instead. What this arm adds is the constant-index and whole-object cases.
   APInt Size(DL.getIndexTypeSizeInBits(LI->getPointerOperand()->getType()),
              DL.getTypeStoreSize(LI->getType()).getFixedValue());
-  return isDereferenceableAndAlignedPointer(LI->getPointerOperand(),
-                                            LI->getAlign(), Size, DL,
-                                            Entry->getTerminator(), &AC, &DT);
+  if (isDereferenceableAndAlignedPointer(LI->getPointerOperand(),
+                                         LI->getAlign(), Size, DL,
+                                         Entry->getTerminator(), &AC, &DT))
+    return true;
+  // bd xdu2.8 — (1d), the LAST resort and the only arm that does NOT make the
+  // read safe at the hoist point: the index is proven in bounds only under a
+  // CLASSICAL conjunct of the arm's own path condition, so the load is admitted
+  // on the condition that the flatten rewrites its address to a bounds-checked
+  // select (the caller records it; `guardSpeculatedClassicalRead`). Every fence
+  // above — simple, classical now and after the flatten, not QROM-shaped, a
+  // template width — has already been asked of it. See GuardedClassicalRead.h.
+  if (classicalRuntimeAllocaReadIsInBoundsUnderGuard(LI, Taint, DT, LInfo, SE,
+                                                     Region, Entry)) {
+    *NeedsGuard = true;
+    return true;
+  }
+  return false;
 }
 
 // bd 20xt.5 (d) — the merge for an entry `E` whose STANDARD post-dominator is
@@ -3553,12 +3585,19 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
           // Failure to PROVE keeps today's decline verbatim — the owner's
           // 2026-09-23 ruling, and increment 1's `flat_qc_load` ruling stands
           // unchanged because an unprovable index still lands on this `leave`.
+          // bd xdu2.8: a read proved only under an arm-local CLASSICAL guard
+          // (arm (1d)) is admitted too, and RECORDED — the flatten owes it the
+          // bounds-checked address, so the record is not optional.
           if (!Loads)
             return leave("E4-load", &I);
           Loads->ensure();
+          bool NeedsGuard = false;
           if (!classicalTableReadIsSpeculatable(LI2, Taint, DT, LInfo, *Loads->SE,
-                                                *Loads->AC, R.InRegion, R.Entry))
+                                                *Loads->AC, R.InRegion, R.Entry,
+                                                &NeedsGuard))
             return leave("E4-load", &I);
+          if (NeedsGuard)
+            R.GuardedLoads.push_back(LI2);  // bd xdu2.8 — the flatten owes the select
           continue;  // a proved classical read: pure speculatable dataflow.
         }
         // bd 20xt.7: a PROVABLE clone read on a pow2 table whose index BECOMES
@@ -3617,9 +3656,13 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
               // day E3's successor or merge-predecessor rule is relaxed.
               if (Loads && R.InRegion.count(LU->getParent())) {
                 Loads->ensure();
+                // The load is re-asked (and, if guarded, RECORDED) on its own
+                // iteration of this walk; the gep only needs the verdict.
+                bool GepLoadNeedsGuard = false;
                 if (classicalTableReadIsSpeculatable(LU, Taint, DT, LInfo,
                                                      *Loads->SE, *Loads->AC,
-                                                     R.InRegion, R.Entry))
+                                                     R.InRegion, R.Entry,
+                                                     &GepLoadNeedsGuard))
                   continue;
               }
             }
@@ -3785,6 +3828,12 @@ public:
       GEP->setOperand(IdxNo, Masked);
       track(Masked);
     }
+    // bd xdu2.8 — every read E4 admitted only under an arm-local classical
+    // guard gets its bounds-checked address NOW, after `moveBody` put it at the
+    // hoist point and before anything can observe the speculation. The replaced
+    // gep is swept if nothing else reads it.
+    for (LoadInst *GL : R.GuardedLoads)
+      track(guardSpeculatedClassicalRead(GL));
     // Entry terminator → unconditional branch to the merge; erase the arms.
     // The entry terminator's own condition/scrutinee joins the sweep set (a
     // Rule-13 clearance follow-up): it normally stays live as a predicate

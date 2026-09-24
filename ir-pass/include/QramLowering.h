@@ -23,6 +23,7 @@
 #include "llvm/ADT/StringRef.h"
 
 #include <cstdint>
+#include <optional>
 
 namespace llvm {
 class AllocaInst;
@@ -33,6 +34,7 @@ class LoadInst;
 class Loop;
 class LoopInfo;
 class Module;
+class SCEV;
 class ScalarEvolution;
 class StoreInst;
 class Type;
@@ -188,11 +190,37 @@ bool classicalTableIndexKnownInBounds(llvm::LoadInst *LI, const TaintSet &taint,
 // only a direct `alloca cell, extent`, allocated before the loop, with an
 // untainted extent and affine non-wrapping 0,+,1 index whose exact loop trip
 // count is semantically equal to that extent at the speculation point. Failure
-// to prove any conjunct leaves PredMux's existing loud E4 decline in place.
+// to prove any conjunct leaves PredMux's existing loud E4 decline in place —
+// ⚠ UNLESS (bd xdu2.8) the arm-guarded sibling
+// `classicalRuntimeAllocaReadIsInBoundsUnderGuard` (GuardedClassicalRead.h)
+// proves the read in bounds under a CLASSICAL conjunct of the arm's own path
+// condition, in which case E4 admits it on condition that the flatten rewrites
+// its address to a bounds-checked select. This predicate's answer is unchanged.
 bool classicalRuntimeAllocaReadIsInBounds(
     llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
     llvm::LoopInfo &LInfo, llvm::ScalarEvolution &SE,
     const llvm::BasicBlock *RegionEntry);
+
+// bd xdu2.8 — the two halves of the proof above, exported so the GUARDED sibling
+// (`GuardedClassicalRead.h`) asks the same structural questions with the same
+// answers (Rule 14). `runtimeAllocaReadShape` is every conjunct that does not
+// depend on the bound relation (direct runtime-alloca origin, classical extent
+// and index, scalar cell, alignment, liveness at the region entry terminator);
+// `unitCounterTrips` is the loop half (a {0,+,1} non-wrapping counter of the loop
+// enclosing `RegionEntry`, returning that loop's exact trip count, or null).
+struct RuntimeAllocaRead {
+  llvm::Value *RawIndex;
+  llvm::Value *Extent;
+  llvm::AllocaInst *AI;
+};
+std::optional<RuntimeAllocaRead> runtimeAllocaReadShape(
+    llvm::LoadInst *LI, const TaintSet &taint, llvm::DominatorTree &DT,
+    const llvm::BasicBlock *RegionEntry);
+const llvm::SCEV *unitCounterTrips(const llvm::LoadInst *LI,
+                                   const llvm::Value *RawIndex,
+                                   llvm::LoopInfo &LInfo,
+                                   llvm::ScalarEvolution &SE,
+                                   const llvm::BasicBlock *RegionEntry);
 
 bool valueWillTaintAfterFlatten(
     const llvm::Value *V, const TaintSet &taint,

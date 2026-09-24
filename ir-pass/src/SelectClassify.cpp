@@ -940,6 +940,11 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   //     mint, and promoting it would allocate a qubit for classical data (the
   //     §5.2 prohibition); a hybrid classical∧quantum conjunction is out of
   //     scope this increment.
+  //     ⚠ bd xdu2.8 has a MEASURED customer here: the bead's own program
+  //     (`int p[m]; for (i<n) if (q && m == n) { a += p[i]; … }`) now passes
+  //     PredMux's E4 and declines at THIS check instead
+  //     (predmux_guarded_vla_reject_row13_hybrid_select.ll, whose header
+  //     carries the retirement trigger).
   //     *** LOAD-BEARING FOR bd q2wk — READ BEFORE LIFTING THIS. *** PredMux's
   //     E6 rule (B) (PRD §4.4b) admits a branch condition that is currently
   //     UNTAINTED on the proof that the flatten will taint it. Where that proof
