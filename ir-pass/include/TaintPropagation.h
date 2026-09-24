@@ -754,6 +754,34 @@ struct TaintSet {
   };
   llvm::SmallVector<CmpCondRead, 4> CmpCondReads;
 
+  // bd `test_C_libtooling-xdu2.13` — every FORWARD `cq_template_{and,or}_i1_hl`
+  // a 4.4 condition network minted with a CLASSICAL operand in its literal slot
+  // (`CondLiteral.h`). Written by `emitCondLiteralNode`, read once by
+  // `declineQuantumCondLiterals` after the round-2 fixpoint in both entry points:
+  // the literal was untainted when classified at round-1 taint, and a literal
+  // that is tainted at FINAL taint is a quantum value in a classical slot (L1).
+  // `WeakVH`: an erased gate nulls and is skipped (it has no literal left to
+  // read). Nothing rebuilds `TaintSet` after control emission, so the record
+  // survives to its reader.
+  llvm::SmallVector<llvm::WeakVH, 4> CondLiteralGates;
+
+  // bd `test_C_libtooling-l3oi` (xdu2.13 Rule-13 round 6 F-R6-1) — every value
+  // `scrubForwardCone` REMOVED from `Tainted` (the §2.7 return-taint correction:
+  // a specialized clone proved to return a classical value). Taint was a
+  // premise of every stage that ran before `specialize()`; a control emitter may
+  // already have read such a value as a quantum HANDLE. RECORDED at the scrub,
+  // RE-ASKED after `specialize()` in both entry points by
+  // `declineScrubbedHandleReads` — the scrub-direction twin of CLAUDE.md L1.
+  llvm::SmallVector<llvm::WeakVH, 4> ScrubbedByReturnTaint;
+
+  // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
+  // record of every function it built, with the argument slots that are QUANTUM
+  // HANDLES in it: a clone `__cq_q_*` maps to its detection-time `SpecMask`; its
+  // `_unc` twin to `(mask << 1) | 1` (arg 0 is the `out` handle). Written by
+  // `buildClone` / at `ensureTwin`, read by `declineScrubbedHandleReads` — never
+  // re-derived from a name prefix (CLAUDE.md §4f (P4)).
+  llvm::DenseMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal
@@ -1387,6 +1415,51 @@ struct TaintSet {
 // propagation. The work-list is seeded with each theta's RESULT (the
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
+
+// bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
+// of the defined function `F` returns a value in `taint.Tainted` (a quantum
+// register's HANDLE). The closure itself lives in `propagateWorklist` (drained
+// by `propagate`, the round-2 reseed and `propagateFromSeeds`; a direct `Tainted`
+// insert reaches it only via `UntaintedMergeRails` — see the list at
+// `propagateWorklist`, Rule-13 round 5 F-R5-1): when a `ret`
+// is tainted, every DIRECT call site of its function whose result is USED joins
+// the worklist (chains and recursion close by the worklist).
+bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
+
+// bd `test_C_libtooling-3jru` — the LOUD refusal: any USE (a call site, or the
+// address taken) of a defined function that returns a tainted value fires
+// `cq taint escape: quantum value returned across a function boundary` (DS_Error,
+// source-located) — no stage downstream is proven to lower a register that arrives
+// as a CALL RESULT. A function with NO use in the module (an entry point) keeps the
+// existing Escaped `ret` contract. Asked ONCE in each entry point, AFTER the
+// round-2 fixpoint (`repropagateControlMerges` can taint a callee's return —
+// CLAUDE.md L1) and before `lowerRotations`/`lowerMeasures`. Every stage above it
+// already sees the call result TAINTED at its own round's taint (the
+// `propagateWorklist` closure — round 3's `propagate`-only loop missed round-2
+// growth, Rule-13 round 4 F-R4-1), which is what
+// keeps them from mis-lowering it meanwhile, and owners that decline first (the
+// specializer's `callee contains a quantum primitive`, the loop layer) keep their
+// strings — owners ABOVE the slot only; owners BELOW it (`declineClassicalMuxes`
+// onward) are pre-empted in such a module (round 4 P3-b). A direct call whose
+// RESULT IS UNUSED is not refused (round 4 P3-a); an address-taken use always is.
+// Returns true iff it declined.
+bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
+
+// bd `test_C_libtooling-l3oi` — the POSTCONDITION after `specialize()`: a value
+// in `taint.ScrubbedByReturnTaint` that is an operand of an emitted
+// `cqrt_*`/`cq_template_*` call, OR a MASKED (quantum) argument of a call to a
+// specialized clone or its `_unc` twin (`taint.SpecHandleArgMask`, the
+// specializer's own record — Rule-13 round 7 F-R7-1; the first spelling checked
+// only the runtime families and was NOT exact: `specialize()` builds every
+// top-level clone from detection-time masks before it scrubs), was read as a
+// quantum HANDLE while it was still tainted and is now proved classical — the
+// integer used as a register id.
+// Fires `cq taint escape: classical call result used as a quantum register`
+// (DS_Error, source-located). Asked once per entry point, right after
+// `specialize()`; `lowerOps`/`lowerRotations` run after it and see the scrubbed
+// value as classical, so any LATER use is a correct `_hl` literal. Returns true
+// iff it declined.
+bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint);
 
 // Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd
 // test_C_libtooling-3qlq Inc 1)?

@@ -18,12 +18,15 @@
  * ⚠ THE ACCEPT ROWS ALL MERGE INTO `_Bool` PHIS, AND THAT IS NOT A CHOICE. A
  * guard that is a classical conjunct of the arm's condition makes that condition
  * a HYBRID classical∧quantum tree. PredMux's boolean-algebra path lowers an i1
- * merge over it (the classical leaf occupies an `_hl` literal slot); the 4.4 DATA
- * select does NOT — `classifySelectRegion` declines an untainted leaf ("a hybrid
- * classical∧quantum conjunction is out of scope", SelectClassify.cpp). So the
- * bead's own program (CASE_ROW13, `a += p[i]` into an `int`) still declines, at
- * THAT wall and no longer at E4 — same diagnostic string, different owner; the
- * lit fixture predmux_guarded_vla_reject_row13_hybrid_select.ll tells them apart.
+ * merge over it (the classical leaf occupies an `_hl` literal slot). Since bd
+ * xdu2.13 the 4.4 DATA select does too (`CondLiteral.h`: the classical child of
+ * the `and` is a `cq_template_and_i1_hl` literal). The bead's own program
+ * (CASE_ROW13, `a += p[i]` into an `int`) STILL declines, but at a THIRD wall:
+ * the loop layer's round-2 grant re-ask ("round-1 iteration-local marking
+ * falsified by round-2 taint" — the LICM-hoisted `and` was a round-1 invariant
+ * root and the select emitter erases it). That wall is pre-existing for any
+ * compound tree in a rolled loop; the lit fixture
+ * predmux_guarded_vla_reject_row13_hybrid_select.ll (old name kept, L8) pins it.
  */
 #include "CQ.h"
 #include <stdlib.h>

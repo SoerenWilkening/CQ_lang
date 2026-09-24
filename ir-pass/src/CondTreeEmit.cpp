@@ -22,6 +22,7 @@
 
 #include "ArmAnalysis.h"       // markRailCondRead (bd r9e5 1b-B.1 round 2)
 #include "CompareLowering.h"     // lowerCompareToFlag / qqSelectLeafWidth
+#include "CondLiteral.h"         // emitCondLiteralNode (bd xdu2.13)
 #include "ControlledSymbols.h"   // cnotFn / toffoliFn / xFn
 #include "SelectClassify.h"      // CondTree / decomposeCondNode (the grammar)
 #include "TaintPropagation.h"    // TaintSet
@@ -210,6 +211,11 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     const auto *P = dyn_cast<PHINode>(V);
     return P && llvm::is_contained(Tree.RailPhiLeaves, P);
   };
+  // bd `test_C_libtooling-xdu2.13` — a classical LITERAL child, by MEMBERSHIP of
+  // the caller's tree (empty for every caller but the 4.4 data select).
+  auto isLit = [&Tree](const Value *V) {
+    return llvm::is_contained(Tree.LiteralLeaves, V);
+  };
   IRBuilder<> B(Before);
   auto stamp = [&DL](CallInst *C) {
     if (DL)
@@ -257,6 +263,22 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
         return CondNetDisp::Malformed;  // detection/emission drift.
       CondNetwork::Node N;
       N.Opc = Opc;
+      // bd `test_C_libtooling-xdu2.13` — a MIXED node: one child is a classical
+      // LITERAL (`CondLiteral.h`), minted by the `_hl` template on the other
+      // child's flag. That flag must be one this network minted, never a rail.
+      if (isLit(L) || isLit(R)) {
+        Value *Q = isLit(L) ? R : L;
+        N.L = FlagOf.lookup(Q);
+        if (isLit(Q) || !N.L || isRailFlag(Q))
+          return CondNetDisp::Malformed;
+        N.Tpl = emitCondLiteralNode(B, Opc, N.L, isLit(L) ? L : R, wd, taint, DL);
+        if (!N.Tpl)
+          return CondNetDisp::Malformed;
+        N.G = N.Tpl;
+        FlagOf[V] = N.G;
+        Out.Nodes.push_back(N);
+        continue;
+      }
       N.L = FlagOf.lookup(L);
       N.R = FlagOf.lookup(R);
       if (!N.L || !N.R)
@@ -306,8 +328,10 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
     if (!decomposeCondNode(V, Opc, L, R, /*AllowLogicalSelect=*/true))
       return CondNetDisp::Malformed;
     Stack.push_back({V, true});
-    Stack.push_back({R, false});
-    Stack.push_back({L, false});  // left child visits first.
+    if (!isLit(R))
+      Stack.push_back({R, false});
+    if (!isLit(L))
+      Stack.push_back({L, false});  // left child visits first.
   }
   Out.Root = FlagOf.lookup(Root);
   Out.RootIsRail = isRailFlag(Root);
@@ -341,57 +365,7 @@ CondNetDisp emitCondNetwork(Value *Root, const CondTree &Tree,
   return Out.Root ? CondNetDisp::Ok : CondNetDisp::Malformed;
 }
 
-void stripCondNetwork(const CondNetwork &Net, WidthDispatch &wd,
-                      const ControlledSymbols &csyms, TaintSet &taint,
-                      Instruction *Before, const DebugLoc &DL,
-                      bool AllowQQLeaves,
-                      SmallVectorImpl<CallInst *> *StripsOut) {
-  IRBuilder<> B(Before);
-  auto stamp = [&DL](CallInst *C) {
-    if (DL)
-      C->setDebugLoc(DL);
-  };
-  // bd test_C_libtooling-r9e5 (1b-B.1) — THE RAIL-ROOT COPY FLAG FIRST, because
-  // it was minted LAST (exact LIFO). `cqrt_cnot` is an involution, so re-emitting
-  // it returns `f` to `x ⊕ x = 0` on EVERY basis branch — a proven-|0> free
-  // (Rule 6), and the register it reads is left exactly as the forward found it
-  // (the merge's controlled copies write `%out`, never the condition rail; the
-  // `cqrt_x` brackets act on `f`). Vacuous for every other caller: `RailRootFlag`
-  // is null unless `CopyRailRoot` was asked for and the root was a rail.
-  if (Net.RailRootFlag) {
-    stamp(B.CreateCall(csyms.cnotFn(), {Net.RailRoot, Net.RailRootFlag}));
-    stamp(B.CreateCall(wd.freeFn(), {Net.RailRootFlag}));
-  }
-  // NODES first, in REVERSE post-order — a parent un-computes while its
-  // children's rails are STILL ALLOCATED, which is the whole reason the order is
-  // load-bearing: the inverse network READS L and R, so freeing a child before
-  // its parent's undo would be a use-after-free of a rail whose value the undo
-  // needs (§5 of the pre-lift SelectMergeEmit; the 4.3 nest's §12.3 in
-  // miniature).
-  //
-  // bd urlv audit — NO KEPT-CARRIER RECORD REACHES ANYTHING FREED HERE. Every
-  // rail is minted BY `emitCondNetwork` at |0> and returned to |0> on the line
-  // above its free; none is an operand of a gate writing a carrier the reversal
-  // does not touch, and this TU mints NO `cqrt_tape_write_*`.
-  for (const CondNetwork::Node &N : llvm::reverse(Net.Nodes)) {
-    emitCondNode(N, csyms, B, DL, /*Inverse=*/true);
-    stamp(B.CreateCall(wd.freeFn(), {N.G}));
-  }
-  // LEAVES second, in reverse MINT order: the `_unc` strip recomputes the
-  // predicate on the leaf's ORIGINAL operands and XORs it back onto that leaf's
-  // own rail (so it MUST run before the caller erases the tree), then the rail
-  // is freed at a proven |0>.
-  for (const auto &LF : llvm::reverse(Net.Leaves)) {
-    auto *Strip = dyn_cast_or_null<CallInst>(lowerCompareToFlag(
-        LF.first, wd, taint,
-        /*qqWidth=*/AllowQQLeaves ? qqSelectLeafWidth(LF.first, taint)
-                                  : StringRef(),
-        /*inverse=*/true, /*before=*/Before, /*negate=*/false,
-        /*railToStrip=*/LF.second));
-    if (StripsOut && Strip)
-      StripsOut->push_back(Strip);
-    stamp(B.CreateCall(wd.freeFn(), {LF.second}));
-  }
-}
+// `stripCondNetwork` — the exact LIFO strip — lives in `CondTreeStrip.cpp`
+// (moved verbatim by bd xdu2.13 to keep this file inside its line budget).
 
 }  // namespace cq

@@ -1,5 +1,5 @@
 ; predmux_guarded_vla_reject_row13_hybrid_select.ll —
-; DECLINE, and the OWNER MOVED (bd xdu2.8). The bead's own program
+; DECLINE, and the OWNER MOVED TWICE. [HISTORY, bd xdu2.8:] The bead's own program
 ; (railbank_dynamic_matrix.c row 13): `for (i<n) if (q && m == n) { a += p[i];
 ; z -= p[i]; }` with `int` accumulators. E4 now ADMITS the read (no `gate=E4`
 ; leave line; proof (T), `trips == extent`), PredMux flattens the arm, and the
@@ -7,15 +7,34 @@
 ; SelectClassify's untainted-leaf gate — "a hybrid classical∧quantum conjunction
 ; is out of scope", which is load-bearing for bd q2wk's E6 rule (B) and is NOT
 ; this bead's to lift. Same diagnostic string as before, different owner.
-; RETIREMENT TRIGGER: when the hybrid 4.4 select lands, this module should ACCEPT;
-; re-derive the stream then (the guarded select below must be in it). Do not
-; delete it. Source: tests/e2e/railbank_guarded_vla_matrix.c CASE 6.
+;
+; ⚠ bd xdu2.13 — xdu2.8's RETIREMENT TRIGGER ("when the hybrid 4.4 select
+; lands, this module should ACCEPT") FIRED, AND THE MODULE DID *NOT* ACCEPT; IT
+; MOVED TO A THIRD WALL. The hybrid 4.4 select landed: the classical
+; leaf `%16` is now the LITERAL of `cq_template_and_i1_hl` and SelectClassify no
+; longer declines (the `CHECK-NOT: CQ_CTRL_DBG: decline` below is that witness —
+; no control-layer decline fires at all). The module now declines at the LOOP
+; layer's round-2 grant re-ask: `-O1` LICM-hoisted `%17 = and i1 %16, %15` into
+; the preheader, `lowerLoops` recorded it at ROUND 1 as an invariant register
+; root of the loop's iteration-local grant, the select emitter then ERASED that
+; tree node (it has no user once the network is minted in the body), and
+; `declineRound2FalsifiedRailGrants` treats a NULLED root as a refusal.
+; PRE-EXISTING and not literal-specific: a pure-quantum `(q > 1) & (r < 5)` 4.4
+; select in the same rolled loop declines with the same string on the
+; pre-xdu2.13 binary (TRACK_E_xdu2_13.md §4). That function's own comment
+; instructs "an over-decline to FILE, not a fence to relax in place".
+; RETIREMENT TRIGGER (re-armed): when the loop layer stops counting a
+; condition-tree node the 4.4 emitter consumes as a round-1 root (or re-derives
+; roots before refusing a nulled one), this module should ACCEPT; re-derive the
+; stream then — the guarded select AND `cq_template_and_i1_hl(…, i1 %16)` must
+; both be in it. Do not delete it (L8). Source:
+; tests/e2e/railbank_guarded_vla_matrix.c CASE 6.
 ;
 ; RUN: env CQ_PREDMUX_DBG=1 CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass \
 ; RUN:   -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK-NOT: gate=E4
-; CHECK: CQ_CTRL_DBG: decline [control flow] at: {{.*}} = select i1 %{{[0-9]+}}, i32
-; CHECK: cq controlled lowering: control flow under quantum control
+; CHECK-NOT: CQ_CTRL_DBG: decline
+; CHECK: cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

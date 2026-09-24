@@ -16,8 +16,11 @@
  * with argc = 1.
  *
  * ⚠ The merge is `_Bool` on purpose: an `int` accumulator merges through the 4.4
- * DATA select, which declines a hybrid classical∧quantum condition — the second
- * wall in front of the bead's own program (railbank_guarded_vla_matrix.c CASE 6).
+ * DATA select. That select declined a hybrid classical∧quantum condition — the
+ * second wall in front of the bead's own program (railbank_guarded_vla_matrix.c
+ * CASE 6) — until bd xdu2.13 lowered the classical leaf as a `_hl` literal; the
+ * in-loop program now declines at a third, pre-existing loop-layer wall (see
+ * that matrix's CASE 6 note).
  */
 #include "CQ.h"
 

@@ -98,6 +98,11 @@ struct CondNetwork {
     llvm::Value *G = nullptr;  // the fresh |0> i1 ancilla this node writes.
     bool NegL = false;         // `cqrt_x` bracket on the left control (P4).
     bool NegR = false;         // …on the right control.
+    // bd `test_C_libtooling-xdu2.13` — a MIXED node (one child a classical
+    // LITERAL, `CondTree::LiteralLeaves`): `G` IS this forward
+    // `cq_template_<op>_i1_hl(L, literal)` rather than an allocated ancilla, `R`
+    // is null, and the strip is its `_unc` + free (`CondLiteral.h`).
+    llvm::CallInst *Tpl = nullptr;
   };
   llvm::SmallVector<std::pair<llvm::CmpInst *, llvm::Value *>, 4> Leaves;
   llvm::SmallVector<Node, 4> Nodes;
@@ -180,6 +185,9 @@ CondNetDisp emitCondNetwork(llvm::Value *Root, const CondTree &Tree,
                             CondNetwork &Out, bool CopyRailRoot = false,
                             bool LeafWireRuled = false);
 
+// (Defined in `CondTreeStrip.cpp` since bd xdu2.13 — the file line budget.)
+// A MIXED node (`Node::Tpl`, bd xdu2.13) strips as its `_unc` with the SAME
+// literal, then `cqrt_free` (`stripCondLiteralNode`).
 // The exact LIFO strip of a network emitted above, before `Before`: the
 // `CopyRailRoot` ancilla FIRST when there is one (it was minted LAST — the
 // second `cqrt_cnot(rail, f)` returns it to |0> and it is freed there), then

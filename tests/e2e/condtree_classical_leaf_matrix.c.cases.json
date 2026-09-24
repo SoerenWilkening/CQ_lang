@@ -1,0 +1,42 @@
+{
+ "_comment": "Expectations for condtree_classical_leaf_matrix.c (bd test_C_libtooling-xdu2.13), read by run_railbank_dynamic_matrix.py. No row is a rail bank, so accept rows set require_railbank=false. Twins: CASE 12 (rolled, the literal `i < m` varies per trip: 1, 1, 0) against CASE 13 (hand-unrolled, n = 3, m = 2), and CASE 17 (rolled, an `or` node with the invariant literal `m == n`) against CASE 18 at m == n (literal 1) and m != n (literal 0). CASE 10/11 (the loop-carried int accumulator) are accepts but NOT a byte-identical pair: the rolled form promotes the classical seed before trip 1 while the unrolled trip-1 select has classical arms (pre-existing, see CASE 10). The rule-(B) predicted-leaf decline has NO row: no construction keeps a rule-(B) condition untainted (TRACK_E_xdu2_13.md §3).",
+ "cases": {
+  "1": {"accept": true, "diagnostic": null, "require_railbank": false,
+        "stage1_contains_in_order": ["icmp ne i32", "icmp eq i32", "and i1", "select i1"],
+        "stage1_note": "clang -O1 no longer fuses `q && m == n` into one and-rooted select"},
+  "2": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "3": {"accept": true, "diagnostic": null, "require_railbank": false,
+        "stage1_contains_in_order": ["or i1", "select i1"],
+        "stage1_note": "clang -O1 no longer emits an or-rooted select for `q || m == n`"},
+  "4": {"accept": false,
+        "diagnostic": "cq loop lowering: round-1 iteration-local marking falsified by round-2 taint",
+        "_note": "row 13: the hybrid select lowers now; the next wall is the loop layer's round-2 grant re-ask (nulled root = the erased LICM-hoisted `and`), pre-existing for any compound tree in a rolled loop."},
+  "5": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "6": {"accept": false,
+        "diagnostic": "cq loop lowering: round-1 iteration-local marking falsified by round-2 taint",
+        "_note": "the fixed-table twin of row 13: same pre-existing loop wall, not VLA-specific."},
+  "7": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control",
+        "_note": "the branch phase does not take a literal in this increment (condtree_classical_leaf_reject_phase.ll)."},
+  "8": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control",
+        "_note": "a literal's sibling may not be a bare rail (condtree_classical_leaf_reject_rail_sibling.ll)."},
+  "9": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control",
+        "_note": "xor is not a literal node (condtree_classical_leaf_reject_xor.ll)."},
+  "10": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "11": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "12": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "13": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "14": {"accept": false,
+         "diagnostic": "cq controlled lowering: classical condition literal became quantum-derived under quantum control",
+         "_note": "L1: the round-1 literal reads a 6.5 merge that round 2 taints (condtree_classical_leaf_reject_round2_literal.ll)."},
+  "15": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "17": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "18": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "16": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control",
+         "_note": "the VALUE-ARM `br` consumer (ArmClassify) does not take a literal in this increment; the table load keeps clang from if-converting to a select and PredMux leaves at W-witness."}
+ },
+ "twins": [
+  {"rolled": 12, "twin": 13, "argv": ["3", "2"], "dropped_twin_lines": []},
+  {"rolled": 17, "twin": 18, "argv": ["3", "3"], "dropped_twin_lines": []},
+  {"rolled": 17, "twin": 18, "argv": ["3", "2"], "dropped_twin_lines": []}
+ ]
+}

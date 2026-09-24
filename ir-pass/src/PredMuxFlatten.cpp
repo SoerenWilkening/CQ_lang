@@ -68,6 +68,7 @@
 
 #include "PredMuxFlatten.h"
 
+#include "CondLiteral.h"    // markPredictedTaintCone (bd xdu2.13 — the rule-(B) record)
 #include "Fp80Union.h"      // foldConstantConesInFunction (adia fold residue)
 #include "IntrinsicLowering.h"
 #include "PoisonFacts.h"  // curatedIntrinsicCanBePoison (lifted, bd s6ao)
@@ -2350,6 +2351,12 @@ struct PredMuxRegion {
   // introduced out-of-bounds read. Captured at E4 time, discarded with `R` on any
   // later `leave` (the `MaskLoads` precedent: analysis decides, flatten executes).
   SmallVector<std::pair<LoadInst *, Value *>, 4> GuardedLoads;  // (load, proved extent)
+  // bd `test_C_libtooling-xdu2.13` — branch conditions E6 admitted by rule (B)
+  // (untainted now, predicted tainted by the flatten). Marked at the claim and
+  // at every `literal()` built from them; see `CondLiteral.h` conjunct (c).
+  // `WeakVH`: a condition φ that `convertPhis` RAUWs and erases nulls here — its
+  // replacement is the tainted boolean-algebra value, which needs no mark.
+  SmallVector<WeakVH, 2> PredictedConds;
 };
 
 // Blocks that sit on any CFG cycle (any non-trivial SCC, or a self-loop).
@@ -3530,21 +3537,49 @@ bool recoverRegion(Instruction *T, PostDominatorTree &PDT, DominatorTree &DT,
         // and `declineClassicalMuxes` can never fire. The classical value
         // survives as an UNTAINTED COMPARE LEAF inside a tainted cond tree, and
         // the load-bearing backstop is `SelectClassify`'s GATE-2 per-leaf taint
-        // check, which declines `control flow under quantum control`. That gate
-        // is explicitly staged for a future "hybrid classical∧quantum
-        // conjunction" widening — whoever lifts it MUST re-derive this
-        // argument. And the decline is not universal: a region that mints no
+        // check, which declined `control flow under quantum control`. That gate
+        // WAS staged for a "hybrid classical∧quantum conjunction" widening, and
+        // bd `test_C_libtooling-xdu2.13` is that widening — see the RECORD block
+        // below for how the argument was re-derived. And the decline is not universal: a region that mints no
         // select (an i1 merge phi takes the boolean-algebra path) compiles
         // silently, which is SOUND only because a classical runtime operand
         // occupies the sanctioned `_hl` literal slot and is never promoted to a
         // qubit handle (the §5.2 non-negotiable). The SWITCH scrutinee gate
         // below is deliberately NOT widened: no measured cell needs it and
         // over-declining is safe.
+        //
+        // bd `test_C_libtooling-xdu2.13` — THAT BACKSTOP IS NOW A RECORD. The
+        // 4.4 data select accepts a classical `and`/`or` child as a `_hl`
+        // LITERAL, so an untainted residue would no longer reach the per-leaf
+        // decline on its own. A rule-(B) admission is RECORDED here
+        // (`PredictedConds`, discarded with `R` on any later `leave`), its i1
+        // cone and every edge literal built from it are MARKED at the claim
+        // (`markPredictedTaintCone`), and `condLiteralAdmissible` refuses a
+        // marked cone — so a residue keeps its `control flow` decline.
+        // ⚠ THE RE-DERIVATION FOUND NO RESIDUE TO FENCE, AND THE RECORD IS KEPT
+        // ANYWAY. Every construction tried keeps the prediction EXACT: an edge
+        // literal that folds to a constant needs a constant branch, and
+        // `foldConstantConeAndBranches` folds those at the top of every call,
+        // before E6; a MEASURE sink between the φ and the condition is refused
+        // at E4-dataflow; the ENTRY-φ and all-equal-incoming φ are q2wk's own
+        // fences. So the mark is defence in depth with NO constructed subject
+        // (Rule 12 cannot pin an unreachable shape — the bd `e1gr` precedent);
+        // what IS pinned is that a mark neither leaks into the output nor
+        // refuses an unrelated genuine literal in the same tree
+        // (`condtree_classical_leaf_accept_predmux_ruleb.ll`). RETIREMENT
+        // TRIGGER: the day any stage can make an edge literal constant AFTER E6
+        // (a late fold inside `run()`, or E6 admitting a non-folded constant
+        // branch), this record gains a subject and owes a decline fixture.
+        // Not in clone mode (`ClaimAll`): no data-select classifier runs in a
+        // clone body.
         if (!Taint.Tainted.count(BI->getCondition()) &&
             !isa<ConstantInt>(BI->getCondition()) &&
             !valueWillTaintAfterFlatten(BI->getCondition(), Taint, R.InRegion,
                                         R.Entry))
           return leave("E6-classicalbr", BI);  // classical control inside a tainted region: mixed
+        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&
+            !isa<ConstantInt>(BI->getCondition()))
+          R.PredictedConds.emplace_back(BI->getCondition());
         if (!isSupportedCondTree(BI->getCondition(), 0, &Scope))
           return leave("E6-condtree", BI);
       }
@@ -3887,6 +3922,11 @@ private:
       assert(BI->isConditional() && "unconditional edge has no literal");
       L = Idx == 0 ? canonicalizePred(BI->getCondition())
                    : buildNegation(BI->getCondition());
+      // bd `test_C_libtooling-xdu2.13` — an edge literal built from a rule-(B)
+      // condition inherits its mark (the negation is a CLONE, not the value).
+      for (const WeakVH &PC : R.PredictedConds)
+        if (static_cast<Value *>(PC) == BI->getCondition())
+          markPredictedTaintCone(L);
     } else {
       auto *SI = cast<SwitchInst>(Term);
       if (Idx == 0) {  // default: ∧ of (scrut != case_k)
@@ -5300,6 +5340,10 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
         for (PHINode *P : R.RailPhiLeaves)
           if (!recordHoldsRailPhiLeaf(*Rec, P))
             Rec->Leaves.emplace_back(P);
+      // bd `test_C_libtooling-xdu2.13` — COMMIT the rule-(B) marks at the same
+      // point and for the same reason (claim final, `run()` not started).
+      for (const WeakVH &PC : R.PredictedConds)
+        markPredictedTaintCone(PC);
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
       RegionFlattener(R, Builder, Rec).run();

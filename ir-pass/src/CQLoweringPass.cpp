@@ -9,6 +9,7 @@
 #include "ArithLowering.h"
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
+#include "CondLiteral.h"      // declineQuantumCondLiterals (bd xdu2.13 round 2)
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
 #include "Fp80Union.h"
@@ -125,6 +126,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
+
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
   // are library functions, now source-injected, not name-recognized. A tainted
@@ -686,6 +688,32 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // cone AT ONCE (`WireWalk::gateIsHarmless` grows its per-activation barriers
   // from the seed set it is handed), while a rail's is asked per rail.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-xdu2.13`) THE LITERAL HALF, same slot, same reason: a
+  // 4.4 condition node's classical `_hl` LITERAL was untainted at the classifier's
+  // taint, and one derived from a 6.5/4.5 `%out` is quantum after the fixpoint —
+  // a quantum value in a classical slot (Rule 3). Loud. The rule-(B) marks are
+  // dropped immediately after: no classifier can ask again past this slot.
+  declineQuantumCondLiterals(M, taint);
+  // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
+  // function boundary, and its slot is the argument. The call-return closure lives
+  // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
+  // `propagateFromSeeds` drain — and a DIRECT `Tainted` insert of a fresh rail
+  // over an untainted value drains through it only if registered in
+  // `UntaintedMergeRails` (the IO-sink mux rail was not until Rule-13 round 5
+  // F-R5-1; the complete list is at `propagateWorklist`) — so every stage above
+  // sees such a call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
+  // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
+  // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners
+  // ABOVE this slot untouched: the specializer's `detectSpecializations`, the loop
+  // layer, and `declineQuantumCondLiterals` just above keep their strings
+  // (measured, TRACK_E §6d/§6e). ⚠ Owners BELOW it are PRE-EMPTED in a
+  // multi-function module whose callee returns a register: `declineClassicalMuxes`
+  // and everything after now see this string instead of theirs (round 4 P3-b —
+  // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
+  // muxed by a classical-condition phi`). Both are declines; only the owner moved.
+  declineQuantumReturnCalls(M, taint);
+  stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
   // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip
@@ -834,6 +862,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `cloneTaint` is never unioned into `taint` (C-Taint); `specialize` re-marks
   // each retargeted call result into `taint` per its post-lowering return-taint.
   specialize(M, wd, taint, plan6);
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
+  // can REMOVE taint (a clone proved classical), after every control emitter
+  // already read the value as a handle. Loud, before anything else runs.
+  if (declineScrubbedHandleReads(M, taint))
+    return PreservedAnalyses::none();
 
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
@@ -1298,6 +1331,28 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (Track A.1; bd test_C_libtooling-9pum) the compare half, mirrored here too —
   // twin-pipeline parity is MANDATORY (WI-1.12); see run() for the slot argument.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-xdu2.13`) the literal half + the mark drop, mirrored.
+  declineQuantumCondLiterals(M, taint);
+  // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
+  // function boundary, and its slot is the argument. The call-return closure lives
+  // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
+  // `propagateFromSeeds` drain — and a DIRECT `Tainted` insert of a fresh rail
+  // over an untainted value drains through it only if registered in
+  // `UntaintedMergeRails` (the IO-sink mux rail was not until Rule-13 round 5
+  // F-R5-1; the complete list is at `propagateWorklist`) — so every stage above
+  // sees such a call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
+  // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
+  // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners
+  // ABOVE this slot untouched: the specializer's `detectSpecializations`, the loop
+  // layer, and `declineQuantumCondLiterals` just above keep their strings
+  // (measured, TRACK_E §6d/§6e). ⚠ Owners BELOW it are PRE-EMPTED in a
+  // multi-function module whose callee returns a register: `declineClassicalMuxes`
+  // and everything after now see this string instead of theirs (round 4 P3-b —
+  // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
+  // muxed by a classical-condition phi`). Both are declines; only the owner moved.
+  declineQuantumReturnCalls(M, taint);
+  stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
   // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip
@@ -1351,6 +1406,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 6 specialization driver (step 14) — mirrored from run() (twin-pipeline
   // parity, WI-1.12).
   specialize(M, wd, taint, plan6);
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
+  // can REMOVE taint (a clone proved classical), after every control emitter
+  // already read the value as a handle. Loud, before anything else runs.
+  if (declineScrubbedHandleReads(M, taint))
+    return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
   // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,
   // `docs/frontend.md` §3.2, for a `@cq_theta_<sfx>` / `@cq_measure_<sfx>` reader

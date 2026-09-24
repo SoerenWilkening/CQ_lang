@@ -192,7 +192,17 @@ int main(int argc, char **argv) { (void)argv; return slice(argc + 1, argc); }
 
 #elif CASE == CASE_SPEC_GUARDED_BOUND
 /* Rule-13 xdu2.4 finding 2, PredMux half: m == n guards the classical p[i] read
- * only on the arm; flattening would execute it at the region entry. */
+ * only on the arm; flattening would execute it at the region entry.
+ * Walls, in order: E4-gep (closed by bd xdu2.8's guarded read) -> the 4.4
+ * select's untainted-leaf gate on the hybrid `and (m == n), (q != 0)` (closed by
+ * bd xdu2.13: the classical leaf is a `cq_template_and_i1_hl` literal) -> the
+ * loop layer's round-2 grant re-ask, "round-1 iteration-local marking falsified
+ * by round-2 taint": -O1 LICM-hoists the `and` into the preheader, the round-1
+ * grant names it as an invariant root, and the select emitter erases the tree
+ * node, so the re-ask sees a NULLED root. That wall is PRE-EXISTING — a
+ * pure-quantum `(q > 1) & (r < 5)` select in the same rolled loop declines with
+ * the same string on the pre-xdu2.13 binary — and it is what row 13 declines at
+ * now. Flip the sidecar row to accept when it moves. */
 __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];

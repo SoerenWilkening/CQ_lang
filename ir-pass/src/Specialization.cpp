@@ -630,6 +630,8 @@ void scrubForwardCone(Value *Root, TaintSet &taint,
                       const SmallPtrSetImpl<const Value *> &TaintedSources) {
   std::vector<Value *> Worklist;
   auto scrub = [&](Value *V) {
+    if (taint.Tainted.count(V))
+      taint.ScrubbedByReturnTaint.emplace_back(V);  // bd l3oi: the record.
     taint.Tainted.erase(V);
     taint.BirthOrder.erase(V);
     if (auto *I = dyn_cast<Instruction>(V))
@@ -831,6 +833,8 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   Function *Clone = cloneFor(SpecCandidate{Site, Callee, Mask});
   // Insert the (incomplete) record up front so a self/dedup reference resolves.
   plan.Cache[Key] = SpecRecord{Clone, false};
+  // bd l3oi F-R7-1: the specializer's own record of the clone's handle slots.
+  taint.SpecHandleArgMask[Clone] = Mask;
 
   TaintSet cloneTaint = seedClone(Clone, Mask);
 
@@ -947,6 +951,9 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
       // dirty rail collapses the caller's qubit (Rule 6/8). Include it in the
       // forward stream and guarantee the twin exists.
       ensureTwin(Rec.Clone);
+      // bd l3oi F-R7-1: the twin's handle slots — `out` (arg 0) + the clone's.
+      if (Function *Twin = M.getFunction((Rec.Clone->getName() + "_unc").str()))
+        taint.SpecHandleArgMask[Twin] = (InnerMask << 1) | 1;
       TaintedCloneCalls.insert(Inner);
     } else {
       // A classical-derived result (inner restored its own borrowed inputs and

@@ -511,8 +511,45 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
             continue;
         }
       }
-      if (out.Tainted.insert(I).second)
+      if (out.Tainted.insert(I).second) {
         Worklist.push_back(I);
+        // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN, and it does
+        // so HERE, in the propagation drain (`propagate`, the round-2 reseed in
+        // `repropagateControlMerges` and its onward-control fixpoint,
+        // `propagateFromSeeds` for `MergePhiPeel` / `adjudicateTaintDelta`) — Rule
+        // 14, one owner. ⚠ A value inserted into `Tainted` DIRECTLY does NOT go
+        // through here, and "every grower drains through this" was FALSE until
+        // Rule-13 round 5 F-R5-1: the IO-sink mux rail (`IOSinkLowering` 7c')
+        // replaced an UNTAINTED φ and was never re-seeded. The complete list of
+        // direct inserts of a FRESH value over an UNTAINTED one is: the 6.5
+        // `ClassicalCallArmEmit` `%out`, the 4.5 `SwitchDataMuxEmit` `%out`, the
+        // IO-sink `MuxOut` (all three registered in `UntaintedMergeRails`, which
+        // `repropagateControlMerges` drains through here), and `MergePhiPeel`'s
+        // clone/select (drained via `propagateFromSeeds`). Every other direct
+        // insert replaces an already-tainted value or is scaffold with no reader
+        // (TRACK_E_xdu2_13.md §6f). A NEW such site must join one of those two
+        // routes, or this closure — and every guard — cannot see it. A tainted `ret` means its DEFINED function returns
+        // a quantum register's HANDLE, so every DIRECT call site of that function
+        // is quantum in its caller and joins the worklist; chains (g→h) and
+        // recursion close by the worklist itself. (Round 3 put this as a separate
+        // fixpoint loop in `propagate` only; Rule-13 round 4 F-R4-1 measured the
+        // round-2 reseed missing it — a `ret` of a 6.5 merge `%out` left its call
+        // site classical at FINAL taint, and a literal carrying the handle id passed
+        // `declineQuantumCondLiterals`.) The consumers are refused loudly by
+        // `declineQuantumReturnCalls`.
+        if (auto *Ret = dyn_cast<ReturnInst>(I)) {
+          Function *F = Ret->getFunction();
+          for (User *FU : F->users()) {
+            auto *CB = dyn_cast<CallBase>(FU);
+            // A call whose result is UNUSED carries no value to taint (and stays
+            // exactly as the pre-3jru compiler saw it; `declineQuantumReturnCalls`
+            // skips it too — round 4 P3-a).
+            if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&
+                out.Tainted.insert(CB).second)
+              Worklist.push_back(CB);
+          }
+        }
+      }
     }
   }
 }
@@ -556,8 +593,11 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
                     /*skipRuntimeCalls=*/false);
 
+  // bd `test_C_libtooling-3jru`: call-return taint is closed INSIDE
+  // `propagateWorklist` (see there), so this rebuild is closed under it too.
   return out;
 }
+
 
 void foldIdentityBitcasts(Module &M, TaintSet &taint,
                           SmallPtrSetImpl<Value *> *Scrub) {
@@ -2431,6 +2471,115 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
     CI->eraseFromParent();
   }
   (void)Declined;
+}
+
+// bd `test_C_libtooling-3jru` — character-for-character in
+// `condtree_classical_leaf_reject_callee_quantum_return*.ll` and
+// `taint_reject_quantum_return_*.ll`.
+static constexpr char kMsgQuantumReturn[] =
+    "cq taint escape: quantum value returned across a function boundary";
+
+bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
+  for (const BasicBlock &BB : F)
+    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue())
+        if (taint.Tainted.count(RV))
+          return true;
+  return false;
+}
+
+// bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
+bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration() || !functionReturnsTainted(F, taint))
+      continue;
+    // Two kinds of use are refused:
+    //  * a DIRECT call whose RESULT HAS A USE — the caller would read the handle
+    //    as a value. A direct call whose result is UNUSED (`g(m);`) is NOT
+    //    refused (Rule-13 round 4 P3-a): nothing in the caller reads the handle,
+    //    the callee's `ret` of it is the ordinary Escaped contract, and the rail is
+    //    left allocated (Rule 6) — which is what the pre-3jru compiler emitted.
+    //  * ANY other use — the address taken (a function pointer, a store, an
+    //    argument, a constant expression): it may reach an INDIRECT call whose
+    //    result is read, and nothing here can tell which. This is kept loud even
+    //    when no indirect call exists in the module (a function that is only
+    //    address-taken and never called still declines): proving the absence of
+    //    every indirect read is a points-to question this stage does not ask, and
+    //    an over-decline is the safe side of it.
+    // A function with no use in this module (an entry point, or a cross-TU
+    // export) is untouched: its `ret` of a handle is the existing Escaped contract.
+    for (User *U : F.users()) {
+      if (auto *CB = dyn_cast<CallBase>(U);
+          CB && CB->getCalledOperand() == &F && CB->use_empty())
+        continue;
+      // Rule-13 round 5 F-R5-2: `@llvm.used` / `@llvm.compiler.used` list F to
+      // keep it alive; they are not callers and read no result.
+      if (auto *C = dyn_cast<Constant>(U); C && !isa<GlobalValue>(C)) {
+        bool OnlyUsedLists = !C->use_empty();
+        for (User *CU : C->users()) {
+          auto *GV = dyn_cast<GlobalVariable>(CU);
+          if (!GV || (GV->getName() != "llvm.used" &&
+                      GV->getName() != "llvm.compiler.used"))
+            OnlyUsedLists = false;
+        }
+        if (OnlyUsedLists)
+          continue;
+      }
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I) {
+        // A constant user (a global initializer, a constant expression): no
+        // instruction to anchor on — anchor on the function itself.
+        F.getContext().diagnose(
+            DiagnosticInfoUnsupported(F, kMsgQuantumReturn));
+        return true;
+      }
+      I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *I->getFunction(), kMsgQuantumReturn, I->getDebugLoc()));
+      return true;
+    }
+  }
+  return false;
+}
+
+// bd `test_C_libtooling-l3oi` — see TaintPropagation.h. Mirrored
+// character-for-character by `taint_reject_scrubbed_handle_*.ll`.
+static constexpr char kMsgScrubbedHandle[] =
+    "cq taint escape: classical call result used as a quantum register";
+
+bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
+  (void)M;
+  for (const WeakVH &H : taint.ScrubbedByReturnTaint) {
+    Value *V = H;
+    if (!V || taint.Tainted.count(V))
+      continue;  // erased, or re-tainted by an independent source since.
+    for (User *U : V->users()) {
+      auto *CB = dyn_cast<CallBase>(U);
+      if (!CB)
+        continue;
+      const Function *Callee = CB->getCalledFunction();
+      if (!Callee)
+        continue;
+      StringRef N = Callee->getName();
+      bool Reads = N.starts_with("cqrt_") || N.starts_with("cq_template_");
+      // Rule-13 round 7 F-R7-1: a call to a SPECIALIZED CLONE (or its `_unc`
+      // twin) built pre-scrub from a detection-time mask reads the value as a
+      // handle in every MASKED argument slot. Identified by the specializer's
+      // own record (`SpecHandleArgMask`), never by the `__cq_q_` name prefix.
+      if (!Reads) {
+        auto It = taint.SpecHandleArgMask.find(Callee);
+        if (It != taint.SpecHandleArgMask.end())
+          for (unsigned A = 0, E = CB->arg_size(); A < E && A < 64; ++A)
+            if (CB->getArgOperand(A) == V && ((It->second >> A) & 1))
+              Reads = true;
+      }
+      if (!Reads)
+        continue;
+      CB->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *CB->getFunction(), kMsgScrubbedHandle, CB->getDebugLoc()));
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace cq
