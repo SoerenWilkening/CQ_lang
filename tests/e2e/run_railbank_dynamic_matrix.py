@@ -14,7 +14,9 @@ registered as separate ctest entries without editing this runner:
 
 An accept row must lower at exit 0, carry ``!cq.railbank`` (unless it is a
 twin's unrolled side or sets ``require_railbank: false``), emit no
-``cqrt_qram_*`` and never park literal handle 0.  A decline row must exit
+``cqrt_qram_*`` and never park literal handle 0 in a ``!cq.railbank`` object
+(resolved through getelementptr hops; a classical store into a non-bank object
+is not a parked handle — see ``literal_zero_bank_stores``).  A decline row must exit
 non-zero with ``diagnostic`` in stderr.  A twin pair is LINKED, run, and its
 rolled trace must be byte-identical to the hand-unrolled twin's after exactly
 the listed identity lines are dropped (CLAUDE.md §1 Witnesses).
@@ -27,6 +29,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -50,6 +53,39 @@ def load_expectations(source: str) -> tuple[dict[int, dict], list[dict]]:
     return cases, twins
 
 
+_DEFINE = re.compile(r"^define [^@]*@([\w.$]+)\(", re.M)
+_BANK_ALLOCA = re.compile(r"^\s*%([\w.]+) = alloca [^\n]*!cq\.railbank ", re.M)
+_GEP = re.compile(r"^\s*%([\w.]+) = getelementptr [^\n]*?ptr %([\w.]+),", re.M)
+_ZERO_STORE = re.compile(r"^\s*store i32 0, ptr %([\w.]+),", re.M)
+
+
+def literal_zero_bank_stores(lowered_text: str) -> list[tuple[str, str]]:
+    """Every `store i32 0` whose address resolves (through getelementptr hops)
+    to an alloca carrying `!cq.railbank` — handle 0 parked in a RAIL BANK.
+
+    ⚠ Scoped to the OBJECT, not to the promoter's `%cq.bank.addr` name (bd
+    test_C_libtooling-xdu2.9). The name is minted for every relocated cell
+    store BEFORE the carve decides whether the object is a bank, so a dead
+    cell whose object is correctly NOT a bank (it parks the classical seed 0)
+    carried the name too; and a literal reaching a bank through any other
+    address spelling carried none. Names are function-local, so each
+    function body is resolved separately."""
+    hits: list[tuple[str, str]] = []
+    starts = [(m.start(), m.group(1)) for m in _DEFINE.finditer(lowered_text)]
+    for idx, (start, fn) in enumerate(starts):
+        end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lowered_text)
+        body = lowered_text[start:end]
+        banks = set(_BANK_ALLOCA.findall(body))
+        base = dict(_GEP.findall(body))
+        for ptr in _ZERO_STORE.findall(body):
+            p, hops = ptr, 0
+            while p in base and hops < 64:
+                p, hops = base[p], hops + 1
+            if p in banks:
+                hits.append((fn, ptr))
+    return hits
+
+
 def check_case(case_id: int, spec: dict, twin_sides: set[int],
                stage1: pathlib.Path, lowered: pathlib.Path,
                lower_result: subprocess.CompletedProcess[str]) -> list[str]:
@@ -71,8 +107,9 @@ def check_case(case_id: int, spec: dict, twin_sides: set[int],
             errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
         if "cqrt_qram_" in lowered_text:
             errs.append(f"CASE={case_id}: rail bank emitted cqrt_qram_*")
-        if "store i32 0, ptr %cq.bank.addr" in lowered_text:
-            errs.append(f"CASE={case_id}: rail bank stored literal handle 0")
+        for fn, ptr in literal_zero_bank_stores(lowered_text):
+            errs.append(f"CASE={case_id}: rail bank stored literal handle 0 "
+                        f"(@{fn}: store i32 0, ptr %{ptr})")
     else:
         if lower_result.returncode == 0:
             errs.append(f"CASE={case_id}: expected a loud decline")

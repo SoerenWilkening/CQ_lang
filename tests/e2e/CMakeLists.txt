@@ -6578,3 +6578,6 @@ add_test(NAME e2e-slice-grover-oracle-uncompute
 get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
 set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
   ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+
+# bd xdu2.9 (Track D): dead bank cells whose zero seed makes the store constant-dead are not rail banks.
+cq_railbank_matrix(e2e-railbank-deadcell-matrix railbank_deadcell_matrix.c)

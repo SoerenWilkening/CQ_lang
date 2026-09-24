@@ -104,10 +104,16 @@
 //     to `select c, t, seed` exactly as `-O1` SimplifyCFG would. That is the
 //     flat twin's 4.4 data select, whose merge mints its own `%out`, so no seed
 //     is minted. Witnessed by byte identity with the hand-unrolled twin
-//     (`tests/e2e/railbank_dynamic_matrix.c` CASE 14 vs 17).
+//     (`tests/e2e/railbank_dynamic_matrix.c` CASE 14 vs 17). When the
+//     promoter's own forwarding makes `c` a CONSTANT (the zero seed under
+//     `if (b[i] != 0)`), PASS H resolves it to the taken edge's value, as
+//     SimplifyCFG would (bd xdu2.9): the dead store parks the classical seed,
+//     the carve answers NotBank and the object is NOT a rail bank
+//     (`tests/e2e/railbank_deadcell_matrix.c`).
 //
 // On the shapes they own, neither path parks literal handle 0 in a cell; but a
-// constant-folded COMPOSITION can (Rule-13 review A F-1), so the property is a
+// constant-folded COMPOSITION can (Rule-13 review A F-1 — whose own exhibit,
+// PASS H's constant-condition select, bd xdu2.9 removed), so the property is a
 // checked POSTCONDITION, `declineNonHandleBankStores`, not an argument about
 // these two paths. Off-pattern banks still remain untouched for the existing
 // loud decline.

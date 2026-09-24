@@ -525,6 +525,10 @@ bool planBank(AllocaInst *Bank, const TaintSet &taint, DominatorTree &DT,
     //     keeps its own source seed (a fresh rail; the skipped path's cell is
     //     a separate |0>, exactly as the source says). A classical `c` becomes a
     //     classical-condition select over tainted data and keeps that decline.
+    //     A condition that the promoter's OWN forwarding makes CONSTANT (the
+    //     zero seed under `if (b[i] != 0)`) is resolved by PASS H to the taken
+    //     edge's value instead of a select (bd xdu2.9) — it is known only after
+    //     PASS B/F, which is why it is asked there and not here.
     //     The arm must be exactly {bank accesses PASS E erases} + `br merge`,
     //     and the merge must have exactly these two predecessors, so PASS H's
     //     two-entry fold is well-defined; anything else skips this path.
@@ -846,14 +850,18 @@ void applyBank(BankPlan &Plan, WidthDispatch &wd) {
   // ⚠⚠ AND THE FIRST VERSION OF THIS PARAGRAPH SAID "in NEITHER does the ¬arm
   // park literal 0" AND WAS FALSE (Rule-13 review A F-1, P1; pre-existing for
   // FIXED banks on the HEAD oracle). When the zero seed makes the arm's own
-  // CONDITION constant (`if (c[i] != 0) c[i] = t;`), PASS H yields
+  // CONDITION constant (`if (c[i] != 0) c[i] = t;`), PASS H USED TO yield
   // `select true, 0, t`, and a later stage (`simplifyFlattenResiduesInFunction`
-  // in a PredMux-claimed function) folds it to the LITERAL — no φ is left
+  // in a PredMux-claimed function) folded it to the LITERAL — no φ is left
   // unlowered and no single emitter owns the composition. The I-3 hazard is
   // therefore closed by a POSTCONDITION, not by an argument about emitters:
   // `declineNonHandleBankStores`, in both entry points after every folder, is
-  // what makes "no cell parks a literal" a checked fact
-  // (`tests/e2e/railbank_dynamic_matrix.c` CASE 20/21).
+  // what makes "no cell parks a literal" a checked fact.
+  // ⚠ bd xdu2.9 CLOSED THAT ONE DOOR, NOT THE CLASS: PASS H now resolves a
+  // `ConstantInt` condition itself (see there), so the dead cell's object is
+  // never marked and `tests/e2e/railbank_dynamic_matrix.c` CASE 20/21 ACCEPT.
+  // The postcondition stays, pinned by a constant-condition select the
+  // promoter does NOT own (`railbank_deadcell_reject_backstop_literal.ll`).
   //
   // ⚠ AND IT MANUFACTURES THE VALUE PASS 3 REFUSES TO WRITE — a LATENT P1,
   // gated by exactly that trigger (review item I-3). The `addIncoming` below
@@ -962,10 +970,48 @@ void applyBank(BankPlan &Plan, WidthDispatch &wd) {
         I.moveBefore(CondBr);
     Value *Cond = CondBr->getCondition();
     const bool ArmOnTrue = CondBr->getSuccessor(0) == Plan.FoldArm;
+    // ⚠ THE CONSTANT CONDITION (bd `test_C_libtooling-xdu2.9`). The promoter's
+    // OWN forwarding (PASS B: the cell load becomes the zero seed) and its own
+    // fold (PASS F) can make the arm's condition a LITERAL — `if (c[i] != 0)
+    // c[i] = t;` over a zero seed is `icmp eq i32 0, 0` = `true` — and that is a
+    // FACT at this point, not a prediction: `Cond` IS the folded constant. A
+    // `select <const>, …` was the pre-fix spelling, and it was never an honest
+    // output: nothing downstream of this stage lowers a constant-condition
+    // select over tainted data (it declined `classical-condition select`), and in
+    // a PredMux-claimed function `simplifyFlattenResiduesInFunction` folded it
+    // to the SEED LITERAL, which the carve then MARKED as a bank parking
+    // literal handle 0 (the Rule-13 review A F-1 P1 that
+    // `declineNonHandleBankStores` now catches).
+    //
+    // So the constant is resolved HERE, exactly as SimplifyCFG would have
+    // resolved it had `-O1` seen the seed: each merge φ becomes the value the
+    // taken edge carries. Value-preserving for every φ by definition of the
+    // constant. The two outcomes, both measured on
+    // `tests/e2e/railbank_deadcell_matrix.c`:
+    //   * the SKIP edge is taken (the dead store) — the φ becomes the seed
+    //     LITERAL, the relocated store is CLASSICAL, the carve answers `NotBank`
+    //     (`a classical store is never a rail bank`), no `!cq.railbank` is ever
+    //     minted, and the cells' readers stay classical. The object is not a
+    //     rail bank at all; the arm's `cq_theta` keeps running with its result
+    //     dead, as it does in the flat twin.
+    //   * the ARM edge is taken (`if (c[i] == 0)`) — the φ becomes `t`, the store
+    //     is unconditional, and the bank is the ordinary unconditional-prep bank.
+    // ⚠ ONLY a `ConstantInt`. An `undef`/`poison` or `ConstantExpr` condition is
+    // NOT resolved (it keeps the select and its existing owner): picking an edge
+    // for `undef` is a choice, not a fact, and nothing here needs it.
+    // ⚠ This does NOT retire `declineNonHandleBankStores`: that postcondition
+    // still guards every MARKED bank against a literal arriving by any other
+    // composition. This fold only stops the promoter from being one of them.
+    auto *ConstCond = dyn_cast<ConstantInt>(Cond);
     IRBuilder<> B(&*Plan.FoldMerge->getFirstInsertionPt());
     for (PHINode &P : llvm::make_early_inc_range(Plan.FoldMerge->phis())) {
       Value *VArm = P.getIncomingValueForBlock(Plan.FoldArm);
       Value *VSkip = P.getIncomingValueForBlock(Plan.FoldCond);
+      if (ConstCond) {
+        P.replaceAllUsesWith((ConstCond->isOne() == ArmOnTrue) ? VArm : VSkip);
+        P.eraseFromParent();
+        continue;
+      }
       Value *Sel = ArmOnTrue ? B.CreateSelect(Cond, VArm, VSkip, P.getName())
                              : B.CreateSelect(Cond, VSkip, VArm, P.getName());
       if (auto *SI = dyn_cast<Instruction>(Sel))
@@ -1034,9 +1080,12 @@ bool promoteRailBankCells(Module &M, WidthDispatch &wd,
     // and far above `unrollConstTripLoops` / `recognizeCtlzIdiomLoops` / the
     // PredMux flattener, so the loops SE describes here are the SOURCE loops and
     // no earlier stage in either entry point reshapes control flow. Within this
-    // stage's own fixpoint the analyses are rebuilt per call, and the rewrite
-    // changes NO edge — it inserts and erases instructions only — so even a
-    // cached tree would stay valid.
+    // stage's own fixpoint the analyses are rebuilt per call, and the call
+    // RETURNS after one bank, so no tree outlives a rewrite. ⚠ The sentence that
+    // stood here — "the rewrite changes NO edge … so even a cached tree would
+    // stay valid" — has been FALSE since xdu2.4's PASS H, which rewrites the
+    // condition block's branch and ERASES the emptied arm block (corrected in
+    // bd xdu2.9's change; the per-call rebuild is what makes it safe, not that).
     AssumptionCache AC(F);
     TargetLibraryInfoImpl TLII(Triple(M.getTargetTriple()));
     TargetLibraryInfo TLI(TLII);
@@ -1115,14 +1164,19 @@ bool isLoweredRailHandle(const Value *V, SmallPtrSetImpl<const Value *> &Seen) {
 }  // namespace
 
 // Rule-13 xdu2.4 review A F-1 (P1; PRE-EXISTING for fixed banks on the HEAD
-// oracle, new customers through PASS H). A constant-condition `select` that the
-// promoter's fold produces can be folded AGAIN by a later stage
+// oracle, new customers through PASS H). A constant-condition `select` stored
+// into a bank cell can be folded by a later stage
 // (`simplifyFlattenResiduesInFunction` folds every constant-condition select in
-// a claimed function) down to the SEED LITERAL, so the surviving store parked
+// a claimed function) down to a LITERAL, so the surviving store parked
 // `store i32 0` — handle `0`, a live and possibly FREED rail — and the measure
 // walk measured it. No single emitter owns that composition, so the invariant is
 // asked where it is a FACT: after every lowering stage, in BOTH entry points,
 // every store into a `!cq.railbank` object must park a proven rail handle.
+// ⚠ The exhibit that found it — the promoter's OWN PASS H minting `select true,
+// 0, t` over a zero seed — no longer exists (bd xdu2.9: PASS H resolves a
+// `ConstantInt` condition, and that object is never marked). The backstop is
+// NOT retired with it; its lit pin is `railbank_deadcell_reject_backstop_literal.ll`,
+// a constant-condition select the promoter does not own.
 bool declineNonHandleBankStores(Module &M) {
   for (Function &F : M)
     for (Instruction &I : instructions(F)) {

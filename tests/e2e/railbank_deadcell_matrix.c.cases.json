@@ -1,0 +1,40 @@
+{
+  "_comment": "Expectations for railbank_deadcell_matrix.c (bd test_C_libtooling-xdu2.9), read by run_railbank_dynamic_matrix.py. A dead cell's object is NOT a rail bank after the fix, so those rows set require_railbank=false; rows whose b[] Grover bank survives keep the default. Twins pair each rolled dead-cell row with its ARRAY-FREE ROLLED twin (the flat twins 2/4/15 accept too, but uncompute the dead preparations LIFO at function end instead of per trip — a reorder on disjoint rails, bank-independent and identical on the pre-fix oracle; see TRACK_D.md). Rows 11-13 are neighbours whose store is NOT provably dead and keep their loud declines; rows 21-22 are the IN-ARM dead-prep sibling, a measured residual over-decline outside xdu2.9's scope (the flat twin, row 23, compiles) with a retirement trigger in the source.",
+  "cases": {
+    "1":  {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "2":  {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "3":  {"accept": true,  "diagnostic": null, "require_railbank": false,
+           "stage1_contains_in_order": ["alloca i32, i64"],
+           "stage1_note": "clang -O1 did not preserve a runtime i32 VLA"},
+    "4":  {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "5":  {"accept": true,  "diagnostic": null},
+    "6":  {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "7":  {"accept": true,  "diagnostic": null},
+    "8":  {"accept": true,  "diagnostic": null},
+    "9":  {"accept": true,  "diagnostic": null,
+           "stage1_contains_in_order": ["alloca i32, i64"],
+           "stage1_note": "clang -O1 did not preserve a runtime i32 VLA"},
+    "10": {"accept": true,  "diagnostic": null},
+    "11": {"accept": false, "diagnostic": "cq rail bank: array escapes to an unsupported user"},
+    "12": {"accept": false, "diagnostic": "cq taint escape: tainted value muxed by a classical-condition select"},
+    "13": {"accept": false, "diagnostic": "cq taint escape: tainted value muxed by a classical-condition select"},
+    "14": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "15": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "16": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "17": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "18": {"accept": true,  "diagnostic": null},
+    "19": {"accept": true,  "diagnostic": null},
+    "20": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "21": {"accept": false, "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"},
+    "22": {"accept": false, "diagnostic": "cq taint escape: tainted value stored to memory"},
+    "23": {"accept": true,  "diagnostic": null, "require_railbank": false}
+  },
+  "twins": [
+    {"rolled": 1,  "twin": 16, "argv": ["a", "b"], "dropped_twin_lines": []},
+    {"rolled": 3,  "twin": 17, "argv": ["a", "b"], "dropped_twin_lines": []},
+    {"rolled": 5,  "twin": 6,  "argv": ["a", "b"], "dropped_twin_lines": []},
+    {"rolled": 7,  "twin": 18, "argv": ["a", "b"], "dropped_twin_lines": []},
+    {"rolled": 9,  "twin": 19, "argv": ["a", "b"], "dropped_twin_lines": []},
+    {"rolled": 14, "twin": 20, "argv": ["a", "b"], "dropped_twin_lines": []}
+  ]
+}
