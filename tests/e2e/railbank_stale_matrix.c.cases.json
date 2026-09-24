@@ -153,6 +153,40 @@
       "accept": false,
       "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
     },
+    "45": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "46": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "47": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "48": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "49": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "50": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "51": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "52": {
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "stage1_note": "the promoter forwards the same-trip load, so no bank survives to the lowered module"
+    },
     "40": {
       "accept": true,
       "diagnostic": null

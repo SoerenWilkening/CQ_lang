@@ -1078,7 +1078,24 @@ Instruction *staleReadOfValue(Value *V,
     SmallVector<LoadInst *, 4> CellReads;
     if (railBankCellReadsOf(V, CellReads))
       for (LoadInst *LD : CellReads)
-        if (railGateBetween(Def, LD, Gates, Refreshes)) {
+        // ⚠ `DefRefreshes=false`, NOT `Refreshes` (Rule-13 round 3, F-R3-1 —
+        // a P1 that the first spelling of this hop, passing `Refreshes`, let
+        // through). The refresh cut says "re-running `Def` makes the NAME
+        // denote the new value", which is true of an SSA name and FALSE of a
+        // memory cell: cell k keeps the value activation k wrote while later
+        // activations re-run `Def` and relabel the wire. With the cut, a park
+        // AFTER an in-place op in the same loop —
+        //   `for(k){ if(q>k) cq_phi(.3); q ^= 3; b[k] = q; }
+        //    for(i) cq_measure(b[i]);`
+        // — had every `Def → back edge → gate` path cut at the next `Def`,
+        // left `Def → exit → load` gate-free, and ACCEPTED a stream in which
+        // every cell reads the FINAL wire (`reviewB_r3/a1_park_after_xor.c`;
+        // its hand-unrolled register twin emits the correct out-of-place
+        // stream). A re-executed in-place `Def` is therefore a GATE on the
+        // parked wire, never a refresh of the cell (L2: the refresh cut is the
+        // other set computed over the same closure). Decline-only: `false`
+        // can only find more paths.
+        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {
           // Name the consumer the register spelling's diagnostic names (the
           // measure), falling back to the load when it has no single reader.
           if (LD->hasOneUse())

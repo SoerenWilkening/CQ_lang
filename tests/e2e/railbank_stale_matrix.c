@@ -56,6 +56,14 @@
 #define CASE_RUNTIME_INLOOP_XOR_LEGIT 38
 #define CASE_FIXED_INLOOP_XOR_LEGIT 39
 #define CASE_RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER 44
+#define CASE_RUNTIME_INLOOP_XOR_PARK_AFTER_OP 45
+#define CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP_SLICE 46
+#define CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP 47
+#define CASE_RUNTIME_INLOOP_SUB_PARK_AFTER_OP 48
+#define CASE_RUNTIME_INLOOP_XORK_PARK_AFTER_OP 49
+#define CASE_FIXED_INLOOP_PARK_AFTER_OP_CONST 50
+#define CASE_RUNTIME_INLOOP_XOR_PARK_OUTOFPLACE 51
+#define CASE_RUNTIME_INLOOP_PARK_SAMETRIP_READ 52
 #define CASE_TWIN_OF_28 40
 #define CASE_TWIN_OF_29 41
 #define CASE_TWIN_OF_31 42
@@ -523,6 +531,85 @@ __attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
  return s + cq_measure(q) + cq_measure(r);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARK_AFTER_OP
+/* DECLINE — Rule-13 round-3 F-R3-1 (reviewer a1): the in-place xor's result parked inside the relabel loop. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP_SLICE
+/* DECLINE — F-R3-1 with `q += 1` outside main (reviewer e2_slice). */
+__attribute__((noinline)) int slice(int seed, int n) {
+  if (n <= 0) return 0; int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q += 1; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s;
+}
+int main(int argc, char **argv) { int n = atoi(argv[1]); if (n <= 0) return 1; return slice(argc, n); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with `q += 3` (reviewer b4). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q += 3; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_SUB_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with `q -= 5` (reviewer b5). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q -= 5; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XORK_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with a trip-dependent immediate `q ^= k` (reviewer b7). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= k; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_PARK_AFTER_OP_CONST
+/* DECLINE — F-R3-1 on a fixed bank with a constant trip (reviewer e1_fixed_const). */
+int main(int argc, char **argv) {
+  int q = cq_theta(argc, 0.5); int b[3]; int s = 0;
+  for (int k = 0; k < 3; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; }
+  for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARK_OUTOFPLACE
+/* ACCEPT — GREEN: the parked q^3 stays OUT OF PLACE (xors fuse to ^6 on the rail) -- not stale, must accept. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int s = 0;
+  int b[n];
+  for (int k = 0; k < n; ++k) { if (q > 5) cq_phi(0.3); q ^= 3; b[k] = q; q ^= 5; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_PARK_SAMETRIP_READ
+/* ACCEPT — GREEN: park after the op and read in the SAME trip (reviewer g2; the promoter forwards the load). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; s += cq_measure(b[k]); }
+  return s;
+}
 
 #elif CASE == CASE_TWIN_OF_28
 /* ACCEPT — hand-unrolled n=3 twin of 28. */

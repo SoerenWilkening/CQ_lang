@@ -691,9 +691,17 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         //     RETIREMENT TRIGGER, narrowed: the day a conditional-bank program
         //     whose arm rail ESCAPES `L` accepts, add the closure WITH a row
         //     for that program in `tools/railbank_twin_pairs`.
+        // ⚠ `SeedIsCellRead = Hopped` (bd `xdu2.1`, Rule-13 round 3, F-R3-1):
+        // a hopped seed is read out of a CELL, so the harmlessness proof may
+        // not grant by "re-running the seed's def refreshes the record" — that
+        // writes the NEXT cell, not this one (see `WireWalk.h`). Leg 1 only.
+        // The comment above that says the hop "moves the SEED and nothing
+        // else" was true until this bit; it now also withholds leg 2, and
+        // only for a hopped reader.
         if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, &I, &*DT,
                                     &taint, Self.empty() ? nullptr : &Self,
-                                    /*RequireEmitDominance=*/false))
+                                    /*RequireEmitDominance=*/false,
+                                    /*SeedIsCellRead=*/Hopped))
           taint.StaleQuantumReaders.emplace_back(&I);
       }
     }

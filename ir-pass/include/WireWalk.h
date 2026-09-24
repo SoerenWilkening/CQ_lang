@@ -155,7 +155,21 @@ llvm::CallInst *findNonDiagonalWireGate(
     const llvm::Instruction *EmitPoint = nullptr,
     const llvm::DominatorTree *DT = nullptr, const TaintSet *Taint = nullptr,
     const llvm::SmallPtrSetImpl<const llvm::CallInst *> *Covered = nullptr,
-    bool RequireEmitDominance = true);
+    bool RequireEmitDominance = true, bool SeedIsCellRead = false);
+
+// `SeedIsCellRead` (bd `xdu2.1`, Rule-13 round 3, F-R3-1 — 2026-09-24). The
+// harmlessness proof's LEG 2 (`recordBarrierCutsPath`) grants a gate that can
+// reach `EmitPoint` again when every such path re-executes the seed's
+// definition, on the premise "executing a barrier RE-ESTABLISHES THE RECORD".
+// That is true of an SSA name and FALSE when `EmitPoint` reads the seed out of a
+// rail-bank CELL: re-running the seed's def writes the NEXT cell, and the cell
+// being read keeps the activation that wrote it while the wire moves on. So a
+// caller whose seeds came through the memory hop (`railBankParkedRails`) passes
+// `true` and only LEG 1 (`!isPotentiallyReachable(T, EmitPoint)`) may grant.
+// Decline-only, and the default leaves every other caller byte-unchanged.
+// MEASURED CUSTOMER (reached with the collapse fence's bank-load hop disabled,
+// `TRACK_B.md` §6c): `for(k){ if(r>k) q = cq_theta(q,.3); b[k] = q; }
+// for(i) cq_measure(b[i]);` accepted with every cell reading the final wire.
 
 // (Track A.1) THE ENUMERATING FACE OF THE SAME WALK — same closure, same
 // exemptions, same harmlessness proof; it COLLECTS every staling gate instead of
