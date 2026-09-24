@@ -241,6 +241,84 @@ overwritten by another track mid-session). It rebuilt both targets per mutant an
 source afterwards. The owned tests were re-run green on the restored binary, cq-opt sha256
 `711b4fb1…`.
 
+## Rule-13 round 2 (CLEAR-WITH-ITEMS): F-1 (P2) fixed, F-2 folded in
+
+**F-1 (P2): the walk never looked at taint.** A branch on a TAINTED condition is FLATTENED by
+control lowering. Both of its successors execute, and a value arm's chain, loads included, is
+HOISTED into the predecessor. So a tainted "dominating edge" says nothing about whether the read
+executes. The reviewer's reproducer (`reviewA_r2/q06_tvalue.c`) is
+`if ((k > 0) & c) x = ((x + b[k&1]) * 3) ^ 5;`, with `c = cq_theta_i1`.
+- `-O1` gives `br (and i1 %pos, %c)`, which implies `k > 0` and refuted the write guard's false
+  edge. The carve printed `railbank [Bank]` and minted the record. The module then declined only at
+  the D5 wall (`unsupported reader of a rail-bank cell`).
+- So the decline was CONTINGENT: any D5 widening would have made it a P1 over-accept. The oracle
+  had declined at C6.
+
+**Fix, two conjuncts, both decline-direction:**
+1. `singleValuedClosure` (now "classical single-valued") refuses any closure value that is in
+   `taint.Tainted`. So a tainted condition is never a fact and never prunes an edge; its edges are
+   FOLLOWED.
+2. At the C6 call site, a read that is control-dependent on a tainted branch
+   (`instUnderTaintedControl`, the existing 7.5 predicate, CALLED rather than re-derived: Rule 14)
+   gets no semantic path, only header dominance. This covers a CLASSICAL fact nested inside a
+   tainted arm, where PredMux may predicate the inner classical branch too and speculate the load.
+
+**Round-2 re-ask (L1), stated:** the carve's taint is the set it is handed. Growth after round 1 is
+re-adjudicated by `adjudicateTaintDelta` → `declineTaintEscapes`, which re-runs the carve over every
+tainted store with the GROWN set. This happens once inside `repropagateControlMerges` (after
+`detectAndLowerOnwardControl`) and once per `MergePhiPeel` delta. At the round-2 point any tainted
+region that round lowered is already flattened, so its branch no longer exists as a fact source.
+
+**The function header's false claim is corrected.** The old wording was "taken on every path to the
+read, so its condition has that edge's polarity whenever the read executes". It now reads as true
+only of CLASSICAL control. A new step (0) states the premise (an execution path is an IR CFG path)
+and its scope.
+
+**Red → green, three decline fixtures.** The final verdict is a decline on both binaries, so each
+fixture pins the difference through the debug trace: the read-order anchor must fire, and
+`--implicit-check-not='railbank [Bank]'` must hold.
+- `railbank_readorder_reject_tainted_fact.ll`: q06 verbatim. It also has
+  `--implicit-check-not` on the D5 string. RED on the pre-fix binary, which gave D5, no anchor,
+  and `[Bank]`. GREEN after.
+- `railbank_readorder_reject_tainted_prune.ll`: hand IR in which the tainted branch does NOT
+  dominate the read, so only conjunct 1 separates the binaries. RED on the pre-fix binary: `[Bank]`,
+  then `control flow under quantum control`. GREEN after.
+- `railbank_readorder_reject_classical_fact_under_tainted_arm.ll`: hand IR with the classical `k > 0`
+  branch nested inside the tainted arm; `-O1` fuses the C spelling into the q06 shape. Only
+  conjunct 2 separates the binaries (see the mutation rows).
+
+**F-2 folded in (the reviewer's simplification of the at-most-once argument).** Given the
+at-most-once check, step 1's "suffix after τ" machinery is unnecessary. Every name in every kept
+condition is single-valued. So induct on the FIRST pruned edge on ANY header-avoiding path: its
+source is walk-reachable, and both compares read the unique values of their names, so the
+SSA-level implication applies directly.
+- ⚠ **The hidden premise, now stated in the source (step (0)): an execution path IS an IR CFG
+  path.** That is exactly what taint flattening breaks, and F-1 is that premise failing. The
+  "argued redundant" status of the at-most-once half in the section above therefore holds only
+  together with the taint conjuncts.
+
+### Round-2 mutation matrix (owned tests only; denominator 15 lit + 14-row matrix + 1 twin)
+
+21 mutants: 13 DETECTED, 8 MISSED; the M0 null was MISSED (correct). Deltas against round 1:
+- **M2 (walk-edge closure dropped) MISSED → DETECTED** by `…_reject_tainted_prune.ll`. That
+  closure now carries the taint conjunct.
+- **M19 (new: closure taint check dropped) DETECTED**, by `…_reject_tainted_prune.ll` only.
+- **M20 (new: `instUnderTaintedControl` at the call site dropped) DETECTED**, by
+  `…_reject_classical_fact_under_tainted_arm.ll` only.
+- M1, M6, M7, M8, M10, M14 and M18 now also fail the new fixtures (for example M1 is 6/15 lit).
+- ⚠ **`…_reject_tainted_fact.ll` (q06) is DOUBLY fenced.** Neither M19 alone nor M20 alone turns
+  it red, because each conjunct catches it by itself (its only refuting fact is tainted, and its
+  read is under tainted control). It pins the COMBINED fix, not one conjunct. The two hand-IR
+  fixtures are what pin each conjunct individually.
+- **Still MISSED:** M3 (the fact closure; the fact-side taint check is shadowed by the read-side
+  conjunct), M11, M12, M13, M15, M16, M17. Their reasons are unchanged from round 1. On M3: a
+  tainted edge that dominates the read makes the read control-dependent on it, unless the read
+  post-dominates that branch. With edge dominance, that is possible only if the other successor
+  loops back, and no such shape was constructed.
+
+Final cq-opt sha256 `28d1a2c5…`. Owned tests on it: lit filter `Passed : 15`; ctest `100% tests
+passed, 0 tests failed out of 2`.
+
 ## What I did NOT test / owed
 
 - No full `ctest`, no full `ir-pass-lit`, no `cq-opt-equivalence`, no corpus A/B, no

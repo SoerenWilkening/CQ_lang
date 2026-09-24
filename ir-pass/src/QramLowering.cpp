@@ -278,11 +278,12 @@ bool instReaches(const Instruction *From, const Instruction *To) {
 // facts + conditions × closure-budget); the fixtures pin the verdict, not the
 // time, so this note is the only guard on the complexity.
 struct ReadOrderCtx {
+  const TaintSet &Taint;  // a TAINTED name is never a fact nor a prune (F-1).
   SmallPtrSet<const BasicBlock *, 32> Reached;  // reachable from entry.
   SmallPtrSet<const BasicBlock *, 32> InCycle;  // reachable and in a CFG cycle.
   DenseMap<const Value *, bool> SingleValued;
 
-  explicit ReadOrderCtx(const Function &F) {
+  ReadOrderCtx(const Function &F, const TaintSet &T) : Taint(T) {
     for (scc_iterator<const Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
       const bool Cyc = I.hasCycle();
       for (const BasicBlock *B : *I) {
@@ -294,8 +295,10 @@ struct ReadOrderCtx {
   }
 };
 
-// Does every SSA name in `Root`'s backward operand closure denote ONE run-time
-// value per function activation? True when every instruction in the closure is
+// Is `Root` a CLASSICAL condition whose every SSA name denotes ONE run-time
+// value per function activation? False if ANY value in its backward operand
+// closure is TAINTED (Rule-13 round 2, F-1, P2 — see `readFollowsLoopOnEveryPath`
+// step (0)). Otherwise true when every instruction in the closure is
 // in a reachable block that no CFG cycle contains (so it executes at most once),
 // and no `undef`/`poison` appears in it. It guards reading an SSA-level
 // implication between two conditions (`isImpliedCondition`, whose matching
@@ -337,6 +340,8 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
       continue;
     if (Seen.size() > Budget)
       return Answer(false);
+    if (Ctx.Taint.Tainted.count(const_cast<Value *>(V)))
+      return Answer(false);  // quantum: its branch is FLATTENED, not taken.
     if (isa<UndefValue>(V))
       return Answer(false);  // undef AND poison (PoisonValue derives from it).
     if (auto *C = dyn_cast<Constant>(V)) {
@@ -367,10 +372,27 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
 // write loop ran (L5: a syntactic answer to a semantic question).
 //
 // THE SEMANTIC QUESTION, asked with LLVM's own machinery:
-//   (1) FACTS. Every conditional branch edge `B→S` that DOMINATES the read's
-//       block (`DT.dominates(BasicBlockEdge)`) is taken on every path to the
-//       read, so its condition has that edge's polarity whenever the read
-//       executes. Only a single-valued condition is kept as a fact.
+//   (0) THE PREMISE, and its scope. Everything below reasons about IR CFG
+//       paths, and treats an execution as one. That is true only of CLASSICAL
+//       control: a branch on a TAINTED condition is FLATTENED by control
+//       lowering — both successors execute, and a value arm's chain (loads
+//       included) is HOISTED into the predecessor — so a tainted edge is no
+//       evidence of what executes. ⚠ Rule-13 round 2 (F-1, P2) found the first
+//       version trusting a tainted fact (`if ((k>0) & c) x = … b[k&1] …`, with
+//       `c` a `cq_theta` result): the carve answered `Bank` for a read that runs
+//       on `k <= 0` too, and only an unrelated D5 wall declined the module. So
+//       a TAINTED condition is never a fact and never prunes an edge (its edges
+//       are FOLLOWED), and the CALLER gives a read that is itself control-
+//       dependent on a tainted branch (`instUnderTaintedControl`) no semantic
+//       path at all — only header dominance. The taint set is the one the carve
+//       is handed; the round-2 re-ask is `adjudicateTaintDelta` →
+//       `declineTaintEscapes`, which re-runs the carve with the GROWN set after
+//       the onward control lowering.
+//   (1) FACTS. Every CLASSICAL conditional branch edge `B→S` that DOMINATES the
+//       read's block (`DT.dominates(BasicBlockEdge)`) is taken on every CFG path
+//       to the read, so — control being classical — its condition has that
+//       edge's polarity whenever the read executes. Only a classical,
+//       single-valued condition is kept as a fact.
 //   (2) PRUNED WALK. Walk the CFG forward from the entry block, never entering
 //       `L`'s header, and drop an edge `B→S` whose (single-valued) condition, at
 //       that edge's polarity, IMPLIES (`isImpliedCondition`) the NEGATION of
@@ -392,14 +414,14 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
 // loop's trip count equals the extent (the caller's per-read SCEV clause), or
 // that the write is total per trip (C7(b)). It replaces ONLY the ordering half.
 bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
-                                const DominatorTree &DT,
-                                const DataLayout &DL) {
+                                const DominatorTree &DT, const DataLayout &DL,
+                                const TaintSet &taint) {
   const BasicBlock *Header = L->getHeader();
   const BasicBlock *RB = Read->getParent();
   if (DT.dominates(Header, RB))
     return true;  // the syntactic case — a special case of the semantic one.
 
-  ReadOrderCtx Ctx(*RB->getParent());
+  ReadOrderCtx Ctx(*RB->getParent(), taint);
 
   // (1) FACTS — (condition, polarity) of every dominating conditional edge.
   // Edge dominance is asked FIRST: a dominator whose edges do not dominate the
@@ -1963,7 +1985,12 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     // `readFollowsLoopOnEveryPath` asks it with the guards' implied conditions
     // and answers yes for dominance as a special case. See its header for what
     // it proves and what it leaves to the clauses below.
-    if (!readFollowsLoopOnEveryPath(LD, L, DT, DL)) {
+    // The semantic path is for reads under CLASSICAL control only (F-1, step
+    // (0) of `readFollowsLoopOnEveryPath`): a read control-dependent on a tainted
+    // branch is hoisted/speculated by the flatten, so only dominance speaks.
+    if (!DT.dominates(L->getHeader(), LD->getParent()) &&
+        (instUnderTaintedControl(LD, taint, DT) ||
+         !readFollowsLoopOnEveryPath(LD, L, DT, DL, taint))) {
       // ⚠ `kMsgBankTotality` is shared by six C6 sub-clauses, so a decline
       // fixture's diagnostic cannot say WHICH one fired (Rule-13 round 1,
       // P3-4). This env-gated anchor (the `CQ_CTRL_DBG` lever the carve's
