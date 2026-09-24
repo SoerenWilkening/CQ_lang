@@ -53,10 +53,13 @@ def load_expectations(source: str) -> tuple[dict[int, dict], list[dict]]:
     return cases, twins
 
 
-_DEFINE = re.compile(r"^define [^@]*@([\w.$]+)\(", re.M)
+_DEFINE = re.compile(r'^define [^@]*@("[^"]*"|[\w.$]+)\(', re.M)
 _BANK_ALLOCA = re.compile(r"^\s*%([\w.]+) = alloca [^\n]*!cq\.railbank ", re.M)
 _GEP = re.compile(r"^\s*%([\w.]+) = getelementptr [^\n]*?ptr %([\w.]+),", re.M)
-_ZERO_STORE = re.compile(r"^\s*store i32 0, ptr %([\w.]+),", re.M)
+# `atomic`/`volatile` and a missing `, align` must not hide a literal (Rule-13
+# review P3-1); a store through a phi/select of addresses is NOT resolved here —
+# `declineNonHandleBankStores` (getUnderlyingObject) is the compiler's real gate.
+_ZERO_STORE = re.compile(r"^\s*store (?:atomic )?(?:volatile )?i32 0, ptr %([\w.]+)\b", re.M)
 
 
 def literal_zero_bank_stores(lowered_text: str) -> list[tuple[str, str]]:
@@ -72,6 +75,8 @@ def literal_zero_bank_stores(lowered_text: str) -> list[tuple[str, str]]:
     function body is resolved separately."""
     hits: list[tuple[str, str]] = []
     starts = [(m.start(), m.group(1)) for m in _DEFINE.finditer(lowered_text)]
+    if len(starts) != len(re.findall(r"^define ", lowered_text, re.M)):
+        raise SystemExit("literal_zero_bank_stores: a `define` line was not parsed")
     for idx, (start, fn) in enumerate(starts):
         end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lowered_text)
         body = lowered_text[start:end]

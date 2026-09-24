@@ -176,3 +176,32 @@ renamed (L8 / bd `gahu`); its header records the history and names the new backs
 Full `ctest`, the full `ir-pass-lit`, `cq-opt-equivalence`, the corpus A/B, the loop
 twin matrix and `e2e-railbank-dynamic-admission-matrix` (not owned; its rows 20/21 WILL
 fail until flipped as in §5). No `+Asserts` build.
+
+## 11. Independent Rule-13 round (one round, in-track) — `CLEAR-WITH-ITEMS`, 0 P1, 0 P2, 3 P3
+
+A separate agent reviewed commit `8a69986e` read-only on the built binary (probes under
+the session scratchpad `trackD_xdu29/review/`, not committed). It attacked the seed
+(irreducible re-walk, escaped pointer, nonzero memset, partial runtime memset,
+nonzero initializer, partly-dead): every one declines before PASS H. Accepted probes
+checked by hand: dead fixed/runtime/`_Bool` (twins identical), rows 20/21 copies
+beside PredMux, a `_Bool` TAKEN arm (PASS G narrowing then the fold), a runtime taken
+arm, an `unsigned` `icmp ugt` fold, the dead prep's `t` measured directly, two banks in
+one dead arm, a taken arm beside the Grover arm vs its flat twin, and a hand-edited
+NON-bank merge φ in the fold block on both polarities (classical answers correct).
+
+* **P3-1** — the scoped runner check missed `store volatile` / `store atomic`, a store
+  with no `, align`, and quoted function names. **Fixed in the follow-up commit**:
+  loosened regexes, a loud failure on an unparsed `define`, and 5 more positive
+  controls (all 1 hit) beside the 8 null/positive controls of §6 (16/16 PASS). Still
+  NOT resolved by the harness (by design): a store through a φ/select of addresses —
+  `declineNonHandleBankStores` is the compiler's gate.
+* **P3-2** — pre-existing: a dead cell and a real bank in ONE loop declines
+  `cq uncompute: tainted handle live range crosses a loop backedge`; the array-free twin
+  declines identically, so it is the uncompute spine's limit, not this change's.
+* **P3-3** — the non-bank-φ branch of the fold has no demonstrated C customer (`-O1`
+  sinks classical ops into the arm, so it never empties); exercised only by hand IR.
+
+Not attacked by the round: multi-function modules (bd `1yeu`), and
+`getUnderlyingObject` through a φ/select of pointers in the postcondition.
+⚠ One in-track round is NOT the Rule-13 budget CLAUDE.md asks for on a core change;
+the merge gate owes its own.
