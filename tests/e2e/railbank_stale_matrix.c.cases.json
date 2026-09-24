@@ -120,6 +120,88 @@
     "32": {
       "accept": true,
       "diagnostic": null
+    },
+    "33": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "34": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "35": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "36": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "37": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "38": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "39": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "44": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "45": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "46": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "47": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "48": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "49": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "50": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "51": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "52": {
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "stage1_note": "the promoter forwards the same-trip load, so no bank survives to the lowered module"
+    },
+    "40": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "41": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "42": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "43": {
+      "accept": true,
+      "diagnostic": null
     }
   },
   "twins": [
@@ -144,6 +226,32 @@
     {
       "rolled": 26,
       "twin": 27,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 28,
+      "twin": 40,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 29,
+      "twin": 41,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 31,
+      "twin": 42,
+      "argv": [],
+      "dropped_twin_lines": [
+        "cqrt_ry_i32(h0, 0x0p+0)"
+      ]
+    },
+    {
+      "rolled": 32,
+      "twin": 43,
       "argv": [],
       "dropped_twin_lines": []
     }

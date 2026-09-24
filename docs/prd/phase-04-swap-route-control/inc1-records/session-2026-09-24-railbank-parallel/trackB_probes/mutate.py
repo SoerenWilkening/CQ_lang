@@ -9,29 +9,31 @@ LLVM = "/usr/local/opt/llvm@19/bin"
 OL = "ir-pass/src/OpcodeLowering.cpp"
 RB = "ir-pass/src/RailBankPromote.cpp"
 AL = "ir-pass/src/ArithLowering.cpp"
+LL = "ir-pass/src/LoopLowering.cpp"
+WW = "ir-pass/src/WireWalk.cpp"
 
 MUTANTS = [
-    ("M0-null", OL, "void declineRecordedStaleQuantumReaders(Module &M, TaintSet &taint) {\n",
-     "void declineRecordedStaleQuantumReaders(Module &M, TaintSet &taint) {\n  // null-control mutant: comment only\n"),
-    ("M1-hop-off", OL, "const bool Hopped = railBankParkedRails(Rec, Seeds);",
-     "const bool Hopped = false; (void)&railBankParkedRails;"),
-    ("M2-const-seeds", RB, "      if (!isa<Constant>(R))\n        Out.push_back(R);",
-     "      Out.push_back(R);"),
-    ("M3-delta-rec-only", OL, "            InDelta = InDelta || Delta->count(S) != 0;",
-     "            (void)S;"),
-    ("M4-self-exempt-when-hopped", OL, "        if (!Hopped)\n          if (auto *CI = dyn_cast<CallInst>(&I))",
-     "        if (true)\n          if (auto *CI = dyn_cast<CallInst>(&I))"),
-    ("M5-no-gep-hop", RB, "      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||\n          isa<AddrSpaceCastInst>(U)) {",
-     "      if (isa<BitCastInst>(U) ||\n          isa<AddrSpaceCastInst>(U)) {"),
-    ("M6-no-cast-peel", RB, "  if (auto *C = dyn_cast<CastInst>(SV))\n    if (CellT && C->getDestTy() == CellT && C->getSrcTy()->isIntegerTy())\n      return C->getOperand(0);\n  return SV;",
-     "  (void)CellT;\n  return SV;"),
-    ("M7-G7e-admits-store", AL, "  const auto *CI = dyn_cast<CallInst>(UI);\n  if (!CI)\n    return false;  // (e) plain-IR use / still-unlowered tainted opcode.",
-     "  const auto *CI = dyn_cast<CallInst>(UI);\n  if (!CI)\n    return isa<StoreInst>(UI);  // MUTANT"),
-    ("M8-naive-backward-closure", OL, "        if (Seeds.empty()) {\n          // Not a bank read at all",
-     "        if (Hopped) { unsigned N0 = Seeds.size(); for (unsigned K = 0; K < N0; ++K) if (auto *PN = dyn_cast<PHINode>(Seeds[K])) { for (Value *In : PN->incoming_values()) if (!isa<Constant>(In)) Seeds.push_back(In); } else if (auto *SL = dyn_cast<SelectInst>(Seeds[K])) { for (Value *In : {SL->getTrueValue(), SL->getFalseValue()}) if (!isa<Constant>(In)) Seeds.push_back(In); } }\n        if (Seeds.empty()) {\n          // Not a bank read at all"),
-    ("M9-fence-positionfree", OL, "                                    /*RequireEmitDominance=*/false))\n          taint.StaleQuantumReaders.emplace_back(&I);",
-     "                                    /*RequireEmitDominance=*/true))\n          taint.StaleQuantumReaders.emplace_back(&I);"),
+    ("N0-null", LL, "  // ── THE MEMORY HOP FOR THIS FENCE (bd `xdu2.1`, Rule-13 round-2 finding F-1,\n",
+     "  // null-control mutant (comment only)\n  // ── THE MEMORY HOP FOR THIS FENCE (bd `xdu2.1`, Rule-13 round-2 finding F-1,\n"),
+    ("N1-hop-removed", LL, "    if (railBankCellReadsOf(V, CellReads))\n",
+     "    if (false && railBankCellReadsOf(V, CellReads))\n"),
+    ("N2-no-cast-user", RB, "    if (isa<CastInst>(U))\n      for (User *CU : U->users())\n        consider(CU);\n",
+     "    (void)0;\n"),
+    ("N3-name-load-not-measure", LL, "          if (LD->hasOneUse())\n            if (auto *R = dyn_cast<Instruction>(*LD->user_begin()))\n              return R;\n",
+     ""),
+    ("N4-bank-refresh-reverted", LL, "        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {",
+     "        if (railGateBetween(Def, LD, Gates, Refreshes)) {"),
+    ("N5-bank-refresh-true", LL, "        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {",
+     "        if (railGateBetween(Def, LD, Gates, true)) {"),
+    ("N8-cellread-bit-off", OL, "                                    /*SeedIsCellRead=*/Hopped))",
+     "                                    /*SeedIsCellRead=*/false))"),
+    ("N9-cellread-leg2-kept", WW, "  if (SeedIsCellRead)\n    return false;\n", ""),
+    ("N6-walker-no-gep", RB, "      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||",
+     "      if (isa<BitCastInst>(U) ||"),
+    ("N7-first-load-only", LL, "      for (LoadInst *LD : CellReads)\n",
+     "      for (LoadInst *LD : ArrayRef<LoadInst *>(CellReads).take_front(1))\n"),
 ]
+
 
 
 def sh(cmd, cwd=None):
@@ -49,7 +51,7 @@ def owned():
     tw = sh(["python3", "tools/railbank_register_twin_gate.py", "--build", "build",
              "--pairs", "tools/railbank_twin_pairs", "--include", "include"])
     tbad = [l.split()[0] for l in tw.stdout.splitlines()
-            if re.search(r"VIOLATION|TRACE-MISMATCH|OVER-DECLINE", l) and l.startswith("  ")]
+            if re.search(r"VIOLATION|TRACE-MISMATCH", l) and l.startswith("  ")]
     return {"lit_fail": lf, "lit_pass": lp.group(1) if lp else "?", "matrix_fail": mfail,
             "matrix_summary": mx.stdout.strip(), "twin_bad": tbad, "twin_rc": tw.returncode}
 

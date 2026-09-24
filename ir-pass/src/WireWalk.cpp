@@ -379,7 +379,8 @@ bool recordBarrierCutsPath(const Instruction *EmitPoint, const CallInst *T,
 
 bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
                     const Value *Seed, ArrayRef<Value *> Seeds,
-                    const DominatorTree &DT, bool RequireEmitDominance) {
+                    const DominatorTree &DT, bool RequireEmitDominance,
+                    bool SeedIsCellRead = false) {
   if (RequireEmitDominance && !DT.dominates(EmitPoint, T))
     return false;
   // ⚠ LEG 1 IS MEANINGLESS WHEN `T == EmitPoint`, AND THAT IS AN LLVM FACT, NOT A
@@ -397,6 +398,10 @@ bool gateIsHarmless(const Instruction *EmitPoint, const CallInst *T,
   // DO NOT "simplify" that back into a `gateIsHarmless(R, R, …)` call.
   if (!isPotentiallyReachable(T, EmitPoint, /*ExclusionSet=*/nullptr, &DT))
     return true;  // leg 1 — the pre-existing straight-line proof, unchanged.
+  // A CELL read gets leg 1 only — re-running the seed's def does not
+  // re-establish a record held in memory (`WireWalk.h`, `SeedIsCellRead`).
+  if (SeedIsCellRead)
+    return false;
   return recordBarrierCutsPath(EmitPoint, T, Seed, Seeds, DT);
 }
 
@@ -681,7 +686,8 @@ static CallInst *walkNonDiagonalWireGates(
     const Instruction *EmitPoint, const DominatorTree *DT,
     const TaintSet *Taint,
     const SmallPtrSetImpl<const CallInst *> *Covered,
-    SmallVectorImpl<CallInst *> *Out, bool RequireEmitDominance) {
+    SmallVectorImpl<CallInst *> *Out, bool RequireEmitDominance,
+    bool SeedIsCellRead = false) {
   // Seed closure + forward wire walk, PER SEED (test_C_libtooling-6j1, extended
   // for test_C_libtooling-6vk). A seed names a basis RECORD; the physical wire
   // carrying it is shared with the seed's whole ANCESTRY — rotation lowering
@@ -835,7 +841,7 @@ static CallInst *walkNonDiagonalWireGates(
           // ancestry member is a PRODUCER of the record, not the record.
           if (EmitPoint && DT &&
               gateIsHarmless(EmitPoint, CI, Seed, Seeds, *DT,
-                             RequireEmitDominance))
+                             RequireEmitDominance, SeedIsCellRead))
             continue;  // provably post-emission on every trace — harmless.
           if (Out) {
             // ENUMERATING MODE: record it and keep going, walking THROUGH it so
@@ -860,10 +866,10 @@ CallInst *findNonDiagonalWireGate(
     const Instruction *EmitPoint, const DominatorTree *DT,
     const TaintSet *Taint,
     const SmallPtrSetImpl<const CallInst *> *Covered,
-    bool RequireEmitDominance) {
+    bool RequireEmitDominance, bool SeedIsCellRead) {
   return walkNonDiagonalWireGates(Seeds, CrossValueRouting, EmitPoint, DT,
                                   Taint, Covered, /*Out=*/nullptr,
-                                  RequireEmitDominance);
+                                  RequireEmitDominance, SeedIsCellRead);
 }
 
 void collectNonDiagonalWireGates(ArrayRef<Value *> Seeds,

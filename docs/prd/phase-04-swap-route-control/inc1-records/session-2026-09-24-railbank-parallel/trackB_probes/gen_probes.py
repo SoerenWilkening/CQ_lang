@@ -534,6 +534,56 @@ fixed("s32_fixed_bool_percell", """  _Bool b[3]; int s = 0;
   return s + seed;
 """)
 
+TW_MAIN = "int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }\n"
+P["t28_rt_percell_sibling.twin.c"] = """__attribute__((noinline)) static int slice(int n) {
+  int r = cq_theta(1, 0.2); (void)n;
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  r = cq_theta(r, 0.7);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + cq_measure(r);
+}
+""" + TW_MAIN
+P["t29_rt_percell.twin.c"] = """__attribute__((noinline)) static int slice(int n) {
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + n;
+}
+""" + TW_MAIN
+P["t30_condprep.twin.c"] = """__attribute__((noinline)) static int slice(int n) {
+  int Z = cq_theta(4 * n, 0.0); int s = 0;
+  int b0 = 0; if (Z >= 2) b0 = cq_theta(0, 0.5); if (b0) Z -= 2;
+  int b1 = 0; if (Z >= 2) b1 = cq_theta(0, 0.5); if (b1) Z -= 2;
+  int b2 = 0; if (Z >= 2) b2 = cq_theta(0, 0.5); if (b2) Z -= 2;
+  s += cq_measure(b0) + cq_measure(b1) + cq_measure(b2);
+  return s + cq_measure(Z);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+"""
+P["t31_passH.twin.c"] = """__attribute__((noinline)) static int slice(int n) {
+  int Z = cq_theta(4 * n, 0.0); int s = 0;
+  int t0 = cq_theta(0, 0.5); int b0 = 0; if (Z >= 2) b0 = t0; if (b0) Z -= 2;
+  int t1 = cq_theta(0, 0.5); int b1 = 0; if (Z >= 2) b1 = t1; if (b1) Z -= 2;
+  int t2 = cq_theta(0, 0.5); int b2 = 0; if (Z >= 2) b2 = t2; if (b2) Z -= 2;
+  s += cq_measure(b0) + cq_measure(b1) + cq_measure(b2);
+  return s + cq_measure(Z);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+"""
+P["t32_bool_percell.twin.c"] = """__attribute__((noinline)) int slice(int seed) {
+  _Bool b0 = cq_theta((_Bool)0, 0.5); _Bool b1 = cq_theta((_Bool)0, 0.5); _Bool b2 = cq_theta((_Bool)0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + seed;
+}
+int main(void) { return slice(1); }
+"""
+P["e1_bank_dtzb_loop_xor.bank.c"] = """__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+  int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;
+  #pragma clang loop unroll(disable)
+  for (int k = 0; k < 3; ++k) q ^= k + seed;
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+"""
+
 for name, text in P.items():
     (D / name).write_text(text)
 print(len(P), "files")

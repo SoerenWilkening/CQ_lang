@@ -48,6 +48,26 @@
 #define CASE_RUNTIME_CONDPREP_CONTROL 30
 #define CASE_RUNTIME_PASSH_CONTROL 31
 #define CASE_FIXED_BOOL_PERCELL 32
+#define CASE_RUNTIME_DTZB_FIXED_TRIP_XOR 33
+#define CASE_RUNTIME_INLOOP_XOR_PARKED 34
+#define CASE_FIXED_INLOOP_XOR_PARKED_OTHER_COND 35
+#define CASE_RUNTIME_INLOOP_XOR_CONST_TRIP 36
+#define CASE_RUNTIME_INLOOP_XOR_KDEP 37
+#define CASE_RUNTIME_INLOOP_XOR_LEGIT 38
+#define CASE_FIXED_INLOOP_XOR_LEGIT 39
+#define CASE_RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER 44
+#define CASE_RUNTIME_INLOOP_XOR_PARK_AFTER_OP 45
+#define CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP_SLICE 46
+#define CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP 47
+#define CASE_RUNTIME_INLOOP_SUB_PARK_AFTER_OP 48
+#define CASE_RUNTIME_INLOOP_XORK_PARK_AFTER_OP 49
+#define CASE_FIXED_INLOOP_PARK_AFTER_OP_CONST 50
+#define CASE_RUNTIME_INLOOP_XOR_PARK_OUTOFPLACE 51
+#define CASE_RUNTIME_INLOOP_PARK_SAMETRIP_READ 52
+#define CASE_TWIN_OF_28 40
+#define CASE_TWIN_OF_29 41
+#define CASE_TWIN_OF_31 42
+#define CASE_TWIN_OF_32 43
 
 #ifndef CASE
 #define CASE CASE_FIXED_STALE_INVARIANT_PARK
@@ -419,6 +439,213 @@ __attribute__((noinline)) int slice(int seed) {
   for (int i = 0; i < 3; ++i) b[i] = cq_theta(b[i], 0.5);
   for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
   return s + seed;
+}
+int main(void) { return slice(1); }
+
+#elif CASE == CASE_RUNTIME_DTZB_FIXED_TRIP_XOR
+/* DECLINE — review round-1 probe e1_bank: fixed-trip (unroll disabled) in-place xor loop on the parked rail; held by tryCaseA's CLOSURE refusing the bank store. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+  int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;
+  #pragma clang loop unroll(disable)
+  for (int k = 0; k < 3; ++k) q ^= k + seed;
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARKED
+/* DECLINE — Rule-13 round-2 F-1 (reviewer P1_bank.c): parked q relabelled by a collapse-committed in-place xor, then the cells read. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;                         /* park q            */
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; } /* relabels q's wire */
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);            /* source: PRE-loop q */
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_XOR_PARKED_OTHER_COND
+/* DECLINE — F-1 on a fixed int b[3], the relabel loop conditioned on a different register r. */
+int main(int argc, char **argv) {
+  int q = cq_theta(argc, 0.5); int b[3]; int s = 0; int r = cq_theta(argc+1, .2);
+  for (int i = 0; i < 3; ++i) b[i] = q;
+  for (int k = 0; k < argc; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+  for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q) + cq_measure(r);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_CONST_TRIP
+/* DECLINE — F-1 with a constant (3) relabel trip count, outside main. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int k = 0; k < 3; ++k) { if (q > k) cq_phi(0.3); q ^= 3; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_KDEP
+/* DECLINE — F-1 with a trip-dependent xor immediate (q ^= k). */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= k; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_LEGIT
+/* ACCEPT — GREEN: F-1 with the bank measure loop moved ABOVE the xor loop (reviewer P1_legit.c). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; }
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_XOR_LEGIT
+/* ACCEPT — GREEN: the fixed-bank, constant-trip legit order. */
+__attribute__((noinline)) int slice(int seed) {
+ int q = cq_theta(seed, 0.5); int b[3]; int s = 0; int r = cq_theta(seed, .2);
+ for (int i = 0; i < 3; ++i) b[i] = q;
+ for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+ #pragma clang loop unroll(disable)
+ for (int k = 0; k < 3; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+ return s + cq_measure(q) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER
+/* DECLINE — F-1 with the bank read BEFORE and AFTER the xor loop -- every cell load must be asked, not the first. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0; int r = cq_theta(seed, .2);
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ for (int k = 0; k < n; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARK_AFTER_OP
+/* DECLINE — Rule-13 round-3 F-R3-1 (reviewer a1): the in-place xor's result parked inside the relabel loop. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP_SLICE
+/* DECLINE — F-R3-1 with `q += 1` outside main (reviewer e2_slice). */
+__attribute__((noinline)) int slice(int seed, int n) {
+  if (n <= 0) return 0; int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q += 1; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s;
+}
+int main(int argc, char **argv) { int n = atoi(argv[1]); if (n <= 0) return 1; return slice(argc, n); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_ADD_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with `q += 3` (reviewer b4). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q += 3; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_SUB_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with `q -= 5` (reviewer b5). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q -= 5; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XORK_PARK_AFTER_OP
+/* DECLINE — F-R3-1 with a trip-dependent immediate `q ^= k` (reviewer b7). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= k; b[k] = q; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_PARK_AFTER_OP_CONST
+/* DECLINE — F-R3-1 on a fixed bank with a constant trip (reviewer e1_fixed_const). */
+int main(int argc, char **argv) {
+  int q = cq_theta(argc, 0.5); int b[3]; int s = 0;
+  for (int k = 0; k < 3; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; }
+  for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARK_OUTOFPLACE
+/* ACCEPT — GREEN: the parked q^3 stays OUT OF PLACE (xors fuse to ^6 on the rail) -- not stale, must accept. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int s = 0;
+  int b[n];
+  for (int k = 0; k < n; ++k) { if (q > 5) cq_phi(0.3); q ^= 3; b[k] = q; q ^= 5; }
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_PARK_SAMETRIP_READ
+/* ACCEPT — GREEN: park after the op and read in the SAME trip (reviewer g2; the promoter forwards the load). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; b[k] = q; s += cq_measure(b[k]); }
+  return s;
+}
+
+#elif CASE == CASE_TWIN_OF_28
+/* ACCEPT — hand-unrolled n=3 twin of 28. */
+__attribute__((noinline)) static int slice(int n) {
+  int r = cq_theta(1, 0.2); (void)n;
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  r = cq_theta(r, 0.7);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_29
+/* ACCEPT — hand-unrolled n=3 twin of 29. */
+__attribute__((noinline)) static int slice(int n) {
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + n;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_31
+/* ACCEPT — hand-unrolled n=3 twin of 31 (Z made quantum by an identity Ry(0), dropped before comparing). */
+__attribute__((noinline)) static int slice(int n) {
+  int Z = cq_theta(4 * n, 0.0); int s = 0;
+  int t0 = cq_theta(0, 0.5); int b0 = 0; if (Z >= 2) b0 = t0; if (b0) Z -= 2;
+  int t1 = cq_theta(0, 0.5); int b1 = 0; if (Z >= 2) b1 = t1; if (b1) Z -= 2;
+  int t2 = cq_theta(0, 0.5); int b2 = 0; if (Z >= 2) b2 = t2; if (b2) Z -= 2;
+  s += cq_measure(b0) + cq_measure(b1) + cq_measure(b2);
+  return s + cq_measure(Z);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_32
+/* ACCEPT — hand-unrolled twin of 32. */
+__attribute__((noinline)) int slice(int seed) {
+  _Bool b0 = cq_theta((_Bool)0, 0.5); _Bool b1 = cq_theta((_Bool)0, 0.5); _Bool b2 = cq_theta((_Bool)0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + seed;
 }
 int main(void) { return slice(1); }
 

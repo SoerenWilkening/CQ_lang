@@ -1010,12 +1010,23 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         // by mutation, is `inPlaceFenceHolds`' G6/G7 pair: the PARKING `store`
         // is a plain-IR user of `P`, so it is either not provably before the
         // site (G6) or, when it is, `priorUseIsSettled` clause (e) refuses any
-        // non-call user (G7). That is a STRUCTURAL refusal — every bank rail
-        // has its store as a user of the parked value — but it is G7(e)'s,
-        // not this list's. RETIREMENT TRIGGER, restated: the day G7(e) admits a
-        // `StoreInst` (or the bank stops being fed by a `store` of the parked
-        // value), this absence and the vocabulary gap compose. Re-derive BOTH
-        // in the same change.
+        // non-call user (G7). That is a STRUCTURAL refusal — every parked
+        // value has a NON-CALL user on the bank's store path: the `store`
+        // itself on an `int` bank, or the storage `CastInst` (the `zext` of a
+        // `_Bool` into its `i8` cell, a widening `sext`/`zext` into a wider
+        // cell) that feeds the store — but it is G7(e)'s, not this list's.
+        // RETIREMENT TRIGGER, restated: the day G7(e) admits a `StoreInst` OR a
+        // storage `CastInst` (or the bank stops being fed through a non-call
+        // user of the parked value), this absence and the vocabulary gap
+        // compose. Re-derive BOTH in the same change.
+        // ⚠ THIS IS RIGHT FOR THIS SITE AND IS NOT THE ONLY IN-PLACE MINTER
+        // (bd `xdu2.1`, Rule-13 round 2 finding F-1, 2026-09-24). The rolled
+        // in-loop collapse (`LoopLowering::collapseRailPhisIn`) converts an
+        // in-loop `q ^= 3` on a parked `q` through `markInPlaceRailOp`, and no
+        // G7(e) stands in front of it; that path accepted a stale bank read
+        // until `staleReadOfValue` learned the bank-load hop
+        // (`railBankCellReadsOf`). Every in-place minter and what refuses each
+        // for a parked rail is enumerated in `TRACK_B.md` §6b.
         if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
             taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
           continue;

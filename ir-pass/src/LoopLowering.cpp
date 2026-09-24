@@ -1041,6 +1041,70 @@ Instruction *staleReadOfValue(Value *V,
   // Asked ONCE per record: whether re-executing this def re-reads the wire is a
   // property of the def, not of the consumer (bd 8h7d.5 Rule-13 round 2, F-2).
   const bool Refreshes = recordRefreshedByDef(Def, GateCalls, taint, Gates);
+  // ── THE MEMORY HOP FOR THIS FENCE (bd `xdu2.1`, Rule-13 round-2 finding F-1,
+  //    2026-09-24 — a P1 OVER-ACCEPT, the bd `3d8q` class through memory again).
+  //
+  // A rail value PARKED in a rail bank is READ at the bank's cell LOADS, not at
+  // the `store` that parks it — the store is only where the name enters memory.
+  // Asking the store alone (the generic user loop below) is asking the wrong
+  // instruction: the park precedes the loop, so no gate lies between `Def` and
+  // it, and the fence passed a program whose bank measures observe the rail
+  // AFTER this loop's in-place relabel —
+  //   `int b[n]; for(i) b[i]=q; for(k){ if(q>k) cq_phi(.3); q ^= 3; }
+  //    for(i) s+=cq_measure(b[i]);`
+  // emitted `ry(h0); …; cqrt_xorc_i32(h0,3) x n; measure(h0) x n+1` (exit 0,
+  // STRICT 2b clean) while its register spelling `c=q; …; cq_measure(c)`
+  // declines here with `kMsgRailRecordStale` (review probes
+  // `reviewB_r2/P1_bank.c` / `P1_reg.c`; twin pair `p13`).
+  //
+  // So every cell load of every bank `V` is parked in is asked the SAME
+  // question with the SAME walk as an SSA read would be — but WITHOUT the
+  // `Refreshes` cut (corrected by Rule-13 round 3, F-R3-1: the round-2 text
+  // here said "the SAME `Refreshes` bit", and that was the P1; see the call
+  // below). `railBankCellReadsOf` is
+  // the forward hop (`railBankParkedRails`) read backwards over the same address
+  // tree and the same `bankStoreRailValue` relation (Rule 14). It is a
+  // DECLINE-direction addition: it only adds read points, never removes one.
+  //
+  // ⚠ WHY HERE AND NOT (ONLY) IN THE READER FENCE'S HOP. `recordStaleQuantumReaders`
+  // runs BEFORE `lowerLoops` and walks for `cq_theta_` gates; the in-place
+  // `add`/`xor` this collapse commits (`markInPlaceRailOp`, just after this
+  // fence at its round-2 call site) does not exist as a gate when that fence
+  // runs. This fence is asked at the site that is about to commit the relabel,
+  // with the relabel already in `Gates` (`collectRailGates` counts it) — the
+  // L1 cure's "ask at the site that asks" rather than a prediction elsewhere.
+  // The other in-place minters for a parked rail are enumerated in
+  // `TRACK_B.md` §6b with what refuses each.
+  {
+    SmallVector<LoadInst *, 4> CellReads;
+    if (railBankCellReadsOf(V, CellReads))
+      for (LoadInst *LD : CellReads)
+        // ⚠ `DefRefreshes=false`, NOT `Refreshes` (Rule-13 round 3, F-R3-1 —
+        // a P1 that the first spelling of this hop, passing `Refreshes`, let
+        // through). The refresh cut says "re-running `Def` makes the NAME
+        // denote the new value", which is true of an SSA name and FALSE of a
+        // memory cell: cell k keeps the value activation k wrote while later
+        // activations re-run `Def` and relabel the wire. With the cut, a park
+        // AFTER an in-place op in the same loop —
+        //   `for(k){ if(q>k) cq_phi(.3); q ^= 3; b[k] = q; }
+        //    for(i) cq_measure(b[i]);`
+        // — had every `Def → back edge → gate` path cut at the next `Def`,
+        // left `Def → exit → load` gate-free, and ACCEPTED a stream in which
+        // every cell reads the FINAL wire (`reviewB_r3/a1_park_after_xor.c`;
+        // its hand-unrolled register twin emits the correct out-of-place
+        // stream). A re-executed in-place `Def` is therefore a GATE on the
+        // parked wire, never a refresh of the cell (L2: the refresh cut is the
+        // other set computed over the same closure). Decline-only: `false`
+        // can only find more paths.
+        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {
+          // Name the consumer the register spelling's diagnostic names (the
+          // measure), falling back to the load when it has no single reader.
+          if (LD->hasOneUse())
+            if (auto *R = dyn_cast<Instruction>(*LD->user_begin()))
+              return R;
+          return LD;
+        }
+  }
   for (User *U : V->users()) {
     auto *UI = dyn_cast<Instruction>(U);
     if (!UI || Members.count(UI))
@@ -2784,6 +2848,30 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // template producer, a tainted control compare, a store, an unknown call, or
   // the rail used as a classical ANGLE (arg-1) — means the rail is not isolated;
   // leave it (the consumer's own guard declines loudly downstream).
+  //
+  // ⚠ THIS CLAUSE KEEPS A RAIL-BANK-PARKED RAIL OUT OF *THIS* PATH's IN-PLACE
+  // RELABEL (Case A) — AND ONLY THIS PATH's. Corrected 2026-09-24 (bd `xdu2.1`,
+  // Rule-13 round 2 finding F-1, L7 fixed at the source): the round-1 version of
+  // this comment was headed "THIS CLAUSE IS WHAT KEEPS A RAIL-BANK-PARKED RAIL
+  // OUT OF THE ROLLED IN-PLACE RELABEL", and that was FALSE. The rolled in-loop
+  // COLLAPSE (`collapseRailPhisIn`, round 2) commits the same relabel
+  // (`markInPlaceRailOp` after its `staleRailRecordRead` fence) and has no such
+  // closure: `int b[n]; for(i) b[i]=q; for(k){ if(q>k) cq_phi(.3); q ^= 3; }
+  // for(i) cq_measure(b[i]);` reached it, converted `q ^= 3` in place and
+  // accepted a stale bank read (review probe `reviewB_r2/P1_bank.c`). What holds
+  // THAT path is now `staleReadOfValue`'s memory hop (`railBankCellReadsOf`),
+  // which asks the question at every bank cell LOAD — and `staleRailRecordRead`
+  // runs here too (below), so this path is held TWICE: by this closure, which
+  // refuses the bank store (or its storage cast) as a non-rail user, and by that
+  // fence. `e1_bank` (`reviewB_r1/p/e1_bank.c`, matrix row 33) is this path's
+  // shape and declines at `declineClassicalMuxes` once this loop is left
+  // unclaimed. The other in-place minters for a parked rail and what refuses
+  // each are enumerated in `TRACK_B.md` §6b.
+  // RETIREMENT TRIGGER: the day this closure admits a `store` into a rail bank
+  // (or its storage cast), the `staleRailRecordRead` call below becomes this
+  // path's only wall for `e1_bank` — re-run the matrix row and the
+  // `railbank_stale_reject_inloop_xor_*` fixtures against a binary with the
+  // closure relaxed BEFORE relaxing it, and keep the fence's bank-load hop.
   for (auto &KV : railRoot) {
     Value *V = KV.first;
     for (User *U : V->users()) {
