@@ -695,13 +695,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // dropped immediately after: no classifier can ask again past this slot.
   declineQuantumCondLiterals(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
-  // function boundary, and its slot is the argument. `propagate` (every rebuild
-  // of it) already TAINTS such a call result, so every stage above sees it as
-  // quantum; asking HERE, after the round-2 fixpoint, (a) reads FINAL taint — round
-  // 2 can taint a callee's `ret` through a 6.5/4.5 `%out` (CLAUDE.md L1) — and
-  // (b) leaves the owners that already speak first untouched: the specializer's
-  // `callee contains a quantum primitive` (`detectSpecializations`) and the loop
-  // layer's declines run above and keep their strings (measured, TRACK_E §6d).
+  // function boundary, and its slot is the argument. The call-return closure lives
+  // in `propagateWorklist` (every taint grower drains through it — `propagate`,
+  // the round-2 reseed, `propagateFromSeeds`), so every stage above sees such a
+  // call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
+  // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
+  // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners
+  // ABOVE this slot untouched: the specializer's `detectSpecializations`, the loop
+  // layer, and `declineQuantumCondLiterals` just above keep their strings
+  // (measured, TRACK_E §6d/§6e). ⚠ Owners BELOW it are PRE-EMPTED in a
+  // multi-function module whose callee returns a register: `declineClassicalMuxes`
+  // and everything after now see this string instead of theirs (round 4 P3-b —
+  // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
+  // muxed by a classical-condition phi`). Both are declines; only the owner moved.
   declineQuantumReturnCalls(M, taint);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
@@ -1319,13 +1326,20 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (bd `test_C_libtooling-xdu2.13`) the literal half + the mark drop, mirrored.
   declineQuantumCondLiterals(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
-  // function boundary, and its slot is the argument. `propagate` (every rebuild
-  // of it) already TAINTS such a call result, so every stage above sees it as
-  // quantum; asking HERE, after the round-2 fixpoint, (a) reads FINAL taint — round
-  // 2 can taint a callee's `ret` through a 6.5/4.5 `%out` (CLAUDE.md L1) — and
-  // (b) leaves the owners that already speak first untouched: the specializer's
-  // `callee contains a quantum primitive` (`detectSpecializations`) and the loop
-  // layer's declines run above and keep their strings (measured, TRACK_E §6d).
+  // function boundary, and its slot is the argument. The call-return closure lives
+  // in `propagateWorklist` (every taint grower drains through it — `propagate`,
+  // the round-2 reseed, `propagateFromSeeds`), so every stage above sees such a
+  // call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
+  // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
+  // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners
+  // ABOVE this slot untouched: the specializer's `detectSpecializations`, the loop
+  // layer, and `declineQuantumCondLiterals` just above keep their strings
+  // (measured, TRACK_E §6d/§6e). ⚠ Owners BELOW it are PRE-EMPTED in a
+  // multi-function module whose callee returns a register: `declineClassicalMuxes`
+  // and everything after now see this string instead of theirs (round 4 P3-b —
+  // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
+  // muxed by a classical-condition phi`). Both are declines; only the owner moved.
   declineQuantumReturnCalls(M, taint);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about

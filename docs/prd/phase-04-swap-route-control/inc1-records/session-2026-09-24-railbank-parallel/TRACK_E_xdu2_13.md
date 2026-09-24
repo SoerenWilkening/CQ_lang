@@ -325,6 +325,12 @@ the taint layer.
 3. **Slot: once per entry point, after the round-2 fixpoint.** This reads FINAL
    taint, which answers the L1 question: `repropagateControlMerges` can taint a
    callee's `ret`. It runs before `lowerRotations` and `lowerMeasures`.
+   ⚠ **CORRECTED IN §6e.** This item went on to claim that "every stage above the
+   slot already sees the call result TAINTED". **That was FALSE for round-2
+   growth.** The closure lived only in `propagate`, and `propagateFromSeeds` and
+   the round-2 reseed did not apply it. Rule-13 round 4 F-R4-1 exhibited the
+   miscompile with j01. Its "keep their strings" half was also over-broad: it
+   holds only for owners ABOVE the slot. See §6e.
    - An EARLY slot was tried first. It preempted two pre-existing owners:
      `spec_reject_cq_primitive.ll` (the specializer's `callee contains a quantum
      primitive`) and `lowering_reject_inloop_rail_record_offchain_ret.ll`, whose
@@ -395,6 +401,87 @@ M27–M31, the conjunct-(d) mutants, are retired with their code.
 - `invoke` call sites: `CallBase` covers them, untested.
 - The 18 e2e sources that need -D flags or other translation units.
 - The full ctest and an unfiltered lit.
+
+## 6e. Rule-13 round 4 on `d393b4bb`: CLEAR-WITH-ITEMS (0 P1, 1 P2, 3 P3)
+
+- **F-R4-1 (P2, L2), fixed.**
+  - **The defect.** The call-return closure lived only in `propagate`. The round-2
+    reseed (`repropagateControlMerges` → `propagateWorklist`) and
+    `propagateFromSeeds` (`MergePhiPeel`, `adjudicateTaintDelta`) never applied
+    it. So j01 (`g` returns a 6.5 classical-call arm merge, whose `ret` is
+    tainted only in round 2) left `g(m)`'s call site CLASSICAL at final taint.
+    `declineQuantumCondLiterals` then passed a literal carrying the handle id.
+    E3 accepted this silently; E4 declined it only at the later slot.
+  - **The fix (Rule 14: one owner).** The closure now lives INSIDE
+    `propagateWorklist`, which is the one drain every taint grower goes through.
+    When a `ReturnInst` is newly tainted, every DIRECT call site of its function
+    whose result is USED joins the worklist. Chains and recursion close through
+    the worklist itself. The separate loop in `propagate` is gone.
+  - **Growers enumerated:**
+    - `propagate` and all of its rebuilds;
+    - `repropagateControlMerges` (the reseed and its onward-control fixpoint);
+    - `propagateFromSeeds` (`MergePhiPeel` via `adjudicateTaintDelta`);
+    - `collectAndSeed`'s bank-load seeds, which drain through the same worklist.
+
+    Emitters that insert `%out` directly (`SelectMergeEmit`) replace a value
+    that was already tainted, so no `ret` newly becomes quantum there. The
+    6.5/4.5 `%out` rails are exactly the round-2 reseed's seeds.
+  - **j01 now declines at 696**, `declineQuantumCondLiterals`, with `classical
+    condition literal became quantum-derived`. That is the first owner after the
+    fixpoint, because the literal is now tainted at final taint
+    (`taint_reject_quantum_return_round2_literal.ll`, red on d393b4bb).
+  - **q61 (volatile flag)** declines with the 3jru string. `slice`'s `ret` is a
+    quantum-condition mux of the volatile `flag`, and `main` reads it. The oracle
+    declined earlier with `control flow`
+    (`taint_reject_quantum_return_volatile_flag.ll`).
+  - The false §6d sentence is corrected at the source (`CQLoweringPass.cpp` slot
+    comment, `TaintPropagation.h`, `propagateWorklist`) and in §6d above (L7).
+- **P3-a (over-decline), fixed.** A direct call whose result is UNUSED is no
+  longer tainted and no longer refused. a12 (`g(m, 0);`) accepts with the rail
+  left allocated, as on aad63450 (`taint_accept_quantum_return_unused.ll`, red on
+  d393b4bb). Address-taken uses are still refused, including a function that is
+  only address-taken and never called. Proving that no indirect call reads the
+  result is a points-to question; the comment at `declineQuantumReturnCalls` says
+  so.
+- **P3-b (wording), corrected.** "Keeps earlier owners' strings" holds only for
+  owners ABOVE the slot: the specializer, the loop layer and
+  `declineQuantumCondLiterals`. Owners BELOW it (`declineClassicalMuxes` onward)
+  are PRE-EMPTED in a multi-function module whose callee returns a register. The
+  reviewer's a08, g03 and g05 now print the 3jru string where the oracle printed
+  `tainted value muxed by a classical-condition phi`. Both are declines; only the
+  owner moved. Corrected in the source comment and the header.
+- **P3-c (record only).** r04's specializer string, `floating-point quantum
+  argument or return has no reversible copy`, is fired for an `i1` (`_Bool`)
+  argument. It is pinned as-is, since it is not this change's owner. **Suggested
+  bead:** the specializer's arg/return width gate names fp for a non-fp width;
+  re-derive the string from the actual type.
+- **Round-4 probe set (reviewE_r4, ~110 C probes, both binaries).** Every
+  exit-code mover was checked:
+  - a01–a06, a13, b02, c02–c04, c06, c08, c10, c12, c14–c17, d01–d03, d05, g01,
+    g02, g04, g06 and i01 now decline where aad63450 exited 0. **Every one of
+    them reads a register returned by a defined function** — exactly the 3jru
+    miscompile class.
+  - c05, c07 and c13 decline at earlier owners (QRAM, rail bank, ctlz), because
+    the returned value is now tainted.
+  - The accepts that stayed accepts: a07 (a returned measure is classical),
+    a12, b01, b03, b04, e05, q42, q62, q91.
+- **Sweeps.** ir-pass fixtures vs aad63450 (exit code, stdout sha and first error
+  line), null control 0 of 40 first: **2266 fixtures, 30 movers, every one this
+  change's own**. That is 11 condtree accepts, the converted classical-leaf
+  fixture, 5 intended string moves, and 13 new taint fixtures.
+- **Mutation delta.** Null control first, 0 movers; denominators 111 lit and 4
+  ctest.
+
+  | mutant | removes | result |
+  |---|---|---|
+  | M39 | the closure hook in `propagateWorklist` | KILLED (boolarg, chain_store, outparam, round2_literal) |
+  | M41 | the unused-result skip in the refusal | KILLED (unused accept) |
+  | M35 | the refusal slot | KILLED (10) |
+  | M36 | the address-taken branch | KILLED (1) |
+  | M38 | `functionReturnsTainted` | KILLED (10) |
+  | M40 | the unused-result skip in the TAINT step | **MISSED**, no subject: an unused call has no users, so tainting it is unobservable, and the refusal skips it anyway |
+
+  M34 and M37, round 3's loop-shaped mutants, are retired with that loop.
 
 ## 7. What I did NOT test
 

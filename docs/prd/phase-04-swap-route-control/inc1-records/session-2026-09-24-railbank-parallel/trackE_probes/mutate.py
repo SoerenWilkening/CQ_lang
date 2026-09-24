@@ -15,7 +15,7 @@ import sys
 
 W = pathlib.Path(__file__).resolve().parent.parent
 B = W / "build"
-LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree|select_classical_leaf|taint_reject_quantum_return|taint_accept_classical_decl|spec_reject_cq_primitive|offchain_ret|classical_call_arm"
+LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree|select_classical_leaf|taint_reject_quantum_return|taint_accept_classical_decl|spec_reject_cq_primitive|offchain_ret|classical_call_arm|taint_accept_quantum_return"
 CTEST_RE = ("^e2e-condtree-classical-leaf-matrix$|^e2e-slice-condtree-classical-leaf$|"
             "^e2e-railbank-dynamic-admission-matrix$|^e2e-railbank-guarded-vla-matrix$")
 
@@ -65,11 +65,12 @@ MUTANTS = [
           (CE, "if (isLit(Q) || !N.L || isRailFlag(Q))", "if (isLit(Q) || !N.L)")], None, None, "rail sibling: classifier AND emitter refusals dropped"),
  ("M32", CL, "  G->addParamAttr(1, Attribute::ZExt);", "", "F-2 zeroext on the forward dropped"),
  ("M33", CL, "      Unc->addParamAttr(2, Attribute::ZExt);", "      (void)Unc;", "F-2 zeroext on the _unc dropped"),
- ("M34", TP, "        if (out.Tainted.insert(CB).second) {", "        if (false) {", "3jru: call sites of a register-returning fn never tainted"),
  ("M35", [(QP, "  declineQuantumReturnCalls(M, taint);\n", "")], None, None, "3jru: refusal slot dropped (both entry points)"),
  ("M36", TP, "      auto *I = dyn_cast<Instruction>(U);\n      if (!I) {", "      auto *I = dyn_cast<CallBase>(U);\n      if (!I) { continue;", "3jru: refusal ignores non-call uses (address taken)"),
- ("M37", TP, "  for (bool Changed = true; Changed;) {\n    Changed = false;", "  for (bool Changed = true, Once = true; Once; Once = false) {\n    Changed = false; (void)Changed;", "3jru: fixpoint runs one pass only"),
  ("M38", TP, "        if (taint.Tainted.count(RV))\n          return true;\n  return false;\n}\n\n// bd `test_C_libtooling-3jru` — the LOUD", "        if (taint.Tainted.count(RV))\n          return false;\n  return false;\n}\n\n// bd `test_C_libtooling-3jru` — the LOUD", "3jru: functionReturnsTainted always false"),
+ ("M39", TP, "        if (auto *Ret = dyn_cast<ReturnInst>(I)) {", "        if (auto *Ret = dyn_cast<ReturnInst>(I); false) {", "3jru: call-return closure removed from propagateWorklist"),
+ ("M40", TP, "            if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&", "            if (CB && CB->getCalledOperand() == F &&", "3jru: unused call results tainted too"),
+ ("M41", TP, "          CB && CB->getCalledOperand() == &F && CB->use_empty())\n        continue;", "          CB && CB->getCalledOperand() == &F && CB->use_empty() && false)\n        continue;", "3jru: refusal also fires on unused call results"),
  ("M26", PM, "        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&", "        if (!Taint.Tainted.count(BI->getCondition()) &&", "rule-(B) record also in clone mode"),
 ]
 

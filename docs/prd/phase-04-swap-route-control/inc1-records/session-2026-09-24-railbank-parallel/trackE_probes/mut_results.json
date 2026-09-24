@@ -351,7 +351,8 @@
    "lit:taint_reject_quantum_return_helper_arg.ll",
    "lit:taint_reject_quantum_return_measure.ll",
    "lit:taint_reject_quantum_return_measured_literal.ll",
-   "lit:taint_reject_quantum_return_smax.ll"
+   "lit:taint_reject_quantum_return_smax.ll",
+   "lit:taint_reject_quantum_return_volatile_flag.ll"
   ],
   "desc": "3jru: refusal slot dropped (both entry points)"
  },
@@ -375,15 +376,36 @@
    "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
    "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll",
    "lit:taint_reject_quantum_return_abs.ll",
-   "lit:taint_reject_quantum_return_boolarg.ll",
    "lit:taint_reject_quantum_return_branch.ll",
    "lit:taint_reject_quantum_return_fnptr.ll",
    "lit:taint_reject_quantum_return_helper_arg.ll",
    "lit:taint_reject_quantum_return_measure.ll",
    "lit:taint_reject_quantum_return_measured_literal.ll",
-   "lit:taint_reject_quantum_return_outparam.ll",
-   "lit:taint_reject_quantum_return_smax.ll"
+   "lit:taint_reject_quantum_return_smax.ll",
+   "lit:taint_reject_quantum_return_volatile_flag.ll"
   ],
   "desc": "3jru: functionReturnsTainted always false"
+ },
+ "M39": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_quantum_return_boolarg.ll",
+   "lit:taint_reject_quantum_return_chain_store.ll",
+   "lit:taint_reject_quantum_return_outparam.ll",
+   "lit:taint_reject_quantum_return_round2_literal.ll"
+  ],
+  "desc": "3jru: call-return closure removed from propagateWorklist"
+ },
+ "M40": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "3jru: unused call results tainted too"
+ },
+ "M41": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_accept_quantum_return_unused.ll"
+  ],
+  "desc": "3jru: refusal also fires on unused call results"
  }
 }

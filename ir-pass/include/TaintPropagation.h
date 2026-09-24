@@ -1401,8 +1401,10 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 
 // bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
 // of the defined function `F` returns a value in `taint.Tainted` (a quantum
-// register's HANDLE). `propagate` iterates it to a fixpoint across functions: every
-// DIRECT call site of such a function is tainted and propagated (chains, recursion).
+// register's HANDLE). The closure itself lives in `propagateWorklist` (every
+// grower: `propagate`, the round-2 reseed, `propagateFromSeeds`): when a `ret`
+// is tainted, every DIRECT call site of its function whose result is USED joins
+// the worklist (chains and recursion close by the worklist).
 bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
 
 // bd `test_C_libtooling-3jru` — the LOUD refusal: any USE (a call site, or the
@@ -1413,10 +1415,15 @@ bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
 // existing Escaped `ret` contract. Asked ONCE in each entry point, AFTER the
 // round-2 fixpoint (`repropagateControlMerges` can taint a callee's return —
 // CLAUDE.md L1) and before `lowerRotations`/`lowerMeasures`. Every stage above it
-// already sees the call result TAINTED (the `propagate` fixpoint), which is what
+// already sees the call result TAINTED at its own round's taint (the
+// `propagateWorklist` closure — round 3's `propagate`-only loop missed round-2
+// growth, Rule-13 round 4 F-R4-1), which is what
 // keeps them from mis-lowering it meanwhile, and owners that decline first (the
 // specializer's `callee contains a quantum primitive`, the loop layer) keep their
-// strings. Returns true iff it declined.
+// strings — owners ABOVE the slot only; owners BELOW it (`declineClassicalMuxes`
+// onward) are pre-empted in such a module (round 4 P3-b). A direct call whose
+// RESULT IS UNUSED is not refused (round 4 P3-a); an address-taken use always is.
+// Returns true iff it declined.
 bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
 
 // Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd

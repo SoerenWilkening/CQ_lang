@@ -511,8 +511,34 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
             continue;
         }
       }
-      if (out.Tainted.insert(I).second)
+      if (out.Tainted.insert(I).second) {
         Worklist.push_back(I);
+        // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN, and it does
+        // so HERE, in the one drain every taint grower goes through (`propagate`,
+        // the round-2 reseed in `repropagateControlMerges` and its onward-control
+        // fixpoint, `propagateFromSeeds` for `MergePhiPeel` / `adjudicateTaintDelta`)
+        // — Rule 14, one owner. A tainted `ret` means its DEFINED function returns
+        // a quantum register's HANDLE, so every DIRECT call site of that function
+        // is quantum in its caller and joins the worklist; chains (g→h) and
+        // recursion close by the worklist itself. (Round 3 put this as a separate
+        // fixpoint loop in `propagate` only; Rule-13 round 4 F-R4-1 measured the
+        // round-2 reseed missing it — a `ret` of a 6.5 merge `%out` left its call
+        // site classical at FINAL taint, and a literal carrying the handle id passed
+        // `declineQuantumCondLiterals`.) The consumers are refused loudly by
+        // `declineQuantumReturnCalls`.
+        if (auto *Ret = dyn_cast<ReturnInst>(I)) {
+          Function *F = Ret->getFunction();
+          for (User *FU : F->users()) {
+            auto *CB = dyn_cast<CallBase>(FU);
+            // A call whose result is UNUSED carries no value to taint (and stays
+            // exactly as the pre-3jru compiler saw it; `declineQuantumReturnCalls`
+            // skips it too — round 4 P3-a).
+            if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&
+                out.Tainted.insert(CB).second)
+              Worklist.push_back(CB);
+          }
+        }
+      }
     }
   }
 }
@@ -556,35 +582,8 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
                     /*skipRuntimeCalls=*/false);
 
-  // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN. A DEFINED function
-  // whose `ret` operand is tainted returns a quantum register's HANDLE; before
-  // this, its direct call sites were UNTAINTED in the caller, so `cq_measure(g(x))`
-  // was deleted as a classical measure and `if (g(m) == n)` branched on the handle
-  // NUMBER (a silent miscompile, exit 0, stage-2b clean). Iterate to a fixpoint
-  // across functions (chains g→h, recursion): every direct call site of such a
-  // function joins `Tainted` and propagates forward. The CONSUMERS are then refused
-  // loudly by `declineQuantumReturnCalls` (nothing downstream is proven to lower a
-  // register that arrives as a CALL RESULT); this taint is what makes the refusal —
-  // and every guard in between — see the value for what it is.
-  for (bool Changed = true; Changed;) {
-    Changed = false;
-    for (Function &F : M) {
-      if (F.isDeclaration() || !functionReturnsTainted(F, out))
-        continue;
-      for (User *U : F.users()) {
-        auto *CB = dyn_cast<CallBase>(U);
-        if (!CB || CB->getCalledOperand() != &F)
-          continue;
-        if (out.Tainted.insert(CB).second) {
-          Worklist.push_back(CB);
-          Changed = true;
-        }
-      }
-    }
-    propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
-                      /*skipRuntimeCalls=*/false);
-  }
-
+  // bd `test_C_libtooling-3jru`: call-return taint is closed INSIDE
+  // `propagateWorklist` (see there), so this rebuild is closed under it too.
   return out;
 }
 
@@ -2483,12 +2482,25 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration() || !functionReturnsTainted(F, taint))
       continue;
-    // Any use of F at all: a direct call receives the handle; any other use (the
-    // address taken — a function pointer, a store, an argument) may reach an
-    // INDIRECT call that does, and nothing can tell which. A function with no use
-    // in this module (an entry point, or a cross-TU export) is untouched: its
-    // `ret` of a handle is the existing Escaped contract.
+    // Two kinds of use are refused:
+    //  * a DIRECT call whose RESULT HAS A USE — the caller would read the handle
+    //    as a value. A direct call whose result is UNUSED (`g(m);`) is NOT
+    //    refused (Rule-13 round 4 P3-a): nothing in the caller reads the handle,
+    //    the callee's `ret` of it is the ordinary Escaped contract, and the rail is
+    //    left allocated (Rule 6) — which is what the pre-3jru compiler emitted.
+    //  * ANY other use — the address taken (a function pointer, a store, an
+    //    argument, a constant expression): it may reach an INDIRECT call whose
+    //    result is read, and nothing here can tell which. This is kept loud even
+    //    when no indirect call exists in the module (a function that is only
+    //    address-taken and never called still declines): proving the absence of
+    //    every indirect read is a points-to question this stage does not ask, and
+    //    an over-decline is the safe side of it.
+    // A function with no use in this module (an entry point, or a cross-TU
+    // export) is untouched: its `ret` of a handle is the existing Escaped contract.
     for (User *U : F.users()) {
+      if (auto *CB = dyn_cast<CallBase>(U);
+          CB && CB->getCalledOperand() == &F && CB->use_empty())
+        continue;
       auto *I = dyn_cast<Instruction>(U);
       if (!I) {
         // A constant user (a global initializer, a constant expression): no
