@@ -9,8 +9,9 @@ import pathlib, subprocess, sys, tempfile, hashlib
 WT = pathlib.Path(sys.argv[1])
 GLOB = sys.argv[2] if len(sys.argv) > 2 else "*.c"
 LLVM = "/usr/local/opt/llvm@19/bin"
-D = pathlib.Path(__file__).parent / "probes"
-OPT = WT / "build/ir-pass/cq-opt"
+import os
+D = pathlib.Path(__file__).parent / os.environ.get("PROBES", "probes")
+OPT = pathlib.Path(os.environ["CQOPT"]) if os.environ.get("CQOPT") else WT / "build/ir-pass/cq-opt"
 PLUG = WT / "build/ir-pass/libCQPass.so"
 RT = WT / "build/runtime/libcq_runtime.a"
 TP = WT / "build/runtime/libcq_templates.a"
@@ -42,12 +43,12 @@ for f in files:
         continue
     exe = tmp / (f.stem + ".exe")
     lk = run([f"{LLVM}/clang", s2, TP, RT, "-o", exe])
-    trace = run([exe]).stdout if lk.returncode == 0 else "LINKFAIL"
+    trace = run([exe, "3"]).stdout if lk.returncode == 0 else "LINKFAIL"
     fp = run(["python3", WT / "tools/free_pairing_check.py", s2])
     tail = (fp.stdout.strip().splitlines() or [""])[-1]
     bank = "!cq.railbank" in s2.read_text()
     res[f.name] = ("ACCEPT", [f"bank={bank} 2b[{tail}]"], trace, "")
-    out = pathlib.Path(__file__).parent / "out"
+    out = pathlib.Path(__file__).parent / os.environ.get("OUT", "out")
     out.mkdir(exist_ok=True)
     (out / (f.stem + ".trace")).write_text(trace)
     (out / (f.stem + ".s2.ll")).write_text(s2.read_text())

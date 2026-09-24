@@ -6,6 +6,14 @@ edits are comments only, and the rebuilt binary is bit-identical).
 
 ## 0. Verdict
 
+> ⚠ **SUPERSEDED IN PART by §6b (Rule-13 round 2, F-1, a P1).** The paragraph
+> below was true of every shape it measured. It was NOT true of the capability:
+> a parked rail relabelled by an in-place `xor` that the ROLLED in-loop collapse
+> commits was a live silent miscompile on this tree and on main `e36d9df4`. It
+> is fixed by `staleReadOfValue`'s bank-load hop (§6b). "Nothing in this track
+> changed a verdict" is now false: 9 probe programs move ACCEPT→DECLINE, all of
+> them over-accepts.
+
 **The P1 is ALREADY CLOSED on this tree, and nothing in this track changed a
 verdict.** The fix the bead names (seed the fence with the parked rail name via
 the bank's store, position-aware walk) landed in `95949550` (session
@@ -58,7 +66,21 @@ The hop reaches the runtime-sized bank (s02, s18) and the two-bank function
 (s30, h06) with the 3d8q string; every other variant declines at an earlier
 wall.
 
-## 2. The dtzb axis — safe, and for a reason no comment stated
+## 2. The dtzb axis — ⚠ "safe" WAS FALSE; see §6b
+
+> ⚠ **CORRECTED 2026-09-24 (Rule-13 round 2, finding F-1, a P1).** This
+> section originally claimed the in-place add/xor axis was safe for a parked
+> rail. That was true only of the **M-C** minters (the straight-line and late
+> conversions), which is all this section measured. The rolled in-loop
+> **collapse** (`collapseRailPhisIn` → `markInPlaceRailOp`) is a different
+> in-place minter with no G7(e) in front of it, and it accepted a stale bank
+> read. `P1_bank.c`: `for(i) b[i]=q; for(k){ if(q>k) cq_phi(.3); q ^= 3; }
+> for(i) cq_measure(b[i]);`. My probes s11–s13/s21/s22/s26/s27 did not reach it,
+> because none of them put a tainted-condition region **and** an in-place op in
+> the same loop (s26 declined at the mux-phi wall instead). What follows is
+> kept as written and is correct **for the M-C minters only**. §6b has the fix
+> and the full list of minters.
+
 
 The fence walks for `cq_theta_` gates and not for an in-place `add`/`xor` (bd
 `a3z7`'s vocabulary gap). So for a parked rail the only thing standing between
@@ -198,7 +220,120 @@ fixture is shown by mutant M1/M5 (the hop disabled), not by an older binary.
   * Stage 2b is not re-run per row by the matrix runner. The row-30 and row-31
     accepts measured STRICT `0 violation(s)` by hand (§1).
 
+## 6b. Rule-13 round 2 finding F-1 (P1): the collapse path, and the fix
+
+**The defect (pre-existing on main `e36d9df4`, re-measured on this branch
+before the fix, `cq-opt` `c6f61f80a5d524c6`).** Reviewer probes `P1_bank.c`,
+`P1_bank_ry.c`, `P1_bank_fixed.c` and `r_qx{33,3n,k3,kn}_bank.c`, plus my
+`t3_fixed_const_trip`, all ACCEPT with STRICT 2b clean. `P1_bank` emits
+`ry(h0); [flag; rz_i1; strip; free; cqrt_xorc_i32(h0,3)] ×3; measure(h0) ×4`,
+so the bank measures observe `q^3` where the source says `q`. Every register
+twin DECLINES with `cq loop lowering: rail record read past an in-place gate on
+the same rail`. Probe corpus: `trackB_probes/collect2.py` (34 files, 11 pairs).
+
+**Mechanism.**
+1. The reader fence's memory hop (`railBankParkedRails`) runs before
+   `lowerLoops`. It walks for `cq_theta_` gates, and the in-place `xor` does not
+   exist as a gate until the collapse commits it.
+2. The collapse's own fence, `staleRailRecordRead` → `staleReadOfValue`,
+   enumerates the parked value's SSA users. It finds the bank STORE, which comes
+   before the loop, so no gate lies between the def and that "read". It never
+   sees the cell LOADS.
+
+**Fix (Rule 14: no second spelling).**
+* `RailBankPromote`: the bank address-tree walk is now ONE function,
+  `forEachBankCellMemop`, used by both directions. On top of it sits
+  `railBankCellReadsOf(V, Loads)`: the forward hop read backwards. "V is parked"
+  is decided by the same `bankStoreRailValue` relation (a direct store, or a
+  store of the storage cast), and every cell load of every such bank is
+  returned.
+* `LoopLowering::staleReadOfValue`: before the SSA-user loop, each such load is
+  asked `railGateBetween(Def, Load, Gates, Refreshes)`. That is the same walk
+  and the same refresh bit an SSA read gets. The load's single user (the
+  measure) is named for the diagnostic, which is the string the register twin
+  gets. This only adds read points, so it can only add declines. It sits at
+  both call sites (`tryCaseA` and the round-2 collapse), because both call
+  `staleRailRecordRead`.
+* Why here and not by widening the reader hop's vocabulary: at the reader
+  fence's slot the in-place op is not yet committed (`taint.InPlaceRailOps` is
+  filled by the collapse), so widening it would ask a prediction. This fence
+  asks at the site that is about to commit, with the op already in `Gates`
+  (`collectRailGates` counts it). That is L1's cure: "ask at the site".
+
+**Every in-place minter for a parked rail, and what refuses each (L2/L3):**
+
+| minter | site | what refuses a parked parent / a later bank read | evidence |
+|---|---|---|---|
+| M-C straight-line (`classifyInPlaceReassignment` → `inPlaceFenceHolds`) | `ArithLowering.cpp` | G6/G7(e): the park `store` or storage cast is a non-call user of the parent; G5 refuses in-loop sites | mutant M7 (round 1): killed |
+| M-C late conversion (`lateReassignShape` → `inPlaceFenceHolds`) | `ArithLowering.cpp` | same G6/G7(e) | M7 |
+| `commitOutOfLoopInPlaceOps` | `LoopLowering.cpp` | calls `classifyInPlaceReassignment`, so the same G6/G7(e) | argued (same function), not separately mutated |
+| `tryCaseA` Case A | `LoopLowering.cpp` | its CLOSURE refuses the store as a non-rail user, **and** `staleRailRecordRead` (now with the bank-load hop) | `e1_bank` matrix row 33; comment corrected |
+| rolled collapse `collapseRailPhisIn` | `LoopLowering.cpp` | **only** `staleRailRecordRead`; before this fix, nothing | **F-1**; now matrix rows 34–37, fixtures `railbank_stale_reject_inloop_xor_*`, twin rows p13–p15 |
+| 7.4 break (`emitBreakForward`) | `LoopLowering.cpp` | (E15): the rail mint may be read only by the rail phi and the escape phi, so the park store is refused | `f1_break_bank` declines `early break body is not a provable rolled single-rail loop` (its twin too); the gate that fires was read, not mutated |
+
+**Measured after the fix (`cq-opt` `427492b12c4162e2`).**
+* All 7 reviewer bank probes, plus `t3`, DECLINE with the twin's exact string.
+  `P1_legit`, `t4_legit_fixed` and `t5_legit_ry` still ACCEPT.
+* A/B of the pre-fix binary against the new one (`trackB_probes/ab.py`) over
+  every `ir-pass/test/*railbank*.ll` and every accepted-probe stage-1 module
+  (133 modules, including `example/grover/main.c`, `h04`/`h05`, all accept
+  controls):
+  * The null control (base vs base) runs first: **0 movers of 133**.
+  * The A/B: **8 movers of 133**, all ACCEPT→DECLINE, and all are the intended
+    F-1 shapes. **0 stream moves on any accept.**
+* Red-green (`trackB_probes/redcheck.py`, `trackB_probes/mutate2.log`):
+  * On the pre-fix binary the 3 new reject fixtures FAIL (rc 0) and the legit
+    fixture PASSES.
+  * The matrix run against the pre-fix binary fails exactly rows 34–37.
+  * After the fix, all pass.
+
+**Round-2 mutation matrix** (`trackB_probes/mutate.py`, owned tests only, the
+null mutant first; the final full run is `trackB_probes/mutate3.log` on the
+binary with hash `427492b12c4162e2`, restored after every mutant).
+
+| mutant | what it breaks | result | detected by / why missed |
+|---|---|---|---|
+| **N0 null** | a comment | **0 detections**: lit 27/27, matrix 42 cases 0 failures, twin rc 0 | control |
+| N1 | the bank-load hop removed | **KILLED** | 4 `inloop_xor` reject fixtures; matrix rows 34–37 and 44; twin rows p13–p16 |
+| N2 | `railBankCellReadsOf` ignores a storage-cast park | MISSED | **no subject reaches it**: every cast-parked shape I built declines earlier (`_Bool` cells: `tainted value consumed by an unknown callee`; `short` into `int b[n]`/`int b[3]`: `unsupported reader of a rail-bank cell`; `short b[n]`: `array element is not a reversible…`; probes t1, u2–u4). The conjunct follows the forward hop's `bankStoreRailValue` so the two directions agree (Rule 14), not because a program needs it today |
+| N3 | the diagnostic names the load, not the measure | MISSED | location only: `!dbg`-free fixtures print `<unknown>:0:0` either way. Cosmetic, not a verdict |
+| N4 | the bank read ignores the def-refresh cut (`false`) | MISSED | no subject: every parked value in reach is defined OUTSIDE the relabel loop, so the refresh bit is irrelevant. An in-loop park of a relabelled rail declines earlier (`muxed by a classical-condition phi`: s15/s16/c04/c05) |
+| N5 | the bank read always cuts at the def (`true`) | MISSED | same reason as N4 |
+| N6 | the shared address-tree walk does not follow GEPs | **KILLED** | the forward hop's fixtures too (11 lit reds): the one walk serves both directions, which is what Rule 14 asked for |
+| N7 | only the FIRST cell load is asked | **KILLED** only after a new row was added | the first run missed it. The fix was fixture `…_read_before_and_after.ll`, matrix row 44 and twin p16: the bank is read before the xor loop (legit, first load) and after it (stale). **That program was a 4th live over-accept on the pre-fix binary** (it accepts there and declines now) |
+
+**Denominator: 7 non-null mutants, 3 KILLED, 4 MISSED (N2–N5), each with a
+stated reason.** N7 was first MISSED; the missing fixture it exposed was a real
+over-accept.
+
+⚠ **An instrument failure I caused and caught.** My first run of the new row
+gave it matrix id 42, which collided with twin row 42. The JSON sidecar is a
+dict, so it silently kept one entry. The **null-control mutant then reported
+KILLED**, because the pure-comment mutant produced "failures". That is the null
+control doing its job. The generator now asserts unique ids. The shared runner
+`run_railbank_dynamic_matrix.py` still accepts a duplicate key silently (Python
+`json` last-wins). I own the sidecar, not the runner, so this is reported rather
+than fixed.
+
 ## 7. NOT tested here (belongs to the merge gate)
+
+**After §6b the verdict-affecting source DID change** (`LoopLowering.cpp`,
+`RailBankPromote.{h,cpp}`; `cq-opt` `427492b12c4162e2`). The full `ir-pass-lit`,
+every `e2e-slice-railbank-*`, `e2e-railbank-dynamic-admission-matrix`, the corpus
+A/B, cq-opt-equivalence and the loop-twin matrix are therefore OWED at the merge
+gate. What I ran instead:
+* The hand A/B over every `*railbank*.ll` fixture plus 64 accepted-probe
+  modules, with a null control (§6b).
+* The owned tests.
+
+The inference "only rail-bank modules can move" rests on this: the new code
+runs only when `railBankCellReadsOf` finds a `!cq.railbank` store of the value.
+That is argued from the code, not measured over the corpus. Also not attacked:
+* a parked rail relabelled inside a NESTED loop;
+* a bank read inside the relabel loop's own body after the relabel;
+* multi-function modules (bd `1yeu`).
+
+Original §7 follows.
 
 The full `ir-pass-lit`, including the pre-existing
 `railbank_reject_measure_after_nondiagonal_on_parked_rail.ll` and every

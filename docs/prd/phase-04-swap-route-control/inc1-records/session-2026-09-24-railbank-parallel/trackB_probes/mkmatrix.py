@@ -75,6 +75,25 @@ ROWS = [
      "GREEN: the capability at _Bool cells -- the hop must peel the i1->i8 storage cast to find the seed"),
     (33, "RUNTIME_DTZB_FIXED_TRIP_XOR", "e1_bank_dtzb_loop_xor.bank", False, MUXPHI,
      "review round-1 probe e1_bank: fixed-trip (unroll disabled) in-place xor loop on the parked rail; held by tryCaseA's CLOSURE refusing the bank store"),
+    (34, "RUNTIME_INLOOP_XOR_PARKED", "../probes2/P1_bank.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "Rule-13 round-2 F-1 (reviewer P1_bank.c): parked q relabelled by a collapse-committed in-place xor, then the cells read"),
+    (35, "FIXED_INLOOP_XOR_PARKED_OTHER_COND", "../probes2/P1_bank_fixed.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-1 on a fixed int b[3], the relabel loop conditioned on a different register r"),
+    (36, "RUNTIME_INLOOP_XOR_CONST_TRIP", "../probes2/r_qx33_bank.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-1 with a constant (3) relabel trip count, outside main"),
+    (37, "RUNTIME_INLOOP_XOR_KDEP", "../probes2/r_qxkn_bank.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-1 with a trip-dependent xor immediate (q ^= k)"),
+    (38, "RUNTIME_INLOOP_XOR_LEGIT", "../probes2/P1_legit.bank", True, None,
+     "GREEN: F-1 with the bank measure loop moved ABOVE the xor loop (reviewer P1_legit.c)"),
+    (39, "FIXED_INLOOP_XOR_LEGIT", "../probes2/t4_legit_fixed.bank", True, None,
+     "GREEN: the fixed-bank, constant-trip legit order"),
+    (44, "RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER", "../probes3/u1_two_read_loops.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-1 with the bank read BEFORE and AFTER the xor loop -- every cell load must be asked, not the first"),
     (40, "TWIN_OF_28", "t28_rt_percell_sibling.twin", True, None, "hand-unrolled n=3 twin of 28"),
     (41, "TWIN_OF_29", "t29_rt_percell.twin", True, None, "hand-unrolled n=3 twin of 29"),
     (42, "TWIN_OF_31", "t31_passH.twin", True, None,
@@ -105,6 +124,8 @@ hdr = """/* railbank_stale_matrix.c — bd xdu2.1 (Track B, session 2026-09-24-r
 #include <stdlib.h>
 
 """
+ids = [r[0] for r in ROWS]
+assert len(ids) == len(set(ids)), f"duplicate case ids: {sorted(i for i in ids if ids.count(i) > 1)}"
 body = []
 cases = {}
 for cid, macro, stem, acc, diag, claim in ROWS:
@@ -112,7 +133,7 @@ for cid, macro, stem, acc, diag, claim in ROWS:
 body.append("\n#ifndef CASE\n#define CASE CASE_FIXED_STALE_INVARIANT_PARK\n#endif\n\n")
 first = True
 for cid, macro, stem, acc, diag, claim in ROWS:
-    src = (SP / "probes" / (stem + ".c")).read_text()
+    src = (SP / "probes" / (stem + ".c")).resolve().read_text()
     src = src.replace("#include <stdlib.h>\n", "")
     kw = "#if" if first else "#elif"
     first = False
