@@ -428,5 +428,32 @@
   "verdict": "MISSED",
   "movers": [],
   "desc": "F-R5-2: direct llvm.used user not exempted"
+ },
+ "M45": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_scrubbed_handle_branch.ll",
+   "lit:taint_reject_scrubbed_handle_branch2.ll",
+   "lit:taint_reject_scrubbed_handle_mixed_select.ll"
+  ],
+  "desc": "l3oi: scrub not recorded"
+ },
+ "M46": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_scrubbed_handle_branch.ll",
+   "lit:taint_reject_scrubbed_handle_branch2.ll",
+   "lit:taint_reject_scrubbed_handle_mixed_select.ll"
+  ],
+  "desc": "l3oi: postcondition not asked (both entry points)"
+ },
+ "M47": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_scrubbed_handle_branch.ll",
+   "lit:taint_reject_scrubbed_handle_branch2.ll",
+   "lit:taint_reject_scrubbed_handle_mixed_select.ll"
+  ],
+  "desc": "l3oi: cq_template_ readers not checked"
  }
 }

@@ -765,6 +765,15 @@ struct TaintSet {
   // survives to its reader.
   llvm::SmallVector<llvm::WeakVH, 4> CondLiteralGates;
 
+  // bd `test_C_libtooling-l3oi` (xdu2.13 Rule-13 round 6 F-R6-1) — every value
+  // `scrubForwardCone` REMOVED from `Tainted` (the §2.7 return-taint correction:
+  // a specialized clone proved to return a classical value). Taint was a
+  // premise of every stage that ran before `specialize()`; a control emitter may
+  // already have read such a value as a quantum HANDLE. RECORDED at the scrub,
+  // RE-ASKED after `specialize()` in both entry points by
+  // `declineScrubbedHandleReads` — the scrub-direction twin of CLAUDE.md L1.
+  llvm::SmallVector<llvm::WeakVH, 4> ScrubbedByReturnTaint;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal
@@ -1427,6 +1436,17 @@ bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
 // RESULT IS UNUSED is not refused (round 4 P3-a); an address-taken use always is.
 // Returns true iff it declined.
 bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
+
+// bd `test_C_libtooling-l3oi` — the POSTCONDITION after `specialize()`: a value
+// in `taint.ScrubbedByReturnTaint` that is an operand of an emitted
+// `cqrt_*`/`cq_template_*` call was read as a quantum HANDLE while it was still
+// tainted and is now proved classical — the integer used as a register id.
+// Fires `cq taint escape: classical call result used as a quantum register`
+// (DS_Error, source-located). Asked once per entry point, right after
+// `specialize()`; `lowerOps`/`lowerRotations` run after it and see the scrubbed
+// value as classical, so any LATER use is a correct `_hl` literal. Returns true
+// iff it declined.
+bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint);
 
 // Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd
 // test_C_libtooling-3qlq Inc 1)?

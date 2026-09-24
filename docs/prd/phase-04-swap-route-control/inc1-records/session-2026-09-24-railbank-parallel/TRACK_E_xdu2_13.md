@@ -578,6 +578,77 @@ M27–M31, the conjunct-(d) mutants, are retired with their code.
   | M43 | the `@llvm.used` exemption | KILLED (u05 accept) |
   | M44 | the direct-global exemption | MISSED; the branch was unreachable and was deleted |
 
+## 6g. Rule-13 round 6 on `60ac0fcb`: CLEAR-WITH-ITEMS; bd l3oi fenced
+
+Round 6 found no new taint hole, and the §6f enumeration held: the reviewer
+independently read about 80 RAUW/setOperand sites, and both soft spots are
+closed. One P1 that predates this change, **bd test_C_libtooling-l3oi**, gains
+customers from the literal slot (xhm, xim and xjm were declined by aad63450 and
+accepted by E6), so it is fenced here, decline-only.
+
+- **The defect: the SCRUB direction of L1.**
+  - Multi-TU (llvm-linked): `h(q, m)` in a library TU reads a tainted argument,
+    so `propagate` taints its result `t`.
+  - The round-1 control emitters then build `cq_template_icmp_sgt_i32_hl(t, 3)`,
+    treating `t` as a quantum HANDLE.
+  - Only after every re-ask does `specialize()` clone `h`, find that the clone
+    returns the classical `k + 1`, and have `scrubForwardCone` REMOVE `t`'s
+    taint.
+  - Nothing re-asked, so the trace read `icmp_sgt_i32_hl(h4, 3)`: the integer 4
+    used as a register id, with exit 0 and 2b clean.
+  - **Every L1 cure so far guarded taint GROWTH. This is taint SHRINKAGE after
+    consumers already acted on it, and it is the same premise violation run
+    backwards.**
+- **Every taint REMOVAL site was enumerated.** All `Tainted.erase` sites in
+  `ir-pass/src` erase a value that is being deleted or RAUW'd in the same
+  statement (the `scrubTaint` helpers, promote, the loop and φ collapses, the
+  freeze fold, the cq_phi deletion, the IO-sink φ). There is **exactly one
+  semantic scrub**, where the value stays live and loses its taint:
+  `Specialization.cpp` `scrubForwardCone`. It is called from the module
+  `specialize()` (:1213) and from a clone-local set (:963, which records into
+  that clone's own `TaintSet`, where it is harmless).
+- **The fix: L1's record-and-re-ask pattern.**
+  - `scrubForwardCone` RECORDS every value it untaints in
+    `taint.ScrubbedByReturnTaint` (`WeakVH`).
+  - `declineScrubbedHandleReads` runs immediately after `specialize()` in BOTH
+    entry points, before `lowerRotations`/`lowerOps`. It fails loudly with
+    `cq taint escape: classical call result used as a quantum register` if a
+    recorded value, still untainted, is an operand of any emitted
+    `cqrt_*`/`cq_template_*` call.
+  - Why the operand test is exact: every call of that kind that exists at this
+    slot was minted by a pre-`specialize` emitter, and at mint time the value
+    was tainted, so it went into a handle slot. The classical `_hl` literal
+    slots take only untainted values (CondLiteral conjunct (b)). Uses lowered
+    AFTER the slot (`lowerOps`) see the value as classical and correctly use a
+    literal.
+  - The better alternative — computing the clone return taint before control
+    emission — was not taken. The clone's `ReturnTainted` verdict comes from
+    lowering the clone, which itself depends on the control plan. Nothing shows
+    that an earlier computation would give the same answer.
+- **Red-green.** Fixtures come from the reviewer's prebuilt llvm-linked modules,
+  with a header that explains the two-TU origin and how to regenerate:
+  `taint_reject_scrubbed_handle_{branch,branch2,mixed_select}.ll`
+  (xam/xbm/xhm). All three are red on 60ac0fcb.
+- **Green cases, all measured:**
+  - xdm (`cq_measure(t * n)`): lowers classically, with the correct no-symbol
+    measure.
+  - spc and sye: still accept.
+  - **All 22 `run_slice_multi.sh` registrations**, rebuilt with llvm-link and
+    compared against aad63450: null control 0 of 22, **0 movers**
+    (`trackE_probes/multi_sweep.py`).
+  - Every `control_classical_call_arm_*` fixture: no mover in the full sweep.
+- **Full lit sweep vs aad63450**, null control 0 of 40: **2274 fixtures, 36
+  movers**. That is the 33 from §6f plus the three new l3oi fixtures. No
+  pre-existing fixture moved.
+- **Mutation delta.** Null control first, 0 movers; denominators 119 lit and 4
+  ctest.
+
+  | mutant | removes | result |
+  |---|---|---|
+  | M45 | the record at the scrub | KILLED (3) |
+  | M46 | the postcondition slot, both entry points | KILLED (3) |
+  | M47 | the `cq_template_` reader check | KILLED (3) |
+
 ## 7. What I did NOT test
 
 - I did not run the full ctest, an unfiltered lit, cq-opt-equivalence or the

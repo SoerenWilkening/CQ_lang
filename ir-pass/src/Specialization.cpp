@@ -630,6 +630,8 @@ void scrubForwardCone(Value *Root, TaintSet &taint,
                       const SmallPtrSetImpl<const Value *> &TaintedSources) {
   std::vector<Value *> Worklist;
   auto scrub = [&](Value *V) {
+    if (taint.Tainted.count(V))
+      taint.ScrubbedByReturnTaint.emplace_back(V);  // bd l3oi: the record.
     taint.Tainted.erase(V);
     taint.BirthOrder.erase(V);
     if (auto *I = dyn_cast<Instruction>(V))

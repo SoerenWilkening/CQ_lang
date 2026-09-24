@@ -862,6 +862,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `cloneTaint` is never unioned into `taint` (C-Taint); `specialize` re-marks
   // each retargeted call result into `taint` per its post-lowering return-taint.
   specialize(M, wd, taint, plan6);
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
+  // can REMOVE taint (a clone proved classical), after every control emitter
+  // already read the value as a handle. Loud, before anything else runs.
+  if (declineScrubbedHandleReads(M, taint))
+    return PreservedAnalyses::none();
 
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
@@ -1401,6 +1406,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 6 specialization driver (step 14) — mirrored from run() (twin-pipeline
   // parity, WI-1.12).
   specialize(M, wd, taint, plan6);
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
+  // can REMOVE taint (a clone proved classical), after every control emitter
+  // already read the value as a handle. Loud, before anything else runs.
+  if (declineScrubbedHandleReads(M, taint))
+    return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
   // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,
   // `docs/frontend.md` §3.2, for a `@cq_theta_<sfx>` / `@cq_measure_<sfx>` reader

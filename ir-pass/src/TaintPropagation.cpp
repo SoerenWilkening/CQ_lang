@@ -2541,4 +2541,33 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
   return false;
 }
 
+// bd `test_C_libtooling-l3oi` — see TaintPropagation.h. Mirrored
+// character-for-character by `taint_reject_scrubbed_handle_*.ll`.
+static constexpr char kMsgScrubbedHandle[] =
+    "cq taint escape: classical call result used as a quantum register";
+
+bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
+  (void)M;
+  for (const WeakVH &H : taint.ScrubbedByReturnTaint) {
+    Value *V = H;
+    if (!V || taint.Tainted.count(V))
+      continue;  // erased, or re-tainted by an independent source since.
+    for (User *U : V->users()) {
+      auto *CB = dyn_cast<CallBase>(U);
+      if (!CB)
+        continue;
+      const Function *Callee = CB->getCalledFunction();
+      if (!Callee)
+        continue;
+      StringRef N = Callee->getName();
+      if (!N.starts_with("cqrt_") && !N.starts_with("cq_template_"))
+        continue;
+      CB->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *CB->getFunction(), kMsgScrubbedHandle, CB->getDebugLoc()));
+      return true;
+    }
+  }
+  return false;
+}
+
 }  // namespace cq
