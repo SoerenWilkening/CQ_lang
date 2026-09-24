@@ -1,0 +1,31 @@
+{
+ "_comment": "Expectations for railbank_guarded_vla_matrix.c (bd xdu2.8), read by run_railbank_dynamic_matrix.py. No row is a rail bank, so accept rows set require_railbank=false. Rows 7-13 share the E4 diagnostic string with row 6; the lit fixtures predmux_guarded_vla_* tell the owners apart via CQ_PREDMUX_DBG. Twins: CASE 1 (PredMux flattens the arm and speculates the guarded read) against CASE 15 (the source performs the guarded read itself; no speculation, no E4 admission), with the index in bounds (argv 0) and out of bounds (argv 7).",
+ "cases": {
+  "1": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "2": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "3": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "4": {"accept": false,
+        "diagnostic": "cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged",
+        "_note": "PRE-EXISTING wall, not xdu2.8's: -O1 LICM-hoists the hybrid `and` into the preheader and the bd tu9q postcondition refuses it. A const-table twin of this row declines identically on the pre-change oracle. E4 now admits the read (no E4 leave line)."},
+  "5": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "6": {"accept": false,
+        "diagnostic": "cq controlled lowering: control flow under quantum control",
+        "_note": "THE BEAD'S PROGRAM (railbank_dynamic_matrix.c row 13). E4 now admits the read; the decline moved to SelectClassify's untainted-leaf gate (a hybrid classical-and-quantum 4.4 DATA select). Same string, different owner: predmux_guarded_vla_reject_row13_hybrid_select.ll."},
+  "7": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "no classical bound: E4-gep"},
+  "8": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "signed k < m does not bound k < 0: E4-gep"},
+  "9": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "k <= m admits k == m: E4-gep"},
+  "10": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "m < k is the wrong direction: E4-gep"},
+  "11": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "m != n bounds nothing: E4-gep"},
+  "12": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "the guard bounds p[k], not p[k + 1]: E4-gep"},
+  "13": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "m + 1 == n puts the extent below the trip count: E4-gep"},
+  "14": {"accept": false, "diagnostic": "cq taint escape: tainted value reaches an unsupported instruction"},
+  "15": {"accept": true, "diagnostic": null, "require_railbank": false},
+  "16": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "the fact holds on the THEN edge; the read is on the ELSE arm: E4-gep"},
+  "17": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "signed k < m over an unsigned index: k < 0 is OOB: E4-gep"},
+  "18": {"accept": false, "diagnostic": "cq controlled lowering: control flow under quantum control", "_note": "read under !(q && k < m): E4-gep"}
+ },
+ "twins": [
+  {"rolled": 1, "twin": 15, "argv": ["0"], "dropped_twin_lines": []},
+  {"rolled": 1, "twin": 15, "argv": ["7"], "dropped_twin_lines": []}
+ ]
+}

@@ -6583,3 +6583,20 @@ cq_railbank_matrix(e2e-railbank-stale-matrix railbank_stale_matrix.c)
 
 # bd xdu2.9 (Track D): dead bank cells whose zero seed makes the store constant-dead are not rail banks.
 cq_railbank_matrix(e2e-railbank-deadcell-matrix railbank_deadcell_matrix.c)
+
+# bd xdu2.8 (Track C) — the arm-guarded classical runtime-VLA read. The matrix
+# rows and its hand-written twin live in the JSON sidecar; the slice pins both the
+# in-bounds and the out-of-bounds activation under STRICT stage 2b. Registered
+# after the directory-wide ENVIRONMENT pass, so it sets its own.
+cq_railbank_matrix(e2e-railbank-guarded-vla-matrix railbank_guarded_vla_matrix.c)
+add_test(NAME e2e-slice-predmux-guarded-vla
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_guarded_vla.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_predmux_guarded_vla.expected.log"
+    "" "--forbid-qram")
+set_tests_properties(e2e-railbank-guarded-vla-matrix e2e-slice-predmux-guarded-vla
+  PROPERTIES ENVIRONMENT
+  "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
