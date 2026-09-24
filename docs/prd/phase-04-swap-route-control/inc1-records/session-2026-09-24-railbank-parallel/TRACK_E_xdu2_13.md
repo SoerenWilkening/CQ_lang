@@ -208,6 +208,35 @@ string. Each pair is killed together.
   has admitted a leaf it cannot re-classify it as a quantum leaf. The program is
   valid (it is a Q∧Q tree after the fixpoint). I suggest filing it as a residual.
 
+## 6b. Rule-13 round 1 on `fc7e6b8e`: CLEAR-WITH-ITEMS, 0 P1
+
+- **P2-1, fixed.** `control_swap_reject_select_classical_leaf.ll` (3c6m.12 L4,
+  `or(q>5, k>7)`) now ACCEPTS. My filtered lit could not see it. It is converted
+  in place, keeping its name (L8), to an accept that pins the stream:
+  `gl = or_i1_hl(h_cmp, %c2)`, copies controlled on `gl`, `_unc` with the same
+  literal, then the frees. Its header's "hybrid conjunction out of scope" is
+  rewritten as [HISTORY] (L7). **Exit-code sweep** against the frozen pre-change
+  binary (`cq-opt.preE`, `63e2f0bb`): every `ir-pass/test/*.ll` whose name
+  matches `*select*|*condtree*|*cond_tree*|*classical*|*leaf*|*hybrid*|*predmux*|*kickback*`
+  was run, **728 fixtures**. The null control was 0 of 20. There are 8 movers:
+  the 7 new `condtree_classical_leaf_accept_*` fixtures plus this one, and **no
+  other**. This agrees with the reviewer's all-2245 measurement
+  (`trackE_probes/sweep.py`).
+- **P3-1, recorded, no code.** The `i1` literal is passed with no `zeroext`. With
+  the hand-IR `trunc i32 (argc+254) to i1`, the runtime prints 255 at both the
+  forward and the `_unc`. They still PAIR, because both read the same register
+  bits, so Rule 6 is intact. The mis-extension was already there on the data
+  path (the bd `ix2v` class, shared with the boolean-algebra path's
+  `and_i1_hl`), and it cannot be reached from C at `-O1`. **This change adds
+  customers to it.** A fix belongs to ix2v, where parameter extension attributes
+  would be emitted on every `_hl` call.
+- **P3-3, pinned.** The reviewer's `p36_measself` measures `q` and then reads it
+  in a mixed tree. Its decline string moves from `control flow` to `condition
+  measured before the control route`: the literal is now admitted, so the select
+  reaches the measured-before rung that used to sit behind the taint gate. The
+  verdict is unchanged. `condtree_classical_leaf_reject_measured_self.ll` pins the
+  new string; on the pre-change binary it declines with `control flow`, measured.
+
 ## 7. What I did NOT test
 
 - I did not run the full ctest, an unfiltered lit, cq-opt-equivalence or the
