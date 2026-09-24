@@ -87,12 +87,12 @@
       "diagnostic": "cq taint escape: tainted value stored to memory"
     },
     "20": {
-      "accept": false,
-      "diagnostic": "cq rail bank: a cell parks a value that is not a rail handle"
+      "accept": true,
+      "diagnostic": null
     },
     "21": {
-      "accept": false,
-      "diagnostic": "cq rail bank: a cell parks a value that is not a rail handle"
+      "accept": true,
+      "diagnostic": null
     },
     "22": {
       "accept": true,

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 720 maintained source files, 5928 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 721 maintained source files, 5978 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -30,11 +30,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
-- `ir-pass/src/RailBankPromote.cpp` — 1833 physical lines
+- `ir-pass/src/RailBankPromote.cpp` — 1898 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/include/TaintPropagation.h` — 1766 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1460 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1464 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1388 physical lines
@@ -74,12 +74,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IntrinsicLowering.cpp` — 518 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
 - `tools/library_coverage/inject_census.py` — 505 physical lines
-- `ir-pass/include/RailBankPromote.h` — 497 physical lines
+- `ir-pass/include/RailBankPromote.h` — 503 physical lines
 - `ir-pass/src/CtlzIdiomPrepass.cpp` — 497 physical lines
 - `tests/e2e/slice_libm_real_lgamma.c` — 497 physical lines
-- `tests/e2e/railbank_dynamic_matrix.c` — 491 physical lines
+- `tests/e2e/railbank_dynamic_matrix.c` — 495 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 488 physical lines
+- `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 482 physical lines
 - `tools/gen_templates.py` — 473 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
@@ -270,12 +271,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1460 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1464 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:53` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:87` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:113` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1026` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1030` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -689,31 +690,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp:2908` — `processShadowAlloca`
 - `ir-pass/src/QramLowering.cpp:3144` — `lowerShadowMemory`
 
-### `ir-pass/src/RailBankPromote.cpp` (1833 lines)
+### `ir-pass/src/RailBankPromote.cpp` (1898 lines)
 
 - `ir-pass/src/RailBankPromote.cpp:133` — `isCellMemop`
 - `ir-pass/src/RailBankPromote.cpp:181` — `isWholeObjectZeroStore`
 - `ir-pass/src/RailBankPromote.cpp:193` — `isConstantOffsetCellRead`
 - `ir-pass/src/RailBankPromote.cpp:221` — `planBank`
-- `ir-pass/src/RailBankPromote.cpp:615` — `applyBank`
-- `ir-pass/src/RailBankPromote.cpp:998` — `promoteRailBankCells`
-- `ir-pass/src/RailBankPromote.cpp:1071` — `declineForeignRailBankSeeds`
-- `ir-pass/src/RailBankPromote.cpp:1092` — `isLoweredRailHandle`
-- `ir-pass/src/RailBankPromote.cpp:1126` — `declineNonHandleBankStores`
-- `ir-pass/src/RailBankPromote.cpp:1146` — `isRailBankSeedAlloc`
-- `ir-pass/src/RailBankPromote.cpp:1182` — `diagnoseBank`
-- `ir-pass/src/RailBankPromote.cpp:1193` — `scrubTaint`
-- `ir-pass/src/RailBankPromote.cpp:1202` — `isRailBankAlloca`
-- `ir-pass/src/RailBankPromote.cpp:1206` — `railBankRailType`
-- `ir-pass/src/RailBankPromote.cpp:1218` — `railBankOfPointer`
-- `ir-pass/src/RailBankPromote.cpp:1225` — `bankStoreRailValue`
-- `ir-pass/src/RailBankPromote.cpp:1233` — `railBankParkedRails`
-- `ir-pass/src/RailBankPromote.cpp:1289` — `railStoredToRailBank`
-- `ir-pass/src/RailBankPromote.cpp:1300` — `markRailBankAllocas`
-- `ir-pass/src/RailBankPromote.cpp:1432` — `isAdmittedRailBankReader`
-- `ir-pass/src/RailBankPromote.cpp:1501` — `declineUnallowedRailBankReaders`
-- `ir-pass/src/RailBankPromote.cpp:1548` — `rewriteOneBank`
-- `ir-pass/src/RailBankPromote.cpp:1815` — `rewriteRailBankCellTypes`
+- `ir-pass/src/RailBankPromote.cpp:619` — `applyBank`
+- `ir-pass/src/RailBankPromote.cpp:1055` — `promoteRailBankCells`
+- `ir-pass/src/RailBankPromote.cpp:1131` — `declineForeignRailBankSeeds`
+- `ir-pass/src/RailBankPromote.cpp:1152` — `isLoweredRailHandle`
+- `ir-pass/src/RailBankPromote.cpp:1191` — `declineNonHandleBankStores`
+- `ir-pass/src/RailBankPromote.cpp:1211` — `isRailBankSeedAlloc`
+- `ir-pass/src/RailBankPromote.cpp:1247` — `diagnoseBank`
+- `ir-pass/src/RailBankPromote.cpp:1258` — `scrubTaint`
+- `ir-pass/src/RailBankPromote.cpp:1267` — `isRailBankAlloca`
+- `ir-pass/src/RailBankPromote.cpp:1271` — `railBankRailType`
+- `ir-pass/src/RailBankPromote.cpp:1283` — `railBankOfPointer`
+- `ir-pass/src/RailBankPromote.cpp:1290` — `bankStoreRailValue`
+- `ir-pass/src/RailBankPromote.cpp:1298` — `railBankParkedRails`
+- `ir-pass/src/RailBankPromote.cpp:1354` — `railStoredToRailBank`
+- `ir-pass/src/RailBankPromote.cpp:1365` — `markRailBankAllocas`
+- `ir-pass/src/RailBankPromote.cpp:1497` — `isAdmittedRailBankReader`
+- `ir-pass/src/RailBankPromote.cpp:1566` — `declineUnallowedRailBankReaders`
+- `ir-pass/src/RailBankPromote.cpp:1613` — `rewriteOneBank`
+- `ir-pass/src/RailBankPromote.cpp:1880` — `rewriteRailBankCellTypes`
 
 ### `ir-pass/src/RegionFlatten.cpp` (304 lines)
 
@@ -4135,7 +4136,58 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/predmux_purecallee_i80cmp_lib.c:54` — `leafl`
 
-### `tests/e2e/railbank_dynamic_matrix.c` (491 lines)
+### `tests/e2e/railbank_deadcell_matrix.c` (482 lines)
+
+- `tests/e2e/railbank_deadcell_matrix.c:55` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:65` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:69` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:76` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:81` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:92` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:96` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:104` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:110` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:120` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:124` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:131` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:139` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:159` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:164` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:183` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:187` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:209` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:214` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:235` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:241` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:251` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:257` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:267` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:273` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:283` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:287` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:297` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:301` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:308` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:317` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:327` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:331` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:342` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:347` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:369` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:373` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:397` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:401` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:411` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:421` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:429` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:435` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:444` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:448` — `slice`
+- `tests/e2e/railbank_deadcell_matrix.c:455` — `main`
+- `tests/e2e/railbank_deadcell_matrix.c:468` — `run_bank`
+- `tests/e2e/railbank_deadcell_matrix.c:481` — `main`
+
+### `tests/e2e/railbank_dynamic_matrix.c` (495 lines)
 
 - `tests/e2e/railbank_dynamic_matrix.c:43` — `measure_bank`
 - `tests/e2e/railbank_dynamic_matrix.c:50` — `slice`
@@ -4168,22 +4220,22 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:295` — `main`
 - `tests/e2e/railbank_dynamic_matrix.c:303` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:315` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:323` — `run_bank`
-- `tests/e2e/railbank_dynamic_matrix.c:345` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:352` — `run_bank`
-- `tests/e2e/railbank_dynamic_matrix.c:372` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:379` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:388` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:396` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:406` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:415` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:433` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:439` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:454` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:463` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:473` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:480` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:490` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:326` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:348` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:356` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:376` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:383` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:392` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:400` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:410` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:419` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:437` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:443` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:458` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:467` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:477` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:484` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:494` — `main`
 
 ### `tests/e2e/railbank_stale_matrix.c` (482 lines)
 
@@ -4257,12 +4309,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_stale_matrix.c:474` — `slice`
 - `tests/e2e/railbank_stale_matrix.c:478` — `main`
 
-### `tests/e2e/run_railbank_dynamic_matrix.py` (150 lines)
+### `tests/e2e/run_railbank_dynamic_matrix.py` (223 lines)
 
-- `tests/e2e/run_railbank_dynamic_matrix.py:35` — `run`
-- `tests/e2e/run_railbank_dynamic_matrix.py:39` — `load_expectations`
-- `tests/e2e/run_railbank_dynamic_matrix.py:53` — `check_case`
-- `tests/e2e/run_railbank_dynamic_matrix.py:85` — `main`
+- `tests/e2e/run_railbank_dynamic_matrix.py:39` — `run`
+- `tests/e2e/run_railbank_dynamic_matrix.py:43` — `load_expectations`
+- `tests/e2e/run_railbank_dynamic_matrix.py:77` — `_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:90` — `literal_bank_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:125` — `check_case`
+- `tests/e2e/run_railbank_dynamic_matrix.py:158` — `main`
 
 ### `tests/e2e/slice_4jok_bank_cell_from_hoisted.c` (57 lines)
 
