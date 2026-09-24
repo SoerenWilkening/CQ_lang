@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 736 maintained source files, 6085 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 741 maintained source files, 6120 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -321,11 +321,27 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CompareLowering.cpp:420` — `emitEqFlag`
 - `ir-pass/src/CompareLowering.cpp:473` — `rewriteCompare`
 
+### `ir-pass/src/CondLiteral.cpp` (231 lines)
+
+- `ir-pass/src/CondLiteral.cpp:41` — `collectI1Cone`
+- `ir-pass/src/CondLiteral.cpp:74` — `returnsQuantum`
+- `ir-pass/src/CondLiteral.cpp:89` — `fullConeReachesQuantumReturn`
+- `ir-pass/src/CondLiteral.cpp:122` — `markPredictedTaintCone`
+- `ir-pass/src/CondLiteral.cpp:135` — `condLiteralAdmissible`
+- `ir-pass/src/CondLiteral.cpp:164` — `emitCondLiteralNode`
+- `ir-pass/src/CondLiteral.cpp:189` — `stripCondLiteralNode`
+- `ir-pass/src/CondLiteral.cpp:205` — `declineQuantumCondLiterals`
+- `ir-pass/src/CondLiteral.cpp:219` — `stripPredMuxPredictedMarks`
+
 ### `ir-pass/src/CondTreeEmit.cpp` (371 lines)
 
 - `ir-pass/src/CondTreeEmit.cpp:54` — `bracket`
 - `ir-pass/src/CondTreeEmit.cpp:68` — `emitCondNode`
 - `ir-pass/src/CondTreeEmit.cpp:149` — `emitCondNetwork`
+
+### `ir-pass/src/CondTreeStrip.cpp` (81 lines)
+
+- `ir-pass/src/CondTreeStrip.cpp:24` — `stripCondNetwork`
 
 ### `ir-pass/src/ControlDetect.cpp` (904 lines)
 
@@ -4135,6 +4151,32 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/classical_call_under_control_lib.c:20` — `ext_f`
 
+### `tests/e2e/condtree_classical_leaf_matrix.c` (224 lines)
+
+- `tests/e2e/condtree_classical_leaf_matrix.c:39` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:57` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:65` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:75` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:78` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:85` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:90` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:95` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:100` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:106` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:117` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:125` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:131` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:141` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:147` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:161` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:173` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:189` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:197` — `f`
+- `tests/e2e/condtree_classical_leaf_matrix.c:198` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:206` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:213` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:221` — `main`
+
 ### `tests/e2e/onward_ctl_phase_caller.c` (52 lines)
 
 - `tests/e2e/onward_ctl_phase_caller.c:41` — `slice`
@@ -4817,6 +4859,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_compare_qq.c:80` — `slice`
 - `tests/e2e/slice_compare_qq.c:95` — `main`
+
+### `tests/e2e/slice_condtree_classical_leaf.c` (25 lines)
+
+- `tests/e2e/slice_condtree_classical_leaf.c:14` — `slice`
+- `tests/e2e/slice_condtree_classical_leaf.c:22` — `main`
 
 ### `tests/e2e/slice_control_abort.c` (43 lines)
 

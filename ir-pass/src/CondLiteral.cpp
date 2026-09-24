@@ -18,6 +18,7 @@
 #include "WidthDispatch.h"      // dataTemplateFn / freeFn
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/Instructions.h"
@@ -52,6 +53,68 @@ bool collectI1Cone(Value *Root, SmallVectorImpl<Instruction *> &Out) {
       Work.push_back(Op);
   }
   return true;
+}
+
+// bd `test_C_libtooling-xdu2.13` Rule-13 round 2 F-1 — taint does NOT cross a
+// call RETURN (pre-existing, bd `test_C_libtooling-3jru`): `r = g(m)` with
+// `g` returning `cq_theta(...)` is UNTAINTED in the caller although it is a
+// quantum register's handle id. A literal must never read one. The taint set
+// is MODULE-wide (`propagate` seeds every defined function), so the precise
+// question is answerable: does any `ret` operand of a DEFINED callee — or,
+// recursively, of a defined function IT calls on that return's cone — carry a
+// tainted value? An INDIRECT call is undecidable and answers yes. A
+// declaration answers no (external classical code; a cross-TU quantum return
+// is bd 3jru's class, not fenced here). Budget/depth exhaustion answers yes.
+constexpr unsigned kCallDepth = 8;
+constexpr unsigned kFullConeBudget = 256;
+
+bool fullConeReachesQuantumReturn(Value *Root, const TaintSet &taint,
+                                  unsigned Depth);
+
+bool returnsQuantum(const Function &F, const TaintSet &taint, unsigned Depth) {
+  if (Depth > kCallDepth)
+    return true;
+  for (const BasicBlock &BB : F)
+    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue())
+        if (fullConeReachesQuantumReturn(RV, taint, Depth + 1))
+          return true;
+  return false;
+}
+
+// `Root`'s whole backward operand cone (every type): true iff some member is
+// tainted (only asked below a call — the literal's own cone is untainted by
+// conjunct (b)'s caller contract, and a tainted member there is refused too)
+// or a call that `returnsQuantum`.
+bool fullConeReachesQuantumReturn(Value *Root, const TaintSet &taint,
+                                  unsigned Depth) {
+  SmallPtrSet<Value *, 32> Seen;
+  SmallVector<Value *, 32> Work{Root};
+  while (!Work.empty()) {
+    Value *V = Work.pop_back_val();
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I || !Seen.insert(I).second)
+      continue;
+    if (Seen.size() > kFullConeBudget)
+      return true;
+    if (taint.Tainted.count(I))
+      return true;
+    if (auto *CB = dyn_cast<CallBase>(I)) {
+      const Function *Callee = CB->getCalledFunction();
+      if (!Callee)
+        return true;  // indirect: undecidable.
+      if (!Callee->isDeclaration() && returnsQuantum(*Callee, taint, Depth))
+        return true;
+      // A call's ARGUMENTS are not walked: a tainted argument taints the call
+      // itself (forward propagation), caught above — EXCEPT at a sink
+      // (`cq_measure`, whose result is classical by Rule 3 and must stay a
+      // legal literal) and the angle slot, neither of which is a quantum id.
+      continue;
+    }
+    for (Value *Op : I->operands())
+      Work.push_back(Op);
+  }
+  return false;
 }
 
 }  // namespace
@@ -92,6 +155,9 @@ bool condLiteralAdmissible(Value *V, const TaintSet &taint) {
   for (Instruction *I : Cone)
     if (I->getMetadata(kPredMuxPredictedMD))
       return false;
+  // (d) Rule-13 round 2 F-1: no quantum register id returned through a call.
+  if (fullConeReachesQuantumReturn(V, taint, /*Depth=*/0))
+    return false;
   return true;
 }
 
@@ -109,6 +175,13 @@ CallInst *emitCondLiteralNode(IRBuilder<> &B, Instruction::BinaryOps Opc,
   CallInst *G = B.CreateCall(Fn, {Flag, Lit}, "gl");
   if (DL)
     G->setDebugLoc(DL);
+  // Rule-13 round 2 F-2: the runtime takes `bool b_classical`, which Clang's
+  // ABI passes `zeroext`. Without the attribute an `i1` literal reaches the C
+  // body with garbage high bits (MEASURED from C at -O1: a toggled `_Bool` in a
+  // rolled loop printed 2/254/253 — a non-0/1 `bool`, UB). Call-site attribute
+  // on the forward and on its `_unc` (below). The DATA path's `_hl` mints
+  // (bd ix2v) are NOT changed here.
+  G->addParamAttr(1, Attribute::ZExt);
   taint.CondLiteralGates.emplace_back(G);
   return G;
 }
@@ -119,6 +192,11 @@ void stripCondLiteralNode(IRBuilder<> &B, CallInst *Tpl, WidthDispatch &wd,
   // rail is LEFT ALLOCATED (a Rule-6 leak), never freed dirty.
   if (!emitInverseCall(B, Tpl, wd, /*CurHandle=*/nullptr, &taint.SpineOps))
     return;
+  // The `_unc` just minted sits immediately before the insertion point; its
+  // literal is arg 2 (`_unc(out, h, lit)`) — same `zeroext` as the forward.
+  if (auto *Unc = dyn_cast<CallInst>(&*std::prev(B.GetInsertPoint())))
+    if (Unc->arg_size() == 3 && Unc->getArgOperand(2) == Tpl->getArgOperand(1))
+      Unc->addParamAttr(2, Attribute::ZExt);
   CallInst *Free = B.CreateCall(wd.freeFn(), {Tpl});
   if (DebugLoc DL = Tpl->getDebugLoc())
     Free->setDebugLoc(DL);

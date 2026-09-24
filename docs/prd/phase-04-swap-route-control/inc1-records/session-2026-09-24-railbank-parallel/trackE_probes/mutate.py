@@ -62,6 +62,13 @@ MUTANTS = [
           (CL, "  if (Opc != Instruction::And && Opc != Instruction::Or)\n    return nullptr;\n", "")], None, None, "xor literal: classifier AND emitter refusals dropped"),
  ("M8x", [(SC, "    if (isCondRailLeaf(LN.Sibling) || isCondRailPhiShape(LN.Sibling))\n      return diagnoseUnderControl(Sel, \"control flow\");", ""),
           (CE, "if (isLit(Q) || !N.L || isRailFlag(Q))", "if (isLit(Q) || !N.L)")], None, None, "rail sibling: classifier AND emitter refusals dropped"),
+ ("M27", CL, "  if (fullConeReachesQuantumReturn(V, taint, /*Depth=*/0))\n    return false;", "", "F-1 fence dropped"),
+ ("M28", CL, "        if (fullConeReachesQuantumReturn(RV, taint, Depth + 1))\n          return true;", "        (void)RV;", "F-1 callee return cone never asked"),
+ ("M29", CL, "      if (!Callee->isDeclaration() && returnsQuantum(*Callee, taint, Depth))\n        return true;", "", "F-1 defined-callee check dropped"),
+ ("M30", CL, "    if (taint.Tainted.count(I))\n      return true;\n    if (auto *CB", "    if (auto *CB", "F-1 tainted-member test dropped (nested case needs it inside the callee)"),
+ ("M31", CL, "      continue;\n    }\n    for (Value *Op : I->operands())", "    }\n    for (Value *Op : I->operands())", "F-1 walks call arguments (over-decline direction)"),
+ ("M32", CL, "  G->addParamAttr(1, Attribute::ZExt);", "", "F-2 zeroext on the forward dropped"),
+ ("M33", CL, "      Unc->addParamAttr(2, Attribute::ZExt);", "      (void)Unc;", "F-2 zeroext on the _unc dropped"),
  ("M26", PM, "        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&", "        if (!Taint.Tainted.count(BI->getCondition()) &&", "rule-(B) record also in clone mode"),
 ]
 

@@ -16,7 +16,7 @@
 ; CHECK-NEXT: %c2 = icmp sgt i32 %n, 3
 ; CHECK-NEXT: %cc = and i1 %c2, %c1
 ; CHECK-NEXT: %[[V1:[a-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[V0]], i32 2)
-; CHECK-NEXT: %[[V2:[a-z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[V1]], i1 %cc)
+; CHECK-NEXT: %[[V2:[a-z0-9_.]+]] = call i32 @cq_template_and_i1_hl(i32 %[[V1]], i1 zeroext %cc)
 ; CHECK-NEXT: %[[V3:[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK-NEXT: %[[V4:[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 10)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[V2]], i32 %[[V4]], i32 %[[V3]])
@@ -24,7 +24,7 @@
 ; CHECK-NEXT: %[[V5:[a-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 7)
 ; CHECK-NEXT: call void @cqrt_copy_i32_controlled(i32 %[[V2]], i32 %[[V5]], i32 %[[V3]])
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[V2]])
-; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[V2]], i32 %[[V1]], i1 %cc)
+; CHECK-NEXT: call void @cq_template_and_i1_hl_unc(i32 %[[V2]], i32 %[[V1]], i1 zeroext %cc)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[V2]])
 ; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[V1]], i32 %[[V0]], i32 2)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[V1]])

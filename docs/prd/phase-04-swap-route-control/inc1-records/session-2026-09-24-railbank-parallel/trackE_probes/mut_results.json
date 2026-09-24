@@ -260,5 +260,76 @@
   "verdict": "MISSED",
   "movers": [],
   "desc": "rule-(B) record also in clone mode"
+ },
+ "M27": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll"
+  ],
+  "desc": "F-1 fence dropped"
+ },
+ "M28": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll"
+  ],
+  "desc": "F-1 callee return cone never asked"
+ },
+ "M29": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll"
+  ],
+  "desc": "F-1 defined-callee check dropped"
+ },
+ "M30": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll"
+  ],
+  "desc": "F-1 tainted-member test dropped (nested case needs it inside the callee)"
+ },
+ "M31": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_accept_measured_literal.ll"
+  ],
+  "desc": "F-1 walks call arguments (over-decline direction)"
+ },
+ "M32": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_callee_classical_helper.ll",
+   "lit:condtree_classical_leaf_accept_callee_classical_return.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll",
+   "lit:condtree_classical_leaf_accept_zeroext_toggle.ll"
+  ],
+  "desc": "F-2 zeroext on the forward dropped"
+ },
+ "M33": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_callee_classical_helper.ll",
+   "lit:condtree_classical_leaf_accept_callee_classical_return.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll",
+   "lit:condtree_classical_leaf_accept_zeroext_toggle.ll"
+  ],
+  "desc": "F-2 zeroext on the _unc dropped"
  }
 }

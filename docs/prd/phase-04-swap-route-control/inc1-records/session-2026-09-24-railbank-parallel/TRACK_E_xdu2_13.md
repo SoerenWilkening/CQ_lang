@@ -227,15 +227,73 @@ string. Each pair is killed together.
   forward and the `_unc`. They still PAIR, because both read the same register
   bits, so Rule 6 is intact. The mis-extension was already there on the data
   path (the bd `ix2v` class, shared with the boolean-algebra path's
-  `and_i1_hl`), and it cannot be reached from C at `-O1`. **This change adds
-  customers to it.** A fix belongs to ix2v, where parameter extension attributes
-  would be emitted on every `_hl` call.
+  `and_i1_hl`). **This change adds customers to it.** ⚠ This item said the
+  defect "cannot be reached from C at `-O1`", and **that was FALSE**. Round 2 F-2
+  reached it from C (`q90_togglephi.c`, a `_Bool` toggled in a rolled loop,
+  printed literals 2/254/253), and it is fixed for THIS emission site (§6c).
 - **P3-3, pinned.** The reviewer's `p36_measself` measures `q` and then reads it
   in a mixed tree. Its decline string moves from `control flow` to `condition
   measured before the control route`: the literal is now admitted, so the select
   reaches the measured-before rung that used to sit behind the taint gate. The
   verdict is unchanged. `condtree_classical_leaf_reject_measured_self.ll` pins the
   new string; on the pre-change binary it declines with `control flow`, measured.
+
+## 6c. Rule-13 round 2 on `bc42274e`: CLEAR-WITH-ITEMS for the mechanism
+
+- **F-1, fenced.** A quantum register RETURNED by a defined `noinline` function
+  is untainted in the caller, because taint does not cross a call return. That
+  pre-existing P1 is now filed as bd `test_C_libtooling-3jru`. The literal slot
+  gave it a new accept route: `r = g(m); if ((q>1) & (r==n))` emitted
+  `and_i1_hl(h_cmp, icmp eq <handle id>, n)`.
+  - `condLiteralAdmissible` now has a conjunct **(d)**. It walks the literal's
+    whole operand cone and refuses a call to a DEFINED function whose return-value
+    cone carries a tainted value. The check recurses through nested defined
+    callees, is depth-bounded, and refuses on budget exhaustion. It also refuses
+    any INDIRECT call.
+  - The PRECISE form was possible because the taint set is module-wide, verified:
+    `propagate` seeds every defined function.
+  - Declarations answer "no" (the cross-TU case is 3jru's). Call ARGUMENTS are not
+    walked: a tainted argument taints the call itself, and a `cq_measure` result
+    must stay a legal literal.
+  - Fixtures: `…reject_callee_quantum_return{,_nested}.ll` (red on `bc42274e`,
+    which accepted), `…accept_callee_classical_return.ll` (q93) and
+    `…accept_callee_classical_helper.ll` (a defined `iabs` + `llvm.smax`).
+  - Whole-corpus exit-code sweep against the `bc42274e` binary: 2251 fixtures,
+    null control 0 of 20, **2 movers, the two new declines**
+    (`trackE_probes/sweep_all.py`).
+- **F-2, fixed at this emission site.** `emitCondLiteralNode` adds `zeroext` to
+  the literal slot of the forward, and `stripCondLiteralNode` adds it to the
+  `_unc`. The runtime prototype is `bool b_classical`, which Clang passes
+  `zeroext`. q90 now prints 1/0/1 and 0/1/0, where it printed 2/254/253.
+  `…accept_zeroext_toggle.ll` pins both attributes. 8 existing accept fixtures
+  had their literal-slot CHECK lines updated to `i1 zeroext`; that is a stream
+  change, made deliberately. **The DATA path (bd ix2v, reviewer q91) is NOT
+  fixed and is left to ix2v.** The slice golden is unchanged, since the trace
+  already printed 0/1 there.
+- **F-3, recorded, not implemented.** `markPredictedTaintCone` marks the WHOLE i1
+  cone, including genuinely classical leaves. The reviewer's `q50_ruleb_mixed.ll`
+  and `q58_ruleb_or.ll` therefore decline, while their hand-flattened unmarked
+  twin `q52` accepts. This is a safe over-decline. Narrowing it is not a small
+  change:
+  - The negation clones built in `literal()` would need a correspondence back to
+    the predicted leaf, or a taint-free re-derivation of
+    `valueWillTaintAfterFlatten`, which is mid-flatten and has no `TaintSet`
+    available.
+  - So it is left for the coordinator to file.
+
+- **Mutation delta (round 2).** The null control ran first, twice, with 0
+  movers (denominators 50 then 51 lit, and 4 ctest). **7 new mutants, 7
+  KILLED:**
+  - M27 (fence dropped), M28 (callee return cone never asked), M29
+    (defined-callee check dropped) and M30 (tainted-member test dropped): each
+    is killed by both `reject_callee_quantum_return*` fixtures.
+  - M31 (call arguments walked, the over-decline direction): first MISSED,
+    because no accept put a `cq_measure` result in a literal. It is KILLED by
+    the new `…accept_measured_literal.ll`.
+  - M32 and M33 (`zeroext` dropped on the forward, or on the `_unc`): each is
+    killed by 10 accept fixtures.
+  - Running total: **37 real mutants, 21 KILLED, 16 MISSED**. The 16 MISSED are
+    unchanged from §5.
 
 ## 7. What I did NOT test
 
@@ -254,6 +312,7 @@ string. Each pair is killed together.
   The hand-IR probe `cd1.ll` was flattened by PredMux instead, and it is
   byte-identical to the oracle.
 - Clone mode, multi-function modules, and `+Asserts`: none were tested.
-- `ix2v`'s class: the `i1` literal is passed without `zeroext`. The slice trace
-  prints clean 0/1. It is pre-existing, and it is shared with the BoolAlg path's
-  `and_i1_hl`.
+- `ix2v`'s class on the DATA path. The literal emission site now passes
+  `zeroext` (§6c), but the data path's `_hl` mints (`lowerOps`, including the
+  boolean-algebra path's `and_i1_hl`, reviewer probe q91) are unchanged and
+  still pass `i1` without it.
