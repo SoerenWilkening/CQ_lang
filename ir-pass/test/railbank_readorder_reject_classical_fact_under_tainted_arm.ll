@@ -1,7 +1,9 @@
 ; railbank_readorder_reject_classical_fact_under_tainted_arm.ll — DECLINE (bd `xdu2.10`, Rule-13 round 2 F-1).
 ;
-; Pins the READ-SIDE half of F-1's fix: a read that is control-dependent on a
-; TAINTED branch (`instUnderTaintedControl`) gets no semantic read-order path,
+; Pins the READ-SIDE half of F-1's fix: a read INSIDE a TAINTED branch's REGION
+; (reachable from the branch without passing its immediate post-dominator —
+; `readInsideTaintedRegion`; round 3 replaced `instUnderTaintedControl`, which
+; also refused reads AFTER a fully-merged tainted diamond) gets no semantic read-order path,
 ; only header dominance — EVEN WHEN every fact that refutes the bypass is
 ; CLASSICAL. Here the read sits under `if (c) { if (k > 0) … b[k&1] … }`, with
 ; `c` a `cq_theta` result. The dominating `k > 0` edge is classical and would

@@ -16,7 +16,7 @@
 ;
 ; THE FIX: a condition may be a fact, or justify pruning, only if its operand
 ; closure is CLASSICAL (not in `taint.Tainted`), and a read that is itself
-; control-dependent on a tainted branch (`instUnderTaintedControl`) gets no
+; inside a tainted branch's region (`readInsideTaintedRegion`, round 3) gets no
 ; semantic path at all — only header dominance.
 ;
 ; ⚠ WHAT PINS IT. The FINAL verdict is a decline on BOTH binaries: before the fix

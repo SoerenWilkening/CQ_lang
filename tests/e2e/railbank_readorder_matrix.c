@@ -28,6 +28,12 @@
 #define CASE_OR_GUARD_UNGUARDED_M 12
 #define CASE_GOTO_AROUND_WRITE 13
 #define CASE_UNSIGNED_READ_BOUND 14
+#define CASE_MERGED_TAINTED_DIAMOND 15
+#define CASE_MERGED_TAINTED_DIAMOND_TWIN 16
+#define CASE_FIXED_TAINTED_DIAMOND_PRE 17
+#define CASE_FIXED_TAINTED_DIAMOND_MID 18
+#define CASE_MEASURED_GUARD 19
+#define CASE_MEASURED_GUARD_SUM 20
 
 #ifndef CASE
 #define CASE CASE_UNGUARDED
@@ -213,4 +219,88 @@ __attribute__((noinline)) static int slice(int n) {
     return s;
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
+
+#elif CASE == CASE_MERGED_TAINTED_DIAMOND
+/* Rule-13 round 3 F-1 (P2, the Grover shape): a tainted `if (c) cq_phi(pi);`
+ * diamond that FULLY MERGES before an unguarded runtime bank. The read is not in
+ * the tainted branch's region, so the classical guards decide. Run with argc=3
+ * (n=2), its trace is byte-identical to CASE 16, the hand-unrolled twin. */
+__attribute__((noinline)) static int slice(int n) {
+    _Bool c = cq_theta((_Bool)0, 0.3);
+    if (c) cq_phi(3.14159);
+    int b[n];
+    for (int i = 0; i < n; ++i) b[i] = cq_theta(b[i], 0.5);
+    int s = cq_measure(c);
+    for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+    return s;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc - 1); }
+
+#elif CASE == CASE_MERGED_TAINTED_DIAMOND_TWIN
+/* Hand-unrolled n=2 twin of CASE 15. */
+__attribute__((noinline)) static int slice(void) {
+    _Bool c = cq_theta((_Bool)0, 0.3);
+    if (c) cq_phi(3.14159);
+    int b0 = cq_theta(0, 0.5);
+    int b1 = cq_theta(0, 0.5);
+    int s = cq_measure(c);
+    s += cq_measure(b0);
+    s += cq_measure(b1);
+    return s;
+}
+int main(void) { return slice(); }
+
+#elif CASE == CASE_FIXED_TAINTED_DIAMOND_PRE
+/* Round 3 F-1, fixed bank: the merged tainted diamond BEFORE the guarded write;
+ * the read runs under k > 1, which implies the write's k > 0. */
+__attribute__((noinline)) static int slice(int k) {
+    _Bool c = cq_theta((_Bool)0, 0.3);
+    if (c) cq_phi(3.14159);
+    int b[3];
+    if (k > 0) for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+    int s = cq_measure(c);
+    if (k > 1) for (int j = 0; j < 3; ++j) s += cq_measure(b[j]);
+    return s;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc - 2); }
+
+#elif CASE == CASE_FIXED_TAINTED_DIAMOND_MID
+/* Round 3 F-1, fixed bank: the merged tainted diamond BETWEEN write and read. */
+__attribute__((noinline)) static int slice(int k) {
+    _Bool c = cq_theta((_Bool)0, 0.3);
+    int b[3];
+    if (k > 0) for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+    if (c) cq_phi(3.14159);
+    int s = cq_measure(c);
+    if (k > 1) for (int j = 0; j < 3; ++j) s += cq_measure(b[j]);
+    return s;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc - 2); }
+
+#elif CASE == CASE_MEASURED_GUARD
+/* Round 3 F-2 (P3): guards built from a cq_measure RESULT, a classical value. */
+__attribute__((noinline)) static int slice(int k) {
+    int q = cq_theta(k, 0.4);
+    int r = cq_measure(q);
+    int b[3];
+    if (r > 0) for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+    int s = 0;
+    if (r > 1) for (int j = 0; j < 3; ++j) s += cq_measure(b[j]);
+    return s;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc - 2); }
+
+#elif CASE == CASE_MEASURED_GUARD_SUM
+/* Round 3 F-2, reviewer round-1 p12: a guard mixing a measurement and an argument. */
+__attribute__((noinline)) static int slice(int k, int n) {
+    (void)n;
+    int c = cq_measure(cq_theta(0, 1.0));
+    int b[3];
+    if (c + k > 1)
+        for (int i = 0; i < 3; ++i) b[i] = cq_theta(0, 0.5);
+    int s = 0;
+    if (c + k > 2) for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+    return s;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc, argc * 7); }
 #endif

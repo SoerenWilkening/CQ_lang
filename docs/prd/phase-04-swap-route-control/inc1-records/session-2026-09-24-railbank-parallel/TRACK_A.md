@@ -258,9 +258,12 @@ executes. The reviewer's reproducer (`reviewA_r2/q06_tvalue.c`) is
 1. `singleValuedClosure` (now "classical single-valued") refuses any closure value that is in
    `taint.Tainted`. So a tainted condition is never a fact and never prunes an edge; its edges are
    FOLLOWED.
-2. At the C6 call site, a read that is control-dependent on a tainted branch
-   (`instUnderTaintedControl`, the existing 7.5 predicate, CALLED rather than re-derived: Rule 14)
-   gets no semantic path, only header dominance. This covers a CLASSICAL fact nested inside a
+2. At the C6 call site, a read that `instUnderTaintedControl` flagged gets no semantic path, only
+   header dominance. That existing 7.5 predicate is CALLED rather than re-derived (Rule 14).
+   ⚠ **CORRECTED in round 3 (F-3, L7):** this said "control-dependent", but that predicate tests
+   "dominated by a tainted branch AND does not post-dominate it", which is neither control
+   dependence nor region membership. Round 3 replaced it at this call site with
+   `readInsideTaintedRegion`; see below. This covers a CLASSICAL fact nested inside a
    tainted arm, where PredMux may predicate the inner classical branch too and speculate the load.
 
 **Round-2 re-ask (L1), stated:** the carve's taint is the set it is handed. Growth after round 1 is
@@ -303,7 +306,7 @@ SSA-level implication applies directly.
 - **M2 (walk-edge closure dropped) MISSED → DETECTED** by `…_reject_tainted_prune.ll`. That
   closure now carries the taint conjunct.
 - **M19 (new: closure taint check dropped) DETECTED**, by `…_reject_tainted_prune.ll` only.
-- **M20 (new: `instUnderTaintedControl` at the call site dropped) DETECTED**, by
+- **M20 (new: the read-side conjunct, then `instUnderTaintedControl`, dropped) DETECTED**, by
   `…_reject_classical_fact_under_tainted_arm.ll` only.
 - M1, M6, M7, M8, M10, M14 and M18 now also fail the new fixtures (for example M1 is 6/15 lit).
 - ⚠ **`…_reject_tainted_fact.ll` (q06) is DOUBLY fenced.** Neither M19 alone nor M20 alone turns
@@ -312,11 +315,80 @@ SSA-level implication applies directly.
   fixtures are what pin each conjunct individually.
 - **Still MISSED:** M3 (the fact closure; the fact-side taint check is shadowed by the read-side
   conjunct), M11, M12, M13, M15, M16, M17. Their reasons are unchanged from round 1. On M3: a
-  tainted edge that dominates the read makes the read control-dependent on it, unless the read
-  post-dominates that branch. With edge dominance, that is possible only if the other successor
+  tainted edge that dominates the read puts the read in that branch's region (reachable from it
+  before its merge), unless the read post-dominates that branch. With edge dominance, that is possible only if the other successor
   loops back, and no such shape was constructed.
 
 Final cq-opt sha256 `28d1a2c5…`. Owned tests on it: lit filter `Passed : 15`; ctest `100% tests
+passed, 0 tests failed out of 2`.
+
+## Rule-13 round 3 (CLEAR-WITH-ITEMS, 0 P1): F-1 (P2), F-2 (P3), F-3 (L7)
+
+**F-1 (P2, an over-decline of the Grover shape).** The round-2 read-side conjunct used
+`instUnderTaintedControl`, which says yes whenever a tainted branch dominates the read and the read
+does not post-dominate it. A tainted `if (c) cq_phi(pi);` diamond that FULLY MERGES before an
+unguarded runtime bank counts under that rule. `-O1` gives every such bank loop its own classical
+guard, so the read post-dominates nothing. The reviewer's `a03.c` declined at the read-order anchor
+while its explicitly guarded twin compiled, and `a06_pre.c` / `a06_mid.c` (fixed bank) behaved the
+same way.
+- **Fix, at the CARVE only** (the shared 7.5 predicate is unchanged; its callers ask a different
+  question): `readInsideTaintedRegion`. It asks whether the read is reachable from some dominating
+  tainted `br`/`switch` WITHOUT passing that branch's immediate post-dominator (its merge). A
+  branch with no immediate post-dominator (a tainted early return, an abort park) has no merge, so
+  everything it reaches counts as inside.
+- `…_classical_fact_under_tainted_arm.ll` still declines at the anchor (its read is inside the
+  arm's region). q05, q06, q07 and q08 still decline at the anchor.
+
+**F-2 (P3, a regression against the round-1 binary).** `singleValuedClosure` walked THROUGH a
+`cq_measure` call into its tainted operand, so a guard built from a measurement result was never a
+fact.
+- **Fix:** membership of `taint.MeasureCalls` (the one owner of "is this a measure call") makes the
+  result a classical LEAF of the closure. It is still asked the at-most-once question.
+
+**F-3 (L7):** "control-dependent" is corrected at the source (step (0) of the header, the new
+helper's header, and the call site), in the three fixture headers that used it, and in this record
+above. Each now names what the code tests: region membership, meaning reachable from the tainted
+branch before its immediate post-dominator.
+
+**Red → green.** All of these were RED on `928eb206` (C6 decline).
+- **lit accepts (3):** `railbank_readorder_accept_merged_tainted_diamond.ll` (a03, runtime bank),
+  `…_accept_fixed_merged_tainted_diamond_pre.ll` (a06_pre) and `…_accept_measured_guard.ll` (d05).
+  Each checks `railbank [Bank]` in the debug trace and forbids both the read-order anchor and every
+  `cq rail bank:` string.
+- **matrix rows 15-20, all ACCEPT:**
+  - 15: a03.
+  - 16: its hand-unrolled n=2 twin.
+  - 17, 18: a06_pre, a06_mid.
+  - 19: d05.
+  - 20: the reviewer's round-1 p12, a guard mixing a measurement and an argument.
+- **New twin 15/16:** LINKED and run; the rolled trace is byte-identical to the unrolled one
+  (argv `a b`).
+- **Traces run by hand:**
+  - a03 at n=2: `ry,rz` on `c`, two cells prepared, three measures.
+  - a06_pre at k=2: three cells prepared and measured.
+  - a06_pre at k<=1: no cell read.
+  - d05 at argc 1 and 5: the runtime's measure returns 0, so `r=0` and neither loop runs, which is
+    correct for the trace runtime.
+  - Stage 2b on each: `0 violation(s), 0 unproven`.
+
+### Round-3 mutation matrix (owned tests only; denominator 18 lit + 20-row matrix + 2 twins)
+
+25 mutants: 16 DETECTED, 9 MISSED; the M0 null was MISSED (correct). Deltas against round 2:
+- **M20 (read-side region conjunct dropped) DETECTED**, by
+  `…_reject_classical_fact_under_tainted_arm.ll` only, as in round 2.
+- **M22 (new: the region walk ignores the merge) DETECTED** by both merged-diamond lit accepts and
+  matrix rows 15-18.
+- **M23 (new: the region conjunct reverted to `instUnderTaintedControl`, i.e. the round-2 binary's
+  behaviour) DETECTED** by the same accepts and rows. This is the F-1 red-green in mutant form.
+- **M24 (new: measure-leaf dropped, i.e. the round-2 closure) DETECTED** by
+  `…_accept_measured_guard.ll` and matrix rows 19 and 20. This is F-2's red-green.
+- **M25 (new: the measure leaf skips the at-most-once check) MISSED.** This is the same argued
+  margin as M11/M17: redundant under the first-pruned-edge argument, kept because it can only
+  decline.
+- **Unchanged MISSED:** M3, M11, M12, M13, M15, M16, M17.
+- **No mutant numbered M21.** The round-2 harness had none, and the numbering was kept.
+
+Final cq-opt sha256 `82e4c9f5…`. Owned tests on it: lit filter `Passed : 18`; ctest `100% tests
 passed, 0 tests failed out of 2`.
 
 ## What I did NOT test / owed

@@ -75,12 +75,51 @@
       "accept": false,
       "diagnostic": "cq rail bank: array has cells no iteration writes",
       "pins": "READ ORDER (anchor fires): read guard n != 0 is not refuted by n <= 0."
+    },
+    "15": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Round-3 F-1: a read after a fully-merged tainted diamond is NOT in its region; RED on 928eb206."
+    },
+    "16": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Hand-unrolled twin of 15 (argv a b, n=2)."
+    },
+    "17": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Round-3 F-1, fixed bank, diamond before the write; RED on 928eb206."
+    },
+    "18": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Round-3 F-1, fixed bank, diamond between write and read; RED on 928eb206."
+    },
+    "19": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Round-3 F-2: a cq_measure result is a classical closure leaf; RED on 928eb206."
+    },
+    "20": {
+      "accept": true,
+      "diagnostic": null,
+      "pins": "Round-3 F-2 (reviewer r1 p12): measured + argument guard; RED on 928eb206."
     }
   },
   "twins": [
     {
       "rolled": 1,
       "twin": 4,
+      "argv": [
+        "a",
+        "b"
+      ],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 15,
+      "twin": 16,
       "argv": [
         "a",
         "b"

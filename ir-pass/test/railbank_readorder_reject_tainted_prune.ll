@@ -1,7 +1,8 @@
 ; railbank_readorder_reject_tainted_prune.ll — DECLINE (bd `xdu2.10`, Rule-13 round 2 F-1, P2).
 ;
 ; The PRUNE half of F-1, isolated from the fact half and from the read-side
-; `instUnderTaintedControl` guard. `%a` branches on the TAINTED `%g = or (k>0), %c`
+; region guard (`readInsideTaintedRegion`; round 3 replaced
+; `instUnderTaintedControl`). `%a` branches on the TAINTED `%g = or (k>0), %c`
 ; whose FALSE edge would imply `k <= 0` — refuting the read's classical fact
 ; `k > 0` — so a walk that trusted it would prune `%a → %r` and, with the classical
 ; `%bb` false edge also refuted, answer "every path passes the write header".
@@ -10,10 +11,11 @@
 ; FOLLOWS every edge of a tainted branch.
 ;
 ; ⚠ HAND IR — built so the tainted branch does NOT dominate the read (the read
-; is reachable through `%bb` too), which makes `instUnderTaintedControl(read)`
-; false: only the prune-side taint conjunct can decline it. The C spelling of the
-; tainted-guarded write (`reviewA_r2`-style `if ((k>0)|c) write; if (k>0) read`)
-; puts the tainted branch at entry, where the read-side guard ALSO catches it.
+; is reachable through `%bb` too), so the read is in no tainted branch's region
+; (`readInsideTaintedRegion(read)` is false): only the prune-side taint
+; conjunct can decline it. (Since round 3 the C spelling of the tainted-guarded
+; write, `if ((k>0)|c) write; if (k>0) read`, is ALSO caught only by the prune
+; conjunct: its tainted branch merges at the write loop's exit, before the read.)
 ;
 ; What pins it: on the pre-fix binary (`afda09e0`) the carve answers
 ; `railbank [Bank]` and the module declines LATER, elsewhere; the fixed binary

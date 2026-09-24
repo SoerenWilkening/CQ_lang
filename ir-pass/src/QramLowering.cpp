@@ -279,11 +279,14 @@ bool instReaches(const Instruction *From, const Instruction *To) {
 // time, so this note is the only guard on the complexity.
 struct ReadOrderCtx {
   const TaintSet &Taint;  // a TAINTED name is never a fact nor a prune (F-1).
+  SmallPtrSet<const Value *, 8> Measures;       // `taint.MeasureCalls`, as a set.
   SmallPtrSet<const BasicBlock *, 32> Reached;  // reachable from entry.
   SmallPtrSet<const BasicBlock *, 32> InCycle;  // reachable and in a CFG cycle.
   DenseMap<const Value *, bool> SingleValued;
 
   ReadOrderCtx(const Function &F, const TaintSet &T) : Taint(T) {
+    for (const CallInst *CI : T.MeasureCalls)
+      Measures.insert(CI);
     for (scc_iterator<const Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
       const bool Cyc = I.hasCycle();
       for (const BasicBlock *B : *I) {
@@ -340,6 +343,19 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
       continue;
     if (Seen.size() > Budget)
       return Answer(false);
+    // A `cq_measure` RESULT is CLASSICAL (the measurement is the sole sink), so
+    // it is a LEAF of the closure: its tainted operand is never walked into
+    // (Rule-13 round 3, F-2 — the round-2 binary did, and so refused every guard
+    // built from a measurement, a regression against round 1). It is still
+    // asked the at-most-once question like any instruction. Membership of
+    // `taint.MeasureCalls` is the one owner of "is this a measure call".
+    if (Ctx.Measures.count(V)) {
+      const auto *MI = cast<Instruction>(V);
+      if (!Ctx.Reached.count(MI->getParent()) ||
+          Ctx.InCycle.count(MI->getParent()))
+        return Answer(false);
+      continue;
+    }
     if (Ctx.Taint.Tainted.count(const_cast<Value *>(V)))
       return Answer(false);  // quantum: its branch is FLATTENED, not taken.
     if (isa<UndefValue>(V))
@@ -382,9 +398,10 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
 //       `c` a `cq_theta` result): the carve answered `Bank` for a read that runs
 //       on `k <= 0` too, and only an unrelated D5 wall declined the module. So
 //       a TAINTED condition is never a fact and never prunes an edge (its edges
-//       are FOLLOWED), and the CALLER gives a read that is itself control-
-//       dependent on a tainted branch (`instUnderTaintedControl`) no semantic
-//       path at all — only header dominance. The taint set is the one the carve
+//       are FOLLOWED), and the CALLER gives a read that lies INSIDE a tainted
+//       branch's REGION (`readInsideTaintedRegion`: reachable from the branch
+//       without passing its immediate post-dominator) no semantic path at all —
+//       only header dominance. The taint set is the one the carve
 //       is handed; the round-2 re-ask is `adjudicateTaintDelta` →
 //       `declineTaintEscapes`, which re-runs the carve with the GROWN set after
 //       the onward control lowering.
@@ -472,6 +489,61 @@ bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
     Work.append(succ_begin(B), succ_end(B));
   }
   return true;
+}
+
+// Does `Read` lie INSIDE the REGION of a tainted branch — i.e. is it reachable
+// from some tainted `br`/`switch` that dominates it, WITHOUT passing that
+// branch's immediate post-dominator (its merge)? A branch with NO immediate
+// post-dominator (a tainted early return, an abort park) has no merge, so
+// everything it reaches is its region. Such a read may be hoisted or speculated
+// by the flatten, so the caller gives it header dominance only.
+//
+// ⚠ DELIBERATELY NOT `instUnderTaintedControl` (Rule-13 round 3, F-1, P2). That
+// shared 7.5 predicate answers "dominated by a tainted branch AND does not
+// post-dominate it", which is NOT region membership (and not control
+// dependence either): a tainted `if (c) cq_phi(pi);` diamond that FULLY MERGES
+// before an unguarded runtime bank still counts, because `-O1` gives each bank
+// loop its own classical guard and the read then post-dominates nothing — the
+// Grover shape over-declined at this clause. The shared predicate is unchanged
+// (its 7.5 callers ask a different question); this is the carve's own, narrower
+// one. A read inside a region: `…_classical_fact_under_tainted_arm.ll`; a
+// merged diamond before the bank: `…_accept_merged_tainted_diamond.ll`.
+bool readInsideTaintedRegion(const Instruction *Read, const TaintSet &taint,
+                             const DominatorTree &DT) {
+  const BasicBlock *RB = Read->getParent();
+  const DomTreeNode *Node = DT.getNode(RB);
+  if (!Node)
+    return true;  // unreachable read — the caller refuses it anyway.
+  std::optional<PostDominatorTree> PDT;
+  for (const DomTreeNode *D = Node->getIDom(); D; D = D->getIDom()) {
+    const BasicBlock *B = D->getBlock();
+    const Instruction *T = B->getTerminator();
+    const Value *C = nullptr;
+    if (const auto *BI = dyn_cast<BranchInst>(T)) {
+      if (BI->isConditional())
+        C = BI->getCondition();
+    } else if (const auto *SI = dyn_cast<SwitchInst>(T)) {
+      C = SI->getCondition();
+    }
+    if (!C || !taint.Tainted.count(const_cast<Value *>(C)))
+      continue;
+    if (!PDT)
+      PDT.emplace(*const_cast<Function *>(RB->getParent()));
+    const DomTreeNode *PN = PDT->getNode(B);
+    const BasicBlock *Merge =
+        (PN && PN->getIDom()) ? PN->getIDom()->getBlock() : nullptr;
+    SmallVector<const BasicBlock *, 16> Work(succ_begin(B), succ_end(B));
+    SmallPtrSet<const BasicBlock *, 32> Seen;
+    while (!Work.empty()) {
+      const BasicBlock *X = Work.pop_back_val();
+      if (X == Merge || !Seen.insert(X).second)
+        continue;
+      if (X == RB)
+        return true;
+      Work.append(succ_begin(X), succ_end(X));
+    }
+  }
+  return false;
 }
 
 // Can this `llvm.stackrestore` free `AI`'s storage? A restore pops back to its
@@ -1986,10 +2058,12 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     // and answers yes for dominance as a special case. See its header for what
     // it proves and what it leaves to the clauses below.
     // The semantic path is for reads under CLASSICAL control only (F-1, step
-    // (0) of `readFollowsLoopOnEveryPath`): a read control-dependent on a tainted
-    // branch is hoisted/speculated by the flatten, so only dominance speaks.
+    // (0) of `readFollowsLoopOnEveryPath`): a read INSIDE a tainted branch's
+    // region (reachable from it before its merge) may be hoisted/speculated by
+    // the flatten, so only dominance speaks. NOT `instUnderTaintedControl`,
+    // which also refuses a read after a fully-merged tainted diamond (round 3).
     if (!DT.dominates(L->getHeader(), LD->getParent()) &&
-        (instUnderTaintedControl(LD, taint, DT) ||
+        (readInsideTaintedRegion(LD, taint, DT) ||
          !readFollowsLoopOnEveryPath(LD, L, DT, DL, taint))) {
       // ⚠ `kMsgBankTotality` is shared by six C6 sub-clauses, so a decline
       // fixture's diagnostic cannot say WHICH one fired (Rule-13 round 1,
