@@ -407,5 +407,26 @@
    "lit:taint_accept_quantum_return_unused.ll"
   ],
   "desc": "3jru: refusal also fires on unused call results"
+ },
+ "M42": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:iosink_accept_mux_measure_kept.ll",
+   "lit:iosink_reject_mux_literal_callee.ll",
+   "lit:iosink_reject_mux_literal_inmain.ll"
+  ],
+  "desc": "F-R5-1: IO-sink mux rail not re-seeded"
+ },
+ "M43": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_accept_quantum_return_llvm_used.ll"
+  ],
+  "desc": "F-R5-2: llvm.used constant-expr user not exempted"
+ },
+ "M44": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "F-R5-2: direct llvm.used user not exempted"
  }
 }

@@ -1401,8 +1401,10 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 
 // bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
 // of the defined function `F` returns a value in `taint.Tainted` (a quantum
-// register's HANDLE). The closure itself lives in `propagateWorklist` (every
-// grower: `propagate`, the round-2 reseed, `propagateFromSeeds`): when a `ret`
+// register's HANDLE). The closure itself lives in `propagateWorklist` (drained
+// by `propagate`, the round-2 reseed and `propagateFromSeeds`; a direct `Tainted`
+// insert reaches it only via `UntaintedMergeRails` — see the list at
+// `propagateWorklist`, Rule-13 round 5 F-R5-1): when a `ret`
 // is tainted, every DIRECT call site of its function whose result is USED joins
 // the worklist (chains and recursion close by the worklist).
 bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);

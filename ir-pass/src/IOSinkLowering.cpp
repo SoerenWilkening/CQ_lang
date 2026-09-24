@@ -785,6 +785,15 @@ void lowerControlledIOSinks(Module &M, WidthDispatch &wd, TaintSet &taint) {
       stamp(MuxOut);
       taint.Tainted.insert(MuxOut);
       taint.ControlOwnedRails.insert(MuxOut);
+      // bd `test_C_libtooling-3jru` / xdu2.13 Rule-13 round 5 F-R5-1 — this rail
+      // REPLACES a data-UNTAINTED constant-incoming φ (7d' RAUWs it), so its
+      // onward users (`v*m`, a literal `v*m == n`, a `cq_measure(v)`, a `ret`)
+      // were classified CLASSICAL by the first `propagate` and would compute on
+      // the handle NUMBER. Record it exactly like the 6.5/4.5 merge rails so
+      // `repropagateControlMerges` — which runs AFTER `lowerControlledIOSinks` in
+      // BOTH entry points — re-seeds a forward propagation from it through
+      // `propagateWorklist` (and its call-return closure).
+      taint.UntaintedMergeRails.insert(MuxOut);
       taint.BirthOrder[MuxOut] = taint.NextBirth++;
       Value *SetSrc = materializeCopySource(FlagSetV, Alloc, taint, B, DL);
       stamp(B.CreateCall(Copy, {Flag, SetSrc, MuxOut}));

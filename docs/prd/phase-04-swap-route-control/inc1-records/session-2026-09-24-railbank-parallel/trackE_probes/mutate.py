@@ -15,7 +15,7 @@ import sys
 
 W = pathlib.Path(__file__).resolve().parent.parent
 B = W / "build"
-LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree|select_classical_leaf|taint_reject_quantum_return|taint_accept_classical_decl|spec_reject_cq_primitive|offchain_ret|classical_call_arm|taint_accept_quantum_return"
+LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree|select_classical_leaf|taint_reject_quantum_return|taint_accept_classical_decl|spec_reject_cq_primitive|offchain_ret|classical_call_arm|taint_accept_quantum_return|iosink_accept_mux|iosink_reject_mux|iosink_accept_noio"
 CTEST_RE = ("^e2e-condtree-classical-leaf-matrix$|^e2e-slice-condtree-classical-leaf$|"
             "^e2e-railbank-dynamic-admission-matrix$|^e2e-railbank-guarded-vla-matrix$")
 
@@ -27,6 +27,7 @@ CS = "ir-pass/src/CondTreeStrip.cpp"
 PM = "ir-pass/src/PredMuxFlatten.cpp"
 QP = "ir-pass/src/CQLoweringPass.cpp"
 TP = "ir-pass/src/TaintPropagation.cpp"
+IO = "ir-pass/src/IOSinkLowering.cpp"
 
 MUTANTS = [
  ("NULL", CL, "namespace cq {\n\nnamespace {", "namespace cq {\n// null mutant\nnamespace {", "null control"),
@@ -71,6 +72,9 @@ MUTANTS = [
  ("M39", TP, "        if (auto *Ret = dyn_cast<ReturnInst>(I)) {", "        if (auto *Ret = dyn_cast<ReturnInst>(I); false) {", "3jru: call-return closure removed from propagateWorklist"),
  ("M40", TP, "            if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&", "            if (CB && CB->getCalledOperand() == F &&", "3jru: unused call results tainted too"),
  ("M41", TP, "          CB && CB->getCalledOperand() == &F && CB->use_empty())\n        continue;", "          CB && CB->getCalledOperand() == &F && CB->use_empty() && false)\n        continue;", "3jru: refusal also fires on unused call results"),
+ ("M42", IO, "      taint.UntaintedMergeRails.insert(MuxOut);", "      (void)0;", "F-R5-1: IO-sink mux rail not re-seeded"),
+ ("M43", TP, "        if (OnlyUsedLists)\n          continue;", "        (void)OnlyUsedLists;", "F-R5-2: llvm.used constant-expr user not exempted"),
+ ("M44", TP, "                 GV->getName() == \"llvm.compiler.used\"))\n        continue;", "                 GV->getName() == \"llvm.compiler.used\") && false)\n        continue;", "F-R5-2: direct llvm.used user not exempted"),
  ("M26", PM, "        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&", "        if (!Taint.Tainted.count(BI->getCondition()) &&", "rule-(B) record also in clone mode"),
 ]
 

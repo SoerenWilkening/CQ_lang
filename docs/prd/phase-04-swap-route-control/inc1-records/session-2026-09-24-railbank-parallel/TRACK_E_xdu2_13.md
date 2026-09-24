@@ -414,6 +414,8 @@ M27–M31, the conjunct-(d) mutants, are retired with their code.
     E3 accepted this silently; E4 declined it only at the later slot.
   - **The fix (Rule 14: one owner).** The closure now lives INSIDE
     `propagateWorklist`, which is the one drain every taint grower goes through.
+    ⚠ **CORRECTED in §6f:** "every taint grower" was FALSE. A direct `Tainted`
+    insert of a fresh rail bypasses the drain unless it is re-seeded.
     When a `ReturnInst` is newly tainted, every DIRECT call site of its function
     whose result is USED joins the worklist. Chains and recursion close through
     the worklist itself. The separate loop in `propagate` is gone.
@@ -482,6 +484,99 @@ M27–M31, the conjunct-(d) mutants, are retired with their code.
   | M40 | the unused-result skip in the TAINT step | **MISSED**, no subject: an unused call has no users, so tainting it is unobservable, and the refusal skips it anyway |
 
   M34 and M37, round 3's loop-shaped mutants, are retired with that loop.
+
+## 6f. Rule-13 round 5 on `7862ee3a`: BLOCK for xdu2.13 (3jru itself clear)
+
+- **F-R5-1 (P1; the hole predates this change, but now reaches the literal slot), fixed.**
+  - **The defect.** `lowerControlledIOSinks` 7c' replaces the untainted
+    constant-incoming merge φ of `if (q>5){ printf(...); v = 7; }` with a fresh
+    rail `MuxOut`. That rail was inserted into `Tainted` DIRECTLY and never
+    re-seeded, so `v*m` stayed classical and was computed on the HANDLE NUMBER.
+    - k11 and k10: the literal `v*m == n` was a handle id; the binary exited 0
+      on 7862ee3a.
+    - k06, on EVERY binary including aad63450: `return cq_measure(v*m)` lost
+      the user's measurement down the 21mg path.
+  - **The fix.** `MuxOut` is registered in `taint.UntaintedMergeRails`, like the
+    6.5 and 4.5 rails.
+  - **L1, timing.** `lowerControlledIOSinks` runs BEFORE
+    `repropagateControlMerges` in BOTH entry points (CQLoweringPass.cpp :528→:660
+    and :1283→:1316). So the round-2 reseed drains the rail through
+    `propagateWorklist`, including the call-return closure, and every
+    post-fixpoint re-ask sees the final taint.
+  - **Results:**
+    - k11 and k10 now decline at the literal re-ask (`classical condition
+      literal became quantum-derived`).
+    - k06 now LOWERS CORRECTLY: `cq_template_mul_i32_hl(%out, m)`, with the
+      measurement kept (`iosink_accept_mux_measure_kept.ll`, the main-branch
+      P1).
+    - The k12 control is unchanged (`iosink_accept_noio_mux_control.ll`).
+    - k1_* and k03 (a callee's IO-mux value branched on in main) and o08 now
+      decline at `control flow` instead of branching on a handle.
+  - All four new red fixtures are red on 7862ee3a. The control is green on both
+    binaries by design.
+- **Enumeration of direct `Tainted.insert` sites, now COMPLETE.** Every
+  `Tainted.insert` in `ir-pass/src` was checked (~40 sites), by an independent
+  read-only pass whose table I verified against the source.
+  - **Fresh rail over an UNTAINTED value (4 sites), each drained:**
+    - `ClassicalCallArmEmit.cpp` `%out` (6.5): `UntaintedMergeRails`.
+    - `SwitchDataMuxEmit.cpp` `%out` (4.5 all-const): `UntaintedMergeRails`.
+    - `IOSinkLowering.cpp` 7c' `MuxOut`: `UntaintedMergeRails`, **this fix**.
+    - `MergePhiPeel.cpp` clone and `Sel`: drained via `propagateFromSeeds`
+      (`adjudicateTaintDelta`).
+  - **Replacement of an already-tainted value.** The `promote` helpers in
+    Cast/Arith/Compare/IntrinsicLowering, plus:
+    - `SelectMergeEmit` `Out` (a claimed select has a tainted condition);
+    - `QramLowering` :3169 and :3474 (tainted-index loads);
+    - `RotationLowering` :806 and :818 (they replace a tainted theta);
+    - `LoopLowering` :2338 `OutReg`;
+    - `SwitchValueEmit` :293;
+    - `SwapRouteEmit` :579 and :983;
+    - `AngleSelectEmit` :503;
+    - `Specialization` :1211.
+  - **Scaffold with no reader or a runtime-only reader:**
+    - `AbortParkEmit` Grave and TW;
+    - `IOSinkLowering` :413 and :750 (tape writes);
+    - `GuardedStoreArmEmit` `FlagI`;
+    - `QramLowering` :3256 (a measure-only carrier) and :3399 (the array
+      token);
+    - `SwitchValueEmit` :333 `Delta`;
+    - `LoopLowering` RReg and IdxReg.
+  - **Clone-local sets:** `SpecializeClone`, `SpecializeSeed`, and
+    `Specialization` :356, :440, :449 and :940.
+  - **Seeds and the drain itself:** `TaintPropagation.cpp` :136, :236, :514 and
+    :537.
+  - Soft spots named by the reader, none a confirmed gap:
+    - `RotationLowering` :806, if an adopted rail-bank seed alloc had another
+      user (not traced);
+    - a select built after propagation reaching `SelectMergeEmit` (the
+      PredMuxFlatten.cpp:4836 builder was not checked).
+
+  The false "every grower drains through `propagateWorklist`" is corrected at
+  the source (`propagateWorklist`, the CQLoweringPass slot comment in both entry
+  points, `TaintPropagation.h`) and in §6e (L7). The list now lives in the
+  source, with the rule for a new site: it must join `UntaintedMergeRails` or
+  `propagateFromSeeds`.
+- **F-R5-2 (P3), fixed.** A function listed in `@llvm.used` or
+  `@llvm.compiler.used` (the `used` attribute) is not an address-taken use:
+  those globals keep a symbol alive and read no result. The refusal skips a
+  constant user whose only users are those two globals. u05 accepts
+  (`taint_accept_quantum_return_llvm_used.ll`, red on 7862ee3a). A
+  direct-global-user branch I first added was unreachable under opaque
+  pointers, because `@llvm.used` is always an array initializer. Mutant M44
+  measured it as MISSED, so I removed it rather than leave dead code.
+- **Sweeps.** ir-pass fixtures vs aad63450, null control 0 of 40 first:
+  **2271 fixtures, 33 movers, every one this change's own.** That is the 30
+  from §6e plus the 3 new iosink fixtures. No pre-existing `iosink_*` fixture
+  moved. e2e C sources: 432 of 450 compiled standalone, **2 movers**, both this
+  change's own.
+- **Mutation delta.** Null control first, 0 movers; denominators 116 lit and 4
+  ctest.
+
+  | mutant | removes | result |
+  |---|---|---|
+  | M42 | the IO-sink `UntaintedMergeRails` registration | KILLED (k06, k10, k11) |
+  | M43 | the `@llvm.used` exemption | KILLED (u05 accept) |
+  | M44 | the direct-global exemption | MISSED; the branch was unreachable and was deleted |
 
 ## 7. What I did NOT test
 

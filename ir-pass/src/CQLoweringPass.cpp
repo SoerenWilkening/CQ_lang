@@ -696,9 +696,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   declineQuantumCondLiterals(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
   // function boundary, and its slot is the argument. The call-return closure lives
-  // in `propagateWorklist` (every taint grower drains through it — `propagate`,
-  // the round-2 reseed, `propagateFromSeeds`), so every stage above sees such a
-  // call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
+  // `propagateFromSeeds` drain — and a DIRECT `Tainted` insert of a fresh rail
+  // over an untainted value drains through it only if registered in
+  // `UntaintedMergeRails` (the IO-sink mux rail was not until Rule-13 round 5
+  // F-R5-1; the complete list is at `propagateWorklist`) — so every stage above
+  // sees such a call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
   // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
   // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
   // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners
@@ -1327,9 +1330,12 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   declineQuantumCondLiterals(M, taint);
   // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
   // function boundary, and its slot is the argument. The call-return closure lives
-  // in `propagateWorklist` (every taint grower drains through it — `propagate`,
-  // the round-2 reseed, `propagateFromSeeds`), so every stage above sees such a
-  // call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
+  // in `propagateWorklist`, through which `propagate`, the round-2 reseed and
+  // `propagateFromSeeds` drain — and a DIRECT `Tainted` insert of a fresh rail
+  // over an untainted value drains through it only if registered in
+  // `UntaintedMergeRails` (the IO-sink mux rail was not until Rule-13 round 5
+  // F-R5-1; the complete list is at `propagateWorklist`) — so every stage above
+  // sees such a call result as quantum AT THE TAINT OF ITS OWN ROUND; asking HERE, after the
   // round-2 fixpoint, (a) reads FINAL taint — round 2 can taint a callee's `ret`
   // through a 6.5/4.5 `%out` (CLAUDE.md L1; Rule-13 round 4 F-R4-1 measured round
   // 3's `propagate`-only closure missing exactly that) — and (b) leaves the owners

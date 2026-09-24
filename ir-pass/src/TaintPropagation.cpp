@@ -514,10 +514,21 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
       if (out.Tainted.insert(I).second) {
         Worklist.push_back(I);
         // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN, and it does
-        // so HERE, in the one drain every taint grower goes through (`propagate`,
-        // the round-2 reseed in `repropagateControlMerges` and its onward-control
-        // fixpoint, `propagateFromSeeds` for `MergePhiPeel` / `adjudicateTaintDelta`)
-        // — Rule 14, one owner. A tainted `ret` means its DEFINED function returns
+        // so HERE, in the propagation drain (`propagate`, the round-2 reseed in
+        // `repropagateControlMerges` and its onward-control fixpoint,
+        // `propagateFromSeeds` for `MergePhiPeel` / `adjudicateTaintDelta`) — Rule
+        // 14, one owner. ⚠ A value inserted into `Tainted` DIRECTLY does NOT go
+        // through here, and "every grower drains through this" was FALSE until
+        // Rule-13 round 5 F-R5-1: the IO-sink mux rail (`IOSinkLowering` 7c')
+        // replaced an UNTAINTED φ and was never re-seeded. The complete list of
+        // direct inserts of a FRESH value over an UNTAINTED one is: the 6.5
+        // `ClassicalCallArmEmit` `%out`, the 4.5 `SwitchDataMuxEmit` `%out`, the
+        // IO-sink `MuxOut` (all three registered in `UntaintedMergeRails`, which
+        // `repropagateControlMerges` drains through here), and `MergePhiPeel`'s
+        // clone/select (drained via `propagateFromSeeds`). Every other direct
+        // insert replaces an already-tainted value or is scaffold with no reader
+        // (TRACK_E_xdu2_13.md §6f). A NEW such site must join one of those two
+        // routes, or this closure — and every guard — cannot see it. A tainted `ret` means its DEFINED function returns
         // a quantum register's HANDLE, so every DIRECT call site of that function
         // is quantum in its caller and joins the worklist; chains (g→h) and
         // recursion close by the worklist itself. (Round 3 put this as a separate
@@ -2501,6 +2512,19 @@ bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
       if (auto *CB = dyn_cast<CallBase>(U);
           CB && CB->getCalledOperand() == &F && CB->use_empty())
         continue;
+      // Rule-13 round 5 F-R5-2: `@llvm.used` / `@llvm.compiler.used` list F to
+      // keep it alive; they are not callers and read no result.
+      if (auto *C = dyn_cast<Constant>(U); C && !isa<GlobalValue>(C)) {
+        bool OnlyUsedLists = !C->use_empty();
+        for (User *CU : C->users()) {
+          auto *GV = dyn_cast<GlobalVariable>(CU);
+          if (!GV || (GV->getName() != "llvm.used" &&
+                      GV->getName() != "llvm.compiler.used"))
+            OnlyUsedLists = false;
+        }
+        if (OnlyUsedLists)
+          continue;
+      }
       auto *I = dyn_cast<Instruction>(U);
       if (!I) {
         // A constant user (a global initializer, a constant expression): no
