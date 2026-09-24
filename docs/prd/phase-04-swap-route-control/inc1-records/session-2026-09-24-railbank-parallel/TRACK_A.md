@@ -391,6 +391,38 @@ branch before its immediate post-dominator.
 Final cq-opt sha256 `82e4c9f5…`. Owned tests on it: lit filter `Passed : 18`; ctest `100% tests
 passed, 0 tests failed out of 2`.
 
+## Rule-13 round 4 (CLEAR-WITH-ITEMS, 0 P1/P2): P3 (L7), comments and record only
+
+The round-3 wording implied FULL coverage of tainted control. Both "a read INSIDE a tainted
+branch's region" here and "a read … may be hoisted/speculated by the flatten" at the source said
+so, and neither is what the code does.
+- **What it actually does:** `readInsideTaintedRegion` examines only tainted branches that
+  DOMINATE the read.
+- **Counter-example:** a NON-dominating tainted branch in a multi-entry shape
+  (`reviewA_r4/h01.ll`) is not examined. The carve answers `[Bank]` there, and the module declines
+  downstream at `control flow under quantum control`.
+
+**The real, narrower load-bearing reason is now stated at the source and here:**
+1. The facts the walk relies on must remain REAL classical branches in the lowered program. A
+   classical fact nested in a dominating tainted branch's region may be predicated away by the
+   flatten, and that is the case this check refuses.
+2. The bank's surviving readers are only what D5 (`isAdmittedRailBankReader`) admits: measure
+   readers and their storage `trunc`. A `cq_measure` is never speculated or hoisted out of its
+   guard.
+
+So the check guards the fact edges, and D5 guards the readers.
+
+**Retirement trigger (source and record):** the day D5 admits a bank reader that is not a
+measurement, the region question re-opens in the same change. That covers an arithmetic consumer,
+a condition, a `cq_theta` arg-0, or anything PredMux may speculate or hoist, such as its E4
+classical-table read. In that change, non-dominating tainted branches must be examined, and load
+speculation must be refused at C6.
+
+Where the round-2/round-3 sections above say "inside a tainted branch's region", read "inside a
+DOMINATING tainted branch's region". The sections are left as written (record history), and this
+section corrects them. No code changed: the diff is comments only, and the binary was rebuilt and
+the owned tests re-run.
+
 ## What I did NOT test / owed
 
 - No full `ctest`, no full `ir-pass-lit`, no `cq-opt-equivalence`, no corpus A/B, no

@@ -398,10 +398,11 @@ bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
 //       `c` a `cq_theta` result): the carve answered `Bank` for a read that runs
 //       on `k <= 0` too, and only an unrelated D5 wall declined the module. So
 //       a TAINTED condition is never a fact and never prunes an edge (its edges
-//       are FOLLOWED), and the CALLER gives a read that lies INSIDE a tainted
-//       branch's REGION (`readInsideTaintedRegion`: reachable from the branch
-//       without passing its immediate post-dominator) no semantic path at all —
-//       only header dominance. The taint set is the one the carve
+//       are FOLLOWED), and the CALLER gives a read that lies inside the region
+//       of a DOMINATING tainted branch (`readInsideTaintedRegion`: reachable
+//       from it without passing its immediate post-dominator) no semantic path
+//       at all — only header dominance. See that function for why its job is
+//       narrower than "no tainted control anywhere" (Rule-13 round 4). The taint set is the one the carve
 //       is handed; the round-2 re-ask is `adjudicateTaintDelta` →
 //       `declineTaintEscapes`, which re-runs the carve with the GROWN set after
 //       the onward control lowering.
@@ -491,12 +492,34 @@ bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
   return true;
 }
 
-// Does `Read` lie INSIDE the REGION of a tainted branch — i.e. is it reachable
-// from some tainted `br`/`switch` that dominates it, WITHOUT passing that
-// branch's immediate post-dominator (its merge)? A branch with NO immediate
-// post-dominator (a tainted early return, an abort park) has no merge, so
-// everything it reaches is its region. Such a read may be hoisted or speculated
-// by the flatten, so the caller gives it header dominance only.
+// Does `Read` lie inside the REGION of a DOMINATING tainted branch — i.e. is it
+// reachable from some tainted `br`/`switch` that DOMINATES it, WITHOUT passing
+// that branch's immediate post-dominator (its merge)? A branch with NO
+// immediate post-dominator (a tainted early return, an abort park) has no
+// merge, so everything it reaches is its region. The caller gives such a read
+// header dominance only.
+//
+// ⚠ ONLY DOMINATING TAINTED BRANCHES ARE EXAMINED — this is NOT "the read is
+// under no tainted control" (Rule-13 round 4, P3, L7). A NON-dominating tainted
+// branch in a multi-entry shape (`reviewA_r4/h01.ll`) is not examined: the
+// carve answers `Bank` and the module declines downstream (`control flow
+// under quantum control`). THE LOAD-BEARING REASON, stated narrowly:
+//   (1) the facts `readFollowsLoopOnEveryPath` relies on must remain REAL
+//       CLASSICAL branches in the lowered program — a classical fact edge
+//       nested inside a dominating tainted branch's region may be predicated
+//       away by the flatten (`…_classical_fact_under_tainted_arm.ll`), which is
+//       the case this function refuses; and
+//   (2) the bank's reads that survive the carve are only those D5
+//       (`isAdmittedRailBankReader`, `RailBankPromote.cpp`) admits — MEASURE
+//       readers (plus their storage `trunc`) — and a `cq_measure` is never
+//       speculated or hoisted out of its guard by the flatten.
+// So this check does NOT need to — and does not — claim full coverage of
+// tainted control; it guards the fact edges, and D5 guards the readers.
+// ⚠ RETIREMENT TRIGGER: the day D5 admits a bank reader that is NOT a
+// measurement (an arithmetic consumer, a condition, a `cq_theta` arg-0 — any
+// reader PredMux may speculate or hoist, e.g. its E4 classical-table read),
+// the region question re-opens IN THE SAME CHANGE: non-dominating tainted
+// branches must be examined and load speculation must be refused here.
 //
 // ⚠ DELIBERATELY NOT `instUnderTaintedControl` (Rule-13 round 3, F-1, P2). That
 // shared 7.5 predicate answers "dominated by a tainted branch AND does not
@@ -2058,10 +2081,14 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     // and answers yes for dominance as a special case. See its header for what
     // it proves and what it leaves to the clauses below.
     // The semantic path is for reads under CLASSICAL control only (F-1, step
-    // (0) of `readFollowsLoopOnEveryPath`): a read INSIDE a tainted branch's
-    // region (reachable from it before its merge) may be hoisted/speculated by
-    // the flatten, so only dominance speaks. NOT `instUnderTaintedControl`,
-    // which also refuses a read after a fully-merged tainted diamond (round 3).
+    // (0) of `readFollowsLoopOnEveryPath`): a read inside a DOMINATING tainted
+    // branch's region (reachable from it before its merge) gets only header
+    // dominance, because the classical facts inside that region may not survive
+    // the flatten as real branches. It is NOT full tainted-control coverage —
+    // D5 admitting only never-speculated MEASURE readers is the other half; see
+    // `readInsideTaintedRegion` for both reasons and the retirement trigger. NOT
+    // `instUnderTaintedControl`, which also refuses a read after a fully-merged
+    // tainted diamond (round 3).
     if (!DT.dominates(L->getHeader(), LD->getParent()) &&
         (readInsideTaintedRegion(LD, taint, DT) ||
          !readFollowsLoopOnEveryPath(LD, L, DT, DL, taint))) {
