@@ -149,15 +149,19 @@
       "accept": true,
       "diagnostic": null
     },
-    "42": {
-      "accept": true,
-      "diagnostic": null
+    "44": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
     },
     "40": {
       "accept": true,
       "diagnostic": null
     },
     "41": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "42": {
       "accept": true,
       "diagnostic": null
     },
