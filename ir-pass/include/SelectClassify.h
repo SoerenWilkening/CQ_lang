@@ -34,6 +34,7 @@
 #ifndef CQ_IRPASS_SELECT_CLASSIFY_H_
 #define CQ_IRPASS_SELECT_CLASSIFY_H_
 
+#include "llvm/ADT/STLFunctionalExtras.h"  // llvm::function_ref (IsLiteral)
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/IR/InstrTypes.h"   // llvm::Instruction::BinaryOps (CondTree node ops)
 
@@ -125,6 +126,21 @@ struct CondTree {
   // increment's own decline family).
   llvm::SmallVector<llvm::PHINode *, 2> RailPhiLeaves;
   llvm::SmallVector<llvm::Instruction *, 4> Nodes;
+  // bd `test_C_libtooling-xdu2.13` — CLASSICAL LITERAL children of an `and`/`or`
+  // node, collected ONLY when the caller passes `IsLiteral` (the 4.4 data select
+  // and its emitter; see `CondLiteral.h`). Not walked into, never minted: the
+  // node becomes `cq_template_<op>_i1_hl(flag, literal)`. `LiteralNodes` pairs
+  // each (node, literal, tainted sibling) so the classifier can refuse a RAIL
+  // sibling. ⚠ The same obligation as `RailLeaves`: every consumer that reads
+  // `Leaves` must decide on these explicitly — the ones that do not pass
+  // `IsLiteral` never see any.
+  struct LiteralNode {
+    llvm::Instruction *Node;
+    llvm::Value *Literal;
+    llvm::Value *Sibling;
+  };
+  llvm::SmallVector<llvm::Value *, 2> LiteralLeaves;
+  llvm::SmallVector<LiteralNode, 2> LiteralNodes;
 };
 
 // bd 3qlq.4 — THE ONE SPELLING of "this condition value is a bare i1 REGISTER".
@@ -261,9 +277,18 @@ bool decomposeCondNode(llvm::Value *V, llvm::Instruction::BinaryOps &Opc,
 // independent (FALSE for the data select, TRUE for the branch phase): the two
 // flags are orthogonal, and a data select over `b1 && q > 3` still declines on
 // the logical-select node, not on the φ (bd `xqgx` (3)).
+//
+// `IsLiteral` (bd `test_C_libtooling-xdu2.13`) — when non-null, a child of an
+// `and`/`or` node (never an `xor`, never the root) for which it returns true is
+// recorded in `Tree.LiteralLeaves`/`LiteralNodes` and NOT walked. Null (every
+// caller but the 4.4 data select and its emitter) is byte-identical to before.
+// The classifier passes `condLiteralAdmissible`; the emitter passes MEMBERSHIP
+// of the classifier's committed `ControlRegion::CondLiterals`, so the two walks
+// cannot drift. A node whose BOTH children are literals is off-grammar.
 bool collectCondTree(llvm::Value *Root, CondTree &Tree,
                      bool AllowLogicalSelect = false,
-                     bool AllowRailPhi = false);
+                     bool AllowRailPhi = false,
+                     llvm::function_ref<bool(llvm::Value *)> IsLiteral = nullptr);
 
 // Run the §0 ladder on a tainted-condition `Sel`. On ACCEPT push a
 // `ControlRegion{Kind=SelectRegion, Merge=Sel, Condition=Sel->getCondition()}`

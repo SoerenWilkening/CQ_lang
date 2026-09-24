@@ -6602,3 +6602,15 @@ set_tests_properties(e2e-railbank-guarded-vla-matrix e2e-slice-predmux-guarded-v
   "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
 # Track A (bd xdu2.10): C6 read order asked semantically — unguarded int b[n] accepts, unsound neighbours decline.
 cq_railbank_matrix(e2e-railbank-readorder-matrix railbank_readorder_matrix.c)
+# Track E (bd xdu2.13): a classical leaf of a mixed and/or 4.4 select condition is the literal of cq_template_{and,or}_i1_hl.
+cq_railbank_matrix(e2e-condtree-classical-leaf-matrix condtree_classical_leaf_matrix.c)
+add_test(NAME e2e-slice-condtree-classical-leaf
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_condtree_classical_leaf.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_condtree_classical_leaf.expected.log"
+    "" "--forbid-qram")
+set_tests_properties(e2e-slice-condtree-classical-leaf PROPERTIES ENVIRONMENT
+  "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")

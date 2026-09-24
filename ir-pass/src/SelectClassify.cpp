@@ -12,6 +12,7 @@
 
 #include "ArmAnalysis.h"     // comparePredLowerable, diagonalAliasHit, condProvenance
 #include "CompareLowering.h" // compareFlagMintable (per-leaf width/scope fence)
+#include "CondLiteral.h"     // condLiteralAdmissible (bd xdu2.13)
 #include "ControlPlan.h"     // diagnoseUnderControl, ControlPlan, ControlRegion
 #include "OpcodeSupport.h"   // abiWidthFromType
 #include "TaintPropagation.h"  // TaintSet
@@ -706,7 +707,7 @@ bool isStructuralRailPhi(const Value *V) {
 }
 
 bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
-                     bool AllowRailPhi) {
+                     bool AllowRailPhi, function_ref<bool(Value *)> IsLiteral) {
   SmallPtrSet<Value *, 8> Seen;
   SmallVector<std::pair<Value *, bool>, 8> Stack;
   Stack.push_back({Root, false});
@@ -909,9 +910,26 @@ bool collectCondTree(Value *Root, CondTree &Tree, bool AllowLogicalSelect,
     // Pinned by control_swap_reject_select_xor_selfdup.ll.
     if (NodeL == NodeR)
       return false;
+    // bd `test_C_libtooling-xdu2.13` — a CLASSICAL LITERAL child of an `and`/
+    // `or` node is recorded, not walked (see `CondLiteral.h`). Only when the
+    // caller asks (`IsLiteral`), never at an `xor` (no mixed-xor probe family;
+    // it keeps its per-leaf taint decline), and never both children.
+    const bool LitL = IsLiteral && NodeOpc != Instruction::Xor && IsLiteral(NodeL);
+    const bool LitR = IsLiteral && NodeOpc != Instruction::Xor && IsLiteral(NodeR);
+    if (LitL && LitR)
+      return false;
+    for (auto [Lit, Sib] : {std::pair{LitL ? NodeL : nullptr, NodeR},
+                            std::pair{LitR ? NodeR : nullptr, NodeL}})
+      if (Lit) {
+        if (!llvm::is_contained(Tree.LiteralLeaves, Lit))
+          Tree.LiteralLeaves.push_back(Lit);
+        Tree.LiteralNodes.push_back({cast<Instruction>(V), Lit, Sib});
+      }
     Stack.push_back({V, true});  // node slot AFTER both children.
-    Stack.push_back({NodeR, false});
-    Stack.push_back({NodeL, false});  // left child visits first.
+    if (!LitR)
+      Stack.push_back({NodeR, false});
+    if (!LitL)
+      Stack.push_back({NodeL, false});  // left child visits first.
   }
   return !Tree.Leaves.empty() || !Tree.RailLeaves.empty() ||
          !Tree.RailPhiLeaves.empty();
@@ -936,26 +954,33 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // obligation can never be met — never brand it `control condition has no
   // template`/clobber; IMPLEMENTATION-4.4 §0). Then PER LEAF:
   //   * an out-of-scope predicate declines (the pre-L4 gate 2);
-  //   * an UNTAINTED (classical) leaf declines — it has no quantum flag to
-  //     mint, and promoting it would allocate a qubit for classical data (the
-  //     §5.2 prohibition); a hybrid classical∧quantum conjunction is out of
-  //     scope this increment.
-  //     ⚠ bd xdu2.8 has a MEASURED customer here: the bead's own program
-  //     (`int p[m]; for (i<n) if (q && m == n) { a += p[i]; … }`) now passes
-  //     PredMux's E4 and declines at THIS check instead
-  //     (predmux_guarded_vla_reject_row13_hybrid_select.ll, whose header
-  //     carries the retirement trigger).
-  //     *** LOAD-BEARING FOR bd q2wk — READ BEFORE LIFTING THIS. *** PredMux's
-  //     E6 rule (B) (PRD §4.4b) admits a branch condition that is currently
-  //     UNTAINTED on the proof that the flatten will taint it. Where that proof
-  //     is over-wide, the value survives the flatten as an untainted COMPARE
-  //     LEAF inside a tainted and-tree — and THIS check, not
-  //     `declineClassicalMuxes`, is what declines it (the classical-mux guard
-  //     provably cannot fire: every edge predicate is `and(BP, lit)` with a
-  //     tainted BP, so every PredMux-minted select condition is tainted). If
-  //     the hybrid conjunction is ever supported here, rule (B)'s taint
-  //     argument must be re-derived first — it is currently backstopped by
-  //     this decline;
+  //   * an UNTAINTED (classical) compare leaf that reached `Tree.Leaves`
+  //     declines — it has no quantum flag to mint, and promoting it would
+  //     allocate a qubit for classical data (the §5.2 prohibition).
+  //     bd `test_C_libtooling-xdu2.13` — BUT A CLASSICAL CHILD OF AN `and`/`or`
+  //     NODE NO LONGER REACHES `Tree.Leaves`: the walk records it as a LITERAL
+  //     (`condLiteralAdmissible`, `CondLiteral.h`) and the network mints the
+  //     node as `cq_template_<op>_i1_hl(flag, literal)` — the mixed Q+C
+  //     convention every other opcode already uses. bd xdu2.8's row-13 program
+  //     (`predmux_guarded_vla_reject_row13_hybrid_select.ll`, kept under its old
+  //     name per L8) now ACCEPTS through it. What still lands on this check is
+  //     an untainted leaf the literal predicate REFUSED: under an `xor`, and —
+  //     the load-bearing one — a PredMux E6 rule-(B) residue.
+  //     *** bd q2wk, RE-DERIVED AS A RECORD RATHER THAN AN ARGUMENT. *** E6
+  //     rule (B) (PRD §4.4b) admits a branch condition that is UNTAINTED now
+  //     on the proof that the flatten will taint it; where that proof is
+  //     over-wide the value survives as an untainted leaf of a tainted and-tree
+  //     (the classical-mux guard cannot fire: every edge predicate is
+  //     `and(BP, lit)` with a tainted BP). This check used to be its only
+  //     backstop. The flatten now MARKS every such condition's i1 cone and
+  //     every edge literal built from it (`!cq.predmux.predicted`, committed at
+  //     the CLAIM), the literal predicate refuses a marked cone, and a
+  //     residue therefore still falls through to THIS decline. ⚠ No residue
+  //     could be CONSTRUCTED (the re-derivation found rule (B)'s prediction
+  //     exact on every probe — see the E6 block in `PredMuxFlatten.cpp`), so
+  //     that direction is defence in depth with no fixture; what is pinned is
+  //     that a mark does not refuse an unrelated genuine literal
+  //     (`condtree_classical_leaf_accept_predmux_ruleb.ll`);
   //   * GATE 2b — a Q+Q leaf (BOTH compare operands tainted) declines HERE in
   //     the CONTROL dialect rather than let the emitter's mint reach the
   //     data-path `no template` bail (the message would mis-brand as a
@@ -967,8 +992,23 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // FALSE (`control_swap_reject_select_i1sel_combinator.ll` is a shipped decline
   // for a data select and is a different construct's widening).
   CondTree Tree;
-  if (!collectCondTree(Sel->getCondition(), Tree, /*AllowLogicalSelect=*/false,
-                       /*AllowRailPhi=*/true))
+  if (!collectCondTree(
+          Sel->getCondition(), Tree, /*AllowLogicalSelect=*/false,
+          /*AllowRailPhi=*/true,
+          [&taint](Value *V) { return condLiteralAdmissible(V, taint); }))
+    return diagnoseUnderControl(Sel, "control flow");
+  // bd `test_C_libtooling-xdu2.13` — a literal's tainted SIBLING must be a flag
+  // the network MINTS (a compare leaf or a node ancilla), never a bare RAIL (a
+  // `_Bool` register or a region-merge φ): the `_hl` template would then read
+  // the user's register in its handle slot, a control read no rail ladder and
+  // no spine predicate has been asked about. Declines, the safe direction.
+  for (const CondTree::LiteralNode &LN : Tree.LiteralNodes)
+    if (isCondRailLeaf(LN.Sibling) || isCondRailPhiShape(LN.Sibling))
+      return diagnoseUnderControl(Sel, "control flow");
+  // …and the literal is a DATA-select capability only: an ANGLE select (gate 3)
+  // re-derives its own tree without literals, so it keeps the pre-xdu2.13
+  // verdict and string, asked here before anything else can see the tree.
+  if (!Tree.LiteralLeaves.empty() && selReachesRotationArg1(Sel, taint))
     return diagnoseUnderControl(Sel, "control flow");
   for (CmpInst *Leaf : Tree.Leaves) {
     if (!comparePredLowerable(Leaf))
@@ -1387,6 +1427,11 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // rail-conditioned select, which needs no edge because nothing rewrites its
   // condition.
   R.PrepRegionIdxs = PrepIdxs;
+  // bd `test_C_libtooling-xdu2.13` — COMMIT the literals this walk admitted. The
+  // emitter re-derives its tree by MEMBERSHIP of this list, never by re-asking
+  // taint (which the regions emitted before it can grow).
+  for (Value *Lit : Tree.LiteralLeaves)
+    R.CondLiterals.emplace_back(Lit);
   plan.Regions.push_back(R);
 }
 

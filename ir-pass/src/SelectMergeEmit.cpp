@@ -168,7 +168,21 @@ void emitSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // again, deterministically.
   CondTree Tree;
   Value *Cond = Sel ? Sel->getCondition() : nullptr;
-  if (!Sel || !Cond || !collectCondTree(Cond, Tree)) {
+  // bd `test_C_libtooling-xdu2.13` — the classifier's committed LITERALS, asked
+  // by membership (the walk cannot drift); each must still be untainted HERE,
+  // since a region emitted before this one may have grown the taint set.
+  auto IsLit = [&](Value *V) {
+    return !taint.Tainted.count(V) &&
+           llvm::any_of(R.CondLiterals,
+                        [V](const WeakTrackingVH &H) { return H == V; });
+  };
+  if (!Sel || !Cond ||
+      !collectCondTree(Cond, Tree, /*AllowLogicalSelect=*/false,
+                       /*AllowRailPhi=*/false,
+                       R.CondLiterals.empty()
+                           ? function_ref<bool(Value *)>()
+                           : function_ref<bool(Value *)>(IsLit)) ||
+      Tree.LiteralLeaves.size() != R.CondLiterals.size()) {
     // Detection guarantees the shape (SelectClassify pushes only a SelectInst
     // Merge + a tree-shaped Condition); if it ever fails to hold, bail LOUDLY —
     // a silently skipped accepted region leaves the tainted select to the

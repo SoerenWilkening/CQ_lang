@@ -1,0 +1,264 @@
+{
+ "NULL": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "null control"
+ },
+ "M1": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "(a) Constant literal admitted"
+ },
+ "M2": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "ctest:e2e-railbank-dynamic-admission-matrix",
+   "ctest:e2e-railbank-guarded-vla-matrix",
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll",
+   "lit:condtree_classical_leaf_reject_round2_literal.ll",
+   "lit:lowering_live_record_condtree_toffoli_observed_accept.ll",
+   "lit:lowering_reject_live_record_condtree_out_unobserved.ll",
+   "lit:predmux_guarded_vla_reject_row13_hybrid_select.ll"
+  ],
+  "desc": "(b) tainted child admitted as literal"
+ },
+ "M3": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "(c) rule-(B) mark ignored"
+ },
+ "M4": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "(c) overflow mark ignored"
+ },
+ "M5": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "(a) non-Instruction/Argument admitted"
+ },
+ "M1M5": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_undef_literal.ll"
+  ],
+  "desc": "(a) BOTH Constant refusals dropped"
+ },
+ "M6": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "xor node admits a left literal"
+ },
+ "M6b": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "xor node admits a right literal"
+ },
+ "M7": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "two-literal node admitted"
+ },
+ "M8": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "rail-sibling classifier refusal dropped"
+ },
+ "M9": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_angle_select.ll"
+  ],
+  "desc": "angle-select literal guard dropped"
+ },
+ "M10": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "ctest:e2e-railbank-dynamic-admission-matrix",
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll",
+   "lit:condtree_classical_leaf_reject_round2_literal.ll",
+   "lit:lowering_live_record_condtree_toffoli_observed_accept.ll",
+   "lit:lowering_live_record_condtree_xor_observed_accept.ll",
+   "lit:lowering_reject_live_record_condtree_out_unobserved.ll"
+  ],
+  "desc": "literal commit to the region dropped"
+ },
+ "M11": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "emitter taint re-check dropped"
+ },
+ "M12": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "emitter size-mismatch refusal dropped"
+ },
+ "M13": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "emitter rail-sibling refusal dropped"
+ },
+ "M14": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll"
+  ],
+  "desc": "and/or template swapped"
+ },
+ "M6x": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "lit:condtree_classical_leaf_reject_xor.ll"
+  ],
+  "desc": "xor literal: classifier AND emitter refusals dropped"
+ },
+ "M8x": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "lit:condtree_classical_leaf_reject_rail_sibling.ll"
+  ],
+  "desc": "rail sibling: classifier AND emitter refusals dropped"
+ },
+ "M15": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll"
+  ],
+  "desc": "mixed-node strip dropped (no _unc, no free)"
+ },
+ "M16": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll"
+  ],
+  "desc": "mixed-node free dropped"
+ },
+ "M17": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll"
+  ],
+  "desc": "mixed-node _unc dropped (dirty free)"
+ },
+ "M18": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "lit:condtree_classical_leaf_reject_round2_literal.ll"
+  ],
+  "desc": "round-2 re-ask never fires"
+ },
+ "M19": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "lit:condtree_classical_leaf_reject_round2_literal.ll"
+  ],
+  "desc": "round-2 record dropped"
+ },
+ "M20": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "rule-(B) marks never stripped"
+ },
+ "M21": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "rule-(B) record dropped at E6"
+ },
+ "M22": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "claim-time mark dropped"
+ },
+ "M23": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "edge-literal mark dropped"
+ },
+ "M24": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll"
+  ],
+  "desc": "emitter walks into literal children"
+ },
+ "M25": {
+  "verdict": "KILLED",
+  "movers": [
+   "ctest:e2e-condtree-classical-leaf-matrix",
+   "ctest:e2e-railbank-dynamic-admission-matrix",
+   "ctest:e2e-railbank-guarded-vla-matrix",
+   "ctest:e2e-slice-condtree-classical-leaf",
+   "lit:condtree_classical_leaf_accept_and.ll",
+   "lit:condtree_classical_leaf_accept_and_taintfirst.ll",
+   "lit:condtree_classical_leaf_accept_argument_literal.ll",
+   "lit:condtree_classical_leaf_accept_classical_subtree.ll",
+   "lit:condtree_classical_leaf_accept_mixed_deep.ll",
+   "lit:condtree_classical_leaf_accept_or.ll",
+   "lit:condtree_classical_leaf_accept_predmux_ruleb.ll",
+   "lit:condtree_classical_leaf_reject_round2_literal.ll",
+   "lit:predmux_guarded_vla_reject_row13_hybrid_select.ll"
+  ],
+  "desc": "classifier walks into literal children"
+ },
+ "M26": {
+  "verdict": "MISSED",
+  "movers": [],
+  "desc": "rule-(B) record also in clone mode"
+ }
+}

@@ -633,6 +633,16 @@ struct ControlRegion {
   // unlike the `RootIsRail` re-ask it is not dead code.
   bool RailLadderProven = false;
 
+  // bd `test_C_libtooling-xdu2.13` — the CLASSICAL LITERALS `classifySelectRegion`
+  // admitted into this `SelectRegion`'s condition tree (`CondLiteral.h`), in walk
+  // order. `emitSelectRegion` re-derives the tree by MEMBERSHIP of this list and
+  // refuses a size mismatch, so detection and emission cannot drift. EMPTY for
+  // every other producer (incl. `emitValueRegion`'s synthesized region), which is
+  // what keeps their walk byte-identical. `WeakTrackingVH`: a literal RAUW'd
+  // between detection and emission is followed (and re-asked for taint there),
+  // an erased one nulls and forces the mismatch decline.
+  llvm::SmallVector<llvm::WeakTrackingVH, 2> CondLiterals;
+
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by

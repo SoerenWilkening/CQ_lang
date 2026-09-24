@@ -9,6 +9,7 @@
 #include "ArithLowering.h"
 #include "ArmAnalysis.h"      // reverifyRailCondReads (bd r9e5 1b-B.1 round 2)
 #include "ByRefInline.h"
+#include "CondLiteral.h"      // declineQuantumCondLiterals (bd xdu2.13 round 2)
 #include "ControlPlan.h"
 #include "CtlzIdiomPrepass.h"
 #include "Fp80Union.h"
@@ -686,6 +687,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // cone AT ONCE (`WireWalk::gateIsHarmless` grows its per-activation barriers
   // from the seed set it is handed), while a rail's is asked per rail.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-xdu2.13`) THE LITERAL HALF, same slot, same reason: a
+  // 4.4 condition node's classical `_hl` LITERAL was untainted at the classifier's
+  // taint, and one derived from a 6.5/4.5 `%out` is quantum after the fixpoint —
+  // a quantum value in a classical slot (Rule 3). Loud. The rule-(B) marks are
+  // dropped immediately after: no classifier can ask again past this slot.
+  declineQuantumCondLiterals(M, taint);
+  stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
   // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip
@@ -1298,6 +1306,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // (Track A.1; bd test_C_libtooling-9pum) the compare half, mirrored here too —
   // twin-pipeline parity is MANDATORY (WI-1.12); see run() for the slot argument.
   reverifyCmpCondReads(M, taint);
+  // (bd `test_C_libtooling-xdu2.13`) the literal half + the mark drop, mirrored.
+  declineQuantumCondLiterals(M, taint);
+  stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
   // ITERATION-LOCAL rotated register inside a rolled loop, and the per-trip

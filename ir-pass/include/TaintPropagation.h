@@ -754,6 +754,17 @@ struct TaintSet {
   };
   llvm::SmallVector<CmpCondRead, 4> CmpCondReads;
 
+  // bd `test_C_libtooling-xdu2.13` — every FORWARD `cq_template_{and,or}_i1_hl`
+  // a 4.4 condition network minted with a CLASSICAL operand in its literal slot
+  // (`CondLiteral.h`). Written by `emitCondLiteralNode`, read once by
+  // `declineQuantumCondLiterals` after the round-2 fixpoint in both entry points:
+  // the literal was untainted when classified at round-1 taint, and a literal
+  // that is tainted at FINAL taint is a quantum value in a classical slot (L1).
+  // `WeakVH`: an erased gate nulls and is skipped (it has no literal left to
+  // read). Nothing rebuilds `TaintSet` after control emission, so the record
+  // survives to its reader.
+  llvm::SmallVector<llvm::WeakVH, 4> CondLiteralGates;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal

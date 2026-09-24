@@ -6891,8 +6891,13 @@ PhaseKickbackDisp classifyPhaseKickback(
     // A CLASSICAL leaf has no quantum flag to mint, and promoting it would put
     // a classical runtime value in the i32 HANDLE slot (the §5.2 prohibition —
     // a phantom rail id aliasing an unrelated qubit). The hybrid
-    // classical∧quantum conjunction is out of scope; `classifySelectRegion`
-    // gate 2 declines the same shape with the same string.
+    // classical∧quantum conjunction is out of scope HERE (the branch phase);
+    // ⚠ since bd `test_C_libtooling-xdu2.13` the 4.4 DATA select lowers it —
+    // the classical child of an `and`/`or` becomes a `cq_template_<op>_i1_hl`
+    // LITERAL (`CondLiteral.h`) — so the two consumers no longer agree. This
+    // decline is pinned by `condtree_classical_leaf_reject_phase.ll`; widening
+    // it means routing the same literal through `emitCondNetwork` for the
+    // kickback AND re-asking the literal in `declineQuantumCondLiterals`.
     if (!Taint.Tainted.count(Leaf)) {
       diagnoseUnderControl(declAnchor(Region), "control flow");
       return PhaseKickbackDisp::Declined;
