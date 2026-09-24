@@ -1,0 +1,79 @@
+\labsessionheader{2026-09-24}{Classical condition leaf as a template literal (xdu2.13); four taint holes closed}%
+  {c6905f4f}{n/a}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-24-railbank-parallel/TRACK\_E\_xdu2\_13.md}
+
+\subsection*{Goal}
+Unblock \bd{test\_C\_libtooling-xdu2.8}'s program \texttt{if (q \&\& m == n)}.
+\texttt{clang -O1} fuses its condition into one \texttt{and i1} of a quantum
+compare and a classical compare, and the 4.4 select-merge emitter used to
+decline any classical leaf. With the owner, the lowering was settled as the
+existing mixed-operand convention: the classical operand becomes the literal
+of the \texttt{\_hl} template (\texttt{cq\_template\_and\_i1\_hl}) and is never
+given a qubit.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \bd{xdu2.13} (CLOSED): a mixed \texttt{and}/\texttt{or} condition of a
+    4.4 data select lowers through \texttt{and/or\_i1\_hl} with a
+    \texttt{zeroext} literal. The forward call and its \texttt{\_unc} use the
+    same literal. Leaves that PredMux rule (B) predicts will become quantum are
+    marked and refused, and every literal is checked again after the round-2
+    fixpoint.
+  \item \bd{3jru} (CLOSED, P1): taint crosses call returns, closed inside
+    \texttt{propagateWorklist} so every stage that grows taint gets it. A used
+    call to a defined function that returns a quantum value now declines
+    loudly.
+  \item \bd{l3oi} (CLOSED, P1): values whose taint \texttt{specialize()}
+    removes are recorded. An already-emitted gate, or a call into a
+    specializer clone, that read such a value as a handle now declines.
+  \item The I/O-sink mux rail is added to the round-2 reseed. A user
+    measurement it used to delete is now kept.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \fpreexisting\ The literal slot turned every taint hole
+    into a visible over-accept. The seven Rule-13 rounds found four holes, all
+    silent miscompiles already on \texttt{main}:
+    \begin{itemize}
+      \item a register returned by a function was classical in the caller, so
+        \texttt{cq\_measure(g(x))} was deleted (\bd{3jru});
+      \item round-2 taint growth did not cross returns;
+      \item the I/O-sink mux rail was never reseeded, so a user measurement
+        was deleted;
+      \item \texttt{specialize()} removed taint after gates had used the value
+        as a handle (\bd{l3oi}, two translation units).
+    \end{itemize}
+  \item \foverdecline\ Filed: \bd{xdu2.16} (a compound condition tree in a
+    rolled loop; this is what still blocks row 13), \bd{xdu2.17},
+    \bd{xdu2.18}, \bd{9bhg} (introduced by the \bd{3jru} fence), \bd{6gqw}
+    (returned registers as a new capability).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries (all pass) & 493 & \measured{ctest --test-dir build -j6} \\
+cq-opt equivalence mismatches & 0 of 2277 & \measured{--target cq-opt-equivalence-full} \\
+corpus A/B: A$\to$D / D$\to$A / diag / stream & 8 / 26 / 22 / 1 & \measured{session ab.py, 2867 modules, null 0} \\
+Rule-13 rounds & 7 & independent reviewers \\
+\bottomrule\end{tabular}
+
+Every mover is one of this change's own fixtures or matrix rows. The 8
+A$\to$D are new reject fixtures that the pre-change binary compiled wrong. The
+one stream move is the I/O-sink fixture that now keeps its measurement.
+
+\subsection*{Verification run}
+Merge gate: the owned tests, full \texttt{ctest -j6},
+\texttt{cq-opt-equivalence-full}, corpus A/B against the pre-change binary
+(\commit{aad63450}), the exact Grover run (exit 0, STRICT 2b 3/0/0), and the
+CODE\_MAP check. Not run: \texttt{+Asserts}.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{xdu2.16} is the remaining wall in front of \bd{xdu2.8}'s program.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 023, Findings and Open questions: \bd{xdu2.13} was filed there as an
+owner decision. After discussing it with the owner it was re-scoped as the
+standard mixed-operand lowering, which needs no ruling.
