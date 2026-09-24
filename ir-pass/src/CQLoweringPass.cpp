@@ -1015,7 +1015,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::none();
   // Rail-bank cell postcondition (bd xdu2.4 review A F-1): no bank cell may park
   // a literal. Asked once every folder has run, because the literal arrives by
-  // COMPOSITION (promoter fold, then a PredMux residue fold), not from one stage.
+  // COMPOSITION (a constant-condition select stored to a cell, then a PredMux
+  // residue fold), not from one stage. The first exhibit's select was the
+  // promoter's own PASS H output; bd xdu2.9 made PASS H resolve a constant
+  // condition itself, so this backstop's lit pin is now
+  // `railbank_deadcell_reject_backstop_literal.ll`.
   if (declineNonHandleBankStores(M))
     return PreservedAnalyses::none();
   eraseDeadDecls(M, wd);

@@ -1,19 +1,49 @@
-; lowering_reject_railbank_literal_cell.ll — DECLINE (bd test_C_libtooling-xdu2.4, Rule-13 review A F-1 / round-2 P3).
+; lowering_reject_railbank_literal_cell.ll — ⚠ NOW AN ACCEPT (bd test_C_libtooling-xdu2.9),
+; DELIBERATELY NOT RENAMED: a rename can be resurrected by a merge (CLAUDE.md L8,
+; the bd `gahu` precedent). The file name records its history; the RUN lines record
+; its verdict.
 ;
 ; SOURCE: tests/e2e/railbank_dynamic_matrix.c CASE_LITERAL_CELL_FIXED at clang -O1:
 ; `int c[3] = {0}; for (i<3) { int t = cq_theta(c[i], .25); if (c[i] != 0) c[i] = t; }`
-; beside a PredMux-claimed Grover arm on `b[]`, then `cq_measure(c[i])`. The zero seed
-; makes the arm's condition constant, PASS H folds the emptied arm to a select, and a
-; PredMux residue fold in the same function reduces it to the LITERAL — so the bank
-; parked `store i32 0` (handle 0, a live and then FREED rail) and measured it three
-; times. The HEAD oracle ACCEPTED this (pre-existing P1). The postcondition
-; `declineNonHandleBankStores`, run after every folder in BOTH entry points, is the
-; only owner: pinned here at the IR layer so deleting it cannot go green in lit.
-; The decline is an over-decline of well-defined C (bd xdu2.9), never a miscompile.
-; ⚠ A DS_Error decline writes 0 bytes to stdout; the property is pinned by the `not` inversion (Rule 12 (b)).
+; beside a PredMux-claimed Grover arm on `b[]`, then `cq_measure(c[i])`.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; CHECK: cq rail bank: a cell parks a value that is not a rail handle
+; HISTORY. The HEAD oracle before xdu2.4 ACCEPTED this and parked `store i32 0` (handle
+; 0, a live and then FREED rail) into a MARKED `c[]` bank, measured three times — a P1.
+; xdu2.4's postcondition `declineNonHandleBankStores` turned that into a DECLINE, and
+; this fixture pinned it. The decline was an over-decline of well-defined C (xdu2.9).
+;
+; NOW. The promoter's PASS H resolves the CONSTANT branch condition its own forwarding
+; produced (`c[i] != 0` over the zero seed) to the value the taken edge carries — the
+; seed literal — so the relocated `c[]` store is CLASSICAL, the carve answers NotBank
+; and `c[]` is never marked: it is not a rail bank at all, and its measure loop reads
+; classical memory (no `cqrt_measure` on it). `b[]` is still a bank and parks handles.
+; The emitted stream is byte-identical to the array-free rolled `c` twin
+; (tests/e2e/railbank_deadcell_matrix.c CASE 7 vs 18).
+;
+; ⚠ THE POSTCONDITION IS NOT RETIRED AND IS STILL PINNED — by
+; railbank_deadcell_reject_backstop_literal.ll, which reaches it through a
+; constant-condition select the promoter does not own (this file no longer can).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.out.ll
+; RUN: %filecheck                    --input-file=%t.out.ll %s
+; RUN: %filecheck --check-prefix=NEG --input-file=%t.out.ll %s
+;
+; The dead c[] is NOT a bank; the Grover b[] IS one.
+; CHECK:      %[[C:[0-9]+]] = alloca [3 x i32], align 4{{$}}
+; CHECK-NEXT: %[[B:[0-9]+]] = alloca [3 x i32], align 4, !cq.railbank
+; The dead preparation runs per trip and is uncomputed per trip.
+; CHECK:      %h = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 2.500000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double -2.500000e-01)
+; CHECK-NEXT: call void @cqrt_free(i32 %h)
+; CHECK:      %cq.bank.addr = getelementptr inbounds [3 x i32], ptr %[[C]], i64 0, i64 %{{[0-9]+}}
+; CHECK-NEXT: store i32 0, ptr %cq.bank.addr
+; The b[] bank parks a HANDLE.
+; CHECK:      %cq.bank.addr1 = getelementptr inbounds [3 x i32], ptr %[[B]], i64 0, i64 %{{[0-9]+}}
+; CHECK-NEXT: store i32 %h{{[0-9]+}}, ptr %cq.bank.addr1
+; NEG-NOT: cqrt_measure_i32(i32 0)
+; NEG-NOT: select i1 true
+; NEG-NOT: store i32 0, ptr %cq.bank.addr1
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

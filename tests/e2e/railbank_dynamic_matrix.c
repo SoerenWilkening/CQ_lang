@@ -319,7 +319,10 @@ int main(int argc, char **argv) { (void)argv; return slice(argc); }
  * false; PASS H folds the emptied arm to `select true, 0, t`, a PredMux residue
  * fold in the SAME function (the b[] Grover arm) folds that to the literal, and
  * the bank parked `store i32 0` — handle 0, a live then FREED rail — measured n
- * times, exit 0, 2b clean. Now the bank-store postcondition declines it. */
+ * times, exit 0, 2b clean. The bank-store postcondition then declined it (safe);
+ * since bd xdu2.9 PASS H resolves the CONSTANT condition to its taken edge, so
+ * c[] is no rail bank at all (classical zeros) and the row ACCEPTS with no
+ * literal handle parked (runner: `literal_bank_stores`). */
 __attribute__((noinline)) static void run_bank(int n) {
     if (n <= 0) return;
     int p[n];
@@ -347,8 +350,9 @@ int main(int argc, char **argv) { (void)argv; run_bank(argc); return 0; }
 #elif CASE == CASE_LITERAL_CELL_FIXED
 /* The FIXED-size form of CASE 20, well-defined C. The HEAD oracle ACCEPTED it
  * with the same `store i32 0` and three measurements of a freed h0 (pre-existing
- * P1). Declining is the safe direction; the flat twin compiles (the dead store
- * folds away), so this is an OVER-DECLINE filed as bd xdu2.9. */
+ * P1). It then declined (safe direction, an over-decline filed as bd xdu2.9);
+ * since the xdu2.9 PASS H constant-condition fold it ACCEPTS, like its flat
+ * twin: the dead store folds away and c[] stays classical. */
 __attribute__((noinline)) static void run_bank(void) {
     int p[3] = {3, 4, 5};
     int z[3] = {2, 3, 4};
