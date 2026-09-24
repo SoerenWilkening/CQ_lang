@@ -170,6 +170,15 @@ llvm::CallInst *findNonDiagonalWireGate(
 // MEASURED CUSTOMER (reached with the collapse fence's bank-load hop disabled,
 // `TRACK_B.md` §6c): `for(k){ if(r>k) q = cq_theta(q,.3); b[k] = q; }
 // for(i) cq_measure(b[i]);` accepted with every cell reading the final wire.
+// ⚠ RESIDUAL, NOT FENCED HERE: when the parked seed IS the relabelling gate's
+// own next dynamic instance (`q = cq_theta(q, .3); b[k] = q;` with an
+// unrelated kickback in the body), the walker never returns the seed as its
+// own staler, so this bit does not catch it. It is the cell analogue of
+// `readerStalesItself`. Today it is caught by `LoopLowering::staleReadOfValue`'s
+// bank-load hop, because such a loop lowers only through the rolled collapse.
+// RETIREMENT TRIGGER: the day another loop path admits an in-loop chained
+// `cq_theta` whose result is parked in a rail bank, add the self-staling check
+// here in the same change (`TRACK_B.md` §6c, probe `v1`).
 
 // (Track A.1) THE ENUMERATING FACE OF THE SAME WALK — same closure, same
 // exemptions, same harmlessness proof; it COLLECTS every staling gate instead of

@@ -6,11 +6,13 @@ Prints movers (rc change, or stdout change) and the denominator. A NULL CONTROL
 import pathlib, subprocess, sys
 SP = pathlib.Path(__file__).parent
 WT = pathlib.Path("/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a784cc15f4136a8dc")
-BASE = SP / "cq-opt.base"
+import os
+BASE = SP / os.environ.get("BASE", "cq-opt.base")
 NEW = WT / "build/ir-pass/cq-opt"
 files = sorted((WT / "ir-pass/test").glob("*railbank*.ll"))
-for d in ("out", "out2", "out3"):
+for d in ("out", "out2", "out3", "out4", "out5", "out7r2", "out7b", "out9", "out10", "out10r2"):
     files += sorted((SP / d).glob("*.s1.ll"))
+files += sorted((SP / "s1all").glob("*.s1.ll"))
 
 
 def run(opt, f):

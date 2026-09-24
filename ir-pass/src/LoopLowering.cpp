@@ -1058,9 +1058,10 @@ Instruction *staleReadOfValue(Value *V,
   // `reviewB_r2/P1_bank.c` / `P1_reg.c`; twin pair `p13`).
   //
   // So every cell load of every bank `V` is parked in is asked the SAME
-  // question with the SAME walk and the SAME `Refreshes` bit as an SSA read
-  // would be — the bank read is adjudicated exactly as if the source had named
-  // `V` directly, which is what the source says it is. `railBankCellReadsOf` is
+  // question with the SAME walk as an SSA read would be — but WITHOUT the
+  // `Refreshes` cut (corrected by Rule-13 round 3, F-R3-1: the round-2 text
+  // here said "the SAME `Refreshes` bit", and that was the P1; see the call
+  // below). `railBankCellReadsOf` is
   // the forward hop (`railBankParkedRails`) read backwards over the same address
   // tree and the same `bankStoreRailValue` relation (Rule 14). It is a
   // DECLINE-direction addition: it only adds read points, never removes one.

@@ -269,7 +269,7 @@ the same rail`. Probe corpus: `trackB_probes/collect2.py` (34 files, 11 pairs).
 | `commitOutOfLoopInPlaceOps` | `LoopLowering.cpp` | calls `classifyInPlaceReassignment`, so the same G6/G7(e) | argued (same function), not separately mutated |
 | `tryCaseA` Case A | `LoopLowering.cpp` | its CLOSURE refuses the store as a non-rail user, **and** `staleRailRecordRead` (now with the bank-load hop) | `e1_bank` matrix row 33; comment corrected |
 | rolled collapse `collapseRailPhisIn` | `LoopLowering.cpp` | **only** `staleRailRecordRead`; before this fix, nothing | **F-1**; now matrix rows 34–37, fixtures `railbank_stale_reject_inloop_xor_*`, twin rows p13–p15 |
-| 7.4 break (`emitBreakForward`) | `LoopLowering.cpp` | (E15): the rail mint may be read only by the rail phi and the escape phi, so the park store is refused | `f1_break_bank` declines `early break body is not a provable rolled single-rail loop` (its twin too); the gate that fires was read, not mutated |
+| 7.4 break (`emitBreakForward`) | `LoopLowering.cpp` | (E15): the rail mint may be read only by the rail phi and the escape phi, so the park store is refused | **`f1_break_bank` ALONE** declines `early break body is not a provable rolled single-rail loop` (its twin too); the gate that fires was read, not mutated. ⚠ **Corrected by round 3 (F-R3-2):** the reviewer's `c4_break.c` does NOT go through this minter. `-O1` merged its break into the loop's single exit, so it lowered through the rolled collapse and declines at `staleRailRecordRead`. The E15 claim rests on `f1_break_bank` only |
 
 **Measured after the fix (`cq-opt` `427492b12c4162e2`).**
 * All 7 reviewer bank probes, plus `t3`, DECLINE with the twin's exact string.
@@ -314,6 +314,131 @@ control doing its job. The generator now asserts unique ids. The shared runner
 `run_railbank_dynamic_matrix.py` still accepts a duplicate key silently (Python
 `json` last-wins). I own the sidecar, not the runner, so this is reported rather
 than fixed.
+
+## 6c. Rule-13 round 3 finding F-R3-1 (P1): the park AFTER the in-place op, and the refresh cut
+
+**The defect** (pre-existing on main, on preA/preD, and on my round-2 binary
+`427492b12c4162e2`, all re-measured by me): `for(k){ if(q>k) cq_phi(.3); q ^= 3;
+b[k] = q; } for(i) cq_measure(b[i]);`. The reviewer's
+`a1`/`a3`/`b4`/`b5`/`b7`/`e1_fixed_const`/`e2_slice` all ACCEPT, and every bank
+measure reads the FINAL wire. The hand-unrolled register twin `a1_reg_unrolled`
+accepts with a correct out-of-place stream.
+
+**Mechanism** (the reviewer's, confirmed by mutant N4): my round-2 bank hop
+reused `Refreshes`. `Def` is the in-loop xor, `recordRefreshedByDef` is true,
+and `railGateBetween` cuts every path that re-runs `Def`, so `xor → exit → load`
+is gate-free. "Re-running Def refreshes the NAME" is true for SSA and false for
+a CELL, because cell k keeps activation k's value. This is L2 exactly: the
+refresh cut is the other set computed over the same closure. **My §4/§6b claims
+that N4/N5 had "no subject", and that an in-loop park of a relabelled rail
+"declines earlier (mux phi)", were FALSE.** They held only when the park
+precedes the op (`a2`), which is all I built.
+
+**Fix 1 (the collapse fence):** `staleReadOfValue`'s bank hop passes
+`DefRefreshes=false`.
+
+**Fix 2: the FORWARD hop has the same flaw, and it was reachable.** The reader
+fence (`railBankParkedRails` → `findNonDiagonalWireGate`) grants through leg 2
+(`recordBarrierCutsPath`) on the premise "executing the seed's def
+re-establishes the record". For a cell that premise is false. New probes
+(`trackB_probes/gen5.py`):
+* v1: `if(r>k) cq_phi; q = cq_theta(q,.3); b[k] = q;`
+* v2: `if(r>k) q = cq_theta(q,.3); b[k] = q;` (in-loop controlled Ry)
+* v4: v1 plus an xor
+* v7: `_Bool` condition, controlled Ry
+
+All four ACCEPT on main and on round 2, with every cell reading the final wire.
+`findNonDiagonalWireGate` now takes `SeedIsCellRead` (default `false`, so every
+other caller is byte-unchanged). When it is true, only leg 1 may grant, and
+`recordStaleQuantumReaders` passes `Hopped`.
+
+**Isolation** (`trackB_probes/iso_forward.py`, three binaries built and then
+restored):
+
+| binary | v1 | v2 | v4 | v7 |
+|---|---|---|---|---|
+| collapse hop off, `SeedIsCellRead` off (the pre-fix forward hop) | ACCEPT | ACCEPT | ACCEPT | ACCEPT |
+| collapse hop off, `SeedIsCellRead` on | ACCEPT | DECLINE (3d8q) | DECLINE | DECLINE |
+| final | DECLINE | DECLINE | DECLINE | DECLINE |
+
+**The v1 residual, stated rather than fenced.** In v1 the seed IS the
+relabelling gate's own next dynamic instance (`%24 = cq_theta(%20)`,
+`%20 = phi(%8, %24)`). The walker does not return the seed as its own staler,
+so the forward hop alone misses it. It is the cell analogue of
+`readerStalesItself`. It is caught by fix 1 (the collapse fence), because a
+chained in-loop `cq_theta` parked into a bank is only lowerable through the
+collapse:
+* `tryCaseA`'s CLOSURE refuses the store user;
+* the 7.4 break's (E15) refuses a non-phi mint reader;
+* the iteration-local rolled rail is freshly minted each trip (v8/v9 decline).
+
+**RETIREMENT TRIGGER** (also written into `WireWalk.h`'s `SeedIsCellRead`
+note): the day a loop path other than the collapse admits an in-loop chained
+`cq_theta` whose result is parked, give the forward hop a self-staling check.
+I did not ship that check, because no owned test can pin it (Rule 12 (c)); the
+same is true of `SeedIsCellRead` itself, see below.
+
+**Measured.**
+* **Red-green** (`trackB_probes/redcheck.py`):
+  * The 3 new reject fixtures (`railbank_stale_reject_inloop_{xor,sub}_park_after_op.ll`,
+    `…_add_park_after_op_slice.ll`) FAIL (rc 0) on `427492b1` and PASS on the
+    final binary.
+  * The new green `railbank_stale_accept_inloop_xor_park_outofplace.ll` passes
+    on all three binaries.
+  * Matrix rows 45–50 fail on `427492b1` and pass on the final binary.
+  * Rows 51/52 are green controls: the parked `q^3` stays out of place (`w1`),
+    and the same-trip read (`g2`) is forwarded by the promoter.
+* **A/B**, `427492b1` vs final (`trackB_probes/ab.py`, log `ab3.log`), over
+  every `*railbank*.ll` fixture plus every probe stage-1 module, including all
+  48 reviewer round-3 programs and the accepted controls (`P1_legit`, `c1`,
+  `f1`, `g2`, `g4`, `x01` grover main, `h04`/`h05`):
+  * Null control first: **0 of 358**.
+  * A/B: **31 movers, 15 unique programs, all ACCEPT→DECLINE**. They are the
+    reviewer's 7, my `v1`/`v2`/`v4`/`v7`, `w2` (the in-place twin of `w1`), and
+    the 3 new fixtures.
+  * **0 stream moves on any accept.**
+* **Over-decline, filed rather than hidden:** `a1`/`w2` (twin row `p17`). The
+  hand-unrolled register program is a valid circuit that emits out-of-place
+  copies. The bank spelling now declines. Realizing it needs the collapse to
+  keep a parked in-place op OUT of place (a copy-out), which is a lowering
+  change, not a fence change. The twin gate prints this as `OVER-DECLINE`
+  (counted, not failed).
+* **Stream-level twin (the reviewer's suggestion), attempted and not
+  byte-comparable.** `w1` (the out-of-place accept) against its hand-unrolled
+  register twin: `-O1` folds the unrolled xors ACROSS iterations
+  (`q^6^3 → q^5` template chains). The rolled form keeps one `xorc 6` per trip.
+  Both are correct by hand, and the streams differ. So `w1`'s order is pinned
+  by a lit fixture instead. (The IV-compare variant `g4` also differs, by an
+  `i64` sext `-O1` introduces only in the rolled form.)
+
+**Round-3 mutation matrix** (`trackB_probes/mutate.py`, log `mutate4.log` plus
+`mutate5.log`; restored binary `7bbcdd9839f7de8f`):
+
+⚠ **The first run's null control FIRED.** My harness counted twin-gate
+`OVER-DECLINE` lines as failures, and `p17` is an over-decline by design. The
+harness now counts only `VIOLATION`/`TRACE-MISMATCH`. N0, N2, N3, N8 and N9
+were re-run under the fixed harness. The other mutants were killed by
+lit/matrix failures, which do not depend on the fix.
+
+| mutant | result |
+|---|---|
+| N0 null (re-run) | **0 detections** (lit 31/31, matrix 50/0, twin rc 0) |
+| N1 hop removed | KILLED |
+| N2 cast-user park ignored | MISSED — no subject (every cast-parked shape declines earlier) |
+| N3 name the load | MISSED — location only |
+| **N4 refresh cut reverted to `Refreshes`** (the round-2 code) | **KILLED**: 3 new lit fixtures, matrix rows 45–50 |
+| N5 refresh cut forced `true` | **KILLED** (same) |
+| N6 walker skips GEPs | KILLED |
+| N7 first load only | KILLED |
+| N8 `SeedIsCellRead` never set | MISSED — **shadowed**: every shape it catches is declined first by the collapse fence (fix 1) in the same pipeline; its effect is measured only by the isolation binaries above |
+| N9 leg 2 kept for cell reads | MISSED — same shadowing |
+
+**Denominator: 9 non-null mutants, 5 KILLED, 4 MISSED** (N2, N3, N8, N9), each
+with a stated reason. N8 and N9 are defence in depth for the reader fence. They
+are kept because they correct a false premise in a live fence and are
+measured reachable in isolation. That is a judgement against my own round-1
+rule (I did not ship M8 for being unpinnable). The difference is that M8 moved
+nothing even in isolation, while N8 moves three programs.
 
 ## 7. NOT tested here (belongs to the merge gate)
 

@@ -94,12 +94,35 @@ ROWS = [
     (44, "RUNTIME_INLOOP_XOR_READ_BEFORE_AND_AFTER", "../probes3/u1_two_read_loops.bank", False,
      "cq loop lowering: rail record read past an in-place gate on the same rail",
      "F-1 with the bank read BEFORE and AFTER the xor loop -- every cell load must be asked, not the first"),
+    (45, "RUNTIME_INLOOP_XOR_PARK_AFTER_OP", "../probes4/a1_park_after_xor.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "Rule-13 round-3 F-R3-1 (reviewer a1): the in-place xor's result parked inside the relabel loop"),
+    (46, "RUNTIME_INLOOP_ADD_PARK_AFTER_OP_SLICE", "../probes4/e2_slice.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-R3-1 with `q += 1` outside main (reviewer e2_slice)"),
+    (47, "RUNTIME_INLOOP_ADD_PARK_AFTER_OP", "../probes4/b4_park_after_add.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-R3-1 with `q += 3` (reviewer b4)"),
+    (48, "RUNTIME_INLOOP_SUB_PARK_AFTER_OP", "../probes4/b5_park_after_sub.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-R3-1 with `q -= 5` (reviewer b5)"),
+    (49, "RUNTIME_INLOOP_XORK_PARK_AFTER_OP", "../probes4/b7_park_after_xor_k.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-R3-1 with a trip-dependent immediate `q ^= k` (reviewer b7)"),
+    (50, "FIXED_INLOOP_PARK_AFTER_OP_CONST", "../probes4/e1_fixed_const.bank", False,
+     "cq loop lowering: rail record read past an in-place gate on the same rail",
+     "F-R3-1 on a fixed bank with a constant trip (reviewer e1_fixed_const)"),
+    (51, "RUNTIME_INLOOP_XOR_PARK_OUTOFPLACE", "../probes6/w1_xor_park_outofplace.bank", True, None,
+     "GREEN: the parked q^3 stays OUT OF PLACE (xors fuse to ^6 on the rail) -- not stale, must accept"),
+    (52, "RUNTIME_INLOOP_PARK_SAMETRIP_READ", "../probes4/g2_samtrip_read.bank", True, None,
+     "GREEN: park after the op and read in the SAME trip (reviewer g2; the promoter forwards the load)"),
     (40, "TWIN_OF_28", "t28_rt_percell_sibling.twin", True, None, "hand-unrolled n=3 twin of 28"),
     (41, "TWIN_OF_29", "t29_rt_percell.twin", True, None, "hand-unrolled n=3 twin of 29"),
     (42, "TWIN_OF_31", "t31_passH.twin", True, None,
      "hand-unrolled n=3 twin of 31 (Z made quantum by an identity Ry(0), dropped before comparing)"),
     (43, "TWIN_OF_32", "t32_bool_percell.twin", True, None, "hand-unrolled twin of 32"),
 ]
+NOBANK = {52}
 TWINS = [(20, 21), (22, 23), (24, 25), (26, 27), (28, 40), (29, 41), (31, 42), (32, 43)]
 DROPPED = {42: ["cqrt_ry_i32(h0, 0x0p+0)"]}
 
@@ -139,6 +162,9 @@ for cid, macro, stem, acc, diag, claim in ROWS:
     first = False
     body.append(f"{kw} CASE == CASE_{macro}\n/* {'ACCEPT' if acc else 'DECLINE'} — {claim}. */\n{src}\n")
     cases[str(cid)] = {"accept": acc, "diagnostic": diag}
+    if cid in NOBANK:
+        cases[str(cid)]["require_railbank"] = False
+        cases[str(cid)]["stage1_note"] = "the promoter forwards the same-trip load, so no bank survives to the lowered module"
 body.append("#else\n#error unknown CASE\n#endif\n")
 (WT / "tests/e2e/railbank_stale_matrix.c").write_text(hdr + "".join(body))
 doc = {

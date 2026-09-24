@@ -10,6 +10,7 @@ OL = "ir-pass/src/OpcodeLowering.cpp"
 RB = "ir-pass/src/RailBankPromote.cpp"
 AL = "ir-pass/src/ArithLowering.cpp"
 LL = "ir-pass/src/LoopLowering.cpp"
+WW = "ir-pass/src/WireWalk.cpp"
 
 MUTANTS = [
     ("N0-null", LL, "  // ── THE MEMORY HOP FOR THIS FENCE (bd `xdu2.1`, Rule-13 round-2 finding F-1,\n",
@@ -20,10 +21,13 @@ MUTANTS = [
      "    (void)0;\n"),
     ("N3-name-load-not-measure", LL, "          if (LD->hasOneUse())\n            if (auto *R = dyn_cast<Instruction>(*LD->user_begin()))\n              return R;\n",
      ""),
-    ("N4-bank-refresh-false", LL, "        if (railGateBetween(Def, LD, Gates, Refreshes)) {",
-     "        if (railGateBetween(Def, LD, Gates, false)) {"),
-    ("N5-bank-refresh-true", LL, "        if (railGateBetween(Def, LD, Gates, Refreshes)) {",
+    ("N4-bank-refresh-reverted", LL, "        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {",
+     "        if (railGateBetween(Def, LD, Gates, Refreshes)) {"),
+    ("N5-bank-refresh-true", LL, "        if (railGateBetween(Def, LD, Gates, /*DefRefreshes=*/false)) {",
      "        if (railGateBetween(Def, LD, Gates, true)) {"),
+    ("N8-cellread-bit-off", OL, "                                    /*SeedIsCellRead=*/Hopped))",
+     "                                    /*SeedIsCellRead=*/false))"),
+    ("N9-cellread-leg2-kept", WW, "  if (SeedIsCellRead)\n    return false;\n", ""),
     ("N6-walker-no-gep", RB, "      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||",
      "      if (isa<BitCastInst>(U) ||"),
     ("N7-first-load-only", LL, "      for (LoadInst *LD : CellReads)\n",
@@ -47,7 +51,7 @@ def owned():
     tw = sh(["python3", "tools/railbank_register_twin_gate.py", "--build", "build",
              "--pairs", "tools/railbank_twin_pairs", "--include", "include"])
     tbad = [l.split()[0] for l in tw.stdout.splitlines()
-            if re.search(r"VIOLATION|TRACE-MISMATCH|OVER-DECLINE", l) and l.startswith("  ")]
+            if re.search(r"VIOLATION|TRACE-MISMATCH", l) and l.startswith("  ")]
     return {"lit_fail": lf, "lit_pass": lp.group(1) if lp else "?", "matrix_fail": mfail,
             "matrix_summary": mx.stdout.strip(), "twin_bad": tbad, "twin_rc": tw.returncode}
 

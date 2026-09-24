@@ -7,9 +7,9 @@ SP = pathlib.Path(__file__).parent
 WT = pathlib.Path("/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a784cc15f4136a8dc")
 FC = "/usr/local/opt/llvm@19/bin/FileCheck"
 MSG = "cq loop lowering: rail record read past an in-place gate on the same rail"
-for opt in (SP / "cq-opt.base", WT / "build/ir-pass/cq-opt"):
+for opt in (SP / "cq-opt.base", SP / "cq-opt.r2", WT / "build/ir-pass/cq-opt"):
     print("==", opt.name)
-    for f in sorted((WT / "ir-pass/test").glob("railbank_stale_*inloop_xor*.ll")):
+    for f in sorted((WT / "ir-pass/test").glob("railbank_stale_*inloop_*.ll")):
         r = subprocess.run([str(opt), "-passes=cq-lowering", "-S", str(f), "-o", "-"],
                            capture_output=True, text=True)
         if "_reject_" in f.name:
@@ -19,5 +19,5 @@ for opt in (SP / "cq-opt.base", WT / "build/ir-pass/cq-opt"):
             ok = r.returncode == 0 and all(
                 subprocess.run([FC, f"--check-prefix={p}", f"--input-file={tmp}", str(f)],
                                capture_output=True).returncode == 0
-                for p in ("IR", "CXOR", "CMEAS", "NOTS"))
+                for p in (["IR", "CXOR", "CMEAS", "NOTS"] if "legit" in f.name else ["IR", "CXORC", "CMEAS", "NOTS"]))
         print(f"  {'PASS' if ok else 'FAIL'} rc={r.returncode} {f.name}")
