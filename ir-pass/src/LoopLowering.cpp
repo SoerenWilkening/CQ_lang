@@ -2784,6 +2784,26 @@ bool tryCaseA(Loop *L, Function &F, TaintSet &taint,
   // template producer, a tainted control compare, a store, an unknown call, or
   // the rail used as a classical ANGLE (arg-1) — means the rail is not isolated;
   // leave it (the consumer's own guard declines loudly downstream).
+  //
+  // ⚠ THIS CLAUSE IS WHAT KEEPS A RAIL-BANK-PARKED RAIL OUT OF THE ROLLED
+  // IN-PLACE RELABEL (bd `xdu2.1`, Rule-13 review round 1 item 2, 2026-09-24).
+  // `int b[n]; for(i) b[i] = q; for(k) q ^= k + seed; for(i) cq_measure(b[i]);`
+  // (review probe `reviewB_r1/p/e1_bank.c`; matrix row 33 of
+  // `tests/e2e/railbank_stale_matrix.c`) reaches here with the parked `q` as a
+  // rail member whose users include the bank STORE (or, on a `_Bool`/widening
+  // bank, its storage CAST). That non-rail user makes this loop return false,
+  // the loop stays unclaimed, and the header phi then declines at
+  // `declineClassicalMuxes` (`tainted value muxed by a classical-condition
+  // phi`, measured). NOTHING ELSE ASKS THIS QUESTION: `staleRailRecordRead`
+  // groups per ROOT MINT and a bank load has none, and the stale-reader
+  // fence's memory hop (`railBankParkedRails`, `OpcodeLowering.cpp`) walks for
+  // `cq_theta_` gates only — it has no vocabulary for a dtzb in-place
+  // `add`/`xor` (the `WireWalk.h` gap, bd `a3z7`).
+  // RETIREMENT TRIGGER: the day this closure admits a `store` into a rail bank
+  // (or its storage cast), `e1_bank` becomes a SILENT STALE READ — the bank
+  // measures would observe `q ^ Σk` where the source says `q`. Widen the hop's
+  // vocabulary to the in-place ops `markInPlaceRailOp` commits, or fence the
+  // bank store here, IN THE SAME CHANGE.
   for (auto &KV : railRoot) {
     Value *V = KV.first;
     for (User *U : V->users()) {

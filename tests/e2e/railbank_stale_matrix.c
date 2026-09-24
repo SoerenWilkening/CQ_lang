@@ -48,6 +48,11 @@
 #define CASE_RUNTIME_CONDPREP_CONTROL 30
 #define CASE_RUNTIME_PASSH_CONTROL 31
 #define CASE_FIXED_BOOL_PERCELL 32
+#define CASE_RUNTIME_DTZB_FIXED_TRIP_XOR 33
+#define CASE_TWIN_OF_28 40
+#define CASE_TWIN_OF_29 41
+#define CASE_TWIN_OF_31 42
+#define CASE_TWIN_OF_32 43
 
 #ifndef CASE
 #define CASE CASE_FIXED_STALE_INVARIANT_PARK
@@ -419,6 +424,56 @@ __attribute__((noinline)) int slice(int seed) {
   for (int i = 0; i < 3; ++i) b[i] = cq_theta(b[i], 0.5);
   for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
   return s + seed;
+}
+int main(void) { return slice(1); }
+
+#elif CASE == CASE_RUNTIME_DTZB_FIXED_TRIP_XOR
+/* DECLINE — review round-1 probe e1_bank: fixed-trip (unroll disabled) in-place xor loop on the parked rail; held by tryCaseA's CLOSURE refusing the bank store. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+  int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;
+  #pragma clang loop unroll(disable)
+  for (int k = 0; k < 3; ++k) q ^= k + seed;
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_TWIN_OF_28
+/* ACCEPT — hand-unrolled n=3 twin of 28. */
+__attribute__((noinline)) static int slice(int n) {
+  int r = cq_theta(1, 0.2); (void)n;
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  r = cq_theta(r, 0.7);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_29
+/* ACCEPT — hand-unrolled n=3 twin of 29. */
+__attribute__((noinline)) static int slice(int n) {
+  int b0 = cq_theta(0, 0.5); int b1 = cq_theta(0, 0.5); int b2 = cq_theta(0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + n;
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_31
+/* ACCEPT — hand-unrolled n=3 twin of 31 (Z made quantum by an identity Ry(0), dropped before comparing). */
+__attribute__((noinline)) static int slice(int n) {
+  int Z = cq_theta(4 * n, 0.0); int s = 0;
+  int t0 = cq_theta(0, 0.5); int b0 = 0; if (Z >= 2) b0 = t0; if (b0) Z -= 2;
+  int t1 = cq_theta(0, 0.5); int b1 = 0; if (Z >= 2) b1 = t1; if (b1) Z -= 2;
+  int t2 = cq_theta(0, 0.5); int b2 = 0; if (Z >= 2) b2 = t2; if (b2) Z -= 2;
+  s += cq_measure(b0) + cq_measure(b1) + cq_measure(b2);
+  return s + cq_measure(Z);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_TWIN_OF_32
+/* ACCEPT — hand-unrolled twin of 32. */
+__attribute__((noinline)) int slice(int seed) {
+  _Bool b0 = cq_theta((_Bool)0, 0.5); _Bool b1 = cq_theta((_Bool)0, 0.5); _Bool b2 = cq_theta((_Bool)0, 0.5);
+  return cq_measure(b0) + cq_measure(b1) + cq_measure(b2) + seed;
 }
 int main(void) { return slice(1); }
 

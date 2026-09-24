@@ -1010,12 +1010,15 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         // by mutation, is `inPlaceFenceHolds`' G6/G7 pair: the PARKING `store`
         // is a plain-IR user of `P`, so it is either not provably before the
         // site (G6) or, when it is, `priorUseIsSettled` clause (e) refuses any
-        // non-call user (G7). That is a STRUCTURAL refusal — every bank rail
-        // has its store as a user of the parked value — but it is G7(e)'s,
-        // not this list's. RETIREMENT TRIGGER, restated: the day G7(e) admits a
-        // `StoreInst` (or the bank stops being fed by a `store` of the parked
-        // value), this absence and the vocabulary gap compose. Re-derive BOTH
-        // in the same change.
+        // non-call user (G7). That is a STRUCTURAL refusal — every parked
+        // value has a NON-CALL user on the bank's store path: the `store`
+        // itself on an `int` bank, or the storage `CastInst` (the `zext` of a
+        // `_Bool` into its `i8` cell, a widening `sext`/`zext` into a wider
+        // cell) that feeds the store — but it is G7(e)'s, not this list's.
+        // RETIREMENT TRIGGER, restated: the day G7(e) admits a `StoreInst` OR a
+        // storage `CastInst` (or the bank stops being fed through a non-call
+        // user of the parked value), this absence and the vocabulary gap
+        // compose. Re-derive BOTH in the same change.
         if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
             taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
           continue;

@@ -152,12 +152,51 @@ fixture is shown by mutant M1/M5 (the hop disabled), not by an older binary.
 
 ## 6. Owned test results (as run, final binary `c6f61f80a5d524c6`)
 
-* `lit ir-pass/test --filter 'railbank_stale|stale_reader|reader_predates'`: 21
-  discovered, 21 passed.
+* `lit ir-pass/test --filter 'railbank_stale|stale_reader|reader_predates'`: 21 (22 after §6a)
+  discovered, 21 (22) passed.
 * `ctest -R '^e2e-railbank-register-twin-(decline|selftest)$|^e2e-railbank-stale-matrix$'`:
   3/3 passed. Twin gate: `12 pair(s) checked, 0 VIOLATION(s), 0
   TRACE-MISMATCH(es), 0 over-decline(s)`. Matrix: `30 case(s): 13 accept, 17
   decline; 4 twin(s); 0 failure(s)`.
+
+## 6a. Rule-13 round 1 P3 items (after merge `33f8bcdb`), fixed on top of `a153a259`
+
+* **Item 2: the rolled-loop in-place relabel path.** `tryCaseA`'s CLOSURE
+  (`LoopLowering.cpp`) refuses any non-rail user of a rail member. The bank
+  store (or its storage cast) is such a user, so a parked `q` never becomes a
+  rolled in-place rail. Neither `staleRailRecordRead` (it groups per root mint,
+  and a bank load has none) nor the memory hop (its vocabulary is `cq_theta_`
+  only) asks this question. A RETIREMENT TRIGGER is now written at that clause.
+  The review's probe `e1_bank` is **matrix row 33**, a decline measured at the
+  mux-phi wall. It is distinct from row 11 (a runtime-trip xor loop), because
+  e1's trip count is fixed at 3 with unrolling disabled.
+* **Item 3: the `ArithLowering.cpp` overstatement.** The claim "every bank rail
+  has its store as a user" is replaced: the non-call user is the `store` on an
+  `int` bank, or the storage `CastInst` on a `_Bool`/widening bank. The trigger
+  now reads "admits a `StoreInst` OR a storage `CastInst`".
+* **Item 4: accept rows 28–32 pinned only the verdict.** Now:
+  * **28, 29, 31, 32** are **byte-compared twins** (matrix twins 28/40, 29/41,
+    31/42, 32/43), linked and run. 31/42 drops the one identity line
+    `cqrt_ry_i32(h0, 0x0p+0)`, the same convention as dynamic-matrix twin 14/17.
+  * **30** (the seed-path conditional prep) **cannot be a byte twin**. Its flat
+    twin emits the same gates, but the rolled form mints the prep rail before
+    the `icmp sgt` flag and the flat form mints it after. A fresh `|0⟩` alloc
+    commutes with that compare, so the circuits are equal, but the handle
+    numbering permutes (checked by `diff`; this is the only difference). It is
+    pinned instead by the new lit fixture
+    `railbank_stale_accept_runtime_condprep_gate_order.ll`, which fixes the
+    per-trip order alloc → flag → controlled Ry(flag, seed) → strip → free, the
+    data select reading the seed rail, and the store. It also pins that each
+    bank measure reads a cell load, and that the seed is never freed.
+  * Controls:
+    * `trackB_probes/twinctl.py` pairs rolled row 30 with the wrong twin, and
+      the runner reports `TWIN 30/41` failing (rc 1).
+    * `trackB_probes/fixctl.py` runs 4 IR mutants against the new fixture: a
+      different module, control/target swapped, alloc after flag, and a seed
+      `cqrt_free`. **All 4 are caught**, and the unmutated module passes every
+      prefix.
+  * Stage 2b is not re-run per row by the matrix runner. The row-30 and row-31
+    accepts measured STRICT `0 violation(s)` by hand (§1).
 
 ## 7. NOT tested here (belongs to the merge gate)
 

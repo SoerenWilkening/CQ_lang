@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 720 maintained source files, 5918 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 720 maintained source files, 5928 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9229 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7110 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7130 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5305 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `tools/free_pairing_check.py` — 3423 physical lines
@@ -43,7 +43,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1099 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1089 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1092 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -80,6 +80,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c` — 491 physical lines
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 488 physical lines
+- `tests/e2e/railbank_stale_matrix.c` — 482 physical lines
 - `tools/gen_templates.py` — 473 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
 - `tools/record_census/census_common.py` — 468 physical lines
@@ -93,7 +94,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
-- `tests/e2e/railbank_stale_matrix.c` — 427 physical lines
 - `ir-pass/src/RegionTreeDetect.cpp` — 425 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `ir-pass/src/SelectMergeEmit.cpp` — 412 physical lines
@@ -142,7 +142,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1089 lines)
+### `ir-pass/src/ArithLowering.cpp` (1092 lines)
 
 - `ir-pass/src/ArithLowering.cpp:49` — `promote`
 - `ir-pass/src/ArithLowering.cpp:105` — `negateClassicalImmediate`
@@ -460,7 +460,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7110 lines)
+### `ir-pass/src/LoopLowering.cpp` (7130 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -492,40 +492,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:1873` — `emitBreakForward`
 - `ir-pass/src/LoopLowering.cpp:2333` — `tryBreak`
 - `ir-pass/src/LoopLowering.cpp:2542` — `tryCaseA`
-- `ir-pass/src/LoopLowering.cpp:2913` — `markIfIterationLocal`
-- `ir-pass/src/LoopLowering.cpp:2988` — `loopHasInPlaceRailStructure`
-- `ir-pass/src/LoopLowering.cpp:3034` — `collapseRailPhisIn`
-- `ir-pass/src/LoopLowering.cpp:3645` — `commitOutOfLoopInPlaceOps`
-- `ir-pass/src/LoopLowering.cpp:3856` — `measureOwnedInvariantRail`
-- `ir-pass/src/LoopLowering.cpp:3908` — `exitDischargeObligations`
-- `ir-pass/src/LoopLowering.cpp:3926` — `allUsersInside`
-- `ir-pass/src/LoopLowering.cpp:3935` — `recordExitDischargeObligation`
-- `ir-pass/src/LoopLowering.cpp:3943` — `invariantRegisterRootsImpl`
-- `ir-pass/src/LoopLowering.cpp:4330` — `invariantRegisterRoots`
-- `ir-pass/src/LoopLowering.cpp:4370` — `railLocalQualifies`
-- `ir-pass/src/LoopLowering.cpp:4508` — `markIfRailLocal`
-- `ir-pass/src/LoopLowering.cpp:4552` — `recordRound1RailGrant`
-- `ir-pass/src/LoopLowering.cpp:4564` — `collapseFlattenedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:4962` — `taintedAncestryReaches`
-- `ir-pass/src/LoopLowering.cpp:4993` — `railIsInterior`
-- `ir-pass/src/LoopLowering.cpp:5099` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5220` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5357` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5362` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5369` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5495` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5517` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5528` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:5652` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:5978` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6047` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6102` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6171` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6191` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6355` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6502` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:6773` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:6966` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:2933` — `markIfIterationLocal`
+- `ir-pass/src/LoopLowering.cpp:3008` — `loopHasInPlaceRailStructure`
+- `ir-pass/src/LoopLowering.cpp:3054` — `collapseRailPhisIn`
+- `ir-pass/src/LoopLowering.cpp:3665` — `commitOutOfLoopInPlaceOps`
+- `ir-pass/src/LoopLowering.cpp:3876` — `measureOwnedInvariantRail`
+- `ir-pass/src/LoopLowering.cpp:3928` — `exitDischargeObligations`
+- `ir-pass/src/LoopLowering.cpp:3946` — `allUsersInside`
+- `ir-pass/src/LoopLowering.cpp:3955` — `recordExitDischargeObligation`
+- `ir-pass/src/LoopLowering.cpp:3963` — `invariantRegisterRootsImpl`
+- `ir-pass/src/LoopLowering.cpp:4350` — `invariantRegisterRoots`
+- `ir-pass/src/LoopLowering.cpp:4390` — `railLocalQualifies`
+- `ir-pass/src/LoopLowering.cpp:4528` — `markIfRailLocal`
+- `ir-pass/src/LoopLowering.cpp:4572` — `recordRound1RailGrant`
+- `ir-pass/src/LoopLowering.cpp:4584` — `collapseFlattenedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:4982` — `taintedAncestryReaches`
+- `ir-pass/src/LoopLowering.cpp:5013` — `railIsInterior`
+- `ir-pass/src/LoopLowering.cpp:5119` — `mintsOutOfPlaceTemplateRail`
+- `ir-pass/src/LoopLowering.cpp:5240` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:5377` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:5382` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:5389` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:5515` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:5537` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:5548` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:5672` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:5998` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6067` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6122` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6191` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6211` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6375` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6522` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:6793` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:6986` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -4185,67 +4185,77 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:480` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:490` — `main`
 
-### `tests/e2e/railbank_stale_matrix.c` (427 lines)
+### `tests/e2e/railbank_stale_matrix.c` (482 lines)
 
-- `tests/e2e/railbank_stale_matrix.c:58` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:66` — `main`
-- `tests/e2e/railbank_stale_matrix.c:70` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:79` — `main`
-- `tests/e2e/railbank_stale_matrix.c:83` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:90` — `main`
-- `tests/e2e/railbank_stale_matrix.c:94` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:102` — `main`
-- `tests/e2e/railbank_stale_matrix.c:106` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:114` — `main`
-- `tests/e2e/railbank_stale_matrix.c:118` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:127` — `main`
-- `tests/e2e/railbank_stale_matrix.c:131` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:138` — `main`
-- `tests/e2e/railbank_stale_matrix.c:142` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:150` — `main`
-- `tests/e2e/railbank_stale_matrix.c:154` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:162` — `main`
-- `tests/e2e/railbank_stale_matrix.c:166` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:176` — `main`
-- `tests/e2e/railbank_stale_matrix.c:180` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:189` — `main`
-- `tests/e2e/railbank_stale_matrix.c:193` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:202` — `main`
-- `tests/e2e/railbank_stale_matrix.c:206` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:216` — `main`
-- `tests/e2e/railbank_stale_matrix.c:220` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:229` — `main`
-- `tests/e2e/railbank_stale_matrix.c:233` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:242` — `main`
-- `tests/e2e/railbank_stale_matrix.c:246` — `main`
-- `tests/e2e/railbank_stale_matrix.c:263` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:271` — `main`
-- `tests/e2e/railbank_stale_matrix.c:275` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:283` — `main`
-- `tests/e2e/railbank_stale_matrix.c:287` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:294` — `main`
-- `tests/e2e/railbank_stale_matrix.c:298` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:307` — `main`
-- `tests/e2e/railbank_stale_matrix.c:311` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:318` — `main`
-- `tests/e2e/railbank_stale_matrix.c:322` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:330` — `main`
-- `tests/e2e/railbank_stale_matrix.c:334` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:340` — `main`
-- `tests/e2e/railbank_stale_matrix.c:344` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:354` — `main`
-- `tests/e2e/railbank_stale_matrix.c:358` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:367` — `main`
-- `tests/e2e/railbank_stale_matrix.c:371` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:380` — `main`
-- `tests/e2e/railbank_stale_matrix.c:384` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:391` — `main`
-- `tests/e2e/railbank_stale_matrix.c:395` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:402` — `main`
-- `tests/e2e/railbank_stale_matrix.c:406` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:413` — `main`
-- `tests/e2e/railbank_stale_matrix.c:417` — `slice`
-- `tests/e2e/railbank_stale_matrix.c:423` — `main`
+- `tests/e2e/railbank_stale_matrix.c:63` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:71` — `main`
+- `tests/e2e/railbank_stale_matrix.c:75` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:84` — `main`
+- `tests/e2e/railbank_stale_matrix.c:88` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:95` — `main`
+- `tests/e2e/railbank_stale_matrix.c:99` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:107` — `main`
+- `tests/e2e/railbank_stale_matrix.c:111` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:119` — `main`
+- `tests/e2e/railbank_stale_matrix.c:123` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:132` — `main`
+- `tests/e2e/railbank_stale_matrix.c:136` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:143` — `main`
+- `tests/e2e/railbank_stale_matrix.c:147` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:155` — `main`
+- `tests/e2e/railbank_stale_matrix.c:159` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:167` — `main`
+- `tests/e2e/railbank_stale_matrix.c:171` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:181` — `main`
+- `tests/e2e/railbank_stale_matrix.c:185` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:194` — `main`
+- `tests/e2e/railbank_stale_matrix.c:198` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:207` — `main`
+- `tests/e2e/railbank_stale_matrix.c:211` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:221` — `main`
+- `tests/e2e/railbank_stale_matrix.c:225` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:234` — `main`
+- `tests/e2e/railbank_stale_matrix.c:238` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:247` — `main`
+- `tests/e2e/railbank_stale_matrix.c:251` — `main`
+- `tests/e2e/railbank_stale_matrix.c:268` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:276` — `main`
+- `tests/e2e/railbank_stale_matrix.c:280` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:288` — `main`
+- `tests/e2e/railbank_stale_matrix.c:292` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:299` — `main`
+- `tests/e2e/railbank_stale_matrix.c:303` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:312` — `main`
+- `tests/e2e/railbank_stale_matrix.c:316` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:323` — `main`
+- `tests/e2e/railbank_stale_matrix.c:327` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:335` — `main`
+- `tests/e2e/railbank_stale_matrix.c:339` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:345` — `main`
+- `tests/e2e/railbank_stale_matrix.c:349` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:359` — `main`
+- `tests/e2e/railbank_stale_matrix.c:363` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:372` — `main`
+- `tests/e2e/railbank_stale_matrix.c:376` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:385` — `main`
+- `tests/e2e/railbank_stale_matrix.c:389` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:396` — `main`
+- `tests/e2e/railbank_stale_matrix.c:400` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:407` — `main`
+- `tests/e2e/railbank_stale_matrix.c:411` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:418` — `main`
+- `tests/e2e/railbank_stale_matrix.c:422` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:428` — `main`
+- `tests/e2e/railbank_stale_matrix.c:432` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:440` — `main`
+- `tests/e2e/railbank_stale_matrix.c:444` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:450` — `main`
+- `tests/e2e/railbank_stale_matrix.c:454` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:458` — `main`
+- `tests/e2e/railbank_stale_matrix.c:462` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:470` — `main`
+- `tests/e2e/railbank_stale_matrix.c:474` — `slice`
+- `tests/e2e/railbank_stale_matrix.c:478` — `main`
 
 ### `tests/e2e/run_railbank_dynamic_matrix.py` (150 lines)
 

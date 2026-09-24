@@ -73,8 +73,16 @@ ROWS = [
      "GREEN: the xdu2.4 PASS-H emptied-arm prep (store value = select)"),
     (32, "FIXED_BOOL_PERCELL", "s32_fixed_bool_percell.bank", True, None,
      "GREEN: the capability at _Bool cells -- the hop must peel the i1->i8 storage cast to find the seed"),
+    (33, "RUNTIME_DTZB_FIXED_TRIP_XOR", "e1_bank_dtzb_loop_xor.bank", False, MUXPHI,
+     "review round-1 probe e1_bank: fixed-trip (unroll disabled) in-place xor loop on the parked rail; held by tryCaseA's CLOSURE refusing the bank store"),
+    (40, "TWIN_OF_28", "t28_rt_percell_sibling.twin", True, None, "hand-unrolled n=3 twin of 28"),
+    (41, "TWIN_OF_29", "t29_rt_percell.twin", True, None, "hand-unrolled n=3 twin of 29"),
+    (42, "TWIN_OF_31", "t31_passH.twin", True, None,
+     "hand-unrolled n=3 twin of 31 (Z made quantum by an identity Ry(0), dropped before comparing)"),
+    (43, "TWIN_OF_32", "t32_bool_percell.twin", True, None, "hand-unrolled twin of 32"),
 ]
-TWINS = [(20, 21), (22, 23), (24, 25), (26, 27)]
+TWINS = [(20, 21), (22, 23), (24, 25), (26, 27), (28, 40), (29, 41), (31, 42), (32, 43)]
+DROPPED = {42: ["cqrt_ry_i32(h0, 0x0p+0)"]}
 
 hdr = """/* railbank_stale_matrix.c — bd xdu2.1 (Track B, session 2026-09-24-railbank-parallel).
  *
@@ -116,7 +124,7 @@ doc = {
     "_comment": "Expectations for railbank_stale_matrix.c (bd xdu2.1, Track B). "
                 "Decline rows pin the wall that fires today; twin pairs are linked and byte-compared.",
     "cases": cases,
-    "twins": [{"rolled": a, "twin": b, "argv": [], "dropped_twin_lines": []} for a, b in TWINS],
+    "twins": [{"rolled": a, "twin": b, "argv": [], "dropped_twin_lines": DROPPED.get(b, [])} for a, b in TWINS],
 }
 (WT / "tests/e2e/railbank_stale_matrix.c.cases.json").write_text(json.dumps(doc, indent=2) + "\n")
 print(len(ROWS), "rows")

@@ -120,6 +120,26 @@
     "32": {
       "accept": true,
       "diagnostic": null
+    },
+    "33": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "40": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "41": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "42": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "43": {
+      "accept": true,
+      "diagnostic": null
     }
   },
   "twins": [
@@ -144,6 +164,32 @@
     {
       "rolled": 26,
       "twin": 27,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 28,
+      "twin": 40,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 29,
+      "twin": 41,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 31,
+      "twin": 42,
+      "argv": [],
+      "dropped_twin_lines": [
+        "cqrt_ry_i32(h0, 0x0p+0)"
+      ]
+    },
+    {
+      "rolled": 32,
+      "twin": 43,
       "argv": [],
       "dropped_twin_lines": []
     }
