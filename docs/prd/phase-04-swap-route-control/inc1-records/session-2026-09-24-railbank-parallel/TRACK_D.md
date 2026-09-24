@@ -47,7 +47,8 @@ by definition of the constant. Only `ConstantInt` (not `undef`/`poison`/`Constan
 * The runtime D1 (uninitialised VLA) case keeps the relocated `store i32 0`: it is
   NOT a no-op there, it is what makes the measure read the 0 that D1 says the cell holds.
 
-`declineNonHandleBankStores` is untouched. Since no C row reaches it any more, a new
+`declineNonHandleBankStores` is untouched. Since no MATRIX ROW of this change reached it
+any more (⚠ corrected in §13: a C program still does — q45, now matrix row 24), a new
 IR pin was built: `railbank_deadcell_reject_backstop_literal.ll` (the row-21 module
 with the `c[]` body hand-rewritten to store `select i1 true, i32 0, i32 %theta` — a
 constant-condition select the promoter does not own: no in-loop load, so B8 leaves it
@@ -213,7 +214,8 @@ It flagged only `store i32 0`; a NON-ZERO integer literal, `undef` or `poison` s
 into a marked bank, and any bank alloca / gep / function name containing `-` or `$`,
 were invisible. `literal_zero_bank_stores` is replaced by `literal_bank_stores`: it
 flags ANY non-SSA stored value (any integer literal at any width, `true`/`false`,
-`undef`, `poison`, a constant expression) whose address resolves through
+`undef`, `poison`, a constant expression — ⚠ a comma-containing one only since §13's
+fix) whose address resolves through
 `getelementptr` hops to a `!cq.railbank` alloca. Local names use LLVM's full unquoted
 class `[-\w.$]+` or a quoted name; function names likewise; an unparsed `define` is a
 loud failure. Controls (pure Python, run by hand): **50 controls, 0 failures** —
@@ -239,3 +241,44 @@ ROUTE into it (a conditional store whose condition folds to constant-true). What
 fence closes xdu2.1's class for the unconditional spelling closes this route too,
 because after PASS H the two are the same IR; the xdu2.1 fix should carry this probe
 as a customer.
+
+## 13. Orchestrator Rule-13 round 2 on `1ca78174` — `CLEAR-WITH-ITEMS`, 0 P1/P2
+
+**P3-3 (fixed): §12's "flags a constant expression" was FALSE for any constant
+expression containing a comma** (`getelementptr (…, …)`, `add (…, …)`): the operand
+regex `[^,]*` stopped at the first comma, the line no longer matched, and the store
+was silently skipped. The operand is now split from the address by anchoring on the
+LAST `, ptr %<name>` of the store line (a constant can never name a `%` local, so the
+last such anchor is the address). Controls: **54, 0 failures** (28 null modules
+unchanged, plus 3 comma-ConstantExpr positives — `ptrtoint(getelementptr(…,…))`,
+`add(…,…)`, and an atomic `add(…,…)` into a quoted gep named `%"q, r"` — and an
+SSA-with-`!tbaa`-tail negative). RED CHECK: the same 54 controls against the
+`1ca78174` runner fail exactly the 3 comma positives (3 failures), so the controls
+witness the fix.
+
+**P3-4 (fixed, comment only): the PASS H "a FACT, not a prediction" claim is now
+stated as CONDITIONAL ON THE SEED.** For a zero-initialised bank the zero is what C
+says; for an UNINITIALISED bank (fixed without initializer, or any VLA) it is owner
+ruling D1, and the comment now cites D1 and says the conjunct falls with it for
+uninitialised banks. The `undef`-condition refusal is reconciled in one sentence (D1
+chose the seed once, by ruling; an `undef` condition would be a second, unruled
+choice). Rebuilt `cq-opt` is bit-identical (`e36d9df4bb18ce1b`) — a comment-only null
+control.
+
+**Matrix row 24 (reviewer probe q45) — the BACKSTOP REACHED FROM C.** My §2 sentence
+"no C row reaches it any more" was true only of THIS change's matrix rows. q45 compares
+the cell with a `volatile const` local: not a constant when the promoter runs (PASS H
+keeps the select, the carve MARKS the bank), then a later stage folds the volatile
+const to 0 and the PredMux residue fold (the Grover `b[]` in the same function) makes
+the select a literal — `declineNonHandleBankStores` declines `cq rail bank: a cell
+parks a value that is not a rail handle`. Pinned as a decline row; it is an
+over-decline of well-defined C (asking the constant question after the late fold would
+remove it), left deliberately and noted in the row's comment.
+
+**Round-2 residuals, recorded (no code; the orchestrator files beads):**
+* **q74/q75** — the `store (select (icmp c[i]==0), 0, t)` spelling: PASS F folds the
+  compare but deliberately refuses to fold a non-constant-operand select, so the
+  module declines `classical-condition select`; the flat twin compiles. Pre-existing.
+* **q45** — above; row 24.
+* **q43/q44** — the `switch` spelling of the dead cell still declines
+  `classical-condition phi` (PASS H only folds the emptied if-without-else diamond).

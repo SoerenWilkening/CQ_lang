@@ -63,11 +63,28 @@ _GEP = re.compile(r"^\s*%(" + _NAME + r") = getelementptr [^\n]*?ptr %(" + _NAME
 # ANY non-SSA stored value — an integer literal of any value and width, `true`/
 # `false`, `undef`, `poison`, a constant expression — is not a rail handle.
 # `atomic`/`volatile` and a missing `, align` must not hide it (Rule-13 review
-# P3-1). A store through a phi/select of addresses is NOT resolved here —
-# `declineNonHandleBankStores` (getUnderlyingObject) is the compiler's real gate.
-_LITERAL_STORE = re.compile(
-    r"^\s*store (?:atomic )?(?:volatile )?i\d+ ([^%\s,][^,]*), ptr %(" + _NAME + r")(?=[\s,]|$)",
-    re.M)
+# P3-1). The operand is split from the address by anchoring on the LAST
+# `, ptr %<name>` of the line, never by the first comma: a constant expression
+# (`getelementptr (…, …)`, `add (…, …)`) contains commas of its own (Rule-13
+# round 2, P3-3), and a constant can never name a `%` local, so the last such
+# anchor is the address. A store through a phi/select of addresses is NOT
+# resolved here — `declineNonHandleBankStores` (getUnderlyingObject) is the
+# compiler's real gate.
+_STORE_HEAD = re.compile(r"^\s*store (?:atomic )?(?:volatile )?i\d+ ")
+_STORE_ADDR = re.compile(r", ptr %(" + _NAME + r")(?=[\s,]|$)")
+
+
+def _stores(body: str):
+    """Yield (stored operand text, address name) for every integer store."""
+    for line in body.splitlines():
+        head = _STORE_HEAD.match(line)
+        if not head:
+            continue
+        addrs = list(_STORE_ADDR.finditer(line, head.end()))
+        if not addrs:
+            continue  # a store to a global / non-local address: never a bank
+        last = addrs[-1]
+        yield line[head.end():last.start()].strip(), last.group(1)
 
 
 def literal_bank_stores(lowered_text: str) -> list[tuple[str, str, str]]:
@@ -94,7 +111,9 @@ def literal_bank_stores(lowered_text: str) -> list[tuple[str, str, str]]:
         body = lowered_text[start:end]
         banks = set(_BANK_ALLOCA.findall(body))
         base = dict(_GEP.findall(body))
-        for val, ptr in _LITERAL_STORE.findall(body):
+        for val, ptr in _stores(body):
+            if val.startswith("%"):
+                continue  # an SSA value: the compiler's postcondition asks if it is a handle
             p, hops = ptr, 0
             while p in base and hops < 64:
                 p, hops = base[p], hops + 1

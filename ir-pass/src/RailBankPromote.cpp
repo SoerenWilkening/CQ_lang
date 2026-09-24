@@ -974,7 +974,16 @@ void applyBank(BankPlan &Plan, WidthDispatch &wd) {
     // OWN forwarding (PASS B: the cell load becomes the zero seed) and its own
     // fold (PASS F) can make the arm's condition a LITERAL — `if (c[i] != 0)
     // c[i] = t;` over a zero seed is `icmp eq i32 0, 0` = `true` — and that is a
-    // FACT at this point, not a prediction: `Cond` IS the folded constant. A
+    // FACT at this point, not a prediction: `Cond` IS the folded constant.
+    // ⚠ A FACT CONDITIONAL ON THE SEED, AND FOR AN UNINITIALISED BANK THE SEED IS
+    // A RULING, NOT THE SOURCE (L7). With a whole-object zero initializer the
+    // zero is what C says the cell holds. With NO initializer — a fixed bank
+    // declared without one, or any runtime VLA — C says the cell is
+    // indeterminate, and the zero is OWNER RULING D1 (read an uninitialised
+    // cell as 0; disclosure at `railBankCarveVerdictImpl`'s D1 block and
+    // `IMPL_A.md` §6, composing with bd `z9t1`). This fold resolves the edge
+    // D1's zero selects; it adds no ruling of its own, and if D1 is ever
+    // withdrawn this conjunct must fall with it for uninitialised banks. A
     // `select <const>, …` was the pre-fix spelling, and it was never an honest
     // output: nothing downstream of this stage lowers a constant-condition
     // select over tainted data (it declined `classical-condition select`), and in
@@ -998,7 +1007,9 @@ void applyBank(BankPlan &Plan, WidthDispatch &wd) {
     //     is unconditional, and the bank is the ordinary unconditional-prep bank.
     // ⚠ ONLY a `ConstantInt`. An `undef`/`poison` or `ConstantExpr` condition is
     // NOT resolved (it keeps the select and its existing owner): picking an edge
-    // for `undef` is a choice, not a fact, and nothing here needs it.
+    // for `undef` is a choice, not a fact, and nothing here needs it. (That is
+    // not in tension with the D1 paragraph above: D1 chose the SEED once, by
+    // owner ruling; an `undef` CONDITION would be a second, unruled choice.)
     // ⚠ This does NOT retire `declineNonHandleBankStores`: that postcondition
     // still guards every MARKED bank against a literal arriving by any other
     // composition. This fold only stops the promoter from being one of them.

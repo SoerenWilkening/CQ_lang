@@ -42,6 +42,7 @@
 #define CASE_INARM_DEAD_FIXED 21
 #define CASE_INARM_DEAD_RUNTIME 22
 #define CASE_INARM_DEAD_FLAT 23
+#define CASE_LATE_CONST_BACKSTOP 24
 
 #ifndef CASE
 #define CASE CASE_DEAD_FIXED
@@ -452,4 +453,30 @@ __attribute__((noinline)) static int slice(int k) {
     return k + cq_measure(c0) + cq_measure(c1) + cq_measure(c2);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc); }
+
+#elif CASE == CASE_LATE_CONST_BACKSTOP
+/* THE BACKSTOP, REACHED FROM C (Rule-13 round 2, reviewer probe q45). The
+ * condition compares the cell with a `volatile const` local, so it is NOT a
+ * constant when the promoter runs (PASS H keeps `select c, t, 0`, the carve
+ * MARKS the bank); a later stage folds the volatile const to 0, and the PredMux
+ * residue fold that the Grover `b[]` triggers in the same function then reduces
+ * the select to the literal. Only `declineNonHandleBankStores` stands between
+ * that and a parked handle 0 — this row pins its string from C. It is an
+ * over-decline of well-defined C (every c[i] stays 0), deliberately left:
+ * resolving it means asking the constant question AFTER the late fold, not in
+ * the promoter. */
+__attribute__((noinline)) static void run_bank(int k) {
+    int p[3] = {3, 4, 5}; int z[3] = {2, 3, 4};
+    bool b[3] = {0}; int P = 0; int Z = 12 + k - k;
+    for (int i = 0; i < 3; ++i) {
+        if (Z >= z[i]) b[i] = cq_theta(b[i], 0.5);
+        if (b[i]) { P += p[i]; Z -= z[i]; }
+    }
+    int c[3] = {0}; volatile int zv = 0;
+    for (int i = 0; i < 3; ++i) { int t = cq_theta(c[i], 0.25); int zz = zv; if (c[i] != zz) c[i] = t; }
+    for (int i = 0; i < 3; ++i) (void)cq_measure(b[i]);
+    for (int i = 0; i < 3; ++i) (void)cq_measure(c[i]);
+    (void)cq_measure(P); (void)cq_measure(Z);
+}
+int main(int argc, char **argv) { (void)argv; run_bank(argc); return 0; }
 #endif

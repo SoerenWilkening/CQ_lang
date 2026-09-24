@@ -1,5 +1,5 @@
 {
-  "_comment": "Expectations for railbank_deadcell_matrix.c (bd test_C_libtooling-xdu2.9), read by run_railbank_dynamic_matrix.py. A dead cell's object is NOT a rail bank after the fix, so those rows set require_railbank=false; rows whose b[] Grover bank survives keep the default. Twins pair each rolled dead-cell row with its ARRAY-FREE ROLLED twin (the flat twins 2/4/15 accept too, but uncompute the dead preparations LIFO at function end instead of per trip — a reorder on disjoint rails, bank-independent and identical on the pre-fix oracle; see TRACK_D.md). Rows 11-13 are neighbours whose store is NOT provably dead and keep their loud declines; rows 21-22 are the IN-ARM dead-prep sibling, a measured residual over-decline outside xdu2.9's scope (the flat twin, row 23, compiles) with a retirement trigger in the source.",
+  "_comment": "Expectations for railbank_deadcell_matrix.c (bd test_C_libtooling-xdu2.9), read by run_railbank_dynamic_matrix.py. A dead cell's object is NOT a rail bank after the fix, so those rows set require_railbank=false; rows whose b[] Grover bank survives keep the default. Twins pair each rolled dead-cell row with its ARRAY-FREE ROLLED twin (the flat twins 2/4/15 accept too, but uncompute the dead preparations LIFO at function end instead of per trip — a reorder on disjoint rails, bank-independent and identical on the pre-fix oracle; see TRACK_D.md). Rows 11-13 are neighbours whose store is NOT provably dead and keep their loud declines; rows 21-22 are the IN-ARM dead-prep sibling, a measured residual over-decline outside xdu2.9's scope (the flat twin, row 23, compiles) with a retirement trigger in the source; row 24 pins the literal-cell POSTCONDITION from C (a volatile-const condition folded AFTER the promoter).",
   "cases": {
     "1":  {"accept": true,  "diagnostic": null, "require_railbank": false},
     "2":  {"accept": true,  "diagnostic": null, "require_railbank": false},
@@ -27,7 +27,8 @@
     "20": {"accept": true,  "diagnostic": null, "require_railbank": false},
     "21": {"accept": false, "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"},
     "22": {"accept": false, "diagnostic": "cq taint escape: tainted value stored to memory"},
-    "23": {"accept": true,  "diagnostic": null, "require_railbank": false}
+    "23": {"accept": true,  "diagnostic": null, "require_railbank": false},
+    "24": {"accept": false, "diagnostic": "cq rail bank: a cell parks a value that is not a rail handle"}
   },
   "twins": [
     {"rolled": 1,  "twin": 16, "argv": ["a", "b"], "dropped_twin_lines": []},
