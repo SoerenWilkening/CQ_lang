@@ -205,3 +205,37 @@ Not attacked by the round: multi-function modules (bd `1yeu`), and
 `getUnderlyingObject` through a φ/select of pointers in the postcondition.
 ⚠ One in-track round is NOT the Rule-13 budget CLAUDE.md asks for on a core change;
 the merge gate owes its own.
+
+## 12. Orchestrator Rule-13 round 1 on `665cb4a7` — `CLEAR-WITH-ITEMS`, 0 P1/P2
+
+**P3 (fixed in the follow-up commit): the scoped runner check was still too narrow.**
+It flagged only `store i32 0`; a NON-ZERO integer literal, `undef` or `poison` stored
+into a marked bank, and any bank alloca / gep / function name containing `-` or `$`,
+were invisible. `literal_zero_bank_stores` is replaced by `literal_bank_stores`: it
+flags ANY non-SSA stored value (any integer literal at any width, `true`/`false`,
+`undef`, `poison`, a constant expression) whose address resolves through
+`getelementptr` hops to a `!cq.railbank` alloca. Local names use LLVM's full unquoted
+class `[-\w.$]+` or a quoted name; function names likewise; an unparsed `define` is a
+loud failure. Controls (pure Python, run by hand): **50 controls, 0 failures** —
+28 NULL modules (every lowered ACCEPT of both matrices in this worktree: 18 deadcell +
+10 dynamic, all non-empty, 16 carrying a real `!cq.railbank`) → 0 hits each; 22
+positive/boundary controls → literal 0 (fixed and runtime), 5, −1, `undef`, `poison`, a
+constant expression, volatile, atomic, no-align, renamed gep, gep names with `-`/`$`/
+quotes, bank allocas named with `-`/`$`/quotes, quoted and `-` function names, a direct
+store to the alloca → 1 hit each; an SSA handle and the dead `c[]` classical 0 into a
+non-bank → 0. Still NOT resolved (by design): a store through a φ/select of addresses.
+Only two rail-bank matrices exist in this worktree (dynamic, deadcell); the third
+track's matrix is not on this branch and was not run.
+
+**Recorded, no code (reviewer probe `p13_taken_outer_rail.c`).** An ALWAYS-TAKEN arm
+(`if (c[i] == 0) c[i] = r;`) that parks a rail `r` minted OUTSIDE the loop into every
+cell now compiles: after PASS H resolves the constant condition the store is
+unconditional, so the same handle is parked in all three cells and measured three
+times (`h0` measured 3×). It matches the UNCONDITIONAL twin (`c[i] = r;` in the loop),
+which the pre-fix oracle already accepts — so the defect class is PRE-EXISTING (bd
+xdu2.1's class: one rail aliased into several cells), not introduced here. ⚠ But
+"pre-existing" is true of the defect and FALSE of its population: this change adds a
+ROUTE into it (a conditional store whose condition folds to constant-true). Whatever
+fence closes xdu2.1's class for the unconditional spelling closes this route too,
+because after PASS H the two are the same IR; the xdu2.1 fix should carry this probe
+as a customer.

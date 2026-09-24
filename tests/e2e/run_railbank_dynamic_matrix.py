@@ -14,9 +14,10 @@ registered as separate ctest entries without editing this runner:
 
 An accept row must lower at exit 0, carry ``!cq.railbank`` (unless it is a
 twin's unrolled side or sets ``require_railbank: false``), emit no
-``cqrt_qram_*`` and never park literal handle 0 in a ``!cq.railbank`` object
-(resolved through getelementptr hops; a classical store into a non-bank object
-is not a parked handle — see ``literal_zero_bank_stores``).  A decline row must exit
+``cqrt_qram_*`` and never park a literal (any integer value, ``undef``,
+``poison``) in a ``!cq.railbank`` object (resolved through getelementptr hops;
+a classical store into a non-bank object is not a parked handle — see
+``literal_bank_stores``).  A decline row must exit
 non-zero with ``diagnostic`` in stderr.  A twin pair is LINKED, run, and its
 rolled trace must be byte-identical to the hand-unrolled twin's after exactly
 the listed identity lines are dropped (CLAUDE.md §1 Witnesses).
@@ -53,18 +54,29 @@ def load_expectations(source: str) -> tuple[dict[int, dict], list[dict]]:
     return cases, twins
 
 
-_DEFINE = re.compile(r'^define [^@]*@("[^"]*"|[\w.$]+)\(', re.M)
-_BANK_ALLOCA = re.compile(r"^\s*%([\w.]+) = alloca [^\n]*!cq\.railbank ", re.M)
-_GEP = re.compile(r"^\s*%([\w.]+) = getelementptr [^\n]*?ptr %([\w.]+),", re.M)
-# `atomic`/`volatile` and a missing `, align` must not hide a literal (Rule-13
-# review P3-1); a store through a phi/select of addresses is NOT resolved here —
+_DEFINE = re.compile(r'^define [^@]*@("[^"]*"|[-\w.$]+)\(', re.M)
+# A local name: quoted, or the full unquoted identifier class LLVM prints
+# (`[-a-zA-Z$._0-9]`, Rule-13 orchestrator round 1: `-`/`$` were missed).
+_NAME = r'(?:"[^"]*"|[-\w.$]+)'
+_BANK_ALLOCA = re.compile(r"^\s*%(" + _NAME + r") = alloca [^\n]*!cq\.railbank\b", re.M)
+_GEP = re.compile(r"^\s*%(" + _NAME + r") = getelementptr [^\n]*?ptr %(" + _NAME + r"),", re.M)
+# ANY non-SSA stored value — an integer literal of any value and width, `true`/
+# `false`, `undef`, `poison`, a constant expression — is not a rail handle.
+# `atomic`/`volatile` and a missing `, align` must not hide it (Rule-13 review
+# P3-1). A store through a phi/select of addresses is NOT resolved here —
 # `declineNonHandleBankStores` (getUnderlyingObject) is the compiler's real gate.
-_ZERO_STORE = re.compile(r"^\s*store (?:atomic )?(?:volatile )?i32 0, ptr %([\w.]+)\b", re.M)
+_LITERAL_STORE = re.compile(
+    r"^\s*store (?:atomic )?(?:volatile )?i\d+ ([^%\s,][^,]*), ptr %(" + _NAME + r")(?=[\s,]|$)",
+    re.M)
 
 
-def literal_zero_bank_stores(lowered_text: str) -> list[tuple[str, str]]:
-    """Every `store i32 0` whose address resolves (through getelementptr hops)
-    to an alloca carrying `!cq.railbank` — handle 0 parked in a RAIL BANK.
+def literal_bank_stores(lowered_text: str) -> list[tuple[str, str, str]]:
+    """Every store of a NON-SSA value (a literal, `undef`, `poison`, a constant
+    expression) whose address resolves (through getelementptr hops) to an alloca
+    carrying `!cq.railbank`. Returns (function, stored value, pointer name).
+
+    A literal in a rail bank is never a handle: handle 0 is a live rail in this
+    runtime, and any other literal names a rail nobody minted for that cell.
 
     ⚠ Scoped to the OBJECT, not to the promoter's `%cq.bank.addr` name (bd
     test_C_libtooling-xdu2.9). The name is minted for every relocated cell
@@ -73,21 +85,21 @@ def literal_zero_bank_stores(lowered_text: str) -> list[tuple[str, str]]:
     carried the name too; and a literal reaching a bank through any other
     address spelling carried none. Names are function-local, so each
     function body is resolved separately."""
-    hits: list[tuple[str, str]] = []
+    hits: list[tuple[str, str, str]] = []
     starts = [(m.start(), m.group(1)) for m in _DEFINE.finditer(lowered_text)]
     if len(starts) != len(re.findall(r"^define ", lowered_text, re.M)):
-        raise SystemExit("literal_zero_bank_stores: a `define` line was not parsed")
+        raise SystemExit("literal_bank_stores: a `define` line was not parsed")
     for idx, (start, fn) in enumerate(starts):
         end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lowered_text)
         body = lowered_text[start:end]
         banks = set(_BANK_ALLOCA.findall(body))
         base = dict(_GEP.findall(body))
-        for ptr in _ZERO_STORE.findall(body):
+        for val, ptr in _LITERAL_STORE.findall(body):
             p, hops = ptr, 0
             while p in base and hops < 64:
                 p, hops = base[p], hops + 1
             if p in banks:
-                hits.append((fn, ptr))
+                hits.append((fn, val.strip(), ptr))
     return hits
 
 
@@ -112,9 +124,9 @@ def check_case(case_id: int, spec: dict, twin_sides: set[int],
             errs.append(f"CASE={case_id}: accepted bank lacks !cq.railbank")
         if "cqrt_qram_" in lowered_text:
             errs.append(f"CASE={case_id}: rail bank emitted cqrt_qram_*")
-        for fn, ptr in literal_zero_bank_stores(lowered_text):
-            errs.append(f"CASE={case_id}: rail bank stored literal handle 0 "
-                        f"(@{fn}: store i32 0, ptr %{ptr})")
+        for fn, val, ptr in literal_bank_stores(lowered_text):
+            errs.append(f"CASE={case_id}: rail bank parks a non-handle literal "
+                        f"(@{fn}: store {val} -> %{ptr})")
     else:
         if lower_result.returncode == 0:
             errs.append(f"CASE={case_id}: expected a loud decline")
