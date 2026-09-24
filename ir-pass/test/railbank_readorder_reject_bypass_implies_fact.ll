@@ -8,6 +8,10 @@
 ;
 ; RUN: env CQ_CTRL_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s --implicit-check-not='railbank [Bank]'
+; The shared string `kMsgBankTotality` is emitted by six C6 sub-clauses, so the
+; env-gated anchor below is what pins WHICH one fired: the read-order walk
+; (Rule-13 round 1, P3-4). Without it this fixture was pinned only by mutant M1.
+; CHECK: CQ_CTRL_DBG: railbank C6 read-order refused:
 ; CHECK: cq rail bank: array has cells no iteration writes
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"

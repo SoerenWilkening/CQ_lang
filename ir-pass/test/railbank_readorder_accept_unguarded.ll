@@ -21,7 +21,8 @@
 ; RUN: env CQ_CTRL_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
 ; RUN:     > /dev/null 2> %t.dbg
 ; RUN: %filecheck --check-prefix=DBG --input-file=%t.dbg %s \
-; RUN:     --implicit-check-not='railbank [BankRaw]' --implicit-check-not='cq rail bank:'
+; RUN:     --implicit-check-not='railbank [BankRaw]' --implicit-check-not='cq rail bank:' \
+; RUN:     --implicit-check-not='C6 read-order refused'
 ;
 ; IR:      %b = alloca i32, i64 %ext, align 16, !cq.railbank
 ; IR:      w:

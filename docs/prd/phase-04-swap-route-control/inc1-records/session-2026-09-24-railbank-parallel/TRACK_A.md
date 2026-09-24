@@ -48,13 +48,37 @@ The walk over-approximates the feasible paths, so "reached" means decline. It ca
 that a real path reaches around `L` into an accept, as long as each pruned edge is really
 infeasible together with the facts. An edge is pruned only when its condition, as an SSA-level
 fact, implies ¬fact. The `undef` half of the closure test is load-bearing: two `icmp ne undef, 0`
-match operand for operand, but each use of `undef` may read differently (pinned, mutant M4). The
-at-most-once half is argued redundant. Every operand's definition dominates the compare that reads
-it. So re-running a definition after a fact edge was taken sends the path back through that
-dominating fact edge before the read. Re-running one after the walk's last pruned edge would
-revisit a walk-reachable block, and by construction the rest of that path does not. It is kept as
-a margin that can only decline, and it is unpinned (M2/M3/M11 MISSED). Its cost is an over-decline
-when a guard's operand is computed inside a preceding classical cycle.
+match operand for operand, but each use of `undef` may read differently (pinned, mutant M4).
+
+### The at-most-once half ("at-most-once" — corrected after Rule-13 round 1, P3-3)
+
+⚠ **The first version of this paragraph was flawed and is withdrawn.** It argued that re-running a
+definition "after the walk's last pruned edge would revisit a walk-reachable block". The source of
+the LAST pruned edge on a path need not be walk-reachable (the walk stops at the first pruned edge),
+so that step did not hold. The corrected argument, as the reviewer framed it (argued, not
+machine-checked):
+
+Let π be an execution from entry to the read that never passes `L`'s header. Let `X` be the set of
+definitions in the closures of the fact `F` and of the pruned-edge conditions, and let τ be the
+point on π just after the last re-execution of any member of `X`.
+1. **F is re-evaluated after τ, with the final values.** Take the prefix of π up to the first
+   execution of the member of `X` that was re-executed last. It executes no `F` compare, because
+   that definition dominates `F`'s compare. Splice it onto π's suffix after τ. The result is a CFG
+   path from entry to the read, so it takes the dominating fact edge, and that edge lies in the
+   suffix. So `F` is evaluated after τ, reads the final values, and holds with the fact's polarity
+   when the read executes.
+2. **The first pruned edge after τ refutes that.** π's suffix after τ still starts inside the walk's
+   reachable set, or the spliced path would contradict "the walk never reached the read". The walk
+   set is closed under unpruned edges and excludes the header, so the suffix leaves it through a
+   pruned edge `B→S`. Take the FIRST such edge. Its source `B` is walk-reachable, and its condition
+   `C_B` reads only final values, because no member of `X` re-executes after τ. So
+   `C_B ⇒ ¬F` holds for these same values, which contradicts step 1.
+
+So no stale name can separate the two compares, and the SSA-level implication applies. Only the
+`undef` hazard remains. The at-most-once check is therefore kept as a margin that can only decline.
+It is unpinned (M2/M3/M11/M17 MISSED by construction). Its cost is an over-decline when a guard's
+operand is computed inside a preceding classical cycle. ⚠ Step 2's "starts inside the walk set"
+sub-step is the least mechanical part of the argument, and a round-2 reviewer should attack it.
 
 ## Red → green (measured)
 
@@ -131,6 +155,91 @@ gives DECLINE C6, a pre-existing restriction: runtime-bank reads must be exact l
 15 mutants: 1 null, 9 DETECTED, 5 MISSED (each with its reason). Harness:
 `scratchpad/mutate.py` (session-local). It rebuilt both targets for every mutant and restored the
 source afterwards; the git diff was checked afterwards.
+
+## Rule-13 round 1 (CLEAR-WITH-ITEMS, 0 P1, 0 P2): the P3 fixes
+
+- **P3-1 (perf, L7): the first spelling was QUADRATIC.** `singleValuedClosure` called the
+  per-instruction reachability walk `instReaches(I, I)` for every closure value of every walked
+  branch and every dominator. The reviewer measured 0.27 s / 0.84 s / 7.72 s at 250 / 1000 / 3000
+  diamonds between the loops, against about 0.2 s on the oracle.
+  - **Fix:** `ReadOrderCtx` computes the in-cycle block set ONCE per query, from `scc_iterator`
+    (`hasCycle()`). It also marks unreached blocks, and memoises the closure verdict per condition.
+    Edge dominance is asked before the closure, so dominators whose edges do not dominate the read
+    (every diamond head) cost no closure walk.
+  - **Measured on a loaded box, min of 3:** perf_3000 is 2.66 s with the predicate and 2.21 s with
+    the predicate short-circuited to `return true` (a temporary mutant build, restored). The rest of
+    that ~2.2 s is the downstream lowering of the ACCEPTED module. The oracle declines it, which is
+    why it takes about 0.6 s there, so oracle time is not the comparable baseline.
+  - No timing test was added. The complexity note on `ReadOrderCtx` is the only guard. The false
+    comment "linear in the edges" in matrix row 3 is corrected.
+  - **Side finding, pre-existing and not read order:** perf_3000 with an explicit
+    `if (n <= 0) return 0;` DECLINES `array has cells no iteration writes` on BOTH the oracle and
+    the subject, with no read-order anchor. So another C6 sub-clause fires, most likely the
+    read-loop SCEV trip equality, whose guard sits 3000 blocks away. Not investigated; it should be
+    filed.
+- **P3-2 (L7):** step (3) of the header no longer says "(the latch)". C6 proves a SINGLE exiting
+  block and an exact BTC. That the exiting block IS the latch is C7(b)'s `WriteIsTotalPerTrip`,
+  which the comment now cites, and read order does not depend on it.
+- **P3-3:** the at-most-once argument is corrected, in the section above and in the
+  `singleValuedClosure` header. The check is kept.
+- **P3-4 (fixture hygiene):** a `CQ_CTRL_DBG: railbank C6 read-order refused: <load>` anchor is added
+  at the read-order decline. It uses the same env lever the carve's caller uses for
+  `railbank [Bank]`, and is byte-neutral when unset.
+  - All 5 `railbank_readorder_reject_*` fixtures CHECK the anchor before the shared string. The
+    accept fixture adds `--implicit-check-not='C6 read-order refused'`.
+  - Verified non-vacuous: the anchor appears 3× per fixture on the subject (the carve is asked 3×)
+    and 0× on the oracle, where FileCheck fails.
+  - ⚠ **L10, instance in this track:** my first run of that check reported `filecheck_rc=0` on the
+    ORACLE too. The `$?` came after a `$(basename …)` substitution, so it was basename's status. The
+    fix captured `rc` immediately, and after it the oracle correctly shows `rc=1`.
+  - **Matrix rows**, using the anchor (each row's `pins` field in the sidecar, which the runner
+    ignores):
+    - 8, 9, 14 pin READ ORDER alone.
+    - 10 is read order AND the SCEV trip clause (`m ≠ n`), doubly fenced, which is why M1 left it
+      declining.
+    - 5 is the SCEV trip clause (`n-1`); the read-order walk is never reached.
+    - 7 is the early-exit write loop failing single-exiting-block/exact-BTC before any read is
+      asked.
+    - 6 is the promoter/C7 partial-write wall.
+- **P3-5, not-reached over-declines, recorded, no code:**
+  - `a21` (reviewer `rt/a21_writeread_mid.c`): write under `k > 0`, read under `k > 1`, fused by
+    `-O1` into an `and i1`-style guard. The walk does not prune it; `isImpliedCondition` on that
+    guard shape was not reached.
+  - `a07` (`rt/a07_k_range.c`): write under `k > 3`, read under `k >= 5 && k < 9`, which `-O1`
+    turns into an unsigned range check (`add` + `icmp ult`). `isImpliedCondition` does not relate
+    the range check to `k > 3`.
+  - Both are valid programs the walk declines. Both are over-declines, not hazards.
+
+### Round-1 mutation matrix (owned tests only; denominator 12 lit + 14-row matrix + 1 twin)
+
+19 mutants. The M0 null was MISSED (correct). 10 DETECTED, 8 MISSED, each with a reason:
+
+| mutant | verdict | killed by / reason |
+|---|---|---|
+| M0 null | MISSED (correct) | — |
+| M1 `return true` | DETECTED | 5 lit declines + matrix rows |
+| M2 walk-edge closure dropped | MISSED | at-most-once half is argued redundant (§ above) |
+| M3 fact closure dropped | MISSED | same |
+| M4 `undef` refusal dropped | DETECTED | `…_reject_undef_condition.ll` |
+| M5 walk enters header | DETECTED | accept fixture + matrix 1, 3, 6, 11, 12, 13 |
+| M6 prune on any implication | DETECTED | 4 lit |
+| M7 facts from non-dominating edges | DETECTED | 5 lit |
+| M8 fact polarity | DETECTED | 4 lit |
+| M9 empty facts ⇒ accept | DETECTED | `…_reject_no_fact.ll` |
+| M10 edge polarity | DETECTED | 4 lit |
+| M11 in-cycle test dropped | MISSED | same as M2 |
+| M12 closure budget dropped | MISSED | cost guard only; the closure is finite with the visited set |
+| M13 same-successor guard | MISSED | equivalent mutant |
+| M14 "reached" ⇒ continue | DETECTED | 4 lit |
+| **M15 memo hit ⇒ `true`** (new) | MISSED | Shadowed. A second query of one condition happens only when a dominating branch whose closure was REFUSED is also walked. To matter, its undef-carrying condition must `isImpliedCondition`-refute a different, single-valued fact. No such pair was constructed, and each fixture's refused condition relates to nothing |
+| **M16 unreached-block def** (new) | MISSED | Only more conservative. A def in an unreachable block never executes, so no value from it flows |
+| **M17 SCC never marks cycles** (new) | MISSED | equivalent to M11 |
+| **M18 anchor dropped** (new) | DETECTED | all 5 decline fixtures (the P3-4 pin working as intended) |
+
+Harness: `scratchpad/trackA/mutateA.py` (its own copy; the shared `scratchpad/mutate.py` was
+overwritten by another track mid-session). It rebuilt both targets per mutant and restored the
+source afterwards. The owned tests were re-run green on the restored binary, cq-opt sha256
+`711b4fb1…`.
 
 ## What I did NOT test / owed
 

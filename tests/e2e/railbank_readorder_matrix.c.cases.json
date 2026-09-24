@@ -1,5 +1,5 @@
 {
-  "_comment": "Expectations for railbank_readorder_matrix.c (bd xdu2.10, Track A), read by run_railbank_dynamic_matrix.py. Rows 1,3,11,12,13 declined 'array has cells no iteration writes' on the pre-change oracle (cq-opt sha256 c6f61f80...) and accept now; row 2 accepted on both (its early return already makes n > 0 dominate, so -O1 emits no per-loop guard); rows 5,7-10,14 are unsound neighbours that must keep the C6 decline. Row 6 (partial write) moved from the C6 string to the classical-mux string: that is the string its EXPLICIT-GUARD twin already declines with on the oracle, because a partial write is the promoter's (C7) business, not C6's.",
+  "_comment": "Expectations for railbank_readorder_matrix.c (bd xdu2.10, Track A), read by run_railbank_dynamic_matrix.py. Rows 1,3,11,12,13 declined 'array has cells no iteration writes' on the pre-change oracle (cq-opt sha256 c6f61f80...) and accept now; row 2 accepted on both (its early return already makes n > 0 dominate, so -O1 emits no per-loop guard); rows 5,7-10,14 are unsound neighbours that must keep the C6 decline. Row 6 (partial write) moved from the C6 string to the classical-mux string: that is the string its EXPLICIT-GUARD twin already declines with on the oracle, because a partial write is the promoter's (C7) business, not C6's. The 'pins' field (ignored by the runner) says which C6 sub-clause each decline row exercises: the diagnostic string is shared by six sub-clauses, so the runner cannot tell them apart; the lit fixtures railbank_readorder_reject_* carry the CQ_CTRL_DBG read-order anchor that does (Rule-13 round 1, P3-4).",
   "cases": {
     "1": {
       "accept": true,
@@ -31,27 +31,33 @@
     },
     "5": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "NOT read order: the read-loop SCEV trip clause (n-1 != extent); no read-order anchor. Neighbour copy of shared row 3."
     },
     "6": {
       "accept": false,
-      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi",
+      "pins": "NOT read order: the promoter/C7 partial-write wall (the string its explicit-guard twin gives on the oracle)."
     },
     "7": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "NOT read order: the early-exit write loop fails C6's single-exiting-block/exact-BTC conjunct before any read is asked; no anchor."
     },
     "8": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "READ ORDER (anchor fires): the bypass under unrelated k is unrefuted. With 9 and 14, the rows mutant M1 flips."
     },
     "9": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "READ ORDER (anchor fires): write guard n>2 does not refute read guard n>0."
     },
     "10": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "READ ORDER (anchor fires) AND the read-loop SCEV trip clause (m != n): doubly fenced, so M1 leaves it declining."
     },
     "11": {
       "accept": true,
@@ -67,7 +73,8 @@
     },
     "14": {
       "accept": false,
-      "diagnostic": "cq rail bank: array has cells no iteration writes"
+      "diagnostic": "cq rail bank: array has cells no iteration writes",
+      "pins": "READ ORDER (anchor fires): read guard n != 0 is not refuted by n <= 0."
     }
   },
   "twins": [

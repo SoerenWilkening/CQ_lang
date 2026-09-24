@@ -16,6 +16,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/DenseMap.h"
+#include "llvm/ADT/SCCIterator.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -45,6 +46,7 @@
 #include "llvm/Transforms/Utils/PromoteMemToReg.h"  // bd zco4 (isAllocaPromotable / PromoteMemToReg)
 
 #include <algorithm>
+#include <cstdlib>
 #include <optional>
 #include <utility>
 
@@ -266,9 +268,35 @@ bool instReaches(const Instruction *From, const Instruction *To) {
 
 // ── C6 READ ORDER, asked SEMANTICALLY (bd xdu2.10) ────────────────────────────
 //
-// Does every SSA name in `V`'s backward operand closure denote ONE run-time
-// value per function activation? True when every instruction in the closure
-// executes at most once (no CFG cycle reaches it back — `instReaches(I, I)`),
+// Per-query context for `readFollowsLoopOnEveryPath`. `InCycle` is computed ONCE
+// per query from LLVM's own SCC iterator (a block is in a cycle iff its SCC has
+// a cycle), and `SingleValued` memoises the closure verdict per condition.
+// ⚠ Rule-13 round 1 (P3-1) measured the first spelling QUADRATIC: it called the
+// per-instruction reachability walk `instReaches(I, I)` for every closure value
+// of every walked branch and every dominator — 7.7 s at 3000 diamonds between
+// the loops where the oracle took ~0.2 s. The cost is now O(blocks + edges ×
+// facts + conditions × closure-budget); the fixtures pin the verdict, not the
+// time, so this note is the only guard on the complexity.
+struct ReadOrderCtx {
+  SmallPtrSet<const BasicBlock *, 32> Reached;  // reachable from entry.
+  SmallPtrSet<const BasicBlock *, 32> InCycle;  // reachable and in a CFG cycle.
+  DenseMap<const Value *, bool> SingleValued;
+
+  explicit ReadOrderCtx(const Function &F) {
+    for (scc_iterator<const Function *> I = scc_begin(&F); !I.isAtEnd(); ++I) {
+      const bool Cyc = I.hasCycle();
+      for (const BasicBlock *B : *I) {
+        Reached.insert(B);
+        if (Cyc)
+          InCycle.insert(B);
+      }
+    }
+  }
+};
+
+// Does every SSA name in `Root`'s backward operand closure denote ONE run-time
+// value per function activation? True when every instruction in the closure is
+// in a reachable block that no CFG cycle contains (so it executes at most once),
 // and no `undef`/`poison` appears in it. It guards reading an SSA-level
 // implication between two conditions (`isImpliedCondition`, whose matching
 // treats one SSA name as one value) as an implication between the values two
@@ -279,14 +307,28 @@ bool instReaches(const Instruction *From, const Instruction *To) {
 // value, so `icmp ne undef, 0` twice can disagree at run time while matching
 // operand-for-operand (pinned: `railbank_readorder_reject_undef_condition.ll`,
 // mutant M4). The at-most-once half is a MARGIN, argued redundant and UNPINNED
-// (mutants M2/M3/M11 MISSED, `TRACK_A.md`): an operand's definition DOMINATES
-// every compare that reads it, so re-executing it after a fact edge was taken
-// forces the path back through that dominating fact edge before the read, and
-// re-executing it after the walk's last pruned edge would revisit a
-// walk-reachable block, which by construction the rest of that path does not.
-// It is kept because it can only DECLINE; its cost is an over-decline of a
-// guard whose operand is computed inside a preceding classical cycle.
-bool singleValuedClosure(const Value *Root, unsigned Budget = 64) {
+// (mutants M2/M3/M11 MISSED; the full argument is `TRACK_A.md` §"at-most-once").
+// Sketch (Rule-13 round 1 P3-3 corrected the first version, which argued from
+// the LAST pruned edge — whose source need not be walk-reachable): consider the
+// part of a counter-path AFTER the last re-execution of any definition shared
+// by the fact's compare and a pruned edge's compare, and induct on the FIRST
+// pruned edge that part takes. Its source is walk-reachable; the shared
+// definitions dominate both compares; and the fact must be RE-EVALUATED after
+// that last redefinition (splice the definition-free entry prefix onto the
+// remaining part: the result is a CFG path to the read, so it passes the
+// dominating fact edge). So both compares read the SAME values and the
+// SSA-level implication applies to that execution.
+// The at-most-once half is kept because it can only DECLINE; its cost is an
+// over-decline of a guard whose operand is computed inside a preceding
+// classical cycle.
+bool singleValuedClosure(const Value *Root, ReadOrderCtx &Ctx,
+                         unsigned Budget = 64) {
+  if (auto It = Ctx.SingleValued.find(Root); It != Ctx.SingleValued.end())
+    return It->second;
+  auto Answer = [&](bool A) {
+    Ctx.SingleValued[Root] = A;
+    return A;
+  };
   SmallVector<const Value *, 16> Work{Root};
   SmallPtrSet<const Value *, 16> Seen;
   while (!Work.empty()) {
@@ -294,9 +336,9 @@ bool singleValuedClosure(const Value *Root, unsigned Budget = 64) {
     if (!Seen.insert(V).second)
       continue;
     if (Seen.size() > Budget)
-      return false;
+      return Answer(false);
     if (isa<UndefValue>(V))
-      return false;  // undef AND poison (PoisonValue derives from UndefValue).
+      return Answer(false);  // undef AND poison (PoisonValue derives from it).
     if (auto *C = dyn_cast<Constant>(V)) {
       // A ConstantExpr may carry an undef operand; walk it like an instruction.
       for (const Use &U : C->operands())
@@ -306,12 +348,13 @@ bool singleValuedClosure(const Value *Root, unsigned Budget = 64) {
     if (isa<Argument>(V) || isa<BasicBlock>(V) || isa<MetadataAsValue>(V))
       continue;
     const auto *I = dyn_cast<Instruction>(V);
-    if (!I || instReaches(I, I))
-      return false;  // re-executed by a cycle: one name, several values.
+    if (!I || !Ctx.Reached.count(I->getParent()) ||
+        Ctx.InCycle.count(I->getParent()))
+      return Answer(false);  // re-executed by a cycle: one name, several values.
     for (const Use &U : I->operands())
       Work.push_back(U.get());
   }
-  return true;
+  return Answer(true);
 }
 
 // Is every EXECUTION of `Read` preceded, on its own path, by an execution of
@@ -331,14 +374,15 @@ bool singleValuedClosure(const Value *Root, unsigned Budget = 64) {
 //   (2) PRUNED WALK. Walk the CFG forward from the entry block, never entering
 //       `L`'s header, and drop an edge `B→S` whose (single-valued) condition, at
 //       that edge's polarity, IMPLIES (`isImpliedCondition`) the NEGATION of
-//       some fact. Such an edge lies on no path that reaches the read: after
-//       taking it the fact is false for the rest of the activation (both names
-//       are single-valued), while every path to the read makes it true.
+//       some fact. Such an edge lies on no path that reaches the read (see
+//       `singleValuedClosure` for why the two SSA names agree in time).
 //   (3) If the read's block is NOT reached, every feasible path to the read
-//       passes the header. With `L`'s single exiting block (the latch) and its
-//       exact backedge count — both already proven by the caller — passing the
-//       header and then leaving `L` means a COMPLETE activation, which is all the
-//       old dominance test ever licensed.
+//       passes the header. The caller has already proven that `L` has a SINGLE
+//       exiting block and an exact backedge count, so passing the header and
+//       then leaving `L` means a COMPLETE activation — all the old dominance
+//       test ever licensed. ⚠ That the exiting block IS the latch is NOT proven
+//       at C6; it is C7(b)'s `WriteIsTotalPerTrip` (and the promoter's), and
+//       nothing here depends on it (Rule-13 round 1, P3-2).
 // Anything unproven — a `switch` edge, a multi-valued condition, no fact that
 // contradicts the edge — is FOLLOWED, so the walk over-approximates the
 // feasible paths and a "reached" answer is the safe decline. It CANNOT turn a
@@ -355,7 +399,11 @@ bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
   if (DT.dominates(Header, RB))
     return true;  // the syntactic case — a special case of the semantic one.
 
+  ReadOrderCtx Ctx(*RB->getParent());
+
   // (1) FACTS — (condition, polarity) of every dominating conditional edge.
+  // Edge dominance is asked FIRST: a dominator whose edges do not dominate the
+  // read (every diamond head between the loops) never costs a closure walk.
   SmallVector<std::pair<const Value *, bool>, 8> Facts;
   for (const DomTreeNode *N = DT.getNode(RB); N; N = N->getIDom()) {
     const BasicBlock *D = N->getBlock();
@@ -363,10 +411,9 @@ bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
     if (!BI || !BI->isConditional() ||
         BI->getSuccessor(0) == BI->getSuccessor(1))
       continue;
-    if (!singleValuedClosure(BI->getCondition()))
-      continue;
     for (unsigned S = 0; S < 2; ++S)
-      if (DT.dominates(BasicBlockEdge(D, BI->getSuccessor(S)), RB))
+      if (DT.dominates(BasicBlockEdge(D, BI->getSuccessor(S)), RB) &&
+          singleValuedClosure(BI->getCondition(), Ctx))
         Facts.push_back({BI->getCondition(), S == 0});
   }
   if (Facts.empty())
@@ -394,7 +441,7 @@ bool readFollowsLoopOnEveryPath(const Instruction *Read, const Loop *L,
     const auto *BI = dyn_cast<BranchInst>(B->getTerminator());
     if (BI && BI->isConditional() &&
         BI->getSuccessor(0) != BI->getSuccessor(1) &&
-        singleValuedClosure(BI->getCondition())) {
+        singleValuedClosure(BI->getCondition(), Ctx)) {
       for (unsigned S = 0; S < 2; ++S)
         if (!EdgeRefutesAFact(BI->getCondition(), /*Taken=*/S == 0))
           Work.push_back(BI->getSuccessor(S));
@@ -1917,6 +1964,14 @@ RailBankCarve railBankCarveVerdictImpl(StoreInst *SI, const TaintSet &taint,
     // and answers yes for dominance as a special case. See its header for what
     // it proves and what it leaves to the clauses below.
     if (!readFollowsLoopOnEveryPath(LD, L, DT, DL)) {
+      // ⚠ `kMsgBankTotality` is shared by six C6 sub-clauses, so a decline
+      // fixture's diagnostic cannot say WHICH one fired (Rule-13 round 1,
+      // P3-4). This env-gated anchor (the `CQ_CTRL_DBG` lever the carve's
+      // caller already uses for `railbank [Bank]`; byte-neutral when unset)
+      // names the read-order sub-clause so `railbank_readorder_reject_*` pin it
+      // by text, not only by mutation.
+      if (::getenv("CQ_CTRL_DBG"))
+        errs() << "CQ_CTRL_DBG: railbank C6 read-order refused: " << *LD << "\n";
       outMsg = kMsgBankTotality;  // a read the loop does not precede.
       return RailBankCarve::RejectTotality;
     }

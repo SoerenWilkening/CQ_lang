@@ -59,7 +59,9 @@ int main(int argc, char **argv) { (void)argv; return slice(argc, argc - 1); }
 
 #elif CASE == CASE_LARGE_BODY
 /* Unguarded, with 22 acyclic diamonds BETWEEN the write and read loops: the
- * semantic walk is linear in the edges and has no block budget. */
+ * walk has no block budget. (The first spelling was QUADRATIC — Rule-13
+ * round 1 P3-1 measured 7.7 s at 3000 diamonds; this row is a verdict pin,
+ * NOT a timing test: complexity is guarded only by the note on ReadOrderCtx.) */
 extern int g[64];
 extern void f1(int); extern void f2(int);
 __attribute__((noinline)) static int slice(int n) {
