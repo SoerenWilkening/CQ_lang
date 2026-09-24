@@ -47,6 +47,7 @@
 #define CASE_RUNTIME_PERCELL 29
 #define CASE_RUNTIME_CONDPREP_CONTROL 30
 #define CASE_RUNTIME_PASSH_CONTROL 31
+#define CASE_FIXED_BOOL_PERCELL 32
 
 #ifndef CASE
 #define CASE CASE_FIXED_STALE_INVARIANT_PARK
@@ -410,6 +411,16 @@ __attribute__((noinline)) static int slice(int n) {
   return s + cq_measure(Z);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc + 2); }
+
+#elif CASE == CASE_FIXED_BOOL_PERCELL
+/* ACCEPT — GREEN: the capability at _Bool cells -- the hop must peel the i1->i8 storage cast to find the seed. */
+__attribute__((noinline)) int slice(int seed) {
+  _Bool b[3]; int s = 0;
+  for (int i = 0; i < 3; ++i) b[i] = cq_theta(b[i], 0.5);
+  for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+  return s + seed;
+}
+int main(void) { return slice(1); }
 
 #else
 #error unknown CASE

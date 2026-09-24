@@ -673,22 +673,24 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         //     `railbank_dynamic_matrix.c`), so re-executing the seed def
         //     re-executes the store. It is argued, not measured by a mutant: no
         //     accepting module puts a gate on the phi's wire between the two.
-        //   * THE BACKWARD CLOSURE IS NOT OWED, AND ADDING IT NAIVELY WOULD BE
-        //     WRONG. The phi's SEED incoming has the prep `cq_theta` among its
-        //     users — the arm gate that wrote the cell — so a position-free
-        //     walk from the incomings declines every conditional prep, grover
-        //     included. The phi is exactly the MERGE VALUE the register
-        //     spelling of the same program names, and the register fence seeds
-        //     a merge value forward-only too; seeding the phi is therefore
-        //     parity with the register spelling, not a gap in it. A stale read
-        //     THROUGH an incoming would need that incoming to have another name
-        //     outside `L` — measured, every such spelling declines at an
-        //     earlier wall (`railbank_stale_matrix.c` rows 14/15:
-        //     `condition predates a non-diagonal gate` and `control flow under
-        //     quantum control`; the unconditional sibling, row 16, declines
-        //     HERE). RETIREMENT TRIGGER, narrowed: the day a conditional-bank
-        //     program whose arm rail ESCAPES `L` accepts, add a row to
-        //     `tools/railbank_twin_pairs` for it BEFORE widening anything.
+        //   * THE BACKWARD CLOSURE HAS NO SUBJECT, SO IT IS NOT ADDED. The phi
+        //     is exactly the MERGE VALUE the register spelling of the same
+        //     program names, and the register fence seeds a merge value
+        //     forward-only too, so seeding the phi is parity with the register
+        //     spelling. A stale read THROUGH an incoming needs that incoming to
+        //     have another name outside `L`, and MEASURED, every such spelling
+        //     declines at an earlier wall (`railbank_stale_matrix.c` rows
+        //     14/15: `condition predates a non-diagonal gate` and `control flow
+        //     under quantum control`; the unconditional sibling, row 16,
+        //     declines HERE). The closure was built as source mutant M8
+        //     (`TRACK_B.md` §4: every non-constant phi/select incoming added as
+        //     a seed) and moved NO verdict in the owned tests — including both
+        //     shipped conditional-bank shapes (matrix rows 30/31) — so it is
+        //     free on what was measured and pinned by nothing: shipping it
+        //     would be a conjunct no fixture can hold (Rule 12 (c)).
+        //     RETIREMENT TRIGGER, narrowed: the day a conditional-bank program
+        //     whose arm rail ESCAPES `L` accepts, add the closure WITH a row
+        //     for that program in `tools/railbank_twin_pairs`.
         if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, &I, &*DT,
                                     &taint, Self.empty() ? nullptr : &Self,
                                     /*RequireEmitDominance=*/false))

@@ -116,6 +116,10 @@
     "31": {
       "accept": true,
       "diagnostic": null
+    },
+    "32": {
+      "accept": true,
+      "diagnostic": null
     }
   },
   "twins": [
