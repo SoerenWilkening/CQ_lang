@@ -42,7 +42,15 @@ def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
 
 def load_expectations(source: str) -> tuple[dict[int, dict], list[dict]]:
     sidecar = pathlib.Path(source + ".cases.json")
-    doc = json.loads(sidecar.read_text())
+    def no_duplicate_keys(pairs: list[tuple[str, object]]) -> dict:
+        # json.loads keeps the LAST of two equal keys silently; a duplicated
+        # case id would drop a row and still report a pass (Track B, 2026-09-24).
+        keys = [k for k, _ in pairs]
+        dups = sorted({k for k in keys if keys.count(k) > 1})
+        if dups:
+            raise SystemExit(f"{sidecar}: duplicate key(s) {dups}")
+        return dict(pairs)
+    doc = json.loads(sidecar.read_text(), object_pairs_hook=no_duplicate_keys)
     cases = {int(k): v for k, v in doc["cases"].items()}
     twins = doc.get("twins", [])
     if not cases:
