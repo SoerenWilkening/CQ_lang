@@ -15,7 +15,7 @@ import sys
 
 W = pathlib.Path(__file__).resolve().parent.parent
 B = W / "build"
-LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree"
+LIT_FILTER = "condtree_classical_leaf|row13_hybrid|predmux_guarded_vla|cond_tree|condtree|select_classical_leaf|taint_reject_quantum_return|taint_accept_classical_decl|spec_reject_cq_primitive|offchain_ret|classical_call_arm"
 CTEST_RE = ("^e2e-condtree-classical-leaf-matrix$|^e2e-slice-condtree-classical-leaf$|"
             "^e2e-railbank-dynamic-admission-matrix$|^e2e-railbank-guarded-vla-matrix$")
 
@@ -26,6 +26,7 @@ CE = "ir-pass/src/CondTreeEmit.cpp"
 CS = "ir-pass/src/CondTreeStrip.cpp"
 PM = "ir-pass/src/PredMuxFlatten.cpp"
 QP = "ir-pass/src/CQLoweringPass.cpp"
+TP = "ir-pass/src/TaintPropagation.cpp"
 
 MUTANTS = [
  ("NULL", CL, "namespace cq {\n\nnamespace {", "namespace cq {\n// null mutant\nnamespace {", "null control"),
@@ -62,13 +63,13 @@ MUTANTS = [
           (CL, "  if (Opc != Instruction::And && Opc != Instruction::Or)\n    return nullptr;\n", "")], None, None, "xor literal: classifier AND emitter refusals dropped"),
  ("M8x", [(SC, "    if (isCondRailLeaf(LN.Sibling) || isCondRailPhiShape(LN.Sibling))\n      return diagnoseUnderControl(Sel, \"control flow\");", ""),
           (CE, "if (isLit(Q) || !N.L || isRailFlag(Q))", "if (isLit(Q) || !N.L)")], None, None, "rail sibling: classifier AND emitter refusals dropped"),
- ("M27", CL, "  if (fullConeReachesQuantumReturn(V, taint, /*Depth=*/0))\n    return false;", "", "F-1 fence dropped"),
- ("M28", CL, "        if (fullConeReachesQuantumReturn(RV, taint, Depth + 1))\n          return true;", "        (void)RV;", "F-1 callee return cone never asked"),
- ("M29", CL, "      if (!Callee->isDeclaration() && returnsQuantum(*Callee, taint, Depth))\n        return true;", "", "F-1 defined-callee check dropped"),
- ("M30", CL, "    if (taint.Tainted.count(I))\n      return true;\n    if (auto *CB", "    if (auto *CB", "F-1 tainted-member test dropped (nested case needs it inside the callee)"),
- ("M31", CL, "      continue;\n    }\n    for (Value *Op : I->operands())", "    }\n    for (Value *Op : I->operands())", "F-1 walks call arguments (over-decline direction)"),
  ("M32", CL, "  G->addParamAttr(1, Attribute::ZExt);", "", "F-2 zeroext on the forward dropped"),
  ("M33", CL, "      Unc->addParamAttr(2, Attribute::ZExt);", "      (void)Unc;", "F-2 zeroext on the _unc dropped"),
+ ("M34", TP, "        if (out.Tainted.insert(CB).second) {", "        if (false) {", "3jru: call sites of a register-returning fn never tainted"),
+ ("M35", [(QP, "  declineQuantumReturnCalls(M, taint);\n", "")], None, None, "3jru: refusal slot dropped (both entry points)"),
+ ("M36", TP, "      auto *I = dyn_cast<Instruction>(U);\n      if (!I) {", "      auto *I = dyn_cast<CallBase>(U);\n      if (!I) { continue;", "3jru: refusal ignores non-call uses (address taken)"),
+ ("M37", TP, "  for (bool Changed = true; Changed;) {\n    Changed = false;", "  for (bool Changed = true, Once = true; Once; Once = false) {\n    Changed = false; (void)Changed;", "3jru: fixpoint runs one pass only"),
+ ("M38", TP, "        if (taint.Tainted.count(RV))\n          return true;\n  return false;\n}\n\n// bd `test_C_libtooling-3jru` — the LOUD", "        if (taint.Tainted.count(RV))\n          return false;\n  return false;\n}\n\n// bd `test_C_libtooling-3jru` — the LOUD", "3jru: functionReturnsTainted always false"),
  ("M26", PM, "        if (!ClaimAll && !Taint.Tainted.count(BI->getCondition()) &&", "        if (!Taint.Tainted.count(BI->getCondition()) &&", "rule-(B) record also in clone mode"),
 ]
 
@@ -119,7 +120,9 @@ def main():
             if sf not in origs:
                 origs[sf] = sp.read_text()
             cur = sp.read_text()
-            if cur.count(so) != 1:
+            # list-form mutants may name an anchor that occurs in BOTH entry
+            # points (M35); every occurrence is mutated, and 0 is an error.
+            if cur.count(so) < 1 or (not isinstance(f, list) and cur.count(so) != 1):
                 bad = True
                 break
             sp.write_text(cur.replace(so, sn))

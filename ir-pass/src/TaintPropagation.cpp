@@ -556,8 +556,38 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
                     /*skipRuntimeCalls=*/false);
 
+  // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN. A DEFINED function
+  // whose `ret` operand is tainted returns a quantum register's HANDLE; before
+  // this, its direct call sites were UNTAINTED in the caller, so `cq_measure(g(x))`
+  // was deleted as a classical measure and `if (g(m) == n)` branched on the handle
+  // NUMBER (a silent miscompile, exit 0, stage-2b clean). Iterate to a fixpoint
+  // across functions (chains g→h, recursion): every direct call site of such a
+  // function joins `Tainted` and propagates forward. The CONSUMERS are then refused
+  // loudly by `declineQuantumReturnCalls` (nothing downstream is proven to lower a
+  // register that arrives as a CALL RESULT); this taint is what makes the refusal —
+  // and every guard in between — see the value for what it is.
+  for (bool Changed = true; Changed;) {
+    Changed = false;
+    for (Function &F : M) {
+      if (F.isDeclaration() || !functionReturnsTainted(F, out))
+        continue;
+      for (User *U : F.users()) {
+        auto *CB = dyn_cast<CallBase>(U);
+        if (!CB || CB->getCalledOperand() != &F)
+          continue;
+        if (out.Tainted.insert(CB).second) {
+          Worklist.push_back(CB);
+          Changed = true;
+        }
+      }
+    }
+    propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out,
+                      /*skipRuntimeCalls=*/false);
+  }
+
   return out;
 }
+
 
 void foldIdentityBitcasts(Module &M, TaintSet &taint,
                           SmallPtrSetImpl<Value *> *Scrub) {
@@ -2431,6 +2461,48 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
     CI->eraseFromParent();
   }
   (void)Declined;
+}
+
+// bd `test_C_libtooling-3jru` — character-for-character in
+// `condtree_classical_leaf_reject_callee_quantum_return*.ll` and
+// `taint_reject_quantum_return_*.ll`.
+static constexpr char kMsgQuantumReturn[] =
+    "cq taint escape: quantum value returned across a function boundary";
+
+bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
+  for (const BasicBlock &BB : F)
+    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue())
+        if (taint.Tainted.count(RV))
+          return true;
+  return false;
+}
+
+// bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
+bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration() || !functionReturnsTainted(F, taint))
+      continue;
+    // Any use of F at all: a direct call receives the handle; any other use (the
+    // address taken — a function pointer, a store, an argument) may reach an
+    // INDIRECT call that does, and nothing can tell which. A function with no use
+    // in this module (an entry point, or a cross-TU export) is untouched: its
+    // `ret` of a handle is the existing Escaped contract.
+    for (User *U : F.users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I) {
+        // A constant user (a global initializer, a constant expression): no
+        // instruction to anchor on — anchor on the function itself.
+        F.getContext().diagnose(
+            DiagnosticInfoUnsupported(F, kMsgQuantumReturn));
+        return true;
+      }
+      I->getFunction()->getContext().diagnose(DiagnosticInfoUnsupported(
+          *I->getFunction(), kMsgQuantumReturn, I->getDebugLoc()));
+      return true;
+    }
+  }
+  return false;
 }
 
 }  // namespace cq

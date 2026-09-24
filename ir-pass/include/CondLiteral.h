@@ -35,11 +35,12 @@
 //       ⚠ Defence in depth: no residue could be CONSTRUCTED — the prediction
 //       was exact on every probe (see the E6 block in `PredMuxFlatten.cpp` for
 //       the constructions and the retirement trigger).
-//   (d) (Rule-13 round 2 F-1) its operand cone reaches no call to a DEFINED
-//       function whose RETURN cone carries a tainted value (recursively), and no
-//       indirect call: taint does not cross a call return (bd
-//       test_C_libtooling-3jru), so `g()` returning a `cq_theta` register is an
-//       untainted HANDLE ID in the caller and must never be a literal.
+//   [HISTORY: a conjunct (d) walked callee return cones syntactically; Rule-13
+//   round 3 defeated it five ways (`abs(g())`, `tw(g())`, an out-param, a `bool`
+//   argument, `cq_measure(g())`). It is removed: bd test_C_libtooling-3jru now
+//   TAINTS a call to a defined function that returns a register, and
+//   `declineQuantumReturnCalls` refuses every such use loudly, so conjunct (b)
+//   sees such a value as quantum — one owner, at the taint layer.]
 // The literal slot carries `zeroext` on the forward and the `_unc` (round 2
 // F-2: the runtime's `bool` parameter; without it C at -O1 delivered 2/254/253).
 // Dominance needs no conjunct: the literal is an operand of a tree node, the

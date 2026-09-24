@@ -1,9 +1,9 @@
 ; condtree_classical_leaf_accept_measured_literal.ll — ACCEPT (bd test_C_libtooling-xdu2.13).
 ;
-; The F-1 fence does NOT walk call ARGUMENTS: `%mr = cq_measure(%r)` is a
-; CLASSICAL value (the sink, Rule 3) even though its argument is a register, so
-; `icmp eq %mr, %n` stays a legal `_hl` literal. Pins the argument-skip (mutation
-; M31: walking arguments turns this into a decline).
+; A `cq_measure` result is CLASSICAL (the sink, Rule 3) even though its argument
+; is a register, so `icmp eq %mr, %n` stays a legal `_hl` literal. (It pinned the
+; argument-skip of round 2's conjunct (d), now removed; it stays as the green
+; boundary of bd 3jru — a measure is not a call to a defined function.)
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

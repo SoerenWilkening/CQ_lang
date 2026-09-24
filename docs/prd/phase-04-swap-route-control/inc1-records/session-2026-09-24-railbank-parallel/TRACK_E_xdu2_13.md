@@ -240,7 +240,7 @@ string. Each pair is killed together.
 
 ## 6c. Rule-13 round 2 on `bc42274e`: CLEAR-WITH-ITEMS for the mechanism
 
-- **F-1, fenced.** A quantum register RETURNED by a defined `noinline` function
+- **F-1, fenced — SUPERSEDED by §6d (conjunct (d) removed, fixed at the taint layer).** A quantum register RETURNED by a defined `noinline` function
   is untainted in the caller, because taint does not cross a call return. That
   pre-existing P1 is now filed as bd `test_C_libtooling-3jru`. The literal slot
   gave it a new accept route: `r = g(m); if ((q>1) & (r==n))` emitted
@@ -294,6 +294,107 @@ string. Each pair is killed together.
     killed by 10 accept fixtures.
   - Running total: **37 real mutants, 21 KILLED, 16 MISSED**. The 16 MISSED are
     unchanged from §5.
+
+## 6d. Rule-13 round 3 on `5bc6ee64`: BLOCK. bd 3jru is fixed at the TAINT layer; conjunct (d) is removed
+
+**Why round 2's fence failed.** Round 3 defeated conjunct (d) five ways; each
+probe compiled at exit 0 and passed stage 2b on `5bc6ee64`, while the oracle
+declined:
+- `abs(g())`: `@llvm.abs` is a declaration, and (d) did not walk its arguments.
+- `smax(g())`: the same, through `@llvm.smax`.
+- `tw(g())`: the returned register reaches the literal only as an argument of a
+  classical helper.
+- an out-param: `*o = h(k)` stored an untainted value.
+- a `_Bool` argument computed from the register in `main`.
+- `cq_measure(g()) == n`: the measure was deleted, leaving a handle id.
+
+A further P3: `returnsQuantum` was exponential. This is L5: a syntactic walk
+answering a semantic question. Per the orchestrator's DECISION, the fix moved to
+the taint layer.
+
+**The fix (bd test_C_libtooling-3jru).**
+1. **`propagate` iterates a cross-function fixpoint.** Every direct call site of a
+   DEFINED function whose `ret` operand is tainted joins `Tainted` and propagates
+   forward, through chains and recursion. Every rebuild of the taint set by the
+   PredMux fixpoints inherits this.
+2. **`declineQuantumReturnCalls` refuses loudly.** Any USE of such a function —
+   a direct call, or the address taken (a function pointer) — fails with
+   `cq taint escape: quantum value returned across a function boundary`
+   (DS_Error, source-located). A function with no use in the module keeps the
+   existing Escaped-`ret` contract.
+3. **Slot: once per entry point, after the round-2 fixpoint.** This reads FINAL
+   taint, which answers the L1 question: `repropagateControlMerges` can taint a
+   callee's `ret`. It runs before `lowerRotations` and `lowerMeasures`.
+   - An EARLY slot was tried first. It preempted two pre-existing owners:
+     `spec_reject_cq_primitive.ll` (the specializer's `callee contains a quantum
+     primitive`) and `lowering_reject_inloop_rail_record_offchain_ret.ll`, whose
+     `main` reads `inner()`'s returned register — a 3jru exhibit sitting inside a
+     loop fixture.
+   - The late slot keeps both of their strings. Every stage above the slot
+     already sees the call result TAINTED, so none of them treats it as
+     classical in the meantime.
+4. **What the 6.5 path owns is untouched.**
+   - The late slot comes after `detectSpecializations`, so the specializer's own
+     declines speak first. r04 now declines with its
+     `floating-point quantum argument or return has no reversible copy`, a
+     misleading string for an `i1` that is pinned as the owner that speaks.
+   - Every `control_classical_call_arm_*` fixture is byte-identical to the
+     aad63450 oracle in exit code, stdout and diagnostic string.
+5. **Out-params (r12).** With `h(k)` tainted inside `g2`, the existing
+   store-escape guard fires first (`tainted value stored to memory`), as the
+   orchestrator predicted.
+
+**Conjunct (d) is REMOVED (Rule 14).** Conjunct (b), "untainted", is again the
+one owner of "is this literal classical". The (d) decline fixtures are kept and
+now pin the 3jru string. The (d)-era accept fixtures keep their shapes, with
+rewritten rationale.
+
+**Fixtures.** All are red on aad63450 (12 of 12 measured, plus `chain_store`):
+- `taint_reject_quantum_return_{measure,branch}`: the main-branch P1 itself. On
+  the oracle, q06 deleted `cq_measure(g(x))` at exit 0, and q07 branched on the
+  handle id.
+- `taint_reject_quantum_return_{abs,smax,boolarg,measured_literal,helper_arg,fnptr,outparam}`:
+  the round-3 probes r01, r03, r04, r05, r06, r10 and r12.
+- `…_chain_store`: pins the ITERATED fixpoint. `g` is defined before `h`, and
+  `main` stores `g()`; only the second pass lets the store guard speak.
+- `taint_accept_classical_decl_literals`: r13, the green side.
+
+**Probes on this binary.** r01–r06, r10, r11, r12, q04–q07 all decline. q93,
+r13, r14 (the blow-up, now 0.08 s) and r15 all accept.
+
+**Sweeps.**
+- **ir-pass fixtures** (by hand, vs aad63450, comparing exit code, stdout sha and
+  the first error line): null control 0 of 40 first, then **2252 fixtures, 17
+  movers**. Every mover is one of this change's own fixtures: the 12
+  accept-direction flips and 5 decline-string moves, each intended and pinned.
+  **No pre-existing fixture moved.**
+- **e2e C sources** (`tests/e2e/*.c`, default CASE, exit code and diagnostic):
+  432 of 450 compiled standalone (18 need -D flags or other TUs and were NOT
+  swept). **2 movers**, both this change's own (`condtree_classical_leaf_matrix.c`
+  and `slice_condtree_classical_leaf.c`).
+- `example/grover/main.c` is not in this worktree (untracked, bd 5zwz). The
+  single-function programs are covered by the sweeps above.
+
+**Mutation delta** (null control first, 0 movers; denominators 107, then 108 lit,
+and 4 ctest):
+
+| mutant | removes | result |
+|---|---|---|
+| M34 | tainting call sites in the fixpoint | KILLED (boolarg, outparam: their owners change) |
+| M35 | the refusal slot, both entry points | KILLED (9 fixtures) |
+| M36 | the address-taken branch of the refusal | KILLED (fnptr) |
+| M37 | the fixpoint iteration (one pass only) | first MISSED: the late refusal reads final taint, so the verdict held; KILLED by the new `chain_store` fixture |
+| M38 | `functionReturnsTainted` (always false) | KILLED (11 fixtures) |
+
+M27–M31, the conjunct-(d) mutants, are retired with their code.
+
+**Not tested.**
+- A module where round-2 growth alone makes a callee's `ret` tainted. The late
+  slot reads that growth by construction, but I have not built a fixture for it.
+- Cross-TU returns (a declaration answers no; this is the Escaped contract).
+- `invoke` call sites: `CallBase` covers them, untested.
+- The 18 e2e sources that need -D flags or other translation units.
+- The full ctest and an unfiltered lit.
 
 ## 7. What I did NOT test
 

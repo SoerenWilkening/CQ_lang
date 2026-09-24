@@ -55,68 +55,6 @@ bool collectI1Cone(Value *Root, SmallVectorImpl<Instruction *> &Out) {
   return true;
 }
 
-// bd `test_C_libtooling-xdu2.13` Rule-13 round 2 F-1 — taint does NOT cross a
-// call RETURN (pre-existing, bd `test_C_libtooling-3jru`): `r = g(m)` with
-// `g` returning `cq_theta(...)` is UNTAINTED in the caller although it is a
-// quantum register's handle id. A literal must never read one. The taint set
-// is MODULE-wide (`propagate` seeds every defined function), so the precise
-// question is answerable: does any `ret` operand of a DEFINED callee — or,
-// recursively, of a defined function IT calls on that return's cone — carry a
-// tainted value? An INDIRECT call is undecidable and answers yes. A
-// declaration answers no (external classical code; a cross-TU quantum return
-// is bd 3jru's class, not fenced here). Budget/depth exhaustion answers yes.
-constexpr unsigned kCallDepth = 8;
-constexpr unsigned kFullConeBudget = 256;
-
-bool fullConeReachesQuantumReturn(Value *Root, const TaintSet &taint,
-                                  unsigned Depth);
-
-bool returnsQuantum(const Function &F, const TaintSet &taint, unsigned Depth) {
-  if (Depth > kCallDepth)
-    return true;
-  for (const BasicBlock &BB : F)
-    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
-      if (Value *RV = R->getReturnValue())
-        if (fullConeReachesQuantumReturn(RV, taint, Depth + 1))
-          return true;
-  return false;
-}
-
-// `Root`'s whole backward operand cone (every type): true iff some member is
-// tainted (only asked below a call — the literal's own cone is untainted by
-// conjunct (b)'s caller contract, and a tainted member there is refused too)
-// or a call that `returnsQuantum`.
-bool fullConeReachesQuantumReturn(Value *Root, const TaintSet &taint,
-                                  unsigned Depth) {
-  SmallPtrSet<Value *, 32> Seen;
-  SmallVector<Value *, 32> Work{Root};
-  while (!Work.empty()) {
-    Value *V = Work.pop_back_val();
-    auto *I = dyn_cast<Instruction>(V);
-    if (!I || !Seen.insert(I).second)
-      continue;
-    if (Seen.size() > kFullConeBudget)
-      return true;
-    if (taint.Tainted.count(I))
-      return true;
-    if (auto *CB = dyn_cast<CallBase>(I)) {
-      const Function *Callee = CB->getCalledFunction();
-      if (!Callee)
-        return true;  // indirect: undecidable.
-      if (!Callee->isDeclaration() && returnsQuantum(*Callee, taint, Depth))
-        return true;
-      // A call's ARGUMENTS are not walked: a tainted argument taints the call
-      // itself (forward propagation), caught above — EXCEPT at a sink
-      // (`cq_measure`, whose result is classical by Rule 3 and must stay a
-      // legal literal) and the angle slot, neither of which is a quantum id.
-      continue;
-    }
-    for (Value *Op : I->operands())
-      Work.push_back(Op);
-  }
-  return false;
-}
-
 }  // namespace
 
 void markPredictedTaintCone(Value *Root) {
@@ -155,9 +93,12 @@ bool condLiteralAdmissible(Value *V, const TaintSet &taint) {
   for (Instruction *I : Cone)
     if (I->getMetadata(kPredMuxPredictedMD))
       return false;
-  // (d) Rule-13 round 2 F-1: no quantum register id returned through a call.
-  if (fullConeReachesQuantumReturn(V, taint, /*Depth=*/0))
-    return false;
+  // (Round-2 F-1's conjunct (d), a syntactic walk of callee return cones, is
+  // GONE — round 3 defeated it five ways (L5). A register returned by a defined
+  // function is now TAINTED at its call site by `propagate` (bd 3jru), so a
+  // literal derived from it fails conjunct (b) HERE, and the module is refused
+  // loudly afterwards by `declineQuantumReturnCalls` at the post-fixpoint slot.
+  // (b) is the one owner of "is this operand quantum" (Rule 14).)
   return true;
 }
 

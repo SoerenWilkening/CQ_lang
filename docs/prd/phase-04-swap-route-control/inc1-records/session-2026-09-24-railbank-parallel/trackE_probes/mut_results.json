@@ -331,5 +331,59 @@
    "lit:condtree_classical_leaf_accept_zeroext_toggle.ll"
   ],
   "desc": "F-2 zeroext on the _unc dropped"
+ },
+ "M34": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_quantum_return_boolarg.ll",
+   "lit:taint_reject_quantum_return_outparam.ll"
+  ],
+  "desc": "3jru: call sites of a register-returning fn never tainted"
+ },
+ "M35": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll",
+   "lit:taint_reject_quantum_return_abs.ll",
+   "lit:taint_reject_quantum_return_branch.ll",
+   "lit:taint_reject_quantum_return_fnptr.ll",
+   "lit:taint_reject_quantum_return_helper_arg.ll",
+   "lit:taint_reject_quantum_return_measure.ll",
+   "lit:taint_reject_quantum_return_measured_literal.ll",
+   "lit:taint_reject_quantum_return_smax.ll"
+  ],
+  "desc": "3jru: refusal slot dropped (both entry points)"
+ },
+ "M36": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_quantum_return_fnptr.ll"
+  ],
+  "desc": "3jru: refusal ignores non-call uses (address taken)"
+ },
+ "M37": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:taint_reject_quantum_return_chain_store.ll"
+  ],
+  "desc": "3jru: fixpoint runs one pass only"
+ },
+ "M38": {
+  "verdict": "KILLED",
+  "movers": [
+   "lit:condtree_classical_leaf_reject_callee_quantum_return.ll",
+   "lit:condtree_classical_leaf_reject_callee_quantum_return_nested.ll",
+   "lit:taint_reject_quantum_return_abs.ll",
+   "lit:taint_reject_quantum_return_boolarg.ll",
+   "lit:taint_reject_quantum_return_branch.ll",
+   "lit:taint_reject_quantum_return_fnptr.ll",
+   "lit:taint_reject_quantum_return_helper_arg.ll",
+   "lit:taint_reject_quantum_return_measure.ll",
+   "lit:taint_reject_quantum_return_measured_literal.ll",
+   "lit:taint_reject_quantum_return_outparam.ll",
+   "lit:taint_reject_quantum_return_smax.ll"
+  ],
+  "desc": "3jru: functionReturnsTainted always false"
  }
 }

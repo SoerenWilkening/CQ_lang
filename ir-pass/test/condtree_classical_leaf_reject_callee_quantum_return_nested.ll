@@ -1,12 +1,14 @@
-; condtree_classical_leaf_reject_callee_quantum_return_nested.ll — DECLINE (bd test_C_libtooling-xdu2.13).
+; condtree_classical_leaf_reject_callee_quantum_return_nested.ll — DECLINE (bd
+; test_C_libtooling-xdu2.13 / bd test_C_libtooling-3jru).
 ;
-; The F-1 fence through TWO calls: `g` returns `h(k) + 1` and `h` returns a
-; `cq_theta` register. `returnsQuantum` recurses into a defined callee on the
-; return value's cone (depth-bounded; exhaustion refuses). Red on bc42274e.
+; The same refusal through TWO calls: `g` returns `h(k) + 1`, and `h` returns a
+; `cq_theta` register. bd 3jru's `propagate` fixpoint taints `h`'s call inside
+; `g`, so `g`'s `ret` is tainted and so is `g`'s call site (chains and recursion
+; iterate to a fixpoint). Red on bc42274e.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
-; CHECK: cq controlled lowering: control flow under quantum control
+; CHECK: cq taint escape: quantum value returned across a function boundary
 
 define i32 @h(i32 %k) noinline {
   %t = call i32 @cq_theta_si32(i32 %k, double 7.000000e-01)

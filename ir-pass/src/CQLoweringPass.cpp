@@ -127,6 +127,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
   // are library functions, now source-injected, not name-recognized. A tainted
   // un-injected by-ref libm call declines via `declineTaintEscapes`. The g7ip
@@ -693,6 +694,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // a quantum value in a classical slot (Rule 3). Loud. The rule-(B) marks are
   // dropped immediately after: no classifier can ask again past this slot.
   declineQuantumCondLiterals(M, taint);
+  // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
+  // function boundary, and its slot is the argument. `propagate` (every rebuild
+  // of it) already TAINTS such a call result, so every stage above sees it as
+  // quantum; asking HERE, after the round-2 fixpoint, (a) reads FINAL taint — round
+  // 2 can taint a callee's `ret` through a 6.5/4.5 `%out` (CLAUDE.md L1) — and
+  // (b) leaves the owners that already speak first untouched: the specializer's
+  // `callee contains a quantum primitive` (`detectSpecializations`) and the loop
+  // layer's declines run above and keep their strings (measured, TRACK_E §6d).
+  declineQuantumReturnCalls(M, taint);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
@@ -1308,6 +1318,15 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   reverifyCmpCondReads(M, taint);
   // (bd `test_C_libtooling-xdu2.13`) the literal half + the mark drop, mirrored.
   declineQuantumCondLiterals(M, taint);
+  // bd `test_C_libtooling-3jru` — THE refusal of a register returned across a
+  // function boundary, and its slot is the argument. `propagate` (every rebuild
+  // of it) already TAINTS such a call result, so every stage above sees it as
+  // quantum; asking HERE, after the round-2 fixpoint, (a) reads FINAL taint — round
+  // 2 can taint a callee's `ret` through a 6.5/4.5 `%out` (CLAUDE.md L1) — and
+  // (b) leaves the owners that already speak first untouched: the specializer's
+  // `callee contains a quantum primitive` (`detectSpecializations`) and the loop
+  // layer's declines run above and keep their strings (measured, TRACK_E §6d).
+  declineQuantumReturnCalls(M, taint);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an

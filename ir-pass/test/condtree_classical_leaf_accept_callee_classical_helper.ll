@@ -1,8 +1,8 @@
 ; condtree_classical_leaf_accept_callee_classical_helper.ll — ACCEPT (bd test_C_libtooling-xdu2.13).
 ;
 ; A literal computed through a classical libm-like helper chain: `g` calls a
-; defined `iabs` and the `llvm.smax` intrinsic (a declaration). Neither return
-; cone carries a tainted value, so the literal is admitted.
+; defined `iabs` and the `llvm.smax` intrinsic (a declaration). No `ret` in the
+; chain is tainted (bd 3jru), so the literal is admitted.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

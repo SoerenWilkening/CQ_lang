@@ -3,8 +3,8 @@
 ; The F-1 fence's green twin (reviewer probe q93): `g` is CLASSICAL
 ; (`k*3 + 1`), and the caller's IR is byte-identical to
 ; condtree_classical_leaf_reject_callee_quantum_return.ll apart from the callee
-; body. The literal `icmp eq %r, %n` is admitted: the fence asks the callee's
-; RETURN cone, not "is there a call".
+; body. The literal `icmp eq %r, %n` is admitted: bd 3jru taints a call result
+; only when the callee's `ret` is tainted, never because "there is a call".
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll
 ; RUN: %filecheck %s < %t.ll

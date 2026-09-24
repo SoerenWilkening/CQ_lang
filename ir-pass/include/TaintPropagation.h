@@ -1399,6 +1399,26 @@ struct TaintSet {
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 
+// bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
+// of the defined function `F` returns a value in `taint.Tainted` (a quantum
+// register's HANDLE). `propagate` iterates it to a fixpoint across functions: every
+// DIRECT call site of such a function is tainted and propagated (chains, recursion).
+bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
+
+// bd `test_C_libtooling-3jru` — the LOUD refusal: any USE (a call site, or the
+// address taken) of a defined function that returns a tainted value fires
+// `cq taint escape: quantum value returned across a function boundary` (DS_Error,
+// source-located) — no stage downstream is proven to lower a register that arrives
+// as a CALL RESULT. A function with NO use in the module (an entry point) keeps the
+// existing Escaped `ret` contract. Asked ONCE in each entry point, AFTER the
+// round-2 fixpoint (`repropagateControlMerges` can taint a callee's return —
+// CLAUDE.md L1) and before `lowerRotations`/`lowerMeasures`. Every stage above it
+// already sees the call result TAINTED (the `propagate` fixpoint), which is what
+// keeps them from mis-lowering it meanwhile, and owners that decline first (the
+// specializer's `callee contains a quantum primitive`, the loop layer) keep their
+// strings. Returns true iff it declined.
+bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
+
 // Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd
 // test_C_libtooling-3qlq Inc 1)?
 //
