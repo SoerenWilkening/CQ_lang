@@ -136,23 +136,32 @@ bool factBoundsRead(const ArmFact &F, const SCEV *Trips, const SCEV *IdxS,
          sameCastChain(IdxS, ExtentS, Lo, Hi, /*Monotone=*/true);
 }
 
+// The metadata kind that marks a zero cell THIS file created. Reuse is keyed on
+// it and never on the name (Rule-13 round 2 P3: the first spelling reused any
+// private zero constant whose NAME started with the prefix — a user's global
+// among them — and RAISED its alignment). A user global of the same name is now
+// genuinely left alone: LLVM uniques the new global's name.
+constexpr const char *kZeroCellMD = "cq.guarded.read.zero";
+
 GlobalVariable *zeroCellFor(Module &M, Type *T, Align A) {
-  // Reuse only a global this file minted (private, constant, zero); a user
-  // global of the same name is left alone and LLVM uniques the new name.
-  const std::string Name = "cq.guarded.read.zero";
   for (GlobalVariable &G : M.globals())
-    if (G.getName().starts_with(Name) && G.hasPrivateLinkage() &&
-        G.isConstant() && G.getValueType() == T && G.hasInitializer() &&
-        G.getInitializer()->isNullValue()) {
-      if (G.getAlign().valueOrOne() < A)
-        G.setAlignment(A);
+    if (G.getMetadata(kZeroCellMD) && G.getValueType() == T &&
+        G.getAddressSpace() == 0 && G.getAlign().valueOrOne() >= A)
       return &G;
-    }
+  // ADDRESS SPACE 0, EXPLICITLY (Rule-13 round 2 sweep): the constructor's
+  // default is the DataLayout's globals address space (`-G<n>`), and a zero cell
+  // outside the load's address space makes the address `select` ill-typed — an
+  // abort ("Invalid operands for select instruction!"). Admission refuses any
+  // load whose pointer is not in address space 0, so 0 is the load's space.
   auto *G = new GlobalVariable(M, T, /*isConstant=*/true,
                                GlobalValue::PrivateLinkage,
-                               Constant::getNullValue(T), Name);
+                               Constant::getNullValue(T), kZeroCellMD,
+                               /*InsertBefore=*/nullptr,
+                               GlobalValue::NotThreadLocal,
+                               /*AddressSpace=*/0u);
   G->setUnnamedAddr(GlobalValue::UnnamedAddr::Global);
   G->setAlignment(A);
+  G->setMetadata(kZeroCellMD, MDNode::get(M.getContext(), {}));
   return G;
 }
 
@@ -173,6 +182,18 @@ bool classicalRuntimeAllocaReadIsInBoundsUnderGuard(
                      LLVMContext::MD_dereferenceable_or_null})
     if (LI->hasMetadata(K))
       return false;
+  // EVERY PROPERTY THE EMISSION'S `select` AND ZERO CELL MUST AGREE WITH, asked
+  // HERE so a mismatch declines instead of producing an ill-typed select (two
+  // aborts in this code so far: Rule-13 round 1 P2-1, round 2 P2). Enumerated:
+  //   * pointer ADDRESS SPACE — the zero cell lives in space 0 (below);
+  //   * load TYPE — a scalar int/fp equal to the allocated cell type (shape half),
+  //     so `Constant::getNullValue` is a defined zero of it; no vector/pointer;
+  //   * volatile / atomic — refused by `isSimple` (shape half);
+  //   * ALIGNMENT — the zero cell is created or reused at >= the load's own;
+  //   * INDEX / EXTENT widths — address-width index (shape half), extent no wider
+  //     (below), so `zext(freeze extent)` to the index type is well-formed.
+  if (LI->getPointerAddressSpace() != 0)
+    return false;
   std::optional<RuntimeAllocaRead> Shape =
       runtimeAllocaReadShape(LI, Taint, DT, Entry);
   if (!Shape)

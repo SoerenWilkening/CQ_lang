@@ -225,3 +225,30 @@ attack:** clone mode (unreached), switch-terminated regions, non-zero address
 spaces or non-64-bit index widths, multi-function modules, a user global named
 `cq.guarded.read.zero`, or the corpus. A second round is the orchestrator's call.
 The Rule-13 budget in CLAUDE.md suggests one.
+
+## 8. Rule-13 round 2 (orchestrator-run, on `d505873f`) — fixes
+
+Verdict: **CLEAR-WITH-ITEMS, 0 P1, 1 P2, 2 P3.** Final subject `cq-opt`
+`e5a2ad88d1f28bc1`.
+
+| finding | disposition |
+|---|---|
+| **P2** An alloca in a non-zero address space (datalayout `-A5`). The zero cell is in space 0, so the address `select` is ill-typed and `opt` ABORTED (exit 134, "Invalid operands for select instruction! … Broken module"). The oracle declined cleanly | **FIXED at admission**: a guarded read whose pointer is not in address space 0 is refused. `…_reject_addrspace.ll` pins the leave line with three `CHECK-NOT`s (select / Broken module / LLVM ERROR), which is what tells a decline from an abort. It is red on `d505873f` |
+| **Sweep (requested): a THIRD abort, found by the sweep.** With a datalayout whose DEFAULT GLOBALS space is non-zero (`-G1`), the `GlobalVariable` constructor put the zero cell in `addrspace(1)` while the load stayed in space 0. It was the same ill-typed select | **FIXED**: the cell is created with address space 0 explicitly. `…_accept_globals_addrspace.ll` is red on `d505873f` |
+| Sweep, the rest, enumerated at the admission site: load TYPE (scalar int/fp equal to the cell type, from the shape half, so `getNullValue` is a defined zero; no vector or pointer); volatile/atomic (`isSimple`); ALIGNMENT (the cell is created or reused at an alignment ≥ the load's); index/extent widths (address-width index; the extent is no wider, so the `zext` is well-formed) | no further mismatch found. Each item is written as a comment at the admission site |
+| **P3** `zeroCellFor` reused any private zero constant whose NAME started with the prefix, and RAISED its alignment (a user's align 1 became align 4) | **FIXED**: reuse is keyed on the pass's own `!cq.guarded.read.zero` metadata marker. The cell must also have the same type, space 0, and alignment ≥ the load's; alignment is never raised. The false "a user global is left alone" comment is replaced. Fixtures: `…_accept_user_zero_global.ll` (the reviewer's align-1 probe; red on `d505873f`), `…_accept_user_zero_global_aligned.ll` (align 16, so only the marker tells it apart; red on `d505873f`), and `…_accept_two_alignments.ll` (an align-1 and an align-4 guarded read need two cells; red on `d505873f`) |
+| **P3** Round-2 taint growth: an index that becomes tainted only in round 2 (reviewer probe `r2g.c`, the merge `%out` of a 6.5 classical-call arm) taints the flatten's own `%cq.gr.addr` select. It declines LOUDLY only because `SelectClassify` has no data-select shape for a tainted POINTER select. `flattenPredMuxRegions` runs only before round 1, and nothing re-asks (1d) | **RECORDED, with a RETIREMENT TRIGGER at the (1d) admission site** in `PredMuxFlatten.cpp`: the day any consumer admits a tainted pointer select, or a round-2 QROM carve reads through one, this read needs a named post-fixpoint re-ask of "is the index still classical at FINAL taint" |
+
+**Mutation delta.** Null control first in both passes (pass 4: `lit pass=28 fail=0`;
+pass 5: `lit pass=30 fail=0`). There are 4 new mutants:
+- M27, the address-space admission: KILLED by `…_reject_addrspace.ll`.
+- M28, the zero cell created in the default globals space: KILLED by
+  `…_accept_globals_addrspace.ll`.
+- M29, reuse by name: MISSED in pass 4, because the align-1 user global shadowed it.
+  KILLED in pass 5 by `…_accept_user_zero_global_aligned.ll`.
+- M30, reuse ignoring alignment: MISSED in pass 4, with only one guarded read. KILLED
+  in pass 5 by `…_accept_two_alignments.ll`.
+
+**Cumulative: 30 real mutants, 24 KILLED, 6 MISSED.** The six are M2, M3, M5, M7 and
+M8, all shadowed, and M25, which is contingent. Owned lit `Passed : 30`, owned ctest
+2/2, and `update_code_map.py --check` clean.

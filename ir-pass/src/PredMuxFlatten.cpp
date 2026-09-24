@@ -2761,6 +2761,15 @@ bool classicalTableReadIsSpeculatable(
   // select (the caller records it; `guardSpeculatedClassicalRead`). Every fence
   // above — simple, classical now and after the flatten, not QROM-shaped, a
   // template width — has already been asked of it. See GuardedClassicalRead.h.
+  // ⚠ L1 — ROUND-2 TAINT GROWTH IS CLOSED CONTINGENTLY, NOT BY A FENCE (Rule-13
+  // round 2 P3). This admission runs before round 1 and nothing re-asks it. An
+  // index that becomes tainted only in round 2 (e.g. the merge `%out` of a 6.5
+  // classical-call arm) taints the flatten's own `%cq.gr.addr` select, and today
+  // that module declines LOUDLY only because `SelectClassify` has no data-select
+  // shape for a tainted POINTER select (`control flow`). ⚠ RETIREMENT TRIGGER:
+  // the day any consumer admits a tainted pointer select (or a round-2 QROM
+  // carve reads through one), this read needs a named post-fixpoint re-ask — the
+  // index must still be classical at FINAL taint.
   if (classicalRuntimeAllocaReadIsInBoundsUnderGuard(LI, Taint, DT, LInfo, SE,
                                                      Region, Entry, GuardExtent))
     return true;
