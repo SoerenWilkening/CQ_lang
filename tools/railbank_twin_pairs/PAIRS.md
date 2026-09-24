@@ -32,6 +32,29 @@ a defect to FILE, not a miscompile, and not a margin either).
 | `p07_sibling_register_rotated` | per-cell theta bank PLUS an unrelated register rotated between the loops. A fence seeded with the wrong thing declines this. | ok-identical | ok-identical |
 | `p08_nonmain_stale` | `p01` outside `main`, house style (two defines survive the lowering). | **VIOLATION** | ok-both-decline |
 
+Rows added by bd `xdu2.1` (Track B, 2026-09-24), after bd `xdu2.4` made the bank
+RUNTIME-SIZED. The third column is the verdict on `d0720cb1` (`cq-opt`
+`c6f61f80a5d524c6`), i.e. the tree the rows were written against — the fence
+already carried the memory hop, so there is no pre-fix column for these; their
+red is the source-mutation matrix in `TRACK_B.md` §4.
+
+| row | the claim | verdict on `d0720cb1` |
+|---|---|---|
+| `p09_rt_stale_invariant_park` | `p01` on a runtime-sized `int b[n]` bank — the hop's `isArrayAllocation()` branch. | ok-both-decline |
+| `p10_parked_parent_add` | `q` parked, then `t = q + 3` (the M-C late in-place candidate on `q`), then the cells measured. If M-C converted the add in place the bank would read `q + 3`; it must stay out of place. | ok-identical |
+| `p11_rt_parked_parent_add_loop` | `p10` on a runtime bank with a runtime-trip add loop on the parked parent. | ok-identical |
+| `p12_phase_between` | a register-free `cq_phi` (diagonal) between park and read — must NOT count as a relabel. | ok-identical |
+
+⚠ **Two shapes were measured and deliberately NOT added**, because their pair is
+not a twin at the `-O1` floor rather than because the compiler is wrong
+(`TRACK_B.md` §2): `q` parked, then `q = q + 3` / `q ^= 5`, then the cells
+measured. `clang -O1` SINKS the add below the bank's measure loop in the bank
+spelling and not in the register spelling, so P2 reports a TRACE-MISMATCH whose
+two streams differ only in where one out-of-place `cq_template_add_i32_hl`
+sits relative to three measures of the rail it READS — a computational-basis
+copy that commutes with those measures. Rows `p10`/`p11` are the same question
+with the order pinned by a use.
+
 ## What this corpus does NOT cover
 
 Stated so absence is not read as clearance:

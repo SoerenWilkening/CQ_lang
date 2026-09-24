@@ -42,8 +42,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp` — 1218 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1074 physical lines
-- `ir-pass/src/OpcodeLowering.cpp` — 1065 physical lines
+- `ir-pass/src/OpcodeLowering.cpp` — 1097 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1089 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -141,7 +141,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1074 lines)
+### `ir-pass/src/ArithLowering.cpp` (1089 lines)
 
 - `ir-pass/src/ArithLowering.cpp:49` — `promote`
 - `ir-pass/src/ArithLowering.cpp:105` — `negateClassicalImmediate`
@@ -547,7 +547,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp:261` — `phiPeelable`
 - `ir-pass/src/MergePhiPeel.cpp:312` — `peelIndependentMergePhis`
 
-### `ir-pass/src/OpcodeLowering.cpp` (1065 lines)
+### `ir-pass/src/OpcodeLowering.cpp` (1097 lines)
 
 - `ir-pass/src/OpcodeLowering.cpp:78` — `diagnoseStaleRecord`
 - `ir-pass/src/OpcodeLowering.cpp:92` — `diagnosePreLoopCommitStale`
@@ -559,8 +559,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/OpcodeLowering.cpp:246` — `declineStaleRecordOps`
 - `ir-pass/src/OpcodeLowering.cpp:311` — `declineLiftedStaleRecordOps`
 - `ir-pass/src/OpcodeLowering.cpp:362` — `recordStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:669` — `declineRecordedStaleQuantumReaders`
-- `ir-pass/src/OpcodeLowering.cpp:726` — `lowerOps`
+- `ir-pass/src/OpcodeLowering.cpp:701` — `declineRecordedStaleQuantumReaders`
+- `ir-pass/src/OpcodeLowering.cpp:758` — `lowerOps`
 
 ### `ir-pass/src/OpcodeSupport.cpp` (343 lines)
 

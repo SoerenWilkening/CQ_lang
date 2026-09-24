@@ -657,6 +657,38 @@ void recordStaleQuantumReaders(Module &M, TaintSet &taint,
         // The same landing also owes this hop a backward closure through that
         // `phi`'s incomings — today the seed IS the `phi` and only its forward
         // users are walked.
+        //
+        // ⚠ THAT TRIGGER FIRED WITHOUT BEING READ, AND IS RE-DERIVED HERE
+        // (bd `xdu2.1`, Track B, 2026-09-24 — L8's "a trigger works only if
+        // someone reads it"). CONDITIONAL bank stores accept today: the xdu2.4
+        // seed-path prep (`if (Z >= 2) b[i] = cq_theta(b[i], .5); if (b[i])
+        // Z -= 2;`, the owner's `example/grover/main.c`) stores the merge phi
+        // `%cq.bank = phi [theta, %arm], [%cq.bank.seed, %skip]`, and the PASS-H
+        // emptied arm stores `%cq.bank1 = select c, t, 0` (both MEASURED with
+        // `CQ_STALEBANK_DBG=1` / `CQ_RAILBANK_DBG=1`). The re-derivation:
+        //   * LEG 2's COINCIDENCE STILL HOLDS, for a reason that is now about
+        //     the STORE: PASS C/D put the phi (or select) and the ONE store in
+        //     the same activation, def before store, and the carve refuses an
+        //     exit between them (the early-exit decline, matrix row 5 of
+        //     `railbank_dynamic_matrix.c`), so re-executing the seed def
+        //     re-executes the store. It is argued, not measured by a mutant: no
+        //     accepting module puts a gate on the phi's wire between the two.
+        //   * THE BACKWARD CLOSURE IS NOT OWED, AND ADDING IT NAIVELY WOULD BE
+        //     WRONG. The phi's SEED incoming has the prep `cq_theta` among its
+        //     users — the arm gate that wrote the cell — so a position-free
+        //     walk from the incomings declines every conditional prep, grover
+        //     included. The phi is exactly the MERGE VALUE the register
+        //     spelling of the same program names, and the register fence seeds
+        //     a merge value forward-only too; seeding the phi is therefore
+        //     parity with the register spelling, not a gap in it. A stale read
+        //     THROUGH an incoming would need that incoming to have another name
+        //     outside `L` — measured, every such spelling declines at an
+        //     earlier wall (`railbank_stale_matrix.c` rows 14/15:
+        //     `condition predates a non-diagonal gate` and `control flow under
+        //     quantum control`; the unconditional sibling, row 16, declines
+        //     HERE). RETIREMENT TRIGGER, narrowed: the day a conditional-bank
+        //     program whose arm rail ESCAPES `L` accepts, add a row to
+        //     `tools/railbank_twin_pairs` for it BEFORE widening anything.
         if (findNonDiagonalWireGate(Seeds, /*CrossValueRouting=*/true, &I, &*DT,
                                     &taint, Self.empty() ? nullptr : &Self,
                                     /*RequireEmitDominance=*/false))

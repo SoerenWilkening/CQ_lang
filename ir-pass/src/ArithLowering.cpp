@@ -998,9 +998,24 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         // the documented `WireWalk.h` vocabulary gap, bd `a3z7`. So the day a
         // bank rail's in-place reassignment can sit BETWEEN the store and a
         // later cell read, this absence and that gap compose into a stale read
-        // the fence cannot see. Today it cannot: D5 admits only a measurement
-        // and its storage `trunc` as cell readers, so there is no reader after
-        // the conversion to be staled. Re-derive BOTH in the same change.
+        // the fence cannot see.
+        // ⚠ CORRECTED 2026-09-24 (bd `xdu2.1`, Track B — L7, fixed at the source):
+        // this sentence used to say that "today it cannot" because "D5 admits
+        // only a measurement … so there is no reader after the conversion to be
+        // staled". FALSE: a bank `cq_measure` IS such a reader, and it sits after
+        // the site in plain `-O1` C (`int b[3]; for(..) b[i]=q; int t=q+3;
+        // cq_measure(t); for(..) cq_measure(b[i]);` —
+        // `railbank_stale_accept_parked_parent_add_stays_out_of_place.ll`,
+        // twin rows `p10`/`p11`). What refuses the conversion there, MEASURED
+        // by mutation, is `inPlaceFenceHolds`' G6/G7 pair: the PARKING `store`
+        // is a plain-IR user of `P`, so it is either not provably before the
+        // site (G6) or, when it is, `priorUseIsSettled` clause (e) refuses any
+        // non-call user (G7). That is a STRUCTURAL refusal — every bank rail
+        // has its store as a user of the parked value — but it is G7(e)'s,
+        // not this list's. RETIREMENT TRIGGER, restated: the day G7(e) admits a
+        // `StoreInst` (or the bank stops being fed by a `store` of the parked
+        // value), this absence and the vocabulary gap compose. Re-derive BOTH
+        // in the same change.
         if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
             taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
           continue;

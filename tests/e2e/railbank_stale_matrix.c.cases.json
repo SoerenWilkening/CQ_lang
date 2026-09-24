@@ -1,0 +1,147 @@
+{
+  "_comment": "Expectations for railbank_stale_matrix.c (bd xdu2.1, Track B). Decline rows pin the wall that fires today; twin pairs are linked and byte-compared.",
+  "cases": {
+    "1": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "2": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "3": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+    },
+    "4": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+    },
+    "5": {
+      "accept": false,
+      "diagnostic": "cq rail bank: array mixes a rail cell access with an unrecognized one"
+    },
+    "6": {
+      "accept": false,
+      "diagnostic": "cq rail bank: unsupported reader of a rail-bank cell"
+    },
+    "7": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "8": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "9": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value consumed by an unknown callee"
+    },
+    "10": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "11": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
+    },
+    "12": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "13": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "14": {
+      "accept": false,
+      "diagnostic": "cq controlled lowering: condition predates a non-diagonal gate under quantum control"
+    },
+    "15": {
+      "accept": false,
+      "diagnostic": "cq controlled lowering: control flow under quantum control"
+    },
+    "16": {
+      "accept": false,
+      "diagnostic": "cq opcode lowering: rotation/measure operand predates a non-diagonal gate"
+    },
+    "17": {
+      "accept": false,
+      "diagnostic": "cq taint escape: tainted value stored to memory"
+    },
+    "20": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "21": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "22": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "23": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "24": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "25": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "26": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "27": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "28": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "29": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "30": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "31": {
+      "accept": true,
+      "diagnostic": null
+    }
+  },
+  "twins": [
+    {
+      "rolled": 20,
+      "twin": 21,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 22,
+      "twin": 23,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 24,
+      "twin": 25,
+      "argv": [],
+      "dropped_twin_lines": []
+    },
+    {
+      "rolled": 26,
+      "twin": 27,
+      "argv": [],
+      "dropped_twin_lines": []
+    }
+  ]
+}
