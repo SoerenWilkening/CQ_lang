@@ -49,6 +49,12 @@
 #define CASE_RUNTIME_PASSH_CONTROL 31
 #define CASE_FIXED_BOOL_PERCELL 32
 #define CASE_RUNTIME_DTZB_FIXED_TRIP_XOR 33
+#define CASE_RUNTIME_INLOOP_XOR_PARKED 34
+#define CASE_FIXED_INLOOP_XOR_PARKED_OTHER_COND 35
+#define CASE_RUNTIME_INLOOP_XOR_CONST_TRIP 36
+#define CASE_RUNTIME_INLOOP_XOR_KDEP 37
+#define CASE_RUNTIME_INLOOP_XOR_LEGIT 38
+#define CASE_FIXED_INLOOP_XOR_LEGIT 39
 #define CASE_TWIN_OF_28 40
 #define CASE_TWIN_OF_29 41
 #define CASE_TWIN_OF_31 42
@@ -438,6 +444,72 @@ __attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
   return s + cq_measure(q);
 }
 int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_PARKED
+/* DECLINE — Rule-13 round-2 F-1 (reviewer P1_bank.c): parked q relabelled by a collapse-committed in-place xor, then the cells read. */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;                         /* park q            */
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; } /* relabels q's wire */
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);            /* source: PRE-loop q */
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_XOR_PARKED_OTHER_COND
+/* DECLINE — F-1 on a fixed int b[3], the relabel loop conditioned on a different register r. */
+int main(int argc, char **argv) {
+  int q = cq_theta(argc, 0.5); int b[3]; int s = 0; int r = cq_theta(argc+1, .2);
+  for (int i = 0; i < 3; ++i) b[i] = q;
+  for (int k = 0; k < argc; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+  for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+  return s + cq_measure(q) + cq_measure(r);
+}
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_CONST_TRIP
+/* DECLINE — F-1 with a constant (3) relabel trip count, outside main. */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int k = 0; k < 3; ++k) { if (q > k) cq_phi(0.3); q ^= 3; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_KDEP
+/* DECLINE — F-1 with a trip-dependent xor immediate (q ^= k). */
+__attribute__((noinline)) int slice(int n, int seed) { if (n <= 1) return 0;
+ int q = cq_theta(seed, 0.5); int b[n]; int s = 0;
+ for (int i = 0; i < n; ++i) b[i] = q;
+ for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= k; }
+ for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+ return s + cq_measure(q);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc + 2, argc); }
+
+#elif CASE == CASE_RUNTIME_INLOOP_XOR_LEGIT
+/* ACCEPT — GREEN: F-1 with the bank measure loop moved ABOVE the xor loop (reviewer P1_legit.c). */
+int main(int argc, char **argv) {
+  int n = atoi(argv[1]); if (n <= 0) return 1;
+  int q = cq_theta(argc, 0.5); int b[n]; int s = 0;
+  for (int i = 0; i < n; ++i) b[i] = q;
+  for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
+  for (int k = 0; k < n; ++k) { if (q > k) cq_phi(0.3); q ^= 3; }
+  return s + cq_measure(q);
+}
+
+#elif CASE == CASE_FIXED_INLOOP_XOR_LEGIT
+/* ACCEPT — GREEN: the fixed-bank, constant-trip legit order. */
+__attribute__((noinline)) int slice(int seed) {
+ int q = cq_theta(seed, 0.5); int b[3]; int s = 0; int r = cq_theta(seed, .2);
+ for (int i = 0; i < 3; ++i) b[i] = q;
+ for (int i = 0; i < 3; ++i) s += cq_measure(b[i]);
+ #pragma clang loop unroll(disable)
+ for (int k = 0; k < 3; ++k) { if (r > k) cq_phi(0.3); q ^= 3; }
+ return s + cq_measure(q) + cq_measure(r);
+}
+int main(int argc, char **argv) { (void)argv; return slice(argc); }
 
 #elif CASE == CASE_TWIN_OF_28
 /* ACCEPT — hand-unrolled n=3 twin of 28. */

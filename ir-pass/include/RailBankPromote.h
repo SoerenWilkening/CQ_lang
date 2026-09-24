@@ -252,6 +252,7 @@
 namespace llvm {
 class AllocaInst;
 class CallInst;
+class LoadInst;
 class Module;
 class StoreInst;
 class Type;
@@ -448,6 +449,30 @@ llvm::Value *bankStoreRailValue(llvm::StoreInst *SI, llvm::Type *CellT);
 // every unrelated use of that literal.
 bool railBankParkedRails(llvm::Value *V,
                          llvm::SmallVectorImpl<llvm::Value *> &Out);
+
+// ── THE REVERSE HOP (bd `xdu2.1`, Rule-13 round-2 finding F-1, 2026-09-24 — a
+//    P1 OVER-ACCEPT, the same class as the F-1 `railBankParkedRails` closed) ──
+//
+// "Is `V` parked in a rail bank, and if so, which cell LOADS read it back?"
+// `Out` is APPENDED with every `load` of every bank a store of `V` (directly, or
+// through the storage cast `bankStoreRailValue` strips) writes; the return value
+// says whether `V` is parked at all. Same address tree as `railBankParkedRails`
+// (one shared walk), same `bankStoreRailValue` relation — so this is that hop
+// read BACKWARDS, not a second spelling of it (Rule 14).
+//
+// WHY IT EXISTS. A fence whose question is "is any READ of this rail value
+// stale?" and which enumerates the value's SSA users sees a bank `store` where
+// the read actually is the later cell `load`. `LoopLowering::staleReadOfValue`
+// did exactly that: `int b[n]; for(i) b[i]=q; for(k){ … q ^= 3; } for(i)
+// cq_measure(b[i]);` — the rolled collapse converted `q ^= 3` IN PLACE, the
+// fence asked about the STORE (which precedes the loop, so no gate lay between
+// def and "read"), and the bank measures observed `q ^ 3` where the source says
+// `q` (exit 0, STRICT 2b clean; the register spelling declines `rail record read
+// past an in-place gate on the same rail`). The forward hop could not see it
+// either: its walker's vocabulary is `cq_theta_` gates, and an in-place
+// `add`/`xor` is committed only by the collapse, after the reader fence ran.
+bool railBankCellReadsOf(llvm::Value *V,
+                         llvm::SmallVectorImpl<llvm::LoadInst *> &Out);
 
 // Mint `!cq.railbank` on every alloca whose store the carve calls `Bank`.
 // Returns true iff anything was newly marked; the caller then re-`propagate`s,

@@ -74,6 +74,7 @@
 #include "llvm/Transforms/Utils/SSAUpdater.h"
 
 #include "llvm/ADT/STLExtras.h"  // make_early_inc_range
+#include "llvm/ADT/STLFunctionalExtras.h"  // function_ref (forEachBankCellMemop)
 
 #include <cstdlib>
 #include <optional>
@@ -1295,6 +1296,90 @@ Value *bankStoreRailValue(StoreInst *SI, Type *CellT) {
   return SV;
 }
 
+namespace {
+
+// The bank's CELL TYPE: the element of an `[N x T]` object, or the allocated
+// type of a runtime-sized `alloca T, %n` (bd `xdu2.4`).
+Type *bankCellType(const AllocaInst *Bank) {
+  if (auto *AT = dyn_cast<ArrayType>(Bank->getAllocatedType()))
+    return AT->getElementType();
+  if (Bank->isArrayAllocation())
+    return Bank->getAllocatedType();
+  return nullptr;
+}
+
+// THE OBJECT'S ADDRESS TREE, not a scan of the function — the ONE walk both
+// directions of the memory hop use (Rule 14: `railBankParkedRails` goes LOAD →
+// parked names, `railBankCellReadsOf` goes parked name → LOADs, and a second
+// spelling of "which memops touch this bank" is how the two would drift). A
+// `Bank` alloca's every user is a canonical cell access, a lifetime marker or
+// the initializer (carve clause C1), so its cell memops are reachable from the
+// alloca through gep and cast hops alone — and C1 is what makes that
+// enumeration complete rather than merely plausible. `F` is called with each
+// `load`/`store` whose POINTER operand is a node of the tree.
+void forEachBankCellMemop(AllocaInst *Bank,
+                          function_ref<void(Instruction *)> F) {
+  SmallVector<Value *, 8> WL{Bank};
+  SmallPtrSet<Value *, 8> Seen;
+  while (!WL.empty()) {
+    Value *P = WL.pop_back_val();
+    if (!Seen.insert(P).second)
+      continue;
+    for (User *U : P->users()) {
+      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||
+          isa<AddrSpaceCastInst>(U)) {
+        WL.push_back(cast<Value>(U));
+        continue;
+      }
+      if (auto *SI = dyn_cast<StoreInst>(U)) {
+        if (SI->getPointerOperand() == P)
+          F(SI);
+      } else if (auto *LI = dyn_cast<LoadInst>(U)) {
+        if (LI->getPointerOperand() == P)
+          F(LI);
+      }
+    }
+  }
+}
+
+}  // namespace
+
+bool railBankCellReadsOf(Value *V, SmallVectorImpl<LoadInst *> &Out) {
+  // The stores that park `V`: a direct `store V`, or a store of the STORAGE
+  // cast `bankStoreRailValue` strips (`zext i1 %V to i8` on a `_Bool` bank,
+  // a widening cast into a wider cell). Asked by CALLING `bankStoreRailValue`
+  // — the same relation the forward hop and the width record use — so "V is
+  // parked" here and "the load denotes V" there cannot disagree.
+  SmallVector<StoreInst *, 4> Parks;
+  auto consider = [&](User *U) {
+    auto *SI = dyn_cast<StoreInst>(U);
+    if (!SI)
+      return;
+    AllocaInst *Bank = railBankOfPointer(SI->getPointerOperand());
+    if (Bank && bankStoreRailValue(SI, bankCellType(Bank)) == V)
+      Parks.push_back(SI);
+  };
+  for (User *U : V->users()) {
+    consider(U);
+    if (isa<CastInst>(U))
+      for (User *CU : U->users())
+        consider(CU);
+  }
+  if (Parks.empty())
+    return false;
+  SmallPtrSet<AllocaInst *, 2> Banks;
+  for (StoreInst *SI : Parks) {
+    AllocaInst *Bank = railBankOfPointer(SI->getPointerOperand());
+    if (!Banks.insert(Bank).second)
+      continue;
+    forEachBankCellMemop(Bank, [&](Instruction *I) {
+      if (auto *LD = dyn_cast<LoadInst>(I))
+        Out.push_back(LD);
+    });
+  }
+  return true;
+}
+
 bool railBankParkedRails(Value *V, SmallVectorImpl<Value *> &Out) {
   auto *LD = dyn_cast<LoadInst>(V);
   if (!LD)
@@ -1310,31 +1395,13 @@ bool railBankParkedRails(Value *V, SmallVectorImpl<Value *> &Out) {
   AllocaInst *Bank = railBankOfPointer(LD->getPointerOperand());
   if (!Bank)
     return false;
-  Type *CellT = nullptr;
-  if (auto *AT = dyn_cast<ArrayType>(Bank->getAllocatedType()))
-    CellT = AT->getElementType();
-  else if (Bank->isArrayAllocation())
-    CellT = Bank->getAllocatedType();
-  // The OBJECT'S ADDRESS TREE, not a scan of the function. A `Bank` alloca's
-  // every user is a canonical cell access, a lifetime marker or the initializer
-  // (carve clause C1), so the stores are reachable from the alloca through gep
-  // and cast hops alone — and C1 is what makes that enumeration complete rather
-  // than merely plausible.
-  SmallVector<Value *, 8> WL{Bank};
-  SmallPtrSet<Value *, 8> Seen;
-  while (!WL.empty()) {
-    Value *P = WL.pop_back_val();
-    if (!Seen.insert(P).second)
-      continue;
-    for (User *U : P->users()) {
-      if (isa<GetElementPtrInst>(U) || isa<BitCastInst>(U) ||
-          isa<AddrSpaceCastInst>(U)) {
-        WL.push_back(cast<Value>(U));
-        continue;
-      }
-      auto *SI = dyn_cast<StoreInst>(U);
-      if (!SI || SI->getPointerOperand() != P)
-        continue;
+  Type *CellT = bankCellType(Bank);
+  // The OBJECT'S ADDRESS TREE (`forEachBankCellMemop`, shared with the reverse
+  // hop `railBankCellReadsOf`).
+  forEachBankCellMemop(Bank, [&](Instruction *I) {
+      auto *SI = dyn_cast<StoreInst>(I);
+      if (!SI)
+        return;
       Value *R = bankStoreRailValue(SI, CellT);
       // ⚠ A CONSTANT IS NEVER A SEED, AND THE REASON IS LLVM'S, NOT OURS.
       // Constants are UNIQUED MODULE-WIDE, so handing `i8 0` — the whole-object
@@ -1346,8 +1413,7 @@ bool railBankParkedRails(Value *V, SmallVectorImpl<Value *> &Out) {
       // it has no wire, so there is nothing for a later gate to stale.
       if (!isa<Constant>(R))
         Out.push_back(R);
-    }
-  }
+  });
   return true;
 }
 

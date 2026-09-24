@@ -1019,6 +1019,14 @@ bool lowerLateReassignments(Module &M, WidthDispatch &wd, TaintSet &taint) {
         // storage `CastInst` (or the bank stops being fed through a non-call
         // user of the parked value), this absence and the vocabulary gap
         // compose. Re-derive BOTH in the same change.
+        // ⚠ THIS IS RIGHT FOR THIS SITE AND IS NOT THE ONLY IN-PLACE MINTER
+        // (bd `xdu2.1`, Rule-13 round 2 finding F-1, 2026-09-24). The rolled
+        // in-loop collapse (`LoopLowering::collapseRailPhisIn`) converts an
+        // in-loop `q ^= 3` on a parked `q` through `markInPlaceRailOp`, and no
+        // G7(e) stands in front of it; that path accepted a stale bank read
+        // until `staleReadOfValue` learned the bank-load hop
+        // (`railBankCellReadsOf`). Every in-place minter and what refuses each
+        // for a parked rail is enumerated in `TRACK_B.md` §6b.
         if (taint.ControlOwnedRails.count(C) || taint.OutputRails.count(C) ||
             taint.GraveyardRails.count(C) || taint.UntaintedMergeRails.count(C))
           continue;

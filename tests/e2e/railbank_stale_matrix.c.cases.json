@@ -125,6 +125,30 @@
       "accept": false,
       "diagnostic": "cq taint escape: tainted value muxed by a classical-condition phi"
     },
+    "34": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "35": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "36": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "37": {
+      "accept": false,
+      "diagnostic": "cq loop lowering: rail record read past an in-place gate on the same rail"
+    },
+    "38": {
+      "accept": true,
+      "diagnostic": null
+    },
+    "39": {
+      "accept": true,
+      "diagnostic": null
+    },
     "40": {
       "accept": true,
       "diagnostic": null
