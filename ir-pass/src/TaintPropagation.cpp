@@ -1410,8 +1410,10 @@ constexpr char kMsgClassicalPhi[] =
 // standing one: the accept RECORDS its premise (`taint.LiftedMergePhis`) and
 // `declineFalsifiedMergePhiLifts` RE-ASKS (2)/(3) at final taint right after
 // `specialize()`, declining with THIS guard's `kMsgClassicalPhi` — the hand-
-// inlined twin (`int t = m + 1;`) declines here with exactly that string, since
-// its phi muxes a classical value and a register. Pinned by the
+// inlined twin (`int t = m + 1;`) declines at this guard too, since its phi muxes
+// a classical value and a register. The VERDICT is the twin's; the STRING and
+// site are the twin's when this phi is the module's first classical-mux offender
+// on both sides (not otherwise: r1A F-DA-3). Pinned by the
 // `lowering_reject_classical_mux_phi_spec_scrubbed_base*.ll` family and its
 // accept controls `lowering_classical_mux_phi_onereg_spec_*.ll`.
 // ───────────────────────────────────────────────────────────────────────────
@@ -1426,8 +1428,19 @@ constexpr char kMsgClassicalPhi[] =
 // diamonds resolve to distinct phi bases and decline — conservative,
 // documented).
 //
-// SOLE CALLER: `liftOneRegisterMergePhi` (grep `resolveWireBase` — one call
-// site, and `WireChain::Gates` has exactly one reader, the (6)/(7) loop there).
+// TWO CALLERS (bd test_C_libtooling-d88e; this said "SOLE CALLER" until the
+// Rule-13 round r1A F-DA-2 caught it): `liftOneRegisterMergePhi`, and its re-ask
+// `declineFalsifiedMergePhiLifts`, which runs after `specialize()` and must
+// resolve every recorded incoming EXACTLY as the lift did — that is why both
+// take their gate set from `collectLiftGateCalls`. `WireChain::Gates` still has
+// exactly ONE reader, the lift's (6)/(7) loop; the re-ask reads only `.Base`.
+// ⚠ THE L3-MIRROR QUESTION, asked for the second caller: the three reasons for
+// the `ControlledRotations` STOP below are about the lift's RECORD semantics, and
+// they hold for the re-ask unchanged because `taint.ControlledRotations` is not
+// written between the lift and the re-ask (`specialize()` never touches it; the
+// control emitters that write it all ran before `declineClassicalMuxes`), so the
+// two calls see the same stop set. RETIREMENT TRIGGER: a stage in that window
+// that writes `ControlledRotations`, or a third caller, re-opens this paragraph.
 // `LoopLowering::peelInPlaceBase` is the SIBLING spelling of the same walk and
 // is deliberately NOT changed by the stop below — see the note at the stop.
 struct WireChain {

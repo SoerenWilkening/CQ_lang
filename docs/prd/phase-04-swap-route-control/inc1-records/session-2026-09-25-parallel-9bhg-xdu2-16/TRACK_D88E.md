@@ -9,7 +9,8 @@ This track touched neither `Specialization.cpp` nor any erase site.
 
 - Worktree branch: `worktree-agent-acf961e52a2f9e440`, based on `main` at `def1b088`.
   The implementation commit is `06148f3d`; a docs-only follow-up adds §10 item 3's
-  composed-tree re-enumeration.
+  composed-tree re-enumeration. A third commit applies the two Rule-13 rounds' P3
+  items as COMMENT / FIXTURE / GOLDEN-HEADER / RECORD changes only (§11).
 
 Binaries:
 
@@ -30,14 +31,19 @@ Probes, twins, sweeps and the mutation harness are under `d88e_probes/`:
 - the C sources are in `src/`;
 - the scripts carry this session's scratchpad paths, and say so.
 
-**Not self-cleared.** The orchestrator owes this change independent Rule-13 rounds. §10
-says what to attack first.
+**Rule-13: two independent rounds, `review_r1A_d88e/` (fence logic, slot order) and
+`review_r1B_d88e/` (emitted circuits, the L2 enumeration), both `CLEAR-WITH-ITEMS`,
+0 P1.** Every finding and its disposition is in §11. §10 was the attack list the rounds
+were given.
 
 ## 1. Headline
 
 - **bd d88e is closed as a silent miscompile.** Every lift-then-scrub reproducer from
   the r1A review now DECLINES with the hand-inlined twin's string, byte-identical stderr,
-  measured pair by pair (§5). So do six more shapes found here:
+  measured pair by pair (§5). (⚠ Byte-identical on THIS battery; in general the re-ask
+  matches the twin's VERDICT, and its string only when the φ is the module's first
+  classical-mux offender on both sides — §6.3, r1A F-DA-3.) So do six more shapes found
+  here:
   - an if/else and an N-way switch that rotate on EVERY edge;
   - a derived base;
   - the f64 register;
@@ -94,6 +100,14 @@ the tainted `q`. When the clone later proves `h` classical, `scrubForwardCone` u
   arm's `cq_theta(t, a)` lowers as a SOURCE on a fresh rail.
 - The user's `cq_measure` of the erased φ reads classical `t` and takes the bd 21mg
   classical-measure path. The measurement is gone.
+- ⚠ "The measurement is gone" UNDERSELLS the class (r1A `r16`, r1B F-DB-3 `zlC`). When
+  the erased φ's consumer is itself a gate — a chained `cq_theta`, or a round-1-emitted
+  quantum-controlled arm whose hoisted theta reads the base — the oracle KEEPS every
+  measurement and still computes the wrong unitary: the arm's rotation lands on an
+  orphan fresh rail and the measured register never sees it. A measure-count metric
+  (this record's own `run.sh` `measure=` column) reads those as clean.
+  `lowering_reject_classical_mux_phi_spec_scrubbed_base_controlled_consumer.ll` pins
+  `zlC`.
 
 `l01C` on the oracle lowers to `ret i32 %6` (the clone's classical result). The lowered
 module has 0 `cqrt_measure`; the source has 1. `opt` exits 0, and stage 2b STRICT
@@ -310,7 +324,23 @@ taint.
 `lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll` pins that branch
 (M3, §8.4). It is hand-edited IR, because `-O1` folds the shape.
 
-### 6.3 Every decline is the twin's decline (an ARGUMENT)
+### 6.3 Every decline is the twin's decline (an ARGUMENT, about VERDICTS)
+
+⚠ **Corrected by Rule-13 r1A F-DA-3.** What follows proves the twin's VERDICT, not its
+STRING. The two coincide only when the lifted φ is the module's FIRST classical-mux
+offender on both sides. A module with a second offender can decline at a different site
+or owner on one side:
+
+- `r01`: `f1` holds a false lift and `f2` a genuine classical mux. The subject declines
+  in `f2`, because the lift in `f1` is provisional and the guard walks on; the twin
+  declines in `f1`.
+- `r10`: C declines at the classical-SELECT guard, the twin at the φ.
+- `r02`: C declines at the rail-bank reader, the twin at the φ.
+- With `-g`, `rk04C_rev` would name the OUTER φ (recorded first), where the twin names
+  the inner one.
+
+None of these is a verdict difference. §5's byte-identical stderr is a fact about that
+battery, not a theorem.
 
 Suppose the re-ask fires. Then the base lost its taint and at least one chain has a
 gate. In the twin, the base is classical from the start, so each chain's first gate on
@@ -337,14 +367,33 @@ read `t` where the program read the rotated register.
 
 - The incomings are the base or `cq_theta` calls, and the theta calls stay alive until
   `lowerRotations`.
-- The only erase in the window is `retargetSite`. It RAUWs the base; it never plainly
-  erases it.
-- `WeakTrackingVH` follows the RAUW.
+- Two RAUW-then-erase events can hit a recorded value after it was recorded. Neither
+  plainly erases it:
+  - `retargetSite`, in the window, rebuilds an fp-return spec site;
+  - a LATER lift in the same `declineClassicalMuxes` walk RAUWs and erases a merge φ
+    that an earlier-recorded lift holds as its BASE. This happens when the outer
+    diamond's merge is laid out first (r1A F-DA-1).
+- `WeakTrackingVH` follows both RAUWs.
 
-`lowering_classical_mux_phi_onereg_spec_quantum_base_fp_rebuilt.ll` pins exactly this.
-There, an f64 site that `specialize()` REBUILDS into an `i32` handle IS the lift's base
-and one of its incomings, and the record follows it. Mutant M6 (`WeakVH`) turns that
-fixture red (§8.4). Rule 12 can supply no fixture for the null branch itself (M7 MISSED).
+Two fixtures pin the tracking handle:
+
+- **`lowering_classical_mux_phi_onereg_spec_quantum_base_fp_rebuilt.ll`**: an f64 site
+  that `specialize()` REBUILDS into an `i32` handle IS the lift's base and one of its
+  incomings, and the record follows it.
+- **`lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll`**: the
+  outer lift's recorded base is the inner merge φ, and the record follows the inner
+  lift's RAUW onto the real base.
+  - This is hand-reordered IR; no C spelling is known to produce the layout.
+  - Its spec-classical sibling `..._spec_scrubbed_base_reversed_layout.ll` declines.
+
+Mutant M6 (`WeakVH`) turns both accept fixtures red (§8.4, re-run in §11).
+
+⚠ The case this section's first version and the source comment used to name — a lift
+whose INCOMING was an earlier lifted φ — needs NO tracking. In forward layout the
+earlier lift has already RAUW'd that φ before the later one is recorded, and `_two_lifts`
+stays green under M6.
+
+Rule 12 can supply no fixture for the null branch itself (M7 MISSED).
 
 ### 6.5 L1 and L2, asked of this change
 
@@ -646,6 +695,14 @@ The one comment edit made after them rebuilt to the same two hashes.
    value would alias. The re-ask reads `Tainted` at a slot where `specialize()` has
    just erased rebuilt sites. The record itself holds `WeakTrackingVH`s and never keys a
    freed pointer, but the `Tainted` set it queries can.
+   - ⚠ **One more consumer, added by this change (r1B F-DB-7).** The moved 2qyz re-sweep
+     now runs AFTER `specialize()`, so it also iterates clone bodies. Its
+     `inLowerOpsScope` asks `taint.Tainted.count(&I)` of module taint. On `main`,
+     where bd `j8sk` is unfixed, a clone-body instruction allocated at a dangling key
+     would be swept.
+   - The direction is decline-only, and it is unmeasured.
+   - bd `8e5r`'s fix in progress (the parallel track) scrubs those keys, which closes
+     it.
 5. **bd `z0re`'s two accepts.** They are correct by argument and stream-read only, with
    no statevector (Rule 2). A reviewer may want to confirm the controlled-Ry-by-difference
    stream of `a01C` independently.
@@ -660,3 +717,97 @@ The one comment edit made after them rebuilt to the same two hashes.
   reached the lift: `k01`–`k03`, `l11`, `l14`, `l16`, `l23`, `l24` all decline earlier);
 - G-13's rolled-vs-unrolled probe, which is not applicable because no condition fence
   was widened.
+
+## 11. Rule-13 dispositions
+
+Two independent rounds ran concurrently on the frozen subject (`06148f3d` +
+`52d35e5d`, `cq-opt` `e587c19152bf39e5`):
+
+- `review_r1A_d88e/REVIEW.md` covered the fence logic and the slot order.
+- `review_r1B_d88e/REVIEW.md` covered the emitted circuits of what still accepts, and the
+  L2 enumeration.
+
+Both returned `CLEAR-WITH-ITEMS`, **0 P1**. Both records and their probes are committed
+beside this file.
+
+**The disposition rule, from the orchestrator:** every item is applied as a COMMENT,
+FIXTURE, GOLDEN-HEADER or RECORD change only. No predicate, slot or emitted stream
+changes, because any of those would void the clearance. The post-edit binary is checked
+against `e587c191` in §11.1.
+
+| id | sev | finding (one line) | disposition |
+|---|---|---|---|
+| F-DA-1 | P3 | The stated reason for `WeakTrackingVH` needs no tracking. The case that does (reversed layout: the outer lift is recorded with the inner merge φ as its base, and the inner lift then RAUWs that φ) was unpinned. | **COMMENT:** `TaintPropagation.h` `LiftedMergePhi` names both real tracking cases, and says the old case needs none. **FIXTURES:** r1A's `rk04Q_rev` / `rk04C_rev` ship as `lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll` (accept, stream pinned) and `lowering_reject_classical_mux_phi_spec_scrubbed_base_reversed_layout.ll` (decline, string mirrored). Both headers say that no C spelling is known to produce the layout. **MEASURED:** a `WeakVH` mutant (M6) kills the accept fixture (§11.1). **RECORD:** §6.4. |
+| F-DA-2 | P3 | `resolveWireBase`'s header still said "SOLE CALLER". | **COMMENT:** the header now says TWO CALLERS, and that they share `collectLiftGateCalls` so both resolve identically. It gives the L3-mirror answer: the `ControlledRotations` STOP is safe for the re-ask because nothing writes that map in the window. The only writers are `SwapRouteEmit.cpp:987/998/1543` and `AngleSelectEmit.cpp:543`, all control emitters that run before `declineClassicalMuxes` (grep). It also states a retirement trigger. |
+| F-DA-3 | P3 | "The twin's string, character-for-character" holds for VERDICTS, not STRINGS, once a module has a second classical-mux offender (`r01`, `r10`, `r02`). | **COMMENTS**, all scoped to "the twin's verdict; its string when this φ is the first offender": `TaintPropagation.h` (the `LiftedMergePhi` comment and the `declineFalsifiedMergePhiLifts` contract), the lift's block comment in `TaintPropagation.cpp`, and the `run()` slot comment in `CQLoweringPass.cpp`. **RECORD:** §6.3 (retitled "about VERDICTS") and the §1 headline. |
+| F-DA-4 | P3 | `r03C` (a lift on a z0re runtime-seed prep) accepts where its twin declines at F1. Correct by stream. | **RECORD / BEAD:** already in bd `z0re`'s notes (added before this pass; verified present, not duplicated). |
+| F-DB-1 | P2 (keep) | bd `hgwx` is confirmed by mutation. Mutant B (`priorUseIsSettled` treats `__cq_q_*` as settled) makes `j02C` twin-identical, the sole mover of 330. Analytically, P(bit0 = 0) is 0.118 coherent versus 0.070 dephased. The warning also fires on twin-identical streams. `priorUseIsSettled` arms (d)/(e) have false comments. | **BEAD:** all of it appended to bd `hgwx`, with lyyf (B) as an owner question. **COMMENTS (ArithLowering.cpp, comment-only):** arm (d) now says a classical-verdict clone mints NO rail and is refused by shape, not verdict, and that the mutant is diagnostic and unsound for a quantum verdict. Arm (e)'s "costs nothing but a kept ancestor rail" is corrected: under a later non-diagonal gate refusal also costs coherence (0.118 → 0.070). |
+| F-DB-2 | P2 (owner Q, keep) | bd `z0re` is confirmed correct on its 4 probes, plus 6 new side-door members (`zcC`, `zfC`, `zjC`, `zkC`, `zmC`, `zxdC`). | **BEAD:** the six members, the `-O1`/F2 unreachability argument and the stale-fence side doors are appended to bd `z0re`. Nothing was missing except these six. |
+| F-DB-3 | P3 | `zlC` keeps BOTH measurements on the oracle but orphans the user's Ry(.9). A measure count and l3oi both miss it. No fixture had a lift feeding a round-1-emitted quantum-controlled region. | **FIXTURE (red → green):** `lowering_reject_classical_mux_phi_spec_scrubbed_base_controlled_consumer.ll`. It is red on the oracle `b1603d23` (exit 0, both measures present) and green on the subject (exit 1, the twin's string, stderr byte-identical to `zlT`). **RECORD:** §2's "the measurement is gone" is marked as underselling the class. **COMMENT:** the `run()` slot comment says the same. |
+| F-DB-4 | P3 | bd `cepm`'s `a03C` fragility is confirmed by mutation, and the natural fix for `a03Q` is the trigger. | **BEAD:** filed by r1B as bd `test_C_libtooling-d152` (verified to exist). No action here. |
+| F-DB-5 | P3 | i1/i8/i16/i64 spec arguments decline with a "floating-point" string, so d88e is C-reachable only at i32 and the fp widths. | **BEAD:** filed by r1B as bd `test_C_libtooling-mg6f` (verified to exist). No action here. |
+| F-DB-6 | P3 | `slice_spec_lift_quantum_base` pins a DEPHASED (lyyf-B) stream without saying so. `e2e-spec-lift-scrubbed-elsewhere-twin-identical` compares traces only and cannot see the spurious hgwx warning, which fires on the C side and not on the twin. | **GOLDEN HEADERS:** `slice_spec_lift_quantum_base.c` (dephased stream, warning, twin coherent, a regression pin rather than a correctness witness, bd hgwx) and `slice_spec_lift_scrubbed_elsewhere.c` (the twin gate compares traces only; the warning is on one side). **REGISTRATION COMMENT:** `tests/e2e/CMakeLists.txt` names both limits. The `.expected.log` files are trace bytes and carry no header, so they are unchanged. |
+| F-DB-7 | P3 (unmeasured) | The moved 2qyz re-sweep now iterates clone bodies keyed on module `taint.Tainted`, which adds exposure to bd `j8sk`'s dangling keys. The direction is decline-only. | **RECORD:** §10 item 4. Covered by bd `8e5r`'s fix in progress on the parallel track; nothing changed here. |
+
+### 11.1 Measured after the edits
+
+Every command below ran on this commit's tree.
+
+**Pre-edit binary kept.**
+
+- `scratchpad/frozen/cq-opt.d88e_preP3` (`e587c19152bf39e5`) and
+  `libCQPass.d88e_preP3.so` (`66c1b68f250d5a30`).
+
+**The three new fixtures, red-green.** Each fixture's RUN line is emulated against a
+frozen binary (`d88e_probes/redgreen.sh`).
+
+- ORACLE `b1603d23`: the accept fixture passes, and both decline fixtures FAIL (exit 0).
+  That is RED for `_controlled_consumer` and `_reversed_layout`.
+- SUBJECT `e587c191`: 3 of 3 pass.
+
+**Mutants, via `mut.py`.**
+
+- Build: the mutant tree was synced with the 3 new fixtures and rebuilt, and before any
+  mutant its hash was checked equal to the subject's.
+- Measurement per mutant: full `lit -s` plus the probe battery.
+- Probe battery: 125 modules, including `rk04{Q,C}_rev` and `zlC`.
+- Results:
+
+| mutant | lit failures (of 2305) | probe movers (of 125) | reading |
+|---|---|---|---|
+| N0 (null) | 0 | 0 | null control |
+| M6 `WeakVH` | 2: `_fp_rebuilt`, **`_reversed_layout`** (accept) | 2: `f01Q`, **`rk04Q_rev`** | KILLED. **This confirms r1A's F-DA-1 claim.** The reversed-layout accept fixture is the lift-order pin M6 lacked, and the spec-CLASSICAL `_reversed_layout` decline is not an M6 pin (a nulled record declines anyway). |
+| M1 no re-ask | 14: every decline fixture of the family, including the new `_controlled_consumer` and `_reversed_layout` | 17 | KILLED. The new fixtures are live pins of the re-ask. |
+
+- Restored: `cq-opt e587c19152bf39e5 == subject: True`.
+- Log: `d88e_probes/results/mut_run_p3.log`.
+
+### 11.2 Rebuild, lit, e2e, code map (post-edit)
+
+**Rebuild** (`cmake --build build --target CQPass cq-opt`):
+
+- `cq-opt` `e587c19152bf39e5`, `libCQPass.so` `66c1b68f250d5a30`: **BIT-IDENTICAL to
+  the pre-edit binary.**
+- The edited sources' objects were checked newer than the edits (`stat`), so this is a
+  real recompile, not a stale build.
+- The coordinator's corpus A/B (pre-edit vs post-edit) applies only if the binary moved,
+  and it did not. An identical binary gives 0 movers by construction, so the sweep was
+  not run.
+
+**Full lit** (`lit -s ir-pass/test`):
+
+- `Total Discovered Tests: 2305`, Passed 2304, Expectedly Failed 1.
+- The count is 2302 plus the 3 new fixtures.
+
+**The d88e family** (`lit --filter 'spec_scrubbed|spec_quantum_base|lift_stale_spec'`):
+
+- 21 of 21 passed.
+
+**e2e** (`ctest --test-dir build -R spec-lift`, after reconfigure):
+
+- 4 of 4 passed.
+- The `.c` header and registration-comment edits leave every stream unchanged.
+
+**Code map:**
+
+- `python3 tools/update_code_map.py`, then `--check`: clean.

@@ -862,11 +862,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // bd `test_C_libtooling-d88e` (P1) — the scrub-direction L1 re-ask of a
   // REWRITE. `declineClassicalMuxes` above lifted every one-register merge phi
   // on PRE-scrub taint, RAUW'ing it onto its wire base; a base that `specialize()`
-  // just proved classical was never a register, and the user's `cq_measure` of
-  // the erased phi would read it as a classical value (the measurement vanishes,
-  // exit 0, stage-2b clean). The lift RECORDED its premise; this re-asks it at
+  // just proved classical was never a register, and every consumer of the erased
+  // phi reads it as a classical value: a `cq_measure` vanishes, and a consumer
+  // that is itself a gate lands the arm's rotation on an orphan rail while the
+  // measurement count stays right (Rule-13 r1B `zlC`, r1A `r16`) — exit 0,
+  // stage-2b clean either way. The lift RECORDED its premise; this re-asks it at
   // FINAL taint and declines with the classical-mux guard's own string — the
-  // hand-inlined twin's. FIRST after `specialize()`, ahead of the 2qyz re-sweep,
+  // hand-inlined twin's verdict (and its string when this phi is the module's
+  // first classical-mux offender, r1A F-DA-3). FIRST after `specialize()`, ahead
+  // of the 2qyz re-sweep,
   // the l3oi fence and the stale-reader backstop, so the owner whose premise was
   // falsified speaks (`..._spec_scrubbed_base_owner.ll` pins the slot against the
   // backstop, `..._spec_scrubbed_base_pure_consumer.ll` against the re-sweep,

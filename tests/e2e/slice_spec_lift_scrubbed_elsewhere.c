@@ -12,6 +12,14 @@
    goldens BYTE-IDENTICAL: Ry(.5) on `q`, Ry(.2) on the SAME handle, one
    measurement, `t` added as classical data (the clone emits no gate).
 
+   ⚠ THAT GATE COMPARES TRACES ONLY (bd d88e Rule-13 r1B F-DB-6). This 2-TU side's
+   `opt` stderr carries `cq rotation lowering: non-diagonal gate over a live
+   derived record`, and the twin's does not: the classical-verdict clone call
+   `__cq_q_h_01(h_q, m)` is counted as a live reader of `q` (bd hgwx — the same
+   misclassification makes stage 2b's census count a dirty template rail here).
+   The warning is spurious on this stream, which is byte-identical to the twin's,
+   and no gate in this family can see the difference.
+
    `m` is `slice`'s parameter, passed `argc + 4` (argc = 1 under the harness, so
    m = 5 and the arm runs); `noinline` keeps `clang -O1` from folding the
    classical condition away (bd 46oo). `main` discards the result so the slice

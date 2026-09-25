@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 746 maintained source files, 6133 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 751 maintained source files, 6141 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -24,16 +24,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2714 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2727 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1899 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1921 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1571 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1575 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -41,9 +41,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `ir-pass/src/Specialization.cpp` — 1225 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1123 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1108 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1100 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -115,9 +115,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1899 lines)
+### `ir-pass/include/TaintPropagation.h` (1921 lines)
 
-- `ir-pass/include/TaintPropagation.h:518` — `isPeelClone`
+- `ir-pass/include/TaintPropagation.h:537` — `isPeelClone`
 
 ### `ir-pass/include/WidthDispatch.h` (245 lines)
 
@@ -143,7 +143,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1100 lines)
+### `ir-pass/src/ArithLowering.cpp` (1123 lines)
 
 - `ir-pass/src/ArithLowering.cpp:49` — `promote`
 - `ir-pass/src/ArithLowering.cpp:105` — `negateClassicalImmediate`
@@ -152,11 +152,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:276` — `rewriteUnary`
 - `ir-pass/src/ArithLowering.cpp:307` — `rewriteInPlaceValueRail`
 - `ir-pass/src/ArithLowering.cpp:407` — `inPlaceReassignRailOperand`
-- `ir-pass/src/ArithLowering.cpp:553` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:630` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:826` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:894` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:934` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:576` — `priorUseIsSettled`
+- `ir-pass/src/ArithLowering.cpp:653` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:849` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:917` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:957` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmClassify.cpp` (9234 lines)
 
@@ -271,12 +271,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1571 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1575 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:54` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:88` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:114` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1102` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1106` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -928,7 +928,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2714 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2727 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:80` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:98` — `collectAndSeed`
@@ -945,27 +945,27 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp:743` — `freezeResultWouldEscape`
 - `ir-pass/src/TaintPropagation.cpp:766` — `isLocalIntegerIdentityFreeze`
 - `ir-pass/src/TaintPropagation.cpp:781` — `declineTaintEscapes`
-- `ir-pass/src/TaintPropagation.cpp:1440` — `resolveWireBase`
-- `ir-pass/src/TaintPropagation.cpp:1501` — `terminatorIsClassical`
-- `ir-pass/src/TaintPropagation.cpp:1515` — `liftOneRegisterMergePhi`
-- `ir-pass/src/TaintPropagation.cpp:1667` — `collectLiftGateCalls`
-- `ir-pass/src/TaintPropagation.cpp:1675` — `declineClassicalMuxes`
-- `ir-pass/src/TaintPropagation.cpp:1799` — `declineFalsifiedMergePhiLifts`
-- `ir-pass/src/TaintPropagation.cpp:1915` — `detectAndLowerOnwardControl`
-- `ir-pass/src/TaintPropagation.cpp:2004` — `replanReseedSpecialization`
-- `ir-pass/src/TaintPropagation.cpp:2069` — `propagateFromSeeds`
-- `ir-pass/src/TaintPropagation.cpp:2132` — `adjudicateTaintDelta`
-- `ir-pass/src/TaintPropagation.cpp:2183` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2353` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2373` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2420` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2439` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:2467` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2504` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2520` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:2611` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:2621` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:2678` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:1453` — `resolveWireBase`
+- `ir-pass/src/TaintPropagation.cpp:1514` — `terminatorIsClassical`
+- `ir-pass/src/TaintPropagation.cpp:1528` — `liftOneRegisterMergePhi`
+- `ir-pass/src/TaintPropagation.cpp:1680` — `collectLiftGateCalls`
+- `ir-pass/src/TaintPropagation.cpp:1688` — `declineClassicalMuxes`
+- `ir-pass/src/TaintPropagation.cpp:1812` — `declineFalsifiedMergePhiLifts`
+- `ir-pass/src/TaintPropagation.cpp:1928` — `detectAndLowerOnwardControl`
+- `ir-pass/src/TaintPropagation.cpp:2017` — `replanReseedSpecialization`
+- `ir-pass/src/TaintPropagation.cpp:2082` — `propagateFromSeeds`
+- `ir-pass/src/TaintPropagation.cpp:2145` — `adjudicateTaintDelta`
+- `ir-pass/src/TaintPropagation.cpp:2196` — `repropagateControlMerges`
+- `ir-pass/src/TaintPropagation.cpp:2366` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2386` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2433` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:2452` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:2480` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2517` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:2533` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:2624` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:2634` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:2691` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TemplateName.cpp` (143 lines)
 
@@ -6756,6 +6756,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_select_rail_alias_cond.c:127` — `slice`
 - `tests/e2e/slice_select_rail_alias_cond.c:142` — `main`
 
+### `tests/e2e/slice_spec_lift_quantum_base.c` (43 lines)
+
+- `tests/e2e/slice_spec_lift_quantum_base.c:31` — `slice`
+- `tests/e2e/slice_spec_lift_quantum_base.c:39` — `main`
+
+### `tests/e2e/slice_spec_lift_scrubbed_elsewhere.c` (41 lines)
+
+- `tests/e2e/slice_spec_lift_scrubbed_elsewhere.c:29` — `slice`
+- `tests/e2e/slice_spec_lift_scrubbed_elsewhere.c:37` — `main`
+
+### `tests/e2e/slice_spec_lift_scrubbed_elsewhere_twin.c` (20 lines)
+
+- `tests/e2e/slice_spec_lift_scrubbed_elsewhere_twin.c:8` — `slice`
+- `tests/e2e/slice_spec_lift_scrubbed_elsewhere_twin.c:16` — `main`
+
 ### `tests/e2e/slice_spec_qram_read.c` (28 lines)
 
 - `tests/e2e/slice_spec_qram_read.c:18` — `lookup`
@@ -6869,6 +6884,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `tests/e2e/spec_fp_select_lib.c` (17 lines)
 
 - `tests/e2e/spec_fp_select_lib.c:13` — `mhelper`
+
+### `tests/e2e/spec_lift_classical_lib.c` (18 lines)
+
+- `tests/e2e/spec_lift_classical_lib.c:15` — `h`
+
+### `tests/e2e/spec_lift_quantum_lib.c` (16 lines)
+
+- `tests/e2e/spec_lift_quantum_lib.c:14` — `h`
 
 ### `tests/e2e/spec_multiexit_caller.c` (20 lines)
 

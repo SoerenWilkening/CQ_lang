@@ -2621,6 +2621,14 @@ add_test(NAME e2e-slice-specialize-twoarm-select
 #   * SPEC-CLASSICAL, SCRUBBED ELSEWHERE (`h(a,k) = k + 1`): the scrub happens but
 #     the lifted base is a `cq_theta` keep root. The correct circuit is the
 #     hand-inlined twin's, so its golden is pinned BYTE-IDENTICAL to the 2-TU one.
+# ⚠ Both limits named by bd d88e Rule-13 r1B F-DB-6. (1) The spec-quantum golden
+#   pins a DEPHASED stream (the clone's copy-out keeps `q` live when the arm's Ry
+#   fires; `opt` warns `non-diagonal gate over a live derived record`, the owner's
+#   lyyf-(B) class; its hand-inlined twin is coherent) — a regression pin, not a
+#   correctness witness. (2) The twin-identical gate below compares TRACES ONLY:
+#   the 2-TU side prints that same warning and its twin does not (bd hgwx: the
+#   classical-verdict clone call reads as a live user of `q`), and nothing here
+#   can see a stderr difference.
 add_test(NAME e2e-slice-spec-lift-quantum-base
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"

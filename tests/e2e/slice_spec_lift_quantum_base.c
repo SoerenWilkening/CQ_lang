@@ -11,6 +11,17 @@
    measures. The golden pins that stream: no fresh rail in the arm, ONE
    `cqrt_measure` of the handle the clone returned.
 
+   ⚠ THE PINNED STREAM IS A DEPHASED ONE, and this golden pins it as today's
+   behaviour, not as a correctness witness (bd d88e Rule-13 r1B F-DB-6). The
+   clone's Bennett copy-out leaves `q` (h0) allocated and entangled with the out
+   rail h2 (= q + 5) when the arm's Ry(.2) fires on h2, and `opt` warns
+   `cq rotation lowering: non-diagonal gate over a live derived record` — the
+   owner's lyyf-(B) class (a live record left entangled is accepted as the user's
+   circuit). The hand-inlined twin (`int t = q + m;`) lowers the add IN PLACE and
+   stays coherent (r1B probe `sqi1U`), so for this shape the twin is a divergence
+   detector, not a correctness oracle. bd hgwx tracks the same dephasing face for
+   a CLASSICAL-verdict clone, where the kept ancestor is the compiler's doing.
+
    `m` is `slice`'s parameter, passed `argc + 4` (argc = 1 under the harness, so
    m = 5 and the arm runs); `noinline` keeps `clang -O1` from folding the
    classical condition away (bd 46oo). `main` discards the result so the slice

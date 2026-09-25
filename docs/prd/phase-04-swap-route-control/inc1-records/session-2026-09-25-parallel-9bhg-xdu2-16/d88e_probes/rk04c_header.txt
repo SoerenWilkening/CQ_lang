@@ -1,0 +1,36 @@
+; lowering_reject_classical_mux_phi_spec_scrubbed_base_reversed_layout.ll — DECLINE
+; (bd test_C_libtooling-d88e, Rule-13 round r1A F-DA-1). HAND-REORDERED IR.
+;
+; ⚠ NO C SPELLING IS KNOWN TO PRODUCE THIS LAYOUT. The body is r1A's
+; `rk04C_rev.s1.ll`: the 2-TU `k04C` module (two chained one-register lifts over a
+; spec-CLASSICAL `t`, library `h(a, k) = k + 1`) after `opt -passes=instnamer`,
+; with the diamond blocks moved to the order `bb14, bb12, bb9, bb7`, so the OUTER
+; lift is recorded first with the INNER merge φ as its base and the inner lift then
+; RAUWs that φ (see the ACCEPT sibling
+; `lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll` for the
+; mechanism). `opt -passes=verify` clean.
+;
+; `specialize()` scrubs `t`, so BOTH lifts were false. The main `def1b088` oracle
+; (cq-opt `b1603d23`) ACCEPTS this at exit 0 with 0 `cqrt_measure` (the source has
+; 1); the subject declines with the classical-mux guard's string, as the normal-
+; layout `k04C` and its hand-inlined twin `k04T` (`int t = m + 1;`) do. Which lift
+; the diagnostic is attributed to differs from the twin (the OUTER φ, recorded
+; first, vs the twin's inner one) — visible only in `!dbg`, which this module has
+; none of (r1A F-DA-3: twin parity is a VERDICT property).
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;
+; Caller TU (clang -O1 -include CQ.h), before the reorder:
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int s = r; if (m > 7) s = cq_theta(r, .4); return cq_measure(s); }
+;
+; Regenerate: build `k04C` (clang -O1 both TUs, llvm-link), run
+; `opt -passes=instnamer`, then move blocks `bb14`, `bb12`, `bb9`, `bb7` (in that
+; order) directly after the entry block by hand.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+

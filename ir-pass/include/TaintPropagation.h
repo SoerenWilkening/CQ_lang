@@ -303,12 +303,31 @@ struct TaintSet {
   //
   // Written ONLY by `liftOneRegisterMergePhi`'s accept; read ONLY by
   // `declineFalsifiedMergePhiLifts`, right after `specialize()` in both entry
-  // points. `WeakTrackingVH`, not `WeakVH`: the record must FOLLOW a later RAUW —
-  // a second lift whose incoming was an earlier lifted phi, and `retargetSite`'s
-  // rebuild of an fp-return spec site — so that the re-ask reads the value that
-  // is actually there. `F`/`DL` are the erased phi's, so the diagnostic is the
-  // one `declineClassicalMuxes` would have printed for it (the hand-inlined
-  // twin's, character-for-character).
+  // points. `WeakTrackingVH`, not `WeakVH`: the record must FOLLOW a RAUW that
+  // happens AFTER it was written, so that the re-ask reads the value that is
+  // actually there. Two such RAUWs exist, and both are pinned:
+  //   * `retargetSite`'s REBUILD of an fp-return spec site (the old call is
+  //     RAUW'd onto the new `i32` one and erased) when that site is the lift's
+  //     base or an incoming — `..._spec_quantum_base_fp_rebuilt.ll`;
+  //   * a LATER lift RAUW'ing a merge φ that an EARLIER-recorded lift holds as its
+  //     BASE. `declineClassicalMuxes` walks blocks in LAYOUT order, and
+  //     `resolveWireBase` stops at a φ, so when an outer diamond's merge is laid
+  //     out before the inner one, the outer lift is recorded with the inner merge
+  //     φ as its base and the inner lift then RAUWs and erases that φ; only a
+  //     tracking handle carries the record onto the real base (bd d88e Rule-13
+  //     r1A F-DA-1; `..._spec_quantum_base_reversed_layout.ll` accepts, its
+  //     spec-classical sibling `..._spec_scrubbed_base_reversed_layout.ll`
+  //     declines — hand-reordered IR, no C spelling is known to produce it).
+  // ⚠ The case this comment used to name — a lift whose INCOMING was an earlier
+  // lifted φ — needs NO tracking: in forward layout the earlier lift has already
+  // RAUW'd that φ before the later one is visited, so the later record holds the
+  // base directly (`..._spec_scrubbed_base_two_lifts.ll` stays green under a
+  // `WeakVH` mutant). `F`/`DL` are the erased phi's, so the diagnostic is the one
+  // `declineClassicalMuxes` would have printed for it. That makes the VERDICT the
+  // hand-inlined twin's; the STRING is the twin's only when this φ is also the
+  // twin's FIRST classical-mux offender — a module with a second offender (a
+  // genuine classical mux in another function, a classical select, a rail-bank
+  // reader) can decline elsewhere on one side (r1A F-DA-3: `r01`, `r10`, `r02`).
   struct LiftedMergePhi {
     llvm::Function *F = nullptr;
     llvm::DebugLoc DL;
@@ -1508,8 +1527,11 @@ bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint);
 // neither does this (the degenerate `phi(t, t)`; RAUW'ing it is exact whatever
 // `t`'s taint). A falsified premise fires `declineClassicalMuxes`' own
 // `cq taint escape: tainted value muxed by a classical-condition phi` at the
-// erased phi's function and `!dbg` — exactly what the hand-inlined twin (the
-// call's classical return written directly) prints. Asked once per entry point,
+// erased phi's function and `!dbg` — the hand-inlined twin's (the call's
+// classical return written directly) VERDICT, and its STRING whenever this φ is
+// also the twin's first classical-mux offender (a second offender elsewhere in
+// the module can make one side decline at a different site or owner — bd d88e
+// Rule-13 r1A F-DA-3, probes `r01`/`r10`/`r02`). Asked once per entry point,
 // right after `specialize()` and BEFORE the bd 2qyz post-lift stale re-sweep
 // (`declineLiftedStaleRecordOps`, moved below this slot by the same change),
 // `declineScrubbedHandleReads` and the bd 3d8q stale-reader backstop, so the
