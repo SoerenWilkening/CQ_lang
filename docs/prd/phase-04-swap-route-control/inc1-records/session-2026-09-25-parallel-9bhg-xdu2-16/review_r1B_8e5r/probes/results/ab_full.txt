@@ -1,0 +1,4 @@
+NULL (A vs A): denominator 2705 {'same': 2705}
+A vs B: denominator 2705 {'same': 2705}
+
+[exited with code 0]

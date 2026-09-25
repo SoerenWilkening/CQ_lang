@@ -1,0 +1,7 @@
+sw_inst_nofree vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_inst_scribble vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_inst_sys vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_subj_shuf1 vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_subj_shuf2 vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_subj_shuf3 vs subject cq-opt (system): same=3228, diff=0 of 3228
+sw_inst2_nofree vs subject cq-opt (system): same=3228, diff=0 of 3228

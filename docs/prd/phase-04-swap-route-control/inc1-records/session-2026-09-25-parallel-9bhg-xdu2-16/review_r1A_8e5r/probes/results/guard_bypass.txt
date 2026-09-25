@@ -1,0 +1,18 @@
+null control: 0 problems over 52 members (must be 0)
+  KILLED  CONTROL raw SmallPtrSet (must be KILLED) llvm::SmallPtrSet<llvm::Value *, 4> X;
+  MISSED  llvm::SmallSet<Value*>                   llvm::SmallSet<llvm::Value *, 4> X;
+  MISSED  std::multiset<Value*>                    std::multiset<llvm::Value *> X;
+  MISSED  std::array<Value*,4>                     std::array<llvm::Value *, 4> X;
+  MISSED  std::optional<Value*>                    std::optional<llvm::Value *> X;
+  MISSED  llvm::StringMap<Value*>                  llvm::StringMap<llvm::Value *> X;
+  MISSED  std::pair<Value*,int> by value           std::pair<llvm::Value *, int> X;
+  MISSED  lowercase ptr typedef in container       llvm::SmallPtrSet<vptr_t, 4> X;
+  MISSED  template alias container                 PtrSetOf<llvm::Value> X;
+  MISSED  by-value foreign record                  LoopBreakRegion LastBreak;
+  MISSED  default init with parens                 std::set<llvm::Value *> X = std::set<llvm::Value *>();
+  MISSED  alignas member                           alignas(8) llvm::Value *Stray;
+  MISSED  raw ptr, brace-init                      llvm::Value *Stray{nullptr};
+  MISSED  brace-init raw DenseMap (X{})            llvm::DenseMap<llvm::Value *, unsigned> X{};
+  MISSED  brace-init raw SmallPtrSet (X{})         llvm::SmallPtrSet<llvm::Instruction *, 4> X{};
+  KILLED  unique_ptr to raw map                    std::unique_ptr<llvm::DenseMap<llvm::Value *, int>> X;
+15 bypass candidates, 14 MISSED
