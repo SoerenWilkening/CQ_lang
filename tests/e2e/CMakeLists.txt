@@ -6614,3 +6614,42 @@ add_test(NAME e2e-slice-condtree-classical-leaf
     "" "--forbid-qram")
 set_tests_properties(e2e-slice-condtree-classical-leaf PROPERTIES ENVIRONMENT
   "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+
+# bd test_C_libtooling-xdu2.16 — a COMPOUND condition tree feeding a 4.4 DATA
+# select INSIDE A ROLLED LOOP. `clang -O1` LICM-hoists a loop-invariant tree into
+# the preheader; the loop layer's round-1 grant named the hoisted node as an
+# invariant root, the 4.4 emitter consumed and ERASED it, and the post-fixpoint
+# re-ask refused the NULLED root unconditionally. The re-ask now re-derives the
+# grant from scratch under FINAL taint (it must be TOTAL) instead. Every ROLLED
+# slice below DECLINES on the pre-change ORACLE `438c77bf45c02e3e`; every UNROLLED
+# twin lowers there too (no loop, no grant). THE ONLY LAYER THAT LINKS, and each
+# twin gate is a `cmp` over committed goldens: identity says the rolled lowering
+# emits the three written-out copies' gate sequence, NOT that either is the right
+# unitary (owner ruling S3, 2026-09-17) — that argument is in each slice header
+# and in the session record TRACK_XDU2_16.md. Registered after the directory-wide
+# ENVIRONMENT pass, so each sets its own.
+foreach(_x16 slice_loop_condtree_select_hoisted
+             slice_loop_condtree_select_hoisted_unrolled
+             slice_loop_condtree_select_hoisted_literal
+             slice_loop_condtree_select_hoisted_literal_unrolled
+             slice_loop_condtree_select_hoisted_row13)
+  string(REPLACE "_" "-" _x16_name "${_x16}")
+  string(REPLACE "slice-" "e2e-slice-" _x16_name "${_x16_name}")
+  add_test(NAME ${_x16_name}
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+      "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_x16}.c"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_x16}.expected.log")
+  set_tests_properties(${_x16_name} PROPERTIES ENVIRONMENT
+    "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+endforeach()
+add_test(NAME e2e-loop-condtree-select-hoisted-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_unrolled.expected.log")
+add_test(NAME e2e-loop-condtree-select-hoisted-literal-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal_unrolled.expected.log")

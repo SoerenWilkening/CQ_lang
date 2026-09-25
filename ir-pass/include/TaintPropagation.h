@@ -1032,7 +1032,11 @@ struct TaintSet {
   // ⚠ THE ROOTS ARE `WeakTrackingVH` FOR THE SAME REASON. A root mint is RAUW'd to
   // its `i32` handle by `lowerRotations`; the re-ask runs BEFORE that, but a region
   // emitter can erase a value in the window. A NULLED root is a root that no longer
-  // exists, and the proof the grant rested on no longer has a subject.
+  // exists and that nothing reads any more; since bd `test_C_libtooling-xdu2.16`
+  // the re-ask answers it by discarding EVERY round-1 root of that grant and
+  // re-deriving the grant from scratch under FINAL taint (it must be TOTAL, or the
+  // grant declines) — no longer by declining outright, which over-declined every
+  // compound 4.4 condition tree `-O1` LICM-hoists out of a rolled loop.
   //
   // ⚠ `Fn` IS RECORDED ONLY SO A NULLED `Header` CAN STILL BE DIAGNOSED. Without
   // it, an erased header is unattributable to any function and the re-ask would

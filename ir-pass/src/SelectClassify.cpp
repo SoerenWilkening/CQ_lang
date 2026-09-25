@@ -963,7 +963,11 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   //     node as `cq_template_<op>_i1_hl(flag, literal)` — the mixed Q+C
   //     convention every other opcode already uses. bd xdu2.8's row-13 program
   //     (`predmux_guarded_vla_reject_row13_hybrid_select.ll`, kept under its old
-  //     name per L8) now ACCEPTS through it. What still lands on this check is
+  //     name per L8) passes THIS gate through it — ⚠ and ACCEPTS only since bd
+  //     xdu2.16: under xdu2.13 alone it moved on to the loop layer's round-2
+  //     grant re-ask, which refused the nulled root of the hoisted `and` this
+  //     emitter erases (an earlier wording here said "now ACCEPTS" at xdu2.13,
+  //     which was false then — L7). What still lands on this check is
   //     an untainted leaf the literal predicate REFUSED: under an `xor`, and —
   //     the load-bearing one — a PredMux E6 rule-(B) residue.
   //     *** bd q2wk, RE-DERIVED AS A RECORD RATHER THAN AN ARGUMENT. *** E6

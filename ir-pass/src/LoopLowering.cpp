@@ -4635,8 +4635,10 @@ bool markIfRailLocal(Loop *L, TaintSet &taint, LoopInfo &LI,
 // `WeakTrackingVH` for the same reason `RolledLoopRegionGates` uses them: a root
 // mint is RAUW'd to its `i32` handle by `lowerRotations`, which runs AFTER this
 // record is written and BEFORE nothing re-reads it — a NULLED handle is a root
-// that no longer exists, and the re-ask treats it as a refusal rather than
-// silently skipping it.
+// that no longer exists, and the re-ask never silently skips it: since bd
+// `test_C_libtooling-xdu2.16` it discards the whole round-1 root set and requires
+// a TOTAL re-derivation under FINAL taint (declining if there is none), where it
+// used to decline outright.
 void recordRound1RailGrant(Loop *L, TaintSet &taint,
                            const SmallPtrSetImpl<Value *> &Roots) {
   TaintSet::Round1RailGrant G;
@@ -5021,9 +5023,18 @@ constexpr char kMsgLoopLeakDephases[] =
 // reading it as a refusal would decline correct programs (it cost four of them
 // there).
 //
-// ⚠ A NULLED ROOT IS A REFUSAL. The roots are `WeakTrackingVH`; a root a region
-// emitter erased between the grant and here is a root that no longer exists, so
-// the proof the grant rested on no longer has a subject.
+// ⚠ A NULLED ROOT FORCES A TOTAL RE-DERIVATION — it is no longer a refusal by
+// itself (bd `test_C_libtooling-xdu2.16`). The roots are `WeakTrackingVH`; a root a
+// region emitter erased between the grant and here (the 4.4 emitter's dead
+// condition-tree cascade is the measured one) is a root nothing reads any more. The
+// grant is then re-derived FROM SCRATCH under FINAL taint by `invariantRegisterRoots`
+// — every round-1 root discarded, the re-derivation required TOTAL — and
+// `railLocalQualifies` is re-asked on that fresh set alone, which is STRICTLY
+// STRONGER than what an intact grant is asked (see the block at the site). A
+// nulled grant that cannot be re-derived still declines with this string.
+// [HISTORY: until xdu2.16 this paragraph read "A NULLED ROOT IS A REFUSAL … the
+// proof the grant rested on no longer has a subject", and it over-declined every
+// compound 4.4 condition tree `-O1` LICM-hoists out of a rolled loop.]
 //
 // RETIREMENT TRIGGER: this stage must stay ABOVE `lowerRotations` (which RAUWs
 // every `@cq_theta_*` result to an `i32` handle, so `Roots` would name handles
@@ -5675,21 +5686,121 @@ void declineRound2FalsifiedRailGrants(Module &M, TaintSet &taint,
       for (const WeakTrackingVH &R : G.Roots) {
         if (!R) {
           Nulled = true;
-          break;
+          continue;
         }
         Roots.insert(R);
       }
-      // A NULLED ROOT IS DECIDED BEFORE THE RE-DERIVATION, NOT AFTER, so the
-      // stage never MUTATES (`invariantRegisterRoots` commits dtzb ops) on a path
-      // it is about to decline. The refusal is deliberately conservative: a root
-      // the grant rested on no longer exists, so the proof has no subject, even
-      // if a fresh derivation would find OTHER roots that happen to cover today's
-      // candidates. Over-declining an input is the safe direction; if this is ever
-      // measured to fire on a program that should compile, it is an over-decline
-      // to FILE (owner ruling 2026-09-11), not a fence to relax in place.
+      // ── bd `test_C_libtooling-xdu2.16` — A NULLED ROOT IS NO LONGER A REFUSAL
+      //    BY ITSELF; IT FORCES A TOTAL RE-DERIVATION. ─────────────────────────
+      //
+      // WHAT THIS REPLACED. Until xdu2.16 a nulled root was refused HERE,
+      // unconditionally, before any re-derivation, on the ground that "the proof
+      // has no subject". Its own comment set the retirement trigger: *"if this is
+      // ever measured to fire on a program that should compile, it is an
+      // over-decline to FILE (owner ruling 2026-09-11), not a fence to relax in
+      // place."* It was measured (bd xdu2.13 Track E, probes p19/p20; xdu2.8's
+      // row 13), it WAS filed (bd xdu2.16), and this is that bead's red-green —
+      // the trigger used in the ACCEPT direction, through the process it names,
+      // not a relaxation in place. What stays: the fence, its string, both entry
+      // points, and the refusal of every grant this block cannot re-prove.
+      //
+      // THE SHAPE, measured on the frozen oracle `438c77bf45c02e3e`: `-O1`
+      // LICM-hoists a loop-invariant compound condition (`(q > 1) & (r < 5)`, the
+      // hybrid `q && m == n`, or one hoisted compare LEAF under an in-body `and`)
+      // into the preheader; at ROUND 1 clause (ii-d) admits that hoisted node as
+      // a Root; the 4.4 emitter then consumes the tree — `emitCondNetwork` mints
+      // FRESH flags from the LEAVES' OPERANDS immediately before the select, in
+      // the body, strips and frees them there — and ERASES the now-dead node
+      // (`SelectMergeEmit.cpp`'s root-first dead-tree cascade). The recorded
+      // `WeakTrackingVH` goes NULL. The value the root named is gone because
+      // NOTHING READS IT ANY MORE: its replacement is the emitter's in-body reads
+      // of the leaves' operands, which are themselves outside-`L` tainted reads
+      // and therefore exactly what a fresh derivation asks about.
+      //
+      // WHAT IS ASKED INSTEAD, and why it is the STRONGER question. For a grant
+      // with a nulled root, EVERY round-1 root is DISCARDED — the surviving ones
+      // too, not unioned — and the grant must be RE-DERIVED FROM SCRATCH under
+      // FINAL taint by the owner (`invariantRegisterRoots`, Rule 14), and that
+      // re-derivation must be TOTAL: `false` is a refusal here, not "adds
+      // nothing". `railLocalQualifies` is then re-asked on the fresh set alone.
+      // Compare the intact-grant path below: it UNIONS the round-1 roots with a
+      // fresh derivation that may FAIL. `railLocalQualifies` is MONOTONE in its
+      // `Roots` (every clause that reads them — `Roots.empty()`, `onRail` in the
+      // escaping-temp and invariant-input clauses — refuses less as the set
+      // grows), so a nulled grant this block accepts is one the intact-grant path
+      // would also accept over the SAME post-fixpoint IR, and on no round-1
+      // evidence at all. The change adds no accept the tu9q re-ask's own
+      // soundness argument does not already cover.
+      //
+      // ⚠ WHY THE ERASER'S IDENTITY IS NOT ASKED. A `WeakTrackingVH` goes NULL
+      // only when its value is DELETED; a value that is REPLACED (RAUW — including
+      // LLVM's own `DeleteDeadBlock`, which RAUWs a dead block's instructions to
+      // `poison` before erasing them) is FOLLOWED, not nulled. And a value can
+      // only be deleted in a valid module once it has NO users (`~Value` asserts
+      // "Uses remain when a value is destroyed" in a +Asserts build; in Release a
+      // survivor would be a dangling operand the in-process verifier trips on).
+      // So a nulled root was unread when it died and names nothing the current
+      // IR reads: it covers no current read, and dropping it can only REMOVE
+      // coverage.
+      // What the marking must be justified by is the CURRENT IR, and that is
+      // exactly what a total FINAL-taint re-derivation plus `railLocalQualifies`
+      // certify. The marking's GRANTING readers (`FreePoint`, `Uncomputation`,
+      // which place in-body discharges on it) all run AFTER this stage. Its two
+      // other readers run BEFORE it — `declineUnmarkedRolledIterLocal`
+      // (`CQLoweringPass.cpp:729`/`:1368`) and `declineDephasingUnmarkedLoopRails`
+      // (`:905`/`:1446`, immediately above this stage) — and both read it in the
+      // SUPPRESSING direction: a marked body silences their decline. That is the
+      // arrangement the intact path already relies on (this function's own "STILL
+      // MARKS NOTHING" note): a suppression made on a marking this stage then
+      // REFUSES is harmless, because the refusal declines the module; a marking
+      // this stage certifies justifies the suppression after the fact.
+      // ⚠ RESIDUAL, STATED: `railLocalQualifies` keys its operand scan on
+      // `taint.Tainted`, and an emitter-minted rail is not in that set. A nulled
+      // root whose value were REPLACED by an emitter rail minted OUTSIDE `L` and
+      // read inside it would be invisible to the scan. No emitter does that
+      // today — every one this window can reach emits at its own `Pred`/select,
+      // i.e. in the body for an in-body consumer — but it is a blindness of the
+      // scan, not a proof, and it is the same blindness the intact path has.
+      // RETIREMENT TRIGGER: an emitter that can hoist its stream OUT of the loop
+      // whose body consumes it.
+      //
+      // ⚠ WHAT THE ROUND-1 GRANT LEFT BEHIND, and why each is safe. (a) The
+      // marking itself — re-certified here or declined. (b) Clause (ii-d)'s exit
+      // obligation for the erased node — its `WeakTrackingVH` is null too, and
+      // `declineUndischargedExitObligations` reads a null obligation as
+      // discharged, correctly: the node was never lowered, so there is no rail
+      // to leak. (c) `commitOutOfLoopInPlaceOps`' dtzb commitments for the
+      // node's preheader chain — re-verified under FINAL taint by `lowerOps`'
+      // own tripwire, which declines loudly (a condition-tree `and`/`or`/`xor`
+      // has no `add`/`xor`-on-a-rail chain to commit in the first place).
+      //
+      // ⚠ THE MUTATION RUNS BEFORE A POSSIBLE DECLINE NOW, and that is safe for
+      // the reason the intact path's own comment gives: `invariantRegisterRoots`
+      // rolls its `InPlaceRailOps` commitments back on failure, so a failed
+      // re-derivation leaves `taint` byte-identical, and `diagnose` EXITS on the
+      // first `DS_Error` (bd `br4a`), so nothing downstream reads it.
+      //
+      // Pinned: `loop_condtree_select_accept_hoisted_{and,mixed_literal,leaf,
+      // nest}.ll` and `predmux_guarded_vla_reject_row13_hybrid_select.ll` (L8
+      // name) ACCEPT; `loop_condtree_select_reject_nulled_root_not_rederivable
+      // .ll` is the neighbour this block must still refuse — a nulled root AND a
+      // round-2-tainted derived read that clause (ii-d) cannot admit.
       if (Nulled) {
-        diagnose(L->getHeader()->getTerminator(), kMsgRound1GrantFalsified);
-        return;
+        SmallPtrSet<Value *, 4> Fresh;
+        if (!invariantRegisterRoots(L, taint, wd, DT, LI, GateCalls, Fresh,
+                                    /*CarriedRoots=*/nullptr)) {
+          diagnose(L->getHeader()->getTerminator(), kMsgRound1GrantFalsified);
+          return;  // `diagnose` EXITS on the first DS_Error (bd `br4a`).
+        }
+        bool AnyLocal = false;
+        Instruction *WhyNot = nullptr;
+        if (!railLocalQualifies(L, taint, LI, GateCalls, Fresh, AnyLocal,
+                                &WhyNot)) {
+          diagnose(WhyNot ? WhyNot : L->getHeader()->getTerminator(),
+                   kMsgRound1GrantFalsified);
+          return;
+        }
+        continue;
       }
       // ⚠ RE-DERIVE THE ROOTS UNDER **FINAL** TAINT BEFORE RE-ASKING, BY CALLING
       // THE OWNER (`invariantRegisterRoots`), NOT BY RE-SPELLING ITS CLAUSES
@@ -5707,7 +5818,9 @@ void declineRound2FalsifiedRailGrants(Module &M, TaintSet &taint,
       // `if (taint.InLoopFlattenedPreds.empty()) return;` and this region is not
       // IN a loop.
       //
-      // GRANT-ONLY, and both halves of that matter: a FALSE return adds nothing
+      // GRANT-ONLY **FOR AN INTACT GRANT** (a nulled one never reaches here — the
+      // xdu2.16 block above reads the same call's FALSE as a refusal), and both
+      // halves of that matter: a FALSE return adds nothing
       // (the recorded roots may still suffice on their own), and
       // `invariantRegisterRoots` rolls its own `InPlaceRailOps` commitments back
       // on failure, so a failed re-derivation leaves `taint` byte-identical. A

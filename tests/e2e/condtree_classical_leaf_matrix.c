@@ -59,9 +59,10 @@ int main(int argc, char **argv) {
 }
 
 #elif CASE == CASE_ROW13
-/* Verbatim railbank_dynamic_matrix.c CASE_SPEC_GUARDED_BOUND. The select now
- * lowers; the loop layer's round-2 grant re-ask declines (pre-existing wall,
- * TRACK_E_xdu2_13.md §4). */
+/* Verbatim railbank_dynamic_matrix.c CASE_SPEC_GUARDED_BOUND. The select lowers
+ * (xdu2.13); the loop layer's round-2 grant re-ask, which declined here on the
+ * NULLED root of the erased LICM-hoisted `and` (TRACK_E_xdu2_13.md §4), re-derives
+ * the grant under FINAL taint since bd xdu2.16, and the row ACCEPTS. */
 __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];

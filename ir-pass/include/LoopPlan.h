@@ -382,7 +382,11 @@ void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
 // marking falsified by round-2 taint`); it never silently withdraws the marking,
 // because the marking has already licensed `commitOutOfLoopInPlaceOps`' dtzb
 // commitments and a silent revert would turn a planned in-body discharge back
-// into a leak with no diagnostic (Rule 1).
+// into a leak with no diagnostic (Rule 1). A grant whose recorded ROOT was
+// erased in the window (bd `test_C_libtooling-xdu2.16` — the 4.4 emitter's dead
+// condition-tree cascade) is re-derived FROM SCRATCH under FINAL taint and must be
+// TOTAL; that is a stronger question than the one an intact grant is asked, and a
+// grant that fails it still declines with the same string.
 //
 // SLOT CONTRACT: strictly BELOW the round-2 fixpoint (the whole point) and
 // strictly ABOVE `lowerRotations` (which RAUWs every `@cq_theta_*` result to an

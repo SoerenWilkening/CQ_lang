@@ -59,9 +59,10 @@
       "diagnostic": "cq rail bank: array has cells no iteration writes"
     },
     "13": {
-      "accept": false,
-      "diagnostic": "cq loop lowering: round-1 iteration-local marking falsified by round-2 taint",
-      "_note": "bd xdu2.13: the hybrid 4.4 select now lowers (classical leaf as a _hl literal); the next wall is the loop layer's round-2 grant re-ask (nulled invariant root = the erased hoisted `and`), pre-existing for any compound tree in a rolled loop. Flip to accept when that wall moves; see CASE 13's comment in railbank_dynamic_matrix.c."
+      "accept": true,
+      "diagnostic": null,
+      "require_railbank": false,
+      "_note": "bd xdu2.16: ACCEPTS. Walls in order: E4-gep (xdu2.8) -> the hybrid select's untainted-leaf gate (xdu2.13, the classical leaf is a _hl literal) -> the loop layer's round-2 grant re-ask refusing the NULLED root left by the erased LICM-hoisted `and` (xdu2.16: the grant is re-derived under FINAL taint and must be TOTAL). Not a rail bank (the VLA is classical data). Declines on the pre-xdu2.16 oracle 438c77bf45c02e3e with `cq loop lowering: round-1 iteration-local marking falsified by round-2 taint`. e2e golden: slice_loop_condtree_select_hoisted_row13."
     },
     "14": {
       "accept": true,

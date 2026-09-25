@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 741 maintained source files, 6121 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 746 maintained source files, 6131 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9234 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7198 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7311 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3536 physical lines
@@ -31,13 +31,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1839 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1843 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1524 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
-- `ir-pass/src/SelectClassify.cpp` — 1438 physical lines
+- `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `ir-pass/src/Specialization.cpp` — 1225 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
@@ -54,7 +54,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/shipped_guard_model.py` — 866 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
-- `ir-pass/include/LoopPlan.h` — 751 physical lines
+- `ir-pass/include/LoopPlan.h` — 755 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 655 physical lines
@@ -74,8 +74,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/RailBankPromote.h` — 528 physical lines
 - `ir-pass/include/ChainWalk.h` — 527 physical lines
 - `ir-pass/src/IntrinsicLowering.cpp` — 518 physical lines
+- `tests/e2e/railbank_dynamic_matrix.c` — 507 physical lines
 - `tests/e2e/slice_libm_real_lgammaf.c` — 506 physical lines
-- `tests/e2e/railbank_dynamic_matrix.c` — 505 physical lines
 - `tools/library_coverage/inject_census.py` — 505 physical lines
 - `ir-pass/src/CtlzIdiomPrepass.cpp` — 497 physical lines
 - `tests/e2e/slice_libm_real_lgamma.c` — 497 physical lines
@@ -115,7 +115,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1839 lines)
+### `ir-pass/include/TaintPropagation.h` (1843 lines)
 
 - `ir-pass/include/TaintPropagation.h:485` — `isPeelClone`
 
@@ -484,7 +484,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7198 lines)
+### `ir-pass/src/LoopLowering.cpp` (7311 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -528,28 +528,28 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:4418` — `invariantRegisterRoots`
 - `ir-pass/src/LoopLowering.cpp:4458` — `railLocalQualifies`
 - `ir-pass/src/LoopLowering.cpp:4596` — `markIfRailLocal`
-- `ir-pass/src/LoopLowering.cpp:4640` — `recordRound1RailGrant`
-- `ir-pass/src/LoopLowering.cpp:4652` — `collapseFlattenedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:5050` — `taintedAncestryReaches`
-- `ir-pass/src/LoopLowering.cpp:5081` — `railIsInterior`
-- `ir-pass/src/LoopLowering.cpp:5187` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5308` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5445` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5450` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5457` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5583` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5605` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5616` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:5740` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6066` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6135` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6190` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6259` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6279` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6443` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6590` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:6861` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7054` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:4642` — `recordRound1RailGrant`
+- `ir-pass/src/LoopLowering.cpp:4654` — `collapseFlattenedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:5061` — `taintedAncestryReaches`
+- `ir-pass/src/LoopLowering.cpp:5092` — `railIsInterior`
+- `ir-pass/src/LoopLowering.cpp:5198` — `mintsOutOfPlaceTemplateRail`
+- `ir-pass/src/LoopLowering.cpp:5319` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:5456` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:5461` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:5468` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:5594` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:5616` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:5627` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:5853` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:6179` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6248` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6303` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6372` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6392` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6556` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6703` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:6974` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7167` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -791,7 +791,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:1914` — `recordIsExemptAt`
 - `ir-pass/src/RotationLowering.cpp:2030` — `warnLiveRecordRotations`
 
-### `ir-pass/src/SelectClassify.cpp` (1438 lines)
+### `ir-pass/src/SelectClassify.cpp` (1442 lines)
 
 - `ir-pass/src/SelectClassify.cpp:42` — `isCallToPrefix`
 - `ir-pass/src/SelectClassify.cpp:68` — `isPhiCall`
@@ -4152,31 +4152,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/classical_call_under_control_lib.c:20` — `ext_f`
 
-### `tests/e2e/condtree_classical_leaf_matrix.c` (224 lines)
+### `tests/e2e/condtree_classical_leaf_matrix.c` (225 lines)
 
 - `tests/e2e/condtree_classical_leaf_matrix.c:39` — `slice`
 - `tests/e2e/condtree_classical_leaf_matrix.c:57` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:65` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:75` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:78` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:85` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:90` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:95` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:100` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:106` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:117` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:125` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:131` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:141` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:147` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:161` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:173` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:189` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:197` — `f`
-- `tests/e2e/condtree_classical_leaf_matrix.c:198` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:206` — `main`
-- `tests/e2e/condtree_classical_leaf_matrix.c:213` — `slice`
-- `tests/e2e/condtree_classical_leaf_matrix.c:221` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:66` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:76` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:79` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:86` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:91` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:96` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:101` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:107` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:118` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:126` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:132` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:142` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:148` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:162` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:174` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:190` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:198` — `f`
+- `tests/e2e/condtree_classical_leaf_matrix.c:199` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:207` — `main`
+- `tests/e2e/condtree_classical_leaf_matrix.c:214` — `slice`
+- `tests/e2e/condtree_classical_leaf_matrix.c:222` — `main`
 
 ### `tests/e2e/onward_ctl_phase_caller.c` (52 lines)
 
@@ -4247,7 +4247,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_deadcell_matrix.c:468` — `run_bank`
 - `tests/e2e/railbank_deadcell_matrix.c:481` — `main`
 
-### `tests/e2e/railbank_dynamic_matrix.c` (505 lines)
+### `tests/e2e/railbank_dynamic_matrix.c` (507 lines)
 
 - `tests/e2e/railbank_dynamic_matrix.c:43` — `measure_bank`
 - `tests/e2e/railbank_dynamic_matrix.c:50` — `slice`
@@ -4266,55 +4266,55 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_dynamic_matrix.c:177` — `main`
 - `tests/e2e/railbank_dynamic_matrix.c:182` — `slice`
 - `tests/e2e/railbank_dynamic_matrix.c:191` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:206` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:216` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:225` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:237` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:242` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:253` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:257` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:268` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:274` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:282` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:294` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:305` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:313` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:325` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:336` — `run_bank`
-- `tests/e2e/railbank_dynamic_matrix.c:358` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:366` — `run_bank`
-- `tests/e2e/railbank_dynamic_matrix.c:386` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:393` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:402` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:410` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:420` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:429` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:447` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:453` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:468` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:477` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:487` — `main`
-- `tests/e2e/railbank_dynamic_matrix.c:494` — `slice`
-- `tests/e2e/railbank_dynamic_matrix.c:504` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:208` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:218` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:227` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:239` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:244` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:255` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:259` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:270` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:276` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:284` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:296` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:307` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:315` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:327` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:338` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:360` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:368` — `run_bank`
+- `tests/e2e/railbank_dynamic_matrix.c:388` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:395` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:404` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:412` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:422` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:431` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:449` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:455` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:470` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:479` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:489` — `main`
+- `tests/e2e/railbank_dynamic_matrix.c:496` — `slice`
+- `tests/e2e/railbank_dynamic_matrix.c:506` — `main`
 
-### `tests/e2e/railbank_guarded_vla_matrix.c` (225 lines)
+### `tests/e2e/railbank_guarded_vla_matrix.c` (232 lines)
 
-- `tests/e2e/railbank_guarded_vla_matrix.c:77` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:94` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:101` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:110` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:114` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:124` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:138` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:151` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:156` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:172` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:180` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:193` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:201` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:210` — `main`
-- `tests/e2e/railbank_guarded_vla_matrix.c:214` — `slice`
-- `tests/e2e/railbank_guarded_vla_matrix.c:224` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:84` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:101` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:108` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:117` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:121` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:131` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:145` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:158` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:163` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:179` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:187` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:200` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:208` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:217` — `main`
+- `tests/e2e/railbank_guarded_vla_matrix.c:221` — `slice`
+- `tests/e2e/railbank_guarded_vla_matrix.c:231` — `main`
 
 ### `tests/e2e/railbank_readorder_matrix.c` (306 lines)
 
@@ -6526,6 +6526,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_loop_carried_handle_narrow.c:41` — `main`
 
+### `tests/e2e/slice_loop_condtree_select_hoisted.c` (47 lines)
+
+- `tests/e2e/slice_loop_condtree_select_hoisted.c:37` — `slice`
+- `tests/e2e/slice_loop_condtree_select_hoisted.c:47` — `main`
+
+### `tests/e2e/slice_loop_condtree_select_hoisted_literal.c` (33 lines)
+
+- `tests/e2e/slice_loop_condtree_select_hoisted_literal.c:24` — `slice`
+- `tests/e2e/slice_loop_condtree_select_hoisted_literal.c:33` — `main`
+
+### `tests/e2e/slice_loop_condtree_select_hoisted_literal_unrolled.c` (16 lines)
+
+- `tests/e2e/slice_loop_condtree_select_hoisted_literal_unrolled.c:8` — `slice`
+- `tests/e2e/slice_loop_condtree_select_hoisted_literal_unrolled.c:16` — `main`
+
+### `tests/e2e/slice_loop_condtree_select_hoisted_row13.c` (42 lines)
+
+- `tests/e2e/slice_loop_condtree_select_hoisted_row13.c:32` — `slice`
+- `tests/e2e/slice_loop_condtree_select_hoisted_row13.c:42` — `main`
+
+### `tests/e2e/slice_loop_condtree_select_hoisted_unrolled.c` (30 lines)
+
+- `tests/e2e/slice_loop_condtree_select_hoisted_unrolled.c:21` — `slice`
+- `tests/e2e/slice_loop_condtree_select_hoisted_unrolled.c:30` — `main`
+
 ### `tests/e2e/slice_loop_hoisted_chain_exit_discharge.c` (69 lines)
 
 - `tests/e2e/slice_loop_hoisted_chain_exit_discharge.c:57` — `slice`
@@ -6613,10 +6638,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_predmux_fp_diamond_volatile.c:33` — `slice`
 - `tests/e2e/slice_predmux_fp_diamond_volatile.c:41` — `main`
 
-### `tests/e2e/slice_predmux_guarded_vla.c` (40 lines)
+### `tests/e2e/slice_predmux_guarded_vla.c` (41 lines)
 
-- `tests/e2e/slice_predmux_guarded_vla.c:27` — `slice`
-- `tests/e2e/slice_predmux_guarded_vla.c:37` — `main`
+- `tests/e2e/slice_predmux_guarded_vla.c:28` — `slice`
+- `tests/e2e/slice_predmux_guarded_vla.c:38` — `main`
 
 ### `tests/e2e/slice_predmux_inloop_value_diamond.c` (38 lines)
 
