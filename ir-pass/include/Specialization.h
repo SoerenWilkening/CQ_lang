@@ -1,8 +1,9 @@
 // Specialization.h — the Phase 6 specialization driver + the `:419` carve-out's
 // membership predicate.
 //
-// `specialize()` is the step-14 stage (between `declineLiftedStaleRecordOps` and
-// `lowerRotations`, DD-1): it DRAINS the already-classified `SpecPlan.Pending`,
+// `specialize()` is the step-14 stage (between `declineClassicalMuxes` and — via
+// the bd d88e lift re-ask and the bd 2qyz stale re-sweep — `lowerRotations`,
+// DD-1): it DRAINS the already-classified `SpecPlan.Pending`,
 // and per Accept candidate clones → seeds a FRESH disjoint `cloneTaint` → drives
 // the clone through the scoped data lowering → captures the forward stream →
 // Bennett-wraps → retargets via `setCalledFunction`, deduping clones by

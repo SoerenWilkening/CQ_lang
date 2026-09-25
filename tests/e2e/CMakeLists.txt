@@ -2610,6 +2610,45 @@ add_test(NAME e2e-slice-specialize-twoarm-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_caller.expected.log")
 
+# bd test_C_libtooling-d88e (P1, the lift-then-scrub silent miscompile). The
+# one-register merge-phi lift (`declineClassicalMuxes`) is proved on PRE-
+# `specialize()` taint and RE-ASKED after it (`declineFalsifiedMergePhiLifts`). The
+# miscompile itself declines, so it is pinned by lit
+# (`lowering_reject_classical_mux_phi_spec_scrubbed_base*.ll`); these three slices
+# LINK-prove the two ACCEPT directions the re-ask must keep:
+#   * SPEC-QUANTUM (`h(a,k) = a + k`): the lifted base is the clone's returned
+#     HANDLE, the arm's Ry fires on it in place and the user measures it.
+#   * SPEC-CLASSICAL, SCRUBBED ELSEWHERE (`h(a,k) = k + 1`): the scrub happens but
+#     the lifted base is a `cq_theta` keep root. The correct circuit is the
+#     hand-inlined twin's, so its golden is pinned BYTE-IDENTICAL to the 2-TU one.
+add_test(NAME e2e-slice-spec-lift-quantum-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_quantum_base.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_quantum_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_quantum_base.expected.log")
+add_test(NAME e2e-slice-spec-lift-scrubbed-elsewhere
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log")
+add_test(NAME e2e-slice-spec-lift-scrubbed-elsewhere-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+add_test(NAME e2e-spec-lift-scrubbed-elsewhere-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two
 # classical-SENTINEL early returns (`if(x>MAX) return C; if(x<MIN) return C'`)

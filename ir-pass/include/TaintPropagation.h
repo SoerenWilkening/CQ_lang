@@ -275,7 +275,8 @@ struct TaintSet {
   // guard) would make the consumer's template stale. The lift inserts its
   // direct Instruction consumers here so the orchestrator knows a lift OCCURRED
   // and re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`,
-  // right after `declineClassicalMuxes`, before any rotation lowering). The
+  // since bd d88e after `specialize()` and the lift's own re-ask
+  // `declineFalsifiedMergePhiLifts`, before any rotation lowering). The
   // re-sweep is NOT scoped to these entries — a stale op can sit any number of
   // in-place-gate hops downstream of the lifted phi (a Rule-13 adversarial
   // finding), so the complete sweep is required for soundness; this set is the
@@ -283,6 +284,38 @@ struct TaintSet {
   // diagnostic churn). Pointers stay valid — consumers are not erased before
   // the re-sweep.
   llvm::SmallPtrSet<llvm::Instruction *, 4> LiftedConsumers;
+
+  // bd `test_C_libtooling-d88e` (P1; bd 9bhg Rule-13 round r1A, F-9A-1) — the
+  // one-register lift's PREMISE, RECORDED at the accept so it can be RE-ASKED at
+  // FINAL taint (CLAUDE.md L1, the STAGE species on the SCRUB side).
+  //
+  // The lift's proof — every incoming resolves through in-place gates to ONE
+  // tainted base (conjuncts (2)/(3) of `liftOneRegisterMergePhi`) — reads
+  // `taint.Tainted`, and it runs BEFORE `specialize()`, whose §2.7 return-taint
+  // correction (`scrubForwardCone`) REMOVES taint from a Phase-6 call result the
+  // clone proves classical. A base that was only CONSERVATIVELY tainted then
+  // stops being a register after the phi has already been RAUW'd onto it: the
+  // arm's `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail, and a consumer of
+  // the erased phi (the user's `cq_measure`) reads the classical `t` — the
+  // measurement vanished, `opt` exit 0, stage-2b clean. The consequence is a
+  // REWRITE, not an emission, so bd l3oi's `declineScrubbedHandleReads` (which
+  // asks about emitted gates reading a scrubbed value) cannot see it.
+  //
+  // Written ONLY by `liftOneRegisterMergePhi`'s accept; read ONLY by
+  // `declineFalsifiedMergePhiLifts`, right after `specialize()` in both entry
+  // points. `WeakTrackingVH`, not `WeakVH`: the record must FOLLOW a later RAUW —
+  // a second lift whose incoming was an earlier lifted phi, and `retargetSite`'s
+  // rebuild of an fp-return spec site — so that the re-ask reads the value that
+  // is actually there. `F`/`DL` are the erased phi's, so the diagnostic is the
+  // one `declineClassicalMuxes` would have printed for it (the hand-inlined
+  // twin's, character-for-character).
+  struct LiftedMergePhi {
+    llvm::Function *F = nullptr;
+    llvm::DebugLoc DL;
+    llvm::WeakTrackingVH Base;
+    llvm::SmallVector<llvm::WeakTrackingVH, 2> Incomings;
+  };
+  llvm::SmallVector<LiftedMergePhi, 2> LiftedMergePhis;
 
   // ── THE MERGE-PEEL'S COMPARE CLONES (bd `test_C_libtooling-rb9x`, increment
   //    R-1) ───────────────────────────────────────────────────────────────────
@@ -1464,6 +1497,29 @@ bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
 // value as classical, so any LATER use is a correct `_hl` literal. Returns true
 // iff it declined.
 bool declineScrubbedHandleReads(llvm::Module &M, const TaintSet &taint);
+
+// bd `test_C_libtooling-d88e` — the RE-ASK of every one-register merge-phi lift
+// (`taint.LiftedMergePhis`) at FINAL taint, i.e. after `specialize()`'s scrub.
+// It re-runs the lift's two taint-dependent conjuncts on the recorded incomings —
+// (2) every incoming tainted, (3) every incoming's `resolveWireBase` is the
+// recorded base — and mirrors `declineClassicalMuxes`' own entry test first: if
+// NO recorded incoming is tainted any more the phi would have been a CLASSICAL
+// phi (`readsTaintedValue` false) and the guard would never have asked, so
+// neither does this (the degenerate `phi(t, t)`; RAUW'ing it is exact whatever
+// `t`'s taint). A falsified premise fires `declineClassicalMuxes`' own
+// `cq taint escape: tainted value muxed by a classical-condition phi` at the
+// erased phi's function and `!dbg` — exactly what the hand-inlined twin (the
+// call's classical return written directly) prints. Asked once per entry point,
+// right after `specialize()` and BEFORE the bd 2qyz post-lift stale re-sweep
+// (`declineLiftedStaleRecordOps`, moved below this slot by the same change),
+// `declineScrubbedHandleReads` and the bd 3d8q stale-reader backstop, so the
+// owner whose premise was falsified speaks first. It OBSERVES the scrub's outcome
+// (the taint that is there), it does not predict which call results are
+// provisional, so it cannot MISS a lift whose base lost its taint (one-sided: the
+// converse, that it never declines a program the twin compiles, is an ARGUMENT —
+// TRACK_D88E.md §6.3 — not a property of this code). Returns true iff it
+// declined.
+bool declineFalsifiedMergePhiLifts(llvm::Module &M, const TaintSet &taint);
 
 // Is `CI` a REGISTER-FREE branch-phase call (`void @cq_phi(double)`, bd
 // test_C_libtooling-3qlq Inc 1)?

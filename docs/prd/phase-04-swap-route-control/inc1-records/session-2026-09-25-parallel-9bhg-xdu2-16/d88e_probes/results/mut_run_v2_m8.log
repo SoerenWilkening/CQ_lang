@@ -1,0 +1,7 @@
+N0: cq-opt 47ebf9a91995c72e (subject e587c19152bf39e5) lit discovered=2302 passed=2301 failed=0
+  probes: 0 movers of 121
+M8_after_l3oi: cq-opt 8fb6309801f191c2 (subject e587c19152bf39e5) lit discovered=2302 passed=2300 failed=1
+  probes: 1 movers of 121
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_l3oi_owner.ll
+  PROBE h03C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]
+restored: cq-opt e587c19152bf39e5 == subject e587c19152bf39e5: True
