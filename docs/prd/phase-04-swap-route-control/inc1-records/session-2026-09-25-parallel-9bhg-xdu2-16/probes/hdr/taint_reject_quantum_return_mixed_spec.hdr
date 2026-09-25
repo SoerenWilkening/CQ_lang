@@ -1,0 +1,28 @@
+; taint_reject_quantum_return_mixed_spec.ll — DECLINE (bd test_C_libtooling-9bhg).
+;
+; The NON-provisional side of `returnTaintIsSpecProvisional`. A TWO-TU module
+; (caller TU `-include CQ.h`, llvm-linked with a plain-C library TU, as
+; tests/e2e/run_slice_multi.sh builds one).
+;
+; `f` returns `t + q`: `t = h(q, m)` is a specialization site whose clone proves the
+; classical `k + 1`, but `q` is the `cq_theta` register itself, so the returned sum
+; is quantum WHATEVER the clone's verdict — it is not in the counterfactual scrub
+; cone of `f`'s specialization sites (a `cq_theta` result is a keep root). The
+; return therefore crosses at propagation exactly as bd 3jru made it, `main`'s
+; `f(m)` is tainted in its caller, and the EARLY refusal fires.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); return t + q; }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int n = atoi(argv[2]); int r = f(m); return r * n; }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main {{.*}}: cq taint escape: quantum value returned across a function boundary

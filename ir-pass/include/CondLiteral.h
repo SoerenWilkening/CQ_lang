@@ -40,7 +40,12 @@
 //   argument, `cq_measure(g())`). It is removed: bd test_C_libtooling-3jru now
 //   TAINTS a call to a defined function that returns a register, and
 //   `declineQuantumReturnCalls` refuses every such use loudly, so conjunct (b)
-//   sees such a value as quantum — one owner, at the taint layer.]
+//   sees such a value as quantum — one owner, at the taint layer. ⚠ bd 9bhg: a
+//   SPECIALIZATION-PROVISIONAL return (taint only from the callee's own Phase-6
+//   sites) is NOT tainted at the call site, so (b) sees it CLASSICAL; if a clone
+//   then proves it quantum, the post-`specialize()` re-ask of
+//   `declineQuantumReturnCalls` refuses the module — that re-ask, not (b), is
+//   the owner for that population.]
 // The literal slot carries `zeroext` on the forward and the `_unc` (round 2
 // F-2: the runtime's `bool` parameter; without it C at -O1 delivered 2/254/253).
 // Dominance needs no conjunct: the literal is an operand of a tree node, the

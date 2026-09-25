@@ -98,7 +98,14 @@ bool condLiteralAdmissible(Value *V, const TaintSet &taint) {
   // function is now TAINTED at its call site by `propagate` (bd 3jru), so a
   // literal derived from it fails conjunct (b) HERE, and the module is refused
   // loudly afterwards by `declineQuantumReturnCalls` at the post-fixpoint slot.
-  // (b) is the one owner of "is this operand quantum" (Rule 14).)
+  // (b) is the one owner of "is this operand quantum" (Rule 14).
+  // ⚠ bd 9bhg: EXCEPT a return whose taint is SPECIALIZATION-PROVISIONAL (it
+  // derives only from the callee's own Phase-6 sites): that taint does NOT cross
+  // to the call site, so a literal derived from such a call result PASSES (b)
+  // here. That is correct when the clones prove the return classical; when they
+  // prove it quantum, the TOTAL re-ask of `declineQuantumReturnCalls` after
+  // `specialize()` refuses the module before anything lowers — it, not (b), is
+  // what makes the classical reading safe for that population.)
   return true;
 }
 

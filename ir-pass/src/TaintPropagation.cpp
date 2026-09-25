@@ -24,6 +24,7 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/ADT/SetVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -479,39 +480,47 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
 void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
                        const FnSet &PhiFns, const FnSet &MeasureFns,
                        TaintSet &out, bool skipRuntimeCalls) {
-  while (!Worklist.empty()) {
-    Value *V = Worklist.back();
-    Worklist.pop_back();
-    for (User *U : V->users()) {
-      auto *I = dyn_cast<Instruction>(U);
-      if (!I)
-        continue;
-      if (isMeasureSink(I, MeasureFns))
-        continue;
-      // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
-      // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
-      // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
-      // handle, do NOT propagate taint through that edge — an angle-derived
-      // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
-      // classical so it lowers as a rotation-angle choice, not quantum data.
-      // Excluding only the arg-1 operand-use (not `V` globally) keeps a value
-      // that is ALSO used as a handle elsewhere tainted (risk R9).
-      if (auto *CI = dyn_cast<CallInst>(I)) {
-        Function *Callee = CI->getCalledFunction();
-        if (Callee && (ThetaFns.contains(Callee) || PhiFns.contains(Callee)) &&
-            CI->arg_size() >= 2 && CI->getArgOperand(1) == V &&
-            CI->getArgOperand(0) != V)
-          continue;  // V is used here only as the classical angle; skip edge.
-        // dugh: an already-lowered runtime primitive (the control emitter's own
-        // cqrt_copy_<W>_controlled / flag scaffolding on the seed rail) is not
-        // user data flow — never re-taint / recurse (uncompute parity).
-        if (skipRuntimeCalls && Callee) {
-          StringRef N = Callee->getName();
-          if (N.starts_with("cqrt_") || N.starts_with("cq_template_"))
-            continue;
+  // bd `test_C_libtooling-9bhg` — functions whose `ret` was tainted by THIS call
+  // and whose return has not crossed to its callers (yet). Decided only when the
+  // worklist is EMPTY (see the closure below): whether a return is
+  // specialization-provisional is a question about ALL of its value's taint
+  // sources, and mid-drain some of them may not have arrived.
+  SetVector<Function *> RetUndecided;
+  while (true) {
+    while (!Worklist.empty()) {
+      Value *V = Worklist.back();
+      Worklist.pop_back();
+      for (User *U : V->users()) {
+        auto *I = dyn_cast<Instruction>(U);
+        if (!I)
+          continue;
+        if (isMeasureSink(I, MeasureFns))
+          continue;
+        // WP10/R9 angle taint-discipline: the angle operand (arg 1) of a
+        // cq_theta/cq_phi is a classical scalar, never a quantum handle. If `V`
+        // reaches a rotation ONLY as its angle (arg 1) and not as the arg-0
+        // handle, do NOT propagate taint through that edge — an angle-derived
+        // value (e.g. an `if(q){rz(u,a)}else{rz(u,b)}` angle select) must stay
+        // classical so it lowers as a rotation-angle choice, not quantum data.
+        // Excluding only the arg-1 operand-use (not `V` globally) keeps a value
+        // that is ALSO used as a handle elsewhere tainted (risk R9).
+        if (auto *CI = dyn_cast<CallInst>(I)) {
+          Function *Callee = CI->getCalledFunction();
+          if (Callee && (ThetaFns.contains(Callee) || PhiFns.contains(Callee)) &&
+              CI->arg_size() >= 2 && CI->getArgOperand(1) == V &&
+              CI->getArgOperand(0) != V)
+            continue;  // V is used here only as the classical angle; skip edge.
+          // dugh: an already-lowered runtime primitive (the control emitter's own
+          // cqrt_copy_<W>_controlled / flag scaffolding on the seed rail) is not
+          // user data flow — never re-taint / recurse (uncompute parity).
+          if (skipRuntimeCalls && Callee) {
+            StringRef N = Callee->getName();
+            if (N.starts_with("cqrt_") || N.starts_with("cq_template_"))
+              continue;
+          }
         }
-      }
-      if (out.Tainted.insert(I).second) {
+        if (!out.Tainted.insert(I).second)
+          continue;
         Worklist.push_back(I);
         // bd `test_C_libtooling-3jru` — TAINT CROSSES A CALL RETURN, and it does
         // so HERE, in the propagation drain (`propagate`, the round-2 reseed in
@@ -528,29 +537,69 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
         // clone/select (drained via `propagateFromSeeds`). Every other direct
         // insert replaces an already-tainted value or is scaffold with no reader
         // (TRACK_E_xdu2_13.md §6f). A NEW such site must join one of those two
-        // routes, or this closure — and every guard — cannot see it. A tainted `ret` means its DEFINED function returns
-        // a quantum register's HANDLE, so every DIRECT call site of that function
-        // is quantum in its caller and joins the worklist; chains (g→h) and
-        // recursion close by the worklist itself. (Round 3 put this as a separate
-        // fixpoint loop in `propagate` only; Rule-13 round 4 F-R4-1 measured the
-        // round-2 reseed missing it — a `ret` of a 6.5 merge `%out` left its call
-        // site classical at FINAL taint, and a literal carrying the handle id passed
+        // routes, or this closure — and every guard — cannot see it. A tainted
+        // `ret` means its DEFINED function returns a quantum register's HANDLE, so
+        // every DIRECT call site of that function is quantum in its caller and
+        // joins the worklist; chains (g→h) and recursion close by the worklist
+        // itself. (Round 3 put this as a separate fixpoint loop in `propagate`
+        // only; Rule-13 round 4 F-R4-1 measured the round-2 reseed missing it — a
+        // `ret` of a 6.5 merge `%out` left its call site classical at FINAL taint,
+        // and a literal carrying the handle id passed
         // `declineQuantumCondLiterals`.) The consumers are refused loudly by
         // `declineQuantumReturnCalls`.
-        if (auto *Ret = dyn_cast<ReturnInst>(I)) {
-          Function *F = Ret->getFunction();
-          for (User *FU : F->users()) {
-            auto *CB = dyn_cast<CallBase>(FU);
-            // A call whose result is UNUSED carries no value to taint (and stays
-            // exactly as the pre-3jru compiler saw it; `declineQuantumReturnCalls`
-            // skips it too — round 4 P3-a).
-            if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&
-                out.Tainted.insert(CB).second)
-              Worklist.push_back(CB);
-          }
+        //
+        // ⚠ bd `test_C_libtooling-9bhg`: WHETHER it crosses is decided once the
+        // worklist is EMPTY, below — not here, and not for every tainted `ret`.
+        if (auto *Ret = dyn_cast<ReturnInst>(I))
+          RetUndecided.insert(Ret->getFunction());
+      }
+    }
+    // bd `test_C_libtooling-9bhg` — THE CROSSING DECISION. A return whose taint
+    // is SPECIALIZATION-PROVISIONAL (`returnTaintIsSpecProvisional`: every tainted
+    // return value is in the scrub cone of the function's own specialization
+    // sites, whose taint is the CONSERVATIVE pre-`specialize()` assumption that a
+    // clone returns a register) does NOT cross. Crossing it put that assumption
+    // into the CALLER, where round-1 control emitters minted gates on the call
+    // result as a HANDLE (`if (f(m) > n)`), and when the clone then proved a
+    // classical return the caller held the integer as a register id — bd l3oi one
+    // function boundary out; the 3jru refusal hid it only by declining modules the
+    // pre-3jru compiler got RIGHT (the 9bhg over-decline). Not crossing leaves the
+    // caller exactly as the pre-3jru compiler saw it, which is correct when the
+    // verdict is classical; when it is QUANTUM the function is refused by
+    // `declineQuantumReturnCalls`' re-ask after `specialize()` (TOTAL — it does
+    // not ask this predicate), so the caller's classical reading never reaches
+    // lowering. A NON-provisional return — some tainted return value has a taint
+    // source the scrub cannot remove (a `cq_theta` result, a control-merge rail, a
+    // call whose taint is not its arguments') — crosses exactly as bd 3jru made it.
+    //
+    // Every function still undecided in THIS call is re-decided after each
+    // crossing batch (a crossing can give a deferred return an independent
+    // source). Across calls nothing is re-decided — a later drain that adds a
+    // source to an ALREADY-tainted return value never revisits it — which is why
+    // the EARLY refusal slot re-asks the predicate itself and the late one needs
+    // none.
+    bool Crossed = false;
+    SmallVector<Function *, 4> Decided;
+    for (Function *F : RetUndecided) {
+      if (returnTaintIsSpecProvisional(*F, out))
+        continue;  // deferred: its callers do not see this taint.
+      Decided.push_back(F);
+      for (User *FU : F->users()) {
+        auto *CB = dyn_cast<CallBase>(FU);
+        // A call whose result is UNUSED carries no value to taint (and stays
+        // exactly as the pre-3jru compiler saw it; `declineQuantumReturnCalls`
+        // skips it too — round 4 P3-a).
+        if (CB && CB->getCalledOperand() == F && !CB->use_empty() &&
+            out.Tainted.insert(CB).second) {
+          Worklist.push_back(CB);
+          Crossed = true;
         }
       }
     }
+    for (Function *F : Decided)
+      RetUndecided.remove(F);
+    if (!Crossed)
+      break;
   }
 }
 
@@ -2488,10 +2537,130 @@ bool functionReturnsTainted(const Function &F, const TaintSet &taint) {
   return false;
 }
 
+// bd `test_C_libtooling-9bhg` — the scrub cone. See TaintPropagation.h. This is
+// the walk `scrubForwardCone` ran inline before bd 9bhg, made PURE: "tainted and
+// not yet admitted" here is exactly "still in `Tainted`" there, because that walk
+// erased each member as it admitted it. Same worklist discipline (LIFO), same
+// user order, so the same members in the same order.
+void collectScrubCone(ArrayRef<Value *> Roots, const TaintSet &taint,
+                      const SmallPtrSetImpl<const Value *> &Keep,
+                      SmallVectorImpl<Value *> &Cone) {
+  SmallPtrSet<const Value *, 32> In;
+  auto liveTainted = [&](Value *V) {
+    return taint.Tainted.count(V) && !In.count(V);
+  };
+  std::vector<Value *> Worklist;
+  for (Value *R : Roots)
+    if (In.insert(R).second) {
+      Cone.push_back(R);
+      Worklist.push_back(R);
+    }
+  while (!Worklist.empty()) {
+    Value *V = Worklist.back();
+    Worklist.pop_back();
+    for (User *U : V->users()) {
+      auto *I = dyn_cast<Instruction>(U);
+      if (!I || !liveTainted(I))
+        continue;
+      // A value that is its OWN taint source — a primary `cq_theta` result, or
+      // another specialized-call result that legitimately carries taint — must
+      // never be scrubbed transitively (its taint does NOT derive from the
+      // scrubbed root). Stopping here also prunes its whole downstream cone from
+      // the walk, so a fresh `cq_theta(%r, θ)` seeded from a scrubbed classical
+      // `%r` keeps the qubit and every consumer of it tainted (the over-scrub
+      // the Rule-13 axis-(g) probe caught). NOT `cq_phi`: a `cq_phi` on a
+      // now-classical operand is deleted (Rule 3), so it is correctly scrubbed.
+      if (Keep.count(I))
+        continue;
+      bool HasOtherTaintedOperand = false;
+      for (Value *Op : I->operands())
+        if (liveTainted(Op)) {
+          HasOtherTaintedOperand = true;
+          break;
+        }
+      if (HasOtherTaintedOperand)
+        continue;  // tainted via another path — keep.
+      In.insert(I);
+      Cone.push_back(I);
+      Worklist.push_back(I);
+    }
+  }
+}
+
+// bd `test_C_libtooling-9bhg` — see TaintPropagation.h. The ROOTS are every
+// POTENTIAL specialization site in `F` (the shape `detectSpecializations` looks
+// at, widened to `CallBase` — a superset is safe, see the header), and the only
+// keep roots are the `cq_theta` results: the question is COUNTERFACTUAL ("would
+// this return be classical if EVERY such site's clone proved classical?"), so no
+// site is assumed genuinely quantum here the way `specialize()`'s actual scrub
+// assumes its `ReturnTainted` sites are.
+bool returnTaintIsSpecProvisional(const Function &F, const TaintSet &taint) {
+  SmallVector<Value *, 4> Roots;
+  for (const BasicBlock &BB : F)
+    for (const Instruction &I : BB) {
+      const auto *CB = dyn_cast<CallBase>(&I);
+      if (!CB)
+        continue;
+      const Function *Callee = CB->getCalledFunction();
+      if (!Callee || Callee->isDeclaration())
+        continue;
+      auto *CBV = const_cast<CallBase *>(CB);
+      if (!taint.Tainted.count(CBV))
+        continue;
+      if (llvm::any_of(CB->args(), [&](const Use &A) {
+            return taint.Tainted.count(A.get()) != 0;
+          }))
+        Roots.push_back(CBV);
+    }
+  if (Roots.empty())
+    return false;
+  SmallPtrSet<const Value *, 8> Keep;
+  for (const CallInst *Theta : taint.ThetaCalls)
+    Keep.insert(Theta);
+  SmallVector<Value *, 16> Cone;
+  collectScrubCone(Roots, taint, Keep, Cone);
+  SmallPtrSet<const Value *, 16> InCone(Cone.begin(), Cone.end());
+  bool AnyTainted = false;
+  for (const BasicBlock &BB : F)
+    if (const auto *R = dyn_cast<ReturnInst>(BB.getTerminator()))
+      if (Value *RV = R->getReturnValue(); RV && taint.Tainted.count(RV)) {
+        AnyTainted = true;
+        if (!InCone.count(RV))
+          return false;  // this return is quantum whatever the clones prove.
+      }
+  return AnyTainted;
+}
+
 // bd `test_C_libtooling-3jru` — the LOUD refusal. See TaintPropagation.h.
-bool declineQuantumReturnCalls(Module &M, const TaintSet &taint) {
+bool declineQuantumReturnCalls(Module &M, const TaintSet &taint,
+                               bool SkipSpecProvisional) {
   for (Function &F : M) {
     if (F.isDeclaration() || !functionReturnsTainted(F, taint))
+      continue;
+    // bd `test_C_libtooling-9bhg`: at the EARLY slot a SPECIALIZATION-PROVISIONAL
+    // return is not refused — its taint did not cross to its callers
+    // (`propagateWorklist`), and whether it is quantum at all is the clones'
+    // verdict, which the LATE slot (after `specialize()`, `SkipSpecProvisional =
+    // false`) reads. The early slot re-asks the predicate rather than trusting
+    // the drain's decision because a later drain can give an already-tainted
+    // return value an independent source without revisiting it.
+    //
+    // The skip's whole justification is "its callers never saw this taint", so
+    // that premise is CHECKED, not assumed: a used direct call site already in
+    // `Tainted` means the return crossed at some earlier drain (or the call reads
+    // a tainted argument) and the caller may have minted gates on it — refuse
+    // HERE. Not constructed: a return that crossed is non-provisional, and
+    // non-provisional is stable under growth EXCEPT if a crossed call on its
+    // independent path later gains a tainted argument and becomes a root — which
+    // needs a callee whose body holds a quantum source, a callee `scanBody`
+    // rejects transitively at detection, before this slot. Kept because the
+    // argument lives in another file (TRACK_9BHG.md §4 S3; mutant M16 MISSED).
+    if (SkipSpecProvisional && returnTaintIsSpecProvisional(F, taint) &&
+        llvm::none_of(F.users(), [&](User *U) {
+          auto *CB = dyn_cast<CallBase>(U);
+          return CB && CB->getCalledOperand() == &F && !CB->use_empty() &&
+                 taint.Tainted.count(CB);
+        }))
       continue;
     // Two kinds of use are refused:
     //  * a DIRECT call whose RESULT HAS A USE — the caller would read the handle
@@ -2562,9 +2731,19 @@ bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
       StringRef N = Callee->getName();
       bool Reads = N.starts_with("cqrt_") || N.starts_with("cq_template_");
       // Rule-13 round 7 F-R7-1: a call to a SPECIALIZED CLONE (or its `_unc`
-      // twin) built pre-scrub from a detection-time mask reads the value as a
+      // twin) built from a mask a LATER scrub falsified reads the value as a
       // handle in every MASKED argument slot. Identified by the specializer's
       // own record (`SpecHandleArgMask`), never by the `__cq_q_` name prefix.
+      // ⚠ bd 9bhg: since `specialize()` scrubs each site as it resolves and
+      // RECOMPUTES a later site's mask before building it, a scrubbed value
+      // reaches a clone call in an UNMASKED slot routinely (yb:
+      // `__cq_q_g2_10(t, q)`, `t` classical in slot 0) — so the MASK test below
+      // is load-bearing, no longer the "equivalent" mutant round 7 measured
+      // (M50). What still reaches a MASKED slot is a site resolved BEFORE the
+      // site whose scrub untaints its argument: `Pending` is in layout order, so
+      // a use laid out before its definition's block
+      // (`taint_reject_scrubbed_handle_clone_arg_layout.ll`) or a loop-carried
+      // argument.
       if (!Reads) {
         auto It = taint.SpecHandleArgMask.find(Callee);
         if (It != taint.SpecHandleArgMask.end())

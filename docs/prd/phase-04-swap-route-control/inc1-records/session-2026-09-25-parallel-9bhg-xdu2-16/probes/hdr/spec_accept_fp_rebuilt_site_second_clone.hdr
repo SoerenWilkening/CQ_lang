@@ -1,0 +1,56 @@
+; spec_accept_fp_rebuilt_site_second_clone.ll — ACCEPT (bd test_C_libtooling-9bhg).
+;
+; A TWO-TU module (caller TU `-include CQ.h`, llvm-linked with a plain-C library
+; TU, as tests/e2e/run_slice_multi.sh builds one). Two top-level Phase-6 sites in
+; one function, BOTH with an f80 RETURN (so `retargetSite` REBUILDS each call as an
+; i32-returning one and ERASES the old call), the second consuming the first's
+; result beside a second register: `y = lpoly(q); z = lmix(y, q2)`.
+;
+; It pins two things this bead's ordered scrub made load-bearing:
+;  * the REBUILT first call is re-inserted into `taint.Tainted` at resolution, so
+;    the second site's RECOMPUTED mask still has slot 0 quantum
+;    (`__cq_q_lmix_11(%1, %h1)`, not `_10` with an i32 handle in an fp literal
+;    slot) — mutant M17;
+;  * the ERASED old call's pointer is scrubbed from the module taint. Before the
+;    scrub, the second clone's `ret` value was allocated at the freed address,
+;    answered "tainted", and the post-`specialize()` re-ask of
+;    `declineQuantumReturnCalls` refused this CORRECT module (measured on the
+;    first bd 9bhg subject; the 983f9361 oracle never asked, so the dangling key
+;    had no observable consumer there). ⚠ Being an allocator-reuse effect, that
+;    failure is not guaranteed to reproduce on every build; the scrub makes the
+;    accept deterministic.
+; The stream is byte-identical to the 983f9361 oracle's and to aad63450's.
+;
+; Library TU (plain C, no CQ.h) — tests/e2e/spec_fp_arg_lib.c plus:
+;   long double lmix(long double x, long double w) { return x * w + 0.5L; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   long double lpoly(long double x);
+;   long double lmix(long double x, long double w);
+;   long double slice(void) {
+;       long double q = cq_theta((long double)3.0L, 0.5);
+;       long double y = lpoly(q);
+;       long double q2 = cq_theta((long double)2.0L, 0.25);
+;       long double z = lmix(y, q2);
+;       return cq_measure(z);
+;   }
+;   int main(void) { (void) slice(); return 0; }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not=__cq_q_lmix_10
+; CHECK-NOT: error
+; CHECK-LABEL: define x86_fp80 @slice(
+; CHECK: %h = call i32 @cqrt_alloc_f80(x86_fp80 0xK4000C000000000000000)
+; CHECK-NEXT: call void @cqrt_ry_f80(i32 %h, double 5.000000e-01)
+; CHECK-NEXT: [[Y:%[0-9]+]] = call i32 @__cq_q_lpoly_1(i32 %h)
+; CHECK-NEXT: %h1 = call i32 @cqrt_alloc_f80(x86_fp80 0xK40008000000000000000)
+; CHECK-NEXT: call void @cqrt_ry_f80(i32 %h1, double 2.500000e-01)
+; CHECK-NEXT: [[Z:%[0-9]+]] = call i32 @__cq_q_lmix_11(i32 [[Y]], i32 %h1)
+; CHECK-NEXT: %m = call x86_fp80 @cqrt_measure_f80(i32 [[Z]])
+; CHECK-NEXT: ret x86_fp80 %m
+; CHECK-LABEL: define noundef i32 @main(
+; CHECK: [[Y2:%[0-9]+]] = call i32 @__cq_q_lpoly_1(i32 %h)
+; CHECK: call i32 @__cq_q_lmix_11(i32 [[Y2]], i32 %h1)

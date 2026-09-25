@@ -1545,6 +1545,23 @@ add_test(NAME e2e-spec-fp-arg
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp_arg_caller.expected.log")
 
+# bd test_C_libtooling-9bhg — a function RETURNING a specialization-classical call
+# result, read by its caller. bd 3jru's refusal ran on the pre-specialize
+# conservative taint and declined this on 983f9361; 9bhg keeps provisional taint
+# from crossing the return and re-asks the refusal after specialize(). The trace's
+# `cqrt_addc_i32(h0, 4)` is the witness: the returned classical 4 is a LITERAL, not
+# a handle. MULTI-file deliberately — single-TU -O1 passes `poison` for `h`'s dead
+# first argument (measured), leaving no specialization site at all. The only layer
+# that LINKS (Rule 2/16).
+add_test(NAME e2e-spec-classical-return
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_return_caller.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_return_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_classical_return_caller.expected.log")
+
 # bd 3c6m.14.1 — the pure-callee proof widened to admit an fp80 BIT-PATTERN
 # `icmp i80` (one ConstantInt operand ⇒ provably `_hl`). A tainted arm's call to
 # such a callee is now speculated by PredMux E4 and the callee specialized into a

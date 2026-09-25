@@ -1,0 +1,53 @@
+; taint_reject_scrubbed_handle_clone_arg_mixed.ll — ACCEPT since bd test_C_libtooling-9bhg
+; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+;
+; ⚠ THE NAME SAYS `reject` AND THE FILE IS AN ACCEPT. Deliberately not renamed: a
+; `git mv` can be resurrected by a merge (CLAUDE.md L8; bd gahu's precedent). The
+; property this file pins is now the ORDERED SCRUB's MASK RECOMPUTATION.
+;
+; A TWO-TU module (caller TU with `-include CQ.h`, llvm-linked with a plain-C
+; library TU, as tests/e2e/run_slice_multi.sh builds one). `t = h(q, m)` is
+; tainted at detection, so `u = g2(t, q)` entered `plan6.Pending` with mask 0b11.
+; Before bd 9bhg the clone `__cq_q_g2_11` was built from that mask and took the
+; scrubbed `t` in its quantum slot 0 beside the genuine register `q` — the trace
+; read `add_i32(h0, h5)` (exit 0 on aad63450; declined by bd l3oi's clone-reader
+; fence on 983f9361).
+;
+; bd 9bhg scrubs `h`'s site as soon as its clone proves the classical `k + 1`, then
+; RECOMPUTES `g2(t, q)`'s mask from the current taint: 0b10. The clone is
+; `__cq_q_g2_10` — `t` a classical operand, `q` the register — and its body is the
+; mixed `a + b` over one handle, `cq_template_add_i32_hl(q, t)`, never a Q+Q add
+; over an integer id.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;   int g(int a) { return a * 3 + 1; }
+;   int g2(int a, int b) { return a + b; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k); int g2(int a, int b);
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int q = cq_theta(m, .5); int t = h(q, m); int u = g2(t, q); return cq_measure(u); }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not=__cq_q_g2_11
+; CHECK-NOT: error
+; CHECK-LABEL: define i32 @main(
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %h, i32 noundef %5)
+; CHECK-NEXT: [[U:%[0-9]+]] = tail call i32 @__cq_q_g2_10(i32 noundef [[T]], i32 noundef %h)
+; CHECK-NEXT: %m = call i32 @cqrt_measure_i32(i32 [[U]])
+; CHECK-NEXT: ret i32 %m
+; The clone: `b` (slot 1, the register) is the HANDLE and `a` (slot 0, `t`) the
+; LITERAL of the one mixed add; then the ordinary Bennett copy-out and reverse.
+; CHECK-LABEL: define internal i32 @__cq_q_g2_10(
+; CHECK-NEXT: %h_op = call i32 @cq_template_add_i32_hl(i32 %1, i32 %0)
+; CHECK-NEXT: %cqq.out = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_copy_i32(i32 %h_op, i32 %cqq.out)
+; CHECK-NEXT: call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %1, i32 %0)
+; CHECK-NEXT: call void @cqrt_free(i32 %h_op)
+; CHECK-NEXT: ret i32 %cqq.out

@@ -1,16 +1,26 @@
-; taint_reject_scrubbed_handle_clone_arg.ll — DECLINE (bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+; taint_reject_scrubbed_handle_clone_arg.ll — ACCEPT since bd test_C_libtooling-9bhg
+; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+;
+; ⚠ THE NAME SAYS `reject` AND THE FILE IS AN ACCEPT. Deliberately not renamed: a
+; `git mv` can be resurrected by a merge (CLAUDE.md L8; bd gahu's precedent). The
+; property this file pins is now the ORDERED SCRUB, and its decline twin is
+; taint_reject_scrubbed_handle_clone_arg_layout.ll.
 ;
 ; A TWO-TU module (caller TU with `-include CQ.h`, llvm-linked with a plain-C
 ; library TU, as tests/e2e/run_slice_multi.sh builds one). `t = h(q, m)` is
-; tainted at detection, so `specialize()` builds the clones of its CONSUMERS
-; from detection-time masks with `t`'s slot QUANTUM — and only afterwards proves
-; `h`'s clone returns the classical `k + 1` and scrubs `t`. The pre-scrub clone
-; call then reads the integer as a register handle.
-; `u = g(t)`: the clone `__cq_q_g_1` is called with the scrubbed `t` in its masked
-; (quantum) slot 0 — the trace read `cq_template_mul_i32_hl(h5, 3)`, an unallocated id.
-; `declineScrubbedHandleReads` now treats a call to a clone (or its `_unc`
-; twin) as a handle reader in its MASKED slots, identified by the
-; specializer's own record `taint.SpecHandleArgMask` — never by name prefix.
+; tainted at detection, and `u = g(t)` was entered in `plan6.Pending` with `t`'s
+; slot QUANTUM. Before bd 9bhg, `specialize()` built EVERY top-level clone from
+; those detection-time masks and scrubbed only afterwards, so `__cq_q_g_1` read the
+; integer `k + 1` as a register handle — the trace read
+; `cq_template_mul_i32_hl(h5, 3)`, an unallocated id (exit 0 on aad63450; declined
+; by bd l3oi's clone-reader fence on 983f9361).
+;
+; bd 9bhg ORDERS the scrub the way `buildClone` already orders its inner calls:
+; each top-level site's scrub runs as soon as it resolves, and a later site's mask
+; is RECOMPUTED from the current taint before it is built. `h`'s clone proves the
+; classical `k + 1`, the scrub untaints `t` and `g(t)`, `g(t)`'s mask is then 0, and
+; it is an ordinary classical call: no clone of `g`, no gate reading `t`, and the
+; user's `cq_measure(u)` of a classical value lowers to the value (bd 21mg).
 ;
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }
@@ -25,9 +35,15 @@
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: cq taint escape: classical call result used as a quantum register
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not=__cq_q_g_
+; CHECK-NOT: error
+; CHECK-LABEL: define i32 @main(
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %h, i32 noundef %5)
+; CHECK-NEXT: [[U:%[0-9]+]] = tail call i32 @g(i32 noundef [[T]])
+; CHECK-NEXT: ret i32 [[U]]
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

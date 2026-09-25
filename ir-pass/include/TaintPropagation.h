@@ -776,7 +776,9 @@ struct TaintSet {
 
   // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
   // record of every function it built, with the argument slots that are QUANTUM
-  // HANDLES in it: a clone `__cq_q_*` maps to its detection-time `SpecMask`; its
+  // HANDLES in it: a clone `__cq_q_*` maps to the `SpecMask` it was BUILT with
+  // (since bd 9bhg's ordered scrub, the mask RECOMPUTED at build time from the
+  // then-current taint, not the detection-time one); its
   // `_unc` twin to `(mask << 1) | 1` (arg 0 is the `out` handle). Written by
   // `buildClone` / at `ensureTwin`, read by `declineScrubbedHandleReads` — never
   // re-derived from a name prefix (CLAUDE.md §4f (P4)).
@@ -1423,35 +1425,88 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 // insert reaches it only via `UntaintedMergeRails` — see the list at
 // `propagateWorklist`, Rule-13 round 5 F-R5-1): when a `ret`
 // is tainted, every DIRECT call site of its function whose result is USED joins
-// the worklist (chains and recursion close by the worklist).
+// the worklist (chains and recursion close by the worklist) — UNLESS the
+// function's return taint is SPECIALIZATION-PROVISIONAL (bd 9bhg, below).
 bool functionReturnsTainted(const llvm::Function &F, const TaintSet &taint);
+
+// bd `test_C_libtooling-9bhg` — the SCRUB CONE, the one spelling of "which
+// tainted values lose ALL their taint if every value in `Roots` is proved
+// classical". Pure analysis over `taint.Tainted`: a forward walk from `Roots`
+// that admits a tainted user iff it is not in `Keep` and EVERY one of its tainted
+// operands is already admitted (the least fixpoint — a φ cycle fed by a root and
+// by itself stays out, i.e. the walk under-scrubs, the safe direction for every
+// caller). The roots themselves are always admitted. `Cone` receives the members
+// in DISCOVERY order (deterministic for a given IR), which is the order
+// `scrubForwardCone` records them in. `Specialization.cpp`'s `scrubForwardCone`
+// APPLIES this cone; `returnTaintIsSpecProvisional` asks it counterfactually —
+// one semantics, two questions (Rule 14).
+void collectScrubCone(llvm::ArrayRef<llvm::Value *> Roots, const TaintSet &taint,
+                      const llvm::SmallPtrSetImpl<const llvm::Value *> &Keep,
+                      llvm::SmallVectorImpl<llvm::Value *> &Cone);
+
+// bd `test_C_libtooling-9bhg` — is `F`'s return taint SPECIALIZATION-PROVISIONAL?
+// True iff `F` returns at least one tainted value and EVERY tainted return value
+// lies in the scrub cone (`collectScrubCone`, `Keep` = `taint.ThetaCalls`) of
+// `F`'s POTENTIAL specialization sites: its tainted direct calls to a DEFINED
+// function with at least one tainted argument. Such a return is quantum only if
+// some clone's `ReturnTainted` verdict says so, and that verdict does not exist
+// until `specialize()` runs — so `propagateWorklist` does NOT carry its taint
+// across the return, and `declineQuantumReturnCalls` defers the question to its
+// re-ask after `specialize()`.
+//
+// ⚠ THE SAFETY ARGUMENT DOES NOT REST ON THIS PREDICATE'S PRECISION. It rests on
+// the post-`specialize()` re-ask of `declineQuantumReturnCalls` being TOTAL (no
+// skip, both entry points): a function the predicate wrongly calls provisional
+// is still tainted after the real scrub (only a clone's classical verdict removes
+// taint, and only from its own cone) and is refused there; one it wrongly calls
+// non-provisional is crossed and refused EARLY. Imprecision moves an owner or a
+// slot, never a verdict. A root set that over-approximates the specializer's
+// `Pending` (an `invoke`, a site the specializer later declines) is therefore
+// safe by construction.
+bool returnTaintIsSpecProvisional(const llvm::Function &F, const TaintSet &taint);
 
 // bd `test_C_libtooling-3jru` — the LOUD refusal: any USE (a call site, or the
 // address taken) of a defined function that returns a tainted value fires
 // `cq taint escape: quantum value returned across a function boundary` (DS_Error,
 // source-located) — no stage downstream is proven to lower a register that arrives
 // as a CALL RESULT. A function with NO use in the module (an entry point) keeps the
-// existing Escaped `ret` contract. Asked ONCE in each entry point, AFTER the
-// round-2 fixpoint (`repropagateControlMerges` can taint a callee's return —
-// CLAUDE.md L1) and before `lowerRotations`/`lowerMeasures`. Every stage above it
-// already sees the call result TAINTED at its own round's taint (the
-// `propagateWorklist` closure — round 3's `propagate`-only loop missed round-2
-// growth, Rule-13 round 4 F-R4-1), which is what
-// keeps them from mis-lowering it meanwhile, and owners that decline first (the
-// specializer's `callee contains a quantum primitive`, the loop layer) keep their
-// strings — owners ABOVE the slot only; owners BELOW it (`declineClassicalMuxes`
-// onward) are pre-empted in such a module (round 4 P3-b). A direct call whose
-// RESULT IS UNUSED is not refused (round 4 P3-a); an address-taken use always is.
-// Returns true iff it declined.
-bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint);
+// existing Escaped `ret` contract. A direct call whose RESULT IS UNUSED is not
+// refused (round 4 P3-a); an address-taken use always is. Returns true iff it
+// declined.
+//
+// ASKED TWICE in each entry point (bd `test_C_libtooling-9bhg`):
+//  * EARLY (`SkipSpecProvisional = true`), AFTER the round-2 fixpoint
+//    (`repropagateControlMerges` can taint a callee's return — CLAUDE.md L1) and
+//    before `lowerRotations`/`lowerMeasures`. It refuses every function whose
+//    return taint is NOT specialization-provisional; for those, every stage above
+//    already saw the call result TAINTED at its own round's taint (the
+//    `propagateWorklist` closure — round 3's `propagate`-only loop missed round-2
+//    growth, Rule-13 round 4 F-R4-1), and owners that decline first (the
+//    specializer's `callee contains a quantum primitive`, the loop layer) keep
+//    their strings — owners ABOVE the slot only; owners BELOW it
+//    (`declineClassicalMuxes` onward) are pre-empted in such a module (round 4
+//    P3-b). A PROVISIONAL function is skipped — its callers never saw its taint,
+//    and that premise is CHECKED: the skip also requires that no used direct call
+//    site of the function is in `Tainted`.
+//  * LATE (`SkipSpecProvisional = false`), immediately after `specialize()` and
+//    `declineScrubbedHandleReads`, at the clones' FINAL verdicts: a provisional
+//    function whose return is still tainted (a clone returned a register) is
+//    refused HERE. Its callers read the call result classically in the window
+//    between — which is why this re-ask must be total and must run before
+//    `lowerRotations`/`lowerMeasures` (a `cq_measure(f(m))` of a classical-looking
+//    value is otherwise deleted down the bd 21mg path — the 3jru miscompile).
+bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint,
+                               bool SkipSpecProvisional);
 
 // bd `test_C_libtooling-l3oi` — the POSTCONDITION after `specialize()`: a value
 // in `taint.ScrubbedByReturnTaint` that is an operand of an emitted
 // `cqrt_*`/`cq_template_*` call, OR a MASKED (quantum) argument of a call to a
 // specialized clone or its `_unc` twin (`taint.SpecHandleArgMask`, the
 // specializer's own record — Rule-13 round 7 F-R7-1; the first spelling checked
-// only the runtime families and was NOT exact: `specialize()` builds every
-// top-level clone from detection-time masks before it scrubs), was read as a
+// only the runtime families and was NOT exact: a top-level clone can be built
+// from a mask that a LATER scrub falsifies — every clone was, before bd 9bhg's
+// ordered scrub; since it, only a site resolved before the site whose scrub
+// untaints its argument, i.e. a use laid out before its definition), was read as a
 // quantum HANDLE while it was still tainted and is now proved classical — the
 // integer used as a register id.
 // Fires `cq taint escape: classical call result used as a quantum register`

@@ -712,7 +712,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // and everything after now see this string instead of theirs (round 4 P3-b —
   // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
   // muxed by a classical-condition phi`). Both are declines; only the owner moved.
-  declineQuantumReturnCalls(M, taint);
+  // ⚠ bd `test_C_libtooling-9bhg`: this is the EARLY half of TWO asks. A function
+  // whose return taint is SPECIALIZATION-PROVISIONAL (it derives only from the
+  // function's own Phase-6 sites, whose clones have not been built yet) is
+  // SKIPPED here — its taint never crossed to a caller (`propagateWorklist`) — and
+  // is asked again, TOTALLY, right after `specialize()` and the l3oi fence, at the
+  // clones' verdicts. "Every stage above sees such a call result as quantum" is
+  // therefore true of NON-provisional returns only.
+  declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/true);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
@@ -866,6 +873,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // can REMOVE taint (a clone proved classical), after every control emitter
   // already read the value as a handle. Loud, before anything else runs.
   if (declineScrubbedHandleReads(M, taint))
+    return PreservedAnalyses::none();
+  // bd `test_C_libtooling-9bhg` — THE LATE HALF of the 3jru refusal, and its slot
+  // is the argument. A SPECIALIZATION-PROVISIONAL return did not cross to its
+  // callers at propagation and was skipped by the early ask above; its callers
+  // read the call result CLASSICALLY in every stage between. That is right only if
+  // the clones prove the return classical — which is known HERE and nowhere
+  // earlier. So this ask is TOTAL (no skip): any function whose return is still
+  // tainted after the scrub, with a used call site or its address taken, is
+  // refused. It must precede `lowerRotations`/`lowerOps`/`lowerMeasures`: a
+  // `cq_measure(f(m))` the caller reads as classical is otherwise DELETED down the
+  // bd 21mg path (taint_reject_spec_quantum_return_measure.ll) — the 3jru
+  // miscompile. After the l3oi fence, so a handle read of a scrubbed value keeps
+  // its more specific owner; before the stale-reader backstop, which stays last.
+  if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return PreservedAnalyses::none();
 
   // The lowered calls are erased inside each step, so nothing dangles and
@@ -1351,7 +1372,14 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // and everything after now see this string instead of theirs (round 4 P3-b —
   // e.g. reviewer probes a08, g03, g05, which the oracle declined as `tainted value
   // muxed by a classical-condition phi`). Both are declines; only the owner moved.
-  declineQuantumReturnCalls(M, taint);
+  // ⚠ bd `test_C_libtooling-9bhg`: this is the EARLY half of TWO asks. A function
+  // whose return taint is SPECIALIZATION-PROVISIONAL (it derives only from the
+  // function's own Phase-6 sites, whose clones have not been built yet) is
+  // SKIPPED here — its taint never crossed to a caller (`propagateWorklist`) — and
+  // is asked again, TOTALLY, right after `specialize()` and the l3oi fence, at the
+  // clones' verdicts. "Every stage above sees such a call result as quantum" is
+  // therefore true of NON-provisional returns only.
+  declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/true);
   stripPredMuxPredictedMarks(M);
   // (bd `test_C_libtooling-wx8g`) THE THIRD RE-ASK IN THIS SLOT, and it is about
   // a marking rather than a read: `ArmClassify`'s R7-loop clause (c) admitted an
@@ -1410,6 +1438,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // can REMOVE taint (a clone proved classical), after every control emitter
   // already read the value as a handle. Loud, before anything else runs.
   if (declineScrubbedHandleReads(M, taint))
+    return false;
+  // bd `test_C_libtooling-9bhg` — the LATE, TOTAL half of the 3jru refusal. See
+  // run() for the slot argument (twin-pipeline parity, WI-1.12).
+  if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
   // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,
