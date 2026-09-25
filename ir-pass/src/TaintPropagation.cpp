@@ -1945,7 +1945,11 @@ void propagateFromSeeds(TaintSet &taint, ArrayRef<Value *> Seeds,
   // before/after diff would miss them. Union them in explicitly — the same
   // two-part computation `repropagateControlMerges` performs for its own reseed
   // set (`UntaintedMergeRails` ∪ `Tainted − beforeTaint`).
-  std::set<Value *> beforeTaint;
+  // bd 8e5r: a SELF-CLEANING snapshot, not a raw `std::set` copy. A raw copy
+  // keeps a member's address after its Value is deleted, and a value tainted
+  // LATER at that reused address would then read as "already tainted before" and
+  // silently drop out of the delta the caller adjudicates (the L1 obligation).
+  TaintedValueSet beforeTaint;
   if (Delta)
     beforeTaint = taint.Tainted;
   FnSet ThetaFns, PhiFns, MeasureFns;
@@ -2101,7 +2105,10 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    rails + everything the propagation newly taints) is recoverable — the
   //    Phase-6 spec guard below needs it. `%out` itself is pre-tainted by the
   //    emitter (so it is in the snapshot, not the diff), so union in the rails.
-  std::set<Value *> beforeTaint = taint.Tainted;
+  // bd 8e5r: self-cleaning, for the reason given at `propagateFromSeeds` — the
+  // reseed delta below is `Tainted − beforeTaint`, and a raw copy would exclude
+  // a value newly tainted at a reused address from it.
+  TaintedValueSet beforeTaint = taint.Tainted;
   std::vector<Value *> Worklist(taint.UntaintedMergeRails.begin(),
                                 taint.UntaintedMergeRails.end());
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
@@ -2465,7 +2472,7 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
     }
     // (3) GLOBAL PHASE → delete (D2). No diagnostic, by owner decision.
     auto &PC = taint.PhaseCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     taint.Tainted.erase(CI);
     taint.BirthOrder.erase(CI);
     CI->eraseFromParent();

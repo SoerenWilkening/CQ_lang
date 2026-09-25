@@ -1096,11 +1096,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Same disposition as the three above: harmless while this entry point has zero
   // callers, and a reviver must scope it to `F` or accept it as module-wide.
   auto onlyInF = [&F](auto &Calls) {
-    Calls.erase(std::remove_if(Calls.begin(), Calls.end(),
-                               [&F](CallInst *CI) {
-                                 return CI->getFunction() != &F;
-                               }),
-                Calls.end());
+    Calls.remove_if([&F](CallInst *CI) { return CI->getFunction() != &F; });
   };
   onlyInF(taint.ThetaCalls);
   onlyInF(taint.PhiCalls);

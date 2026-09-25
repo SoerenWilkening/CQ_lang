@@ -1,0 +1,111 @@
+; ModuleID = 'combined.ll'
+source_filename = "llvm-link"
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+
+@M = global i32 5, align 4
+@N = global i32 3, align 4
+
+; Function Attrs: nounwind ssp uwtable
+define noundef i32 @main() local_unnamed_addr #0 {
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %1 = load volatile i32, ptr @M, align 4, !tbaa !6
+  %2 = load volatile i32, ptr @N, align 4, !tbaa !6
+  %h = call i32 @cqrt_alloc_i32(i32 %1)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h2 = call i32 @cqrt_alloc_i32(i32 %2)
+  call void @cqrt_ry_i32(i32 %h2, double 2.500000e-01)
+  %h_op = call i32 @cq_template_and_i32_hl(i32 %h2, i32 7)
+  %qval = call i32 @cqrt_alloc_i32(i32 7)
+  call void @cqrt_qram_store_i32(i32 %arr, i32 %h_op, i32 %qval)
+  %h_op3 = call i32 @cq_template_and_i32_hl(i32 %h, i32 7)
+  %qval1 = call i32 @cqrt_alloc_i32(i32 9)
+  call void @cqrt_qram_store_i32(i32 %arr, i32 %h_op3, i32 %qval1)
+  %h_op4 = call i32 @cq_template_add_i32_hl(i32 %h2, i32 1)
+  %h_op5 = call i32 @cq_template_and_i32_hl(i32 %h_op4, i32 7)
+  %3 = call i32 @cqrt_qram_load_i32(i32 %arr, i32 %h_op5)
+  call void @cq_template_and_i32_hl_unc(i32 %h_op5, i32 %h_op4, i32 7)
+  call void @cqrt_free(i32 %h_op5)
+  call void @cq_template_add_i32_hl_unc(i32 %h_op4, i32 %h2, i32 1)
+  call void @cqrt_free(i32 %h_op4)
+  %m = call i32 @cqrt_measure_i32(i32 %3)
+  %4 = tail call i32 @__cq_q_k1_10(i32 noundef %1, i32 noundef %h) #5
+  %5 = tail call i32 @__cq_q_k1_10(i32 noundef %2, i32 noundef %h2) #5
+  %m6 = call i32 @cqrt_measure_i32(i32 %4)
+  %m7 = call i32 @cqrt_measure_i32(i32 %5)
+  %m8 = call i32 @cqrt_measure_i32(i32 %h2)
+  %m9 = call i32 @cqrt_measure_i32(i32 %h)
+  ret i32 0
+}
+
+; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture) #1
+
+; Function Attrs: nocallback nofree nounwind willreturn memory(argmem: write)
+declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg) #2
+
+; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)
+declare void @llvm.lifetime.end.p0(i64 immarg, ptr nocapture) #1
+
+; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+define i32 @k1(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
+  %3 = mul nsw i32 %0, 7
+  %4 = add nsw i32 %3, %1
+  ret i32 %4
+}
+
+declare void @cqrt_copy_i32(i32, i32)
+
+declare i32 @cqrt_qram_alloc_i32(i32)
+
+declare i32 @cqrt_qram_load_i32(i32, i32)
+
+declare void @cqrt_qram_store_i32(i32, i32, i32)
+
+declare i32 @cqrt_alloc_i32(i32)
+
+; Function Attrs: mustprogress norecurse nosync nounwind ssp memory(readwrite) uwtable
+define internal i32 @__cq_q_k1_10(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
+  %3 = mul nsw i32 %0, 7
+  %h_op = call i32 @cq_template_add_i32_hl(i32 %1, i32 %3)
+  %cqq.out = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %h_op, i32 %cqq.out)
+  call void @cq_template_add_i32_hl_unc(i32 %h_op, i32 %1, i32 %3)
+  call void @cqrt_free(i32 %h_op)
+  ret i32 %cqq.out
+}
+
+declare i32 @cq_template_add_i32_hl(i32, i32)
+
+declare void @cq_template_add_i32_hl_unc(i32, i32, i32)
+
+declare void @cqrt_free(i32)
+
+declare void @cqrt_ry_i32(i32, double)
+
+declare i32 @cq_template_and_i32_hl(i32, i32)
+
+declare i32 @cqrt_measure_i32(i32)
+
+declare void @cq_template_and_i32_hl_unc(i32, i32, i32)
+
+attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #1 = { nocallback nofree nosync nounwind willreturn memory(argmem: readwrite) }
+attributes #2 = { nocallback nofree nounwind willreturn memory(argmem: write) }
+attributes #3 = { mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #4 = { mustprogress norecurse nosync nounwind ssp memory(readwrite) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #5 = { nounwind }
+
+!llvm.ident = !{!0, !0}
+!llvm.module.flags = !{!1, !2, !3, !4, !5}
+
+!0 = !{!"Homebrew clang version 19.1.7"}
+!1 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 4]}
+!2 = !{i32 1, !"wchar_size", i32 4}
+!3 = !{i32 8, !"PIC Level", i32 2}
+!4 = !{i32 7, !"uwtable", i32 2}
+!5 = !{i32 7, !"frame-pointer", i32 2}
+!6 = !{!7, !7, i64 0}
+!7 = !{!"int", !8, i64 0}
+!8 = !{!"omnipotent char", !9, i64 0}
+!9 = !{!"Simple C/C++ TBAA"}

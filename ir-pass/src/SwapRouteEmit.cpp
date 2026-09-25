@@ -81,7 +81,7 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.StaleDeclined.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     // M-B Increment 6's two EMITTER-RECORDED sets (bd test_C_libtooling-160a
     // Rule-13 round, finding F3). This module is their sole writer, so it is
     // also where a recorded key must be dropped if the call it names is ever
@@ -983,7 +983,7 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       taint.Tainted.insert(TNeg);
       // Insert into `ThetaCalls` immediately AFTER `T` (see the ⚠ above).
       auto It = llvm::find(taint.ThetaCalls, T);
-      taint.ThetaCalls.insert(It == taint.ThetaCalls.end() ? It : It + 1, TNeg);
+      taint.ThetaCalls.insert(It == taint.ThetaCalls.end() ? It : std::next(It), TNeg);
       taint.ControlledRotations[TNeg] = Flag;
       markRailCondRead(taint, Flag, TNeg);
       G.first = TNeg;  // M-β's RAUW target is the LAST gate in the stream.
@@ -2150,7 +2150,7 @@ void emitPhaseKickbackRegion(const ControlRegion &R, WidthDispatch &wd,
   // from the IR) and any later module walk cannot dereference freed memory.
   auto erasePhase = [&](CallInst *CI) {
     auto &PC = taint.PhaseCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     CI->eraseFromParent();
   };
   for (Instruction *I : R.Shadow)
@@ -2414,7 +2414,7 @@ void emitPhaseKickbackNestRegion(const ControlRegion &R, WidthDispatch &wd,
   // freed memory.
   auto erasePhase = [&](CallInst *CI) {
     auto &PC = taint.PhaseCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     CI->eraseFromParent();
   };
   for (Instruction *I : R.Shadow)

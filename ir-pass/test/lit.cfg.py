@@ -22,6 +22,14 @@ cq_opt = getattr(config, "cq_opt", None) or os.environ.get("CQ_OPT", "opt-19")
 cq_pass = getattr(config, "cq_pass_plugin", None) or os.environ.get("CQ_PASS", "")
 filecheck = getattr(config, "filecheck", None) or os.environ.get("FILECHECK", "FileCheck-19")
 
+# %debugalloc-cq-opt (bd test_C_libtooling-8e5r) — the SAME pass objects as
+# %cq-opt, linked with the test-only allocator (`CQ_OPT_DEBUG_ALLOC=lifo|nofree`,
+# ir-pass/tools/cq_debug_alloc.cpp) that makes a stale-key alias deterministic.
+# Falls back to %cq-opt (which ignores the variable). The key deliberately does
+# NOT contain "%cq-opt" as a substring, so substitution order cannot matter.
+cq_opt_debugalloc = getattr(config, "cq_opt_debugalloc", None) or cq_opt
+config.substitutions.append(("%debugalloc-cq-opt", cq_opt_debugalloc))
+
 # %cq-opt expands to the opt binary; %cq-pass to the pass plugin path.
 # Tests typically write: ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 config.substitutions.append(("%cq-opt", cq_opt))

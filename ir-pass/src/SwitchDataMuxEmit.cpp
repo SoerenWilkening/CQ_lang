@@ -72,7 +72,7 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.StaleDeclined.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
   }
 }
 

@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9234 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7381 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7398 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3536 physical lines
@@ -24,16 +24,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2585 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2592 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1843 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1875 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1524 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1520 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -57,7 +57,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/LoopPlan.h` — 757 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
-- `ir-pass/src/MergePhiPeel.cpp` — 655 physical lines
+- `ir-pass/src/MergePhiPeel.cpp` — 659 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 654 physical lines
 - `tools/negative_vacuity_check.py` — 646 physical lines
 - `ir-pass/src/SwitchClassify.cpp` — 620 physical lines
@@ -115,9 +115,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1843 lines)
+### `ir-pass/include/TaintPropagation.h` (1875 lines)
 
-- `ir-pass/include/TaintPropagation.h:485` — `isPeelClone`
+- `ir-pass/include/TaintPropagation.h:512` — `isPeelClone`
 
 ### `ir-pass/include/WidthDispatch.h` (245 lines)
 
@@ -271,7 +271,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1524 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1520 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:54` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:88` — `declineSurvivingIntrinsicCalls`
@@ -484,7 +484,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7381 lines)
+### `ir-pass/src/LoopLowering.cpp` (7398 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -541,15 +541,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:5648` — `deferredDephasingSlot`
 - `ir-pass/src/LoopLowering.cpp:5659` — `declineRound2FalsifiedRailGrants`
 - `ir-pass/src/LoopLowering.cpp:5923` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6249` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6318` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6373` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6442` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6462` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6626` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6773` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:7044` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7237` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:6252` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6321` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6376` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6445` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6465` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6629` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6776` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:7045` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7238` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -564,7 +564,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MeasureLowering.cpp:222` — `diagnoseMeasure`
 - `ir-pass/src/MeasureLowering.cpp:230` — `lowerMeasures`
 
-### `ir-pass/src/MergePhiPeel.cpp` (655 lines)
+### `ir-pass/src/MergePhiPeel.cpp` (659 lines)
 
 - `ir-pass/src/MergePhiPeel.cpp:76` — `recoverPeelShape`
 - `ir-pass/src/MergePhiPeel.cpp:192` — `armWritesMemory`
@@ -747,12 +747,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp:1679` — `rewriteOneBank`
 - `ir-pass/src/RailBankPromote.cpp:1946` — `rewriteRailBankCellTypes`
 
-### `ir-pass/src/RegionFlatten.cpp` (304 lines)
+### `ir-pass/src/RegionFlatten.cpp` (308 lines)
 
 - `ir-pass/src/RegionFlatten.cpp:37` — `scrubTaint`
 - `ir-pass/src/RegionFlatten.cpp:48` — `flattenRegion`
-- `ir-pass/src/RegionFlatten.cpp:134` — `flattenRegionTree`
-- `ir-pass/src/RegionFlatten.cpp:246` — `flattenSwitchRegion`
+- `ir-pass/src/RegionFlatten.cpp:137` — `flattenRegionTree`
+- `ir-pass/src/RegionFlatten.cpp:249` — `flattenSwitchRegion`
 
 ### `ir-pass/src/RegionTreeDetect.cpp` (425 lines)
 
@@ -928,7 +928,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2585 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2592 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:80` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:98` — `collectAndSeed`
@@ -952,18 +952,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp:1786` — `detectAndLowerOnwardControl`
 - `ir-pass/src/TaintPropagation.cpp:1875` — `replanReseedSpecialization`
 - `ir-pass/src/TaintPropagation.cpp:1940` — `propagateFromSeeds`
-- `ir-pass/src/TaintPropagation.cpp:2003` — `adjudicateTaintDelta`
-- `ir-pass/src/TaintPropagation.cpp:2054` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2224` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2244` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2291` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2310` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:2338` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2375` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2391` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:2482` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:2492` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:2549` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:2007` — `adjudicateTaintDelta`
+- `ir-pass/src/TaintPropagation.cpp:2058` — `repropagateControlMerges`
+- `ir-pass/src/TaintPropagation.cpp:2231` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2251` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2298` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:2317` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:2345` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2382` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:2398` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:2489` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:2499` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:2556` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TemplateName.cpp` (143 lines)
 

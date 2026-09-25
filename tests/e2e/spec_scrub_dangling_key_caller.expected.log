@@ -1,0 +1,33 @@
+cqrt_qram_alloc_i32(8) -> a0
+cqrt_alloc_i32(5) -> h1
+cqrt_ry_i32(h1, 0x1p-1)
+cqrt_alloc_i32(3) -> h2
+cqrt_ry_i32(h2, 0x1p-2)
+cq_template_and_i32_hl(h2, 7) -> h3
+cqrt_alloc_i32(7) -> h4
+cqrt_qram_store_i32(a0, h3, h4)
+cq_template_and_i32_hl(h1, 7) -> h5
+cqrt_alloc_i32(9) -> h6
+cqrt_qram_store_i32(a0, h5, h6)
+cq_template_add_i32_hl(h2, 1) -> h7
+cq_template_and_i32_hl(h7, 7) -> h8
+cqrt_qram_load_i32(a0, h8) -> h9
+cq_template_and_i32_hl_unc(h8, h7, 7)
+cqrt_free(h8)
+cq_template_add_i32_hl_unc(h7, h2, 1)
+cqrt_free(h7)
+cqrt_measure_i32(h9) -> 0
+cq_template_add_i32_hl(h1, 35) -> h10
+cqrt_alloc_i32(0) -> h11
+cqrt_copy_i32(h10, h11)
+cq_template_add_i32_hl_unc(h10, h1, 35)
+cqrt_free(h10)
+cq_template_add_i32_hl(h2, 21) -> h12
+cqrt_alloc_i32(0) -> h13
+cqrt_copy_i32(h12, h13)
+cq_template_add_i32_hl_unc(h12, h2, 21)
+cqrt_free(h12)
+cqrt_measure_i32(h11) -> 0
+cqrt_measure_i32(h13) -> 0
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h1) -> 0

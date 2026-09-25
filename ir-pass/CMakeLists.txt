@@ -156,6 +156,50 @@ llvm_map_components_to_libnames(_CQ_OPT_LLVM_LIBS
   core irreader passes analysis transformutils bitwriter support)
 target_link_libraries(cq-opt PRIVATE ${_CQ_OPT_LLVM_LIBS})
 
+# cq-opt-debugalloc (bd test_C_libtooling-8e5r / -um24): cq-opt's OWN object
+# files re-linked with tools/cq_debug_alloc.cpp, the TEST-ONLY allocator
+# (`CQ_OPT_DEBUG_ALLOC=lifo|nofree`) that makes a dangling-key alias — or a
+# stale-key dereference — DETERMINISTIC instead of a lottery. A SEPARATE binary
+# on purpose: replacing the global operator new/delete costs ~5 ms of launch CPU
+# even with the variable unset (measured, dyld/static-init), and `%cq-opt` runs
+# ~3000 times a lit run, so the harness's default driver stays exactly as it
+# was. Same objects, so the pass code under test is the pass code `%cq-opt`
+# runs; lit spells it `%debugalloc-cq-opt`. Not a CQPass source: the plugin
+# every user loads never contains it. Costs one extra link, no recompile.
+add_executable(cq-opt-debugalloc tools/cq_debug_alloc.cpp $<TARGET_OBJECTS:cq-opt>)
+add_dependencies(cq-opt-debugalloc cq-opt)
+target_compile_features(cq-opt-debugalloc PRIVATE cxx_std_17)
+target_link_libraries(cq-opt-debugalloc PRIVATE ${_CQ_OPT_LLVM_LIBS})
+
+# cq-scrub-selftest (bd test_C_libtooling-8e5r / -um24 / -j8sk): the deterministic
+# per-member pin of `include/ScrubOnDelete.h` over every pointer-keyed member of
+# `cq::TaintSet` — header-only subject, one TU, LLVM core+support. Run twice:
+# under `lifo` (address reuse REQUIRED, so the aliasing branch is never vacuous)
+# and under the system allocator (the shipped allocation path).
+add_executable(cq-scrub-selftest tools/scrub_selftest.cpp tools/cq_debug_alloc.cpp)
+target_include_directories(cq-scrub-selftest PRIVATE
+  "${CMAKE_CURRENT_SOURCE_DIR}/include" ${LLVM_INCLUDE_DIRS})
+target_compile_features(cq-scrub-selftest PRIVATE cxx_std_17)
+target_compile_definitions(cq-scrub-selftest PRIVATE ${LLVM_DEFINITIONS})
+llvm_map_components_to_libnames(_CQ_SELFTEST_LLVM_LIBS core support)
+target_link_libraries(cq-scrub-selftest PRIVATE ${_CQ_SELFTEST_LLVM_LIBS})
+add_test(NAME ir-pass-scrub-on-delete-selftest-lifo COMMAND cq-scrub-selftest)
+set_tests_properties(ir-pass-scrub-on-delete-selftest-lifo
+  PROPERTIES ENVIRONMENT "CQ_OPT_DEBUG_ALLOC=lifo")
+add_test(NAME ir-pass-scrub-on-delete-selftest-sysalloc COMMAND cq-scrub-selftest)
+set_tests_properties(ir-pass-scrub-on-delete-selftest-sysalloc
+  PROPERTIES ENVIRONMENT "CQ_OPT_DEBUG_ALLOC=")
+# The STRUCTURAL half: no raw pointer-bearing member may be (re)added to
+# `cq::TaintSet`, and every self-cleaning one must be exercised by the selftest
+# above. A pure-Python record gate; `--selftest` is its own mutant validation.
+find_program(CQ_SCRUB_GUARD_PYTHON NAMES python3 python)
+if(CQ_SCRUB_GUARD_PYTHON)
+  add_test(NAME taintset-scrub-guard
+    COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py")
+  add_test(NAME taintset-scrub-guard-selftest
+    COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py" --selftest)
+endif()
+
 # LIT/FileCheck harness for the pass. Lives in test/ alongside the *.ll
 # fixtures from issue -345; gated on the CQPass target existing (which it
 # now does), so the harness will switch from shell fallback to real LIT

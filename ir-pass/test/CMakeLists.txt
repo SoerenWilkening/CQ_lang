@@ -39,6 +39,16 @@ if(TARGET cq-opt)
 else()
   set(CQ_OPT_EXECUTABLE "${CQ_OPT_STOCK}")
 endif()
+# `%debugalloc-cq-opt` (bd test_C_libtooling-8e5r): the same pass objects linked
+# with the test allocator (`CQ_OPT_DEBUG_ALLOC=lifo|nofree`, see
+# ir-pass/CMakeLists.txt). Without the target it falls back to `%cq-opt`, which
+# IGNORES the variable — a pin then passes without exercising address reuse; it
+# cannot go falsely RED.
+if(TARGET cq-opt-debugalloc)
+  set(CQ_OPT_DEBUGALLOC_EXECUTABLE "$<TARGET_FILE:cq-opt-debugalloc>")
+else()
+  set(CQ_OPT_DEBUGALLOC_EXECUTABLE "${CQ_OPT_EXECUTABLE}")
+endif()
 
 # Resolve `FileCheck`. Versioned name comes first on Debian/Ubuntu installs.
 find_program(CQ_FILECHECK_EXECUTABLE

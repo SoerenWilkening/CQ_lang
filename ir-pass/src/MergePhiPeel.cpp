@@ -595,10 +595,14 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
         taint.Tainted.insert(Sel);
         Seeds.push_back(Sel);
         Phi->replaceAllUsesWith(Sel);
-        // Erase from the taint set BEFORE the instruction dies. `Tainted` is a
-        // `std::set<Value *>`; a dangling key in it is the bd `drbq` Inc-1 defect
-        // verbatim (a `Value *` set keyed at one stage and read stages later,
-        // after the key was erased). No OTHER `TaintSet` field can name a SOURCE
+        // Erase from the taint set BEFORE the instruction dies. `Tainted` WAS a
+        // raw `std::set<Value *>`, and a dangling key in it is the bd `drbq`
+        // Inc-1 defect verbatim (a `Value *` set keyed at one stage and read
+        // stages later, after the key was erased). ⚠ Since bd 8e5r it is a
+        // self-cleaning `TaintedValueSet` (`ScrubOnDelete.h`) and EVERY
+        // `TaintSet` table drops a deleted key by itself, so this erase — and the
+        // measured audit below, which a site-by-site defence needed — is now
+        // belt-and-braces rather than the defence. No OTHER `TaintSet` field can name a SOURCE
         // φ at this program point — `InPlaceRailOps`/`PreLoopCommittedInPlaceOps`
         // hold `add`/`xor` ops, `ClaimedRailRoots` holds `cq_theta` root mints,
         // every `*Rails` field holds emitter-created handles that do not exist
