@@ -929,18 +929,29 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // body's ops read the inner result as UNTAINTED, so `ArithLowering` picks the
     // wrong template shape (an i32 handle lands in an fp literal slot → a broken
     // module, the Rule-13 finding). Mirror the module-level re-seed `specialize`
-    // does for a top-level rebuilt result: erase the stale entry, register the new
-    // call as a tainted i32 handle (carrying any `BirthOrder`), and record its fp
-    // logical width in `HandleWidth` so a later outer op/cast off it resolves the
-    // right `cq_template_*_f<W>`. The integer path never rebuilds
-    // (`setCalledFunction` keeps the pointer), so this is inert there.
+    // does for a top-level rebuilt result: register the new call as a tainted i32
+    // handle and record its fp logical width in `HandleWidth` so a later outer
+    // op/cast off it resolves the right `cq_template_*_f<W>`. The integer path
+    // never rebuilds (`setCalledFunction` keeps the pointer), so this is inert
+    // there.
+    //
+    // ⚠ TWO STATEMENTS WERE DELETED HERE, AND WHY (bd 8e5r, Rule-13 r1A F-EA-7):
+    //   * `cloneTaint.Tainted.erase(OldInner)` — `OldInner` was already
+    //     `eraseFromParent`'d inside `retargetSite`, so this erased by a DEAD
+    //     pointer. `cloneTaint.Tainted` is self-cleaning (`ScrubOnDelete.h`): the
+    //     key was dropped at the deletion itself, so the erase is redundant — and
+    //     it was a latent HAZARD, because an erase by a dead address removes
+    //     whatever LIVE object has since been revived at that address (safe only
+    //     while nothing allocates between `retargetSite`'s erase and here; the
+    //     r1B F-EB-9 shape).
+    //   * the `BirthOrder` migration of `OldInner` onto `Inner` — DEAD BY
+    //     CONSTRUCTION, on every binary: `cloneTaint.BirthOrder` is written only
+    //     by `lowerCloneSelect` / `lowerQramReads` / `lowerOps`, all of which run
+    //     AFTER this loop, so it never holds an inner call here (r1A's I1 logged
+    //     no lookup hit at it on the corpus). A lookup MOVED before the erase would
+    //     be dead too, so it is deleted rather than moved; the stream is unchanged
+    //     by construction (and measured: corpus A/B, TRACK_8E5R.md §13).
     if (Inner != OldInner) {
-      cloneTaint.Tainted.erase(OldInner);
-      if (auto BO = cloneTaint.BirthOrder.find(OldInner);
-          BO != cloneTaint.BirthOrder.end()) {
-        cloneTaint.BirthOrder[Inner] = BO->second;
-        cloneTaint.BirthOrder.erase(OldInner);
-      }
       cloneTaint.Tainted.insert(Inner);
       if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(InnerOrigW))
         cloneTaint.HandleWidth[Inner] = InnerOrigW;

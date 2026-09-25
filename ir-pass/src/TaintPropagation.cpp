@@ -2221,11 +2221,22 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   // bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1 — the SNAPSHOT the onward
   // loop-rail pass at the end of this function needs. Taken HERE, before
   // `detectAndLowerOnwardControl` grows the set, so the difference is exactly
-  // "the loops round 2 opened". A `BasicBlock *` in it may be dangling by the
-  // time it is read (a round-2 flatten erases blocks); it is only ever compared
-  // by identity against a LIVE block of a LIVE loop, and the worst a recycled
-  // address can do is make the onward pass SKIP a loop — the leak, i.e. the safe
-  // direction.
+  // "the loops round 2 opened".
+  //
+  // ⚠ SELF-CLEANING, LIKE THE TABLE IT SNAPSHOTS (bd test_C_libtooling-jct8,
+  // Rule-13 r1A F-EA-1 — the L2 question the `beforeTaint` snapshots below
+  // already answered). A round-2 flatten can erase a recorded `Pred`. The live
+  // `taint.InLoopFlattenedPreds` drops a deleted block and RESETS the count of a
+  // fresh block recycled at its address; a RAW snapshot kept the dead block's
+  // round-1 count, so a new Pred at that address compared `1 <= 1` and the
+  // onward pass SKIPPED the loop. This comment used to call that skip "the leak,
+  // i.e. the safe direction" — FALSE (L7): F-R1-1 below measured exactly that
+  // skip as a rolled-vs-unrolled divergence whose per-trip which-path rails
+  // leaked. With a `ScrubMap` snapshot the dead block is absent on both sides
+  // (live 1 against snapshot 0), so the loop is re-offered. Argued unreachable
+  // today (no stage creates a BasicBlock between here and the onward pass —
+  // `LoopLowering.cpp`'s creator census); reproduced deterministically in a unit
+  // probe (`review_r1A_8e5r/probes/round1_snapshot_asym.cpp`).
   //
   // A COUNT SNAPSHOT since bd 3qlq Inc 1's SECOND C-1 review round (F-C1-2(2b)):
   // the delta the onward pass wants is "did round 2 emit a region into this
@@ -2234,8 +2245,8 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   // already used, so membership does not move and the loop is never re-offered
   // (MEASURED on `p/r40_onward_r1open.c`: one `[DBG] loop hdr=` line, `round2=0`,
   // while every per-trip which-path rail leaked).
-  DenseMap<const BasicBlock *, unsigned> Round1FlattenedPreds(
-      taint.InLoopFlattenedPreds.begin(), taint.InLoopFlattenedPreds.end());
+  ScrubMap<const BasicBlock *, unsigned> Round1FlattenedPreds =
+      taint.InLoopFlattenedPreds;
 
   // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
   // (needed by the shared work-list loop's angle / measure-sink rules). NOT a

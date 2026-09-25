@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 757 maintained source files, 6232 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 757 maintained source files, 6250 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -24,7 +24,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2750 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2761 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
@@ -38,8 +38,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
+- `ir-pass/src/Specialization.cpp` — 1236 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
-- `ir-pass/src/Specialization.cpp` — 1225 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1123 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
@@ -54,13 +54,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/shipped_guard_model.py` — 866 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
-- `ir-pass/include/LoopPlan.h` — 757 physical lines
+- `ir-pass/include/LoopPlan.h` — 762 physical lines
+- `tools/taintset_scrub_guard.py` — 761 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 659 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 654 physical lines
+- `ir-pass/include/ScrubOnDelete.h` — 646 physical lines
 - `tools/negative_vacuity_check.py` — 646 physical lines
-- `ir-pass/include/ScrubOnDelete.h` — 645 physical lines
 - `ir-pass/src/SwitchClassify.cpp` — 620 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 614 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
@@ -99,6 +100,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp` — 426 physical lines
 - `ir-pass/src/RegionTreeDetect.cpp` — 425 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
+- `ir-pass/tools/scrub_selftest.cpp` — 419 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `runtime/cq_intrinsic_templates.h` — 407 physical lines
 - `tools/install_cq.py` — 402 physical lines
@@ -109,67 +111,67 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/include/ControlPlan.h:343` — `setRoutedBase`
 
-### `ir-pass/include/ScrubOnDelete.h` (645 lines)
+### `ir-pass/include/ScrubOnDelete.h` (646 lines)
 
-- `ir-pass/include/ScrubOnDelete.h:107` — `rearm`
-- `ir-pass/include/ScrubOnDelete.h:108` — `armed`
-- `ir-pass/include/ScrubOnDelete.h:127` — `arm`
-- `ir-pass/include/ScrubOnDelete.h:136` — `disarm`
-- `ir-pass/include/ScrubOnDelete.h:137` — `clear`
-- `ir-pass/include/ScrubOnDelete.h:140` — `asValue`
-- `ir-pass/include/ScrubOnDelete.h:163` — `dead`
-- `ir-pass/include/ScrubOnDelete.h:167` — `toStore`
-- `ir-pass/include/ScrubOnDelete.h:174` — `skip`
-- `ir-pass/include/ScrubOnDelete.h:224` — `begin`
-- `ir-pass/include/ScrubOnDelete.h:225` — `end`
-- `ir-pass/include/ScrubOnDelete.h:227` — `insert`
-- `ir-pass/include/ScrubOnDelete.h:240` — `insert`
-- `ir-pass/include/ScrubOnDelete.h:245` — `count`
-- `ir-pass/include/ScrubOnDelete.h:250` — `contains`
-- `ir-pass/include/ScrubOnDelete.h:251` — `find`
-- `ir-pass/include/ScrubOnDelete.h:257` — `erase`
-- `ir-pass/include/ScrubOnDelete.h:266` — `empty`
-- `ir-pass/include/ScrubOnDelete.h:267` — `size`
-- `ir-pass/include/ScrubOnDelete.h:268` — `clear`
-- `ir-pass/include/ScrubOnDelete.h:274` — `remove_if`
-- `ir-pass/include/ScrubOnDelete.h:302` — `dead`
-- `ir-pass/include/ScrubOnDelete.h:306` — `toStore`
-- `ir-pass/include/ScrubOnDelete.h:311` — `skip`
-- `ir-pass/include/ScrubOnDelete.h:339` — `base`
-- `ir-pass/include/ScrubOnDelete.h:367` — `begin`
-- `ir-pass/include/ScrubOnDelete.h:368` — `end`
-- `ir-pass/include/ScrubOnDelete.h:369` — `begin`
-- `ir-pass/include/ScrubOnDelete.h:372` — `end`
-- `ir-pass/include/ScrubOnDelete.h:390` — `insert`
-- `ir-pass/include/ScrubOnDelete.h:404` — `try_emplace`
-- `ir-pass/include/ScrubOnDelete.h:419` — `count`
-- `ir-pass/include/ScrubOnDelete.h:424` — `contains`
-- `ir-pass/include/ScrubOnDelete.h:425` — `find`
-- `ir-pass/include/ScrubOnDelete.h:430` — `find`
-- `ir-pass/include/ScrubOnDelete.h:435` — `lookup`
-- `ir-pass/include/ScrubOnDelete.h:441` — `erase`
-- `ir-pass/include/ScrubOnDelete.h:449` — `erase`
-- `ir-pass/include/ScrubOnDelete.h:451` — `empty`
-- `ir-pass/include/ScrubOnDelete.h:452` — `size`
-- `ir-pass/include/ScrubOnDelete.h:453` — `clear`
-- `ir-pass/include/ScrubOnDelete.h:483` — `skip`
-- `ir-pass/include/ScrubOnDelete.h:534` — `begin`
-- `ir-pass/include/ScrubOnDelete.h:537` — `end`
-- `ir-pass/include/ScrubOnDelete.h:539` — `push_back`
-- `ir-pass/include/ScrubOnDelete.h:544` — `insert`
-- `ir-pass/include/ScrubOnDelete.h:552` — `contains`
-- `ir-pass/include/ScrubOnDelete.h:556` — `erase_value`
-- `ir-pass/include/ScrubOnDelete.h:559` — `remove_if`
-- `ir-pass/include/ScrubOnDelete.h:564` — `empty`
-- `ir-pass/include/ScrubOnDelete.h:565` — `size`
-- `ir-pass/include/ScrubOnDelete.h:566` — `clear`
-- `ir-pass/include/ScrubOnDelete.h:614` — `insert`
-- `ir-pass/include/ScrubOnDelete.h:620` — `count`
-- `ir-pass/include/ScrubOnDelete.h:621` — `contains`
-- `ir-pass/include/ScrubOnDelete.h:622` — `erase`
-- `ir-pass/include/ScrubOnDelete.h:623` — `empty`
-- `ir-pass/include/ScrubOnDelete.h:624` — `size`
-- `ir-pass/include/ScrubOnDelete.h:625` — `clear`
+- `ir-pass/include/ScrubOnDelete.h:108` — `rearm`
+- `ir-pass/include/ScrubOnDelete.h:109` — `armed`
+- `ir-pass/include/ScrubOnDelete.h:128` — `arm`
+- `ir-pass/include/ScrubOnDelete.h:137` — `disarm`
+- `ir-pass/include/ScrubOnDelete.h:138` — `clear`
+- `ir-pass/include/ScrubOnDelete.h:141` — `asValue`
+- `ir-pass/include/ScrubOnDelete.h:164` — `dead`
+- `ir-pass/include/ScrubOnDelete.h:168` — `toStore`
+- `ir-pass/include/ScrubOnDelete.h:175` — `skip`
+- `ir-pass/include/ScrubOnDelete.h:225` — `begin`
+- `ir-pass/include/ScrubOnDelete.h:226` — `end`
+- `ir-pass/include/ScrubOnDelete.h:228` — `insert`
+- `ir-pass/include/ScrubOnDelete.h:241` — `insert`
+- `ir-pass/include/ScrubOnDelete.h:246` — `count`
+- `ir-pass/include/ScrubOnDelete.h:251` — `contains`
+- `ir-pass/include/ScrubOnDelete.h:252` — `find`
+- `ir-pass/include/ScrubOnDelete.h:258` — `erase`
+- `ir-pass/include/ScrubOnDelete.h:267` — `empty`
+- `ir-pass/include/ScrubOnDelete.h:268` — `size`
+- `ir-pass/include/ScrubOnDelete.h:269` — `clear`
+- `ir-pass/include/ScrubOnDelete.h:275` — `remove_if`
+- `ir-pass/include/ScrubOnDelete.h:303` — `dead`
+- `ir-pass/include/ScrubOnDelete.h:307` — `toStore`
+- `ir-pass/include/ScrubOnDelete.h:312` — `skip`
+- `ir-pass/include/ScrubOnDelete.h:340` — `base`
+- `ir-pass/include/ScrubOnDelete.h:368` — `begin`
+- `ir-pass/include/ScrubOnDelete.h:369` — `end`
+- `ir-pass/include/ScrubOnDelete.h:370` — `begin`
+- `ir-pass/include/ScrubOnDelete.h:373` — `end`
+- `ir-pass/include/ScrubOnDelete.h:391` — `insert`
+- `ir-pass/include/ScrubOnDelete.h:405` — `try_emplace`
+- `ir-pass/include/ScrubOnDelete.h:420` — `count`
+- `ir-pass/include/ScrubOnDelete.h:425` — `contains`
+- `ir-pass/include/ScrubOnDelete.h:426` — `find`
+- `ir-pass/include/ScrubOnDelete.h:431` — `find`
+- `ir-pass/include/ScrubOnDelete.h:436` — `lookup`
+- `ir-pass/include/ScrubOnDelete.h:442` — `erase`
+- `ir-pass/include/ScrubOnDelete.h:450` — `erase`
+- `ir-pass/include/ScrubOnDelete.h:452` — `empty`
+- `ir-pass/include/ScrubOnDelete.h:453` — `size`
+- `ir-pass/include/ScrubOnDelete.h:454` — `clear`
+- `ir-pass/include/ScrubOnDelete.h:484` — `skip`
+- `ir-pass/include/ScrubOnDelete.h:535` — `begin`
+- `ir-pass/include/ScrubOnDelete.h:538` — `end`
+- `ir-pass/include/ScrubOnDelete.h:540` — `push_back`
+- `ir-pass/include/ScrubOnDelete.h:545` — `insert`
+- `ir-pass/include/ScrubOnDelete.h:553` — `contains`
+- `ir-pass/include/ScrubOnDelete.h:557` — `erase_value`
+- `ir-pass/include/ScrubOnDelete.h:560` — `remove_if`
+- `ir-pass/include/ScrubOnDelete.h:565` — `empty`
+- `ir-pass/include/ScrubOnDelete.h:566` — `size`
+- `ir-pass/include/ScrubOnDelete.h:567` — `clear`
+- `ir-pass/include/ScrubOnDelete.h:615` — `insert`
+- `ir-pass/include/ScrubOnDelete.h:621` — `count`
+- `ir-pass/include/ScrubOnDelete.h:622` — `contains`
+- `ir-pass/include/ScrubOnDelete.h:623` — `erase`
+- `ir-pass/include/ScrubOnDelete.h:624` — `empty`
+- `ir-pass/include/ScrubOnDelete.h:625` — `size`
+- `ir-pass/include/ScrubOnDelete.h:626` — `clear`
 
 ### `ir-pass/include/SpecializePlan.h` (190 lines)
 
@@ -880,7 +882,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1225 lines)
+### `ir-pass/src/Specialization.cpp` (1236 lines)
 
 - `ir-pass/src/Specialization.cpp:56` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:73` — `isForwardQramLoad`
@@ -896,8 +898,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:792` — `retargetSite`
 - `ir-pass/src/Specialization.cpp:819` — `resolveSite`
 - `ir-pass/src/Specialization.cpp:830` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1154` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1161` — `specialize`
+- `ir-pass/src/Specialization.cpp:1165` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1172` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (254 lines)
 
@@ -991,7 +993,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2750 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2761 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:80` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:98` — `collectAndSeed`
@@ -1019,16 +1021,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp:2098` — `propagateFromSeeds`
 - `ir-pass/src/TaintPropagation.cpp:2165` — `adjudicateTaintDelta`
 - `ir-pass/src/TaintPropagation.cpp:2216` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2389` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2409` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2456` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2475` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:2503` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2540` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2556` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:2647` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:2657` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:2714` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:2400` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2420` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2467` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:2486` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:2514` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2551` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:2567` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:2658` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:2668` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:2725` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TemplateName.cpp` (143 lines)
 
@@ -1118,38 +1120,40 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/WireWalk.cpp:927` — `everyPathReExecutes`
 - `ir-pass/src/WireWalk.cpp:934` — `intervalAlternates`
 
-### `ir-pass/tools/cq_debug_alloc.cpp` (146 lines)
+### `ir-pass/tools/cq_debug_alloc.cpp` (181 lines)
 
-- `ir-pass/tools/cq_debug_alloc.cpp:54` — `cqAllocMode`
-- `ir-pass/tools/cq_debug_alloc.cpp:78` — `cqNew`
-- `ir-pass/tools/cq_debug_alloc.cpp:100` — `cqDelete`
-- `ir-pass/tools/cq_debug_alloc.cpp:125` — `new`
-- `ir-pass/tools/cq_debug_alloc.cpp:127` — `new`
-- `ir-pass/tools/cq_debug_alloc.cpp:141` — `delete`
-- `ir-pass/tools/cq_debug_alloc.cpp:143` — `delete`
-- `ir-pass/tools/cq_debug_alloc.cpp:145` — `delete`
+- `ir-pass/tools/cq_debug_alloc.cpp:72` — `cqAllocRefuse`
+- `ir-pass/tools/cq_debug_alloc.cpp:82` — `cqAllocMode`
+- `ir-pass/tools/cq_debug_alloc.cpp:113` — `cqNew`
+- `ir-pass/tools/cq_debug_alloc.cpp:135` — `cqDelete`
+- `ir-pass/tools/cq_debug_alloc.cpp:160` — `new`
+- `ir-pass/tools/cq_debug_alloc.cpp:162` — `new`
+- `ir-pass/tools/cq_debug_alloc.cpp:176` — `delete`
+- `ir-pass/tools/cq_debug_alloc.cpp:178` — `delete`
+- `ir-pass/tools/cq_debug_alloc.cpp:180` — `delete`
 
 ### `ir-pass/tools/cq_opt_main.cpp` (126 lines)
 
 - `ir-pass/tools/cq_opt_main.cpp:43` — `main`
 
-### `ir-pass/tools/scrub_selftest.cpp` (382 lines)
+### `ir-pass/tools/scrub_selftest.cpp` (419 lines)
 
-- `ir-pass/tools/scrub_selftest.cpp:55` — `expect`
-- `ir-pass/tools/scrub_selftest.cpp:63` — `iterCount`
-- `ir-pass/tools/scrub_selftest.cpp:75` — `Fixture`
-- `ir-pass/tools/scrub_selftest.cpp:87` — `term`
-- `ir-pass/tools/scrub_selftest.cpp:88` — `mkAdd`
-- `ir-pass/tools/scrub_selftest.cpp:89` — `mkCall`
-- `ir-pass/tools/scrub_selftest.cpp:90` — `mkPhi`
-- `ir-pass/tools/scrub_selftest.cpp:91` — `mkStore`
-- `ir-pass/tools/scrub_selftest.cpp:92` — `mkBlock`
-- `ir-pass/tools/scrub_selftest.cpp:97` — `mkFunction`
-- `ir-pass/tools/scrub_selftest.cpp:102` — `kill`
-- `ir-pass/tools/scrub_selftest.cpp:106` — `checkSet`
-- `ir-pass/tools/scrub_selftest.cpp:137` — `checkMap`
-- `ir-pass/tools/scrub_selftest.cpp:169` — `checkList`
-- `ir-pass/tools/scrub_selftest.cpp:196` — `main`
+- `ir-pass/tools/scrub_selftest.cpp:62` — `expect`
+- `ir-pass/tools/scrub_selftest.cpp:70` — `skipBranch`
+- `ir-pass/tools/scrub_selftest.cpp:78` — `iterCount`
+- `ir-pass/tools/scrub_selftest.cpp:90` — `Fixture`
+- `ir-pass/tools/scrub_selftest.cpp:102` — `term`
+- `ir-pass/tools/scrub_selftest.cpp:103` — `mkAdd`
+- `ir-pass/tools/scrub_selftest.cpp:104` — `mkCall`
+- `ir-pass/tools/scrub_selftest.cpp:105` — `mkPhi`
+- `ir-pass/tools/scrub_selftest.cpp:106` — `mkStore`
+- `ir-pass/tools/scrub_selftest.cpp:107` — `mkBlock`
+- `ir-pass/tools/scrub_selftest.cpp:112` — `mkFunction`
+- `ir-pass/tools/scrub_selftest.cpp:117` — `kill`
+- `ir-pass/tools/scrub_selftest.cpp:121` — `checkSet`
+- `ir-pass/tools/scrub_selftest.cpp:152` — `checkMap`
+- `ir-pass/tools/scrub_selftest.cpp:184` — `checkList`
+- `ir-pass/tools/scrub_selftest.cpp:211` — `main`
 
 ### `runtime/cq_intrinsic_templates.c` (2355 lines)
 
@@ -8392,15 +8396,31 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/taintset_scrub_guard.py` (255 lines)
+### `tools/taintset_scrub_guard.py` (761 lines)
 
-- `tools/taintset_scrub_guard.py:84` — `strip_comments`
-- `tools/taintset_scrub_guard.py:109` — `taintset_body`
-- `tools/taintset_scrub_guard.py:123` — `members`
-- `tools/taintset_scrub_guard.py:153` — `check_aliases`
-- `tools/taintset_scrub_guard.py:168` — `check`
-- `tools/taintset_scrub_guard.py:202` — `selftest`
-- `tools/taintset_scrub_guard.py:243` — `main`
+- `tools/taintset_scrub_guard.py:127` — `_find_clang`
+- `tools/taintset_scrub_guard.py:144` — `_find_llvm_include`
+- `tools/taintset_scrub_guard.py:160` — `_toolchain`
+- `tools/taintset_scrub_guard.py:169` — `_clang`
+- `tools/taintset_scrub_guard.py:177` — `_json_docs`
+- `tools/taintset_scrub_guard.py:192` — `_split_top`
+- `tools/taintset_scrub_guard.py:209` — `parse_type`
+- `tools/taintset_scrub_guard.py:261` — `_balanced`
+- `tools/taintset_scrub_guard.py:275` — `Walk.__init__`
+- `tools/taintset_scrub_guard.py:286` — `Walk.field_type`
+- `tools/taintset_scrub_guard.py:289` — `Walk._t`
+- `tools/taintset_scrub_guard.py:344` — `Walk._named`
+- `tools/taintset_scrub_guard.py:355` — `_render`
+- `tools/taintset_scrub_guard.py:366` — `_walk_record`
+- `tools/taintset_scrub_guard.py:393` — `_dump`
+- `tools/taintset_scrub_guard.py:403` — `_traits`
+- `tools/taintset_scrub_guard.py:439` — `check`
+- `tools/taintset_scrub_guard.py:548` — `_strip_comments`
+- `tools/taintset_scrub_guard.py:596` — `_mutants`
+- `tools/taintset_scrub_guard.py:597` — `_mutants.ins`
+- `tools/taintset_scrub_guard.py:708` — `selftest`
+- `tools/taintset_scrub_guard.py:714` — `selftest.run`
+- `tools/taintset_scrub_guard.py:742` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 

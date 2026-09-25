@@ -32,7 +32,8 @@
 #ifndef CQ_IRPASS_LOOP_PLAN_H_
 #define CQ_IRPASS_LOOP_PLAN_H_
 
-#include "llvm/ADT/DenseMap.h"  // collapseFlattenedLoopRails (count snapshot)
+#include "llvm/ADT/DenseMap.h"
+#include "ScrubOnDelete.h"  // collapseFlattenedLoopRails (self-cleaning count snapshot, bd jct8)
 #include "llvm/ADT/SmallPtrSet.h"  // loopHasInPlaceRailStructure (set param)
 #include "llvm/ADT/SmallVector.h"  // CarriedHandleProof::BypassIncomings (bd h1ip)
 #include "llvm/ADT/StringRef.h"  // LoopBreakRegion::RailWidth (by-value member)
@@ -422,10 +423,14 @@ void declineRound2FalsifiedRailGrants(llvm::Module &M, TaintSet &taint,
 // `$SES/trackD/MEASUREMENT.md`, not on this mechanism.
 void emitDeferredDephasingDecline(llvm::Module &M);
 
+// `AlreadyProcessed` is the caller's round-1 snapshot of
+// `taint.InLoopFlattenedPreds`; it is a SELF-CLEANING `ScrubMap` like the live
+// table it snapshots (bd test_C_libtooling-jct8 / Rule-13 r1A F-EA-1: a raw
+// snapshot against a self-cleaning live map turned a recycled block address into
+// a SKIPPED loop — see `repropagateControlMerges`).
 void collapseFlattenedLoopRails(
     llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
-    const llvm::DenseMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed =
-        nullptr);
+    const ScrubMap<const llvm::BasicBlock *, unsigned> *AlreadyProcessed = nullptr);
 
 // Issue dtzb — is `BO` a recognized IN-PLACE value rail self-update (`q = q OP
 // c`, OP in {add, xor}, EXACTLY ONE tainted operand, integer width <= 64, the

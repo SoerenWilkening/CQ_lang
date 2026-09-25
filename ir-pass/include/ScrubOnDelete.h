@@ -73,6 +73,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/STLExtras.h"
+#include "llvm/IR/Instructions.h"  // SpineOpSet names llvm::CallInst — self-contained (r1A F-EA-9)
 #include "llvm/IR/Value.h"
 #include "llvm/IR/ValueHandle.h"
 

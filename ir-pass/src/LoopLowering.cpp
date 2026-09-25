@@ -4685,7 +4685,7 @@ void recordRound1RailGrant(Loop *L, TaintSet &taint,
 
 void collapseFlattenedLoopRails(
     Module &M, WidthDispatch &wd, TaintSet &taint,
-    const DenseMap<const BasicBlock *, unsigned> *AlreadyProcessed) {
+    const ScrubMap<const BasicBlock *, unsigned> *AlreadyProcessed) {
   // Round-2 TRIGGER: only a module in which an in-loop tainted-control region
   // was actually emitted + flattened. Everything else is byte-identical, which
   // is what keeps the 250-odd shipped e2e goldens untouched by this increment.

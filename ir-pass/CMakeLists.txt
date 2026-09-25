@@ -183,7 +183,7 @@ target_compile_features(cq-scrub-selftest PRIVATE cxx_std_17)
 target_compile_definitions(cq-scrub-selftest PRIVATE ${LLVM_DEFINITIONS})
 llvm_map_components_to_libnames(_CQ_SELFTEST_LLVM_LIBS core support)
 target_link_libraries(cq-scrub-selftest PRIVATE ${_CQ_SELFTEST_LLVM_LIBS})
-add_test(NAME ir-pass-scrub-on-delete-selftest-lifo COMMAND cq-scrub-selftest)
+add_test(NAME ir-pass-scrub-on-delete-selftest-lifo COMMAND cq-scrub-selftest --require-reuse)
 set_tests_properties(ir-pass-scrub-on-delete-selftest-lifo
   PROPERTIES ENVIRONMENT "CQ_OPT_DEBUG_ALLOC=lifo")
 add_test(NAME ir-pass-scrub-on-delete-selftest-sysalloc COMMAND cq-scrub-selftest)

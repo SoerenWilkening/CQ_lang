@@ -50,7 +50,14 @@ using namespace llvm;
 namespace {
 
 unsigned Checks = 0, Failures = 0, ReuseTried = 0, ReuseHit = 0;
+unsigned SkippedBranches = 0, SkippedChecks = 0;
 bool StrictReuse = false;
+
+// The aliasing branch of one member did not run because the fresh object did not
+// land on the dead address. Under `--require-reuse` that is a FAILURE (the branch
+// would be vacuous); otherwise it is COUNTED and reported — never skipped
+// silently (Rule-13 r1B F-EB-10).
+void skipBranch(unsigned NChecks, const std::string &What);
 
 void expect(bool Ok, const std::string &What) {
   ++Checks;
@@ -58,6 +65,14 @@ void expect(bool Ok, const std::string &What) {
     ++Failures;
     errs() << "FAIL: " << What << "\n";
   }
+}
+
+void skipBranch(unsigned NChecks, const std::string &What) {
+  ++SkippedBranches;
+  SkippedChecks += NChecks;
+  if (StrictReuse)
+    expect(false, What + ": address reuse NOT reproduced under --require-reuse "
+                         "(the aliasing branch would be vacuous)");
 }
 
 template <typename C> std::size_t iterCount(const C &Cont) {
@@ -125,8 +140,8 @@ void checkSet(const char *Name, SetT &S, MkT Mk) {
     expect(S.insert(Y).second, N + ": inserting the fresh object is a NEW insertion");
     expect(S.count(Y) == 1 && S.size() == 1 && iterCount(S) == 1,
            N + ": the revived address is a member exactly once");
-  } else if (StrictReuse) {
-    expect(false, N + ": LIFO reuse NOT reproduced (the aliasing branch would be vacuous)");
+  } else {
+    skipBranch(3, N);
   }
   S.erase(Y);
   expect(S.empty(), N + ": explicit erase empties the set");
@@ -157,8 +172,8 @@ void checkMap(const char *Name, MapT &Mp, MkT Mk, ValT V1) {
            N + ": a FRESH object at the dead address has NO mapping (8e5r)");
     expect(Mp[Y] == ValT(), N + ": operator[] on the fresh object yields the DEFAULT, not the stale value");
     expect(Mp.count(Y) == 1 && Mp.size() == 1, N + ": the revived key is a member once");
-  } else if (StrictReuse) {
-    expect(false, N + ": LIFO reuse NOT reproduced (the aliasing branch would be vacuous)");
+  } else {
+    skipBranch(3, N);
   }
   Mp.erase(Y);
   expect(Mp.empty(), N + ": explicit erase empties the map");
@@ -183,8 +198,8 @@ void checkList(const char *Name, ListT &L, MkT Mk) {
     expect(!L.contains(Y), N + ": a FRESH call at the dead address is NOT listed (8e5r)");
     L.push_back(Y);
     expect(iterCount(L) == 1, N + ": the fresh call is listed exactly ONCE, not twice");
-  } else if (StrictReuse) {
-    expect(false, N + ": LIFO reuse NOT reproduced (the aliasing branch would be vacuous)");
+  } else {
+    skipBranch(2, N);
   }
   L.erase_value(Y);
   expect(L.empty(), N + ": erase_value empties the list");
@@ -193,9 +208,30 @@ void checkList(const char *Name, ListT &L, MkT Mk) {
 
 }  // namespace
 
-int main() {
+int main(int argc, char **argv) {
+  // Rule-13 r1B F-EB-10: the mode is VALIDATED, and "reuse required" is an
+  // ARGUMENT, not a re-read of the env string — a typo (`LIFO`) or a lost ctest
+  // ENVIRONMENT used to downgrade silently to "(not required)".
   const char *Mode = std::getenv("CQ_OPT_DEBUG_ALLOC");
-  StrictReuse = Mode && !std::strcmp(Mode, "lifo");
+  std::string M = Mode ? Mode : "";
+  if (!M.empty() && M != "lifo" && M != "nofree") {
+    errs() << "cq-scrub-selftest: unknown CQ_OPT_DEBUG_ALLOC='" << M
+           << "' (expected unset, 'lifo' or 'nofree') — refusing to run\n";
+    return 2;
+  }
+  for (int I = 1; I < argc; ++I) {
+    if (!std::strcmp(argv[I], "--require-reuse")) {
+      StrictReuse = true;
+    } else {
+      errs() << "cq-scrub-selftest: unknown argument '" << argv[I] << "'\n";
+      return 2;
+    }
+  }
+  if (StrictReuse && M != "lifo") {
+    errs() << "cq-scrub-selftest: --require-reuse needs CQ_OPT_DEBUG_ALLOC=lifo (got '" << M
+           << "') — refusing to run\n";
+    return 2;
+  }
 
   Fixture Fx;
   cq::TaintSet T;
@@ -257,8 +293,8 @@ int main() {
         ++ReuseHit;
         expect(Mp.count(K2) == 0 && static_cast<Value *>(Mp.lookup(K2)) == nullptr,
                N + ": a FRESH key at the dead address has NO mapping (8e5r)");
-      } else if (StrictReuse) {
-        expect(false, N + ": LIFO reuse NOT reproduced (the aliasing branch would be vacuous)");
+      } else {
+        skipBranch(1, N);
       }
       Mp[K2] = Flag;
       return K2;
@@ -296,8 +332,8 @@ int main() {
       expect(T.ControlledRotations.count(Y) == 0 &&
                  static_cast<Value *>(T.ControlledRotations.lookup(Y)) == nullptr,
              "ControlledRotations: a FRESH call at the dead address has NO flag (8e5r)");
-    } else if (StrictReuse) {
-      expect(false, "ControlledRotations: LIFO reuse NOT reproduced");
+    } else {
+      skipBranch(1, "ControlledRotations");
     }
     kill(Y);
   }
@@ -374,9 +410,10 @@ int main() {
            "MeasureCalls: erasing the CURRENT call mid-iteration visits all three");
   }
 
-  outs() << "scrub-on-delete selftest: " << Checks << " checks, " << Failures
-         << " failures; LIFO address reuse reproduced " << ReuseHit << "/" << ReuseTried
-         << (StrictReuse ? " (required: CQ_OPT_DEBUG_ALLOC=lifo)" : " (not required)")
-         << "\n";
+  outs() << "scrub-on-delete selftest [CQ_OPT_DEBUG_ALLOC=" << (M.empty() ? "<unset>" : M)
+         << "]: " << Checks << " checks, " << Failures << " failures; address reuse reproduced "
+         << ReuseHit << "/" << ReuseTried
+         << (StrictReuse ? " (REQUIRED)" : " (not required)") << "; aliasing branches SKIPPED "
+         << SkippedBranches << "/" << ReuseTried << " (" << SkippedChecks << " checks)\n";
   return Failures ? 1 : 0;
 }
