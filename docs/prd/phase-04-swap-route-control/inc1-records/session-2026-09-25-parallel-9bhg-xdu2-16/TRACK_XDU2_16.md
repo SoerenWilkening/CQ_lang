@@ -11,6 +11,14 @@ Probes, sweeps and the mutation harness are committed under `xdu2_16_probes/`.
 **Not self-cleared.** The orchestrator owes this change independent Rule-13 rounds.
 §8 says what to attack first.
 
+> **UPDATE after Rule-13 (two independent rounds, r1A fence logic and r1B emitted
+> circuit, both `CLEAR-WITH-ITEMS`, 0 P1, 0 P2):** records `review_r1A_xdu2_16/REVIEW.md`
+> and `review_r1B_xdu2_16/REVIEW.md` in this directory. Every P3 item was applied as a
+> COMMENT / RECORD / FIXTURE-HEADER change only — no predicate and no emitted stream
+> changed (the post-edit binary is compared against `b1603d23` in §10). Where this
+> record was wrong it is corrected IN PLACE and marked `⚠ CORRECTED (r1…)`; §10 maps
+> every finding to its disposition.
+
 ## 1. Headline
 
 - **The wall moved and xdu2.8's program compiles.** `railbank_dynamic_matrix.c`
@@ -25,14 +33,17 @@ Probes, sweeps and the mutation harness are committed under `xdu2_16_probes/`.
   (`false` is a refusal), and `railLocalQualifies` is re-asked on the fresh set
   alone. The fence, its string, its slot and both entry points are unchanged.
 - **Rolled == hand-unrolled, byte for byte**, on the two committed twin gates and on
-  9 more probe cells (§5). **K-independent**: 102 lowered lines at `i < 3` and at
-  `i < 1000`.
+  9 more probe cells (§5). **K-independent**: 123 lowered lines (`wc -l`; 102
+  non-blank) at `i < 3` and at `i < 1000` — ⚠ CORRECTED (r1A F-A1-6): the first
+  version said "102 lowered lines" with no command; the command and the full diff
+  are now in §5.
 - **Corpus A/B: 0 A→D, 0 string moves, 0 stream moves**; every mover is an intended
   D→A (§6).
-- **One ROLLED-ONLY cell** was found and is adjudicated in §7: the flat half's
-  decline is a pre-existing positional over-decline (filed bd `xdu2.19`), the rolled
-  circuit is argued correct gate by gate. It is the first thing a reviewer should
-  attack.
+- **ROLLED-ONLY cells exist and are adjudicated in §7.** ⚠ CORRECTED (r1B F-B1-2,
+  r1A F-A1-2): the first version said "one ROLLED-ONLY cell". The review rounds found
+  at least four flat-decline causes and ~50 rolled-only cell-forms, all flat
+  OVER-declines in the safe direction (bd `xdu2.19`, `xdu2.22`, `xdu2.23`); the
+  data-rotated cell is now WITNESSED by an IR-level twin (r1B F-B1-1).
 
 ## 2. The wall, read off the IR (Rule 11)
 
@@ -118,6 +129,27 @@ if (Nulled) {
   `lowerOps`' tripwire; an `and`/`or`/`xor i1` has no dtzb chain to commit anyway.
 - **Mutation before a possible decline**: `invariantRegisterRoots` rolls its own
   commitments back on failure, and `diagnose` exits (bd `br4a`).
+- ⚠ CORRECTED (r1A F-A1-3, r1B F-B1-3) — **the SUCCESS path has two side effects the
+  two bullets above never stated.** Round 1's only candidate was usually the hoisted
+  node, so the fresh candidates (the leaves' registers) are judged for the first time
+  HERE, and "idempotent with round 1's" does not reach them:
+  (i) **new dtzb in-place commitments** (`InPlaceRailOps` /
+  `PreLoopCommittedInPlaceOps`) made at this slot, i.e. AFTER `declineStaleRecordOps`
+  / `recordStaleQuantumReaders` / `declineRecordedStaleQuantumReaders` (r1A measured
+  late `cqrt_addc_i32`/`cqrt_xorc_i32` on `ch/f1`, `ch/f2`). Safe today because the
+  `lowerOps` (1b) tripwire re-asks `classifyInPlaceReassignment` under FINAL taint and
+  declines loudly, and its G6 conjunct forbids any later read of the parent, so no
+  reader exists for the earlier stale fences to have missed (`f1`/`f2` byte-identical
+  to twins where M-C decides the same at `lowerOps`; `f3` reads the parent later → G6
+  refuses → IRR false → decline);
+  (ii) **new (ii-d) exit obligations** recorded in the ledger at this slot for a fresh
+  derived-rail candidate; `declineUndischargedExitObligations` enforces them after
+  `uncompute`. That postcondition, not the re-derivation, is what stops an undischarged
+  fresh root; safe because a ledger entry can only add declines. Measured as the main
+  remaining wall of this shape: r1A 10 of 168 probe pairs, r1B 87 of 510 cell-forms
+  move from this fence's string to `hoisted invariant rail admitted for in-loop
+  discharge was not discharged` (bd `xdu2.21`). Both are now stated at the source,
+  with retirement triggers.
 - **Residual, stated at the site:** `railLocalQualifies` keys its scan on
   `taint.Tainted`, and emitter-minted rails are not in it. An emitter that hoisted
   its stream OUT of the loop whose body consumes it would be invisible — none does;
@@ -180,19 +212,39 @@ binaries): on the oracle every ROLLED cell declined at the wall; on the subject
 | loop-variant tree, hoisted leaf `(q>1)&(r<i)` | IDENTICAL (60) | clean |
 | `_Bool` rail leaf `b & (q > 1)` | IDENTICAL (51) | clean |
 | hybrid `q \|\| m == n` | IDENTICAL (45) | clean |
-| derived `int p = q*3+1; (p>4)&(r<5)` | IDENTICAL (60) | clean |
+| derived `int p = q*3+1; (p>4)&(r<5)` ⚠ see note | IDENTICAL (60) | clean |
 | fp leaf `(double q > 1.0) & (r < 5)` | IDENTICAL (60) | clean |
 | hybrid `q && m == n`, `q && i < m` | DIFFERENT 36 vs 45 **on BOTH binaries** | clean |
-| data-rotated (Ry on the select output) | **ROLLED-ONLY** (§7) | clean |
+| data-rotated (Ry on the select output) | **ROLLED-ONLY** vs the C twin; IDENTICAL vs the IR twin (§7) | clean |
+
+⚠ CORRECTED (r1A F-A1-1): the "derived" row **never exercised a derived leaf** —
+`-O1` folds `q*3+1 > 4` into `icmp sgt %q, 1`. A genuinely non-foldable derived leaf
+(`int p = q*q;`) still DECLINES, at the (ii-d) exit-obligation postcondition (bd
+`xdu2.21`; §3's new success-path bullet (ii)).
 
 The two DIFFERENT rows accept on the ORACLE too (rolled and unrolled): `-O1` splits
 the rolled `q && m == n` into a classical `select` on `m == n` followed by a quantum
 `select` on `q == 0`, while the flat copies keep the fused `and` — two spellings of
 one function by the generator, not by this change.
 
-**K-independence**: `slice_loop_condtree_select_hoisted.c` at `i < 3` and `i < 1000`
-lowers to 102 lines each; the only diff is the two trip constants (the loop and its
-inlined copy in `main`).
+**K-independence** — ⚠ CORRECTED (r1A F-A1-6). The first version said "102 lines
+each; the only diff is the two trip constants" and recorded no command. Re-measured
+on the COMMITTED `tests/e2e/slice_loop_condtree_select_hoisted.c` with
+`xdu2_16_probes/kind.sh OUTDIR` (stage 1 at `-O1`, `cq-opt`, then `wc -l`,
+`grep -c .`, `diff`; the K=1000 copy edits only the code loop's `i < 3; ++i`):
+
+```
+k3:    wc -l = 123, non-blank = 102
+k1000: wc -l = 123, non-blank = 102
+diff:  lines 1-2 (ModuleID / source_filename: the file name), and
+       44c44  %9 = icmp eq i32 %8, 3   ->  1000     (in @slice)
+       77c77  %4 = icmp eq i32 %3, 3   ->  1000     (in @main, which inlines slice)
+```
+
+So "102" was the non-blank count and "123" is `wc -l`; both are K-independent. The
+two differing code lines are the trip constants of `@slice` and of its inlined copy
+in `@main`. (r1A reports ONE differing line on the same source; I measure two, with
+the command above. K-independence is not in dispute.)
 
 **G-13** (`xdu2_16_probes/g13.py`, rolled vs unrolled, trailing `cq_theta` on `q`,
 on `r`, on both; per-trip and carried shapes; both binaries): **every trailing-gate
@@ -210,6 +262,10 @@ which-path record of `q`/`r` survives a trip. A single-compare control
 (`g13single.c`) declines at `SelectClassify` on both binaries — the compound tree
 landing on the stale-record fence instead is a pre-existing asymmetry of owners,
 safe direction, not traced further.
+(r1B §2 extends this: a trailing non-diagonal gate on a register the CONDITION reads
+stays unreachable in every spelling it tried; one on a register only the per-trip
+in-body DATA rails read IS reached — 5 do-while cells, all accepted STRICT-clean with
+the hoisted (ii-d) rails discharged at the loop exit before the Ry. See its record.)
 
 ## 6. Measurements (commands in `xdu2_16_probes/`)
 
@@ -251,7 +307,7 @@ safe direction, not traced further.
   | M1 withdraw a nulled grant silently (`continue`) | KILLED | both `reject_nulled_root_*` |
   | M4 restore the old unconditional refusal | KILLED | 11 (every new accept, the 3 matrices, the 3 slices) |
   | M5 accept on a total re-derivation, skip `railLocalQualifies` | KILLED | `…_rederived_escape.ll` |
-  | M2 ignore the totality requirement | MISSED | shadowed: a non-total derivation fails on an uncovered Cand, which `railLocalQualifies`' invariant-input clause refuses too; the only clauses it does not re-ask — (iii-b) void writes to a merge out-rail inside `L` — have no constructible subject (that clause's own comment: no emitter builds it) |
+  | M2 ignore the totality requirement | MISSED | shadowed: a non-total derivation usually fails on an uncovered Cand, which `railLocalQualifies`' invariant-input clause refuses too. ⚠ CORRECTED (r1A F-A1-4, r1B F-B1-4) — the first version said "the only clauses it does not re-ask — (iii-b) … — have no constructible subject". Both halves were wrong. (a) The list is incomplete: clause **(iii)**'s in-loop in-place-gate refusal is ALSO not re-asked when a sibling Cand already put the same peeled root into `Fresh` (`onRail(V)` is then true although V failed) — no C subject constructed by r1A, every spelling dies earlier. (b) **(iii-b) IS reachable from plain C** (r1B `outleaf/ol_none.c`, `int u = (q>1)?k1:k2; for(…) t = ((u>3)&(r<5))?i:55;`, bd `xdu2.24`): its `isVoidTy()` test refuses the 4.4 emitter's read-only `_unc` BORROW of the out-rail. **Measured whether it distinguishes M2** (`xdu2_16_probes/m2_olnone.py`: M2 built, bin `778de12df402b8bf`, restored to `b1603d23` by hash): **it does NOT** — `ol_none` declines with the SAME string on base and M2 (with totality ignored, `railLocalQualifies`' invariant-input clause refuses the uncovered `%out_u`, as r1B predicted); `ol_inrot`/`ol_postrot`/`ol_single` also unchanged. M2 stays MISSED |
   | M3 union the surviving round-1 roots into the fresh set | MISSED | accept-direction only (monotonicity); no subject separates them |
   | M6 treat a nulled grant as intact (drop the null, fall through) | MISSED | same: the Fresh-only + totality strengthening is defence in depth with no constructed subject in its difference |
 
@@ -283,7 +339,7 @@ safe direction, not traced further.
 - Every comment-only edit after the measurements was followed by a rebuild whose
   `cq-opt` / `libCQPass.so` hashes were checked equal to `b1603d23` / `3001ec9a`.
 
-## 7. The ROLLED-ONLY cell — adjudicated, and the first thing to attack
+## 7. The data-rotated ROLLED-ONLY cell — adjudicated, and (since r1B) witnessed
 
 `for (i<n) { int t = ((q>1)&(r<5)) ? i : 55; t = cq_theta(t, 0.7); s += cq_measure(t); }`
 
@@ -304,8 +360,35 @@ safe direction, not traced further.
   single-select spelling fires it identically on the ORACLE (`dr1.c`, 2 warnings),
   so it is not new.
 - ⚠ The loop twin matrix's convention reads ROLLED-ONLY as "an over-accept and a
-  Prime-Directive red however green the run looks". This row is argued, not
-  witnessed: it has no twin gate until the flat half is fixed (bd `xdu2.19`).
+  Prime-Directive red however green the run looks". ~~This row is argued, not
+  witnessed: it has no twin gate until the flat half is fixed (bd `xdu2.19`).~~
+  ⚠ CORRECTED (r1B F-B1-1): **it IS witnessed, by an IR-level twin.** r1B's recipe
+  (`review_r1B_xdu2_16/probes/unrl/twin_ir.sh`): make the trip constant (3), rewrite
+  `llvm.loop.unroll.disable` → `llvm.loop.unroll.full` in the ROLLED stage-1 IR and
+  run only `opt -passes='loop-unroll<O3>'` — no other `-O1` re-canonicalisation, so
+  no cross-copy CSE and prong (c) never fires. Rolled vs IR twin: byte-identical on
+  **15/15** `rot` cells, and the pre-change ORACLE lowers the IR twin to the SAME
+  stream on 15/15. Re-measured here on `i32_and_rot_for` (this cell's shape): 63 = 63
+  trace lines, identical; ORACLE-on-twin == SUBJECT-rolled; the ORACLE declines the
+  rolled form at the xdu2.16 wall. The flat twin prints the `lyyf` warning once per
+  trip (3) against the rolled form's 1 — a diagnostic count, not a stream difference.
+  What stays open is only the C-level twin (bd `xdu2.19`); the recipe is noted on bd
+  `xdu2.20` as the twin matrix's way around `-O1`'s CSE/fold confound.
+- ⚠ CORRECTED (r1B F-B1-2, r1A F-A1-2): **this is not "the one ROLLED-ONLY cell".**
+  The population is at least four flat-decline causes and **~50 rolled-only
+  cell-forms** in r1B's 510-cell sweep, every one a flat OVER-decline in the safe
+  direction and every one argued or witnessed correct on the rolled side:
+  (1) prong (c)'s cross-wire refusal — this cell's family (bd `xdu2.19`);
+  (2) a post-loop phase kickback on the same tree after an in-loop select — the flat
+  CSE'd `and` is read by the selects AND the phase `br` (`condition used outside the
+  branch`), r1A F-A1-2 (bd `xdu2.22`);
+  (3) value routing after the trip-0 fold (`t = C ? (q+i) : 55; t = cq_theta(t,.7)`:
+  flat `q+0 → q` routes the Ry onto `q`'s wire, `operand predates a non-diagonal
+  gate`), and (4) i64 `trunc`/`select` order (flat `-O1` value-routes the Ry back to
+  `trunc r`, `control flow`), both r1B F-B1-2 (bd `xdu2.23`).
+  **And the asymmetry pre-exists on the ORACLE**: the single-compare rolled/flat pair
+  (`st/single_rot_*`) and `lvar_rotr2` are already rolled-only there — xdu2.16 adds
+  customers to a known asymmetry, it does not create it.
 
 ## 8. What I did NOT attack — start here
 
@@ -331,6 +414,12 @@ safe direction, not traced further.
    as is, argued harmless at the re-ask; not re-derived for its two suppression
    callers.
 
+(Items 1–7 above are the pre-review list, kept as written. What the two review rounds
+then attacked, and what THEY did not, is in their own records' "did NOT attack"
+sections; the notable remaining gaps both rounds name are a round-2-only nulled root,
+roots nulled by emitters other than `SelectMergeEmit`, multi-latch/irreducible loops,
+and `+Asserts`.)
+
 ## 9. Beads
 
 - `xdu2.16`: notes updated, NOT closed (Rule-13 rounds owed).
@@ -340,3 +429,50 @@ safe direction, not traced further.
 - Related, existing: `xdu2.14` (the `treedata` / guarded-VLA row-4 wall — a
   hoisted `and` that is also read as data), `xqgx` (short-circuit `&&` data select),
   `ztyc` (the branch-phase form).
+- Filed by the Rule-13 rounds (not by me): `xdu2.21` (r1A F-A1-1, the derived-leaf
+  postcondition wall), `xdu2.22` (r1A F-A1-2), `xdu2.23` (r1B F-B1-2), `xdu2.24`
+  (r1B F-B1-4).
+
+## 10. Rule-13 dispositions (r1A + r1B, both `CLEAR-WITH-ITEMS`, 0 P1, 0 P2)
+
+Every item was applied as a COMMENT / RECORD / FIXTURE-HEADER change. **No predicate
+and no emitted stream changed**, measured below.
+
+| finding | sev | disposition |
+|---|---|---|
+| F-A1-1 derived leaf `p = q*q` still declines at the (ii-d) postcondition; record's "derived" twin row was folded by `-O1` | P3 | **filed** bd `xdu2.21` (by r1A); record §5 row corrected in place |
+| F-A1-2 post-loop kickback on the same tree: second ROLLED-ONLY family | P3 | **filed** bd `xdu2.22` (by r1A); record §7 population paragraph |
+| F-A1-3 success path: new dtzb commitments after the stale fences + new (ii-d) obligations, unstated | P3 | **fixed in comment** at the xdu2.16 block (`LoopLowering.cpp`, "⚠⚠ AND ON THE SUCCESS PATH…", with the ground for each and a retirement trigger for (i)); record §3 |
+| F-A1-4 M2 rationale omits clause (iii) | P3 | **fixed in record** (§6 M2 row); no C subject for (iii) — **unmeasured** beyond r1A's attempts |
+| F-A1-5 `loopCarriedHandlePhi` header lists four slots; the re-ask is a fifth, post-promotion, sole source of the carried chain for a nulled grant | P3 | **fixed in comment** (header now lists FIVE slots, the backstop paragraph states the fifth is not behind the promotion/mux-guard pair and why that is safe); `LoopPlan.h`'s pointer comment updated to "FIVE". ⚠ `CLAUDE.md`'s "Where Things Live" row still says "asked at FOUR slots" — **not edited by me** (an agent message cannot authorise a `CLAUDE.md` change); flagged for the orchestrator/owner |
+| F-A1-6 "102 lowered lines" irreproducible, no command | P3 | **fixed in record** §1/§5: 123 (`wc -l`) / 102 (non-blank), command `xdu2_16_probes/kind.sh`, full diff recorded |
+| F-B1-1 the §7 cell has an IR-level twin, 15/15 identical, oracle agrees | P3 | **fixture header** (`…_accept_hoisted_data_rotated.ll`) and record §7 updated; one cell re-measured here; recipe cited on bd `xdu2.20` (by r1B) |
+| F-B1-2 ≥4 flat-decline causes, ~50 rolled-only cell-forms | P3 | **filed** bd `xdu2.23` (by r1B); record §1/§7 and the fixture header corrected; pre-existing single-compare asymmetry on the ORACLE recorded |
+| F-B1-3 87/510 cell-forms move to the (ii-d) postcondition; new obligations unstated | P3 | **fixed in comment** (same block as F-A1-3, item (ii)); data points added to bd `xdu2.21` (by r1B) |
+| F-B1-4 (iii-b) reachable from plain C via a read-only `_unc` borrow; clause comment and record false | P3 | **filed** bd `xdu2.24` (by r1B); clause comment corrected at the source (`invariantRegisterRootsImpl` (iii-b)); record §6 M2 row corrected; **M2 measured** against r1B's program: does NOT distinguish it (`m2_olnone.py`) |
+
+**Probe directories.** `review_r1A_xdu2_16/` and `review_r1B_xdu2_16/` are committed
+with their generated OUTPUTS pruned to keep them lean (3877 files, ~10.8 MB): every
+`*.s2.ll`, every `*.s1.ll` that has a sibling `.c` it is compiled from, and every
+`*.trace` / `*.err` / `*.ea` / `*.eb`. Kept: every `.c`, every hand-written or
+recipe-generated `.s1.ll` with no sibling `.c` (e.g. the 270 `unrl/*.k3{m,u}.s1.ll` IR
+twins), all scripts, logs, ledgers, the instrumentation patch and both REVIEW.md
+files. No built executables were present. Each pruned file is regenerable by the
+round's own harness (`probes/h.py`, `probes/unrl/twin_ir.sh`, r1A's `corpus_*.sh`)
+against the recorded binaries. A `PRUNED.txt` in each directory says the same.
+
+### 10b. The post-edit binary is behaviour-identical (measured)
+
+- Rebuilt `CQPass` + `cq-opt` after the comment edits (`LoopLowering.cpp.o` recompiled
+  for both targets, timestamps checked): `cq-opt` **`b1603d237fc3a739`** and
+  `libCQPass.so` **`3001ec9a1cc5bb2a`** — BIT-IDENTICAL to the pre-edit binaries.
+- Corpus A/B (`xdu2_16_probes/ab.py`: exit code, stdout sha256, first error line),
+  pre-edit `b1603d23` (frozen copy) vs post-edit: null control (pre vs pre) FIRST,
+  **0 movers of 2284**; then pre vs post, **0 movers of 2284**, accepts 1135 = 1135.
+  (The harness's positive control is the §6 sweep, where the same script reported the
+  6 intended D→A movers ORACLE vs SUBJECT.)
+- `lit build/ir-pass/test` (full): **2284 discovered, 2283 passed, 1 XFAIL**, 54.9 s.
+- `tools/update_code_map.py` regenerated (the comment lines shift function start
+  lines in `LoopLowering.cpp`); `--check` exits 0.
+- The M2 build used for F-B1-4's measurement was restored and re-hashed to
+  `b1603d23` before any of the above.

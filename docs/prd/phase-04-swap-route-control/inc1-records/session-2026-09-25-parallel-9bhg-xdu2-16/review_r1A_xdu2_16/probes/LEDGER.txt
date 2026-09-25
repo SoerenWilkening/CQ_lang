@@ -1,0 +1,168 @@
+acc/a1_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+acc/a1_unrolled.c | A | A | same
+acc/a2_rolled.c | D:cq loop lowering: loop-carried tainted value crosses iterations | D:cq loop lowering: loop-carried tainted value crosses iterations | same
+acc/a2_unrolled.c | A | A | same
+acc/a3_rolled.c | D:cq loop lowering: loop-carried tainted value crosses iterations | D:cq loop lowering: loop-carried tainted value crosses iterations | same
+acc/a3_unrolled.c | A | A | same
+acc/a4_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+acc/a4_unrolled.c | A | A | same
+acc/a5_rolled.c | D:cq loop lowering: loop-carried tainted value crosses iterations | D:cq loop lowering: loop-carried tainted value crosses iterations | same
+acc/a5_unrolled.c | A | A | same
+acc/a6_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+acc/a6_unrolled.c | A | A | same
+b2/cont.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/k0_acc.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/k0_sel.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/k1_acc.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/kick_post.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/kick_pre.c | D:cq controlled lowering: condition used outside the branch under quantum control | D:cq controlled lowering: condition used outside the branch under quantum control | same
+b2/ne_pair.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/shortcirc.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+b2/twoloops.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+b2/xor3.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c00_p19.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c01_slice.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c01u_slice.c | A | A | same
+c02_lit.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c02u_lit.c | A | A | same
+c03_row13.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c10_der_mul.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c10k_der_consttrip.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c10s_der_single.c | A | A | same
+c10u_der_mul.c | A | A | same
+c10v_der_mul.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c11_der_after.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | same
+c13_angle_rz.c | D:cq controlled lowering: rotation angle under quantum control | D:cq controlled lowering: rotation angle under quantum control | same
+c14_angle_ry.c | D:cq controlled lowering: rotation angle under quantum control | D:cq controlled lowering: rotation angle under quantum control | same
+c15_twosel.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c15u_twosel.c | A | A | same
+c15v_twosel.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c16_tree_after.c | A | A | same
+c19_inplace_leafop.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c19b_inplace_leafop_qafter.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c19u_inplace_leafop.c | A | A | same
+c19v_inplace_leafop.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c19x1.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | same
+c19x1u.c | A | A | same
+c19x2.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c19x2u.c | A | A | same
+c19x3.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c19x3u.c | A | A | same
+c24_tree_plus_data.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c24b_data_only.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c24c_data_nohoist.c | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | same
+c24d_data_only_nosel.c | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | same
+c30_65leaf.c | D:cq controlled lowering: value-arm swap-route under quantum control | D:cq controlled lowering: value-arm swap-route under quantum control | same
+c31_65leaf_both.c | D:cq controlled lowering: value-arm swap-route under quantum control | D:cq controlled lowering: value-arm swap-route under quantum control | same
+c32_65flat.c | A | A | same
+c33_65leaf_loop.c | D:cq controlled lowering: classical condition literal became quantum-derived under quantum c | D:cq controlled lowering: classical condition literal became quantum-derived under quantum c | same
+c34_65leaf_lit.c | D:cq controlled lowering: value-arm swap-route under quantum control | D:cq controlled lowering: value-arm swap-route under quantum control | same
+c40_inbody_rot_leafreg.c | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | same
+c41_inbody_rot_leafreg_single.c | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | same
+c42_shared_cmp_data.c | A | A | same
+c43_shared_leaf_data.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+c44_shared_leaf_after.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c44u_shared_leaf_after.c | A | A | same
+c50_bank_leaves.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c51_bank_leaf_cmp.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c60_shared_pre.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c61_1.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c61_2.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c61_3.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c61_4.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c70_clone.c | D:cq specialization: callee contains tainted control flow under quantum lift | D:cq specialization: callee contains tainted control flow under quantum lift | same
+c71_twoloops_fns.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c80_meas_inloop.c | D:cq controlled lowering: condition measured before the control route under quantum control | D:cq controlled lowering: condition measured before the control route under quantum control | same
+c80u_meas_inloop.c | D:cq controlled lowering: condition measured before the control route under quantum control | D:cq controlled lowering: condition measured before the control route under quantum control | same
+c90_clobber.c | D:cq loop lowering: loop-carried tainted value crosses iterations | D:cq loop lowering: loop-carried tainted value crosses iterations | same
+c90u_clobber.c | A | A | same
+c91_clobber_cls.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+c91u_clobber_cls.c | A | A | same
+c95_gstore.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+c96_gstore_int.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+ch/d1_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+ch/d1_unrolled.c | A | A | same
+ch/d2_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+ch/d2_unrolled.c | A | A | same
+ch/d3_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+ch/d3_unrolled.c | A | A | same
+ch/d4_rolled.c | A | A | same
+ch/d4_unrolled.c | A | A | same
+ch/e1_rolled.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+ch/e1_unrolled.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+ch/e2_rolled.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+ch/e2_unrolled.c | D:cq controlled lowering: control flow under quantum control | D:cq controlled lowering: control flow under quantum control | same
+ch/f1_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+ch/f1_unrolled.c | A | A | same
+ch/f2_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+ch/f2_unrolled.c | A | A | same
+ch/f3_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | same
+ch/f3_unrolled.c | A | A | same
+mixed/m_rolled.c | A | A | same
+mixed/m_unrolled.c | A | A | same
+nest/n1_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+nest/n1_unrolled.c | A | A | same
+nest/n2_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+nest/n2_unrolled.c | A | A | same
+nest/n3_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+nest/n4_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+nest/n5_rolled.c | D:cq loop lowering: loop-carried tainted value crosses iterations | D:cq loop lowering: loop-carried tainted value crosses iterations | same
+tw/acc_and_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/acc_and_unrolled.c | A | A | same
+tw/acc_or_xor_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/acc_or_xor_unrolled.c | A | A | same
+tw/bool_leaf_xor_cmp_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/bool_leaf_xor_cmp_unrolled.c | A | A | same
+tw/bool_leaves_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/bool_leaves_unrolled.c | A | A | same
+tw/carried_q_data_rolled.c | D:cq taint escape: tainted value muxed by a classical-condition phi | D:cq taint escape: tainted value muxed by a classical-condition phi | same
+tw/carried_q_data_unrolled.c | A | A | same
+tw/dowhile_acc_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/dowhile_acc_unrolled.c | A | A | same
+tw/fp_leaf_or_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/fp_leaf_or_unrolled.c | A | A | same
+tw/hoisted_template_sel_value_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | D:cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged | string-move
+tw/hoisted_template_sel_value_unrolled.c | A | A | same
+tw/i8_leaves_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/i8_leaves_unrolled.c | A | A | same
+tw/i8_sel_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/i8_sel_unrolled.c | A | A | same
+tw/preloop_sel_leaf_nomeas_y_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/preloop_sel_leaf_nomeas_y_unrolled.c | A | A | same
+tw/preloop_sel_leaf_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/preloop_sel_leaf_unrolled.c | A | A | same
+tw/sel_value_is_leafreg_derived_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/sel_value_is_leafreg_derived_unrolled.c | A | A | same
+tw/sel_value_is_leafreg_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/sel_value_is_leafreg_unrolled.c | A | A | same
+tw/two_trees_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw/two_trees_unrolled.c | A | A | same
+tw2/c15_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c15_unrolled.c | A | A | same
+tw2/c50_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c50_unrolled.c | A | A | same
+tw2/c51_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c51_unrolled.c | A | A | same
+tw2/c60_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c60_unrolled.c | A | A | same
+tw2/c61_1_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c61_1_unrolled.c | A | A | same
+tw2/c61_4_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/c61_4_unrolled.c | A | A | same
+tw2/kick_flat_ctrl.c | D:cq controlled lowering: condition used outside the branch under quantum control | D:cq controlled lowering: condition used outside the branch under quantum control | same
+tw2/kick_post_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/kick_post_unrolled.c | D:cq controlled lowering: condition used outside the branch under quantum control | D:cq controlled lowering: condition used outside the branch under quantum control | same
+tw2/ne_pair_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/ne_pair_unrolled.c | A | A | same
+tw2/xor3_rolled.c | D:cq loop lowering: round-1 iteration-local marking falsified by round-2 taint | A | D->A
+tw2/xor3_unrolled.c | A | A | same
+wp/x1_rolled.c | D:cq opcode lowering: operand predates a non-diagonal gate | D:cq opcode lowering: operand predates a non-diagonal gate | same
+wp/x1_unrolled.c | A | A | same
+wp/x2_rolled.c | D:cq opcode lowering: operand predates a non-diagonal gate | D:cq opcode lowering: operand predates a non-diagonal gate | same
+wp/x2_unrolled.c | A | A | same
+wp/x3_rolled.c | D:cq opcode lowering: operand predates a non-diagonal gate | D:cq opcode lowering: operand predates a non-diagonal gate | same
+wp/x3_unrolled.c | A | A | same
+wp/x4_rolled.c | D:cq opcode lowering: operand predates a non-diagonal gate | D:cq opcode lowering: operand predates a non-diagonal gate | same
+wp/x4_unrolled.c | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | D:cq controlled lowering: condition predates a non-diagonal gate under quantum control | same
+wp/x5_rolled.c | A | A | same
+wp/x5_unrolled.c | A | A | same

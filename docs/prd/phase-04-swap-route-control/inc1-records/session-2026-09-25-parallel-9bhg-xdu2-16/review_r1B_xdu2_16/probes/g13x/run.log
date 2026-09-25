@@ -1,0 +1,77 @@
+xdata_none_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=87 ll=117 2b(rc=0)=5 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 5 template rail m
+xdata_none_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=87 ll=117 2b(rc=0)=5 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 5 template rail m
+xdata_none_unr.c
+  ORA: ACCEPT tr=87 ll=153 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 15 template rai
+  SUB: ACCEPT tr=87 ll=153 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 15 template rai
+  ORA-vs-SUB trace: IDENTICAL
+xdata_r_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=88 ll=118 2b(rc=0)=5 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 5 template rail m
+xdata_r_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+  SUB: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+xdata_r_unr.c
+  ORA: ACCEPT tr=88 ll=154 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 15 template rai
+  SUB: ACCEPT tr=88 ll=154 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 15 template rai
+  ORA-vs-SUB trace: IDENTICAL
+xleaf_none_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=66 ll=101 2b(rc=0)=3 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 3 template rail m
+xleaf_none_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=66 ll=101 2b(rc=0)=3 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 7 rail mint(s) of which 6 left allocated, 3 template rail m
+xleaf_none_unr.c
+  ORA: ACCEPT tr=66 ll=121 2b(rc=0)=9 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 9 template rail
+  SUB: ACCEPT tr=66 ll=121 2b(rc=0)=9 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 15 rail mint(s) of which 12 left allocated, 9 template rail
+  ORA-vs-SUB trace: IDENTICAL
+xleaf_r_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+  SUB: DECLINE [in function slice i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+xleaf_r_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+  SUB: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+xleaf_r_unr.c
+  ORA: DECLINE [in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+  SUB: DECLINE [in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+xsel2_none_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=99 ll=117 2b(rc=0)=4 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 10 rail mint(s) of which 9 left allocated, 4 template rail 
+xsel2_none_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=99 ll=117 2b(rc=0)=4 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 10 rail mint(s) of which 9 left allocated, 4 template rail 
+xsel2_none_unr.c
+  ORA: ACCEPT tr=99 ll=161 2b(rc=0)=12 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 24 rail mint(s) of which 21 left allocated, 12 template rai
+  SUB: ACCEPT tr=99 ll=161 2b(rc=0)=12 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 24 rail mint(s) of which 21 left allocated, 12 template rai
+  ORA-vs-SUB trace: IDENTICAL
+xsel2_r_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+  SUB: DECLINE [in function slice i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+xsel2_r_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+  SUB: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+xsel2_r_unr.c
+  ORA: DECLINE [in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+  SUB: DECLINE [in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control]
+xval_none_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=81 ll=114 2b(rc=0)=5 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 5 template rail m
+xval_none_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint]
+  SUB: ACCEPT tr=81 ll=114 2b(rc=0)=5 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 6 rail mint(s) of which 5 left allocated, 5 template rail m
+xval_none_unr.c
+  ORA: ACCEPT tr=81 ll=144 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 12 rail mint(s) of which 9 left allocated, 15 template rail
+  SUB: ACCEPT tr=81 ll=144 2b(rc=0)=15 verified, 0 violation(s), 0 unproven | free_pairing_check: 1 file(s), 12 rail mint(s) of which 9 left allocated, 15 template rail
+  ORA-vs-SUB trace: IDENTICAL
+xval_r_dw.c
+  ORA: DECLINE [in function slice i32 (i32): cq controlled lowering: control flow under quantum control]
+  SUB: DECLINE [in function slice i32 (i32): cq controlled lowering: control flow under quantum control]
+xval_r_for.c
+  ORA: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+  SUB: DECLINE [in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate]
+xval_r_unr.c
+  ORA: DECLINE [in function slice i32 (): cq controlled lowering: control flow under quantum control]
+  SUB: DECLINE [in function slice i32 (): cq controlled lowering: control flow under quantum control]

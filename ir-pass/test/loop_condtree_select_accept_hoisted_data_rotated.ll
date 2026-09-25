@@ -1,6 +1,12 @@
 ; loop_condtree_select_accept_hoisted_data_rotated.ll — ACCEPT (bd
-; test_C_libtooling-xdu2.16), and it is the ONE measured ROLLED-ONLY cell of the
-; increment: read this header before reading the verdict.
+; test_C_libtooling-xdu2.16). It is ROLLED-ONLY against its C-level hand-unrolled
+; twin and it IS WITNESSED by an IR-level twin (see "THE TWIN" below): read this
+; header before reading the verdict.
+; ⚠ An earlier version of this line called it "the ONE measured ROLLED-ONLY cell
+; of the increment". That understated it: xdu2.16's Rule-13 rounds found at least
+; four flat-decline causes and ~50 rolled-only cell-forms (r1B F-B1-2, bd
+; `test_C_libtooling-xdu2.23`; r1A F-A1-2, bd `test_C_libtooling-xdu2.22`), all
+; flat OVER-declines in the safe direction; see TRACK_XDU2_16.md §7.
 ;
 ; `for (i < n) { int t = ((q > 1) & (r < 5)) ? i : 55; t = cq_theta(t, 0.7);
 ;  s += cq_measure(t); }` — the select's OUTPUT is rotated by a NON-DIAGONAL gate
@@ -39,10 +45,24 @@
 ; is not new to this increment. Which record it counts was NOT traced here; the
 ; physics argument above does not rest on it.
 ;
-; Filed as bd `test_C_libtooling-xdu2.19` (the flat over-decline), so the pair can
-; be made twin-identical when prong (c) learns to ask the wire (TRACK_XDU2_16.md §7).
-; RETIREMENT TRIGGER: when the flat twin accepts, add this pair to a
-; `*-twin-identical` gate; do not delete this file.
+; THE TWIN (xdu2.16 Rule-13 r1B F-B1-1). The C-level twin is not the only flat
+; form. r1B's recipe (`review_r1B_xdu2_16/probes/unrl/twin_ir.sh`): make the trip
+; constant (3), rewrite `llvm.loop.unroll.disable` to `llvm.loop.unroll.full` in
+; the ROLLED stage-1 IR, and run ONLY `opt -passes='loop-unroll<O3>'` — no other
+; `-O1` re-canonicalisation, so no cross-copy CSE and prong (c) never fires. Rolled
+; vs that IR twin: BYTE-IDENTICAL on 15/15 `rot` cells (r1B), and the pre-change
+; ORACLE lowers the IR twin to the SAME stream on 15/15. Re-measured by the
+; implementer on `i32_and_rot_for` (this fixture's shape at K=3): 63 = 63 trace
+; lines, identical, and ORACLE-on-twin == SUBJECT-rolled byte for byte (the ORACLE
+; still declines the rolled form at the xdu2.16 wall). ⚠ The diagnostics are not
+; symmetric: the flat twin prints the `lyyf` warning once PER TRIP (3), the rolled
+; form once — a warning count, not a stream difference.
+; So the old retirement trigger ("when the flat twin accepts") is MET by the IR
+; twin. What stays open is the C-level twin: bd `test_C_libtooling-xdu2.19` (prong
+; (c)'s cross-wire refusal); bd `test_C_libtooling-xdu2.20` carries the recipe as
+; a mechanism for the twin matrix. RETIREMENT TRIGGER (re-armed): when the C-level
+; flat twin accepts, add this pair to a `*-twin-identical` gate; do not delete this
+; file.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.ll 2> %t.err
 ; RUN: %filecheck %s < %t.ll

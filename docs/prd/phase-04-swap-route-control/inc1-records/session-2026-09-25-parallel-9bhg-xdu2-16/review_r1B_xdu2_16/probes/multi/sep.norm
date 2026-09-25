@@ -1,0 +1,108 @@
+cqrt_alloc_i32(0) -> H
+cqrt_ry_i32(H, 0x1p-2)
+cqrt_alloc_i32(1) -> H
+cqrt_ry_i32(H, 0x1p-1)
+cq_template_icmp_sgt_i32_Hl(H, 1) -> H
+cq_template_icmp_slt_i32_Hl(H, 5) -> H
+cqrt_alloc_i1(0) -> H
+cqrt_toffoli(H, H, H)
+cqrt_alloc_i32(0) -> H
+cqrt_alloc_i32(0) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_alloc_i32(55) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_toffoli(H, H, H)
+cqrt_free(H)
+cq_template_icmp_slt_i32_Hl_unc(H, H, 5)
+cqrt_free(H)
+cq_template_icmp_sgt_i32_Hl_unc(H, H, 1)
+cqrt_free(H)
+cqrt_measure_i32(H) -> 0
+cq_template_icmp_sgt_i32_Hl(H, 1) -> H
+cq_template_icmp_slt_i32_Hl(H, 5) -> H
+cqrt_alloc_i1(0) -> H
+cqrt_toffoli(H, H, H)
+cqrt_alloc_i32(0) -> H
+cqrt_alloc_i32(1) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_alloc_i32(55) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_toffoli(H, H, H)
+cqrt_free(H)
+cq_template_icmp_slt_i32_Hl_unc(H, H, 5)
+cqrt_free(H)
+cq_template_icmp_sgt_i32_Hl_unc(H, H, 1)
+cqrt_free(H)
+cqrt_measure_i32(H) -> 0
+cq_template_icmp_sgt_i32_Hl(H, 1) -> H
+cq_template_icmp_slt_i32_Hl(H, 5) -> H
+cqrt_alloc_i1(0) -> H
+cqrt_toffoli(H, H, H)
+cqrt_alloc_i32(0) -> H
+cqrt_alloc_i32(2) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_alloc_i32(55) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_toffoli(H, H, H)
+cqrt_free(H)
+cq_template_icmp_slt_i32_Hl_unc(H, H, 5)
+cqrt_free(H)
+cq_template_icmp_sgt_i32_Hl_unc(H, H, 1)
+cqrt_free(H)
+cqrt_measure_i32(H) -> 0
+cqrt_measure_i32(H) -> 0
+cqrt_measure_i32(H) -> 0
+cqrt_alloc_i32(2) -> H
+cqrt_ry_i32(H, 0x1.3333333333333p-2)
+cqrt_alloc_i32(3) -> H
+cqrt_ry_i32(H, 0x1.3333333333333p-1)
+cqrt_alloc_i32(0) -> H
+cq_template_add_i32_Hl(H, 7) -> H
+cq_template_icmp_slt_i32_Hl(H, 3) -> H
+cq_template_icmp_sgt_i32_Hl(H, 1) -> H
+cqrt_alloc_i1(0) -> H
+cqrt_cnot(H, H)
+cqrt_cnot(H, H)
+cqrt_toffoli(H, H, H)
+cqrt_alloc_i32(0) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_toffoli(H, H, H)
+cqrt_cnot(H, H)
+cqrt_cnot(H, H)
+cqrt_free(H)
+cq_template_icmp_sgt_i32_Hl_unc(H, H, 1)
+cqrt_free(H)
+cq_template_icmp_slt_i32_Hl_unc(H, H, 3)
+cqrt_free(H)
+cq_template_add_i32_Hl(H, 7) -> H
+cq_template_icmp_slt_i32_Hl(H, 3) -> H
+cq_template_icmp_sgt_i32_Hl(H, 1) -> H
+cqrt_alloc_i1(0) -> H
+cqrt_cnot(H, H)
+cqrt_cnot(H, H)
+cqrt_toffoli(H, H, H)
+cqrt_alloc_i32(0) -> H
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_copy_i32_controlled(H, H, H)
+cqrt_x(H)
+cqrt_toffoli(H, H, H)
+cqrt_cnot(H, H)
+cqrt_cnot(H, H)
+cqrt_free(H)
+cq_template_icmp_sgt_i32_Hl_unc(H, H, 1)
+cqrt_free(H)
+cq_template_icmp_slt_i32_Hl_unc(H, H, 3)
+cqrt_free(H)
+cqrt_measure_i32(H) -> 0
+cqrt_measure_i32(H) -> 0
+cqrt_measure_i32(H) -> 0

@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9234 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7311 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7381 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3536 physical lines
@@ -54,7 +54,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/shipped_guard_model.py` — 866 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
-- `ir-pass/include/LoopPlan.h` — 755 physical lines
+- `ir-pass/include/LoopPlan.h` — 757 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 655 physical lines
@@ -484,7 +484,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7311 lines)
+### `ir-pass/src/LoopLowering.cpp` (7381 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -503,53 +503,53 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:1033` — `staleReadOfValue`
 - `ir-pass/src/LoopLowering.cpp:1154` — `staleRailRecordRead`
 - `ir-pass/src/LoopLowering.cpp:1185` — `taintedExit`
-- `ir-pass/src/LoopLowering.cpp:1307` — `latchIsControlMergeRail`
-- `ir-pass/src/LoopLowering.cpp:1325` — `loopCarriedHandlePhi`
-- `ir-pass/src/LoopLowering.cpp:1639` — `collectCarriedHandleChains`
-- `ir-pass/src/LoopLowering.cpp:1676` — `breakLineageCarriesPhase`
-- `ir-pass/src/LoopLowering.cpp:1736` — `decomposeFusedExit`
-- `ir-pass/src/LoopLowering.cpp:1763` — `isTaintedExitingTerminator`
-- `ir-pass/src/LoopLowering.cpp:1774` — `subloopHasTaintedValue`
-- `ir-pass/src/LoopLowering.cpp:1814` — `hasFiniteClassicalTripBound`
-- `ir-pass/src/LoopLowering.cpp:1830` — `boundComparesInductionToInvariant`
-- `ir-pass/src/LoopLowering.cpp:1866` — `boundProvablyTerminates`
-- `ir-pass/src/LoopLowering.cpp:1937` — `emitBreakForward`
-- `ir-pass/src/LoopLowering.cpp:2397` — `tryBreak`
-- `ir-pass/src/LoopLowering.cpp:2606` — `tryCaseA`
-- `ir-pass/src/LoopLowering.cpp:3001` — `markIfIterationLocal`
-- `ir-pass/src/LoopLowering.cpp:3076` — `loopHasInPlaceRailStructure`
-- `ir-pass/src/LoopLowering.cpp:3122` — `collapseRailPhisIn`
-- `ir-pass/src/LoopLowering.cpp:3733` — `commitOutOfLoopInPlaceOps`
-- `ir-pass/src/LoopLowering.cpp:3944` — `measureOwnedInvariantRail`
-- `ir-pass/src/LoopLowering.cpp:3996` — `exitDischargeObligations`
-- `ir-pass/src/LoopLowering.cpp:4014` — `allUsersInside`
-- `ir-pass/src/LoopLowering.cpp:4023` — `recordExitDischargeObligation`
-- `ir-pass/src/LoopLowering.cpp:4031` — `invariantRegisterRootsImpl`
-- `ir-pass/src/LoopLowering.cpp:4418` — `invariantRegisterRoots`
-- `ir-pass/src/LoopLowering.cpp:4458` — `railLocalQualifies`
-- `ir-pass/src/LoopLowering.cpp:4596` — `markIfRailLocal`
-- `ir-pass/src/LoopLowering.cpp:4642` — `recordRound1RailGrant`
-- `ir-pass/src/LoopLowering.cpp:4654` — `collapseFlattenedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:5061` — `taintedAncestryReaches`
-- `ir-pass/src/LoopLowering.cpp:5092` — `railIsInterior`
-- `ir-pass/src/LoopLowering.cpp:5198` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5319` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5456` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5461` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5468` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5594` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5616` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5627` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:5853` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6179` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6248` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6303` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6372` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6392` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6556` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6703` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:6974` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7167` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:1325` — `latchIsControlMergeRail`
+- `ir-pass/src/LoopLowering.cpp:1343` — `loopCarriedHandlePhi`
+- `ir-pass/src/LoopLowering.cpp:1657` — `collectCarriedHandleChains`
+- `ir-pass/src/LoopLowering.cpp:1694` — `breakLineageCarriesPhase`
+- `ir-pass/src/LoopLowering.cpp:1754` — `decomposeFusedExit`
+- `ir-pass/src/LoopLowering.cpp:1781` — `isTaintedExitingTerminator`
+- `ir-pass/src/LoopLowering.cpp:1792` — `subloopHasTaintedValue`
+- `ir-pass/src/LoopLowering.cpp:1832` — `hasFiniteClassicalTripBound`
+- `ir-pass/src/LoopLowering.cpp:1848` — `boundComparesInductionToInvariant`
+- `ir-pass/src/LoopLowering.cpp:1884` — `boundProvablyTerminates`
+- `ir-pass/src/LoopLowering.cpp:1955` — `emitBreakForward`
+- `ir-pass/src/LoopLowering.cpp:2415` — `tryBreak`
+- `ir-pass/src/LoopLowering.cpp:2624` — `tryCaseA`
+- `ir-pass/src/LoopLowering.cpp:3019` — `markIfIterationLocal`
+- `ir-pass/src/LoopLowering.cpp:3094` — `loopHasInPlaceRailStructure`
+- `ir-pass/src/LoopLowering.cpp:3140` — `collapseRailPhisIn`
+- `ir-pass/src/LoopLowering.cpp:3751` — `commitOutOfLoopInPlaceOps`
+- `ir-pass/src/LoopLowering.cpp:3962` — `measureOwnedInvariantRail`
+- `ir-pass/src/LoopLowering.cpp:4014` — `exitDischargeObligations`
+- `ir-pass/src/LoopLowering.cpp:4032` — `allUsersInside`
+- `ir-pass/src/LoopLowering.cpp:4041` — `recordExitDischargeObligation`
+- `ir-pass/src/LoopLowering.cpp:4049` — `invariantRegisterRootsImpl`
+- `ir-pass/src/LoopLowering.cpp:4450` — `invariantRegisterRoots`
+- `ir-pass/src/LoopLowering.cpp:4490` — `railLocalQualifies`
+- `ir-pass/src/LoopLowering.cpp:4628` — `markIfRailLocal`
+- `ir-pass/src/LoopLowering.cpp:4674` — `recordRound1RailGrant`
+- `ir-pass/src/LoopLowering.cpp:4686` — `collapseFlattenedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:5093` — `taintedAncestryReaches`
+- `ir-pass/src/LoopLowering.cpp:5124` — `railIsInterior`
+- `ir-pass/src/LoopLowering.cpp:5230` — `mintsOutOfPlaceTemplateRail`
+- `ir-pass/src/LoopLowering.cpp:5351` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:5488` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:5493` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:5500` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:5626` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:5648` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:5659` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:5923` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:6249` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6318` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6373` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6442` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6462` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6626` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6773` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:7044` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7237` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 

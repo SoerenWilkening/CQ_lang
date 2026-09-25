@@ -665,7 +665,9 @@ bool declineUndischargedMarkedBodyRails(llvm::Module &M);
 // the back edge IN PLACE and (c) the ITERATION-LOCAL rail: a register that
 // crosses the back edge AND is re-minted every trip, because the merge emitter
 // mints a FRESH `%out = cqrt_alloc_<W>` per activation. The full argument, the
-// per-trip unitary proof, the four slots that ask it and the reason byte-identity
+// per-trip unitary proof, the FIVE slots that ask it (the fifth, bd xdu2.16's
+// nulled-grant re-derivation, was added to that list by Rule-13 r1A F-A1-5) and
+// the reason byte-identity
 // with the hand-unrolled twin is an INSTRUMENT rather than the target all live at
 // `loopCarriedHandlePhi`'s definition in `LoopLowering.cpp`.
 //
