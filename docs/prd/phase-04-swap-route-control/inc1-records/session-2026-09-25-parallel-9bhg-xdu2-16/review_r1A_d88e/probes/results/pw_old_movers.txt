@@ -1,0 +1,3 @@
+DIAG	g01C.s1.ll
+DIAG	r13C.s1.ll
+denominator 501; DIAG=2

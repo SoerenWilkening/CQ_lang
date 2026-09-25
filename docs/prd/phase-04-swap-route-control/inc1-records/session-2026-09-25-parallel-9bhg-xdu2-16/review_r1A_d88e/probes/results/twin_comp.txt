@@ -1,0 +1,47 @@
+a01    comp  VERDICT-DIFF(C rc=0, T rc=1)
+a02    comp  VERDICT-DIFF(C rc=0, T rc=1)
+a03    comp  VERDICT-DIFF(C rc=1, T rc=0)
+a04    comp  VERDICT-DIFF(C rc=1, T rc=0)
+b01    comp  DECL-SAME
+b02    comp  DECL-SAME
+e01    comp  DECL-SAME
+e02    comp  ACC-SAME
+f01    comp  DECL-SAME
+g01    comp  DECL-SAME
+h01    comp  DECL-DIFF
+h02    comp  DECL-DIFF
+h03    comp  DECL-SAME
+j01    comp  ACC-SAME
+j02    comp  ACC-DIFF
+j03    comp  DECL-SAME
+k01    comp  DECL-SAME
+k02    comp  DECL-SAME
+k03    comp  DECL-SAME
+k04    comp  DECL-SAME
+l01    comp  DECL-SAME
+l02    comp  DECL-SAME
+l03    comp  ACC-SAME
+l04    comp  DECL-DIFF
+l05    comp  DECL-DIFF
+l06    comp  DECL-DIFF
+l07    comp  DECL-SAME
+l08    comp  DECL-SAME
+l09    comp  DECL-SAME
+l10    comp  DECL-SAME
+l11    comp  DECL-SAME
+l12    comp  VERDICT-DIFF(C rc=0, T rc=1)
+l13    comp  DECL-SAME
+l14    comp  DECL-SAME
+l15    comp  ACC-SAME
+l16    comp  DECL-SAME
+l17    comp  VERDICT-DIFF(C rc=0, T rc=1)
+l18    comp  DECL-SAME
+l19    comp  VERDICT-DIFF(C rc=1, T rc=0)
+l20    comp  ACC-DIFF
+l21    comp  ACC-SAME
+l22    comp  DECL-SAME
+l23    comp  DECL-SAME
+l24    comp  DECL-SAME
+l25    comp  DECL-SAME
+denominator: 45 pairs, 31 twin-identical
+DONE
