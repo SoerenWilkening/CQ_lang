@@ -1,0 +1,19 @@
+r01    ora   DECL-DIFF
+r02    ora   DECL-DIFF
+r03    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r04    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r05    ora   DECL-DIFF
+r07    ora   VERDICT-DIFF(C rc=1, T rc=0)
+r10    ora   DECL-DIFF
+r13    ora   DECL-DIFF
+r14    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r15    ora   DECL-DIFF
+r16    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r17    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r18    ora   VERDICT-DIFF(C rc=0, T rc=1)
+r19    ora   DECL-DIFF
+r20    ora   DECL-DIFF
+r21    ora   ACC-SAME
+r22    ora   DECL-SAME
+r23    ora   DECL-SAME
+denominator: 18 pairs, 3 twin-identical

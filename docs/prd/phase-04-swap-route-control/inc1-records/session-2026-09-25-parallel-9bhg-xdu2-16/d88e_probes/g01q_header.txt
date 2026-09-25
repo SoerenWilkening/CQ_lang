@@ -1,0 +1,31 @@
+; lowering_reject_classical_mux_phi_lift_stale_spec_quantum_base.ll — DECLINE (bd
+; test_C_libtooling-2qyz's post-lift stale re-sweep, still firing after bd
+; test_C_libtooling-d88e MOVED it below `specialize()`).
+;
+; The TRUE-lift twin of `lowering_reject_classical_mux_phi_spec_scrubbed_base_pure_
+; consumer.ll`: the library `h` returns its QUANTUM argument, so `t = h(q, m)` IS a
+; register, the one-register lift of `phi(t, cq_theta(t, .2))` is a true renaming,
+; and the d88e re-ask (`declineFalsifiedMergePhiLifts`) keeps it. After the lift,
+; `r + 1` reads `t`, whose wire the arm's `cq_theta(t, .2)` rotated in place: a
+; pure op past a non-diagonal gate on its wire, which is exactly what the bd 2qyz
+; re-sweep (`declineLiftedStaleRecordOps`) exists to refuse. This file pins that
+; the re-sweep still fires at its NEW slot (after `specialize()` and the re-ask,
+; before the l3oi fence) — deleting the moved call turns it red. Same verdict and
+; string on main `def1b088` (cq-opt `b1603d23`), where the re-sweep ran before
+; `specialize()`.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return a + k; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int u = r + 1; return cq_measure(u); }
+;
+; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main i32 (i32, ptr): cq opcode lowering: operand predates a non-diagonal gate
+

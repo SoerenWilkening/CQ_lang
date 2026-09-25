@@ -836,23 +836,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // non-terminal. Must run BEFORE `lowerRotations` (pre-RAUW SSA identity).
   // One deliberate accept (test_C_libtooling-5j5): the proven ONE-REGISTER
   // merge phi (`if (classical_c) q = cq_phi(q, θ); use(q)`) is RAUW'd to its
-  // wire base and erased here instead of declined.
+  // wire base and erased here instead of declined. ⚠ That proof reads PRE-
+  // `specialize()` taint, so it is RECORDED and re-asked right after
+  // `specialize()` (`declineFalsifiedMergePhiLifts`, bd `test_C_libtooling-d88e`):
+  // a base the scrub proves classical turns the accept back into this guard's
+  // decline.
   // bd `test_C_libtooling-zujr` — THE TRIP-1 PROMOTION, immediately before the
   // guard whose accept it grants. Contract, slot and retirement trigger in
   // `LoopPlan.h`; it never declines, and an unpromoted carried-handle φ is
   // refused by the very next call.
   promoteLoopCarriedHandleSeeds(M, wd, taint);
   declineClassicalMuxes(M, taint);
-
-  // Post-lift stale-record re-sweep (test_C_libtooling-2qyz): the lift above
-  // RAUWs a merge phi to its wire base AFTER declineStaleRecordOps already ran,
-  // so a consumer over a re-Ry'd wire would lower silently. When a lift occurred
-  // (witnessed by taint.LiftedConsumers) this re-runs the FULL stale-record
-  // sweep on the post-lift IR — a stale op can be a TRANSITIVE consumer any
-  // number of in-place-gate hops below the lifted phi, so a scoped re-check is
-  // incomplete (Rule-13 finding). Idempotent + still pre-RAUW SSA identity;
-  // no-op when nothing was lifted.
-  declineLiftedStaleRecordOps(M, taint);
+  // (The bd 2qyz post-lift stale-record re-sweep, `declineLiftedStaleRecordOps`,
+  // used to run HERE. It runs below, after `specialize()` and the bd d88e re-ask
+  // of the lift itself — see there for why.)
 
   // Phase 6 specialization DRIVER (step 14, DD-1): drains `plan6.Pending`,
   // cloning each visible pure-classical callee, lowering it under a disjoint
@@ -862,9 +859,55 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `cloneTaint` is never unioned into `taint` (C-Taint); `specialize` re-marks
   // each retargeted call result into `taint` per its post-lowering return-taint.
   specialize(M, wd, taint, plan6);
-  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
-  // can REMOVE taint (a clone proved classical), after every control emitter
-  // already read the value as a handle. Loud, before anything else runs.
+  // bd `test_C_libtooling-d88e` (P1) — the scrub-direction L1 re-ask of a
+  // REWRITE. `declineClassicalMuxes` above lifted every one-register merge phi
+  // on PRE-scrub taint, RAUW'ing it onto its wire base; a base that `specialize()`
+  // just proved classical was never a register, and every consumer of the erased
+  // phi reads it as a classical value: a `cq_measure` vanishes, and a consumer
+  // that is itself a gate lands the arm's rotation on an orphan rail while the
+  // measurement count stays right (Rule-13 r1B `zlC`, r1A `r16`) — exit 0,
+  // stage-2b clean either way. The lift RECORDED its premise; this re-asks it at
+  // FINAL taint and declines with the classical-mux guard's own string — the
+  // hand-inlined twin's verdict (and its string when this phi is the module's
+  // first classical-mux offender, r1A F-DA-3). FIRST after `specialize()`, ahead
+  // of the 2qyz re-sweep,
+  // the l3oi fence and the stale-reader backstop, so the owner whose premise was
+  // falsified speaks (`..._spec_scrubbed_base_owner.ll` pins the slot against the
+  // backstop, `..._spec_scrubbed_base_pure_consumer.ll` against the re-sweep,
+  // `..._spec_scrubbed_base_l3oi_owner.ll` against the l3oi fence).
+  // Nothing between here and `lowerRotations` changes `taint.Tainted` (the
+  // re-sweep below writes only `StaleDeclined`), so the taint it reads is the
+  // taint `lowerRotations` decides `Chained` on.
+  if (declineFalsifiedMergePhiLifts(M, taint))
+    return PreservedAnalyses::none();
+
+  // Post-lift stale-record re-sweep (test_C_libtooling-2qyz): the lift RAUWs a
+  // merge phi to its wire base AFTER declineStaleRecordOps already ran, so a
+  // consumer over a re-Ry'd wire would lower silently. When a lift occurred
+  // (witnessed by taint.LiftedConsumers) this re-runs the FULL stale-record
+  // sweep on the post-lift IR — a stale op can be a TRANSITIVE consumer any
+  // number of in-place-gate hops below the lifted phi, so a scoped re-check is
+  // incomplete (Rule-13 finding). Idempotent + still pre-RAUW SSA identity;
+  // no-op when nothing was lifted.
+  //
+  // ⚠ MOVED HERE from right after `declineClassicalMuxes` by bd d88e, and the
+  // slot is the argument. This sweep adjudicates CONSEQUENCES of a lift, so it
+  // must run only once the lift itself is confirmed: before `specialize()` it
+  // judged the post-lift IR on PRE-scrub taint, and for a lift the re-ask above
+  // now refuses it declined FIRST, with a stale-record string for a staleness the
+  // false RAUW manufactured (probe `g01C`, `r = t; if (c) r = cq_theta(t, a);
+  // cq_measure(r + 1)` over a spec-classical `t`, where the hand-inlined twin
+  // declines at the classical-mux guard). Here it reads POST-scrub taint (the
+  // same `taint.Tainted` `lowerRotations` starts from), and every lift still
+  // standing is a proven one. It still runs BEFORE the l3oi fence, the relative
+  // order it always had. RETIREMENT TRIGGER: a stage that REMOVES taint after
+  // this slot re-opens the same window for this sweep.
+  declineLiftedStaleRecordOps(M, taint);
+
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask of an EMISSION:
+  // `specialize()` can REMOVE taint (a clone proved classical), after every
+  // control emitter already read the value as a handle. Loud, and ahead of
+  // everything after it except the d88e re-ask and the 2qyz re-sweep just above.
   if (declineScrubbedHandleReads(M, taint))
     return PreservedAnalyses::none();
 
@@ -1397,14 +1440,22 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // refused by the very next call.
   promoteLoopCarriedHandleSeeds(M, wd, taint);
   declineClassicalMuxes(M, taint);
-  // Post-lift stale-record re-check (test_C_libtooling-2qyz) — see run().
-  declineLiftedStaleRecordOps(M, taint);
+  // (The bd 2qyz post-lift stale-record re-check runs below `specialize()` and
+  // the d88e re-ask — see run().)
   // Phase 6 specialization driver (step 14) — mirrored from run() (twin-pipeline
   // parity, WI-1.12).
   specialize(M, wd, taint, plan6);
-  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask: `specialize()`
-  // can REMOVE taint (a clone proved classical), after every control emitter
-  // already read the value as a handle. Loud, before anything else runs.
+  // bd `test_C_libtooling-d88e` — the lift re-ask, same slot as run() and for
+  // the same reason (twin-pipeline parity).
+  if (declineFalsifiedMergePhiLifts(M, taint))
+    return false;
+  // Post-lift stale-record re-check (test_C_libtooling-2qyz) — moved below the
+  // d88e re-ask by bd d88e; see run() for why.
+  declineLiftedStaleRecordOps(M, taint);
+  // bd `test_C_libtooling-l3oi` — the scrub-direction L1 re-ask of an EMISSION:
+  // `specialize()` can REMOVE taint (a clone proved classical), after every
+  // control emitter already read the value as a handle. Loud, and ahead of
+  // everything after it except the d88e re-ask and the 2qyz re-sweep above.
   if (declineScrubbedHandleReads(M, taint))
     return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record

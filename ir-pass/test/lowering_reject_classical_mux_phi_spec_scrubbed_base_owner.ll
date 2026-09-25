@@ -1,0 +1,121 @@
+; lowering_reject_classical_mux_phi_spec_scrubbed_base_owner.ll — DECLINE (bd test_C_libtooling-d88e, P1 silent miscompile, found by
+; bd 9bhg's Rule-13 round r1A, F-9A-1): the SLOT pin: two lifts whose post-lift IR ALSO trips the bd 3d8q stale-reader BACKSTOP.
+;
+; A TWO-TU module: the caller TU (`-include CQ.h`) llvm-linked with a plain-C
+; library TU, exactly as tests/e2e/run_slice_multi.sh builds one. `t = h(q, m)`
+; reads the tainted `q`, so `propagate` taints `t` CONSERVATIVELY and every stage
+; before `specialize()` sees it as a quantum REGISTER. `declineClassicalMuxes`'
+; one-register lift (`liftOneRegisterMergePhi`) therefore proved the
+; classical-condition merge phi (each of two) a pure renaming of ONE
+; register, RAUW'd it to its wire base `t` and erased it. `specialize()` then
+; clones `h`, proves the clone returns the CLASSICAL `k + 1`, and
+; `scrubForwardCone` untaints `t`: the lift's premise is false after the fact.
+; Before this fence the rotation lowered as a SOURCE on a fresh rail that nothing
+; reads and the user's `cq_measure` read the classical `t` down the bd 21mg
+; classical-measure path — NO measurement, `opt` exit 0, stage-2b STRICT clean
+; (measured on main `def1b088`, cq-opt `b1603d23`: 0 `cqrt_measure` in the lowered
+; module, 1 in the source). bd `test_C_libtooling-l3oi`'s fence could not see it:
+; no EMITTED gate reads `t` — the consumers were reached through a RAUW.
+;
+; THE CORRECT DISPOSITION IS THE HAND-INLINED TWIN'S (`int t = m + 1;`, the same
+; caller with `h`'s classical return written directly), and the twin DECLINES at
+; `declineClassicalMuxes` with exactly the string below (measured on the same
+; oracle): the phi muxes the classical `t` and a quantum register under a
+; classical condition, a real data mux and not a renaming. The lift now RECORDS
+; its taint-dependent premise (`taint.LiftedMergePhis`) and
+; `declineFalsifiedMergePhiLifts` RE-ASKS it at FINAL taint right after
+; `specialize()` in both entry points (CLAUDE.md L1: record, then re-ask).
+;
+; ⚠ THIS FIXTURE PINS THE SLOT, NOT ONLY THE VERDICT. The oracle declined this
+; module too, but with the stale-reader backstop's string (`rotation/measure
+; operand predates a non-diagonal gate`): after the two false lifts both
+; `cq_theta(t, .2)` and `cq_theta(t, .4)` read `t` IN PLACE and the backstop saw
+; a stale reader that exists only because of the lifts' RAUW. The twin declines
+; at `declineClassicalMuxes` with the classical-phi string. The re-ask sits
+; immediately after `specialize()` and BEFORE the backstop, so the first owner to
+; speak is the one whose premise was falsified. Moving it below the backstop
+; turns this fixture red.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (m > 3) r = cq_theta(t, .2); int u = cq_measure(r); int s = t; if (m > 5) s = cq_theta(t, .4); return u + cq_measure(s); }
+;
+; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+
+; ModuleID = 'llvm-link'
+source_filename = "llvm-link"
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+
+; Function Attrs: nounwind ssp uwtable
+define i32 @main(i32 noundef %0, ptr nocapture noundef readonly %1) local_unnamed_addr #0 {
+  %3 = getelementptr inbounds i8, ptr %1, i64 8
+  %4 = load ptr, ptr %3, align 8, !tbaa !6
+  %5 = tail call i32 @atoi(ptr nocapture noundef %4)
+  %6 = tail call i32 @cq_theta_si32(i32 noundef %5, double noundef 5.000000e-01) #4
+  %7 = tail call i32 @h(i32 noundef %6, i32 noundef %5) #4
+  %8 = icmp sgt i32 %5, 3
+  br i1 %8, label %9, label %11
+
+9:                                                ; preds = %2
+  %10 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef 2.000000e-01) #4
+  br label %11
+
+11:                                               ; preds = %9, %2
+  %12 = phi i32 [ %10, %9 ], [ %7, %2 ]
+  %13 = tail call i32 @cq_measure_si32(i32 noundef %12) #4
+  %14 = icmp sgt i32 %5, 5
+  br i1 %14, label %15, label %17
+
+15:                                               ; preds = %11
+  %16 = tail call i32 @cq_theta_si32(i32 noundef %7, double noundef 4.000000e-01) #4
+  br label %17
+
+17:                                               ; preds = %15, %11
+  %18 = phi i32 [ %16, %15 ], [ %7, %11 ]
+  %19 = tail call i32 @cq_measure_si32(i32 noundef %18) #4
+  %20 = add nsw i32 %19, %13
+  ret i32 %20
+}
+
+; Function Attrs: mustprogress nofree nounwind willreturn memory(read)
+declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #1
+
+declare i32 @cq_theta_si32(i32 noundef, double noundef) local_unnamed_addr #2
+
+declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+
+; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
+  %3 = add nsw i32 %1, 1
+  ret i32 %3
+}
+
+attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #1 = { mustprogress nofree nounwind willreturn memory(read) "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #2 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #3 = { mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
+attributes #4 = { nounwind }
+
+!llvm.ident = !{!0, !0}
+!llvm.module.flags = !{!1, !2, !3, !4, !5}
+
+!0 = !{!"Homebrew clang version 19.1.7"}
+!1 = !{i32 2, !"SDK Version", [2 x i32] [i32 26, i32 4]}
+!2 = !{i32 1, !"wchar_size", i32 4}
+!3 = !{i32 8, !"PIC Level", i32 2}
+!4 = !{i32 7, !"uwtable", i32 2}
+!5 = !{i32 7, !"frame-pointer", i32 2}
+!6 = !{!7, !7, i64 0}
+!7 = !{!"any pointer", !8, i64 0}
+!8 = !{!"omnipotent char", !9, i64 0}
+!9 = !{!"Simple C/C++ TBAA"}

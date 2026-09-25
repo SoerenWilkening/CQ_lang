@@ -1,0 +1,19 @@
+r01    comp  DECL-DIFF
+r02    comp  DECL-DIFF
+r03    comp  VERDICT-DIFF(C rc=0, T rc=1)
+r04    comp  DECL-SAME
+r05    comp  DECL-SAME
+r07    comp  ACC-SAME
+r10    comp  DECL-DIFF
+r13    comp  DECL-SAME
+r14    comp  DECL-SAME
+r15    comp  DECL-SAME
+r16    comp  DECL-SAME
+r17    comp  DECL-SAME
+r18    comp  DECL-SAME
+r19    comp  DECL-SAME
+r20    comp  DECL-SAME
+r21    comp  ACC-SAME
+r22    comp  DECL-SAME
+r23    comp  DECL-SAME
+denominator: 18 pairs, 14 twin-identical

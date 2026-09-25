@@ -1496,7 +1496,7 @@ void emitRegion(const ControlRegion &R, WidthDispatch &wd,
   //    keeping the `@cq_phi_` call alive until `lowerRotations` means every stage
   //    between here and there — `collapseFlattenedLoopRails`, `lowerIOSinks`,
   //    `lowerQramReads`, `lowerShadowMemory`, `declineClassicalMuxes`,
-  //    `declineLiftedStaleRecordOps`, `specialize` — keeps seeing the SAME
+  //    `specialize`, `declineLiftedStaleRecordOps` — keeps seeing the SAME
   //    pre-lowering vocabulary it saw before this increment: a diagonal `cq_phi`
   //    on the register, at arg 0. `LoopLowering::collectRailGates` in particular
   //    follows a `cq_phi` as a RAIL HOP that is not a gate (Rz is diagonal), which

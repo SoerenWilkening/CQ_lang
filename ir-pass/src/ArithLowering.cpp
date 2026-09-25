@@ -495,6 +495,20 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 // (d) A RAIL-MINTING PRODUCER READING `P` (`cq_template_*`, `cqrt_qram_load_*`,
 //     a `__cq_q_*` clone call) is the hazard itself — UNLESS its rail is already
 //     FULLY DISCHARGED before `bo`: its `_unc` fired and its rail was freed,
+//     ⚠ FALSE AS WRITTEN FOR ONE MEMBER (bd test_C_libtooling-hgwx; bd d88e
+//     Rule-13 r1B F-DB-1): a `__cq_q_*` clone whose specializer verdict is
+//     CLASSICAL (`ReturnTainted == false` — the clone returns a classical value,
+//     e.g. `h(a, k) = k + 1`) mints NO rail; its result is plain data and there
+//     is no adjoint of it that could ever re-read `P`. It is refused here anyway
+//     (this arm matches by the call's SHAPE, not by the verdict), so `P` is
+//     lowered OUT of place where its hand-inlined twin lowers IN place — see (e)
+//     for what that costs. Measured by r1B's diagnostic mutant (treat every
+//     `__cq_q_*` callee as settled): `j02C` becomes byte-identical to its twin,
+//     sole mover of 330 probes. That mutant is UNSOUND for a QUANTUM-verdict
+//     clone (its out rail's `_unc` does re-read `P`), so a real fix must consult
+//     the specializer's VERDICT, never the name; this comment names the gap, it
+//     does not license the mutant.
+//     Otherwise:
 //     both provably before. A freed rail cannot be reversed again — its
 //     `cqrt_free` user makes `recoverDataDag`'s closure scan mark the whole DAG
 //     `NotClosed`, and `reverseTerminalGroup` then emits nothing at all — so no
@@ -548,8 +562,17 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 // (e) EVERYTHING ELSE — a plain-IR use (`ret`/`store`/`phi`), a STILL-UNLOWERED
 //     tainted opcode (it is not a `CallInst` yet, and the spine will adjoint
 //     whatever `lowerOps` turns it into), a measurement, an unknown callee —
-//     is refused. Out-of-place is the fallback, so refusing costs nothing but a
-//     kept ancestor rail, which is exactly today's behavior.
+//     is refused. Out-of-place is the fallback. ⚠ "Refusing costs nothing but a
+//     kept ancestor rail" was this comment's claim and it is FALSE whenever a
+//     NON-DIAGONAL gate later acts on the out-of-place result (bd hgwx; bd d88e
+//     Rule-13 r1B F-DB-1): the kept ancestor stays entangled with the copy and
+//     DEPHASES it. `j02C` (`u = t + q; … Ry(.2) on u`, a classical-verdict clone
+//     call as the refused prior use) measures bit 0 as 0 with probability ≈0.070
+//     where the coherent in-place twin gives ≈0.118 (analytic, r1B §2). The
+//     compiler then says only `non-diagonal gate over a live derived record`
+//     (the owner's lyyf-(B) warning), so what refusal costs is a KEPT ANCESTOR
+//     RAIL PLUS, under a later non-diagonal gate, COHERENCE — which is exactly
+//     today's behavior, and a reason to refuse only what must be refused.
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
                        const InteriorDischargePlan *Plan) {
