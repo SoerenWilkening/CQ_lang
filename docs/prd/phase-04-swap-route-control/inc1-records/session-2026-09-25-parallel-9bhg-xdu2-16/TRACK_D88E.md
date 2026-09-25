@@ -8,6 +8,8 @@ Session 2026-09-25. Two tracks ran in parallel with this one:
 This track touched neither `Specialization.cpp` nor any erase site.
 
 - Worktree branch: `worktree-agent-acf961e52a2f9e440`, based on `main` at `def1b088`.
+  The implementation commit is `06148f3d`; a docs-only follow-up adds §10 item 3's
+  composed-tree re-enumeration.
 
 Binaries:
 
@@ -627,9 +629,17 @@ The one comment edit made after them rebuilt to the same two hashes.
    untainted after the scrub, while the lift's base stays tainted. §6.5 argues such a
    module is correct in its new form, but I did not construct one.
 3. **(5) and taint monotonicity (§6.1).** The claim is that nothing in the window can
-   make a terminator newly tainted. It rests on an enumeration of two sites in
-   `Specialization.cpp`, and bd 9bhg edits that file. After the merge, re-enumerate on
-   the composed tree; I did not re-read 9bhg's `specialize()` for new `Tainted.insert`s.
+   make a terminator newly tainted. It rests on an enumeration of the module-taint
+   mutations in `Specialization.cpp`, and bd 9bhg edits that file.
+   - Re-enumerated on the composed tree AFTER this commit, by reading the code, not by
+     construction. 9bhg's `specialize()` has three module-taint mutations:
+     - the scrub's erase (`:649`);
+     - an erase of a REBUILT site's old pointer (`:1231`, the bd j8sk fix);
+     - the ReturnTainted re-insert of `Cand.Site` (`:1272`), now at resolution time.
+   - None of them can newly taint a value that a terminator read at the lift, so the
+     argument holds on the composition.
+   - A reviewer should still attack 9bhg's mask-recompute path: a mask-0 site is left
+     as a classical call and only ever scrubbed, never inserted.
 4. **Keys that dangle and alias.** The parallel bd `j8sk`/`8e5r` track exists because
    erase sites leave dangling `Tainted` keys. `resolveWireBase` asks
    `Tainted.count(Handle)` on live values only, but a freed address reused by a new
