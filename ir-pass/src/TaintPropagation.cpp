@@ -1810,14 +1810,30 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
 // so this is the Prime-Directive default for an argued-unreachable state, not a
 // shape any fixture can reach (Rule 12 can supply none).
 bool declineFalsifiedMergePhiLifts(Module &M, const TaintSet &taint) {
-  (void)M;
   if (taint.LiftedMergePhis.empty())
     return false;
   SmallPtrSet<CallInst *, 32> GateCalls;
   collectLiftGateCalls(taint, GateCalls);
   for (const TaintSet::LiftedMergePhi &L : taint.LiftedMergePhis) {
-    // `L.F` is never null: the accept records `Phi->getFunction()`, and a
-    // function is never erased in the window.
+    // `L.F` is a `WeakVH` (bd 8e5r x d88e, r1B F-EB-1): the accept records
+    // `Phi->getFunction()`, and nothing in the window erases a Function, so it is
+    // non-null on every path this pass has. A NULL one means the recorded function
+    // was deleted: the premise has no question left to re-ask, so it DECLINES
+    // like a nulled Base/Incoming, anchored on the first defined function (a
+    // diagnostic needs one). ⚠ Argued unreachable; Rule 12 can supply no fixture.
+    auto *Fn = cast_or_null<Function>(static_cast<Value *>(L.F));
+    if (!Fn) {
+      for (Function &G : M)
+        if (!G.isDeclaration()) {
+          Fn = &G;
+          break;
+        }
+      if (!Fn)
+        return false;  // no defined function left: nothing can be lowered
+      Fn->getContext().diagnose(
+          DiagnosticInfoUnsupported(*Fn, kMsgClassicalPhi, L.DL));
+      return true;
+    }
     Value *Base = L.Base;
     bool Falsified = !Base;
     SmallVector<Value *, 4> Ins;
@@ -1848,8 +1864,8 @@ bool declineFalsifiedMergePhiLifts(Module &M, const TaintSet &taint) {
       continue;
     // The erased phi's own diagnostic: `diagnoseEscape(Phi, kMsgClassicalPhi)`
     // spelled from the recorded function and `!dbg`.
-    L.F->getContext().diagnose(
-        DiagnosticInfoUnsupported(*L.F, kMsgClassicalPhi, L.DL));
+    Fn->getContext().diagnose(
+        DiagnosticInfoUnsupported(*Fn, kMsgClassicalPhi, L.DL));
     return true;
   }
   return false;

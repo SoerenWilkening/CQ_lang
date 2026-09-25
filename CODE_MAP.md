@@ -24,14 +24,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2734 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2750 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1971 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1953 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1571 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
@@ -178,9 +178,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1953 lines)
+### `ir-pass/include/TaintPropagation.h` (1971 lines)
 
-- `ir-pass/include/TaintPropagation.h:564` — `isPeelClone`
+- `ir-pass/include/TaintPropagation.h:582` — `isPeelClone`
 
 ### `ir-pass/include/WidthDispatch.h` (245 lines)
 
@@ -991,7 +991,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2734 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2750 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:80` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:98` — `collectAndSeed`
@@ -1014,21 +1014,21 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TaintPropagation.cpp:1680` — `collectLiftGateCalls`
 - `ir-pass/src/TaintPropagation.cpp:1688` — `declineClassicalMuxes`
 - `ir-pass/src/TaintPropagation.cpp:1812` — `declineFalsifiedMergePhiLifts`
-- `ir-pass/src/TaintPropagation.cpp:1928` — `detectAndLowerOnwardControl`
-- `ir-pass/src/TaintPropagation.cpp:2017` — `replanReseedSpecialization`
-- `ir-pass/src/TaintPropagation.cpp:2082` — `propagateFromSeeds`
-- `ir-pass/src/TaintPropagation.cpp:2149` — `adjudicateTaintDelta`
-- `ir-pass/src/TaintPropagation.cpp:2200` — `repropagateControlMerges`
-- `ir-pass/src/TaintPropagation.cpp:2373` — `isRegisterFreePhaseCall`
-- `ir-pass/src/TaintPropagation.cpp:2393` — `reachedThroughTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2440` — `canReachReturn`
-- `ir-pass/src/TaintPropagation.cpp:2459` — `everyReturningPathThrough`
-- `ir-pass/src/TaintPropagation.cpp:2487` — `controlDependentOnTaintedBranch`
-- `ir-pass/src/TaintPropagation.cpp:2524` — `functionCarriesBranchPhase`
-- `ir-pass/src/TaintPropagation.cpp:2540` — `deleteGlobalPhases`
-- `ir-pass/src/TaintPropagation.cpp:2631` — `functionReturnsTainted`
-- `ir-pass/src/TaintPropagation.cpp:2641` — `declineQuantumReturnCalls`
-- `ir-pass/src/TaintPropagation.cpp:2698` — `declineScrubbedHandleReads`
+- `ir-pass/src/TaintPropagation.cpp:1944` — `detectAndLowerOnwardControl`
+- `ir-pass/src/TaintPropagation.cpp:2033` — `replanReseedSpecialization`
+- `ir-pass/src/TaintPropagation.cpp:2098` — `propagateFromSeeds`
+- `ir-pass/src/TaintPropagation.cpp:2165` — `adjudicateTaintDelta`
+- `ir-pass/src/TaintPropagation.cpp:2216` — `repropagateControlMerges`
+- `ir-pass/src/TaintPropagation.cpp:2389` — `isRegisterFreePhaseCall`
+- `ir-pass/src/TaintPropagation.cpp:2409` — `reachedThroughTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2456` — `canReachReturn`
+- `ir-pass/src/TaintPropagation.cpp:2475` — `everyReturningPathThrough`
+- `ir-pass/src/TaintPropagation.cpp:2503` — `controlDependentOnTaintedBranch`
+- `ir-pass/src/TaintPropagation.cpp:2540` — `functionCarriesBranchPhase`
+- `ir-pass/src/TaintPropagation.cpp:2556` — `deleteGlobalPhases`
+- `ir-pass/src/TaintPropagation.cpp:2647` — `functionReturnsTainted`
+- `ir-pass/src/TaintPropagation.cpp:2657` — `declineQuantumReturnCalls`
+- `ir-pass/src/TaintPropagation.cpp:2714` — `declineScrubbedHandleReads`
 
 ### `ir-pass/src/TemplateName.cpp` (143 lines)
 

@@ -355,8 +355,26 @@ struct TaintSet {
   // twin's FIRST classical-mux offender — a module with a second offender (a
   // genuine classical mux in another function, a classical select, a rail-bank
   // reader) can decline elsewhere on one side (r1A F-DA-3: `r01`, `r10`, `r02`).
+  //
+  // ⚠ TWO HANDLE KINDS, CHOSEN PER FIELD (bd 8e5r x d88e merge, Rule-13 r1B
+  // F-EB-1 / bd lin4):
+  //   * `F` is a `WeakVH` — IDENTITY, nulled if the function is deleted. It was a
+  //     raw `llvm::Function *`, the one raw pointer-bearing TaintSet member the
+  //     8e5r guard refused at the merge. Nothing in the window erases a Function
+  //     today, so the handle changes no answer; the reader declines on a null `F`
+  //     (the same Prime-Directive default as a nulled Base/Incoming). NOT
+  //     `AssertingVH`: with `LLVM_ENABLE_ABI_BREAKING_CHECKS 0` (this LLVM 19
+  //     build) an `AssertingVH` IS a bare pointer — no handle, no protection.
+  //   * `Base` / `Incomings` are `WeakTrackingVH` and MUST STAY SO — deliberately
+  //     NOT a `scrub::` container and NOT a `WeakVH`: the re-ask must FOLLOW a
+  //     RAUW (the two pinned RAUWs above), while every `ScrubOnDelete.h` container
+  //     is IDENTITY-keyed and dead-marks, so it would read a RAUW'd incoming as
+  //     "gone" and decline `..._spec_quantum_base_fp_rebuilt.ll`, an accept that
+  //     depends on following. `taintset-scrub-guard` admits `WeakTrackingVH` for
+  //     exactly this reason (a tracking handle cannot dangle: it follows a RAUW
+  //     and nulls on a plain delete).
   struct LiftedMergePhi {
-    llvm::Function *F = nullptr;
+    llvm::WeakVH F;
     llvm::DebugLoc DL;
     llvm::WeakTrackingVH Base;
     llvm::SmallVector<llvm::WeakTrackingVH, 2> Incomings;
