@@ -28,7 +28,9 @@
 ; `CQ_OPT_DEBUG_ALLOC` (`ir-pass/tools/cq_debug_alloc.cpp`, linked only into
 ; `%debugalloc-cq-opt` = `cq-opt-debugalloc`, never into `%cq-opt` or the plugin)
 ; makes it deterministic:
-;   lifo   — maximal exact-class address reuse: the unfixed binary is WRONG
+;   lifo   — exact-class LIFO address reuse for the blocks the test allocator
+;            manages (non-aligned new/delete: IR objects, hooks, std nodes —
+;            see cq_debug_alloc.cpp's SCOPE): the unfixed binary is WRONG
 ;            20/20; the fixed one is right 20/20;
 ;   nofree — no reuse at all: the no-aliasing REFERENCE stream (the unfixed
 ;            binary is right 20/20 here, and it is byte-identical to the fixed

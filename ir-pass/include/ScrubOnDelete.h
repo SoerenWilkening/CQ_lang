@@ -18,8 +18,10 @@
 //     the constant used as a handle — `opt` exit 0, verify-clean, stage 2b clean).
 //
 // The pre-existing defence was a PREDICTION: every erase site must remember to
-// scrub every table first. There are ~180 erase sites in `ir-pass/src/` plus
-// the LLVM utilities that delete internally, and at least seven of them did not
+// scrub every table first. There are 133 IR-deleting sites in `ir-pass/src/`
+// (measured: 121 `eraseFromParent` + 12 LLVM utilities that delete internally),
+// and dynamically 29 producer functions deleted a key nobody scrubbed; the
+// Rule-13 r1B detector had named seven of them — they did not
 // (Rule-13 r1B's detector, `review_r1B_9bhg/REVIEW.md`). This header replaces
 // the prediction with an OBSERVATION: each container arms one
 // `llvm::CallbackVH` per key, and LLVM itself calls it back from inside
@@ -41,7 +43,9 @@
 //       tombstone on the next insert, so a physical removal would change the
 //       ITERATION ORDER of the surviving keys — and several emitters walk these
 //       tables in order. With deferred removal the surviving keys keep EXACTLY
-//       the slots and the order they had on the unfixed binary; the only
+//       the slots and the order they had on the unfixed binary UNDER THE SAME
+//       ALLOCATION SEQUENCE (the hooks allocate, so absolute addresses differ —
+//       "the stream does not move" is MEASURED, r1A F-EA-3); the only
 //       observable differences are the ones that were reads of freed memory:
 //       a dead address is absent, and a fresh object inserted at a dead address
 //       is a NEW member (`insert(...).second == true`) that inherits the dead
@@ -62,8 +66,19 @@
 // residual list in `TRACK_8E5R.md` before relying on a local snapshot across an
 // erase.
 //
+// ⚠ PRECONDITION (Rule-13 r1A F-EA-5): never INSERT (or `operator[]`) a pointer
+// to an ALREADY-DELETED Value. Arming the key's `CallbackVH` reads the Value
+// (`AddToUseList` -> `getContext()`), so that is a use-after-free that also
+// registers a handle on freed memory; a raw container merely stored the pointer.
+// No insert site in the pass does it (0 dead inserts measured over the corpus);
+// fill a table from a RAW record only after a liveness check.
+//
+// ⚠ `empty()` / `size()` COUNT LIVE KEYS (r1A F-EA-8): a set used as an EVENT
+// WITNESS means "a live member remains", not "something was ever recorded".
+//
 // Cost: one heap-allocated `CallbackVH` per distinct key per container, and a
-// dead-set probe on each query (skipped when nothing has died).
+// dead-set probe on each query (skipped when nothing has died). Measured +1.2%
+// ± 0.35% CPU per `cq-opt` invocation, all of it LAUNCH cost (r1B §6).
 
 #ifndef CQ_IRPASS_SCRUB_ON_DELETE_H_
 #define CQ_IRPASS_SCRUB_ON_DELETE_H_

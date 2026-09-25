@@ -45,7 +45,9 @@ namespace {
 // mirrors the `Tainted.erase` — with `Value*` pointer reuse a stale entry at
 // `orig`'s reused address would otherwise feed a wrong width into a later Q+Q
 // compare (a verify-clean miscompile). The erase happens UNCONDITIONALLY (even
-// when `handleWidth` is empty) so no stale `orig` record survives.
+// when `handleWidth` is empty) so no stale `orig` record survives. (Now
+// belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h` — so this erase is no longer the only thing between a
+// reused address and a wrong width.)
 void promote(Value *repl, Instruction *orig, TaintSet &taint,
              StringRef handleWidth = {}) {
   taint.Tainted.insert(repl);

@@ -27,7 +27,8 @@
 //      later `lowerRotations`/`uncompute` dereferences freed memory; ⚠ since bd
 //      8e5r every `TaintSet` table drops a deleted key BY ITSELF
 //      (`ScrubOnDelete.h`), so this scrub is belt-and-braces, no longer the only
-//      defence — and the ~180 erase sites that never scrubbed are covered too); then
+//      defence — and the other IR-deleting sites, most of which never scrubbed,
+//      are covered too: 133 static sites, 29 dynamic unscrubbed producers); then
 //      `RegionFlatten` splices the merge into the pred and deletes the now-dead
 //      arm/merge blocks.
 //

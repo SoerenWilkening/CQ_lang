@@ -60,7 +60,7 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   // a new instruction class (condition-tree nodes/leaves), and a lingering
   // HandleWidth entry on a freed Instruction* is an address-reuse phantom
   // width waiting to happen. Vacuous for today's erased classes; closed by
-  // construction.
+  // construction. (All of this function is now belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`.)
   taint.HandleWidth.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;

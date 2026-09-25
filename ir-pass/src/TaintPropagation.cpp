@@ -636,7 +636,7 @@ void foldIdentityBitcasts(Module &M, TaintSet &taint,
     BC->replaceAllUsesWith(Src);
     // Scrub the freed Instruction* from the taint side-tables (SwapRouteEmit::
     // scrubTaint / freeze-fold precedent — a later allocation could alias the
-    // address). The operand keeps its own BirthOrder/HandleWidth; a fold mints no
+    // address; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`). The operand keeps its own BirthOrder/HandleWidth; a fold mints no
     // new handle. BirthOrder is not populated for a raw pre-lowering bitcast.
     taint.Tainted.erase(BC);
     taint.HandleWidth.erase(BC);
@@ -1282,7 +1282,7 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
   // each `%f = freeze iN %h` to its `%h` (the freeze of a defined runtime i32
   // handle is the handle), scrub it from the taint set (`SwapRouteEmit::scrubTaint`
   // precedent — a freed Instruction* must not linger in `Tainted` where a later
-  // allocation could alias it), and erase. The downstream measure/return/uncompute
+  // allocation could alias it; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`), and erase. The downstream measure/return/uncompute
   // analyses then see the TRUE handle lineage (the standing freeze would otherwise
   // read as an unrecognized FreePoint user). Done AFTER the walk so no erasure
   // invalidates the BB iterator above.
@@ -1632,7 +1632,7 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // rotation lowering every incoming IS this base's i32 handle), scrub the
   // erased value from the taint set (`SwapRouteEmit::scrubTaint` precedent —
   // a freed Instruction* must not linger in `Tainted` where a later
-  // allocation could alias it), and erase.
+  // allocation could alias it; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`), and erase.
   //
   // Witness that a lift OCCURRED (test_C_libtooling-2qyz). The RAUW re-points
   // every consumer onto the wire base, so a sibling Ry re-rotating that base's
@@ -2215,6 +2215,9 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
 
 void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
                               SpecPlan &plan6) {
+  // ⚠ `empty()` counts LIVE rails only (bd 8e5r, r1A F-EA-8): it is empty here
+  // only if every recorded `%out` is gone — and then there is nothing left to
+  // re-propagate FROM, so the early return is still right.
   if (taint.UntaintedMergeRails.empty())
     return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
 

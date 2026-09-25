@@ -1536,7 +1536,8 @@ add_test(NAME e2e-spec-fp80-union
 # (`cq_template_mul_i32_hl(h7, 5)` on a freed rail; stage 2b clean). Whether the
 # key is aliased is the ALLOCATOR's choice, so the entry runs the pass through
 # `cq-opt-debugalloc` (cq-opt's own objects + ir-pass/tools/cq_debug_alloc.cpp)
-# in the test allocator's maximal-reuse mode: the unfixed
+# in the test allocator's exact-class LIFO reuse mode (non-aligned new/delete
+# only — the IR-object population this defect lives in): the unfixed
 # binary is wrong 10/10 there, the fixed one is allocator-independent. The lit
 # twin (`spec_scrub_dangling_key_clone_classical_mul.ll`) also diffs the three
 # modes; this is the layer that links and runs the right literals (35, 21).

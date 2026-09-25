@@ -47,7 +47,9 @@ struct SpecPlan;
 // is deleted — by ANY stage, through ANY route, LLVM utilities included — is
 // dropped by LLVM's own `~Value()` callback: it is no longer counted, found,
 // looked up or iterated, and a fresh object later allocated at its address is
-// NOT a member. Before this, ~180 erase sites each had to remember to scrub each
+// NOT a member. Before this, the 133 IR-deleting sites in `ir-pass/src/`
+// (measured: 121 `eraseFromParent` + 12 LLVM utilities; 63 of them scrubbed
+// something nearby, the rest nothing) each had to remember to scrub each
 // table, and the ones that did not left DANGLING KEYS whose effect the system
 // allocator decided: nothing, a use-after-free READ (bd um24, `lowerLoops`), or a
 // fresh clone instruction answering `Tainted.count() == true` and being lowered
@@ -60,8 +62,25 @@ struct SpecPlan;
 //   * Membership is by IDENTITY and never follows a RAUW — exactly the raw
 //     pointer's meaning. A table that must follow a RAUW uses `WeakTrackingVH`.
 //   * A deleted key is only MARKED dead, never physically removed, so surviving
-//     keys keep the slots and the iteration order they had before (the emitted
-//     stream cannot move), and a loop may erase the instruction it is visiting.
+//     keys keep the slots and the iteration order they had before, and a loop may
+//     erase the instruction it is visiting. ⚠ "The stream does not move" is
+//     MEASURED, not guaranteed by construction (r1A F-EA-3): the hooks themselves
+//     allocate, so absolute addresses — and `Tainted`'s address order — differ
+//     from the unfixed binary. Measured: 0 stream movers on the shipped corpus vs
+//     the oracle, and allocator-independence across system / LIFO / no-reuse /
+//     scribble / 3 shuffle seeds (TRACK_8E5R.md §6.3, r1A I2/I3).
+//   * PRECONDITION (r1A F-EA-5): never INSERT a pointer to an already-deleted
+//     Value. Arming a key's `CallbackVH` reads the Value (`getContext()`), so a
+//     dead-pointer insert is a use-after-free — a raw container merely stored it.
+//     No insert site in the pass does this (r1A I1: 0 dead inserts over the
+//     corpus); a future table filled from a RAW record (a local snapshot, a
+//     `ControlRegion` field) must check liveness first.
+//   * `empty()` / `size()` count LIVE keys (r1A F-EA-8). A set used as an EVENT
+//     WITNESS ("a lift occurred": `LiftedConsumers`; "a region was emitted":
+//     `InLoopFlattenedPreds`, `UntaintedMergeRails`) now reads "a live member
+//     remains", not "it was ever recorded". Argued not to flip at any of its
+//     three readers (nothing erases a recorded member in those windows; r1A I1:
+//     0 flips) — a new erasing stage inside one of those windows must re-ask it.
 //   * A LOCAL raw copy of a table (`SmallPtrSet<CallInst *> GateCalls(
 //     taint.ThetaCalls...)`) is outside this guarantee; copy into a `scrub::`
 //     container (`TaintedValueSet Before = taint.Tainted;`) to stay inside it.
@@ -1328,11 +1347,12 @@ struct TaintSet {
   // clause-(ii-b) `cqrt_alloc` out-rail), both writers run before
   // `lowerRotations` — the only stage that erases a root — and both readers
   // (`collapseFlattenedLoopRails` at round 1 and at round 2) run before it too.
-  // ⚠ RETIREMENT TRIGGER: if a stage that erases a `cq_theta` is ever placed
-  // between `lowerLoops` and the round-2 collapse, this set needs a
-  // `WeakTrackingVH` or a re-validation, because a recycled address matching a
-  // live peel root would SKIP a candidate that must be judged — the over-accept
-  // direction, not the leak direction.
+  // ⚠ RETIREMENT TRIGGER — DISCHARGED BY bd 8e5r (r1A F-EA-3): it said that if
+  // a stage that erases a `cq_theta` were ever placed between `lowerLoops` and
+  // the round-2 collapse, this set would need a handle or a re-validation,
+  // because a recycled address matching a live peel root would SKIP a candidate
+  // that must be judged. The set is now a `scrub::PairSet`: a pair is DROPPED
+  // when EITHER half is deleted, so a recycled address can no longer match.
   //
   // ⭐ KEYED ON `(root, the CLAIMING LOOP's header)`, NOT ON THE ROOT ALONE — bd
   // 3qlq Inc 1, the THIRD C-1 review round's finding **F-C1B-2**. Round 2 shipped
@@ -1370,8 +1390,9 @@ struct TaintSet {
   // no spurious match is constructible today (`RegionFlatten` erases a region's
   // ARM/MERGE/COND blocks between the writers and the round-2 reader — never a
   // loop HEADER in any measured shape, and every measured customer keeps
-  // `claimedHERE=1`), but a stage that ever erases a loop header here wants a
-  // `WeakTrackingVH` or a re-validation on BOTH halves of the key.
+  // `claimedHERE=1`). ⚠ DISCHARGED BY bd 8e5r: the "handle or re-validation on
+  // BOTH halves" this sentence asked for is what `scrub::PairSet` does — a pair
+  // dies with its root OR its header, so no recycled address can match.
   scrub::PairSet<const llvm::Value *, const llvm::BasicBlock *> ClaimedRailRoots;
 
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The

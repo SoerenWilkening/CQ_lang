@@ -340,6 +340,11 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // accurate stale-record message — the lift proved the phi a pure renaming, so
   // the residual defect IS a stale record). Still BEFORE any rotation lowering
   // (pre-RAUW SSA identity).
+  // ⚠ `empty()` counts LIVE members only (bd 8e5r, r1A F-EA-8): this asks "a
+  // lift occurred and a recorded consumer is still alive". Argued equal to "a
+  // lift occurred" here — nothing erases between `declineClassicalMuxes` and
+  // this re-sweep, and a lifted φ that was itself a recorded consumer contributes
+  // its own consumers. An erasing stage placed in that window must re-ask it.
   if (taint.LiftedConsumers.empty())
     return;  // no lift occurred — nothing to re-adjudicate.
   // ⚠ PURE OPS ONLY, and after bd test_C_libtooling-3d8q that is a positive
