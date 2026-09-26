@@ -1,14 +1,25 @@
 #!/usr/bin/env python3
 """taintset_scrub_guard.py — the STRUCTURAL half of bd test_C_libtooling-8e5r /
--j8sk's pin, asked of the COMPILER. A record gate (no plugin, no build products
-beyond the build's own `compile_commands.json`).
+-j8sk's pin: a BEST-EFFORT, compiler-assisted check that catches the listed
+classes of raw `llvm::Value`-pointer-bearing member being (re)added to
+`cq::TaintSet`. A record gate (no plugin, no build products beyond the build's own
+`compile_commands.json`).
+
+⚠ IT IS NOT A PROOF AND NOT A CLOSED WORLD. It catches the spelling classes listed
+under WHAT IT CATCHES and misses the ones listed under KNOWN GAPS (Rule-13 round r3,
+open as bd test_C_libtooling-wop9 / -7gri / -jk56). A clean run means "none of the
+checked spellings", never "no raw pointer anywhere in TaintSet". The per-table
+deterministic pin is `ir-pass/tools/scrub_selftest.cpp`; this gate is the
+structural backstop in front of it. (An earlier version of this docstring said
+"THE WALK IS A CLOSED WORLD"; r3 measured 12 in-contract spellings it passes — L7,
+corrected here.)
 
 `cq::TaintSet` (ir-pass/include/TaintPropagation.h) is where every stage keeps
 pointers to IR values across stages that ERASE IR. Since bd 8e5r every such
 table is a self-cleaning container (`ir-pass/include/ScrubOnDelete.h`): a key
 whose Value is deleted is dropped by LLVM's own `~Value()` callback, so a later
 allocation at the freed address can never answer "tainted". That holds only
-while NOBODY ADDS A RAW ONE BACK, and this gate is what says so.
+while NOBODY ADDS A RAW ONE BACK; this gate catches the common ways of doing so.
 
 ⚠ WHY IT ASKS THE COMPILER (Rule-13 r1A F-EA-2 / r1B F-EB-2, bd urf8). The first
 version scanned the header TEXT and missed 14-16 of ~23 natural spellings. CLAUDE.md
@@ -19,23 +30,26 @@ with their DESUGARED types — aliases, typedefs, macros, initialiser styles and
 compiler again (`std::is_base_of`, `std::is_enum`, completeness) about every type
 it needs to classify.
 
-⚠ WITH THE BUILD'S OWN COMPILER AND FLAGS (Rule-13 delta r2 F-R2-2, bd a66j). The
+⚠ WITH ONE OF THE BUILD'S COMPILE COMMANDS (Rule-13 delta r2 F-R2-2, bd a66j). The
 second version parsed with Homebrew `clang++` and a hand-written flag set, while
 the build uses `/usr/bin/c++ -O3 -DNDEBUG …`: a raw member inside `#ifdef NDEBUG`
 shipped in the Release build and the gate never saw it. The compile command is now
-READ from the build's `compile_commands.json` (the entry for
-`ir-pass/src/TaintPropagation.cpp` in the `CQPass` target — `CMAKE_EXPORT_COMPILE_
-COMMANDS` is ON in the top-level CMakeLists): same compiler, same defines, same
-include paths, same `-std`. The gate therefore checks THE CONFIGURED BUILD: a
-member present only in another configuration (e.g. under `#ifndef NDEBUG` in a
-Release tree) is checked when that configuration is configured, not before.
-A missing database, a missing entry, or any parse error FAILS CLOSED.
+READ from the build's `compile_commands.json`: the `CQPass` target's entry for
+`ir-pass/src/TaintPropagation.cpp` (`CMAKE_EXPORT_COMPILE_COMMANDS` is ON in the
+top-level CMakeLists) — that compiler, its defines, include paths and `-std`.
+⚠ That is ONE of the build's configurations for this file, not all of them (KNOWN
+GAP G5), and the PCH below can change the answer (G6). It checks the CONFIGURED
+build: a member present only in another configuration (e.g. under `#ifndef NDEBUG`
+in a Release tree) is not seen until that configuration is configured. A missing
+database, a missing entry, or any parse error FAILS CLOSED.
 
-THE WALK IS A CLOSED WORLD. A field — at any depth: nested records, anonymous
-structs/unions, base classes, static data members, and every PROJECT (`cq::`)
-record or class template reachable from `TaintSet` BY VALUE, BY POINTER, or as a
-template argument / `scrub::Map` MAPPED type — is accepted only if its desugared
-type is built from:
+WHAT IT WALKS. Starting at `TaintSet`, the walk visits fields at any depth of:
+nested records, anonymous structs/unions, base classes, static data members, and
+the PROJECT (`cq::`) records and class-template PATTERNS it reaches by value, as a
+template argument, as a `scrub::Map` MAPPED type, or through a pointer whose
+pointee is spelled as a `cq::` record or `cq::` template (G1-G4 name the pointer,
+specialization and alias forms it does NOT follow). A field it visits is accepted
+if its desugared type is built from:
 
   * scalars: builtins (except `void` in a pointer or template argument) and enums;
   * a pointer to a type that is NOT derived from `llvm::Value` (asked of the
@@ -50,7 +64,8 @@ type is built from:
   * a PROJECT record or class template, whose fields and bases are walked (a
     template's PATTERN is walked; its type parameters are checked at each use).
 
-REFUSED, each with its own diagnostic: a raw pointer to a `Value`-derived type; a
+WHAT IT CATCHES (each with its own diagnostic, among the fields it visits): a raw
+pointer to a `Value`-derived type; a
 `Value`-derived type held by value (the tell of an unapproved handle such as
 `AssertingVH`, a bare pointer at `LLVM_ENABLE_ABI_BREAKING_CHECKS=0`); a type-
 erased pointer (`void *`, `const void *`) or a `void` template argument
@@ -58,12 +73,54 @@ erased pointer (`void *`, `const void *`) or a `void` template argument
 SUGARED spelling `uintptr_t` / `intptr_t`; a pointer to `llvm::Loop` / `llvm::Use`
 (IR-owned objects a `~Value` callback does not observe: a `Loop` dies with its
 `LoopInfo`, a `Use` with its `User`); a value handle as (part of) an associative-
-container KEY (`std::set<WeakVH>` — a handle nulled or retargeted in place breaks
-the container's ordering/hash invariant); an unknown non-template record; a
-function type; a type the walker cannot parse; a header that does not compile.
+container KEY when the handle is spelled in the key type itself (`std::set<WeakVH>`,
+`pair<WeakVH,int>` — a handle nulled or retargeted in place breaks the container's
+ordering/hash invariant; see G7); an unknown non-template record; a function type;
+a type the walker cannot parse; a header that does not compile. (Several
+diagnostics say "closed world: refused": that names the policy applied to a type
+the walk REACHES and cannot classify — it is not a claim that every type is reached.)
 
-INTENTIONALLY OUT OF SCOPE, and why (the delta reviewer's six out-of-`Value`-scope
-spellings are all REFUSED above; what remains is stated here, not implied):
+KNOWN GAPS — measured by Rule-13 round r3 (`review_r3_8e5r/`, 2026-09-26): each
+spelling compiles in the Release build with the raw member present and this gate
+reports 0 problems. Open, not fixed; do not quote the gate as covering them.
+  G1 (bd wop9) A POINTER to a LIBRARY template holding raw `Value *` is not walked:
+     `std::set<llvm::Value *> *`, `llvm::DenseMap<llvm::Value *, unsigned> *`,
+     `llvm::SmallVector<llvm::DenseSet<llvm::Value *> *, 2>`. A pointee template's
+     arguments are walked only for `cq::` templates; for a library template the
+     pointee is only asked "is it Value-derived?" (it is not), and accepted.
+  G2 (bd wop9) EXPLICIT and PARTIAL SPECIALIZATIONS of a `cq::` class template are
+     not walked — only the primary PATTERN is (`_dump` keeps `CXXRecordDecl` /
+     `ClassTemplateDecl` and drops `ClassTemplate[Partial]SpecializationDecl`); a
+     specialization selected only under `NDEBUG` passes too.
+  G3 (bd wop9) SHORT-NAME alias resolution: a pointer written through an unqualified
+     alias (`using Result = RawRec; Result *P;`) is resolved to a name and then
+     DUMPED BY SHORT NAME, so records elsewhere in the TU with the same short name
+     (LLVM's own `Result`, `Impl`) are walked instead and the member passes; a
+     unique short name is refused only by the "no complete definition" fallback —
+     safe by luck, not by design.
+  G4 (bd wop9) A POINTER to a record OUTSIDE `cq::` (global scope, another
+     namespace) is accepted unwalked when it is not `Value`-derived.
+  G5 (bd 7gri) It parses ONE translation unit: the CQPass command
+     (`-DCQPass_EXPORTS -fPIC`). cq-opt, cq-opt-debugalloc and cq-scrub-selftest
+     compile `TaintPropagation.cpp` WITHOUT `-DCQPass_EXPORTS`, so a member under
+     `#ifndef CQPass_EXPORTS` ships in the driver every lit RUN line and e2e slice
+     uses, and is not seen.
+  G6 (bd 7gri) The PCH can CHANGE THE ANSWER: it holds third-party headers outside
+     `TaintPropagation.h`'s own include closure (e.g. `llvm/Analysis/LoopInfo.h`),
+     and a compile is retried without it only on FAILURE, never on a clean verdict.
+     A member under `#ifndef <such a header's guard macro>` passes with the PCH and
+     is caught without it.
+  G7 (bd jk56) The handle-in-a-KEY rule is SYNTACTIC: a `WeakVH` inside a project
+     record used as an associative key (`std::set<RecWithHandle>`) passes —
+     `_has_handle` does not look into records.
+  G8 (bd jk56) An ALLOWLISTED member exempts its WHOLE TYPE subtree: a raw
+     `SmallPtrSet<Value *>` added to `LoopBreakRegion` passes under
+     `cq::TaintSet::BreakRegions`' entry, whose reason ("never a table asked by
+     IDENTITY") nothing enforces.
+
+INTENTIONALLY OUT OF SCOPE, and why (the r2 reviewer's six out-of-`Value`-scope
+spellings are all caught above; what remains by DESIGN is stated here — the gaps
+by DEFECT are G1-G8):
   * an address laundered through a PLAIN INTEGER type (`unsigned long`, `size_t`,
     or an alias of one): to the compiler it IS an integer. Only the `uintptr_t` /
     `intptr_t` sugar is recognisable, and only while it is spelled so.
@@ -79,15 +136,18 @@ a bare name) names no member, and (b) a self-cleaning member is not exercised by
 `ir-pass/tools/scrub_selftest.cpp` — searched with comments STRIPPED.
 
 SPEED: every compile reuses one PRECOMPILED HEADER of the third-party headers the
-project headers include, built once per run with the same command. It is an
-optimisation only: if the PCH cannot be built, or a compile fails WITH it, the
-compile is retried WITHOUT it, and only that result counts. The self-test pins
-that the pristine header gives the same answer with and without the PCH.
+project headers include, built once per run with the same command. If the PCH
+cannot be built, or a compile fails WITH it, the compile is retried WITHOUT it and
+that result counts — but a CLEAN verdict with the PCH is NOT re-checked without it,
+so the PCH is NOT verdict-neutral (G6). The self-test pins only that the PRISTINE
+header's verdict is the same with and without it.
 
 `--selftest` is its own mutant validation: null controls clean, and every spelling
-of all three Rule-13 fool corpora (r1A `guard_bypass.py`, r1B `guard_fool.py`, r2
-`guard_fool_r2.py`) plus the guard's own mutants REFUSED FOR THE RIGHT REASON (the
-expected diagnostic substring is checked, so a compile error is not a kill).
+of the three Rule-13 fool corpora it was built against (r1A `guard_bypass.py`, r1B
+`guard_fool.py`, r2 `guard_fool_r2.py`) plus the guard's own mutants REFUSED FOR THE
+RIGHT REASON (the expected diagnostic substring is checked, so a compile error is
+not a kill). It does NOT carry r3's G1-G8 spellings: those are the open beads above,
+and as expected-refusals they would turn the self-test red until the beads land.
 
 The module keeps the first guard's API (`HEADER`, `SELFTEST`, `SCRUB_HDR`,
 `ALLOWLIST`, `check(header_src, selftest_src, allowlist, scrub_src)`), so the
@@ -190,7 +250,8 @@ _BASE_LOCK = threading.Lock()
 
 def _base_command():
     """-> (argv prefix [compiler, flags...], cwd). The CQPass target's command for
-    ir-pass/src/TaintPropagation.cpp, with output/dependency/source arguments removed."""
+    ir-pass/src/TaintPropagation.cpp, with output/dependency/source arguments removed.
+    ⚠ ONE of the build's configurations for that file (KNOWN GAP G5, bd 7gri)."""
     global _BASE
     with _BASE_LOCK:
         if _BASE is not None:
@@ -225,7 +286,8 @@ def _base_command():
 
 
 # ----------------------------------------------------------------------------
-# the precompiled header (an optimisation; never trusted for a verdict alone)
+# the precompiled header (an optimisation that is NOT verdict-neutral: a clean
+# verdict with it is not re-checked without it — KNOWN GAP G6, bd 7gri)
 # ----------------------------------------------------------------------------
 _PCH = {"state": None, "path": None, "dir": None}
 _PCH_LOCK = threading.Lock()
@@ -281,7 +343,8 @@ def _pch():
 
 def _compile(tu_dir, tu, extra):
     """Run the build's compiler on `tu` (syntax only). With the PCH first; on any
-    failure retried without it, and only that result is returned."""
+    failure retried without it, and only that result is returned. ⚠ A SUCCESS with
+    the PCH is returned as is (KNOWN GAP G6, bd 7gri)."""
     base, cwd = _base_command()
     cmd = base + ["-fsyntax-only", "-fno-color-diagnostics", "-ferror-limit=0", "-w",
                   f"-I{tu_dir}"]
@@ -696,8 +759,9 @@ def check(header_src, selftest_src, allowlist, scrub_src=None):
             return ([f"expected exactly one complete `TaintSet` definition, found {len(recs)}"], 0)
         W = Walk(allowlist)
         _walk_record(W, recs[0], "cq::TaintSet", top_level=True)
-        # project records and class templates reached by value, by pointer or as a
-        # template argument: dump and walk each (iterate: one may reach another)
+        # project records and class templates reached by value, by a `cq::`-spelled
+        # pointer or as a template argument: dump (BY SHORT NAME — KNOWN GAP G3) and
+        # walk each (iterate: one may reach another)
         while True:
             if W.unresolved:
                 items, W.unresolved = W.unresolved, []

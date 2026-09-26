@@ -27,8 +27,10 @@
 //
 // A member whose type is reverted to a raw `SmallPtrSet`/`DenseMap`/
 // `SmallVector`/`std::set` still COMPILES here (the APIs are compatible) and
-// FAILS at (3). `tools/taintset_scrub_guard.py` is the other half: it fails on a
-// NEW raw pointer-keyed member this file does not know about.
+// FAILS at (3). `tools/taintset_scrub_guard.py` is the other half: a
+// BEST-EFFORT check that catches the common spellings of a NEW raw pointer-keyed
+// member this file does not know about (its docstring names the gaps it has —
+// bd wop9 / 7gri / jk56).
 
 #include "TaintPropagation.h"
 

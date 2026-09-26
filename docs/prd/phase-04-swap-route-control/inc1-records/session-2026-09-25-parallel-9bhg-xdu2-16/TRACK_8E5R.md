@@ -63,8 +63,9 @@ result file are under `track_8e5r_probes/`.
   exceptions being the oracle's own um24 crashes (§6.3).
 - **Four deterministic pins**, none of them an allocation lottery: a per-member
   self-test of every `TaintSet` table (`cq-scrub-selftest`, two ctest entries), a
-  structural guard that no raw pointer-keyed member can be (re)added
-  (`taintset-scrub-guard`, with its own mutant self-test), a lit fixture + an e2e slice
+  structural guard against (re)adding a raw pointer-keyed member
+  (`taintset-scrub-guard`, with its own mutant self-test — ⚠ CORRECTED (r3, L7): a
+  BEST-EFFORT check with named gaps, not a guarantee; §16), a lit fixture + an e2e slice
   for k65 under a test-only maximal-reuse allocator, and a `nofree` RUN line on the four
   um24 fixtures. Red on the oracle, green on the subject, measured repeatedly (§5).
 
@@ -257,7 +258,7 @@ allocations turned a stale key into a miscompile; the "after" rows are the dangl
 | `iosink_reject_mux_literal_callee`, `lowering_reject_break_uncollected_clone`, `lowering_reject_inplace_rail_stale_w1_xor_{bareout,derived}` — one added RUN line each, `env CQ_OPT_DEBUG_ALLOC=nofree not %debugalloc-cq-opt` | lit | FAIL 80/80 (20 runs × 4; `Segmentation fault: 11`, `not` fails on a crash) | PASS 40/40 |
 | `e2e-spec-scrub-dangling-key` (`tests/e2e/spec_scrub_dangling_key_{caller,lib}.c`, golden 33 lines) | e2e multi-TU, `cq-opt-debugalloc` under `lifo` | FAIL 10/10 (trace `cq_template_mul_i32_hl(h7, 5)` on freed `h7`, `add_hl(h1, 10)`; stage 2b `3 verified, 0 violation(s)`) — the oracle under `nofree` PASSES 5/5, i.e. the golden IS the no-reuse reference | PASS 10/10 (lifo), 5/5 (system) |
 | `cq-scrub-selftest` (ctest `ir-pass-scrub-on-delete-selftest-{lifo,sysalloc}`) | per-member, every `TaintSet` table: insert, DELETE, then `count`/`find`/`lookup`/`contains`/`size`/`empty`/iteration by pointer comparison only; then a fresh object at the SAME address (LIFO reuse REQUIRED under `lifo`: 31/31) must NOT be a member, must insert as NEW, a map must yield the DEFAULT; plus copy, move and erase-while-iterating | n/a (tests the containers; see the mutation matrix §8) | 287 checks, 0 failures |
-| `taintset-scrub-guard` (+ `-selftest`) | structural: no raw pointer-bearing member (any depth), every wrapped member exercised by the self-test, no stale allowlist | n/a | 52 members scanned, 5 aliases verified, 0 problems; 10/10 guard mutants killed (3 added after the matrix found M11, §8) |
+| `taintset-scrub-guard` (+ `-selftest`) | structural (⚠ best-effort, not "any depth" — r1A/r1B/r2/r3 each found spellings it missed; its gaps are listed in its docstring, §16): no raw pointer-bearing member, every wrapped member exercised by the self-test, no stale allowlist | n/a | 52 members scanned, 5 aliases verified, 0 problems; 10/10 guard mutants killed (3 added after the matrix found M11, §8) |
 
 What is pinned DETERMINISTICALLY: the self-test (independent of any allocation
 coincidence — the dead-key checks are pointer comparisons, and the reuse is manufactured),
@@ -736,7 +737,8 @@ witness (`TaintPropagation.cpp` ×2, `OpcodeLowering.h`, `CQLoweringPass.cpp`, `
 
 Enumeration: `grep -nE "\b(<every scrub:: member>)\s*(\.|->)\s*(empty|size)\s*\("` over
 `ir-pass/src` + `ir-pass/include`, plus the reference aliases (`auto &PC = taint.PhiCalls` …; none
-calls `empty`/`size`). **11 sites, 15 gate evaluations; no `size()` gate exists.** Instrument
+calls `empty`/`size`). **13 sites** (⚠ CORRECTED by r3: this said 11 — the uncalled `runOnFunction`
+shim holds two more G1 sites), **15 gate evaluations instrumented; no `size()` gate exists.** Instrument
 (`tools/mk_gate_instr.py` on a copy of `c416f04d`, never committed): every gate evaluation prints
 the live answer AND what the pre-8e5r RAW container would have answered (`rawEmpty()`); a **FLIP** is
 live-empty ∧ raw-non-empty — exactly F-R2-1's shape. Positive control first: on the reviewer's
@@ -752,7 +754,7 @@ modules + the 4 probes (`results/r2_empty_gate_flip_sweep.txt`), every gate reac
 | G5 | `lowerRotations`: `ThetaCalls.empty() && PhiCalls.empty()` (`RotationLowering.cpp`) | "live thetas to lower" | 2097 / 2097 | 0 | **SOUND BY CONSTRUCTION**: the stage lowers only live calls; `declineFrozenWire` behind it walks `Tainted` over the IR, and a module with 0 live thetas has no tainted freeze by Rule 3 |
 | G6 | `warnLiveRecordRotations`: `UserChainedRotations.empty()` (`RotationLowering.cpp`) | "live user chained rotations to report" | 2042 / 2042 | 0 | **SOUND BY CONSTRUCTION**: its loop only reports LIVE members (and it is a WARNING, bd lyyf) |
 | **G7** | `declineLiftedStaleRecordOps`: `LiftedConsumers.empty()` | "**a lift OCCURRED**" (an EVENT) | 2148 / 2148 | **2** (`k1`, `p2_C` — the probes only) | **WRONG — FIXED** (§15.1): now `LiftedMergePhis.empty()`, the event record |
-| G8 | `repropagateControlMerges`: `UntaintedMergeRails.empty()` (`TaintPropagation.cpp`) | "round-2 rails to re-seed from" | 2328 / 2328 | 0 | **SOUND BY CONSTRUCTION**: the only work is re-propagating FROM live rails; an all-dead set leaves nothing to propagate from |
+| G8 | `repropagateControlMerges`: `UntaintedMergeRails.empty()` (`TaintPropagation.cpp`) | "round-2 rails to re-seed from" | 2328 / 2328 | 0 | **SOUND — by the reason r3 N-1 supplies, not the one first written here.** The first ground ("the only work is re-propagating FROM live rails") was INCOMPLETE: the early return also skips `detectAndLowerOnwardControl` (a full second round of detection) and the spec re-plan. The conclusion holds because every recorded rail is a `cqrt_alloc_*` `CallInst` (`ClassicalCallArmEmit.cpp`, `SwitchDataMuxEmit.cpp`, `IOSinkLowering.cpp`) — a runtime call is never trivially dead and no eraser in the window removes one — so the set cannot go all-dead before this gate |
 | G9 | `lowerMeasures`: `MeasureCalls.empty()` (`MeasureLowering.cpp`) | "live measures to lower" | 2071 / 2071 | 0 | same as G5 |
 | G10 | `collapseFlattenedLoopRails`: `InLoopFlattenedPreds.empty()` (`LoopLowering.cpp`) | "a region was emitted into a loop" (an EVENT) | 2447 / 2354 | 0 | **ARGUED, and measured 0**: the loop that follows looks up each LIVE loop block in the table, so an all-dead table asks nothing the early-return skips. Only a recorded Pred that DIED and was replaced by a NEW block of the same loop could matter, and that new block is a different key (absent either way) — the gate cannot change the outcome |
 | G11 | `declineDephasingUnmarkedLoopRails`: `Tainted.empty()` (`LoopLowering.cpp`) | "anything tainted" | 2107 / 2107 | 0 | **SOUND BY CONSTRUCTION**: the stage asks questions of live tainted values only |
@@ -765,14 +767,19 @@ exists needed a hand-built 2-TU program, which is why the probes are in the swee
 
 ### 15.3 F-R2-2 (P2, bd a66j) — the guard
 
-- **The build's own command.** `CMAKE_EXPORT_COMPILE_COMMANDS ON` (top-level `CMakeLists.txt`); the
+- **One of the build's commands.** `CMAKE_EXPORT_COMPILE_COMMANDS ON` (top-level `CMakeLists.txt`); the
   gate takes the CQPass command for `src/TaintPropagation.cpp` from `compile_commands.json`
-  (compiler `/usr/bin/c++`, `-O3 -DNDEBUG`, include paths, `-std=c++17`). Missing database, entry, or
+  (compiler `/usr/bin/c++`, `-O3 -DNDEBUG`, include paths, `-std=c++17`). ⚠ CORRECTED (r3 F-R3-2,
+  bd 7gri): this said "the build's own command"; it is ONE of two — cq-opt compiles the file without
+  `-DCQPass_EXPORTS`. Missing database, entry, or
   any parse error FAILS CLOSED; unknown CLI args exit 2. ⚠ Consequence stated in the docstring: the
   gate checks the **configured** build — a raw member under `#ifndef NDEBUG` is invisible in a Release
   tree (a selftest `CONFIG` control pins exactly that), and is checked when a Debug tree is configured.
-- **Walk every project type it reaches** — project records AND class templates (the pattern, with its
-  type parameters exempt), by value, by POINTER, as a template argument or a `ScrubMap` MAPPED type.
+- **Walk the project types it reaches** — project records AND class-template patterns, by value, as a
+  template argument or `ScrubMap` MAPPED type, and by a pointer spelled as a `cq::` type. ⚠ CORRECTED
+  (r3 F-R3-1, bd wop9): "every project type" was false — a pointer to a LIBRARY table, template
+  SPECIALIZATIONS, a short-name alias shared with an LLVM record, and a pointee outside `cq::` are
+  not followed (§16).
 - **Unqualified names resolved like C++ lookup.** The JSON desugars only the top level, so `R2Rec *`
   arrives unqualified; each such name is resolved innermost-scope-outward in one probe TU, and an
   unresolvable one is refused. (Found by the selftest's own NULL control: the first spelling of this
@@ -783,9 +790,11 @@ exists needed a hand-built 2-TU program, which is why the probes are in the swee
   container KEY. **Stated out of scope** (docstring): an address laundered through a plain integer
   type (to the compiler it IS an integer); other non-`Value` IR-adjacent pointees (`MDNode *`,
   analysis results); state outside `TaintSet` (bd ibtq).
-- **Speed.** A PCH of the headers' third-party includes, built once per run with the same command, is
-  an optimisation only: any failure with it is retried without it, and the selftest's first control
-  pins that the pristine verdict is identical with and without it. ctest `taintset-scrub-guard` +
+- **Speed.** A PCH of the headers' third-party includes, built once per run with the same command.
+  A failure with it is retried without it, and the selftest's first control pins that the PRISTINE
+  verdict is identical with and without it. ⚠ CORRECTED (r3 F-R3-2, bd 7gri): "an optimisation
+  only" was false — a CLEAN verdict with the PCH is never re-checked without it, and r3 built a
+  member the guard misses WITH the PCH and catches WITHOUT it. ctest `taintset-scrub-guard` +
   `-selftest`: **41.3 s wall together** (r2 measured ~109 s for the selftest alone, under load).
 
 Validation (`results/guard_v3_*`): clean header **56 members walked, 0 problems** (57 → 56: the removed
@@ -872,3 +881,43 @@ Final binaries (sha256): `cq-opt` `69250feaf68bbe4952ee3ac791e061a808234383db5a1
 expression; the member and its writer removed). Everything else in `git diff c416f04d..HEAD` is the
 guard tool, the lit/CMake harness, fixtures, records, and comments (the comment-only commit
 `cb041dab` proved mechanically).
+
+
+## 16. After Rule-13 round r3 (2026-09-26) — 8e5r LANDS; the guard's gaps are follow-ups
+
+Record: `review_r3_8e5r/REVIEW.md` + probes, committed verbatim with this section. Verdict
+`CLEAR-WITH-ITEMS`: **F-R2-1's logic fix (bd ec7r) is CLEAR on every attack** and the r2
+measurements were reproduced with the reviewer's own harness (`ab3.py`: full stderr, 0-byte refusal,
+denominator first): null 3260/3260; `c416f04d` vs head 3258 same + 2 A→D (the new fixture and `p2_C`);
+`ba80bda1` vs head 2735/2737 (the k65 pair); head vs debugalloc lifo/nofree 3260/3260 each.
+
+**Coordinator decision:** 8e5r lands now. The guard's remaining gaps are FOLLOW-UPS, not blockers — but
+every text describing the guard must stop claiming what it does not do (L7). This section's commit is
+COMMENT / DOCSTRING / FIXTURE-HEADER / RECORD ONLY, proved mechanically:
+- `tools/taintset_scrub_guard.py`: `track_8e5r_probes/tools/py_docstring_only_check.py` (both versions
+  parsed, every docstring dropped, `ast.dump` compared; null and positive controls first) — **code AST
+  unchanged**.
+- `CMakeLists.txt`, `ir-pass/CMakeLists.txt`, `ir-pass/include/TaintPropagation.h`,
+  `ir-pass/tools/scrub_selftest.cpp`, the fixture: `comment_only_check.py` — **0 non-comment changes**.
+- Rebuilt `cq-opt` bit-identical: `69250feaf68bbe49`.
+
+### 16.1 Dispositions
+
+| id | sev | disposition |
+|---|---|---|
+| F-R3-1 (bd wop9) | P2 | **OPEN, follow-up** — documented as KNOWN GAPS G1–G4 in the guard's docstring (pointer to a library table; template specializations; short-name alias resolution; pointer to a non-`cq::` record); the CMake comment, `TaintPropagation.h`, `scrub_selftest.cpp` and this record (§1, §5, §15.3) no longer claim a closed world. Fix direction is the reviewer's (walk every pointee template's arguments; dump specializations; resolve pointees canonically and dump by qualified name; walk or refuse records outside `llvm::`/`std::` behind a pointer) |
+| F-R3-2 (bd 7gri) | P3 | **OPEN, follow-up** — documented as G5 (one TU: the CQPass command, `-DCQPass_EXPORTS`; cq-opt differs) and G6 (the PCH is not verdict-neutral; a clean verdict is not re-checked without it). The top-level CMake comment and §15.3 corrected. Cheap fix noted by r3: re-run every CLEAN verdict without the PCH, and parse both configurations |
+| F-R3-3 (bd jk56) | P3 | **OPEN, follow-up** — documented as G7 (the handle-in-a-KEY rule is syntactic) and G8 (an allowlisted member exempts its whole type subtree) |
+| N-1 | note | **CORRECTED** — §15.2 G8 row carries the complete ground (the early return also skips round-2 detection and the spec re-plan; the conclusion holds because every recorded rail is a `cqrt_alloc_*` call nothing erases in that window) |
+| N-2 | note | **DONE** — `lowering_reject_lift_resweep_spec_rebuilt_consumer.ll`'s header carries the retirement trigger: when bd 3a43 scopes the re-sweep, the gate choice likely becomes unpinned; re-derive a pin (or record that it is unobservable) rather than flip the CHECK |
+| 11 → 13 sites | cosmetic | **CORRECTED** in §15.2 (two G1 sites in the uncalled `runOnFunction` shim) |
+| `.cache/` | hygiene | `.gitignore` now ignores the clangd index that appears once `compile_commands.json` is exported |
+
+### 16.2 What this leaves true about the guard
+
+It still catches everything r1A, r1B and r2 threw at it (0/15, 0/23, 0/12 missed, unmodified) and its
+own 74 mutants, and it fails closed on a missing database, a parse error and an unknown argument. It
+misses r3's 12 in-contract spellings (G1–G4) and the two configuration/PCH spellings (G5, G6), and the
+key and allowlist rules are shallower than their wording (G7, G8). None of this is a pass defect: the
+pass-level pins of this bead are the per-table self-test (`cq-scrub-selftest`), the k65 / um24 / ec7r
+fixtures and the e2e slice, all red on the oracle and green here.

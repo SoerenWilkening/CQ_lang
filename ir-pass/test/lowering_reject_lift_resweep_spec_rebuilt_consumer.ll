@@ -45,6 +45,17 @@
 ;       return (int)cq_measure(d) + slice();
 ;   }
 ;
+; ⚠ RETIREMENT TRIGGER (Rule-13 r3 N-2, L8): this fixture is the ONLY verdict-level
+; pin of the ec7r gate choice (the lift EVENT `LiftedMergePhis` vs a consumer SET),
+; and it pins it only THROUGH bd test_C_libtooling-3a43's module-wide over-decline
+; — the decline lands in `slice()`, a different function from the lift. When 3a43
+; scopes the re-sweep, this module will likely ACCEPT under EITHER gate, and the
+; gate choice becomes UNPINNED (probably unobservable). Then: do not just flip the
+; CHECK to an accept — RE-DERIVE a pin for the gate (an in-function stale op
+; reachable only through a consumer `specialize()` rebuilds, if one can be built;
+; r2 argued a spec-site consumer starts a fresh wire, so it may not exist), or
+; record in bd ec7r that the choice has become unobservable and why.
+;
 ; Verdicts (3 runs each, `results` in TRACK_8E5R.md §15): def1b088 DECLINE, 818f8afa
 ; DECLINE, ba80bda1 DECLINE, c416f04d ACCEPT (the defect), this tree DECLINE.
 ; The twin with a SURVIVING consumer is `lowering_reject_lift_resweep_surviving_consumer.ll`.

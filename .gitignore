@@ -51,3 +51,5 @@ demo/
 docs/labreport/build/
 docs/labreport/labreport.pdf
 .aider*
+# clangd index (appears once compile_commands.json is exported for the scrub guard, bd a66j)
+.cache/

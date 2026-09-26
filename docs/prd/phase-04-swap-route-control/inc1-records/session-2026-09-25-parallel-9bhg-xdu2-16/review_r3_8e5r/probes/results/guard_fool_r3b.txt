@@ -1,0 +1,16 @@
+ok  control-clean      NULL: pristine  [56 members]
+ok  control-refused    POS: std::set<Value*> by value  [57 members]
+        cq::TaintSet::R3S: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  control-refused    POS: unique_ptr<std::set<Value*>>  [57 members]
+        cq::TaintSet::R3U: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+MISSED                 C1 raw POINTER to a library container of raw Value*: std::set<llvm::Value *> *  [57 members]
+MISSED                 C2 raw POINTER to llvm::DenseMap<llvm::Value *, unsigned>  [57 members]
+MISSED                 C3 raw POINTER to llvm::SmallPtrSet<llvm::Instruction *, 4>  [57 members]
+MISSED                 C4 pointer to a GLOBAL-namespace record holding a raw Value*  [57 members]
+ok  control-refused    C4b the same GLOBAL record held BY VALUE (control: closed world refuses)  [57 members]
+        cq::TaintSet::R3GV: record type `::R3G` is not a scalar, an approved handle/leaf, a scrub:: container or a project record — closed world: approve it in taintset_scrub_guard.py with a reason, or change
+MISSED                 C5 pointer to a record in a NON-cq project namespace holding a raw Value*  [57 members]
+MISSED                 C6 SmallVector of POINTERS to a raw library table  [57 members]
+
+controls bad: 0; attacks 6, MISSED 6
+elapsed 36.7s PCH ok

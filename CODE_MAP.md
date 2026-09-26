@@ -30,7 +30,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2129 physical lines
-- `ir-pass/include/TaintPropagation.h` — 1989 physical lines
+- `ir-pass/include/TaintPropagation.h` — 1992 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1571 physical lines
@@ -41,10 +41,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp` — 1236 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
+- `tools/taintset_scrub_guard.py` — 1148 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1128 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1125 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
-- `tools/taintset_scrub_guard.py` — 1084 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -100,7 +100,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp` — 426 physical lines
 - `ir-pass/src/RegionTreeDetect.cpp` — 425 physical lines
 - `ir-pass/include/WireWalk.h` — 424 physical lines
-- `ir-pass/tools/scrub_selftest.cpp` — 418 physical lines
+- `ir-pass/tools/scrub_selftest.cpp` — 420 physical lines
 - `tests/e2e/slice_libm_real_powf.c` — 418 physical lines
 - `runtime/cq_intrinsic_templates.h` — 407 physical lines
 - `tools/install_cq.py` — 402 physical lines
@@ -180,9 +180,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (1989 lines)
+### `ir-pass/include/TaintPropagation.h` (1992 lines)
 
-- `ir-pass/include/TaintPropagation.h:598` — `isPeelClone`
+- `ir-pass/include/TaintPropagation.h:601` — `isPeelClone`
 
 ### `ir-pass/include/WidthDispatch.h` (245 lines)
 
@@ -1136,24 +1136,24 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `ir-pass/tools/cq_opt_main.cpp:43` — `main`
 
-### `ir-pass/tools/scrub_selftest.cpp` (418 lines)
+### `ir-pass/tools/scrub_selftest.cpp` (420 lines)
 
-- `ir-pass/tools/scrub_selftest.cpp:62` — `expect`
-- `ir-pass/tools/scrub_selftest.cpp:70` — `skipBranch`
-- `ir-pass/tools/scrub_selftest.cpp:78` — `iterCount`
-- `ir-pass/tools/scrub_selftest.cpp:90` — `Fixture`
-- `ir-pass/tools/scrub_selftest.cpp:102` — `term`
-- `ir-pass/tools/scrub_selftest.cpp:103` — `mkAdd`
-- `ir-pass/tools/scrub_selftest.cpp:104` — `mkCall`
-- `ir-pass/tools/scrub_selftest.cpp:105` — `mkPhi`
-- `ir-pass/tools/scrub_selftest.cpp:106` — `mkStore`
-- `ir-pass/tools/scrub_selftest.cpp:107` — `mkBlock`
-- `ir-pass/tools/scrub_selftest.cpp:112` — `mkFunction`
-- `ir-pass/tools/scrub_selftest.cpp:117` — `kill`
-- `ir-pass/tools/scrub_selftest.cpp:121` — `checkSet`
-- `ir-pass/tools/scrub_selftest.cpp:152` — `checkMap`
-- `ir-pass/tools/scrub_selftest.cpp:184` — `checkList`
-- `ir-pass/tools/scrub_selftest.cpp:211` — `main`
+- `ir-pass/tools/scrub_selftest.cpp:64` — `expect`
+- `ir-pass/tools/scrub_selftest.cpp:72` — `skipBranch`
+- `ir-pass/tools/scrub_selftest.cpp:80` — `iterCount`
+- `ir-pass/tools/scrub_selftest.cpp:92` — `Fixture`
+- `ir-pass/tools/scrub_selftest.cpp:104` — `term`
+- `ir-pass/tools/scrub_selftest.cpp:105` — `mkAdd`
+- `ir-pass/tools/scrub_selftest.cpp:106` — `mkCall`
+- `ir-pass/tools/scrub_selftest.cpp:107` — `mkPhi`
+- `ir-pass/tools/scrub_selftest.cpp:108` — `mkStore`
+- `ir-pass/tools/scrub_selftest.cpp:109` — `mkBlock`
+- `ir-pass/tools/scrub_selftest.cpp:114` — `mkFunction`
+- `ir-pass/tools/scrub_selftest.cpp:119` — `kill`
+- `ir-pass/tools/scrub_selftest.cpp:123` — `checkSet`
+- `ir-pass/tools/scrub_selftest.cpp:154` — `checkMap`
+- `ir-pass/tools/scrub_selftest.cpp:186` — `checkList`
+- `ir-pass/tools/scrub_selftest.cpp:213` — `main`
 
 ### `runtime/cq_intrinsic_templates.c` (2355 lines)
 
@@ -8396,36 +8396,36 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/taintset_scrub_guard.py` (1084 lines)
+### `tools/taintset_scrub_guard.py` (1148 lines)
 
-- `tools/taintset_scrub_guard.py:191` — `_base_command`
-- `tools/taintset_scrub_guard.py:254` — `_pch`
-- `tools/taintset_scrub_guard.py:282` — `_compile`
-- `tools/taintset_scrub_guard.py:297` — `_json_docs`
-- `tools/taintset_scrub_guard.py:312` — `_split_top`
-- `tools/taintset_scrub_guard.py:329` — `parse_type`
-- `tools/taintset_scrub_guard.py:374` — `_balanced`
-- `tools/taintset_scrub_guard.py:384` — `_render`
-- `tools/taintset_scrub_guard.py:395` — `_has_handle`
-- `tools/taintset_scrub_guard.py:410` — `Walk.__init__`
-- `tools/taintset_scrub_guard.py:424` — `Walk._is_tparam`
-- `tools/taintset_scrub_guard.py:427` — `Walk.field_type`
-- `tools/taintset_scrub_guard.py:430` — `Walk._t`
-- `tools/taintset_scrub_guard.py:519` — `Walk._named`
-- `tools/taintset_scrub_guard.py:533` — `_walk_record`
-- `tools/taintset_scrub_guard.py:544` — `_walk_record_body`
-- `tools/taintset_scrub_guard.py:571` — `_walk_template`
-- `tools/taintset_scrub_guard.py:586` — `_dump`
-- `tools/taintset_scrub_guard.py:601` — `_requalify`
-- `tools/taintset_scrub_guard.py:605` — `_resolve`
-- `tools/taintset_scrub_guard.py:637` — `_traits`
-- `tools/taintset_scrub_guard.py:673` — `check`
-- `tools/taintset_scrub_guard.py:805` — `_strip_comments`
-- `tools/taintset_scrub_guard.py:843` — `_mutants`
-- `tools/taintset_scrub_guard.py:844` — `_mutants.ins`
-- `tools/taintset_scrub_guard.py:1007` — `selftest`
-- `tools/taintset_scrub_guard.py:1024` — `selftest.run`
-- `tools/taintset_scrub_guard.py:1052` — `main`
+- `tools/taintset_scrub_guard.py:251` — `_base_command`
+- `tools/taintset_scrub_guard.py:316` — `_pch`
+- `tools/taintset_scrub_guard.py:344` — `_compile`
+- `tools/taintset_scrub_guard.py:360` — `_json_docs`
+- `tools/taintset_scrub_guard.py:375` — `_split_top`
+- `tools/taintset_scrub_guard.py:392` — `parse_type`
+- `tools/taintset_scrub_guard.py:437` — `_balanced`
+- `tools/taintset_scrub_guard.py:447` — `_render`
+- `tools/taintset_scrub_guard.py:458` — `_has_handle`
+- `tools/taintset_scrub_guard.py:473` — `Walk.__init__`
+- `tools/taintset_scrub_guard.py:487` — `Walk._is_tparam`
+- `tools/taintset_scrub_guard.py:490` — `Walk.field_type`
+- `tools/taintset_scrub_guard.py:493` — `Walk._t`
+- `tools/taintset_scrub_guard.py:582` — `Walk._named`
+- `tools/taintset_scrub_guard.py:596` — `_walk_record`
+- `tools/taintset_scrub_guard.py:607` — `_walk_record_body`
+- `tools/taintset_scrub_guard.py:634` — `_walk_template`
+- `tools/taintset_scrub_guard.py:649` — `_dump`
+- `tools/taintset_scrub_guard.py:664` — `_requalify`
+- `tools/taintset_scrub_guard.py:668` — `_resolve`
+- `tools/taintset_scrub_guard.py:700` — `_traits`
+- `tools/taintset_scrub_guard.py:736` — `check`
+- `tools/taintset_scrub_guard.py:869` — `_strip_comments`
+- `tools/taintset_scrub_guard.py:907` — `_mutants`
+- `tools/taintset_scrub_guard.py:908` — `_mutants.ins`
+- `tools/taintset_scrub_guard.py:1071` — `selftest`
+- `tools/taintset_scrub_guard.py:1088` — `selftest.run`
+- `tools/taintset_scrub_guard.py:1116` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 
