@@ -1218,34 +1218,40 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
       }
     }
     StringRef OrigW = abiWidthFromType(Cand.Site->getType());  // pre-retarget width.
-    CallInst *OldSite = Cand.Site;
     SpecRecord Rec =
         resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
-    // bd `test_C_libtooling-9bhg` — a REBUILT site (an fp return rewritten to an
-    // i32 handle: `retargetSite` RAUWs and ERASES the old call) must leave no
-    // DANGLING key in the module taint. `buildClone` has always migrated the inner
-    // case (`cloneTaint.Tainted.erase(OldInner)`); the top-level case never did,
-    // and the freed pointer stayed in `taint.Tainted`. MEASURED consequence once
-    // `declineQuantumReturnCalls` was re-asked after this function: a LATER
-    // clone's `ret` value was allocated at the freed address, answered "tainted",
-    // and a correct module (`lpoly(q)` then `lmix(y, q2)`, f80) was refused —
-    // `spec_accept_fp_rebuilt_site_second_clone.ll` (⚠ an allocator-reuse effect
-    // that varies from RUN to run: mutant M18, which deletes this block, is killed
-    // 3/5 under the system allocator and 5/5 under LIFO reuse — bd 9bhg Rule-13
-    // r1B F-9B-3; an earlier note here called it MISSED on a single unlucky run.
-    // The fixture is a FLAKY pin, not a deterministic one). Every stage after this one
-    // that reads `taint.Tainted` by pointer (`lowerOps` over the whole module) was
-    // exposed to the same aliasing before; it is closed here at its source. The
-    // new call's taint is (re-)inserted below. There is no `BirthOrder` to
-    // migrate: none is ever assigned to a Phase-6 call site (only minted rails and
-    // rail-bank seeds get one), so that erase is hygiene, not a behaviour change.
-    if (Cand.Site != OldSite) {
-      taint.Tainted.erase(OldSite);
-      taint.BirthOrder.erase(OldSite);
-      taint.HandleWidth.erase(OldSite);
-      taint.StaleDeclined.erase(OldSite);
-      plan.Pending[i].Site = Cand.Site;
-    }
+    // bd `test_C_libtooling-9bhg` / bd `test_C_libtooling-8e5r` — a REBUILT site
+    // (an fp return rewritten to an i32 handle: `retargetSite` RAUWs and ERASES
+    // the old call) must leave no DANGLING key in the module taint. It does not,
+    // and the reason is NOT this function: every pointer-keyed `TaintSet` table is
+    // SELF-CLEANING (`ScrubOnDelete.h`, bd 8e5r), so the old call's key is dropped
+    // at the `eraseFromParent` inside `retargetSite` itself, before anything can
+    // be allocated at its address. The new call's taint is (re-)inserted below.
+    //
+    // ⚠ HISTORY, corrected at the source (bd 9bhg Rule-13 r1B F-9B-2, r1B-8e5r
+    // F-EB-9). Before bd 8e5r this was a real dangling key. Once 9bhg re-asked
+    // `declineQuantumReturnCalls` after this function, a LATER clone's `ret` value
+    // allocated at the freed address answered "tainted", and a correct module
+    // (`lpoly(q)` then `lmix(y, q2)`, f80) was refused
+    // (`spec_accept_fp_rebuilt_site_second_clone.ll`, flaky from run to run: 3/5
+    // under the system allocator, 5/5 under LIFO reuse).
+    //   * 9bhg fixed it with an erase HERE, after `resolveSite`. That erase ran on a
+    //     pointer `retargetSite` had ALREADY deleted, so it was safe only while
+    //     nothing allocated in between; an erase by a dead address removes
+    //     whatever LIVE object has been revived there. Under 8e5r it is a no-op,
+    //     so it is DELETED (mirroring 8e5r's deletion of the inner-call twin in
+    //     `buildClone`), not moved.
+    //   * The comment it carried said the aliasing "was closed here at its source"
+    //     for every later reader of `taint.Tainted` (`lowerOps` over the whole
+    //     module). That was TRUE OF THIS ONE PRODUCER AND FALSE OF THE CLASS: r1B
+    //     F-9B-1 constructed a `lowerOps` miscompile through a dangling key left by
+    //     `lowerQramReads`/`lowerShadowMemory`, and the class had 29 producers. The
+    //     class is closed by the containers, which scrub at every deletion
+    //     wherever it happens.
+    //   * `plan.Pending[i].Site` is deliberately NOT updated to the rebuilt call.
+    //     Every reader of `Pending` (`detectSpecializations`, the
+    //     `declineTaintEscapes` carve, the round-2 re-plan) runs BEFORE
+    //     `specialize()`, and this loop reads index `i` exactly once.
     // fp-ABI result HandleWidth (bd 3c6m.54): a tainted fp return is an i32 handle
     // at the call site (`retargetSite` rebuilt the call to i32), but its logical
     // width is the ORIGINAL fp width captured above. Record it so a caller CAST off

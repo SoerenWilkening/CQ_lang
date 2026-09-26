@@ -11,17 +11,28 @@
 ;    the second site's RECOMPUTED mask still has slot 0 quantum
 ;    (`__cq_q_lmix_11(%1, %h1)`, not `_10` with an i32 handle in an fp literal
 ;    slot) — mutant M17;
-;  * the ERASED old call's pointer is scrubbed from the module taint. Before the
-;    scrub, the second clone's `ret` value was allocated at the freed address,
-;    answered "tainted", and the post-`specialize()` re-ask of
-;    `declineQuantumReturnCalls` refused this CORRECT module (measured on the
-;    first bd 9bhg subject; the 983f9361 oracle never asked, so the dangling key
-;    had no observable consumer there). ⚠ Being an allocator-reuse effect, that
-;    failure varies from RUN to run (not build to build): with the scrub deleted
-;    it declined 3/5 under the system allocator and 5/5 under LIFO reuse (Rule-13
-;    r1B F-9B-3). So this is a FLAKY pin for the scrub, not a deterministic one.
-;    The deterministic pin is a live-key check (bd 8e5r's scope). Other producers
-;    of the same dangling-key class are bd 8e5r / j8sk.
+;  * the ERASED old call's key must not survive in the module taint. Before it
+;    was removed, the second clone's `ret` value was allocated at the freed
+;    address, answered "tainted", and the post-`specialize()` re-ask of
+;    `declineQuantumReturnCalls` refused this CORRECT module. This was measured
+;    on the first bd 9bhg subject; the 983f9361 oracle never asked, so the
+;    dangling key had no observable consumer there.
+;    - Since bd 8e5r the key is dropped by the self-cleaning `taint.Tainted`
+;      (`ScrubOnDelete.h`) at the deletion inside `retargetSite`.
+;    - 9bhg's own post-hoc erase was deleted at the 8e5r merge (r1B-8e5r F-EB-9):
+;      it erased by an already-dead pointer.
+;    - ⚠ The failure depends on the allocator. Under the system allocator it varies
+;      from RUN to run (9bhg's M18 mutant: 3/5, Rule-13 r1B F-9B-3), so a single
+;      `%cq-opt` run was a FLAKY pin.
+;    - Since the 8e5r merge this file runs three allocator modes, bd 8e5r's
+;      pattern:
+;      - `lifo` (maximal exact-class address reuse, `%debugalloc-cq-opt`) is
+;        FileChecked;
+;      - `nofree` (no reuse, the reference) and the system allocator must be
+;        byte-identical to it.
+;      Positive control (TRACK_9BHG §11): with `Set::Core::keyDeleted`'s
+;      dead-mark disabled, this file goes red in 3 of 3 lit runs.
+;    Other producers of the dangling-key class are bd 8e5r / j8sk.
 ; The stream is byte-identical to the 983f9361 oracle's and to aad63450's.
 ;
 ; Library TU (plain C, no CQ.h) — tests/e2e/spec_fp_arg_lib.c plus:
@@ -42,9 +53,14 @@
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not=__cq_q_lmix_10
-; CHECK-NOT: error
+; Three allocator modes (bd 8e5r's pattern). An `error:` exits non-zero and fails
+; the RUN line itself: no `not`, and stdout alone goes to the files.
+; RUN: env CQ_OPT_DEBUG_ALLOC=lifo %debugalloc-cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.lifo.ll
+; RUN: env CQ_OPT_DEBUG_ALLOC=nofree %debugalloc-cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.nofree.ll
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.sys.ll
+; RUN: %filecheck %s --implicit-check-not=__cq_q_lmix_10 < %t.lifo.ll
+; RUN: diff %t.lifo.ll %t.nofree.ll
+; RUN: diff %t.lifo.ll %t.sys.ll
 ; CHECK-LABEL: define x86_fp80 @slice(
 ; CHECK: %h = call i32 @cqrt_alloc_f80(x86_fp80 0xK4000C000000000000000)
 ; CHECK-NEXT: call void @cqrt_ry_f80(i32 %h, double 5.000000e-01)

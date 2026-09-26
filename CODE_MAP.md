@@ -38,7 +38,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
-- `ir-pass/src/Specialization.cpp` — 1292 physical lines
+- `ir-pass/src/Specialization.cpp` — 1298 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `tools/taintset_scrub_guard.py` — 1148 physical lines
@@ -882,7 +882,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1292 lines)
+### `ir-pass/src/Specialization.cpp` (1298 lines)
 
 - `ir-pass/src/Specialization.cpp:56` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:73` — `isForwardQramLoad`
