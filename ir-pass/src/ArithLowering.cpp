@@ -494,22 +494,43 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     idx/val operands — which is where `P` would be sitting. (When `P` is the
 //     array itself, arm (a) already claimed it.)
 //
+// (d0 — bd test_C_libtooling-vsfp / bd hgwx) A CALL THAT DOES NOT READ `P` AT ALL:
+//     a call to a DEFINED, non-vararg function that passes `P` ONLY in argument
+//     slots whose parameter the callee's body has NO USES of. Such a call can
+//     neither observe `P` nor mint a rail from it, and neither can any adjoint of
+//     it: the only one the pipeline builds is a Phase-6 clone's `_unc` twin, a
+//     verbatim copy of the same body, whose parameter in that slot is unused too.
+//     So it is settled by construction. This is the question bd hgwx asked for —
+//     answered from the CALLEE'S PARAMETER, never from the `__cq_q_` name (r1B's
+//     diagnostic mutant) and never from the clone's verdict alone: a clone that
+//     DOES read the slot — a spec-QUANTUM clone, or a classical-verdict one whose
+//     body computes from `P` and Bennett-reverses it — still counts as a use and
+//     falls through to (d) exactly as before (and a clone never measures or rotates
+//     its argument: `scanBody` refuses a `cq_*` body). WHO REACHES IT: after bd
+//     vsfp's `dropDeadCallArguments` a callee parameter with no uses no longer
+//     receives a non-constant operand, so the only customer is a slot whose use
+//     the CLONE PIPELINE removed (e.g. `volatile int z = a;` in the callee, which
+//     the clone's lowering erases), with a `cq_theta` result as the operand — the
+//     one operand `declinePhantomCloneArgReads` exempts; any other tainted operand
+//     in such a slot has already been declined. Measured: `u = t + q` after
+//     `t = h(q, m)` with that callee lowers IN PLACE like its hand-inlined twin
+//     (spec_accept_phantom_arg_read_theta_source_inplace_mc.ll); without (d0) it
+//     lowers out of place and dephases the following Ry (warned, lyyf-(B)).
+//
 // (d) A RAIL-MINTING PRODUCER READING `P` (`cq_template_*`, `cqrt_qram_load_*`,
 //     a `__cq_q_*` clone call) is the hazard itself — UNLESS its rail is already
 //     FULLY DISCHARGED before `bo`: its `_unc` fired and its rail was freed,
-//     ⚠ FALSE AS WRITTEN FOR ONE MEMBER (bd test_C_libtooling-hgwx; bd d88e
-//     Rule-13 r1B F-DB-1): a `__cq_q_*` clone whose specializer verdict is
-//     CLASSICAL (`ReturnTainted == false` — the clone returns a classical value,
-//     e.g. `h(a, k) = k + 1`) mints NO rail; its result is plain data and there
-//     is no adjoint of it that could ever re-read `P`. It is refused here anyway
-//     (this arm matches by the call's SHAPE, not by the verdict), so `P` is
-//     lowered OUT of place where its hand-inlined twin lowers IN place — see (e)
-//     for what that costs. Measured by r1B's diagnostic mutant (treat every
-//     `__cq_q_*` callee as settled): `j02C` becomes byte-identical to its twin,
-//     sole mover of 330 probes. That mutant is UNSOUND for a QUANTUM-verdict
-//     clone (its out rail's `_unc` does re-read `P`), so a real fix must consult
-//     the specializer's VERDICT, never the name; this comment names the gap, it
-//     does not license the mutant.
+//     ⚠ THIS WAS FALSE AS WRITTEN FOR ONE MEMBER (bd test_C_libtooling-hgwx; bd
+//     d88e Rule-13 r1B F-DB-1): a `__cq_q_*` clone that never READS the slot `P`
+//     sits in (e.g. `h(a, k) = k + 1`) mints no rail from `P`, and there is no
+//     adjoint of it that could ever re-read `P` — yet this arm refused it by the
+//     call's SHAPE, so `P` lowered OUT of place where its hand-inlined twin lowers
+//     IN place (`j02C`; see (e) for what that cost). bd vsfp closes it twice: the
+//     dead-argument drop removes that read before any stage sees it, and arm (d0)
+//     above settles the residual by the callee's PARAMETER. r1B's diagnostic
+//     mutant (every `__cq_q_*` callee settled, by NAME) stays UNSOUND and
+//     unlicensed: a clone that reads `P` keeps an out rail whose `_unc` re-reads
+//     `P`. What reaches this arm now is a producer that genuinely READS `P`.
 //     Otherwise:
 //     both provably before. A freed rail cannot be reversed again — its
 //     `cqrt_free` user makes `recoverDataDag`'s closure scan mark the whole DAG
@@ -568,13 +589,14 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     kept ancestor rail" was this comment's claim and it is FALSE whenever a
 //     NON-DIAGONAL gate later acts on the out-of-place result (bd hgwx; bd d88e
 //     Rule-13 r1B F-DB-1): the kept ancestor stays entangled with the copy and
-//     DEPHASES it. `j02C` (`u = t + q; … Ry(.2) on u`, a classical-verdict clone
-//     call as the refused prior use) measures bit 0 as 0 with probability ≈0.070
-//     where the coherent in-place twin gives ≈0.118 (analytic, r1B §2). The
-//     compiler then says only `non-diagonal gate over a live derived record`
-//     (the owner's lyyf-(B) warning), so what refusal costs is a KEPT ANCESTOR
-//     RAIL PLUS, under a later non-diagonal gate, COHERENCE — which is exactly
-//     today's behavior, and a reason to refuse only what must be refused.
+//     DEPHASES it. `j02C` (`u = t + q; … Ry(.2) on u`, then a clone call that
+//     never read `q` as the refused prior use) measured bit 0 as 0 with
+//     probability ≈0.070 where the coherent in-place twin gives ≈0.118 (analytic,
+//     r1B §2), reported only as `non-diagonal gate over a live derived record`
+//     (the owner's lyyf-(B) warning). So what refusal costs is a KEPT ANCESTOR
+//     RAIL PLUS, under a later non-diagonal gate, COHERENCE — a reason to refuse
+//     only what must be refused. (`j02C` itself no longer reaches here: arm (d0)
+//     and bd vsfp's drop, above.)
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
                        const InteriorDischargePlan *Plan) {
@@ -595,6 +617,24 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
   if (CI->getType()->isVoidTy() && N.starts_with("cqrt_") &&
       !N.starts_with("cqrt_qram_store_"))
     return true;  // (c)
+
+  // (d0) — a call that passes `P` only in slots its callee's body never reads
+  // (bd vsfp / bd hgwx; see above). Asked of the PARAMETER: a slot the body reads
+  // — a spec-quantum clone's, or any real read — falls through to (d) unchanged.
+  if (!Callee->isDeclaration() && !Callee->isVarArg()) {
+    bool PassesP = false, ReadsP = false;
+    for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
+      if (CI->getArgOperand(A) != P)
+        continue;
+      PassesP = true;
+      if (A >= Callee->arg_size() || !Callee->getArg(A)->use_empty()) {
+        ReadsP = true;
+        break;
+      }
+    }
+    if (PassesP && !ReadsP)
+      return true;
+  }
 
   // (d) — a producer whose own rail is provably zeroed AND released before `bo`.
   // Both halves are required: the `_unc` witnesses that the rail was RETURNED TO

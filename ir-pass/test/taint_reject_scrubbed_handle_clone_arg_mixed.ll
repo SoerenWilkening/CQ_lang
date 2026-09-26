@@ -1,4 +1,19 @@
 ; taint_reject_scrubbed_handle_clone_arg_mixed.ll — DECLINE (bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+; ⚠ bd test_C_libtooling-vsfp (2026-09-26) — RE-SPELLED, and why. `@h` used to
+; IGNORE its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now replaces
+; an integer/fp argument whose callee parameter has NO USES by a constant before any
+; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
+; never reaches the specializer: `t` is classical from the start, no gate ever
+; reads it as a handle, and that spelling now ACCEPTS with the hand-inlined twin's
+; stream (bd cepm's over-decline, removed for a callee that ignores the argument) —
+; pinned by `spec_accept_dropped_arg_scrubbed_handle_branch.ll`.
+; The ONE added line in `@h`, `%vsfp.read`, is a DEAD READ that keeps the
+; parameter used, so this file still reaches the fence it was written for. That
+; residual population — a callee that READS the argument yet returns classical — is
+; IR-ONLY from C at -O1 (the library TU deletes a dead read). The `env
+; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
+; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
+; and must re-derive it (CLAUDE.md L8).
 ;
 ; A TWO-TU module (caller TU with `-include CQ.h`, llvm-linked with a plain-C
 ; library TU, as tests/e2e/run_slice_multi.sh builds one). `t = h(q, m)` is
@@ -25,8 +40,9 @@
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
+; CHECK-NOT: CQ_DEADARG_DBG
 ; CHECK: cq taint escape: classical call result used as a quantum register
 
 ; ModuleID = 'llvm-link'
@@ -55,6 +71,7 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
 define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
+  %vsfp.read = mul i32 %0, 3   ; bd vsfp: a DEAD READ keeps this parameter used
   %3 = add nsw i32 %1, 1
   ret i32 %3
 }

@@ -2645,6 +2645,9 @@ add_test(NAME e2e-slice-specialize-twoarm-select
 #   * SPEC-CLASSICAL, SCRUBBED ELSEWHERE (`h(a,k) = k + 1`): the scrub happens but
 #     the lifted base is a `cq_theta` keep root. The correct circuit is the
 #     hand-inlined twin's, so its golden is pinned BYTE-IDENTICAL to the 2-TU one.
+#     ⚠ Since bd vsfp the library stores `a` to a volatile local: an `a` with NO
+#     uses is dropped before the specializer sees the call (`dropDeadCallArguments`)
+#     and the slice would scrub nothing. The golden did not move (measured).
 # ⚠ Both limits named by bd d88e Rule-13 r1B F-DB-6. (1) The spec-quantum golden
 #   pins a DEPHASED stream (the clone's copy-out keeps `q` live when the arm's Ry
 #   fires; `opt` warns `non-diagonal gate over a live derived record`, the owner's
@@ -2680,6 +2683,54 @@ add_test(NAME e2e-spec-lift-scrubbed-elsewhere-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+
+# bd test_C_libtooling-vsfp (P1, SILENT DEPHASING) and its warned sibling bd hgwx.
+# A callee parameter with NO USES (`spec_dropped_arg_lib.c`: `h(a, k) = k + 1`) used
+# to be a Phase-6 slot the clone never read while the CALL still read the operand,
+# keeping a which-path rail the hand-inlined twin never computes alive across a
+# later non-diagonal gate (boolsel: a 4.4 `%out`, silent; inplace: M-C refused the
+# in-place add, warned). `dropDeadCallArguments` replaces such an operand by `0`
+# before any stage reads it. Each 2-TU golden is pinned BYTE-IDENTICAL to its
+# hand-inlined twin's — the definition of the correct circuit; both gates are RED on
+# the pre-vsfp oracle (the 2-TU streams carried the copies / the out-of-place add).
+add_test(NAME e2e-slice-spec-dropped-arg-boolsel
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-boolsel-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-boolsel-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-inplace
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-inplace-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-inplace-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.expected.log")
 
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two

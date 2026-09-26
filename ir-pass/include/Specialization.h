@@ -40,6 +40,28 @@ void specialize(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // that check lives at the carve-out, not here.
 bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 
+// bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the total
+// half of `dropDeadCallArguments` (SpecializeDetect.h). After `specialize()`, a
+// call in a NON-clone function to a function the specializer built
+// (`taint.SpecHandleArgMask`, its own record — never the `__cq_q_` name) that
+// passes a TAINTED operand in a slot whose parameter the built body has NO USES of
+// is a read only the compiler performs: the operand's rail is kept alive for a
+// callee that never looks at it, which is how a which-path rail the hand-inlined
+// twin never computes stays entangled across a later non-diagonal gate (bd
+// vsfp's silent dephasing). Fires `cq specialization: quantum argument to a
+// parameter the lifted callee never reads` (DS_Error, source-located on the
+// call) and returns true.
+//
+// It OBSERVES rather than predicts: it reads the BUILT clone's parameters, so a
+// use the clone pipeline removed after the drop ran (a dead read PredMux's sweep
+// or `lowerCloneSelect`'s tree erase took) is caught too. It says nothing about
+// a slot the clone DOES read (a spec-quantum clone, or a classical-verdict clone
+// whose body computes from the argument and Bennett-reverses it) — that read is
+// real, and the hand-inlined twin performs it as well. Clone BODIES are not
+// scanned: every rail an inner call there could keep alive is uncomputed by the
+// enclosing Bennett wrap before the clone returns.
+bool declinePhantomCloneArgReads(llvm::Module &M, const TaintSet &taint);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_SPECIALIZATION_H_

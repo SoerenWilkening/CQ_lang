@@ -1,4 +1,5 @@
-// SpecializeDetect.cpp — the pure-analysis specialization pre-pass (C-Plan).
+// SpecializeDetect.cpp — the pure-analysis specialization pre-pass (C-Plan),
+// and (bd vsfp) the dead call-argument drop that normalises its input.
 
 #include "SpecializeDetect.h"
 
@@ -9,12 +10,18 @@
 #include "WidthDispatch.h"
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
+#include "llvm/Support/raw_ostream.h"
+#include "llvm/Transforms/Utils/Local.h"
 
+#include <cstdlib>
 #include <string>
 
 using namespace llvm;
@@ -52,7 +59,119 @@ bool readsTainted(const CallInst *CI, const TaintSet &taint) {
   return false;
 }
 
+// bd vsfp — the ONLY attributes a dropped argument slot may carry, on the
+// callee's parameter or at the call site. A null constant satisfies `noundef`
+// and the three are ABI-only; anything else (`range`, `nofpclass`, a string
+// attribute, a future kind) could make the substituted constant a violation,
+// so the slot is left alone for the post-`specialize()` backstop.
+bool dropSafeParamAttrs(AttributeSet AS) {
+  for (Attribute A : AS) {
+    if (!A.isEnumAttribute())
+      return false;
+    switch (A.getKindAsEnum()) {
+    case Attribute::NoUndef:
+    case Attribute::SExt:
+    case Attribute::ZExt:
+    case Attribute::InReg:
+      continue;
+    default:
+      return false;
+    }
+  }
+  return true;
+}
+
+// bd vsfp — delete `Root` and the part of its operand cone that dies with it,
+// `RecursivelyDeleteTriviallyDeadInstructions`' walk with ONE difference: a CALL
+// is never deleted, whatever LLVM thinks of its side effects. A dead `cq_theta`
+// is the user's gate (CLAUDE.md §4i: "never this stage's to erase, WHATEVER ITS
+// USE COUNT"), and a dead call to a `memory(none)` user function is kept too so
+// the stage has one rule, not a curated list. `clang -O1` keeps both in the
+// hand-inlined twin as well (`cq_theta` carries no attributes in `CQ.h`).
+void deleteDeadOperandCone(Instruction *Root) {
+  auto deletable = [](Instruction *I) {
+    return I->use_empty() && !isa<CallBase>(I) && isInstructionTriviallyDead(I);
+  };
+  if (!deletable(Root))
+    return;
+  SmallVector<Instruction *, 16> Dead{Root};
+  while (!Dead.empty()) {
+    Instruction *I = Dead.pop_back_val();
+    salvageDebugInfo(*I);
+    for (Use &OpU : I->operands()) {
+      Value *OpV = OpU.get();
+      OpU.set(nullptr);
+      auto *OpI = dyn_cast_or_null<Instruction>(OpV);
+      // An operand is queued at most once: only the use that EMPTIES it pushes.
+      if (OpI && deletable(OpI))
+        Dead.push_back(OpI);
+    }
+    I->eraseFromParent();
+  }
+}
+
 }  // namespace
+
+bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
+  // The front-end intrinsic sites are skipped by MEMBERSHIP (the
+  // `detectSpecializations` rule, never a name prefix). Their callees are
+  // declarations in every well-formed input, so this is a belt.
+  SmallPtrSet<const CallInst *, 16> Intrinsics = intrinsicSites(taint);
+  bool Changed = false;
+  // Fixpoint: a drop inside `h`'s body can empty `h`'s own parameter
+  // (`h(a, k) { return h2(a, k); }` with `h2` ignoring `a`), which licenses a
+  // drop at `h`'s callers on the next turn. Terminates: every drop replaces a
+  // NON-constant operand by a constant, and constants are never revisited.
+  for (bool Again = true; Again;) {
+    Again = false;
+    // Snapshot the call sites first: a deleted cone can reach an instruction
+    // laid out AFTER the call (a header phi's back-edge incoming), so no block
+    // iterator may be live across `deleteDeadOperandCone`. The calls themselves
+    // survive — the cone walk never deletes a call.
+    SmallVector<CallInst *, 32> Sites;
+    for (Function &F : M) {
+      if (F.isDeclaration())
+        continue;
+      for (BasicBlock &BB : F)
+        for (Instruction &I : BB)
+          if (auto *CI = dyn_cast<CallInst>(&I); CI && !Intrinsics.count(CI))
+            Sites.push_back(CI);
+    }
+    for (CallInst *CI : Sites) {
+      Function *Callee = CI->getCalledFunction();
+      if (!Callee || !Callee->hasExactDefinition() || Callee->isVarArg() ||
+          CI->getFunctionType() != Callee->getFunctionType())
+        continue;
+      for (unsigned A = 0, E = Callee->arg_size(); A < E; ++A) {
+        Value *Op = CI->getArgOperand(A);
+        if (isa<Constant>(Op))
+          continue;
+        Argument *P = Callee->getArg(A);
+        Type *Ty = P->getType();
+        if (!Ty->isIntegerTy() && !Ty->isFloatingPointTy())
+          continue;
+        if (!P->use_empty())
+          continue;
+        if (!dropSafeParamAttrs(Callee->getAttributes().getParamAttrs(A)) ||
+            !dropSafeParamAttrs(CI->getAttributes().getParamAttrs(A)))
+          continue;
+        // Debug lever (env-gated, no behaviour change; the CQ_SPEC_DBG
+        // precedent): one line per drop, so a census can list the modules this
+        // stage touches — a decline fixture whose subject it removes can keep
+        // its STRING under another owner, which no stdout/stderr A/B can see.
+        if (::getenv("CQ_DEADARG_DBG"))
+          errs() << "CQ_DEADARG_DBG: drop arg " << A << " of @"
+                 << Callee->getName() << " in @" << CI->getFunction()->getName()
+                 << (isa<Instruction>(Op) ? " (inst)" : " (arg)") << "\n";
+        CI->setArgOperand(A, Constant::getNullValue(Ty));
+        if (auto *OpI = dyn_cast<Instruction>(Op))
+          deleteDeadOperandCone(OpI);
+        Changed = Again = true;
+      }
+    }
+  }
+  return Changed;
+}
 
 void detectSpecializations(Module &M, const TaintSet &taint, WidthDispatch &wd,
                            SpecPlan &out,

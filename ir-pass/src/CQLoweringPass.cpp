@@ -127,6 +127,35 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return PreservedAnalyses::all();
 
+  // bd `test_C_libtooling-vsfp` (P1) / bd `hgwx` — THE DEAD CALL-ARGUMENT DROP
+  // (`SpecializeDetect.h`): an integer/fp argument whose callee parameter has no
+  // uses becomes a null constant and its now-dead cone is deleted, which is what
+  // `clang -O1` does to the hand-inlined twin. Without it a Phase-6 clone that
+  // never reads its masked slot was still PASSED the operand, and that phantom
+  // read kept a which-path rail (a 4.4 bool-select `%out`, a 6.5 `%out`, a
+  // template rail) alive and entangled across a later non-diagonal gate on the
+  // register it copies — a dephased circuit at exit 0, stage 2b clean.
+  //
+  // ⚠ THE SLOT IS THE ARGUMENT, AND IT IS *FIRST*. The operand has to be gone
+  // before ANY stage reads it: before `detectSpecializations` computes a mask
+  // over it, before round-1 control emission mints a merge rail for it (a 4.4
+  // select, a 6.5 arm), and before round 2's re-detection (bd 9paa) makes a
+  // `g(%out)` site out of it. After emission a dropped operand would leave its
+  // rail minted, orphaned and entangled — the defect in another spelling. And
+  // the pre-passes below (the by-ref inliner, the rail bank, the volatile and
+  // fp80 folds, PredMux, the unroll and ctlz pre-passes) must see the TWIN'S IR,
+  // not a tainted cone the twin never had, for their verdicts to be the twin's.
+  // It needs taint only for the intrinsic-site membership skip; it is otherwise
+  // structural, so the full re-`propagate` after it is exactly the restart every
+  // fixpoint below performs (the dropped operand was the ONLY tainted input of
+  // the call result, which must lose that taint). It SHRINKS the taint set and
+  // grows nothing, so it owes no `adjudicateTaintDelta`.
+  //
+  // It is a PREDICTOR (a parameter with no uses in the callee is a slot the clone
+  // will not read). The OBSERVER is `declinePhantomCloneArgReads` after
+  // `specialize()` — see there.
+  if (dropDeadCallArguments(M, taint))
+    taint = propagate(M, wd);
 
   // p119: tainted by-ref MATH (frexp/modf/remquo) recognition is REMOVED — those
   // are library functions, now source-injected, not name-recognized. A tainted
@@ -953,6 +982,27 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
+  // bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the TOTAL
+  // half of `dropDeadCallArguments` (the predictor at the top of this function).
+  // It OBSERVES the built clones: a call here that passes a quantum operand to a
+  // parameter the clone never reads keeps that operand's rail alive for nobody,
+  // and a derived rail kept alive that way dephases a later non-diagonal gate on
+  // the register it copies (bd vsfp) — so it declines loudly, never warns.
+  //
+  // ⚠ THE SLOT: after `specialize()`, the first point at which the clone bodies
+  // are FINAL (a use the clone pipeline removed is visible only here), and at the
+  // END of the post-`specialize()` decline chain — after the bd d88e lift
+  // re-ask, the bd 2qyz re-sweep, the bd l3oi fence, the bd 3d8q stale-reader
+  // backstop and the two loop re-asks above — so it only ever speaks where
+  // nothing else did. That is the twin-parity argument, not a convenience: the
+  // hand-inlined twin never computes the phantom operand, so any OTHER owner that
+  // fires here fires on the twin too and must keep its string
+  // (`LLVMContext::diagnose` exits on the first `DS_Error`, bd br4a). Before
+  // `lowerRotations`, which RAUWs every `cq_theta` result to its handle. Nothing
+  // between `specialize()` and here writes `taint.Tainted`, so the taint it reads
+  // is FINAL.
+  if (declinePhantomCloneArgReads(M, taint))
+    return PreservedAnalyses::none();
 
   lowerRotations(M, wd, taint, &plan);
   // ── bd `xdu2` / L-1a W1 PIECE 2 — the rail-bank cell TYPE REWRITE,
@@ -1148,6 +1198,18 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (taint.ThetaCalls.empty() && taint.PhiCalls.empty() &&
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
+
+  // bd `test_C_libtooling-vsfp` — the dead call-argument drop, mirrored in this
+  // entry point too (twin-pipeline parity is MANDATORY, WI-1.12). FIRST, before
+  // any stage reads an argument; see run() for the slot argument. Module-wide,
+  // like `detectSpecializations` below (AXIS-F).
+  if (dropDeadCallArguments(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // p119: by-ref math canonicalization removed (library functions, source-injected
   // not recognized) — see run(). Twin-pipeline parity preserved by the removal in
@@ -1498,6 +1560,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
+  // bd `test_C_libtooling-vsfp` — the phantom-read postcondition, mirrored in this
+  // entry point too (twin-pipeline parity is MANDATORY, WI-1.12). Same slot, last
+  // in the post-`specialize()` decline chain; see run().
+  if (declinePhantomCloneArgReads(M, taint))
+    return false;
 
   lowerRotations(M, wd, taint, &plan);
   // ── bd `xdu2` / L-1a W1 PIECE 2 — the rail-bank cell TYPE REWRITE,

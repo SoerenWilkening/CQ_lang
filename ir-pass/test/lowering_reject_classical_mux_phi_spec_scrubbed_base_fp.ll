@@ -1,4 +1,20 @@
 ; lowering_reject_classical_mux_phi_spec_scrubbed_base_fp.ll — DECLINE (bd test_C_libtooling-d88e, P1 silent miscompile, found by
+; ⚠ bd test_C_libtooling-vsfp (2026-09-26) — RE-SPELLED, and why. `@hf` used to
+; IGNORE its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now replaces
+; an integer/fp argument whose callee parameter has NO USES by a constant before any
+; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
+; never reaches the specializer: `t` is classical from the start and the
+; classical-mux guard itself declines with this very string — the verdict AND the
+; string survived while the SUBJECT (the d88e re-ask) vanished, which no stdout/stderr
+; A/B can see (found by the `CQ_DEADARG_DBG` census: 33 lit modules touched).
+; The ONE added line in `@hf`, `%vsfp.read`, is a DEAD READ that keeps the
+; parameter used, so this file still reaches the fence it was written for. That
+; residual population — a callee that READS the argument yet returns classical — is
+; IR-ONLY from C at -O1 (the library TU deletes a dead read). The `env
+; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
+; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
+; and must re-derive it (CLAUDE.md L8).
+;
 ; bd 9bhg's Rule-13 round r1A, F-9A-1): the f64 register (a `double` spec site whose clone returns the classical `k + 1.0`; `t` is a `cq_theta_f64` register at round 1).
 ;
 ; A TWO-TU module: the caller TU (`-include CQ.h`) llvm-linked with a plain-C
@@ -42,8 +58,9 @@
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
+; CHECK-NOT: CQ_DEADARG_DBG
 ; CHECK: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
 
 ; ModuleID = 'llvm-link'
@@ -81,6 +98,7 @@ declare double @cq_measure_f64(double noundef) local_unnamed_addr #2
 
 ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
 define noundef double @hf(double noundef %0, double noundef %1) local_unnamed_addr #3 {
+  %vsfp.read = fmul double %0, 3.000000e+00   ; bd vsfp: a DEAD READ keeps this parameter used
   %3 = fadd double %1, 1.000000e+00
   ret double %3
 }

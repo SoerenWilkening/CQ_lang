@@ -39,6 +39,7 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -1166,6 +1167,64 @@ bool shouldSpecialize(const CallInst *CI, const SpecPlan &plan) {
   for (const SpecCandidate &C : plan.Pending)
     if (C.Site == CI)
       return true;
+  return false;
+}
+
+// bd `test_C_libtooling-vsfp` — see Specialization.h. Mirrored
+// character-for-character by `spec_reject_phantom_arg_read*.ll`.
+static constexpr char kMsgPhantomArgRead[] =
+    "cq specialization: quantum argument to a parameter the lifted callee never "
+    "reads";
+
+bool declinePhantomCloneArgReads(Module &M, const TaintSet &taint) {
+  for (Function &F : M) {
+    if (F.isDeclaration() || taint.SpecHandleArgMask.count(&F))
+      continue;  // a clone / `_unc` twin body: its own Bennett wrap discharges.
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        if (!CB)
+          continue;
+        const Function *Callee = CB->getCalledFunction();
+        if (!Callee || Callee->isDeclaration() ||
+            !taint.SpecHandleArgMask.count(Callee))
+          continue;
+        // EVERY slot, not only the detection mask's: the question is whether
+        // the body reads the parameter, and a slot that became tainted after
+        // detection (round 2) is a phantom read on exactly the same terms.
+        for (unsigned A = 0, E = std::min<unsigned>(CB->arg_size(),
+                                                    Callee->arg_size());
+             A < E; ++A) {
+          if (!Callee->getArg(A)->use_empty())
+            continue;
+          Value *Op = CB->getArgOperand(A);
+          if (!taint.Tainted.count(Op))
+            continue;
+          // A `cq_theta` RESULT is the user's own register (a source, or the
+          // same register rotated in place): the phantom read neither mints
+          // nor keeps alive a rail the hand-inlined twin lacks — `clang -O1`
+          // never deletes a `cq_theta` call, and nothing discharges a user
+          // register. That is r2A's harmless quadrant ("theta-source p",
+          // probe b3), and declining it would be an over-decline the twin does
+          // not share (r2A probe `cv9S`: `volatile int z = a;` in the callee,
+          // which the clone pipeline erases, leaving the parameter unread). The
+          // one thing such a read could still do — make M-C's G7 count the call
+          // as an unsettled prior reader of the register and lower a later
+          // `u = t + q` OUT of place (bd hgwx) — is closed by `priorUseIsSettled`
+          // arm (d0), which asks the same question of the callee's PARAMETER
+          // (spec_accept_phantom_arg_read_theta_source_inplace_mc.ll). What
+          // remains is a SPURIOUS lyyf-(B) warning (M-A classifies every
+          // `__cq_q_*` result as a record by name — bd jr8q) on a stream that is
+          // the twin's. Membership, never a name test.
+          if (auto *OpCI = dyn_cast<CallInst>(Op);
+              OpCI && llvm::is_contained(taint.ThetaCalls, OpCI))
+            continue;
+          F.getContext().diagnose(DiagnosticInfoUnsupported(
+              F, kMsgPhantomArgRead, CB->getDebugLoc()));
+          return true;
+        }
+      }
+  }
   return false;
 }
 
