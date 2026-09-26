@@ -9,6 +9,12 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# bd test_C_libtooling-a66j (Rule-13 r2 F-R2-2): `taintset-scrub-guard` parses
+# `TaintPropagation.h` with the REAL build's compiler and flags (defines incl.
+# `-DNDEBUG`, include paths, `-std`), read from this file — a guard that parsed
+# with other flags missed a raw member inside `#ifdef NDEBUG`.
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 # Propagate -Wall -Wextra to every sub-build (warnings only, not -Werror,
 # so pre-existing diagnostics in subprojects don't break the build today).
 add_compile_options(-Wall -Wextra)

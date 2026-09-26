@@ -191,26 +191,23 @@ set_tests_properties(ir-pass-scrub-on-delete-selftest-sysalloc
   PROPERTIES ENVIRONMENT "CQ_OPT_DEBUG_ALLOC=")
 # The STRUCTURAL half: no raw pointer-bearing member may be (re)added to
 # `cq::TaintSet`, and every self-cleaning one must be exercised by the selftest
-# above. ASKED OF THE COMPILER (Rule-13 r1A F-EA-2 / r1B F-EB-2): the gate
-# compiles the header with LLVM 19's clang++, walks `TaintSet`'s fields with
-# their DESUGARED types from `-ast-dump=json`, and asks clang `is_base_of<
-# llvm::Value, T>` about every pointee. `--selftest` is its own mutant
-# validation (both Rule-13 fool corpora + its own mutants, each required to be
-# refused for the RIGHT reason). No clang++ next to the LLVM tools = the gate
-# FAILS CLOSED, never skips.
+# above. ASKED OF THE COMPILER (Rule-13 r1A F-EA-2 / r1B F-EB-2) WITH THE BUILD'S
+# OWN COMMAND (r2 F-R2-2 / bd a66j): the gate reads the CQPass compile command for
+# `src/TaintPropagation.cpp` from `compile_commands.json` (exported by the top-level
+# CMakeLists — same compiler, defines incl. `-DNDEBUG`, include paths, `-std`),
+# parses `TaintSet` with `-ast-dump=json`, walks its fields' DESUGARED types, and
+# asks the compiler `is_base_of<llvm::Value, T>` about every pointee. `--selftest`
+# is its own mutant validation (all three Rule-13 fool corpora + its own mutants,
+# each required to be refused for the RIGHT reason). A missing compile database
+# or a parse error = the gate FAILS CLOSED, never skips.
 find_program(CQ_SCRUB_GUARD_PYTHON NAMES python3 python)
-find_program(CQ_SCRUB_GUARD_CLANGXX NAMES clang++ HINTS "${LLVM_TOOLS_BINARY_DIR}" NO_DEFAULT_PATH)
-if(NOT CQ_SCRUB_GUARD_CLANGXX)
-  set(CQ_SCRUB_GUARD_CLANGXX "${LLVM_TOOLS_BINARY_DIR}/clang++")  # absent: the gate fails loudly
-endif()
-list(GET LLVM_INCLUDE_DIRS 0 _CQ_SCRUB_GUARD_LLVM_INC)
 if(CQ_SCRUB_GUARD_PYTHON)
   add_test(NAME taintset-scrub-guard
     COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py"
-            --clang "${CQ_SCRUB_GUARD_CLANGXX}" --llvm-include "${_CQ_SCRUB_GUARD_LLVM_INC}")
+            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json")
   add_test(NAME taintset-scrub-guard-selftest
     COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py"
-            --clang "${CQ_SCRUB_GUARD_CLANGXX}" --llvm-include "${_CQ_SCRUB_GUARD_LLVM_INC}" --selftest)
+            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json" --selftest)
 endif()
 
 # LIT/FileCheck harness for the pass. Lives in test/ alongside the *.ll
