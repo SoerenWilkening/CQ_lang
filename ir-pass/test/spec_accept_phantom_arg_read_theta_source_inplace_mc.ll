@@ -1,48 +1,60 @@
 ; spec_accept_phantom_arg_read_theta_source_inplace_mc.ll — ACCEPT, IN PLACE like the
-; hand-inlined twin (bd test_C_libtooling-hgwx's C-reachable RESIDUAL after bd vsfp's
-; drop; M-C `priorUseIsSettled` arm (d0)).
+; hand-inlined twin (bd test_C_libtooling-vsfp / bd hgwx — M-C `priorUseIsSettled` arm
+; (d0)). Re-spelled in ROUND 2, see below.
 ;
-; bd hgwx's `j02C` (`t = h(q, m); u = t + q; ... Ry(.2) on u`) with the callee's
-; parameter READ by `volatile int z = a;` — so the dead-argument drop leaves the call
-; alone, the clone's own lowering erases the store, and the built `__cq_q_h_01` never
-; reads `q`. `q` is a `cq_theta` result, which `declinePhantomCloneArgReads` exempts, so
-; the module reaches `lowerOps`. There, on the oracle (`main` aee8f4f8) and before arm
-; (d0), M-C's G7 counted that phantom call as an UNSETTLED prior reader of `q` and
-; lowered `u = t + q` OUT of place (`cq_template_add_i32_hl`) — the Ry(.2) then acted on
-; the copy while `q` kept the which-value record: DEPHASED (hgwx's analytic 0.070 vs
-; 0.118). Arm (d0) asks the CALLEE'S PARAMETER: a call that passes `q` only in slots its
-; body never reads does not read `q`, and neither can its `_unc` twin. The add lowers IN
-; PLACE (`cqrt_addc_i32` on `q`'s handle) and the gate stream is TRACE-IDENTICAL to the
-; twin's (`volatile int z = q; int t = m + 1; ...`), measured.
+; `t = h(q, m)` passes `q` only in a slot the specializer RECORDED dead in the built clone,
+; so arm (d0) — asked by CALLING `isRecordedDeadSlot`, the one owner of "slot unread" —
+; settles the call as a prior user of `q`, and `u = t + q` lowers IN PLACE
+; (`cqrt_addc_i32(q, t)`), as in its twin (`int t = m + 1;`). Without (d0) (mutant D1) it
+; lowers OUT of place and the later Ry on `u` dephases `q` (warned, lyyf-(B)).
 ;
-; ⚠ STILL WARNED, AND THE WARNING IS SPURIOUS: M-A's `isCloneCallHop` classifies every
-; non-void `__cq_q_*` result as a RECORD by NAME, and a classical-verdict clone's result
-; is plain data. The stream is the twin's; the warning is filed as bd jr8q and is
-; deliberately NOT pinned here either way. RED on the oracle (out-of-place add).
+; ⚠ WHY HAND-WRITTEN IR (bd vsfp round 2). The callee's only read of `a` is a
+; BRANCH-ONLY one — an empty diamond on `a > 3`. The pass's liveness predicate has no
+; control dependence (`DeadValueLiveness.h` LIMITS), so `a` is LIVE in the ORIGINAL
+; `@h` and the dead-argument drop (both slots) does NOT fire; the CLONE's own control
+; flatten then removes the branch, and `buildClone` RECORDS slot 0 dead
+; (`taint.SpecDeadArgMask`). That is the one route by which a phantom read still
+; reaches the post-`specialize()` backstop. It is IR-only: `clang -O1` deletes an
+; empty diamond in the library TU. Round 1 spelled this file with `volatile int z = a;`,
+; which bd vsfp r1B F-VB-3 showed is erased by the MODULE fenv pre-pass on the
+; ORIGINAL callee — predictable pre-emission, and since round 2 the drop's slot B
+; predicts it (see `spec_reject_phantom_arg_read_volatile_callee.ll`, now an accept).
 ;
-; Caller TU (clang -O1 -include CQ.h):
-;   #include <stdlib.h>
-;   int h(int a, int k);
-;   int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = h(q, m); int u = t + q; int r = u; if (m > 3) r = cq_theta(u, .2); return cq_measure(r); }
-; Library TU (plain C, no CQ.h):
-;   int h(int a, int k) { volatile int z = a; return k + 1; }
+; Caller: `int q = cq_theta(m, .5); int t = h(q, m); int u = t + q; int r = u; if (m > 3) r = cq_theta(u, .2); return cq_measure(r);`
 ;
-; Regenerate (the tests/e2e/run_slice_multi.sh recipe, clang/llvm-link 19):
-;   clang -O1 -emit-llvm -S -I<repo>/include -include CQ.h caller.c -o caller.ll
-;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
-;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=INPLACE < %t.cqd0.ll
-; CHECK-LABEL: define i32 @main(
-; CHECK:      [[Q:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 %{{[0-9]+}})
-; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %{{[0-9]+}})
-; CHECK-NEXT: call void @cqrt_addc_i32(i32 [[Q]], i32 [[T]])
-; CHECK:      call void @cqrt_ry_i32(i32 [[Q]], double 2.000000e-01)
-; CHECK:      call i32 @cqrt_measure_i32(i32 [[Q]])
-; INPLACE-NOT: cq_template_add_i32
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
+;
+; The ordered call sequence of @main (derived from the lowered module; SSA names
+; wildcarded, constants — every dropped `0` and every angle — kept):
+; Between consecutive matches NO other runtime/clone call may appear, so the
+; runtime stream is pinned EXACTLY, not as a subsequence.
+; CHECK-LABEL: define {{.*}}@main(
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @atoi(ptr nocapture noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_addc_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 2.000000e-01)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: ret i32
+;
+; Callees the ORACLE emitted in @main and this lowering must not:
+; NEG-LABEL: define {{.*}}@main(
+; NEG-NOT: @cq_template_add_i32_hl(
+; NEG: ret i32
+; NODROP-NOT: CQ_DEADARG_DBG
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"
@@ -79,12 +91,13 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: nofree norecurse nounwind ssp memory(inaccessiblemem: readwrite) uwtable
 define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
-  %3 = alloca i32, align 4
-  call void @llvm.lifetime.start.p0(i64 4, ptr nonnull %3)
-  store volatile i32 %0, ptr %3, align 4, !tbaa !10
-  %4 = add nsw i32 %1, 1
-  call void @llvm.lifetime.end.p0(i64 4, ptr nonnull %3)
-  ret i32 %4
+  %vsfp.c = icmp sgt i32 %0, 3   ; a BRANCH-ONLY read: live in @h, removed by the CLONE's own flatten
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
+  %vsfp.r = add nsw i32 %1, 1
+  ret i32 %vsfp.r
 }
 
 ; Function Attrs: nocallback nofree nosync nounwind willreturn memory(argmem: readwrite)

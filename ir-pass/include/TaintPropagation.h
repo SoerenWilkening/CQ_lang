@@ -898,6 +898,18 @@ struct TaintSet {
   // re-derived from a name prefix (CLAUDE.md §4f (P4)).
   ScrubMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
 
+  // bd `test_C_libtooling-vsfp` round 2 — the SPECIALIZER'S record of which
+  // parameters of each clone it built are DEAD (bit i set ⇔ parameter i reaches no
+  // live root of the clone body), computed by the ONE liveness predicate
+  // (`DeadValueLiveness.h`) on the clone's STOCK-OPCODE body — after its control
+  // flattening and inner-call retargeting, before `lowerCloneSelect`/`lowerOps`
+  // turn every read into a runtime call. Written ONLY by `buildClone`; read by
+  // `isRecordedDeadSlot` (the liveness predicate's call-slot rule), the
+  // phantom-read backstop `declinePhantomCloneArgReads`, and M-C's
+  // `priorUseIsSettled` arm (d0). A function without an entry is a function the
+  // specializer did not build (or a `_unc` twin): every slot counts as read.
+  ScrubMap<const llvm::Function *, uint64_t> SpecDeadArgMask;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal

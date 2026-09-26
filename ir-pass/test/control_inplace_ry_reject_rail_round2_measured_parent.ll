@@ -94,10 +94,14 @@ define range(i32 -2147483548, -2147483648) i32 @ext_f(i32 noundef %0) local_unna
   ret i32 %2
 }
 
-; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
-define void @ext_sink(i32 noundef %0) local_unnamed_addr #2 {
-  ret void
-}
+; bd vsfp round 2: `ext_sink` is now an EXTERNAL declaration (a body in a TU this
+; module does not contain). Its linked body was empty and side-effect-free, so the
+; dead-argument drop's liveness predicate saw `ext_sink(keep)` as a DEAD call and
+; deleted it — with it the opaque diamond this file's header calls load-bearing, and
+; the module fell back to the hcrg `control flow` decline (measured). The twin with
+; the empty body visible would lose the diamond the same way; an opaque sink is what
+; the header means by "opaque", so it is spelled that way now.
+declare void @ext_sink(i32 noundef) local_unnamed_addr
 
 attributes #0 = { nounwind ssp uwtable "frame-pointer"="all" "min-legal-vector-width"="0" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }
 attributes #1 = { "frame-pointer"="all" "no-trapping-math"="true" "stack-protector-buffer-size"="8" "target-cpu"="penryn" "target-features"="+cmov,+cx16,+cx8,+fxsr,+mmx,+sahf,+sse,+sse2,+sse3,+sse4.1,+ssse3,+x87" "tune-cpu"="generic" }

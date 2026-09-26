@@ -1,0 +1,325 @@
+diff --git a/ir-pass/test/taint_accept_spec_classical_return.ll b/ir-pass/test/taint_accept_spec_classical_return.ll
+index dd0a0e07..002ca81e 100644
+--- a/ir-pass/test/taint_accept_spec_classical_return.ll
++++ b/ir-pass/test/taint_accept_spec_classical_return.ll
+@@ -1,4 +1,20 @@
+ ; taint_accept_spec_classical_return.ll — ACCEPT (bd test_C_libtooling-9bhg).
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
++; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's dead `mul` stopped keeping the
++; parameter used once the drop asked LIVENESS instead of `use_empty()` — a value that
++; reaches no root is dead. A branch condition IS a liveness root (the predicate has
++; no control dependence — `DeadValueLiveness.h` LIMITS), so this read keeps the
++; parameter live in the ORIGINAL callee; the clone's own flatten then removes it,
++; the specializer RECORDS the slot dead, and the operand here is a `cq_theta` result
++; (the backstop's one exemption) or the fixture says otherwise. A predicate WITH
++; control dependence (ADCE) retires this subject: the pin below turns red.
+ ;
+ ; A TWO-TU module: the caller TU (`-include CQ.h`) llvm-linked with a plain-C
+ ; library TU, as tests/e2e/run_slice_multi.sh builds one (single-TU -O1 deletes
+@@ -32,8 +48,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @f(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+@@ -45,7 +62,11 @@
+ ; CHECK: [[R:%[0-9]+]] = tail call i32 @f(i32 noundef %5)
+ ; CHECK-NEXT: ret i32 [[R]]
+ ; CHECK-LABEL: define internal i32 @__cq_q_h_01(
+-; CHECK-NEXT: add nsw i32 %1, 1
++; (bd vsfp round 2: the clone's flatten leaves the branch-only read's join block label
++; as the entry block's name, so this line is CHECK, not CHECK-NEXT; nothing else
++; precedes the `add`.)
++; CHECK-NOT: cq{{rt|_template}}_
++; CHECK: add nsw i32 %1, 1
+ ; CHECK-NEXT: ret i32
+ 
+ ; ModuleID = 'llvm-link'
+@@ -76,6 +97,11 @@ declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #3
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_accept_spec_classical_return_arith.ll b/ir-pass/test/taint_accept_spec_classical_return_arith.ll
+index c674b354..445a9f43 100644
+--- a/ir-pass/test/taint_accept_spec_classical_return_arith.ll
++++ b/ir-pass/test/taint_accept_spec_classical_return_arith.ll
+@@ -1,4 +1,20 @@
+ ; taint_accept_spec_classical_return_arith.ll — ACCEPT (bd test_C_libtooling-9bhg).
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
++; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's dead `mul` stopped keeping the
++; parameter used once the drop asked LIVENESS instead of `use_empty()` — a value that
++; reaches no root is dead. A branch condition IS a liveness root (the predicate has
++; no control dependence — `DeadValueLiveness.h` LIMITS), so this read keeps the
++; parameter live in the ORIGINAL callee; the clone's own flatten then removes it,
++; the specializer RECORDS the slot dead, and the operand here is a `cq_theta` result
++; (the backstop's one exemption) or the fixture says otherwise. A predicate WITH
++; control dependence (ADCE) retires this subject: the pin below turns red.
+ ;
+ ; A TWO-TU module (caller TU `-include CQ.h`, llvm-linked with a plain-C library
+ ; TU, as tests/e2e/run_slice_multi.sh builds one). `f` returns `t + cq_measure(q)`
+@@ -23,8 +39,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @f(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+@@ -75,6 +92,11 @@ declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #3
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_accept_spec_classical_return_branch.ll b/ir-pass/test/taint_accept_spec_classical_return_branch.ll
+index 46528f16..e59291c7 100644
+--- a/ir-pass/test/taint_accept_spec_classical_return_branch.ll
++++ b/ir-pass/test/taint_accept_spec_classical_return_branch.ll
+@@ -1,4 +1,20 @@
+ ; taint_accept_spec_classical_return_branch.ll — ACCEPT (bd test_C_libtooling-9bhg).
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
++; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's dead `mul` stopped keeping the
++; parameter used once the drop asked LIVENESS instead of `use_empty()` — a value that
++; reaches no root is dead. A branch condition IS a liveness root (the predicate has
++; no control dependence — `DeadValueLiveness.h` LIMITS), so this read keeps the
++; parameter live in the ORIGINAL callee; the clone's own flatten then removes it,
++; the specializer RECORDS the slot dead, and the operand here is a `cq_theta` result
++; (the backstop's one exemption) or the fixture says otherwise. A predicate WITH
++; control dependence (ADCE) retires this subject: the pin below turns red.
+ ;
+ ; bd l3oi's hazard ONE FUNCTION BOUNDARY OUT, and the fixture that says why the fix
+ ; is shaped the way it is. A TWO-TU module (caller TU `-include CQ.h`, llvm-linked
+@@ -34,8 +50,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @f(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+@@ -85,6 +102,11 @@ declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #3
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_accept_spec_classical_return_clone_arg.ll b/ir-pass/test/taint_accept_spec_classical_return_clone_arg.ll
+index 26d9a841..425a7823 100644
+--- a/ir-pass/test/taint_accept_spec_classical_return_clone_arg.ll
++++ b/ir-pass/test/taint_accept_spec_classical_return_clone_arg.ll
+@@ -1,4 +1,20 @@
+ ; taint_accept_spec_classical_return_clone_arg.ll — ACCEPT (bd test_C_libtooling-9bhg).
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
++; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's dead `mul` stopped keeping the
++; parameter used once the drop asked LIVENESS instead of `use_empty()` — a value that
++; reaches no root is dead. A branch condition IS a liveness root (the predicate has
++; no control dependence — `DeadValueLiveness.h` LIMITS), so this read keeps the
++; parameter live in the ORIGINAL callee; the clone's own flatten then removes it,
++; the specializer RECORDS the slot dead, and the operand here is a `cq_theta` result
++; (the backstop's one exemption) or the fixture says otherwise. A predicate WITH
++; control dependence (ADCE) retires this subject: the pin below turns red.
+ ;
+ ; bd l3oi Rule-13 round 7 F-R7-1's shape (a specialization-classical value passed
+ ; to ANOTHER defined function) ONE FUNCTION BOUNDARY OUT. A TWO-TU module (caller
+@@ -28,8 +44,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s --implicit-check-not=__cq_q_g_
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @f(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+@@ -71,6 +88,11 @@ declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #3
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg.ll b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg.ll
+index dad4923e..3304113b 100644
+--- a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg.ll
++++ b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg.ll
+@@ -1,4 +1,12 @@
+ ; taint_reject_scrubbed_handle_clone_arg.ll — ACCEPT since bd test_C_libtooling-9bhg
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
+ ; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+ ;
+ ; ⚠ THE NAME SAYS `reject` AND THE FILE IS AN ACCEPT. Deliberately not renamed: a
+@@ -35,8 +43,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s --implicit-check-not=__cq_q_g_
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @main(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %5)
+@@ -71,6 +80,11 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_layout.ll b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_layout.ll
+index ec0af4f8..7bf2a6dd 100644
+--- a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_layout.ll
++++ b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_layout.ll
+@@ -1,4 +1,12 @@
+ ; taint_reject_scrubbed_handle_clone_arg_layout.ll — DECLINE (bd test_C_libtooling-9bhg;
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
+ ; the fence is bd test_C_libtooling-l3oi Rule-13 round 7 F-R7-1's).
+ ;
+ ; The DECLINE twin of taint_reject_scrubbed_handle_clone_arg.ll, and the fixture
+@@ -28,8 +36,9 @@
+ ; Regenerate: take taint_reject_scrubbed_handle_clone_arg.ll's module body and
+ ; replace `@main` with the three-block function below.
+ ;
+-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK: in function main {{.*}}: cq taint escape: classical call result used as a quantum register
+ 
+ ; ModuleID = 'llvm-link'
+@@ -65,6 +74,11 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }
+diff --git a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_mixed.ll b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_mixed.ll
+index 79728dc8..71134020 100644
+--- a/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_mixed.ll
++++ b/ir-pass/test/taint_reject_scrubbed_handle_clone_arg_mixed.ll
+@@ -1,4 +1,12 @@
+ ; taint_reject_scrubbed_handle_clone_arg_mixed.ll — ACCEPT since bd test_C_libtooling-9bhg
++; ⚠ bd test_C_libtooling-vsfp (composed with bd 9bhg) — RE-SPELLED: `@h` ignored its
++; parameter 0, and bd vsfp's `dropDeadCallArguments` replaces such an operand by a constant
++; before `detectSpecializations`, so the original spelling is no Phase-6 site and this
++; file's subject would be gone. A BRANCH-ONLY read (`%vsfp.c` and an EMPTY diamond on it)
++; keeps the parameter LIVE — round 2's drop asks liveness, so a dead `mul` read no longer
++; does; a branch condition is a liveness root (no control dependence). The clone's own
++; flatten then removes the read. `CHECK-NOT: CQ_DEADARG_DBG` pins that the drop does not
++; fire (CLAUDE.md L8).
+ ; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
+ ;
+ ; ⚠ THE NAME SAYS `reject` AND THE FILE IS AN ACCEPT. Deliberately not renamed: a
+@@ -32,8 +40,9 @@
+ ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+ ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+ ;
+-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
++; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+ ; RUN:   | %filecheck %s --implicit-check-not=__cq_q_g2_11
++; CHECK-NOT: CQ_DEADARG_DBG
+ ; CHECK-NOT: error
+ ; CHECK-LABEL: define i32 @main(
+ ; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %5)
+@@ -78,6 +87,11 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
+ 
+ ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
+ define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
++  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
++  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
++vsfp.arm:
++  br label %vsfp.join
++vsfp.join:
+   %3 = add nsw i32 %1, 1
+   ret i32 %3
+ }

@@ -6,13 +6,23 @@
 ; never reaches the specializer: the call became an ordinary classical call,
 ; `scanBody`'s return fence was never asked, and the module ACCEPTED (the caller reads
 ; the call's RESULT as one runtime value, so no undef literal is duplicated).
-; The ONE added line in `@leaf`, `%vsfp.read`, is a DEAD READ that keeps the
-; parameter used, so this file still reaches the fence it was written for. That
+; The added lines in `@leaf` (a branch-only read — see ROUND 2 below) keep the parameter live, so this file still reaches the fence it was written for. That
 ; residual population — a callee that READS the argument yet returns classical — is
 ; IR-ONLY from C at -O1 (the library TU deletes a dead read). The `env
 ; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
 ; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
 ; and must re-derive it (CLAUDE.md L8).
+; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's DEAD `mul` read no longer keeps the
+; parameter used — the drop now asks LIVENESS (`DeadValueLiveness.h`), and a value that
+; reaches no root is dead. The read is therefore a BRANCH-ONLY one now: `%vsfp.c` and an
+; EMPTY diamond on it. A branch condition is a liveness ROOT (the predicate has no
+; control dependence — see its LIMITS), so the parameter is LIVE in the original callee,
+; the drop does not fire (the NODROP / CHECK-NOT pin below), and the clone is built as
+; before; the clone's own flatten then removes the branch and the specializer records
+; the slot dead. Where this module ACCEPTS, its operand is a `cq_theta` result (the
+; phantom-read backstop's one exemption); where it DECLINES, the owner named here fires
+; before the backstop is asked. A predicate WITH control dependence (ADCE) retires this
+; subject — the pin below then turns red and the subject must be re-derived (L8).
 ;
 ; ARM: the CONE part of `returnDerivesFromUndef` — the walk, not just the operand.
 ;
@@ -49,7 +59,11 @@ declare i32 @cq_measure_si32(i32)
 
 define i32 @leaf(i32 %a) {
 entry:
-  %vsfp.read = mul i32 %a, 3   ; bd vsfp: a DEAD READ keeps this parameter used
+  %vsfp.c = icmp eq i32 %a, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
   %c = xor i32 poison, 7        ; an INSTRUCTION — invisible to an operand check
   ret i32 %c
 }

@@ -1,0 +1,3 @@
+denominator=5946 A=bin/cq-opt.r2 B=bin/cq-opt.r2f
+STREAM	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_reserved_marker_kept.ll	A_rc=0 B_rc=0	A:	B:
+summary STREAM=1

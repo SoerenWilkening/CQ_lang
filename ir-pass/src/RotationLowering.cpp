@@ -1350,13 +1350,15 @@ bool isCloneCallHop(const CallInst *CI) {
 //
 // ⚠ SINCE bd vsfp THE UNUSED-PARAMETER CASE NO LONGER REACHES THIS PREDICATE WITH A
 // DERIVED RECORD. `dropDeadCallArguments` replaces an argument whose callee
-// parameter has no uses by a constant before `detectSpecializations` (that
-// fixture's `inner(%c, %p)` is now `inner(0, %p)`, its dead sibling deleted, and
-// it pins the twin's stream), and a phantom read the drop misses is DECLINED by
-// `declinePhantomCloneArgReads` right after `specialize()`, long before the warn
-// stage — unless its operand is a `cq_theta` result, which that fence exempts.
-// So this branch is reached only by such a register (never a derived record);
-// it is kept as the decline-direction default it always was, not deleted.
+// parameter is DEAD (the liveness predicate, `DeadValueLiveness.h` — round 1 asked
+// `use_empty()`) by a constant before `detectSpecializations` (that fixture's
+// `inner(%c, %p)` is now `inner(0, %p)`, its dead sibling deleted, and it pins the
+// twin's stream), and a phantom read the drop cannot predict — a slot only the
+// CLONE's own flatten makes dead — is DECLINED by `declinePhantomCloneArgReads`
+// right after `specialize()`, long before the warn stage, unless its operand is a
+// `cq_theta` result, which that fence exempts. So this branch is reached only by
+// such a register (never a derived record); it is kept as the decline-direction
+// default it always was, not deleted.
 //
 // IR-ONLY, and said plainly because it changes how the pin must be read: `clang
 // -O1` runs DAE and DROPS a parameter no callee body reads, so the natural C

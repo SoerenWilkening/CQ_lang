@@ -4,6 +4,7 @@
 
 #include "BennettWrap.h"
 #include "CompareLowering.h"
+#include "DeadValueLiveness.h"
 #include "ControlledSymbols.h"
 #include "IntrinsicLowering.h"
 #include "LiteralIntegrity.h"  // findUndefOperandInBody (bd xy9n — the twin dup)
@@ -40,6 +41,7 @@
 #include "llvm/Transforms/Utils/Cloning.h"
 
 #include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -983,6 +985,21 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     }
   }
 
+  // bd `test_C_libtooling-vsfp` round 2 — THE SPECIALIZER'S DEAD-SLOT RECORD,
+  // taken with the pass's ONE liveness predicate (`DeadValueLiveness.h`) on the
+  // clone body as it is HERE: control flattened (`lowerCloneControl`), inner
+  // tainted-arg calls retargeted to their own clones (whose records this
+  // predicate's call-slot rule already consults), and every read still a STOCK
+  // OPCODE. Not later: `lowerCloneSelect`/`lowerOps` turn reads into runtime
+  // calls, which are roots, and would make every parameter live. A slot recorded
+  // here is one the built clone never reads — the question the phantom-read
+  // backstop and M-C arm (d0) ask, by CALLING `isRecordedDeadSlot`. A dead
+  // parameter that reaches this point at all is one the dead-argument drop could
+  // not predict from the ORIGINAL callee (the clone's own flatten removed its
+  // last read — e.g. a condition-only use of an empty diamond — or a drop
+  // precondition refused the slot).
+  taint.SpecDeadArgMask[Clone] = deadParamMask(*Clone, taint);
+
   // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
   // controlled-XOR copy BEFORE `lowerOps` — so the fresh `cq_template_icmp` flag
   // mint is an ordinary data template the wrap captures/reverses, and the stock
@@ -1176,49 +1193,98 @@ static constexpr char kMsgPhantomArgRead[] =
     "cq specialization: quantum argument to a parameter the lifted callee never "
     "reads";
 
+namespace {
+
+// Is `V` a caller-side QUANTUM value at this slot: tainted, or a rail a control
+// emitter minted and recorded (the round-1 and round-2 `%out` rails are in
+// `Tainted` too — r1B measured it; the rail sets are asked as well so the answer
+// does not depend on that).
+bool isQuantumCallerValue(const Value *V, const TaintSet &taint) {
+  Value *NV = const_cast<Value *>(V);
+  return taint.Tainted.count(NV) || taint.ControlOwnedRails.count(NV) ||
+         taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
+}
+
+// Does `V` have a use, OTHER than a recorded-dead clone slot, that keeps it alive
+// for a reason of its own? Asked positively (Prime Directive direction: an
+// unrecognised use is NOT a keeper, so the answer errs toward "only the phantom
+// keeps it", i.e. toward declining). A keeper is: a LIVE non-call instruction
+// (the liveness predicate, which already ignores recorded-dead slots); a
+// front-end `cq_theta` arg-0 or `cq_measure` (by membership — the user reads it);
+// a `ret`; or a READ slot of a clone call. A runtime `cqrt_*`/`cq_template_*`
+// call is NOT counted, reader or writer (a control emitter's own copies into a
+// `%out` rail are writes, and telling them apart needs the runtime ABI's slot
+// semantics — declined instead: a phantom read of a value some emitted gate also
+// reads is an over-decline, named in TRACK_VSFP §4).
+bool keptAliveElsewhere(const Value *V, const FunctionLiveness &L,
+                        const TaintSet &taint) {
+  for (const Use &U : V->uses()) {
+    const auto *UI = dyn_cast<Instruction>(U.getUser());
+    if (!UI)
+      return true;  // a constant-expression user: unknown, but not ours to judge.
+    if (const auto *CB = dyn_cast<CallBase>(UI)) {
+      if (CB->isArgOperand(&U) &&
+          isRecordedDeadSlot(*CB, CB->getArgOperandNo(&U), taint))
+        continue;  // the phantom itself.
+      if (const auto *CI = dyn_cast<CallInst>(CB)) {
+        if (taint.MeasureCalls.contains(CI))
+          return true;
+        if (taint.ThetaCalls.contains(CI) && CI->arg_size() >= 1 &&
+            CI->getArgOperand(0) == V)
+          return true;
+      }
+      if (const Function *Callee = CB->getCalledFunction())
+        if (taint.SpecHandleArgMask.count(Callee))
+          return true;  // a READ slot of a clone (dead slots were skipped above).
+      continue;  // a runtime call: not counted (see above).
+    }
+    if (isa<ReturnInst>(UI))
+      return true;
+    if (L.isLive(UI))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
 bool declinePhantomCloneArgReads(Module &M, const TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration() || taint.SpecHandleArgMask.count(&F))
       continue;  // a clone / `_unc` twin body: its own Bennett wrap discharges.
+    std::optional<FunctionLiveness> L;
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
         auto *CB = dyn_cast<CallBase>(&I);
         if (!CB)
           continue;
         const Function *Callee = CB->getCalledFunction();
-        if (!Callee || Callee->isDeclaration() ||
-            !taint.SpecHandleArgMask.count(Callee))
+        if (!Callee || !taint.SpecDeadArgMask.count(Callee))
           continue;
-        // EVERY slot, not only the detection mask's: the question is whether
-        // the body reads the parameter, and a slot that became tainted after
-        // detection (round 2) is a phantom read on exactly the same terms.
-        for (unsigned A = 0, E = std::min<unsigned>(CB->arg_size(),
-                                                    Callee->arg_size());
-             A < E; ++A) {
-          if (!Callee->getArg(A)->use_empty())
+        // EVERY slot the record calls dead, not only the detection mask's: a slot
+        // that became tainted after detection (round 2) is a phantom read on
+        // exactly the same terms.
+        for (unsigned A = 0, E = CB->arg_size(); A < E; ++A) {
+          if (!isRecordedDeadSlot(*CB, A, taint))
             continue;
           Value *Op = CB->getArgOperand(A);
-          if (!taint.Tainted.count(Op))
+          if (isa<Constant>(Op) || !isQuantumCallerValue(Op, taint))
             continue;
-          // A `cq_theta` RESULT is the user's own register (a source, or the
-          // same register rotated in place): the phantom read neither mints
-          // nor keeps alive a rail the hand-inlined twin lacks — `clang -O1`
-          // never deletes a `cq_theta` call, and nothing discharges a user
-          // register. That is r2A's harmless quadrant ("theta-source p",
-          // probe b3), and declining it would be an over-decline the twin does
-          // not share (r2A probe `cv9S`: `volatile int z = a;` in the callee,
-          // which the clone pipeline erases, leaving the parameter unread). The
-          // one thing such a read could still do — make M-C's G7 count the call
-          // as an unsettled prior reader of the register and lower a later
-          // `u = t + q` OUT of place (bd hgwx) — is closed by `priorUseIsSettled`
-          // arm (d0), which asks the same question of the callee's PARAMETER
-          // (spec_accept_phantom_arg_read_theta_source_inplace_mc.ll). What
-          // remains is a SPURIOUS lyyf-(B) warning (M-A classifies every
-          // `__cq_q_*` result as a record by name — bd jr8q) on a stream that is
-          // the twin's. Membership, never a name test.
+          // The ONE exemption, validated by Rule-13 r1B on nine shapes (mutant
+          // B2, load-bearing on all nine): a `cq_theta` RESULT is the user's own
+          // register (a source, or the same register rotated in place). The
+          // phantom read neither mints nor keeps alive a rail the hand-inlined
+          // twin lacks — `cq_theta` is a liveness root, so the twin computes and
+          // keeps that register too, and nothing discharges a user register. A
+          // chained theta on a derived rail is covered by the same argument: the
+          // twin computes and rotates the same rail. Membership, never a name.
           if (auto *OpCI = dyn_cast<CallInst>(Op);
-              OpCI && llvm::is_contained(taint.ThetaCalls, OpCI))
+              OpCI && taint.ThetaCalls.contains(OpCI))
             continue;
+          if (!L)
+            L.emplace(F, taint);
+          if (keptAliveElsewhere(Op, *L, taint))
+            continue;  // live for a reason of its own; the phantom adds nothing.
           F.getContext().diagnose(DiagnosticInfoUnsupported(
               F, kMsgPhantomArgRead, CB->getDebugLoc()));
           return true;

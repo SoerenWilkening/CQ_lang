@@ -12,8 +12,10 @@
    circuit is the hand-inlined twin's (slice_spec_dropped_arg_boolsel_twin.c,
    `int t = m + 1;`), and `e2e-spec-dropped-arg-boolsel-twin-identical` pins the two
    goldens BYTE-IDENTICAL: Ry(0.5) then Ry(0.7) on ONE handle and its measurement —
-   no `%out`, no copies, no clone. On the oracle that gate is RED (the 2-TU golden
-   would carry the copies).
+   no `%out`, no copies, no clone. (What is red on the oracle is THIS slice's own
+   entry, `e2e-slice-spec-dropped-arg-boolsel` — its 2-TU trace carries the copies; the
+   twin-identical gate compares two committed goldens and cannot be red on any binary,
+   bd vsfp r1B F-VB-6.)
 
    `m` is `slice`'s parameter, passed `argc + 4` (argc = 1 under the harness, so m
    = 5 and `b` starts |1>); `noinline` keeps `clang -O1` from folding it (bd 46oo).

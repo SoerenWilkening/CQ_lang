@@ -50,55 +50,71 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
                                nullptr);
 
 // bd `test_C_libtooling-vsfp` (P1) / bd `test_C_libtooling-hgwx` — THE DEAD
-// CALL-ARGUMENT DROP, a normaliser that runs ONCE, before any stage reads the
-// argument, in both entry points (the slot argument is at the call site in
+// CALL-ARGUMENT DROP, a normaliser asked at TWO slots in both entry points, both
+// before any stage reads an argument (slot A first; slot B right after the fenv
+// volatile stages — the slot arguments are at the call sites in
 // `CQLoweringPass.cpp`).
 //
-// For every DIRECT `CallInst` to an EXACT, non-vararg definition, every
-// integer/floating-point argument whose callee PARAMETER HAS NO USES is replaced
-// by `Constant::getNullValue`, and the operand's now-unused cone is deleted
-// (non-call, trivially-dead instructions only). Iterated to a fixpoint, so a
-// parameter that is only FORWARDED to a dead parameter of an inner callee dies
-// too. Returns true iff anything changed; the caller must then re-`propagate`
-// (the call result's conservative taint came from the dropped operand).
+// For every DIRECT `CallInst` (never a front-end intrinsic site, by membership)
+// to an eligible callee, every eligible argument whose callee PARAMETER IS DEAD
+// under the pass's ONE liveness predicate (`DeadValueLiveness.h`,
+// `deadParamMask`: mark-from-roots, NOT `use_empty()`) is replaced by
+// `Constant::getNullValue`, and the operands' dead cones are deleted with the
+// SAME predicate (`deleteDeadCones`). Iterated to a fixpoint, so a parameter that
+// is only FORWARDED to a dead parameter of an inner callee dies too. Returns true
+// iff anything changed; the caller must then re-`propagate`.
 //
-// WHY: a Phase-6 clone is built from its callee's body, so a parameter with no
-// uses there is a parameter the clone never reads — yet the call kept READING
-// the operand (bd hgwx's root cause), which kept a which-path rail the
-// hand-inlined twin never computes alive and entangled across a later
-// non-diagonal gate (bd vsfp: exit 0, no warning, stage 2b clean). The twin is
-// the definition of the right circuit, and this is what `clang -O1` does to the
-// twin: the dead operand is never computed. Doing it HERE — before
+// WHY: a Phase-6 clone is built from its callee's body, so a parameter dead
+// there is a parameter the clone never reads — yet the call kept READING the
+// operand (bd hgwx's root cause), which kept a which-path rail the hand-inlined
+// twin never computes alive and entangled across a later non-diagonal gate (bd
+// vsfp: exit 0, no warning, stage 2b clean). Doing it before
 // `detectSpecializations` computes a mask and before any control emitter mints a
-// rail for the operand — is the timing argument: after emission a dropped
-// operand would leave an orphaned, entangled rail.
+// rail for the operand is the timing argument: after emission a dropped operand
+// would leave an orphaned, entangled rail.
 //
-// IT IS LLVM'S OWN TRANSFORM, APPLIED ACROSS TUs. `clang -O1`'s dead-argument
-// elimination already does this WITHIN one TU (`RemoveDeadArgumentsFromCallers`,
-// for an exact definition). What it cannot do is look through the TU boundary:
-// the caller TU of a 2-TU program sees only `int h(int a, int k);`, and the pass
-// is the first to see both. The replacement is a NULL CONSTANT, not DAE's
-// `poison`, for two reasons of this pass's own: a `noundef` parameter (clang puts
-// one on every scalar parameter) makes a poison argument immediate UB unless the
-// attribute is also stripped from the callee, which this stage never touches; and
-// a clone call inside a clone is duplicated verbatim into its `_unc` twin, where an
-// `undef`/`poison` literal is the bd xy9n two-reads-two-values hazard — `0` is one
-// value in every slot. The cone deletion is `RecursivelyDeleteTriviallyDeadInstructions`'
-// walk minus calls.
+// ⚠ ROUND 1 ASKED `use_empty()` AND LOST THE WAY CLAUDE.md L5 PREDICTS (Rule-13
+// r1A/r1B on 5e56060b, both NOT-CLEAR): a dead `trunc` left by the fenv store
+// erasure is a use (bd a8q5), a dead `llvm.smax`/`abs`/`ctpop` is a call the
+// round-1 cone walk refused to delete (bd m1gi), a dead loop-carried φ cycle has
+// no `use_empty()` member (r1A F-VA-3), and an emptied arm left an empty diamond
+// on a quantum condition (r1A F-VA-4). The liveness predicate answers all four;
+// `deleteDeadCones` folds the emptied arm.
+//
+// IT IS LLVM's DEAD-ARGUMENT ELIMINATION, WITH DAE's PRECONDITIONS, APPLIED
+// ACROSS TUs. `clang -O1` does this WITHIN one TU; the caller TU of a 2-TU
+// program sees only `int h(int a, int k);`, and the pass is the first to see
+// both. ⚠ Round 1 said "LLVM's own transform" while copying ONE of DAE's
+// preconditions: a `naked` callee (its asm reads the argument REGISTERS) had its
+// argument rewritten, a classical miscompile at exit 0 (bd ctz4, r1A F-VA-1).
+// The preconditions now mirrored, each at its definition in SpecializeDetect.cpp:
+// exact definition, not `naked`, not variadic and not a `musttail` site (both
+// STRICTER than DAE's call-site rewrite — conservatism, pinned), the call's
+// function type equal to the callee's (DAE's own rule), and a
+// parameter carrying none of `returned`/`swifterror`/`byval`/`inalloca`/
+// `preallocated`, with every attribute in the whitelist
+// `noundef`/`signext`/`zeroext`/`inreg`/`range`/`nofpclass` (the last two
+// STRIPPED, as DAE strips its UB-implying set). The replacement is a NULL
+// CONSTANT, not DAE's `poison`: a `noundef` parameter makes poison immediate UB
+// unless the callee's attribute is stripped too, and a clone call inside a clone
+// is duplicated verbatim into its `_unc` twin, where an `undef`/`poison` literal is
+// bd xy9n's two-reads-two-values hazard — `0` is one value in every slot. Scope,
+// not soundness: pointer/vector/aggregate arguments are never rewritten.
 //
 // ⚠ PURELY STRUCTURAL AND TAINT-AGNOSTIC, deliberately: the operand of a
 // ROUND-2 candidate (`g(%out)`, bd 9paa) is CLASSICAL at every slot before
 // emission, so a taint-keyed drop would miss exactly the 6.5 `%out` member
-// (r2A `s3d`). What it will NOT do: touch a pointer/vector/aggregate argument,
-// a constant operand, a callee that may be interposed (`!hasExactDefinition()`),
-// a parameter or call-site argument carrying any attribute other than
-// `noundef`/`signext`/`zeroext`/`inreg` (a null constant could violate
-// `range`/`nofpclass`), or DELETE A CALL (a dead `cq_theta` is the user's gate,
-// never this stage's to erase — CLAUDE.md §4i).
+// (r2A `s3d`). It never deletes a ROOT — so never a user's `cq_theta`/`cq_measure`
+// (membership, and the reserved-name rule) and never a call that may have side
+// effects. A dead call that is side-effect-free — by LLVM's attributes (a pure
+// intrinsic, a `memory(none)` `willreturn` `nounwind` definition) or by its BODY
+// (`DeadValueLiveness.h`'s body rule: acyclic, call-free, write-free) — IS
+// deleted, as `-O1` deletes it once it can see the body.
 //
-// The TOTAL half is `declinePhantomCloneArgReads` (Specialization.h): it OBSERVES,
-// after `specialize()`, any clone call that still passes a quantum operand to a
-// parameter the clone never reads — i.e. whatever this predictor missed.
+// The TOTAL half is `declinePhantomCloneArgReads` (Specialization.h): after
+// `specialize()` it asks the SAME predicate of the BUILT clones (the
+// specializer's record `taint.SpecDeadArgMask`) and declines a quantum operand
+// kept alive only by a slot the clone never reads.
 bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq

@@ -1,0 +1,2 @@
+denominator=5949 A=bin/cq-opt.r2g B=bin/cq-opt.r2g
+summary 

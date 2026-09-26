@@ -269,7 +269,8 @@ bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 // points). Erases a static scalar alloca whose EVERY user is a direct non-atomic
 // exact-type store with the alloca as the POINTER operand, or a lifetime marker —
 // so ZERO loads, and the address demonstrably never escapes — provided at least
-// one access is volatile. Stores, markers and alloca go; THE STORED VALUE STAYS.
+// one access is volatile. Stores, markers and alloca go, and — since bd vsfp
+// round 2 (bd qjoc) — so does the stored value's DEAD cone (see below).
 //
 // GROUND: the fenv ruling (owner 2026-08-10, CLAUDE.md "Scope of the semantic
 // model"). CQ does not model FP exception flags, and a volatile access to a
@@ -280,23 +281,27 @@ bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 // (ld80/s_nexttowardf.c:63, `u` never read) exists to force the multiply so the
 // FPU raises FE_UNDERFLOW, not to block reassociation.
 //
-// *** THIS STAGE ERASES ONLY THE STORE, BUT THE PIPELINE USUALLY LOSES THE
-// COMPUTATION TOO — AND THAT IS RULED, NOT ACCIDENTAL. *** Once the store is gone
-// the stored value is trivially dead, and PredMuxFlatten.cpp:2618's pre-existing
-// `RecursivelyDeleteTriviallyDeadInstructions` removes it (a cleanup that exists
-// for its own Rule-6/8 reason: a dead TAINTED op left alive lowers to a forward
-// gate that is never uncomputed and never freed). Measured on the motivating
-// cell: the shipped `slice_libm_ld80_nexttowardf` trace contains ZERO
-// `fmul_f32`. Do not write "we only delete the store" in a summary — it is true
-// of this function and false of the pass, and the ruling was first requested on
-// exactly that too-comfortable phrasing before being re-affirmed on the measured
-// facts.
+// *** THIS STAGE ERASES THE STORE AND THE COMPUTATION THAT DIES WITH IT — AND
+// THAT IS RULED, NOT ACCIDENTAL. *** (bd test_C_libtooling-qjoc, bd vsfp round 2.)
+// Once the store is gone the stored value is dead, and the stage deletes its dead
+// cone with the pass's ONE liveness predicate (`DeadValueLiveness.h`: never a
+// root, so never a user's `cq_theta`/`cq_measure` and never a call that may have
+// side effects). The fenv ruling licenses exactly this ("the computation then
+// usually disappears too, and the ruling accepts that"). Measured on the
+// motivating cell: the shipped `slice_libm_ld80_nexttowardf` trace contains ZERO
+// `fmul_f32` (there PredMux's cleanup used to take it; now this stage does).
 //
-// ASYMMETRY WORTH KNOWING BEFORE READING A TRACE: with NO enclosing tainted
-// control flow the dead product IS lowered, uncomputed and freed — a useless but
-// harmless gate pair, pinned by lowering_volatile_scalar_deadstore.ll — because
-// nothing invokes that DCE path. Inside a PredMux region it is deleted outright.
-// Both are sound under the ruling; they are not the same circuit.
+// ⚠ WHAT THIS PARAGRAPH SAID BEFORE, AND WHY IT WAS FALSE (L7, corrected at the
+// source). It said that with no enclosing tainted control flow "the dead product
+// IS lowered, uncomputed and freed — a useless but harmless gate pair … Both are
+// sound". Two measured counter-examples (bd qjoc; bd vsfp Rule-13 r1B F-VB-7):
+// a dead 4.4 data SELECT got its `%out` which-path rail minted and never
+// discharged (silent dephasing of a later `Ry` on the condition register), and a
+// dead TEMPLATE product whose source later took a non-diagonal gate was left
+// DIRTY, not uncomputed (warned, lyyf-(B)). CLAUDE.md's owner-ruled fenv section
+// carries the same "Both are sound" sentence; it is FLAGGED to the owner in the
+// bd vsfp round-2 record (TRACK_VSFP §6), not edited here. The circuit is now
+// the same inside and outside a region: the dead computation is gone.
 //
 // WHY NOT just relax promoteVolatileScalarLocals' `Loads.empty()` clause at
 // QramLowering.cpp — the obvious-looking one-token fix, and it is wrong (bd k710
@@ -344,6 +349,13 @@ bool eraseDeadVolatileScalarStores(llvm::Module &M, const TaintSet &taint);
 // mints tainted SSA (the accumulator's stored value flows to its loads), so the
 // caller RE-PROPAGATES taint after a true return (the promoteFp80Union fixpoint
 // precedent). Returns true if anything promoted.
+//
+// bd vsfp round 2 (r1B F-VB-1 `v29c`): after promotion, the promoted stores'
+// values are handed to `deleteDeadCones` (`DeadValueLiveness.h`). An idiom such
+// as `volatile char z = a; char w = z; return … + (w - w);` leaves the stored
+// `trunc` DEAD once the loads are replaced; the residue is deleted so no stage —
+// the dead-argument drop that runs after this one, or the lowering — sees a dead
+// tainted op as a reader.
 bool promoteVolatileScalarLocals(llvm::Module &M, const TaintSet &taint);
 
 // bd 20xt.4 — the taint-blind STRUCTURAL const-global QROM-read shape, the shared

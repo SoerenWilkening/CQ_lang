@@ -10,6 +10,8 @@
 
 #include "QramLowering.h"
 
+#include "DeadValueLiveness.h"
+
 #include "OpcodeSupport.h"      // abiWidthFromType / widthHasReversibleCopy
 #include "PoisonFacts.h"        // indexBoundIsPoisonConditional (bd s6ao)
 #include "TaintPropagation.h"   // TaintSet
@@ -2689,6 +2691,11 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
       if (auto *A = dyn_cast<AllocaInst>(&I))
         if (A->isStaticAlloca())
           Cands.push_back(A);
+    // bd vsfp round 2: the blocks this fold empties (store, loads, markers), for
+    // the empty-arm fold after the candidate loop — `if (a > 3) { volatile int
+    // z = 1; w = z; }` otherwise leaves an empty diamond that keeps `a` live.
+    // After the loop because the fold changes the CFG and `DT` is live inside it.
+    SmallVector<BasicBlock *, 8> Emptied;
     for (AllocaInst *A : Cands) {
       // Whole-alloca user scan: EXACTLY one non-atomic store of a Constant
       // with A as the pointer operand, any number of non-atomic loads and
@@ -2775,6 +2782,11 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
       // stay), the store / lifetime markers / alloca must be ERASED with the
       // loads — a surviving volatile store would still block the PredMux
       // claim (E4) exactly as before.
+      for (LoadInst *LI : Loads)
+        Emptied.push_back(LI->getParent());
+      Emptied.push_back(TheStore->getParent());
+      for (IntrinsicInst *II : Lifetimes)
+        Emptied.push_back(II->getParent());
       for (LoadInst *LI : Loads) {
         LI->replaceAllUsesWith(C);
         LI->eraseFromParent();
@@ -2785,6 +2797,8 @@ bool foldVolatileConstAllocaLoads(Module &M, const TaintSet &taint) {
       A->eraseFromParent();
       Changed = true;
     }
+    if (!Emptied.empty())
+      deleteDeadCones(F, {}, taint, "volatile-constfold", Emptied);
   }
   return Changed;
 }
@@ -2801,6 +2815,13 @@ bool eraseDeadVolatileScalarStores(Module &M, const TaintSet &taint) {
       if (auto *A = dyn_cast<AllocaInst>(&I))
         if (A->isStaticAlloca())
           Cands.push_back(A);
+    // The stored values of every alloca erased in THIS function, cleaned up
+    // after the candidate loop (a cone deletion inside it could reach an
+    // instruction the snapshot still names).
+    SmallVector<Value *, 8> Stored;
+    // The blocks the erased stores/markers lived in: an arm this stage EMPTIES is
+    // folded by `deleteDeadCones` exactly as one its cone deletion empties.
+    SmallVector<BasicBlock *, 8> Emptied;
     for (AllocaInst *A : Cands) {
       // SCALAR only, and the name means it: one first-class int/fp slot, no
       // array allocation. The idiom this stage exists for is a one-line local;
@@ -2848,17 +2869,32 @@ bool eraseDeadVolatileScalarStores(Module &M, const TaintSet &taint) {
       // claiming it here would widen this stage into a general DSE it is not.
       if (!Clean || Stores.empty() || !SawVolatile)
         continue;
-      // Erase the STORES, the markers, and the alloca. THIS STAGE does not touch
-      // the stored VALUE — but do not read that as "the computation survives".
-      // Once its only consumer is gone the value is trivially dead, and inside a
-      // PredMux region the pre-existing cleanup at PredMuxFlatten.cpp:2618 takes
-      // it; the shipped `slice_libm_ld80_nexttowardf` trace has ZERO `fmul_f32`.
-      // That outcome is what the fenv ruling actually licenses (an op whose only
-      // purpose is raising a flag has no observable effect), and the owner
-      // re-affirmed it on the measured facts after the ruling was first requested
-      // on the tidier, false summary. Outside a region the dead product is
-      // instead lowered, uncomputed and freed — harmless, and pinned by
-      // lowering_volatile_scalar_deadstore.ll.
+      // Erase the STORES, the markers, and the alloca — and then the stored
+      // VALUE's now-dead cone (bd test_C_libtooling-qjoc / bd vsfp round 2).
+      //
+      // ⚠ WHAT THIS COMMENT SAID BEFORE, AND WHY IT WAS FALSE (L7, corrected at
+      // the source). It said this stage "does not touch the stored VALUE", that a
+      // PredMux region's cleanup takes it, and that "outside a region the dead
+      // product is instead lowered, uncomputed and freed — harmless". Two
+      // measured counter-examples (bd qjoc, bd vsfp r1B F-VB-7):
+      //   * a dead 4.4 data `select` (`p = b ? 9 : 4; volatile int z = p;`) was
+      //     still claimed by control detection, which minted its `%out`
+      //     which-path rail and never discharged it — SILENT dephasing of a later
+      //     `Ry` on `b`;
+      //   * a dead template product (`p = q * 3; volatile int z = p;`) was left
+      //     DIRTY across a later `Ry` on `q` (warned, lyyf-(B)), not uncomputed.
+      // The fenv ruling licenses exactly this deletion ("the computation then
+      // usually disappears too, and the ruling accepts that"), so the stage now
+      // does it itself, with the pass's ONE liveness predicate
+      // (`DeadValueLiveness.h`): only DEAD instructions go — never a root, so
+      // never a user's `cq_theta`/`cq_measure` (membership) and never a call that
+      // may have side effects. A value that is live for another reason stays.
+      for (StoreInst *SI : Stores) {
+        Stored.push_back(SI->getValueOperand());
+        Emptied.push_back(SI->getParent());
+      }
+      for (IntrinsicInst *II : Lifetimes)
+        Emptied.push_back(II->getParent());
       for (StoreInst *SI : Stores)
         SI->eraseFromParent();
       for (IntrinsicInst *II : Lifetimes)
@@ -2866,6 +2902,8 @@ bool eraseDeadVolatileScalarStores(Module &M, const TaintSet &taint) {
       A->eraseFromParent();
       Changed = true;
     }
+    if (!Stored.empty())
+      deleteDeadCones(F, Stored, taint, "volatile-erase", Emptied);
   }
   return Changed;
 }
@@ -3022,9 +3060,25 @@ bool promoteVolatileScalarLocals(Module &M, const TaintSet &taint) {
     }
     if (ToPromote.empty())
       continue;
+    // bd vsfp round 2 (r1B F-VB-1 `v29c`): the values the promoted stores wrote.
+    // After promotion a store's value survives only through the loads it fed,
+    // and an idiom like `volatile char z = a; char w = z; … (w - w)` leaves it
+    // DEAD — the residue the dead-argument drop's liveness question must not
+    // trip over, and a dead tainted op the lowering would otherwise mint a rail
+    // for. Collected before `PromoteMemToReg` erases the stores.
+    SmallVector<Value *, 8> Stored;
+    SmallVector<BasicBlock *, 8> Emptied;
+    for (AllocaInst *A : ToPromote)
+      for (User *U : A->users()) {
+        if (auto *SI = dyn_cast<StoreInst>(U))
+          Stored.push_back(SI->getValueOperand());
+        if (auto *I = dyn_cast<Instruction>(U))
+          Emptied.push_back(I->getParent());  // the accesses PromoteMemToReg erases.
+      }
     if (!DT)
       DT.emplace(F);
     PromoteMemToReg(ToPromote, *DT);
+    deleteDeadCones(F, Stored, taint, "volatile-promote", Emptied);
     Changed = true;
   }
   return Changed;

@@ -1,0 +1,4 @@
+N0_null discovered=2363 seen=2363 failed=0 :: 
+R7_musttail_too discovered=2363 seen=2363 failed=1 :: FAIL:spec_accept_dropped_arg_musttail_kept.ll 
+R12_varargs_too discovered=2363 seen=2363 failed=1 :: FAIL:spec_accept_dropped_arg_varargs_kept.ll 
+done N0_null R7_musttail_too R12_varargs_too

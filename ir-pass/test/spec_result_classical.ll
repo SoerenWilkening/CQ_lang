@@ -5,13 +5,25 @@
 ; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
 ; is no longer a Phase-6 site at all: the call stays an ordinary classical call, no
 ; clone is built and nothing is scrubbed, i.e. the property this file pins would have
-; no subject. The ONE added line in `@double_classical`, `%vsfp.read`, is a DEAD READ that keeps
-; the parameter used, so the clone is still built, still returns classical and is
-; still scrubbed. (Its forward/adjoint template pair now sits in the CLONE body; the
-; caller-side checks below are unchanged.) That population — a callee that READS the
+; no subject. The added lines in `@double_classical` (a branch-only read — see ROUND 2 below) keep the
+; parameter live, so the clone is still built, still returns classical and is
+; still scrubbed. (The clone's own flatten removes the read, so the clone body carries no
+; template for it; the caller-side checks below are unchanged.)
+; That population — a callee that READS the
 ; argument yet returns classical — is IR-ONLY from C at -O1. The NODROP prefix pins
 ; that the drop does NOT fire here; a widening of the drop retires this subject and
 ; must re-derive it (CLAUDE.md L8).
+; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's DEAD `mul` read no longer keeps the
+; parameter used — the drop now asks LIVENESS (`DeadValueLiveness.h`), and a value that
+; reaches no root is dead. The read is therefore a BRANCH-ONLY one now: `%vsfp.c` and an
+; EMPTY diamond on it. A branch condition is a liveness ROOT (the predicate has no
+; control dependence — see its LIMITS), so the parameter is LIVE in the original callee,
+; the drop does not fire (the NODROP / CHECK-NOT pin below), and the clone is built as
+; before; the clone's own flatten then removes the branch and the specializer records
+; the slot dead. Where this module ACCEPTS, its operand is a `cq_theta` result (the
+; phantom-read backstop's one exemption); where it DECLINES, the owner named here fires
+; before the backstop is asked. A predicate WITH control dependence (ADCE) retires this
+; subject — the pin below then turns red and the subject must be re-derived (L8).
 ;
 ; The callee has a tainted param (arg 0) but its RETURN derives from a CLASSICAL
 ; param only (`return c + c`). The clone proves `ReturnTainted = false`, so
@@ -30,7 +42,11 @@ declare i32 @cq_measure_si32(i32)
 
 define i32 @double_classical(i32 %t, i32 %c) {
 entry:
-  %vsfp.read = mul i32 %t, 3   ; bd vsfp: a DEAD READ keeps this parameter used
+  %vsfp.c = icmp eq i32 %t, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
   %y = add i32 %c, %c
   ret i32 %y
 }
@@ -43,14 +59,20 @@ entry:
   ret i32 %z
 }
 
-; The call retargets (mask "01": arg 0 tainted, arg 1 classical pass-through).
+; The call retargets (mask "01": arg 0 tainted, arg 1 classical pass-through). Nothing
+; in the caller before it lowered to a data template:
+; CHECK-LABEL: define i32 @example(
+; CHECK-NOT: cq_template
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_double_classical_01(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
 ; The caller's `add` stays a RAW classical add — `%r` was scrubbed back out of
 ; taint, so the op is NOT lowered to a template.
-; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = add i32 %[[R]], 5
-; The caller lowered nothing to a data template — the tainted arg never affects
-; the (classical) return, so the caller's cone stays raw. (Since bd vsfp this
-; says nothing about the CLONE body: its dead read `%vsfp.read` is a forward
-; template the Bennett wrap reverses there. Scoped to the caller for that reason.)
+; CHECK-NEXT: %[[Z:[a-zA-Z0-9_.]+]] = add i32 %[[R]], 5
+; CHECK-NEXT: ret i32 %[[Z]]
+;
+; Nothing after the caller (the clone body, the declarations) lowered to a data template
+; either — the whole-file window main had. ⚠ bd vsfp round 2, Rule-13 r1A F-VA-6: round
+; 1 moved this NOT between two ADJACENT lines (`add` … `ret`), where it checked nothing,
+; because round 1's dead `mul` read put a template pair in the clone body. The round-2
+; branch-only read is removed by the clone's own flatten, so the clone body has no
+; template and the original whole-file window is restored.
 ; CHECK-NOT: cq_template
-; CHECK:     ret i32 %[[Z]]

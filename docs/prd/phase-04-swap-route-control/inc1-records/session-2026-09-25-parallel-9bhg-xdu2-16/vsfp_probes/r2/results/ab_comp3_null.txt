@@ -1,0 +1,2 @@
+denominator=531 A=bin/cq-opt.comp3 B=bin/cq-opt.comp3
+summary 

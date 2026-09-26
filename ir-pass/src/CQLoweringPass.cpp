@@ -128,32 +128,45 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
     return PreservedAnalyses::all();
 
   // bd `test_C_libtooling-vsfp` (P1) / bd `hgwx` — THE DEAD CALL-ARGUMENT DROP
-  // (`SpecializeDetect.h`): an integer/fp argument whose callee parameter has no
-  // uses becomes a null constant and its now-dead cone is deleted, which is what
-  // `clang -O1` does to the hand-inlined twin. Without it a Phase-6 clone that
-  // never reads its masked slot was still PASSED the operand, and that phantom
-  // read kept a which-path rail (a 4.4 bool-select `%out`, a 6.5 `%out`, a
-  // template rail) alive and entangled across a later non-diagonal gate on the
-  // register it copies — a dephased circuit at exit 0, stage 2b clean.
+  // (`SpecializeDetect.h`), SLOT A of two. An integer/fp argument whose callee
+  // parameter is DEAD under the pass's ONE liveness predicate
+  // (`DeadValueLiveness.h` — mark-from-roots, not `use_empty()`) becomes a null
+  // constant, and the operand's dead cone is deleted by the same predicate. That
+  // is LLVM's dead-argument elimination, with DAE's own preconditions mirrored
+  // (exact definition, not `naked`, not `musttail`, …), applied across the TU
+  // boundary `clang -O1` cannot see. Without it a Phase-6 clone that never reads
+  // a slot was still PASSED the operand, and that phantom read kept a which-path
+  // rail (a 4.4 bool-select `%out`, a 6.5 `%out`, a template rail) alive and
+  // entangled across a later non-diagonal gate on the register it copies — a
+  // dephased circuit at exit 0, stage 2b clean.
   //
-  // ⚠ THE SLOT IS THE ARGUMENT, AND IT IS *FIRST*. The operand has to be gone
-  // before ANY stage reads it: before `detectSpecializations` computes a mask
-  // over it, before round-1 control emission mints a merge rail for it (a 4.4
-  // select, a 6.5 arm), and before round 2's re-detection (bd 9paa) makes a
-  // `g(%out)` site out of it. After emission a dropped operand would leave its
-  // rail minted, orphaned and entangled — the defect in another spelling. And
-  // the pre-passes below (the by-ref inliner, the rail bank, the volatile and
-  // fp80 folds, PredMux, the unroll and ctlz pre-passes) must see the TWIN'S IR,
-  // not a tainted cone the twin never had, for their verdicts to be the twin's.
-  // It needs taint only for the intrinsic-site membership skip; it is otherwise
-  // structural, so the full re-`propagate` after it is exactly the restart every
-  // fixpoint below performs (the dropped operand was the ONLY tainted input of
-  // the call result, which must lose that taint). It SHRINKS the taint set and
-  // grows nothing, so it owes no `adjudicateTaintDelta`.
+  // ⚠ THE SLOT IS THE ARGUMENT. The operand has to be gone before any stage
+  // READS it: before `detectSpecializations` computes a mask over it, before
+  // round-1 control emission mints a merge rail for it, and before round 2's
+  // re-detection (bd 9paa) makes a `g(%out)` site out of it — after emission a
+  // dropped operand would leave its rail minted, orphaned and entangled. Slot A
+  // is FIRST so the by-ref inliner, the rail bank and the bitcast/volatile folds
+  // see IR with the dead cone already gone. SLOT B (after the fenv volatile
+  // stages, below) asks again, because the volatile STORE erasure is what makes
+  // `h(a,k){ volatile char z = a; … }`'s parameter dead (bd a8q5) — slot A cannot
+  // see that, the store being a root until it is erased.
   //
-  // It is a PREDICTOR (a parameter with no uses in the callee is a slot the clone
-  // will not read). The OBSERVER is `declinePhantomCloneArgReads` after
-  // `specialize()` — see there.
+  // ⚠ WHAT "THE TWIN'S IR" MEANS HERE, PRECISELY (L7 — round 1 said the
+  // pre-passes "see the TWIN's IR" and r1A F-VA-2/3/4 measured three ways it was
+  // false). After both slots, every argument whose callee parameter the liveness
+  // predicate proves dead is a constant and its dead cone is gone — dead LLVM
+  // intrinsics, dead side-effect-free calls and dead φ cycles included — and an
+  // arm the deletion emptied is folded into its merge (the SimplifyCFG shape
+  // `-O1` gives the twin). What is NOT the twin's: a dead BRANCH `-O1` would
+  // have removed is kept when its arm is not empty or its merge has a φ (the
+  // predicate has no control dependence; conservative — the parameter it reads
+  // stays live), and CFG simplification beyond that one fold is not run.
+  //
+  // It needs taint only for the intrinsic-site membership (roots; the call-site
+  // skip). The full re-`propagate` after it is exactly the restart every fixpoint
+  // below performs. It SHRINKS the taint set and grows nothing, so it owes no
+  // `adjudicateTaintDelta`. The TOTAL half is `declinePhantomCloneArgReads`
+  // after `specialize()`, asked with the SAME predicate of the built clones.
   if (dropDeadCallArguments(M, taint))
     taint = propagate(M, wd);
 
@@ -334,12 +347,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // claim it, so the volatile store survives to `declineTaintEscapes` and the
   // cell dies on kMsgStore. Grounded in the fenv ruling (owner 2026-08-10): CQ
   // models no FP exception flags and a volatile access to a non-escaping local
-  // is not observable. Erases the stores/markers/alloca; the stored VALUE is then
-  // trivially dead and, inside a PredMux region, is removed by the pre-existing
-  // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
-  // the multiply too, which IS what the ruling licenses (measured: zero
-  // `fmul_f32` in slice_libm_ld80_nexttowardf). Outside a region it is instead
-  // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
+  // is not observable. Erases the stores/markers/alloca AND the stored value's
+  // dead cone (bd qjoc / bd vsfp round 2, the pass's ONE liveness predicate) —
+  // the computation disappears, which IS what the ruling licenses (measured: zero
+  // `fmul_f32` in slice_libm_ld80_nexttowardf). ⚠ The sentence that stood here —
+  // "outside a region it is instead lowered, uncomputed and freed" — was false
+  // for a dead 4.4 select (a silent which-path rail) and a dead template product
+  // whose source is later rotated (a dirty rail); see QramLowering.h.
   eraseDeadVolatileScalarStores(M, taint);
 
   // bd zco4 — volatile scalar-local SSA promotion (QramLowering.cpp): the mem2reg
@@ -356,6 +370,23 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // promoteFp80Union precedent) — the promoted phis/values are re-tainted and a
   // scalar exposed by an outer promotion is claimed on the next turn.
   while (promoteVolatileScalarLocals(M, taint))
+    taint = propagate(M, wd);
+
+  // bd `test_C_libtooling-vsfp` round 2 — THE DEAD CALL-ARGUMENT DROP, SLOT B.
+  // The two fenv stages just above are what make a parameter dead in callees
+  // like `h(a,k){ volatile char z = a; return k+1; }` (the store erasure, with
+  // its dead cone) and `volatile char z = a; char w = z; … (w - w)` (the
+  // promotion, with its residue) — bd a8q5, r1B F-VB-1. Slot A ran before them
+  // and saw the volatile store as a root. Asked here, still before
+  // `promoteFp80Union`, PredMux, `detectSpecializations` and every emission, so
+  // the premise of slot A (no stage has read the argument yet) holds verbatim.
+  // What ran between the slots and could have READ a now-dead operand: the
+  // by-ref inliner, the rail-bank promoter and mint, the bitcast and volatile
+  // folds. None records an SSA value this drop then deletes (the rail-bank
+  // record is metadata on an ALLOCA, never on a load), and each is an
+  // accept-only normaliser. Idempotent with slot A: every argument slot A
+  // dropped is a constant, and constants are never revisited.
+  if (dropDeadCallArguments(M, taint))
     taint = propagate(M, wd);
 
   // bd 3c6m.51 — x86_fp80 union-promotion peephole (Fp80Union.cpp): the ld80 libm
@@ -982,25 +1013,35 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
-  // bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the TOTAL
-  // half of `dropDeadCallArguments` (the predictor at the top of this function).
-  // It OBSERVES the built clones: a call here that passes a quantum operand to a
-  // parameter the clone never reads keeps that operand's rail alive for nobody,
-  // and a derived rail kept alive that way dephases a later non-diagonal gate on
-  // the register it copies (bd vsfp) — so it declines loudly, never warns.
+  // bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the observing
+  // half of `dropDeadCallArguments` (its slots A and B above). It asks the SAME
+  // liveness predicate of the BUILT clones (the specializer's record
+  // `taint.SpecDeadArgMask`): a call here that passes a caller-side quantum value,
+  // kept alive by nothing else, into a slot the clone never reads keeps that
+  // value's rail alive for nobody, and a derived rail kept alive that way dephases
+  // a later non-diagonal gate on the register it copies — so it declines loudly.
+  // ⚠ Round 1 called this "TOTAL"; it is total only for phantom reads THROUGH A
+  // CLONE CALL (Rule-13 r1A F-VA-2 — a dead intrinsic kept a rail alive with no
+  // clone in sight). Those other keepers are the drop's `deleteDeadCones`.
   //
   // ⚠ THE SLOT: after `specialize()`, the first point at which the clone bodies
-  // are FINAL (a use the clone pipeline removed is visible only here), and at the
-  // END of the post-`specialize()` decline chain — after the bd d88e lift
+  // are FINAL (a read the clone's own flatten removed is visible only here), and at
+  // the END of the post-`specialize()` decline chain — after the bd d88e lift
   // re-ask, the bd 2qyz re-sweep, the bd l3oi fence, the bd 3d8q stale-reader
-  // backstop and the two loop re-asks above — so it only ever speaks where
-  // nothing else did. That is the twin-parity argument, not a convenience: the
-  // hand-inlined twin never computes the phantom operand, so any OTHER owner that
-  // fires here fires on the twin too and must keep its string
-  // (`LLVMContext::diagnose` exits on the first `DS_Error`, bd br4a). Before
-  // `lowerRotations`, which RAUWs every `cq_theta` result to its handle. Nothing
-  // between `specialize()` and here writes `taint.Tainted`, so the taint it reads
-  // is FINAL.
+  // backstop and the two loop re-asks above — so it only ever speaks where nothing
+  // else did (`LLVMContext::diagnose` exits on the first `DS_Error`, bd br4a).
+  // ⚠ WHY LAST IS NOT "TWIN PARITY" (L7; Rule-13 r1B F-VB-5). Round 1 wrote "the
+  // twin never computes the phantom operand, so any OTHER owner that fires here
+  // fires on the twin too". False in one direction: an earlier owner can fire ON
+  // THE PHANTOM OPERAND'S OWN CONE, which the twin does not have (r1B `v27`: l3oi
+  // refused a 4.4 select reading a scrubbed call result, while the twin accepted).
+  // The correct statement: an earlier owner fires either on something the twin also
+  // has (same verdict) or on the phantom operand's cone (the twin has none — a
+  // decline where the twin accepts, the safe direction). Since round 2 the drop
+  // removes such a cone before emission whenever the callee's parameter is dead in
+  // the ORIGINAL body (`v27` now accepts, twin-identical). Before `lowerRotations`,
+  // which RAUWs every `cq_theta` result to its handle. Nothing between
+  // `specialize()` and here writes `taint.Tainted`, so the taint it reads is FINAL.
   if (declinePhantomCloneArgReads(M, taint))
     return PreservedAnalyses::none();
 
@@ -1199,10 +1240,10 @@ bool CQLoweringPass::runOnFunction(Function &F) {
       taint.PhaseCalls.empty() && taint.MeasureCalls.empty())
     return false;
 
-  // bd `test_C_libtooling-vsfp` — the dead call-argument drop, mirrored in this
-  // entry point too (twin-pipeline parity is MANDATORY, WI-1.12). FIRST, before
-  // any stage reads an argument; see run() for the slot argument. Module-wide,
-  // like `detectSpecializations` below (AXIS-F).
+  // bd `test_C_libtooling-vsfp` — the dead call-argument drop's SLOT A, mirrored
+  // in this entry point too (twin-pipeline parity is MANDATORY, WI-1.12). FIRST,
+  // before any stage reads an argument; see run() for the slot argument and for
+  // slot B. Module-wide, like `detectSpecializations` below (AXIS-F).
   if (dropDeadCallArguments(M, taint)) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
@@ -1266,12 +1307,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // claim it, so the volatile store survives to `declineTaintEscapes` and the
   // cell dies on kMsgStore. Grounded in the fenv ruling (owner 2026-08-10): CQ
   // models no FP exception flags and a volatile access to a non-escaping local
-  // is not observable. Erases the stores/markers/alloca; the stored VALUE is then
-  // trivially dead and, inside a PredMux region, is removed by the pre-existing
-  // cleanup at PredMuxFlatten.cpp:2618 — so the emitted circuit generally loses
-  // the multiply too, which IS what the ruling licenses (measured: zero
-  // `fmul_f32` in slice_libm_ld80_nexttowardf). Outside a region it is instead
-  // lowered, uncomputed and freed. See QramLowering.h for the asymmetry.
+  // is not observable. Erases the stores/markers/alloca AND the stored value's
+  // dead cone (bd qjoc / bd vsfp round 2, the pass's ONE liveness predicate) —
+  // the computation disappears, which IS what the ruling licenses (measured: zero
+  // `fmul_f32` in slice_libm_ld80_nexttowardf). ⚠ The sentence that stood here —
+  // "outside a region it is instead lowered, uncomputed and freed" — was false
+  // for a dead 4.4 select (a silent which-path rail) and a dead template product
+  // whose source is later rotated (a dirty rail); see QramLowering.h.
   eraseDeadVolatileScalarStores(M, taint);
 
   // bd zco4 — volatile scalar-local SSA promotion, mirrored in this entry point
@@ -1281,6 +1323,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     taint = propagate(M, wd);
     onlyInF(taint.ThetaCalls);
     onlyInF(taint.PhiCalls);
+    onlyInF(taint.MeasureCalls);
+  }
+
+  // bd `test_C_libtooling-vsfp` round 2 — the drop's SLOT B, mirrored in this
+  // entry point (twin-pipeline parity, WI-1.12). See run() for why two slots.
+  if (dropDeadCallArguments(M, taint)) {
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
     onlyInF(taint.MeasureCalls);
   }
 

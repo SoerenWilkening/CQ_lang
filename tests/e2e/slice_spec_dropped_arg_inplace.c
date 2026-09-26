@@ -9,7 +9,9 @@
    dead-argument drop the call is `h(0, m)`, `q` has no prior user, and the add lowers
    IN PLACE (`cqrt_addc_i32`), exactly as in the hand-inlined twin
    (slice_spec_dropped_arg_inplace_twin.c). `e2e-spec-dropped-arg-inplace-twin-identical`
-   pins the two goldens BYTE-IDENTICAL. On the oracle that gate is RED.
+   pins the two goldens BYTE-IDENTICAL. (What is red on the oracle is THIS slice's
+   own entry — its 2-TU trace is out of place; the twin-identical gate compares two
+   committed goldens and cannot be red on any binary, bd vsfp r1B F-VB-6.)
 
    `m = argc + 4` = 5 under the harness (bd 46oo), so the arm runs. */
 int h(int a, int k);

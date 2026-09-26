@@ -9,17 +9,22 @@
    `specialize()` scrubs the call result's conservative taint — the scrub bd d88e's
    re-ask (`declineFalsifiedMergePhiLifts`) exists to observe.
 
-   ⚠ bd test_C_libtooling-vsfp (2026-09-26) — WHY `a` IS STORED TO A VOLATILE LOCAL.
-   This body used to be `(void) a; return k + 1;`, i.e. `a` had NO USES, and bd
-   vsfp's `dropDeadCallArguments` now replaces such an argument by `0` before
-   `detectSpecializations` (what `clang -O1` does to the hand-inlined twin) — so
-   that spelling is no Phase-6 site at all and this golden would scrub nothing. The
-   volatile store keeps `a` USED in the body, so the call is still specialized; the
-   clone's own lowering erases the store (the fenv ruling), the built clone never
-   reads `a`, and the operand is `q`, a `cq_theta` result — the one operand bd vsfp's
-   `declinePhantomCloneArgReads` exempts (a user register the phantom read neither
-   mints nor keeps alive). It is the C-reachable spelling of the population the d88e
-   re-ask still guards. The golden is byte-identical to the pre-vsfp one (measured). */
+   ⚠ bd test_C_libtooling-vsfp — WHY `a` IS STORED TO A VOLATILE LOCAL, AND WHAT
+   THAT NO LONGER BUYS (round 2, 2026-09-26). This body used to be `(void) a; return
+   k + 1;`. Round 1's dead-argument drop replaced an `a` with no uses by `0`, so round
+   1 stored `a` to a volatile local to keep the call a Phase-6 site, and said the
+   CLONE's lowering erased the store. That attribution was WRONG (bd vsfp Rule-13 r1B
+   F-VB-3): the MODULE fenv pre-pass `eraseDeadVolatileScalarStores` erases it on
+   THIS body, before `detectSpecializations`. Round 2 asks the drop again right after
+   the fenv stages (slot B), so `a` is dead there and the call becomes `h(0, m)`: this
+   golden no longer reaches the specializer or the scrub at all. It is now the e2e
+   golden of the slot-B drop with a `cq_theta` operand; its bytes did not move
+   (measured — the stream was already the twin's), and the spurious lyyf-(B) warning
+   and dirty-rail census count bd jr8q names are gone from it (no clone call). The
+   d88e lift-then-scrub re-ask has NO C-reachable member any more: a callee that READS
+   its argument and returns classical needs a read that survives `clang -O1` and the
+   fenv stages yet dies in the clone, which only hand-written IR provides (the
+   branch-only read in the re-spelled `lowering_*_spec_scrubbed_*` lit fixtures). */
 #ifdef cq_theta
 #error "C18 violation: CQ.h was -include'd into a classical lib TU (must compile without it)"
 #endif

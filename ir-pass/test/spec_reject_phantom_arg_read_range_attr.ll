@@ -1,25 +1,24 @@
-; spec_reject_phantom_arg_read_range_attr.ll — DECLINE (bd test_C_libtooling-vsfp, the TOTAL
-; half: `declinePhantomCloneArgReads`). HAND-WRITTEN IR.
+; spec_reject_phantom_arg_read_range_attr.ll — DECLINE (bd test_C_libtooling-vsfp, the
+; phantom-read BACKSTOP; hand-written IR). ⚠ Round 2: the name is kept, the attribute is not.
 ;
-; `@h` ignores `%a`, the bead's shape, but `%a` carries `range(i32 1, 100)`: a null
-; constant would violate it, so the dead-argument drop's attribute whitelist
-; (noundef/signext/zeroext/inreg only) leaves the call alone — the predictor is
-; deliberately conservative, and this is its miss. The operand is the 4.4 bool-select
-; `%out` rail (`select i1 %b, i32 9, i32 4`), a which-path copy of `%b`, read only by the
-; clone that ignores it, across Ry(.7) on `%b`: on the oracle (`main` aee8f4f8) a SILENTLY
-; dephased circuit (exit 0, no warning, stage 2b clean). After `specialize()` the backstop
-; sees the built clone's parameter 0 with no uses and a non-`cq_theta` tainted operand in
-; that slot, and declines. The CHECK-NOT pins that the DROP did not fire — so the fence
-; that speaks is the observer, not the predictor.
-; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; Round 1 defeated the drop with `range(i32 1, 100)` on the dead parameter. Round 2 mirrors
+; LLVM DAE, which STRIPS `range`/`nofpclass` when it rewrites an argument, so that slot is
+; now dropped (pinned by spec_accept_dropped_arg_range_attr_stripped.ll). What the drop
+; still refuses is an attribute it does not know — here a STRING attribute on the
+; parameter — so the phantom operand (a 4.4 bool-select `%out`, which the twin never
+; computes) reaches `specialize()`, the clone records slot 0 dead, and the backstop
+; declines rather than keep that which-path rail alive across the later Ry on `b`.
+;
+;
+; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s
 ; CHECK-NOT: CQ_DEADARG_DBG
-; CHECK: error{{.*}}in function main{{.*}}cq specialization: quantum argument to a parameter the lifted callee never reads
+; CHECK: error: {{.*}}cq specialization: quantum argument to a parameter the lifted callee never reads
 
 declare i1 @cq_theta_i1(i1, double)
 declare i1 @cq_measure_i1(i1)
 
-define i32 @h(i32 range(i32 1, 100) %a, i32 %k) {
+define i32 @h(i32 "cq.probe.opaque" %a, i32 %k) {
   %r = add i32 %k, 1
   ret i32 %r
 }

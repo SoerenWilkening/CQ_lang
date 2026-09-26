@@ -1,23 +1,15 @@
-; spec_reject_phantom_arg_read_volatile_callee.ll — DECLINE (bd test_C_libtooling-vsfp, the
-; TOTAL half: `declinePhantomCloneArgReads`, reached FROM C).
+; spec_reject_phantom_arg_read_volatile_callee.ll — ⚠ NOW AN ACCEPT with the fenv-intended
+; twin's stream (bd test_C_libtooling-vsfp ROUND 2; bd a8q5; Rule-13 r1B F-VB-3). The name
+; is kept on purpose: round 1's record, both Rule-13 reviews and bd a8q5 cite it.
 ;
-; `h(a, k) { volatile int z = a; return k + 1; }` USES `a` — a volatile store to a
-; non-escaping local — so the dead-argument drop (a predictor keyed on `use_empty()`)
-; correctly leaves the call alone. But the CLONE's pipeline erases that store (the fenv
-; ruling: a volatile access to a non-escaping local is not observable), and the built
-; clone `__cq_q_h_01` then never reads its parameter 0: the phantom read the drop could
-; not predict. The operand is the 4.4 bool-select `%out` rail, a which-path copy of `b`,
-; kept alive only by that call across `b = cq_theta(b, .7)` — on the oracle (`main`
-; aee8f4f8) a SILENTLY dephased circuit (exit 0, no warning, stage 2b clean). The
-; backstop OBSERVES the built clone after `specialize()` and declines, as the last owner
-; before `lowerRotations`. The operand is not a `cq_theta` result, so the fence's one
-; exemption does not apply (its control: spec_accept_phantom_arg_read_theta_source.ll).
-;
-; ⚠ The hand-inlined twin (`volatile int z = p;` in the caller) is NOT a correctness
-; oracle here: it compiles on every binary and is dephased the same way — the erased
-; store leaves `p` dead, and a dead 4.4 select still gets its `%out` minted and never
-; discharged. That is a separate, pre-existing defect with no clone in it, filed as bd
-; qjoc (P1); declining this module is the safe direction and costs no correct accept.
+; Round 1 pinned this as the backstop's one C-reachable customer and said the CLONE
+; pipeline erased the callee's volatile store. r1B measured that FALSE: the MODULE fenv
+; pre-pass `eraseDeadVolatileScalarStores` erases it on the ORIGINAL callee, before
+; `detectSpecializations` — predictable, and the round-1 decline cost the program its
+; fenv meaning (the coherent twin). Round 2 asks the drop again right after the fenv
+; stages (SLOT B), so `h(p, m)` becomes `h(0, m)`, the dead 4.4 select is deleted, and
+; the stream is the twin's (`volatile int z = a;` removed, `int t = m + 1;`):
+; alloc; Ry(.5); Ry(.7); measure — no `%out` rail, no copy. Twin: fx/volatile_charT.
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
@@ -31,10 +23,42 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
-; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK-NOT: CQ_DEADARG_DBG
-; CHECK: error{{.*}}in function main{{.*}}cq specialization: quantum argument to a parameter the lifted callee never reads
+;
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NEG < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=DROP < %t.err
+;
+; The ordered call sequence of @main (derived from the lowered module; SSA names
+; wildcarded, constants — every dropped `0` and every angle — kept):
+; Between consecutive matches NO other runtime/clone call may appear, so the
+; runtime stream is pinned EXACTLY, not as a subsequence.
+; CHECK-LABEL: define {{.*}}@main(
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @atoi(ptr nocapture noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_alloc_i1(i1 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i1(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @h(i32 noundef 0, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i1(i32 %{{[a-zA-Z0-9_.]+}}, double 0x3FE6666666666666)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i1 @cqrt_measure_i1(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: ret i32
+;
+; Callees the ORACLE emitted in @main and this lowering must not:
+; NEG-LABEL: define {{.*}}@main(
+; NEG-NOT: @__cq_q_h_01(
+; NEG-NOT: @cqrt_alloc_i32(
+; NEG-NOT: @cqrt_cnot(
+; NEG-NOT: @cqrt_copy_i32_controlled(
+; NEG-NOT: @cqrt_free(
+; NEG-NOT: @cqrt_x(
+; NEG: ret i32
+; DROP: CQ_DEADARG_DBG: drop arg 0 of @h in @main (inst)
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

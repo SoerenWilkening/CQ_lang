@@ -14,25 +14,24 @@
 ; model"). CQ models no FP exception flags, and a volatile access to a
 ; NON-ESCAPING function-local is not observable, so the store is dead.
 ;
-; *** WHAT THIS FIXTURE PINS IS THE NO-CONTROL-FLOW HALF OF AN ASYMMETRY, AND IT
-; MUST NOT BE READ AS "THE COMPUTATION ALWAYS SURVIVES". *** Here there is no
-; enclosing tainted branch, so nothing invokes PredMuxFlatten.cpp:2618's
-; `RecursivelyDeleteTriviallyDeadInstructions`; the now-dead product therefore
-; reaches `lowerOps`, is emitted as a template call, and is then uncomputed and
-; freed by the whole-DAG spine — a useless but harmless gate pair. INSIDE a
-; PredMux region the same product is deleted outright, and the shipped
-; `slice_libm_ld80_nexttowardf` golden has ZERO `fmul_f32` for exactly that
-; reason. Both outcomes are sound under the fenv ruling; they are not the same
-; circuit.
+; ⚠⚠ bd vsfp ROUND 2 (bd test_C_libtooling-qjoc; bd vsfp Rule-13 r1B F-VB-7) — THE
+; ASYMMETRY THIS FIXTURE USED TO PIN IS GONE, AND THE HALF IT PINNED WAS NOT "HARMLESS".
+; It pinned the no-control-flow half: the dead product `x*x` was lowered, uncomputed
+; and freed, "a useless but harmless gate pair". That was true of THIS module and
+; false of the class: a dead 4.4 select left behind the same way got its `%out`
+; which-path rail minted and never discharged (silent dephasing, bd qjoc), and a dead
+; template product whose source later took a non-diagonal gate was left DIRTY
+; (warned). The stage now deletes the erased store's DEAD cone itself, with the
+; pass's ONE liveness predicate (`DeadValueLiveness.h`), so the circuit is the same
+; inside and outside a PredMux region: the computation is gone — what the fenv
+; ruling licenses ("the computation then usually disappears too"). CLAUDE.md's
+; owner-ruled fenv section still says "Both are sound"; that sentence is FLAGGED to
+; the owner in the bd vsfp record (TRACK_VSFP §6), not edited.
 ;
-; That distinction is recorded here because a tidier claim — "the stage removes
-; the store, so the computation survives" — was put to the owner when the ruling
-; was requested, and was an artifact of a fixture shaped like THIS one. The
-; ruling was re-affirmed on the measured facts. Do not restore the tidier claim.
-;
-; So the CHECKs below assert what actually happens on this shape: the product is
-; lowered, then its adjoint runs, THEN the rail is freed (Rule 6 — freed only at
-; |0>). They are a Rule-6 pairing pin, not a "computation is protected" pin.
+; What remains on this module: `%p` is a user `cq_theta` (a liveness ROOT, never
+; deleted) with no other reader, so its rail is allocated, rotated, reversed and
+; freed by the ordinary whole-DAG spine — exactly the hand-written program without
+; the volatile line.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -73,17 +72,9 @@ entry:
 ; CHECK-NEXT:  %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f32(float %u1)
 ; CHECK-NEXT:  call void @cqrt_ry_f32(i32 %[[R]], double 5.000000e-01)
 ;
-; On THIS shape (no enclosing tainted branch) `x*x` still lowers, on the rail, as
-; a Q+Q template call — bare symbol; `_hl`/`_lh` are the mixed shapes. See the
-; asymmetry note in the header: this is not a guarantee the pipeline makes in
-; general, it is what happens when the PredMux DCE path is not reached.
-; CHECK-NEXT:  %[[P:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fmul_f32(i32 %[[R]], i32 %[[R]])
-;
-; and because the product is now dead, the whole-DAG spine does its ordinary job
-; on it — adjoint FIRST, then free, so the rail is provably |0> at the free and
-; Rule 6 holds. The source rail's own Ry is reversed and it is freed after:
-; CHECK-NEXT:  call void @cq_template_fmul_f32_unc(i32 %[[P]], i32 %[[R]], i32 %[[R]])
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[P]])
+; No product, no template, no adjoint pair — the dead `fmul` went with the store.
+; The now-unread `%p` rail is reversed and freed by the spine (Rule 6: |0> at the
+; free):
 ; CHECK-NEXT:  call void @cqrt_ry_f32(i32 %[[R]], double -5.000000e-01)
 ; CHECK-NEXT:  call void @cqrt_free(i32 %[[R]])
 ;
