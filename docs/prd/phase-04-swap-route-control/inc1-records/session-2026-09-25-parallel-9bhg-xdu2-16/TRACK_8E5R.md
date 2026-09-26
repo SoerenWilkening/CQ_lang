@@ -23,6 +23,13 @@ result file are under `track_8e5r_probes/`.
 > `818f8afa`, for the delta reviewer), §13 (measurements on the merged tree), §14 (the
 > disposition of every F-EA-n / F-EB-n). Where this record was wrong it is corrected IN PLACE
 > and marked ⚠ CORRECTED (the e2e names in §6.1 were an instrument defect of mine).
+>
+> **UPDATE 2 (2026-09-26) — after the DELTA round r2** (`review_r2_delta_8e5r/`, on head
+> `c416f04d`: `CLEAR-WITH-ITEMS`, 0 P1, 2 P2, 2 P3, 2 notes). ⚠ **Its P2 F-R2-1 falsified a claim
+> this record made in §14 (F-EA-8 "argued not to flip")**: the composition 8e5r × d88e moved one
+> verdict against `main`. Fixed (bd ec7r), the L2 question re-asked over EVERY `empty()` gate on a
+> self-cleaning table, the guard made total over its stated scope (bd a66j), and the lit/CMake
+> fallback removed (bd sjwe): §15.
 
 ## 1. Headline
 
@@ -616,7 +623,7 @@ Reference = `ba80bda1` under r1B `nofree` (its own 10 runs: 0/5230 non-reference
 | F-EA-5 | P3 | **DOCUMENTED** `e24126b1` — the insert-a-deleted-pointer precondition in `ScrubOnDelete.h` and `TaintPropagation.h` |
 | F-EA-6 | P3 | **FILED, not built** — bd `test_C_libtooling-r77x` (a non-owner-deleted user intrinsic is now skipped silently; make it a loud postcondition) |
 | F-EA-7 | P3 | **FIXED** `c268f545` — the dead migration and the dead-pointer erase deleted with the reason at the site (§12.1 item 4) |
-| F-EA-8 | P3 | **DOCUMENTED** `e24126b1` — at the headers and at each of the three event-witness readers |
+| F-EA-8 | P3 | **DOCUMENTED** `e24126b1` — at the headers and at each of the three event-witness readers. ⚠ **THAT DOCUMENTATION WAS FALSE FOR ONE READER** (r2 F-R2-1, bd ec7r): the `LiftedConsumers` gate DID flip on the merged tree. Fixed and the gate enumeration redone in §15 |
 | F-EA-9 | P3 | **FIXED** `c268f545` — `ScrubOnDelete.h` includes `llvm/IR/Instructions.h` (verified: a TU including only it compiles) |
 | F-EB-1 (bd lin4) | **P1** (merge obligation) | **RESOLVED** `152fafe1` — `WeakVH F` + null-checked `cast_or_null` at the reader; `Base`/`Incomings` stay `WeakTrackingVH` with the reason at the member; not AssertingVH, not an allowlist entry. The guard's selftest carries "d88e's raw F restored" and "AssertingVH for F" as mutants |
 | F-EB-2 (bd urf8) | **P2** | **FIXED** `c150d983` — the guard asks the compiler (§13.3); urf8 updated, not closed (owes the delta review) |
@@ -662,3 +669,206 @@ A/B count stands; every per-module NAME from the e2e corpus was one test late �
 names of §6.1 were wrong (corrected there), and r1B §4.5 inherited them. Found because an A/B
 mover NAMED `e2e-spec-fp80-union` contained `k1`'s `mul nsw i32 %0, 7`. The parser now pairs by
 test number; every name in §13 was re-measured with it.
+
+## 15. After the DELTA round r2 (2026-09-26)
+
+Record of the round: `review_r2_delta_8e5r/REVIEW.md` (committed verbatim, `d2efdd54`). Commits,
+each separate, on `worktree-agent-a2cf1f874e5ec99d2`; not merged, not pushed:
+
+| commit | item | kind |
+|---|---|---|
+| `d2efdd54` | the r2 record + probes, verbatim | record |
+| `c81a2201` | F-R2-1 / bd ec7r — the lift re-sweep gated on the lift EVENT | **LOGIC** |
+| `ee046f42` | F-R2-2 / bd a66j — the guard parses with the build's own command and walks every project type it reaches | instrument |
+| `7c1e1622` | F-R2-4 / bd sjwe — no debugalloc fallback; CLAUDE.md names `cq-scrub-selftest` | harness |
+| (this) | this section and the dispositions | record |
+
+### 15.1 F-R2-1 (P2, bd ec7r) — the fix, and why this gate
+
+**The defect.** `declineLiftedStaleRecordOps` (the bd 2qyz MODULE-WIDE stale-record re-sweep after a
+one-register merge-φ lift) was gated on `!taint.LiftedConsumers.empty()`. 8e5r made that set
+self-cleaning; d88e moved the re-sweep after `specialize()`, whose `retargetSite` REBUILDS an
+fp-return spec call and ERASES the old one. When that call was the lift's only consumer the set
+emptied and the re-sweep was skipped. Neither change alone moves it; only the composition does.
+
+**LOGIC changed (the only pass-code change in this round):**
+- `OpcodeLowering.cpp` `declineLiftedStaleRecordOps`: `if (taint.LiftedConsumers.empty())` →
+  `if (taint.LiftedMergePhis.empty())`.
+- `TaintSet::LiftedConsumers` REMOVED, with its one writer (`liftOneRegisterMergePhi`'s insert loop)
+  and its selftest line — the gate was its only reader.
+
+**Why `LiftedMergePhis`, argued.** The question the re-sweep asks is module-wide and does not depend
+on any consumer staying alive, so the gate must record the EVENT, not a population the pipeline can
+shrink. `LiftedMergePhis` gets exactly one record per accepted lift (pushed in the same accept, right
+beside the old insert loop) and is NEVER shrunk — its handles may null, its length cannot. It is a
+`SmallVector` of records, not a `scrub::` table, so no deletion can make it read empty. And it is
+EQUIVALENT to the old gate on every pre-merge binary: a lifted φ always has ≥ 1 `Instruction` user
+(`declineClassicalMuxes` skips `use_empty()` φs before the lift runs), so "raw consumer set
+non-empty" and "a lift occurred" were the same fact. The alternatives were worse: a raw
+(non-scrub) consumer set would re-introduce a dangling-key table (the very class this bead closes);
+a scrub set that survived `specialize()` would need a claim about every future eraser in that window.
+
+**Red → green (Rule 12)**, `lowering_reject_lift_resweep_spec_rebuilt_consumer.ll` = the reviewer's
+`p2_C` (2 TUs from plain C, `slice()` = the shipped Grover range-oracle loop, `main()` = a one-register
+lift whose only consumer is an fp-return spec call), string mirrored:
+
+| binary | verdict |
+|---|---|
+| `def1b088` (pre-d88e main) | DECLINE — fixture PASSES |
+| `818f8afa` (8e5r alone) | DECLINE — PASSES |
+| `ba80bda1` (d88e alone) | DECLINE — PASSES |
+| `c416f04d` (8e5r × d88e, before this fix) | **ACCEPT — FAILS** (3/3) |
+| this tree | DECLINE — PASSES (system / lifo / nofree, 3 each) |
+
+Companion `lowering_reject_lift_resweep_surviving_consumer.ll` (`p2_T`, a surviving pure-op
+consumer) passes on all five — the case the old gate already got right is unmoved. ⚠ The DECLINE is
+the pre-existing over-decline F-R2-3 / bd 3a43 (the re-sweep is module-wide, so a lift in `main()`
+declines `slice()`); both fixture headers say they pin **main's verdict**, not that it is right.
+
+**Comments corrected at the source (L7):** `OpcodeLowering.cpp` (the note "nothing erases between
+`declineClassicalMuxes` and this re-sweep" — written after the merge, measured before it) and
+`TaintPropagation.h`'s struct-level F-EA-8 block (now: a self-cleaning table cannot be an event
+witness; every remaining gate is tabled below), plus every comment that named `LiftedConsumers` the
+witness (`TaintPropagation.cpp` ×2, `OpcodeLowering.h`, `CQLoweringPass.cpp`, `MergePhiPeel.cpp`,
+`control_peel_reject_stale_mux_record.ll`'s containment argument).
+
+### 15.2 The L2 question, asked of EVERY `empty()` / `size()` gate over a self-cleaning table
+
+Enumeration: `grep -nE "\b(<every scrub:: member>)\s*(\.|->)\s*(empty|size)\s*\("` over
+`ir-pass/src` + `ir-pass/include`, plus the reference aliases (`auto &PC = taint.PhiCalls` …; none
+calls `empty`/`size`). **11 sites, 15 gate evaluations; no `size()` gate exists.** Instrument
+(`tools/mk_gate_instr.py` on a copy of `c416f04d`, never committed): every gate evaluation prints
+the live answer AND what the pre-8e5r RAW container would have answered (`rawEmpty()`); a **FLIP** is
+live-empty ∧ raw-non-empty — exactly F-R2-1's shape. Positive control first: on the reviewer's
+`p1`/`p2` probes it flips `G7` on `k1.ll` and `p2_C.ll`, and nothing else. Sweep: all 3254 corpus
+modules + the 4 probes (`results/r2_empty_gate_flip_sweep.txt`), every gate reached.
+
+| # | gate (site) | meaning the code intends | evaluations / modules | FLIPS | decision |
+|---|---|---|---|---:|---|
+| G1 | `run()` + `runOnFunction` passthrough: `ThetaCalls/PhiCalls/PhaseCalls/MeasureCalls.empty()` (`CQLoweringPass.cpp` ×3) | "any quantum intrinsic in the module" | 3247 / 3247 | 0 | **SOUND BY ORDER**: evaluated right after `propagate()` builds the lists; nothing has erased yet |
+| G2 | `declineRound2TaintedArmCone`: `ValueArmConeOps.empty()` (`ArmClassify.cpp`) | "cone members to re-check" | 2233 / 2233 | 0 | **SOUND BY CONSTRUCTION**: the loop only ever re-checks LIVE members; a dead cone member is skipped anyway (its own comment) — "no live member" and "no work" coincide |
+| G3 | `computeFreePoint`: `!IterationLocalBlocks.empty() && count(BB)` (`FreePoint.cpp`) | short-circuit before a membership test | 1345 / 1050 | 0 | **SOUND BY CONSTRUCTION**: `empty()` only guards `count()` of a LIVE block — if the live set is empty the count is 0 either way |
+| G4 | uncompute terminal grouping: same (`Uncomputation.cpp`) | same | 1345 / 1050 | 0 | same as G3 |
+| G5 | `lowerRotations`: `ThetaCalls.empty() && PhiCalls.empty()` (`RotationLowering.cpp`) | "live thetas to lower" | 2097 / 2097 | 0 | **SOUND BY CONSTRUCTION**: the stage lowers only live calls; `declineFrozenWire` behind it walks `Tainted` over the IR, and a module with 0 live thetas has no tainted freeze by Rule 3 |
+| G6 | `warnLiveRecordRotations`: `UserChainedRotations.empty()` (`RotationLowering.cpp`) | "live user chained rotations to report" | 2042 / 2042 | 0 | **SOUND BY CONSTRUCTION**: its loop only reports LIVE members (and it is a WARNING, bd lyyf) |
+| **G7** | `declineLiftedStaleRecordOps`: `LiftedConsumers.empty()` | "**a lift OCCURRED**" (an EVENT) | 2148 / 2148 | **2** (`k1`, `p2_C` — the probes only) | **WRONG — FIXED** (§15.1): now `LiftedMergePhis.empty()`, the event record |
+| G8 | `repropagateControlMerges`: `UntaintedMergeRails.empty()` (`TaintPropagation.cpp`) | "round-2 rails to re-seed from" | 2328 / 2328 | 0 | **SOUND BY CONSTRUCTION**: the only work is re-propagating FROM live rails; an all-dead set leaves nothing to propagate from |
+| G9 | `lowerMeasures`: `MeasureCalls.empty()` (`MeasureLowering.cpp`) | "live measures to lower" | 2071 / 2071 | 0 | same as G5 |
+| G10 | `collapseFlattenedLoopRails`: `InLoopFlattenedPreds.empty()` (`LoopLowering.cpp`) | "a region was emitted into a loop" (an EVENT) | 2447 / 2354 | 0 | **ARGUED, and measured 0**: the loop that follows looks up each LIVE loop block in the table, so an all-dead table asks nothing the early-return skips. Only a recorded Pred that DIED and was replaced by a NEW block of the same loop could matter, and that new block is a different key (absent either way) — the gate cannot change the outcome |
+| G11 | `declineDephasingUnmarkedLoopRails`: `Tainted.empty()` (`LoopLowering.cpp`) | "anything tainted" | 2107 / 2107 | 0 | **SOUND BY CONSTRUCTION**: the stage asks questions of live tainted values only |
+
+So G7 was the only gate whose meaning was an EVENT answered by a population a later stage can
+erase; G10 is the one other EVENT-shaped gate and is outcome-neutral by the argument in its row
+(written into its source comment since `e24126b1`). ⚠ "0 flips over the corpus" is evidence about
+modules that reach each gate — the populations are large (1050–3247 modules) — and the one flip that
+exists needed a hand-built 2-TU program, which is why the probes are in the sweep.
+
+### 15.3 F-R2-2 (P2, bd a66j) — the guard
+
+- **The build's own command.** `CMAKE_EXPORT_COMPILE_COMMANDS ON` (top-level `CMakeLists.txt`); the
+  gate takes the CQPass command for `src/TaintPropagation.cpp` from `compile_commands.json`
+  (compiler `/usr/bin/c++`, `-O3 -DNDEBUG`, include paths, `-std=c++17`). Missing database, entry, or
+  any parse error FAILS CLOSED; unknown CLI args exit 2. ⚠ Consequence stated in the docstring: the
+  gate checks the **configured** build — a raw member under `#ifndef NDEBUG` is invisible in a Release
+  tree (a selftest `CONFIG` control pins exactly that), and is checked when a Debug tree is configured.
+- **Walk every project type it reaches** — project records AND class templates (the pattern, with its
+  type parameters exempt), by value, by POINTER, as a template argument or a `ScrubMap` MAPPED type.
+- **Unqualified names resolved like C++ lookup.** The JSON desugars only the top level, so `R2Rec *`
+  arrives unqualified; each such name is resolved innermost-scope-outward in one probe TU, and an
+  unresolvable one is refused. (Found by the selftest's own NULL control: the first spelling of this
+  change FAILED on a clean project record held by pointer — the fail-closed path, not a pass.)
+- **The r2 reviewer's six out-of-`Value`-scope spellings are now REFUSED**, each with its own
+  diagnostic: `void *` and a `void` template argument (type-erased), the `uintptr_t`/`intptr_t`
+  sugar, pointers to IR-owned `llvm::Loop` / `llvm::Use`, and a value handle in an associative-
+  container KEY. **Stated out of scope** (docstring): an address laundered through a plain integer
+  type (to the compiler it IS an integer); other non-`Value` IR-adjacent pointees (`MDNode *`,
+  analysis results); state outside `TaintSet` (bd ibtq).
+- **Speed.** A PCH of the headers' third-party includes, built once per run with the same command, is
+  an optimisation only: any failure with it is retried without it, and the selftest's first control
+  pins that the pristine verdict is identical with and without it. ctest `taintset-scrub-guard` +
+  `-selftest`: **41.3 s wall together** (r2 measured ~109 s for the selftest alone, under load).
+
+Validation (`results/guard_v3_*`): clean header **56 members walked, 0 problems** (57 → 56: the removed
+`LiftedConsumers`); `--selftest` **7 null/equivalence controls + 74 mutants, 0 failed**; the three
+reviewer corpora UNMODIFIED — r1A **0/15 MISSED**, r1B **0/23 MISSED**, r2 **0/12 MISSED**, all
+controls OK (every r2 kill is for its own reason, not a compile error).
+
+### 15.4 F-R2-4 (P3, bd sjwe) and F-R2-6 (note)
+
+- **sjwe.** `ir-pass/test/CMakeLists.txt` no longer falls back to `%cq-opt` (the substitution is left
+  empty, so lit substitutes a path that cannot run); `lit.cfg.py` also stops if the configured
+  debugalloc path IS `cq-opt` (realpath-equal — the case the mtime test could not see). Positive
+  control: a site with `config.cq_opt_debugalloc = config.cq_opt` stops with "configured as cq-opt
+  itself". CLAUDE.md's build line names all four targets.
+- **F-R2-6, the e2e k65 row as run counts** (`tools/sdist.py`, 20 runs per cell, `ModuleID` line
+  dropped before hashing):
+
+  | binary / allocator | wrong stream |
+  |---|---|
+  | `ba80bda1`, system | **20/20** this batch (18/20 in a second batch; r2 measured 10/20) — a LOTTERY whose odds drift by batch |
+  | `ba80bda1` + r1B interposer, lifo | 20/20 |
+  | `ba80bda1` + r1B interposer, nofree | **0/20** (the reference) |
+  | `c416f04d`, system | 0/20 |
+  | this tree: system / debugalloc lifo / nofree | 0/20 each |
+
+  §13.4 row B's "STREAM" for the e2e module is therefore the oracle's lottery landing wrong on that
+  sweep, not a deterministic mover; the lit fixture's row is deterministic (its RUN lines force LIFO).
+
+### 15.5 Record-only items
+
+- **F-R2-3 (P3, bd 3a43, pre-existing over-decline).** The 2qyz re-sweep is module-wide and runs after
+  `lowerLoops`' collapse, so a lift in `main()` declines a shipped Grover loop in `slice()` on all
+  four binaries (and on this tree — the two new fixtures pin that verdict, not its correctness). An
+  always-sweep mutant declines five shipped accepts (r2 §F-R2-3). Not in this change's scope.
+- **F-R2-5 (P3 note).** The null-`F` branch of `declineFalsifiedMergePhiLifts` is unreachable
+  (no `Function` is erased in `specialize()` or its callees; 0/3254 modules), its decline verdict is
+  right, and it has two blemishes the reviewer names: the diagnostic is anchored on the first defined
+  function when `L.DL` is empty, and its `return false` for "no defined function" exits the whole
+  record loop. Not changed (unreachable; a change would be untestable — Rule 12 can supply no
+  fixture).
+
+### 15.6 Measurements (as literally run)
+
+Final binaries (sha256): `cq-opt` `69250feaf68bbe4952ee3ac791e061a808234383db5a1101612726359d524218`,
+`cq-opt-debugalloc` `b8e9c952e2ccf4fabb7d2189155908340993816d9d410267ec0c323d51f5a79d`, `libCQPass.so`
+`e62d1a204ff3a85d…`, `cq-scrub-selftest` `ab56e731ca270b5c…`. Reference for the delta: `c416f04d`'s
+`cq-opt` `57f0348465bab76f` (a copy kept before rebuilding).
+
+- **Corpus A/B** (`results/r2_corpus_sweeps.log`; 2308 lit + 425 e2e stage-1 + 523 family + the 4 r2
+  probes = **3260**):
+  - A. NULL — subject twice: **3260/3260 same**.
+  - B. `c416f04d` vs subject: **3258 same, 2 A→D** — `lowering_reject_lift_resweep_spec_rebuilt_consumer.ll`
+    and its source probe `p2_C.ll`, i.e. exactly the deliberately changed gate's customer. 0 stream
+    moves, 0 string moves, 0 D→A. (`p2_T` and `k1` do not move: `p2_T` declined already, `k1` has
+    nothing stale — the reviewer's state-level probe.)
+  - C. `main` ba80bda1 vs subject, 2737 (lit + e2e + probes): **2735 same, 2 STREAM** — the 8e5r k65
+    program (the lit fixture, deterministic; the e2e module, the §15.4 lottery), where the ORACLE is
+    wrong. `p2_C` is now SAME as main.
+  - D. subject `cq-opt` vs `cq-opt-debugalloc` lifo / nofree: **3260/3260 same** each.
+- **Pins:** subject — the k65 fixture, the four um24 `nofree` lines and the two new fixtures, 10 runs:
+  **70/70 PASS**. Frozen `ba80bda1` via the r1B-interposer wrapper — k65 + um24: **50/50 FAIL**; the
+  two new fixtures: 6/6 PASS (main's verdict). `c416f04d` on the new fixture: **3/3 FAIL**.
+- **Guard:** §15.3. **CODE_MAP** `--check` clean.
+- **Full `lit ir-pass/test`:** 2308 discovered, 2307 passed, 1 XFAIL.
+- **Full `ctest --test-dir build -j6`, first run: 508/509** — `code_map_drift` RED: `CODE_MAP.md`
+  was stale since the guard commit `ee046f42` (new functions in `tools/taintset_scrub_guard.py`),
+  every other entry green. Regenerated in `cb041dab` (with the G10 comment, comment-only, `cq-opt`
+  bit-identical `69250feaf68bbe49`), then the **full `ctest --test-dir build -j6` re-run: 509/509
+  passed in 565.98 s** (load average 6.6 at start, 4.2 at end; `ir-pass-lit` 74.15 s,
+  `taintset-scrub-guard-selftest` 58.97 s under that load).
+
+### 15.7 Rule-13 r2 dispositions
+
+| id | sev | disposition |
+|---|---|---|
+| F-R2-1 (bd ec7r) | **P2** | **FIXED** `c81a2201` — the re-sweep gate reads `LiftedMergePhis` (the lift EVENT); `LiftedConsumers` removed; red-green fixture + companion; both false comments corrected at the source; the L2 enumeration over all 11 `empty()` gate sites done and MEASURED (§15.2) — G7 was the only flip |
+| F-R2-2 (bd a66j) | **P2** | **FIXED** `ee046f42` — the build's own compile command (NDEBUG included), project templates and pointed-to project records walked, unqualified names resolved, the six out-of-scope spellings refused, scope stated; all five reviewer spellings + A3/A4/A8–A11 in the selftest; r2 corpus 0/12 MISSED unmodified; PCH (41 s for both guard entries) |
+| F-R2-3 (bd 3a43) | P3 | **RECORD ONLY** (§15.5) — pre-existing over-decline; the new fixtures pin main's verdict, not its correctness |
+| F-R2-4 (bd sjwe) | P3 | **FIXED** `7c1e1622` — no CMake fallback, lit fatal on a debugalloc path equal to `cq-opt` (control fired), CLAUDE.md names `cq-scrub-selftest` |
+| F-R2-5 | P3 note | **RECORD ONLY** (§15.5) — unreachable; not changed (no fixture possible) |
+| F-R2-6 | P3 note | **RECORDED** (§15.4) — the run counts: ba80 system 20/20 and 18/20 wrong in two batches (r2: 10/20), ba80 no-reuse 0/20, subject 0/20 in every mode |
+
+**LOGIC changed since `c416f04d`, for the next delta reviewer:** only §15.1's two items (the gate
+expression; the member and its writer removed). Everything else in `git diff c416f04d..HEAD` is the
+guard tool, the lit/CMake harness, fixtures, records, and comments (the comment-only commit
+`cb041dab` proved mechanically).
