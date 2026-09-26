@@ -1,0 +1,12 @@
+== e2e NULL: subject twice
+denominator: 425 modules  A=ab/e2eSubjA  B=ab/e2eSubjB
+counts: same=425
+== e2e: oracle ba80 (system) vs subject (system)
+denominator: 425 modules  A=ab/e2eOra  B=ab/e2eSubjA
+counts: same=425
+== families: subject system vs subject-debugalloc lifo
+denominator: 523 modules  A=ab/famSubj  B=ab/famSubjLifo
+counts: same=523
+== families: subject system vs subject-debugalloc nofree
+denominator: 523 modules  A=ab/famSubj  B=ab/famSubjNofree
+counts: same=523

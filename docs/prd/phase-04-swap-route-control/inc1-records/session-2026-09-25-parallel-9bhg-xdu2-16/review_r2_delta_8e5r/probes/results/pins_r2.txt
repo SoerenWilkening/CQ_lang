@@ -1,0 +1,11 @@
+SUBJECT k65 pin: PASS 10 / FAIL 0 of 10
+SUBJECT um24 nofree iosink_reject_mux_literal_callee: clean-decline(rc1) 10 / crash 0 / other 0 of 10
+SUBJECT um24 nofree lowering_reject_break_uncollected_clone: clean-decline(rc1) 10 / crash 0 / other 0 of 10
+SUBJECT um24 nofree lowering_reject_inplace_rail_stale_w1_xor_bareout: clean-decline(rc1) 10 / crash 0 / other 0 of 10
+SUBJECT um24 nofree lowering_reject_inplace_rail_stale_w1_xor_derived: clean-decline(rc1) 10 / crash 0 / other 0 of 10
+ORACLE_ba80+rb8 k65 pin: PASS 0 / FAIL 10 of 10
+ORACLE_ba80+rb8 um24 nofree iosink_reject_mux_literal_callee: clean-decline(rc1) 0 / crash 10 / other 0 of 10
+ORACLE_ba80+rb8 um24 nofree lowering_reject_break_uncollected_clone: clean-decline(rc1) 0 / crash 10 / other 0 of 10
+ORACLE_ba80+rb8 um24 nofree lowering_reject_inplace_rail_stale_w1_xor_bareout: clean-decline(rc1) 0 / crash 10 / other 0 of 10
+ORACLE_ba80+rb8 um24 nofree lowering_reject_inplace_rail_stale_w1_xor_derived: clean-decline(rc1) 0 / crash 10 / other 0 of 10
+(40 'Segmentation fault: 11' shell notices from the ORACLE um24 runs elided)

@@ -23,6 +23,7 @@
 #define CQ_IRPASS_TAINT_PROPAGATION_H_
 
 #include "LoopPlan.h"  // LoopBreakRegion (by-value in BreakRegions, Phase 7.4 y05j.2)
+#include "ScrubOnDelete.h"  // every pointer-keyed table below (bd 8e5r / um24 / j8sk)
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/DenseSet.h"
@@ -41,13 +42,65 @@ namespace cq {
 class WidthDispatch;
 struct SpecPlan;
 
+// ⚠ EVERY POINTER-KEYED TABLE BELOW IS SELF-CLEANING ON DELETION (bd
+// test_C_libtooling-8e5r / -um24 / -j8sk, `ScrubOnDelete.h`). A key whose Value
+// is deleted — by ANY stage, through ANY route, LLVM utilities included — is
+// dropped by LLVM's own `~Value()` callback: it is no longer counted, found,
+// looked up or iterated, and a fresh object later allocated at its address is
+// NOT a member. Before this, the 133 IR-deleting sites in `ir-pass/src/`
+// (measured: 121 `eraseFromParent` + 12 LLVM utilities; 63 of them scrubbed
+// something nearby, the rest nothing) each had to remember to scrub each
+// table, and the ones that did not left DANGLING KEYS whose effect the system
+// allocator decided: nothing, a use-after-free READ (bd um24, `lowerLoops`), or a
+// fresh clone instruction answering `Tainted.count() == true` and being lowered
+// as quantum (bd 8e5r, `cq_template_mul_i32_hl(7 /*as a handle*/, m)`).
+//   * Adding a table: use `ScrubPtrSet` / `ScrubMap` / `ScrubCallList` /
+//     `scrub::PairSet`, or value handles (`WeakVH` / `WeakTrackingVH`). A raw
+//     pointer-keyed member in the common spellings FAILS the
+//     `taintset-scrub-guard` ctest — a BEST-EFFORT check with named gaps (a
+//     pointer to a library table, template specializations, short-name aliases,
+//     pointees outside `cq::`, one compile configuration; bd wop9 / 7gri / jk56),
+//     so do not rely on it as a proof; a new self-cleaning member must be added
+//     to `ir-pass/tools/scrub_selftest.cpp` (the same gate checks that it is).
+//   * Membership is by IDENTITY and never follows a RAUW — exactly the raw
+//     pointer's meaning. A table that must follow a RAUW uses `WeakTrackingVH`.
+//   * A deleted key is only MARKED dead, never physically removed, so surviving
+//     keys keep the slots and the iteration order they had before, and a loop may
+//     erase the instruction it is visiting. ⚠ "The stream does not move" is
+//     MEASURED, not guaranteed by construction (r1A F-EA-3): the hooks themselves
+//     allocate, so absolute addresses — and `Tainted`'s address order — differ
+//     from the unfixed binary. Measured: 0 stream movers on the shipped corpus vs
+//     the oracle, and allocator-independence across system / LIFO / no-reuse /
+//     scribble / 3 shuffle seeds (TRACK_8E5R.md §6.3, r1A I2/I3).
+//   * PRECONDITION (r1A F-EA-5): never INSERT a pointer to an already-deleted
+//     Value. Arming a key's `CallbackVH` reads the Value (`getContext()`), so a
+//     dead-pointer insert is a use-after-free — a raw container merely stored it.
+//     No insert site in the pass does this (r1A I1: 0 dead inserts over the
+//     corpus); a future table filled from a RAW record (a local snapshot, a
+//     `ControlRegion` field) must check liveness first.
+//   * `empty()` / `size()` count LIVE keys (r1A F-EA-8). A self-cleaning table
+//     therefore CANNOT be an EVENT WITNESS ("did X ever happen?"): it answers "is
+//     a member still alive?". ⚠ CORRECTED (L7, Rule-13 delta round r2 F-R2-1 /
+//     bd ec7r): this note used to say the three event-witness readers could not
+//     flip because "nothing erases a recorded member in those windows" — measured
+//     on the pre-merge binary, and FALSE after the bd d88e merge moved
+//     `specialize()` into the `LiftedConsumers` window. That gate now reads the
+//     lift EVENT (`LiftedMergePhis`) and `LiftedConsumers` is gone. Every
+//     remaining `empty()` gate over a table in this struct is tabled, decided and
+//     MEASURED (TRACK_8E5R.md §15.2): each one gates work that only ever touches
+//     the table's own LIVE members (so "no live member" and "no work" coincide),
+//     or is argued in place. A new `empty()` gate over one of these tables must
+//     say which of the two it is — or read an event record instead.
+//   * A LOCAL raw copy of a table (`SmallPtrSet<CallInst *> GateCalls(
+//     taint.ThetaCalls...)`) is outside this guarantee; copy into a `scrub::`
+//     container (`TaintedValueSet Before = taint.Tainted;`) to stay inside it.
 struct TaintSet {
   // Front-end intrinsic call sites collected during the propagation walk,
   // in basic-block order. `ThetaCalls` seeds the taint sources and feeds
   // `RotationLowering`; `MeasureCalls` is the work list for
   // `MeasureLowering`. Collecting them here avoids re-walking the module
   // from those passes.
-  llvm::SmallVector<llvm::CallInst *, 8> ThetaCalls;
+  ScrubCallList<llvm::CallInst *, 8> ThetaCalls;
 
   // ⚠ `PhiCalls` IS PERMANENTLY EMPTY SINCE bd test_C_libtooling-3qlq Inc 1
   // (2026-09-05). It used to hold the 15-width `@cq_phi_<sfx>(x, angle)`
@@ -67,9 +120,9 @@ struct TaintSet {
   // an arg-0 WIRE and an arg-1 ANGLE can ever be handed a `void(double)`
   // call whose `getArgOperand(0)` is the angle and whose `getArgOperand(1)`
   // is out of range.
-  llvm::SmallVector<llvm::CallInst *, 8> PhiCalls;
+  ScrubCallList<llvm::CallInst *, 8> PhiCalls;
 
-  llvm::SmallVector<llvm::CallInst *, 8> MeasureCalls;
+  ScrubCallList<llvm::CallInst *, 8> MeasureCalls;
 
   // bd test_C_libtooling-3qlq Inc 1 (PRD `retire-swap-route-PRD.md` §4.1,
   // owner decision D1) — the REGISTER-FREE `void @cq_phi(double)` BRANCH
@@ -85,7 +138,7 @@ struct TaintSet {
   // `deleteGlobalPhases` (which deletes every surviving one — an
   // uncontrolled or classically-controlled branch phase is a GLOBAL phase,
   // owner decision D2). Emitters that erase one MUST scrub it from here.
-  llvm::SmallVector<llvm::CallInst *, 8> PhaseCalls;
+  ScrubCallList<llvm::CallInst *, 8> PhaseCalls;
 
   // Front-end intrinsic call sites reached via `invoke` instead of a direct
   // `call` (test_C_libtooling-rzs9). `collectAndSeed` declines each one LOUDLY
@@ -95,13 +148,13 @@ struct TaintSet {
   // re-flagging a tainted arg-0 as a misleading "unknown callee" (the callee IS
   // known — it is reached via the unsupported form). Normally empty: clang -O1
   // on exception-free C never emits `invoke` for these opaque externs.
-  llvm::SmallPtrSet<llvm::CallBase *, 4> IntrinsicInvokes;
+  ScrubPtrSet<llvm::CallBase *, 4> IntrinsicInvokes;
 
   // All SSA values that carry quantum taint at any point in the pipeline.
   // `RotationLowering` mutates this set (inserts alloc handles minted at
   // classical-operand thetas); `OpcodeLowering` mutates it again as tainted
   // adds get rewritten to template-call results.
-  std::set<llvm::Value *> Tainted;
+  TaintedValueSet Tainted;
 
   // SSA-value birth order for stable Q+Q operand canonicalization,
   // formerly carried by the now-removed rebind side-table.
@@ -110,7 +163,7 @@ struct TaintSet {
   // extends it for template results and reads it back to order commutative
   // adds so the lowered trace is stable across clang versions. 0 means
   // "not assigned"; only canonicalized values have non-zero entries.
-  llvm::DenseMap<llvm::Value *, unsigned> BirthOrder;
+  ScrubMap<llvm::Value *, unsigned> BirthOrder;
   unsigned NextBirth = 1;
 
   // Phase 4 (PRD §2.8). Logical ABI width of each quantum handle, recorded
@@ -118,7 +171,7 @@ struct TaintSet {
   // classical operand. Read when building Q+Q control conditions (PRD §2.4),
   // where both operands are i32-laundered handles and the width is otherwise
   // unrecoverable. Populated and consumed by later WPs; unread this WP.
-  llvm::DenseMap<llvm::Value *, llvm::StringRef> HandleWidth;
+  ScrubMap<llvm::Value *, llvm::StringRef> HandleWidth;
 
   // ziov WI-1 (owner 2026-06-15). Maps a tainted condition compare that
   // `SwapRouteEmit::emitRegion` minted a SHARED control flag for — because the
@@ -134,8 +187,10 @@ struct TaintSet {
   // `zext i32→i32`). Populated by `emitRegion`; consumed in `rewriteCompare` (the
   // entry then goes stale as the compare is erased). Empty for every region
   // without a shared condition flag.
-  llvm::DenseMap<llvm::Value * /*compare*/, llvm::Value * /*flag*/>
-      SharedCondFlags;
+  // bd 8e5r: the MAPPED value is a `WeakVH` (was a raw `Value *`), so a deleted
+  // mapped value reads back null instead of dangling; the key side is
+  // self-cleaning like every table here.
+  ScrubMap<llvm::Value * /*compare*/, llvm::WeakVH /*flag*/> SharedCondFlags;
 
   // Control-in-place rotation arms (control-in-place-PRD §6, bd
   // test_C_libtooling-drbq Inc 1). Maps a `@cq_theta_<sfx>` call that
@@ -188,8 +243,8 @@ struct TaintSet {
   // (never a silent fall-through to the UNCONTROLLED gate, which would fire the
   // arm on both branches). Read `lowerRotations`' pass-1 comment before changing
   // either half; neither alone is the fix.
-  llvm::DenseMap<const llvm::CallInst * /*theta*/,
-                 llvm::WeakTrackingVH /*flag: an i32 handle at lowering time*/>
+  ScrubMap<const llvm::CallInst * /*theta*/,
+           llvm::WeakTrackingVH /*flag: an i32 handle at lowering time*/>
       ControlledRotations;
 
   // ⚠ THERE IS NO `ControlledRotationRails` MEMBER, AND ITS ABSENCE IS THE FIX
@@ -223,9 +278,10 @@ struct TaintSet {
   // distinct — after rotation lowering's RAUW both are the same i32 handle
   // and the distinction is unrecoverable). `lowerOps` skips members (the
   // diagnostic has already fired; lower nothing — Prime Directive). Members
-  // are never erased before `lowerOps` reads this set, so the pointers stay
+  // are never erased before `lowerOps` reads this set (and since bd 8e5r one
+  // that were would simply drop out — `ScrubOnDelete.h`), so the pointers stay
   // valid.
-  llvm::SmallPtrSet<llvm::Instruction *, 4> StaleDeclined;
+  ScrubPtrSet<llvm::Instruction *, 4> StaleDeclined;
 
   // bd `test_C_libtooling-fn1q` increment 1 — THE HOISTED VALUE-ARM CONE, as a
   // ROUND-2 OBLIGATION rather than as bookkeeping. `emitValueRegion` records
@@ -265,25 +321,15 @@ struct TaintSet {
   // fig leaf in front of an open hole of the same class. Read
   // `declineRound2TaintedArmCone`'s own comment for what it does and does not
   // witness.
-  llvm::SmallPtrSet<llvm::Instruction *, 4> ValueArmConeOps;
+  ScrubPtrSet<llvm::Instruction *, 4> ValueArmConeOps;
 
-  // One-register merge-phi lift WITNESS (test_C_libtooling-2qyz). The lift
-  // (`liftOneRegisterMergePhi`) RAUWs a proven pure-renaming merge phi to its
-  // wire BASE and erases it — AFTER `declineStaleRecordOps` already ran — so a
-  // consumer that read the phi now resolves to the base, and a sibling Ry
-  // re-rotating the base's wire (invisible behind the PHINode at the earlier
-  // guard) would make the consumer's template stale. The lift inserts its
-  // direct Instruction consumers here so the orchestrator knows a lift OCCURRED
-  // and re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`,
-  // since bd d88e after `specialize()` and the lift's own re-ask
-  // `declineFalsifiedMergePhiLifts`, before any rotation lowering). The
-  // re-sweep is NOT scoped to these entries — a stale op can sit any number of
-  // in-place-gate hops downstream of the lifted phi (a Rule-13 adversarial
-  // finding), so the complete sweep is required for soundness; this set is the
-  // lift-occurred gate (non-empty ⇒ re-sweep, so non-lift modules incur no
-  // diagnostic churn). Pointers stay valid — consumers are not erased before
-  // the re-sweep.
-  llvm::SmallPtrSet<llvm::Instruction *, 4> LiftedConsumers;
+  // ⚠ `LiftedConsumers` — the one-register merge-phi lift's direct consumers,
+  // once the "a lift OCCURRED" witness for the bd 2qyz re-sweep — was REMOVED by
+  // bd test_C_libtooling-ec7r (Rule-13 delta round r2 F-R2-1). Its only reader
+  // was that gate, and as a SELF-CLEANING set it answered "a consumer is still
+  // alive", which `specialize()` (moved into the window by bd d88e) can falsify
+  // by erasing a rebuilt spec call. The gate now reads the lift EVENT,
+  // `LiftedMergePhis` below (one record per accepted lift, never shrunk).
 
   // bd `test_C_libtooling-d88e` (P1; bd 9bhg Rule-13 round r1A, F-9A-1) — the
   // one-register lift's PREMISE, RECORDED at the accept so it can be RE-ASKED at
@@ -328,8 +374,26 @@ struct TaintSet {
   // twin's FIRST classical-mux offender — a module with a second offender (a
   // genuine classical mux in another function, a classical select, a rail-bank
   // reader) can decline elsewhere on one side (r1A F-DA-3: `r01`, `r10`, `r02`).
+  //
+  // ⚠ TWO HANDLE KINDS, CHOSEN PER FIELD (bd 8e5r x d88e merge, Rule-13 r1B
+  // F-EB-1 / bd lin4):
+  //   * `F` is a `WeakVH` — IDENTITY, nulled if the function is deleted. It was a
+  //     raw `llvm::Function *`, the one raw pointer-bearing TaintSet member the
+  //     8e5r guard refused at the merge. Nothing in the window erases a Function
+  //     today, so the handle changes no answer; the reader declines on a null `F`
+  //     (the same Prime-Directive default as a nulled Base/Incoming). NOT
+  //     `AssertingVH`: with `LLVM_ENABLE_ABI_BREAKING_CHECKS 0` (this LLVM 19
+  //     build) an `AssertingVH` IS a bare pointer — no handle, no protection.
+  //   * `Base` / `Incomings` are `WeakTrackingVH` and MUST STAY SO — deliberately
+  //     NOT a `scrub::` container and NOT a `WeakVH`: the re-ask must FOLLOW a
+  //     RAUW (the two pinned RAUWs above), while every `ScrubOnDelete.h` container
+  //     is IDENTITY-keyed and dead-marks, so it would read a RAUW'd incoming as
+  //     "gone" and decline `..._spec_quantum_base_fp_rebuilt.ll`, an accept that
+  //     depends on following. `taintset-scrub-guard` admits `WeakTrackingVH` for
+  //     exactly this reason (a tracking handle cannot dangle: it follows a RAUW
+  //     and nulls on a plain delete).
   struct LiftedMergePhi {
-    llvm::Function *F = nullptr;
+    llvm::WeakVH F;
     llvm::DebugLoc DL;
     llvm::WeakTrackingVH Base;
     llvm::SmallVector<llvm::WeakTrackingVH, 2> Incomings;
@@ -557,7 +621,7 @@ struct TaintSet {
   // spurious loud decline). Populated by each control emitter at its
   // `Tainted.insert(rail)` site; consumed by `uncompute`. Empty for a module with
   // no tainted control flow.
-  llvm::SmallPtrSet<llvm::Value *, 8> ControlOwnedRails;
+  ScrubPtrSet<llvm::Value *, 8> ControlOwnedRails;
 
   // ── bd `test_C_libtooling-zujr` — THE PROMOTED LOOP-CARRIED HANDLE PHIS ────
   //
@@ -574,7 +638,7 @@ struct TaintSet {
   // is written by the same stage that made it true, at FINAL taint, one stage
   // before its only reader. A PREDICTION here would be the `RailCondReads` shape
   // and would owe the round-2 question.
-  llvm::SmallPtrSet<const llvm::PHINode *, 4> PromotedCarriedHandlePhis;
+  ScrubPtrSet<const llvm::PHINode *, 4> PromotedCarriedHandlePhis;
 
   // ── M-B INCREMENT 6, clause (d2) — the EMITTER-RECORDED FLAG STRIP (bd
   //    test_C_libtooling-160a) ────────────────────────────────────────────────
@@ -607,7 +671,7 @@ struct TaintSet {
   // value-arm, 4.3 nest, 4.4 select, 4.5 switch, the 6.5 classical-call arm, the
   // 7.6 controlled tape write — deliberately stays OUT and its condition chain
   // keeps leaking, each pinned by a leak fixture.
-  llvm::SmallPtrSet<const llvm::CallInst *, 4> DischargedFlagGates;
+  ScrubPtrSet<const llvm::CallInst *, 4> DischargedFlagGates;
 
   // ── THE EMITTED RAIL CONTROL READS (bd test_C_libtooling-r9e5 1b-B.1,
   //    Rule-13 ROUND-2 finding F-B1R2-1) ─────────────────────────────────────
@@ -832,7 +896,7 @@ struct TaintSet {
   // `_unc` twin to `(mask << 1) | 1` (arg 0 is the `out` handle). Written by
   // `buildClone` / at `ensureTwin`, read by `declineScrubbedHandleReads` — never
   // re-derived from a name prefix (CLAUDE.md §4f (P4)).
-  llvm::DenseMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
+  ScrubMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
 
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
@@ -888,7 +952,7 @@ struct TaintSet {
   // tainted, not a rail — so it is NEVER in this set; only the per-entry
   // `out_handle` is. Populated by `lowerIOSinks`; consumed by `uncompute`.
   // Empty for a module with no tainted I/O output.
-  llvm::SmallPtrSet<llvm::Value *, 8> OutputRails;
+  ScrubPtrSet<llvm::Value *, 8> OutputRails;
 
   // Phase 7.2 Increment 3 (PRD-7.2 §2.8 / §2.11-B, plan §2-A). Parked GRAVEYARD
   // rails — the freshly-`cqrt_alloc`'d rail the abort/exit park `cqrt_cswap`s the
@@ -907,7 +971,7 @@ struct TaintSet {
   // graveyard reached as a DAG ancestor must still be left allocated, never
   // reversed/freed). Populated by `AbortParkEmit`; consumed by `uncompute`. Empty
   // for a module with no controlled abort/exit.
-  llvm::SmallPtrSet<llvm::Value *, 8> GraveyardRails;
+  ScrubPtrSet<llvm::Value *, 8> GraveyardRails;
 
   // Phase 7.3 Inc 2 (799w.2, PRD-7.3 §2.5). Blocks of recognized Case-B
   // "iteration-local" loops — a classically-bounded loop (untainted exit, no
@@ -924,7 +988,7 @@ struct TaintSet {
   // block NOT in this set keeps both guards (the residual net). Populated by
   // `lowerLoops`; consumed by `FreePoint` + `Uncomputation`. Empty for a module
   // with no Case-B loop.
-  llvm::SmallPtrSet<const llvm::BasicBlock *, 8> IterationLocalBlocks;
+  ScrubPtrSet<const llvm::BasicBlock *, 8> IterationLocalBlocks;
 
   // ── THE ROLLED IN-LOOP ROTATION-ARM REGIONS (bd `test_C_libtooling-wx8g`) ──
   //
@@ -1114,7 +1178,7 @@ struct TaintSet {
   // carries ONLY ops `lowerLoops` proved are clean in-place rail self-updates;
   // any unproven value rail stays the X1 decline. Empty for a module with no
   // recognized value-accumulator loop.
-  llvm::SmallPtrSet<llvm::Instruction *, 4> InPlaceRailOps;
+  ScrubPtrSet<llvm::Instruction *, 4> InPlaceRailOps;
 
   // bd test_C_libtooling-eqpx — THE OPERAND INDEX OF THE PROVEN RAIL OPERAND,
   // for every `InPlaceRailOps` member. `0` or `1`; an INDEX, never a `Value *`
@@ -1139,7 +1203,7 @@ struct TaintSet {
   // `sub` widening picks the rail with a DIFFERENT predicate
   // (`inPlaceReassignRailOperand`, handle-LHS only), so the emitter keeps its own
   // `TL` pick for that route and M-C's stream is byte-for-byte untouched.
-  llvm::DenseMap<llvm::Instruction *, unsigned> InPlaceRailIdx;
+  ScrubMap<llvm::Instruction *, unsigned> InPlaceRailIdx;
 
   // bd 3qlq Inc 1, the THIRD C-1 review round's finding F-C1B-1 — THE SUBSET OF
   // `InPlaceRailOps` THAT `commitOutOfLoopInPlaceOps` PREDICTED, and therefore the
@@ -1198,7 +1262,7 @@ struct TaintSet {
   // Written and rolled back in lockstep with `InPlaceRailOps` by
   // `invariantRegisterRoots`; read ONCE, by `lowerOps` Phase 1. Empty for a module
   // with no committed pre-loop in-place op.
-  llvm::SmallPtrSet<llvm::Instruction *, 4> PreLoopCommittedInPlaceOps;
+  ScrubPtrSet<llvm::Instruction *, 4> PreLoopCommittedInPlaceOps;
 
   // Phase 7.6 (PRD-7.6 §2.4). One lazy `cqrt_tape_alloc()` per function — the
   // stream→tape registry (v1 has a single stdout stream). SHARED across the two
@@ -1210,7 +1274,10 @@ struct TaintSet {
   // Keyed by Function so each function owns its own stdout tape. Populated lazily
   // by `lowerControlledIOSinks` / `lowerIOSinks`; empty for a module with no
   // tainted I/O output.
-  llvm::DenseMap<llvm::Function *, llvm::Value *> IOTapeForFn;
+  // bd 8e5r: the MAPPED value is a `WeakVH` (was a raw `Value *`), so a deleted
+  // mapped value reads back null instead of dangling; the key side is
+  // self-cleaning like every table here.
+  ScrubMap<llvm::Function *, llvm::WeakVH> IOTapeForFn;
 
   // Phase 7.4 Increment 2 (epic y05j) — value-arm `break` loops the FORWARD
   // transform (`tryBreak`/`emitBreakForward`, pre-lowering) recognized and rewired
@@ -1246,7 +1313,7 @@ struct TaintSet {
   // exactly the event "a round-2 region opened here". Membership (`count(BB)`,
   // `empty()`) reads identically on a `DenseMap`, so the trigger and the
   // per-block test above are unchanged.
-  llvm::DenseMap<const llvm::BasicBlock *, unsigned> InLoopFlattenedPreds;
+  ScrubMap<const llvm::BasicBlock *, unsigned> InLoopFlattenedPreds;
 
   // bd 3qlq Inc 1, the SECOND C-1 review round's finding F-C1-2(2a) — THE RAIL
   // ROOTS A CASE-A COLLAPSE HAS ALREADY CLAIMED, module-wide.
@@ -1280,11 +1347,12 @@ struct TaintSet {
   // clause-(ii-b) `cqrt_alloc` out-rail), both writers run before
   // `lowerRotations` — the only stage that erases a root — and both readers
   // (`collapseFlattenedLoopRails` at round 1 and at round 2) run before it too.
-  // ⚠ RETIREMENT TRIGGER: if a stage that erases a `cq_theta` is ever placed
-  // between `lowerLoops` and the round-2 collapse, this set needs a
-  // `WeakTrackingVH` or a re-validation, because a recycled address matching a
-  // live peel root would SKIP a candidate that must be judged — the over-accept
-  // direction, not the leak direction.
+  // ⚠ RETIREMENT TRIGGER — DISCHARGED BY bd 8e5r (r1A F-EA-3): it said that if
+  // a stage that erases a `cq_theta` were ever placed between `lowerLoops` and
+  // the round-2 collapse, this set would need a handle or a re-validation,
+  // because a recycled address matching a live peel root would SKIP a candidate
+  // that must be judged. The set is now a `scrub::PairSet`: a pair is DROPPED
+  // when EITHER half is deleted, so a recycled address can no longer match.
   //
   // ⭐ KEYED ON `(root, the CLAIMING LOOP's header)`, NOT ON THE ROOT ALONE — bd
   // 3qlq Inc 1, the THIRD C-1 review round's finding **F-C1B-2**. Round 2 shipped
@@ -1322,10 +1390,10 @@ struct TaintSet {
   // no spurious match is constructible today (`RegionFlatten` erases a region's
   // ARM/MERGE/COND blocks between the writers and the round-2 reader — never a
   // loop HEADER in any measured shape, and every measured customer keeps
-  // `claimedHERE=1`), but a stage that ever erases a loop header here wants a
-  // `WeakTrackingVH` or a re-validation on BOTH halves of the key.
-  llvm::DenseSet<std::pair<const llvm::Value *, const llvm::BasicBlock *>>
-      ClaimedRailRoots;
+  // `claimedHERE=1`). ⚠ DISCHARGED BY bd 8e5r: the "handle or re-validation on
+  // BOTH halves" this sentence asked for is what `scrub::PairSet` does — a pair
+  // dies with its root OR its header, so no recycled address can match.
+  scrub::PairSet<const llvm::Value *, const llvm::BasicBlock *> ClaimedRailRoots;
 
   // Issue dugh (Phase 4×6) — the untainted-capable control-merge OUT-rails. The
   // two accept paths that build a DATA-untainted-yet-quantum-by-control merge
@@ -1342,7 +1410,7 @@ struct TaintSet {
   // re-propagation is idempotent for it (its onward users were tainted by the
   // first round). Populated by the two emitters; consumed once by
   // `repropagateControlMerges`. Empty for a module with no untainted-merge region.
-  llvm::SmallPtrSet<llvm::Value *, 4> UntaintedMergeRails;
+  ScrubPtrSet<llvm::Value *, 4> UntaintedMergeRails;
 
   // iw81.7 — guarded Shadow stores. Maps a tainted-index `store` that
   // `emitGuardedStoreArmRegion` proved sits under a depth-1 tainted diamond (the
@@ -1358,7 +1426,10 @@ struct TaintSet {
   // store via `..._controlled_unc` (pred arg 0) and then strips the flag (the
   // flag-mint compare is a reversible DAG ancestor, §6.0 compare `_unc`). Empty
   // for a module with no guarded store.
-  llvm::DenseMap<llvm::StoreInst *, llvm::Value *> GuardedStores;
+  // bd 8e5r: the MAPPED value is a `WeakVH` (was a raw `Value *`), so a deleted
+  // mapped value reads back null instead of dangling; the key side is
+  // self-cleaning like every table here.
+  ScrubMap<llvm::StoreInst *, llvm::WeakVH> GuardedStores;
 
   // ── M-A Increment 1 (bd test_C_libtooling-6uqc, owner ruling 2026-08-27) ──
   //
@@ -1393,13 +1464,13 @@ struct TaintSet {
   // `cqrt_ry_<W>` emitted for a user `@cq_theta` whose arg-0 was CLASSICAL (a
   // SOURCE theta: `cqrt_alloc_<W>` then Ry on the fresh handle). NOT a guard site
   // — a source theta mints its wire, so that wire can carry no record yet.
-  llvm::SmallPtrSet<const llvm::CallInst *, 4> UserSourceRotations;
+  ScrubPtrSet<const llvm::CallInst *, 4> UserSourceRotations;
 
   // `cqrt_ry_<W>` emitted for a user `@cq_theta` whose arg-0 was already a
   // TAINTED handle (a CHAINED theta: Ry in place on the existing wire). THESE ARE
   // THE GUARD'S SITES — an in-place non-diagonal gate on a wire that may still
   // carry live basis records of its own value.
-  llvm::SmallPtrSet<const llvm::CallInst *, 4> UserChainedRotations;
+  ScrubPtrSet<const llvm::CallInst *, 4> UserChainedRotations;
 
   // `cqrt_rz_<W>` emitted for a user `@cq_phi` (a DIAGONAL user gate). Recorded
   // for the same reason as the two above: so a user Rz on a record is not
@@ -1408,7 +1479,7 @@ struct TaintSet {
   // arg-0 is always a freshly `cqrt_alloc`'d work RAIL, never a template- or
   // qram-load-minted record, so it can never be a use of a record (see
   // `warnLiveRecordRotations`'s record definition).
-  llvm::SmallPtrSet<const llvm::CallInst *, 8> UserPhaseRotations;
+  ScrubPtrSet<const llvm::CallInst *, 8> UserPhaseRotations;
 
   // Every adjoint `EmitInverse::emitInverseCall` minted (the whole-DAG spine's
   // `_unc`s and negated-angle rotations, the Phase-4 value-arm reverse-play, the
@@ -1463,7 +1534,7 @@ struct TaintSet {
   // site — or from an existing one on a path that can run outside a clone body —
   // thread `&taint.SpineOps` through it. Forgetting to does not make the compiler
   // noisier; it makes it silently accept a dephased program (Prime Directive).
-  llvm::SmallPtrSet<const llvm::CallInst *, 16> SpineOps;
+  SpineOpSet SpineOps;
 };
 
 // Walks every non-declaration function in `M`, collects theta/phi/measure

@@ -28,9 +28,10 @@
 ;
 ; CONTAINMENT of the message: `checkStaleOp` has exactly one caller
 ; (`OpcodeLowering.cpp`, inside `declineStaleRecordOps`), and
-; `declineLiftedStaleRecordOps` is gated on a non-empty `LiftedConsumers`, which
-; this module cannot populate — so the string below comes from call 5 and from
-; nowhere else.
+; `declineLiftedStaleRecordOps` is gated on a one-register merge-phi lift having
+; occurred (since bd ec7r the lift EVENT `LiftedMergePhis`; before, the equivalent
+; non-empty `LiftedConsumers`), which this module cannot produce — so the string
+; below comes from call 5 and from nowhere else.
 ;
 ; RED-GREEN, MEASURED: `control flow under quantum control` on `main` 0c7380c (the
 ; 2-φ merge declines there); the string below on the round-1 fix tree b7d646c and

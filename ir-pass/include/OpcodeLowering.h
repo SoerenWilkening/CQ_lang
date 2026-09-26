@@ -86,7 +86,7 @@ void declineRecordedStaleQuantumReaders(llvm::Module &M, TaintSet &taint);
 // merge-phi lift RAUWs a phi to its wire base, exposing a stale-record consumer
 // the earlier `declineStaleRecordOps` could not see through the opaque PHINode)
 // and BEFORE any rotation lowering (pre-RAUW SSA identity). When a lift occurred
-// (`taint.LiftedConsumers` non-empty) it re-runs the COMPLETE
+// (`taint.LiftedMergePhis` non-empty — the lift EVENT, bd ec7r) it re-runs the COMPLETE
 // `declineStaleRecordOps` sweep on the post-lift IR — NOT scoped to the recorded
 // direct consumers, because a stale op can sit any number of in-place-gate hops
 // (Rz / chained Ry) downstream of the lifted phi (a Rule-13 adversarial finding;

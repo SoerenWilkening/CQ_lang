@@ -1579,7 +1579,10 @@ cmake --build build -j8
 # a CQPass-only rebuild leaves lit on a STALE binary and reports FALSE GREEN.
 # MEASURED (bd 8h7d.5): 100% pass on a knowingly broken pass, then 49 reds the
 # moment cq-opt was built. Two fix agents and one reviewer hit it.
-cmake --build build --target CQPass cq-opt   # if you must name targets, name BOTH
+cmake --build build --target CQPass cq-opt cq-opt-debugalloc cq-scrub-selftest   # if you must name targets, name ALL FOUR
+# (bd 8e5r / m91g / sjwe: `%debugalloc-cq-opt` — the test-allocator driver the dangling-key
+# pins run through — links cq-opt's OWN objects, and lit STOPS if it is missing, older than
+# cq-opt, or cq-opt itself; `cq-scrub-selftest` is the per-table pin two ctest entries run.)
 
 # Full suite — a GATE, not the inner loop (Rule 19). RUN IT PARALLEL.
 cmake --build build -j8 && ctest --test-dir build -j6 --output-on-failure

@@ -1,0 +1,12 @@
+frozen oracle under rb8 'nofree' (independent allocator) vs subject cq-opt 8ab548b7 (system allocator, 1st of 3 runs): denominator 3228; identical (rc,stdout) 3217; different 11
+   iosink_reject_mux_literal_callee.ll -11 EMPTY 1 EMPTY
+   lowering_reject_break_uncollected_clone.ll -11 EMPTY 1 EMPTY
+   lowering_reject_inplace_rail_stale_w1_xor_bareout.ll -11 EMPTY 1 EMPTY
+   lowering_reject_inplace_rail_stale_w1_xor_derived.ll -11 EMPTY 1 EMPTY
+   e2e-slice-io-both-arm.ll -11 EMPTY 0 26313f6d6d
+   e2e-slice-io-chained-theta.ll -11 EMPTY 0 9973deb643
+   e2e-slice-io-controlled.ll -11 EMPTY 0 0f0779ec0b
+   e2e-slice-loop-break-qq-derived.ll -11 EMPTY 0 b556b2e4c3
+   e2e-slice-loop-break-qq.ll -11 EMPTY 0 b1629b32d0
+   e2e-slice-loop-break.ll -11 EMPTY 0 fc3b98b1a6
+   e2e-slice-loop-value-accum.ll -11 EMPTY 0 8c6ba7f674

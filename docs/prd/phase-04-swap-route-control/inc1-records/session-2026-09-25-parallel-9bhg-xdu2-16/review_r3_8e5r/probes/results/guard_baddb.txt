@@ -1,0 +1,6 @@
+db_othertree.json rc=1
+taintset_scrub_guard: 0 TaintSet members walked (compiler: ?, flags from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a
+db_badcc.json rc=1
+FileNotFoundError: [Errno 2] No such file or directory: '/nonexistent/c++'
+db_garbage.json rc=1
+json.decoder.JSONDecodeError: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)

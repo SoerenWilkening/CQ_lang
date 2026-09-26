@@ -331,16 +331,36 @@ void declineLiftedStaleRecordOps(Module &M, TaintSet &taint) {
   // sibling regardless of how many hops away the consumer sits (Rule 14 — reuse
   // the exact analysis, add no parallel wire-walk).
   //
-  // Gated on a lift having occurred (`LiftedConsumers` is the witness, populated
-  // by `liftOneRegisterMergePhi`): a module with no lift skips the re-sweep
+  // Gated on a lift having occurred: a module with no lift skips the re-sweep
   // entirely, so NO message-ownership churn on non-lift fixtures (opt exits at
-  // the first DS_Error). The re-sweep is idempotent — `checkStaleOp` skips ops
+  // the first DS_Error).
+  // ⚠ THE WITNESS IS THE LIFT **EVENT**, `taint.LiftedMergePhis` (bd
+  // test_C_libtooling-ec7r, Rule-13 delta round r2 F-R2-1). It used to be the
+  // lift's direct consumers (`LiftedConsumers`), and that broke in the
+  // COMPOSITION of two correct changes: bd 8e5r made the set self-cleaning
+  // (`empty()` = "no LIVE consumer"), and bd d88e moved this re-sweep AFTER
+  // `specialize()`, whose `retargetSite` REBUILDS an fp-return spec call and
+  // ERASES the old one — so when that call was the lift's only consumer the set
+  // emptied, the re-sweep was SKIPPED, and a module every pre-merge binary
+  // declined was accepted (`lowering_reject_lift_resweep_spec_rebuilt_consumer.ll`).
+  // The question this sweep asks is module-wide and does not depend on any
+  // consumer still being alive, so the gate must not either. `LiftedMergePhis`
+  // gets one record per accepted lift and is never shrunk (its handles may null;
+  // its LENGTH cannot), and every lifted phi has >= 1 Instruction user
+  // (`declineClassicalMuxes` skips `use_empty()` phis), so this is exactly the
+  // fact the pre-merge raw consumer set encoded. The re-sweep is idempotent — `checkStaleOp` skips ops
   // already in `StaleDeclined`, so the first pass's diagnostics are neither
   // duplicated nor re-pointed; only newly-exposed ops are diagnosed (with the
   // accurate stale-record message — the lift proved the phi a pure renaming, so
   // the residual defect IS a stale record). Still BEFORE any rotation lowering
   // (pre-RAUW SSA identity).
-  if (taint.LiftedConsumers.empty())
+  // ⚠ CORRECTED (L7): the note that stood here argued a self-cleaning consumer
+  // set was equivalent because "nothing erases between `declineClassicalMuxes`
+  // and this re-sweep". FALSE since the d88e merge — `specialize()` is in that
+  // window and erases rebuilt spec calls. Written after the merge, measured on
+  // the pre-merge binary: the bd 8e5r lesson that a claim about a WINDOW must be
+  // re-asked whenever a stage moves into it.
+  if (taint.LiftedMergePhis.empty())
     return;  // no lift occurred — nothing to re-adjudicate.
   // ⚠ PURE OPS ONLY, and after bd test_C_libtooling-3d8q that is a positive
   // statement rather than an accident of scope: `declineStaleQuantumReaders` runs

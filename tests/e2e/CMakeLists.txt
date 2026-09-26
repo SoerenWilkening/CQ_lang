@@ -1530,6 +1530,30 @@ add_test(NAME e2e-spec-fp80-union
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_fp80_union_caller.expected.log")
 
+# bd test_C_libtooling-8e5r — a DANGLING `taint.Tainted` key (a shadow-array
+# store `lowerShadowMemory` erased) aliased by the Phase-6 clone's CLASSICAL
+# `mul`, which the unfixed module-level `lowerOps` then lowered as quantum
+# (`cq_template_mul_i32_hl(h7, 5)` on a freed rail; stage 2b clean). Whether the
+# key is aliased is the ALLOCATOR's choice, so the entry runs the pass through
+# `cq-opt-debugalloc` (cq-opt's own objects + ir-pass/tools/cq_debug_alloc.cpp)
+# in the test allocator's exact-class LIFO reuse mode (non-aligned new/delete
+# only — the IR-object population this defect lives in): the unfixed
+# binary is wrong 10/10 there, the fixed one is allocator-independent. The lit
+# twin (`spec_scrub_dangling_key_clone_classical_mul.ll`) also diffs the three
+# modes; this is the layer that links and runs the right literals (35, 21).
+if(TARGET cq-opt-debugalloc)
+  add_test(NAME e2e-spec-scrub-dangling-key
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+      "${_E2E_CLANG}" "$<TARGET_FILE:cq-opt-debugalloc>" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/spec_scrub_dangling_key_caller.c"
+      "${CMAKE_CURRENT_SOURCE_DIR}/spec_scrub_dangling_key_lib.c"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/spec_scrub_dangling_key_caller.expected.log")
+  set_tests_properties(e2e-spec-scrub-dangling-key
+    PROPERTIES ENVIRONMENT "CQ_OPT_DEBUG_ALLOC=lifo")
+endif()
+
 # bd 3c6m.54 — the fp-ABI specialization: a Phase-6 clone with an x86_fp80 quantum
 # ARG and RETURN. The i32-only FpAbi gate is lifted so a straight-line fp80 helper
 # `lpoly` clones with the fp80 arg/return rewritten to i32 handles (Rule 15), the

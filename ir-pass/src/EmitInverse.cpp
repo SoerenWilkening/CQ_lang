@@ -179,7 +179,7 @@ bool isInverseEmittable(const CallInst *Forward) {
 
 bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
                      Value *CurHandle,
-                     SmallPtrSetImpl<const CallInst *> *Rec) {
+                     SpineOpSet *Rec) {
   (void)wd;  // width is recovered from the forward call's own type; no lookup.
 
   // M-A Inc 1 (bd test_C_libtooling-6uqc): record EVERY adjoint minted here into
@@ -422,7 +422,7 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
 
 bool emitInverseChain(IRBuilder<> &B, ArrayRef<CallInst *> ForwardChain,
                       WidthDispatch &wd,
-                      SmallPtrSetImpl<const CallInst *> *Rec) {
+                      SpineOpSet *Rec) {
   // Walk the chain in reverse program order: the adjoint of (g0 ∘ g1 ∘ … ∘ gN)
   // is (gN⁻¹ ∘ … ∘ g1⁻¹ ∘ g0⁻¹). Each void `_unc` reads its forward operands in
   // place; SSA dominance guarantees those sources are still live (a leaf is

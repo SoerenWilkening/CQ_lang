@@ -1,0 +1,140 @@
+diff --git a/ir-pass/include/ScrubOnDelete.h b/ir-pass/include/ScrubOnDelete.h
+index cc8ad243..5647234b 100644
+--- a/ir-pass/include/ScrubOnDelete.h
++++ b/ir-pass/include/ScrubOnDelete.h
+@@ -83,9 +83,21 @@
+ #include <set>
+ #include <type_traits>
+ #include <utility>
++#include <cstdio>
++#include <cstdlib>
+ 
+ namespace cq {
+ namespace scrub {
++// ---- review r1B_8e5r PRIVATE positive-control counters (not for landing) ----
++inline unsigned long RB8QueryHits = 0, RB8IterSkips = 0, RB8Revives = 0;
++struct RB8Reporter {
++  ~RB8Reporter() {
++    if (std::getenv("CQ_SCRUB_STATS"))
++      std::fprintf(stderr, "cq-scrub-stats: query_hits=%lu iter_skips=%lu revives=%lu\n",
++                   RB8QueryHits, RB8IterSkips, RB8Revives);
++  }
++};
++inline RB8Reporter TheRB8Reporter;
+ 
+ // The receiver of a key's deletion. One per container, heap-allocated and owned
+ // by it through a `unique_ptr`, so a hook's back-pointer survives a MOVE of the
+@@ -174,8 +186,10 @@ public:
+     void skip() {
+       if (Co->Dead.empty())
+         return;
+-      while (I != E && Co->Dead.count(asValue(*I)))
++      while (I != E && Co->Dead.count(asValue(*I))) {
++        ++RB8IterSkips;
+         ++I;
++      }
+     }
+ 
+   public:
+@@ -228,6 +242,7 @@ public:
+     const llvm::Value *K = asValue(V);
+     if (C->dead(K)) {
+       // A fresh object at a dead key's address: a NEW member, in the dead slot.
++      ++RB8Revives;
+       C->Dead.erase(K);
+       C->H.arm(K, C.get());
+       return {find(V), true};
+@@ -243,14 +258,18 @@ public:
+   }
+ 
+   std::size_t count(KeyArg V) const {
+-    if (C->dead(asValue(V)))
++    if (C->dead(asValue(V))) {
++      ++RB8QueryHits;
+       return 0;
++    }
+     return C->S.count(toStore(V)) ? 1 : 0;
+   }
+   bool contains(KeyArg V) const { return count(V) != 0; }
+   const_iterator find(KeyArg V) const {
+-    if (C->dead(asValue(V)))
++    if (C->dead(asValue(V))) {
++      ++RB8QueryHits;
+       return end();
++    }
+     return const_iterator(C->S.find(toStore(V)), C->S.end(), C.get());
+   }
+ 
+@@ -311,8 +330,10 @@ template <typename KeyT, typename ValT> class Map {
+     void skip() {
+       if (Co->Dead.empty())
+         return;
+-      while (I != E && Co->Dead.count(asValue(I->first)))
++      while (I != E && Co->Dead.count(asValue(I->first))) {
++        ++RB8IterSkips;
+         ++I;
++      }
+     }
+ 
+   public:
+@@ -376,6 +397,7 @@ public:
+   ValT &operator[](KeyT K) {
+     const llvm::Value *KV = asValue(K);
+     if (C->dead(KV)) {
++      ++RB8Revives;
+       C->Dead.erase(KV);
+       C->H.arm(KV, C.get());
+       ValT &Slot = C->S[K];
+@@ -390,6 +412,7 @@ public:
+   std::pair<iterator, bool> insert(const std::pair<KeyT, ValT> &KV) {
+     const llvm::Value *K = asValue(KV.first);
+     if (C->dead(K)) {
++      ++RB8Revives;
+       C->Dead.erase(K);
+       C->H.arm(K, C.get());
+       auto It = C->S.find(KV.first);
+@@ -404,6 +427,7 @@ public:
+   template <typename... Ts> std::pair<iterator, bool> try_emplace(KeyT K, Ts &&...Args) {
+     const llvm::Value *KV = asValue(K);
+     if (C->dead(KV)) {
++      ++RB8Revives;
+       C->Dead.erase(KV);
+       C->H.arm(KV, C.get());
+       auto It = C->S.find(K);
+@@ -417,24 +441,32 @@ public:
+   }
+ 
+   std::size_t count(KeyArg K) const {
+-    if (C->dead(asValue(K)))
++    if (C->dead(asValue(K))) {
++      ++RB8QueryHits;
+       return 0;
++    }
+     return C->S.count(toStore(K)) ? 1 : 0;
+   }
+   bool contains(KeyArg K) const { return count(K) != 0; }
+   iterator find(KeyArg K) {
+-    if (C->dead(asValue(K)))
++    if (C->dead(asValue(K))) {
++      ++RB8QueryHits;
+       return end();
++    }
+     return iterator(C->S.find(toStore(K)), C->S.end(), C.get());
+   }
+   const_iterator find(KeyArg K) const {
+-    if (C->dead(asValue(K)))
++    if (C->dead(asValue(K))) {
++      ++RB8QueryHits;
+       return end();
++    }
+     return const_iterator(C->S.find(toStore(K)), C->S.end(), C.get());
+   }
+   ValT lookup(KeyArg K) const {
+-    if (C->dead(asValue(K)))
++    if (C->dead(asValue(K))) {
++      ++RB8QueryHits;
+       return ValT();
++    }
+     return C->S.lookup(toStore(K));
+   }
+ 

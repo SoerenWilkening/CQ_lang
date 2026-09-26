@@ -1,0 +1,28 @@
+[control] NULL: pristine tree: clean -> OK
+[control] POS: guard's own M11 alias retarget: problems -> OK
+[control] POS: plain raw SmallPtrSet member: problems -> OK
+  MISSED             G1 brace-initialized raw member `std::set<Value*> X{};`   [0 problem(s), 52 members]
+  MISSED             G2 llvm::SmallSet<Value*,8>   [0 problem(s), 53 members]
+  MISSED             G3 alias declared OUTSIDE TaintSet   [0 problem(s), 53 members]
+  MISSED             G4 typedef INSIDE TaintSet   [0 problem(s), 53 members]
+  MISSED             G5 macro-spelled type   [0 problem(s), 53 members]
+  MISSED             G6 parenthesised template arg   [0 problem(s), 52 members]
+  KILLED             G7 std::unordered_map<const Value*,..>   [1 problem(s), 53 members]
+  KILLED             G8 SmallDenseMap   [1 problem(s), 53 members]
+  KILLED             G9 MapVector   [1 problem(s), 53 members]
+  KILLED             G10 pointer in a pair KEY   [1 problem(s), 53 members]
+  MISSED             G11 std::array<Value*,4>   [0 problem(s), 53 members]
+  MISSED             G12 std::optional<Instruction*>   [0 problem(s), 53 members]
+  MISSED             G13 std::pair<Value*,unsigned> field   [0 problem(s), 53 members]
+  MISSED             G14 StringMap<Value*>   [0 problem(s), 53 members]
+  KILLED             G15 nested record declared `final`   [1 problem(s), 53 members]
+  MISSED             G16 anonymous struct member   [0 problem(s), 53 members]
+  MISSED             G17 union member   [0 problem(s), 53 members]
+  MISSED             G18 raw key, wrapped MAPPED type + a selftest mention   [0 problem(s), 53 members]
+  (coverage) MISSED  G19 wrapped member 'exercised' by a COMMENT only   [0 problem(s), 53 members]
+  MISSED             G20 foreign record held DIRECTLY (not in a container)   [0 problem(s), 53 members]
+  MISSED             G21 decltype/paren default initializer   [0 problem(s), 52 members]
+  MISSED             G22 ScrubMap with a RAW MAPPED pointer (+ exercised)   [0 problem(s), 53 members]
+  KILLED             G23 class-scope alias SHADOWING ScrubPtrSet (all 17 ScrubPtrSet members go raw)   [1 problem(s), 53 members]
+  KILLED             G24 nested record with a BASE class   [1 problem(s), 53 members]
+guard_fool: 23 raw-member mutants, 16 MISSED; controls failed: 0
