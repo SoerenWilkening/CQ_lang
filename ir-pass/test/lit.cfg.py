@@ -43,6 +43,12 @@ if not cq_opt_debugalloc:
 elif not os.path.exists(cq_opt_debugalloc):
     lit_config.fatal("cq-opt-debugalloc is configured but missing (%s); build it: "
                      "cmake --build build --target cq-opt-debugalloc" % cq_opt_debugalloc)
+elif os.path.exists(cq_opt) and os.path.realpath(cq_opt_debugalloc) == os.path.realpath(cq_opt):
+    # r2 F-R2-4 / bd sjwe: a configured path EQUAL to cq-opt is a fallback in
+    # disguise (cq-opt ignores CQ_OPT_DEBUG_ALLOC, so every pin would pass
+    # vacuously) and the mtime test below cannot see it — equal is never "older".
+    lit_config.fatal("cq-opt-debugalloc is configured as cq-opt itself (%s): cq-opt ignores "
+                     "CQ_OPT_DEBUG_ALLOC, so the allocator pins would pass vacuously" % cq_opt)
 elif os.path.exists(cq_opt) and os.path.getmtime(cq_opt_debugalloc) < os.path.getmtime(cq_opt):
     lit_config.fatal("cq-opt-debugalloc (%s) is OLDER than cq-opt (%s): it links cq-opt's "
                      "objects, so it is STALE — rebuild it: cmake --build build --target "

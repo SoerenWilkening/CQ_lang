@@ -41,13 +41,17 @@ else()
 endif()
 # `%debugalloc-cq-opt` (bd test_C_libtooling-8e5r): the same pass objects linked
 # with the test allocator (`CQ_OPT_DEBUG_ALLOC=lifo|nofree`, see
-# ir-pass/CMakeLists.txt). Without the target it falls back to `%cq-opt`, which
-# IGNORES the variable — a pin then passes without exercising address reuse; it
-# cannot go falsely RED.
+# ir-pass/CMakeLists.txt). ⚠ NO FALLBACK (Rule-13 r1B F-EB-4 / r2 F-R2-4, bd sjwe):
+# the first version fell back to `%cq-opt`, which IGNORES the variable, so every
+# allocator pin would pass VACUOUSLY — and the fallback path even defeated lit's
+# staleness check (equal paths are never "older"). Without the target the
+# substitution is left EMPTY, lit.cfg.py substitutes a path that cannot run, and
+# every pin FAILS loudly. (The target is unconditional in ir-pass/CMakeLists.txt,
+# which is included before this directory, so today the empty case is a control.)
 if(TARGET cq-opt-debugalloc)
   set(CQ_OPT_DEBUGALLOC_EXECUTABLE "$<TARGET_FILE:cq-opt-debugalloc>")
 else()
-  set(CQ_OPT_DEBUGALLOC_EXECUTABLE "${CQ_OPT_EXECUTABLE}")
+  set(CQ_OPT_DEBUGALLOC_EXECUTABLE "")
 endif()
 
 # Resolve `FileCheck`. Versioned name comes first on Debian/Ubuntu installs.
