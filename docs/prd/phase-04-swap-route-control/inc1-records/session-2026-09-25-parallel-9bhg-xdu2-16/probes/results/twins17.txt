@@ -1,0 +1,17 @@
+v1   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+v12  sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w1   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w2   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w3   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w4   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w5   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w6   sys: DEAD-REG-ONLY; lifo: DEAD-REG-ONLY; nofree: DEAD-REG-ONLY
+w7   sys: IDENT; lifo: IDENT; nofree: IDENT
+w8   sys: IDENT; lifo: IDENT; nofree: IDENT
+w9   sys: IDENT; lifo: IDENT; nofree: IDENT
+w10  sys: IDENT; lifo: IDENT; nofree: IDENT
+w11  sys: IDENT; lifo: IDENT; nofree: IDENT
+w12  sys: IDENT; lifo: IDENT; nofree: IDENT
+w13  sys: IDENT; lifo: IDENT; nofree: IDENT
+w14  sys: IDENT; lifo: IDENT; nofree: IDENT
+w15  sys: IDENT; lifo: IDENT; nofree: IDENT

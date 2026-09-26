@@ -604,3 +604,163 @@ both binaries twice):
   reuses the key. Same root.
 - bd `cepm`: the over-decline face in the provisional function's own body.
 - bd `z0re` (`l12`/`l17`): unchanged.
+
+## 11. After bd 8e5r: `main` (`aee8f4f8`) merged, 2026-09-26
+
+bd `8e5r` (+ `um24`, `j8sk`) landed on `main` at `aee8f4f8`: every pointer-keyed
+`TaintSet` table is now a self-cleaning container (`ScrubOnDelete.h`). This branch
+merged it (merge, not rebase; `30529716` and everything after it are intact).
+
+**Commits:**
+- `f145f257`: the merge. One textual conflict, `CODE_MAP.md`, regenerated. The
+  auto-merge compiles cleanly.
+- `22d2db65`: F-EB-9, the F-9B-2 comment, and the fp3 fixture moved to three
+  allocator modes.
+- the commit carrying this section.
+
+**Binaries** (sha-256 prefixes):
+- FINAL `cq-opt`: `bfb441d3b9568bd1`.
+- `cq-opt-debugalloc`: `7ef9853f0eb3a528`.
+- `libCQPass.so`: `9029b2b59d3b8a07`.
+- The merge commit alone (before F-EB-9): `cq-opt` `766f31cdf3b688df`.
+- `main` `aee8f4f8`: `cq-opt` `69250feaf68bbe49` (the coordinator's frozen copy).
+
+**`TaintSet` members.**
+- **bd 9bhg adds none.** It adds functions (`collectScrubCone`,
+  `returnTaintIsSpecProvisional`), a function-local drain set
+  (`SetVector<Function *> RetUndecided`, which holds functions; no function is
+  erased during a drain) and function-local sets inside the pure cone walk.
+- `taintset-scrub-guard` and its selftest pass, and so do both scrub-on-delete
+  selftests (`lifo`, `sysalloc`).
+- It WRITES INTO two l3oi members, both already converted on `main`:
+  - `SpecHandleArgMask`: a `ScrubMap<const Function *, uint64_t>`. The mask
+    9bhg writes is now the RECOMPUTED one. IDENTITY is right, not RAUW-following:
+    it is keyed by the clone `Function`, and no `Function` is erased or RAUW'd
+    in the window (r1B-9bhg, (b)).
+  - `ScrubbedByReturnTaint`: `SmallVector<WeakVH>`, deliberately NOT
+    `WeakTrackingVH`. A value in it is SCRUBBED, i.e. untainted. The only RAUW
+    between a scrub and its reader (`declineScrubbedHandleReads`) is
+    `retargetSite`'s rebuild of a Pending SITE.
+    - The ordered scrub SKIPS every scrubbed site: its recomputed mask is 0 and
+      it is no longer tainted, because the cone admits a site only when every
+      tainted operand of it is in the cone. So no recorded value is ever RAUW'd
+      before it is read.
+    - Following a RAUW would make the fence ask about a DIFFERENT value than the
+      one proved classical.
+
+**F-EB-9 (r1B-8e5r) and F-9B-2 (r1B-9bhg).**
+- 9bhg's post-`resolveSite` `OldSite` erase erased by a pointer `retargetSite` had
+  already deleted. Under 8e5r it is a no-op, safe only while nothing allocates in
+  between. It is DELETED, mirroring 8e5r's deletion of the inner-call twin in
+  `buildClone`; the container drops the key at the deletion itself.
+- The `plan.Pending[i].Site` update went with it: every reader of `Pending` runs
+  before `specialize()`, and this loop reads index `i` once.
+- The comment's "closed here at its source" (true of this producer, false of the
+  class) is rewritten to name the containers, with the history kept.
+- `spec_accept_fp_rebuilt_site_second_clone.ll`, the flaky fp3 pin (F-9B-3), now
+  runs 8e5r's three modes: `lifo` FileChecked, and `nofree` and the system
+  allocator diffed against it.
+  - **Positive control** (`probes/merge9/pos_control_container.py`): with
+    `Set::Core::keyDeleted`'s dead-mark disabled, the fixture is RED in 3 of 3
+    lit runs.
+  - The restored build is bit-identical.
+
+**Slot order: UNCHANGED.** In `run()` and the shim alike: `specialize` →
+`declineFalsifiedMergePhiLifts` → `declineLiftedStaleRecordOps` →
+`declineScrubbedHandleReads` → `declineQuantumReturnCalls(late)` →
+`declineRecordedStaleQuantumReaders` → `lowerRotations`. 8e5r's `c81a2201` changed
+only the 2qyz re-sweep's internal gate, not its slot.
+
+**r1B_9bhg's alias families**, regenerated from r1B's own generators
+(`probes/merge11/`):
+
+| family | modules | runs × mode | sys wrong | lifo wrong | nofree wrong |
+|---|---|---|---|---|---|
+| `alias_gen` (216 generated) | 216 | 10 | 0/2160 | 0/2160 | 0/2160 |
+| `alias_gen2` (incl. `k74`) | 128 | 10 | 0/1280 | 0/1280 | 0/1280 |
+| `alias_gen3` (incl. `k65`) | 128 | 10 | 0/1280 | 0/1280 | 0/1280 |
+| `alias_gen5` (`v1`, `v12`; v2–v19 have no committed source) | 2 | 10 | 0/20 | 0/20 | 0/20 |
+| `alias_gen6` (`w1`–`w15`) | 15 | 10 | 0/150 | 0/150 | 0/150 |
+
+"Wrong" means an (exit, lowered-IR) pair different from the first `nofree` run,
+the no-reuse reference. **0 of 14 670 runs differ.** Every reference ACCEPTS: all
+489 modules, **`v12` included, in all 30 of its runs.**
+
+Is the reference CORRECT?
+- **vs `main` `aee8f4f8`** (8e5r-fixed, no 9bhg), each binary run twice first
+  (null 0 of 489 for both): 472 modules are byte-identical, and 17 move
+  decline → accept. Those 17 are `v1`, `v12` and `w1`–`w15`, exactly 9bhg's
+  population.
+- **Each of the 17 against a hand-inlined twin** (`h` → `k+1`, `hz` → `k`,
+  `probes/merge11/twins17.py`), under all three modes:
+  - `w7`–`w15` (incl. r1B's miscompiles `w9`, `w12`, `w15`): trace-IDENTICAL.
+  - `v1`, `v12` and `w1`–`w6`: DEAD-REG-ONLY. The twin uncomputes and frees the
+    now-dead register, while the original leaves it allocated as the classical
+    clone's borrowed argument (Rule 6's accepted leak); `v12` does this twice,
+    because it calls `f` twice. Checked mechanically.
+- `w12` and `k65` are byte-identical to r1B's committed no-reuse reference streams
+  (ModuleID line aside). Neither contains `cq_template_mul_i32_hl(i32 7`.
+
+**r1A's battery + twins + my 31 probes on the FINAL binary**
+(`probes/merge9/battery10.py`, 327 modules):
+- Null controls first: `sub`, `main_aee8` and `final`, each run twice. 0 of 327
+  differ.
+- **Final vs the pre-8e5r merged binary (`242f8b61`): 0 movers of 327.**
+- Final vs `main_aee8`: the same 64 movers as §10 measured against `main_ba80`.
+- Every former d88e miscompile (`l01C l07C l08C l09C l10C l13C l18C l22C`)
+  declines with stderr byte-identical to its twin. Twin parity is 38 of 72.
+- The measure census shows the same four legitimate never-quantum measures.
+
+**Gates on the FINAL binary:**
+- `lit -s ir-pass/test`: 2320 discovered, 2319 passed, 1 XFAIL.
+- The 9bhg + d88e + 8e5r-dangling-key families: 83 of 83 passed.
+- `taintset-scrub-guard`, its selftest and both scrub selftests: 4 of 4.
+- `update_code_map.py --check`: clean.
+- Duplicate-body scan: 0 of 9bhg's 14 fixtures in a duplicate group. The
+  corpus's 9 pre-existing groups are unchanged by both merges.
+- **Corpus A/B vs `main_aee8`**, with the fixed `--null` (both binaries twice
+  first, all 0):
+
+  | set | denominator | movers |
+  |---|---|---|
+  | lit | 2320 | 7 = 9bhg's 6 accept fixtures (D→A) + the order pin (DIAG) |
+  | `run_slice_multi.sh` modules | 26 | 1 = `m3`, `spec_classical_return_caller.c`, 9bhg's own e2e (D→A) |
+  | standalone e2e `.c` | 444 of 464 | 0 |
+
+- Full `ctest` and `cq-opt-equivalence-full`: §11.1.
+
+**Dispositions of every r1A/r1B finding:**
+
+| finding | disposition | verified by |
+|---|---|---|
+| r1A F-9A-1 (P1, bd d88e) | CLOSED by d88e (`ba80bda1`) | the eight former miscompiles DECL-SAME with their twins on the final binary; d88e's fixture family green |
+| r1A F-9A-2 (P2) | record + erratum (§0) | — |
+| r1A F-9A-3 (P3) | MRED/MNOREASK listed (§5) | — |
+| r1A F-9A-4 (P3) | corrected at the source (`20bb2e29`) | — |
+| r1B F-9B-1 (P1, bd 8e5r) | CLOSED by 8e5r (`aee8f4f8`) | 14 670 alias-family runs, 0 differ; the 17-module population twin-correct in 3 modes; `w12`/`k65` = r1B's references |
+| r1B F-9B-2 (P2) | CLOSED by 8e5r; comment corrected (`22d2db65`) | `v12` ACCEPTS in 30/30 runs, twin-correct |
+| r1B F-9B-3 (P3) | the scrub is deleted, and the fixture is a deterministic three-mode pin | positive control red 3/3 |
+| r1B F-9B-4 (P2, bd um24) | CLOSED by 8e5r (um24) | 8e5r's `%debugalloc-cq-opt` RUN lines on the four UAF fixtures, green in full lit |
+| r1B F-9B-5 (P3) | `--null` fixed (`20bb2e29`) | positive control `flaky_opt.sh` |
+| r1B-8e5r F-EB-9 (P3) | the OldSite scrub deleted (`22d2db65`) | lit + positive control above |
+
+### 11.1 Full gates, FINAL binary `bfb441d3`
+
+| gate | command | result |
+|---|---|---|
+| full ctest | `ctest --test-dir build -j6 --output-on-failure` | **510/510 passed**, 530.79 s wall (`results/merge11_ctest_final.txt`) |
+| cq-opt equivalence | `cmake --build build --target cq-opt-equivalence-full` | 2320 fixtures, 0 mismatches |
+
+⚠ The ctest wall time is quoted WITH ITS LOAD. The 1/5/15-minute load averages
+were 7.3/7.0/6.5 at the start and 4.1/14.2/14.9 at the end. The parallel sessions
+are quieter than at §9's run, but this is still not a quiet-box figure. Every row
+passed.
+
+**Still open and not closed here:**
+- bd `cepm`: the over-decline face in the provisional function's own body.
+- bd `s07e`: layout order.
+- bd `z0re`: `l12`/`l17`.
+- MISSED mutants M10, M11, M16, MRED and MNOREASK, each argued to move only a slot
+  or an owner, or to be equivalent.
+- The branch is NOT merged into `main` and NOT pushed. A final independent Rule-13
+  round on the composed branch is owed.
