@@ -1,12 +1,15 @@
-; spec_accept_phantom_arg_read_classical_slot.ll — ACCEPT, the oracle's verdict and stream
-; (bd test_C_libtooling-vsfp ROUND 2 — the backstop asks about QUANTUM operands only;
-; hand-written IR).
+; spec_accept_phantom_arg_read_classical_slot.ll — ACCEPT (bd test_C_libtooling-vsfp ROUND 2,
+; subject changed in round 3 — the resolution declines QUANTUM operands only; hand IR).
 ;
 ; `@h` reads `a` and `b` only through one empty diamond: both are live in `@h`, both dead
-; in its clone, and the specializer records both slots dead. Slot 0 gets `q` (a `cq_theta`
-; result — exempt) and slot 1 `m * 5`, a CLASSICAL value read by nothing else. A classical
-; value kept alive by a phantom read costs nothing — no rail, no entanglement — so the
-; backstop must not decline it (mutant B4, which drops the "quantum" conjunct, does).
+; in its clone, and both slots are neutralised (`h(0, 0, m)`). Slot 0 held `q` (a
+; `cq_theta` result — exempt), slot 1 `m * 5`, a CLASSICAL value that no rail represents:
+; nothing to decline (mutant B4, which drops the "quantum" conjunct, declines).
+; ⚠ ROUND 3 (bd tzfa; Rule-13 r2B F-WB-1). A slot the specializer RECORDED dead is now
+; NEUTRALISED after `specialize()` (`resolvePhantomCloneArgReads`: the argument becomes `0`,
+; the drop's rewrite), so the uncompute spine, M-C, M-A and stage 2b see the hand-inlined
+; twin's consumer set. Round 2 instead ACCEPTED a phantom read whose operand had another
+; reader and left the read in place — one consumer too many for the spine.
 ;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
@@ -23,7 +26,7 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @__cq_q_h_001(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: call i32 @__cq_q_h_001(i32 0, i32 0, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}

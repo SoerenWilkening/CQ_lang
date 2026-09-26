@@ -1,12 +1,17 @@
 ; spec_accept_phantom_arg_read_theta_source_inplace_mc.ll — ACCEPT, IN PLACE like the
-; hand-inlined twin (bd test_C_libtooling-vsfp / bd hgwx — M-C `priorUseIsSettled` arm
-; (d0)). Re-spelled in ROUND 2, see below.
+; hand-inlined twin (bd test_C_libtooling-vsfp / bd hgwx). Re-spelled in round 2
+; (branch-only read, below); subject changed in round 3.
 ;
-; `t = h(q, m)` passes `q` only in a slot the specializer RECORDED dead in the built clone,
-; so arm (d0) — asked by CALLING `isRecordedDeadSlot`, the one owner of "slot unread" —
-; settles the call as a prior user of `q`, and `u = t + q` lowers IN PLACE
-; (`cqrt_addc_i32(q, t)`), as in its twin (`int t = m + 1;`). Without (d0) (mutant D1) it
-; lowers OUT of place and the later Ry on `u` dephases `q` (warned, lyyf-(B)).
+; `t = h(q, m)` passes `q` only in a slot the specializer RECORDED dead. Round 2 settled
+; that call as a prior user of `q` through M-C arm (d0); since round 3 the slot is
+; neutralised to `0` first, so the call is not a user of `q` at all and `u = t + q` lowers
+; IN PLACE (`cqrt_addc_i32(q, t)`) exactly as in the twin (`int t = m + 1;`). (d0) stays the
+; one spelling of the question for an inner clone call, where no neutralisation runs.
+; ⚠ ROUND 3 (bd tzfa; Rule-13 r2B F-WB-1). A slot the specializer RECORDED dead is now
+; NEUTRALISED after `specialize()` (`resolvePhantomCloneArgReads`: the argument becomes `0`,
+; the drop's rewrite), so the uncompute spine, M-C, M-A and stage 2b see the hand-inlined
+; twin's consumer set. Round 2 instead ACCEPTED a phantom read whose operand had another
+; reader and left the read in place — one consumer too many for the spine.
 ;
 ; ⚠ WHY HAND-WRITTEN IR (bd vsfp round 2). The callee's only read of `a` is a
 ; BRANCH-ONLY one — an empty diamond on `a > 3`. The pass's liveness predicate has no
@@ -40,7 +45,7 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK: call i32 @__cq_q_h_01(i32 noundef 0, i32 noundef %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_addc_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}

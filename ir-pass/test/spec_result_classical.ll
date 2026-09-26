@@ -63,7 +63,10 @@ entry:
 ; in the caller before it lowered to a data template:
 ; CHECK-LABEL: define i32 @example(
 ; CHECK-NOT: cq_template
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_double_classical_01(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
+; (bd vsfp round 3, bd tzfa: slot 0 is one the specializer RECORDED dead — the clone never
+; reads it — so `resolvePhantomCloneArgReads` NEUTRALISES it to `0` after `specialize()`;
+; the operand is a `cq_theta` result, which the twin keeps, so nothing is declined.)
+; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_double_classical_01(i32 0, i32 7)
 ; The caller's `add` stays a RAW classical add — `%r` was scrubbed back out of
 ; taint, so the op is NOT lowered to a template.
 ; CHECK-NEXT: %[[Z:[a-zA-Z0-9_.]+]] = add i32 %[[R]], 5

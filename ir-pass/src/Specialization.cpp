@@ -1205,27 +1205,51 @@ bool isQuantumCallerValue(const Value *V, const TaintSet &taint) {
          taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
 }
 
-// Does `V` have a use, OTHER than a recorded-dead clone slot, that keeps it alive
-// for a reason of its own? Asked positively (Prime Directive direction: an
-// unrecognised use is NOT a keeper, so the answer errs toward "only the phantom
-// keeps it", i.e. toward declining). A keeper is: a LIVE non-call instruction
-// (the liveness predicate, which already ignores recorded-dead slots); a
-// front-end `cq_theta` arg-0 or `cq_measure` (by membership — the user reads it);
-// a `ret`; or a READ slot of a clone call. A runtime `cqrt_*`/`cq_template_*`
-// call is NOT counted, reader or writer (a control emitter's own copies into a
-// `%out` rail are writes, and telling them apart needs the runtime ABI's slot
-// semantics — declined instead: a phantom read of a value some emitted gate also
-// reads is an over-decline, named in TRACK_VSFP §4).
-bool keptAliveElsewhere(const Value *V, const FunctionLiveness &L,
-                        const TaintSet &taint) {
+// A rail a CONTROL EMITTER minted (a 4.4/6.5/4.5 `%out`, a loop rail): the
+// emitter's own runtime calls on it (the controlled copies INTO it) are its
+// construction, not a user READ of it.
+bool isControlEmittedRail(const Value *V, const TaintSet &taint) {
+  Value *NV = const_cast<Value *>(V);
+  return taint.ControlOwnedRails.count(NV) ||
+         taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
+}
+
+bool isRuntimeCall(const CallBase &CB) {
+  const Function *Callee = CB.getCalledFunction();
+  if (!Callee)
+    return false;
+  StringRef N = Callee->getName();
+  return N.starts_with("cqrt_") || N.starts_with("cq_template_");
+}
+
+// Does the USER PROGRAM read `V` — i.e. does the hand-inlined twin compute `V`
+// too? Asked AFTER every recorded-dead slot was neutralised, so no phantom read
+// is left among `V`'s uses. Asked positively (Prime Directive direction: a use we
+// cannot name as a reader is NOT one, so the answer errs toward declining).
+// A READER is: a front-end `cq_measure`, or a `cq_theta` taking `V` as arg-0 (by
+// membership — the user reads it); a READ slot of a clone call; a `ret`; a
+// control-emitted runtime call reading a USER value (`V` not itself an emitter's
+// rail — the compare a tainted condition mints, which the twin mints too); or a
+// LIVE instruction under the liveness predicate. ⚠ NOT a reader: a runtime call
+// on a rail a control emitter minted (the emitter's own copies INTO its `%out` —
+// telling a read from a write there needs the runtime ABI's slot semantics, so
+// every such call is treated as construction; a `%out` a later control-emitted
+// compare genuinely reads is therefore an over-decline, named, not constructed).
+// ⚠ THE ROUND-2 VERSION OF THIS PREDICATE WAS UNSOUND AS AN ACCEPT (bd tzfa; bd
+// vsfp Rule-13 r2B F-WB-1): it asked "is `V` live for a reason of its own?" while
+// the phantom read was still IN the use list, and a live `V` was accepted with the
+// phantom read left in place — the uncompute spine then saw an extra CONSUMER of
+// `V`'s template rail and did not discharge it (r2B `k19`: `h1 = 3q` never
+// uncomputed, `q` fully dephased across the phase oracle). It is only sound now
+// because the phantom read is GONE before the question is asked.
+bool userProgramReads(const Value *V, const FunctionLiveness &L,
+                      const TaintSet &taint) {
+  const bool EmitterRail = isControlEmittedRail(V, taint);
   for (const Use &U : V->uses()) {
     const auto *UI = dyn_cast<Instruction>(U.getUser());
     if (!UI)
-      return true;  // a constant-expression user: unknown, but not ours to judge.
+      continue;  // not a reader we can name.
     if (const auto *CB = dyn_cast<CallBase>(UI)) {
-      if (CB->isArgOperand(&U) &&
-          isRecordedDeadSlot(*CB, CB->getArgOperandNo(&U), taint))
-        continue;  // the phantom itself.
       if (const auto *CI = dyn_cast<CallInst>(CB)) {
         if (taint.MeasureCalls.contains(CI))
           return true;
@@ -1235,8 +1259,12 @@ bool keptAliveElsewhere(const Value *V, const FunctionLiveness &L,
       }
       if (const Function *Callee = CB->getCalledFunction())
         if (taint.SpecHandleArgMask.count(Callee))
-          return true;  // a READ slot of a clone (dead slots were skipped above).
-      continue;  // a runtime call: not counted (see above).
+          return true;  // a READ slot of a clone (dead slots were neutralised).
+      if (isRuntimeCall(*CB)) {
+        if (EmitterRail)
+          continue;  // the emitter's own traffic on its rail: construction.
+        return true;
+      }
     }
     if (isa<ReturnInst>(UI))
       return true;
@@ -1248,48 +1276,76 @@ bool keptAliveElsewhere(const Value *V, const FunctionLiveness &L,
 
 }  // namespace
 
-bool declinePhantomCloneArgReads(Module &M, const TaintSet &taint) {
+bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
+  // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
+  //    non-clone function gets a null constant, exactly the drop's rewrite (and
+  //    its `range`/`nofpclass` strip), asked with the SAME predicate's record
+  //    (`isRecordedDeadSlot`). From here on no stage — the uncompute spine's
+  //    terminal selection and free points, M-C, M-A's hop walk, stage 2b — can
+  //    see a read the clone never performs: the operand's consumer set is the
+  //    hand-inlined twin's. One rewrite at the one point the record exists, rather
+  //    than a `isRecordedDeadSlot` exemption in every consumer (Rule 14; L3's
+  //    mirror — a consumer that forgot the exemption would re-open bd tzfa).
+  struct Neutralised {
+    Function *F;
+    CallBase *CB;
+    Value *Op;
+  };
+  SmallVector<Neutralised, 8> Done;
   for (Function &F : M) {
     if (F.isDeclaration() || taint.SpecHandleArgMask.count(&F))
       continue;  // a clone / `_unc` twin body: its own Bennett wrap discharges.
-    std::optional<FunctionLiveness> L;
     for (BasicBlock &BB : F)
       for (Instruction &I : BB) {
         auto *CB = dyn_cast<CallBase>(&I);
         if (!CB)
           continue;
-        const Function *Callee = CB->getCalledFunction();
+        Function *Callee = CB->getCalledFunction();
         if (!Callee || !taint.SpecDeadArgMask.count(Callee))
           continue;
-        // EVERY slot the record calls dead, not only the detection mask's: a slot
-        // that became tainted after detection (round 2) is a phantom read on
-        // exactly the same terms.
+        // EVERY slot the record calls dead, not only the detection mask's.
         for (unsigned A = 0, E = CB->arg_size(); A < E; ++A) {
           if (!isRecordedDeadSlot(*CB, A, taint))
             continue;
           Value *Op = CB->getArgOperand(A);
-          if (isa<Constant>(Op) || !isQuantumCallerValue(Op, taint))
+          if (isa<Constant>(Op))
             continue;
-          // The ONE exemption, validated by Rule-13 r1B on nine shapes (mutant
-          // B2, load-bearing on all nine): a `cq_theta` RESULT is the user's own
-          // register (a source, or the same register rotated in place). The
-          // phantom read neither mints nor keeps alive a rail the hand-inlined
-          // twin lacks — `cq_theta` is a liveness root, so the twin computes and
-          // keeps that register too, and nothing discharges a user register. A
-          // chained theta on a derived rail is covered by the same argument: the
-          // twin computes and rotates the same rail. Membership, never a name.
-          if (auto *OpCI = dyn_cast<CallInst>(Op);
-              OpCI && taint.ThetaCalls.contains(OpCI))
-            continue;
-          if (!L)
-            L.emplace(F, taint);
-          if (keptAliveElsewhere(Op, *L, taint))
-            continue;  // live for a reason of its own; the phantom adds nothing.
-          F.getContext().diagnose(DiagnosticInfoUnsupported(
-              F, kMsgPhantomArgRead, CB->getDebugLoc()));
-          return true;
+          if (A < Callee->arg_size())
+            for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
+              Callee->removeParamAttr(A, K);
+              CB->removeParamAttr(A, K);
+            }
+          CB->setArgOperand(A, Constant::getNullValue(Op->getType()));
+          Done.push_back({&F, CB, Op});
         }
       }
+  }
+  // 2. DECLINE what the spine still cannot discharge like the twin. A neutralised
+  //    QUANTUM operand the user program still reads is computed by the twin too,
+  //    and now has the twin's consumer set — the spine discharges it (or keeps
+  //    it) exactly as the twin's. One the user program does NOT read is a
+  //    computation the twin does not have: a control-emitted rail minted for the
+  //    phantom (a 4.4 `%out` — a which-path rail no stage uncomputes) or a dead
+  //    tainted op (lowered as a forward template; a dead chain is not reliably
+  //    uncomputed — CLAUDE.md fenv, bd vsfp §R2.6). Declined.
+  //    The one exemption is a `cq_theta` RESULT: the user's own register, which
+  //    the twin computes and keeps too (`cq_theta` is never deleted; validated by
+  //    Rule-13 r1B on nine shapes, mutant B2).
+  DenseMap<Function *, std::unique_ptr<FunctionLiveness>> Live;
+  for (const Neutralised &N : Done) {
+    if (!isQuantumCallerValue(N.Op, taint))
+      continue;  // a classical value costs nothing: no rail, no entanglement.
+    if (auto *OpCI = dyn_cast<CallInst>(N.Op);
+        OpCI && taint.ThetaCalls.contains(OpCI))
+      continue;
+    auto &L = Live[N.F];
+    if (!L)
+      L = std::make_unique<FunctionLiveness>(*N.F, taint);
+    if (userProgramReads(N.Op, *L, taint))
+      continue;
+    N.F->getContext().diagnose(DiagnosticInfoUnsupported(
+        *N.F, kMsgPhantomArgRead, N.CB->getDebugLoc()));
+    return true;
   }
   return false;
 }

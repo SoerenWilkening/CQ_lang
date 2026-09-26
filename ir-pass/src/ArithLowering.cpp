@@ -515,13 +515,21 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     spec_accept_dropped_arg_quantum_reader_outofplace.ll, mutant D2).
 //     ⚠ ROUND 1 ASKED `use_empty()` OF THE BUILT CLONE'S PARAMETER, which a dead
 //     `trunc` the clone Bennett-reverses defeats (bd vsfp r1B F-VB-1 `v30`:
-//     `volatile char z = a;`). WHO REACHES IT NOW: after bd vsfp round 2 the
-//     dead-argument drop replaces every argument whose parameter is dead in the
-//     ORIGINAL callee (after the fenv stages) by a constant, so the only customer
-//     is a slot the CLONE's own pipeline made dead (its scoped PredMux flatten,
-//     e.g. a branch-only read of an emptied diamond) with a `cq_theta` result as
-//     the operand — the one operand the backstop exempts; any other quantum
-//     operand in such a slot has already been declined.
+//     `volatile char z = a;`). WHO REACHES IT NOW (bd vsfp round 3): at MODULE
+//     level, nothing — the dead-argument drop replaces every argument whose
+//     parameter is dead in the ORIGINAL callee (after the fenv stages) by a
+//     constant, and `resolvePhantomCloneArgReads` NEUTRALISES every slot the
+//     specializer recorded dead (a slot only the clone's own flatten killed) right
+//     after `specialize()`, before `lowerOps`; a neutralised call passes a
+//     constant and is not a user of `P` at all. What can still reach this arm is
+//     an inner clone call inside a clone body, which the neutralisation does not
+//     touch (the Bennett wrap discharges there). Kept as the one spelling of the
+//     question for that population, not deleted.
+//     ⚠ The round-2 sentence here — "the only customer is … a `cq_theta` result
+//     … any other quantum operand in such a slot has already been declined" — was
+//     FALSE (bd vsfp Rule-13 r2B F-WB-3): round 2's keeper exemption let a derived
+//     record through (`k7`: `p = q*3; h(p, m); p += 5`), which this arm then
+//     settled — the right outcome on the wrong stated population (L7).
 //     ⚠ Round 1's comment here attributed its C customer (`volatile int z = a;`)
 //     to "the clone's lowering". That was WRONG (bd vsfp r1B F-VB-3): the MODULE
 //     pre-pass `eraseDeadVolatileScalarStores` erased that store on the ORIGINAL

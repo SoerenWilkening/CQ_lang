@@ -1,0 +1,56 @@
+lit: /Users/sorenwilkening/.pyenv/versions/3.11.9/lib/python3.11/site-packages/lit/main.py:72: note: The test suite configuration requested an individual test timeout of 0 seconds but a timeout of 60 seconds was requested on the command line. Forcing timeout to be 60 seconds.
+-- Testing: 23 of 2378 tests, 12 workers --
+FAIL: CQ IR-pass :: lowering_volatile_arm_fold_repropagate_addc.ll (1 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_measured_record.ll (2 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_template_reader.ll (3 of 23)
+FAIL: CQ IR-pass :: spec_accept_dropped_arg_volatile_global_phi.ll (4 of 23)
+FAIL: CQ IR-pass :: spec_accept_dropped_arg_volatile_global_oracle.ll (5 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_kept_alive.ll (6 of 23)
+FAIL: CQ IR-pass :: spec_accept_dropped_arg_volatile_global_expect.ll (7 of 23)
+FAIL: CQ IR-pass :: lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll (8 of 23)
+FAIL: CQ IR-pass :: spec_result_classical.ll (9 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_theta_source.ll (10 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_theta_source_inplace_mc.ll (11 of 23)
+FAIL: CQ IR-pass :: spec_reseed_theta_source.ll (12 of 23)
+FAIL: CQ IR-pass :: spec_accept_dropped_arg_volatile_global_arm.ll (13 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_arm_fold_repropagate_escape.ll (14 of 23)
+PASS: CQ IR-pass :: spec_reject_phantom_arg_read_unread_select.ll (15 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_globalfold_equal_phi.ll (16 of 23)
+PASS: CQ IR-pass :: spec_reject_phantom_arg_read_unread_template.ll (17 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_arm_fold_repropagate_loop.ll (18 of 23)
+FAIL: CQ IR-pass :: spec_accept_phantom_arg_read_classical_slot.ll (19 of 23)
+FAIL: CQ IR-pass :: lowering_classical_mux_phi_onereg_spec_scrubbed_elsewhere.ll (20 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_constfold_arm_repropagate.ll (21 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_arm_fold_stale_taint_redgreen.ll (22 of 23)
+FAIL: CQ IR-pass :: lowering_volatile_arm_fold_repropagate.ll (23 of 23)
+********************
+Failed Tests (21):
+  CQ IR-pass :: lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll
+  CQ IR-pass :: lowering_classical_mux_phi_onereg_spec_scrubbed_elsewhere.ll
+  CQ IR-pass :: lowering_volatile_arm_fold_repropagate.ll
+  CQ IR-pass :: lowering_volatile_arm_fold_repropagate_addc.ll
+  CQ IR-pass :: lowering_volatile_arm_fold_repropagate_escape.ll
+  CQ IR-pass :: lowering_volatile_arm_fold_repropagate_loop.ll
+  CQ IR-pass :: lowering_volatile_arm_fold_stale_taint_redgreen.ll
+  CQ IR-pass :: lowering_volatile_constfold_arm_repropagate.ll
+  CQ IR-pass :: lowering_volatile_globalfold_equal_phi.ll
+  CQ IR-pass :: spec_accept_dropped_arg_volatile_global_arm.ll
+  CQ IR-pass :: spec_accept_dropped_arg_volatile_global_expect.ll
+  CQ IR-pass :: spec_accept_dropped_arg_volatile_global_oracle.ll
+  CQ IR-pass :: spec_accept_dropped_arg_volatile_global_phi.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_classical_slot.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_kept_alive.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_measured_record.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_template_reader.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_theta_source.ll
+  CQ IR-pass :: spec_accept_phantom_arg_read_theta_source_inplace_mc.ll
+  CQ IR-pass :: spec_reseed_theta_source.ll
+  CQ IR-pass :: spec_result_classical.ll
+
+
+Testing Time: 0.68s
+
+Total Discovered Tests: 2378
+  Excluded: 2355 (99.03%)
+  Passed  :    2 (0.08%)
+  Failed  :   21 (0.88%)

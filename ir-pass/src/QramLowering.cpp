@@ -19,6 +19,7 @@
 
 #include "llvm/ADT/DenseMap.h"
 #include "llvm/ADT/SCCIterator.h"
+#include "llvm/ADT/MapVector.h"
 #include "llvm/ADT/SmallPtrSet.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
@@ -2594,9 +2595,16 @@ QromClaim classifyQromReadUnderControl(
 // an unfoldable offset+type each leave the global untouched for the existing
 // loud declines — over-declining is safe, a wrong fold would be a silent
 // wrong-value miscompile in the classical remainder).
-bool foldVolatileConstGlobalLoads(Module &M) {
+bool foldVolatileConstGlobalLoads(Module &M, const TaintSet &taint) {
   bool Changed = false;
   const DataLayout &DL = M.getDataLayout();
+  // bd stl3 (bd vsfp round 3, Rule-13 r2B F-WB-2): the blocks this fold empties,
+  // per function, for the SAME empty-arm fold its three siblings run — `if (a >
+  // 3) (void)K;` otherwise leaves an empty diamond (or a two-entry φ of EQUAL
+  // incomings, `(a > 3) ? K : 0` with `K == 0`) that keeps `a` branch-live, so the
+  // dead-argument drop's slot B cannot predict the slot the clone's own flatten
+  // then kills. After the global loop: the fold changes the CFG.
+  MapVector<Function *, SmallVector<BasicBlock *, 4>> Emptied;
   for (GlobalVariable &G : M.globals()) {
     if (!G.hasLocalLinkage() || !G.hasDefinitiveInitializer())
       continue;
@@ -2657,11 +2665,17 @@ bool foldVolatileConstGlobalLoads(Module &M) {
           ConstantFoldLoadFromConst(G.getInitializer(), LI->getType(), Off, DL);
       if (!C)
         continue;  // offset/type the initializer cannot produce — leave.
+      Emptied[LI->getFunction()].push_back(LI->getParent());
       LI->replaceAllUsesWith(C);
       LI->eraseFromParent();
       Changed = true;
     }
   }
+  // ⚠ The fold may create a TAINTED `select` (a two-entry φ under a quantum
+  // condition) — the caller owes a re-`propagate` whenever this returns true
+  // (bd otam; `deleteDeadCones`' contract).
+  for (auto &[F, Blocks] : Emptied)
+    deleteDeadCones(*F, {}, taint, "volatile-globalfold", Blocks);
   return Changed;
 }
 

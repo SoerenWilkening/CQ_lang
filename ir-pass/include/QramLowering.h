@@ -239,10 +239,14 @@ bool valueWillTaintAfterFlatten(
 // load == initializer on every execution, so the fold is exact; anything short of
 // the proof (external linkage, any store, any escaping user, atomic, a type the
 // initializer cannot produce at that offset) is left untouched — the existing
-// loud declines own it. Folded loads are CLASSICAL (constant address), so taint
-// is unaffected and no re-propagate is needed (the foldIdentityBitcasts
-// precedent). Returns true if anything folded.
-bool foldVolatileConstGlobalLoads(llvm::Module &M);
+// loud declines own it. Folded loads are CLASSICAL (constant address). ⚠ But the
+// stage does not leave taint unaffected (bd vsfp round 3, bd otam / stl3): an arm
+// the fold EMPTIES is folded by `deleteDeadCones` (the empty-arm fold its three
+// siblings run), and a two-entry φ under a QUANTUM condition becomes
+// `select %taintedCond, …` — a NEW tainted value. The caller re-`propagate`s
+// whenever this returns true (both entry points). Returns true if anything
+// folded.
+bool foldVolatileConstGlobalLoads(llvm::Module &M, const TaintSet &taint);
 
 // bd etiq — volatile-const LOCAL fold: the alloca sibling of the global fold
 // above (curation, runs immediately after it in BOTH pipeline entry points).
@@ -258,10 +262,15 @@ bool foldVolatileConstGlobalLoads(llvm::Module &M);
 // through-gep tolerance (the local proof is exact-type/exact-address; a
 // type-punned or offset view is off-idiom and forfeits). The single-Constant
 // store gate structurally excludes tainted (shadow-QRAM) allocas; folded
-// values are CLASSICAL, so taint is unaffected and no re-propagate is needed
-// (the foldVolatileConstGlobalLoads precedent). Anything short of the proof is
-// left untouched for the existing loud declines. Returns true if anything
-// folded.
+// values are CLASSICAL. ⚠ FALSE SINCE bd vsfp ROUND 2, and the source of bd otam
+// (Rule-13 r2A F-WA-1/F-WA-2): this used to read "taint is unaffected and no
+// re-propagate is needed". Round 2 gave the stage `deleteDeadCones(…, Emptied)`,
+// whose empty-arm fold turns a two-entry φ under a QUANTUM condition into
+// `select %taintedCond, …` — a NEW tainted value — and both call sites ignored
+// the return. A classical consumer then computed with a `%out` rail handle and a
+// user `cq_measure` vanished (r2A `stale4`). The caller now re-`propagate`s
+// whenever this returns true. Anything short of the proof is left untouched for
+// the existing loud declines. Returns true if anything folded.
 bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 
 // bd k710 — DEAD VOLATILE SCALAR STORE elimination: the write-only sibling of the
@@ -318,6 +327,16 @@ bool foldVolatileConstAllocaLoads(llvm::Module &M, const TaintSet &taint);
 // claims them. Anything short of the proof is left byte-untouched for the existing
 // loud declines (ACCEPT-ONLY, emits no diagnostic — the foldVolatileConstAllocaLoads
 // precedent). Returns true if anything was erased.
+//
+// ⚠ THE STAGE GROWS THE TAINT SET, AND ITS CALLERS OWE A RE-`propagate` (bd otam,
+// bd vsfp Rule-13 r2A F-WA-1). An arm this stage EMPTIES is folded by
+// `deleteDeadCones`, and a two-entry φ under a QUANTUM condition becomes
+// `select %taintedCond, …` — a new tainted value. Round 2 ignored the return at
+// both call sites; a later classical consumer then computed with the select's
+// `%out` rail handle and a user `cq_measure` vanished (r2A `stale3c`, `loop2`).
+// Both entry points now re-`propagate` whenever this returns true, and
+// `declineStaleTaintSet` re-derives the taint set before `detectSpecializations`
+// so a future stage that forgets is LOUD.
 bool eraseDeadVolatileScalarStores(llvm::Module &M, const TaintSet &taint);
 
 // bd zco4 — volatile scalar-local SSA promotion: the mem2reg sibling of

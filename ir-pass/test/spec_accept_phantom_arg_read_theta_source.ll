@@ -1,13 +1,16 @@
 ; spec_accept_phantom_arg_read_theta_source.ll — ACCEPT (bd test_C_libtooling-vsfp — the
-; backstop's ONE exemption; r2A_9bhg probe `cv9S`). Re-spelled in ROUND 2, see below.
+; phantom read of a `cq_theta` RESULT; r2A_9bhg probe `cv9S`). Re-spelled in round 2
+; (branch-only read, below); subject changed in round 3.
 ;
-; The built clone never reads its parameter 0 (the specializer RECORDED it dead), but the
-; operand is `q`, a `cq_theta` RESULT — the user's own register. The phantom read neither
-; mints nor keeps alive a rail the hand-inlined twin lacks (`cq_theta` is a liveness root;
-; nothing discharges a user register) — r2A's harmless quadrant, validated on nine shapes
-; by Rule-13 r1B (mutant B2 load-bearing on all nine). `declinePhantomCloneArgReads`
-; exempts a `taint.ThetaCalls` member by MEMBERSHIP; delete the exemption and this file
-; declines. The drop does not fire (NODROP): `a` is live in the original `@h`.
+; The built clone never reads its parameter 0, so the call becomes `h(0, m)`. The operand
+; was `q`, a `cq_theta` RESULT — the user's own register, which the twin computes and keeps
+; too — so nothing is declined: the one exemption (Rule-13 r1B, nine shapes). The drop
+; does not fire (NODROP): `a` is live in the original `@h`.
+; ⚠ ROUND 3 (bd tzfa; Rule-13 r2B F-WB-1). A slot the specializer RECORDED dead is now
+; NEUTRALISED after `specialize()` (`resolvePhantomCloneArgReads`: the argument becomes `0`,
+; the drop's rewrite), so the uncompute spine, M-C, M-A and stage 2b see the hand-inlined
+; twin's consumer set. Round 2 instead ACCEPTED a phantom read whose operand had another
+; reader and left the read in place — one consumer too many for the spine.
 ;
 ; ⚠ WHY HAND-WRITTEN IR (bd vsfp round 2). The callee's only read of `a` is a
 ; BRANCH-ONLY one — an empty diamond on `a > 3`. The pass's liveness predicate has no
@@ -40,7 +43,7 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK: call i32 @__cq_q_h_01(i32 noundef 0, i32 noundef %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}

@@ -75,7 +75,10 @@ entry:
 ; %r is scrubbed (classical-return clone) but the fresh theta seeded from it is a
 ; real qubit: alloc+ry, then the downstream add lowers to a data template, then
 ; a real measure on that handle — NO loud decline.
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_cls_01(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
+; (bd vsfp round 3, bd tzfa: slot 0 is one the specializer RECORDED dead — the clone never
+; reads it — so `resolvePhantomCloneArgReads` NEUTRALISES it to `0` after `specialize()`;
+; the operand is a `cq_theta` result, which the twin keeps, so nothing is declined.)
+; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_cls_01(i32 0, i32 7)
 ; CHECK:     %[[RE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[RE]], double 2.500000e-01)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[RE]], i32 8)

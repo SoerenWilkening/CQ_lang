@@ -111,10 +111,10 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // (`DeadValueLiveness.h`'s body rule: acyclic, call-free, write-free) — IS
 // deleted, as `-O1` deletes it once it can see the body.
 //
-// The TOTAL half is `declinePhantomCloneArgReads` (Specialization.h): after
-// `specialize()` it asks the SAME predicate of the BUILT clones (the
-// specializer's record `taint.SpecDeadArgMask`) and declines a quantum operand
-// kept alive only by a slot the clone never reads.
+// The observing half is `resolvePhantomCloneArgReads` (Specialization.h): after
+// `specialize()` it reads the SAME predicate's record of the BUILT clones
+// (`taint.SpecDeadArgMask`), neutralises every slot the clone never reads, and
+// declines a quantum operand the user program then no longer reads.
 bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq

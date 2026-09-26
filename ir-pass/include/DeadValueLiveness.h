@@ -125,6 +125,20 @@ uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint);
 // the definition), and delete the now-dead condition cone the same way. Arms with their address taken and the entry block are never touched.
 // Returns the number of instructions deleted. `Stage` names the caller for the
 // env-gated `CQ_DEADCONE_DBG` census line.
+//
+// ⚠ THE CALLER'S OBLIGATION — THIS FUNCTION CAN GROW THE TAINT SET (bd otam; bd
+// vsfp Rule-13 r2A F-WA-1, retirement trigger per CLAUDE.md L8). The two-entry-φ
+// fold creates `select Cond, vT, vF`; when `Cond` is tainted the select is a NEW
+// tainted value (a φ of classical incomings is not tainted by data flow; the
+// select is, through its condition), and so is every user it takes over. `taint`
+// is read here only for the ROOT set (membership lists, the specializer record),
+// never `taint.Tainted`, so this function itself is unaffected — but a caller
+// that does not re-`propagate` after a call that changed the IR leaves
+// `taint.Tainted` STALE for every later stage. Every caller is in the pre-guard
+// window (the drop's two slots, the three volatile folds, the promotion) and
+// re-`propagate`s when its stage returns true; `declineStaleTaintSet` re-derives
+// the set before `detectSpecializations` so an omission is loud. A caller added
+// AFTER the guards owes `adjudicateTaintDelta`, not just a `propagate` (L1).
 unsigned deleteDeadCones(llvm::Function &F, llvm::ArrayRef<llvm::Value *> Seeds,
                          const TaintSet &taint, llvm::StringRef Stage,
                          llvm::ArrayRef<llvm::BasicBlock *> Touched = {});

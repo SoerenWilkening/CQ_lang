@@ -40,44 +40,48 @@ void specialize(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // that check lives at the carve-out, not here.
 bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 
-// bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the observing
-// half of `dropDeadCallArguments` (SpecializeDetect.h). After `specialize()`, a
-// call in a NON-clone function to a function the specializer built, passing in a
-// slot the specializer RECORDED as dead in the built clone
+// bd `test_C_libtooling-vsfp` (P1) / bd `tzfa` (P1) — THE PHANTOM READ, RESOLVED
+// (bd vsfp round 3). The observing half of `dropDeadCallArguments`
+// (SpecializeDetect.h): after `specialize()`, the specializer's record
 // (`isRecordedDeadSlot`: `taint.SpecDeadArgMask`, taken by `buildClone` with the
-// pass's ONE liveness predicate, `DeadValueLiveness.h`) a caller-side QUANTUM
-// value (tainted, or a rail a control emitter minted — round-1 and round-2
-// `%out`s included) that nothing else keeps alive, is a read only the compiler
-// performs: that value's rail is kept alive for a callee that never looks at it,
-// which is how a which-path rail the hand-inlined twin never computes stays
-// entangled across a later non-diagonal gate (bd vsfp's silent dephasing). Fires
-// `cq specialization: quantum argument to a parameter the lifted callee never
-// reads` (DS_Error, source-located on the call) and returns true.
+// pass's ONE liveness predicate, `DeadValueLiveness.h`) names the slots each built
+// clone never reads. A call in a NON-clone function that passes a value in such a
+// slot is a read only the compiler performs.
 //
-// "NOTHING ELSE KEEPS IT ALIVE" (bd vsfp r1B F-VB-4, `v12`): a value some other
-// LIVE instruction reads, a user's `cq_measure`/`cq_theta` arg-0 reads, a `ret`
-// returns, or a clone reads in a slot it does NOT ignore, is live for a reason of
-// its own — the twin keeps it too, and the phantom read adds nothing. Runtime
-// `cqrt_*`/`cq_template_*` calls are not counted as keepers (an emitter's copies
-// into a `%out` rail are writes); the over-decline that leaves is named in
-// TRACK_VSFP §4. The one exemption is a `cq_theta` RESULT operand (validated by
-// Rule-13 r1B on nine shapes; its argument is at the definition).
+// (1) It NEUTRALISES every one: the operand becomes a null constant (the drop's
+// rewrite, `range`/`nofpclass` stripped), so no later stage can see the phantom
+// read. That is the fix for bd tzfa: the read did not keep the operand's rail
+// ALIVE, it kept the uncompute SPINE from DISCHARGING it — an extra consumer of a
+// template rail the twin uncomputes (r2B `k19`: `h1 = 3q` left dirty across a
+// phase oracle, `q` fully dephased). With the read gone, the spine sees the
+// hand-inlined twin's consumer set.
 //
-// ⚠ WHAT IT IS NOT (L7; round 1 called it "TOTAL"). It observes phantom reads
-// THROUGH A CLONE CALL. A dead operand kept alive by something that is not a
-// clone call — a dead intrinsic, a dead φ cycle — is not its population; those
-// are the dead-argument drop's (`deleteDeadCones`, the same predicate). And round
-// 1's stated C customer, `volatile int z = a;` in the callee, was attributed to
-// "the clone pipeline" when it was the MODULE pre-pass
-// `eraseDeadVolatileScalarStores` acting on the ORIGINAL callee (r1B F-VB-3):
-// since round 2 the drop's slot B predicts it, so that program lowers to its
-// fenv-intended twin instead of declining. What reaches this fence now is a slot
-// the CLONE's own pipeline made dead (its scoped PredMux flatten), or one a drop
-// precondition refused (a `range`-less custom attribute, a `naked` or
-// interposable callee cannot reach here — those callees decline at spec).
-// Clone BODIES are not scanned: every rail an inner call there could keep alive
-// is uncomputed by the enclosing Bennett wrap before the clone returns.
-bool declinePhantomCloneArgReads(llvm::Module &M, const TaintSet &taint);
+// (2) It DECLINES (`cq specialization: quantum argument to a parameter the lifted
+// callee never reads`, DS_Error on the call, returns true) when a neutralised
+// operand is QUANTUM (tainted, or a control-emitted rail) and the user program no
+// longer reads it: the twin never computes such a value, and what the pass
+// already built for it cannot be taken back — a 4.4 `%out` minted for the
+// phantom is a which-path rail no stage uncomputes, and a dead tainted op is not
+// reliably uncomputed. The one exemption is a `cq_theta` RESULT (the user's own
+// register; Rule-13 r1B, nine shapes, mutant B2). "Reads" is asked positively —
+// see `userProgramReads` in Specialization.cpp for the list, and for the one
+// named over-decline it leaves (a `%out` read only by a later control-emitted
+// compare).
+//
+// ⚠ WHAT IT IS NOT (L7). Not "TOTAL" (round 1): it acts on phantom reads THROUGH
+// A CLONE CALL; a dead operand kept alive by something else (a dead intrinsic, a
+// dead φ cycle) is the drop's (`deleteDeadCones`). And not round 2's "a value
+// kept alive elsewhere adds nothing" — that exemption was accepted with the
+// phantom still in the use list, which was bd tzfa. What reaches this point at
+// all is a slot the CLONE's own pipeline made dead (its scoped PredMux flatten)
+// that the drop could not predict from the original callee, or one a drop
+// precondition refused. Clone BODIES are not scanned: every rail an inner call
+// there could keep is uncomputed by the enclosing Bennett wrap.
+//
+// THE SLOT (both entry points): last in the post-`specialize()` decline chain,
+// before `lowerRotations` (which RAUWs every `cq_theta` result to its handle), so
+// the neutralisation happens before every stage that builds a consumer set.
+bool resolvePhantomCloneArgReads(llvm::Module &M, const TaintSet &taint);
 
 }  // namespace cq
 

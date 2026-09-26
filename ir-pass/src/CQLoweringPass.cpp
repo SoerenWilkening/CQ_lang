@@ -164,9 +164,15 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   //
   // It needs taint only for the intrinsic-site membership (roots; the call-site
   // skip). The full re-`propagate` after it is exactly the restart every fixpoint
-  // below performs. It SHRINKS the taint set and grows nothing, so it owes no
-  // `adjudicateTaintDelta`. The TOTAL half is `declinePhantomCloneArgReads`
-  // after `specialize()`, asked with the SAME predicate of the built clones.
+  // below performs, and it is what the drop OWES: ⚠ the round-2 sentence here —
+  // "it SHRINKS the taint set and grows nothing" — was false (bd vsfp Rule-13 r2A
+  // F-WA-2): `deleteDeadCones`' two-entry-φ fold can mint a TAINTED `select`
+  // (a φ of classical incomings under a quantum condition). The conclusion
+  // survives on the right ground: the drop re-`propagate`s whenever it changed
+  // anything and no guard has run yet, so a plain `propagate` is the whole
+  // obligation (no `adjudicateTaintDelta`). The observing half is
+  // `resolvePhantomCloneArgReads` after `specialize()`, asked with the SAME
+  // predicate's record of the built clones.
   if (dropDeadCallArguments(M, taint))
     taint = propagate(M, wd);
 
@@ -327,9 +333,13 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // address-escaped. Runs HERE — after the passthrough early-out (a cq-free
   // module stays byte-identical) and BEFORE the PredMux fixpoint, whose E4
   // admits no volatile access (unfolded, these block the tainted arm). Folded
-  // loads are classical, so taint is unaffected (the bitcast-fold precedent —
-  // no re-propagate needed).
-  foldVolatileConstGlobalLoads(M);
+  // loads are classical. ⚠ But since bd vsfp round 3 (bd stl3) the stage also
+  // folds an arm it EMPTIES (`deleteDeadCones`), which can turn a two-entry φ
+  // under a quantum condition into a NEW tainted `select` — so it re-propagates
+  // when it changed anything, like every other pre-pass in this window (bd otam;
+  // the old "no re-propagate needed" was the bug, see QramLowering.h).
+  if (foldVolatileConstGlobalLoads(M, taint))
+    taint = propagate(M, wd);
 
   // bd etiq — volatile-const LOCAL fold (QramLowering.cpp): the alloca sibling
   // of the global fold, for the openlibm rounding idiom kept in a LOCAL
@@ -337,8 +347,12 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // volatile access, so the store/load pair survives -O1 and would block the
   // tainted arm at PredMux E4). Single-Constant-store + dominated exact-type
   // loads only; the fold erases the loads, store, lifetime markers, and
-  // alloca. Folded values are classical — same no-re-propagate rationale.
-  foldVolatileConstAllocaLoads(M, taint);
+  // alloca. Folded values are classical, but the arm fold behind it is not taint-
+  // neutral (bd otam, r2A `stale4`: a `(void)k` arm emptied under a quantum
+  // condition became a tainted `select` nobody re-propagated, and a user
+  // `cq_measure` vanished) — so: re-propagate when it changed anything.
+  if (foldVolatileConstAllocaLoads(M, taint))
+    taint = propagate(M, wd);
 
   // bd k710 — DEAD volatile SCALAR STORE elimination (QramLowering.cpp): the
   // WRITE-ONLY sibling of the two folds above, for openlibm's underflow idiom
@@ -353,8 +367,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // `fmul_f32` in slice_libm_ld80_nexttowardf). ⚠ The sentence that stood here —
   // "outside a region it is instead lowered, uncomputed and freed" — was false
   // for a dead 4.4 select (a silent which-path rail) and a dead template product
-  // whose source is later rotated (a dirty rail); see QramLowering.h.
-  eraseDeadVolatileScalarStores(M, taint);
+  // whose source is later rotated (a dirty rail); see QramLowering.h. The same
+  // cone deletion can fold an emptied arm into a tainted `select` (bd otam, r2A
+  // `stale3a/b/c`, `loop2`), so: re-propagate when it changed anything.
+  if (eraseDeadVolatileScalarStores(M, taint))
+    taint = propagate(M, wd);
 
   // bd zco4 — volatile scalar-local SSA promotion (QramLowering.cpp): the mem2reg
   // sibling of the etiq fold above, for the OpenBSD/Moshier "***CAUTION***" idiom
@@ -536,6 +553,14 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // runs. It enters ONLY proven-Accept sites into `plan6.Pending` and loud-
   // declines classified rejects (recording them in `plan6.Diagnosed`); every
   // candidate-shaped-but-unproven site is left for the carve-out to decline.
+  // bd `test_C_libtooling-otam` (bd vsfp round 3) — THE PRE-PASS WINDOW'S
+  // TAINT-FRESHNESS POSTCONDITION. Every stage above that changes the IR
+  // re-propagates itself; this re-derives the set once more and declines LOUDLY
+  // if it differs, so the NEXT stage that grows taint and forgets (the three
+  // volatile folds did, round 2) is a decline, not a silent miscompile. See
+  // TaintPropagation.h for what it can and cannot see.
+  if (declineStaleTaintSet(M, wd, taint))
+    return PreservedAnalyses::none();
   SpecPlan plan6;
   detectSpecializations(M, taint, wd, plan6);
 
@@ -1013,16 +1038,19 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
-  // bd `test_C_libtooling-vsfp` (P1) — THE PHANTOM-READ POSTCONDITION, the observing
-  // half of `dropDeadCallArguments` (its slots A and B above). It asks the SAME
-  // liveness predicate of the BUILT clones (the specializer's record
-  // `taint.SpecDeadArgMask`): a call here that passes a caller-side quantum value,
-  // kept alive by nothing else, into a slot the clone never reads keeps that
-  // value's rail alive for nobody, and a derived rail kept alive that way dephases
-  // a later non-diagonal gate on the register it copies — so it declines loudly.
-  // ⚠ Round 1 called this "TOTAL"; it is total only for phantom reads THROUGH A
-  // CLONE CALL (Rule-13 r1A F-VA-2 — a dead intrinsic kept a rail alive with no
-  // clone in sight). Those other keepers are the drop's `deleteDeadCones`.
+  // bd `test_C_libtooling-vsfp` (P1) / bd `tzfa` (P1) — THE PHANTOM READ,
+  // RESOLVED: the observing half of `dropDeadCallArguments` (its slots A and B
+  // above), with the specializer's record of the SAME liveness predicate
+  // (`taint.SpecDeadArgMask`). It NEUTRALISES every recorded-dead slot of every
+  // module-level clone call (a null constant, the drop's rewrite), so the
+  // uncompute spine, M-C, M-A and stage 2b all see the hand-inlined twin's
+  // consumer set; then it declines a neutralised QUANTUM operand the user program
+  // no longer reads (a rail minted only for the phantom — the twin has none).
+  // ⚠ Round 2's version declined unless the operand was "kept alive elsewhere"
+  // and then ACCEPTED with the phantom read still in place: the spine saw an extra
+  // consumer and left a template rail dirty (bd tzfa, r2B `k19`: `q` dephased).
+  // ⚠ Round 1 called this "TOTAL"; it acts only on phantom reads THROUGH A CLONE
+  // CALL (r1A F-VA-2). Other dead keepers are the drop's `deleteDeadCones`.
   //
   // ⚠ THE SLOT: after `specialize()`, the first point at which the clone bodies
   // are FINAL (a read the clone's own flatten removed is visible only here), and at
@@ -1040,9 +1068,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // decline where the twin accepts, the safe direction). Since round 2 the drop
   // removes such a cone before emission whenever the callee's parameter is dead in
   // the ORIGINAL body (`v27` now accepts, twin-identical). Before `lowerRotations`,
-  // which RAUWs every `cq_theta` result to its handle. Nothing between
-  // `specialize()` and here writes `taint.Tainted`, so the taint it reads is FINAL.
-  if (declinePhantomCloneArgReads(M, taint))
+  // which RAUWs every `cq_theta` result to its handle, and before `lowerOps` and
+  // `uncompute`, which build the consumer sets the neutralisation corrects.
+  // Nothing between `specialize()` and here writes `taint.Tainted`, so the taint
+  // it reads is FINAL.
+  if (resolvePhantomCloneArgReads(M, taint))
     return PreservedAnalyses::none();
 
   lowerRotations(M, wd, taint, &plan);
@@ -1229,6 +1259,16 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // `F`, and — since F-L3-4 — would DECLINE on an address-take anywhere in `M`.
   // Same disposition as the three above: harmless while this entry point has zero
   // callers, and a reviver must scope it to `F` or accept it as module-wide.
+  //
+  // ⚠ A FIFTH AND SIXTH (bd vsfp, Rule-13 r2A F-WA-4): `dropDeadCallArguments`
+  // (both slots) and `resolvePhantomCloneArgReads` rewrite call arguments in EVERY
+  // function of M, and the drop's LOAD-BEARING front-end-site skip reads the
+  // membership lists AFTER `onlyInF` has filtered them to F — so a reviver would
+  // no longer protect another function's `cq_theta` angle in a module that DEFINES
+  // the reserved symbol (`spec_accept_dropped_arg_reserved_symbol_angle.ll`'s
+  // shape; the liveness ROOT side is still covered by the reserved-name root). The
+  // `declineStaleTaintSet` postcondition compares only `Tainted`, which `onlyInF`
+  // never filters. Same disposition: a reviver must scope all of these to `F`.
   auto onlyInF = [&F](auto &Calls) {
     Calls.remove_if([&F](CallInst *CI) { return CI->getFunction() != &F; });
   };
@@ -1293,12 +1333,24 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // bd 3c6m.14 Inc 3 — volatile-const global-load fold, mirrored in this entry
   // point too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-passthrough / pre-PredMux placement rationale.
-  foldVolatileConstGlobalLoads(M);
+  if (foldVolatileConstGlobalLoads(M, taint)) {  // bd otam/stl3 — see run().
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // bd etiq — volatile-const LOCAL fold, mirrored in this entry point too
   // (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
   // post-global-fold / pre-PredMux placement rationale.
-  foldVolatileConstAllocaLoads(M, taint);
+  if (foldVolatileConstAllocaLoads(M, taint)) {  // bd otam — see run().
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // bd k710 — DEAD volatile SCALAR STORE elimination (QramLowering.cpp): the
   // WRITE-ONLY sibling of the two folds above, for openlibm's underflow idiom
@@ -1314,7 +1366,13 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // "outside a region it is instead lowered, uncomputed and freed" — was false
   // for a dead 4.4 select (a silent which-path rail) and a dead template product
   // whose source is later rotated (a dirty rail); see QramLowering.h.
-  eraseDeadVolatileScalarStores(M, taint);
+  if (eraseDeadVolatileScalarStores(M, taint)) {  // bd otam — see run().
+    taint = propagate(M, wd);
+    onlyInF(taint.ThetaCalls);
+    onlyInF(taint.PhiCalls);
+    onlyInF(taint.PhaseCalls);
+    onlyInF(taint.MeasureCalls);
+  }
 
   // bd zco4 — volatile scalar-local SSA promotion, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY, WI-1.12) — see run() for the
@@ -1408,6 +1466,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 6 specialization pre-pass + carve-out, mirrored in this entry point
   // too (twin-pipeline parity is MANDATORY — a pre-pass wired in `run()` but not
   // here would silently diverge, WI-1.12). See run() for the rationale.
+  if (declineStaleTaintSet(M, wd, taint))  // bd otam — see run().
+    return false;
   SpecPlan plan6;
   detectSpecializations(M, taint, wd, plan6);
 
@@ -1612,10 +1672,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // nothing else did; a no-op when `taint.Round1RailGrants` is empty, which is
   // every module with no bounded quantum loop reading a loop-invariant register.
   declineRound2FalsifiedRailGrants(M, taint, wd);
-  // bd `test_C_libtooling-vsfp` — the phantom-read postcondition, mirrored in this
+  // bd `test_C_libtooling-vsfp` / bd `tzfa` — the phantom-read resolution
+  // (neutralise, then decline what the twin does not compute), mirrored in this
   // entry point too (twin-pipeline parity is MANDATORY, WI-1.12). Same slot, last
   // in the post-`specialize()` decline chain; see run().
-  if (declinePhantomCloneArgReads(M, taint))
+  if (resolvePhantomCloneArgReads(M, taint))
     return false;
 
   lowerRotations(M, wd, taint, &plan);

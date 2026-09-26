@@ -599,6 +599,48 @@ TaintSet propagate(Module &M, WidthDispatch &wd) {
 }
 
 
+bool declineStaleTaintSet(Module &M, WidthDispatch &wd, const TaintSet &taint) {
+  // See TaintPropagation.h. Asked in both directions: a value the fresh set has
+  // and the carried one lacks is the bd otam shape (a pre-pass minted a tainted
+  // value and nobody re-propagated); the converse (a carried value the fresh set
+  // lacks) would mean a stage made a value classical without a re-propagate —
+  // equally stale, equally loud.
+  TaintSet Fresh = propagate(M, wd);
+  const Value *Diff = nullptr;
+  for (Value *V : Fresh.Tainted)
+    if (!taint.Tainted.count(V)) {
+      Diff = V;
+      break;
+    }
+  if (!Diff)
+    for (Value *V : taint.Tainted)
+      if (!Fresh.Tainted.count(V)) {
+        Diff = V;
+        break;
+      }
+  if (!Diff)
+    return false;
+  const auto *I = dyn_cast<Instruction>(Diff);
+  const Function *F = I ? I->getFunction() : nullptr;
+  if (!F)
+    if (const auto *A = dyn_cast<Argument>(Diff))
+      F = A->getParent();
+  if (!F)
+    for (const Function &G : M)
+      if (!G.isDeclaration()) {
+        F = &G;
+        break;
+      }
+  if (!F)
+    return false;  // no body anywhere: nothing downstream can read the set.
+  F->getContext().diagnose(DiagnosticInfoUnsupported(
+      *F,
+      "cq lowering: taint set is stale after a pre-pass (a stage grew or shrank "
+      "the tainted set without re-propagating)",
+      I ? I->getDebugLoc() : DebugLoc()));
+  return true;
+}
+
 void foldIdentityBitcasts(Module &M, TaintSet &taint,
                           SmallPtrSetImpl<Value *> *Scrub) {
   // See TaintPropagation.h for the full rationale. A same-width int<->int

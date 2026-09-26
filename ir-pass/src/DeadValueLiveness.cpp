@@ -324,8 +324,15 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
         A->eraseFromParent();
         Erased.insert(A);
       }
-    if (NewIn.empty())
-      CondSeeds.push_back(Cond);
+    // The condition is a seed whenever the fold leaves it dead: no φ, or every φ
+    // had EQUAL incomings (`int r = (q > 3) ? K : 0;` with `K == 0` once the
+    // volatile global fold read `K`). For a CLASSICAL condition that is cleanup
+    // only (a dead compare keeps no parameter live under liveness); for a TAINTED
+    // one it is load-bearing: the dead compare would be lowered as a forward
+    // template never uncomputed — a dirty flag (bd vsfp round 3, mutant S2,
+    // `lowering_volatile_globalfold_equal_phi.ll`). A condition a new `select`
+    // reads is live and the recursive call deletes nothing.
+    CondSeeds.push_back(Cond);
     Merge.push_back(WeakVH(S));
     ++Folded;
   }

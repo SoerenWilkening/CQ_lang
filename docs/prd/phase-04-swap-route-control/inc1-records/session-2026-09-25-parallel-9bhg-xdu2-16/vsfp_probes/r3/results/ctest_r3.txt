@@ -1,0 +1,203 @@
+Test project /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/build
+      Start  18: cq-opt-equivalence
+      Start  16: taintset-scrub-guard-selftest
+      Start 231: e2e-slice-volatile-arm-fold-repropagate-twin
+      Start 230: e2e-slice-volatile-arm-fold-repropagate
+      Start  43: e2e-slice-predmux-fp-diamond-volatile
+      Start 228: e2e-slice-spec-dropped-arg-volatile-global-twin
+ 1/99 Test #231: e2e-slice-volatile-arm-fold-repropagate-twin ..............   Passed    1.28 sec
+      Start 225: e2e-slice-spec-dropped-arg-dead-smax
+ 2/99 Test #230: e2e-slice-volatile-arm-fold-repropagate ...................   Passed    1.59 sec
+      Start 227: e2e-slice-spec-dropped-arg-volatile-global
+ 3/99 Test #228: e2e-slice-spec-dropped-arg-volatile-global-twin ...........   Passed    1.99 sec
+      Start 223: e2e-slice-spec-dropped-arg-volatile-char
+ 4/99 Test  #43: e2e-slice-predmux-fp-diamond-volatile .....................   Passed    2.39 sec
+      Start 247: e2e-slice-control-spec-chained-ctl
+ 5/99 Test #225: e2e-slice-spec-dropped-arg-dead-smax ......................   Passed    2.31 sec
+      Start 289: e2e-slice-libm-ld80-nextafterl
+ 6/99 Test #227: e2e-slice-spec-dropped-arg-volatile-global ................   Passed    2.89 sec
+      Start 212: e2e-slice-specialize-twoarm-select
+ 7/99 Test #223: e2e-slice-spec-dropped-arg-volatile-char ..................   Passed    3.16 sec
+      Start 242: e2e-slice-specialize-transitive
+ 8/99 Test #247: e2e-slice-control-spec-chained-ctl ........................   Passed    3.47 sec
+      Start 213: e2e-slice-spec-lift-quantum-base
+ 9/99 Test #289: e2e-slice-libm-ld80-nextafterl ............................   Passed    3.04 sec
+      Start 245: e2e-slice-control-spec-replan
+10/99 Test #212: e2e-slice-specialize-twoarm-select ........................   Passed    3.35 sec
+      Start 246: e2e-slice-control-spec-newcand
+11/99 Test #242: e2e-slice-specialize-transitive ...........................   Passed    3.96 sec
+      Start 118: e2e-spec-fp80-union
+12/99 Test #213: e2e-slice-spec-lift-quantum-base ..........................   Passed    3.93 sec
+      Start 211: e2e-slice-specialize-select
+13/99 Test #245: e2e-slice-control-spec-replan .............................   Passed    4.02 sec
+      Start 234: e2e-slice-specialize-fp-select
+14/99 Test #246: e2e-slice-control-spec-newcand ............................   Passed    4.30 sec
+      Start 290: e2e-slice-libm-ld80-nexttoward
+15/99 Test #118: e2e-spec-fp80-union .......................................   Passed    4.12 sec
+      Start 236: e2e-slice-specialize-fp-select-fcmp
+16/99 Test #211: e2e-slice-specialize-select ...............................   Passed    4.12 sec
+      Start 233: e2e-slice-specialize-multiexit-fp80
+17/99 Test #234: e2e-slice-specialize-fp-select ............................   Passed    4.45 sec
+      Start 241: e2e-slice-specialize-multiarg
+18/99 Test #290: e2e-slice-libm-ld80-nexttoward ............................   Passed    4.02 sec
+      Start 208: e2e-slice-multi-zerolib
+19/99 Test #236: e2e-slice-specialize-fp-select-fcmp .......................   Passed    4.66 sec
+      Start 119: e2e-spec-scrub-dangling-key
+20/99 Test #233: e2e-slice-specialize-multiexit-fp80 .......................   Passed    5.15 sec
+      Start 235: e2e-slice-specialize-fp-select-const
+21/99 Test #241: e2e-slice-specialize-multiarg .............................   Passed    5.29 sec
+      Start 237: e2e-slice-specialize-intrinsic
+22/99 Test #208: e2e-slice-multi-zerolib ...................................   Passed    5.23 sec
+      Start 217: e2e-slice-spec-dropped-arg-boolsel
+23/99 Test #119: e2e-spec-scrub-dangling-key ...............................   Passed    4.77 sec
+      Start 120: e2e-spec-fp-arg
+24/99 Test #235: e2e-slice-specialize-fp-select-const ......................   Passed    4.42 sec
+      Start 210: e2e-slice-specialize-2file
+25/99 Test #237: e2e-slice-specialize-intrinsic ............................   Passed    4.01 sec
+      Start 220: e2e-slice-spec-dropped-arg-inplace
+26/99 Test  #18: cq-opt-equivalence ........................................   Passed   24.73 sec
+      Start 214: e2e-slice-spec-lift-scrubbed-elsewhere
+27/99 Test #217: e2e-slice-spec-dropped-arg-boolsel ........................   Passed    3.72 sec
+      Start 209: e2e-slice-multi-2file
+28/99 Test #120: e2e-spec-fp-arg ...........................................   Passed    3.57 sec
+      Start 239: e2e-slice-spec-qram-read-under-control
+29/99 Test #210: e2e-slice-specialize-2file ................................   Passed    3.42 sec
+      Start 260: e2e-slice-qram-guarded-store-multi
+30/99 Test #220: e2e-slice-spec-dropped-arg-inplace ........................   Passed    3.09 sec
+      Start 240: e2e-slice-spec-qrom-read-arm-escape
+31/99 Test #214: e2e-slice-spec-lift-scrubbed-elsewhere ....................   Passed    3.43 sec
+      Start  15: taintset-scrub-guard
+32/99 Test #239: e2e-slice-spec-qram-read-under-control ....................   Passed    2.56 sec
+      Start 291: e2e-slice-libm-ld80-nexttowardf
+33/99 Test #209: e2e-slice-multi-2file .....................................   Passed    4.27 sec
+      Start 238: e2e-slice-spec-qram-read
+34/99 Test #260: e2e-slice-qram-guarded-store-multi ........................   Passed    3.08 sec
+      Start 218: e2e-slice-spec-dropped-arg-boolsel-twin
+35/99 Test #240: e2e-slice-spec-qrom-read-arm-escape .......................   Passed    3.18 sec
+      Start 221: e2e-slice-spec-dropped-arg-inplace-twin
+36/99 Test #291: e2e-slice-libm-ld80-nexttowardf ...........................   Passed    2.49 sec
+      Start 215: e2e-slice-spec-lift-scrubbed-elsewhere-twin
+37/99 Test #238: e2e-slice-spec-qram-read ..................................   Passed    2.50 sec
+      Start 324: e2e-free-pairing-selftest
+38/99 Test #218: e2e-slice-spec-dropped-arg-boolsel-twin ...................   Passed    2.50 sec
+      Start 509: e2e-predmux-inloop-value-diamond-twin-identical
+39/99 Test #509: e2e-predmux-inloop-value-diamond-twin-identical ...........   Passed    0.43 sec
+      Start 419: e2e-phase-bool-loop-twin-identical
+40/99 Test #419: e2e-phase-bool-loop-twin-identical ........................   Passed    0.04 sec
+      Start 441: e2e-phase-onward-perbit-loop-mixed-twin-identical
+41/99 Test #441: e2e-phase-onward-perbit-loop-mixed-twin-identical .........   Passed    0.04 sec
+      Start  62: e2e-angle-select-ry-twin-identical
+42/99 Test  #62: e2e-angle-select-ry-twin-identical ........................   Passed    0.04 sec
+      Start 449: e2e-undef-seed-cascade-twin-identical
+43/99 Test #449: e2e-undef-seed-cascade-twin-identical .....................   Passed    0.04 sec
+      Start 216: e2e-spec-lift-scrubbed-elsewhere-twin-identical
+44/99 Test #216: e2e-spec-lift-scrubbed-elsewhere-twin-identical ...........   Passed    0.05 sec
+      Start 408: e2e-phase-perbit-loop-twin-identical
+45/99 Test #221: e2e-slice-spec-dropped-arg-inplace-twin ...................   Passed    2.45 sec
+      Start 341: e2e-grover-loop-two-regs-twin-identical
+46/99 Test #341: e2e-grover-loop-two-regs-twin-identical ...................   Passed    0.04 sec
+      Start 229: e2e-spec-dropped-arg-volatile-global-twin-identical
+47/99 Test #408: e2e-phase-perbit-loop-twin-identical ......................   Passed    0.05 sec
+      Start 224: e2e-spec-dropped-arg-volatile-char-twin-identical
+48/99 Test #229: e2e-spec-dropped-arg-volatile-global-twin-identical .......   Passed    0.04 sec
+      Start 473: e2e-loop-pairing-rootmint-twin-identical
+49/99 Test #224: e2e-spec-dropped-arg-volatile-char-twin-identical .........   Passed    0.04 sec
+      Start  39: e2e-value-mixedops-twin-identical
+50/99 Test #473: e2e-loop-pairing-rootmint-twin-identical ..................   Passed    0.06 sec
+      Start 347: e2e-grover-loop-range-oracle-twin-identical
+51/99 Test  #39: e2e-value-mixedops-twin-identical .........................   Passed    0.06 sec
+      Start 360: e2e-inplace-ry-loop-leading-gate-twin-identical
+52/99 Test #347: e2e-grover-loop-range-oracle-twin-identical ...............   Passed    0.05 sec
+53/99 Test #360: e2e-inplace-ry-loop-leading-gate-twin-identical ...........   Passed    0.05 sec
+      Start  40: e2e-value-polarity-twin-identical
+      Start 361: e2e-inplace-ry-loop-two-regs-twin-identical
+54/99 Test  #40: e2e-value-polarity-twin-identical .........................   Passed    0.05 sec
+55/99 Test #361: e2e-inplace-ry-loop-two-regs-twin-identical ...............   Passed    0.05 sec
+      Start  38: e2e-value-ifelse-twin-identical
+      Start 432: e2e-select-bool-loop-twin-identical
+56/99 Test  #38: e2e-value-ifelse-twin-identical ...........................   Passed    0.05 sec
+57/99 Test #432: e2e-select-bool-loop-twin-identical .......................   Passed    0.05 sec
+      Start  63: e2e-angle-select-ry-ne-twin-identical
+      Start 484: e2e-railbank-flat-twin-identical
+58/99 Test  #63: e2e-angle-select-ry-ne-twin-identical .....................   Passed    0.05 sec
+59/99 Test #484: e2e-railbank-flat-twin-identical ..........................   Passed    0.05 sec
+      Start  37: e2e-value-diamond-twin-identical
+      Start 383: e2e-cascade-two-bools-twin-identical
+60/99 Test  #37: e2e-value-diamond-twin-identical ..........................   Passed    0.05 sec
+      Start 525: e2e-loop-condtree-select-hoisted-literal-twin-identical
+61/99 Test #383: e2e-cascade-two-bools-twin-identical ......................   Passed    0.05 sec
+      Start 338: e2e-grover-loop-offset-twin-identical
+62/99 Test #338: e2e-grover-loop-offset-twin-identical .....................   Passed    0.05 sec
+      Start 489: e2e-inloop-hoisted-cond-twin-identical
+63/99 Test #525: e2e-loop-condtree-select-hoisted-literal-twin-identical ...   Passed    0.05 sec
+      Start 336: e2e-grover-loop-twin-identical
+64/99 Test #324: e2e-free-pairing-selftest .................................   Passed    1.71 sec
+      Start 407: e2e-phase-grover-loop-twin-identical
+65/99 Test #489: e2e-inloop-hoisted-cond-twin-identical ....................   Passed    0.05 sec
+66/99 Test #336: e2e-grover-loop-twin-identical ............................   Passed    0.05 sec
+      Start 363: e2e-inplace-ry-loop-grover-twin-identical
+      Start 226: e2e-spec-dropped-arg-dead-smax-twin-identical
+67/99 Test #407: e2e-phase-grover-loop-twin-identical ......................   Passed    0.04 sec
+      Start 468: e2e-stateprep-bool-loop-iterlocal-twin-identical
+68/99 Test #226: e2e-spec-dropped-arg-dead-smax-twin-identical .............   Passed    0.04 sec
+      Start 469: e2e-inplace-ry-loop-iterlocal-derived-twin-identical
+69/99 Test #363: e2e-inplace-ry-loop-grover-twin-identical .................   Passed    0.05 sec
+      Start 359: e2e-inplace-ry-loop-twin-identical
+70/99 Test #468: e2e-stateprep-bool-loop-iterlocal-twin-identical ..........   Passed    0.05 sec
+      Start 496: e2e-loop-bank-derived-cond-twin-identical
+71/99 Test #469: e2e-inplace-ry-loop-iterlocal-derived-twin-identical ......   Passed    0.04 sec
+      Start 445: e2e-measure-classical-bool-twin-identical
+72/99 Test #496: e2e-loop-bank-derived-cond-twin-identical .................   Passed    0.05 sec
+      Start 466: e2e-inplace-ry-bool-loop-grover-twin-identical
+73/99 Test #359: e2e-inplace-ry-loop-twin-identical ........................   Passed    0.05 sec
+      Start 264: e2e-loop-phase-accum-twin-identical
+74/99 Test #445: e2e-measure-classical-bool-twin-identical .................   Passed    0.04 sec
+      Start 344: e2e-grover-loop-leading-gate-twin-identical
+75/99 Test #264: e2e-loop-phase-accum-twin-identical .......................   Passed    0.05 sec
+      Start 386: e2e-cascade-select-in-loop-twin-identical
+76/99 Test #466: e2e-inplace-ry-bool-loop-grover-twin-identical ............   Passed    0.05 sec
+      Start 440: e2e-phase-perbit-loop-value-merge-preadd-twin-identical
+77/99 Test #344: e2e-grover-loop-leading-gate-twin-identical ...............   Passed    0.04 sec
+      Start 337: e2e-grover-loop-derived-twin-identical
+78/99 Test #215: e2e-slice-spec-lift-scrubbed-elsewhere-twin ...............   Passed    2.52 sec
+      Start 409: e2e-phase-perbit-loop-mixed-twin-identical
+79/99 Test #337: e2e-grover-loop-derived-twin-identical ....................   Passed    0.04 sec
+      Start 422: e2e-phase-bool-carried-theta-first-twin-identical
+80/99 Test #386: e2e-cascade-select-in-loop-twin-identical .................   Passed    0.05 sec
+81/99 Test #440: e2e-phase-perbit-loop-value-merge-preadd-twin-identical ...   Passed    0.05 sec
+      Start 437: e2e-phase-bool-loop-iterlocal-twin-identical
+      Start 362: e2e-inplace-ry-loop-derived-twin-identical
+82/99 Test #409: e2e-phase-perbit-loop-mixed-twin-identical ................   Passed    0.04 sec
+      Start 524: e2e-loop-condtree-select-hoisted-twin-identical
+83/99 Test #362: e2e-inplace-ry-loop-derived-twin-identical ................   Passed    0.04 sec
+      Start 438: e2e-phase-perbit-loop-mixed-preadd-twin-identical
+84/99 Test #422: e2e-phase-bool-carried-theta-first-twin-identical .........   Passed    0.05 sec
+85/99 Test #437: e2e-phase-bool-loop-iterlocal-twin-identical ..............   Passed    0.05 sec
+      Start 373: e2e-inplace-ry-bool-negated-twin-identical
+      Start 467: e2e-inplace-ry-bool-loop-iterlocal-twin-identical
+86/99 Test #524: e2e-loop-condtree-select-hoisted-twin-identical ...........   Passed    0.04 sec
+      Start 465: e2e-inplace-ry-bool-loop-twin-identical
+87/99 Test #373: e2e-inplace-ry-bool-negated-twin-identical ................   Passed    0.05 sec
+88/99 Test #465: e2e-inplace-ry-bool-loop-twin-identical ...................   Passed    0.04 sec
+      Start 439: e2e-phase-perbit-loop-merge-preadd-twin-identical
+      Start 483: e2e-railbank-uninit-zeroinit-twin-identical
+89/99 Test #438: e2e-phase-perbit-loop-mixed-preadd-twin-identical .........   Passed    0.06 sec
+90/99 Test #467: e2e-inplace-ry-bool-loop-iterlocal-twin-identical .........   Passed    0.05 sec
+      Start 219: e2e-spec-dropped-arg-boolsel-twin-identical
+      Start 222: e2e-spec-dropped-arg-inplace-twin-identical
+91/99 Test #219: e2e-spec-dropped-arg-boolsel-twin-identical ...............   Passed    0.04 sec
+      Start 232: e2e-volatile-arm-fold-repropagate-twin-identical
+92/99 Test #222: e2e-spec-dropped-arg-inplace-twin-identical ...............   Passed    0.04 sec
+      Start  14: ir-pass-scrub-on-delete-selftest-sysalloc
+93/99 Test #439: e2e-phase-perbit-loop-merge-preadd-twin-identical .........   Passed    0.08 sec
+94/99 Test #483: e2e-railbank-uninit-zeroinit-twin-identical ...............   Passed    0.08 sec
+95/99 Test #232: e2e-volatile-arm-fold-repropagate-twin-identical ..........   Passed    0.04 sec
+      Start  13: ir-pass-scrub-on-delete-selftest-lifo
+96/99 Test  #13: ir-pass-scrub-on-delete-selftest-lifo .....................   Passed    0.65 sec
+97/99 Test  #14: ir-pass-scrub-on-delete-selftest-sysalloc .................   Passed    0.65 sec
+98/99 Test  #15: taintset-scrub-guard ......................................   Passed    9.16 sec
+99/99 Test  #16: taintset-scrub-guard-selftest .............................   Passed   56.19 sec
+
+100% tests passed, 0 tests failed out of 99
+
+Total Test time (real) =  56.22 sec

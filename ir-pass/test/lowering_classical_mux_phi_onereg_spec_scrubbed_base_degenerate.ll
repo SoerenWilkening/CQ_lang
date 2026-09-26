@@ -51,7 +51,10 @@
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[Q:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
+; (bd vsfp round 3, bd tzfa: slot 0 is one the specializer RECORDED dead — the clone never
+; reads it — so `resolvePhantomCloneArgReads` NEUTRALISES it to `0` after `specialize()`;
+; the operand is a `cq_theta` result, which the twin keeps, so nothing is declined.)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef 0, i32 noundef %5)
 ; CHECK-NOT:  cqrt_
 ; CHECK:      ret i32 [[T]]
 ; CHECK-NEXT: }

@@ -9,6 +9,8 @@ round r2A (`review_r2A_9bhg/REVIEW.md` F-9C-1) and, for hgwx, bd d88e's r1B (F-D
   G7, a new post-`specialize()` decline). §10 is the attack list for the rounds.
 - ⚠ **Both Rule-13 rounds on round 1 were NOT-CLEAR; ROUND 2 is at the end of this file (§R2).**
   §1–§12 are round 1's record, with each falsified sentence marked inline.
+- ⚠ **Both Rule-13 rounds on round 2 were NOT-CLEAR too; ROUND 3 follows §R2 (§R3)** — bd otam, tzfa,
+  stl3. The current description of the mechanism is §R3 on top of §R2.
 
 Binaries (sha-256 prefixes):
 
@@ -509,9 +511,9 @@ it drops at slot B and is TRACE-IDENT (`spec_accept_dropped_arg_volatile_arm_{co
 
 | stage (moved / changed) | premise it relies on | can anything between its slot and the premise's owner falsify it? | grows taint? |
 |---|---|---|---|
-| SLOT A | no stage has READ the dropped operand (no mask, no rail, no record keyed on it) | nothing runs before it | no (shrinks; `propagate` restarts) |
-| (5) const fold + arm fold | an arm it emptied has no effect (it is empty) and a φ fold's incomings are available at the branch | the fold runs inside the stage, on blocks the stage just emptied; nothing between | no; the fold's `select` is on values already present |
-| (6) erase + cone | the cone is DEAD under liveness at this point | liveness is computed at the call; the deleted instructions are dead by definition; front-end sites are roots | no; deleted keys self-scrub (`ScrubOnDelete`) |
+| SLOT A | no stage has READ the dropped operand (no mask, no rail, no record keyed on it) | nothing runs before it | ⚠ **YES, it can** (r2A F-WA-2 #3: its fold can mint a tainted `select`); the `propagate` restart it already performs is the whole obligation — right conclusion, wrong ground (§R3.6) |
+| (5) const fold + arm fold | an arm it emptied has no effect (it is empty) and a φ fold's incomings are available at the branch | the fold runs inside the stage, on blocks the stage just emptied; nothing between | ⚠ **FALSE — YES** (bd otam, r2A F-WA-1/F-WA-2 #2): a `select` on a TAINTED condition is a new tainted value, and round 2 never re-propagated. Round 3: re-`propagate` on a true return (§R3.2) |
+| (6) erase + cone | the cone is DEAD under liveness at this point | liveness is computed at the call; the deleted instructions are dead by definition; front-end sites are roots | ⚠ **FALSE — YES** (bd otam, r2A `stale3a/b/c`, `loop2`): the arm fold behind the cone deletion mints a tainted `select`. Round 3: re-`propagate` on a true return (§R3.2) |
 | (7) promote + residue | same | same | no (its own `propagate` after a true return) |
 | SLOT B | no stage has read the operand yet | stages 3–7 read call operands? `lowerByRefInline` inlines by-ref libm calls (no call left to drop); the rail bank records metadata on ALLOCAS and mints `cqrt_alloc` (a root); the folds are accept-only normalisers. None records an SSA value SLOT B deletes | no |
 | clone record (`buildClone`) | the clone body at record time is the body that runs | later clone passes lower reads into runtime calls (no NEW read of a dead slot); a dead instruction left in the clone is lowered as a forward/adjoint pair inside the Bennett wrap (net identity); the clone's `_unc` twin is never emitted at top level (r1B measured) | no |
@@ -522,6 +524,12 @@ FUNCTION and asked by callee identity; `ScrubMap` drops a deleted clone's key. A
 the same pointer is the 8e5r class the scrub containers exist for.
 
 ## R2.5 The backstop now — `declinePhantomCloneArgReads`
+
+⚠ **SUPERSEDED IN ROUND 3 (bd tzfa, r2B F-WB-1).** The "kept alive elsewhere" exemption below was
+UNSOUND: it accepted with the phantom read still in the use list, and the uncompute spine then saw
+one consumer too many and left a template rail dirty (`k19`: `q` fully dephased). Round 3 replaced
+the function by `resolvePhantomCloneArgReads` (neutralise every recorded-dead slot, then decline an
+unread quantum operand) — §R3.3. The text below is round 2's record.
 
 For every call in a non-clone function to a callee with a record, for every slot the record calls
 dead, operand `Op` declines iff: `Op` is not a constant; `Op` is QUANTUM (tainted, or in
@@ -537,7 +545,7 @@ runtime gate genuinely READS the phantom operand and nothing else does** — nam
 CLONE's own pipeline made dead. Since round 2 the drop predicts every slot whose parameter is dead in
 the ORIGINAL callee after the fenv stages, so the backstop's remaining customer is a slot only the
 clone's flatten kills (a branch-only read) — hand-written IR; `clang -O1` deletes an empty diamond.
-Its C-reachable customer count is **zero** as far as measured — ⚠ after one was FOUND and removed
+⚠ **FALSE (r2B F-WB-2, bd stl3): the C-reachable count was NOT zero** — every `(void)K` / `__builtin_expect` / `? K : 0` spelling on a volatile GLOBAL reached this fence (the global fold had no arm fold), and a keeper made it ACCEPT a Rule-8 wrong unitary (bd tzfa). Corrected in §R3. Its C-reachable customer count is **zero** as far as measured — ⚠ after one was FOUND and removed
 this round: `if (a > 3) { volatile int z = 1; }` reached it on build `r2f` (the fenv stage emptied the
 arm but nothing folded it); the fenv stages now fold what they empty (§R2.2).
 
@@ -802,3 +810,382 @@ Ordered by where a silent miscompile would hide, not by size:
    nothing else does (named, not constructed). And the one exemption (`cq_theta` result).
 8. **The CLAUDE.md fenv sentence** (§R2.6) is an owner question, not a reviewer one — but a reviewer
    should confirm the two counter-examples on the oracle.
+
+---
+
+# ROUND 3 (2026-09-26) — taint freshness, the phantom read NEUTRALISED, the global fold's arm
+
+Both Rule-13 rounds on round 2 (`0a485382`) were **NOT-CLEAR** (`review_r2A_vsfp/REVIEW.md`: F-WA-1..5,
+bd `otam`; `review_r2B_vsfp/REVIEW.md`: F-WB-1..5, bds `tzfa`, `stl3`; committed unmodified at
+`0979276f`). What held, by their own account: the body-purity rule, user gates never deleted, the
+empty-arm fold's CFG surgery, the passthrough, `SpecDeadArgMask`'s soundness, (d0), the 84-pair battery
+and the 9bhg composition. **NOT self-cleared**: round 3 owes its own Rule-13 round (§R3.12).
+
+Measurement scope was set by the owner for this round (lighter): full `lit ir-pass/test`, targeted
+`ctest -R` for touched/added entries, every probe of both round-2 reviews + the round-1 vsfp reviews +
+r2A_9bhg against its twin, a corpus A/B vs the ORACLE over lit + e2e + multi-TU + those review probe
+dirs only, ≤8 mutants for the new/changed predicates plus a null, `update_code_map.py --check`. **No full
+ctest, no allocator sweeps, no 9bhg composition** (it runs at the 9bhg merge).
+
+| tag | what | `cq-opt` |
+|---|---|---|
+| ORACLE | `main` `aee8f4f8` | `69250feaf68bbe49` |
+| ROUND 1 | `5e56060b` | `73fd07592c4960dd` |
+| ROUND 2 | `0a485382` | `d17c95e8353711b1` |
+| SUBJECT | round 3, final | `3cb890ef25187b4b` (`libCQPass.so` `2764c64abcc871bc`, `cq-opt-debugalloc` `ce5fbf89cd8f5f82`) |
+
+Build null controls: the mutation worktree `mutwt3` (detached at `0979276f`, round-3 sources synced)
+built the SUBJECT's exact `cq-opt` hash before any mutation, and the null mutant N0 (a comment) rebuilt
+to it again; every comment-only edit after the measurements rebuilt the SUBJECT to the same hash.
+
+## R3.1 Ledger
+
+| id | sev | disposition | pins |
+|---|---|---|---|
+| F-WA-1 (otam) | P1, introduced | every volatile stage re-`propagate`s when it changed the IR (both entry points); `declineStaleTaintSet` re-derives the set before `detectSpecializations` and declines loudly on any difference (§R3.2) | `lowering_volatile_arm_fold_{repropagate,repropagate_addc,repropagate_escape,repropagate_loop,stale_taint_redgreen}.ll`, `lowering_volatile_constfold_arm_repropagate.ll`, e2e `…-volatile-arm-fold-repropagate` (+ twin-identical) |
+| F-WA-2 | P2 | the three false claims corrected at the source (`QramLowering.h` ×3 headers incl. the global fold's, `CQLoweringPass.cpp` slot A and the three call sites) and marked in §R2.4 | — |
+| F-WA-3 | P2 | mutation rows O1/O2/O4 added and KILLED (§R3.10) | the otam fixtures |
+| F-WA-4 | P3 | named in the dead shim's AXIS-F hazard list (the drop, the resolution; the F-scoped intrinsic skip) | — |
+| F-WA-5 | P3 | noted; no action (this round's scratch dirs are `r3p/`, `e2e3/`, `mutwt3/`) | — |
+| F-WB-1 (tzfa) | P1 | `resolvePhantomCloneArgReads` NEUTRALISES every recorded-dead slot, then declines a quantum operand the user program no longer reads (§R3.3) | `spec_accept_phantom_arg_read_template_reader.ll`, `spec_reject_phantom_arg_read_unread_{select,template}.ll`, the four re-derived phantom fixtures, e2e `…-volatile-global` (+ twin-identical) |
+| F-WB-2 (stl3) | P2 | `foldVolatileConstGlobalLoads` gets the empty-arm fold (+ the otam re-propagate); `deleteDeadCones` seeds the condition after every fold (a φ of EQUAL incomings left a dead TAINTED compare lowered as a dirty flag) (§R3.4) | `spec_accept_dropped_arg_volatile_global_{arm,expect,phi,oracle}.ll` |
+| F-WB-3 | P3 | `cloneArgReachesResult` asks `isRecordedDeadSlot` (Rule 14); both false comments rewritten (`ArithLowering.cpp` (d0), `RotationLowering.cpp`) | `spec_accept_phantom_arg_read_measured_record.ll` (NOWARN) |
+| F-WB-4 | P3/owner | r2B's replacement sentence and counter-examples recorded for the owner (§R3.8); CLAUDE.md NOT edited | — |
+| F-WB-5 | P3 | a bd 9bhg-alone note; the composition is not run this round (brief) | — |
+
+## R3.2 bd otam — taint freshness across the pre-pass window
+
+**The defect** (r2A F-WA-1). Round 2 gave `foldVolatileConstAllocaLoads` and
+`eraseDeadVolatileScalarStores` the arm fold (`deleteDeadCones(…, Emptied)`). Its two-entry-φ fold
+creates `select Cond, vT, vF`; with a TAINTED `Cond` that select is a NEW tainted value (a φ of
+classical incomings is not tainted by data flow; the select is, through its condition). Both call
+sites ignored the stage's return, so `taint.Tainted` stayed stale until some unrelated stage happened
+to re-propagate — and when none did, control detection (keyed on the tainted condition) still claimed
+the select and RAUW'd it to its `%out` handle while every taint consumer saw it classical: a rail
+handle passed to classical `f`, a user `cq_measure` lowered as a never-quantum measure (vanished),
+classical arithmetic on handles across a loop's back edge. Exit 0, 0 bytes of stderr, 2b clean.
+
+**The fix, in two parts, and why not one "re-propagate at the end".**
+1. **Per stage** — `if (stage(M, taint)) taint = propagate(M, wd);` for the global fold, the alloca
+   fold and the store erasure, in both entry points. This is the window's existing uniform rule
+   (every other pre-pass already did it); the three volatile stages were the only exception, because
+   their headers said "classical, so taint is unaffected" — true of the folded value, false of the arm
+   fold behind it.
+2. **One postcondition** — `declineStaleTaintSet(M, wd, taint)` (TaintPropagation.{h,cpp}) right
+   before `detectSpecializations`, i.e. after the last pre-pass and before the first guard: it runs a
+   fresh `propagate` and declines (`cq lowering: taint set is stale after a pre-pass …`) on ANY
+   difference, in either direction.
+
+A single re-`propagate` at the end of the window, with no per-stage rule, would NOT be a fix: every
+stage between the volatile folds and the end reads `taint.Tainted` (the promotion's taint gate, slot
+B's front-end skip, PredMux's region claim, the unroller and the ctlz recogniser are all taint-driven),
+so they would still run on the stale set — and it would silently repair the set below, hiding the
+omission. A silent end-of-window re-`propagate` repairs; the check REFUSES. With the per-stage rule
+the window is fresh; with the check, the NEXT stage that grows taint and forgets is a loud decline,
+not a miscompile — which is what "it cannot recur for the next stage" can honestly mean. What the
+check cannot see is a stale window a LATER stage's own re-`propagate` already repaired (stated at the
+declaration).
+
+**Contract written where the next caller will read it** (L8): `DeadValueLiveness.h`'s
+`deleteDeadCones` now carries "THE CALLER'S OBLIGATION — THIS FUNCTION CAN GROW THE TAINT SET", and
+each volatile stage's header says so.
+
+## R3.3 bd tzfa — the phantom read NEUTRALISED
+
+**The defect** (r2B F-WB-1). Round 2's backstop exempted an operand "kept alive elsewhere" and then
+ACCEPTED with the phantom clone call still in the operand's use list. The phantom read did not keep
+the rail alive — it kept the uncompute SPINE from discharging it: `p = q * 3` had two consumers (the
+oracle's `xor` and the clone call), so the spine left `p`'s template rail dirty, a complete which-path
+record of `q` across `Ry(0.7)` (`k19`: the oracle's phase erased; the ORACLE emits the same stream;
+round 1 declined).
+
+**The fix** — `resolvePhantomCloneArgReads` (Specialization.{h,cpp}), same slot (last in the
+post-`specialize()` decline chain, before `lowerRotations`, both entry points):
+1. **Neutralise.** Every slot the specializer RECORDED dead (`isRecordedDeadSlot`, the one predicate's
+   record) of every call to a clone in a non-clone function gets `Constant::getNullValue` — the drop's
+   rewrite, `range`/`nofpclass` stripped. From then on no stage — terminal selection, free points,
+   M-C, M-A's hop walk, stage 2b — can see the read.
+2. **Decline what the twin does not compute.** A neutralised operand that is QUANTUM (tainted, or a
+   control-emitted rail) and that the user program no longer reads (`userProgramReads`: a
+   `cq_measure`, a `cq_theta` arg-0, a clone read slot, a `ret`, a control-emitted runtime call on a
+   USER value, or a live instruction) is something only the phantom built — a 4.4 `%out` rail no
+   stage uncomputes, or a dead tainted op the spine does not uncompute. Declined. The one exemption
+   stays: a `cq_theta` RESULT (the user's register; r1B's nine shapes).
+
+**Why one rewrite rather than an exemption in the spine** (the brief asked for "the spine … must
+treat a RECORDED-DEAD clone slot read as NOT a use — use the one shared predicate"). The neutralisation
+IS that, for every consumer at once: it asks `isRecordedDeadSlot` once, at the one point the record
+exists, and removes the read, so the spine's terminal selection, `FreePoint`, M-C (d0), M-A and 2b need
+no exemption of their own. An exemption per consumer is the L3-mirror hazard (a consumer that forgets
+it re-opens bd tzfa with no diagnostic). Soundness rests on the record: the clone never reads the slot
+(r2B verified the record and that no later clone pass adds a read), so the constant is unobservable
+— including through the clone's `_unc` twin, a verbatim copy of the same body.
+
+**What stays declined, IR-only** (the C spellings now drop at slot B, §R3.4): a phantom operand
+minted ONLY for the call (`k1` branch-only → `spec_reject_phantom_arg_read_unread_select.ll`) and a
+dead tainted op read only by the call (`k3` branch-only → `…_unread_template.ll`, where `-O1` rewrote
+`p + 1 == 7` to `q == 2`). Both are over-declines against their twins. The second could become the
+twin by deleting the dead op, which is not done post-`specialize()` (plan structures hold raw
+pointers there) — named, not built. ⚠ Also named, not constructed: a control-emitted rail
+(`%out`) read ONLY by a later control-emitted compare is counted as unread (the emitter's traffic on
+its own rail is treated as construction, since telling a read from a write needs the runtime ABI's
+slot semantics) — an over-decline.
+
+(d0) is unchanged and now has no MODULE-level population (a neutralised call is not a user of the
+operand); it stays the one spelling of the question for an inner clone call inside a clone body.
+
+## R3.4 bd stl3 — the global fold's arm, and a φ of equal incomings
+
+`foldVolatileConstGlobalLoads` was the one volatile fold without the empty-arm fold (r2B F-WB-2: an
+L2 omission — the set of stages given the fold was widened by three and this sibling was left out).
+It now records, per function, the blocks it empties and calls `deleteDeadCones(F, {}, taint,
+"volatile-globalfold", Blocks)`, and re-`propagate`s on a true return (the otam rule). A second defect
+is in `deleteDeadCones`: after a fold whose φs all had EQUAL incomings (`(a > 3) ? K : 0` with
+`K == 0`) it seeded the condition's cone only when NO φ was left. ⚠ For `g13` (a CLASSICAL condition
+in the callee) that is cleanup only — a dead compare keeps no parameter live under liveness, and
+mutant S2 passes `g13`'s fixture — and the first draft of this paragraph, and of the source comment,
+said otherwise (L7, caught before commit by reading S2's result). Where it is load-bearing is a
+TAINTED condition: `int r = (q > 3) ? K : 0;` in `main` leaves a dead tainted compare that is lowered
+as a forward template and never uncomputed — a dirty flag across the later Ry (S2 was MISSED by the
+whole suite until `lowering_volatile_globalfold_equal_phi.ll` pinned it, §R3.10). The condition is
+now seeded after every fold (a condition a new `select` reads is live, and the recursive call deletes
+nothing).
+
+## R3.5 F-WB-3 — the third "slot unread"
+
+`RotationLowering.cpp`'s `cloneArgReachesResult` asked `Argument::use_empty()` of the clone parameter
+— a third spelling of the question beside the record (Rule 14). It now asks `isRecordedDeadSlot` (no
+record → no hop, the decline direction), which also closes its old stated IR residual (a parameter
+read only by a stripped in-body compare: the record calls it dead). With the neutralisation in front
+of it, no module-level dead-slot read reaches M-A at all; the warning on r2B's `k5` (and `d1`/`d4`)
+is gone (`spec_accept_phantom_arg_read_measured_record.ll`, NOWARN prefix; that fixture warns on
+round 2). Both false comments rewritten at the source.
+
+## R3.6 F-WA-2 — the falsified claims, corrected at the source
+
+- `QramLowering.h`: the alloca fold's "folded values are CLASSICAL, so taint is unaffected and no
+  re-propagate is needed" → marked FALSE with bd otam's mechanism; the global fold's same sentence
+  (the precedent it cited) rewritten; the store erasure's header now states the caller's obligation.
+- `CQLoweringPass.cpp` slot A: "It SHRINKS the taint set and grows nothing" → marked false; the
+  conclusion (a plain `propagate` is the whole obligation, pre-guard) kept on the right ground.
+- This file: §R2.4's L1 rows (5)/(6) and SLOT A marked inline; §R2.5's "C-reachable customer count
+  zero" marked FALSE; §R2.5 marked SUPERSEDED.
+
+## R3.7 L1 stage table, re-asked
+
+| stage | grows taint? | obligation discharged by |
+|---|---|---|
+| SLOT A drop (+ cone + arm fold) | YES (a `select` on a tainted condition) | its own `propagate` on a true return (pre-guard) |
+| by-ref inline, rail bank, bank marks | yes (existing) | their own fixpoint `propagate`s (unchanged) |
+| `foldIdentityBitcasts` | no (RAUW to the operand; scrubs its own) | — |
+| global volatile fold (+ arm fold, NEW) | YES | `propagate` on a true return (NEW) |
+| alloca volatile fold (+ arm fold) | YES | `propagate` on a true return (NEW — bd otam) |
+| store erasure (+ cone + arm fold) | YES | `propagate` on a true return (NEW — bd otam) |
+| volatile promotion (+ residue + arm fold) | yes | its fixpoint `propagate` (unchanged) |
+| SLOT B drop | YES | its own `propagate` on a true return (unchanged) |
+| fp80, PredMux, unroll, ctlz | yes (existing) | their fixpoint `propagate`s (unchanged) |
+| **window end** | — | **`declineStaleTaintSet`: fresh `propagate` ≠ carried set → DECLINE** |
+| `resolvePhantomCloneArgReads` (post-`specialize()`) | no (rewrites an argument to a constant; no new value, no taint change) | — ; it runs after every guard and before `lowerRotations`/`lowerOps`/`uncompute`, whose consumer sets it corrects |
+
+## R3.8 The fenv sentence — for the OWNER (CLAUDE.md not edited)
+
+CLAUDE.md "Scope of the semantic model — `fenv` is OUT" says: *"with **no** enclosing tainted control
+flow the dead product IS lowered, uncomputed and freed; inside a PredMux region it is deleted outright.
+Both are sound; they are not the same circuit."* Neither half held before bd vsfp round 2, and after it
+there is no asymmetry. Counter-examples, all measured by Rule-13 r2B (F-WB-4) on the ORACLE vs the
+subject:
+
+- `qjoc` — `int p = b ? 9 : 4; volatile int z = p; …; b = cq_theta(b, .7)` (a dead 4.4 SELECT): the
+  ORACLE mints the select's `%out` which-path rail and never discharges it — silent dephasing, no
+  warning. Subject: TRACE-IDENT with the program without the volatile line.
+- `qjoc_tpl` — `int p = q * 3; volatile int z = p; …; q = cq_theta(q, .7)` (a dead TEMPLATE product
+  whose source is later rotated): the ORACLE leaves `mul_i32_hl` DIRTY (a lyyf warning). Subject:
+  TRACE-IDENT.
+- `f1` — `int p = q * 3; volatile int z = p; … return cq_measure(q)` — the first half is false even
+  WITHOUT a later non-diagonal gate: the ORACLE emits `cq_template_mul_i32_hl(h0, 3)` and no `_unc`
+  (2b CENSUS `1 left dirty`). Only the ruling fixture's own `fmul r*r` happened to be uncomputed.
+- `f5` — `if (b) { volatile int z = q * 3; }` with `b` tainted: the ORACLE DECLINES (`operand predates
+  a non-diagonal gate`), not "deleted outright". Subject: TRACE-IDENT.
+
+**r2B's suggested replacement (report only):** *"The erasure deletes the stored value's DEAD CONE by
+liveness (`deleteDeadCones`), so the product is deleted whether or not it sits in a PredMux region;
+there is no asymmetry. What survives is only what is live for another reason, or a liveness root (a
+front-end `cq_*` site, a reserved-namespace or specializer-built call, or a call whose callee body is
+not provably side-effect-free and terminating). Before bd vsfp round 2 neither half held: the
+no-control-flow product was lowered and in general NOT uncomputed (a Rule-8 wrong unitary once its
+source takes a non-diagonal gate, silently for a dead 4.4 select), and the PredMux case could
+decline."* The ruling itself is not in question.
+
+## R3.9 Fixtures and e2e
+
+`ls ir-pass/test/*.ll | wc -l`: **2378** (round 2: 2363). Round 3 added **15** fixtures and changed
+**8** (a family of 23). Generated by `vsfp_probes/r3/tools/mkfix3.py` (round 2's derivation: the exact
+ordered runtime/clone call sequence of the quantum function, SSA names wildcarded; a NEG prefix for
+every callee the ORACLE emitted there and the subject does not; the drop census). One added verbatim:
+r2A's `fwa1_stale_taint_redgreen.ll` as `lowering_volatile_arm_fold_stale_taint_redgreen.ll` — ⚠ an
+INTENTIONAL duplicate body of `lowering_volatile_arm_fold_repropagate.ll` (the L8 duplicate-body scan,
+`vsfp_probes/r2/tools/dupscan.py`, finds exactly this pair among round 3's files; both ACCEPT, one pins
+the exact stream, the reviewer's pins clone + measure).
+
+**Red-green, measured** (`tools/redgreen3.sh`, the scratch lit site config pointed at each binary),
+over the 23-file family: ORACLE 0 PASS / 23 FAIL; ROUND 1 2 / 21; ROUND 2 2 / 21; SUBJECT 23 / 0. The 2
+green on rounds 1 and 2 are the two new DECLINE fixtures (`…_unread_{select,template}.ll`), which those
+rounds declined with the same string (they are pins of the decline direction against mutant T2, and
+RED on the oracle, which accepts them dephased).
+
+Four changed CHECK lines only (`spec_result_classical.ll`, `spec_reseed_theta_source.ll`,
+`lowering_classical_mux_phi_onereg_spec_scrubbed_{base_degenerate,elsewhere}.ll`): their clone call's
+dead slot now reads `0`; each carries a note. Four phantom fixtures re-derived with new headers
+(`theta_source`, `theta_source_inplace_mc`, `classical_slot`, `kept_alive`).
+
+**e2e, 6 new entries**: `e2e-slice-spec-dropped-arg-volatile-global` (2-TU, r2B `k19`, lib
+`spec_dropped_arg_volatile_global_lib.c`) + `…-twin` + `e2e-spec-dropped-arg-volatile-global-twin-identical`;
+`e2e-slice-volatile-arm-fold-repropagate` (r2A `stale3c`) + `…-twin` +
+`e2e-volatile-arm-fold-repropagate-twin-identical`. Both subjects are TRACE-IDENT with their twins on
+the SUBJECT (14 and 21 lines); on ROUND 2 the first is 12 lines with a dirty template rail and a
+warning and the second 12 lines with no clone and no measure (both RED); on the ORACLE the first is
+round 2's wrong stream and the second declines; on ROUND 1 both decline (`tools/mkgold3.py`).
+
+## R3.10 Mutation matrix (full lit per mutant, `lit --timeout 60`)
+
+Brief: mutants ONLY for the new/changed predicates, ≤8, plus a no-op null. `tools/mutants3.py` in the
+scratch worktree `mutwt3` (its base build hashed BIT-IDENTICAL to the SUBJECT); anchor found exactly
+once or abort; each mutant builds its OWN `cq-opt` and `cq-opt-debugalloc`; a binary equal to the
+SUBJECT is refused (stale / compiled away) and a null that is NOT equal aborts. `tools/mutmatrix.sh`
+(full lit per mutant through the scratch site config, `lit --timeout 60`, no debugalloc default). The
+eight real mutants ran over 2377 fixtures; after the equal-φ fixture was added (below), N0, S2 and O3
+ran again over 2378.
+
+| mutant | removes | failed | killed by | verdict |
+|---|---|---|---|---|
+| N0_null | nothing (a comment); binary = SUBJECT `3cb890ef25187b4b` | 0 / 2377, 0 / 2378 | — | null |
+| O1_no_erase_repropagate | the re-`propagate` after the store erasure (bd otam) | 5 | `lowering_volatile_arm_fold_{repropagate,repropagate_addc,repropagate_escape,repropagate_loop,stale_taint_redgreen}` — now through the POSTCONDITION's decline | KILLED |
+| O2_no_constfold_repropagate | the re-`propagate` after the alloca fold (bd otam) | 1 | `lowering_volatile_constfold_arm_repropagate` | KILLED |
+| O4_round2_stale | both: no erase re-`propagate` AND no postcondition (round 2's behaviour) | 5 | the same five — now as the round-2 MISCOMPILE (no clone, no measure) | KILLED |
+| O3_no_postcondition | `declineStaleTaintSet` alone | 0 / 2377, 0 / 2378 | — | **EQUIVALENT by construction**: a backstop, and every stage in the window re-propagates, so no module reaches a stale set; O1 vs O4 shows it is the postcondition that turns the omission into a decline |
+| S1_no_globalfold_armfold | the global fold's arm fold (bd stl3) | 4 | `spec_accept_dropped_arg_volatile_global_{arm,expect,phi,oracle}` | KILLED |
+| S2_condseed_nophi_only | the condition seed after a fold with φs (round 2's rule) | **0 / 2377 — MISSED**, then 1 / 2378 | `lowering_volatile_globalfold_equal_phi` | KILLED after a new fixture ⚠ |
+| T1_no_neutralise | the neutralisation (bd tzfa) | 14 | `spec_accept_phantom_arg_read_template_reader`, `…_measured_record`, the four re-derived phantom fixtures, the four CHECK-line fixtures, and all four decline fixtures (`…_unread_{select,template}`, `…_range_attr`, `…_clone_sweep`: without the rewrite the phantom clone call is itself a "reader", so nothing is declined) | KILLED |
+| T2_no_unread_decline | the decline of an unread quantum operand (bd tzfa) | 4 | `spec_reject_phantom_arg_read_{unread_select,unread_template,range_attr,clone_sweep}` | KILLED |
+
+**7 KILLED, 1 EQUIVALENT (argued), 0 MISSED** after one gap was found and closed: **S2 was MISSED
+over the whole 2377-fixture suite**. The condition seed looked cosmetic for the dead-argument drop
+(a dead compare does not keep a parameter live under liveness), and it is — but in a MODULE-level
+tainted diamond it is not: `int r = (q > 3) ? K : 0;` with `K == 0` folds to an equal-incoming φ, and
+without the seed the dead TAINTED compare is lowered as a forward template and never uncomputed — a
+dirty which-path flag across `Ry(0.7)` on `q` (measured on S2: TRACE-DIFF, 1 dirty template rail, a
+warning). `lowering_volatile_globalfold_equal_phi.ll` now pins it (RED on S2, GREEN on the SUBJECT;
+the ORACLE and round 2 declined the program, an over-decline). Mutation found a missing fixture,
+which is what it is for.
+
+Not mutated (brief ≤8), argued instead: `cloneArgReachesResult`'s record-based test (F-WB-3) — with
+the neutralisation in front of it no module-level call passes a value in a recorded-dead slot, so a
+`use_empty()` revert is expected EQUIVALENT; its warning-parity pin is the neutralisation's
+(`…_measured_record.ll`, killed by T1).
+
+## R3.11 Measurements (commands under `vsfp_probes/r3/tools/`; ⚠ the battery's ROUND 1/2 and ORACLE runs predate the `eqphi` pair)
+
+All on SUBJECT `3cb890ef25187b4b` unless stated. Every A/B ran its null control FIRST on the same list.
+
+**Layers run, literally** (the owner's round-3 scope — no full `ctest -j6` on the branch):
+- `cmake --build build -j8` (all targets); `cd build && lit ir-pass/test` → **2378 discovered, 2377
+  passed, 1 XFAIL** (56 s).
+- `ctest --test-dir build -R "spec|twin-identical|multi|scrub|libm-ld80-next|volatile|free-pairing-selftest|cq-opt-equivalence$|taintset" -j6`
+  → **99/99 passed** (every `spec` e2e slice incl. the 6 new entries, all 54 `*-twin-identical`
+  gates, the multi-TU slices, the `libm-ld80-next*` slices the volatile stages touch,
+  `taintset-scrub-guard` (+ selftest), `ir-pass-scrub-on-delete-selftest-*`,
+  `e2e-free-pairing-selftest`, and the SAMPLED `cq-opt-equivalence` — the full sweep was not run).
+- `python3 tools/update_code_map.py --check` → clean (regenerated).
+
+**The battery** (`tools/r3bat.py TAG`, 176 rows: round 2's 79 pairs + 5 singles — r1A/r1B vsfp,
+r2A_9bhg F-9C-1, hgwx — plus EVERY probe of r2A_vsfp and r2B_vsfp (88 pairs + 4 singles), each against
+its hand-inlined or fenv-intended twin; verdicts memoised per (binary, probe) so twins shared by many
+pairs are built and run once):
+
+| binary (rows) | TRACE-IDENT | DECL-SAME | ORACLE-SAME | TRACE-DIFF | VERDICT-DIFF | DECL-DIFFSTR | ORACLE-DIFF |
+|---|---|---|---|---|---|---|---|
+| SUBJECT (176) | **151** | 5 | 6 | 3 | 7 | 1 | 3 |
+| ROUND 2 (175) | 122 | 3 | 6 | 17 | 23 | 1 | 3 |
+| ROUND 1 (175) | 40 | 4 | 5 | 42 | 74 | 6 | 4 |
+| ORACLE (175) | 16 | 2 | 9 | 77 | 65 | 6 | 0 |
+
+The SUBJECT's 19 non-identical rows, each attributed: **identical on ROUND 2, ROUND 1 and the ORACLE
+(pre-existing, the same class on all four binaries)** — `g4A/B`, `g5A/B`, `g11A/B` (callee declines at
+spec: vector lane / nested call / tainted control flow), `threepred` (r2A: a three-predecessor merge,
+safe-direction over-decline), `f6` (DECL-DIFFSTR), `g12A/B` (TRACE-DIFF, `g12B` with a warned dirty
+rail — FILED bd `test_C_libtooling-50ho`: the volatile folds do not constant-fold the users of the
+folded load); **equivalent by reading** — `k9` (the twin's `-O1` folds `p + 1` into the select's arms,
+`select(b, 10, 5)`, where the subject adds 1 in place to `select(b, 9, 4)`; round 2 had a dirty rail
+here, round 3 has none); **the twin's own verdict** — `f2`, `loop2`, `stale1`, `stale3a`, `stale7`
+(DECL-SAME); **round-2 D→A classified by hand twins in round 2** — the singles `m_s_f32`, `m_s_f80`,
+`r1b_v26vsel` (ORACLE-DIFF: the oracle declines; unchanged round 2 → 3).
+
+Named results: r2A `stale3b`, `stale3c`, `stale4`, `stale5` TRACE-IDENT; `stale3a`, `loop2`
+DECL-SAME (bd otam). r2B `k8`, `k14`, `k18`, `k19`, `k24` TRACE-IDENT with 0 dirty template rails,
+equal to the twin (bd tzfa); `k1`, `g9A/B`, `g13A/B`, `k3`, `k4`, `k12`, `k13` TRACE-IDENT (bd stl3);
+`k5`, `d1`, `d4` TRACE-IDENT with 0 warnings (F-WB-3); `k11` TRACE-IDENT with a fully inlined twin
+`k11H` (r2B's `k11F` inlines only the first call and keeps an external `h`, so it declines); `d3`, `e5`,
+`k15`, `k21` — which r2B recorded as declining on every binary — now TRACE-IDENT (the global fold's
+arm fold removes the read that made the clone contain tainted control flow / the loop carry a
+tainted value).
+
+**Corpus A/B** (`tools/ab.py`; `tools/buildcorp3.py`), denominator **3440** = lit 2377 + review-probe
+modules 633 (every `.c` with its `.lib.c` and every stage-1 `.ll` of `review_r1A_vsfp`,
+`review_r1B_vsfp`, `review_r2A_vsfp`, `review_r2B_vsfp`, and bd 9bhg's `review_r2A_9bhg`) + e2e
+single-TU 400 + multi-TU 30:
+
+| A → B | movers | A→D | D→A | DIAG | STREAM |
+|---|---|---|---|---|---|
+| SUBJECT → SUBJECT (null) | **0** | | | | |
+| ORACLE → SUBJECT | 369 | 5 (lit) | 177 (lit 11, e2e 1, probes 165) | 16 (lit 2, probes 14) | 171 (lit 48, multi-TU 6, probes 117) |
+| ROUND 2 → SUBJECT | 76 | 6 (lit 2, probes 4) | 21 (lit 3, probes 18) | 0 | 49 (lit 15, e2e 1, multi-TU 1, probes 32) |
+
+- **Every lit / e2e / multi-TU mover is a file this branch touched since `main`** (`tools/litmov3.py`
+  over `git diff --name-only aee8f4f8` + the working tree: 0 UNTOUCHED).
+- **Every one of the 76 ROUND 2 → SUBJECT probe movers is a battery subject or twin**, all TRACE-IDENT
+  or DECL-SAME with its twin: the otam exhibits (A→D `stale3a`, `loop2` ×2 each — now the twin's
+  decline; STREAM `stale3b/3c/4`, r2A's red-green `.ll`), the stl3/tzfa members, the F-WB-3 warning
+  rows (d1/d2/d4/e1–e8 STREAM: the neutralisation removes a clone read), and the literally inlined
+  T-twins `k2T`–`k5T`, `k1T`, which now accept TRACE-IDENT with the fenv twins (the global fold's arm
+  fold in `main`).
+- **The 296 ORACLE → SUBJECT probe movers** (`tools/classify3.py`, mechanical): r2A/r2B_vsfp modules →
+  their battery row (81 TRACE-IDENT/DECL-SAME/ORACLE-SAME, `k9` equivalent above, the 3 singles above,
+  `purity2.ll` — r2A's body-purity IR probe, trace-identical to round 2 and reviewed by r2A — and
+  `m_s_f64H`, a hand twin whose TRACE equals the oracle's); r1A/r1B_vsfp and r2A_9bhg modules that did
+  NOT move round 2 → 3 keep round 2's twin classification (a round-2 stream): 187 TRACE-IDENT/DECL-SAME
+  (auto or hand) and 12 rows round 2 classified by hand (§R2.9: `v08c/d/e`, `qjoc`, `v01T`, `v02T`,
+  `v16b`, `g3C`, `g4C`, `s_f*T`). **0 unclassified.**
+- The new decline string (`taint set is stale …`) fires on **0** of 3440 modules (no mover carries it, and the ORACLE cannot emit it, so a module that did would be a mover).
+
+**Red-green** of the 23-file round-3 family (`tools/redgreen3.sh`): ORACLE 0 / 23 PASS, ROUND 1 2 / 23,
+ROUND 2 2 / 23, SUBJECT 23 / 23 (the 2 green on rounds 1–2 are the new decline fixtures, which those
+rounds declined with the same string).
+
+## R3.12 Per bead
+
+| bead | round-3 result (TRACE-IDENT is against the bead's own twin, on the SUBJECT) |
+|---|---|
+| **otam** (P1, introduced by round 2) | FIXED: per-stage re-`propagate` + the `declineStaleTaintSet` postcondition. `stale3b/3c/4/5` TRACE-IDENT, `stale3a`/`loop2` DECL-SAME; 7 fixtures + 1 e2e slice (+ twin, + gate) RED on round 2; mutants O1/O2/O4 KILLED, O3 equivalent (a backstop). |
+| **tzfa** (P1, re-admitted by round 2) | FIXED: `resolvePhantomCloneArgReads` neutralises every recorded-dead slot, then declines an unread quantum operand. C members `k8/k14/k18/k19/k24` TRACE-IDENT with 0 dirty template rails; IR-only branch-read spellings TRACE-IDENT (`k19/k8/k24/k5/k7/k2`) or DECLINED (`k1`, `k3`: rails the twin never computes — named over-declines). Mutants T1/T2 KILLED. |
+| **stl3** (P2) | FIXED: the global fold's arm fold (+ re-propagate) and the condition seed after every fold. `k1`, `g9A/B`, `g13A/B`, `k3`, `k4`, `k12`, `k13` TRACE-IDENT; `d3`, `e5`, `k15`, `k21`, `k11` now accept TRACE-IDENT too. Mutants S1 KILLED, S2 KILLED after a new fixture (`…_globalfold_equal_phi.ll`). |
+| **vsfp** (P1) | round 3's changes above; F-WB-3's third "slot unread" spelling routed through the record; all falsified claims corrected at the source. The C route to the phantom-read resolution is now closed as far as measured (the four volatile folds all fold what they empty); what reaches it is IR-only. NOT self-cleared. |
+| **50ho** (NEW, P2, pre-existing) | r2B `g12A/B`: the volatile folds do not constant-fold the users of a folded load (`K - 7` survives), so the clone reads a parameter the twin's `-O1` sees as ignored — TRACE-DIFF (g12B with a warned dirty rail), identical on the ORACLE, round 1, round 2 and round 3. |
+
+## R3.13 What a Rule-13 round should attack first
+
+1. **`resolvePhantomCloneArgReads`' neutralisation.** It rewrites an argument AFTER every guard and
+   after `specialize()`, relying on the specializer's record being exact for the built clone and on no
+   later clone pass adding a read (r2B checked the passes; attack a clone built twice, a clone called
+   from another clone's `_unc` twin, a clone whose dead slot feeds an inner clone call, fp-ABI clones).
+2. **`userProgramReads`' reader list** — the decline's complement. It counts a control-emitted runtime
+   call on a USER value as a reader and skips every runtime call on an EMITTER rail. Attack: a
+   runtime call that consumes a user value without keeping it (so a phantom-only value is accepted and
+   left dirty), and an emitter rail genuinely read by a later gate (the named over-decline).
+3. **`declineStaleTaintSet`'s blind spot**: a stage in the window that reads a stale set BEFORE a
+   later stage's re-`propagate` repairs it. Find one reachable from C.
+4. **The condition-seed change** (seed after every fold): a condition read by a new `select` must be
+   live — check the recursive `deleteDeadCones` never deletes it, including when the select is itself
+   dead and later swept.
+5. **The global fold's arm fold** runs on EVERY function of the module, tainted or not; a two-entry φ
+   under a tainted condition becomes a select that control detection then claims as a 4.4 select —
+   check a case where the original `-O1` shape declined for a reason the select does not have.
