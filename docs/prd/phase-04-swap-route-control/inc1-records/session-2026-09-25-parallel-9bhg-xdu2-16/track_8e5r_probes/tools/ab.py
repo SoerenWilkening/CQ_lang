@@ -6,14 +6,13 @@ LISTFILE (one path per line) through A and B and classifies the pair:
   | STRING (both decline, first error differs) | CRASH (either rc not in {0,1}).
 Prints the DENOMINATOR first, then the counts."""
 import hashlib, os, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import polenv
 from concurrent.futures import ThreadPoolExecutor
 
 def run(spec, f):
     b, mode = spec.rsplit(":", 1)
-    env = dict(os.environ)
-    env.pop("CQ_OPT_DEBUG_ALLOC", None)
-    if mode != "system":
-        env["CQ_OPT_DEBUG_ALLOC"] = mode
+    env = polenv.env_for(mode)
     r = subprocess.run([b, "-passes=cq-lowering", "-S", f, "-o", "-"], env=env,
                        capture_output=True)
     h = hashlib.sha256(r.stdout).hexdigest()[:12]

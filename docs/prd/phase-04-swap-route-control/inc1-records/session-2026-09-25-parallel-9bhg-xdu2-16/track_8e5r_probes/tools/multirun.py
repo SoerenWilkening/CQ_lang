@@ -6,15 +6,14 @@ config's FIRST run (pass the no-reuse reference first). Reports, per config,
 how many modules produced ANY run differing from the reference ("wrong"), how
 many crashed at least once, and the total wrong-run count — with denominators."""
 import hashlib, os, subprocess, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import polenv
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 
 def run(spec, f):
     b, mode = spec.rsplit(":", 1)
-    env = dict(os.environ)
-    env.pop("CQ_OPT_DEBUG_ALLOC", None)
-    if mode != "system":
-        env["CQ_OPT_DEBUG_ALLOC"] = mode
+    env = polenv.env_for(mode)
     r = subprocess.run([b, "-passes=cq-lowering", "-S", f, "-o", "-"], env=env,
                        capture_output=True)
     return (r.returncode, hashlib.sha256(r.stdout).hexdigest()[:12])

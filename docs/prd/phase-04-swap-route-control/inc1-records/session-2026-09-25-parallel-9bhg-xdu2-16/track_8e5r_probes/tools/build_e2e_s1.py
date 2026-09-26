@@ -11,23 +11,30 @@ T = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac
 out = subprocess.run(["ctest", "--test-dir", f"{W}/build", "-N", "-V"],
                      capture_output=True, text=True).stdout
 single, multi = [], []
-name = None
+# ⚠ `ctest -N -V` prints "N: Test command: ..." BEFORE "Test #N: name". The first
+# version of this parser paired each command with the PREVIOUS test's name, so
+# every e2e module was NAMED one test late (contents complete and correct; names
+# wrong). Pair by the test NUMBER instead.
+names, cmds = {}, {}
 for line in out.splitlines():
-    m = re.match(r"^\s*Test\s+#\d+:\s+(\S+)", line)
+    m = re.match(r"^\s*Test\s+#(\d+):\s+(\S+)", line)
     if m:
-        name = m.group(1)
+        names[int(m.group(1))] = m.group(2)
         continue
-    m = re.match(r"^\d+: Test command: (.*)$", line)
-    if not m or name is None:
+    m = re.match(r"^(\d+): Test command: (.*)$", line)
+    if m:
+        cmds[int(m.group(1))] = m.group(2)
+for num in sorted(cmds):
+    name = names.get(num)
+    if name is None:
         continue
-    argv = shlex.split(m.group(1))
+    argv = shlex.split(cmds[num])
     if len(argv) > 1 and argv[1].endswith("/run_slice.sh"):
         a = argv[2:]
         single.append((name, a[0], a[3], a[4]))  # clang, inc, src
     elif len(argv) > 1 and argv[1].endswith("/run_slice_multi.sh"):
         a = argv[2:]
         multi.append((name, a[0], a[2], a[4], a[5], a[6]))  # clang, llvmlink, inc, cqsrc, libsrcs
-    name = None
 
 os.makedirs(f"{T}/e2e_s1", exist_ok=True)
 os.makedirs(f"{T}/e2e_multi_s1", exist_ok=True)

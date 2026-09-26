@@ -1,0 +1,2 @@
+taintset_scrub_guard: 57 TaintSet members walked (compiler: /usr/local/opt/llvm@19/bin/clang++), 0 problem(s), 2 allowlisted
+rc=0

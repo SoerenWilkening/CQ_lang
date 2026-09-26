@@ -15,6 +15,15 @@ result file are under `track_8e5r_probes/`.
 **Not self-cleared.** This is a Rule-13 lowering-core change (`TaintPropagation.h`'s
 `TaintSet` and every emitter that scrubs it). §9 says what to attack first.
 
+> **UPDATE 2026-09-26 — after Rule-13 rounds r1A (container semantics, `CLEAR-WITH-ITEMS`,
+> 0 P1 / 0 P2 / 9 P3) and r1B (verification + composition, `CLEAR-WITH-ITEMS`, one P1 that
+> is a MERGE OBLIGATION, one P2, P3s)**, records `review_r1A_8e5r/` and `review_r1B_8e5r/` in
+> this directory. `main` (ba80bda1, bd d88e) was MERGED into this branch and every finding was
+> dispositioned: §12 (the commits and exactly which LOGIC lines changed since the reviewed
+> `818f8afa`, for the delta reviewer), §13 (measurements on the merged tree), §14 (the
+> disposition of every F-EA-n / F-EB-n). Where this record was wrong it is corrected IN PLACE
+> and marked ⚠ CORRECTED (the e2e names in §6.1 were an instrument defect of mine).
+
 ## 1. Headline
 
 - **The class is closed by construction, not by a site list.** Every pointer-keyed
@@ -258,11 +267,18 @@ header says so; the self-test is the pin that does not depend on it.
 Oracle+alloc: the four named fixtures `rc=1` (system) / `rc=139` (lifo 10/10, nofree 10/10);
 `lowering_io_controlled_putchar` 9/10 clean + 1/10 `139` under nofree. Subject: every cell
 10/10 clean (`rc=1` / `rc=0`). The corpus sweeps (§6.3) add **seven e2e slices** that also
-SIGSEGV on the oracle under LIFO and under nofree (`io-both-arm`, `io-chained-theta`,
-`io-controlled`, `loop-break`, `loop-break-qq`, `loop-break-qq-derived`,
-`loop-value-accum`) and `lowering_io_controlled_printf_sgt.ll` (LIFO) — shipped goldens that
-pass only because the system allocator reuses the freed memory for something with a
-readable parent field.
+SIGSEGV on the oracle under LIFO and under nofree and `lowering_io_controlled_printf_sgt.ll`
+(LIFO) — shipped goldens that pass only because macOS malloc reuses a same-size block
+near-deterministically, for something with a readable parent field (r1B F-EB-7 wording).
+⚠ **CORRECTED 2026-09-26 — THE SEVEN NAMES FIRST PRINTED HERE WERE WRONG** (an instrument
+defect of exactly L10's kind, found while measuring the merged tree): `build_e2e_s1.py` paired
+each `ctest -N -V` "Test command" line with the PREVIOUS test's name (ctest prints the command
+BEFORE `Test #N: name`), so every e2e stage-1 module was NAMED one test late — contents complete
+and correct, names shifted. The parser now pairs by test NUMBER, and the re-measured list (frozen
+`main` ba80bda1 under r1B's independent no-reuse interposer, §13.4 D) is: `io-both-arm`,
+`io-controlled`, `loop-break`, `loop-break-qq`, `loop-break-qq-derived`, `loop-break-qq-i64`,
+`mixed-value-io` (the first print had `io-chained-theta` and `loop-value-accum` instead of
+`loop-break-qq-i64` and `mixed-value-io`). r1B §4.5 quoted the old names off this record.
 
 ### 6.2 The alias families, repeated (`multirun.py`, 523 modules × 10 runs per config)
 
@@ -455,3 +471,194 @@ Readings:
 - `TaintPropagation.cpp` × 2: why the `beforeTaint` snapshots must be self-cleaning.
 - NOT corrected here (not on `main`): 9bhg's `Specialization.cpp` *"closed here at its
   source"* and TRACK_9BHG §3/§7 item 6 (F-9B-2) — owed at the 9bhg composition.
+
+## 12. After the Rule-13 rounds — the merge with `main` and the delta (2026-09-26)
+
+Commits on `worktree-agent-a2cf1f874e5ec99d2`, in order, each separate; the reviewed
+`818f8afa` is intact (a MERGE, not a rebase). Not merged into `main`, not pushed.
+
+| commit | what | kind |
+|---|---|---|
+| `cb3e6609` | the two review records, verbatim | records |
+| `0b07629e` | merge `main` `ba80bda1` (bd d88e). Every source file auto-merged; the one conflict was the generated `CODE_MAP.md` (regenerated). **Guard RED at this commit, by design** — r1B F-EB-1's positive control firing on d88e's raw `LiftedMergePhi::F` | merge |
+| `152fafe1` | F-EB-1 / bd lin4 | LOGIC |
+| `c150d983` | F-EA-2 / F-EB-2 / bd urf8 (c3gf closed as its duplicate): the semantic guard | instrument |
+| `c268f545` | F-EA-1 / bd jct8, F-EA-7, F-EB-10, F-EB-4 / bd m91g, F-EA-9 | LOGIC + instrument |
+| `e24126b1` | F-EA-3, F-EA-5, F-EA-8, F-EB-5, the CLAUDE.md build line | COMMENTS ONLY — proved by `tools/comment_only_check.py` (comment-stripped diff, null + positive controls): 10 code files, 0 non-comment changes; and the rebuilt `cq-opt` is BIT-IDENTICAL to `c268f545`'s (`57f0348465bab76f`) |
+| (this) | this record, §12–§14 | record |
+
+### 12.1 EXACTLY which lines of LOGIC changed since `818f8afa` (for the delta reviewer)
+
+Everything else in `git diff 818f8afa..HEAD` is d88e's own (`ba80bda1`, reviewed on its own
+track), the guard tool, the test drivers, records, or comments (proved above).
+
+1. **`TaintPropagation.h` `struct LiftedMergePhi`** (d88e's): `llvm::Function *F = nullptr;` →
+   `llvm::WeakVH F;`. `Base`/`Incomings` unchanged (`WeakTrackingVH` — the re-ask must FOLLOW a
+   RAUW; the reason is written at the member).
+2. **`TaintPropagation.cpp` `declineFalsifiedMergePhiLifts`**: `(void)M;` removed; a new first
+   step `Fn = cast_or_null<Function>(L.F)` — if null, DECLINE with the same `kMsgClassicalPhi`
+   anchored on the first defined function of `M` (return `false` only if `M` has none); the
+   diagnostic uses `Fn` instead of `L.F`. Argued unreachable (no Function is erased in the
+   window); the non-null path is byte-identical (the 21 d88e fixtures: 21/21 same vs `ba80bda1`).
+3. **`TaintPropagation.cpp` `repropagateControlMerges`**: `DenseMap<const BasicBlock *, unsigned>
+   Round1FlattenedPreds(taint.InLoopFlattenedPreds.begin(), …end())` →
+   `ScrubMap<const BasicBlock *, unsigned> Round1FlattenedPreds = taint.InLoopFlattenedPreds;`
+   (a self-cleaning copy). **`LoopPlan.h` / `LoopLowering.cpp` `collapseFlattenedLoopRails`**:
+   the `AlreadyProcessed` parameter type follows (`const ScrubMap<…> *`); its body is unchanged
+   (`find`/`end`/`->second` keep their meaning; a dead key is absent). `LoopPlan.h` now includes
+   `ScrubOnDelete.h`, which therefore gained `llvm/IR/Instructions.h` (F-EA-9 — the build broke
+   without it, reproducing r1A's finding).
+4. **`Specialization.cpp` `buildClone`, the inner-site fp-rebuild migration**: DELETED
+   `cloneTaint.Tainted.erase(OldInner)` and the five-line `BirthOrder` migration of `OldInner`
+   onto `Inner`. Kept: `cloneTaint.Tainted.insert(Inner)` and the `HandleWidth` record. Ground
+   (written at the site): the erase was by a DEAD pointer (redundant under self-cleaning, and a
+   latent hazard — an erase by a dead address removes a LIVE object revived there); the
+   migration was dead by construction (`cloneTaint.BirthOrder` is written only by
+   `lowerCloneSelect` / `lowerQramReads` / `lowerOps`, all after this loop). Moving the lookup
+   before the erase would have moved a dead lookup, so it was deleted. Stream unchanged (§13.4 B).
+5. **Test drivers only (not the pass)**: `cq_debug_alloc.cpp` mode parsing (unknown value /
+   non-Apple `lifo` → exit 2); `scrub_selftest.cpp` `main` (`--require-reuse`, mode validation,
+   `skipBranch` counting); `lit.cfg.py` (`%debugalloc-cq-opt` never falls back; missing or
+   older-than-`cq-opt` → `lit_config.fatal`); `ir-pass/CMakeLists.txt` (`--require-reuse`, the
+   guard's `--clang`/`--llvm-include`).
+
+## 13. Measurements on the merged tree (as literally run)
+
+Final binaries (sha256): `cq-opt` `57f0348465bab76f85c80298536d83f431362aa5808ca20b9d17ad4ac8cd63ab`,
+`cq-opt-debugalloc` `ff15a90315ca94987db3554fb5a8c98927e513fe94fc5c495ce050712e754ee1`,
+`libCQPass.so` `bb9c7a0653f1e50bbfc6373db36aefe8699d2e896bbd98fed41a09d09d91b731`,
+`cq-scrub-selftest` `97bc7e5159ac2dab6c75c26df218215ae308ce1033d90e3eee985872cb515e7a`.
+ORACLE: frozen `main` `ba80bda1` `cq-opt` `e587c19152bf39e5`. The oracle cannot read
+`CQ_OPT_DEBUG_ALLOC`, so its allocator runs use **r1B's INDEPENDENT interposer**
+(`review_r1B_8e5r/probes/rb8_interpose.cpp`, `DYLD_INSERT_LIBRARIES`, dylib `dda46979…`) on the
+unmodified frozen binary; `tools/ba80_debugalloc_wrapper.sh` maps `CQ_OPT_DEBUG_ALLOC` onto it so
+the lit pins run against the oracle unchanged. Corpus: 2306 lit fixtures + 425 e2e stage-1
+modules (400 single-TU + 25 multi-TU, rebuilt with the FIXED name pairing, §14.2) + the 523
+alias-family programs = **3254**. Sweep log: `results/merged_final_sweeps.log`.
+
+### 13.1 The pins, red on the oracle, green on the merged tree
+
+| pin | oracle `ba80bda1` (+ r1B interposer) | merged tree |
+|---|---|---|
+| lit `spec_scrub_dangling_key_clone_classical_mul.ll` | FAIL 10/10 (FileCheck: `cq_template_mul_i32_hl(i32 7, i32 %0)`) | PASS 10/10 |
+| the four um24 `nofree` lines | FAIL 40/40 (`Segmentation fault: 11`) | PASS 40/40 |
+| `e2e-spec-scrub-dangling-key` (lifo) | FAIL 10/10; under `nofree` PASS 5/5 (the golden IS the no-reuse reference) | PASS 10/10 |
+| full `lit` | 2300 passed + 1 XFAIL, **exactly 5 failed = the 5 new pins** (twice) | 2305 passed + 1 XFAIL (twice) |
+
+### 13.2 `cq-scrub-selftest`, every mode
+
+`lifo --require-reuse` ×3: 287 checks, 0 failures, reuse 31/31 (REQUIRED), 0 branches skipped.
+system: 287/0, reuse 31/31 (not required). `nofree`: 206/0, **31/31 aliasing branches (81
+checks) SKIPPED — reported** (F-EB-10). `CQ_OPT_DEBUG_ALLOC=Lifo` / `LIFO`: exit 2, message on
+stderr. `--require-reuse` without `lifo`: exit 2.
+
+### 13.3 The guard
+
+Clean header: 57 members walked, 0 problems (`results/guard_v2_clean.txt`). `--selftest`: 2 null
+controls clean, 57 mutants all refused for the RIGHT reason (`results/guard_v2_selftest.txt`).
+r1A `guard_bypass.py` UNMODIFIED: 15 candidates, **0 MISSED**; r1B `guard_fool.py` UNMODIFIED: 23
+mutants, **0 MISSED**, controls OK (`results/guard_v2_vs_r1{A,B}_corpus.txt`; r1B G2/G24 are
+killed there by a compile error — undeclared `SmallSet`/`Base0` in their harness — and their
+right-reason versions are in `--selftest`). Fail-closed controls: a nonexistent `--clang` and a
+wrong `--llvm-include` both exit 1 with a message.
+
+### 13.4 Corpus A/B (null controls FIRST, denominators printed)
+
+| | A | B | modules | result |
+|---|---|---|---:|---|
+| A | subject `cq-opt` (system) | the same, again (**null, the SUBJECT twice**) | 3254 | 3254 same |
+| A2 | subject under r1B `rand` (scrambled address order) | the same, again | 3254 | 3254 same |
+| B | `main` ba80bda1 (system) | subject (system) | 2731 (lit + e2e) | **2729 same, 2 STREAM** — both the 8e5r k65 program (the lit fixture and its e2e module), where the ORACLE emits the wrong `cq_template_mul_i32_hl(7, …)`; 0 A→D, 0 D→A, 0 string moves |
+| C | subject `cq-opt` (system) | `cq-opt-debugalloc` system / lifo / nofree | 3254 ×3 | 3254 same ×3 (the debug driver is output-identical; the subject is allocator-independent) |
+| D | `main` ba80bda1 under r1B **no-reuse** | subject (system) | 3254 | **3241 same, 13 = oracle SIGSEGVs** (6 lit: `iosink_reject_mux_literal_callee`, `lowering_io_controlled_both_arm`, `lowering_io_controlled_putchar`, `lowering_reject_break_uncollected_clone`, `…_xor_bareout`, `…_xor_derived`; 7 e2e: `io-both-arm`, `io-controlled`, `loop-break`, `loop-break-qq`, `loop-break-qq-derived`, `loop-break-qq-i64`, `mixed-value-io`) |
+| E | subject (system) | subject under r1B `lifo` / `fifo` | 3254 ×2 | 3254 same ×2 |
+
+### 13.5 Alias families, 523 programs × 10 runs × 7 configs (`results/merged_F_multi_fam.tsv`)
+
+Reference = `ba80bda1` under r1B `nofree` (its own 10 runs: 0/5230 non-reference).
+
+| config | modules with any non-reference run | crashes | non-reference runs |
+|---|---:|---:|---:|
+| subject `cq-opt`, system | **0/523** | 0 | **0/5230** |
+| subject `cq-opt-debugalloc`, lifo | **0/523** | 0 | **0/5230** |
+| subject `cq-opt-debugalloc`, nofree | **0/523** | 0 | **0/5230** |
+| subject `cq-opt`, r1B `fifo` | **0/523** | 0 | **0/5230** |
+| `main` ba80bda1, system | 81/523 | 12 | 676/5230 |
+| `main` ba80bda1, r1B `lifo` | 80/523 | 11 | 800/5230 |
+
+### 13.6 Suites and gates
+
+- d88e's family on the merged tree: lit filter `classical_mux_phi|onereg|spec_lift|lift` 63/63;
+  its 4 e2e entries 4/4; its 21 fixtures byte-identical to `ba80bda1` (null subject-twice 21/21).
+- **`cmake --build build --target cq-opt-equivalence-full`: 2306 fixtures, 0 mismatches.**
+- `python3 tools/update_code_map.py --check`: clean.
+- **Duplicate-body scan** (L8, `tools/dup_body_scan.py`, controls first): 2306 fixtures, 2297
+  bodies, 9 groups — **IDENTICAL to the 9 groups on `main` ba80bda1** (pre-existing deliberate
+  twins); the merge resurrected nothing (`results/merged_dup_body_scan.txt`).
+- Full `lit` (private sites, alternating): oracle 59.0 / 68.0 s, subject 73.3 / 67.0 s at load
+  averages 10 / 49 / 39 / 54 before each run — not resolvable at that load; r1B §6 measured
+  +1.2% ± 0.35% CPU per invocation, all launch cost, in a quiet window.
+- **Full `ctest --test-dir build -j6`: 509/509 passed in 587.18 s** (load average 36 at the
+  start, 4 at the end — not a quiet-box figure). `ir-pass-lit` 91.55 s,
+  `taintset-scrub-guard-selftest` 66.44 s (it compiles the header 59 times; the heaviest new
+  entry), `taintset-scrub-guard` 5.40 s, both `ir-pass-scrub-on-delete-selftest-*` ≤ 0.03 s,
+  `e2e-spec-scrub-dangling-key` 2.57 s. Counts: ctest 509 (505 at `818f8afa` + d88e's 4).
+  `ls ir-pass/test/*.ll` 2306.
+
+## 14. Rule-13 dispositions
+
+| id | sev | disposition |
+|---|---|---|
+| F-EA-1 (bd jct8) | P3 | **FIXED** `c268f545` — self-cleaning `ScrubMap` snapshot; the "safe direction" comment corrected as FALSE (§12.1 item 3) |
+| F-EA-2 (bd c3gf) | P3 | **FIXED** `c150d983` together with F-EB-2; c3gf **closed as a DUPLICATE of urf8** |
+| F-EA-3 | P3 | **CORRECTED AT THE SOURCE** `e24126b1` — the LoopLowering / TaintPropagation.h passages, "~180" → 133, "cannot move" → measured; lower-priority scrub rationales marked belt-and-braces |
+| F-EA-4 | P3 | **RECORDED** (§14.1): the second UAF consumer, `propagateWorklist` via `repropagateControlMerges`, and its extra crashing fixtures |
+| F-EA-5 | P3 | **DOCUMENTED** `e24126b1` — the insert-a-deleted-pointer precondition in `ScrubOnDelete.h` and `TaintPropagation.h` |
+| F-EA-6 | P3 | **FILED, not built** — bd `test_C_libtooling-r77x` (a non-owner-deleted user intrinsic is now skipped silently; make it a loud postcondition) |
+| F-EA-7 | P3 | **FIXED** `c268f545` — the dead migration and the dead-pointer erase deleted with the reason at the site (§12.1 item 4) |
+| F-EA-8 | P3 | **DOCUMENTED** `e24126b1` — at the headers and at each of the three event-witness readers |
+| F-EA-9 | P3 | **FIXED** `c268f545` — `ScrubOnDelete.h` includes `llvm/IR/Instructions.h` (verified: a TU including only it compiles) |
+| F-EB-1 (bd lin4) | **P1** (merge obligation) | **RESOLVED** `152fafe1` — `WeakVH F` + null-checked `cast_or_null` at the reader; `Base`/`Incomings` stay `WeakTrackingVH` with the reason at the member; not AssertingVH, not an allowlist entry. The guard's selftest carries "d88e's raw F restored" and "AssertingVH for F" as mutants |
+| F-EB-2 (bd urf8) | **P2** | **FIXED** `c150d983` — the guard asks the compiler (§13.3); urf8 updated, not closed (owes the delta review) |
+| F-EB-3 (bd p5p7) | P3 | **KEPT as the bead, not built** (positive-control counters on the k65 pins) |
+| F-EB-4 (bd m91g) | P3 | **FIXED** `c268f545` + `e24126b1` — lit fatal on a missing/older driver (controls fired), loud exit on an unknown mode or non-Apple `lifo`, no fallback to `%cq-opt`, CLAUDE.md names all three targets. Residual: the e2e ctest passes the driver path directly (lit is the fence) |
+| F-EB-5 | P3 | **CORRECTED** `c268f545`/`e24126b1` — "maximal reuse" scoped to non-aligned new/delete in `cq_debug_alloc.cpp`, the fixture header and the e2e CMake comment |
+| F-EB-6 | P3 | **RECORDED** (§14.1) |
+| F-EB-7 | P3 | **RECORDED** (§14.1) |
+| F-EB-8 | P3 | **NOTED** — `ab.py` compares the FIRST `error:` line only; r1B's `ab_full.py` closed it by measurement (2705/2705 same incl. warnings). Not re-run on the merged tree |
+| F-EB-9 | P3 | **OWED AT THE 9bhg COMPOSITION** — 9bhg's post-`resolveSite` `taint.Tainted.erase(OldSite)` block erases by a dead pointer; delete it at that merge (the reasoning of F-EA-7 here) and correct F-9B-2's comment |
+| F-EB-10 | P3 | **FIXED** `c268f545` — §13.2 |
+
+### 14.1 The three record items (F-EA-4, F-EB-6, F-EB-7), stated
+
+- **F-EA-4 — the UAF population is wider than um24's one consumer.** Under r1A's scribble
+  allocator the oracle crashes in TWO consumers: `lowerLoops`' prescan (um24) AND
+  `propagateWorklist` ← `repropagateControlMerges`, whose round-2 worklist
+  `WL(taint.Tainted.begin(), end())` walks a DEAD key's `users()`. Under a reusing allocator
+  that second route is itself an entry into the 8e5r class (it reads the use list of whatever
+  object now occupies the address and taints its users). Crashing lit fixtures this record did
+  not name before: `control_phase_kickback_onward_merge`,
+  `control_swap_{reject_,}switch_datamux_angle{,_runtime}`, `lowering_io_controlled_both_arm`
+  (the last also in §13.4 D). The subject crashes on 0 modules under every allocator run.
+- **F-EB-6 — what closes um24's broader population is the ITERATION SKIP, not the prescan
+  rewrite.** r1B's counter build shows an iteration reaching a dead key in 12 shipped modules
+  (6 accepts) on the fixed binary — iterate-and-dereference consumers other than the prescan
+  exist (`TaintPropagation.cpp`'s round-2 worklist, `AbortParkEmit.cpp:229`). The container's
+  dead-skip closes them all. Per r1B §1.2, `lowering_reject_break_uncollected_clone`'s `nofree`
+  line is killed only by the two mutants together (M7 iteration-skip off ∧ M12 prescan
+  reverted) — consistent with §8's "M12 EQUIVALENT" — and its header could say so (not done).
+- **F-EB-7 — no LIVE flaky surface on the shipped corpus, and a LARGE latent one.** r1B: 0 of
+  2705 shipped modules vary across 10 system-allocator runs on the oracle; 0/650 um24 crashes at
+  N=50. But under the system allocator **225 shipped modules (214 of them accepts) had ≥ 1
+  TaintSet lookup decided by a deleted address** (573 queries), with **0 output change** on the
+  corpus (§13.4 B). So the A/B's "0 movers" is evidence about EXERCISED modules, not an empty
+  quadrant (1029 of 3228 modules exercise the dead-marking under the system allocator).
+
+### 14.2 An instrument defect of mine, found while measuring (L10)
+
+`build_e2e_s1.py` paired each `ctest -N -V` command with the PREVIOUS test's name (ctest prints
+`N: Test command:` BEFORE `Test #N: name`). Module CONTENTS were complete and correct, so every
+A/B count stands; every per-module NAME from the e2e corpus was one test late — the seven e2e
+names of §6.1 were wrong (corrected there), and r1B §4.5 inherited them. Found because an A/B
+mover NAMED `e2e-spec-fp80-union` contained `k1`'s `mul nsw i32 %0, 7`. The parser now pairs by
+test number; every name in §13 was re-measured with it.
