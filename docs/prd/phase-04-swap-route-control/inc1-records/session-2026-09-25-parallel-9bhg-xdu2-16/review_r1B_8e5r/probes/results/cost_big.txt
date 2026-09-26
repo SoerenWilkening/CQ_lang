@@ -1,0 +1,1 @@
+SUMMARY SUB/ORA: modules=30 rounds=8 mean_ratio=1.0110 sd=0.0064 95%CI=[1.0057,1.0163] per-module-median=1.0154 totalCPU ORA=29.2s SUB=29.5s load_start=2 load_end=3

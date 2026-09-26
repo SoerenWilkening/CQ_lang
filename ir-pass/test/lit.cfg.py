@@ -22,6 +22,40 @@ cq_opt = getattr(config, "cq_opt", None) or os.environ.get("CQ_OPT", "opt-19")
 cq_pass = getattr(config, "cq_pass_plugin", None) or os.environ.get("CQ_PASS", "")
 filecheck = getattr(config, "filecheck", None) or os.environ.get("FILECHECK", "FileCheck-19")
 
+# %debugalloc-cq-opt (bd test_C_libtooling-8e5r) — the SAME pass objects as
+# %cq-opt, linked with the test-only allocator (`CQ_OPT_DEBUG_ALLOC=lifo|nofree`,
+# ir-pass/tools/cq_debug_alloc.cpp) that makes a stale-key alias deterministic.
+# The key deliberately does NOT contain "%cq-opt" as a substring, so
+# substitution order cannot matter.
+#
+# ⚠ IT NEVER FALLS BACK, AND A STALE ONE STOPS THE RUN (Rule-13 r1B F-EB-4 /
+# bd m91g). The first version fell back to %cq-opt, which IGNORES the variable,
+# so every pin using it passed VACUOUSLY GREEN; and `cmake --build --target
+# CQPass cq-opt` (the recipe CLAUDE.md then gave) relinked cq-opt but left
+# cq-opt-debugalloc on the OLD objects, so the um24 `nofree` lines reported on
+# old code. Now: not configured -> a path that cannot run (every RUN line using
+# it fails loudly); configured but missing, or OLDER than cq-opt (it links
+# cq-opt's own objects after cq-opt, so a complete build always makes it newer)
+# -> the whole lit run stops with the rebuild command.
+cq_opt_debugalloc = getattr(config, "cq_opt_debugalloc", None)
+if not cq_opt_debugalloc:
+    cq_opt_debugalloc = "/cq-opt-debugalloc-NOT-CONFIGURED-rerun-cmake"
+elif not os.path.exists(cq_opt_debugalloc):
+    lit_config.fatal("cq-opt-debugalloc is configured but missing (%s); build it: "
+                     "cmake --build build --target cq-opt-debugalloc" % cq_opt_debugalloc)
+elif os.path.exists(cq_opt) and os.path.realpath(cq_opt_debugalloc) == os.path.realpath(cq_opt):
+    # r2 F-R2-4 / bd sjwe: a configured path EQUAL to cq-opt is a fallback in
+    # disguise (cq-opt ignores CQ_OPT_DEBUG_ALLOC, so every pin would pass
+    # vacuously) and the mtime test below cannot see it — equal is never "older".
+    lit_config.fatal("cq-opt-debugalloc is configured as cq-opt itself (%s): cq-opt ignores "
+                     "CQ_OPT_DEBUG_ALLOC, so the allocator pins would pass vacuously" % cq_opt)
+elif os.path.exists(cq_opt) and os.path.getmtime(cq_opt_debugalloc) < os.path.getmtime(cq_opt):
+    lit_config.fatal("cq-opt-debugalloc (%s) is OLDER than cq-opt (%s): it links cq-opt's "
+                     "objects, so it is STALE — rebuild it: cmake --build build --target "
+                     "cq-opt-debugalloc (or a full cmake --build build)"
+                     % (cq_opt_debugalloc, cq_opt))
+config.substitutions.append(("%debugalloc-cq-opt", cq_opt_debugalloc))
+
 # %cq-opt expands to the opt binary; %cq-pass to the pass plugin path.
 # Tests typically write: ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s | %filecheck %s
 config.substitutions.append(("%cq-opt", cq_opt))

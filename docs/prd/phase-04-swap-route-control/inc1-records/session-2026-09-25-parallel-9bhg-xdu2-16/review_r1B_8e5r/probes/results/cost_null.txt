@@ -1,0 +1,7 @@
+round 1: ORA 12.45s  ORAcopy 12.42s  ratio 0.9971  load 4
+round 2: ORA 12.32s  ORAcopy 12.38s  ratio 1.0048  load 4
+round 3: ORA 12.33s  ORAcopy 12.31s  ratio 0.9982  load 3
+round 4: ORA 12.28s  ORAcopy 12.27s  ratio 0.9986  load 3
+round 5: ORA 12.22s  ORAcopy 12.28s  ratio 1.0042  load 3
+round 6: ORA 12.24s  ORAcopy 12.18s  ratio 0.9953  load 2
+SUMMARY ORAcopy/ORA: modules=150 rounds=6 mean_ratio=0.9997 sd=0.0039 95%CI=[0.9956,1.0038] per-module-median=0.9988 totalCPU ORA=73.9s ORAcopy=73.8s load_start=5 load_end=2

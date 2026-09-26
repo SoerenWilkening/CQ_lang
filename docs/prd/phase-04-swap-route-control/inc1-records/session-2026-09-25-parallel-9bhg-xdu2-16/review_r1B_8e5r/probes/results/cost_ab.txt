@@ -1,0 +1,7 @@
+round 1: ORA 12.15s  SUB 12.22s  ratio 1.0064  load 2
+round 2: ORA 12.08s  SUB 12.24s  ratio 1.0134  load 2
+round 3: ORA 12.15s  SUB 12.34s  ratio 1.0152  load 2
+round 4: ORA 12.08s  SUB 12.26s  ratio 1.0147  load 2
+round 5: ORA 12.31s  SUB 12.44s  ratio 1.0108  load 2
+round 6: ORA 12.08s  SUB 12.22s  ratio 1.0109  load 2
+SUMMARY SUB/ORA: modules=150 rounds=6 mean_ratio=1.0119 sd=0.0033 95%CI=[1.0085,1.0153] per-module-median=1.0111 totalCPU ORA=72.9s SUB=73.7s load_start=2 load_end=2

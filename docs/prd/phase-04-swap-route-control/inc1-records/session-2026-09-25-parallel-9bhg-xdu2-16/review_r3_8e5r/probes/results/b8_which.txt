@@ -1,0 +1,8 @@
+Result
+  DUMP Result: kind=CXXRecordDecl file=/usr/local/opt/llvm@19/include/llvm/IR/PassManager.h line=565 fields=[]
+  DUMP Result: kind=CXXRecordDecl file=/usr/local/opt/llvm@19/include/llvm/IR/PassManager.h line=691 fields=[]
+  errs 0
+Impl
+  DUMP Impl: kind=ClassTemplateDecl file=/usr/local/opt/llvm@19/include/llvm/ADT/Bitfields.h line=156 fields=[]
+  DUMP Impl: kind=ClassTemplateDecl file=/usr/local/opt/llvm@19/include/llvm/ADT/Bitfields.h line=234 fields=[]
+  errs 0

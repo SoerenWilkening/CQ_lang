@@ -1,0 +1,3 @@
+denominator: 2306 modules  A=$R2/ab/subjA  B=$R2/ab/posctl
+counts: STREAM=1 same=2305
+  STREAM	condtree_classical_leaf_accept_and_taintfirst.ll	0	0

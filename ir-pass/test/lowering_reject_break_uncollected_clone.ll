@@ -82,6 +82,13 @@
 ; round. Tracked under the 7.x widenings epic, not here.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; bd test_C_libtooling-um24 — the SAME decline under the no-reuse test allocator
+; (`CQ_OPT_DEBUG_ALLOC=nofree`, `%debugalloc-cq-opt` only). The unfixed `lowerLoops` prescan
+; called `getFunction()` on a `taint.Tainted` key an earlier stage had ERASED;
+; with no reuse the dead object's parent is null, so the unfixed binary SIGSEGVs
+; here DETERMINISTICALLY (measured on oracle `def1b088` + the test allocator), and
+; `not` fails on a crash. The system allocator hid it by reusing the memory.
+; RUN: env CQ_OPT_DEBUG_ALLOC=nofree not %debugalloc-cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

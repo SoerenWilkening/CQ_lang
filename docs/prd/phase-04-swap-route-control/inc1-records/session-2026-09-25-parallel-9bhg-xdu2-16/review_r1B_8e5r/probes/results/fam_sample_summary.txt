@@ -1,0 +1,13 @@
+# 60 alias-family modules (40 oracle-flaky + 20 clean, seed 8), N=10 per config; reference = ORACLE under rb8 nofree
+ORA   fifo        modules_nonref=37/60 runs_nonref=370/600 crash_runs=20
+ORA   lifo        modules_nonref=38/60 runs_nonref=380/600 crash_runs=50
+ORA   nofree      modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+ORA   rand        modules_nonref=30/60 runs_nonref=54/600 crash_runs=5
+ORA   sys         modules_nonref=40/60 runs_nonref=269/600 crash_runs=40
+SUB   fifo        modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUB   lifo        modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUB   nofree      modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUB   rand        modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUB   sys         modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUBd  dbg:lifo    modules_nonref=0/60 runs_nonref=0/600 crash_runs=0
+SUBd  dbg:nofree  modules_nonref=0/60 runs_nonref=0/600 crash_runs=0

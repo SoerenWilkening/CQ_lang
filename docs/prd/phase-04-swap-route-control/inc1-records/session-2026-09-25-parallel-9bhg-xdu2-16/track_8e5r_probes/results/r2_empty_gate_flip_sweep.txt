@@ -1,0 +1,19 @@
+denominator: 3258 modules, binary ./cq-opt.gate_c416, allocator system
+G10_InLoopFlattenedPreds             evals=  2447 modules= 2354 FLIPS=0 impossible_reverse=0
+G11_Dephasing_Tainted                evals=  2107 modules= 2107 FLIPS=0 impossible_reverse=0
+G1a_run_ThetaCalls                   evals=  3247 modules= 3247 FLIPS=0 impossible_reverse=0
+G1b_run_PhiCalls                     evals=  3247 modules= 3247 FLIPS=0 impossible_reverse=0
+G1c_run_PhaseCalls                   evals=  3247 modules= 3247 FLIPS=0 impossible_reverse=0
+G1d_run_MeasureCalls                 evals=  3247 modules= 3247 FLIPS=0 impossible_reverse=0
+G2_ValueArmConeOps                   evals=  2233 modules= 2233 FLIPS=0 impossible_reverse=0
+G3_FreePoint_IterationLocalBlocks    evals=  1345 modules= 1050 FLIPS=0 impossible_reverse=0
+G4_Uncompute_IterationLocalBlocks    evals=  1345 modules= 1050 FLIPS=0 impossible_reverse=0
+G5a_lowerRotations_ThetaCalls        evals=  2097 modules= 2097 FLIPS=0 impossible_reverse=0
+G5b_lowerRotations_PhiCalls          evals=  2097 modules= 2097 FLIPS=0 impossible_reverse=0
+G6_UserChainedRotations              evals=  2042 modules= 2042 FLIPS=0 impossible_reverse=0
+G7_LiftedConsumers                   evals=  2148 modules= 2148 FLIPS=2 impossible_reverse=0
+      flip: k1.ll
+      flip: p2_C.ll
+G8_UntaintedMergeRails               evals=  2328 modules= 2328 FLIPS=0 impossible_reverse=0
+G9_lowerMeasures_MeasureCalls        evals=  2071 modules= 2071 FLIPS=0 impossible_reverse=0
+gates never reached: []

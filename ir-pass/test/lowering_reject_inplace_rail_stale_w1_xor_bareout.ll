@@ -48,6 +48,13 @@
 ; our decline. They stay as a tripwire for a driver that continues past it.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+; bd test_C_libtooling-um24 — the SAME decline under the no-reuse test allocator
+; (`CQ_OPT_DEBUG_ALLOC=nofree`, `%debugalloc-cq-opt` only). The unfixed `lowerLoops` prescan
+; called `getFunction()` on a `taint.Tainted` key an earlier stage had ERASED;
+; with no reuse the dead object's parent is null, so the unfixed binary SIGSEGVs
+; here DETERMINISTICALLY (measured on oracle `def1b088` + the test allocator), and
+; `not` fails on a crash. The system allocator hid it by reusing the memory.
+; RUN: env CQ_OPT_DEBUG_ALLOC=nofree not %debugalloc-cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq loop lowering: in-place rail op no longer provable at lowering
 
 ; (DOCUMENTATION OF THE FORBIDDEN OUTPUT, not a live assertion — F-E1-2 above:

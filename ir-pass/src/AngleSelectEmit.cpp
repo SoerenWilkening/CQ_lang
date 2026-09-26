@@ -69,9 +69,9 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   // a rotation from here is the shape this block exists for.
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     auto &TC = taint.ThetaCalls;
-    TC.erase(std::remove(TC.begin(), TC.end(), CI), TC.end());
+    TC.erase_value(CI);
   }
 }
 
@@ -246,7 +246,7 @@ void emitPhaseAngleSelect(SelectInst *Sel, Instruction *Cond, CallInst *T,
   // rail that nothing strips and nothing frees (the `SelectMergeEmit` step-6
   // discipline, verbatim).
   auto &PC = taint.PhaseCalls;
-  PC.erase(std::remove(PC.begin(), PC.end(), T), PC.end());
+  PC.erase_value(T);
   T->eraseFromParent();
   scrubTaint(Sel, taint);
   Sel->eraseFromParent();

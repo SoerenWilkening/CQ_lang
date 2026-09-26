@@ -1,0 +1,54 @@
+== binaries
+57f0348465bab76f85c80298536d83f431362aa5808ca20b9d17ad4ac8cd63ab  cq-opt.fin
+ff15a90315ca94987db3554fb5a8c98927e513fe94fc5c495ce050712e754ee1  cq-opt.find
+e587c19152bf39e5f1d388a7418338dfbf332d0f745b480db71f6869c9bc8325  cq-opt.oracle_ba80
+dda469790173d2821a1a9d2c35a9bb8fd002da8082572631b1041769aacae5a1  rb8_interpose.dylib
+== A. NULL CONTROL: subject (final cq-opt) twice, system allocator
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.fin:system
+counts: same=3254 (total 3254)
+== A2. NULL CONTROL under the independent interposer (rand: scrambled address order), subject twice
+denominator: 3254 modules   A=./cq-opt.fin:rb8-rand   B=./cq-opt.fin:rb8-rand
+counts: same=3254 (total 3254)
+== B. main ba80bda1 (system) vs subject (system), shipped corpus (lit + e2e stage-1)
+denominator: 2731 modules   A=./cq-opt.oracle_ba80:system   B=./cq-opt.fin:system
+counts: STREAM=2 same=2729 (total 2731)
+  STREAM	spec_scrub_dangling_key_clone_classical_mul.ll	rc 0->0	'' -> ''
+  STREAM	e2e-spec-scrub-dangling-key.ll	rc 0->0	'' -> ''
+== C. subject allocator independence: cq-opt(system) vs cq-opt-debugalloc under system / lifo / nofree
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.find:system
+counts: same=3254 (total 3254)
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.find:lifo
+counts: same=3254 (total 3254)
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.find:nofree
+counts: same=3254 (total 3254)
+== D. main ba80bda1 under NO REUSE (independent interposer) vs subject (system)
+denominator: 3254 modules   A=./cq-opt.oracle_ba80:rb8-nofree   B=./cq-opt.fin:system
+counts: CRASH=13 same=3241 (total 3254)
+  CRASH	iosink_reject_mux_literal_callee.ll	rc -11->1	'' -> '<unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowerin'
+  CRASH	lowering_io_controlled_both_arm.ll	rc -11->0	'' -> ''
+  CRASH	lowering_io_controlled_putchar.ll	rc -11->0	'' -> ''
+  CRASH	lowering_reject_break_uncollected_clone.ll	rc -11->1	'' -> '<unknown>:0:0: in function break_uncollected_clone i32 (i32, i32): cq '
+  CRASH	lowering_reject_inplace_rail_stale_w1_xor_bareout.ll	rc -11->1	'' -> '<unknown>:0:0: in function run i32 (i32, i32, i32): cq loop lowering: '
+  CRASH	lowering_reject_inplace_rail_stale_w1_xor_derived.ll	rc -11->1	'' -> '<unknown>:0:0: in function run i32 (i32, i32, i32): cq loop lowering: '
+  CRASH	e2e-slice-io-both-arm.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-io-controlled.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-loop-break-qq-derived.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-loop-break-qq-i64.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-loop-break-qq.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-loop-break.ll	rc -11->0	'' -> ''
+  CRASH	e2e-slice-mixed-value-io.ll	rc -11->0	'' -> ''
+== E. subject under the independent interposer's reuse policies
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.fin:rb8-lifo
+counts: same=3254 (total 3254)
+denominator: 3254 modules   A=./cq-opt.fin:system   B=./cq-opt.fin:rb8-fifo
+counts: same=3254 (total 3254)
+== F. alias families, 10 runs per config (reference: ba80 under rb8 nofree)
+denominator: 523 modules x 7 configs x 10 runs
+cq-opt.oracle_ba80:rb8-nofree modules-with-any-non-reference-run=0/523  modules-with-a-crash=0/523  non-reference-runs=0/5230
+cq-opt.fin:system            modules-with-any-non-reference-run=0/523  modules-with-a-crash=0/523  non-reference-runs=0/5230
+cq-opt.find:lifo             modules-with-any-non-reference-run=0/523  modules-with-a-crash=0/523  non-reference-runs=0/5230
+cq-opt.find:nofree           modules-with-any-non-reference-run=0/523  modules-with-a-crash=0/523  non-reference-runs=0/5230
+cq-opt.fin:rb8-fifo          modules-with-any-non-reference-run=0/523  modules-with-a-crash=0/523  non-reference-runs=0/5230
+cq-opt.oracle_ba80:system    modules-with-any-non-reference-run=81/523  modules-with-a-crash=12/523  non-reference-runs=676/5230
+cq-opt.oracle_ba80:rb8-lifo  modules-with-any-non-reference-run=80/523  modules-with-a-crash=11/523  non-reference-runs=800/5230
+== DONE

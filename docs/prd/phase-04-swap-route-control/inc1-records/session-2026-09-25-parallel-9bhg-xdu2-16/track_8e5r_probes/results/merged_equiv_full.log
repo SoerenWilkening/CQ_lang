@@ -1,0 +1,6 @@
+[ 50%] Built target cq-opt
+[ 98%] Built target CQPass
+[100%] cq-opt vs stock opt: full all-fixture equivalence sweep
+cq_opt_equivalence: compared 2306 fixtures, 0 mismatch(es)
+[100%] Built target cq-opt-equivalence-full
+rc=0

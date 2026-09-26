@@ -17,6 +17,14 @@
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
+; bd test_C_libtooling-um24 — the SAME decline under the no-reuse test allocator
+; (`CQ_OPT_DEBUG_ALLOC=nofree`, `%debugalloc-cq-opt` only). The unfixed `lowerLoops` prescan
+; called `getFunction()` on a `taint.Tainted` key an earlier stage had ERASED;
+; with no reuse the dead object's parent is null, so the unfixed binary SIGSEGVs
+; here DETERMINISTICALLY (measured on oracle `def1b088` + the test allocator), and
+; `not` fails on a crash. The system allocator hid it by reusing the memory.
+; RUN: env CQ_OPT_DEBUG_ALLOC=nofree not %debugalloc-cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
 ; CHECK: cq controlled lowering: classical condition literal became quantum-derived under quantum control
 
 ; ModuleID = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2b9793f123da59f8/te_scratch/r5/k10_io_lit.c'

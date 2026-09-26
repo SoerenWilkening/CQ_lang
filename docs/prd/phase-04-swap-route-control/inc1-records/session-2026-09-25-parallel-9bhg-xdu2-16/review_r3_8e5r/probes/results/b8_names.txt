@@ -1,0 +1,11 @@
+CAUGHT alias `Entry` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Entry` is reached, but no complete definition was found — refused
+CAUGHT alias `Node` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Node` is reached, but no complete definition was found — refused
+CAUGHT alias `Info` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Info` is reached, but no complete definition was found — refused
+CAUGHT alias `Record` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Record` is reached, but no complete definition was found — refused
+MISSED alias `Impl` -> raw-bearing record, held by pointer: 
+CAUGHT alias `Key` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Key` is reached, but no complete definition was found — refused
+CAUGHT alias `Data` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Data` is reached, but no complete definition was found — refused
+CAUGHT alias `Item` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Item` is reached, but no complete definition was found — refused
+CAUGHT alias `State` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::State` is reached, but no complete definition was found — refused
+MISSED alias `Result` -> raw-bearing record, held by pointer: 
+CAUGHT alias `Region` -> raw-bearing record, held by pointer: cq::TaintSet::R3AP: project type `cq::Region` is reached, but no complete definition was found — refused

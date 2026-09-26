@@ -50,6 +50,8 @@
 #include "llvm/IR/IRBuilder.h"
 #include "llvm/IR/Instructions.h"
 
+#include "ScrubOnDelete.h"  // SpineOpSet (bd 8e5r)
+
 namespace cq {
 
 class WidthDispatch;
@@ -95,8 +97,7 @@ bool isInverseEmittable(const llvm::CallInst *Forward);
 // reachable outside a clone body, MUST thread `&taint.SpineOps`.
 bool emitInverseCall(llvm::IRBuilder<> &B, llvm::CallInst *Forward,
                      WidthDispatch &wd, llvm::Value *CurHandle = nullptr,
-                     llvm::SmallPtrSetImpl<const llvm::CallInst *> *Rec =
-                         nullptr);
+                     SpineOpSet *Rec = nullptr);
 
 // Emit the adjoint of a whole forward chain: walk `ForwardChain` in REVERSE
 // (`Chain[N-1] … Chain[0]`), calling `emitInverseCall` per link. `ForwardChain`
@@ -110,8 +111,7 @@ bool emitInverseCall(llvm::IRBuilder<> &B, llvm::CallInst *Forward,
 bool emitInverseChain(llvm::IRBuilder<> &B,
                       llvm::ArrayRef<llvm::CallInst *> ForwardChain,
                       WidthDispatch &wd,
-                      llvm::SmallPtrSetImpl<const llvm::CallInst *> *Rec =
-                          nullptr);
+                      SpineOpSet *Rec = nullptr);
 
 }  // namespace cq
 

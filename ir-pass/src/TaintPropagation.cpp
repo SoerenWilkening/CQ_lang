@@ -685,7 +685,7 @@ void foldIdentityBitcasts(Module &M, TaintSet &taint,
     BC->replaceAllUsesWith(Src);
     // Scrub the freed Instruction* from the taint side-tables (SwapRouteEmit::
     // scrubTaint / freeze-fold precedent — a later allocation could alias the
-    // address). The operand keeps its own BirthOrder/HandleWidth; a fold mints no
+    // address; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`). The operand keeps its own BirthOrder/HandleWidth; a fold mints no
     // new handle. BirthOrder is not populated for a raw pre-lowering bitcast.
     taint.Tainted.erase(BC);
     taint.HandleWidth.erase(BC);
@@ -1331,7 +1331,7 @@ void declineTaintEscapes(Module &M, TaintSet &taint, const SpecPlan &plan6) {
   // each `%f = freeze iN %h` to its `%h` (the freeze of a defined runtime i32
   // handle is the handle), scrub it from the taint set (`SwapRouteEmit::scrubTaint`
   // precedent — a freed Instruction* must not linger in `Tainted` where a later
-  // allocation could alias it), and erase. The downstream measure/return/uncompute
+  // allocation could alias it; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`), and erase. The downstream measure/return/uncompute
   // analyses then see the TRUE handle lineage (the standing freeze would otherwise
   // read as an unrecognized FreePoint user). Done AFTER the walk so no erasure
   // invalidates the BB iterator above.
@@ -1681,7 +1681,7 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // rotation lowering every incoming IS this base's i32 handle), scrub the
   // erased value from the taint set (`SwapRouteEmit::scrubTaint` precedent —
   // a freed Instruction* must not linger in `Tainted` where a later
-  // allocation could alias it), and erase.
+  // allocation could alias it; belt-and-braces since bd 8e5r: every TaintSet table drops a deleted key by itself, `ScrubOnDelete.h`), and erase.
   //
   // Witness that a lift OCCURRED (test_C_libtooling-2qyz). The RAUW re-points
   // every consumer onto the wire base, so a sibling Ry re-rotating that base's
@@ -1691,17 +1691,15 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // PHINode, and its forward walk from the phi never reaches the base's sibling
   // theta), so it could not adjudicate the now-exposed shape. NOT "every later
   // guard still adjudicates it" — the stale-record guard is an EARLIER guard.
-  // Recording the direct consumers flags the lift to the orchestrator, which
-  // re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`) — since
-  // bd d88e AFTER `specialize()` and the re-ask of this lift's own premise, so it
-  // only ever adjudicates a lift that survived that re-ask. The sweep is
-  // complete, not scoped to these
-  // entries: the genuine stale op may be a TRANSITIVE consumer separated from
-  // the phi by in-place-gate hops (Rz / chained Ry) — a Rule-13 adversarial
-  // finding — so only re-walking every consumer's full wire is sound.
-  for (User *U : Phi->users())
-    if (auto *I = dyn_cast<Instruction>(U))
-      taint.LiftedConsumers.insert(I);
+  // The record pushed below flags the lift to the orchestrator, which re-runs
+  // the FULL stale-record sweep (`declineLiftedStaleRecordOps`) — since bd d88e
+  // AFTER `specialize()` and the re-ask of this lift's own premise, so it only
+  // ever adjudicates a lift that survived that re-ask. The sweep is complete,
+  // not scoped to the phi's consumers: the genuine stale op may be a TRANSITIVE
+  // consumer separated from the phi by in-place-gate hops (Rz / chained Ry) — a
+  // Rule-13 adversarial finding — so only re-walking every consumer's full wire
+  // is sound. (bd ec7r: the witness is the RECORD, i.e. the lift event; the
+  // self-cleaning direct-consumer set that used to be the witness is removed.)
   // bd test_C_libtooling-d88e — RECORD the premise (2)/(3) just proved, at the
   // taint it was proved under, so `declineFalsifiedMergePhiLifts` can re-ask it
   // after `specialize()` (see the block comment above). The incomings are not
@@ -1859,14 +1857,30 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
 // so this is the Prime-Directive default for an argued-unreachable state, not a
 // shape any fixture can reach (Rule 12 can supply none).
 bool declineFalsifiedMergePhiLifts(Module &M, const TaintSet &taint) {
-  (void)M;
   if (taint.LiftedMergePhis.empty())
     return false;
   SmallPtrSet<CallInst *, 32> GateCalls;
   collectLiftGateCalls(taint, GateCalls);
   for (const TaintSet::LiftedMergePhi &L : taint.LiftedMergePhis) {
-    // `L.F` is never null: the accept records `Phi->getFunction()`, and a
-    // function is never erased in the window.
+    // `L.F` is a `WeakVH` (bd 8e5r x d88e, r1B F-EB-1): the accept records
+    // `Phi->getFunction()`, and nothing in the window erases a Function, so it is
+    // non-null on every path this pass has. A NULL one means the recorded function
+    // was deleted: the premise has no question left to re-ask, so it DECLINES
+    // like a nulled Base/Incoming, anchored on the first defined function (a
+    // diagnostic needs one). ⚠ Argued unreachable; Rule 12 can supply no fixture.
+    auto *Fn = cast_or_null<Function>(static_cast<Value *>(L.F));
+    if (!Fn) {
+      for (Function &G : M)
+        if (!G.isDeclaration()) {
+          Fn = &G;
+          break;
+        }
+      if (!Fn)
+        return false;  // no defined function left: nothing can be lowered
+      Fn->getContext().diagnose(
+          DiagnosticInfoUnsupported(*Fn, kMsgClassicalPhi, L.DL));
+      return true;
+    }
     Value *Base = L.Base;
     bool Falsified = !Base;
     SmallVector<Value *, 4> Ins;
@@ -1897,8 +1911,8 @@ bool declineFalsifiedMergePhiLifts(Module &M, const TaintSet &taint) {
       continue;
     // The erased phi's own diagnostic: `diagnoseEscape(Phi, kMsgClassicalPhi)`
     // spelled from the recorded function and `!dbg`.
-    L.F->getContext().diagnose(
-        DiagnosticInfoUnsupported(*L.F, kMsgClassicalPhi, L.DL));
+    Fn->getContext().diagnose(
+        DiagnosticInfoUnsupported(*Fn, kMsgClassicalPhi, L.DL));
     return true;
   }
   return false;
@@ -2136,7 +2150,11 @@ void propagateFromSeeds(TaintSet &taint, ArrayRef<Value *> Seeds,
   // before/after diff would miss them. Union them in explicitly — the same
   // two-part computation `repropagateControlMerges` performs for its own reseed
   // set (`UntaintedMergeRails` ∪ `Tainted − beforeTaint`).
-  std::set<Value *> beforeTaint;
+  // bd 8e5r: a SELF-CLEANING snapshot, not a raw `std::set` copy. A raw copy
+  // keeps a member's address after its Value is deleted, and a value tainted
+  // LATER at that reused address would then read as "already tainted before" and
+  // silently drop out of the delta the caller adjudicates (the L1 obligation).
+  TaintedValueSet beforeTaint;
   if (Delta)
     beforeTaint = taint.Tainted;
   FnSet ThetaFns, PhiFns, MeasureFns;
@@ -2221,7 +2239,7 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
   // tainted bound is Q1-declined before this point); or (iv) is typed so a
   // `BitCastInst` cannot enter it (`CallInst *` / `StoreInst *` / `BasicBlock *`
   // containers, `InPlaceRailOps`' `add`/`xor`); or (v) is empty here
-  // (`LiftedConsumers` — `declineClassicalMuxes` runs after BOTH peel sites;
+  // (`LiftedConsumers`, removed since bd ec7r — `declineClassicalMuxes` runs after BOTH peel sites;
   // `StaleDeclined` — reaching this line at all means no stale decline fired, and
   // a `DS_Error` is final). The full row-by-row version of this table, measured
   // over 194 φ erasures, is `IMPL_b6ap.md` §2d.
@@ -2244,17 +2262,31 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
 
 void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
                               SpecPlan &plan6) {
+  // ⚠ `empty()` counts LIVE rails only (bd 8e5r, r1A F-EA-8): it is empty here
+  // only if every recorded `%out` is gone — and then there is nothing left to
+  // re-propagate FROM, so the early return is still right.
   if (taint.UntaintedMergeRails.empty())
     return;  // no 6.5 classical-call arm / 4.5 switch data-mux region emitted.
 
   // bd 3qlq Inc 1, Rule-13 ROUND-2 finding F-R1-1 — the SNAPSHOT the onward
   // loop-rail pass at the end of this function needs. Taken HERE, before
   // `detectAndLowerOnwardControl` grows the set, so the difference is exactly
-  // "the loops round 2 opened". A `BasicBlock *` in it may be dangling by the
-  // time it is read (a round-2 flatten erases blocks); it is only ever compared
-  // by identity against a LIVE block of a LIVE loop, and the worst a recycled
-  // address can do is make the onward pass SKIP a loop — the leak, i.e. the safe
-  // direction.
+  // "the loops round 2 opened".
+  //
+  // ⚠ SELF-CLEANING, LIKE THE TABLE IT SNAPSHOTS (bd test_C_libtooling-jct8,
+  // Rule-13 r1A F-EA-1 — the L2 question the `beforeTaint` snapshots below
+  // already answered). A round-2 flatten can erase a recorded `Pred`. The live
+  // `taint.InLoopFlattenedPreds` drops a deleted block and RESETS the count of a
+  // fresh block recycled at its address; a RAW snapshot kept the dead block's
+  // round-1 count, so a new Pred at that address compared `1 <= 1` and the
+  // onward pass SKIPPED the loop. This comment used to call that skip "the leak,
+  // i.e. the safe direction" — FALSE (L7): F-R1-1 below measured exactly that
+  // skip as a rolled-vs-unrolled divergence whose per-trip which-path rails
+  // leaked. With a `ScrubMap` snapshot the dead block is absent on both sides
+  // (live 1 against snapshot 0), so the loop is re-offered. Argued unreachable
+  // today (no stage creates a BasicBlock between here and the onward pass —
+  // `LoopLowering.cpp`'s creator census); reproduced deterministically in a unit
+  // probe (`review_r1A_8e5r/probes/round1_snapshot_asym.cpp`).
   //
   // A COUNT SNAPSHOT since bd 3qlq Inc 1's SECOND C-1 review round (F-C1-2(2b)):
   // the delta the onward pass wants is "did round 2 emit a region into this
@@ -2263,8 +2295,8 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   // already used, so membership does not move and the loop is never re-offered
   // (MEASURED on `p/r40_onward_r1open.c`: one `[DBG] loop hdr=` line, `round2=0`,
   // while every per-trip which-path rail leaked).
-  DenseMap<const BasicBlock *, unsigned> Round1FlattenedPreds(
-      taint.InLoopFlattenedPreds.begin(), taint.InLoopFlattenedPreds.end());
+  ScrubMap<const BasicBlock *, unsigned> Round1FlattenedPreds =
+      taint.InLoopFlattenedPreds;
 
   // Rebuild the theta/phi/measure FnSets from the collected intrinsic call sites
   // (needed by the shared work-list loop's angle / measure-sink rules). NOT a
@@ -2292,7 +2324,10 @@ void repropagateControlMerges(Module &M, WidthDispatch &wd, TaintSet &taint,
   //    rails + everything the propagation newly taints) is recoverable — the
   //    Phase-6 spec guard below needs it. `%out` itself is pre-tainted by the
   //    emitter (so it is in the snapshot, not the diff), so union in the rails.
-  std::set<Value *> beforeTaint = taint.Tainted;
+  // bd 8e5r: self-cleaning, for the reason given at `propagateFromSeeds` — the
+  // reseed delta below is `Tainted − beforeTaint`, and a raw copy would exclude
+  // a value newly tainted at a reused address from it.
+  TaintedValueSet beforeTaint = taint.Tainted;
   std::vector<Value *> Worklist(taint.UntaintedMergeRails.begin(),
                                 taint.UntaintedMergeRails.end());
   propagateWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, taint,
@@ -2656,7 +2691,7 @@ void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
     }
     // (3) GLOBAL PHASE → delete (D2). No diagnostic, by owner decision.
     auto &PC = taint.PhaseCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
     taint.Tainted.erase(CI);
     taint.BirthOrder.erase(CI);
     CI->eraseFromParent();

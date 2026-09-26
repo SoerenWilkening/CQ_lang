@@ -468,7 +468,7 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 // Returns the adjoint's verdict; the caller propagates it to the loud decline.
 [[nodiscard]] bool clearAndFree(IRBuilder<> &B, CallInst *Fwd, WidthDispatch &wd,
                                 DebugLoc DL,
-                                SmallPtrSetImpl<const CallInst *> *Rec) {
+                                SpineOpSet *Rec) {
   if (!emitInverseCall(B, Fwd, wd, /*CurHandle=*/nullptr, Rec))
     return false;
   mintCall(B, wd.freeFn(), {Fwd}, DL);
@@ -483,7 +483,7 @@ CallInst *emitEqZero(IRBuilder<> &B, WidthDispatch &wd, Value *IdxHandle,
 // Returns the chain's verdict.
 [[nodiscard]] bool clearChainAndFree(IRBuilder<> &B, ArrayRef<CallInst *> Chain,
                                      WidthDispatch &wd, DebugLoc DL,
-                                     SmallPtrSetImpl<const CallInst *> *Rec) {
+                                     SpineOpSet *Rec) {
   if (!emitInverseChain(B, Chain, wd, Rec))
     return false;
   for (CallInst *C : Chain)

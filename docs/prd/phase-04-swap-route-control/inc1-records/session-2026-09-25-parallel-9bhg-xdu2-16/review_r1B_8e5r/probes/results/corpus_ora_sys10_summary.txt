@@ -1,0 +1,2 @@
+frozen oracle cq-opt.main_e846 (b1603d23), system allocator, 10 runs per module over the SHIPPED corpus (2284 lit + 421 e2e stage-1 = corpus_le.lst): modules 2705, runs 27050; modules with >1 distinct (rc,stdout) or any crash: 0
+subject cq-opt 8ab548b7, 3x system + 3x rb8 'rand' (address-scrambling) per module over ALL 3228 (lit+e2e+families): runs 19368; modules with >1 distinct (rc,stdout) or any crash: 0

@@ -39,7 +39,7 @@ void scrubTaint(Instruction *I, TaintSet &taint) {
   taint.BirthOrder.erase(I);
   if (auto *CI = dyn_cast<CallInst>(I)) {
     auto &PC = taint.PhiCalls;
-    PC.erase(std::remove(PC.begin(), PC.end(), CI), PC.end());
+    PC.erase_value(CI);
   }
 }
 
@@ -74,7 +74,10 @@ void flattenRegion(const ControlRegion &R, TaintSet &taint) {
   //    TaintPropagation put it in taint.Tainted — erasing without scrubbing
   //    leaves a dangling Instruction* whose heap address a later-minted
   //    instruction could reuse, turning membership probes into false taint
-  //    (§6.1 hygiene; §8 adversarial review 2026-06-10).
+  //    (§6.1 hygiene; §8 adversarial review 2026-06-10). ⚠ Since bd 8e5r the
+  //    set drops a deleted key by itself (`ScrubOnDelete.h`) — this is exactly
+  //    the hazard that shipped from sites that did NOT scrub — so the explicit
+  //    scrub here is now belt-and-braces.
   if (BI) {
     scrubTaint(BI, taint);
     BI->eraseFromParent();
@@ -271,7 +274,8 @@ void flattenSwitchRegion(const ControlRegion &R, TaintSet &taint) {
   // 1. Drop the `switch` terminator — control is now straight-line. The switch is
   //    a USER of the tainted scrutinee `q` (TaintPropagation put it in
   //    taint.Tainted), so scrub before erase (§6.1 — else a later module walk
-  //    dereferences freed memory). This leaves Pred terminator-less for exactly
+  //    dereferences freed memory; since bd 8e5r the set also drops it by itself,
+  //    `ScrubOnDelete.h`). This leaves Pred terminator-less for exactly
   //    the next statement (the spliced merge tail; no verify runs in between).
   if (SI) {
     scrubTaint(SI, taint);
