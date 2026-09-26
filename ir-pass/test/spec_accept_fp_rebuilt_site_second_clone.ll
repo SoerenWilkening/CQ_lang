@@ -17,8 +17,11 @@
 ;    `declineQuantumReturnCalls` refused this CORRECT module (measured on the
 ;    first bd 9bhg subject; the 983f9361 oracle never asked, so the dangling key
 ;    had no observable consumer there). ⚠ Being an allocator-reuse effect, that
-;    failure is not guaranteed to reproduce on every build; the scrub makes the
-;    accept deterministic.
+;    failure varies from RUN to run (not build to build): with the scrub deleted
+;    it declined 3/5 under the system allocator and 5/5 under LIFO reuse (Rule-13
+;    r1B F-9B-3). So this is a FLAKY pin for the scrub, not a deterministic one.
+;    The deterministic pin is a live-key check (bd 8e5r's scope). Other producers
+;    of the same dangling-key class are bd 8e5r / j8sk.
 ; The stream is byte-identical to the 983f9361 oracle's and to aad63450's.
 ;
 ; Library TU (plain C, no CQ.h) — tests/e2e/spec_fp_arg_lib.c plus:

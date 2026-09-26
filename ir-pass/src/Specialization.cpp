@@ -1218,10 +1218,11 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
     // `declineQuantumReturnCalls` was re-asked after this function: a LATER
     // clone's `ret` value was allocated at the freed address, answered "tainted",
     // and a correct module (`lpoly(q)` then `lmix(y, q2)`, f80) was refused —
-    // `spec_accept_fp_rebuilt_site_second_clone.ll` (⚠ an allocator-reuse effect:
-    // reproduced twice on one build, NOT on the mutant build that deletes this
-    // block — mutant M18 MISSED; the fixture is a regression witness, not a
-    // deterministic pin). Every stage after this one
+    // `spec_accept_fp_rebuilt_site_second_clone.ll` (⚠ an allocator-reuse effect
+    // that varies from RUN to run: mutant M18, which deletes this block, is killed
+    // 3/5 under the system allocator and 5/5 under LIFO reuse — bd 9bhg Rule-13
+    // r1B F-9B-3; an earlier note here called it MISSED on a single unlucky run.
+    // The fixture is a FLAKY pin, not a deterministic one). Every stage after this one
     // that reads `taint.Tainted` by pointer (`lowerOps` over the whole module) was
     // exposed to the same aliasing before; it is closed here at its source. The
     // new call's taint is (re-)inserted below. There is no `BirthOrder` to

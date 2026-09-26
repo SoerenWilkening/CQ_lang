@@ -11,9 +11,16 @@ Compared per module: exit code, sha256 of stdout (the lowered IR), and the first
   DIAG   both non-zero, first error message differs
   STREAM both exit 0, lowered IR differs
   OTHER  anything else (e.g. both non-zero with different exit codes, same msg)
-Prints the denominator FIRST and every mover. With --null the SUBJECT is run
-against itself twice as well, and the script refuses to report if the null
-control is non-zero.
+Prints the denominator FIRST and every mover. With --null BOTH binaries are run
+twice over the full list (REF vs REF and SUBJECT vs SUBJECT), each null control
+is printed with its denominator, and the script refuses to report if either is
+non-zero.
+
+⚠ Fixed 2026-09-26 (bd 9bhg Rule-13 r1B F-9B-5): until then `--null` ran only
+the REF twice, although this docstring said the SUBJECT. A reference-only null
+control cannot see a subject whose verdicts vary from run to run (the
+dangling-key allocator lottery, bd 8e5r). Every "null 0" cited before the fix
+measured REF stability only.
 """
 import hashlib
 import pathlib
@@ -61,15 +68,19 @@ print(f"denominator: {len(files)} modules")
 if "--null" in sys.argv:
     a = sweep(REF)
     b = sweep(REF)
-    nullc = sum(classify(x, y) is not None for x, y in zip(a, b))
-    print(f"null control (REF vs REF, full list): {nullc} of {len(files)} movers")
-    if nullc:
+    null_ref = sum(classify(x, y) is not None for x, y in zip(a, b))
+    print(f"null control (REF vs REF, full list): {null_ref} of {len(files)} movers")
+    c = sweep(SUB)
+    d = sweep(SUB)
+    null_sub = sum(classify(x, y) is not None for x, y in zip(c, d))
+    print(f"null control (SUBJECT vs SUBJECT, full list): {null_sub} of {len(files)} movers")
+    if null_ref or null_sub:
         print("NULL CONTROL FAILED — not reporting")
         sys.exit(2)
-    ref = a
+    ref, new = a, c
 else:
     ref = sweep(REF)
-new = sweep(SUB)
+    new = sweep(SUB)
 movers = [(f, r, n, classify(r, n)) for f, r, n in zip(files, ref, new)
           if classify(r, n)]
 counts = {}

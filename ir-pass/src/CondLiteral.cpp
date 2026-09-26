@@ -104,8 +104,14 @@ bool condLiteralAdmissible(Value *V, const TaintSet &taint) {
   // to the call site, so a literal derived from such a call result PASSES (b)
   // here. That is correct when the clones prove the return classical; when they
   // prove it quantum, the TOTAL re-ask of `declineQuantumReturnCalls` after
-  // `specialize()` refuses the module before anything lowers — it, not (b), is
-  // what makes the classical reading safe for that population.)
+  // `specialize()` refuses the module — it, not (b), is what makes the classical
+  // reading safe for that population. ⚠ PRECISELY (bd 9bhg Rule-13 r1A F-9A-4):
+  // the refusal is NOT "before anything lowers". By then this literal HAS been
+  // emitted into a `_hl` gate by round-1/round-2 control emission, and the
+  // IO/QRAM/Shadow lowerings and the clone lowering have run. What is true: it
+  // runs before `lowerRotations`/`lowerOps`/`lowerMeasures`/`uncompute` and
+  // before any output, and the `DS_Error` exits the process (bd `br4a`), so the
+  // emitted gate never reaches the output.)
   return true;
 }
 

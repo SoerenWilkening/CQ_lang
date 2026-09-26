@@ -33,12 +33,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/TaintPropagation.h` — 1976 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1607 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1622 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
-- `ir-pass/src/Specialization.cpp` — 1280 physical lines
+- `ir-pass/src/Specialization.cpp` — 1281 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1123 physical lines
@@ -271,12 +271,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1607 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1622 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:54` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:88` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:114` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1127` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1140` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -321,15 +321,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CompareLowering.cpp:420` — `emitEqFlag`
 - `ir-pass/src/CompareLowering.cpp:473` — `rewriteCompare`
 
-### `ir-pass/src/CondLiteral.cpp` (179 lines)
+### `ir-pass/src/CondLiteral.cpp` (185 lines)
 
 - `ir-pass/src/CondLiteral.cpp:41` — `collectI1Cone`
 - `ir-pass/src/CondLiteral.cpp:60` — `markPredictedTaintCone`
 - `ir-pass/src/CondLiteral.cpp:73` — `condLiteralAdmissible`
-- `ir-pass/src/CondLiteral.cpp:112` — `emitCondLiteralNode`
-- `ir-pass/src/CondLiteral.cpp:137` — `stripCondLiteralNode`
-- `ir-pass/src/CondLiteral.cpp:153` — `declineQuantumCondLiterals`
-- `ir-pass/src/CondLiteral.cpp:167` — `stripPredMuxPredictedMarks`
+- `ir-pass/src/CondLiteral.cpp:118` — `emitCondLiteralNode`
+- `ir-pass/src/CondLiteral.cpp:143` — `stripCondLiteralNode`
+- `ir-pass/src/CondLiteral.cpp:159` — `declineQuantumCondLiterals`
+- `ir-pass/src/CondLiteral.cpp:173` — `stripPredMuxPredictedMarks`
 
 ### `ir-pass/src/CondTreeEmit.cpp` (371 lines)
 
@@ -817,7 +817,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1280 lines)
+### `ir-pass/src/Specialization.cpp` (1281 lines)
 
 - `ir-pass/src/Specialization.cpp:56` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:73` — `isForwardQramLoad`

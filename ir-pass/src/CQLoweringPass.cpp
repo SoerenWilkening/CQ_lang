@@ -927,8 +927,21 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // refused. It must precede `lowerRotations`/`lowerOps`/`lowerMeasures`: a
   // `cq_measure(f(m))` the caller reads as classical is otherwise DELETED down the
   // bd 21mg path (taint_reject_spec_quantum_return_measure.ll) — the 3jru
-  // miscompile. After the l3oi fence, so a handle read of a scrubbed value keeps
-  // its more specific owner; before the stale-reader backstop, which stays last.
+  // miscompile. ⚠ It does NOT precede "all lowering" (Rule-13 r1A F-9A-4): control
+  // emission, the IO/QRAM/Shadow lowerings and the clone lowering ran long before,
+  // and may have read the caller's classical view; what makes that safe is that
+  // this `DS_Error` exits before any output (bd `br4a`).
+  //
+  // THE SLOT ORDER after `specialize()`, the same in both entry points:
+  //   (1) the bd d88e lift re-ask; (2) the bd 2qyz re-sweep; (3) the bd l3oi fence;
+  //   (4) THIS ask; (5) the bd 3d8q stale-reader backstop; then `lowerRotations`.
+  // After (1): a function holding a lift over a spec-CLASSICAL base AND returning
+  // a spec-QUANTUM value is refused by the lift's owner, with the classical-mux
+  // string, which is its hand-inlined twin's verdict. In the twin the lift base is
+  // classical from the start, so the classical-mux guard speaks long before any
+  // 3jru ask (`taint_reject_quantum_return_lift_owner_order.ll`). After (3): a
+  // handle read of a scrubbed value keeps its more specific owner. Before (5):
+  // the backstop stays last.
   if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return PreservedAnalyses::none();
 
@@ -1491,7 +1504,9 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   if (declineScrubbedHandleReads(M, taint))
     return false;
   // bd `test_C_libtooling-9bhg` — the LATE, TOTAL half of the 3jru refusal. See
-  // run() for the slot argument (twin-pipeline parity, WI-1.12).
+  // run() for the slot argument and the post-`specialize()` order (d88e re-ask,
+  // 2qyz re-sweep, l3oi, THIS, stale-reader backstop) — twin-pipeline parity,
+  // WI-1.12.
   if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record

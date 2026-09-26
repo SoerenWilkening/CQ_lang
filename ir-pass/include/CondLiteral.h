@@ -45,7 +45,10 @@
 //   sites) is NOT tainted at the call site, so (b) sees it CLASSICAL; if a clone
 //   then proves it quantum, the post-`specialize()` re-ask of
 //   `declineQuantumReturnCalls` refuses the module — that re-ask, not (b), is
-//   the owner for that population.]
+//   the owner for that population. It runs AFTER the literal was emitted into a
+//   `_hl` gate by control emission, and BEFORE `lowerRotations`/`lowerOps`/
+//   `lowerMeasures` and any output; its `DS_Error` exits the process (bd `br4a`),
+//   so that gate never reaches the output (r1A F-9A-4).]
 // The literal slot carries `zeroext` on the forward and the `_unc` (round 2
 // F-2: the runtime's `bool` parameter; without it C at -O1 delivered 2/254/253).
 // Dominance needs no conjunct: the literal is an operand of a tree node, the
