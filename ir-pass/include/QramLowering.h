@@ -233,12 +233,22 @@ bool valueWillTaintAfterFlatten(
 // stored and whose address never escapes (every transitive user through
 // gep/bitcast — instruction or constexpr — is a plain non-atomic load) to the
 // loaded constant from the initializer. This is the openlibm anti-const-fold
-// idiom (`static volatile double twom1000`, `*(volatile double *)&atanlo[3]`):
-// the volatile qualifier exists purely to defeat classical FP folding /
-// raise-inexact elision, and fenv is out of scope project-wide. The proof makes
-// load == initializer on every execution, so the fold is exact; anything short of
-// the proof (external linkage, any store, any escaping user, atomic, a type the
-// initializer cannot produce at that offset) is left untouched — the existing
+// idiom (`static volatile double twom1000`, `*(volatile double *)&atanlo[3]`).
+// GROUND (owner ruling 2026-09-26, bd memory `owner-ruling-volatile-unreachable-object-2026-09-26`):
+// a volatile access to an object NOTHING OUTSIDE THE PROGRAM CAN REACH is not
+// observable in CQ's model — internal linkage (or function-local), never written,
+// address never escaping, no atomic access, and NOT in a named section or at an
+// absolute/fixed address (that is how MMIO is declared). Every conjunct is a gate
+// here; the section / absolute-address one was MISSING until bd vsfp round 4 (a
+// `static volatile … __attribute__((section("…")))` global folded like any other,
+// `lowering_reject_volatile_global_section.ll`). ⚠ The sentence that stood here —
+// "the volatile qualifier exists purely to defeat classical FP folding …, and fenv
+// is out of scope project-wide" — was an agent-authored over-generalisation (L7):
+// the 2026-08-10 fenv ruling spoke of FUNCTION-LOCAL objects, and "why the author
+// wrote `volatile`" is not a licence. The proof makes load == initializer on every
+// execution, so the fold is exact; anything short of the proof (external linkage,
+// any store, any escaping user, atomic, a named section or absolute symbol, a type
+// the initializer cannot produce at that offset) is left untouched — the existing
 // loud declines own it. Folded loads are CLASSICAL (constant address). ⚠ But the
 // stage does not leave taint unaffected (bd vsfp round 3, bd otam / stl3): an arm
 // the fold EMPTIES is folded by `deleteDeadCones` (the empty-arm fold its three

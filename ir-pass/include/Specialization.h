@@ -45,12 +45,17 @@ bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 // (SpecializeDetect.h): after `specialize()`, the specializer's record
 // (`isRecordedDeadSlot`: `taint.SpecDeadArgMask`, taken by `buildClone` with the
 // pass's ONE liveness predicate, `DeadValueLiveness.h`) names the slots each built
-// clone never reads. A call in a NON-clone function that passes a value in such a
-// slot is a read only the compiler performs.
+// clone never reads — EXACTLY since bd vsfp round 4: `buildClone` deletes the dead
+// cone of every recorded-dead parameter right after taking the record (bd sqjq;
+// round 3's record left a dead-but-lowered op on the slot, which then read runtime
+// handle h0 once the caller's slot was a constant, r3A F-XA-2). A call in a
+// NON-clone function that passes a value in such a slot is a read only the
+// compiler performs.
 //
-// (1) It NEUTRALISES every one: the operand becomes a null constant (the drop's
-// rewrite, `range`/`nofpclass` stripped), so no later stage can see the phantom
-// read. That is the fix for bd tzfa: the read did not keep the operand's rail
+// (1) It NEUTRALISES every one: the operand becomes a null constant OF THE CALLEE
+// PARAMETER'S TYPE (the drop's rewrite, `range`/`nofpclass` stripped; bd f061 —
+// round 3 took the caller operand's fp type for an `i32` handle slot and the
+// verifier aborted), so no later stage can see the phantom read. That is the fix for bd tzfa: the read did not keep the operand's rail
 // ALIVE, it kept the uncompute SPINE from DISCHARGING it — an extra consumer of a
 // template rail the twin uncomputes (r2B `k19`: `h1 = 3q` left dirty across a
 // phase oracle, `q` fully dephased). With the read gone, the spine sees the
@@ -59,7 +64,8 @@ bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 // (2) It DECLINES (`cq specialization: quantum argument to a parameter the lifted
 // callee never reads`, DS_Error on the call, returns true) when a neutralised
 // operand is QUANTUM (tainted, or a control-emitted rail) and the user program no
-// longer reads it: the twin never computes such a value, and what the pass
+// longer reads it (every use but the DESTINATION slot of a basis copy is a read —
+// bd xh17): the twin never computes such a value, and what the pass
 // already built for it cannot be taken back — a 4.4 `%out` minted for the
 // phantom is a which-path rail no stage uncomputes, and a dead tainted op is not
 // reliably uncomputed. The one exemption is a `cq_theta` RESULT (the user's own

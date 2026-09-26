@@ -82,6 +82,7 @@ class BasicBlock;
 class CallBase;
 class Function;
 class Instruction;
+class Use;
 class Value;
 }  // namespace llvm
 
@@ -98,6 +99,18 @@ bool isLivenessRoot(const llvm::Instruction &I, const TaintSet &taint);
 // the 64-bit mask).
 bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                         const TaintSet &taint);
+
+// THE ONE REWRITE of a recorded-dead slot (bd vsfp round 4; Rule 14 — three sites
+// used to spell it): if `U` is an argument operand of a call in a slot
+// `isRecordedDeadSlot` names, and it is not already a constant, set it to the null
+// constant of the CALLEE PARAMETER's type (bd f061: after retargeting, an fp slot
+// is an `i32` handle — never the operand's type) and strip `range`/`nofpclass` from
+// the parameter and the call site (a null may violate them — the constraint DAE
+// strips too). Returns true iff it rewrote. Callers: `resolvePhantomCloneArgReads`
+// (a module-level call), `buildClone` (an inner clone call reading a dead
+// PARAMETER directly) and `deleteDeadCones` step 3 (an inner clone call reading a
+// dead INSTRUCTION) — so a nested clone call inherits the dead slot (bd sqjq).
+bool rewriteRecordedDeadSlotUse(llvm::Use &U, const TaintSet &taint);
 
 // The liveness of one function body, computed once at construction.
 class FunctionLiveness {
@@ -138,7 +151,22 @@ uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint);
 // window (the drop's two slots, the three volatile folds, the promotion) and
 // re-`propagate`s when its stage returns true; `declineStaleTaintSet` re-derives
 // the set before `detectSpecializations` so an omission is loud. A caller added
-// AFTER the guards owes `adjudicateTaintDelta`, not just a `propagate` (L1).
+// AFTER the guards owes `adjudicateTaintDelta`, not just a `propagate` (L1). The
+// one post-`specialize()` caller, `buildClone` (bd sqjq, round 4), runs on a clone
+// body that `lowerCloneControl`'s backstop has already made ONE BLOCK, so the fold
+// cannot fire there and no select is created — it only deletes.
+//
+// Round-4 contract items (bd vsfp Rule-13 r3A/r3B):
+//   * the fold's condition seeds are `WeakTrackingVH`s (bd 1xp9): a seed that is
+//     an `i1` φ in an earlier fold's merge block is erased by that block's merge
+//     and the handle FOLLOWS its RAUW to the replacement, so the recursion never
+//     reads freed memory and still deletes the replacement if it is dead;
+//   * the two-entry-φ fold goes through `simplifySelectInst` first (`select %c,
+//     i1 true, i1 false` IS `%c`), as SimplifyCFG's own fold does;
+//   * a dead value that is an operand of a LIVE call in a slot the specializer
+//     RECORDED dead (the call-slot rule) is replaced there by a null of the
+//     CALLEE PARAMETER's type before deletion — an inner clone call inherits the
+//     dead slot; unreachable before `specialize()`, whose record is empty.
 unsigned deleteDeadCones(llvm::Function &F, llvm::ArrayRef<llvm::Value *> Seeds,
                          const TaintSet &taint, llvm::StringRef Stage,
                          llvm::ArrayRef<llvm::BasicBlock *> Touched = {});

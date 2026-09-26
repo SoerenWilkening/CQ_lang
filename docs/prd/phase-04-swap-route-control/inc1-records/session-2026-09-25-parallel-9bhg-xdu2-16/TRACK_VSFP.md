@@ -11,6 +11,8 @@ round r2A (`review_r2A_9bhg/REVIEW.md` F-9C-1) and, for hgwx, bd d88e's r1B (F-D
   §1–§12 are round 1's record, with each falsified sentence marked inline.
 - ⚠ **Both Rule-13 rounds on round 2 were NOT-CLEAR too; ROUND 3 follows §R2 (§R3)** — bd otam, tzfa,
   stl3. The current description of the mechanism is §R3 on top of §R2.
+- ⚠ **And on round 3: ROUND 4 follows §R3 (§R4)** — bd 1xp9, f061, sqjq, xh17 and the owner's
+  2026-09-26 reachability ruling. Read §R2 → §R3 → §R4 in order.
 
 Binaries (sha-256 prefixes):
 
@@ -919,7 +921,11 @@ exists, and removes the read, so the spine's terminal selection, `FreePoint`, M-
 no exemption of their own. An exemption per consumer is the L3-mirror hazard (a consumer that forgets
 it re-opens bd tzfa with no diagnostic). Soundness rests on the record: the clone never reads the slot
 (r2B verified the record and that no later clone pass adds a read), so the constant is unobservable
-— including through the clone's `_unc` twin, a verbatim copy of the same body.
+— including through the clone's `_unc` twin, a verbatim copy of the same body. ⚠ **FALSE AS WRITTEN
+(Rule-13 r3A F-XA-2, bd sqjq):** the record says no LIVE ROOT reads the slot, not that no instruction
+does — a dead-but-lowered op on it (the chain of a compare the clone's flatten deleted, or `a+1` passed
+into an inner clone's dead slot) read runtime handle h0 once the slot was 0. Made true in round 4
+(§R4.3) by deleting that dead cone after the record.
 
 **What stays declined, IR-only** (the C spellings now drop at slot B, §R3.4): a phantom operand
 minted ONLY for the call (`k1` branch-only → `spec_reject_phantom_arg_read_unread_select.ll`) and a
@@ -1189,3 +1195,276 @@ rounds declined with the same string).
 5. **The global fold's arm fold** runs on EVERY function of the module, tainted or not; a two-entry φ
    under a tainted condition becomes a select that control detection then claims as a 4.4 select —
    check a case where the original `-O1` shape declined for a reason the select does not have.
+
+---
+
+# ROUND 4 (2026-09-27) — the seeds track, the constant takes the slot's type, the record is exact, the ruling's conjunct
+
+Both Rule-13 rounds on round 3 (`671390fe`) were **NOT-CLEAR** (`review_r3A_vsfp/REVIEW.md`: F-XA-1..6,
+bds `f061`, `sqjq`, `xh17`, `rhk5`; `review_r3B_vsfp/REVIEW.md`: F-XB-1..2, bds `1xp9`, `g84t`; committed
+unmodified at `d24dd1f2`). What held, by their own account: the per-stage re-propagation,
+`declineStaleTaintSet` (both directions), the tainted-branch fold's no-op conditions (it never fires with a
+`cq_phi` in an arm), the condition deletion, and twin identity for every C reproducer (`k2/k5/k7/k8/k14/k18/
+k19/k24`, `s1b`, `wboolb`, `g1b`, `t1`, `t2`, `e2`, `l2`). **NOT self-cleared**: round 4 owes its own round
+(§R4.11). Measurement scope: the owner's light profile (§R3 header), unchanged.
+
+| tag | what | `cq-opt` |
+|---|---|---|
+| ORACLE | `main` `aee8f4f8` | `69250feaf68bbe49` |
+| ROUND 3 | `671390fe` | `3cb890ef25187b4b` |
+| SUBJECT | round 4, final | `829769d92e05c4e4` (`libCQPass.so` `efe38e3f619250b9`, `cq-opt-debugalloc` `03ba76c1b2a3a37d`) |
+
+(An intermediate round-4 build `2f4dd6d62cd65596`, before the rewrite was factored into one helper and the
+direct-parameter inherit was added, ran the first mutation matrix — where U2 was MISSED, §R4.9. Every number
+below is on the final SUBJECT; its battery differs from the intermediate one only by the new `u6` row.)
+
+## R4.1 Ledger
+
+| id | sev | disposition | pins |
+|---|---|---|---|
+| F-XB-1 (1xp9) | P1 crash, C | `deleteDeadCones`' condition seeds are `WeakTrackingVH` — they FOLLOW the erased φ's RAUW; the two-entry-φ fold goes through `simplifySelectInst` (§R4.2) | `lowering_volatile_arm_fold_cascade_{classical,tainted,merge_phi,live_condition}.ll`, `lowering_volatile_{globalfold,alloca_fold}_cascade*.ll` (each with a deterministic `nofree` UAF RUN line), e2e `…-volatile-arm-fold-cascade` (+ twin, + gate) |
+| F-XA-1 (f061) | P1 crash, IR | the neutralising constant takes the CALLEE parameter's type, in the one rewrite `rewriteRecordedDeadSlotUse` (§R4.3) | `spec_accept_phantom_arg_read_fp_slot_{fpfloat,f1,fplongd,f2}.ll` |
+| F-XA-2 (sqjq) | P2 | `buildClone` deletes the dead cone of every recorded-dead parameter right after the record; an inner clone call inherits the dead slot (§R4.4) | `spec_accept_phantom_arg_read_exact_record_{a2_chain,a3_width,a1_icmp,a1_xorself,n5_nested,g1c,n6_nested_arg}.ll` (CLONE prefix: no template in the clone) |
+| F-XA-3 (xh17) | P2 over-decline | only the DESTINATION slot of a basis copy is an emitter's own construction (§R4.5) | `spec_accept_phantom_arg_read_copy_source_reader.ll` |
+| owner ruling 2026-09-26 | — | `foldVolatileConstGlobalLoads` refuses a named section and an absolute symbol; the "fenv is out of scope project-wide" justification replaced by the ruling (§R4.6) | `lowering_reject_volatile_global_{section,absolute_symbol}.ll` |
+| F-XA-4 (rhk5) | P1 warned, pre-existing | NOT this bead's to fix (coordinator); disposition recorded (§R4.7) | — |
+| sqjq, round 4's own probe | — | a dead PARAMETER passed straight into an inner clone's dead slot now inherits it too (`buildClone`) | `…_exact_record_n6_nested_arg.ll` |
+| F-XB-2 (g84t) | P3 | record-only (§R4.7) | — |
+| F-XA-5 | P3 | noted under bd jr8q (§R4.7) | — |
+| F-XA-6 | P3 | record-only (§R4.7) | — |
+
+## R4.2 bd 1xp9 — the condition seeds TRACK
+
+**The defect** (r3B F-XB-1). Step 4 of `deleteDeadCones` pushes each folded branch's condition into
+`CondSeeds` (a `SmallVector<Value *>`), merges the fold's merge blocks into their predecessors, THEN recurses on
+the seeds. When a later fold's condition is an `i1` φ in an earlier fold's merge block, fold 1 leaves it
+single-entry and `MergeBlockIntoPredecessor` (`FoldSingleEntryPHINodes`) RAUWs and ERASES it; the recursion
+read freed memory. r3B's `u5.c` — nine lines, classical conditions, a program the ORACLE compiles — SIGSEGVs.
+
+**The fix and why this one.** r3B offered two: seeds as `WeakTrackingVH`, or recurse before the merge loop.
+- `WeakTrackingVH` FOLLOWS the RAUW, so the seed becomes the φ's replacement (the earlier fold's `select`, or
+  a value it simplified to) and the recursion deletes it if it is now dead.
+- A plain `WeakVH` (skip a deleted seed) was measured INSUFFICIENT, as r3B predicted: round 4's own probe
+  `u6.c` (the tainted cascade plus a MEASURED second merge value, so the first condition stays live) keeps a
+  dead `select` on a TAINTED condition, which control detection then mints as a 4.4 which-path rail (mutant
+  U2: TRACE-DIFF, one extra template rail). `…_cascade_live_condition.ll` pins it.
+- Recursing before the merge loop would also avoid the dangling read, but would run dead-code elimination
+  on a CFG `-O1` never leaves (single-entry φs standing); the tracking handle keeps the twin's order — CFG
+  simplification, then DCE.
+
+**A second, found while measuring:** r3B's `u1.ll` (global-fold path) stopped crashing but declined —
+fold 1 built `select %c, i1 true, i1 false` for the second condition, and the 4.4 data-select grammar refuses
+a logical `select i1` condition. SimplifyCFG's own `FoldTwoEntryPHINode` goes through the folder, which
+returns `%c`; the fold now calls `simplifySelectInst` first (an existing value, never a new instruction).
+`u1` is TRACE-IDENT with its twin (mutant U3 pins it).
+
+**Deterministic UAF pins.** A use-after-free is a lottery under the system allocator — one lit run of
+round 3 PASSED the `u3` fixture. Every cascade accept fixture therefore carries a second RUN line through
+`%debugalloc-cq-opt` with `CQ_OPT_DEBUG_ALLOC=nofree` (a freed instruction's parent pointer is null):
+measured on the round-3 objects, exit 139 on `u1`/`u2`/`u3`/`u4`/`u5` under both `nofree` and `lifo`, and
+under Guard Malloc; exit 0 (`u4`: its twin's clean decline, exit 1) on round 4 under all three.
+
+## R4.3 bd f061 — the constant takes the SLOT's type, in one rewrite
+
+After `retargetSite` a tainted fp slot of an fp-ABI clone is an `i32` HANDLE parameter, while the caller's
+operand is still the stock `float`/`double`/`x86_fp80` value (`lowerRotations`/`lowerOps` RAUW it later; a
+constant is never RAUW'd). Round 3 built the null from the operand's type — verifier abort, exit 134, at every
+fp width and with an fp return. The null now takes `CB->getFunctionType()->getParamType(A)`. The rewrite had
+become three spellings (the resolution, `deleteDeadCones` step 3, `buildClone`) and is now one,
+`rewriteRecordedDeadSlotUse` (`DeadValueLiveness.h`; Rule 14). `fpfloatb`, `f1b`, `fplongdb` are TRACE-IDENT
+with their twins; `f2b` (fp RESULT, spec-QUANTUM clone) keeps the ORACLE's own stream — a Bennett copy-out
+around the twin's product, byte-identical to the ORACLE, the known clone copy-out divergence (net unitary
+unchanged).
+
+## R4.4 bd sqjq — the record made EXACT for the built clone
+
+`SpecDeadArgMask` said "no LIVE ROOT of the clone reads this parameter"; round 3 read it as "the clone never
+reads it" (§R3.3, now marked). A dead instruction still standing on the parameter — the chain of a compare
+the clone's own flatten deleted (`t = a*3; if (t > 3) {}`), or `a + 1` passed into an INNER clone's dead slot —
+was lowered by the clone's `lowerOps`, so once the caller's slot was `0` the clone operated on runtime handle
+**h0**, a register the caller never passed (a 32-bit template on a 1-qubit register when h0 was a `_Bool`).
+
+**Fix: delete, not re-record.** Right after taking the record, `buildClone` calls `deleteDeadCones` on every
+user of every recorded-dead parameter (the same predicate), then rewrites any remaining direct use of such a
+parameter in an inner clone call's recorded-dead slot. `deleteDeadCones` step 3 does the same for a dead
+INSTRUCTION read by a live call in a recorded-dead slot (the only way a dead value can have a live user). So
+an inner clone call INHERITS the dead slot as `0` (`n5_nested`, and round 4's `n6_nested_arg`, where the
+parameter is passed straight through). Recording after `lowerOps` instead (r3A's other option) would record on
+lowered runtime calls, which are liveness roots — every parameter would look live. The clone is ONE BLOCK at
+that point (`lowerCloneControl`'s backstop), so the arm fold cannot fire and no tainted value is created.
+All 8 r3A spellings plus `n6` are TRACE-IDENT with their twins, including `g1c` (`-g`); the CLONE prefix of
+each fixture pins that the clone body holds no template call.
+
+## R4.5 bd xh17 — only a basis copy's DESTINATION is construction
+
+`userProgramReads` skipped every runtime call on a control-emitted rail as "the emitter building its rail".
+The destination is the LAST argument of `cqrt_copy_<W>[_controlled]` (`free_pairing_check.py`'s `classify()`:
+`writes=(1,)` / `writes=(2,)`); every other slot — the source of a later select's controlled copy, a compare —
+is a read. `isCopyDestination` asks exactly that. r3A's `e2b.ll` (27 lines, ORACLE twin-identical) now
+accepts TRACE-IDENT; mutant X1 (every copy slot counts as construction) declines it again.
+
+## R4.6 The owner's reachability ruling (2026-09-26) — the missing conjunct
+
+Ruling (bd memory `owner-ruling-volatile-unreachable-object-2026-09-26`): a volatile access is unobservable
+iff the object is unreachable from outside the program — internal linkage or function-local, never written,
+address never escaping, no atomic access, **and not in a named section or at an absolute/fixed address**.
+`foldVolatileConstGlobalLoads` had every conjunct but the last; it now skips a global with `hasSection()`,
+`isAbsoluteSymbolRef()` or `!absolute_symbol`. A pointer built from an integer never strips to a
+`GlobalVariable`, so it never reaches the fold. `static volatile int K __attribute__((section("__DATA,__mmio")))`
+read in a quantum branch now declines exactly as on the ORACLE (round 3 folded it and accepted);
+`lowering_reject_volatile_global_{section,absolute_symbol}.ll` pin both (mutants S1/S2).
+
+The justification "the volatile qualifier exists purely to defeat classical FP folding …, and fenv is out of
+scope project-wide" is REPLACED by a citation of the ruling at the source (`QramLowering.h`, both fold
+fixtures' headers); the old sentence is quoted there as the L7 over-generalisation it was. **r3B's owner note**
+("the global fold's licence reads 'fenv is out of scope project-wide'; the owner's fenv ruling says
+function-LOCAL") is **RESOLVED by this ruling**, which extends the axis from storage class to reachability.
+
+## R4.7 Records (not fixed here, by instruction)
+
+- **bd rhk5 (P1 warned, PRE-EXISTING) — NOT THIS BEAD'S.** A clone call scheduled between a derived chain and
+  that chain's `cq_phi` consumer leaves the chain's template rails (`3q`, `3q ⊕ q`) allocated across a later Ry
+  (warned). It reproduces byte-for-byte on the ORACLE with no volatile and no phantom (r3A `d4.c`). Round 3
+  only made the volatile-arm spelling (`d2.c`) behave like its twin — and the twin already carries the defect.
+  Round 4 measured: `d1`, `d2`, `d4`, `d1b` TRACE-DIFF with 2 (4) dirty rails, identical classes on round 3 and
+  the ORACLE (the ORACLE declines `d2`). "Pre-existing" is true of the defect and false of its population.
+- **bd g84t (P3) — record-only.** §R3.7's table re-asks only consumers BELOW the growing stages;
+  `foldIdentityBitcasts`, the by-ref inliner and the rail-bank stages ran on the earlier set. The one measured
+  consequence is LOUD (`e1.ll`: `no template for opcode 'bitcast i32'`, IR-only; round 4 same). What
+  `declineStaleTaintSet` cannot see is exactly this (its header says so).
+- **F-XA-5 (P3) — noted under bd jr8q.** The 2b CENSUS counts a clone call's CLASSICAL result as a dirty
+  template rail (by-name classification), so every IR-only branch row reads `tpl +1, dirty +1` against its
+  twin. Not a leak.
+- **F-XA-6 (P3) — record-only, safe direction.** The resolution runs after `lowerLoops`, so the loop layer
+  still sees the phantom read: `l2b.ll` declines `loop-carried tainted value crosses iterations` (ORACLE too)
+  where the twin and the C form accept.
+
+## R4.8 Fixtures and e2e
+
+**20 fixtures added, 2 changed** (`ls ir-pass/test/*.ll | wc -l`: **2398**; generated by
+`vsfp_probes/r4/tools/mkfix4.py`, the round-2 derivation plus a CLONE prefix). **Red-green** of the family
+(`tools/redgreen4.sh`, each binary through the scratch lit site config): ORACLE 5/22 PASS, ROUND 1 5/22, ROUND 2 4/22, ROUND 3 2/22, SUBJECT 22/22 — every one of the 20 new files RED on ROUND 3 (with round 3's own debugalloc for the `nofree` lines) and GREEN on the SUBJECT; details §R4.10.
+
+**e2e, 3 new entries**: `e2e-slice-volatile-arm-fold-cascade` (r3B `u5` as a slice) + `…-twin` +
+`e2e-volatile-arm-fold-cascade-twin-identical`. The subject crashes (SIGSEGV) on rounds 2 and 3; ORACLE and
+round 4 accept, TRACE-IDENT with the twin (3 lines).
+
+## R4.9 Mutation matrix (full lit per mutant, `lit --timeout 60`)
+
+Brief: mutants ONLY for new/changed code, ≤8, plus a no-op null. `tools/mutants4.py` in the scratch
+worktree `mutwt4` (base build BIT-IDENTICAL to the SUBJECT `829769d92e05c4e4`; anchor found exactly once
+or abort; own `cq-opt` + `cq-opt-debugalloc` per mutant; a binary equal to the SUBJECT refused, a null that
+is not equal aborts). `tools/mutmatrix.sh`: full lit per mutant, `lit --timeout 60`, over 2398 fixtures.
+Boundary controls re-run (`results/stale_debugalloc.txt`): a stale debugalloc → lit `fatal` rc 2, unset →
+`KeyError` rc 2, fresh → PASS.
+
+| mutant | removes | failed / 2398 | killed by | verdict |
+|---|---|---|---|---|
+| N0_null | nothing (a comment); binary = SUBJECT | 0 | — | null |
+| U1_raw_seeds | round 3's raw `Value *` condition seeds | 6 | all six cascade fixtures (the `nofree` RUN lines crash deterministically) | KILLED |
+| U2_weakvh_seeds | `WeakVH` instead of `WeakTrackingVH` (skip, don't follow) | 1 | `lowering_volatile_arm_fold_cascade_live_condition` | KILLED ⚠ |
+| U3_no_simplify | `simplifySelectInst` on the two-entry-φ fold | 1 | `lowering_volatile_globalfold_cascade` | KILLED |
+| F1_operand_type | the slot type (null of the OPERAND's type, round 3) | 4 | `spec_accept_phantom_arg_read_fp_slot_{f1,f2,fpfloat,fplongd}` (verifier abort) | KILLED |
+| Q1_no_clone_dead_cone | the dead-cone deletion after the record | 6 | `…_exact_record_{a1_icmp,a1_xorself,a2_chain,a3_width,g1c,n5_nested}` | KILLED |
+| X1_copy_any_slot | the destination-slot test (every copy slot = construction) | 1 | `spec_accept_phantom_arg_read_copy_source_reader` | KILLED |
+| S1_no_section | the named-section conjunct | 1 | `lowering_reject_volatile_global_section` | KILLED |
+| S2_no_absolute | the absolute-address conjunct | 1 | `lowering_reject_volatile_global_absolute_symbol` | KILLED |
+
+**8 KILLED, 0 EQUIVALENT, 0 MISSED** — ⚠ after one gap was closed: on the first matrix (over 2396 fixtures,
+an intermediate build) **U2 was MISSED**. r3B had predicted exactly this ("a null-skip alone … would leave a
+dead tainted `select` alive whenever that condition is live for another reason"), and the suite had no such
+shape: in every cascade fixture the first condition was dead too, so its own seed's forward closure deleted
+the select anyway. Round 4's probe `u6.c` keeps the first condition live (a measured second merge value) and
+separates the two: `…_cascade_live_condition.ll` is red on U2 (TRACE-DIFF, +1 template rail — the which-path
+rail) and green on the SUBJECT. The direct-parameter inherit loop in `buildClone` (not a matrix row, ≤8) is
+pinned by `…_exact_record_n6_nested_arg.ll`'s CLONE prefix, red on the intermediate build that lacked it
+(the inner call passed `%a`) and green on the SUBJECT.
+
+## R4.10 Measurements (commands under `vsfp_probes/r4/tools/`)
+
+All on SUBJECT `829769d92e05c4e4` unless stated. Every A/B ran its null control FIRST on the same list.
+
+**Layers run, literally** (the owner's light profile — no full `ctest -j6`, no allocator sweeps, no 9bhg
+composition):
+- `cmake --build build -j8`; `cd build && lit ir-pass/test` → **2398 discovered, 2397 passed, 1 XFAIL**.
+- `ctest --test-dir build -R "spec|twin-identical|multi|scrub|libm-ld80-next|volatile|free-pairing-selftest|cq-opt-equivalence$|taintset" -j6`
+  → **102/102 passed** (incl. the 3 new cascade entries, all 55 `*-twin-identical` gates,
+  `taintset-scrub-guard` (+ selftest), the scrub-on-delete selftests, `e2e-free-pairing-selftest`, and the
+  SAMPLED `cq-opt-equivalence` — the full sweep was not run).
+- `python3 tools/update_code_map.py --check` → clean (regenerated).
+- Build null controls: `mutwt4`'s base build and its null mutant both hashed to the SUBJECT; every
+  comment-only edit after the measurements rebuilt the SUBJECT to the same hash.
+
+**The battery** (`tools/r4bat.py TAG`, 239 rows = round 3's 176 + every probe of r3A_vsfp and r3B_vsfp against
+its twin — the reviewer's named twin, `<n>T/F/H.c`, or for an IR-only probe `INL`, the probe run through LLVM's
+inliner + instcombine/simplifycfg/adce — plus round 4's own `u6`):
+
+| binary (rows) | TRACE-IDENT | DECL-SAME | ORACLE-SAME | TRACE-DIFF | VERDICT-DIFF | DECL-DIFFSTR | ORACLE-DIFF |
+|---|---|---|---|---|---|---|---|
+| SUBJECT (239) | **192** | 11 | 8 | 10 | 12 | 3 | 3 |
+| ROUND 3 (238) | 174 | 10 | 8 | 18 | 22 | 3 | 3 |
+| ORACLE (238) | 25 | 7 | 11 | 98 | 88 | 9 | 0 |
+
+Every row that moved ROUND 3 → SUBJECT moved toward the twin: `a1_{add,deadop,icmp,sext,xorself}`,
+`a2_chain`, `a3_width`, `g1c`, `n5_nested` (TRACE-DIFF → TRACE-IDENT, bd sqjq); `fpfloatb`, `f1b`, `fplongdb`
+(abort → TRACE-IDENT) and `f2b` (abort → the ORACLE's stream, bd f061); `e2b` (decline → TRACE-IDENT, bd
+xh17); `u1`, `u2`, `u3`, `u5` (SIGSEGV → TRACE-IDENT) and `u4` (SIGSEGV → the twin's decline, bd 1xp9). The
+SUBJECT's 39 non-identical rows (all but TRACE-IDENT / ORACLE-SAME) are each identical in class on ROUND 3 (pre-existing to round 4) and
+attributed: the round-3 list (`g4/g5/g11/g12` A/B, `threepred`, `f6`, `k9`, `f2`, `loop2`, `stale1/3a/7`, the
+three ORACLE-DIFF singles); **bd rhk5** (`d1`, `d2`, `d4`, `d1b`: TRACE-DIFF, dirty 2–4, warned — §R4.7);
+`f2`/`f2b` (the ORACLE's copy-out stream); `e1.c` (VERDICT-DIFF on every binary); `a1_sel` (the clone declines
+`callee contains tainted control flow`, every binary); `l2b` (F-XA-6); `c1`, `l1`, `b3`, `c2`, `d1`(r3B), `u4`
+(DECL-SAME); `a3`, `e1.ll` (DECL-DIFFSTR, both loud; `e1.ll` is bd g84t); `b5` (bd 50ho), `c3` (switch), `c4`
+(three-predecessor merge), all pre-existing on the ORACLE.
+
+**Corpus A/B** (`tools/ab.py`; `tools/buildcorp4.py`), denominator **3564** = lit 2398 + review-probe modules
+734 (every `.c` with its `.lib.c` and every stage-1 `.ll` of `review_r{1A,1B,2A,2B,3A,3B}_vsfp` and bd 9bhg's
+`review_r2A_9bhg`) + e2e single-TU 402 + multi-TU 30:
+
+| A → B | movers | A→D | D→A | DIAG | STREAM | CRASH→ok |
+|---|---|---|---|---|---|---|
+| SUBJECT → SUBJECT (null) | **0** | | | | | |
+| ORACLE → SUBJECT | 443 | 5 (lit) | 200 (lit 16, e2e 1, probes 183) | 21 (lit 3, probes 18) | 217 (lit 61, e2e 1, multi-TU 6, probes 149) | — |
+| ROUND 3 → SUBJECT | 41 | 2 (the section / absolute-symbol declines) | 2 (`e2b` + its fixture) | 0 | 17 (the exact-record fixtures + r3A `a*`/`g1c`/`n5` probes, `…_classical_slot.ll` — IR text only) | 20 (rc −11 / −6 on round 3 → 0 or 1) |
+
+- **Every lit / e2e / multi-TU mover is a file this branch touched since `main`** (`tools/litmov3.py`: 0
+  UNTOUCHED).
+- **Every ROUND 3 → SUBJECT mover is a round-3 finding's exhibit or its fixture** (listed in
+  `results/ab7_delta.txt`): the 20 CRASH rows are the 1xp9 (`u1`, `u3`, `u4`, `u5` ×2 stage-1 copies, the e2e
+  slice and six cascade fixtures) and f061 (`f1b`, `f2b`, `fpfloatb`, `fplongdb` and their four fixtures) sets.
+  `u2` is not a mover: under the system allocator its round-3 UAF is silent (exit 0), which is why its
+  fixture pins it with the `nofree` allocator.
+- **The 297 ORACLE → SUBJECT probe movers** (`tools/classify4.py`, mechanical + 4 by hand): r2A/r2B/r3A/r3B
+  modules → their battery row; r1A/r1B vsfp and r2A_9bhg modules that moved neither round 2→3 nor round 3→4
+  keep round 2's twin classification. Non-identical rows: bd rhk5 (`d1`, `d2`, `d4`, `d1b`), `f2`/`f2b` (the
+  ORACLE's stream), `k9` (equivalent by reading, §R3.11), the three ORACLE-DIFF singles and the 12 rows round 2
+  classified by hand (`v08c/d/e`, `qjoc`, `v01T`, `v02T`, `v16b`, `g3C`, `g4C`, `s_f*T`), `a3`/`e1.ll`
+  (DECL-DIFFSTR). By hand: `fwa1_stale_taint_redgreen.ll` = `stale3c` TRACE-IDENT with `stale3cT`; the T-twins
+  `k2T`–`k5T` TRACE-IDENT with the fenv twins `k2F`–`k5F`; `purity2.ll` and `m_s_f64H` trace-identical to
+  ROUND 3 and to the ORACLE respectively. **0 unclassified.**
+
+**Red-green** of the 22-file round-4 family (`tools/redgreen4.sh`): ORACLE 5/22 PASS, ROUND 1 5/22, ROUND 2
+4/22, ROUND 3 2/22, SUBJECT 22/22. Of the 20 new files, all 20 are RED on ROUND 3 (its real debugalloc
+`ce5fbf89` for the `nofree` lines); the 2 changed fixture headers are green everywhere. ⚠ For the ORACLE /
+ROUND 1 / ROUND 2 rows the `nofree` RUN line runs the SUBJECT's debugalloc (no older one was built), so
+`…_cascade_classical.ll` reads green on the ORACLE and ROUND 1 — correctly: both compile `u5` to the twin.
+
+## R4.11 What a Rule-13 round should attack first
+
+1. **`rewriteRecordedDeadSlotUse` inside clone bodies** (`buildClone`, `deleteDeadCones` step 3): an inner
+   clone call now receives `0` in an inherited slot. Attack an inner call whose callee's record is taken
+   from a DIFFERENT (cached) clone of the same `(callee, mask)`, an inner `_unc` twin call, and a clone
+   whose inner call is later RE-retargeted.
+2. **The dead-cone deletion in `buildClone`**: anything deleted there is an instruction no live root reads.
+   Attack a clone whose dead op is a `TaintedCloneCalls` member, an fp cast the fp-ABI `HandleWidth` record
+   points at, and a clone the cache later reuses for a caller whose slot was NOT neutralised (a detection
+   mask that differs from the record).
+3. **`WeakTrackingVH` seeds**: a seed RAUW'd to a value in ANOTHER function, or to a constant (skipped by
+   `visit`), and a seed RAUW'd twice across two merges in one call.
+4. **`simplifySelectInst` on the fold**: it may return an operand that is not available at the branch —
+   argue from its contract (it returns `Cond`, `VT`, `VF` or a constant, all available) or construct.
+5. **`isCopyDestination`**: any other runtime family whose LAST argument is not a write (a
+   `cqrt_copy_<W>` with a swapped ABI in some emitter) would make a real read look like construction.
+6. **The section / absolute-address conjunct**: a global in a section only through a `#pragma`, a global
+   aliased by a `GlobalAlias` with a section, and an `internal` global with an `!absolute_symbol` range that
+   is not a single address.

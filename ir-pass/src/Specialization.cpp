@@ -992,13 +992,51 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // predicate's call-slot rule already consults), and every read still a STOCK
   // OPCODE. Not later: `lowerCloneSelect`/`lowerOps` turn reads into runtime
   // calls, which are roots, and would make every parameter live. A slot recorded
-  // here is one the built clone never reads — the question the phantom-read
-  // backstop and M-C arm (d0) ask, by CALLING `isRecordedDeadSlot`. A dead
+  // here is one no LIVE ROOT of the clone reads — and, since bd vsfp round 4 (bd
+  // sqjq), one the built clone never reads at all, because the dead cone below is
+  // deleted right after the record (⚠ round 3 wrote "never reads" of the record
+  // alone, and a dead-but-lowered op on the slot falsified it, r3A F-XA-2). It is
+  // the question the phantom-read resolution and M-C arm (d0) ask, by CALLING
+  // `isRecordedDeadSlot`. A dead
   // parameter that reaches this point at all is one the dead-argument drop could
   // not predict from the ORIGINAL callee (the clone's own flatten removed its
   // last read — e.g. a condition-only use of an empty diamond — or a drop
   // precondition refused the slot).
-  taint.SpecDeadArgMask[Clone] = deadParamMask(*Clone, taint);
+  const uint64_t DeadSlots = deadParamMask(*Clone, taint);
+  taint.SpecDeadArgMask[Clone] = DeadSlots;
+  // …AND MAKE THE RECORD EXACT FOR THE BUILT CLONE (bd `test_C_libtooling-sqjq`,
+  // Rule-13 r3A F-XA-2). "Dead" means no live root reads the parameter — not that
+  // no instruction does. A dead instruction still standing here (the chain of a
+  // compare the clone's own flatten deleted, `t = a*3; if (t > 3) {}`; or `a+1`
+  // passed into an inner clone's dead slot) would be lowered by `lowerOps` below
+  // and so READ the parameter at run time — and once `resolvePhantomCloneArgReads`
+  // neutralises the caller's slot to `0`, that read addresses runtime handle h0, a
+  // register the caller never passed (at the wrong width when h0 is a `_Bool`).
+  // Delete that dead cone now, with the same predicate that took the record: the
+  // parameter is then genuinely unread, and an inner clone call inherits the dead
+  // slot (its operand becomes a constant, `deleteDeadCones` step 3). Deleting
+  // rather than recording later (after `lowerOps`) keeps the record on the
+  // stock-opcode body, where every read is still visible as a stock use. The clone
+  // is ONE BLOCK here (`lowerCloneControl`'s backstop), so `deleteDeadCones`' arm
+  // fold cannot fire and no tainted value is created: the call only deletes dead
+  // instructions, whose `cloneTaint` keys self-scrub (`ScrubOnDelete.h`), and none
+  // of them is in `TaintedCloneCalls` (a clone call is a liveness root).
+  if (DeadSlots) {
+    SmallVector<Value *, 8> DeadUsers;
+    for (Argument &Arg : Clone->args())
+      if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+        for (User *U : Arg.users())
+          if (isa<Instruction>(U))
+            DeadUsers.push_back(U);
+    if (!DeadUsers.empty())
+      deleteDeadCones(*Clone, DeadUsers, taint, "clone-dead-slot");
+    // A dead PARAMETER passed straight into an inner clone call's dead slot (the
+    // instruction case is `deleteDeadCones` step 3): the inner call inherits it.
+    for (Argument &Arg : Clone->args())
+      if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+        for (Use &U : make_early_inc_range(Arg.uses()))
+          rewriteRecordedDeadSlotUse(U, taint);
+  }
 
   // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
   // controlled-XOR copy BEFORE `lowerOps` — so the fresh `cq_template_icmp` flag
@@ -1205,15 +1243,6 @@ bool isQuantumCallerValue(const Value *V, const TaintSet &taint) {
          taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
 }
 
-// A rail a CONTROL EMITTER minted (a 4.4/6.5/4.5 `%out`, a loop rail): the
-// emitter's own runtime calls on it (the controlled copies INTO it) are its
-// construction, not a user READ of it.
-bool isControlEmittedRail(const Value *V, const TaintSet &taint) {
-  Value *NV = const_cast<Value *>(V);
-  return taint.ControlOwnedRails.count(NV) ||
-         taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
-}
-
 bool isRuntimeCall(const CallBase &CB) {
   const Function *Callee = CB.getCalledFunction();
   if (!Callee)
@@ -1222,19 +1251,39 @@ bool isRuntimeCall(const CallBase &CB) {
   return N.starts_with("cqrt_") || N.starts_with("cq_template_");
 }
 
+// Is use `U` the DESTINATION operand of a basis copy — the one slot a control
+// emitter writes while it BUILDS its own `%out` rail? `cqrt_copy_<W>(src, dst)`
+// and `cqrt_copy_<W>_controlled(ctl, src, dst)` both write their LAST argument
+// and read every other one (`tools/free_pairing_check.py`'s `classify()`:
+// `writes=(1,)` / `writes=(2,)`). bd `test_C_libtooling-xh17` (Rule-13 r3A
+// F-XA-3): round 3 skipped EVERY runtime call on an emitter rail as
+// "construction", so a 4.4 `%out` read in the SOURCE slot of a later select's
+// controlled copy counted as unread and a correct program declined (the oracle
+// compiles it trace-identical to its twin).
+bool isCopyDestination(const Use &U) {
+  const auto *CB = dyn_cast<CallBase>(U.getUser());
+  if (!CB || !CB->isArgOperand(&U))
+    return false;
+  const Function *Callee = CB->getCalledFunction();
+  if (!Callee || !Callee->getName().starts_with("cqrt_copy_"))
+    return false;
+  return CB->getArgOperandNo(&U) + 1 == CB->arg_size();
+}
+
 // Does the USER PROGRAM read `V` — i.e. does the hand-inlined twin compute `V`
 // too? Asked AFTER every recorded-dead slot was neutralised, so no phantom read
 // is left among `V`'s uses. Asked positively (Prime Directive direction: a use we
 // cannot name as a reader is NOT one, so the answer errs toward declining).
 // A READER is: a front-end `cq_measure`, or a `cq_theta` taking `V` as arg-0 (by
-// membership — the user reads it); a READ slot of a clone call; a `ret`; a
-// control-emitted runtime call reading a USER value (`V` not itself an emitter's
-// rail — the compare a tainted condition mints, which the twin mints too); or a
-// LIVE instruction under the liveness predicate. ⚠ NOT a reader: a runtime call
-// on a rail a control emitter minted (the emitter's own copies INTO its `%out` —
-// telling a read from a write there needs the runtime ABI's slot semantics, so
-// every such call is treated as construction; a `%out` a later control-emitted
-// compare genuinely reads is therefore an over-decline, named, not constructed).
+// membership — the user reads it); a READ slot of a clone call; a `ret`; any
+// control-emitted runtime call that READS `V` (a compare a tainted condition
+// mints, or the SOURCE/control slot of a controlled copy — the twin has the same
+// emitter calls, because the user wrote the same regions); or a LIVE instruction
+// under the liveness predicate. ⚠ NOT a reader: the DESTINATION slot of a basis
+// copy (`isCopyDestination`), which is how an emitter builds its own `%out`. That
+// slot-exact rule replaced round 3's "every runtime call on an emitter rail is
+// construction", which declined a `%out` read by a later select's copy (bd
+// `xh17`).
 // ⚠ THE ROUND-2 VERSION OF THIS PREDICATE WAS UNSOUND AS AN ACCEPT (bd tzfa; bd
 // vsfp Rule-13 r2B F-WB-1): it asked "is `V` live for a reason of its own?" while
 // the phantom read was still IN the use list, and a live `V` was accepted with the
@@ -1244,7 +1293,6 @@ bool isRuntimeCall(const CallBase &CB) {
 // because the phantom read is GONE before the question is asked.
 bool userProgramReads(const Value *V, const FunctionLiveness &L,
                       const TaintSet &taint) {
-  const bool EmitterRail = isControlEmittedRail(V, taint);
   for (const Use &U : V->uses()) {
     const auto *UI = dyn_cast<Instruction>(U.getUser());
     if (!UI)
@@ -1261,9 +1309,9 @@ bool userProgramReads(const Value *V, const FunctionLiveness &L,
         if (taint.SpecHandleArgMask.count(Callee))
           return true;  // a READ slot of a clone (dead slots were neutralised).
       if (isRuntimeCall(*CB)) {
-        if (EmitterRail)
-          continue;  // the emitter's own traffic on its rail: construction.
-        return true;
+        if (isCopyDestination(U))
+          continue;  // an emitter building its own rail: construction.
+        return true;  // any other runtime slot reads `V`.
       }
     }
     if (isa<ReturnInst>(UI))
@@ -1308,14 +1356,14 @@ bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
           if (!isRecordedDeadSlot(*CB, A, taint))
             continue;
           Value *Op = CB->getArgOperand(A);
-          if (isa<Constant>(Op))
-            continue;
-          if (A < Callee->arg_size())
-            for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
-              Callee->removeParamAttr(A, K);
-              CB->removeParamAttr(A, K);
-            }
-          CB->setArgOperand(A, Constant::getNullValue(Op->getType()));
+          // The ONE rewrite (`rewriteRecordedDeadSlotUse`): a null of the CLONE
+          // PARAMETER's type, never the caller operand's (bd `f061`, bd vsfp Rule-13
+          // r3A F-XA-1 — a verifier ABORT, exit 134: after `retargetSite` a tainted
+          // fp slot of an fp-ABI clone is an `i32` HANDLE parameter while the
+          // caller's operand is still the stock `float`/`double`/`x86_fp80` value,
+          // which `lowerRotations`/`lowerOps` RAUW later — a constant never is).
+          if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint))
+            continue;  // already a constant.
           Done.push_back({&F, CB, Op});
         }
       }

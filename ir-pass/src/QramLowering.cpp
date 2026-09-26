@@ -2608,6 +2608,14 @@ bool foldVolatileConstGlobalLoads(Module &M, const TaintSet &taint) {
   for (GlobalVariable &G : M.globals()) {
     if (!G.hasLocalLinkage() || !G.hasDefinitiveInitializer())
       continue;
+    // Not in a NAMED SECTION and not at an ABSOLUTE / fixed address: that is how
+    // MMIO is declared, and the owner's reachability ruling (2026-09-26, bd memory
+    // `owner-ruling-volatile-unreachable-object-2026-09-26`) requires both. A
+    // pointer built from an integer (`*(volatile int *)0x40000000`) never strips to
+    // a `GlobalVariable`, so it never reaches this loop.
+    if (G.hasSection() || G.isAbsoluteSymbolRef() ||
+        G.getMetadata(LLVMContext::MD_absolute_symbol))
+      continue;
     // Never-stored / address-never-escaping proof: every transitive user
     // (through gep/bitcast — instruction or constexpr — chains) is a plain
     // non-atomic load. Any other user (store, call, ptrtoint, cmp, phi/select,

@@ -4,10 +4,14 @@
 
 #include "TaintPropagation.h"
 
+#include "llvm/ADT/STLExtras.h"
 #include "llvm/ADT/SmallVector.h"
 #include "llvm/Analysis/CFG.h"
+#include "llvm/Analysis/InstructionSimplify.h"
 #include "llvm/IR/BasicBlock.h"
+#include "llvm/IR/Attributes.h"
 #include "llvm/IR/CFG.h"
+#include "llvm/IR/Constants.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/InstrTypes.h"
 #include "llvm/IR/Instructions.h"
@@ -134,6 +138,24 @@ bool isRecordedDeadSlot(const CallBase &CB, unsigned ArgNo,
   return (It->second >> ArgNo) & 1;
 }
 
+bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
+  auto *CB = dyn_cast<CallBase>(U.getUser());
+  if (!CB || !CB->isArgOperand(&U) || isa<Constant>(U.get()))
+    return false;
+  unsigned A = CB->getArgOperandNo(&U);
+  if (!isRecordedDeadSlot(*CB, A, taint))
+    return false;
+  FunctionType *FT = CB->getFunctionType();
+  Type *SlotTy = A < FT->getNumParams() ? FT->getParamType(A) : U.get()->getType();
+  if (Function *Callee = CB->getCalledFunction(); Callee && A < Callee->arg_size())
+    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
+      Callee->removeParamAttr(A, K);
+      CB->removeParamAttr(A, K);
+    }
+  U.set(Constant::getNullValue(SlotTy));
+  return true;
+}
+
 FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
   SmallVector<const Instruction *, 64> Worklist;
   auto markLive = [&](const Value *V) {
@@ -228,6 +250,19 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
     Touched.insert(I->getParent());
     salvageDebugInfo(*I);
   }
+  // A dead value may still be an operand of a LIVE call — exactly when that call's
+  // slot is one the specializer RECORDED dead (the call-slot rule is the one place
+  // liveness does not follow an operand). Such a slot gets the null constant of the
+  // CALLEE PARAMETER's type (bd `f061`'s lesson: after retargeting, an fp slot is an
+  // `i32` handle), with `range`/`nofpclass` stripped — the drop's own rewrite. Only
+  // reachable after `specialize()` has written a record, i.e. inside a clone body
+  // (bd `sqjq`: a nested clone call INHERITS the dead slot, r3A `n5_nested.ll`); the
+  // pre-`specialize()` callers see an empty record and never take this branch.
+  for (Instruction *I : Del)
+    for (Use &U : make_early_inc_range(I->uses()))
+      if (auto *CB = dyn_cast<CallBase>(U.getUser()); CB && !Del.count(CB))
+        rewriteRecordedDeadSlotUse(U, taint);  // a live reader of a dead `I` can
+                                                // only be such a slot.
   for (Instruction *I : Del)
     I->dropAllReferences();
   unsigned N = Del.size();
@@ -254,7 +289,22 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
   //        empty arm defines nothing, so a value flowing out of it dominates it,
   //        and its only predecessor is the branch's block.
   //    Anything else (a merge with a third predecessor and a φ) is left alone.
-  SmallVector<Value *, 4> CondSeeds;
+  // ⚠ The condition seeds are TRACKING handles (bd `test_C_libtooling-1xp9`, bd
+  // vsfp Rule-13 r3B F-XB-1 — a use-after-free reachable from plain C): a seed
+  // that is an `i1` φ in an EARLIER fold's merge block is erased by that block's
+  // `MergeBlockIntoPredecessor` below (`FoldSingleEntryPHINodes` RAUWs the now
+  // single-entry φ to its value and deletes it), and round 2/3 held it as a raw
+  // `Value *`, so the recursive call read freed memory (SIGSEGV on r3B `u5.c`,
+  // whose conditions are classical; silent UB on `u2.ll`). A `WeakTrackingVH`
+  // FOLLOWS that RAUW, so the seed becomes the φ's replacement — typically the
+  // earlier fold's `select` — and the recursion deletes that select if it is
+  // now dead. Skipping a nulled seed instead (a `WeakVH`) would leave such a
+  // dead select behind, and a dead select on a TAINTED condition is a which-path
+  // rail nobody discharges (bd qjoc's class). Recursing BEFORE the merge loop
+  // would also avoid the dangling read, but on a CFG `-O1` would not leave
+  // (single-entry φs still standing); the tracking handle keeps the order the
+  // twin gets — CFG simplification first, then dead-code elimination.
+  SmallVector<WeakTrackingVH, 4> CondSeeds;
   SmallVector<WeakVH, 4> Merge;
   unsigned Folded = 0;
   SmallPtrSet<BasicBlock *, 8> Erased;
@@ -301,9 +351,17 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
     for (PHINode &Phi : S->phis()) {
       Value *VT = Phi.getIncomingValueForBlock(E0);
       Value *VF = Phi.getIncomingValueForBlock(E1);
+      // What SimplifyCFG's `FoldTwoEntryPHINode` builds: through the folder, so
+      // `select %c, i1 true, i1 false` IS `%c` (bd vsfp round 4: r3B `u1.ll`'s
+      // cascaded fold otherwise left a logical `select i1` as a 4.4 data select's
+      // condition, which the data-select grammar refuses — an over-decline against
+      // the twin). `simplifySelectInst` returns only an EXISTING value equal to the
+      // select, never a new instruction.
       Value *NV = VT == VF ? VT
-                           : SelectInst::Create(Cond, VT, VF,
-                                                Phi.getName() + ".cq.dce.sel", BI);
+                           : simplifySelectInst(Cond, VT, VF,
+                                                SimplifyQuery(F.getParent()->getDataLayout()));
+      if (!NV)
+        NV = SelectInst::Create(Cond, VT, VF, Phi.getName() + ".cq.dce.sel", BI);
       NewIn.push_back({&Phi, NV});
     }
     BranchInst::Create(S, BI);
@@ -348,8 +406,12 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
     errs() << "CQ_DEADCONE_DBG: " << Stage << " deleted " << N << " in @"
            << F.getName() << (Folded ? " (folded " + std::to_string(Folded) + " empty arm(s))" : std::string())
            << "\n";
-  if (!CondSeeds.empty())
-    N += deleteDeadCones(F, CondSeeds, taint, Stage);
+  SmallVector<Value *, 4> Live;
+  for (WeakTrackingVH &H : CondSeeds)
+    if (Value *V = H)
+      Live.push_back(V);  // a seed ERASED (not RAUW'd) has nothing left to delete.
+  if (!Live.empty())
+    N += deleteDeadCones(F, Live, taint, Stage);
   return N;
 }
 
