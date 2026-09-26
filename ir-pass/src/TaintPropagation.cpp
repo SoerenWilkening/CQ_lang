@@ -1642,17 +1642,15 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // PHINode, and its forward walk from the phi never reaches the base's sibling
   // theta), so it could not adjudicate the now-exposed shape. NOT "every later
   // guard still adjudicates it" — the stale-record guard is an EARLIER guard.
-  // Recording the direct consumers flags the lift to the orchestrator, which
-  // re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`) — since
-  // bd d88e AFTER `specialize()` and the re-ask of this lift's own premise, so it
-  // only ever adjudicates a lift that survived that re-ask. The sweep is
-  // complete, not scoped to these
-  // entries: the genuine stale op may be a TRANSITIVE consumer separated from
-  // the phi by in-place-gate hops (Rz / chained Ry) — a Rule-13 adversarial
-  // finding — so only re-walking every consumer's full wire is sound.
-  for (User *U : Phi->users())
-    if (auto *I = dyn_cast<Instruction>(U))
-      taint.LiftedConsumers.insert(I);
+  // The record pushed below flags the lift to the orchestrator, which re-runs
+  // the FULL stale-record sweep (`declineLiftedStaleRecordOps`) — since bd d88e
+  // AFTER `specialize()` and the re-ask of this lift's own premise, so it only
+  // ever adjudicates a lift that survived that re-ask. The sweep is complete,
+  // not scoped to the phi's consumers: the genuine stale op may be a TRANSITIVE
+  // consumer separated from the phi by in-place-gate hops (Rz / chained Ry) — a
+  // Rule-13 adversarial finding — so only re-walking every consumer's full wire
+  // is sound. (bd ec7r: the witness is the RECORD, i.e. the lift event; the
+  // self-cleaning direct-consumer set that used to be the witness is removed.)
   // bd test_C_libtooling-d88e — RECORD the premise (2)/(3) just proved, at the
   // taint it was proved under, so `declineFalsifiedMergePhiLifts` can re-ask it
   // after `specialize()` (see the block comment above). The incomings are not
@@ -2192,7 +2190,7 @@ void adjudicateTaintDelta(Module &M, WidthDispatch &wd, TaintSet &taint,
   // tainted bound is Q1-declined before this point); or (iv) is typed so a
   // `BitCastInst` cannot enter it (`CallInst *` / `StoreInst *` / `BasicBlock *`
   // containers, `InPlaceRailOps`' `add`/`xor`); or (v) is empty here
-  // (`LiftedConsumers` — `declineClassicalMuxes` runs after BOTH peel sites;
+  // (`LiftedConsumers`, removed since bd ec7r — `declineClassicalMuxes` runs after BOTH peel sites;
   // `StaleDeclined` — reaching this line at all means no stale decline fired, and
   // a `DS_Error` is final). The full row-by-row version of this table, measured
   // over 194 φ erasures, is `IMPL_b6ap.md` §2d.

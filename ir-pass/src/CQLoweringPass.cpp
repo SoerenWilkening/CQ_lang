@@ -884,7 +884,7 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Post-lift stale-record re-sweep (test_C_libtooling-2qyz): the lift RAUWs a
   // merge phi to its wire base AFTER declineStaleRecordOps already ran, so a
   // consumer over a re-Ry'd wire would lower silently. When a lift occurred
-  // (witnessed by taint.LiftedConsumers) this re-runs the FULL stale-record
+  // (witnessed by taint.LiftedMergePhis, the lift EVENT — bd ec7r) this re-runs the FULL stale-record
   // sweep on the post-lift IR — a stale op can be a TRANSITIVE consumer any
   // number of in-place-gate hops below the lifted phi, so a scoped re-check is
   // incomplete (Rule-13 finding). Idempotent + still pre-RAUW SSA identity;

@@ -252,7 +252,6 @@ int main(int argc, char **argv) {
   checkSet("IntrinsicInvokes", T.IntrinsicInvokes, Call);
   checkSet("StaleDeclined", T.StaleDeclined, Add);
   checkSet("ValueArmConeOps", T.ValueArmConeOps, Add);
-  checkSet("LiftedConsumers", T.LiftedConsumers, Add);
   checkSet("ControlOwnedRails", T.ControlOwnedRails, Add);
   checkSet("PromotedCarriedHandlePhis", T.PromotedCarriedHandlePhis, Phi);
   checkSet("DischargedFlagGates", T.DischargedFlagGates, Call);

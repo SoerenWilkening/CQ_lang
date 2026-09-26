@@ -623,7 +623,8 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
         // / `Function *` keys), which cannot by WRITER (`StaleDeclined`, whose
         // `inLowerOpsScope` admits no `PHINode`), and which cannot only by STAGE
         // ORDER (`LiftedConsumers`, empty until `declineClassicalMuxes` runs
-        // AFTER both peel sites) — is in `IMPL_b6ap.md` §2d, with the two
+        // AFTER both peel sites; the member is removed since bd ec7r) — is in
+        // `IMPL_b6ap.md` §2d, with the two
         // retirement triggers it found (that one, and P9's `BreakRegions` above).
         taint.Tainted.erase(Phi);
         Phi->eraseFromParent();

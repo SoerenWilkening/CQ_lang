@@ -75,12 +75,19 @@ struct SpecPlan;
 //     No insert site in the pass does this (r1A I1: 0 dead inserts over the
 //     corpus); a future table filled from a RAW record (a local snapshot, a
 //     `ControlRegion` field) must check liveness first.
-//   * `empty()` / `size()` count LIVE keys (r1A F-EA-8). A set used as an EVENT
-//     WITNESS ("a lift occurred": `LiftedConsumers`; "a region was emitted":
-//     `InLoopFlattenedPreds`, `UntaintedMergeRails`) now reads "a live member
-//     remains", not "it was ever recorded". Argued not to flip at any of its
-//     three readers (nothing erases a recorded member in those windows; r1A I1:
-//     0 flips) — a new erasing stage inside one of those windows must re-ask it.
+//   * `empty()` / `size()` count LIVE keys (r1A F-EA-8). A self-cleaning table
+//     therefore CANNOT be an EVENT WITNESS ("did X ever happen?"): it answers "is
+//     a member still alive?". ⚠ CORRECTED (L7, Rule-13 delta round r2 F-R2-1 /
+//     bd ec7r): this note used to say the three event-witness readers could not
+//     flip because "nothing erases a recorded member in those windows" — measured
+//     on the pre-merge binary, and FALSE after the bd d88e merge moved
+//     `specialize()` into the `LiftedConsumers` window. That gate now reads the
+//     lift EVENT (`LiftedMergePhis`) and `LiftedConsumers` is gone. Every
+//     remaining `empty()` gate over a table in this struct is tabled, decided and
+//     MEASURED (TRACK_8E5R.md §15.2): each one gates work that only ever touches
+//     the table's own LIVE members (so "no live member" and "no work" coincide),
+//     or is argued in place. A new `empty()` gate over one of these tables must
+//     say which of the two it is — or read an event record instead.
 //   * A LOCAL raw copy of a table (`SmallPtrSet<CallInst *> GateCalls(
 //     taint.ThetaCalls...)`) is outside this guarantee; copy into a `scrub::`
 //     container (`TaintedValueSet Before = taint.Tainted;`) to stay inside it.
@@ -313,23 +320,13 @@ struct TaintSet {
   // witness.
   ScrubPtrSet<llvm::Instruction *, 4> ValueArmConeOps;
 
-  // One-register merge-phi lift WITNESS (test_C_libtooling-2qyz). The lift
-  // (`liftOneRegisterMergePhi`) RAUWs a proven pure-renaming merge phi to its
-  // wire BASE and erases it — AFTER `declineStaleRecordOps` already ran — so a
-  // consumer that read the phi now resolves to the base, and a sibling Ry
-  // re-rotating the base's wire (invisible behind the PHINode at the earlier
-  // guard) would make the consumer's template stale. The lift inserts its
-  // direct Instruction consumers here so the orchestrator knows a lift OCCURRED
-  // and re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`,
-  // since bd d88e after `specialize()` and the lift's own re-ask
-  // `declineFalsifiedMergePhiLifts`, before any rotation lowering). The
-  // re-sweep is NOT scoped to these entries — a stale op can sit any number of
-  // in-place-gate hops downstream of the lifted phi (a Rule-13 adversarial
-  // finding), so the complete sweep is required for soundness; this set is the
-  // lift-occurred gate (non-empty ⇒ re-sweep, so non-lift modules incur no
-  // diagnostic churn). Pointers stay valid — consumers are not erased before
-  // the re-sweep.
-  ScrubPtrSet<llvm::Instruction *, 4> LiftedConsumers;
+  // ⚠ `LiftedConsumers` — the one-register merge-phi lift's direct consumers,
+  // once the "a lift OCCURRED" witness for the bd 2qyz re-sweep — was REMOVED by
+  // bd test_C_libtooling-ec7r (Rule-13 delta round r2 F-R2-1). Its only reader
+  // was that gate, and as a SELF-CLEANING set it answered "a consumer is still
+  // alive", which `specialize()` (moved into the window by bd d88e) can falsify
+  // by erasing a rebuilt spec call. The gate now reads the lift EVENT,
+  // `LiftedMergePhis` below (one record per accepted lift, never shrunk).
 
   // bd `test_C_libtooling-d88e` (P1; bd 9bhg Rule-13 round r1A, F-9A-1) — the
   // one-register lift's PREMISE, RECORDED at the accept so it can be RE-ASKED at
