@@ -1,0 +1,43 @@
+; taint_reject_quantum_return_lift_owner_order.ll — DECLINE (bd test_C_libtooling-9bhg × bd
+; test_C_libtooling-d88e: the composed post-specialize() SLOT ORDER).
+;
+; A TWO-TU module (caller TU `-include CQ.h`, llvm-linked with a plain-C library
+; TU, as tests/e2e/run_slice_multi.sh builds one). Written at the merge of `main`
+; (d88e) into the 9bhg branch: before that merge neither owner below existed on
+; one binary, so no fixture could pin their relative order.
+;
+; `f` holds BOTH hazards the post-`specialize()` window re-asks:
+;  * a one-register lift `r = t; if (m > 3) r = cq_theta(t, .2);` over
+;    `t = hc(q, m)`, a spec site whose clone proves the CLASSICAL `k + 1`. The
+;    lift's premise is falsified by the scrub, so bd d88e's
+;    `declineFalsifiedMergePhiLifts` fires;
+;  * a RETURN of `t2 = hq(q, m + 2)`, a spec site whose clone proves QUANTUM
+;    (`a + k`). That return is provisional at propagation, so bd 9bhg's LATE
+;    `declineQuantumReturnCalls` would fire too.
+; `LLVMContext::diagnose` exits on the first DS_Error (bd br4a), so the ORDER picks
+; the owner. The d88e re-ask runs FIRST, and that matches the hand-inlined twin
+; (`t = m + 1`, `hq` kept). There the lift base is classical from propagation
+; onward, so `declineClassicalMuxes` speaks with this same string long before any
+; 3jru ask. Measured at the merge (merged `cq-opt` 242f8b61): this module's stderr
+; is BYTE-IDENTICAL to the twin's. On the 9bhg-alone binary (8b837d1f) it declined
+; with the 3jru string instead, i.e. twin-DIFFERENT.
+;
+; Mutant (TRACK_9BHG §10): moving the late 3jru ask ABOVE the d88e re-ask turns
+; this file red (the 3jru string speaks, in `main`).
+;
+; Library TU (plain C, no CQ.h):
+;   int hc(int a, int k) { return k + 1; }
+;   int hq(int a, int k) { return a + k; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int hc(int a, int k); int hq(int a, int k);
+;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = hc(q, m); int t2 = hq(q, m + 2); int r = t; if (m > 3) r = cq_theta(t, .2); return t2 + cq_measure(r); }
+;   int main(int c, char **v) { int m = atoi(v[1]); return f(m); }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not='quantum value returned'
+; CHECK: in function f {{.*}}: cq taint escape: tainted value muxed by a classical-condition phi

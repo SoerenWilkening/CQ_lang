@@ -55,6 +55,15 @@ MUTANTS = [
                                      "        auto It = taint.SpecHandleArgMask.end();\n        if (It != taint.SpecHandleArgMask.end())", 1)]),
     ("M16-early-skip-no-caller-check", [(TP, "                 taint.Tainted.count(CB);\n        }))\n      continue;",
                                          "                 taint.Tainted.count(CB) && false;\n        }))\n      continue;", 1)]),
+    ("MORD-late-ask-before-d88e", [
+        (CQ, "  if (declineFalsifiedMergePhiLifts(M, taint))\n    return PreservedAnalyses::none();",
+         "  if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))\n"
+         "    return PreservedAnalyses::none();\n"
+         "  if (declineFalsifiedMergePhiLifts(M, taint))\n    return PreservedAnalyses::none();", 1),
+        (CQ, "  if (declineFalsifiedMergePhiLifts(M, taint))\n    return false;",
+         "  if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))\n"
+         "    return false;\n"
+         "  if (declineFalsifiedMergePhiLifts(M, taint))\n    return false;", 1)]),
     ("M17-spec-no-reinsert", [(SP, "      taint.Tainted.insert(Cand.Site);\n      TaintedSources.insert(Cand.Site);",
                                "      TaintedSources.insert(Cand.Site);", 1)]),
     ("M18-spec-no-oldsite-scrub", [(SP, "    if (Cand.Site != OldSite) {\n      taint.Tainted.erase(OldSite);",

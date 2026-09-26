@@ -15,7 +15,71 @@ Binaries (sha-256 prefixes):
   §3 item 6). Every final number in §5 and §9 is on `8b837d1f`.
 
 Probes, the mutation harness and the sweep scripts are in `probes/` next to this
-file. **No Rule-13 round has run on this change. It is not self-cleared.**
+file. ~~No Rule-13 round has run on this change.~~ **Two rounds ran on `30529716`,
+both NOT-CLEAR, each on a pre-existing P1 that 9bhg exposes to more programs:**
+- `review_r1A_9bhg/`: bd `d88e`, FIXED on `main`;
+- `review_r1B_9bhg/`: bd `8e5r`, fix pending.
+
+Both rounds found 9bhg's own logic sound and its route deviation justified. §10 is
+the post-merge state.
+
+## 0. ERRATA (2026-09-26, from rounds r1A/r1B — read before §1)
+
+The commit message of `30529716` cannot change, so this section corrects it and the
+record.
+
+- **"an over-decline of programs aad63450 compiled correctly" (commit message) is
+  TRUE OF THE CALLER ONLY** (r1A F-9A-2).
+  - preE is not a correctness oracle. It MISCOMPILES `l09C`/`l10C` in the
+    provisional function's OWN body: the one-register lift runs on the
+    conservative taint, `specialize()` then scrubs its base, and the user's
+    `cq_measure` vanishes (bd `d88e`). `30529716` reproduced that byte for byte.
+  - Matching preE's stream is STABILITY across binaries, not correctness. That is
+    the `*_leak_control` trap in CLAUDE.md §5.
+  - With `main` (d88e) merged, `l09C`/`l10C` DECLINE with their hand-inlined twin's
+    stderr, byte-identical (§10).
+- **§1's "byte-identical to preE (16 of 16), which compiled them correctly".** The 16
+  streams are correct, but that was established by reading them, and on the merged
+  tree by twin comparison (§10). The preE identity is not the evidence.
+- **§2's last row ("accept, preE's stream") and its prose ("the window's stages see
+  the caller exactly as preE did")** hold for the CALLER. They do not hold for the
+  provisional function's own body. Every window stage still runs there on the
+  conservative taint:
+  - the over-accept face is bd `d88e`, fixed on `main`;
+  - the over-decline face is bd `cepm`.
+- **"before anything lowers" (§2 prose, `CondLiteral.{h,cpp}`) and "before any
+  lowering stage" (§4 S1) are FALSE** (r1A F-9A-4). By the late ask:
+  - round-1 and round-2 control emission have ALREADY emitted gates, including a
+    `_hl` literal taken from a provisional call result;
+  - so have `lowerIOSinks`, `lowerQramReads`, `lowerShadowMemory` and the clone
+    lowering inside `specialize()`.
+
+  What IS true: it runs before `lowerRotations`, `lowerOps`, `lowerMeasures` and
+  `uncompute`, and before any output is written. Its `DS_Error` exits the process
+  (bd `br4a`), so nothing emitted earlier reaches the output. Corrected at the
+  source in the same change as this erratum.
+- **"I did not construct a case where that aliasing miscompiles" (§1, §3 item 6,
+  §7 item 6).** r1B F-9B-1 CONSTRUCTED it.
+  - `k65` is pre-existing, miscompiled on the oracle 28/30 runs.
+  - `w12`, `w9` and `w15` are 9bhg's population: the oracle declines them, and the
+    subject miscompiles them in 7–11 of 12 runs.
+  - The fix is bd `8e5r`. Per the coordinator, the source comment's "closed here at
+    its source" and the `retargetSite` old-site scrub stay untouched until the
+    8e5r merge, which will delete that scrub (r1B F-EB-9).
+- **§5 M18 is a FLAKY KILL, not a miss** (r1B F-9B-3): killed 3/5 under the system
+  allocator and 5/5 under a deterministic LIFO allocator. The fp3 fixture is a
+  flaky pin. "Did not recur on the mutant build" was one unlucky run, not a build
+  difference.
+- **§5's mutation table missed two unpinned conjuncts** (r1A F-9A-3). MRED is the
+  drain's re-decision of deferred functions after a crossing batch. MNOREASK is
+  the early slot's predicate re-ask. Both are MISSED, and both move a slot or an
+  owner only, because the late ask is total (added to §5).
+- **`probes/ab_sweep.py --null` ran the REFERENCE twice**, although its docstring
+  said the SUBJECT (r1B F-9B-5). With a subject whose verdicts vary from run to run
+  (F-9B-1), a reference-only null control cannot see that. Fixed: it now runs BOTH
+  twice and refuses to report if either differs. Every sweep in §5 that cited
+  "null 0" measured the reference's stability only. The §10 battery runs every
+  binary twice.
 
 ## 1. Headline
 
@@ -24,7 +88,8 @@ file. **No Rule-13 round has run on this change. It is not self-cleared.**
   classical `k + 1`, compiles again, and so do its callers that BRANCH on it,
   SELECT on it, STORE it, PRINT it, pass it to ANOTHER defined function, use it as
   a LOOP bound, or chain it through a second function. Every one of those accepted
-  probes is **byte-identical to preE** (16 of 16), which compiled them correctly.
+  probes is **byte-identical to preE** (16 of 16). ⚠ That is STABILITY, not the
+  correctness evidence (§0): preE also miscompiles `l09C`.
 - **The route is NOT the bead's literal route, and §2 says why.** The bead said:
   make `scrubForwardCone` cross returns, then move the 3jru refusal after the scrub.
   That route leaves the conservative taint IN THE CALLER through control emission,
@@ -53,9 +118,10 @@ file. **No Rule-13 round has run on this change. It is not self-cleared.**
   - The oracle never asked anything of a clone's return after `specialize()`, so
     the key had no observable consumer there. `lowerOps(M, …, taint)` reads the
     same set by pointer, and I did not construct a case where that aliasing
-    miscompiles.
-  - The witness depends on the allocator: the M18 mutant build does NOT reproduce
-    it (§5).
+    miscompiles. ⚠ **r1B F-9B-1 did** (§0, bd `8e5r`).
+  - The witness depends on the allocator. ~~The M18 mutant build does NOT reproduce
+    it (§5).~~ It is flaky from run to run, not a property of the build: M18 is
+    killed 3/5 (§0, r1B F-9B-3).
 
 ## 2. Why not the bead's route (the L1 analysis)
 
@@ -70,14 +136,20 @@ the window, measured or argued:
 | 983f9361 (3jru) | tainted | refused early (OVER-DECLINE, this bead) | refused early |
 | move refusal only (mutant **M1**) | tainted, gates minted on the handle | **SILENT MISCOMPILE** (`mul_i32_hl(r, n)` over a classical call result — the M1 kills in §5) | refused late |
 | bead route: scrub crosses returns + move (ARGUED, not built) | tainted, gates minted on the handle | decline at l3oi's fence for any caller whose round-1 emitters read it (a branch or select on it; also an IO/QRAM/Shadow lowering of it), and the store/mux guards' declines on the conservative taint — over-declines of what preE got right. Plain arithmetic is lowered after the scrub and would be fine | refused late |
-| **this change** | classical (as preE) | accept, preE's stream | refused late |
+| **this change** | classical (as preE) | accept; the CALLER's stream is preE's (⚠ the provisional function's OWN body is not covered by this row — §0, bd `d88e`) | refused late |
 
-The last row is sound because the classical reading in the window is right exactly
-when the verdict is classical, and when it is quantum the whole module is refused
-before anything lowers: `LLVMContext::diagnose` exits on the first `DS_Error`
-(bd `br4a`), so nothing the window's stages did with the classical reading reaches
-the output. The window's stages see the caller exactly as preE did, which is the
-configuration they were built and tested against.
+The last row is sound FOR THE CALLER. The classical reading in the window is right
+exactly when the verdict is classical. When the verdict is quantum, the whole module
+is refused before `lowerRotations`, `lowerOps`, `lowerMeasures` and `uncompute`, and
+before any output is written (⚠ NOT "before anything lowers": control emission and
+the IO/QRAM/Shadow and clone lowerings have already run — §0).
+`LLVMContext::diagnose` exits on the first `DS_Error` (bd `br4a`), so nothing the
+window's stages did with the classical reading reaches the output. The window's
+stages see the CALLER exactly as preE did. ⚠ **They do NOT see the provisional
+function's own body that way**: there every window stage still acts on the
+conservative taint. The one-register lift is the stage found doing so (r1A F-9A-1,
+bd `d88e`, fixed on `main` by a record-and-re-ask; merged here, §10). A full
+enumeration of such rewrite stages is owed by `d88e`'s record (TRACK_D88E §10.3).
 
 ## 3. Mechanism
 
@@ -105,9 +177,13 @@ configuration they were built and tested against.
      rather than assuming it (M16, §5). The predicate is re-asked here, not trusted
      from the drain, because a later drain can give an already-tainted return
      value an independent source without revisiting it (`r65`: a provisional `t`
-     plus a 6.5 `%out`, refused here).
+     plus a 6.5 `%out`, refused here). ⚠ Refused HERE, but not ONLY here: under
+     r1A's MNOREASK mutant `r65` is refused by the late ask with the same string.
+     The re-ask fixes the SLOT and the OWNER, not the verdict (§0, F-9A-3).
    - LATE (skip = false): right after `specialize()` and the l3oi fence, before the
-     stale-reader backstop, `lowerRotations` and `lowerMeasures`. TOTAL.
+     stale-reader backstop, `lowerRotations` and `lowerMeasures`. TOTAL. Since the
+     `main` merge (§10) it runs after bd d88e's lift re-ask and the 2qyz re-sweep
+     as well.
 5. **The ordered scrub** (`specialize()`): each site's scrub runs when it resolves
    (`TaintedSources` grows as genuine sites resolve), and each site's mask is
    recomputed first:
@@ -139,7 +215,10 @@ configuration they were built and tested against.
 - **S1 (the one that matters): the late re-ask is total and is reached.** It asks
   `functionReturnsTainted` of EVERY defined function at final taint, with no skip,
   in both entry points (`CQLoweringPass.cpp` `run` and the `runOnFunction` shim),
-  immediately after `declineScrubbedHandleReads` and before any lowering stage. A
+  immediately after `declineScrubbedHandleReads` and before `lowerRotations`,
+  `lowerOps`, `lowerMeasures` and `uncompute`. ⚠ "Before any lowering stage" stood
+  here and was FALSE (§0, r1A F-9A-4): control emission, the IO/QRAM/Shadow
+  lowerings and the clone lowering run earlier. A
   provisional function is refused there unless the actual scrub removed ALL its
   return taint, and the actual scrub removes taint only from the cone of a clone
   whose `ReturnTainted` verdict is false.
@@ -209,7 +288,7 @@ fixtures below.
 | `taint_reject_quantum_return_spec_seeded_theta` (rs1) | DECLINE, store-escape owner | green | green | M2, M5, M12 |
 | `taint_reject_quantum_return_mixed_rets` (rm2, hand IR) | DECLINE, store-escape owner | green | green | M2, M6 |
 | `taint_reject_scrubbed_handle_clone_arg_layout` (yo, hand IR) | DECLINE | green | green | M15 |
-| `spec_accept_fp_rebuilt_site_second_clone` (fp3) | ACCEPT | green | green (red on `98b921fb`) | M17; M18 MISSED (allocator) |
+| `spec_accept_fp_rebuilt_site_second_clone` (fp3) | ACCEPT | green | green (red on `98b921fb`) | M17; M18 FLAKY (3/5, r1B F-9B-3) |
 
 - The 6 accepts are red on the oracle (`lit --filter`, measured before any source
   change). The 6 declines are declines on both binaries; their red is their
@@ -286,13 +365,21 @@ The restored build was checked bit-identical to the subject after each batch.
 | M15 | l3oi fence: clone-reader clause off | KILLED (1: clone_arg_layout) |
 | M16 | early skip: the "no tainted caller" conjunct | **MISSED** — no subject, by S3's argument (§4). Kept deliberately, because it CHECKS the skip's own premise. |
 | M17 | `specialize()`: no re-insert of a `ReturnTainted` site | KILLED (12: 11 pre-existing fp/QRAM spec fixtures + fp3) — the old "robustness" comment was false |
-| M18 | `specialize()`: no old-site pointer scrub | **MISSED** — the address reuse did not recur on the mutant build; it DID on `98b921fb` (twice). The fixture is a regression witness, not a deterministic pin. |
+| M18 | `specialize()`: no old-site pointer scrub | ~~MISSED — the address reuse did not recur on the mutant build~~ **FLAKY KILL** (r1B F-9B-3: killed 3/5 under the system allocator, 5/5 under LIFO reuse). My single run was an unlucky draw, not a build difference. The fp3 fixture is a FLAKY pin; a deterministic one needs a live-key check, which is bd `8e5r`'s scope |
+| MRED | the drain's re-decision of deferred functions after a crossing batch (r1A F-9A-3) | **MISSED** (r1A: 0 of 2288 lit, 0 of 179 probes). Slot/owner-only: a deferred function never re-decided is re-asked at the early slot |
+| MNOREASK | the early slot's re-ask of the predicate; skip on the "no tainted caller" conjunct alone (r1A F-9A-3) | **MISSED** (same denominators). Slot/owner-only: a function the early slot skips is refused at the late slot. ⚠ So §3's "necessary" for the re-ask was over-strong: under MNOREASK `r65` is still refused, with the same string, one slot later |
 
 - M1–M16 ran on subject `98b921fb` sources (null 0 of 2287).
 - N0, M4, M17 and M18 re-ran on the FINAL sources (null 0 of 2288; the positive
   control M4 still KILLED 2).
-- Totals: 18 mutants plus the null. 14 KILLED, 4 MISSED, each with a stated
-  reason. No mutant was INVALID.
+- Totals as first reported: 18 mutants plus the null, 14 KILLED, 4 MISSED. ⚠
+  **Corrected (§0):** 20 mutants plus the null. M1–M18 are mine; MRED and
+  MNOREASK are r1A's.
+  - 14 KILLED deterministically.
+  - 1 FLAKY kill (M18).
+  - 5 MISSED: M10, M11, M16, MRED and MNOREASK. Each MISSED one moves a slot or an
+    owner only, or is argued equivalent given l3oi's fence.
+  - No mutant was INVALID.
 - After every batch the restored build was bit-identical to the subject
   (`6b8bebc7`, `98b921fb`, `8b837d1f`).
 
@@ -396,3 +483,124 @@ is still a pass.
 A first full ctest was started on subject `98b921fb` and deliberately STOPPED at
 143 of 494 (all passed) when the §3 item-6 finding made that binary obsolete. It
 is not cited as a gate.
+
+## 10. After the Rule-13 rounds: `main` (d88e + xdu2.16) merged, 2026-09-26
+
+Both rounds on `30529716` were NOT-CLEAR on pre-existing P1s that 9bhg exposes
+(r1A → bd `d88e`, r1B → bd `8e5r`). Neither round faulted 9bhg's own logic (§0).
+bd `d88e` landed on `main` (`ba80bda1`, which also carries bd `xdu2.16`).
+bd `8e5r` is still in review on its own branch, and this branch does NOT merge it.
+
+**Commits** (merged, not rebased; `30529716` is intact):
+- the review records;
+- the merge `e4adabad`;
+- the review-item dispositions plus the slot-order pin;
+- this section.
+
+The merge had one textual conflict, `CODE_MAP.md`, resolved by regeneration.
+
+**Binary.** The merged `cq-opt` is `242f8b61530623e9` (`libCQPass.so`
+`ea806919a6c16a91`). It is BIT-IDENTICAL to the "composed with 9bhg" build that
+TRACK_D88E §7 measured independently. The later comment-only edits rebuild to the
+same hash.
+
+**The post-`specialize()` slot ORDER, the same in `run()` and the `runOnFunction`
+shim:**
+
+1. `declineFalsifiedMergePhiLifts` (d88e — the lift's premise, a REWRITE);
+2. `declineLiftedStaleRecordOps` (2qyz, moved here by d88e);
+3. `declineScrubbedHandleReads` (l3oi — an EMISSION read a scrubbed value);
+4. `declineQuantumReturnCalls(…, /*SkipSpecProvisional=*/false)` (9bhg, the TOTAL
+   late ask);
+5. `declineRecordedStaleQuantumReaders` (3d8q backstop, still last);
+6. then `lowerRotations`, `lowerOps`, `lowerMeasures`, `uncompute`.
+
+Why this order is right: the first `DS_Error` exits (bd `br4a`), so the order
+decides which owner speaks, and each owner is placed where the hand-inlined twin
+agrees.
+- **(1) before (4).** Take a function with a lift over a spec-CLASSICAL base that
+  also RETURNS a spec-QUANTUM value. In its twin the base is classical from
+  propagation onward, so `declineClassicalMuxes` speaks long before any 3jru ask.
+  Placing (1) first reproduces that. Probe `ordM` (fixture
+  `taint_reject_quantum_return_lift_owner_order.ll`) measures it: stderr is
+  byte-identical to its twin on the merged binary, and it is RED on
+  9bhg-alone, `main` and the oracle, each of which prints the 3jru string.
+  - Mutant MORD (the late ask moved above (1), in both entry points) is KILLED by
+    that fixture and by nothing else: 1 of 2317 lit.
+  - No fixture pinned this order before, because neither owner existed on one
+    binary.
+  - Null control first: 0 of 2317.
+  - The no-lift control `ordN` still reaches (4).
+- **(3) before (4).** A handle read of a scrubbed value keeps its more specific
+  owner. This is unchanged from `30529716`.
+- **(1) and (2) before (3).** d88e's own pins
+  (`…_spec_scrubbed_base_{owner,pure_consumer,l3oi_owner}.ll`), all green on the
+  merged binary.
+- **(5) last.** Unchanged.
+
+**r1A's full battery, rebuilt on the merged tree**
+(`probes/merge9/battery.py`, output in `probes/results/merge9_battery.txt`):
+- Modules: 327 = 224 r1A sources + 72 hand-inlined twins (d88e's own `mktwins.sh`
+  rule; `s09`/`s13` are not derivable) + my 31 probes.
+- **Null controls first: `sub` (`8b837d1f`), `main` (`e587c191`) and `merged` each
+  ran TWICE over all 327. 0 of 327 differ, for all three.** None of these modules is
+  in r1B's alias families; those need bd `8e5r`.
+- **Every former miscompile now declines with its twin's verdict AND byte-identical
+  stderr (DECL-SAME):** `l01C l07C l08C l09C l10C l13C l18C l22C`. On `sub` all
+  eight were silent accepts that DELETED the user's `cq_measure` (measure census:
+  1 → 0). `l25C` moved from DECL-DIFF to DECL-SAME.
+- **Movers merged vs `sub`: 9 of 327.** 8 A→D, exactly the eight above; 1
+  decline-string move, `l25C`. My own 31 probes: 0 movers.
+- **Movers merged vs `main`: 64 of 327.** 35 D→A and 29 decline-string moves. Every
+  string move is decline→decline; the owner moved because the early 3jru refusal no
+  longer fires. Every D→A accept is justified:
+  - `x10C`: twin ACC-SAME.
+  - `s05C`, `w02C w03C w05C w06C w08C w12C…w20C`: twin ACC-DIFF, and in all 15 pairs
+    the ONLY difference is that the twin uncomputes and frees the dead register `q`
+    (`ry(h,−θ)`, `cqrt_free`). In the 2-TU program `q` is the classical clone's
+    borrowed argument and is left allocated (Rule 6's accepted leak). This was
+    checked mechanically (`accdiff_class.py`: DEAD-REG-ONLY for 15 of 15). `l20` is
+    the only other ACC-DIFF pair, d88e's known stage-1 folding difference, and it is
+    the same on all three binaries.
+  - `rt1`: byte-identical to preE.
+  - `s13C`: read by hand. `u = h(q, t)` with `t` classical is cloned
+    `__cq_q_h_01(q, t)`, so `f13` returns `(m+1)+1`. preE differs because it built
+    the F-R7-1 shape, with `t` as a handle.
+  - My own 17 accepts: byte-identical to `sub`, i.e. §5's streams.
+- **Twin parity:** 38 of 72 pairs twin-identical on merged, against 29 on `sub` and
+  29 on `main`. Every remaining VERDICT-DIFF is either C-declines/T-accepts (an
+  over-decline in the provisional function's own body: bd `cepm`'s class; `l19`,
+  `s01`, `s02`, `s14`, `x01…x07`, `x09`, `x11`) or d88e's known out-of-scope pair
+  `l12`/`l17` (bd `z0re`). Each is the same on all three binaries.
+- **Measure census on every merged ACCEPT (88 modules):** only four lower fewer
+  `cqrt_measure` than their source has `cq_measure`. Each is a bd 21mg
+  never-quantum measure: `l21C` (twin ACC-SAME), `l21T`, `own_ob2` (preE-identical),
+  and `own_ya` (`g(t)` with `t` classical). ⚠ The first census regex undercounted
+  `call zeroext i1 @cq_measure_i1(` and flagged `l17`/`w16` falsely. It was fixed
+  before any row above was read.
+
+**Corpus A/B** (`probes/merge9/ab_both.sh`; the FIXED `ab_sweep.py --null` runs
+both binaries twice):
+
+| pair | denominator | null REF | null SUBJECT | movers |
+|---|---|---|---|---|
+| merged vs `main` | 2317 | 0 | 0 | 7: 9bhg's 6 D→A fixtures + the order fixture (DIAG) |
+| merged vs `sub` | 2317 | 0 | 0 | 21: `main`'s own d88e fixtures (11 A→D, 3 DIAG) and xdu2.16 fixtures (6 D→A), + the order fixture |
+
+**Gates run (merged binary):**
+- `lit -s ir-pass/test`: 2317 discovered, 2316 passed, 1 XFAIL.
+- The 9bhg and d88e families (`--filter 'quantum_return|scrubbed_handle|spec_classical_return|spec_quantum_return|fp_rebuilt_site|spec_scrubbed_base|spec_quantum_base|lift'`):
+  80 of 80 passed.
+- e2e: `e2e-spec-classical-return` and d88e's four `spec-lift` entries, 5 of 5.
+- `update_code_map.py --check`: clean.
+- **Full `ctest` was NOT run on the merged tree.** Per the coordinator it runs
+  after the 8e5r merge.
+
+**Still wrong or open (not closed by this merge):**
+- bd `8e5r` (r1B F-9B-1): the dangling-key alias still miscompiles 9bhg's r1B
+  population (`w12`/`w9`/`w15` in r1B's alias families, from run to run) on this
+  tree. The branch must not land before 8e5r.
+- F-9B-2: 9bhg's headline accept `v12` is refused spuriously when the allocator
+  reuses the key. Same root.
+- bd `cepm`: the over-decline face in the provisional function's own body.
+- bd `z0re` (`l12`/`l17`): unchanged.
