@@ -2627,6 +2627,53 @@ add_test(NAME e2e-slice-specialize-twoarm-select
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/spec_twoarm_caller.expected.log")
 
+# bd test_C_libtooling-d88e (P1, the lift-then-scrub silent miscompile). The
+# one-register merge-phi lift (`declineClassicalMuxes`) is proved on PRE-
+# `specialize()` taint and RE-ASKED after it (`declineFalsifiedMergePhiLifts`). The
+# miscompile itself declines, so it is pinned by lit
+# (`lowering_reject_classical_mux_phi_spec_scrubbed_base*.ll`); these three slices
+# LINK-prove the two ACCEPT directions the re-ask must keep:
+#   * SPEC-QUANTUM (`h(a,k) = a + k`): the lifted base is the clone's returned
+#     HANDLE, the arm's Ry fires on it in place and the user measures it.
+#   * SPEC-CLASSICAL, SCRUBBED ELSEWHERE (`h(a,k) = k + 1`): the scrub happens but
+#     the lifted base is a `cq_theta` keep root. The correct circuit is the
+#     hand-inlined twin's, so its golden is pinned BYTE-IDENTICAL to the 2-TU one.
+# ⚠ Both limits named by bd d88e Rule-13 r1B F-DB-6. (1) The spec-quantum golden
+#   pins a DEPHASED stream (the clone's copy-out keeps `q` live when the arm's Ry
+#   fires; `opt` warns `non-diagonal gate over a live derived record`, the owner's
+#   lyyf-(B) class; its hand-inlined twin is coherent) — a regression pin, not a
+#   correctness witness. (2) The twin-identical gate below compares TRACES ONLY:
+#   the 2-TU side prints that same warning and its twin does not (bd hgwx: the
+#   classical-verdict clone call reads as a live user of `q`), and nothing here
+#   can see a stderr difference.
+add_test(NAME e2e-slice-spec-lift-quantum-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_quantum_base.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_quantum_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_quantum_base.expected.log")
+add_test(NAME e2e-slice-spec-lift-scrubbed-elsewhere
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log")
+add_test(NAME e2e-slice-spec-lift-scrubbed-elsewhere-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+add_test(NAME e2e-spec-lift-scrubbed-elsewhere-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two
 # classical-SENTINEL early returns (`if(x>MAX) return C; if(x<MIN) return C'`)
@@ -6631,3 +6678,42 @@ add_test(NAME e2e-slice-condtree-classical-leaf
     "" "--forbid-qram")
 set_tests_properties(e2e-slice-condtree-classical-leaf PROPERTIES ENVIRONMENT
   "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+
+# bd test_C_libtooling-xdu2.16 — a COMPOUND condition tree feeding a 4.4 DATA
+# select INSIDE A ROLLED LOOP. `clang -O1` LICM-hoists a loop-invariant tree into
+# the preheader; the loop layer's round-1 grant named the hoisted node as an
+# invariant root, the 4.4 emitter consumed and ERASED it, and the post-fixpoint
+# re-ask refused the NULLED root unconditionally. The re-ask now re-derives the
+# grant from scratch under FINAL taint (it must be TOTAL) instead. Every ROLLED
+# slice below DECLINES on the pre-change ORACLE `438c77bf45c02e3e`; every UNROLLED
+# twin lowers there too (no loop, no grant). THE ONLY LAYER THAT LINKS, and each
+# twin gate is a `cmp` over committed goldens: identity says the rolled lowering
+# emits the three written-out copies' gate sequence, NOT that either is the right
+# unitary (owner ruling S3, 2026-09-17) — that argument is in each slice header
+# and in the session record TRACK_XDU2_16.md. Registered after the directory-wide
+# ENVIRONMENT pass, so each sets its own.
+foreach(_x16 slice_loop_condtree_select_hoisted
+             slice_loop_condtree_select_hoisted_unrolled
+             slice_loop_condtree_select_hoisted_literal
+             slice_loop_condtree_select_hoisted_literal_unrolled
+             slice_loop_condtree_select_hoisted_row13)
+  string(REPLACE "_" "-" _x16_name "${_x16}")
+  string(REPLACE "slice-" "e2e-slice-" _x16_name "${_x16_name}")
+  add_test(NAME ${_x16_name}
+    COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+      "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+      "${CMAKE_SOURCE_DIR}/include"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_x16}.c"
+      "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+      "${CMAKE_CURRENT_SOURCE_DIR}/${_x16}.expected.log")
+  set_tests_properties(${_x16_name} PROPERTIES ENVIRONMENT
+    "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+endforeach()
+add_test(NAME e2e-loop-condtree-select-hoisted-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_unrolled.expected.log")
+add_test(NAME e2e-loop-condtree-select-hoisted-literal-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_condtree_select_hoisted_literal_unrolled.expected.log")

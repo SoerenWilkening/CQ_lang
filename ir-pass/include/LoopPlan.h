@@ -382,7 +382,11 @@ void declineDephasingUnmarkedLoopRails(llvm::Module &M, TaintSet &taint);
 // marking falsified by round-2 taint`); it never silently withdraws the marking,
 // because the marking has already licensed `commitOutOfLoopInPlaceOps`' dtzb
 // commitments and a silent revert would turn a planned in-body discharge back
-// into a leak with no diagnostic (Rule 1).
+// into a leak with no diagnostic (Rule 1). A grant whose recorded ROOT was
+// erased in the window (bd `test_C_libtooling-xdu2.16` — the 4.4 emitter's dead
+// condition-tree cascade) is re-derived FROM SCRATCH under FINAL taint and must be
+// TOTAL; that is a stronger question than the one an intact grant is asked, and a
+// grant that fails it still declines with the same string.
 //
 // SLOT CONTRACT: strictly BELOW the round-2 fixpoint (the whole point) and
 // strictly ABOVE `lowerRotations` (which RAUWs every `@cq_theta_*` result to an
@@ -661,7 +665,9 @@ bool declineUndischargedMarkedBodyRails(llvm::Module &M);
 // the back edge IN PLACE and (c) the ITERATION-LOCAL rail: a register that
 // crosses the back edge AND is re-minted every trip, because the merge emitter
 // mints a FRESH `%out = cqrt_alloc_<W>` per activation. The full argument, the
-// per-trip unitary proof, the four slots that ask it and the reason byte-identity
+// per-trip unitary proof, the FIVE slots that ask it (the fifth, bd xdu2.16's
+// nulled-grant re-derivation, was added to that list by Rule-13 r1A F-A1-5) and
+// the reason byte-identity
 // with the hand-unrolled twin is an INSTRUMENT rather than the target all live at
 // `loopCarriedHandlePhi`'s definition in `LoopLowering.cpp`.
 //

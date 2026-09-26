@@ -1,0 +1,11 @@
+baseline binary b1603d237fc3a739: 58 tests (48 lit + 10 ctest), non-PASS at baseline: []
+M0_null              bin=b1603d237fc3a739 NULL-OK 0 mover(s): []
+M1_withdraw          bin=06b7f660a7eccfb4 KILLED 2 mover(s): ['lit:loop_condtree_select_reject_nulled_root_not_rederivable.ll', 'lit:loop_condtree_select_reject_nulled_root_rederived_escape.ll']
+M2_no_totality       bin=778de12df402b8bf MISSED 0 mover(s): []
+M3_union_survivors   bin=9a19ded839bb13f3 MISSED 0 mover(s): []
+M4_old_refusal       bin=086ce8b68f72bcda KILLED 11 mover(s): ['ctest:e2e-condtree-classical-leaf-matrix', 'ctest:e2e-railbank-dynamic-admission-matrix', 'ctest:e2e-railbank-guarded-vla-matrix', 'ctest:e2e-slice-loop-condtree-select-hoisted', 'ctest:e2e-slice-loop-condtree-select-hoisted-literal', 'ctest:e2e-slice-loop-condtree-select-hoisted-row13', 'lit:loop_condtree_select_accept_hoisted_and.ll', 'lit:loop_condtree_select_accept_hoisted_leaf.ll', 'lit:loop_condtree_select_accept_hoisted_mixed_literal.ll', 'lit:loop_condtree_select_accept_hoisted_nest.ll', 'lit:predmux_guarded_vla_reject_row13_hybrid_select.ll']
+M5_skip_rlq          bin=f193604e174ea36b KILLED 1 mover(s): ['lit:loop_condtree_select_reject_nulled_root_rederived_escape.ll']
+M6_as_intact         bin=627162005ca0ee2e MISSED 0 mover(s): []
+M0_null              bin=b1603d237fc3a739 NULL-OK 0 mover(s): []
+restored: b1603d237fc3a739 (baseline b1603d237fc3a739) OK
+DONE

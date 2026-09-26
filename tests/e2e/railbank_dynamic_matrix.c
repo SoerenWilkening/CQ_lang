@@ -199,10 +199,12 @@ int main(int argc, char **argv) { (void)argv; return slice(argc + 1, argc); }
  * loop layer's round-2 grant re-ask, "round-1 iteration-local marking falsified
  * by round-2 taint": -O1 LICM-hoists the `and` into the preheader, the round-1
  * grant names it as an invariant root, and the select emitter erases the tree
- * node, so the re-ask sees a NULLED root. That wall is PRE-EXISTING — a
- * pure-quantum `(q > 1) & (r < 5)` select in the same rolled loop declines with
- * the same string on the pre-xdu2.13 binary — and it is what row 13 declines at
- * now. Flip the sidecar row to accept when it moves. */
+ * node, so the re-ask sees a NULLED root. That wall was PRE-EXISTING — a
+ * pure-quantum `(q > 1) & (r < 5)` select in the same rolled loop declined with
+ * the same string on the pre-xdu2.13 binary. bd xdu2.16 moved it: a nulled root
+ * now forces a TOTAL re-derivation of the grant under FINAL taint instead of a
+ * refusal, and this row ACCEPTS (sidecar flipped; e2e golden
+ * slice_loop_condtree_select_hoisted_row13). */
 __attribute__((noinline)) static int slice(int n, int m) {
     if (n <= 0 || m <= 0) return 0;
     int p[m];

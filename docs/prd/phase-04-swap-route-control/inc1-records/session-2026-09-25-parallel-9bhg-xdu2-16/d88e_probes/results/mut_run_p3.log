@@ -1,0 +1,42 @@
+N0: cq-opt 47ebf9a91995c72e (subject e587c19152bf39e5) lit discovered=2305 passed=2304 failed=0
+  probes: 0 movers of 125
+M6_weakvh: cq-opt 87b4ad9efabd9b3a (subject e587c19152bf39e5) lit discovered=2305 passed=2302 failed=2
+  probes: 2 movers of 125
+  LIT-FAIL lowering_classical_mux_phi_onereg_spec_quantum_base_fp_rebuilt.ll
+  LIT-FAIL lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll
+  PROBE f01Q.s1.ll: subj rc=0 [] -> mut rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  PROBE rk04Q_rev.s1.ll: subj rc=0 [] -> mut rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+M1_noask: cq-opt 386b816309fe9c29 (subject e587c19152bf39e5) lit discovered=2305 passed=2290 failed=14
+  probes: 17 movers of 125
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_arm_chain.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_controlled_consumer.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_fp.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_ifelse_all_arms.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_l3oi_owner.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_nonmain.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_owner.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_pure_consumer.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_reversed_layout.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_store.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_switch.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_switch_nway_all_arms.ll
+  LIT-FAIL lowering_reject_classical_mux_phi_spec_scrubbed_base_two_lifts.ll
+  PROBE b01C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE b02C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE e01C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE f01C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE g01C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE h03C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]
+  PROBE j03C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE k04C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE l01C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE l07C.s1.ll: subj rc=1 [<unknown>:0:0: in function f i32 (i32, ptr): cq taint escape: tainted value muxed by a cla] -> mut rc=0 []
+  PROBE l08C.s1.ll: subj rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica] -> mut rc=0 []
+  PROBE l13C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE l18C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE l22C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE l25C.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq opcode lowering: rotation/measure opera]
+  PROBE rk04C_rev.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+  PROBE zlC.s1.ll: subj rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ] -> mut rc=0 []
+restored: cq-opt e587c19152bf39e5 == subject e587c19152bf39e5: True

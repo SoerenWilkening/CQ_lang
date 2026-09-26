@@ -284,7 +284,8 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   //   2. `adjudicateTaintDelta` — the guard sequence EVERY taint-growth event
   //      owes (the `MergePhiPeel` sites, bd b6ap), which ends with this call;
   //   3. the same, inside `repropagateControlMerges` on the round-2 `reseed`;
-  //   4. `declineLiftedStaleRecordOps`, after the one-register merge-phi lift.
+  //   4. `declineLiftedStaleRecordOps`, after the one-register merge-phi lift
+  //      (since bd d88e, after `specialize()` and the lift's re-ask).
   // So "can a value become a stale reader only in ROUND 2?" — yes (a 6.5/4.5
   // merge `%out` rail is untainted at round 1), and slot 3 is what asks about it:
   // the widening rides the SAME re-run the pure-op policy already rides, because

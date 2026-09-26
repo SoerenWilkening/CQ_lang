@@ -1,0 +1,46 @@
+a01    ora   VERDICT-DIFF(C rc=0, T rc=1)
+a02    ora   VERDICT-DIFF(C rc=0, T rc=1)
+a03    ora   VERDICT-DIFF(C rc=1, T rc=0)
+a04    ora   VERDICT-DIFF(C rc=1, T rc=0)
+b01    ora   VERDICT-DIFF(C rc=0, T rc=1)
+b02    ora   VERDICT-DIFF(C rc=0, T rc=1)
+e01    ora   VERDICT-DIFF(C rc=0, T rc=1)
+e02    ora   ACC-SAME
+f01    ora   VERDICT-DIFF(C rc=0, T rc=1)
+g01    ora   DECL-DIFF
+h01    ora   DECL-DIFF
+h02    ora   DECL-DIFF
+h03    ora   DECL-DIFF
+j01    ora   ACC-SAME
+j02    ora   ACC-DIFF
+j03    ora   VERDICT-DIFF(C rc=0, T rc=1)
+k01    ora   DECL-SAME
+k02    ora   DECL-SAME
+k03    ora   DECL-SAME
+k04    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l01    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l02    ora   DECL-SAME
+l03    ora   ACC-SAME
+l04    ora   DECL-DIFF
+l05    ora   DECL-DIFF
+l06    ora   DECL-DIFF
+l07    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l08    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l09    ora   DECL-DIFF
+l10    ora   DECL-DIFF
+l11    ora   DECL-SAME
+l12    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l13    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l14    ora   DECL-SAME
+l15    ora   ACC-SAME
+l16    ora   DECL-SAME
+l17    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l18    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l19    ora   VERDICT-DIFF(C rc=1, T rc=0)
+l20    ora   ACC-DIFF
+l21    ora   ACC-SAME
+l22    ora   VERDICT-DIFF(C rc=0, T rc=1)
+l23    ora   DECL-SAME
+l24    ora   DECL-SAME
+l25    ora   DECL-DIFF
+denominator: 45 pairs, 14 twin-identical

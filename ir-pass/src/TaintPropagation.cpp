@@ -1442,6 +1442,29 @@ constexpr char kMsgClassicalPhi[] =
 // register is non-unitary; it would need cloning). Accepting it would compile
 // "rotate iff c" IR semantics to "always rotate": the exact verify-clean
 // silent-miscompile class. Pinned: lowering_reject_classical_mux_select_onereg.ll.
+//
+// ⚠ THE PROOF IS ONLY AS FINAL AS THE TAINT IT READS — bd test_C_libtooling-d88e
+// (P1, found by bd 9bhg's Rule-13 round r1A, F-9A-1). Conjuncts (2) and (3) ask
+// `taint.Tainted`, and this lift runs BEFORE `specialize()`. A Phase-6 call
+// result `t = h(q, m)` is tainted CONSERVATIVELY by `propagate` (it reads a
+// tainted argument); if the clone proves `h` returns a classical value,
+// `scrubForwardCone` UNTAINTS `t` after this lift has already RAUW'd
+// `phi(t, cq_theta(t, θ))` onto it. "One register" was then never true: the arm's
+// `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail (`Chained` is decided at
+// FINAL taint, RotationLowering.cpp), and the user's `cq_measure` of the erased
+// phi reads the classical `t` down the bd 21mg classical-measure path — the
+// measurement VANISHED, exit 0, stage-2b clean, on every binary up to `def1b088`.
+// The "only hazard is a RECORD mismatch" sentence above is therefore true of a
+// FINAL-taint proof and was false of this one. The cure is CLAUDE.md L1's
+// standing one: the accept RECORDS its premise (`taint.LiftedMergePhis`) and
+// `declineFalsifiedMergePhiLifts` RE-ASKS (2)/(3) at final taint right after
+// `specialize()`, declining with THIS guard's `kMsgClassicalPhi` — the hand-
+// inlined twin (`int t = m + 1;`) declines at this guard too, since its phi muxes
+// a classical value and a register. The VERDICT is the twin's; the STRING and
+// site are the twin's when this phi is the module's first classical-mux offender
+// on both sides (not otherwise: r1A F-DA-3). Pinned by the
+// `lowering_reject_classical_mux_phi_spec_scrubbed_base*.ll` family and its
+// accept controls `lowering_classical_mux_phi_onereg_spec_*.ll`.
 // ───────────────────────────────────────────────────────────────────────────
 
 // The backward in-place-gate wire resolution: peel collected cq_theta/cq_phi
@@ -1454,8 +1477,19 @@ constexpr char kMsgClassicalPhi[] =
 // diamonds resolve to distinct phi bases and decline — conservative,
 // documented).
 //
-// SOLE CALLER: `liftOneRegisterMergePhi` (grep `resolveWireBase` — one call
-// site, and `WireChain::Gates` has exactly one reader, the (6)/(7) loop there).
+// TWO CALLERS (bd test_C_libtooling-d88e; this said "SOLE CALLER" until the
+// Rule-13 round r1A F-DA-2 caught it): `liftOneRegisterMergePhi`, and its re-ask
+// `declineFalsifiedMergePhiLifts`, which runs after `specialize()` and must
+// resolve every recorded incoming EXACTLY as the lift did — that is why both
+// take their gate set from `collectLiftGateCalls`. `WireChain::Gates` still has
+// exactly ONE reader, the lift's (6)/(7) loop; the re-ask reads only `.Base`.
+// ⚠ THE L3-MIRROR QUESTION, asked for the second caller: the three reasons for
+// the `ControlledRotations` STOP below are about the lift's RECORD semantics, and
+// they hold for the re-ask unchanged because `taint.ControlledRotations` is not
+// written between the lift and the re-ask (`specialize()` never touches it; the
+// control emitters that write it all ran before `declineClassicalMuxes`), so the
+// two calls see the same stop set. RETIREMENT TRIGGER: a stage in that window
+// that writes `ControlledRotations`, or a third caller, re-opens this paragraph.
 // `LoopLowering::peelInPlaceBase` is the SIBLING spelling of the same walk and
 // is deliberately NOT changed by the stop below — see the note at the stop.
 struct WireChain {
@@ -1658,18 +1692,44 @@ bool liftOneRegisterMergePhi(PHINode *Phi, TaintSet &taint,
   // theta), so it could not adjudicate the now-exposed shape. NOT "every later
   // guard still adjudicates it" — the stale-record guard is an EARLIER guard.
   // Recording the direct consumers flags the lift to the orchestrator, which
-  // re-runs the FULL stale-record sweep right after `declineClassicalMuxes`
-  // (`declineLiftedStaleRecordOps`). The sweep is complete, not scoped to these
+  // re-runs the FULL stale-record sweep (`declineLiftedStaleRecordOps`) — since
+  // bd d88e AFTER `specialize()` and the re-ask of this lift's own premise, so it
+  // only ever adjudicates a lift that survived that re-ask. The sweep is
+  // complete, not scoped to these
   // entries: the genuine stale op may be a TRANSITIVE consumer separated from
   // the phi by in-place-gate hops (Rz / chained Ry) — a Rule-13 adversarial
   // finding — so only re-walking every consumer's full wire is sound.
   for (User *U : Phi->users())
     if (auto *I = dyn_cast<Instruction>(U))
       taint.LiftedConsumers.insert(I);
+  // bd test_C_libtooling-d88e — RECORD the premise (2)/(3) just proved, at the
+  // taint it was proved under, so `declineFalsifiedMergePhiLifts` can re-ask it
+  // after `specialize()` (see the block comment above). The incomings are not
+  // touched by the RAUW below (only the phi's USES are), and every handle is a
+  // `WeakTrackingVH`, so the record follows any later RAUW of them.
+  {
+    TaintSet::LiftedMergePhi Rec;
+    Rec.F = Phi->getFunction();
+    Rec.DL = Phi->getDebugLoc();
+    Rec.Base = Chains[0].Base;
+    for (Value *V : Phi->incoming_values())
+      Rec.Incomings.emplace_back(V);
+    taint.LiftedMergePhis.push_back(std::move(Rec));
+  }
   Phi->replaceAllUsesWith(Chains[0].Base);
   taint.Tainted.erase(Phi);
   Phi->eraseFromParent();
   return true;
+}
+
+// The ONE spelling of `resolveWireBase`'s gate set: exact `CallInst` membership
+// of the collected rotation call sites (an ACCEPT predicate — never a name test).
+// Shared by the lift (`declineClassicalMuxes`) and its re-ask
+// (`declineFalsifiedMergePhiLifts`), so the two cannot resolve a wire differently.
+void collectLiftGateCalls(const TaintSet &taint,
+                          SmallPtrSetImpl<CallInst *> &GateCalls) {
+  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
+  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
 }
 
 }  // namespace
@@ -1691,13 +1751,16 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
   // a proven pure renaming of ONE register's per-path current record — the
   // natural `if (classical_c) q = cq_phi(q, θ); use(q)` shape — is RAUW'd to
   // its wire base and erased (see liftOneRegisterMergePhi above for the full
-  // predicate and the Rule-13 clearance). Selects are NEVER lifted: a select's
+  // predicate and the Rule-13 clearance). ⚠ That accept is proved at PRE-
+  // `specialize()` taint and is PROVISIONAL until `declineFalsifiedMergePhiLifts`
+  // re-asks it after the scrub (bd test_C_libtooling-d88e) — a base that turns
+  // out classical makes the accept this guard's decline after all, with this
+  // guard's string. Selects are NEVER lifted: a select's
   // gate-call incoming dominates it, so the gate has already fired
   // unconditionally and the untaken incoming names a record the register no
   // longer holds.
   SmallPtrSet<CallInst *, 32> GateCalls;
-  GateCalls.insert(taint.ThetaCalls.begin(), taint.ThetaCalls.end());
-  GateCalls.insert(taint.PhiCalls.begin(), taint.PhiCalls.end());
+  collectLiftGateCalls(taint, GateCalls);
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
@@ -1760,6 +1823,85 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
       }
     }
   }
+}
+
+// bd test_C_libtooling-d88e — the RE-ASK of every one-register lift, at FINAL
+// taint. Contract in TaintPropagation.h; the defect it closes is in the lift's
+// block comment above (`liftOneRegisterMergePhi`).
+//
+// WHAT IS RE-ASKED, AND WHY ONLY THAT. The lift's conjuncts split by what they
+// read. (1) arity, (4) the dominator tree, (6) block membership and (7a)/(7b)
+// reachability are STRUCTURAL: nothing between the lift and this slot changes
+// the caller's CFG (the only stage between them is `specialize()`, which clones
+// callees, retargets call sites in place and scrubs taint; the bd 2qyz re-sweep
+// used to sit in between and now runs AFTER this slot). (5) asks that
+// every deciding terminator be CLASSICAL, and between the lift and this slot
+// taint only SHRINKS on anything a terminator can read: `specialize()`'s one
+// `Tainted.insert` re-marks a spec-site result the clone proves QUANTUM, and
+// that result was already tainted at propagation (or is the rebuilt call that
+// replaced one which was), so a terminator reading it was already refused by
+// (5). What CAN move is (2)/(3): the scrub removes taint, and a removed base
+// ends the wire walk at the arm's gate (a SOURCE theta) instead of at the base.
+// So exactly (2)/(3) are re-run, by CALLING `resolveWireBase` with the same gate
+// set (`collectLiftGateCalls`, Rule 14) — never a second spelling of the walk.
+//
+// THE ENTRY TEST MIRRORS `declineClassicalMuxes`, not the lift. When no recorded
+// incoming is tainted any more, the phi (had it survived) is a CLASSICAL phi:
+// `readsTaintedValue` is false and the guard skips it, so the twin accepts. The
+// only lift that can land there is the DEGENERATE `phi(t, t, …)` (every chain
+// empty — any recorded gate is a `cq_theta` result, a never-scrub keep root), and
+// RAUW'ing it to `t` is exact at any taint. Pinned by
+// `lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll`.
+//
+// A NULLED HANDLE DECLINES. An incoming or the base erased without a RAUW has no
+// question left to re-ask; nothing in the window erases a lifted phi's base or
+// its incomings (the gates are `cq_theta` calls, alive until `lowerRotations`),
+// so this is the Prime-Directive default for an argued-unreachable state, not a
+// shape any fixture can reach (Rule 12 can supply none).
+bool declineFalsifiedMergePhiLifts(Module &M, const TaintSet &taint) {
+  (void)M;
+  if (taint.LiftedMergePhis.empty())
+    return false;
+  SmallPtrSet<CallInst *, 32> GateCalls;
+  collectLiftGateCalls(taint, GateCalls);
+  for (const TaintSet::LiftedMergePhi &L : taint.LiftedMergePhis) {
+    // `L.F` is never null: the accept records `Phi->getFunction()`, and a
+    // function is never erased in the window.
+    Value *Base = L.Base;
+    bool Falsified = !Base;
+    SmallVector<Value *, 4> Ins;
+    for (const WeakTrackingVH &H : L.Incomings) {
+      Value *V = H;
+      if (!V)
+        Falsified = true;
+      else
+        Ins.push_back(V);
+    }
+    if (!Falsified) {
+      // `declineClassicalMuxes`' entry test: a phi that reads no tainted value
+      // is a classical phi the guard never asks about.
+      bool AnyTainted = llvm::any_of(
+          Ins, [&](Value *V) { return taint.Tainted.count(V) != 0; });
+      if (!AnyTainted)
+        continue;
+      for (Value *V : Ins) {
+        // (2) every incoming still tainted; (3) still ONE base, the recorded one.
+        if (!taint.Tainted.count(V) ||
+            resolveWireBase(V, GateCalls, taint).Base != Base) {
+          Falsified = true;
+          break;
+        }
+      }
+    }
+    if (!Falsified)
+      continue;
+    // The erased phi's own diagnostic: `diagnoseEscape(Phi, kMsgClassicalPhi)`
+    // spelled from the recorded function and `!dbg`.
+    L.F->getContext().diagnose(
+        DiagnosticInfoUnsupported(*L.F, kMsgClassicalPhi, L.DL));
+    return true;
+  }
+  return false;
 }
 
 namespace {

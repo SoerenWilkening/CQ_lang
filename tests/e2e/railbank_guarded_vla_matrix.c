@@ -21,12 +21,19 @@
  * merge over it (the classical leaf occupies an `_hl` literal slot). Since bd
  * xdu2.13 the 4.4 DATA select does too (`CondLiteral.h`: the classical child of
  * the `and` is a `cq_template_and_i1_hl` literal). The bead's own program
- * (CASE_ROW13, `a += p[i]` into an `int`) STILL declines, but at a THIRD wall:
- * the loop layer's round-2 grant re-ask ("round-1 iteration-local marking
- * falsified by round-2 taint" — the LICM-hoisted `and` was a round-1 invariant
- * root and the select emitter erases it). That wall is pre-existing for any
- * compound tree in a rolled loop; the lit fixture
- * predmux_guarded_vla_reject_row13_hybrid_select.ll (old name kept, L8) pins it.
+ * (CASE_ROW13, `a += p[i]` into an `int`) then declined at a THIRD wall, the
+ * loop layer's round-2 grant re-ask ("round-1 iteration-local marking falsified
+ * by round-2 taint" — the LICM-hoisted `and` was a round-1 invariant root and the
+ * select emitter erases it), pre-existing for any compound tree in a rolled loop.
+ * bd xdu2.16 moved that wall (a nulled root forces a TOTAL re-derivation of the
+ * grant under FINAL taint instead of a refusal) and CASE_ROW13 ACCEPTS; the lit
+ * fixture predmux_guarded_vla_reject_row13_hybrid_select.ll (old name kept, L8)
+ * pins its stream. ⚠ CASE_TRIP_EQ_GUARD (row 4) is a DIFFERENT wall and did NOT
+ * move (measured on the xdu2.16 binary): there the arm writes `_Bool` merges, so
+ * PredMux's boolean-algebra path reads the hoisted `and` as DATA, it is never
+ * erased, and its (ii-d) exit obligation survives undischarged — the bd tu9q
+ * postcondition's `hoisted invariant rail admitted for in-loop discharge was not
+ * discharged`. That is bd xdu2.14's wall, not a nulled root.
  */
 #include "CQ.h"
 #include <stdlib.h>
