@@ -1,0 +1,81 @@
+cqrt_alloc_i32(5) -> h0
+cqrt_alloc_i32(5) -> h1
+cq_template_icmp_sgt_i32_hl(h0, 2) -> h2
+cqrt_alloc_i1(0) -> h3
+cqrt_ry_i1_controlled(h2, h3, 0x1p-1)
+cq_template_icmp_sgt_i32_hl_unc(h2, h0, 2)
+cqrt_free(h2)
+cq_template_add_i32_hl(h0, -3) -> h4
+cqrt_alloc_i1(0) -> h5
+cqrt_cnot(h3, h5)
+cqrt_alloc_i32(0) -> h6
+cqrt_copy_i32_controlled(h5, h4, h6)
+cqrt_x(h5)
+cqrt_copy_i32_controlled(h5, h0, h6)
+cqrt_x(h5)
+cqrt_cnot(h3, h5)
+cqrt_free(h5)
+cq_template_add_i32_hl(h1, -7) -> h7
+cqrt_alloc_i1(0) -> h8
+cqrt_cnot(h3, h8)
+cqrt_alloc_i32(0) -> h9
+cqrt_copy_i32_controlled(h8, h7, h9)
+cqrt_x(h8)
+cqrt_copy_i32_controlled(h8, h1, h9)
+cqrt_x(h8)
+cqrt_cnot(h3, h8)
+cqrt_free(h8)
+cq_template_icmp_sgt_i32_hl(h6, 2) -> h10
+cqrt_alloc_i1(0) -> h11
+cqrt_ry_i1_controlled(h10, h11, 0x1p-1)
+cq_template_icmp_sgt_i32_hl_unc(h10, h6, 2)
+cqrt_free(h10)
+cq_template_add_i32_hl(h6, -3) -> h12
+cqrt_alloc_i1(0) -> h13
+cqrt_cnot(h11, h13)
+cqrt_alloc_i32(0) -> h14
+cqrt_copy_i32_controlled(h13, h12, h14)
+cqrt_x(h13)
+cqrt_copy_i32_controlled(h13, h6, h14)
+cqrt_x(h13)
+cqrt_cnot(h11, h13)
+cqrt_free(h13)
+cq_template_add_i32_hl(h9, -7) -> h15
+cqrt_alloc_i1(0) -> h16
+cqrt_cnot(h11, h16)
+cqrt_alloc_i32(0) -> h17
+cqrt_copy_i32_controlled(h16, h15, h17)
+cqrt_x(h16)
+cqrt_copy_i32_controlled(h16, h9, h17)
+cqrt_x(h16)
+cqrt_cnot(h11, h16)
+cqrt_free(h16)
+cq_template_icmp_sgt_i32_hl(h14, 2) -> h18
+cqrt_alloc_i1(0) -> h19
+cqrt_ry_i1_controlled(h18, h19, 0x1p-1)
+cq_template_icmp_sgt_i32_hl_unc(h18, h14, 2)
+cqrt_free(h18)
+cq_template_add_i32_hl(h14, -3) -> h20
+cqrt_alloc_i1(0) -> h21
+cqrt_cnot(h19, h21)
+cqrt_alloc_i32(0) -> h22
+cqrt_copy_i32_controlled(h21, h20, h22)
+cqrt_x(h21)
+cqrt_copy_i32_controlled(h21, h14, h22)
+cqrt_x(h21)
+cqrt_cnot(h19, h21)
+cqrt_free(h21)
+cq_template_add_i32_hl(h17, -7) -> h23
+cqrt_alloc_i1(0) -> h24
+cqrt_cnot(h19, h24)
+cqrt_alloc_i32(0) -> h25
+cqrt_copy_i32_controlled(h24, h23, h25)
+cqrt_x(h24)
+cqrt_copy_i32_controlled(h24, h17, h25)
+cqrt_x(h24)
+cqrt_cnot(h19, h24)
+cqrt_free(h24)
+cqrt_measure_i1(h3) -> 0
+cqrt_measure_i1(h11) -> 0
+cqrt_measure_i1(h19) -> 0
+cqrt_measure_i32(h22) -> 0

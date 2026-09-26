@@ -1,0 +1,26 @@
+[proto] v15vc: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v15vs: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v15vl: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v15vd: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v26vf: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v26vb: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v02: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v01: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v15vx: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v15vn: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v26v2s: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v29c: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=f6891af47f88 lines=      18
+[proto] v29: DECL rc=1 :: <unknown>:0:0: in function main i32 (i32, ptr): cq specialization: quantum argument to a parameter the lifted callee never reads
+[proto] v26vtwo: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] v20: DECL rc=1 :: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+[proto] v07: DECL rc=1 :: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+[proto] qjoc: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] qjoc_tpl: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=edaf67527a8e lines=       4
+[proto] v04: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=edaf67527a8e lines=       4
+[proto] v12: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=a02e5da1ada4 lines=       3
+[proto] v16: ACC warn=0 2b_rc=0 run_rc=0 trace_sha=c925118ad6f8 lines=      16
+[proto] j02C: ACC warn=0 2b_rc=0 run_rc=0 trace_sha=4a6ddbb182ea lines=       5
+[proto] b10: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] b15: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=afb3b43d6f8f lines=       4
+[proto] b20: ACC warn=0 2b_rc=0 run_rc=7 trace_sha=4072357688f8 lines=       7
+[proto] v27: ACC warn=0 2b_rc=0 run_rc=6 trace_sha=4072357688f8 lines=       7
