@@ -1,0 +1,6 @@
+instrumented subject (c416f04d + instr_subject_c416f04d.patch, cq-opt e419bb370154fad2), R2INSTR events per corpus:
+  lit(2306): modules=2306 LIFT-RUN=30 LIFT-SKIP=0 BIRTHORDER-NONEMPTY=0 INNER-REBUILD=2 NULL-F=0
+  e2e(425): modules=425 LIFT-RUN=5 LIFT-SKIP=0 BIRTHORDER-NONEMPTY=0 INNER-REBUILD=0 NULL-F=0
+  families(523): modules=523 LIFT-RUN=0 LIFT-SKIP=0 BIRTHORDER-NONEMPTY=0 INNER-REBUILD=0 NULL-F=0
+  INNER-REBUILD modules (lit): control_predmux_accept_i80_cmp_purecallee_transitive.ll spec_accept_fp_transitive.ll 
+probe p1 k1.ll: subject instr -> LIFT recs=1 liveConsumers=0 SKIP (3/3); oracle instr (ba80bda1 + instr_oracle_ba80bda1.patch) -> LIFT recs=1 rawConsumers=1 RUN (3/3); streams identical (subject == oracle, modulo ModuleID)
