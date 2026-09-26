@@ -4690,9 +4690,12 @@ void collapseFlattenedLoopRails(
   // was actually emitted + flattened. Everything else is byte-identical, which
   // is what keeps the 250-odd shipped e2e goldens untouched by this increment.
   // ⚠ `empty()` counts LIVE Preds only (bd 8e5r, r1A F-EA-8): "a region was
-  // emitted into a block that still exists". A recorded Pred survives its own
-  // flatten (it is the block the diamond splices INTO), so this equals "a region
-  // was emitted" today; an erasing stage between the flatten and here re-asks it.
+  // emitted into a block that still exists". The early return is OUTCOME-NEUTRAL,
+  // not merely argued equal (bd ec7r's L2 re-ask, TRACK_8E5R.md §15.2 row G10): the
+  // loop below only ever `find`s LIVE loop blocks in this table, so a table whose
+  // every recorded Pred has died answers "not touched" for every loop whether or not
+  // this line returns. (Contrast the bd 2qyz re-sweep gate, which asked a MODULE-WIDE
+  // question and was moved onto the lift EVENT record for that reason.)
   if (taint.InLoopFlattenedPreds.empty())
     return;
 

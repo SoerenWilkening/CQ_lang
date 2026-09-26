@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 757 maintained source files, 6250 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 757 maintained source files, 6255 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 16061 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9234 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7410 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7413 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3536 physical lines
@@ -44,6 +44,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/OpcodeLowering.cpp` — 1128 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1125 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
+- `tools/taintset_scrub_guard.py` — 1084 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1019 physical lines
 - `ir-pass/src/ChainWalk.cpp` — 971 physical lines
 - `tools/golden_multiset_audit_test.py` — 948 physical lines
@@ -55,7 +56,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
 - `ir-pass/include/LoopPlan.h` — 762 physical lines
-- `tools/taintset_scrub_guard.py` — 761 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
@@ -549,7 +549,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7410 lines)
+### `ir-pass/src/LoopLowering.cpp` (7413 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -595,26 +595,26 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:4628` — `markIfRailLocal`
 - `ir-pass/src/LoopLowering.cpp:4674` — `recordRound1RailGrant`
 - `ir-pass/src/LoopLowering.cpp:4686` — `collapseFlattenedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:5097` — `taintedAncestryReaches`
-- `ir-pass/src/LoopLowering.cpp:5128` — `railIsInterior`
-- `ir-pass/src/LoopLowering.cpp:5233` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5354` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5491` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5496` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5503` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5629` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5651` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5662` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:5926` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6258` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6327` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6382` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6451` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6471` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6635` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6785` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:7054` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7250` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:5100` — `taintedAncestryReaches`
+- `ir-pass/src/LoopLowering.cpp:5131` — `railIsInterior`
+- `ir-pass/src/LoopLowering.cpp:5236` — `mintsOutOfPlaceTemplateRail`
+- `ir-pass/src/LoopLowering.cpp:5357` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:5494` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:5499` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:5506` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:5632` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:5654` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:5665` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:5929` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:6261` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6330` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6385` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6454` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6474` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6638` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6788` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:7057` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7253` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 
@@ -8396,31 +8396,36 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/taintset_scrub_guard.py` (761 lines)
+### `tools/taintset_scrub_guard.py` (1084 lines)
 
-- `tools/taintset_scrub_guard.py:127` — `_find_clang`
-- `tools/taintset_scrub_guard.py:144` — `_find_llvm_include`
-- `tools/taintset_scrub_guard.py:160` — `_toolchain`
-- `tools/taintset_scrub_guard.py:169` — `_clang`
-- `tools/taintset_scrub_guard.py:177` — `_json_docs`
-- `tools/taintset_scrub_guard.py:192` — `_split_top`
-- `tools/taintset_scrub_guard.py:209` — `parse_type`
-- `tools/taintset_scrub_guard.py:261` — `_balanced`
-- `tools/taintset_scrub_guard.py:275` — `Walk.__init__`
-- `tools/taintset_scrub_guard.py:286` — `Walk.field_type`
-- `tools/taintset_scrub_guard.py:289` — `Walk._t`
-- `tools/taintset_scrub_guard.py:344` — `Walk._named`
-- `tools/taintset_scrub_guard.py:355` — `_render`
-- `tools/taintset_scrub_guard.py:366` — `_walk_record`
-- `tools/taintset_scrub_guard.py:393` — `_dump`
-- `tools/taintset_scrub_guard.py:403` — `_traits`
-- `tools/taintset_scrub_guard.py:439` — `check`
-- `tools/taintset_scrub_guard.py:548` — `_strip_comments`
-- `tools/taintset_scrub_guard.py:596` — `_mutants`
-- `tools/taintset_scrub_guard.py:597` — `_mutants.ins`
-- `tools/taintset_scrub_guard.py:708` — `selftest`
-- `tools/taintset_scrub_guard.py:714` — `selftest.run`
-- `tools/taintset_scrub_guard.py:742` — `main`
+- `tools/taintset_scrub_guard.py:191` — `_base_command`
+- `tools/taintset_scrub_guard.py:254` — `_pch`
+- `tools/taintset_scrub_guard.py:282` — `_compile`
+- `tools/taintset_scrub_guard.py:297` — `_json_docs`
+- `tools/taintset_scrub_guard.py:312` — `_split_top`
+- `tools/taintset_scrub_guard.py:329` — `parse_type`
+- `tools/taintset_scrub_guard.py:374` — `_balanced`
+- `tools/taintset_scrub_guard.py:384` — `_render`
+- `tools/taintset_scrub_guard.py:395` — `_has_handle`
+- `tools/taintset_scrub_guard.py:410` — `Walk.__init__`
+- `tools/taintset_scrub_guard.py:424` — `Walk._is_tparam`
+- `tools/taintset_scrub_guard.py:427` — `Walk.field_type`
+- `tools/taintset_scrub_guard.py:430` — `Walk._t`
+- `tools/taintset_scrub_guard.py:519` — `Walk._named`
+- `tools/taintset_scrub_guard.py:533` — `_walk_record`
+- `tools/taintset_scrub_guard.py:544` — `_walk_record_body`
+- `tools/taintset_scrub_guard.py:571` — `_walk_template`
+- `tools/taintset_scrub_guard.py:586` — `_dump`
+- `tools/taintset_scrub_guard.py:601` — `_requalify`
+- `tools/taintset_scrub_guard.py:605` — `_resolve`
+- `tools/taintset_scrub_guard.py:637` — `_traits`
+- `tools/taintset_scrub_guard.py:673` — `check`
+- `tools/taintset_scrub_guard.py:805` — `_strip_comments`
+- `tools/taintset_scrub_guard.py:843` — `_mutants`
+- `tools/taintset_scrub_guard.py:844` — `_mutants.ins`
+- `tools/taintset_scrub_guard.py:1007` — `selftest`
+- `tools/taintset_scrub_guard.py:1024` — `selftest.run`
+- `tools/taintset_scrub_guard.py:1052` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 
