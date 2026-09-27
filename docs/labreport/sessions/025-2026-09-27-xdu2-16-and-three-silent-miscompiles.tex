@@ -1,0 +1,102 @@
+\labsessionheader{2026-09-27}{Row 13 compiles (xdu2.16); three pre-existing silent miscompiles fixed; 9bhg superseded}%
+  {cf1f84b2}{d2ac97c1-732d-4a6e-83a0-786b16babcc6}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-25-parallel-9bhg-xdu2-16/}
+
+\subsection*{Goal}
+Implement the two follow-ups entry 024 left: \bd{xdu2.16}, the loop-layer wall
+in front of \bd{xdu2.8}'s program (shared matrix row 13), and \bd{9bhg}, the
+over-decline the \bd{3jru} fence introduced. The two were independent and ran
+in parallel. \bd{9bhg}'s review rounds then kept exposing older silent
+miscompiles that its wider acceptance would have reached, so on the owner's
+instruction those were fixed on \texttt{main} first.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{def1b088} --- \bd{xdu2.16} --- a compound condition tree feeding a
+    4.4 select in a rolled loop compiles: when the select emitter erases a
+    round-1 invariant root that \texttt{-O1} hoisted, the loop layer re-derives
+    the grant at final taint instead of refusing. Row 13 compiles; \bd{xdu2.8}
+    closed. Two review rounds, no P1.
+  \item \commit{ba80bda1} --- \bd{d88e} --- the one-register merge-phi lift is
+    recorded and asked again after \texttt{specialize()}; a base the specializer
+    proved classical now declines with the hand-inlined twin's verdict. Two
+    review rounds, no P1.
+  \item \commit{aee8f4f8} --- \bd{8e5r}, \bd{um24}, \bd{j8sk} --- every
+    pointer-keyed table of the taint set cleans itself when LLVM deletes a key
+    (\texttt{ScrubOnDelete.h}); a test-only allocator driver
+    (\texttt{cq-opt-debugalloc}) makes the aliasing reproducible; a
+    compiler-AST guard refuses new raw-pointer members. Four review rounds.
+  \item \commit{c1136be2} --- \bd{vsfp} and 16 beads found while fixing it ---
+    one shared liveness predicate decides whether a call argument is read and
+    whether a value is dead. It drives a dead-argument drop before
+    specialization, dead-cone deletion (including after volatile-store
+    erasure), the M-C reuse check, and a post-specialize neutraliser with a
+    backstop. Six fix rounds, ten reviews; the last cleared with no P1.
+  \item \commit{cf1f84b2} --- \bd{9bhg} closed as fixed by \bd{vsfp}: the
+    original program is pinned as an accept fixture; the 9bhg branch was not
+    merged. Residual: \bd{ev3m}.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \fpreexisting\ \bd{d88e}: the lift rewrote a register phi to
+    a call result the specializer later proved classical, deleting the user's
+    \texttt{cq\_measure} (or, in one variant, measuring the wrong rail). Found
+    by a review of \bd{9bhg}, reproduced on the frozen \texttt{main} binary.
+  \item \fconfirmed\ \fpreexisting\ \bd{8e5r}: stages erased tainted instructions
+    without removing them from the taint set; a specialized clone's classical
+    instruction allocated at a freed address was lowered as quantum, with a
+    constant used as a register handle. The frozen \texttt{main} binary was
+    wrong on the reviewer's \texttt{k65} program in 7 of 10 runs.
+  \item \fconfirmed\ \fpreexisting\ \bd{vsfp}: a specialized clone that ignores
+    an argument still received the caller's derived which-path rail, which was
+    never uncomputed. For \texttt{b10f}, rotations of 0.5 then 0.7 give
+    $P(b{=}1)=\cos^2 0.6 \approx 0.681$; the compiled circuit gave 0.836,
+    because the leftover copy dephases the register. Exit 0, no warning.
+  \item \fconfirmed\ Fix rounds introduced defects that later review rounds
+    caught before landing: two compiler crashes (\bd{1xp9}, \bd{f061}), a
+    segfaulting executable from a nulled \texttt{byval} argument (\bd{91k9}),
+    stale taint after a fold (\bd{otam}), an unsound exemption (\bd{tzfa}), a
+    missed \texttt{\#pragma clang section} form (\bd{qce6}) and a regression
+    through a \texttt{musttail} forward (\bd{w7nm}). None reached \texttt{main}.
+  \item \foverdecline\ After \bd{vsfp}, \bd{9bhg}'s path is reachable from C
+    only through \texttt{musttail} forwarders, measured by its implementer;
+    the owner chose to close it rather than land the machinery (\bd{ev3m}).
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest at the \bd{xdu2.16} gate & 500/500 & \measured{ctest --test-dir build -j6} \\
+ctest at the \bd{d88e} gate & 504/504 & \measured{ctest --test-dir build -j6} \\
+ctest at the \bd{8e5r} gate & 509/509 & \measured{ctest --test-dir build -j6} \\
+ctest at the \bd{vsfp} gate & 532/532 & \measured{ctest --test-dir build -j6} \\
+equivalence at the \bd{vsfp} gate & 2405 / 0 & \measured{--target cq-opt-equivalence-full} \\
+\texttt{k65} wrong runs, main before / after \bd{8e5r} & 7/10 / 0/10 & \measured{10 runs of cq-opt on k65.s1.ll} \\
+review rounds this session & 22 & independent reviewers \\
+\bottomrule\end{tabular}
+
+Every gate binary was bit-identical to the binary its last review round
+examined (sha-256 recorded in the merge commits and the TRACK files).
+
+\subsection*{Verification run}
+Full \texttt{ctest -j6}, \texttt{cq-opt-equivalence-full} and the code-map
+check at each of the four merge gates on \texttt{main}, and once more before the
+final push. From the \bd{vsfp} round-2 point on, branch rounds ran only targeted
+layers (full \texttt{lit}, affected \texttt{ctest -R} entries, corpus A/B,
+reviewer probe batteries), per the owner ruling recorded in bd memory
+\texttt{owner-ruling-fullsuite-at-gate-2026-09-26}. Not run: an
+\texttt{+Asserts} build; AddressSanitizer (it aborts at start-up on this macOS
+version, so Guard Malloc was used instead).
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item Owner: CLAUDE.md's fenv section still states only the function-local
+    ruling and a ``both are sound'' sentence that reviews showed false. The
+    2026-09-26 reachability ruling is in bd memory only.
+  \item \bd{nlfd} (P2, IR-only, already on \texttt{main} before this session),
+    \bd{rhk5} (warned dephasing, already on \texttt{main} before this session),
+    \bd{ev3m}, \bd{3zr4}, \bd{z0re}, \bd{cepm}, \bd{wop9}.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
