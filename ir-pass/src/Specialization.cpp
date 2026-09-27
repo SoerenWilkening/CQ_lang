@@ -1018,9 +1018,11 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // rather than recording later (after `lowerOps`) keeps the record on the
   // stock-opcode body, where every read is still visible as a stock use. The clone
   // is ONE BLOCK here (`lowerCloneControl`'s backstop), so `deleteDeadCones`' arm
-  // fold cannot fire and no tainted value is created: the call only deletes dead
-  // instructions, whose `cloneTaint` keys self-scrub (`ScrubOnDelete.h`), and none
-  // of them is in `TaintedCloneCalls` (a clone call is a liveness root).
+  // fold cannot fire and no tainted value is created: the call deletes dead
+  // instructions, whose `cloneTaint` keys self-scrub (`ScrubOnDelete.h`), none of
+  // them in `TaintedCloneCalls` (a clone call is a liveness root), and REWRITES a
+  // live inner call's rewritable dead-slot operand to a constant (step 3 — a
+  // shrink, never a growth; r4A F-YA-3 corrected "only deletes").
   if (DeadSlots) {
     SmallVector<Value *, 8> DeadUsers;
     for (Argument &Arg : Clone->args())
@@ -1260,6 +1262,18 @@ bool isRuntimeCall(const CallBase &CB) {
 // "construction", so a 4.4 `%out` read in the SOURCE slot of a later select's
 // controlled copy counted as unread and a correct program declined (the oracle
 // compiles it trace-identical to its twin).
+//
+// ⚠ RETIREMENT TRIGGER (L8; bd vsfp Rule-13 r4A F-YA-3). The test is NAME-keyed
+// (`cqrt_copy_` + the last argument) and sound by ENUMERATION: every emitter rail
+// that exists when `resolvePhantomCloneArgReads` asks is built by
+// `cqrt_copy_<W>[_controlled]` with the destination last (`SelectMergeEmit`,
+// `ClassicalCallArmEmit`, `SwitchValueEmit`'s preload and controlled copies,
+// `SwitchDataMuxEmit`, the `IOSinkLowering` value mux); `BreakReversePlay`'s copies
+// are minted later, and the tape-write / abort-park `OutputRails` have no users.
+// The day an emitter builds a user-visible rail with `cqrt_cswap` / `cqrt_cnot` /
+// `cqrt_toffoli` / `cqrt_x` (or a copy whose destination is not last) BEFORE this
+// point, that traffic will read as a REAL read of the rail and a phantom-only rail
+// will be accepted: widen this test to that emitter's write slots IN THE SAME CHANGE.
 bool isCopyDestination(const Use &U) {
   const auto *CB = dyn_cast<CallBase>(U.getUser());
   if (!CB || !CB->isArgOperand(&U))
@@ -1326,9 +1340,13 @@ bool userProgramReads(const Value *V, const FunctionLiveness &L,
 
 bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
   // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
-  //    non-clone function gets a null constant, exactly the drop's rewrite (and
-  //    its `range`/`nofpclass` strip), asked with the SAME predicate's record
-  //    (`isRecordedDeadSlot`). From here on no stage — the uncompute spine's
+  //    non-clone function that the drop's own eligibility admits (an int/fp scalar
+  //    with allowlisted attributes — `dropEligibleSlot`) gets a null constant with
+  //    the drop's `range`/`nofpclass` strip, asked with the SAME predicate's record
+  //    (`isRecordedDeadSlot`). ⚠ Round 4 said "exactly the drop's rewrite" and
+  //    applied none of the drop's eligibility — it nulled pointer and `byval`
+  //    slots (bd `91k9`, r4A F-YA-1); an ineligible slot is now left in place, and
+  //    declined when its operand is quantum. From here on no stage — the uncompute spine's
   //    terminal selection and free points, M-C, M-A's hop walk, stage 2b — can
   //    see a read the clone never performs: the operand's consumer set is the
   //    hand-inlined twin's. One rewrite at the one point the record exists, rather
@@ -1362,8 +1380,20 @@ bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
           // fp slot of an fp-ABI clone is an `i32` HANDLE parameter while the
           // caller's operand is still the stock `float`/`double`/`x86_fp80` value,
           // which `lowerRotations`/`lowerOps` RAUW later — a constant never is).
-          if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint))
+          if (isa<Constant>(Op))
             continue;  // already a constant.
+          if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint)) {
+            // An INELIGIBLE slot (bd `91k9`, round 5: a pointer, a `byval`, an
+            // attribute outside the drop's allowlist) is left in place. A
+            // classical value there is harmless — no rail, no consumer set, no
+            // spine. A QUANTUM one would stay a phantom read, exactly bd `tzfa`'s
+            // extra consumer, so it declines (the same string as step 2).
+            if (!isQuantumCallerValue(Op, taint))
+              continue;
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F, kMsgPhantomArgRead, CB->getDebugLoc()));
+            return true;
+          }
           Done.push_back({&F, CB, Op});
         }
       }

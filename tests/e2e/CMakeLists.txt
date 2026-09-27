@@ -2848,6 +2848,19 @@ add_test(NAME e2e-volatile-arm-fold-cascade-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade_twin.expected.log")
 
+# bd vsfp ROUND 5 (Rule-13 r4A F-YA-1 — bd 91k9, probe `bv`). A clone's recorded-dead `byval`
+# struct slot was neutralised to `null` on rounds 3-4: opt, the verifier and stage 2b were clean
+# and the linked executable SIGSEGVed. Only a slice RUNS the program. RED (crash) on rounds 3 and
+# 4, GREEN here; the golden is byte-identical to the ORACLE's trace (measured).
+add_test(NAME e2e-slice-spec-dropped-arg-byval-slot
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_byval_slot.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_byval_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_byval_slot.expected.log")
+
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two
 # classical-SENTINEL early returns (`if(x>MAX) return C; if(x<MIN) return C'`)

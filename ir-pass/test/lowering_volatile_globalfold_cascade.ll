@@ -3,8 +3,9 @@
 ;
 ; Two never-stored internal volatile globals (`@KB`, an `i1` read as the second branch's
 ; condition φ; `@K2`, the second merge's φ incoming). Round 3 segfaulted (exit 139). Round 4:
-; the tracked seed follows the first φ to its replacement and the fold goes through the folder
-; (`simplifySelectInst`), so `select %c, i1 true, i1 false` IS `%c` and the second φ becomes
+; the tracked seed follows the first φ to its replacement and the fold asks the folder
+; (`simplifySelectInst`; NOT what SimplifyCFG does — it builds with NoFolder and -O1 loses the
+; select in InstCombine, bd w9xe), so `select %c, i1 true, i1 false` IS `%c` and the second φ becomes
 ; `select %c, 5, 9` — the twin `u1T.ll`. Without the folder the logical select would be a 4.4
 ; data select's condition, which that grammar refuses (an over-decline; oracle declined too).
 ; The second RUN line is the deterministic use-after-free pin (test allocator, `nofree`).

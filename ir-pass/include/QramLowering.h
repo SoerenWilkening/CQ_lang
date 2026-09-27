@@ -238,17 +238,24 @@ bool valueWillTaintAfterFlatten(
 // a volatile access to an object NOTHING OUTSIDE THE PROGRAM CAN REACH is not
 // observable in CQ's model — internal linkage (or function-local), never written,
 // address never escaping, no atomic access, and NOT in a named section or at an
-// absolute/fixed address (that is how MMIO is declared). Every conjunct is a gate
-// here; the section / absolute-address one was MISSING until bd vsfp round 4 (a
-// `static volatile … __attribute__((section("…")))` global folded like any other,
-// `lowering_reject_volatile_global_section.ll`). ⚠ The sentence that stood here —
+// absolute/fixed address (that is how MMIO is declared). Each conjunct is a gate
+// here. ⚠ Round 4 wrote "Every conjunct is a gate here" when it had added only the
+// EXPLICIT section and the absolute symbol; `#pragma clang section bss=/data=/
+// rodata=/relro=` sets an IMPLICIT section `hasSection()` does not see, and an MMIO
+// `static volatile int STATUS;` under the pragma still folded (bd `qce6`, r4B
+// F-YB-1). Since round 5 the gate is: explicit section, implicit section
+// (`hasImplicitSection()`), absolute symbol, and — owner decision 2026-09-27,
+// conservative — any NON-DEFAULT ADDRESS SPACE (device memory). Pins:
+// `lowering_reject_volatile_global_{section,absolute_symbol,pragma_bss,pragma_data,
+// addrspace}.ll`. ⚠ The sentence that stood here —
 // "the volatile qualifier exists purely to defeat classical FP folding …, and fenv
 // is out of scope project-wide" — was an agent-authored over-generalisation (L7):
 // the 2026-08-10 fenv ruling spoke of FUNCTION-LOCAL objects, and "why the author
 // wrote `volatile`" is not a licence. The proof makes load == initializer on every
 // execution, so the fold is exact; anything short of the proof (external linkage,
-// any store, any escaping user, atomic, a named section or absolute symbol, a type
-// the initializer cannot produce at that offset) is left untouched — the existing
+// any store, any escaping user, atomic, a named section — explicit or pragma-implied —,
+// an absolute symbol, a non-default address space, a type the initializer cannot
+// produce at that offset) is left untouched — the existing
 // loud declines own it. Folded loads are CLASSICAL (constant address). ⚠ But the
 // stage does not leave taint unaffected (bd vsfp round 3, bd otam / stl3): an arm
 // the fold EMPTIES is folded by `deleteDeadCones` (the empty-arm fold its three

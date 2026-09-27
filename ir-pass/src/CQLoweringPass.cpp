@@ -1042,7 +1042,9 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // RESOLVED: the observing half of `dropDeadCallArguments` (its slots A and B
   // above), with the specializer's record of the SAME liveness predicate
   // (`taint.SpecDeadArgMask`). It NEUTRALISES every recorded-dead slot of every
-  // module-level clone call (a null constant, the drop's rewrite), so the
+  // module-level clone call that the drop's eligibility admits (a null constant —
+  // bd `91k9`: never a pointer or `byval` slot; a quantum operand in such an
+  // ineligible slot declines instead), so the
   // uncompute spine, M-C, M-A and stage 2b all see the hand-inlined twin's
   // consumer set; then it declines a neutralised QUANTUM operand the user program
   // no longer reads (a rail minted only for the phantom — the twin has none).

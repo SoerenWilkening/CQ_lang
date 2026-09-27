@@ -2608,13 +2608,21 @@ bool foldVolatileConstGlobalLoads(Module &M, const TaintSet &taint) {
   for (GlobalVariable &G : M.globals()) {
     if (!G.hasLocalLinkage() || !G.hasDefinitiveInitializer())
       continue;
-    // Not in a NAMED SECTION and not at an ABSOLUTE / fixed address: that is how
-    // MMIO is declared, and the owner's reachability ruling (2026-09-26, bd memory
-    // `owner-ruling-volatile-unreachable-object-2026-09-26`) requires both. A
-    // pointer built from an integer (`*(volatile int *)0x40000000`) never strips to
-    // a `GlobalVariable`, so it never reaches this loop.
-    if (G.hasSection() || G.isAbsoluteSymbolRef() ||
-        G.getMetadata(LLVMContext::MD_absolute_symbol))
+    // Not in a NAMED SECTION — explicit (`section "…"`) OR IMPLICIT (the
+    // `bss-section`/`data-section`/`rodata-section`/`relro-section` attributes
+    // `#pragma clang section` sets, which the backend honours and `hasSection()`
+    // does not see: bd `qce6`, r4B F-YB-1, an MMIO `static volatile int STATUS;`
+    // under the pragma folded to its initializer) — not at an ABSOLUTE / fixed
+    // address (`isAbsoluteSymbolRef()`, which IS the `!absolute_symbol` test for a
+    // global object — round 4 spelled it twice, r4B P3), and not in a NON-DEFAULT
+    // ADDRESS SPACE (owner decision 2026-09-27, conservative: an address space is
+    // how device / MMIO memory is declared on GPU and embedded targets). That is
+    // how MMIO is declared, and the owner's reachability ruling (2026-09-26, bd
+    // memory `owner-ruling-volatile-unreachable-object-2026-09-26`) excludes it. A
+    // pointer built from an integer (`*(volatile int *)0x40000000`) never strips
+    // to a `GlobalVariable`, so it never reaches this loop.
+    if (G.hasSection() || G.hasImplicitSection() || G.isAbsoluteSymbolRef() ||
+        G.getAddressSpace() != 0)
       continue;
     // Never-stored / address-never-escaping proof: every transitive user
     // (through gep/bitcast — instruction or constexpr — chains) is a plain

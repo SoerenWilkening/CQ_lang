@@ -2,6 +2,7 @@
 
 #include "DeadValueLiveness.h"
 
+#include "SpecializeDetect.h"  // dropEligibleSlot (bd 91k9: the drop's ONE slot rule)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -138,12 +139,17 @@ bool isRecordedDeadSlot(const CallBase &CB, unsigned ArgNo,
   return (It->second >> ArgNo) & 1;
 }
 
+bool isRewritableDeadSlot(const CallBase &CB, unsigned ArgNo,
+                          const TaintSet &taint) {
+  return isRecordedDeadSlot(CB, ArgNo, taint) && dropEligibleSlot(CB, ArgNo);
+}
+
 bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
   auto *CB = dyn_cast<CallBase>(U.getUser());
   if (!CB || !CB->isArgOperand(&U) || isa<Constant>(U.get()))
     return false;
   unsigned A = CB->getArgOperandNo(&U);
-  if (!isRecordedDeadSlot(*CB, A, taint))
+  if (!isRewritableDeadSlot(*CB, A, taint))
     return false;
   FunctionType *FT = CB->getFunctionType();
   Type *SlotTy = A < FT->getNumParams() ? FT->getParamType(A) : U.get()->getType();
@@ -174,10 +180,15 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
     const Instruction *I = Worklist.pop_back_val();
     if (const auto *CB = dyn_cast<CallBase>(I)) {
       // Operands of a call: the argument slots the callee is RECORDED never to
-      // read do not propagate; the called operand and bundle operands do.
+      // read AND that the one rewrite may null (`isRewritableDeadSlot`) do not
+      // propagate; the called operand, bundle operands and every other slot do.
+      // ⚠ bd `91k9` (round 5): an INELIGIBLE recorded-dead slot (a pointer, a
+      // `byval`, an attribute outside the drop's allowlist) is never rewritten, so
+      // its operand stays a use of the call — counting it as a read keeps
+      // `deleteDeadCones` step 3 from deleting a value that call still uses.
       for (const Use &U : CB->operands()) {
         if (CB->isArgOperand(&U) &&
-            isRecordedDeadSlot(*CB, CB->getArgOperandNo(&U), taint))
+            isRewritableDeadSlot(*CB, CB->getArgOperandNo(&U), taint))
           continue;
         markLive(U.get());
       }
@@ -351,12 +362,17 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
     for (PHINode &Phi : S->phis()) {
       Value *VT = Phi.getIncomingValueForBlock(E0);
       Value *VF = Phi.getIncomingValueForBlock(E1);
-      // What SimplifyCFG's `FoldTwoEntryPHINode` builds: through the folder, so
-      // `select %c, i1 true, i1 false` IS `%c` (bd vsfp round 4: r3B `u1.ll`'s
-      // cascaded fold otherwise left a logical `select i1` as a 4.4 data select's
-      // condition, which the data-select grammar refuses — an over-decline against
-      // the twin). `simplifySelectInst` returns only an EXISTING value equal to the
-      // select, never a new instruction.
+      // `select %c, i1 true, i1 false` IS `%c`, so ask the folder first (bd vsfp
+      // round 4: r3B `u1.ll`'s cascaded fold otherwise left a logical `select i1`
+      // as a 4.4 data select's condition, which the data-select grammar refuses —
+      // an over-decline against the twin). ⚠ Round 4's comment said this is what
+      // SimplifyCFG's `FoldTwoEntryPHINode` builds — FALSE (bd `w9xe`, r4B F-YB-2,
+      // measured): stock SimplifyCFG builds through `IRBuilder<NoFolder>` and emits
+      // `select i1 %c, i1 true, i1 false`; the `-O1` twin loses it only in the LATER
+      // InstCombine. The parity bar is SimplifyCFG + InstCombine, of which this is
+      // one fold. `simplifySelectInst` returns only an EXISTING value (a constant,
+      // `Cond`, `VT`, `VF` or an operand of `Cond`'s compare — all available at the
+      // branch), never a new instruction.
       Value *NV = VT == VF ? VT
                            : simplifySelectInst(Cond, VT, VF,
                                                 SimplifyQuery(F.getParent()->getDataLayout()));

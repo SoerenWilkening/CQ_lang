@@ -53,7 +53,9 @@ bool shouldSpecialize(const llvm::CallInst *CI, const SpecPlan &plan);
 // compiler performs.
 //
 // (1) It NEUTRALISES every one: the operand becomes a null constant OF THE CALLEE
-// PARAMETER'S TYPE (the drop's rewrite, `range`/`nofpclass` stripped; bd f061 —
+// PARAMETER'S TYPE (on a slot the drop's eligibility admits — bd `91k9`: never a
+// pointer, `byval`/`byref`/`sret`/`inalloca`/`preallocated` or non-allowlisted slot;
+// a QUANTUM operand in such a slot declines instead — `range`/`nofpclass` stripped; bd f061 —
 // round 3 took the caller operand's fp type for an `i32` handle slot and the
 // verifier aborted), so no later stage can see the phantom read. That is the fix for bd tzfa: the read did not keep the operand's rail
 // ALIVE, it kept the uncompute SPINE from DISCHARGING it — an extra consumer of a

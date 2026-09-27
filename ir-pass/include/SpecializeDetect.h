@@ -30,6 +30,7 @@
 #include "llvm/ADT/SmallPtrSet.h"
 
 namespace llvm {
+class CallBase;
 class Module;
 class Value;
 }  // namespace llvm
@@ -116,6 +117,19 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // (`taint.SpecDeadArgMask`), neutralises every slot the clone never reads, and
 // declines a quantum operand the user program then no longer reads.
 bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
+
+// THE DROP'S SLOT ELIGIBILITY, as one predicate (bd vsfp round 5, bd `91k9`): may
+// argument slot `A` of `CB` be rewritten to a constant? True only when the callee is
+// a direct, exact, non-`naked`, non-variadic definition called with its own function
+// type and not `musttail`, and the parameter is an integer or floating-point scalar
+// with no `returned`/`swifterror`/`byval`/`inalloca`/`preallocated` and only
+// `noundef`/`signext`/`zeroext`/`inreg`/`range`/`nofpclass` on it and on the call
+// site's slot. A POINTER slot is never eligible (so neither is `byref`/`sret`/
+// `nonnull`/`dereferenceable`). Called by the drop's loop and by
+// `rewriteRecordedDeadSlotUse` (DeadValueLiveness.h) — the post-`specialize()`
+// rewrite, which rewrote pointer and `byval` slots to `null` without it (a plain-C
+// program compiled clean and its executable SIGSEGVed, r4A F-YA-1).
+bool dropEligibleSlot(const llvm::CallBase &CB, unsigned A);
 
 }  // namespace cq
 

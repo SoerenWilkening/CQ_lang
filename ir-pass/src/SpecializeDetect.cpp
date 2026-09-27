@@ -125,6 +125,19 @@ bool dropEligibleParam(const Argument &P) {
 
 }  // namespace
 
+bool dropEligibleSlot(const CallBase &CB, unsigned A) {
+  const Function *Callee = CB.getCalledFunction();
+  if (!dropEligibleCallee(Callee) || CB.getFunctionType() != Callee->getFunctionType())
+    return false;
+  if (const auto *CI = dyn_cast<CallInst>(&CB); CI && CI->isMustTailCall())
+    return false;
+  if (A >= Callee->arg_size())
+    return false;
+  return dropEligibleParam(*Callee->getArg(A)) &&
+         dropEligibleParamAttrs(Callee->getAttributes().getParamAttrs(A)) &&
+         dropEligibleParamAttrs(CB.getAttributes().getParamAttrs(A));
+}
+
 bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
   // The front-end intrinsic sites are skipped by MEMBERSHIP (the
   // `detectSpecializations` rule, never a name prefix). LOAD-BEARING, not a belt
@@ -173,9 +186,7 @@ bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
         if (isa<Constant>(Op))
           continue;
         Argument *P = Callee->getArg(A);
-        if (!dropEligibleParam(*P) ||
-            !dropEligibleParamAttrs(Callee->getAttributes().getParamAttrs(A)) ||
-            !dropEligibleParamAttrs(CI->getAttributes().getParamAttrs(A)))
+        if (!dropEligibleSlot(*CI, A))
           continue;
         // Debug lever (env-gated, no behaviour change; the CQ_SPEC_DBG
         // precedent): one line per drop, so a census can list the modules this

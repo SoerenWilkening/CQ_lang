@@ -100,13 +100,31 @@ bool isLivenessRoot(const llvm::Instruction &I, const TaintSet &taint);
 bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                         const TaintSet &taint);
 
+// A recorded-dead slot that the one rewrite may also NULL: `isRecordedDeadSlot` AND
+// the pre-`specialize()` drop's own eligibility (`dropEligibleSlot`,
+// SpecializeDetect.h — an int/fp scalar, no `byval`/`returned`/`swifterror`/…, only
+// allowlisted attributes). The liveness call-slot rule asks THIS, not the bare
+// record, so an ineligible slot's operand — which stays in place — is a read.
+bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
+                          const TaintSet &taint);
+
 // THE ONE REWRITE of a recorded-dead slot (bd vsfp round 4; Rule 14 — three sites
 // used to spell it): if `U` is an argument operand of a call in a slot
-// `isRecordedDeadSlot` names, and it is not already a constant, set it to the null
+// `isRewritableDeadSlot` names, and it is not already a constant, set it to the null
 // constant of the CALLEE PARAMETER's type (bd f061: after retargeting, an fp slot
 // is an `i32` handle — never the operand's type) and strip `range`/`nofpclass` from
-// the parameter and the call site (a null may violate them — the constraint DAE
-// strips too). Returns true iff it rewrote. Callers: `resolvePhantomCloneArgReads`
+// the parameter and the call site. ⚠ bd `91k9` (round 5; r4A F-YA-1): round 4's
+// text said this was "the drop's rewrite" and that the strip was "the constraint DAE
+// strips too" — FALSE: the drop never rewrites a pointer, a `byval`/`inalloca`/
+// `preallocated` slot or a slot with an attribute outside its allowlist, and this
+// rewrite nulled all of them (a `byval` struct slot → `ptr byval null`: the plain-C
+// executable SIGSEGVed; `ptr nonnull dereferenceable(16) null` — immediate UB). It
+// now applies the drop's eligibility (`dropEligibleSlot`), and on an eligible slot
+// the only attributes that can be present are the allowlist, of which `range` /
+// `nofpclass` are the only ones a null can violate — hence exactly that strip.
+// An ineligible slot is left alone (a classical pointer there costs nothing; a
+// QUANTUM operand there is declined by `resolvePhantomCloneArgReads`). Returns
+// true iff it rewrote. Callers: `resolvePhantomCloneArgReads`
 // (a module-level call), `buildClone` (an inner clone call reading a dead
 // PARAMETER directly) and `deleteDeadCones` step 3 (an inner clone call reading a
 // dead INSTRUCTION) — so a nested clone call inherits the dead slot (bd sqjq).
@@ -154,7 +172,11 @@ uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint);
 // AFTER the guards owes `adjudicateTaintDelta`, not just a `propagate` (L1). The
 // one post-`specialize()` caller, `buildClone` (bd sqjq, round 4), runs on a clone
 // body that `lowerCloneControl`'s backstop has already made ONE BLOCK, so the fold
-// cannot fire there and no select is created — it only deletes.
+// cannot fire there and no select is created. ⚠ Not "it only deletes" (round 4's
+// wording, r4A F-YA-3): step 3 also REWRITES the operand of a live inner call in a
+// rewritable recorded-dead slot to a constant (the inherit). A rewrite to a
+// constant shrinks the taint set and never grows it, so the conclusion stands —
+// no select, no taint growth, no adjudication owed.
 //
 // Round-4 contract items (bd vsfp Rule-13 r3A/r3B):
 //   * the fold's condition seeds are `WeakTrackingVH`s (bd 1xp9): a seed that is
@@ -162,7 +184,9 @@ uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint);
 //     and the handle FOLLOWS its RAUW to the replacement, so the recursion never
 //     reads freed memory and still deletes the replacement if it is dead;
 //   * the two-entry-φ fold goes through `simplifySelectInst` first (`select %c,
-//     i1 true, i1 false` IS `%c`), as SimplifyCFG's own fold does;
+//     i1 true, i1 false` IS `%c`). ⚠ NOT "as SimplifyCFG's own fold does" (round
+//     4's wording, bd `w9xe`): SimplifyCFG builds with `IRBuilder<NoFolder>`; the
+//     `-O1` twin loses the select in InstCombine;
 //   * a dead value that is an operand of a LIVE call in a slot the specializer
 //     RECORDED dead (the call-slot rule) is replaced there by a null of the
 //     CALLEE PARAMETER's type before deletion — an inner clone call inherits the

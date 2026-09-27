@@ -8,8 +8,9 @@
 ; transitive users are loads), so the loaded value IS the initializer on
 ; every execution; the volatile qualifier exists only to defeat classical FP
 ; const-folding. GROUND: the owner's reachability ruling (2026-09-26 — a volatile
-; access to an internal, never-written, non-escaping, non-section object is not
-; observable), NOT "fenv is out of scope project-wide", which was an agent-authored
+; access to an internal, never-written, non-escaping object that is in no named section —
+; explicit or `#pragma clang section`-implied —, at no absolute address and in the default
+; address space is not observable), NOT "fenv is out of scope project-wide", which was an agent-authored
 ; over-generalisation (L7, bd vsfp round 4). The curation folds each
 ; load to its initializer constant BEFORE the PredMux fixpoint — unfolded,
 ; either load would block the tainted arm (E4 admits no volatile access) and

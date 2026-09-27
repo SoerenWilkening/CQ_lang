@@ -13,6 +13,8 @@ round r2A (`review_r2A_9bhg/REVIEW.md` F-9C-1) and, for hgwx, bd d88e's r1B (F-D
   stl3. The current description of the mechanism is §R3 on top of §R2.
 - ⚠ **And on round 3: ROUND 4 follows §R3 (§R4)** — bd 1xp9, f061, sqjq, xh17 and the owner's
   2026-09-26 reachability ruling. Read §R2 → §R3 → §R4 in order.
+- ⚠ **And on round 4: ROUND 5 follows §R4 (§R5)** — narrow: bd 91k9 (the rewrite keeps pointer/byval
+  slots) and bd qce6 (the implicit section; the address space). Read §R2 → §R3 → §R4 → §R5.
 
 Binaries (sha-256 prefixes):
 
@@ -1256,6 +1258,10 @@ read freed memory. r3B's `u5.c` — nine lines, classical conditions, a program 
 fold 1 built `select %c, i1 true, i1 false` for the second condition, and the 4.4 data-select grammar refuses
 a logical `select i1` condition. SimplifyCFG's own `FoldTwoEntryPHINode` goes through the folder, which
 returns `%c`; the fold now calls `simplifySelectInst` first (an existing value, never a new instruction).
+⚠ **FALSE (bd w9xe, Rule-13 r4B F-YB-2, measured):** stock SimplifyCFG builds through
+`IRBuilder<NoFolder>` and emits `select i1 %c, i1 true, i1 false`; the `-O1` twin loses it only in the
+later InstCombine. The code is sound and the conclusion holds; the parity bar is SimplifyCFG + InstCombine.
+Corrected at the source in round 5 (§R5.4).
 `u1` is TRACE-IDENT with its twin (mutant U3 pins it).
 
 **Deterministic UAF pins.** A use-after-free is a lottery under the system allocator — one lit run of
@@ -1309,7 +1315,12 @@ Ruling (bd memory `owner-ruling-volatile-unreachable-object-2026-09-26`): a vola
 iff the object is unreachable from outside the program — internal linkage or function-local, never written,
 address never escaping, no atomic access, **and not in a named section or at an absolute/fixed address**.
 `foldVolatileConstGlobalLoads` had every conjunct but the last; it now skips a global with `hasSection()`,
-`isAbsoluteSymbolRef()` or `!absolute_symbol`. A pointer built from an integer never strips to a
+`isAbsoluteSymbolRef()` or `!absolute_symbol`. ⚠ **INCOMPLETE (bd qce6, Rule-13 r4B F-YB-1, a P1):**
+`#pragma clang section bss=/data=/rodata=/relro=` sets an IMPLICIT section (global attributes the backend
+honours) that `hasSection()` does not see, so an MMIO `static volatile int STATUS;` under the pragma still
+folded in a quantum branch; and `isAbsoluteSymbolRef()` IS the `!absolute_symbol` test (the second test
+was redundant). Round 5 adds `hasImplicitSection()` and refuses any non-default address space (owner
+decision 2026-09-27) — §R5.3. A pointer built from an integer never strips to a
 `GlobalVariable`, so it never reaches the fold. `static volatile int K __attribute__((section("__DATA,__mmio")))`
 read in a quantum branch now declines exactly as on the ORACLE (round 3 folded it and accepted);
 `lowering_reject_volatile_global_{section,absolute_symbol}.ll` pin both (mutants S1/S2).
@@ -1468,3 +1479,131 @@ ROUND 1 / ROUND 2 rows the `nofree` RUN line runs the SUBJECT's debugalloc (no o
 6. **The section / absolute-address conjunct**: a global in a section only through a `#pragma`, a global
    aliased by a `GlobalAlias` with a section, and an `internal` global with an `!absolute_symbol` range that
    is not a single address.
+
+---
+
+# ROUND 5 (2026-09-27) — narrow: the rewrite keeps pointer slots, the implicit section, the address space
+
+Both Rule-13 rounds on round 4 (`5e38bef2`) were **NOT-CLEAR, each on ONE narrow P1**; everything else in
+both scopes held (`sqjq`/`f061`/`xh17` re-derived twin-identical, 8 new nested-clone spellings
+twin-identical, the tracking handles crash-free under `nofree`/`lifo`, `u1`–`u6` and new cascades
+twin-identical). Records: `review_r4A_vsfp/REVIEW.md` (F-YA-1..3; bds `91k9`, `cpac`),
+`review_r4B_vsfp/REVIEW.md` (F-YB-1..3; bds `qce6`, `w9xe`), committed unmodified at `3eb6bd7e`.
+Round 5 is deliberately narrow (coordinator), one commit. **NOT self-cleared.**
+
+| tag | `cq-opt` |
+|---|---|
+| ROUND 4 (`5e38bef2`, kept copy) | `829769d92e05c4e4` |
+| SUBJECT (round 5) | `74df1d02e7b90123` (`libCQPass.so` `0995fe83b837dedb`, `cq-opt-debugalloc` `4e0f3b7426760080`) |
+
+## R5.1 bd 91k9 (P1; introduced round 3, extended round 4) — the one rewrite never nulls a pointer slot
+
+`rewriteRecordedDeadSlotUse` nulled EVERY recorded-dead slot (`Constant::getNullValue(<param type>)`,
+stripping only `range`/`nofpclass`); the record covers pointer parameters too. r4A's `bv.c`
+(`int h(int a, struct Big s)`, `s` unread): `ptr noundef nonnull byval(%struct.Big) align 8 null` — opt exit
+0, verifier and 2b clean, the executable SIGSEGVs; `bvn2.c` the same through round 4's inner-call inherit;
+`pn.c` `nonnull null` into a `dereferenceable(16)` parameter (immediate UB, harmless only at `-O0`).
+
+**Fix.** The pre-`specialize()` drop's own slot eligibility is now ONE exported predicate,
+`dropEligibleSlot(CB, A)` (SpecializeDetect.h; the drop's loop calls it too — Rule 14): a direct, exact,
+non-`naked`, non-variadic, non-`musttail` callee called with its own type; an int/fp scalar parameter; no
+`returned`/`swifterror`/`byval`/`inalloca`/`preallocated`; only `noundef`/`signext`/`zeroext`/`inreg`/
+`range`/`nofpclass` on the parameter and the call site. A pointer slot (so `byref`/`sret`/`nonnull`/
+`dereferenceable`) is never eligible. `isRewritableDeadSlot = isRecordedDeadSlot ∧ dropEligibleSlot` gates
+the rewrite AND the liveness call-slot rule — an ineligible slot's operand stays in place, so it must count
+as a read, or `deleteDeadCones` step 3 would delete a value that call still uses. In
+`resolvePhantomCloneArgReads` an ineligible slot is left alone when its operand is classical (costs
+nothing) and DECLINES with the phantom-read string when it is quantum (it would stay bd `tzfa`'s extra
+consumer). On an eligible slot only the allowlist can be present, and `range`/`nofpclass` are the only two a
+null can violate — hence exactly that strip.
+
+**Linked executables (arg 5)** (`tools/r5run.py`): `bv` ORACLE rc 5 / 8 lines, ROUND 4 **rc −11 (SIGSEGV)** /
+2 lines, SUBJECT **rc 5 / 8 lines**; `bvn2` 5/18, −11/2, **5/18**; `pn` 5/8 on all three with the call
+`nonnull %3` on the ORACLE and SUBJECT and `nonnull null` on ROUND 4; the twin `bvT` rc 5 / 4 lines on all
+(the fully-inlined twin has no clone call and a shorter trace). The SUBJECT's traces of `bv`, `bvn2` and `pn`
+are byte-identical to the ORACLE's (8, 18, 8 lines; measured, `results/r5run_out.txt` + an `h.verdict` diff).
+
+**Comments corrected at the source (F-YA-1/F-YA-3):** the three that cited "the drop's rewrite" / "the
+constraint DAE strips too" (`DeadValueLiveness.h`, `Specialization.h`, `Specialization.cpp` step 1,
+`CQLoweringPass.cpp`), `DeadValueLiveness.h`'s and `buildClone`'s "only deletes" (step 3 also rewrites — a
+shrink, never a growth), and an L8 retirement trigger on `isCopyDestination` (name-keyed, sound by
+enumeration of today's emitters; widen it in the same change as any emitter that builds a user-visible rail
+with `cqrt_cswap`/`cnot`/`toffoli`/`x` before the resolution).
+
+## R5.2 bd cpac (P3, pre-existing) — record-only
+
+The inherit covers only values rooted at a DEAD parameter; `t = a*5` passed to an inner dead slot while `a`
+is live is lowered, reversed and freed (unitary unchanged; the ORACLE emits the same stream). Not changed.
+
+## R5.3 bd qce6 (P1; the owner's ruling) — the implicit section and the address space
+
+`#pragma clang section bss=/data=/rodata=/relro=` attaches `bss-section`/`data-section`/… global attributes,
+which the backend honours and `hasSection()` misses: an MMIO-style `static volatile int STATUS;` under the
+pragma folded to its initializer in a quantum branch (r4B `s4_pragma_bss.c`, `s1`/`s2_pragma_*.c`,
+`i_dsect.ll`, `i_relro.ll`). The gate is now `hasSection() || hasImplicitSection() || isAbsoluteSymbolRef()
+|| getAddressSpace() != 0` — the non-default address space by owner decision (conservative: device/MMIO
+memory on GPU/embedded targets); the redundant second absolute-symbol test is dropped (r4B P3:
+`isAbsoluteSymbolRef()` IS the `!absolute_symbol` test for a global object). Falsified claims corrected:
+`QramLowering.h` "Every conjunct is a gate here", §R4.6 (marked inline), and the fold fixture's
+"non-section object". On the SUBJECT the pragma and address-space probes decline exactly as their explicit-
+`section` sibling does (`value-arm swap-route`; `s1_pragma` `control flow`, the ORACLE's string).
+
+## R5.4 bd w9xe (P3) — the SimplifyCFG claim
+
+"SimplifyCFG's `FoldTwoEntryPHINode` goes through the folder, so `select %c, true, false` IS `%c`" is false:
+stock SimplifyCFG builds with `IRBuilder<NoFolder>`; the `-O1` twin loses the select in InstCombine.
+Corrected in `DeadValueLiveness.cpp`, `DeadValueLiveness.h`, the `lowering_volatile_globalfold_cascade.ll`
+header and §R4.2 (marked inline). Code unchanged. F-YB-3 stays on bd `50ho` (record-only).
+
+## R5.5 Fixtures, e2e
+
+6 fixtures added — `spec_accept_phantom_arg_read_{byval_slot,byval_inner_slot,pointer_slot}_kept.ll` (each with
+a NONULL prefix: no pointer argument is `null`) and `lowering_reject_volatile_global_{pragma_bss,pragma_data,
+addrspace}.ll` — and 2 headers corrected (`lowering_qram_volatile_fold.ll`,
+`lowering_volatile_globalfold_cascade.ll`); `ls ir-pass/test/*.ll | wc -l` **2404**. One e2e entry:
+`e2e-slice-spec-dropped-arg-byval-slot` (2-TU `bv`, lib `spec_dropped_arg_byval_lib.c`), whose golden is the
+ORACLE's trace byte-for-byte; on ROUND 4 and ROUND 3 the linked slice SIGSEGVs (rc −11), measured with
+`tools/mkgold5.py`.
+
+**Red-green** (`tools/redgreen5.sh`, 8-file family): ORACLE 4/8, ROUND 1 4/8, ROUND 2 4/8, ROUND 3 1/8,
+ROUND 4 2/8, SUBJECT 8/8. Every new file is RED on ROUND 4. The three 91k9 accepts are green on the ORACLE and
+rounds 1–2 (they never rewrote the slot); the three declines are red on every earlier binary (the ORACLE
+declines them at a different wall, `control flow`).
+
+## R5.6 Measurements (commands under `vsfp_probes/r5/tools/`)
+
+- `lit ir-pass/test` → **2404 discovered, 2403 passed, 1 XFAIL**.
+- `ctest --test-dir build -R byval-slot` → 1/1 (the new slice). No other ctest run (brief: nothing else).
+- **The reviewers' own verdict scripts, re-run unmodified on the SUBJECT** (`tools/r5_rerun_reviews.sh`;
+  r4B's on a scratch copy of its probes): r4A `results.sh` — the ONLY rows that moved are `bv [S]` (run
+  139 → 5, 2 → 8 lines), `bvn2 [S]` (139 → 5, 2 → 18) and `pn`'s S call (`null` → `%3`); r4B `all.sh` — the
+  only rows that moved are `g_as`, `s1_pragma`, `s2_pragma_val`, `s4_pragma_bss`, `i_dsect`, `i_relro`
+  (SUBJ/NOFREE/LIFO: ACCEPT → DECLINE) and their two twin-pair lines (now `(no trace pair)`); every other
+  row is identical except PIDs in the probes' own executable segfault lines (pre-existing, same rows).
+- **Corpus A/B vs ROUND 4** (`tools/buildcorp5.py`, `tools/ab.py`), denominator **3672** = lit 2404 + probe
+  modules 835 (the eight vsfp review dirs `review_r{1A,1B,2A,2B,3A,3B,4A,4B}_vsfp` + `review_r2A_9bhg`) + e2e
+  402 + multi-TU 31. Null (SUBJECT vs SUBJECT) **0**. ROUND 4 → SUBJECT **20 movers, all the fixed shapes**:
+  9 A→D (the three new decline fixtures; r4B `g_as`, `s1/s2/s4_pragma`, `i_dsect`, `i_relro`), 11 STREAM
+  (the three 91k9 fixtures and the byval e2e slice; r4A `bv`, `bvn2`, `pn` ×2 stage-1 copies each; r4B
+  `s3_pragma_cls` — straight-line `q + K` with a pragma-sectioned `K`, now reads `K` by its volatile load
+  instead of the folded 7, exactly as its explicit-section twin `s3_attr_cls` already did; the trace is
+  unchanged).
+- **Mutants** (`tools/mutants5.py`, scratch worktree `mutwt5` whose base build hashed to the SUBJECT; full
+  lit per mutant, `--timeout 60`, 2404 fixtures): N0 null 0 failed; **E1** (drop `dropEligibleSlot` from
+  `isRewritableDeadSlot`) KILLED by the three `*_slot_kept.ll`; **E2** (keep a quantum operand in an
+  ineligible slot silently) KILLED by `spec_reject_phantom_arg_read_range_attr.ll` (its string-attribute
+  slot is ineligible and quantum); **Q1** (drop `hasImplicitSection`) KILLED by `…_pragma_{bss,data}.ll`;
+  **A1** (drop the address-space conjunct) KILLED by `…_addrspace.ll`. **4 killed, 0 missed.**
+- `python3 tools/update_code_map.py --check` → clean (regenerated).
+
+## R5.7 What to attack
+
+1. `dropEligibleSlot` now also gates the LIVENESS call-slot rule: a recorded-dead but ineligible slot keeps its
+   operand live. Check the record-taking itself (`deadParamMask` via `FunctionLiveness`) for a clone whose
+   inner call's ineligible dead slot was previously treated as unread — could a parameter that used to be
+   recorded dead now be recorded live (a stream change) or vice versa?
+2. The resolution's new decline for a QUANTUM operand in an ineligible slot: is there an int/fp quantum slot
+   with a non-allowlisted attribute that clang emits (e.g. `noalias` never; `returned`?) — an over-decline
+   the corpus did not show.
+3. The address-space conjunct refuses ANY non-zero address space; on x86-64 no C spelling reaches it except
+   `__attribute__((address_space(N)))`. An owner decision, conservative by construction.
