@@ -8,6 +8,8 @@
 
 #include "RotationLowering.h"
 
+#include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r3: the ONE "slot unread")
+
 #include "ControlPlan.h"
 #include "ControlledSymbols.h"
 #include "LiteralIntegrity.h"  // valueCarriesUndef (bd z9t1 — the ONE spelling)
@@ -1346,7 +1348,23 @@ bool isCloneCallHop(const CallInst *CI) {
 // gate and nothing anywhere observes it. Measured on
 // `@__cq_q_inner_11(%x, %y)` with `%x` unread: `opt` exit 0 in the pre-round-2
 // tree, and the whole module's only sink is `cqrt_measure(%r)`. Pinned by
-// lowering_reject_live_record_clone_unused_arg.ll.
+// lowering_reject_live_record_clone_unused_arg.ll UNTIL bd vsfp (2026-09-26).
+//
+// ⚠ SINCE bd vsfp ROUND 3 NO MODULE-LEVEL CALL READS A RECORDED-DEAD SLOT AT ALL.
+// `dropDeadCallArguments` replaces an argument whose callee parameter is DEAD
+// (the liveness predicate, `DeadValueLiveness.h`) by a constant before
+// `detectSpecializations` (that fixture's `inner(%c, %p)` is now `inner(0, %p)`,
+// its dead sibling deleted, and it pins the twin's stream), and
+// `resolvePhantomCloneArgReads` NEUTRALISES every slot the specializer RECORDED
+// dead in a built clone (a slot only the clone's own flatten killed) right after
+// `specialize()`, before this walk runs. ⚠ The round-2 sentence here — "this
+// branch is reached only by such a register (never a derived record)" — was
+// FALSE (bd vsfp Rule-13 r2B F-WB-3): round 2's keeper exemption let a derived
+// record (`k5`: `p = q*3`, kept by a measure) reach this predicate through a dead
+// slot, and the `use_empty()` test below then emitted a spurious lyyf-(B) warning
+// the twin does not. Both halves are gone: no dead-slot read survives to here,
+// and the test asks the specializer's RECORD (`isRecordedDeadSlot`, the ONE
+// spelling of "slot unread" — Rule 14; this was a THIRD, `use_empty()` one).
 //
 // IR-ONLY, and said plainly because it changes how the pin must be read: `clang
 // -O1` runs DAE and DROPS a parameter no callee body reads, so the natural C
@@ -1363,30 +1381,47 @@ bool isCloneCallHop(const CallInst *CI) {
 // body-less declaration and an argument past a varargs boundary all return false.
 // That is the DECLINE direction, which is the safe one here.
 //
-// WHAT THE TEST IS, PRECISELY: a USE test, not a DATAFLOW test — "an argument
-// the callee never READS" (`Argument::use_empty()`), not "an argument the result
-// cannot depend on". The residual one level up is therefore known and IR-only
-// (Inc-3 Rule-13 round 2, reviewer probe q3): a parameter read only by an
-// in-body compare that is stripped and freed, with the return computed from the
-// OTHER parameter, still hops. `clang -O1` DCEs that dead compare and DAE then
-// drops the parameter, so C does not reach it; a dataflow test would be the fix
-// if it ever does.
+// WHAT THE TEST IS, PRECISELY (bd vsfp round 3; round 6): the specializer's RECORD —
+// the slot is read iff the callee is a clone `buildClone` recorded and the record
+// does not call the slot dead AND null-safe (`isRewritableDeadSlot`, the one slot
+// question liveness, the rewrite and M-C (d0) ask — Rule 14; round 3–5 asked the
+// bare `isRecordedDeadSlot` here). ⚠ NOT CONSERVATIVE HERE (bd `x8ut`, r6 F-R6-2):
+// this predicate's one caller is `reachesObservingSink`, the clause-3 EXEMPTION
+// walk, so a hop EXEMPTS a record; round 6 moved a recorded-dead, not-null-safe
+// slot from "no hop" to "hop" — the exempting direction — and called it
+// conservative. It is UNREACHABLE today, and that is the whole argument: M-A gates
+// are rotations, rotations occur only in non-clone functions (`scanBody` declines
+// `cq_theta` in a clone), and there `resolvePhantomCloneArgReads` step 1 DECLINES a
+// quantum operand in a recorded-dead, not-null-safe slot before `lowerRotations`.
+// RETIREMENT TRIGGER (L8): if that decline is relaxed or moved after
+// `lowerRotations`, or a rotation can occur inside a clone body, revert this test
+// to the bare `isRecordedDeadSlot` — the honest question here is "does the clone's
+// result depend on this argument?", whatever null-safety says. A call to a `__cq_q_*` function
+// with NO record gets no hop (the decline direction). The record is LIVENESS, not
+// a use test, so it also closes the old residual one level up (Inc-3 Rule-13
+// round 2, reviewer probe q3: a parameter read only by an in-body compare that is
+// stripped and freed, the return computed from the OTHER parameter — a dead
+// compare reaches no root, so the slot is recorded dead and there is no hop). It
+// is still not a DATAFLOW test: a parameter that reaches a live root other than
+// the returned value (e.g. a measured intermediate) is "read" and hops.
 //
 // NOT APPLIED TO THE CLAUSE-1 WALKS, deliberately. `collectDescendantRecords` /
 // `collectAncestorRecords` cross a clone call to decide what COUNTS as a record;
 // crossing an unused parameter there only ADDS records, i.e. over-declines, so
 // tightening it would be a scope change with no safety argument behind it.
-bool cloneArgReachesResult(const CallInst *CI, const Value *In) {
+bool cloneArgReachesResult(const CallInst *CI, const Value *In,
+                           const TaintSet &taint) {
   const auto *F = dyn_cast<Function>(CI->getCalledOperand());
-  if (!F || F->isDeclaration())
-    return false;
+  if (!F || F->isDeclaration() || !taint.SpecDeadArgMask.count(F))
+    return false;  // no clone record: no hop (the decline direction).
   for (unsigned K = 0, E = CI->arg_size(); K != E; ++K) {
     if (CI->getArgOperand(K) != In)
       continue;
     if (K >= F->arg_size())
       return false;  // past the varargs boundary — no `Argument` to interrogate.
-    if (!F->getArg(K)->use_empty())
-      return true;
+    if (!isRewritableDeadSlot(*CI, K, taint))
+      return true;  // a read, or a recorded-dead, not-null-safe slot (kept) — the
+                    // EXEMPTING direction; unreachable today (bd x8ut, see above).
   }
   return false;
 }
@@ -1865,7 +1900,7 @@ bool reachesObservingSink(Instruction *U, Value *R, const TaintSet &taint,
       continue;
     }
     if (!CI->getType()->isVoidTy() && isCloneCallHop(CI)) {
-      if (cloneArgReachesResult(CI, In))
+      if (cloneArgReachesResult(CI, In, taint))
         pushValue(CI);  // a clone's returned `cqq.out` rail.
       continue;         // …otherwise the argument is DEAD in the callee — no hop.
     }

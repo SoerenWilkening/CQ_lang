@@ -1,0 +1,32 @@
+N0_null: built 3cb890ef25187b4b debugalloc ce5fbf89cd8f5f82
+O1_no_erase_repropagate: built 40350799bc0449be debugalloc 1f451aed29fc2010
+O2_no_constfold_repropagate: built 2b355aea1c081a86 debugalloc 9af09718fbd756d8
+O3_no_postcondition: built d8bdd357111e7676 debugalloc 202f7f3fd0ae80f9
+O4_round2_stale: built ca5caa16f472e6ff debugalloc 6175e8931d976391
+S1_no_globalfold_armfold: BUILD FAILED
+[  0%] Building CXX object ir-pass/CMakeFiles/cq-opt.dir/src/CQLoweringPass.cpp.o
+[  2%] Building CXX object ir-pass/CMakeFiles/cq-opt.dir/src/QramLowering.cpp.o
+[  2%] Building CXX object ir-pass/CMakeFiles/cq-opt.dir/src/TaintPropagation.cpp.o
+/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/mutwt3/ir-pass/src/TaintPropagation.cpp:360:64: warning: unused parameter 'PhiFns' [-Wunused-parameter]
+  360 | void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
+      |                                                                ^
+/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/mutwt3/ir-pass/src/TaintPropagation.cpp:2610:33: warning: unused parameter 'M' [-Wunused-parameter]
+ 2610 | void deleteGlobalPhases(Module &M, WidthDispatch &wd, TaintSet &taint) {
+      |                                 ^
+/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/mutwt3/ir-pass/src/QramLowering.cpp:2678:20: error: use of undeclared identifier 'Blocks'
+ 2678 |     (void)F; (void)Blocks;
+      |                    ^
+/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/mutwt3/ir-pass/src/QramLowering.cpp:2598:62: warning: unused parameter 'taint' [-Wunused-parameter]
+ 2598 | bool foldVolatileConstGlobalLoads(Module &M, const TaintSet &taint) {
+      |                                                              ^
+1 warning and 1 error generated.
+make[3]: *** [ir-pass/CMakeFiles/cq-opt.dir/src/QramLowering.cpp.o] Error 1
+make[3]: *** Waiting for unfinished jobs....
+2 warnings generated.
+make[2]: *** [ir-pass/CMakeFiles/cq-opt.dir/all] Error 2
+make[1]: *** [ir-pass/CMakeFiles/cq-opt.dir/rule] Error 2
+make: *** [cq-opt] Error 2
+
+S2_condseed_nophi_only: built ec8ed07d781746d4 debugalloc e4e7fad5599ee761
+T1_no_neutralise: built 8172c677a7117870 debugalloc 4df7b442cd2e3bf8
+T2_no_unread_decline: built 5643651312ef60c7 debugalloc 5421e5ec06059a49

@@ -1,4 +1,24 @@
 ; taint_reject_quantum_return_spec_seeded_theta.ll — DECLINE (bd test_C_libtooling-9bhg).
+; ⚠ bd test_C_libtooling-vsfp (merged into bd 9bhg 2026-09-27) — RE-SPELLED, and why.
+; `@h` IGNORED its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now
+; replaces an argument whose callee parameter is DEAD under liveness
+; (`DeadValueLiveness.h`) by a constant before any stage reads it — what `clang -O1` does
+; to the hand-inlined twin — so that spelling never reaches the specializer: no
+; specialization site, no provisional return, and this file's subject is GONE. Measured on
+; the merged tree before this re-spell: `CQ_DEADARG_DBG: drop arg 0 of @h`, and 4 of
+; the 11 affected bd 9bhg fixtures still PASSED — for the hand-inlined twin's reason, not
+; theirs (CLAUDE.md Rule 12(c)).
+; The BRANCH-ONLY read now in `@h` (`%vsfp.c` feeding an EMPTY diamond — bd vsfp's
+; own round-2 spelling) keeps the parameter LIVE: a branch condition is a liveness root.
+; So the drop does not fire (pinned: `env CQ_DEADARG_DBG=1` on the RUN line and
+; `--implicit-check-not=CQ_DEADARG_DBG`), the specialization site exists at propagation as
+; before, and the clone is built as before. The clone's own flatten then removes the
+; branch, the specializer records slot 0 dead, and `resolvePhantomCloneArgReads` (last in
+; the post-`specialize()` chain) neutralises that slot where the module gets that far.
+; From C at -O1 this spelling is IR-ONLY: the library TU deletes an empty branch. The
+; `Library TU` source below is the ORIGINAL; the module is hand-edited from it.
+; RETIREMENT TRIGGER: a liveness predicate WITH control dependence (ADCE) makes this read
+; dead too. The pin then turns red and the subject must be re-derived (L8).
 ;
 ; Pins that a `cq_theta` result is a KEEP root of `returnTaintIsSpecProvisional`'s
 ; counterfactual cone — i.e. that the predicate asks "does this return's taint
@@ -33,8 +53,8 @@
 ; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s --implicit-check-not='quantum value returned'
+; RUN: not env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not=CQ_DEADARG_DBG --implicit-check-not='quantum value returned'
 ; CHECK: in function main {{.*}}: cq taint escape: tainted value stored to memory
 
 ; ModuleID = 'llvm-link'
@@ -69,6 +89,11 @@ declare i32 @atoi(ptr nocapture noundef) local_unnamed_addr #3
 
 ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
 define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #4 {
+  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp: a BRANCH-ONLY read keeps this parameter LIVE (header)
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
   %3 = add nsw i32 %1, 1
   ret i32 %3
 }

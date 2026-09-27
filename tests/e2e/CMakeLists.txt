@@ -2662,6 +2662,9 @@ add_test(NAME e2e-slice-specialize-twoarm-select
 #   * SPEC-CLASSICAL, SCRUBBED ELSEWHERE (`h(a,k) = k + 1`): the scrub happens but
 #     the lifted base is a `cq_theta` keep root. The correct circuit is the
 #     hand-inlined twin's, so its golden is pinned BYTE-IDENTICAL to the 2-TU one.
+#     ⚠ Since bd vsfp the library stores `a` to a volatile local: an `a` with NO
+#     uses is dropped before the specializer sees the call (`dropDeadCallArguments`)
+#     and the slice would scrub nothing. The golden did not move (measured).
 # ⚠ Both limits named by bd d88e Rule-13 r1B F-DB-6. (1) The spec-quantum golden
 #   pins a DEPHASED stream (the clone's copy-out keeps `q` live when the arm's Ry
 #   fires; `opt` warns `non-diagonal gate over a live derived record`, the owner's
@@ -2697,6 +2700,208 @@ add_test(NAME e2e-spec-lift-scrubbed-elsewhere-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_lift_scrubbed_elsewhere_twin.expected.log")
+
+# bd test_C_libtooling-vsfp (P1, SILENT DEPHASING) and its warned sibling bd hgwx.
+# A callee parameter with NO USES (`spec_dropped_arg_lib.c`: `h(a, k) = k + 1`) used
+# to be a Phase-6 slot the clone never read while the CALL still read the operand,
+# keeping a which-path rail the hand-inlined twin never computes alive across a
+# later non-diagonal gate (boolsel: a 4.4 `%out`, silent; inplace: M-C refused the
+# in-place add, warned). `dropDeadCallArguments` replaces such an operand by `0`
+# before any stage reads it. Each 2-TU golden is pinned BYTE-IDENTICAL to its
+# hand-inlined twin's — the definition of the correct circuit. ⚠ WHAT IS RED ON THE
+# ORACLE (bd vsfp Rule-13 r1B F-VB-6): NOT the `*-twin-identical` gates — each is a
+# `compare_files` of two COMMITTED goldens and is binary-independent. What the oracle
+# fails is `e2e-slice-spec-dropped-arg-{boolsel,inplace,volatile-char}`: its 2-TU
+# stage-2 module runs to a trace carrying the `%out` copy block / the out-of-place add,
+# which differs from the committed golden (measured). The twin-identical gate pins
+# that the committed goldens ARE the twin's; the slice entries pin that this binary
+# produces them.
+add_test(NAME e2e-slice-spec-dropped-arg-boolsel
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-boolsel-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-boolsel-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-inplace
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-inplace-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-inplace-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_inplace_twin.expected.log")
+
+# bd vsfp ROUND 2 (Rule-13 r1B F-VB-1 / bd a8q5; r1A F-VA-2 / bd m1gi). Two more
+# callers of the SAME boolsel twin: a library that stores the dead parameter to a
+# `volatile char` (the fenv stage's dead `trunc` kept it "used" in round 1), and an
+# operand that is a dead `llvm.smax` (round 1's cone walk kept dead intrinsic calls).
+# Both 2-TU entries are RED on the oracle and on bd vsfp round 1 (their traces carry
+# the `%out` copy block) and GREEN here; the twin-identical gates pin the committed
+# goldens to the twin's (they compare two files and cannot be red on any binary).
+add_test(NAME e2e-slice-spec-dropped-arg-volatile-char
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_char.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_volatile_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_char.expected.log")
+add_test(NAME e2e-spec-dropped-arg-volatile-char-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_char.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-dead-smax
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_dead_smax.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_dead_smax.expected.log")
+add_test(NAME e2e-spec-dropped-arg-dead-smax-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_dead_smax.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_boolsel_twin.expected.log")
+
+# bd vsfp ROUND 3 (Rule-13 r2B F-WB-1/F-WB-2 — bd tzfa / bd stl3, probe `k19`). A callee
+# whose only read of the dead parameter is the condition of an arm reading a never-stored
+# internal `volatile` global. Round 2 left the emptied diamond (the global fold had no arm
+# fold), the backstop accepted the phantom read because the operand `p = q * 3` had
+# another reader, and the phantom clone call kept the spine from uncomputing `p`'s rail:
+# `q` fully dephased across its phase oracle (a Rule-8 wrong unitary; the ORACLE emits the
+# same stream). The 2-TU entry is RED on round 2 and on the oracle (12 trace lines, no
+# `mul_i32_hl_unc`), DECLINES on round 1, and is GREEN here; the gate pins its golden to
+# the hand-inlined twin's (it compares two files and cannot be red on any binary).
+add_test(NAME e2e-slice-spec-dropped-arg-volatile-global
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_volatile_global_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-volatile-global-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-volatile-global-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global_twin.expected.log")
+
+# bd vsfp ROUND 3 (Rule-13 r2A F-WA-1 — bd otam, probe `stale3c`). The fenv store erasure
+# empties a quantum-conditioned arm and its cone deletion folds the two-entry φ into a NEW
+# tainted `select`; round 2 never re-propagated, so `f(r)` was treated as classical, `f`
+# received the `%out` rail handle as data and the user's `cq_measure` VANISHED (exit 0,
+# 0 bytes of stderr, 2b clean). RED on round 2 (12 lines, no clone) and a decline on the
+# oracle and round 1; GREEN here, pinned to the fenv-intended twin.
+add_test(NAME e2e-slice-volatile-arm-fold-repropagate
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate.expected.log")
+add_test(NAME e2e-slice-volatile-arm-fold-repropagate-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate_twin.expected.log")
+add_test(NAME e2e-volatile-arm-fold-repropagate-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_repropagate_twin.expected.log")
+
+# bd vsfp ROUND 4 (Rule-13 r3B F-XB-1 — bd 1xp9, probe `u5`). Two cascaded diamonds on
+# CLASSICAL conditions whose arms the fenv store erasure empties; the second condition is an
+# `i1` phi the first fold's block merge erases. Rounds 2-3 read it freed: SIGSEGV (exit 139) on
+# a program the ORACLE compiles. RED (a crash) on rounds 2 and 3, GREEN here, pinned to the
+# fenv-intended twin.
+add_test(NAME e2e-slice-volatile-arm-fold-cascade
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade.expected.log")
+add_test(NAME e2e-slice-volatile-arm-fold-cascade-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade_twin.expected.log")
+add_test(NAME e2e-volatile-arm-fold-cascade-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_volatile_arm_fold_cascade_twin.expected.log")
+
+# bd vsfp ROUND 5 (Rule-13 r4A F-YA-1 — bd 91k9, probe `bv`). A clone's recorded-dead `byval`
+# struct slot was neutralised to `null` on rounds 3-4: opt, the verifier and stage 2b were clean
+# and the linked executable SIGSEGVed. Only a slice RUNS the program. RED (crash) on rounds 3 and
+# 4, GREEN here; the golden is byte-identical to the ORACLE's trace (measured).
+add_test(NAME e2e-slice-spec-dropped-arg-byval-slot
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_byval_slot.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_byval_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_byval_slot.expected.log")
+
+# bd vsfp ROUND 6 (Rule-13 r5 F-Z-1 — bd w7nm, probe `mt1`). r2B's `k19` main with the callee
+# forwarding its dead argument through `musttail`. Round 5's liveness rule asked the drop's
+# `musttail` POLICY, the outer phantom slot was never neutralised and `p = 3q` stayed DIRTY across
+# the Ry — bd tzfa's wrong unitary, exit 0. RED on round 5 and the ORACLE (their stream lacks the
+# `mul_i32_hl_unc` + free), GREEN here; pinned to the hand-inlined twin.
+add_test(NAME e2e-slice-spec-dropped-arg-musttail-inner
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_musttail_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-musttail-inner-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-musttail-inner-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner_twin.expected.log")
 
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two

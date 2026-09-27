@@ -1,0 +1,21 @@
+lit: /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/lit.cfg.py:53: fatal: cq-opt-debugalloc (/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/bin/cq-opt-debugalloc.stale) is OLDER than cq-opt (/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/bin/cq-opt.N0_null): it links cq-opt's objects, so it is STALE — rebuild it: cmake --build build --target cq-opt-debugalloc (or a full cmake --build build)
+stale: rc=2
+lit: /Users/sorenwilkening/.pyenv/versions/3.11.9/lib/python3.11/site-packages/lit/TestingConfig.py:152: fatal: unable to parse config file '/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/litora/lit.site.cfg.py', traceback: Traceback (most recent call last):
+  File "/Users/sorenwilkening/.pyenv/versions/3.11.9/lib/python3.11/site-packages/lit/TestingConfig.py", line 140, in load_from_path
+    exec(compile(data, path, "exec"), cfg_globals, None)
+  File "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/litora/lit.site.cfg.py", line 9, in <module>
+    config.cq_opt_debugalloc = os.environ["VSFP_DEBUGALLOC"]
+                               ~~~~~~~~~~^^^^^^^^^^^^^^^^^^^
+  File "<frozen os>", line 679, in __getitem__
+KeyError: 'VSFP_DEBUGALLOC'
+
+unset: rc=2
+-- Testing: 1 of 2361 tests, 1 workers --
+PASS: CQ IR-pass :: spec_scrub_dangling_key_clone_classical_mul.ll (1 of 1)
+
+Testing Time: 2.62s
+
+Total Discovered Tests: 2361
+  Excluded: 2360 (99.96%)
+  Passed  :    1 (0.04%)
+fresh (positive control): rc=0

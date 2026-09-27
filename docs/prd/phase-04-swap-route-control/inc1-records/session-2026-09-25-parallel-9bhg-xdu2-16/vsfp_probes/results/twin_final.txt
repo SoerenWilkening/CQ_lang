@@ -1,0 +1,309 @@
+STREAM	P_d88e_probes__LL_src_d01C.handedited.s1	NO-SRC		
+A->D	P_d88e_probes__src_a01C	DECL-SAME	S=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=	T=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=
+A->D	P_d88e_probes__src_a02C	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+D->A	P_d88e_probes__src_a03C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_d88e_probes__src_a04C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_d88e_probes__src_e02C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_d88e_probes__src_h01C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_d88e_probes__src_h02C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+STREAM	P_d88e_probes__src_j01C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_d88e_probes__src_j02C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_d88e_probes__src_l03C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_d88e_probes__src_l04C	DECL-SAME	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_d88e_probes__src_l05C	DECL-SAME	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_d88e_probes__src_l06C	DECL-SAME	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_d88e_probes__src_l09C	DECL-SAME	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_d88e_probes__src_l10C	DECL-SAME	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+A->D	P_d88e_probes__src_l12C	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+STREAM	P_d88e_probes__src_l15C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+A->D	P_d88e_probes__src_l17C	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+D->A	P_d88e_probes__src_l19C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_d88e_probes__src_l20C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_d88e_probes__src_l21C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_d88e_probes__src_n04C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob1	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob2	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob3	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob4	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob5	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob6	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob7	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob8	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ob9	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__rfc	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__rloop	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__rsel	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__ya	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__yb	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_probes__yc	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_c01C	DECL-SAME(auto)	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+DIAG	P_review_r1A_9bhg__probes_src_c06C	DECL-SAME(auto)	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+STREAM	P_review_r1A_9bhg__probes_src_l03C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_l04C	DECL-SAME(auto)	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1A_9bhg__probes_src_l05C	DECL-SAME(auto)	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1A_9bhg__probes_src_l06C	DECL-SAME(auto)	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1A_9bhg__probes_src_l09C	DECL-SAME(auto)	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1A_9bhg__probes_src_l10C	DECL-SAME(auto)	S=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+A->D	P_review_r1A_9bhg__probes_src_l12C	DECL-SAME(auto)	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+STREAM	P_review_r1A_9bhg__probes_src_l15C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+A->D	P_review_r1A_9bhg__probes_src_l17C	DECL-SAME(auto)	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+D->A	P_review_r1A_9bhg__probes_src_l19C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1A_9bhg__probes_src_l20C	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1A_9bhg__probes_src_l21C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_rb1	DECL-SAME(auto)	S=DECL nknown>:0:0: in function f i32 (i32): cq rail bank: unsupported reader of a rail-bank cell w=	T=DECL nknown>:0:0: in function f i32 (i32): cq rail bank: unsupported reader of a rail-bank cell w=
+D->A	P_review_r1A_9bhg__probes_src_rb3	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_rt1	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s01C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s02C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s05C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s09C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s13C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_s14C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_w01C	DECL-SAME(auto)	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r1A_9bhg__probes_src_w02C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w03C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w05C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w06C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_w07C	DECL-SAME(auto)	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+D->A	P_review_r1A_9bhg__probes_src_w08C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_9bhg__probes_src_w09C	DECL-SAME(auto)	S=DECL  i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail w=	T=DECL  i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail w=
+DIAG	P_review_r1A_9bhg__probes_src_w11C	DECL-SAME(auto)	S=DECL ain i32 (i32, ptr): cq I/O output sink: tainted argument is not a lowerable integer scalar w=	T=DECL ain i32 (i32, ptr): cq I/O output sink: tainted argument is not a lowerable integer scalar w=
+D->A	P_review_r1A_9bhg__probes_src_w12C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w13C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w14C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w15C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w16C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w17C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w18C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w19C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_w20C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x01C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x02C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x03C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x04C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x05C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x06C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x07C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x09C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x10C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_9bhg__probes_src_x11C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1A_d88e__probes_src_r01C	DECL-SAME	S=DECL n function f1 i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL n function f1 i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1A_d88e__probes_src_r02C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+A->D	P_review_r1A_d88e__probes_src_r03C	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+DIAG	P_review_r1A_d88e__probes_src_r05C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+D->A	P_review_r1A_d88e__probes_src_r07C	TRACE-IDENT	S=ACC  w=1	T=ACC  w=1
+DIAG	P_review_r1A_d88e__probes_src_r10C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+D->A	P_review_r1A_d88e__probes_src_r15C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1A_d88e__probes_src_r15T	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1A_d88e__probes_src_r21C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_n3	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_n4	VERDICT-DIFF(auto)	S=ACC  w=0	T=DECL ut1 i32 (i32, i32): cq specialization: callee return value denotes no value (undef/poison) w=
+D->A	P_review_r1B_9bhg__probes_battery_s_f32	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_s_f64	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_s_f80	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_f32	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_f64	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_f80	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_i1	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_i16	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_i64	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_w_i8	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_a03C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_bbC	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1B_d88e__probes_src_bcC	DECL-SAME	S=DECL function main i32 (i32, ptr): cq rail bank: array is written from more than one store site w=	T=DECL function main i32 (i32, ptr): cq rail bank: array is written from more than one store site w=
+STREAM	P_review_r1B_d88e__probes_src_e2ec	NO-TWIN	S=ACC 	
+STREAM	P_review_r1B_d88e__probes_src_lbC	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1B_d88e__probes_src_lcC	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_leC	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+D->A	P_review_r1B_d88e__probes_src_rb01C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb02C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb03C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb05C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb06C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb07C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_rb08C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_rb10C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb11C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb12C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb14C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_d88e__probes_src_rb15C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_rb17C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_rb18C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r1B_d88e__probes_src_sqb1C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb3C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb4C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb5C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb6C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqb7C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc1C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc3C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc4C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc5C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc6C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqc7C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqd2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqi2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql1C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql3C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql4C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql5C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql6C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sql7C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs1C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs2C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs3C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs4C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs5C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs6C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_sqs7C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+DIAG	P_review_r1B_d88e__probes_src_zaC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+DIAG	P_review_r1B_d88e__probes_src_zbC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zcC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zfC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+DIAG	P_review_r1B_d88e__probes_src_zgC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+DIAG	P_review_r1B_d88e__probes_src_ziC	DECL-SAME	S=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=	T=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zjC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zkC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zmC	DECL-SAME	S=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=	T=DECL function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control w=
+A->D	P_review_r1B_d88e__probes_src_zxdC	DECL-SAME	S=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=	T=DECL ntrolled lowering: state prep seed does not match the merge incoming under quantum control w=
+STREAM	P_review_r1B_d88e__probes_src_zxnC	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_a_v1	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_a_v12	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_a_w12	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_a_w15	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_a_w9	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b1	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b10	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b10f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b11	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b11f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b12	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b12f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b13	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b13f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b14	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b14f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b15	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b15f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b16	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b16f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b17	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b17f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b18	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b18f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b2	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b20	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b24	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b25	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b26	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b3	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b4	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b5	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b6	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b7	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b7f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_b8	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b8f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b9	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_b9f	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_cv11S	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_cv11W	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_cv12S	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_cv12W	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_cv14S	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_cv14W	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_cv16S	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_cv16W	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_cv17S	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_cv17W	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d1	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d10	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d3	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d4	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d6	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d7	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d8	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_d9	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e10C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e11C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e12C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e13C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e14C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e15C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_e16C	DECL-SAME(auto)	S=DECL on main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary w=	T=DECL on main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary w=
+D->A	P_review_r2A_9bhg__probes_src_e1C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e2C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e3C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e4C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e5C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e6C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e7C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e8C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_e9C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fp_doubl_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fp_float_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fp_longd_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fpb_doubl_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fpb_float_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_fpb_longd_C	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_g3C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_g4C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k01C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k02C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_k03C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k04C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k05C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k06C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k07C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k08C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k09C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_k10C	DECL-SAME	S=DECL ain i32 (i32, ptr): cq I/O output sink: tainted argument is not a lowerable integer scalar w=	T=DECL ain i32 (i32, ptr): cq I/O output sink: tainted argument is not a lowerable integer scalar w=
+DIAG	P_review_r2A_9bhg__probes_src_k11C	DECL-SAME	S=DECL n i32 (i32, ptr): cq QRAM store: alloca array mixes a tainted-index and a classical access w=	T=DECL n i32 (i32, ptr): cq QRAM store: alloca array mixes a tainted-index and a classical access w=
+D->A	P_review_r2A_9bhg__probes_src_k12C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k13C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k14C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k15C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k16C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k17C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k20C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k21C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k22C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k23C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_k24C	DECL-SAME	S=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=	T=DECL ion main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi w=
+D->A	P_review_r2A_9bhg__probes_src_k25C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_k26C	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+DIAG	P_review_r2A_9bhg__probes_src_k27C	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r2A_9bhg__probes_src_k28C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_k29C	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r2A_9bhg__probes_src_k30C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k31C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_k32C	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r2A_9bhg__probes_src_k33C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_k34C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_ln1C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_ln3C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_ln5C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_ln6C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_m3	TRACE-IDENT(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_n3	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_n4	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_o4	TRACE-IDENT	S=ACC  w=1	T=ACC  w=1
+D->A	P_review_r2A_9bhg__probes_src_r07C	TRACE-IDENT	S=ACC  w=1	T=ACC  w=1
+D->A	P_review_r2A_9bhg__probes_src_rb1C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_rb2C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_rb3C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_rb4C	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r2A_9bhg__probes_src_rb5C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_rb6C	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_s3b	VERDICT-DIFF(auto)	S=DECL >:0:0: in function F i32 (i32): cq controlled lowering: control flow under quantum control w=	T=ACC  w=0
+DIAG	P_review_r2A_9bhg__probes_src_s3c	VERDICT-DIFF(auto)	S=DECL >:0:0: in function F i32 (i32): cq controlled lowering: control flow under quantum control w=	T=ACC  w=0
+A->D	P_review_r2A_9bhg__probes_src_s3d	DECL-SAME	S=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=	T=DECL n function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control w=
+D->A	P_review_r2A_9bhg__probes_src_s_f32	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f32T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_s_f64	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f64T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r2A_9bhg__probes_src_s_f80	TRACE-IDENT	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f80T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0

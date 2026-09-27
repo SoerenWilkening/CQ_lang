@@ -21,4 +21,10 @@ int slice(void) {
     return z + lib_bias();
 }
 
-int main(void) { (void) slice(); return 0; }
+/* bd test_C_libtooling-vsfp round 2: `main` RETURNS `slice()` (0 under the trace
+   runtime: `measure` returns 0 and `lib_bias` returns 0). It used to discard it, which
+   left `lib_bias()` a DEAD call once llvm-link made its body (`return 0`) visible — and
+   round 2's dead-argument drop deletes a dead call to a side-effect-free definition, as
+   `-O1` would with both TUs visible. This smoke's point is that the caller really CALLS
+   the classical helper across the TU boundary, so its result is kept live. */
+int main(void) { return slice(); }

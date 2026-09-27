@@ -60,6 +60,8 @@ add_library(CQPass MODULE
   src/ControlledSymbols.cpp
   src/CtlzIdiomPrepass.cpp
   src/DagTraversal.cpp
+  # bd vsfp round 2: the ONE liveness predicate + dead-cone deletion.
+  src/DeadValueLiveness.cpp
   src/GuardedStoreArmEmit.cpp
   # bd xdu2.8: the arm-guarded classical runtime-VLA read (PredMux E4 (1d)).
   src/GuardedClassicalRead.cpp

@@ -1,4 +1,22 @@
 ; lowering_reject_live_record_clone_unused_arg.ll — WARNING (was DECLINE): a Phase-6 clone call
+; ⚠⚠ bd test_C_libtooling-vsfp (2026-09-26) — THIS FILE'S SUBJECT IS RETIRED, AND IT NOW
+; PINS THE HAND-INLINED TWIN'S STREAM. Everything below the rule is kept verbatim as
+; history; its "IR-ONLY" paragraph predicted exactly what happened: "`clang -O1` runs DAE
+; and DROPS a parameter no callee body reads, taking the dead argument — and then the
+; dead sibling `c` itself — with it". `dropDeadCallArguments` (SpecializeDetect.h) now
+; does that inside CQ, before any stage reads an argument, for a callee `-O1` could not
+; see (another TU; here an `internal` one, so it is exact): `inner(%c, %p)` becomes
+; `inner(0, %p)`, the dead sibling `%c = mul %q, 3` is deleted with its cone, and
+; nothing stands at the gate — NO warning, the clone is `__cq_q_inner_10` (it reads
+; exactly the slot it is passed), and the stream is the twin's. A phantom read the drop
+; MISSES no longer reaches this warning at all: `declinePhantomCloneArgReads` declines it
+; right after `specialize()` (spec_reject_phantom_arg_read_range_attr.ll is this very
+; shape with the drop defeated by a `range` attribute). So `cloneArgReachesResult`'s
+; unused-parameter branch (RotationLowering.cpp) is now reached only by an operand that
+; fence EXEMPTS — a `cq_theta` result — never by a derived record like `c`. The name
+; keeps `reject_` for the reason given below (a `git mv` can be resurrected by a merge,
+; CLAUDE.md L8). The DROP prefix pins that the drop fired; NOSIB that the sibling is gone.
+; ----------------------------------------------------------------------------------------
 ; is a value-preserving HOP only for the arguments the clone actually READS. An
 ; argument the callee ignores does not reach the clone's result, so measuring that
 ; result observes nothing about it (M-A, bd test_C_libtooling-6uqc; round 2 of the
@@ -76,10 +94,10 @@
 ; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
 ; `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
-; RUN: %filecheck %s --check-prefix=WARN < %t.err
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=DROP < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOSIB < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -105,19 +123,18 @@ define internal fastcc i32 @inner(i32 %x, i32 %y) {
   ret i32 %a
 }
 
-; WARN: warning{{.*}}in function main{{.*}}cq rotation lowering: non-diagonal gate over a live derived record
-; ONE report per offending GATE, never per record (the message carries the
-; gate's !dbg, so a second record on the same rotation would print a duplicate).
-; WARN-NOT: warning
+; (bd vsfp) The drop fires on `inner`'s unread slot, and NOTHING warns afterwards:
+; DROP: CQ_DEADARG_DBG: drop arg 0 of @inner in @main (inst)
+; DROP-NOT: warning
 ;
-; THE PROGRAM LOWERS. `opt` exits zero and the gate is in the stream:
+; THE PROGRAM LOWERS to the twin's stream: the wire's gate, then the clone of `inner`
+; with mask `10` reading only `%p`'s rail.
 ; LOWER-LABEL: define{{.*}}@main(
 ; LOWER: call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)
-; and the record is LEFT ALLOCATED — never freed dirty (Rule 6), which is the
-; whole of what the ruling changes about the emitted circuit.
-; NOFREEREC-NOT: call void @cqrt_free(i32 %h_op2)
-; It is its OWN prefix, with no positive directive, so its window is the
-; WHOLE lowered module rather than the span after the gate — a free emitted
-; BEFORE the rotation would be caught too. That is also the spelling
-; tools/fixture_guard_liveness.py recognizes (`NOFREE*`), which counts it as
-; unanchored-and-therefore-not-dead rather than passing over it in silence.
+; LOWER: call fastcc i32 @__cq_q_inner_10(i32 0, i32 %h1)
+; The dead sibling record is never computed (own prefix: the WHOLE module).
+; NOSIB-NOT: cq_template_mul_i32_hl(i32 %h, i32 3)
+; NOSIB-NOT: %h_op2
+;
+; (The pre-vsfp checks — `WARN:` on this gate and `NOFREEREC-NOT: cqrt_free(%h_op2)` —
+; pinned a record that no longer exists; see the note at the top.)

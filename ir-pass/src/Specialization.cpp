@@ -4,6 +4,7 @@
 
 #include "BennettWrap.h"
 #include "CompareLowering.h"
+#include "DeadValueLiveness.h"
 #include "ControlledSymbols.h"
 #include "IntrinsicLowering.h"
 #include "LiteralIntegrity.h"  // findUndefOperandInBody (bd xy9n — the twin dup)
@@ -39,6 +40,8 @@
 #include "llvm/Transforms/Utils/BasicBlockUtils.h"
 #include "llvm/Transforms/Utils/Cloning.h"
 
+#include <algorithm>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -965,6 +968,61 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     }
   }
 
+  // bd `test_C_libtooling-vsfp` round 2 — THE SPECIALIZER'S DEAD-SLOT RECORD,
+  // taken with the pass's ONE liveness predicate (`DeadValueLiveness.h`) on the
+  // clone body as it is HERE: control flattened (`lowerCloneControl`), inner
+  // tainted-arg calls retargeted to their own clones (whose records this
+  // predicate's call-slot rule already consults), and every read still a STOCK
+  // OPCODE. Not later: `lowerCloneSelect`/`lowerOps` turn reads into runtime
+  // calls, which are roots, and would make every parameter live. A slot recorded
+  // here is one no LIVE ROOT of the clone reads — and, since bd vsfp round 4 (bd
+  // sqjq), one the built clone never reads at all, because the dead cone below is
+  // deleted right after the record (⚠ round 3 wrote "never reads" of the record
+  // alone, and a dead-but-lowered op on the slot falsified it, r3A F-XA-2). It is
+  // the question the phantom-read resolution and M-C arm (d0) ask, by CALLING
+  // `isRecordedDeadSlot`. A dead
+  // parameter that reaches this point at all is one the dead-argument drop could
+  // not predict from the ORIGINAL callee (the clone's own flatten removed its
+  // last read — e.g. a condition-only use of an empty diamond — or a drop
+  // precondition refused the slot).
+  const uint64_t DeadSlots = deadParamMask(*Clone, taint);
+  taint.SpecDeadArgMask[Clone] = DeadSlots;
+  // …AND MAKE THE RECORD EXACT FOR THE BUILT CLONE (bd `test_C_libtooling-sqjq`,
+  // Rule-13 r3A F-XA-2). "Dead" means no live root reads the parameter — not that
+  // no instruction does. A dead instruction still standing here (the chain of a
+  // compare the clone's own flatten deleted, `t = a*3; if (t > 3) {}`; or `a+1`
+  // passed into an inner clone's dead slot) would be lowered by `lowerOps` below
+  // and so READ the parameter at run time — and once `resolvePhantomCloneArgReads`
+  // neutralises the caller's slot to `0`, that read addresses runtime handle h0, a
+  // register the caller never passed (at the wrong width when h0 is a `_Bool`).
+  // Delete that dead cone now, with the same predicate that took the record: the
+  // parameter is then genuinely unread, and an inner clone call inherits the dead
+  // slot (its operand becomes a constant, `deleteDeadCones` step 3). Deleting
+  // rather than recording later (after `lowerOps`) keeps the record on the
+  // stock-opcode body, where every read is still visible as a stock use. The clone
+  // is ONE BLOCK here (`lowerCloneControl`'s backstop), so `deleteDeadCones`' arm
+  // fold cannot fire and no tainted value is created: the call deletes dead
+  // instructions, whose `cloneTaint` keys self-scrub (`ScrubOnDelete.h`), none of
+  // them in `TaintedCloneCalls` (a clone call is a liveness root), and REWRITES a
+  // live inner call's rewritable dead-slot operand to a constant (step 3 — a
+  // shrink, never a growth; r4A F-YA-3 corrected "only deletes").
+  if (DeadSlots) {
+    SmallVector<Value *, 8> DeadUsers;
+    for (Argument &Arg : Clone->args())
+      if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+        for (User *U : Arg.users())
+          if (isa<Instruction>(U))
+            DeadUsers.push_back(U);
+    if (!DeadUsers.empty())
+      deleteDeadCones(*Clone, DeadUsers, taint, "clone-dead-slot");
+    // A dead PARAMETER passed straight into an inner clone call's dead slot (the
+    // instruction case is `deleteDeadCones` step 3): the inner call inherits it.
+    for (Argument &Arg : Clone->args())
+      if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+        for (Use &U : make_early_inc_range(Arg.uses()))
+          rewriteRecordedDeadSlotUse(U, taint);
+  }
+
   // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
   // controlled-XOR copy BEFORE `lowerOps` — so the fresh `cq_template_icmp` flag
   // mint is an ordinary data template the wrap captures/reverses, and the stock
@@ -1149,6 +1207,209 @@ bool shouldSpecialize(const CallInst *CI, const SpecPlan &plan) {
   for (const SpecCandidate &C : plan.Pending)
     if (C.Site == CI)
       return true;
+  return false;
+}
+
+// bd `test_C_libtooling-vsfp` — see Specialization.h. Mirrored
+// character-for-character by `spec_reject_phantom_arg_read*.ll`.
+static constexpr char kMsgPhantomArgRead[] =
+    "cq specialization: quantum argument to a parameter the lifted callee never "
+    "reads";
+
+namespace {
+
+// Is `V` a caller-side QUANTUM value at this slot: tainted, or a rail a control
+// emitter minted and recorded (the round-1 and round-2 `%out` rails are in
+// `Tainted` too — r1B measured it; the rail sets are asked as well so the answer
+// does not depend on that).
+bool isQuantumCallerValue(const Value *V, const TaintSet &taint) {
+  Value *NV = const_cast<Value *>(V);
+  return taint.Tainted.count(NV) || taint.ControlOwnedRails.count(NV) ||
+         taint.UntaintedMergeRails.count(NV) || taint.OutputRails.count(NV);
+}
+
+bool isRuntimeCall(const CallBase &CB) {
+  const Function *Callee = CB.getCalledFunction();
+  if (!Callee)
+    return false;
+  StringRef N = Callee->getName();
+  return N.starts_with("cqrt_") || N.starts_with("cq_template_");
+}
+
+// Is use `U` the DESTINATION operand of a basis copy — the one slot a control
+// emitter writes while it BUILDS its own `%out` rail? `cqrt_copy_<W>(src, dst)`
+// and `cqrt_copy_<W>_controlled(ctl, src, dst)` both write their LAST argument
+// and read every other one (`tools/free_pairing_check.py`'s `classify()`:
+// `writes=(1,)` / `writes=(2,)`). bd `test_C_libtooling-xh17` (Rule-13 r3A
+// F-XA-3): round 3 skipped EVERY runtime call on an emitter rail as
+// "construction", so a 4.4 `%out` read in the SOURCE slot of a later select's
+// controlled copy counted as unread and a correct program declined (the oracle
+// compiles it trace-identical to its twin).
+//
+// ⚠ RETIREMENT TRIGGER (L8; bd vsfp Rule-13 r4A F-YA-3). The test is NAME-keyed
+// (`cqrt_copy_` + the last argument) and sound by ENUMERATION: every emitter rail
+// that exists when `resolvePhantomCloneArgReads` asks is built by
+// `cqrt_copy_<W>[_controlled]` with the destination last (`SelectMergeEmit`,
+// `ClassicalCallArmEmit`, `SwitchValueEmit`'s preload and controlled copies,
+// `SwitchDataMuxEmit`, the `IOSinkLowering` value mux); `BreakReversePlay`'s copies
+// are minted later, and the tape-write / abort-park `OutputRails` have no users.
+// The day an emitter builds a user-visible rail with `cqrt_cswap` / `cqrt_cnot` /
+// `cqrt_toffoli` / `cqrt_x` (or a copy whose destination is not last) BEFORE this
+// point, that traffic will read as a REAL read of the rail and a phantom-only rail
+// will be accepted: widen this test to that emitter's write slots IN THE SAME CHANGE.
+bool isCopyDestination(const Use &U) {
+  const auto *CB = dyn_cast<CallBase>(U.getUser());
+  if (!CB || !CB->isArgOperand(&U))
+    return false;
+  const Function *Callee = CB->getCalledFunction();
+  if (!Callee || !Callee->getName().starts_with("cqrt_copy_"))
+    return false;
+  return CB->getArgOperandNo(&U) + 1 == CB->arg_size();
+}
+
+// Does the USER PROGRAM read `V` — i.e. does the hand-inlined twin compute `V`
+// too? Asked AFTER every recorded-dead slot was neutralised, so no phantom read
+// is left among `V`'s uses. Asked positively (Prime Directive direction: a use we
+// cannot name as a reader is NOT one, so the answer errs toward declining).
+// A READER is: a front-end `cq_measure`, or a `cq_theta` taking `V` as arg-0 (by
+// membership — the user reads it); a READ slot of a clone call; a `ret`; any
+// control-emitted runtime call that READS `V` (a compare a tainted condition
+// mints, or the SOURCE/control slot of a controlled copy — the twin has the same
+// emitter calls, because the user wrote the same regions); or a LIVE instruction
+// under the liveness predicate. ⚠ NOT a reader: the DESTINATION slot of a basis
+// copy (`isCopyDestination`), which is how an emitter builds its own `%out`. That
+// slot-exact rule replaced round 3's "every runtime call on an emitter rail is
+// construction", which declined a `%out` read by a later select's copy (bd
+// `xh17`).
+// ⚠ THE ROUND-2 VERSION OF THIS PREDICATE WAS UNSOUND AS AN ACCEPT (bd tzfa; bd
+// vsfp Rule-13 r2B F-WB-1): it asked "is `V` live for a reason of its own?" while
+// the phantom read was still IN the use list, and a live `V` was accepted with the
+// phantom read left in place — the uncompute spine then saw an extra CONSUMER of
+// `V`'s template rail and did not discharge it (r2B `k19`: `h1 = 3q` never
+// uncomputed, `q` fully dephased across the phase oracle). It is only sound now
+// because the phantom read is GONE before the question is asked.
+bool userProgramReads(const Value *V, const FunctionLiveness &L,
+                      const TaintSet &taint) {
+  for (const Use &U : V->uses()) {
+    const auto *UI = dyn_cast<Instruction>(U.getUser());
+    if (!UI)
+      continue;  // not a reader we can name.
+    if (const auto *CB = dyn_cast<CallBase>(UI)) {
+      if (const auto *CI = dyn_cast<CallInst>(CB)) {
+        if (taint.MeasureCalls.contains(CI))
+          return true;
+        if (taint.ThetaCalls.contains(CI) && CI->arg_size() >= 1 &&
+            CI->getArgOperand(0) == V)
+          return true;
+      }
+      if (const Function *Callee = CB->getCalledFunction())
+        if (taint.SpecHandleArgMask.count(Callee))
+          return true;  // a READ slot of a clone (dead slots were neutralised).
+      if (isRuntimeCall(*CB)) {
+        if (isCopyDestination(U))
+          continue;  // an emitter building its own rail: construction.
+        return true;  // any other runtime slot reads `V`.
+      }
+    }
+    if (isa<ReturnInst>(UI))
+      return true;
+    if (L.isLive(UI))
+      return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
+  // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
+  //    non-clone function that is NULL-SAFE (an int/fp scalar with allowlisted
+  //    attributes — `nullSafeSlot`; never the drop's `musttail` policy, bd `w7nm`)
+  //    gets a null constant with the `range`/`nofpclass` strip, asked with the SAME predicate's record
+  //    (`isRecordedDeadSlot`). ⚠ Round 4 said "exactly the drop's rewrite" and
+  //    applied none of the drop's eligibility — it nulled pointer and `byval`
+  //    slots (bd `91k9`, r4A F-YA-1); an ineligible slot is now left in place, and
+  //    declined when its operand is quantum. From here on no stage — the uncompute spine's
+  //    terminal selection and free points, M-C, M-A's hop walk, stage 2b — can
+  //    see a read the clone never performs: the operand's consumer set is the
+  //    hand-inlined twin's. One rewrite at the one point the record exists, rather
+  //    than a `isRecordedDeadSlot` exemption in every consumer (Rule 14; L3's
+  //    mirror — a consumer that forgot the exemption would re-open bd tzfa).
+  struct Neutralised {
+    Function *F;
+    CallBase *CB;
+    Value *Op;
+  };
+  SmallVector<Neutralised, 8> Done;
+  for (Function &F : M) {
+    if (F.isDeclaration() || taint.SpecHandleArgMask.count(&F))
+      continue;  // a clone / `_unc` twin body: its own Bennett wrap discharges.
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB) {
+        auto *CB = dyn_cast<CallBase>(&I);
+        if (!CB)
+          continue;
+        Function *Callee = CB->getCalledFunction();
+        if (!Callee || !taint.SpecDeadArgMask.count(Callee))
+          continue;
+        // EVERY slot the record calls dead, not only the detection mask's.
+        for (unsigned A = 0, E = CB->arg_size(); A < E; ++A) {
+          if (!isRecordedDeadSlot(*CB, A, taint))
+            continue;
+          Value *Op = CB->getArgOperand(A);
+          // The ONE rewrite (`rewriteRecordedDeadSlotUse`): a null of the CLONE
+          // PARAMETER's type, never the caller operand's (bd `f061`, bd vsfp Rule-13
+          // r3A F-XA-1 — a verifier ABORT, exit 134: after `retargetSite` a tainted
+          // fp slot of an fp-ABI clone is an `i32` HANDLE parameter while the
+          // caller's operand is still the stock `float`/`double`/`x86_fp80` value,
+          // which `lowerRotations`/`lowerOps` RAUW later — a constant never is).
+          if (isa<Constant>(Op))
+            continue;  // already a constant.
+          if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint)) {
+            // A slot that is not NULL-SAFE (bd `91k9`, round 5: a pointer, a
+            // `byval`, an attribute outside the allowlist) is left in place. This
+            // is the one consumer that asks both the bare record and the rewritable
+            // question — it is where their difference is resolved. A
+            // classical value there is harmless — no rail, no consumer set, no
+            // spine. A QUANTUM one would stay a phantom read, exactly bd `tzfa`'s
+            // extra consumer, so it declines (the same string as step 2).
+            if (!isQuantumCallerValue(Op, taint))
+              continue;
+            F.getContext().diagnose(DiagnosticInfoUnsupported(
+                F, kMsgPhantomArgRead, CB->getDebugLoc()));
+            return true;
+          }
+          Done.push_back({&F, CB, Op});
+        }
+      }
+  }
+  // 2. DECLINE what the spine still cannot discharge like the twin. A neutralised
+  //    QUANTUM operand the user program still reads is computed by the twin too,
+  //    and now has the twin's consumer set — the spine discharges it (or keeps
+  //    it) exactly as the twin's. One the user program does NOT read is a
+  //    computation the twin does not have: a control-emitted rail minted for the
+  //    phantom (a 4.4 `%out` — a which-path rail no stage uncomputes) or a dead
+  //    tainted op (lowered as a forward template; a dead chain is not reliably
+  //    uncomputed — CLAUDE.md fenv, bd vsfp §R2.6). Declined.
+  //    The one exemption is a `cq_theta` RESULT: the user's own register, which
+  //    the twin computes and keeps too (`cq_theta` is never deleted; validated by
+  //    Rule-13 r1B on nine shapes, mutant B2).
+  DenseMap<Function *, std::unique_ptr<FunctionLiveness>> Live;
+  for (const Neutralised &N : Done) {
+    if (!isQuantumCallerValue(N.Op, taint))
+      continue;  // a classical value costs nothing: no rail, no entanglement.
+    if (auto *OpCI = dyn_cast<CallInst>(N.Op);
+        OpCI && taint.ThetaCalls.contains(OpCI))
+      continue;
+    auto &L = Live[N.F];
+    if (!L)
+      L = std::make_unique<FunctionLiveness>(*N.F, taint);
+    if (userProgramReads(N.Op, *L, taint))
+      continue;
+    N.F->getContext().diagnose(DiagnosticInfoUnsupported(
+        *N.F, kMsgPhantomArgRead, N.CB->getDebugLoc()));
+    return true;
+  }
   return false;
 }
 

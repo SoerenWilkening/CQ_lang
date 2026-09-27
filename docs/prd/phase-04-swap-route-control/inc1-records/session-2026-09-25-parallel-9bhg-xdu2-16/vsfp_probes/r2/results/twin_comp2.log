@@ -1,0 +1,30 @@
+STREAM	P_review_r2A_9bhg__probes_src_g3C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_g4C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f32T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f64T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f80T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	Q_r1Bv__src_qjoc	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v01T	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v02T	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v08c	NO-TWIN	S=ACC 	
+D->A	Q_r1Bv__src_v08d	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v08e	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v16b	TRACE-DIFF(auto)	S=ACC  w=1	T=ACC  w=1
+STREAM	Q_review_r1B_vsfp__probes_src_qjoc	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v01T	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v02T	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v08c	NO-TWIN	S=ACC 	
+D->A	Q_review_r1B_vsfp__probes_src_v08d	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v08e	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v16b	TRACE-DIFF(auto)	S=ACC  w=1	T=ACC  w=1
+---
+D->A    NO-TWIN        2
+D->A    TRACE-IDENT    26
+D->A    TRACE-IDENT(auto) 14
+DIAG    DECL-SAME      1
+DIAG    DECL-SAME(auto) 1
+STREAM  NO-TWIN        10
+STREAM  TRACE-DIFF(auto) 5
+STREAM  TRACE-DIFF/auto:TRACE-DIFF 2
+STREAM  TRACE-IDENT    129
+STREAM  TRACE-IDENT(auto) 58

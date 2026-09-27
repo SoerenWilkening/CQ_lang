@@ -7,6 +7,12 @@
 ; that checks only arg-0. (The arg-0 named negative is `spec_reject_fp_abi.ll`; the
 ; reversible-fp arg accepts are `spec_accept_fp_*.ll`.)
 ;
+; ⚠ bd vsfp round 2: `%r` is now USED. The helper's body is side-effect-free and
+; terminating, so an UNUSED call to it is dead under the pass's liveness predicate and
+; the dead-argument drop deletes it (the hand-inlined twin's `-O1` would too) — which
+; removed this file's subject (no spec site, no decline). Using the result keeps the
+; call a Phase-6 site; the fence below fires before the use is ever lowered.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)
@@ -25,7 +31,8 @@ entry:
   %r = call i32 @helper(i32 7, fp128 %qe)
   %z = call double @cq_measure_f64(double %q)
   %zi = fptosi double %z to i32
-  ret i32 %zi
+  %s = add i32 %zi, %r
+  ret i32 %s
 }
 
 ; CHECK: error{{.*}}cq specialization: floating-point quantum argument or return has no reversible copy

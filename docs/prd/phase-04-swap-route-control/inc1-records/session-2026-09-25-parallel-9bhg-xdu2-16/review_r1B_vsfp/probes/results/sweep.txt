@@ -1,0 +1,3 @@
+programs=521 tiny_skipped=0 crashes=0 accepts_sub=275 accepts_comp=276
+
+[exited with code 0]

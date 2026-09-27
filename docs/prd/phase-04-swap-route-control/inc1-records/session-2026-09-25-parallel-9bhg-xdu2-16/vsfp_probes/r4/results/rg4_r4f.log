@@ -1,0 +1,30 @@
+lit: /Users/sorenwilkening/.pyenv/versions/3.11.9/lib/python3.11/site-packages/lit/main.py:72: note: The test suite configuration requested an individual test timeout of 0 seconds but a timeout of 60 seconds was requested on the command line. Forcing timeout to be 60 seconds.
+-- Testing: 22 of 2398 tests, 12 workers --
+PASS: CQ IR-pass :: lowering_volatile_arm_fold_cascade_merge_phi.ll (1 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_fp_slot_f1.ll (2 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_fp_slot_f2.ll (3 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_fp_slot_fpfloat.ll (4 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_fp_slot_fplongd.ll (5 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_n6_nested_arg.ll (6 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_g1c.ll (7 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_a3_width.ll (8 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_n5_nested.ll (9 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_a1_icmp.ll (10 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_a1_xorself.ll (11 of 22)
+PASS: CQ IR-pass :: lowering_reject_volatile_global_section.ll (12 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_exact_record_a2_chain.ll (13 of 22)
+PASS: CQ IR-pass :: lowering_reject_volatile_global_absolute_symbol.ll (14 of 22)
+PASS: CQ IR-pass :: spec_accept_phantom_arg_read_copy_source_reader.ll (15 of 22)
+PASS: CQ IR-pass :: lowering_qram_volatile_fold.ll (16 of 22)
+PASS: CQ IR-pass :: lowering_volatile_local_fold.ll (17 of 22)
+PASS: CQ IR-pass :: lowering_volatile_alloca_fold_cascade_uaf.ll (18 of 22)
+PASS: CQ IR-pass :: lowering_volatile_arm_fold_cascade_classical.ll (19 of 22)
+PASS: CQ IR-pass :: lowering_volatile_globalfold_cascade.ll (20 of 22)
+PASS: CQ IR-pass :: lowering_volatile_arm_fold_cascade_live_condition.ll (21 of 22)
+PASS: CQ IR-pass :: lowering_volatile_arm_fold_cascade_tainted.ll (22 of 22)
+
+Testing Time: 3.49s
+
+Total Discovered Tests: 2398
+  Excluded: 2376 (99.08%)
+  Passed  :   22 (0.92%)
