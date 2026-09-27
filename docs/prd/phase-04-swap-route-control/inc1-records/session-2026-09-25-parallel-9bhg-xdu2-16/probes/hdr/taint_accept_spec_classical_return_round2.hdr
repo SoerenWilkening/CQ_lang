@@ -1,0 +1,61 @@
+; taint_accept_spec_classical_return_round2.ll — ACCEPT (bd test_C_libtooling-9bhg;
+; Rule-13 r2B_9bhg F-9D-2's suggested pin `R6`, re-spelled for bd vsfp).
+;
+; A provisional return whose taint arises only in ROUND 2.
+; - `y` is a 6.5 classical-call-arm `%out` (`if (q > 5) y = ext_f(7)`) and is tainted
+;   only by the round-2 reseed.
+; - So `t = h(y, m)` becomes a Phase-6 site only in round 2, and `f`'s return
+;   (`t + cq_measure(y) + cq_measure(q)`) is PROVISIONAL only in the round-2 call of
+;   `propagateWorklist`.
+; - `h`'s clone returns the classical `k + 1`, so `f` returns a classical integer and
+;   `main` branches on it classically.
+; What it pins: that the round-2 crossing decision also DEFERS. Before this file, mutant
+; M1 (the drain never defers) was killed only by round-1 shapes (r2B F-9D-2).
+; Measured at the bd vsfp merge (2026-09-27):
+; - `main` c1136be2 DECLINES this module with the 3jru string.
+; - Its trace equals the hand-inlined twin's (`t = m + 1`) for arguments 5 7, 2 9, 1 1
+;   and 4 4.
+; - Stage 2b STRICT reports 0 violations and 0 unproven on both (TRACK_9BHG §12).
+;
+; RE-SPELLED for bd vsfp, as the other 9bhg fixtures are. r2B's `h` ignored `a`, so
+; `dropDeadCallArguments` removed the argument before propagation and the program was
+; the twin (measured: `CQ_DEADARG_DBG: drop arg 0 of @h in @f`). The BRANCH-ONLY read
+; now in `@h` (`%vsfp.c` feeding an EMPTY diamond) keeps the parameter live. The
+; `env CQ_DEADARG_DBG=1` and `--implicit-check-not=CQ_DEADARG_DBG` pin that the drop
+; does not fire. From C at -O1 this spelling is IR-ONLY: the library TU deletes an empty
+; branch. RETIREMENT TRIGGER: a liveness predicate with control dependence makes the
+; read dead again; re-derive the subject then (L8).
+;
+; Library TU (plain C, no CQ.h) — review_r2B_9bhg/probes/src/lib.c, of which this uses:
+;   int h(int a, int k) { return k + 1; }        // then hand-edited as above
+;   int ext_f(int a) { return a * 7 + 2; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   int h(int a, int k); int ext_f(int a);
+;   __attribute__((noinline)) int f(int m) {
+;     int q = cq_theta(m, .5);
+;     int y = 0;
+;     if (q > 5) y = ext_f(7);
+;     int t = h(y, m);
+;     return t + cq_measure(y) + cq_measure(q);
+;   }
+;   int main(int c, char **v) { int r = f(c); if (r > 7) return 1; return r; }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, llvm-link -S caller.ll lib.ll,
+; then add the branch-only read to `@h`.
+;
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s --implicit-check-not=CQ_DEADARG_DBG
+; CHECK-NOT: error
+; CHECK-LABEL: define i32 @f(
+; CHECK: %out = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef 0, i32 noundef %0)
+; CHECK-NEXT: %m = call i32 @cqrt_measure_i32(i32 %out)
+; CHECK-NEXT: [[A:%[0-9]+]] = add nsw i32 %m, [[T]]
+; CHECK-NEXT: %m2 = call i32 @cqrt_measure_i32(i32 %h)
+; CHECK-LABEL: define {{.*}}@main(
+; CHECK-NOT: cq{{rt|_template}}_
+; CHECK: [[R:%[0-9]+]] = tail call i32 @f(i32 noundef %0)
+; CHECK-NEXT: icmp sgt i32 [[R]], 7
+; CHECK-LABEL: define internal i32 @__cq_q_h_01(
+; CHECK: add nsw i32 %1, 1
