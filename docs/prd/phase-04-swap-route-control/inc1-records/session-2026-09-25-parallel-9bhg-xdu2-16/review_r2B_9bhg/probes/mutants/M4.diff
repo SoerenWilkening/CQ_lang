@@ -1,0 +1,19 @@
+--- a/ir-pass/src/Specialization.cpp
++++ b/ir-pass/src/Specialization.cpp
+@@ -1218,8 +1218,16 @@
+       }
+     }
+     StringRef OrigW = abiWidthFromType(Cand.Site->getType());  // pre-retarget width.
++    CallInst *OldSite = Cand.Site;
+     SpecRecord Rec =
+         resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
++    if (Cand.Site != OldSite) {
++      taint.Tainted.erase(OldSite);
++      taint.BirthOrder.erase(OldSite);
++      taint.HandleWidth.erase(OldSite);
++      taint.StaleDeclined.erase(OldSite);
++      plan.Pending[i].Site = Cand.Site;
++    }
+     // bd `test_C_libtooling-9bhg` / bd `test_C_libtooling-8e5r` — a REBUILT site
+     // (an fp return rewritten to an i32 handle: `retargetSite` RAUWs and ERASES
+     // the old call) must leave no DANGLING key in the module taint. It does not,

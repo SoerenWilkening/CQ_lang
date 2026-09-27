@@ -1,0 +1,18 @@
+--- a/ir-pass/src/Specialization.cpp
++++ b/ir-pass/src/Specialization.cpp
+@@ -1,6 +1,7 @@
+ // Specialization.cpp — the Phase 6 specialization driver (step 14, DD-1).
+ 
+ #include "Specialization.h"
++#include <cstdlib>
+ 
+ #include "BennettWrap.h"
+ #include "CompareLowering.h"
+@@ -1202,6 +1203,7 @@
+   for (size_t i = 0; i < plan.Pending.size(); ++i) {
+     SpecCandidate Cand = plan.Pending[i];
+     SpecMask Now = taintArgMask(Cand.Site, taint);
++    if (::getenv("R2B_PENDING_DBG")) llvm::errs() << "R2B-PENDING " << i << " callee=" << Cand.Callee->getName() << " detmask=" << Cand.Mask << " now=" << Now << " tainted=" << taint.Tainted.count(Cand.Site) << "\n";
+     if (Now != Cand.Mask) {
+       if (Now == 0 && !taint.Tainted.count(Cand.Site))
+         continue;  // an ordinary classical call now — leave it to its callee.

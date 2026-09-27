@@ -1,0 +1,11 @@
+int h(int a, int k);
+int main(int c, char **v) {
+    int q = cq_theta(c, .5);
+    int a = c + 1;
+    bool b0[3];
+    for (int i = 0; i < 3; ++i) {
+        b0[i] = cq_theta((bool)0, 0.5);
+        if (b0[i]) a -= 3;
+    }
+    return cq_measure(b0[0]) + cq_measure(b0[1]) + cq_measure(b0[2]) + cq_measure(a) + cq_measure(q);
+}

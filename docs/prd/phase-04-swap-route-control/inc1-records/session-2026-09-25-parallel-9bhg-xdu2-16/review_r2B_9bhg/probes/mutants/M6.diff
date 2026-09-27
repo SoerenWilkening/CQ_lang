@@ -1,0 +1,10 @@
+--- a/ir-pass/src/Specialization.cpp
++++ b/ir-pass/src/Specialization.cpp
+@@ -1288,7 +1288,6 @@
+       // ordered scrub it is also read by a LATER site's recomputed mask
+       // (`spec_accept_fp_rebuilt_site_second_clone.ll`).
+       taint.Tainted.insert(Cand.Site);
+-      TaintedSources.insert(Cand.Site);
+     } else if (taint.Tainted.count(Cand.Site)) {
+       scrubForwardCone(Cand.Site, taint, TaintedSources);
+     }
