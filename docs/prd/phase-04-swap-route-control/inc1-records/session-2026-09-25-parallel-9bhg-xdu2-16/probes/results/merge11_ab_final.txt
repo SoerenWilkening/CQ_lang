@@ -1,0 +1,39 @@
+### lit corpus
+denominator: 2320 modules
+null control (REF vs REF, full list): 0 of 2320 movers
+null control (SUBJECT vs SUBJECT, full list): 0 of 2320 movers
+movers: 7 D->A=6 DIAG=1
+  D->A   taint_accept_spec_classical_return_arith.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return_branch.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return_clone_arg.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  DIAG   taint_reject_quantum_return_lift_owner_order.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+  D->A   taint_reject_scrubbed_handle_clone_arg_mixed.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+         sub: 
+  D->A   taint_reject_scrubbed_handle_clone_arg.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+         sub: 
+### run_slice_multi.sh modules
+denominator: 26 modules
+null control (REF vs REF, full list): 0 of 26 movers
+null control (SUBJECT vs SUBJECT, full list): 0 of 26 movers
+movers: 1 D->A=1
+  D->A   m3.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (): cq taint escape: quantum value returned across a function boundary
+         sub: 
+### standalone tests/e2e/*.c modules
+denominator: 444 modules
+null control (REF vs REF, full list): 0 of 444 movers
+null control (SUBJECT vs SUBJECT, full list): 0 of 444 movers
+movers: 0 

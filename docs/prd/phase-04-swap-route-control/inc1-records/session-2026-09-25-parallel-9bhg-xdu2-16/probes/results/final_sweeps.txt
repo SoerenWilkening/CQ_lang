@@ -1,0 +1,134 @@
+### multi-TU e2e modules
+denominator: 22 modules
+null control (REF vs REF, full list): 0 of 22 movers
+movers: 0 
+### standalone e2e modules
+denominator: 432 modules
+null control (REF vs REF, full list): 0 of 432 movers
+movers: 0 
+### probe battery (pre / ora / new2)
+rt1          pre  rc=0   
+rt1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rt1          new2 rc=0   
+rt2          pre  rc=0   
+rt2          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rt2          new2 rc=0   
+rt3          pre  rc=0   
+rt3          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rt3          new2 rc=0   
+rq1          pre  rc=0   
+rq1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rq1          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rq2          pre  rc=0   
+rq2          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rq2          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rx1          pre  rc=0   
+rx1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rx1          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ya           pre  rc=0   
+ya           ora  rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+ya           new2 rc=0   
+yb           pre  rc=0   
+yb           ora  rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+yb           new2 rc=0   
+yc           pre  rc=0   
+yc           ora  rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+yc           new2 rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+yo           pre  rc=0   
+yo           ora  rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+yo           new2 rc=1   in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+ob1          pre  rc=0   
+ob1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob1          new2 rc=0   
+ob2          pre  rc=0   
+ob2          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob2          new2 rc=0   
+ob3          pre  rc=0   
+ob3          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+ob3          new2 rc=0   
+ob4          pre  rc=0   
+ob4          ora  rc=1   in function f1 i32 (i32): cq taint escape: quantum value returned across a function boundary
+ob4          new2 rc=0   
+ob5          pre  rc=0   
+ob5          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob5          new2 rc=0   
+ob6          pre  rc=0   
+ob6          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob6          new2 rc=0   
+ob7          pre  rc=0   
+ob7          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob7          new2 rc=0   
+ob8          pre  rc=0   
+ob8          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob8          new2 rc=0   
+ob9          pre  rc=0   
+ob9          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+ob9          new2 rc=0   
+rp1          pre  rc=0   
+rp1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rp1          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rq3          pre  rc=0   
+rq3          ora  rc=1   in function f1 i32 (i32): cq taint escape: quantum value returned across a function boundary
+rq3          new2 rc=1   in function f1 i32 (i32): cq taint escape: quantum value returned across a function boundary
+rfc          pre  rc=0   
+rfc          ora  rc=1   in function f i32 (i32): cq taint escape: quantum value returned across a function boundary
+rfc          new2 rc=0   
+rfq          pre  rc=0   
+rfq          ora  rc=1   in function f i32 (i32): cq taint escape: quantum value returned across a function boundary
+rfq          new2 rc=1   in function f i32 (i32): cq taint escape: quantum value returned across a function boundary
+r65          pre  rc=0   
+r65          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+r65          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+r65c         pre  rc=0   
+r65c         ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+r65c         new2 rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rloop        pre  rc=0   
+rloop        ora  rc=1   in function main i32 (i32, ptr): cq controlled lowering: loop under quantum control
+rloop        new2 rc=0   
+rsel         pre  rc=0   
+rsel         ora  rc=1   in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+rsel         new2 rc=0   
+rs1          pre  rc=0   
+rs1          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+rs1          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+rm2          pre  rc=0   
+rm2          ora  rc=1   in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+rm2          new2 rc=1   in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+fp2          pre  rc=0   
+fp2          ora  rc=0   
+fp2          new2 rc=0   
+### new2 vs preE streams on the accepts
+rt1: IDENTICAL (pre vs new2)
+rt2: IDENTICAL (pre vs new2)
+rt3: IDENTICAL (pre vs new2)
+ob1: IDENTICAL (pre vs new2)
+ob2: IDENTICAL (pre vs new2)
+ob3: IDENTICAL (pre vs new2)
+ob4: IDENTICAL (pre vs new2)
+ob5: IDENTICAL (pre vs new2)
+ob6: IDENTICAL (pre vs new2)
+ob7: IDENTICAL (pre vs new2)
+ob8: IDENTICAL (pre vs new2)
+rfc: IDENTICAL (pre vs new2)
+rloop: IDENTICAL (pre vs new2)
+rsel: IDENTICAL (pre vs new2)
+fp2: IDENTICAL (pre vs new2)
+### new2 vs the pre-conjunct subject (6b8bebc7; tag 'new' was run when build/ was that binary)
+rt1: IDENTICAL (new vs new2)
+rt2: IDENTICAL (new vs new2)
+rt3: IDENTICAL (new vs new2)
+ob1: IDENTICAL (new vs new2)
+ob2: IDENTICAL (new vs new2)
+ob3: IDENTICAL (new vs new2)
+ob4: IDENTICAL (new vs new2)
+ob5: IDENTICAL (new vs new2)
+ob6: IDENTICAL (new vs new2)
+ob7: IDENTICAL (new vs new2)
+ob8: IDENTICAL (new vs new2)
+ob9: IDENTICAL (new vs new2)
+ya: IDENTICAL (new vs new2)
+yb: IDENTICAL (new vs new2)
+fp2: IDENTICAL (new vs new2)
+rfc: IDENTICAL (new1 vs new2)
+rloop: IDENTICAL (new1 vs new2)
+rsel: IDENTICAL (new1 vs new2)

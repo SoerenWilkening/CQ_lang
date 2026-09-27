@@ -1,0 +1,49 @@
+; taint_accept_spec_classical_return.ll — ACCEPT (bd test_C_libtooling-9bhg).
+;
+; A TWO-TU module: the caller TU (`-include CQ.h`) llvm-linked with a plain-C
+; library TU, as tests/e2e/run_slice_multi.sh builds one (single-TU -O1 deletes
+; the dead argument, so the shape needs the second TU).
+;
+; `f` returns `t = h(q, m)`. `h(q, m)` reads the register `q`, so at DETECTION it
+; is a Phase-6 specialization site and its result is tainted CONSERVATIVELY; the
+; clone `__cq_q_h_01` later proves it returns the CLASSICAL `k + 1`. `f` therefore
+; returns a classical integer and `main` reads it classically — which is what the
+; pre-3jru compiler (aad63450) emitted, byte for byte.
+;
+; bd 3jru made taint cross call returns, and its refusal `quantum value returned
+; across a function boundary` ran on that PRE-specialize conservative taint, so
+; this module declined on 983f9361 (an over-decline, owner ruling 2026-09-11).
+; The fix: `propagateWorklist` no longer crosses a return whose taint is
+; SPECIALIZATION-PROVISIONAL (`returnTaintIsSpecProvisional` — every tainted return
+; value lies in the counterfactual scrub cone of the function's own specialization
+; sites), so `main` never sees provisional taint; the early refusal skips such a
+; function and `declineQuantumReturnCalls` is RE-ASKED after `specialize()`'s scrub,
+; where the verdict is final.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); return t; }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); return f(m); }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK-NOT: error
+; CHECK-LABEL: define i32 @f(
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %h, i32 noundef %0)
+; CHECK-NEXT: ret i32 [[T]]
+; CHECK-LABEL: define i32 @main(
+; CHECK-NOT: cq{{rt|_template}}_
+; CHECK: [[R:%[0-9]+]] = tail call i32 @f(i32 noundef %5)
+; CHECK-NEXT: ret i32 [[R]]
+; CHECK-LABEL: define internal i32 @__cq_q_h_01(
+; CHECK-NEXT: add nsw i32 %1, 1
+; CHECK-NEXT: ret i32

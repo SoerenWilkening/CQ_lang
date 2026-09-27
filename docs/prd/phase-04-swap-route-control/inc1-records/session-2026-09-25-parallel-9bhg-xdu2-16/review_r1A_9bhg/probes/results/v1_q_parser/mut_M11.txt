@@ -1,0 +1,5 @@
+mutant M11: cq-opt 1c27aabcb644d835
+lit: Total Discovered Tests: 2288
+lit failures: 0
+probes: 176 run, 0 moved
+restored: cq-opt 8b837d1f79574156

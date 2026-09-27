@@ -1,0 +1,63 @@
+member twin      | merged m12 vs twin | 2b(m12) | warn(m12) | main_c113 vs twin
+b10    r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b15    r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+s3d    r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b10f   generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b15f   generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+s3c    generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b26    r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+b20    r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 2 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 2 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b2     r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b5     r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b6     r2A       | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+b7f    generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+b8f    generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+b12f   generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b17f   generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+b18f   generated | TRACE-IDENT                  | rc=0  | 0 | TRACE-IDENT
+         census m12: rail mint(s) of which 2 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+         census twin: rail mint(s) of which 2 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+
+--- b10f merged trace (5 7):
+cqrt_alloc_i1(1) -> h0
+cqrt_ry_i1(h0, 0x1p-1)
+cqrt_ry_i1(h0, 0x1.6666666666666p-1)
+cqrt_measure_i1(h0) -> 0
+exit=6
+--- twin:
+cqrt_alloc_i1(1) -> h0
+cqrt_ry_i1(h0, 0x1p-1)
+cqrt_ry_i1(h0, 0x1.6666666666666p-1)
+cqrt_measure_i1(h0) -> 0
+exit=6
+

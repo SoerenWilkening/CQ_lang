@@ -1,0 +1,8 @@
+runs per module per mode: 10
+alias_gen: 216 modules, reference ACCEPTS 216; sys wrong 0/2160; lifo wrong 0/2160; nofree wrong 0/2160
+alias_gen2: 128 modules, reference ACCEPTS 128; sys wrong 0/1280; lifo wrong 0/1280; nofree wrong 0/1280
+alias_gen3: 128 modules, reference ACCEPTS 128; sys wrong 0/1280; lifo wrong 0/1280; nofree wrong 0/1280
+alias_gen5: 2 modules, reference ACCEPTS 2; sys wrong 0/20; lifo wrong 0/20; nofree wrong 0/20
+alias_gen6: 15 modules, reference ACCEPTS 15; sys wrong 0/150; lifo wrong 0/150; nofree wrong 0/150
+modules with ANY wrong run: 0
+references written to /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/alias9/refs_N10.tsv

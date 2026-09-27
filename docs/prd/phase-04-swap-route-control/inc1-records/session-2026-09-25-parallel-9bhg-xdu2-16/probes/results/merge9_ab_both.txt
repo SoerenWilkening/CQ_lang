@@ -1,0 +1,94 @@
+### merged vs sub (30529716, cq-opt 8b837d1f)
+denominator: 2317 modules
+null control (REF vs REF, full list): 0 of 2317 movers
+null control (SUBJECT vs SUBJECT, full list): 0 of 2317 movers
+movers: 21 A->D=11 D->A=6 DIAG=4
+  D->A   loop_condtree_select_accept_hoisted_and.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  D->A   loop_condtree_select_accept_hoisted_data_rotated.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  D->A   loop_condtree_select_accept_hoisted_leaf.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  D->A   loop_condtree_select_accept_hoisted_mixed_literal.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  D->A   loop_condtree_select_accept_hoisted_nest.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_arm_chain.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_controlled_consumer.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_fp.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_ifelse_all_arms.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  DIAG   lowering_reject_classical_mux_phi_spec_scrubbed_base_l3oi_owner.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_nonmain.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+  DIAG   lowering_reject_classical_mux_phi_spec_scrubbed_base_owner.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  DIAG   lowering_reject_classical_mux_phi_spec_scrubbed_base_pure_consumer.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq opcode lowering: operand predates a non-diagonal gate
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_reversed_layout.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_store.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function f i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_switch_nway_all_arms.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_switch.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base_two_lifts.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  A->D   lowering_reject_classical_mux_phi_spec_scrubbed_base.ll: ref rc=0 sub rc=1
+         ref: 
+         sub: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+  D->A   predmux_guarded_vla_reject_row13_hybrid_select.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint
+         sub: 
+  DIAG   taint_reject_quantum_return_lift_owner_order.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+### merged vs main (ba80bda1, cq-opt e587c191)
+denominator: 2317 modules
+null control (REF vs REF, full list): 0 of 2317 movers
+null control (SUBJECT vs SUBJECT, full list): 0 of 2317 movers
+movers: 7 D->A=6 DIAG=1
+  D->A   taint_accept_spec_classical_return_arith.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return_branch.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return_clone_arg.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  D->A   taint_accept_spec_classical_return.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: 
+  DIAG   taint_reject_quantum_return_lift_owner_order.ll: ref rc=1 sub rc=1
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
+         sub: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+  D->A   taint_reject_scrubbed_handle_clone_arg_mixed.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+         sub: 
+  D->A   taint_reject_scrubbed_handle_clone_arg.ll: ref rc=1 sub rc=0
+         ref: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register
+         sub: 

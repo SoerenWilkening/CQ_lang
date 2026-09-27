@@ -1,0 +1,244 @@
+--- a/ir-pass/src/Specialization.cpp
++++ b/ir-pass/src/Specialization.cpp
+@@ -625,31 +625,48 @@
+ 
+ // Erase `V` and its forward cone of consumers that lose ALL taint once `V` is
+ // scrubbed (§2.7 return-taint correction for a ReturnTainted=false clone). A
+-// consumer that still reads an independently-tainted operand keeps its taint;
+-// `TaintedSources` (a primary `cq_theta` result, a genuinely-tainted
+-// specialized-call result) is never scrubbed and prunes its own cone.
+-//
+-// bd `test_C_libtooling-9bhg`: the cone is `collectScrubCone` (TaintPropagation.h)
+-// — the same walk this function used to run inline, made pure so that
+-// `returnTaintIsSpecProvisional` can ask it COUNTERFACTUALLY without a second
+-// spelling (Rule 14). ⚠ The scrub still does NOT cross a `ret` to the function's
+-// callers, and after bd 9bhg it has nothing there to cross: a return whose taint
+-// derives only from specialization sites is exactly the provisional kind, and
+-// `propagateWorklist` never carried it to a caller. A return with any other taint
+-// source crossed at propagation, and its function was refused by the EARLY
+-// `declineQuantumReturnCalls` before `specialize()` ran — and a scrub cannot
+-// remove such a source (it is not in the cone of any site).
++// consumer that still reads an independently-tainted operand keeps its taint.
+ void scrubForwardCone(Value *Root, TaintSet &taint,
+                       const SmallPtrSetImpl<const Value *> &TaintedSources) {
+-  SmallVector<Value *, 16> Cone;
+-  collectScrubCone({Root}, taint, TaintedSources, Cone);
+-  for (Value *V : Cone) {
++  std::vector<Value *> Worklist;
++  auto scrub = [&](Value *V) {
+     if (taint.Tainted.count(V))
+       taint.ScrubbedByReturnTaint.emplace_back(V);  // bd l3oi: the record.
+     taint.Tainted.erase(V);
+     taint.BirthOrder.erase(V);
+     if (auto *I = dyn_cast<Instruction>(V))
+       taint.StaleDeclined.erase(I);
++  };
++  scrub(Root);
++  Worklist.push_back(Root);
++  while (!Worklist.empty()) {
++    Value *V = Worklist.back();
++    Worklist.pop_back();
++    for (User *U : V->users()) {
++      auto *I = dyn_cast<Instruction>(U);
++      if (!I || !taint.Tainted.count(I))
++        continue;
++      // A value that is its OWN taint source — a primary `cq_theta` result, or
++      // another specialized-call result that legitimately carries taint — must
++      // never be scrubbed transitively (its taint does NOT derive from the
++      // scrubbed root). Stopping here also prunes its whole downstream cone from
++      // the walk, so a fresh `cq_theta(%r, θ)` seeded from a scrubbed classical
++      // `%r` keeps the qubit and every consumer of it tainted (the over-scrub
++      // the Rule-13 axis-(g) probe caught). NOT `cq_phi`: a `cq_phi` on a
++      // now-classical operand is deleted (Rule 3), so it is correctly scrubbed.
++      if (TaintedSources.count(I))
++        continue;
++      bool HasOtherTaintedOperand = false;
++      for (Value *Op : I->operands())
++        if (taint.Tainted.count(Op)) {
++          HasOtherTaintedOperand = true;
++          break;
++        }
++      if (HasOtherTaintedOperand)
++        continue;  // tainted via another path — keep.
++      scrub(I);
++      Worklist.push_back(I);
++    }
+   }
+ }
+ 
+@@ -1153,16 +1170,11 @@
+ }
+ 
+ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
+-  // §2.7 return-taint re-seed — never-scrub roots. Every value whose taint is
+-  // INDEPENDENT of a scrubbed call result: the primary `cq_theta` sources (a theta
+-  // result is quantum regardless of its arg-0 seed, Rule 3) and every
+-  // genuinely-tainted specialized-call result RESOLVED SO FAR (added as each one
+-  // resolves, below). The scrub walk stops at these, pruning their downstream
+-  // cones (axis-(g) over-scrub fix). `cq_phi` is deliberately absent — it is not
+-  // a source, and a `cq_phi` on a now-classical operand must be scrubbed.
+-  SmallPtrSet<const Value *, 8> TaintedSources;
+-  for (const CallInst *Theta : taint.ThetaCalls)
+-    TaintedSources.insert(Theta);
++  // Each retargeted TOP-LEVEL site + whether its clone returns a tainted handle
++  // (read post-drain for the §2.7 return-taint re-seed). Inner sites live inside
++  // clones (disjoint `cloneTaint`) and are NOT module-level — `buildClone` owns
++  // their retargeting and intra-clone taint, so they never enter `Retargeted`.
++  SmallVector<std::pair<CallInst *, bool>, 4> Retargeted;
+ 
+   // Drain the proven-Accept top candidates. `resolveSite` recurses depth-first
+   // into each clone's inner tainted-arg calls (the transitive worklist),
+@@ -1170,88 +1182,12 @@
+   // and terminating on the finite key space of the acyclic accepted subset (3.6).
+   // `Pending` holds only the module-level tops (the carve-out's membership domain)
+   // and never grows here — inner specialization is the recursion, not a push.
+-  // Inner sites live inside clones (disjoint `cloneTaint`) and are NOT
+-  // module-level — `buildClone` owns their retargeting and intra-clone taint.
+-  //
+-  // bd `test_C_libtooling-9bhg` — THE ORDERED SCRUB, the discipline `buildClone`
+-  // already applies to its inner calls ("process in program order so a downstream
+-  // inner sees the corrected taint"). Before it, every top-level clone was built
+-  // from its DETECTION-time mask and every scrub ran after the last build, so a
+-  // site reading another site's classical result (`u = g(t)`, `t = h(q, m)`, `h`'s
+-  // clone returning `k + 1`) was cloned with `t` as a quantum HANDLE — bd l3oi
+-  // Rule-13 round 7 F-R7-1, fenced (declined) since. Now each site is scrubbed as
+-  // soon as it resolves, and each later site's mask is RECOMPUTED from the current
+-  // taint before it is built:
+-  //   * mask unchanged → exactly the old build;
+-  //   * mask 0 and the site no longer tainted → the scrub took the site's result
+-  //     with its arguments (it is a user with no other tainted operand), so it is
+-  //     an ORDINARY classical call: not cloned, not retargeted;
+-  //   * mask changed and non-zero → re-classified with the new mask
+-  //     (`classifyCandidate`, as `replanReseedSpecialization` does for a GROWN
+-  //     mask) and built with it; a reject is loud;
+-  //   * mask 0 but the site STILL tainted — not constructed; it would mean a taint
+-  //     source this walk cannot see — keeps the detection-time mask, so the clone
+-  //     reads the scrubbed argument in a masked slot and bd l3oi's
+-  //     `declineScrubbedHandleReads` declines it (the backstop, never an accept).
+-  // ⚠ `Pending` is in LAYOUT order (function, block, instruction), so this orders
+-  // a use after its definition only where the layout does; a use laid out BEFORE
+-  // its definition's block, or a loop-carried argument, is still built from a
+-  // mask a later scrub falsifies and still declines at the same fence
+-  // (taint_reject_scrubbed_handle_clone_arg_layout.ll). An RPO order would recover
+-  // the former; it is not done here.
+   for (size_t i = 0; i < plan.Pending.size(); ++i) {
+     SpecCandidate Cand = plan.Pending[i];
+-    SpecMask Now = taintArgMask(Cand.Site, taint);
+-    if (Now != Cand.Mask) {
+-      if (Now == 0 && !taint.Tainted.count(Cand.Site))
+-        continue;  // an ordinary classical call now — leave it to its callee.
+-      if (Now != 0) {
+-        SpecCandidate ReCand{Cand.Site, Cand.Callee, Now};
+-        Instruction *Where = nullptr;
+-        std::string Kind;
+-        SpecReject Why = classifyCandidate(ReCand, taint, wd, Where, Kind);
+-        if (Why != SpecReject::Accept) {
+-          diagnoseReject(Where, Why, Kind);
+-          continue;
+-        }
+-        Cand.Mask = Now;
+-      }
+-    }
+     StringRef OrigW = abiWidthFromType(Cand.Site->getType());  // pre-retarget width.
+     SpecRecord Rec =
+         resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
+-    // bd `test_C_libtooling-9bhg` / bd `test_C_libtooling-8e5r` — a REBUILT site
+-    // (an fp return rewritten to an i32 handle: `retargetSite` RAUWs and ERASES
+-    // the old call) must leave no DANGLING key in the module taint. It does not,
+-    // and the reason is NOT this function: every pointer-keyed `TaintSet` table is
+-    // SELF-CLEANING (`ScrubOnDelete.h`, bd 8e5r), so the old call's key is dropped
+-    // at the `eraseFromParent` inside `retargetSite` itself, before anything can
+-    // be allocated at its address. The new call's taint is (re-)inserted below.
+-    //
+-    // ⚠ HISTORY, corrected at the source (bd 9bhg Rule-13 r1B F-9B-2, r1B-8e5r
+-    // F-EB-9). Before bd 8e5r this was a real dangling key. Once 9bhg re-asked
+-    // `declineQuantumReturnCalls` after this function, a LATER clone's `ret` value
+-    // allocated at the freed address answered "tainted", and a correct module
+-    // (`lpoly(q)` then `lmix(y, q2)`, f80) was refused
+-    // (`spec_accept_fp_rebuilt_site_second_clone.ll`, flaky from run to run: 3/5
+-    // under the system allocator, 5/5 under LIFO reuse).
+-    //   * 9bhg fixed it with an erase HERE, after `resolveSite`. That erase ran on a
+-    //     pointer `retargetSite` had ALREADY deleted, so it was safe only while
+-    //     nothing allocated in between; an erase by a dead address removes
+-    //     whatever LIVE object has been revived there. Under 8e5r it is a no-op,
+-    //     so it is DELETED (mirroring 8e5r's deletion of the inner-call twin in
+-    //     `buildClone`), not moved.
+-    //   * The comment it carried said the aliasing "was closed here at its source"
+-    //     for every later reader of `taint.Tainted` (`lowerOps` over the whole
+-    //     module). That was TRUE OF THIS ONE PRODUCER AND FALSE OF THE CLASS: r1B
+-    //     F-9B-1 constructed a `lowerOps` miscompile through a dangling key left by
+-    //     `lowerQramReads`/`lowerShadowMemory`, and the class had 29 producers. The
+-    //     class is closed by the containers, which scrub at every deletion
+-    //     wherever it happens.
+-    //   * `plan.Pending[i].Site` is deliberately NOT updated to the rebuilt call.
+-    //     Every reader of `Pending` (`detectSpecializations`, the
+-    //     `declineTaintEscapes` carve, the round-2 re-plan) runs BEFORE
+-    //     `specialize()`, and this loop reads index `i` exactly once.
++    Retargeted.push_back({Cand.Site, Rec.ReturnTainted});
+     // fp-ABI result HandleWidth (bd 3c6m.54): a tainted fp return is an i32 handle
+     // at the call site (`retargetSite` rebuilt the call to i32), but its logical
+     // width is the ORIGINAL fp width captured above. Record it so a caller CAST off
+@@ -1263,34 +1199,36 @@
+     // and never consults this; harmless there.
+     if (Rec.ReturnTainted && abiWidthHasReversibleFpCopy(OrigW))
+       taint.HandleWidth[Cand.Site] = OrigW;
++  }
+ 
+-    // §2.7 return-taint re-seed, AT RESOLUTION (bd 9bhg — it ran after the last
+-    // build before). The original `propagate` conservatively tainted EVERY
+-    // specialized-call result (a call reading a tainted arg). The clone's
+-    // post-lowering `ReturnTainted` is the precise verdict:
+-    //   * true  → the result is genuine quantum data; leave it tainted (already in
+-    //     `taint`, downstream already propagated) — the caller's uncompute owns it
+-    //     (C-Taint) — and make it a never-scrub root for every LATER site's scrub.
+-    //   * false → the conservative taint was wrong (the return derives from
+-    //     classical params only); scrub the result and the forward cone that loses
+-    //     all taint, so a downstream caller op — and a downstream `Pending` site's
+-    //     recomputed mask — stays CLASSICAL (WI-1.9).
+-    // A LATER site whose result is genuinely tainted is not yet a root here; it
+-    // does not need to be — the walk reaches it only as a user of this cone, i.e.
+-    // only if it reads this result, and then it is scrubbed exactly when ALL its
+-    // tainted arguments are, which is the mask-0 case above.
+-    if (Rec.ReturnTainted) {
+-      // Already present for a `setCalledFunction` retarget; LOAD-BEARING for a
+-      // REBUILT one (fp return — the new call is a fresh value). ⚠ This line said
+-      // "robustness; usually already present" until bd 9bhg, and that was FALSE:
+-      // deleting it fails 12 fp/QRAM specialization fixtures (mutant M17), because
+-      // every stage after `specialize()` reads the rebuilt call's taint. Since the
+-      // ordered scrub it is also read by a LATER site's recomputed mask
+-      // (`spec_accept_fp_rebuilt_site_second_clone.ll`).
+-      taint.Tainted.insert(Cand.Site);
+-      TaintedSources.insert(Cand.Site);
+-    } else if (taint.Tainted.count(Cand.Site)) {
+-      scrubForwardCone(Cand.Site, taint, TaintedSources);
++  // §2.7 return-taint re-seed. The original `propagate` conservatively tainted
++  // EVERY specialized-call result (a call reading a tainted arg, :305-306). The
++  // clone's post-lowering `ReturnTainted` is the precise verdict:
++  //   * true  → the result is genuine quantum data; leave it tainted (already in
++  //     `taint`, downstream already propagated) — the caller's `:115` uncompute
++  //     owns it (C-Taint).
++  //   * false → the conservative taint was wrong (the return derives from
++  //     classical params only); scrub the result and the forward cone that loses
++  //     all taint, so a downstream caller op stays CLASSICAL (WI-1.9).
++  // Never-scrub roots: every value whose taint is INDEPENDENT of a scrubbed
++  // call result — the primary `cq_theta` sources (a theta result is quantum
++  // regardless of its arg-0 seed, Rule 3) and every genuinely-tainted
++  // specialized-call result. The walk stops at these, pruning their downstream
++  // cones (axis-(g) over-scrub fix). `cq_phi` is deliberately absent — it is
++  // not a source, and a `cq_phi` on a now-classical operand must be scrubbed.
++  SmallPtrSet<const Value *, 8> TaintedSources;
++  for (auto &R : Retargeted)
++    if (R.second)
++      TaintedSources.insert(R.first);
++  for (const CallInst *Theta : taint.ThetaCalls)
++    TaintedSources.insert(Theta);
++  for (auto &R : Retargeted) {
++    CallInst *Site = R.first;
++    bool ReturnTainted = R.second;
++    if (ReturnTainted) {
++      taint.Tainted.insert(Site);  // robustness; usually already present.
++    } else if (taint.Tainted.count(Site)) {
++      scrubForwardCone(Site, taint, TaintedSources);
+     }
+   }
+ }

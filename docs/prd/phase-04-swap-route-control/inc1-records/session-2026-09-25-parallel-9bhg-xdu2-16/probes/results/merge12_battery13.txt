@@ -1,0 +1,248 @@
+modules: 327 (224 r1A sources, 72 twins built, 31 own); build failures: 0 []
+twins NOT derivable by the sed rule (still call h): 2: s09 s13
+
+## null controls (each binary twice over the full list)
+  sub    run1 vs run2: 0 of 327 differ []
+  main   run1 vs run2: 0 of 327 differ []
+  merged run1 vs run2: 0 of 327 differ []
+
+## movers merged vs sub: 71 of 327  {'A->D': 10, 'STREAM': 39, 'DIAG': 5, 'D->A': 17}
+  A->D   l01C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  STREAM l03C: sub rc=0 []  ->  merged rc=0 []
+  DIAG   l04C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   l05C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   l06C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  A->D   l07C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32, ptr): cq taint escape: tainted value muxed by a cla]
+  A->D   l08C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  A->D   l09C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  A->D   l10C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  A->D   l12C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do]
+  A->D   l13C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  STREAM l15C: sub rc=0 []  ->  merged rc=0 []
+  A->D   l17C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do]
+  A->D   l18C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  D->A   l19C: sub rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]  ->  merged rc=0 []
+  STREAM l20C: sub rc=0 []  ->  merged rc=0 []
+  STREAM l21C: sub rc=0 []  ->  merged rc=0 []
+  A->D   l22C: sub rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  DIAG   l25C: sub rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq opcode lowering: rotation/measure opera]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]
+  DIAG   rb1: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: array mixes a rail cell access with ]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: unsupported reader of a rail-bank ce]
+  D->A   rb3: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: array mixes a rail cell access with ]  ->  merged rc=0 []
+  STREAM rt1: sub rc=0 []  ->  merged rc=0 []
+  D->A   s01C: sub rc=1 [<unknown>:0:0: in function fr i32 (i32): cq loop lowering: loop-carried tainted value cros]  ->  merged rc=0 []
+  D->A   s02C: sub rc=1 [<unknown>:0:0: in function F i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  STREAM s05C: sub rc=0 []  ->  merged rc=0 []
+  D->A   s09C: sub rc=1 [<unknown>:0:0: in function f9 i32 (i32): cq loop lowering: loop-carried tainted value cros]  ->  merged rc=0 []
+  STREAM s13C: sub rc=0 []  ->  merged rc=0 []
+  D->A   s14C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq specialization: callee contains a quantum primi]  ->  merged rc=0 []
+  STREAM w02C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w03C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w05C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w06C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w08C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w12C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w13C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w14C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w15C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w16C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w17C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w18C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w19C: sub rc=0 []  ->  merged rc=0 []
+  STREAM w20C: sub rc=0 []  ->  merged rc=0 []
+  D->A   x01C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq QRAM load: coherently escaping value is entangl]  ->  merged rc=0 []
+  D->A   x02C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value stored to memory]  ->  merged rc=0 []
+  D->A   x03C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq I/O output sink: tainted argument has continued]  ->  merged rc=0 []
+  D->A   x04C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq loop lowering: loop-carried tainted value cross]  ->  merged rc=0 []
+  D->A   x05C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  D->A   x06C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  D->A   x07C: sub rc=1 [<unknown>:0:0: in function f i64 (i32): cq taint escape: tainted value returned at non-i32]  ->  merged rc=0 []
+  D->A   x09C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: classical call result used as a q]  ->  merged rc=0 []
+  STREAM x10C: sub rc=0 []  ->  merged rc=0 []
+  D->A   x11C: sub rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=0 []
+  STREAM own_rt1: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_rt2: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_rt3: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ya: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_yb: sub rc=0 []  ->  merged rc=0 []
+  D->A   own_yc: sub rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]  ->  merged rc=0 []
+  D->A   own_yo: sub rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]  ->  merged rc=0 []
+  STREAM own_ob1: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob2: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob3: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob4: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob5: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob6: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob7: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob8: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_ob9: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_rfc: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_rloop: sub rc=0 []  ->  merged rc=0 []
+  STREAM own_rsel: sub rc=0 []  ->  merged rc=0 []
+
+## movers merged vs main: 15 of 327  {'DIAG': 15}
+  DIAG   c01Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-rou]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under]
+  DIAG   c06Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-rou]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under]
+  DIAG   s02Q: main rc=1 [<unknown>:0:0: in function G i32 (i32): cq taint escape: quantum value returned across a f]  ->  merged rc=1 [<unknown>:0:0: in function F i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   w01Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under]
+  DIAG   w07Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do]
+  DIAG   w08Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: loop under quantum]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]
+  DIAG   w09Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: quantum-quantum co]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: rail record read past an]
+  DIAG   w11Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq I/O output sink: tainted argument is no]
+  DIAG   w13Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: arm rewrites a con]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]
+  DIAG   w14Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value stored to m]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]
+  DIAG   w19Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: quantum-quantum co]  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]
+  DIAG   x01Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq QRAM load: coherently escaping value is entangl]
+  DIAG   x03Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq I/O output sink: tainted argument has continued]
+  DIAG   x05Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   x06Q: main rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+
+## movers merged vs prev: 62 of 327  {'STREAM': 39, 'DIAG': 4, 'A->D': 2, 'D->A': 17}
+  STREAM l03C: prev rc=0 []  ->  merged rc=0 []
+  DIAG   l04C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   l05C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  DIAG   l06C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]
+  A->D   l12C: prev rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do]
+  STREAM l15C: prev rc=0 []  ->  merged rc=0 []
+  A->D   l17C: prev rc=0 []  ->  merged rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do]
+  D->A   l19C: prev rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a ]  ->  merged rc=0 []
+  STREAM l20C: prev rc=0 []  ->  merged rc=0 []
+  STREAM l21C: prev rc=0 []  ->  merged rc=0 []
+  DIAG   rb1: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: array mixes a rail cell access with ]  ->  merged rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: unsupported reader of a rail-bank ce]
+  D->A   rb3: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq rail bank: array mixes a rail cell access with ]  ->  merged rc=0 []
+  STREAM rt1: prev rc=0 []  ->  merged rc=0 []
+  D->A   s01C: prev rc=1 [<unknown>:0:0: in function fr i32 (i32): cq loop lowering: loop-carried tainted value cros]  ->  merged rc=0 []
+  D->A   s02C: prev rc=1 [<unknown>:0:0: in function F i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  STREAM s05C: prev rc=0 []  ->  merged rc=0 []
+  D->A   s09C: prev rc=1 [<unknown>:0:0: in function f9 i32 (i32): cq loop lowering: loop-carried tainted value cros]  ->  merged rc=0 []
+  STREAM s13C: prev rc=0 []  ->  merged rc=0 []
+  D->A   s14C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq specialization: callee contains a quantum primi]  ->  merged rc=0 []
+  STREAM w02C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w03C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w05C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w06C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w08C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w12C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w13C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w14C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w15C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w16C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w17C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w18C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w19C: prev rc=0 []  ->  merged rc=0 []
+  STREAM w20C: prev rc=0 []  ->  merged rc=0 []
+  D->A   x01C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq QRAM load: coherently escaping value is entangl]  ->  merged rc=0 []
+  D->A   x02C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value stored to memory]  ->  merged rc=0 []
+  D->A   x03C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq I/O output sink: tainted argument has continued]  ->  merged rc=0 []
+  D->A   x04C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq loop lowering: loop-carried tainted value cross]  ->  merged rc=0 []
+  D->A   x05C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  D->A   x06C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classica]  ->  merged rc=0 []
+  D->A   x07C: prev rc=1 [<unknown>:0:0: in function f i64 (i32): cq taint escape: tainted value returned at non-i32]  ->  merged rc=0 []
+  D->A   x09C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq taint escape: classical call result used as a q]  ->  merged rc=0 []
+  STREAM x10C: prev rc=0 []  ->  merged rc=0 []
+  D->A   x11C: prev rc=1 [<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagona]  ->  merged rc=0 []
+  STREAM own_rt1: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_rt2: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_rt3: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ya: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_yb: prev rc=0 []  ->  merged rc=0 []
+  D->A   own_yc: prev rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]  ->  merged rc=0 []
+  D->A   own_yo: prev rc=1 [<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use]  ->  merged rc=0 []
+  STREAM own_ob1: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob2: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob3: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob4: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob5: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob6: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob7: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob8: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_ob9: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_rfc: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_rloop: prev rc=0 []  ->  merged rc=0 []
+  STREAM own_rsel: prev rc=0 []  ->  merged rc=0 []
+
+## twin table (merged; also sub and main for the same pair)
+  c01    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c02    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c03    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c04    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c05    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c06    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  c07    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l01    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l02    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l03    merged=ACC-SAME                       sub=ACC-SAME                       main=ACC-SAME
+  l04    merged=DECL-SAME                      sub=DECL-DIFF                      main=DECL-SAME
+  l05    merged=DECL-SAME                      sub=DECL-DIFF                      main=DECL-SAME
+  l06    merged=DECL-SAME                      sub=DECL-DIFF                      main=DECL-SAME
+  l07    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l08    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l09    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l10    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l11    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l12    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l13    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l14    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l15    merged=ACC-SAME                       sub=ACC-SAME                       main=ACC-SAME
+  l16    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l17    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l18    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l19    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  l20    merged=ACC-DIFF                       sub=ACC-DIFF                       main=ACC-DIFF
+  l21    merged=ACC-SAME                       sub=ACC-SAME                       main=ACC-SAME
+  l22    merged=DECL-SAME                      sub=VERDICT-DIFF(C rc=0, T rc=1)   main=DECL-SAME
+  l23    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l24    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  l25    merged=DECL-SAME                      sub=DECL-DIFF                      main=DECL-SAME
+  s01    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  s02    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  s04    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  s05    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  s07    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  s11    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  s12    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  s14    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  w01    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w02    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w03    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w04    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w05    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w06    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w07    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w08    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w09    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w10    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w11    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  w12    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w13    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w14    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w15    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w16    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w17    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w18    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w19    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  w20    merged=ACC-SAME                       sub=ACC-DIFF                       main=ACC-SAME
+  x01    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x02    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x03    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x04    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x05    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x06    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x07    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x08    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  x09    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x10    merged=ACC-SAME                       sub=ACC-SAME                       main=ACC-SAME
+  x11    merged=ACC-SAME                       sub=VERDICT-DIFF(C rc=1, T rc=0)   main=ACC-SAME
+  x12    merged=DECL-SAME                      sub=DECL-SAME                      main=DECL-SAME
+  denominator 72 pairs; twin-identical: merged 71, sub 29, main 71
+
+## cq_measure census (source calls vs cqrt_measure in the merged lowered IR, accepts only)
+  l17Q: source 1 cq_measure, lowered 2 cqrt_measure
+  l21C: source 1 cq_measure, lowered 0 cqrt_measure
+  w16C: source 1 cq_measure, lowered 2 cqrt_measure
+  l21T: source 1 cq_measure, lowered 0 cqrt_measure
+  w16T: source 1 cq_measure, lowered 2 cqrt_measure
+  own_ya: source 1 cq_measure, lowered 0 cqrt_measure
+  own_yc: source 1 cq_measure, lowered 0 cqrt_measure
+  own_yo: source 1 cq_measure, lowered 0 cqrt_measure
+  own_ob2: source 1 cq_measure, lowered 0 cqrt_measure
+done

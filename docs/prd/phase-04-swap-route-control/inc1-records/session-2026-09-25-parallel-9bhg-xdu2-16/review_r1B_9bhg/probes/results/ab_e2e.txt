@@ -1,0 +1,14 @@
+### multi ORA vs SUBJ
+denominator: 22 modules
+null control (REF vs REF, full list): 0 of 22 movers
+movers: 0 
+### multi SUBJ vs SUBJ (null)
+denominator: 22 modules
+movers: 0 
+### single ORA vs SUBJ
+denominator: 432 modules
+null control (REF vs REF, full list): 0 of 432 movers
+movers: 0 
+### single SUBJ vs SUBJ (null)
+denominator: 432 modules
+movers: 0 

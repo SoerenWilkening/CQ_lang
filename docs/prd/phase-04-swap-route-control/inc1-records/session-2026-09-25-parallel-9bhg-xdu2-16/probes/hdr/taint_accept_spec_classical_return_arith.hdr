@@ -1,0 +1,40 @@
+; taint_accept_spec_classical_return_arith.ll — ACCEPT (bd test_C_libtooling-9bhg).
+;
+; A TWO-TU module (caller TU `-include CQ.h`, llvm-linked with a plain-C library
+; TU, as tests/e2e/run_slice_multi.sh builds one). `f` returns `t + cq_measure(q)`
+; where `t = h(q, m)` is a specialization site whose clone proves the CLASSICAL
+; `k + 1`; the measure result is classical by construction (Rule 3's sink). So `f`
+; returns a classical integer and `main`'s `r * n` is a classical multiply — no
+; template, no rail — exactly the pre-3jru (aad63450) stream.
+;
+; It declined on 983f9361 with `quantum value returned across a function
+; boundary`: the refusal ran on the PRE-specialize conservative taint. See
+; taint_accept_spec_classical_return.ll for the mechanism of the fix.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;
+; Caller TU (clang -O1 -include CQ.h):
+;   #include <stdlib.h>
+;   int h(int a, int k);
+;   __attribute__((noinline)) int f(int m) { int q = cq_theta(m, .5); int t = h(q, m); return t + cq_measure(q); }
+;   int main(int argc, char **argv) { int m = atoi(argv[1]); int n = atoi(argv[2]); int r = f(m); return r * n; }
+;
+; Regenerate: clang -O1 -emit-llvm -S each TU as above, then
+;   llvm-link -S caller.ll lib.ll -o <this file's body>.
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK-NOT: error
+; CHECK-LABEL: define i32 @f(
+; CHECK: %h = call i32 @cqrt_alloc_i32(i32 %0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %h, i32 noundef %0)
+; CHECK-NEXT: %m = call i32 @cqrt_measure_i32(i32 %h)
+; CHECK-NEXT: [[S:%[0-9]+]] = add nsw i32 %m, [[T]]
+; CHECK-NEXT: ret i32 [[S]]
+; CHECK-LABEL: define i32 @main(
+; CHECK-NOT: cq{{rt|_template}}_
+; CHECK: [[R:%[0-9]+]] = tail call i32 @f(i32 noundef %5)
+; CHECK-NEXT: [[P:%[0-9]+]] = mul nsw i32 [[R]], %8
+; CHECK-NEXT: ret i32 [[P]]

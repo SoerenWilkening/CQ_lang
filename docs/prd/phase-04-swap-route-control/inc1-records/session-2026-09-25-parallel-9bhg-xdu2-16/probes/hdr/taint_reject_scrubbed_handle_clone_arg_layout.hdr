@@ -1,0 +1,33 @@
+; taint_reject_scrubbed_handle_clone_arg_layout.ll — DECLINE (bd test_C_libtooling-9bhg;
+; the fence is bd test_C_libtooling-l3oi Rule-13 round 7 F-R7-1's).
+;
+; The DECLINE twin of taint_reject_scrubbed_handle_clone_arg.ll, and the fixture
+; that keeps bd l3oi's CLONE-READER clause (`taint.SpecHandleArgMask`) pinned now
+; that the ordered scrub made that file an accept.
+;
+; HAND-EDITED from that file's llvm-linked two-TU module: `@main` is the same
+; program — `q = cq_theta(m, .5); t = h(q, m); u = g(t); return cq_measure(u);` —
+; with `u = g(t)` moved into a block LAID OUT BEFORE the block defining `t`
+; (`entry → def → use`, layout `entry, use, def`). Legal IR; `clang -O1` does not
+; emit this layout, which is why it is hand-written. `plan6.Pending` is in LAYOUT
+; order, so the ordered scrub resolves `g(t)` FIRST, from its detection-time mask
+; with `t` QUANTUM (`__cq_q_g_1`, returning a register), and only then proves `h`'s
+; clone returns the classical `k + 1` and scrubs `t`. The clone call now reads the
+; integer in its masked slot 0: `declineScrubbedHandleReads` refuses it.
+;
+; RETIREMENT TRIGGER: if `specialize()` ever orders `Pending` by dominance (RPO)
+; instead of layout, this becomes the ACCEPT its twin is — re-derive it then and
+; find another subject for the clone-reader clause (a loop-carried argument), do
+; not delete the clause.
+;
+; Library TU (plain C, no CQ.h):
+;   int h(int a, int k) { return k + 1; }
+;   int g(int a) { return a * 3 + 1; }
+;   int g2(int a, int b) { return a + b; }
+;
+; Regenerate: take taint_reject_scrubbed_handle_clone_arg.ll's module body and
+; replace `@main` with the three-block function below.
+;
+; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN:   | %filecheck %s
+; CHECK: in function main {{.*}}: cq taint escape: classical call result used as a quantum register

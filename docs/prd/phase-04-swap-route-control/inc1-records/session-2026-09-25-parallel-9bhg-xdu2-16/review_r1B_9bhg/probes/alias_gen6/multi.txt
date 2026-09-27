@@ -1,0 +1,15 @@
+w12.s1.ll REF[0 7e605473e9;] SUBJ    1 0 7e605473e9;  11 0 c5bf5a01e2; || ORA    2 1 e3b0c44298;
+w14.s1.ll REF[0 ea990af3f9;] SUBJ   12 0 ea990af3f9; || ORA    2 1 e3b0c44298;
+w11.s1.ll REF[0 e991e567f1;] SUBJ    6 0 e991e567f1;   6 1 e3b0c44298; || ORA    2 1 e3b0c44298;
+w13.s1.ll REF[0 28f513f49e;] SUBJ   12 0 28f513f49e; || ORA    2 1 e3b0c44298;
+w1.s1.ll REF[0 1583a9a3ad;] SUBJ   12 0 1583a9a3ad; || ORA    2 1 e3b0c44298;
+w10.s1.ll REF[0 a3b4f90fbc;] SUBJ    4 0 a3b4f90fbc;   8 1 e3b0c44298; || ORA    2 1 e3b0c44298;
+w15.s1.ll REF[0 e994f42481;] SUBJ    7 0 511d6c13e3;   5 0 e994f42481; || ORA    2 1 e3b0c44298;
+w2.s1.ll REF[0 84e39cc856;] SUBJ   12 0 84e39cc856; || ORA    2 1 e3b0c44298;
+w4.s1.ll REF[0 8df1e00903;] SUBJ    6 0 8df1e00903;   6 1 e3b0c44298; || ORA    2 1 e3b0c44298;
+w3.s1.ll REF[0 df3b2da6b1;] SUBJ   12 0 df3b2da6b1; || ORA    2 1 e3b0c44298;
+w6.s1.ll REF[0 4c8b33cfd8;] SUBJ    4 0 4c8b33cfd8;   8 1 e3b0c44298; || ORA    2 1 e3b0c44298;
+w5.s1.ll REF[0 3c2ade2b8f;] SUBJ    2 0 3c2ade2b8f;  10 1 e3b0c44298; || ORA    2 1 e3b0c44298;
+w7.s1.ll REF[0 305394e688;] SUBJ   12 0 305394e688; || ORA    2 1 e3b0c44298;
+w8.s1.ll REF[0 d4c45874c2;] SUBJ   12 0 d4c45874c2; || ORA    2 1 e3b0c44298;
+w9.s1.ll REF[0 1c80939944;] SUBJ    2 0 1c80939944;  10 0 ba228b34fe; || ORA    2 1 e3b0c44298;
