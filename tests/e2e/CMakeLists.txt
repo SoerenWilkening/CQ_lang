@@ -1577,6 +1577,12 @@ add_test(NAME e2e-spec-fp-arg
 # a handle. MULTI-file deliberately — single-TU -O1 passes `poison` for `h`'s dead
 # first argument (measured), leaving no specialization site at all. The only layer
 # that LINKS (Rule 2/16).
+# ⚠ Re-spelled at the bd vsfp merge. A callee that IGNORES its argument is now
+# dropped before propagation, so the first spelling became the hand-inlined twin and
+# stayed green while witnessing nothing. The slice now uses a `musttail` call (the
+# drop keeps a `musttail` site's operands) to a callee with a volatile-guarded read.
+# The golden is unchanged; `main` c1136be2 declines the module (3jru) and this branch
+# accepts it. Header of spec_classical_return_caller.c.
 add_test(NAME e2e-spec-classical-return
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
