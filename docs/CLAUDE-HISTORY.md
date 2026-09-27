@@ -4104,3 +4104,69 @@ slices × 4 lines; unchanged). Full `ctest -j6`: **464/464 in 561.64 s** at load
 `cq-opt-equivalence-full`: **2106/0**. ⚠ **The inline chain ENDS HERE** — the 2026-09-17 and
 2026-09-15 links were archived to `docs/CLAUDE-HISTORY.md` on 2026-09-26 to keep it bounded, along
 with every figure older than those. Re-measure, never quote.
+
+---
+
+## ARCHIVED 2026-09-27 — CLAUDE.md §4j, verbatim (the 2026-09-26 landing)
+
+Moved when CLAUDE.md crossed 150 k at the bd `vsfp` landing and the 2026-09-26 Rule-19 / fenv owner rulings. Non-normative history; read it the way Rule 11 says to read any dated block.
+
+### 4j. The 2026-09-26 landing — M4's placement conjunct stops being POINT-IN-TIME
+
+bd `test_C_libtooling-woa0` CLOSED (this session). M4's E6 rail-φ conjunct promises "a φ THIS
+flatten will not convert", which is true of the region being claimed and FALSE of the pipeline —
+one region is claimed per `flattenPredMuxRegions` call inside a `while` fixpoint and nothing
+re-asks E6 about a region already emitted, so an inner claim can flatten the φ's own block and an
+OUTER region's E6 loop (conditional terminators only) then stops seeing it, claims, and
+select-chains the φ out from under the inner region's already-emitted predicate tree. Before this
+it landed on a loud decline ONLY as round 2's *"downstream accident, not a fence"* — ⚠ **whose
+mechanism this paragraph named WRONG**: there is no `xor` in the post-flatten module on either
+binary; the owner is `SelectClassify`'s data-select grammar refusing a `select i1` condition
+(measured, §4k `F-RB-3`).
+
+**CLAUDE.md L1's standing cure, applied literally in four pieces:** RECORD at the site that asks
+(`PhiCondScope::RailLeaves` at the M4 conjunct) · COMMIT at the CLAIM, never at the admission (a
+later gate's `leave` discards the whole `PredMuxRegion` — the `BoolAlgPhis` precedent) · OBSERVE at
+`convertPhis`, the only converter **in that file** (⚠ not pass-wide — `MergePhiPeel` and
+`SwapRouteEmit` also select-ify a φ, both AFTER the re-ask, hence outside the window BY
+CONSTRUCTION; moving the window must re-ask that) and the first point at which the
+conversion is a FACT · RE-ASK
+after the fixpoint in **both** entry points plus inside `lowerCloneControl`, loudly
+(`declineConvertedRailPhiLeaves`, the `declineSurvivingIntrinsicCalls` shape).
+
+⚠ **IT OBSERVES, IT DOES NOT PREDICT, so it CANNOT MISS** a select-chain conversion of a recorded
+φ — it fires on the conversion, not on a re-derivation of where that φ lives — and it covers bd
+`0fly`'s `{R.Merge}` cell without asking a placement question at all. ⚠⚠ **THAT IS ONE-SIDED. The
+sentence that stood here — "it can neither over-decline a φ that survives nor miss one that does
+not" — is LITERALLY TRUE AND ANSWERS THE WRONG QUESTION**, and so is its source-comment twin: in
+all four exhibits of §4k's converged P2 the φ **was** converted and did **not** survive, and the
+decline is still spurious. Say "cannot MISS one"; never a two-sided form. ⚠ **The conjunct is STILL
+point-in-time; what is now total is the OUTCOME**, and both source comments that said "true only
+within one pass" now say exactly that.
+
+**Measured** (ORACLE `fe5805a41df2e173` — rebuilt and BIT-IDENTICAL to the brief's recorded hash,
+an unplanned build null control that fired): **not one verdict moved on any of 7 probes**; 5
+string moves from the accident to the named fence; corpus A/B over 2157 is **1 mover, the
+increment's own decline fixture** (null and positive controls first). The owner's program and its
+e2e slice are **byte-identical** — and the instrumented commit census shows they are LIVE
+customers of the record (`%cq.bank1` commits), so that byte-identity is not vacuous. Record:
+`.../inc1-records/session-2026-09-26-orchestrator/MEASUREMENT_WOA0.md`.
+
+⚠ **THE MUTATION MATRIX FOUND A MISSING FIXTURE, WHICH IS WHAT MUTATION IS FOR.** Two of three
+mutants pinned what was expected (drop the RECORD or the COMMIT and the decline fixture goes red
+in both prefixes, verified by RUNNING FileCheck). The third said the **`!BoolAlg` conjunct was
+UNPINNED** — 0 movers over the whole corpus — and chasing that produced a shipped ACCEPT fixture
+(`control_predmux_accept_recorded_railphi_boolalg_converted.ll`) for a cell no sweep could ever
+have shown: a recorded φ converted by the BOOLEAN-ALGEBRA path, which must NOT be a violation.
+⚠ Its first construction **recorded the φ and never converted it** (the outer region left at
+`gate=W-witness`), i.e. it contained half the shape its name claimed — bd `46oo`'s class, caught
+by reading the DBG trace instead of the verdict; a second merge φ is what closes it, and the
+fixture header says so.
+
+⚠ **AND A CONTROL THAT REPORTS A PASS WITHOUT REPORTING ITS DENOMINATOR IS NOT A CONTROL** (L10's
+family, new instance): the mutant null control first printed `divergent=0 of 1` — under **zsh** an
+unquoted `$FILES` is ONE WORD, so the loop ran once and "0 divergent" was true and worthless. Only
+the denominator caught it; same class as round 3's `export -f` bashism, one shell feature over.
+⚠ The G-13 standing probe was RUN and **did not reach this fence** — rolled and unrolled decline
+identically on both binaries at EARLIER walls — so it is a non-divergence measured at the wrong
+wall, not a clearance.

@@ -517,19 +517,29 @@ turns into "probably contention". Measured inner-loop costs, all on a quiet box:
 | pass source, iterating | `ctest --test-dir build -R ir-pass-lit` | **~60–105s** |
 | docs / comments only | nothing | 0s |
 
-**The full `ctest -j6` is MANDATORY, no judgement call, at these five moments:**
-1. **Before any commit touching the Rule-13 lowering core.**
-2. **Before `git push` / at session end**, whenever the push contains any change
-   to code, fixtures, goldens, or the harness. A push that is *purely*
-   docs/comments does not need it.
-3. **After any change to the harness itself** (`run_slice*.sh`, any
-   `CMakeLists.txt`, `lit.cfg.py`, `cq-opt`, the caches) — a harness edit changes
-   how *every* test runs, so no subset can witness it. Not theoretical: a
-   `lit.cfg.py` PATH edit turned 551 fixtures red in a way that read exactly like
-   a lowering regression, and only the full suite caught it.
-4. **After regenerating the templates** (Rule 15) — the ABI moved under every layer.
-5. **When an accept/decline predicate changed** — Rule 12's probe families live
-   across both `ir-pass-lit` and e2e.
+**Where the full `ctest -j6` runs — ONCE, at the merge gate on `main`, before
+`git push`** (owner ruling 2026-09-26, narrowing 2026-08-13; bd memory
+`owner-ruling-fullsuite-at-gate-2026-09-26`). Implementation and fix rounds on a
+worktree BRANCH do **not** run it; they run what can witness the change — full
+`lit ir-pass/test`, the affected `ctest -R` entries, corpus A/B + reviewer probe
+batteries, the mutation matrix, `update_code_map.py --check`, and
+`taintset-scrub-guard` when a `TaintSet` member changes. The gate on `main` is
+**MANDATORY, no judgement call**, whenever the merged range (or a commit made
+directly on `main`) contains any of:
+1. **A change to the Rule-13 lowering core.**
+2. **Any change to code, fixtures, goldens, or the harness** being pushed. A push
+   that is *purely* docs/comments does not need it.
+3. **A change to the harness itself** (`run_slice*.sh`, any `CMakeLists.txt`,
+   `lit.cfg.py`, `cq-opt`, the caches) — a harness edit changes how *every* test
+   runs, so no subset can witness it. Not theoretical: a `lit.cfg.py` PATH edit
+   turned 551 fixtures red in a way that read exactly like a lowering
+   regression, and only the full suite caught it.
+4. **Regenerated templates** (Rule 15) — the ABI moved under every layer.
+5. **A changed accept/decline predicate** — Rule 12's probe families live across
+   both `ir-pass-lit` and e2e.
+
+The gate binary should be bit-identical to the one the last Rule-13 round
+examined; say so, with its hash, in the merge record.
 
 **Report only what you ran.** If you ran `ir-pass-lit`, say "lit green (1893)",
 never "tests pass" — an unqualified green claim about layers you did not execute
@@ -546,27 +556,39 @@ trains you to discount a real red.
 
 ---
 
-## Scope of the semantic model — `fenv` is OUT (owner ruling 2026-08-10)
+## Scope of the semantic model — `fenv` is OUT (owner rulings 2026-08-10, extended 2026-09-26)
 
 **CQ does not model floating-point exception flags** (`FE_UNDERFLOW`,
-`FE_INEXACT`, the rest of `<fenv.h>`), and **a `volatile` access to a
-non-escaping function-local object is not observable** in CQ's model. There is
-no fenv concept anywhere in the runtime ABI, the pass, or `CQ.h`, and this
-ruling adds **no frozen symbol**. MMIO, external linkage, escaping addresses and
-atomics are untouched and keep their existing loud declines.
+`FE_INEXACT`, the rest of `<fenv.h>`), and **a `volatile` access to an object
+that nothing outside the program can reach is not observable** in CQ's model.
+The axis is REACHABILITY, not local-vs-global storage (extension 2026-09-26, bd
+memory `owner-ruling-volatile-unreachable-object-2026-09-26`); all of these are
+required: function-local or internal linkage; never written anywhere in the
+program; address never escapes (no call argument, store, int cast, compare,
+φ/select); no atomic access; not in a named or implicit (`#pragma clang
+section`) section, not at an absolute address, address space 0. That covers a
+non-escaping local and a never-written `static volatile` global (the openlibm
+`static volatile double huge` idiom) alike; a quantum branch whose only content
+is such a read is a no-op and may be deleted. There is no fenv concept anywhere
+in the runtime ABI, the pass, or `CQ.h`, and neither ruling adds a frozen
+symbol. MMIO, external linkage, escaping addresses, atomics and section /
+absolute / non-zero-address-space globals keep their loud declines.
 
 **What it licenses — and the comfortable version is false.** An operation whose
-*only* consumer is a store to a never-read non-escaping `volatile` local may have
-that **store** removed. **The computation then usually disappears too, and the
-ruling accepts that**: once the store is gone the `fmul` is trivially dead and
-`PredMuxFlatten`'s `RecursivelyDeleteTriviallyDeadInstructions` takes it — a
-cleanup that exists for a Rule-6/8 reason of its own (a dead *tainted* op left
-alive lowers to a forward gate that is never uncomputed and never freed). So "we
-only delete the store" is true of the *stage* and false of the *pipeline*, and
-only the second one matters. Note the asymmetry before reading a trace: with
-**no** enclosing tainted control flow the dead product IS lowered, uncomputed and
-freed; inside a PredMux region it is deleted outright. Both are sound; they are
-not the same circuit.
+*only* consumer is a store to such a `volatile` object may have that **store**
+removed. **The computation then disappears too, and the ruling accepts that**:
+since bd `vsfp` (`c1136be2`) the erasing stage deletes the stored value's DEAD
+CONE by liveness (`deleteDeadCones`), with or without enclosing PredMux
+control, so there is no asymmetry left to read a trace for. What survives is
+only what is live for another reason or is a liveness root (a front-end `cq_*`
+site, a reserved-namespace or specializer-built call, a call whose callee body
+is not provably side-effect-free and terminating). ⚠ The sentence that stood
+here — *"with no enclosing tainted control flow the dead product IS lowered,
+uncomputed and freed; inside a PredMux region it is deleted outright. Both are
+sound"* — was FALSE in both halves before `vsfp` (measured: a dead product was
+lowered and NOT uncomputed, a Rule-8 wrong unitary once its source took a
+non-diagonal gate — silently for a dead 4.4 select, bd `qjoc`; the PredMux case
+could decline). Counter-examples: `TRACK_VSFP.md` §R3.8.
 
 > **Two lessons attached to this ruling.** (1) It needed ruling *because* the
 > sentence "fenv is out of scope project-wide" had been shipped source prose
@@ -577,6 +599,13 @@ not the same circuit.
 > implementation keeps the `fmul`"), an artifact of a fixture with no control
 > flow; the owner re-affirmed it on the corrected facts. The reassurance was the
 > wrong reason for a decision that stands without it.
+>
+> (3) It happened a SECOND time: `foldVolatileConstGlobalLoads` justified folding
+> a `static volatile` GLOBAL with "fenv is out of scope project-wide", beyond
+> the ruling's function-local wording, until a review (bd `vsfp` r3B) found it
+> deciding quantum-branch verdicts; the owner then ruled the reachability
+> extension, and the stage now cites it (plus the `#pragma` section and
+> address-space conjuncts the old prose never checked, bd `qce6`).
 >
 > **THE RULING STANDS; ITS CENSUS CELL DOES NOT** (bd `3c6m.63`): the write-only
 > idiom is `ld80/s_nexttowardf.c`, which openlibm does not build, so the `+1`
@@ -1177,63 +1206,20 @@ same class one eraser over.
 
 ### 4j. The 2026-09-26 landing — M4's placement conjunct stops being POINT-IN-TIME
 
-bd `test_C_libtooling-woa0` CLOSED (this session). M4's E6 rail-φ conjunct promises "a φ THIS
-flatten will not convert", which is true of the region being claimed and FALSE of the pipeline —
-one region is claimed per `flattenPredMuxRegions` call inside a `while` fixpoint and nothing
-re-asks E6 about a region already emitted, so an inner claim can flatten the φ's own block and an
-OUTER region's E6 loop (conditional terminators only) then stops seeing it, claims, and
-select-chains the φ out from under the inner region's already-emitted predicate tree. Before this
-it landed on a loud decline ONLY as round 2's *"downstream accident, not a fence"* — ⚠ **whose
-mechanism this paragraph named WRONG**: there is no `xor` in the post-flatten module on either
-binary; the owner is `SelectClassify`'s data-select grammar refusing a `select i1` condition
-(measured, §4k `F-RB-3`).
+⚠ **ARCHIVED VERBATIM to [`docs/CLAUDE-HISTORY.md`](docs/CLAUDE-HISTORY.md) on 2026-09-27** (the same
+treatment §4b–§4i received), when this file crossed 150 k at the bd `vsfp` landing. **Moved, not
+deleted** — L1's four-piece cure applied to PredMux (RECORD at the M4 conjunct · COMMIT at the claim,
+never at the admission · OBSERVE at `convertPhis` · RE-ASK after the fixpoint in both entry points and
+inside `lowerCloneControl`), the measurement, the mutation-matrix finding and the zsh-denominator
+control are all there. Record: `.../inc1-records/session-2026-09-26-orchestrator/MEASUREMENT_WOA0.md`.
 
-**CLAUDE.md L1's standing cure, applied literally in four pieces:** RECORD at the site that asks
-(`PhiCondScope::RailLeaves` at the M4 conjunct) · COMMIT at the CLAIM, never at the admission (a
-later gate's `leave` discards the whole `PredMuxRegion` — the `BoolAlgPhis` precedent) · OBSERVE at
-`convertPhis`, the only converter **in that file** (⚠ not pass-wide — `MergePhiPeel` and
-`SwapRouteEmit` also select-ify a φ, both AFTER the re-ask, hence outside the window BY
-CONSTRUCTION; moving the window must re-ask that) and the first point at which the
-conversion is a FACT · RE-ASK
-after the fixpoint in **both** entry points plus inside `lowerCloneControl`, loudly
-(`declineConvertedRailPhiLeaves`, the `declineSurvivingIntrinsicCalls` shape).
-
-⚠ **IT OBSERVES, IT DOES NOT PREDICT, so it CANNOT MISS** a select-chain conversion of a recorded
-φ — it fires on the conversion, not on a re-derivation of where that φ lives — and it covers bd
-`0fly`'s `{R.Merge}` cell without asking a placement question at all. ⚠⚠ **THAT IS ONE-SIDED. The
-sentence that stood here — "it can neither over-decline a φ that survives nor miss one that does
-not" — is LITERALLY TRUE AND ANSWERS THE WRONG QUESTION**, and so is its source-comment twin: in
-all four exhibits of §4k's converged P2 the φ **was** converted and did **not** survive, and the
-decline is still spurious. Say "cannot MISS one"; never a two-sided form. ⚠ **The conjunct is STILL
-point-in-time; what is now total is the OUTCOME**, and both source comments that said "true only
-within one pass" now say exactly that.
-
-**Measured** (ORACLE `fe5805a41df2e173` — rebuilt and BIT-IDENTICAL to the brief's recorded hash,
-an unplanned build null control that fired): **not one verdict moved on any of 7 probes**; 5
-string moves from the accident to the named fence; corpus A/B over 2157 is **1 mover, the
-increment's own decline fixture** (null and positive controls first). The owner's program and its
-e2e slice are **byte-identical** — and the instrumented commit census shows they are LIVE
-customers of the record (`%cq.bank1` commits), so that byte-identity is not vacuous. Record:
-`.../inc1-records/session-2026-09-26-orchestrator/MEASUREMENT_WOA0.md`.
-
-⚠ **THE MUTATION MATRIX FOUND A MISSING FIXTURE, WHICH IS WHAT MUTATION IS FOR.** Two of three
-mutants pinned what was expected (drop the RECORD or the COMMIT and the decline fixture goes red
-in both prefixes, verified by RUNNING FileCheck). The third said the **`!BoolAlg` conjunct was
-UNPINNED** — 0 movers over the whole corpus — and chasing that produced a shipped ACCEPT fixture
-(`control_predmux_accept_recorded_railphi_boolalg_converted.ll`) for a cell no sweep could ever
-have shown: a recorded φ converted by the BOOLEAN-ALGEBRA path, which must NOT be a violation.
-⚠ Its first construction **recorded the φ and never converted it** (the outer region left at
-`gate=W-witness`), i.e. it contained half the shape its name claimed — bd `46oo`'s class, caught
-by reading the DBG trace instead of the verdict; a second merge φ is what closes it, and the
-fixture header says so.
-
-⚠ **AND A CONTROL THAT REPORTS A PASS WITHOUT REPORTING ITS DENOMINATOR IS NOT A CONTROL** (L10's
-family, new instance): the mutant null control first printed `divergent=0 of 1` — under **zsh** an
-unquoted `$FILES` is ONE WORD, so the loop ran once and "0 divergent" was true and worthless. Only
-the denominator caught it; same class as round 3's `export -f` bashism, one shell feature over.
-⚠ The G-13 standing probe was RUN and **did not reach this fence** — rolled and unrolled decline
-identically on both binaries at EARLIER walls — so it is a non-divergence measured at the wrong
-wall, not a clearance.
+**What survives here, because §2, §4k and §5 lean on it.** bd `woa0` is CLOSED:
+`declineConvertedRailPhiLeaves` fires on an OBSERVED select-chain conversion of a recorded E6 rail φ,
+so it **cannot MISS** one. ⚠ Never quote a two-sided form ("can neither over-decline nor miss") — §4k's
+bd `707a` is exactly the spurious-decline side. The conjunct is still point-in-time; what is total is
+the OUTCOME. The observation covers `convertPhis` in `PredMuxFlatten.cpp` only; `MergePhiPeel` and
+`SwapRouteEmit` also select-ify a φ, both AFTER the re-ask — moving the window must re-ask that. The
+`xor` mechanism first given for round 2's "downstream accident" was WRONG (§4k, `F-RB-3`).
 
 ### 4k. The 2026-09-27 rounds — the fence is CLEARED, and both reviewers found the SAME over-decline
 
