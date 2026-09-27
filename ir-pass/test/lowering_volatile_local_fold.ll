@@ -11,7 +11,8 @@
 ; other writer exists) makes load == stored-constant on every execution; the
 ; fold RAUWs each load to the constant and erases the loads, the store, the
 ; lifetime markers, and the alloca. The volatile qualifier exists purely to
-; defeat classical FP const-folding (fenv is out of scope project-wide) —
+; defeat classical FP const-folding (the ground is the owner's reachability ruling
+; of 2026-09-26, not "fenv is out of scope project-wide" — L7, bd vsfp round 4) —
 ; folding it is the same deliberate semantic choice the global fold
 ; documents. Two locals mirror cbrtl's vd2/vd1 pair (lifetime.start + store
 ; volatile + load volatile + lifetime.end inside the tainted region; allocas

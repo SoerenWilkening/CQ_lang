@@ -22,7 +22,22 @@
 ; draft of the twin used one theta for both roles and hit this. Recorded so the
 ; next person does not re-discover it as a regression.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 | %filecheck %s
+; ⚠⚠ bd vsfp ROUND 2 (bd test_C_libtooling-qjoc; bd vsfp Rule-13 r1B) — THIS FILE IS
+; NOW AN ACCEPT, AND THAT IS A FIX, NOT A LOST FENCE. Its name is kept deliberately
+; (bd gahu / CLAUDE.md L8: a `git mv` can be resurrected by a merge). The decline
+; above was the spine refusing to uncompute a dead chain through a measured
+; register — correct, but the chain only existed because the fenv stage erased the
+; STORE and left the dead `fmul` behind. The stage now deletes the stored value's
+; DEAD cone with the pass's ONE liveness predicate (`DeadValueLiveness.h`), so there
+; is no chain: the module is exactly the fenv-intended program without the volatile
+; line — `alloc; Ry; measure` — which is what its hand-inlined twin compiles to.
+; The Rule-6 guard the old pin exercised is unchanged and is still reached by any
+; LIVE chain through a measured register; this module simply has none now. What the
+; paragraph above calls "the stage's job ends at the store" is RETIRED by the same
+; change (L7, corrected in QramLowering.h).
+;
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: %filecheck %s < %t.cqd0.ll
 declare float @cq_theta_f32(float, double)
 declare float @cq_measure_f32(float)
 declare void @llvm.lifetime.start.p0(i64 immarg, ptr nocapture)
@@ -40,4 +55,9 @@ entry:
   ret float %m
 }
 
-; CHECK: error{{.*}}cq uncompute: dead chain would free a measured register
+; CHECK-LABEL: define float @probe(float %u0)
+; CHECK-NEXT:  entry:
+; CHECK-NEXT:  %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f32(float %u0)
+; CHECK-NEXT:  call void @cqrt_ry_f32(i32 %[[H]], double 5.000000e-01)
+; CHECK-NEXT:  %{{[a-zA-Z0-9_.]+}} = call float @cqrt_measure_f32(i32 %[[H]])
+; CHECK-NEXT:  ret float

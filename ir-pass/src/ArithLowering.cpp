@@ -7,6 +7,7 @@
 #include "ArithLowering.h"
 
 #include "ChainWalk.h"      // isInPlaceGateOn (the ONE in-place-gate relation)
+#include "DeadValueLiveness.h"  // isRecordedDeadSlot (bd vsfp r2: the ONE "slot unread")
 #include "FreePoint.h"      // blockCanRepeat (the ONE "can this block run twice")
 #include "LoopPlan.h"       // inPlaceValueRailOperand (the dtzb shape predicate)
 #include "OpcodeSupport.h"
@@ -494,22 +495,61 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     idx/val operands — which is where `P` would be sitting. (When `P` is the
 //     array itself, arm (a) already claimed it.)
 //
+// (d0 — bd test_C_libtooling-vsfp / bd hgwx) A CALL THAT DOES NOT READ `P` AT ALL:
+//     a call to a function the SPECIALIZER built that passes `P` ONLY in argument
+//     slots the specializer RECORDED as dead in the built clone
+//     (`isRecordedDeadSlot` — `taint.SpecDeadArgMask`, written by `buildClone`
+//     with the pass's ONE liveness predicate, `DeadValueLiveness.h`; the same
+//     question the dead-argument drop and the phantom-read backstop ask). Such a
+//     call cannot observe `P` and mints no rail that outlives it: whatever dead
+//     computation the clone still performs on the slot is its own forward+adjoint
+//     pair inside the Bennett wrap, an identity on any input. Neither can any
+//     adjoint of it re-read `P` to effect: the only one the pipeline builds is the
+//     clone's `_unc` twin, a verbatim copy of the same body with the same dead
+//     slot (and r1B measured the top-level spine never emits it). So it is
+//     settled. This is the question bd hgwx asked for — answered by CALLING the
+//     one owner of "this slot is unread", never from the `__cq_q_` name (r1B's
+//     diagnostic mutant) and never from the clone's verdict alone: a clone that
+//     READS the slot — spec-quantum, or classical-verdict computing from `P` —
+//     falls through to (d) exactly as before (pinned by
+//     spec_accept_dropped_arg_quantum_reader_outofplace.ll, mutant D2).
+//     ⚠ ROUND 1 ASKED `use_empty()` OF THE BUILT CLONE'S PARAMETER, which a dead
+//     `trunc` the clone Bennett-reverses defeats (bd vsfp r1B F-VB-1 `v30`:
+//     `volatile char z = a;`). WHO REACHES IT NOW (bd vsfp round 3): at MODULE
+//     level, nothing — the dead-argument drop replaces every argument whose
+//     parameter is dead in the ORIGINAL callee (after the fenv stages) by a
+//     constant, and `resolvePhantomCloneArgReads` NEUTRALISES every slot the
+//     specializer recorded dead (a slot only the clone's own flatten killed) right
+//     after `specialize()`, before `lowerOps`; a neutralised call passes a
+//     constant and is not a user of `P` at all. What can still reach this arm is
+//     an inner clone call inside a clone body, which the neutralisation does not
+//     touch (the Bennett wrap discharges there). Kept as the one spelling of the
+//     question for that population, not deleted.
+//     ⚠ The round-2 sentence here — "the only customer is … a `cq_theta` result
+//     … any other quantum operand in such a slot has already been declined" — was
+//     FALSE (bd vsfp Rule-13 r2B F-WB-3): round 2's keeper exemption let a derived
+//     record through (`k7`: `p = q*3; h(p, m); p += 5`), which this arm then
+//     settled — the right outcome on the wrong stated population (L7).
+//     ⚠ Round 1's comment here attributed its C customer (`volatile int z = a;`)
+//     to "the clone's lowering". That was WRONG (bd vsfp r1B F-VB-3): the MODULE
+//     pre-pass `eraseDeadVolatileScalarStores` erased that store on the ORIGINAL
+//     callee before `detectSpecializations`, so it was predictable pre-emission —
+//     and since round 2 the drop's slot B does predict it.
+//
 // (d) A RAIL-MINTING PRODUCER READING `P` (`cq_template_*`, `cqrt_qram_load_*`,
 //     a `__cq_q_*` clone call) is the hazard itself — UNLESS its rail is already
 //     FULLY DISCHARGED before `bo`: its `_unc` fired and its rail was freed,
-//     ⚠ FALSE AS WRITTEN FOR ONE MEMBER (bd test_C_libtooling-hgwx; bd d88e
-//     Rule-13 r1B F-DB-1): a `__cq_q_*` clone whose specializer verdict is
-//     CLASSICAL (`ReturnTainted == false` — the clone returns a classical value,
-//     e.g. `h(a, k) = k + 1`) mints NO rail; its result is plain data and there
-//     is no adjoint of it that could ever re-read `P`. It is refused here anyway
-//     (this arm matches by the call's SHAPE, not by the verdict), so `P` is
-//     lowered OUT of place where its hand-inlined twin lowers IN place — see (e)
-//     for what that costs. Measured by r1B's diagnostic mutant (treat every
-//     `__cq_q_*` callee as settled): `j02C` becomes byte-identical to its twin,
-//     sole mover of 330 probes. That mutant is UNSOUND for a QUANTUM-verdict
-//     clone (its out rail's `_unc` does re-read `P`), so a real fix must consult
-//     the specializer's VERDICT, never the name; this comment names the gap, it
-//     does not license the mutant.
+//     ⚠ THIS WAS FALSE AS WRITTEN FOR ONE MEMBER (bd test_C_libtooling-hgwx; bd
+//     d88e Rule-13 r1B F-DB-1): a `__cq_q_*` clone that never READS the slot `P`
+//     sits in (e.g. `h(a, k) = k + 1`) mints no rail from `P`, and there is no
+//     adjoint of it that could ever re-read `P` — yet this arm refused it by the
+//     call's SHAPE, so `P` lowered OUT of place where its hand-inlined twin lowers
+//     IN place (`j02C`; see (e) for what that cost). bd vsfp closes it twice: the
+//     dead-argument drop removes that read before any stage sees it, and arm (d0)
+//     above settles the residual by the specializer's dead-slot RECORD. r1B's diagnostic
+//     mutant (every `__cq_q_*` callee settled, by NAME) stays UNSOUND and
+//     unlicensed: a clone that reads `P` keeps an out rail whose `_unc` re-reads
+//     `P`. What reaches this arm now is a producer that genuinely READS `P`.
 //     Otherwise:
 //     both provably before. A freed rail cannot be reversed again — its
 //     `cqrt_free` user makes `recoverDataDag`'s closure scan mark the whole DAG
@@ -568,16 +608,17 @@ llvm::Value *inPlaceReassignRailOperand(BinaryOperator *bo,
 //     kept ancestor rail" was this comment's claim and it is FALSE whenever a
 //     NON-DIAGONAL gate later acts on the out-of-place result (bd hgwx; bd d88e
 //     Rule-13 r1B F-DB-1): the kept ancestor stays entangled with the copy and
-//     DEPHASES it. `j02C` (`u = t + q; … Ry(.2) on u`, a classical-verdict clone
-//     call as the refused prior use) measures bit 0 as 0 with probability ≈0.070
-//     where the coherent in-place twin gives ≈0.118 (analytic, r1B §2). The
-//     compiler then says only `non-diagonal gate over a live derived record`
-//     (the owner's lyyf-(B) warning), so what refusal costs is a KEPT ANCESTOR
-//     RAIL PLUS, under a later non-diagonal gate, COHERENCE — which is exactly
-//     today's behavior, and a reason to refuse only what must be refused.
+//     DEPHASES it. `j02C` (`u = t + q; … Ry(.2) on u`, then a clone call that
+//     never read `q` as the refused prior use) measured bit 0 as 0 with
+//     probability ≈0.070 where the coherent in-place twin gives ≈0.118 (analytic,
+//     r1B §2), reported only as `non-diagonal gate over a live derived record`
+//     (the owner's lyyf-(B) warning). So what refusal costs is a KEPT ANCESTOR
+//     RAIL PLUS, under a later non-diagonal gate, COHERENCE — a reason to refuse
+//     only what must be refused. (`j02C` itself no longer reaches here: arm (d0)
+//     and bd vsfp's drop, above.)
 bool priorUseIsSettled(const Instruction *UI, const Value *P,
                        const Instruction *bo, const DominatorTree &DT,
-                       const InteriorDischargePlan *Plan) {
+                       const InteriorDischargePlan *Plan, const TaintSet &taint) {
   const auto *CI = dyn_cast<CallInst>(UI);
   if (!CI)
     return false;  // (e) plain-IR use / still-unlowered tainted opcode.
@@ -595,6 +636,29 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
   if (CI->getType()->isVoidTy() && N.starts_with("cqrt_") &&
       !N.starts_with("cqrt_qram_store_"))
     return true;  // (c)
+
+  // (d0) — a call that passes `P` only in slots the specializer RECORDED as dead
+  // in the built clone (bd vsfp / bd hgwx; see above). Asked by CALLING the one
+  // owner of the slot question, `isRewritableDeadSlot` (bd vsfp round 6, Rule 14 —
+  // the question liveness and the rewrite ask; round 5 left this on the bare
+  // `isRecordedDeadSlot`, two answers for one slot, r5 "not attacked"): a slot the
+  // clone reads — spec-quantum or any real read — or a recorded-dead slot that is
+  // not null-safe (its operand stays a use) falls through to (d) unchanged, the
+  // conservative direction.
+  {
+    bool PassesP = false, ReadsP = false;
+    for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
+      if (CI->getArgOperand(A) != P)
+        continue;
+      PassesP = true;
+      if (!isRewritableDeadSlot(*CI, A, taint)) {
+        ReadsP = true;
+        break;
+      }
+    }
+    if (PassesP && !ReadsP)
+      return true;
+  }
 
   // (d) — a producer whose own rail is provably zeroed AND released before `bo`.
   // Both halves are required: the `_unc` witnesses that the rail was RETURNED TO
@@ -813,7 +877,7 @@ bool inPlaceFenceHolds(const Instruction *Site, const Value *P, const Value *Imm
     if (!provablyBefore(UI, Site, DT))
       return false;
     // G7 — the prior use must be settled (see `priorUseIsSettled`).
-    if (!priorUseIsSettled(UI, P, Site, DT, Plan))
+    if (!priorUseIsSettled(UI, P, Site, DT, Plan, taint))
       return false;
   }
 

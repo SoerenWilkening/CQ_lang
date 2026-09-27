@@ -1,4 +1,35 @@
 ; lowering_reject_classical_mux_phi_spec_scrubbed_base_fp.ll — DECLINE (bd test_C_libtooling-d88e, P1 silent miscompile, found by
+; ⚠ bd test_C_libtooling-vsfp (2026-09-26) — RE-SPELLED, and why. `@hf` used to
+; IGNORE its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now replaces
+; an integer/fp argument whose callee parameter has NO USES by a constant before any
+; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
+; never reaches the specializer: `t` is classical from the start and the
+; classical-mux guard itself declines with this very string — the verdict AND the
+; string survived while the SUBJECT (the d88e re-ask) vanished, which no stdout/stderr
+; A/B can see (found by the `CQ_DEADARG_DBG` census: 33 lit modules touched).
+; The added lines in `@hf` (a branch-only read — see ROUND 2 below) keep the parameter live, so this file still reaches the fence it was written for. That
+; residual population — a callee that READS the argument yet returns classical — is
+; IR-ONLY from C at -O1 (the library TU deletes a dead read). The `env
+; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
+; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
+; and must re-derive it (CLAUDE.md L8).
+; ⚠⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B) — THIS FILE'S d88e SUBJECT IS NOT CONSTRUCTIBLE
+; ANY MORE, AND IT NOW PINS THE TWIN'S VERDICT. Round 1 kept `@hf`'s first parameter
+; "used" with a dead `fmul`; round 2's drop asks LIVENESS, so that read is dead. The
+; branch-only read the other re-spelled d88e fixtures use makes an FP-returning clone
+; carry a tainted terminator, which `predictReturnTainted` over-approximates to
+; TAINTED — the module then declines at `floating-point return-taint could not be
+; proven`, a different owner (measured). A classical-FP-return clone with a LIVE
+; tainted parameter needs a read that reaches a root without control flow or data
+; flow into the return, and a pure clone body has no such root: the cell is empty. So
+; the original spelling is restored: the drop fires (pinned by the DBG line below),
+; `t = hf(0.0, m)` is classical from the start, and the module declines exactly as
+; its hand-inlined twin (`t = m + 1.0`) does, at the classical-mux guard with the
+; very string below. The d88e re-ask's FP path keeps no lit pin of its own; its
+; int path is pinned by the 13 sibling fixtures (the code is shared). Retirement
+; trigger: a clone-return predictor precise under control flow makes the
+; branch-only spelling reachable again — re-spell then.
+;
 ; bd 9bhg's Rule-13 round r1A, F-9A-1): the f64 register (a `double` spec site whose clone returns the classical `k + 1.0`; `t` is a `cq_theta_f64` register at round 1).
 ;
 ; A TWO-TU module: the caller TU (`-include CQ.h`) llvm-linked with a plain-C
@@ -42,8 +73,9 @@
 ; Regenerate: clang -O1 -emit-llvm -S the two TUs as above, then
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>.
 ;
-; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
+; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s
+; CHECK: CQ_DEADARG_DBG: drop arg 0 of @hf in @main
 ; CHECK: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
 
 ; ModuleID = 'llvm-link'

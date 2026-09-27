@@ -1,0 +1,5 @@
+denominator=5949 A=bin/cq-opt.r2f B=bin/cq-opt.r2g
+D->A	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_volatile_arm_const.ll	A_rc=1 B_rc=0	A:<unknown>:0:0: in function main i32 (i32, ptr): cq specialization: quantum argument to a parameter the lifted callee never reads	B:
+D->A	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_volatile_arm_constfold.ll	A_rc=1 B_rc=0	A:<unknown>:0:0: in function main i32 (i32, ptr): cq specialization: quantum argument to a parameter the lifted callee never reads	B:
+D->A	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_volatile_arm_value.ll	A_rc=1 B_rc=0	A:<unknown>:0:0: in function main i32 (i32, ptr): cq specialization: quantum argument to a parameter the lifted callee never reads	B:
+summary D->A=3

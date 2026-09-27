@@ -898,6 +898,18 @@ struct TaintSet {
   // re-derived from a name prefix (CLAUDE.md §4f (P4)).
   ScrubMap<const llvm::Function *, uint64_t> SpecHandleArgMask;
 
+  // bd `test_C_libtooling-vsfp` round 2 — the SPECIALIZER'S record of which
+  // parameters of each clone it built are DEAD (bit i set ⇔ parameter i reaches no
+  // live root of the clone body), computed by the ONE liveness predicate
+  // (`DeadValueLiveness.h`) on the clone's STOCK-OPCODE body — after its control
+  // flattening and inner-call retargeting, before `lowerCloneSelect`/`lowerOps`
+  // turn every read into a runtime call. Written ONLY by `buildClone`; read by
+  // `isRecordedDeadSlot` (the liveness predicate's call-slot rule), the
+  // phantom-read resolution `resolvePhantomCloneArgReads`, and M-C's
+  // `priorUseIsSettled` arm (d0). A function without an entry is a function the
+  // specializer did not build (or a `_unc` twin): every slot counts as read.
+  ScrubMap<const llvm::Function *, uint64_t> SpecDeadArgMask;
+
   // A control region's `cqrt_cswap` ROUTE GROUP on one base register, recorded
   // ONLY where executing the WHOLE group provably restores that register's BASIS
   // LABEL (a phase-arm route-in/route-back pair per arm: the join is the literal
@@ -1542,6 +1554,31 @@ struct TaintSet {
 // propagation. The work-list is seeded with each theta's RESULT (the
 // suffix's natural ABI scalar — plain SSA, no struct wrapper).
 TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
+
+// bd `test_C_libtooling-otam` (bd vsfp round 3; Rule-13 r2A F-WA-1/F-WA-3) — THE
+// PRE-PASS WINDOW'S TAINT-FRESHNESS POSTCONDITION. Re-derives `propagate(M, wd)`
+// and compares its `Tainted` set with `taint.Tainted`; on ANY difference it emits
+// a loud `DS_Error` (`cq lowering: taint set is stale after a pre-pass …`) at the
+// first differing instruction and returns true. Called in BOTH entry points
+// immediately before `detectSpecializations`, i.e. after the last pre-pass that
+// mutates the IR and before the first guard/consumer that assumes a settled
+// taint set. Pure analysis; `taint` is not modified (its side tables are not
+// something `propagate` rebuilds, so it is compared, never replaced).
+//
+// WHY A CHECK AND NOT ANOTHER `propagate`. Every pre-pass that changes the IR
+// re-`propagate`s itself (the window's one rule; the three volatile folds were the
+// exception, which was bd otam). A silent re-`propagate` here would REPAIR the set
+// for the stages below while hiding that the stages INSIDE the window ran on a
+// stale one; the check turns the next omission into a decline instead (Prime
+// Directive), and the red-green/mutation rows pin it.
+//
+// ⚠ WHAT IT CANNOT SEE: a stale window that a LATER stage's own re-`propagate`
+// already repaired before this point (the stages between read the stale set, and
+// nothing here knows). It is a backstop for the omission that survives to the
+// end of the window, not a proof that no stage in it ever read a stale set —
+// that is the per-stage rule's job.
+bool declineStaleTaintSet(llvm::Module &M, WidthDispatch &wd,
+                          const TaintSet &taint);
 
 // bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
 // of the defined function `F` returns a value in `taint.Tainted` (a quantum

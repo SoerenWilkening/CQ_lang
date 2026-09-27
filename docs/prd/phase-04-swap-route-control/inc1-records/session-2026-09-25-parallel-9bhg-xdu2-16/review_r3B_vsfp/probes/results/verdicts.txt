@@ -1,0 +1,54 @@
+# verdicts: SUBJECT=3cb890ef25187b4b ROUND2(r2g)=d17c95e8353711b1 ORACLE(base)=69250feaf68bbe49
+# probe | SUBJECT rc | ROUND2 rc | ORACLE rc | first error (subject)
+a1 | 0 | 1 | 1 | 
+a1T | 0 | 0 | 0 | 
+a2 | 0 | 1 | 1 | 
+a2T | 0 | 0 | 0 | 
+a3 | 1 | 1 | 1 | cq controlled lowering: condition data use neither escaped nor measured under quantum cont
+a3T | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+b1 | 0 | 1 | 1 | 
+b1T | 0 | 0 | 0 | 
+b2 | 0 | 1 | 1 | 
+b2T | 0 | 0 | 0 | 
+b3 | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+b3T | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+b4 | 0 | 0 | 0 | 
+b4T | 0 | 0 | 0 | 
+b5 | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+b5T | 0 | 0 | 0 | 
+c1 | 0 | 1 | 1 | 
+c1T | 0 | 0 | 0 | 
+c2 | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+c2T | 1 | 1 | 1 | cq controlled lowering: condition predates a non-diagonal gate under quantum control
+c3 | 1 | 1 | 1 | cq controlled lowering: control flow under quantum control
+c3T | 0 | 0 | 0 | 
+c4 | 0 | 0 | 0 | 
+c4T | 0 | 0 | 0 | 
+d1 | 1 | 1 | 1 | cq specialization: callee contains a non-reversibilizable construct under quantum lift (me
+d1T | 1 | 1 | 1 | cq specialization: callee contains a non-reversibilizable construct under quantum lift (me
+d1H | 0 | 0 | 0 | 
+e1 | 1 | 1 | 1 | error: <unknown>:0:0: in function main i32 (): no template for opcode 'bitcast i32' in tai
+e1T | 1 | 1 | 1 | cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+u1 | 139 | 1 | 1 | 
+u2 | 0 | 0 | 1 | 
+u3 | 139 | 139 | 1 | 
+u4 | 139 | 134 | 1 | 
+u5 | 139 | 139 | 0 | 
+
+# trace identity on SUBJECT (subject vs twin)
+a1 vs a1T: TRACE-IDENT
+a2 vs a2T: TRACE-IDENT
+b1 vs b1T: TRACE-IDENT
+b2 vs b2T: TRACE-IDENT
+b4 vs b4T: TRACE-IDENT
+c1 vs c1T: TRACE-IDENT
+c4 SUBJECT vs ORACLE: IDENT (3-predecessor merge; fold does not apply; pre-existing twin divergence)
+
+# Guard Malloc (DYLD_INSERT_LIBRARIES=/usr/lib/libgmalloc.dylib) on u2 (silent in plain Release) and e1T (null control).
+# (first spelling of this block printed rc=0 for all three: $? was read after $(basename) in the same echo — L10's rc trap; re-measured with rc captured on its own line)
+u2 cq-opt gmalloc rc=139 cq::deleteDeadCones
+e1T cq-opt gmalloc rc=1 
+u2 cq-opt.r2g gmalloc rc=139 cq::deleteDeadCones
+e1T cq-opt.r2g gmalloc rc=1 
+u2 cq-opt.base gmalloc rc=1 
+e1T cq-opt.base gmalloc rc=1 

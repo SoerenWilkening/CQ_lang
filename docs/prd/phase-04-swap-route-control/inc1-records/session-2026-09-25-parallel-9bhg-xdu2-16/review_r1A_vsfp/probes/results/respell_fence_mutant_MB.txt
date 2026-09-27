@@ -1,0 +1,7 @@
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_branch.ll (25 of 30)
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_clone_arg_branch.ll (26 of 30)
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_clone_arg_mixed.ll (27 of 30)
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_branch2.ll (28 of 30)
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_clone_arg.ll (29 of 30)
+FAIL: CQ IR-pass :: orig__taint_reject_scrubbed_handle_mixed_select.ll (30 of 30)
+Total Discovered Tests: 60

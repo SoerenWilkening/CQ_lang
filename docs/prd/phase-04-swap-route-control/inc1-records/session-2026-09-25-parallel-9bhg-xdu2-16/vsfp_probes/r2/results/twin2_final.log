@@ -1,0 +1,62 @@
+STREAM	P_d88e_probes__LL_src_d01C.handedited.s1	NO-SRC		
+STREAM	P_d88e_probes__src_l20C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1A_9bhg__probes_src_l20C	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_n4	VERDICT-DIFF(auto)	S=ACC  w=0	T=DECL ut1 i32 (i32, i32): cq specialization: callee return value denotes no value (undef/poison) w=
+D->A	P_review_r1B_9bhg__probes_battery_s_f32	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_s_f64	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+D->A	P_review_r1B_9bhg__probes_battery_s_f80	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r1B_d88e__probes_src_e2ec	NO-TWIN	S=ACC 	
+D->A	P_review_r1B_d88e__probes_src_rb02C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_g3C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_g4C	TRACE-DIFF/auto:TRACE-DIFF	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f32T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f64T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	P_review_r2A_9bhg__probes_src_s_f80T	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	Q_fx__quantum_clone_dead_slot	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	Q_r1Bv__src_qjoc	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v01T	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v02T	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v08c	NO-TWIN	S=ACC 	
+D->A	Q_r1Bv__src_v08d	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v08e	NO-TWIN	S=ACC 	
+STREAM	Q_r1Bv__src_v16b	TRACE-DIFF(auto)	S=ACC  w=1	T=ACC  w=1
+STREAM	Q_r2src__qjoc	NO-TWIN	S=ACC 	
+STREAM	Q_r2src__v01T	NO-TWIN	S=ACC 	
+STREAM	Q_r2src__v02T	NO-TWIN	S=ACC 	
+STREAM	Q_r2src__v08c	NO-TWIN	S=ACC 	
+D->A	Q_r2src__v08d	NO-TWIN	S=ACC 	
+STREAM	Q_r2src__v08e	NO-TWIN	S=ACC 	
+STREAM	Q_r2src__v16b	TRACE-DIFF(auto)	S=ACC  w=1	T=ACC  w=1
+STREAM	Q_review_r1B_vsfp__probes_src_qjoc	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v01T	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v02T	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v08c	NO-TWIN	S=ACC 	
+D->A	Q_review_r1B_vsfp__probes_src_v08d	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v08e	NO-TWIN	S=ACC 	
+STREAM	Q_review_r1B_vsfp__probes_src_v16b	TRACE-DIFF(auto)	S=ACC  w=1	T=ACC  w=1
+STREAM	Q_vsfp_probes__src_fx_quantum_clone_dead_slot	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	Q_vsfp_probes__src_own_dvT	NO-TWIN	S=ACC 	
+STREAM	Q_vsfp_probes__src_own_q1	TRACE-DIFF(auto)	S=ACC  w=0	T=ACC  w=0
+STREAM	M_e2e-slice-multi-2file	NO-SRC		
+STREAM	M_e2e-slice-spec-dropped-arg-boolsel	NO-SRC		
+STREAM	M_e2e-slice-spec-dropped-arg-dead-smax	NO-SRC		
+STREAM	M_e2e-slice-spec-dropped-arg-inplace	NO-SRC		
+STREAM	M_e2e-slice-spec-dropped-arg-volatile-char	NO-SRC		
+STREAM	M_e2e-slice-spec-lift-scrubbed-elsewhere	NO-SRC		
+---
+A->D    DECL-SAME      11
+A->D    DECL-SAME(auto) 4
+D->A    NO-TWIN        3
+D->A    TRACE-DIFF(auto) 3
+D->A    TRACE-DIFF/auto:TRACE-DIFF 1
+D->A    TRACE-IDENT    168
+D->A    TRACE-IDENT(auto) 109
+D->A    VERDICT-DIFF(auto) 1
+DIAG    DECL-SAME      56
+DIAG    DECL-SAME(auto) 13
+STREAM  NO-SRC         7
+STREAM  NO-TWIN        17
+STREAM  TRACE-DIFF(auto) 10
+STREAM  TRACE-DIFF/auto:TRACE-DIFF 3
+STREAM  TRACE-IDENT    120
+STREAM  TRACE-IDENT(auto) 80

@@ -1,0 +1,246 @@
+[r4a] r2src/v15vc.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v15vs.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v15vl.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v15vd.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v26vf.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v26vb.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v02.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v01.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v15vx.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v15vn.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v26v2s.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v29c.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v29.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v26vtwo.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v20.c vs r2src/s3dT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v07.c vs r2src/s3dT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v21.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v22.c vs r2src/b10T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v23.c vs r2src/s3cT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v24.c vs r2src/b26T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v25.c vs r2src/b20T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v03.c vs r2src/v03T.c: TRACE-IDENT | S=ACC  w=1 dirty=0/0 | T=ACC  w=1 dirty=0/0
+[r4a] r2src/v03b.c vs r2src/v03bT.c: TRACE-IDENT | S=ACC  w=1 dirty=0/0 | T=ACC  w=1 dirty=0/0
+[r4a] r2src/v04.c vs r2src/v04T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v06.c vs r2src/v06T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v11.c vs r2src/v11T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v13.c vs r2src/v13T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v14.c vs r2src/v14T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v16.c vs r2src/v16T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v08c.c vs r2src/v08T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v08d.c vs r2src/v08T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v10.c vs r2src/v10T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v12.c vs r2src/v12T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v17.c vs r2src/v17T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v18.c vs r2src/v18T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v19.c vs r2src/v19T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v27.c vs r2src/v27T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v30.c vs r2src/v30F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/v30i.c vs r2src/v30F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/qjoc.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/qjoc_tpl.c vs r2src/qjoc_tplT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b10.c vs r2src/b10T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b15.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/s3d.c vs r2src/s3dT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b10f.c vs r2src/b10T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b15f.c vs r2src/b15T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/s3c.c vs r2src/s3cT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b26.c vs r2src/b26T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b20.c vs r2src/b20T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b2.c vs r2src/b2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b5.c vs r2src/b5T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b6.c vs r2src/b6T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b7f.c vs r2src/b7T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r2src/b8f.c vs r2src/b8T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r2src/b12f.c vs r2src/b12T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b17f.c vs r2src/b17T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/b18f.c vs r2src/b18T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/j02C.c vs r2src/j02T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/e02C.c vs r2src/e02T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/j01C.c vs r2src/j01T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/prov1.c vs r2src/prov1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/bint1.c vs r2src/bint1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/bint2.c vs r2src/bint2_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/bint3.c vs r2src/bint3_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/bint4.c vs r2src/bint4_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/bint5.c vs r2src/bint5_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/ctlz1.c vs r2src/ctlz1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/ctlz2.c vs r2src/ctlz2_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/dcar1.c vs r2src/dcar1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=1/2 | T=ACC  w=0 dirty=1/2
+[r4a] r2src/dcar5.c vs r2src/dcar5_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/dcar6.c vs r2src/dcar6_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/dloop1.c vs r2src/dloop1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/dloop2.c vs r2src/dloop2_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/dloop3.c vs r2src/dloop3_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/ediam1.c vs r2src/ediam1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/ediam2.c vs r2src/ediam2_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r2src/meas1.c vs r2src/meas1_twin.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r2src/av1.c vs r2src/av1t.c: TRACE-IDENT | S=ACC  w=0 dirty=2/8 | T=ACC  w=0 dirty=2/8
+[r4a] r2src/aw9.c vs r2src/aw9t.c: TRACE-IDENT | S=ACC  w=0 dirty=2/8 | T=ACC  w=0 dirty=2/8
+[r4a] r3p/d1.c vs r3p/d1F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/d2.c vs r3p/d2F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/d3.c vs r3p/d3F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/d4.c vs r3p/d4F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e1.c vs r3p/e1F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e2.c vs r3p/e2F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e3.c vs r3p/e3F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e4.c vs r3p/e4F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e5.c vs r3p/e5F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e6.c vs r3p/e6F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e7.c vs r3p/e7F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/e8.c vs r3p/e8F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/eqphi.c vs r3p/eqphiT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/f1.c vs r3p/f1F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/f2.c vs r3p/f2F.c: DECL-SAME | S=DECL eversibilizable construct under quantum lift (memory access) w=  | T=DECL zable construct under quantum lift (memory access) w= 
+[r4a] r3p/f3.c vs r3p/f3F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/f4.c vs r3p/f4F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/f5.c vs r3p/f5F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/f6.c vs r3p/f6F.c: DECL-DIFFSTR | S=DECL r): cq opcode lowering: operand predates a non-diagonal gate w=  | T=DECL olled lowering: control flow under quantum control w= 
+[r4a] r3p/g10A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g10B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g11A.c vs r3p/gTA.c: VERDICT-DIFF | S=DECL ion: callee contains tainted control flow under quantum lift w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g11B.c vs r3p/gTB.c: VERDICT-DIFF | S=DECL ion: callee contains tainted control flow under quantum lift w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g12A.c vs r3p/gTA.c: TRACE-DIFF | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g12B.c vs r3p/gTB.c: TRACE-DIFF | S=ACC  w=1 dirty=1/3 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g13A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g13B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g1A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g1B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g2A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g2B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g3A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g3B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g4A.c vs r3p/gTA.c: VERDICT-DIFF | S=DECL zable construct under quantum lift (unsupported instruction) w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g4B.c vs r3p/gTB.c: VERDICT-DIFF | S=DECL zable construct under quantum lift (unsupported instruction) w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g5A.c vs r3p/gTA.c: VERDICT-DIFF | S=DECL -reversibilizable construct under quantum lift (nested call) w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g5B.c vs r3p/gTB.c: VERDICT-DIFF | S=DECL -reversibilizable construct under quantum lift (nested call) w=  | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g6A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g6B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g7A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g7B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g8A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g8B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g9A.c vs r3p/gTA.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/g9B.c vs r3p/gTB.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/k1.c vs r3p/k1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/k10.c vs r3p/k10F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k11.c vs r3p/k11H.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/k12.c vs r3p/k12F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k13.c vs r3p/k13F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k14.c vs r3p/k14F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/2
+[r4a] r3p/k15.c vs r3p/k15F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/2
+[r4a] r3p/k16.c vs r3p/k16F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k18.c vs r3p/k18F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/2
+[r4a] r3p/k19.c vs r3p/k19F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r3p/k19v.c vs r3p/k19F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r3p/k2.c vs r3p/k2F.c: TRACE-IDENT | S=ACC  w=1 dirty=1/4 | T=ACC  w=1 dirty=1/4
+[r4a] r3p/k20.c vs r3p/k20F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k21.c vs r3p/k21F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r3p/k22.c vs r3p/k22F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k23.c vs r3p/k23F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k24.c vs r3p/k24F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r3p/k3.c vs r3p/k3F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k4.c vs r3p/k4F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k5.c vs r3p/k5F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k6.c vs r3p/k6F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k7.c vs r3p/k7F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/k8.c vs r3p/k8F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/2
+[r4a] r3p/k9.c vs r3p/k9F.c: TRACE-DIFF | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/loop1.c vs r3p/loop1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/5 | T=ACC  w=0 dirty=0/5
+[r4a] r3p/loop2.c vs r3p/loop2T.c: DECL-SAME | S=DECL loop lowering: loop-carried tainted value crosses iterations w=  | T=DECL ing: loop-carried tainted value crosses iterations w= 
+[r4a] r3p/m_n4.c vs r3p/m_n4H.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r3p/m_s_f64.c vs r3p/m_s_f64H.c: TRACE-IDENT | S=ACC  w=0 dirty=1/4 | T=ACC  w=0 dirty=1/4
+[r4a] r3p/r1b_v08.c vs r3p/r1b_v08T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/r1b_v08b.c vs r3p/r1b_v08T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r3p/stale1.c vs r3p/stale1T.c: DECL-SAME | S=DECL condition predates a non-diagonal gate under quantum control w=  | T=DECL predates a non-diagonal gate under quantum control w= 
+[r4a] r3p/stale10.c vs r3p/stale10T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/stale2.c vs r3p/stale2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/stale3a.c vs r3p/stale3aT.c: DECL-SAME | S=DECL main i32 (): cq taint escape: tainted value stored to memory w=  | T=DECL ): cq taint escape: tainted value stored to memory w= 
+[r4a] r3p/stale3b.c vs r3p/stale3bT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/stale3c.c vs r3p/stale3cT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/4 | T=ACC  w=0 dirty=0/4
+[r4a] r3p/stale4.c vs r3p/stale3cT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/4 | T=ACC  w=0 dirty=0/4
+[r4a] r3p/stale5.c vs r3p/stale3cT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/4 | T=ACC  w=0 dirty=0/4
+[r4a] r3p/stale6.c vs r3p/stale6T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/stale7.c vs r3p/stale7T.c: DECL-SAME | S=DECL  escape: tainted value muxed by a classical-condition select w=  | T=DECL ainted value muxed by a classical-condition select w= 
+[r4a] r3p/stale8.c vs r3p/stale8T.c: TRACE-IDENT | S=ACC  w=1 dirty=0/1 | T=ACC  w=1 dirty=0/1
+[r4a] r3p/stale9.c vs r3p/stale9T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r3p/threepred.c vs r3p/threepredT.c: VERDICT-DIFF | S=DECL : cq controlled lowering: control flow under quantum control w=  | T=ACC  w=0 dirty=0/1
+[r4a] r4a/c1.c vs r4a/c1T.c: DECL-SAME | S=DECL r): cq opcode lowering: operand predates a non-diagonal gate w=  | T=DECL ode lowering: operand predates a non-diagonal gate w= 
+[r4a] r4a/c2.c vs r4a/c2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/d1.c vs r4a/d1T.c: TRACE-DIFF | S=ACC  w=1 dirty=2/5 | T=ACC  w=0 dirty=0/4
+[r4a] r4a/d2.c vs r4a/d2T.c: TRACE-DIFF | S=ACC  w=1 dirty=2/5 | T=ACC  w=0 dirty=0/4
+[r4a] r4a/d4.c vs r4a/d4T.c: TRACE-DIFF | S=ACC  w=1 dirty=2/5 | T=ACC  w=0 dirty=0/4
+[r4a] r4a/e1.c vs r4a/e1T.c: VERDICT-DIFF | S=DECL : cq controlled lowering: control flow under quantum control w=  | T=ACC  w=0 dirty=0/1
+[r4a] r4a/e2.c vs r4a/e2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/f1.c vs r4a/f1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/f2.c vs r4a/f2T.c: TRACE-DIFF | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/2
+[r4a] r4a/fpfloat.c vs r4a/fpfloatT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/fplongd.c vs r4a/fplongdT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/g1.c vs r4a/g1F.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/l1.c vs r4a/l1T.c: DECL-SAME | S=DECL riant rail admitted for in-loop discharge was not discharged w=  | T=DECL  admitted for in-loop discharge was not discharged w= 
+[r4a] r4a/l2.c vs r4a/l2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/2 | T=ACC  w=0 dirty=0/2
+[r4a] r4a/s1.c vs r4a/s1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/t1.c vs r4a/t1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/t2.c vs r4a/t2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/wBool.c vs r4a/wBoolT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/wlongl.c vs r4a/wlonglT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/wshort.c vs r4a/wshortT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/wsigne.c vs r4a/wsigneT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/a1_add.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a1_deadop.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a1_icmp.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a1_sel.ll vs INL: VERDICT-DIFF | S=DECL ion: callee contains tainted control flow under quantum lift w=  | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a1_sext.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a1_xorself.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a2_chain.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/a3_width.ll vs INL: TRACE-IDENT | S=ACC  w=0 dirty=1/2 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/d1b.ll vs r4a/d1T.c: TRACE-DIFF | S=ACC  w=1 dirty=4/7 | T=ACC  w=0 dirty=0/4
+[r4a] r4a/e2b.ll vs r4a/e2T.c: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/f1b.ll vs r4a/f1T.c: TRACE-IDENT | S=ACC  w=0 dirty=1/2 | T=ACC  w=0 dirty=0/1
+[r4a] r4a/f2b.ll vs r4a/f2T.c: TRACE-DIFF | S=ACC  w=0 dirty=0/3 | T=ACC  w=0 dirty=0/2
+[r4a] r4a/fpfloatb.ll vs r4a/fpfloatT.c: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/fplongdb.ll vs r4a/fplongdT.c: TRACE-IDENT | S=ACC  w=0 dirty=1/1 | T=ACC  w=0 dirty=0/0
+[r4a] r4a/g1b.ll vs r4a/g1F.c: TRACE-IDENT | S=ACC  w=0 dirty=1/4 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/g1c.ll vs r4a/g1F.c: TRACE-IDENT | S=ACC  w=0 dirty=1/4 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/l2b.ll vs r4a/l2T.c: VERDICT-DIFF | S=DECL loop lowering: loop-carried tainted value crosses iterations w=  | T=ACC  w=0 dirty=0/2
+[r4a] r4a/n5_nested.ll vs r4a/n5T.ll: TRACE-IDENT | S=ACC  w=0 dirty=0/5 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/s1b.ll vs r4a/s1T.c: TRACE-IDENT | S=ACC  w=0 dirty=1/4 | T=ACC  w=0 dirty=0/3
+[r4a] r4a/wboolb.ll vs r4a/wBoolT.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4b/a1.c vs r4b/a1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4b/a2.c vs r4b/a2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4b/a3.c vs r4b/a3T.c: DECL-DIFFSTR | S=DECL  data use neither escaped nor measured under quantum control w=  | T=DECL predates a non-diagonal gate under quantum control w= 
+[r4a] r4b/b1.c vs r4b/b1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/5 | T=ACC  w=0 dirty=0/5
+[r4a] r4b/b2.c vs r4b/b2T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4b/b3.c vs r4b/b3T.c: DECL-SAME | S=DECL condition predates a non-diagonal gate under quantum control w=  | T=DECL predates a non-diagonal gate under quantum control w= 
+[r4a] r4b/b4.c vs r4b/b4T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4b/b5.c vs r4b/b5T.c: VERDICT-DIFF | S=DECL condition predates a non-diagonal gate under quantum control w=  | T=ACC  w=0 dirty=0/1
+[r4a] r4b/c1.c vs r4b/c1T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4b/c2.c vs r4b/c2T.c: DECL-SAME | S=DECL condition predates a non-diagonal gate under quantum control w=  | T=DECL predates a non-diagonal gate under quantum control w= 
+[r4a] r4b/c3.c vs r4b/c3T.c: VERDICT-DIFF | S=DECL : cq controlled lowering: control flow under quantum control w=  | T=ACC  w=0 dirty=0/2
+[r4a] r4b/c4.c vs r4b/c4T.c: TRACE-DIFF | S=ACC  w=0 dirty=0/4 | T=ACC  w=0 dirty=0/2
+[r4a] r4b/d1.c vs r4b/d1T.c: DECL-SAME | S=DECL eversibilizable construct under quantum lift (memory access) w=  | T=DECL zable construct under quantum lift (memory access) w= 
+[r4a] r4b/u3.c vs r4b/u3T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4b/u4.c vs r4b/u4T.c: DECL-SAME | S=DECL : cq controlled lowering: control flow under quantum control w=  | T=DECL olled lowering: control flow under quantum control w= 
+[r4a] r4b/u5.c vs r4b/u5T.c: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] r4b/e1.ll vs r4b/e1T.ll: DECL-DIFFSTR | S=DECL  (): no template for opcode 'bitcast i32' in tainted context w=  | T=DECL ation/measure operand predates a non-diagonal gate w= 
+[r4a] r4b/u1.ll vs r4b/u1T.ll: TRACE-IDENT | S=ACC  w=0 dirty=0/1 | T=ACC  w=0 dirty=0/1
+[r4a] r4b/u2.ll vs r4b/u2T.ll: TRACE-IDENT | S=ACC  w=0 dirty=0/0 | T=ACC  w=0 dirty=0/0
+[r4a] single r2src/naked1.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+[r4a] single r2src/naked2.c: ORACLE-SAME | main: DECL ersibilizable construct under quantum lift (inline assembly) | r4a: DECL ersibilizable construct under quantum lift (inline assembly)
+[r4a] single r2src/resv2.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+[r4a] single r2src/v09.c: ORACLE-SAME | main: DECL e/derefinable linkage); the linker may bind a different body | r4a: DECL e/derefinable linkage); the linker may bind a different body
+[r4a] single r2src/v16b.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+[r4a] single r3p/m_s_f32.c: ORACLE-DIFF | main: DECL int escape: classical call result used as a quantum register | r4a: ACC 
+[r4a] single r3p/m_s_f80.c: ORACLE-DIFF | main: DECL int escape: classical call result used as a quantum register | r4a: ACC 
+[r4a] single r3p/r1b_v26vsel.c: ORACLE-DIFF | main: DECL ion: callee contains tainted control flow under quantum lift | r4a: ACC 
+[r4a] single r3p/v16b.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+[r4a] single r4a/d3.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+[r4a] single r4a/d5.c: ORACLE-SAME | main: ACC  | r4a: ACC 
+denominator=238 (pairs 227, singles 11)
+    3 DECL-DIFFSTR
+   11 DECL-SAME
+    3 ORACLE-DIFF
+    8 ORACLE-SAME
+   10 TRACE-DIFF
+  191 TRACE-IDENT
+   12 VERDICT-DIFF

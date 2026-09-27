@@ -1,0 +1,8 @@
+denominator=3672 movers=0 
+denominator=3672 movers=20 A->D=9 STREAM=11
+denominator=3672 movers=20
+  A->D    R_   6
+  A->D    lit  3
+  STREAM  M_   1
+  STREAM  R_   7
+  STREAM  lit  3

@@ -1,4 +1,30 @@
 ; lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll — ACCEPT (bd
+; ⚠ bd test_C_libtooling-vsfp (2026-09-26) — RE-SPELLED, and why. `@h` used to
+; IGNORE its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now replaces an
+; integer/fp argument whose callee parameter has NO USES by a constant before any
+; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
+; is no longer a Phase-6 site at all: the call stays an ordinary classical call, no
+; clone is built and nothing is scrubbed, i.e. the property this file pins would have
+; no subject. The added lines in `@h` (a branch-only read — see ROUND 2 below) keep the
+; parameter live, so the clone is still built, still returns classical and is
+; still scrubbed. (The clone's own flatten removes the read, so the clone body carries no
+; template for it; the caller-side checks below are unchanged.)
+; That population — a callee that READS the
+; argument yet returns classical — is IR-ONLY from C at -O1. The NODROP prefix pins
+; that the drop does NOT fire here; a widening of the drop retires this subject and
+; must re-derive it (CLAUDE.md L8).
+; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's DEAD `mul` read no longer keeps the
+; parameter used — the drop now asks LIVENESS (`DeadValueLiveness.h`), and a value that
+; reaches no root is dead. The read is therefore a BRANCH-ONLY one now: `%vsfp.c` and an
+; EMPTY diamond on it. A branch condition is a liveness ROOT (the predicate has no
+; control dependence — see its LIMITS), so the parameter is LIVE in the original callee,
+; the drop does not fire (the NODROP / CHECK-NOT pin below), and the clone is built as
+; before; the clone's own flatten then removes the branch and the specializer records
+; the slot dead. Where this module ACCEPTS, its operand is a `cq_theta` result (the
+; phantom-read backstop's one exemption); where it DECLINES, the owner named here fires
+; before the backstop is asked. A predicate WITH control dependence (ADCE) retires this
+; subject — the pin below then turns red and the subject must be re-derived (L8).
+;
 ; test_C_libtooling-d88e, the re-ask's NO-TAINTED-INCOMING branch). HAND-EDITED IR.
 ;
 ; `lowering_reject_classical_mux_phi_spec_scrubbed_base.ll` with the arm's
@@ -18,12 +44,17 @@
 ; that: when NO recorded incoming is tainted at FINAL taint, the twin would never
 ; have asked, so neither does the re-ask. Deleting that branch turns this red.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2> %t.vsfp.err \
 ; RUN:   | %filecheck %s
+; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.vsfp.err
+; NODROP-NOT: CQ_DEADARG_DBG
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:      [[Q:%[a-z0-9.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 [[Q]], double 5.000000e-01)
-; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef [[Q]], i32 noundef %5)
+; (bd vsfp round 3, bd tzfa: slot 0 is one the specializer RECORDED dead — the clone never
+; reads it — so `resolvePhantomCloneArgReads` NEUTRALISES it to `0` after `specialize()`;
+; the operand is a `cq_theta` result, which the twin keeps, so nothing is declined.)
+; CHECK-NEXT: [[T:%[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef 0, i32 noundef %5)
 ; CHECK-NOT:  cqrt_
 ; CHECK:      ret i32 [[T]]
 ; CHECK-NEXT: }
@@ -61,6 +92,11 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: mustprogress nofree norecurse nosync nounwind ssp willreturn memory(none) uwtable
 define range(i32 -2147483647, -2147483648) i32 @h(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
+  %vsfp.c = icmp eq i32 %0, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
   %3 = add nsw i32 %1, 1
   ret i32 %3
 }

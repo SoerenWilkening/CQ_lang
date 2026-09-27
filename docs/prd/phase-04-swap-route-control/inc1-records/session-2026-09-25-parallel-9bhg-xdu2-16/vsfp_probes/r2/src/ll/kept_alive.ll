@@ -1,0 +1,28 @@
+declare i1 @cq_theta_i1(i1, double)
+declare i1 @cq_measure_i1(i1)
+declare i32 @cq_measure_si32(i32)
+
+define i32 @h(i32 %a, i32 %k) {
+entry:
+  %c = icmp sgt i32 %a, 3
+  br i1 %c, label %t, label %e
+t:
+  br label %e
+e:
+  %r = add i32 %k, 1
+  ret i32 %r
+}
+
+define i32 @main(i32 %m) {
+  %lo = trunc i32 %m to i1
+  %b = call i1 @cq_theta_i1(i1 %lo, double 5.000000e-01)
+  %p = select i1 %b, i32 9, i32 4
+  %t = call i32 @h(i32 %p, i32 %m)
+  %pm = call i32 @cq_measure_si32(i32 %p)
+  %b2 = call i1 @cq_theta_i1(i1 %b, double 7.000000e-01)
+  %mm = call i1 @cq_measure_i1(i1 %b2)
+  %mz = zext i1 %mm to i32
+  %s = add i32 %t, %mz
+  %s2 = add i32 %s, %pm
+  ret i32 %s2
+}

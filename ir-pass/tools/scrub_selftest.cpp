@@ -273,6 +273,7 @@ int main(int argc, char **argv) {
   checkMap("InPlaceRailIdx", T.InPlaceRailIdx, Add, 1u);
   checkMap("InLoopFlattenedPreds", T.InLoopFlattenedPreds, Block, 3u);
   checkMap("SpecHandleArgMask", T.SpecHandleArgMask, Fn, uint64_t(5));
+  checkMap("SpecDeadArgMask", T.SpecDeadArgMask, Fn, uint64_t(3));
   {
     // Maps whose MAPPED value is a Value handle: the key half as above, with a
     // live mapped value, then the mapped half — a deleted flag/tape/store value

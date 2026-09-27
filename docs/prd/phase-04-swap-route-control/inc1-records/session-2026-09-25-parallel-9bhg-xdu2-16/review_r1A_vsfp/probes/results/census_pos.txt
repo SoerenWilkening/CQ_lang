@@ -1,0 +1,3 @@
+FIRE rc=0 n=1 /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_boolsel.ll
+    CQ_DEADARG_DBG: drop arg 0 of @h in @main (inst)
+DENOM=2 FIRED=1 UNREADABLE=0 TOOLFAIL=0

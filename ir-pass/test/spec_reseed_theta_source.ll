@@ -1,4 +1,30 @@
 ; spec_reseed_theta_source.ll — Phase 6.1 WI-1.9 hardening (Rule-13 axis-(g)
+; ⚠ bd test_C_libtooling-vsfp (2026-09-26) — RE-SPELLED, and why. `@cls` used to
+; IGNORE its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now replaces an
+; integer/fp argument whose callee parameter has NO USES by a constant before any
+; stage reads it — what `clang -O1` does to the hand-inlined twin — so that spelling
+; is no longer a Phase-6 site at all: the call stays an ordinary classical call, no
+; clone is built and nothing is scrubbed, i.e. the property this file pins would have
+; no subject. The added lines in `@cls` (a branch-only read — see ROUND 2 below) keep the
+; parameter live, so the clone is still built, still returns classical and is
+; still scrubbed. (The clone's own flatten removes the read, so the clone body carries no
+; template for it; the caller-side checks below are unchanged.)
+; That population — a callee that READS the
+; argument yet returns classical — is IR-ONLY from C at -O1. The NODROP prefix pins
+; that the drop does NOT fire here; a widening of the drop retires this subject and
+; must re-derive it (CLAUDE.md L8).
+; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's DEAD `mul` read no longer keeps the
+; parameter used — the drop now asks LIVENESS (`DeadValueLiveness.h`), and a value that
+; reaches no root is dead. The read is therefore a BRANCH-ONLY one now: `%vsfp.c` and an
+; EMPTY diamond on it. A branch condition is a liveness ROOT (the predicate has no
+; control dependence — see its LIMITS), so the parameter is LIVE in the original callee,
+; the drop does not fire (the NODROP / CHECK-NOT pin below), and the clone is built as
+; before; the clone's own flatten then removes the branch and the specializer records
+; the slot dead. Where this module ACCEPTS, its operand is a `cq_theta` result (the
+; phantom-read backstop's one exemption); where it DECLINES, the owner named here fires
+; before the backstop is asked. A predicate WITH control dependence (ADCE) retires this
+; subject — the pin below then turns red and the subject must be re-derived (L8).
+;
 ; regression). The §2.7 return-taint SCRUB (for a `ReturnTainted=false` clone)
 ; must NOT walk through a PRIMARY taint source. Here a classical-return clone
 ; result `%r` (correctly scrubbed) feeds a FRESH `cq_theta` — a NEW taint source
@@ -18,13 +44,20 @@
 ; no ancestor rail is minted and the measurement reads the rail itself. Nothing
 ; else this file pins has moved.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.vsfp.err
+; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.vsfp.err
+; NODROP-NOT: CQ_DEADARG_DBG
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
 define i32 @cls(i32 %t, i32 %c) {
 entry:
+  %vsfp.c = icmp eq i32 %t, 0   ; bd vsfp r2: a BRANCH-ONLY read keeps this parameter LIVE
+  br i1 %vsfp.c, label %vsfp.arm, label %vsfp.join
+vsfp.arm:
+  br label %vsfp.join
+vsfp.join:
   %y = add i32 %c, %c
   ret i32 %y
 }
@@ -42,7 +75,10 @@ entry:
 ; %r is scrubbed (classical-return clone) but the fresh theta seeded from it is a
 ; real qubit: alloc+ry, then the downstream add lowers to a data template, then
 ; a real measure on that handle — NO loud decline.
-; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_cls_01(i32 %{{[a-zA-Z0-9_.]+}}, i32 7)
+; (bd vsfp round 3, bd tzfa: slot 0 is one the specializer RECORDED dead — the clone never
+; reads it — so `resolvePhantomCloneArgReads` NEUTRALISES it to `0` after `specialize()`;
+; the operand is a `cq_theta` result, which the twin keeps, so nothing is declined.)
+; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @__cq_q_cls_01(i32 0, i32 7)
 ; CHECK:     %[[RE:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[R]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[RE]], double 2.500000e-01)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[RE]], i32 8)
