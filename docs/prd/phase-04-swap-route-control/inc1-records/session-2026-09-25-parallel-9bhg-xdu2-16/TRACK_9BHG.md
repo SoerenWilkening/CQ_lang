@@ -764,3 +764,247 @@ passed.
   or an owner, or to be equivalent.
 - The branch is NOT merged into `main` and NOT pushed. A final independent Rule-13
   round on the composed branch is owed.
+
+## 12. After bd vsfp: `main` (`c1136be2`) merged, 2026-09-27
+
+Two Rule-13 rounds ran on `f2148d0a`, and their records are committed unmodified
+(`ecf00f03`):
+- r2A_9bhg: NOT-CLEAR on F-9C-1, a pre-existing P1 whose population 9bhg grew, filed as
+  bd vsfp;
+- r2B_9bhg: CLEAR-WITH-ITEMS, 0 P1.
+
+bd vsfp (+ hgwx and its round-2..6 beads) then landed on `main` at `c1136be2`. This
+branch merged it, not rebased: `30529716` and everything after it are intact. Owner
+ruling in force: no full `ctest` on the branch, targeted layers only; the full suite
+runs at the merge gate on `main`.
+
+**Commits:**
+- `ecf00f03`: the r2A/r2B_9bhg records.
+- `22be2f75`: the merge, with the fixture re-spells (below).
+- `da9dd852`: the e2e re-spell.
+- `026b9069`: F-9D-2's pins.
+- `0cc81e27`: the comment corrections (F-9D-1, F-9D-3, F-9C-2, the slot-order
+  comment).
+- the commit carrying this section.
+
+**Binaries** (sha-256 prefixes):
+- merged `cq-opt`: `cf6ae6f11d8b5fd3`;
+- `cq-opt-debugalloc`: `f8a0ecc5c4af5f04`;
+- `libCQPass.so`: `253c01dd7327cb92`.
+
+The comment-only commits rebuild `cq-opt` and `cq-opt-debugalloc` to the same hashes.
+`main` `c1136be2`'s `cq-opt` is `3f6db37f5cf937b4`, the coordinator's frozen copy.
+
+### 12.1 The dead-argument drop took the subject of ELEVEN 9bhg fixtures, not seven
+
+vsfp's `dropDeadCallArguments` replaces an argument whose callee parameter is dead
+under liveness by a constant, before propagation. Every 9bhg fixture's library callee
+(`h`/`hc(a, k) = k + 1`) ignored `a`. So on the merged tree there was no Phase-6 site
+and no provisional return, and each program was its own hand-inlined twin. Measured
+with `CQ_DEADARG_DBG=1` before the re-spell:
+- **7 went RED**: the four `taint_accept_spec_classical_return*` accepts and the three
+  `taint_reject_scrubbed_handle_clone_arg{,_mixed,_layout}` fixtures.
+- **4 still PASSED — for the twin's reason, not theirs** (CLAUDE.md Rule 12(c)):
+  `taint_reject_quantum_return_{mixed_spec, spec_seeded_theta, mixed_rets,
+  lift_owner_order}`. vsfp's round-1 composition note named only the first seven, and
+  the round-2 re-spell script named the same seven.
+
+All eleven now carry vsfp's own round-2 spelling: a BRANCH-ONLY read of `%0` feeding an
+empty diamond, which keeps the parameter live. They also carry `env CQ_DEADARG_DBG=1`
+plus `--implicit-check-not=CQ_DEADARG_DBG` (the drop must not fire), a header note, and
+a retirement trigger. The accepts' CHECKs changed in two ways, and both are the twin's
+shape:
+- the clone call's dead slot 0 is NEUTRALISED to `0` by `resolvePhantomCloneArgReads`;
+- where nothing else reads `q`, the spine now discharges it (Ry(−0.5), a proven-|0⟩
+  free).
+
+**L8 verified by mutation** (`probes/mutate.py`, full lit per mutant). Every re-spelled
+fixture is killed by its own mutant:
+
+| mutant | kills |
+|---|---|
+| M1 / M3 | the four `spec_classical_return*` accepts (+ `…_round2`, + `lift_owner_order`) |
+| MORD | `lift_owner_order` (only it) |
+| M5 | `spec_seeded_theta` (M2 too) |
+| M6 | `mixed_rets` (M2 too) |
+| M13 | `mixed_spec` (+ vsfp's `spec_accept_phantom_arg_read_theta_source_inplace_mc.ll`) |
+| M8 | `clone_arg`, `clone_arg_mixed`, `spec_accept_ordered_scrub_lift_mixed_mask` |
+| M9 | `clone_arg` |
+| M14 | `clone_arg_mixed` |
+| M15 | `clone_arg_layout` |
+| M4 (positive control) | `spec_quantum_return_{branch,measure}` (these read `a`; not re-spelled) |
+
+- Null mutant: 0 of 2417, and 0 of 2419 after the pins.
+- The restored build was bit-identical (`cf6ae6f1`) after every batch.
+- ⚠ **The harness was hardened before it was trusted.** Since bd 8e5r, lit STOPS
+  when `cq-opt-debugalloc` is older than `cq-opt`, and a stopped lit prints no FAIL
+  line, so a harness that rebuilds `cq-opt` alone would score every mutant MISSED.
+  `mutate.py` did rebuild `cq-opt` alone. That was fixed BEFORE the first measured
+  batch (it now builds both drivers), so the stale-driver case was not observed, only
+  closed. In the same edit I added a sanity check: a run without "Passed" is INVALID,
+  not MISSED. Its first batch reported all 12 mutants INVALID, because `lit -q` prints
+  no "Passed"; the harness now runs `lit -s`. The M3 pattern was also stale (the
+  early-skip conjunct had moved to a continuation line) and now matches. Every
+  verdict above is from the re-run.
+
+### 12.2 The e2e slice had silently stopped witnessing 9bhg — re-spelled
+
+`e2e-spec-classical-return` (`h(a, k) = k + 1`) lost its Phase-6 site to the drop,
+became the twin, and stayed GREEN: the clone call emitted no gate, so the golden did
+not move.
+- **Seven C spellings of a callee that keeps `a` live all DECLINE at `scanBody`**, on
+  the merged binary, `main` and 9bhg-alone: a conditional or unconditional
+  `putchar`/`printf` of `a`, a store of `a` to a global, a call `g(a)`, and a
+  volatile-guarded select (`probes/merge12/cprobe/`).
+- The spelling that works is r5/r6_vsfp's `mt2`/`mm1` shape. It is a `musttail` call,
+  and the drop refuses `musttail` sites (`SpecializeDetect.cpp:177`). The callee is
+  `h2(a, k) { if (a > 3) (void)K; return k + 1; }` with `K` a never-written static
+  volatile. vsfp's global fold removes that read in the clone only, and the neutraliser
+  nulls slot 0.
+- Measured on the committed slice: this branch exits 0 with no `CQ_DEADARG_DBG` line,
+  `main` c1136be2 DECLINES with the 3jru string, and the trace equals the hand-inlined
+  twin's.
+- **The golden is unchanged, byte for byte.**
+
+### 12.3 The post-`specialize()` slot order, both entry points
+
+`specialize` → (1) `declineFalsifiedMergePhiLifts` (d88e) → (2)
+`declineLiftedStaleRecordOps` (2qyz) → (3) `declineScrubbedHandleReads` (l3oi) → (4)
+**`declineQuantumReturnCalls(late)` (9bhg)** → (5) `declineRecordedStaleQuantumReaders`
+(3d8q) → (6) `declineDephasingUnmarkedLoopRails` (s82e) → (7)
+`declineRound2FalsifiedRailGrants` (tu9q) → (8) **`resolvePhantomCloneArgReads` (vsfp)**
+→ `lowerRotations`. In `run()` this is lines 953–1114; in the shim it is 1664–1731,
+identical.
+
+Why the late 3jru ask sits at (4):
+- **After (1).** The twin-parity argument is measured and pinned:
+  `…_lift_owner_order.ll` is MORD-killed, and it is re-spelled so it still reaches both
+  owners.
+- **After (3).** A handle read of a scrubbed value keeps its more SPECIFIC owner. This
+  is not twin parity (F-9C-2, below).
+- **Before (5)–(8).** Those speak only where nothing earlier did.
+- **Before (8).** The neutraliser rewrites a clone call's dead slot to a constant. It
+  takes `const TaintSet &` and writes no taint, so it cannot change the answer to "is
+  this function's return tainted"; and a module the late ask refuses never needs
+  neutralising.
+- **(4) must stay before `lowerRotations`/`lowerMeasures`.** That is unchanged: M4
+  kills 2 fixtures.
+
+The source comment at (4) now states this whole order, in both entry points.
+
+### 12.4 r2A_9bhg's F-9C-1 table on the merged binary (`probes/merge12/f9c1.py`)
+
+Every member was built 2-TU, with r2A's recipe. The twin is r2A's `<b>T.c` where it
+exists; otherwise it is GENERATED by replacing each call `h(A, K)` with `(K + 1)` and
+each `h2(A, B, K)` with `(K + 3)`, the library bodies, which the script asserts. Traces
+are compared for arguments `5 7` and `2 9`, together with STRICT 2b and the CENSUS
+clause:
+
+| member | twin | merged vs twin | 2b STRICT | warnings | CENSUS = twin's |
+|---|---|---|---|---|---|
+| b10, b15, s3d, b26, b20, b2, b5, b6 | r2A's | TRACE-IDENT | rc 0 | 0 | yes |
+| b10f, b15f, s3c, b7f, b8f, b12f, b17f, b18f | generated | TRACE-IDENT | rc 0 | 0 | yes |
+
+- **16 of 16 are trace-identical, with CENSUS equal to the twin's.** No member warns,
+  including the formerly warned `b2 b5 b6 b7f b8f b12f b17f b18f`.
+- **`b10f`** (`m = 5`, odd, so `b` starts in |1⟩) has the trace `cqrt_alloc_i1(1) -> h0`,
+  `cqrt_ry_i1(h0, 0.5)`, `cqrt_ry_i1(h0, 0.7)`, `cqrt_measure_i1(h0)`. That is one
+  qubit, with no other gate on its wire (no `%bf` copy, no `%out` rail). So it is
+  Ry(1.2)|1⟩ = −sin(0.6)|0⟩ + cos(0.6)|1⟩, and **P(b = 1) = cos²(0.6) = 0.6812**. This
+  is analytic from the trace, as r2A computed the twin's; no simulator was used.
+- `main` `c1136be2` gives the same TRACE-IDENT on all 16. The drop turns each member
+  into its twin before propagation there too.
+- **r1B_vsfp's composed `v21`–`v25`** (lib `h(a, k) { volatile char z = a; return
+  k + 1; }`): the drop fires there too, in slot B after the volatile-store erase.
+  All five are TRACE-IDENT with generated twins, with 2b STRICT clean and 0 warnings.
+
+### 12.5 Corpus A/B vs `cq-opt.main_c113` (`probes/merge12/ab12.py`)
+
+**Null controls first:** the subject ran twice and the reference ran twice over all
+6 945 modules; **0 of 6 945 differ** for each. Movers are classified against the
+hand-inlined twin where one exists.
+
+| set | modules | movers |
+|---|---|---|
+| lit `ir-pass/test/*.ll` | 2419 | **9**, all 9bhg's own: 8 D→A (the six accept fixtures + the two F-9D-2 pins) + 1 DIAG (the order pin) |
+| e2e standalone | 459 of 484 | 0 |
+| e2e multi-TU (`run_slice_multi.sh`) | 33 | **1** D→A: `m3` = `e2e-spec-classical-return`, twin-identical (§12.2) |
+| every record probe dir (27 dirs) | 3545 | **43**: 41 DIAG + 2 D→A |
+| r1B_9bhg alias families (regenerated) | 489 | 0 |
+
+- **The 41 DIAG are ALL quantum-verdict variants** (`*Q`/`*q`: the callee `hq = a + k`
+  reads `a`). They decline→decline, and the owner moves because the early 3jru
+  refusal no longer speaks first for a provisional return. Each declines on both
+  binaries.
+- **The 2 D→A are `mt2` (r5_vsfp) and `mm1` (r6_vsfp).** Both are 9bhg's C-level
+  population after vsfp, the `musttail` shape.
+  - `mt2` is TRACE-IDENT with r5's own twin.
+  - `mm1` is TRACE-IDENT with a hand-inlined twin (`h2(p, k)` → `k + 1`) for four
+    argument sets, 2b STRICT 0/0. The template-rail count differs by the clone call,
+    bd jr8q's census artefact, and 0 are left dirty on either side
+    (`probes/merge12/mm1/`).
+- ⚠ **The first corpus build was vacuous for three directories.** It linked only a
+  per-module `<n>.lib.c`. r2B, r1B's battery and l3oi, d88e and my own probes use a
+  SHARED `lib.c`/`libf.c`/`libC|Q|T.c`, so those modules declined at "unknown callee"
+  on every binary. It was caught by reading r2B's `R2` verdict. The builder now picks
+  the shared lib, falls back to single-TU on a duplicate-symbol link (25 modules), and
+  the table above is the corrected run.
+
+**What it says:** after bd vsfp, bd 9bhg's accept surface from C is the `musttail`
+population (`mt2`, `mm1`, the re-spelled e2e). Every other C-level member of the
+F-9C-1 / r1A / r2A / r2B batteries is dropped to its twin before propagation, on
+`main` as well as here.
+
+### 12.6 r1A's battery (+ twins) on the merged binary (`probes/merge9/battery13.py`)
+
+Same harness as §10/§11: 327 modules = 224 r1A sources + 72 hand-inlined twins +
+my 31 probes; binaries `sub` (`8b837d1f`), `main` = `main_c113`, `merged` = `cf6ae6f1`,
+and `prev` = the pre-vsfp merged binary `bfb441d3`.
+- **Null controls:** 0 of 327 differ for each binary, run twice.
+- **Every former d88e miscompile** (`l01C l07C l08C l09C l10C l13C l18C l22C`), and
+  `l25C`, still declines with stderr byte-identical to its twin (DECL-SAME).
+- **Twin parity: 71 of 72 pairs on merged**, up from 38 before vsfp; `main` c1136be2 is
+  also 71. The one remaining pair is `l20`, d88e's documented stage-1 folding
+  difference (ACC-DIFF on all three binaries). Every C/T VERDICT-DIFF of §10 is gone:
+  the drop makes each C its own twin.
+- **Movers merged vs `main`: 15 of 327, all DIAG** on quantum-verdict `*Q` variants
+  (decline→decline).
+- **Movers merged vs `prev` (`bfb441d3`): 62.** 39 STREAM (the neutralised slot, the
+  discharged dead register), 17 D→A (the drop makes the program the twin, which
+  accepts), 4 DIAG and 2 A→D. That is vsfp's own population on this battery, and every
+  C/T pair among them is twin-identical except `l20` (above).
+- **Measure census on the 103 accepted modules:** only six lower fewer `cqrt_measure`
+  than their source has `cq_measure`, and each is a bd 21mg never-quantum measure:
+  `l21C`/`l21T`, `own_ob2`, `own_ya`, `own_yc`, `own_yo` (`g(t)` with `t` classical
+  since the drop). `own_yc`/`own_yo` accept for the first time, as their twins do. ⚠
+  battery13's inline census still carries the `call zeroext i1` regex bug (it lists
+  `l17Q`/`w16C` falsely); the corrected `census13.py` gives the six above.
+
+### 12.7 Dispositions of r2A_9bhg and r2B_9bhg findings
+
+| finding | disposition | verified by |
+|---|---|---|
+| **F-9C-1** (P1, bd vsfp) | **CLOSED by vsfp** (`c1136be2`): the drop removes a dead argument before propagation; the neutraliser covers a slot only the clone kills | §12.4: 16/16 TRACE-IDENT + CENSUS-equal, 0 warnings; `b10f` P(b=1) = 0.6812 from the trace; v21–v25 TRACE-IDENT |
+| F-9C-2 (P3) | corrected at the source (the late-ask comment: "specificity, not twin parity") and here. ⚠ Its exhibit `o1` no longer separates them: `h`'s argument is dropped, so `o1` and `o1T` both decline with the 3jru string on the merged binary (DECL-SAME); `o4` is now TRACE-IDENT with its twin | `twincheck.py` |
+| F-9C-3 (P3, bd cepm) | record: §6's "still declines at l3oi" is imprecise; a function returning a round-1 emitter's `%out` was refused EARLY. ⚠ Since vsfp, every r2A member whose callee ignores `a` (`e1C`…`e14C`) is dropped to its twin before propagation: all 14 now ACCEPT, trace-identical to their twins, on this branch and on `main` alike (not movers in §12.5). That part of cepm's over-decline is REMOVED by vsfp; a callee that reads `a` is not covered by this measurement | `probes/merge12/twincheck.py` |
+| F-9D-1 (P3, bd 3zr4) | corrected at the source in the three places r2B named (`Specialization.cpp` drain comment, the clone-reader comment in `TaintPropagation.cpp`, the `declineScrubbedHandleReads` header) plus the `_layout.ll` retirement trigger. ⚠ `R2`'s C spelling itself collapses under vsfp (its round-2 callee ignores its argument); the clause's round-2 subject is now IR-level | text |
+| F-9D-2 (P3) | two of r2B's suggested pins added, re-spelled in IR: `taint_accept_spec_classical_return_round2.ll` (R6; killed by M1, M3 — the first round-2 shape to pin the drain's deferral) and `spec_accept_ordered_scrub_lift_mixed_mask.ll` (D2; killed by M8). Both are twin-identical for four argument sets and decline on `main`. ⚠ The fp pin (`FA_F80`) could NOT be re-spelled: both branch-only reads tried (an `fcmp`, an `i80` bitcast `icmp`) decline in the fp clone ("floating-point return-taint could not be proven", "callee contains tainted control flow"). The fp rebuild inside the ordered scrub is still pinned only by `spec_accept_fp_rebuilt_site_second_clone.ll`, whose mask never changes | mutation, §12.1 |
+| F-9D-3 (P3) | trigger written at the fence (`declineScrubbedHandleReads` header): the `CallBase`-only reader set is a CONTINGENT closure; the day the loop layer admits a TAINTED carried seed, `Z5`'s shape becomes an unseen reader; widen the fence then. `LoopLowering.cpp` untouched | text |
+
+### 12.8 Gates run on the merged binary (targeted; owner ruling — no full ctest here)
+
+| gate | command (literally) | result |
+|---|---|---|
+| lit | `cd build && lit -s ir-pass/test` | **2419 discovered, 2418 passed, 1 XFAIL** |
+| targeted ctest | `ctest --test-dir build -j6 -R "spec\|twin-identical\|multi\|scrub\|taintset\|volatile" --output-on-failure` | **102/102 passed**, 43.61 s (load 47 at the start, 26 at the end, from the other sessions) |
+| mutation (L8) | `probes/mutate.py`, full lit per mutant | §12.1: 14 mutants + null, every re-spelled fixture and both pins killed by its own mutant |
+| corpus A/B vs `main_c113` | `probes/merge12/ab12.py` | §12.5: null 0 of 6945 on each binary (twice); every mover classified |
+| F-9C-1 table | `probes/merge12/f9c1.py`, `v2x.py` | §12.4: 16/16 + v21–v25 TRACE-IDENT |
+| code map | `python3 tools/update_code_map.py --check` | clean (regenerated at the merge and after the comment commit) |
+| duplicate-body scan (L8) | `probes/dupscan.py` | 2419 fixtures, 9 pre-existing duplicate groups (unchanged), **0 of this change's 16 fixtures in one** |
+| full `ctest -j6` | — | **NOT RUN**, per the owner ruling: it runs at the merge gate on `main` |
+
+**Still open:** bd `cepm`, bd `3zr4` (was `s07e`'s round-2 half), bd `z0re`, bd
+`nlfd` (vsfp's, IR-only), the fp-pin gap above, and the mutants M10, M11, M16, MRED and
+MNOREASK, each argued to move only a slot or an owner, or to be equivalent. The branch
+is NOT merged into `main` and NOT pushed. One final Rule-13 round follows.

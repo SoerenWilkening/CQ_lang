@@ -16,6 +16,8 @@ MINE = {
     "taint_reject_scrubbed_handle_clone_arg_mixed.ll", "taint_reject_scrubbed_handle_clone_arg_layout.ll",
     "spec_accept_fp_rebuilt_site_second_clone.ll",
     "taint_reject_quantum_return_lift_owner_order.ll",
+    "taint_accept_spec_classical_return_round2.ll",
+    "spec_accept_ordered_scrub_lift_mixed_mask.ll",
 }
 groups = collections.defaultdict(list)
 for f in sorted(T.glob("*.ll")):

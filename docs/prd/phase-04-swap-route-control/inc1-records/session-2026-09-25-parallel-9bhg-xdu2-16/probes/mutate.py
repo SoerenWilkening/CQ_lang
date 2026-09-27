@@ -28,8 +28,8 @@ MUTANTS = [
                                 "      if (false)\n        continue;  // deferred", 1)]),
     ("M2-drain-always-defers", [(TP, "      if (returnTaintIsSpecProvisional(*F, out))\n        continue;  // deferred",
                                  "      if (true)\n        continue;  // deferred", 1)]),
-    ("M3-early-no-skip", [(TP, "if (SkipSpecProvisional && returnTaintIsSpecProvisional(F, taint))",
-                           "if (false && SkipSpecProvisional && returnTaintIsSpecProvisional(F, taint))", 1)]),
+    ("M3-early-no-skip", [(TP, "if (SkipSpecProvisional && returnTaintIsSpecProvisional(F, taint) &&",
+                           "if (false && SkipSpecProvisional && returnTaintIsSpecProvisional(F, taint) &&", 1)]),
     ("M4-no-late-slot", [(CQ, "if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))",
                           "if (false && declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))", 2)]),
     ("M5-pred-no-theta-keep", [(TP, "  for (const CallInst *Theta : taint.ThetaCalls)\n    Keep.insert(Theta);\n  SmallVector<Value *, 16> Cone;",
@@ -77,13 +77,17 @@ def restore():
 
 
 def build():
-    r = subprocess.run(["cmake", "--build", str(W / "build"), "--target", "cq-opt", "-j8"],
+    # bd 8e5r / m91g: lit STOPS if cq-opt-debugalloc is missing or older than
+    # cq-opt, so both are rebuilt (a cq-opt-only rebuild made lit fatal, and a
+    # fatal lit has no FAIL lines — it would read as MISSED).
+    r = subprocess.run(["cmake", "--build", str(W / "build"), "--target", "cq-opt",
+                        "cq-opt-debugalloc", "-j8"],
                        capture_output=True, text=True)
     return r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
 
 
 def lit():
-    r = subprocess.run(["lit", "ir-pass/test", "-q"], cwd=W / "build", capture_output=True,
+    r = subprocess.run(["lit", "ir-pass/test", "-s"], cwd=W / "build", capture_output=True,
                        text=True)
     fails = sorted(set(re.findall(r"CQ IR-pass :: (\S+\.ll)", r.stdout)))
     tot = re.search(r"Total Discovered Tests: (\d+)", r.stdout + r.stderr)
@@ -115,6 +119,9 @@ try:
             print(f"{name}: BUILD FAILED\n{log}", flush=True)
             continue
         fails, tot, out = lit()
+        if tot == "?" or "Passed" not in out:
+            print(f"{name}: INVALID (lit did not run the suite; no 'Total Discovered')", flush=True)
+            continue
         verdict = "KILLED" if fails else "MISSED"
         print(f"{name}: {verdict} ({len(fails)} of {tot} lit fail)", flush=True)
         for x in fails:
