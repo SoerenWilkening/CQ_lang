@@ -101,10 +101,19 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                         const TaintSet &taint);
 
 // A recorded-dead slot that the one rewrite may also NULL: `isRecordedDeadSlot` AND
-// the pre-`specialize()` drop's own eligibility (`dropEligibleSlot`,
-// SpecializeDetect.h — an int/fp scalar, no `byval`/`returned`/`swifterror`/…, only
-// allowlisted attributes). The liveness call-slot rule asks THIS, not the bare
-// record, so an ineligible slot's operand — which stays in place — is a read.
+// `nullSafeSlot` (SpecializeDetect.h — an int/fp scalar, no `byval`/`returned`/
+// `swifterror`/…, only allowlisted attributes). ⚠ NOT the drop's whole eligibility
+// (`dropEligibleSlot`): round 5 asked that, and its `musttail` POLICY conservatism
+// turned an inner dead slot into a read, one clone level up into a LIVE outer slot,
+// and bd `tzfa`'s wrong unitary back (bd `w7nm`, r5 F-Z-1). THE ONE SLOT QUESTION
+// (Rule 14): the liveness call-slot rule, the rewrite, M-C arm (d0)
+// (ArithLowering.cpp) and M-A's `cloneArgReachesResult` (RotationLowering.cpp) all
+// ask THIS; only `resolvePhantomCloneArgReads` also asks the bare record, because
+// it is the stage that resolves the difference (a recorded-dead, not null-safe
+// slot: kept when its operand is classical, declined when quantum). A slot this
+// calls "read" but the record calls dead is treated as READ everywhere — the
+// conservative direction for each consumer (d0: not settled → the out-of-place
+// path; M-A: a hop → more records; liveness: the operand survives).
 bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                           const TaintSet &taint);
 
@@ -119,7 +128,8 @@ bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // `preallocated` slot or a slot with an attribute outside its allowlist, and this
 // rewrite nulled all of them (a `byval` struct slot → `ptr byval null`: the plain-C
 // executable SIGSEGVed; `ptr nonnull dereferenceable(16) null` — immediate UB). It
-// now applies the drop's eligibility (`dropEligibleSlot`), and on an eligible slot
+// now asks `nullSafeSlot` (round 5 asked the drop's whole eligibility — bd `w7nm`),
+// and on a null-safe slot
 // the only attributes that can be present are the allowlist, of which `range` /
 // `nofpclass` are the only ones a null can violate — hence exactly that strip.
 // An ineligible slot is left alone (a classical pointer there costs nothing; a

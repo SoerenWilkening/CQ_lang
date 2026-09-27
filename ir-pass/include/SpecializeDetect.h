@@ -118,17 +118,28 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // declines a quantum operand the user program then no longer reads.
 bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 
-// THE DROP'S SLOT ELIGIBILITY, as one predicate (bd vsfp round 5, bd `91k9`): may
-// argument slot `A` of `CB` be rewritten to a constant? True only when the callee is
-// a direct, exact, non-`naked`, non-variadic definition called with its own function
-// type and not `musttail`, and the parameter is an integer or floating-point scalar
-// with no `returned`/`swifterror`/`byval`/`inalloca`/`preallocated` and only
-// `noundef`/`signext`/`zeroext`/`inreg`/`range`/`nofpclass` on it and on the call
-// site's slot. A POINTER slot is never eligible (so neither is `byref`/`sret`/
-// `nonnull`/`dereferenceable`). Called by the drop's loop and by
-// `rewriteRecordedDeadSlotUse` (DeadValueLiveness.h) — the post-`specialize()`
-// rewrite, which rewrote pointer and `byval` slots to `null` without it (a plain-C
-// program compiled clean and its executable SIGSEGVed, r4A F-YA-1).
+// NULL-SOUNDNESS of argument slot `A` of `CB` (bd vsfp round 6, bd `w7nm`): is a
+// null constant in this slot well-defined whatever the callee does with it, given
+// the callee never reads it? True only when the callee is direct and the parameter
+// is an integer or floating-point scalar with no `returned`/`swifterror`/`byval`/
+// `inalloca`/`preallocated` and only `noundef`/`signext`/`zeroext`/`inreg`/`range`/
+// `nofpclass` on it and on the call site's slot (`range`/`nofpclass` are the two a
+// null can violate; the rewrite strips them). A POINTER slot is never null-safe (so
+// neither is `byref`/`sret`/`nonnull`/`dereferenceable`) — bd `91k9`: a nulled
+// `byval` slot compiled clean and the executable SIGSEGVed. This is the ONLY slot
+// question the post-`specialize()` rewrite and the liveness call-slot rule ask
+// (`isRewritableDeadSlot`, DeadValueLiveness.h).
+bool nullSafeSlot(const llvm::CallBase &CB, unsigned A);
+
+// THE DROP'S SLOT ELIGIBILITY: `nullSafeSlot` AND the drop's POLICY conservatisms —
+// a direct, exact, non-`naked`, non-variadic callee called with its own function
+// type, and not `musttail`. Asked ONLY by the pre-`specialize()` drop's loop.
+// ⚠ Round 5 made the rewrite and the liveness rule ask this whole predicate, so the
+// `musttail` conservatism became load-bearing for CORRECTNESS: an inner `musttail`
+// dead slot counted as a READ, the enclosing clone's parameter became live, the
+// outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary came back
+// (r5 F-Z-1, bd `w7nm`, probe `mt1`: exit 0, the ORACLE's wrong stream). A constant in
+// a `musttail` slot changes no signature and is what round 4 emitted, verify-clean.
 bool dropEligibleSlot(const llvm::CallBase &CB, unsigned A);
 
 }  // namespace cq

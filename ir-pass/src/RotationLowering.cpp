@@ -1381,10 +1381,11 @@ bool isCloneCallHop(const CallInst *CI) {
 // body-less declaration and an argument past a varargs boundary all return false.
 // That is the DECLINE direction, which is the safe one here.
 //
-// WHAT THE TEST IS, PRECISELY (bd vsfp round 3): the specializer's RECORD — the
-// slot is read iff the callee is a clone `buildClone` recorded and the record
-// does not call the slot dead (`isRecordedDeadSlot`, taken with the liveness
-// predicate on the clone's stock-opcode body). A call to a `__cq_q_*` function
+// WHAT THE TEST IS, PRECISELY (bd vsfp round 3; round 6): the specializer's RECORD —
+// the slot is read iff the callee is a clone `buildClone` recorded and the record
+// does not call the slot dead AND null-safe (`isRewritableDeadSlot`, the one slot
+// question liveness, the rewrite and M-C (d0) ask — Rule 14; round 3–5 asked the
+// bare `isRecordedDeadSlot` here). A call to a `__cq_q_*` function
 // with NO record gets no hop (the decline direction). The record is LIVENESS, not
 // a use test, so it also closes the old residual one level up (Inc-3 Rule-13
 // round 2, reviewer probe q3: a parameter read only by an in-body compare that is
@@ -1407,8 +1408,8 @@ bool cloneArgReachesResult(const CallInst *CI, const Value *In,
       continue;
     if (K >= F->arg_size())
       return false;  // past the varargs boundary — no `Argument` to interrogate.
-    if (!isRecordedDeadSlot(*CI, K, taint))
-      return true;
+    if (!isRewritableDeadSlot(*CI, K, taint))
+      return true;  // a read, or a recorded-dead slot that is not null-safe (kept).
   }
   return false;
 }

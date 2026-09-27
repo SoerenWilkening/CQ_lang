@@ -6,9 +6,10 @@
 ; `ptr noundef nonnull byval(%struct.Big) align 8 null` and the linked executable SIGSEGVed (exit
 ; 139; `pn` got `nonnull null` into a `dereferenceable(16)` parameter — immediate UB), while opt,
 ; the verifier and stage 2b were all clean. The ORACLE compiles it correctly. Since round 5 the
-; one rewrite applies the pre-`specialize()` drop's own eligibility (`dropEligibleSlot`: an int/fp
-; scalar, no `byval`/`inalloca`/`preallocated`/`returned`/`swifterror`, allowlisted attributes
-; only), so a pointer slot is never rewritten — a classical pointer left in a dead slot costs
+; one rewrite asks NULL-SOUNDNESS (`nullSafeSlot` since round 6 — round 5 asked the drop's whole
+; eligibility `dropEligibleSlot`, whose `musttail` policy was a P1, bd w7nm: an int/fp scalar, no
+; `byval`/`inalloca`/`preallocated`/`returned`/`swifterror`, allowlisted attributes only), so a
+; pointer slot is never rewritten — a classical pointer left in a dead slot costs
 ; nothing (no rail, no spine). The NONULL prefix pins that no pointer argument is `null`; the
 ; main CHECKs pin the stream (the ORACLE's, byte-identical; the executable exits 5, measured).
 ;

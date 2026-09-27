@@ -125,17 +125,22 @@ bool dropEligibleParam(const Argument &P) {
 
 }  // namespace
 
+bool nullSafeSlot(const CallBase &CB, unsigned A) {
+  const Function *Callee = CB.getCalledFunction();
+  if (!Callee || A >= Callee->arg_size())
+    return false;
+  return dropEligibleParam(*Callee->getArg(A)) &&
+         dropEligibleParamAttrs(Callee->getAttributes().getParamAttrs(A)) &&
+         dropEligibleParamAttrs(CB.getAttributes().getParamAttrs(A));
+}
+
 bool dropEligibleSlot(const CallBase &CB, unsigned A) {
   const Function *Callee = CB.getCalledFunction();
   if (!dropEligibleCallee(Callee) || CB.getFunctionType() != Callee->getFunctionType())
     return false;
   if (const auto *CI = dyn_cast<CallInst>(&CB); CI && CI->isMustTailCall())
-    return false;
-  if (A >= Callee->arg_size())
-    return false;
-  return dropEligibleParam(*Callee->getArg(A)) &&
-         dropEligibleParamAttrs(Callee->getAttributes().getParamAttrs(A)) &&
-         dropEligibleParamAttrs(CB.getAttributes().getParamAttrs(A));
+    return false;  // POLICY, not soundness: a constant changes no signature.
+  return nullSafeSlot(CB, A);
 }
 
 bool dropDeadCallArguments(Module &M, const TaintSet &taint) {

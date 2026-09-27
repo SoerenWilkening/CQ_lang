@@ -639,15 +639,19 @@ bool priorUseIsSettled(const Instruction *UI, const Value *P,
 
   // (d0) — a call that passes `P` only in slots the specializer RECORDED as dead
   // in the built clone (bd vsfp / bd hgwx; see above). Asked by CALLING the one
-  // owner, `isRecordedDeadSlot`: a slot the clone reads — spec-quantum or any
-  // real read — falls through to (d) unchanged.
+  // owner of the slot question, `isRewritableDeadSlot` (bd vsfp round 6, Rule 14 —
+  // the question liveness and the rewrite ask; round 5 left this on the bare
+  // `isRecordedDeadSlot`, two answers for one slot, r5 "not attacked"): a slot the
+  // clone reads — spec-quantum or any real read — or a recorded-dead slot that is
+  // not null-safe (its operand stays a use) falls through to (d) unchanged, the
+  // conservative direction.
   {
     bool PassesP = false, ReadsP = false;
     for (unsigned A = 0, E = CI->arg_size(); A < E; ++A) {
       if (CI->getArgOperand(A) != P)
         continue;
       PassesP = true;
-      if (!isRecordedDeadSlot(*CI, A, taint)) {
+      if (!isRewritableDeadSlot(*CI, A, taint)) {
         ReadsP = true;
         break;
       }

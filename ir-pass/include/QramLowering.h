@@ -244,7 +244,9 @@ bool valueWillTaintAfterFlatten(
 // rodata=/relro=` sets an IMPLICIT section `hasSection()` does not see, and an MMIO
 // `static volatile int STATUS;` under the pragma still folded (bd `qce6`, r4B
 // F-YB-1). Since round 5 the gate is: explicit section, implicit section
-// (`hasImplicitSection()`), absolute symbol, and — owner decision 2026-09-27,
+// (`hasImplicitSection()` — CONSERVATIVE: any pragma attribute, whether or not the
+// object's section kind makes the backend honour it, bd `ad35`), absolute symbol,
+// and — owner decision 2026-09-27,
 // conservative — any NON-DEFAULT ADDRESS SPACE (device memory). Pins:
 // `lowering_reject_volatile_global_{section,absolute_symbol,pragma_bss,pragma_data,
 // addrspace}.ll`. ⚠ The sentence that stood here —

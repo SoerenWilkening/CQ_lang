@@ -2610,9 +2610,17 @@ bool foldVolatileConstGlobalLoads(Module &M, const TaintSet &taint) {
       continue;
     // Not in a NAMED SECTION — explicit (`section "…"`) OR IMPLICIT (the
     // `bss-section`/`data-section`/`rodata-section`/`relro-section` attributes
-    // `#pragma clang section` sets, which the backend honours and `hasSection()`
-    // does not see: bd `qce6`, r4B F-YB-1, an MMIO `static volatile int STATUS;`
-    // under the pragma folded to its initializer) — not at an ABSOLUTE / fixed
+    // `#pragma clang section` sets and `hasSection()` does not see: bd `qce6`, r4B
+    // F-YB-1, an MMIO `static volatile int STATUS;` under the pragma folded to its
+    // initializer). ⚠ CONSERVATIVE, not exact (bd `ad35`, r5 F-Z-2): LLVM honours
+    // such an attribute only when the object's section KIND matches
+    // (`TargetLoweringObjectFile::SectionForGlobal`: `bss-section` only for a BSS
+    // object, `rodata-section` only for a read-only one), so `bss=` on an
+    // INITIALIZED `static volatile int K = 7;` actually lands in `__DATA,__data` and
+    // is refused here anyway — an over-decline the owner prefers to a fold of
+    // reachable-looking memory (deciding the kind exactly needs a TargetMachine).
+    // Round 5's comment said these attributes are ones "the backend honours" —
+    // false for a kind mismatch. — not at an ABSOLUTE / fixed
     // address (`isAbsoluteSymbolRef()`, which IS the `!absolute_symbol` test for a
     // global object — round 4 spelled it twice, r4B P3), and not in a NON-DEFAULT
     // ADDRESS SPACE (owner decision 2026-09-27, conservative: an address space is

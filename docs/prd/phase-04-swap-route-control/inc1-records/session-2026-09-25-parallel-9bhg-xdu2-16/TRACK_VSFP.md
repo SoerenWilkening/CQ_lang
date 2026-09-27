@@ -15,6 +15,8 @@ round r2A (`review_r2A_9bhg/REVIEW.md` F-9C-1) and, for hgwx, bd d88e's r1B (F-D
   2026-09-26 reachability ruling. Read §R2 → §R3 → §R4 in order.
 - ⚠ **And on round 4: ROUND 5 follows §R4 (§R5)** — narrow: bd 91k9 (the rewrite keeps pointer/byval
   slots) and bd qce6 (the implicit section; the address space). Read §R2 → §R3 → §R4 → §R5.
+- ⚠ **And on round 5: ROUND 6 follows §R5 (§R6)** — narrow: bd w7nm (the slot question is NULL-SOUNDNESS,
+  `nullSafeSlot`, never the drop's `musttail` policy) and one slot question for every consumer.
 
 Binaries (sha-256 prefixes):
 
@@ -1504,8 +1506,10 @@ stripping only `range`/`nofpclass`); the record covers pointer parameters too. r
 0, verifier and 2b clean, the executable SIGSEGVs; `bvn2.c` the same through round 4's inner-call inherit;
 `pn.c` `nonnull null` into a `dereferenceable(16)` parameter (immediate UB, harmless only at `-O0`).
 
-**Fix.** The pre-`specialize()` drop's own slot eligibility is now ONE exported predicate,
-`dropEligibleSlot(CB, A)` (SpecializeDetect.h; the drop's loop calls it too — Rule 14): a direct, exact,
+**Fix.** [⚠ Round 6 (bd `w7nm`, r5 F-Z-1): the rewrite and the liveness rule asking the WHOLE
+`dropEligibleSlot` below was itself a P1 — its `musttail` policy made an inner dead slot a read and brought
+bd `tzfa` back; round 6 splits out `nullSafeSlot` for them, §R6.1.] The pre-`specialize()` drop's own slot
+eligibility is now ONE exported predicate, `dropEligibleSlot(CB, A)` (SpecializeDetect.h; the drop's loop calls it too — Rule 14): a direct, exact,
 non-`naked`, non-variadic, non-`musttail` callee called with its own type; an int/fp scalar parameter; no
 `returned`/`swifterror`/`byval`/`inalloca`/`preallocated`; only `noundef`/`signext`/`zeroext`/`inreg`/
 `range`/`nofpclass` on the parameter and the call site. A pointer slot (so `byref`/`sret`/`nonnull`/
@@ -1539,7 +1543,10 @@ is live is lowered, reversed and freed (unitary unchanged; the ORACLE emits the 
 
 `#pragma clang section bss=/data=/rodata=/relro=` attaches `bss-section`/`data-section`/… global attributes,
 which the backend honours and `hasSection()` misses: an MMIO-style `static volatile int STATUS;` under the
-pragma folded to its initializer in a quantum branch (r4B `s4_pragma_bss.c`, `s1`/`s2_pragma_*.c`,
+pragma folded to its initializer in a quantum branch [⚠ CORRECTED round 6, bd `ad35` / r5 F-Z-2: the backend
+honours the attribute only when the object's section KIND matches, so the refusal is CONSERVATIVE — any
+pragma attribute, whether or not the kind matches (`bss=` on an initialized `K = 7` lands in `__DATA,__data`
+and is refused anyway; the owner prefers that over-decline)] (r4B `s4_pragma_bss.c`, `s1`/`s2_pragma_*.c`,
 `i_dsect.ll`, `i_relro.ll`). The gate is now `hasSection() || hasImplicitSection() || isAbsoluteSymbolRef()
 || getAddressSpace() != 0` — the non-default address space by owner decision (conservative: device/MMIO
 memory on GPU/embedded targets); the redundant second absolute-symbol test is dropped (r4B P3:
@@ -1607,3 +1614,98 @@ declines them at a different wall, `control flow`).
    the corpus did not show.
 3. The address-space conjunct refuses ANY non-zero address space; on x86-64 no C spelling reaches it except
    `__attribute__((address_space(N)))`. An owner decision, conservative by construction.
+
+---
+
+# ROUND 6 (2026-09-27) — narrow: null-soundness is the slot question, not the drop's policy
+
+The narrow Rule-13 round on round 5 (`a3e22f5b`) was **NOT-CLEAR on one P1 round 5 introduced**; everything
+else held (the reviewers' scripts moved only the fixed rows; clang-19 `-O1` emits only `noundef`/`signext`/
+`zeroext` on int/fp params, all allowlisted; the `_Bool`..`long double` `k19` family is twin-identical; the
+libm slices and the census gate are green). Record: `review_r5_vsfp/REVIEW.md` (F-Z-1..3; bds `w7nm`,
+`ad35`, `18a7`), committed unmodified at `d84bf2fc`. **NOT self-cleared.**
+
+| tag | `cq-opt` |
+|---|---|
+| ROUND 5 (`a3e22f5b`, kept copy) | `74df1d02e7b90123` |
+| SUBJECT (round 6) | `3f6db37f5cf937b4` (`libCQPass.so` `356df92e0b58bbf7`, `cq-opt-debugalloc` `36033dbf6641b168`) |
+
+## R6.1 bd w7nm (P1, introduced in round 5)
+
+Round 5 made the liveness call-slot rule and the rewrite ask the drop's WHOLE eligibility
+(`dropEligibleSlot`), including its `musttail` refusal — a POLICY conservatism (`spec_accept_dropped_arg_
+musttail_kept.ll`'s header: "a constant argument changes no signature"). A read counted by liveness is not
+local: through `deadParamMask` it makes the enclosing clone's parameter LIVE one level up. r5's `mt1`
+(r2B's `k19` main; `int h(int a,int k){ __attribute__((musttail)) return h2(a,k); }`, `h2` reading `a` only
+in a volatile-fold empty diamond): the inner `musttail` dead slot counted as a read, `h`'s parameter became
+live, the outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary was back (no
+`mul_i32_hl_unc` + free before the Ry; exit 0; the ORACLE's stream byte-for-byte). Round 4 was twin-identical.
+
+**Fix — the reviewer's split.** `dropEligibleSlot` is split in `SpecializeDetect.{h,cpp}`:
+- `nullSafeSlot(CB, A)` — NULL-SOUNDNESS: a direct callee, an int/fp scalar parameter with no
+  `returned`/`swifterror`/`byval`/`inalloca`/`preallocated`, only allowlisted attributes on the parameter
+  and the call-site slot. A pointer slot (hence `byref`/`sret`/`nonnull`/`dereferenceable`) is never
+  null-safe. `isRewritableDeadSlot = isRecordedDeadSlot ∧ nullSafeSlot` — asked by the rewrite AND the
+  liveness rule.
+- `dropEligibleSlot(CB, A)` = `nullSafeSlot` ∧ the drop's POLICY (exact, non-`naked`, non-variadic callee,
+  own function type, not `musttail`) — asked ONLY by the pre-`specialize()` drop's loop.
+
+`mt1` is TRACE-IDENT with its twin `mtT` again, and so is `mtN` (plain tail call); round 5's `bv`/`bvn2`/`pn`
+and the three `*_slot_kept.ll` stay green (the pointer/byval slots are still not null-safe).
+
+## R6.2 Rule 14 — one slot question for every consumer
+
+Round 5 left M-C arm (d0) (`ArithLowering.cpp`) and M-A's `cloneArgReachesResult` (`RotationLowering.cpp`)
+on the bare `isRecordedDeadSlot` while liveness asked the rewritable predicate — two answers for one slot
+(r5 "not attacked"). Both now ask `isRewritableDeadSlot`. The only consumer that still asks the bare record
+is `resolvePhantomCloneArgReads`, because it is the stage that resolves the difference (a recorded-dead,
+not null-safe slot: kept when classical, declined when quantum). Where the two questions differ the slot is
+READ everywhere — the conservative direction for each consumer (d0: not settled → out of place; M-A: a hop
+→ more records; liveness: the operand survives). The comment in `DeadValueLiveness.h` states this.
+
+**Mutant W2 (both consumers back to the bare record) is EQUIVALENT, argued and measured:** the questions
+differ only on a slot that is recorded dead and NOT null-safe. After round 6's split that population is:
+pointer/`byval`-type slots (never carry a quantum value, so neither consumer ever sees them with a quantum
+`P`) and int/fp slots with a non-allowlisted attribute, which clang-19 `-O1` never emits (r5 attack 2). An
+IR-only construction (`vsfp_probes/r6/src/w2probe.ll`, a string attribute on the inner slot) lowers
+byte-identically under the SUBJECT and W2. W2 went 0/2405 on the suite. The change is uniformity (Rule 14),
+not a stream change.
+
+## R6.3 bd ad35 (P3) — the implicit section is refused CONSERVATIVELY
+
+LLVM honours a `#pragma clang section` attribute only when the object's section KIND matches
+(`TargetLoweringObjectFile::SectionForGlobal`), so `bss=` on an initialized `static volatile int K = 7;`
+lands in `__DATA,__data` (r5 `ps1`/`ps2`). The refusal stays (the owner prefers declining reachable-looking
+memory; deciding the kind exactly needs a `TargetMachine`); the false "which the backend honours" is
+corrected in `QramLowering.cpp`, `QramLowering.h` and §R5.3 (marked inline): it is conservative — any pragma
+attribute, whether or not the kind matches. bd `18a7` (P3, instrument: r4B's `all.sh` `declare -A` is dead
+under `/bin/bash` 3.2, so every r4B probe ran with argv `1`) — record-only.
+
+## R6.4 Fixtures, e2e
+
+1 fixture added: `spec_accept_phantom_arg_read_musttail_inner_slot.ll` (r5's `mt1` stage-1 IR; main CHECKs =
+the twin's stream; a CLONE prefix pins that `h`'s clone passes `0` into the inner `musttail` call and holds
+no template). The three `*_slot_kept.ll` headers corrected (they named `dropEligibleSlot`).
+`ls ir-pass/test/*.ll | wc -l` **2405**. **Red-green** (`tools/redgreen6.sh`): ORACLE FAIL, ROUND 4 PASS,
+ROUND 5 FAIL, SUBJECT PASS. e2e, 3 entries: `e2e-slice-spec-dropped-arg-musttail-inner` (2-TU, lib
+`spec_dropped_arg_musttail_lib.c`), `…-twin`, `e2e-spec-dropped-arg-musttail-inner-twin-identical`
+(`tools/mkgold6.py`: SUBJECT and ROUND 4 TWIN-IDENT, 14 lines; ROUND 5 and the ORACLE 12 lines, a warning,
+1 dirty template rail — TWIN-DIFF).
+
+## R6.5 Measurements (commands under `vsfp_probes/r6/tools/`)
+
+- `lit ir-pass/test` → **2405 discovered, 2404 passed, 1 XFAIL**.
+- `ctest --test-dir build -R "musttail-inner|byval-slot"` → 4/4. No other ctest (brief).
+- **The r5 reviewer's `results.sh` and r4A's `results.sh`, re-run unmodified** (`tools/r6_rerun_reviews.sh`):
+  r5 — the ONLY rows that moved are `mt1 [S]` (warn 1 → 0, dirty 2 → 1 — the census's clone-call-result
+  artefact, F-XA-5 —, 2 → 3 verified, 12 → 14 lines), `mt1.S vs twin mtT` (TRACE-DIFF → TRACE-IDENT), the
+  two S call sites (`%h_op` / `%0` → `0` / `0`) and the trace-diff block (now empty). r4A — only the binary
+  line moved (`bv`/`bvn2` still run 5, `pn`'s call `%3`).
+- **Corpus A/B vs ROUND 5** (`tools/buildcorp6.py` adds `review_r5_vsfp`), denominator **3712** = lit 2405 +
+  probe modules 872 + e2e 403 + multi-TU 32. Null (SUBJECT vs SUBJECT) **0**. ROUND 5 → SUBJECT **4 movers,
+  all STREAM, all w7nm's shape**: the new fixture, r5's `mt1` (×2 stage-1 copies), and the new e2e slice.
+- **Mutants** (`tools/mutants6.py`, scratch worktree `mutwt6`, base = SUBJECT hash; full lit per mutant,
+  2405 fixtures): N0 null 0; **W1** (the rewritable question back to `dropEligibleSlot`) KILLED by
+  `…_musttail_inner_slot.ll`; **W2** (M-C (d0) and M-A back to the bare record) 0 failed — EQUIVALENT,
+  argued in §R6.2. ad35 is comment-only (no mutant).
+- `python3 tools/update_code_map.py --check` → clean (regenerated).

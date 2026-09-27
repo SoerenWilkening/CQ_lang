@@ -2,7 +2,7 @@
 
 #include "DeadValueLiveness.h"
 
-#include "SpecializeDetect.h"  // dropEligibleSlot (bd 91k9: the drop's ONE slot rule)
+#include "SpecializeDetect.h"  // nullSafeSlot (bd 91k9 / w7nm: the ONE null-soundness rule)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -141,7 +141,7 @@ bool isRecordedDeadSlot(const CallBase &CB, unsigned ArgNo,
 
 bool isRewritableDeadSlot(const CallBase &CB, unsigned ArgNo,
                           const TaintSet &taint) {
-  return isRecordedDeadSlot(CB, ArgNo, taint) && dropEligibleSlot(CB, ArgNo);
+  return isRecordedDeadSlot(CB, ArgNo, taint) && nullSafeSlot(CB, ArgNo);
 }
 
 bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
@@ -182,10 +182,16 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
       // Operands of a call: the argument slots the callee is RECORDED never to
       // read AND that the one rewrite may null (`isRewritableDeadSlot`) do not
       // propagate; the called operand, bundle operands and every other slot do.
-      // ⚠ bd `91k9` (round 5): an INELIGIBLE recorded-dead slot (a pointer, a
-      // `byval`, an attribute outside the drop's allowlist) is never rewritten, so
-      // its operand stays a use of the call — counting it as a read keeps
+      // ⚠ bd `91k9` (round 5): a recorded-dead slot that is NOT NULL-SAFE (a
+      // pointer, a `byval`, an attribute outside the allowlist) is never rewritten,
+      // so its operand stays a use of the call — counting it as a read keeps
       // `deleteDeadCones` step 3 from deleting a value that call still uses.
+      // ⚠ bd `w7nm` (round 6): the question is NULL-SOUNDNESS only, never the
+      // drop's policy (`musttail`, callee conjuncts). A read counted here is NOT
+      // local: through `deadParamMask` it makes the enclosing clone's parameter
+      // LIVE one level up, where the outer slot is null-safe and would otherwise
+      // be neutralised — round 5 asked `dropEligibleSlot` here, an inner `musttail`
+      // dead slot became a read, and tzfa's phantom read came back (r5 `mt1`).
       for (const Use &U : CB->operands()) {
         if (CB->isArgOperand(&U) &&
             isRewritableDeadSlot(*CB, CB->getArgOperandNo(&U), taint))

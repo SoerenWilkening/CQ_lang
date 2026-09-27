@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 774 maintained source files, 6306 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 776 maintained source files, 6310 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -19,7 +19,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp` — 7413 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
 - `tools/loop_twin_matrix.py` — 4066 physical lines
-- `ir-pass/src/QramLowering.cpp` — 3620 physical lines
+- `ir-pass/src/QramLowering.cpp` — 3628 physical lines
 - `tools/free_pairing_check.py` — 3423 physical lines
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
@@ -29,19 +29,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
-- `ir-pass/src/RotationLowering.cpp` — 2151 physical lines
+- `ir-pass/src/RotationLowering.cpp` — 2152 physical lines
 - `ir-pass/include/TaintPropagation.h` — 2029 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1753 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `ir-pass/src/Specialization.cpp` — 1495 physical lines
+- `ir-pass/src/Specialization.cpp` — 1497 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
-- `ir-pass/src/ArithLowering.cpp` — 1185 physical lines
+- `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
 - `tools/taintset_scrub_guard.py` — 1148 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1128 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
@@ -62,7 +62,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/MergePhiPeel.cpp` — 660 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 654 physical lines
 - `tools/negative_vacuity_check.py` — 646 physical lines
-- `ir-pass/include/QramLowering.h` — 623 physical lines
+- `ir-pass/include/QramLowering.h` — 625 physical lines
 - `ir-pass/src/SwitchClassify.cpp` — 620 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 614 physical lines
 - `ir-pass/src/MeasureLowering.cpp` — 614 physical lines
@@ -91,10 +91,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
+- `ir-pass/src/DeadValueLiveness.cpp` — 440 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 440 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
 - `ir-pass/src/DagTraversal.cpp` — 436 physical lines
-- `ir-pass/src/DeadValueLiveness.cpp` — 434 physical lines
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
@@ -209,7 +209,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/AngleSelectEmit.cpp:108` — `emitPhaseAngleSelect`
 - `ir-pass/src/AngleSelectEmit.cpp:265` — `emitAngleSelectRegion`
 
-### `ir-pass/src/ArithLowering.cpp` (1185 lines)
+### `ir-pass/src/ArithLowering.cpp` (1189 lines)
 
 - `ir-pass/src/ArithLowering.cpp:52` — `promote`
 - `ir-pass/src/ArithLowering.cpp:108` — `negateClassicalImmediate`
@@ -219,10 +219,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArithLowering.cpp:310` — `rewriteInPlaceValueRail`
 - `ir-pass/src/ArithLowering.cpp:410` — `inPlaceReassignRailOperand`
 - `ir-pass/src/ArithLowering.cpp:619` — `priorUseIsSettled`
-- `ir-pass/src/ArithLowering.cpp:715` — `inPlaceFenceHolds`
-- `ir-pass/src/ArithLowering.cpp:911` — `classifyInPlaceReassignment`
-- `ir-pass/src/ArithLowering.cpp:979` — `lateReassignShape`
-- `ir-pass/src/ArithLowering.cpp:1019` — `lowerLateReassignments`
+- `ir-pass/src/ArithLowering.cpp:719` — `inPlaceFenceHolds`
+- `ir-pass/src/ArithLowering.cpp:915` — `classifyInPlaceReassignment`
+- `ir-pass/src/ArithLowering.cpp:983` — `lateReassignShape`
+- `ir-pass/src/ArithLowering.cpp:1023` — `lowerLateReassignments`
 
 ### `ir-pass/src/ArmClassify.cpp` (9234 lines)
 
@@ -449,7 +449,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DagTraversal.cpp:24` — `isInvertEscape`
 - `ir-pass/src/DagTraversal.cpp:39` — `recoverDataDag`
 
-### `ir-pass/src/DeadValueLiveness.cpp` (434 lines)
+### `ir-pass/src/DeadValueLiveness.cpp` (440 lines)
 
 - `ir-pass/src/DeadValueLiveness.cpp:35` — `isFrontEndIntrinsicSite`
 - `ir-pass/src/DeadValueLiveness.cpp:44` — `isEmptyUncondArm`
@@ -459,9 +459,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:142` — `isRewritableDeadSlot`
 - `ir-pass/src/DeadValueLiveness.cpp:147` — `rewriteRecordedDeadSlotUse`
 - `ir-pass/src/DeadValueLiveness.cpp:165` — `FunctionLiveness::FunctionLiveness`
-- `ir-pass/src/DeadValueLiveness.cpp:202` — `FunctionLiveness::isLive`
-- `ir-pass/src/DeadValueLiveness.cpp:204` — `deadParamMask`
-- `ir-pass/src/DeadValueLiveness.cpp:213` — `deleteDeadCones`
+- `ir-pass/src/DeadValueLiveness.cpp:208` — `FunctionLiveness::isLive`
+- `ir-pass/src/DeadValueLiveness.cpp:210` — `deadParamMask`
+- `ir-pass/src/DeadValueLiveness.cpp:219` — `deleteDeadCones`
 
 ### `ir-pass/src/EmitInverse.cpp` (440 lines)
 
@@ -743,7 +743,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PredMuxFlatten.cpp:5276` — `flattenPredMuxRegions`
 - `ir-pass/src/PredMuxFlatten.cpp:5393` — `declineConvertedRailPhiLeaves`
 
-### `ir-pass/src/QramLowering.cpp` (3620 lines)
+### `ir-pass/src/QramLowering.cpp` (3628 lines)
 
 - `ir-pass/src/QramLowering.cpp:254` — `instReaches`
 - `ir-pass/src/QramLowering.cpp:333` — `singleValuedClosure`
@@ -789,14 +789,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/QramLowering.cpp:2579` — `guardedShadowStoreShape`
 - `ir-pass/src/QramLowering.cpp:2584` — `classifyQromReadUnderControl`
 - `ir-pass/src/QramLowering.cpp:2598` — `foldVolatileConstGlobalLoads`
-- `ir-pass/src/QramLowering.cpp:2709` — `foldVolatileConstAllocaLoads`
-- `ir-pass/src/QramLowering.cpp:2836` — `eraseDeadVolatileScalarStores`
-- `ir-pass/src/QramLowering.cpp:2955` — `everyLoadIsStoreDefined`
-- `ir-pass/src/QramLowering.cpp:3004` — `promoteVolatileScalarLocals`
-- `ir-pass/src/QramLowering.cpp:3117` — `lowerQramReads`
-- `ir-pass/src/QramLowering.cpp:3309` — `emitCopyOutIfDirectMeasure`
-- `ir-pass/src/QramLowering.cpp:3353` — `processShadowAlloca`
-- `ir-pass/src/QramLowering.cpp:3589` — `lowerShadowMemory`
+- `ir-pass/src/QramLowering.cpp:2717` — `foldVolatileConstAllocaLoads`
+- `ir-pass/src/QramLowering.cpp:2844` — `eraseDeadVolatileScalarStores`
+- `ir-pass/src/QramLowering.cpp:2963` — `everyLoadIsStoreDefined`
+- `ir-pass/src/QramLowering.cpp:3012` — `promoteVolatileScalarLocals`
+- `ir-pass/src/QramLowering.cpp:3125` — `lowerQramReads`
+- `ir-pass/src/QramLowering.cpp:3317` — `emitCopyOutIfDirectMeasure`
+- `ir-pass/src/QramLowering.cpp:3361` — `processShadowAlloca`
+- `ir-pass/src/QramLowering.cpp:3597` — `lowerShadowMemory`
 
 ### `ir-pass/src/RailBankPromote.cpp` (1964 lines)
 
@@ -843,7 +843,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RegionTreeDetect.cpp:81` — `condHasDataUse`
 - `ir-pass/src/RegionTreeDetect.cpp:90` — `recoverRegionTree`
 
-### `ir-pass/src/RotationLowering.cpp` (2151 lines)
+### `ir-pass/src/RotationLowering.cpp` (2152 lines)
 
 - `ir-pass/src/RotationLowering.cpp:52` — `suffixFromName`
 - `ir-pass/src/RotationLowering.cpp:431` — `normalizeUndefRotationSeed`
@@ -857,19 +857,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:1207` — `isRecordedUserRotation`
 - `ir-pass/src/RotationLowering.cpp:1260` — `isTeardownUse`
 - `ir-pass/src/RotationLowering.cpp:1334` — `isCloneCallHop`
-- `ir-pass/src/RotationLowering.cpp:1400` — `cloneArgReachesResult`
-- `ir-pass/src/RotationLowering.cpp:1425` — `isAllocRail`
-- `ir-pass/src/RotationLowering.cpp:1437` — `isQramArrayHandle`
-- `ir-pass/src/RotationLowering.cpp:1452` — `isCopyGate`
-- `ir-pass/src/RotationLowering.cpp:1469` — `classifyRail`
-- `ir-pass/src/RotationLowering.cpp:1492` — `push`
-- `ir-pass/src/RotationLowering.cpp:1514` — `collectDescendantRecords`
-- `ir-pass/src/RotationLowering.cpp:1579` — `collectAncestorRecords`
-- `ir-pass/src/RotationLowering.cpp:1641` — `isQramStoreGate`
-- `ir-pass/src/RotationLowering.cpp:1740` — `reachesObservingSink`
-- `ir-pass/src/RotationLowering.cpp:1925` — `recordAbsentAt`
-- `ir-pass/src/RotationLowering.cpp:1936` — `recordIsExemptAt`
-- `ir-pass/src/RotationLowering.cpp:2052` — `warnLiveRecordRotations`
+- `ir-pass/src/RotationLowering.cpp:1401` — `cloneArgReachesResult`
+- `ir-pass/src/RotationLowering.cpp:1426` — `isAllocRail`
+- `ir-pass/src/RotationLowering.cpp:1438` — `isQramArrayHandle`
+- `ir-pass/src/RotationLowering.cpp:1453` — `isCopyGate`
+- `ir-pass/src/RotationLowering.cpp:1470` — `classifyRail`
+- `ir-pass/src/RotationLowering.cpp:1493` — `push`
+- `ir-pass/src/RotationLowering.cpp:1515` — `collectDescendantRecords`
+- `ir-pass/src/RotationLowering.cpp:1580` — `collectAncestorRecords`
+- `ir-pass/src/RotationLowering.cpp:1642` — `isQramStoreGate`
+- `ir-pass/src/RotationLowering.cpp:1741` — `reachesObservingSink`
+- `ir-pass/src/RotationLowering.cpp:1926` — `recordAbsentAt`
+- `ir-pass/src/RotationLowering.cpp:1937` — `recordIsExemptAt`
+- `ir-pass/src/RotationLowering.cpp:2053` — `warnLiveRecordRotations`
 
 ### `ir-pass/src/SelectClassify.cpp` (1442 lines)
 
@@ -897,7 +897,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1495 lines)
+### `ir-pass/src/Specialization.cpp` (1497 lines)
 
 - `ir-pass/src/Specialization.cpp:59` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:76` — `isForwardQramLoad`
@@ -919,7 +919,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:1277` — `isCopyDestination`
 - `ir-pass/src/Specialization.cpp:1308` — `userProgramReads`
 - `ir-pass/src/Specialization.cpp:1341` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1431` — `specialize`
+- `ir-pass/src/Specialization.cpp:1433` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (254 lines)
 
@@ -929,16 +929,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeClone.cpp:106` — `predictReturnTainted`
 - `ir-pass/src/SpecializeClone.cpp:188` — `cloneFor`
 
-### `ir-pass/src/SpecializeDetect.cpp` (337 lines)
+### `ir-pass/src/SpecializeDetect.cpp` (342 lines)
 
 - `ir-pass/src/SpecializeDetect.cpp:43` — `intrinsicSites`
 - `ir-pass/src/SpecializeDetect.cpp:60` — `readsTainted`
 - `ir-pass/src/SpecializeDetect.cpp:94` — `dropEligibleCallee`
 - `ir-pass/src/SpecializeDetect.cpp:99` — `dropEligibleParamAttrs`
 - `ir-pass/src/SpecializeDetect.cpp:118` — `dropEligibleParam`
-- `ir-pass/src/SpecializeDetect.cpp:128` — `dropEligibleSlot`
-- `ir-pass/src/SpecializeDetect.cpp:141` — `dropDeadCallArguments`
-- `ir-pass/src/SpecializeDetect.cpp:248` — `detectSpecializations`
+- `ir-pass/src/SpecializeDetect.cpp:128` — `nullSafeSlot`
+- `ir-pass/src/SpecializeDetect.cpp:137` — `dropEligibleSlot`
+- `ir-pass/src/SpecializeDetect.cpp:146` — `dropDeadCallArguments`
+- `ir-pass/src/SpecializeDetect.cpp:253` — `detectSpecializations`
 
 ### `ir-pass/src/SpecializeReject.cpp` (1019 lines)
 
@@ -6888,6 +6889,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_dropped_arg_boolsel_twin.c:8` — `slice`
 - `tests/e2e/slice_spec_dropped_arg_boolsel_twin.c:17` — `main`
 
+### `tests/e2e/slice_spec_dropped_arg_byval_slot.c` (28 lines)
+
+- `tests/e2e/slice_spec_dropped_arg_byval_slot.c:17` — `slice`
+- `tests/e2e/slice_spec_dropped_arg_byval_slot.c:24` — `main`
+
 ### `tests/e2e/slice_spec_dropped_arg_dead_smax.c` (33 lines)
 
 - `tests/e2e/slice_spec_dropped_arg_dead_smax.c:21` — `slice`
@@ -7023,6 +7029,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `tests/e2e/spec_chained_ctl_lib.c` (23 lines)
 
 - `tests/e2e/spec_chained_ctl_lib.c:21` — `gg`
+
+### `tests/e2e/spec_dropped_arg_byval_lib.c` (11 lines)
+
+- `tests/e2e/spec_dropped_arg_byval_lib.c:11` — `h`
 
 ### `tests/e2e/spec_dropped_arg_lib.c` (21 lines)
 

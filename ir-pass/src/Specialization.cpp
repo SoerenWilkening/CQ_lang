@@ -1340,9 +1340,9 @@ bool userProgramReads(const Value *V, const FunctionLiveness &L,
 
 bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
   // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
-  //    non-clone function that the drop's own eligibility admits (an int/fp scalar
-  //    with allowlisted attributes — `dropEligibleSlot`) gets a null constant with
-  //    the drop's `range`/`nofpclass` strip, asked with the SAME predicate's record
+  //    non-clone function that is NULL-SAFE (an int/fp scalar with allowlisted
+  //    attributes — `nullSafeSlot`; never the drop's `musttail` policy, bd `w7nm`)
+  //    gets a null constant with the `range`/`nofpclass` strip, asked with the SAME predicate's record
   //    (`isRecordedDeadSlot`). ⚠ Round 4 said "exactly the drop's rewrite" and
   //    applied none of the drop's eligibility — it nulled pointer and `byval`
   //    slots (bd `91k9`, r4A F-YA-1); an ineligible slot is now left in place, and
@@ -1383,8 +1383,10 @@ bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
           if (isa<Constant>(Op))
             continue;  // already a constant.
           if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint)) {
-            // An INELIGIBLE slot (bd `91k9`, round 5: a pointer, a `byval`, an
-            // attribute outside the drop's allowlist) is left in place. A
+            // A slot that is not NULL-SAFE (bd `91k9`, round 5: a pointer, a
+            // `byval`, an attribute outside the allowlist) is left in place. This
+            // is the one consumer that asks both the bare record and the rewritable
+            // question — it is where their difference is resolved. A
             // classical value there is harmless — no rail, no consumer set, no
             // spine. A QUANTUM one would stay a phantom read, exactly bd `tzfa`'s
             // extra consumer, so it declines (the same string as step 2).
