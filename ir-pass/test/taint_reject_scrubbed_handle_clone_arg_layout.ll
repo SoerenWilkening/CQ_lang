@@ -1,4 +1,5 @@
 ; taint_reject_scrubbed_handle_clone_arg_layout.ll — DECLINE (bd test_C_libtooling-9bhg;
+; the fence is bd test_C_libtooling-l3oi Rule-13 round 7 F-R7-1's).
 ; ⚠ bd test_C_libtooling-vsfp (merged into bd 9bhg 2026-09-27) — RE-SPELLED, and why.
 ; `@h` IGNORED its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now
 ; replaces an argument whose callee parameter is DEAD under liveness
@@ -19,7 +20,6 @@
 ; `Library TU` source below is the ORIGINAL; the module is hand-edited from it.
 ; RETIREMENT TRIGGER: a liveness predicate WITH control dependence (ADCE) makes this read
 ; dead too. The pin then turns red and the subject must be re-derived (L8).
-; the fence is bd test_C_libtooling-l3oi Rule-13 round 7 F-R7-1's).
 ;
 ; The DECLINE twin of taint_reject_scrubbed_handle_clone_arg.ll, and the fixture
 ; that keeps bd l3oi's CLONE-READER clause (`taint.SpecHandleArgMask`) pinned now
@@ -37,8 +37,11 @@
 ;
 ; RETIREMENT TRIGGER: if `specialize()` ever orders `Pending` by dominance (RPO)
 ; instead of layout, this becomes the ACCEPT its twin is — re-derive it then and
-; find another subject for the clone-reader clause (a loop-carried argument), do
-; not delete the clause.
+; find another subject for the clone-reader clause, do not delete the clause.
+; ⚠ CORRECTED (bd 9bhg Rule-13 r2B F-9D-1, bd 3zr4): `Pending` is round-1 layout
+; order FOLLOWED BY the round-2 tail, so an RPO drain alone does not retire the
+; clause — a round-1 site reading a round-2 site's result (r2B `R2`: 6.5 arm →
+; spec site → spec site) is a second subject, and a loop-carried argument a third.
 ;
 ; Library TU (plain C, no CQ.h):
 ;   int h(int a, int k) { return k + 1; }

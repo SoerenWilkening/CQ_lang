@@ -1454,12 +1454,23 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   //     source this walk cannot see — keeps the detection-time mask, so the clone
   //     reads the scrubbed argument in a masked slot and bd l3oi's
   //     `declineScrubbedHandleReads` declines it (the backstop, never an accept).
-  // ⚠ `Pending` is in LAYOUT order (function, block, instruction), so this orders
-  // a use after its definition only where the layout does; a use laid out BEFORE
-  // its definition's block, or a loop-carried argument, is still built from a
-  // mask a later scrub falsifies and still declines at the same fence
-  // (taint_reject_scrubbed_handle_clone_arg_layout.ll). An RPO order would recover
-  // the former; it is not done here.
+  // ⚠ `Pending` is NOT simply in layout order (bd 9bhg Rule-13 r2B F-9D-1, bd
+  // 3zr4 — this comment said it was). Round 1's `detectSpecializations` pushes its
+  // sites in layout order, and round 2's `detectSpecializations(…, &live)` (from
+  // `adjudicateTaintDelta`) then APPENDS every site whose argument became tainted
+  // only in round 2 (a 6.5 / 4.5 / controlled-IO merge `%out`). So this drain orders
+  // a use after its definition only where both are round-1 sites and the layout
+  // does. Three shapes are still built from a mask a later scrub falsifies, and still
+  // decline at the l3oi fence (the backstop — never an accept):
+  //   (a) a use laid out before its definition's block
+  //       (taint_reject_scrubbed_handle_clone_arg_layout.ll, hand IR);
+  //   (b) a ROUND-1 site reading a ROUND-2 site's result (r2B `R2`: 6.5 arm → spec
+  //       site → spec site; plain C before bd vsfp, PRE-EXISTING — `main` declined
+  //       it too; since vsfp its C spelling collapses to the twin when the round-2
+  //       callee ignores its argument);
+  //   (c) a loop-carried argument (argued, not constructed).
+  // An RPO drain alone recovers (a) but not (b): the round-2 tail would have to be
+  // merged into the dominance order (bd 3zr4).
   for (size_t i = 0; i < plan.Pending.size(); ++i) {
     SpecCandidate Cand = plan.Pending[i];
     SpecMask Now = taintArgMask(Cand.Site, taint);

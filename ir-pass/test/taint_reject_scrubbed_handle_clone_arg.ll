@@ -1,4 +1,5 @@
 ; taint_reject_scrubbed_handle_clone_arg.ll — ACCEPT since bd test_C_libtooling-9bhg
+; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
 ; ⚠ bd test_C_libtooling-vsfp (merged into bd 9bhg 2026-09-27) — RE-SPELLED, and why.
 ; `@h` IGNORED its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now
 ; replaces an argument whose callee parameter is DEAD under liveness
@@ -19,7 +20,6 @@
 ; `Library TU` source below is the ORIGINAL; the module is hand-edited from it.
 ; RETIREMENT TRIGGER: a liveness predicate WITH control dependence (ADCE) makes this read
 ; dead too. The pin then turns red and the subject must be re-derived (L8).
-; (was a DECLINE for bd test_C_libtooling-l3oi, xdu2.13 Rule-13 round 7 F-R7-1).
 ;
 ; ⚠ THE NAME SAYS `reject` AND THE FILE IS AN ACCEPT. Deliberately not renamed: a
 ; `git mv` can be resurrected by a merge (CLAUDE.md L8; bd gahu's precedent). The

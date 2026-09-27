@@ -23,18 +23,18 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/free_pairing_check.py` — 3423 physical lines
 - `tools/free_pairing_check_test.py` — 3203 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3068 physical lines
-- `ir-pass/src/TaintPropagation.cpp` — 2983 physical lines
+- `ir-pass/src/TaintPropagation.cpp` — 2985 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2164 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
-- `ir-pass/include/TaintPropagation.h` — 2084 physical lines
+- `ir-pass/include/TaintPropagation.h` — 2102 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1800 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1811 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
-- `ir-pass/src/Specialization.cpp` — 1559 physical lines
+- `ir-pass/src/Specialization.cpp` — 1570 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -181,7 +181,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/SpecializePlan.h:133` — `getHashValue`
 - `ir-pass/include/SpecializePlan.h:137` — `isEqual`
 
-### `ir-pass/include/TaintPropagation.h` (2084 lines)
+### `ir-pass/include/TaintPropagation.h` (2102 lines)
 
 - `ir-pass/include/TaintPropagation.h:601` — `isPeelClone`
 
@@ -337,12 +337,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1800 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1811 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:54` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:88` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:114` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1263` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1274` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -897,7 +897,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1559 lines)
+### `ir-pass/src/Specialization.cpp` (1570 lines)
 
 - `ir-pass/src/Specialization.cpp:59` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:76` — `isForwardQramLoad`
@@ -1019,7 +1019,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwitchValueEmit.cpp:115` — `bailLoud`
 - `ir-pass/src/SwitchValueEmit.cpp:137` — `emitSwitchValueRegion`
 
-### `ir-pass/src/TaintPropagation.cpp` (2983 lines)
+### `ir-pass/src/TaintPropagation.cpp` (2985 lines)
 
 - `ir-pass/src/TaintPropagation.cpp:81` — `diagnoseIntrinsicInvoke`
 - `ir-pass/src/TaintPropagation.cpp:99` — `collectAndSeed`
@@ -7042,14 +7042,14 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/spec_chained_ctl_lib.c:21` — `gg`
 
-### `tests/e2e/spec_classical_return_caller.c` (52 lines)
+### `tests/e2e/spec_classical_return_caller.c` (60 lines)
 
-- `tests/e2e/spec_classical_return_caller.c:41` — `f`
-- `tests/e2e/spec_classical_return_caller.c:47` — `main`
+- `tests/e2e/spec_classical_return_caller.c:49` — `f`
+- `tests/e2e/spec_classical_return_caller.c:55` — `main`
 
-### `tests/e2e/spec_classical_return_lib.c` (4 lines)
+### `tests/e2e/spec_classical_return_lib.c` (11 lines)
 
-- `tests/e2e/spec_classical_return_lib.c:4` — `h`
+- `tests/e2e/spec_classical_return_lib.c:11` — `h2`
 
 ### `tests/e2e/spec_dropped_arg_byval_lib.c` (11 lines)
 

@@ -1670,9 +1670,27 @@ bool declineQuantumReturnCalls(llvm::Module &M, const TaintSet &taint,
 // only the runtime families and was NOT exact: a top-level clone can be built
 // from a mask that a LATER scrub falsifies — every clone was, before bd 9bhg's
 // ordered scrub; since it, only a site resolved before the site whose scrub
-// untaints its argument, i.e. a use laid out before its definition), was read as a
-// quantum HANDLE while it was still tainted and is now proved classical — the
-// integer used as a register id.
+// untaints its argument — a use laid out before its definition, a round-1 site
+// reading a round-2 site's result (the drain is round-1 layout order FOLLOWED BY
+// the round-2 tail — bd 9bhg Rule-13 r2B F-9D-1, bd 3zr4; this sentence said
+// "i.e. a use laid out before its definition"), or a loop-carried argument), was
+// read as a quantum HANDLE while it was still tainted and is now proved classical —
+// the integer used as a register id.
+// ⚠ ITS READER SET IS `CallBase` ONLY, and bd 9bhg GREW the scrubbed population
+// (every mask-0 site the ordered scrub skips, and its cone). A pre-`specialize()`
+// stage that read a scrubbed value through a NON-call user on the conservative
+// taint is NOT seen here (Rule-13 r2B F-9D-3). Every such reader is closed TODAY
+// by ANOTHER owner, measured by r2B: a lift base by bd d88e's re-ask; a rail-bank
+// store or reader by `declineNonHandleBankStores` / the bank-reader allow-list; a
+// classical-condition mux by `declineClassicalMuxes` on the conservative taint;
+// and a LOOP-CARRIED HANDLE SEED by the loop layer's refusal of a tainted carried
+// seed (r2B `Z5`). That last closure is CONTINGENT. RETIREMENT TRIGGER: the day
+// the loop layer admits a TAINTED carried seed (`loopCarriedHandlePhi` /
+// `promoteLoopCarriedHandleSeeds`), `Z5`'s shape — `a = g(t)` seeding the carried
+// φ with a spec-classical `t` — becomes an accept whose φ carries the classical
+// integer into trip 1 as a register, and this fence does not see it. Widen the
+// fence then to "any user that is itself still in `Tainted`" (r2B's route), in the
+// same change.
 // Fires `cq taint escape: classical call result used as a quantum register`
 // (DS_Error, source-located). Asked once per entry point, right after
 // `specialize()`; `lowerOps`/`lowerRotations` run after it and see the scrubbed

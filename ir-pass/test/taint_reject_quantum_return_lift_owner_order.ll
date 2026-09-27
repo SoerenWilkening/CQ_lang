@@ -1,4 +1,5 @@
 ; taint_reject_quantum_return_lift_owner_order.ll — DECLINE (bd test_C_libtooling-9bhg × bd
+; test_C_libtooling-d88e: the composed post-specialize() SLOT ORDER).
 ; ⚠ bd test_C_libtooling-vsfp (merged into bd 9bhg 2026-09-27) — RE-SPELLED, and why.
 ; `@hc` IGNORED its parameter 0. `dropDeadCallArguments` (SpecializeDetect.h) now
 ; replaces an argument whose callee parameter is DEAD under liveness
@@ -19,7 +20,6 @@
 ; `Library TU` source below is the ORIGINAL; the module is hand-edited from it.
 ; RETIREMENT TRIGGER: a liveness predicate WITH control dependence (ADCE) makes this read
 ; dead too. The pin then turns red and the subject must be re-derived (L8).
-; test_C_libtooling-d88e: the composed post-specialize() SLOT ORDER).
 ;
 ; A TWO-TU module (caller TU `-include CQ.h`, llvm-linked with a plain-C library
 ; TU, as tests/e2e/run_slice_multi.sh builds one). Written at the merge of `main`

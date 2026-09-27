@@ -1019,14 +1019,25 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   //
   // THE SLOT ORDER after `specialize()`, the same in both entry points:
   //   (1) the bd d88e lift re-ask; (2) the bd 2qyz re-sweep; (3) the bd l3oi fence;
-  //   (4) THIS ask; (5) the bd 3d8q stale-reader backstop; then `lowerRotations`.
+  //   (4) THIS ask; (5) the bd 3d8q stale-reader backstop; (6) the bd s82e
+  //   unmarked-loop dephasing decline; (7) the bd tu9q round-2 rail-grant re-ask;
+  //   (8) bd vsfp's `resolvePhantomCloneArgReads` (neutralise, then decline);
+  //   then `lowerRotations`.
   // After (1): a function holding a lift over a spec-CLASSICAL base AND returning
   // a spec-QUANTUM value is refused by the lift's owner, with the classical-mux
   // string, which is its hand-inlined twin's verdict. In the twin the lift base is
   // classical from the start, so the classical-mux guard speaks long before any
   // 3jru ask (`taint_reject_quantum_return_lift_owner_order.ll`). After (3): a
-  // handle read of a scrubbed value keeps its more specific owner. Before (5):
-  // the backstop stays last.
+  // handle read of a scrubbed value keeps its more specific owner — ⚠ on the
+  // ground of SPECIFICITY, not twin parity (Rule-13 r2A F-9C-2: on the pre-vsfp
+  // binary probe `o1` declined with the l3oi string where its twin declined with
+  // this one; same verdict, different string. Since bd vsfp `o1`'s callee argument
+  // is dropped and both decline with this string; whether a callee that READS its
+  // argument separates them again was not measured). Before (5)–(8): those only
+  // ever speak where nothing earlier did. Before (8) in particular: the
+  // neutraliser rewrites a clone call's DEAD slot to a constant and writes no
+  // `taint.Tainted`, so it cannot change this ask's answer (a function's return
+  // taint); and a module this ask refuses never needs neutralising.
   if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return PreservedAnalyses::none();
 
@@ -1677,8 +1688,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
     return false;
   // bd `test_C_libtooling-9bhg` — the LATE, TOTAL half of the 3jru refusal. See
   // run() for the slot argument and the post-`specialize()` order (d88e re-ask,
-  // 2qyz re-sweep, l3oi, THIS, stale-reader backstop) — twin-pipeline parity,
-  // WI-1.12.
+  // 2qyz re-sweep, l3oi, THIS, stale-reader backstop, s82e, tu9q, then vsfp's
+  // `resolvePhantomCloneArgReads`) — twin-pipeline parity, WI-1.12.
   if (declineQuantumReturnCalls(M, taint, /*SkipSpecProvisional=*/false))
     return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record

@@ -2959,10 +2959,12 @@ bool declineScrubbedHandleReads(Module &M, const TaintSet &taint) {
       // `__cq_q_g2_10(t, q)`, `t` classical in slot 0) — so the MASK test below
       // is load-bearing, no longer the "equivalent" mutant round 7 measured
       // (M50). What still reaches a MASKED slot is a site resolved BEFORE the
-      // site whose scrub untaints its argument: `Pending` is in layout order, so
-      // a use laid out before its definition's block
-      // (`taint_reject_scrubbed_handle_clone_arg_layout.ll`) or a loop-carried
-      // argument.
+      // site whose scrub untaints its argument. ⚠ `Pending` is round-1 layout
+      // order FOLLOWED BY the round-2 tail, not layout order (bd 9bhg Rule-13 r2B
+      // F-9D-1, bd 3zr4), so that is: a use laid out before its definition's block
+      // (`taint_reject_scrubbed_handle_clone_arg_layout.ll`), a round-1 site
+      // reading a round-2 site's result (r2B `R2`), or a loop-carried argument.
+      // See `specialize()`'s drain comment.
       if (!Reads) {
         auto It = taint.SpecHandleArgMask.find(Callee);
         if (It != taint.SpecHandleArgMask.end())
