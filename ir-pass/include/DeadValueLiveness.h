@@ -111,9 +111,28 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // ask THIS; only `resolvePhantomCloneArgReads` also asks the bare record, because
 // it is the stage that resolves the difference (a recorded-dead, not null-safe
 // slot: kept when its operand is classical, declined when quantum). A slot this
-// calls "read" but the record calls dead is treated as READ everywhere — the
-// conservative direction for each consumer (d0: not settled → the out-of-place
-// path; M-A: a hop → more records; liveness: the operand survives).
+// calls "read" but the record calls dead is treated as READ everywhere. ⚠ That is
+// NOT "the conservative direction for each consumer", which round 6 wrote here
+// (bd vsfp Rule-13 r6: F-R6-1 / bd `nlfd`, F-R6-2 / bd `x8ut`). Per consumer:
+//   * M-C (d0): conservative — "not settled" falls to the out-of-place path.
+//   * LIVENESS: NOT conservative (bd `nlfd`, OPEN, P2, IR-only). A read counted
+//     here propagates one clone level up through `deadParamMask`: a recorded-dead
+//     inner slot that is not null-safe makes the enclosing clone's parameter LIVE,
+//     the outer (null-safe) phantom slot is never neutralised, and bd `tzfa`'s
+//     wrong unitary is back (r6 `sa1.ll`: a string attribute on the inner slot;
+//     exit 0, warned, the ORACLE's stream). IR-only as far as measured: clang-19
+//     `-O1` emits only allowlisted attributes on int/fp parameters, and `musttail`
+//     (the one C-reachable reason, bd `w7nm`) is no longer a null-safety reason.
+//   * M-A (`cloneArgReachesResult`): NOT conservative — its one caller,
+//     `reachesObservingSink`, is the clause-3 EXEMPTION walk, where a hop EXEMPTS
+//     a record. It is UNREACHABLE today: M-A gates are rotations, which occur only
+//     in non-clone functions (`scanBody` declines `cq_theta` in a clone), and there
+//     `resolvePhantomCloneArgReads` step 1 DECLINES a quantum operand in a
+//     recorded-dead, not-null-safe slot before `lowerRotations` runs.
+//     RETIREMENT TRIGGER (L8): the day that decline is relaxed or moved after
+//     `lowerRotations`, or a rotation can occur inside a clone body, M-A must go
+//     back to the bare `isRecordedDeadSlot` (its honest question is "does the
+//     clone's result depend on this argument?", not "is a null safe here?").
 bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                           const TaintSet &taint);
 

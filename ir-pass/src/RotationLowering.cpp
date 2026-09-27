@@ -1385,7 +1385,18 @@ bool isCloneCallHop(const CallInst *CI) {
 // the slot is read iff the callee is a clone `buildClone` recorded and the record
 // does not call the slot dead AND null-safe (`isRewritableDeadSlot`, the one slot
 // question liveness, the rewrite and M-C (d0) ask — Rule 14; round 3–5 asked the
-// bare `isRecordedDeadSlot` here). A call to a `__cq_q_*` function
+// bare `isRecordedDeadSlot` here). ⚠ NOT CONSERVATIVE HERE (bd `x8ut`, r6 F-R6-2):
+// this predicate's one caller is `reachesObservingSink`, the clause-3 EXEMPTION
+// walk, so a hop EXEMPTS a record; round 6 moved a recorded-dead, not-null-safe
+// slot from "no hop" to "hop" — the exempting direction — and called it
+// conservative. It is UNREACHABLE today, and that is the whole argument: M-A gates
+// are rotations, rotations occur only in non-clone functions (`scanBody` declines
+// `cq_theta` in a clone), and there `resolvePhantomCloneArgReads` step 1 DECLINES a
+// quantum operand in a recorded-dead, not-null-safe slot before `lowerRotations`.
+// RETIREMENT TRIGGER (L8): if that decline is relaxed or moved after
+// `lowerRotations`, or a rotation can occur inside a clone body, revert this test
+// to the bare `isRecordedDeadSlot` — the honest question here is "does the clone's
+// result depend on this argument?", whatever null-safety says. A call to a `__cq_q_*` function
 // with NO record gets no hop (the decline direction). The record is LIVENESS, not
 // a use test, so it also closes the old residual one level up (Inc-3 Rule-13
 // round 2, reviewer probe q3: a parameter read only by an in-body compare that is
@@ -1409,7 +1420,8 @@ bool cloneArgReachesResult(const CallInst *CI, const Value *In,
     if (K >= F->arg_size())
       return false;  // past the varargs boundary — no `Argument` to interrogate.
     if (!isRewritableDeadSlot(*CI, K, taint))
-      return true;  // a read, or a recorded-dead slot that is not null-safe (kept).
+      return true;  // a read, or a recorded-dead, not-null-safe slot (kept) — the
+                    // EXEMPTING direction; unreachable today (bd x8ut, see above).
   }
   return false;
 }

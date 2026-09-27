@@ -129,6 +129,17 @@ bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 // `byval` slot compiled clean and the executable SIGSEGVed. This is the ONLY slot
 // question the post-`specialize()` rewrite and the liveness call-slot rule ask
 // (`isRewritableDeadSlot`, DeadValueLiveness.h).
+// ⚠ IT ASKS NO CALLEE CONJUNCT, and that admits `naked` clones (bd `xmew`, r6
+// F-R6-3): `CloneFunction` copies `naked` onto the clone, so round 6 rewrites a
+// naked clone's dead slot where round 5 declined (an unannounced D→A, IR-only probe
+// `nk5.ll`). The other callee conjuncts are vacuous for a clone (a definition,
+// internal, never variadic, `getCalledFunction()` is null on a type mismatch).
+// `naked` is SOUND today for two facts nothing here asks: the verifier forbids any
+// use of a naked function's arguments, and `scanBody` declines inline asm, so no
+// clone body can observe the slot. bd ctz4's hazard (inline asm reading the
+// argument REGISTERS) is therefore held off ONLY by `scanBody`'s inline-asm decline.
+// RETIREMENT TRIGGER (L8): the day `scanBody` admits any inline asm, this predicate
+// must refuse a `naked` callee, or ctz4's wrong value comes back through the rewrite.
 bool nullSafeSlot(const llvm::CallBase &CB, unsigned A);
 
 // THE DROP'S SLOT ELIGIBILITY: `nullSafeSlot` AND the drop's POLICY conservatisms —

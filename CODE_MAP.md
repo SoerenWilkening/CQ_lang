@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 776 maintained source files, 6310 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 779 maintained source files, 6316 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -28,8 +28,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.h` — 2497 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
+- `ir-pass/src/RotationLowering.cpp` — 2164 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2161 physical lines
-- `ir-pass/src/RotationLowering.cpp` — 2152 physical lines
 - `ir-pass/include/TaintPropagation.h` — 2029 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
@@ -843,7 +843,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RegionTreeDetect.cpp:81` — `condHasDataUse`
 - `ir-pass/src/RegionTreeDetect.cpp:90` — `recoverRegionTree`
 
-### `ir-pass/src/RotationLowering.cpp` (2152 lines)
+### `ir-pass/src/RotationLowering.cpp` (2164 lines)
 
 - `ir-pass/src/RotationLowering.cpp:52` — `suffixFromName`
 - `ir-pass/src/RotationLowering.cpp:431` — `normalizeUndefRotationSeed`
@@ -857,19 +857,19 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RotationLowering.cpp:1207` — `isRecordedUserRotation`
 - `ir-pass/src/RotationLowering.cpp:1260` — `isTeardownUse`
 - `ir-pass/src/RotationLowering.cpp:1334` — `isCloneCallHop`
-- `ir-pass/src/RotationLowering.cpp:1401` — `cloneArgReachesResult`
-- `ir-pass/src/RotationLowering.cpp:1426` — `isAllocRail`
-- `ir-pass/src/RotationLowering.cpp:1438` — `isQramArrayHandle`
-- `ir-pass/src/RotationLowering.cpp:1453` — `isCopyGate`
-- `ir-pass/src/RotationLowering.cpp:1470` — `classifyRail`
-- `ir-pass/src/RotationLowering.cpp:1493` — `push`
-- `ir-pass/src/RotationLowering.cpp:1515` — `collectDescendantRecords`
-- `ir-pass/src/RotationLowering.cpp:1580` — `collectAncestorRecords`
-- `ir-pass/src/RotationLowering.cpp:1642` — `isQramStoreGate`
-- `ir-pass/src/RotationLowering.cpp:1741` — `reachesObservingSink`
-- `ir-pass/src/RotationLowering.cpp:1926` — `recordAbsentAt`
-- `ir-pass/src/RotationLowering.cpp:1937` — `recordIsExemptAt`
-- `ir-pass/src/RotationLowering.cpp:2053` — `warnLiveRecordRotations`
+- `ir-pass/src/RotationLowering.cpp:1412` — `cloneArgReachesResult`
+- `ir-pass/src/RotationLowering.cpp:1438` — `isAllocRail`
+- `ir-pass/src/RotationLowering.cpp:1450` — `isQramArrayHandle`
+- `ir-pass/src/RotationLowering.cpp:1465` — `isCopyGate`
+- `ir-pass/src/RotationLowering.cpp:1482` — `classifyRail`
+- `ir-pass/src/RotationLowering.cpp:1505` — `push`
+- `ir-pass/src/RotationLowering.cpp:1527` — `collectDescendantRecords`
+- `ir-pass/src/RotationLowering.cpp:1592` — `collectAncestorRecords`
+- `ir-pass/src/RotationLowering.cpp:1654` — `isQramStoreGate`
+- `ir-pass/src/RotationLowering.cpp:1753` — `reachesObservingSink`
+- `ir-pass/src/RotationLowering.cpp:1938` — `recordAbsentAt`
+- `ir-pass/src/RotationLowering.cpp:1949` — `recordIsExemptAt`
+- `ir-pass/src/RotationLowering.cpp:2065` — `warnLiveRecordRotations`
 
 ### `ir-pass/src/SelectClassify.cpp` (1442 lines)
 
@@ -6909,6 +6909,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_dropped_arg_inplace_twin.c:6` — `slice`
 - `tests/e2e/slice_spec_dropped_arg_inplace_twin.c:15` — `main`
 
+### `tests/e2e/slice_spec_dropped_arg_musttail_inner.c` (32 lines)
+
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:17` — `slice`
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:28` — `main`
+
+### `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c` (21 lines)
+
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c:6` — `slice`
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c:17` — `main`
+
 ### `tests/e2e/slice_spec_dropped_arg_volatile_char.c` (37 lines)
 
 - `tests/e2e/slice_spec_dropped_arg_volatile_char.c:25` — `slice`
@@ -7037,6 +7047,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `tests/e2e/spec_dropped_arg_lib.c` (21 lines)
 
 - `tests/e2e/spec_dropped_arg_lib.c:18` — `h`
+
+### `tests/e2e/spec_dropped_arg_musttail_lib.c` (23 lines)
+
+- `tests/e2e/spec_dropped_arg_musttail_lib.c:15` — `h2`
+- `tests/e2e/spec_dropped_arg_musttail_lib.c:21` — `h`
 
 ### `tests/e2e/spec_dropped_arg_volatile_global_lib.c` (26 lines)
 

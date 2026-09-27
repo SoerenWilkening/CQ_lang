@@ -17,6 +17,8 @@ round r2A (`review_r2A_9bhg/REVIEW.md` F-9C-1) and, for hgwx, bd d88e's r1B (F-D
   slots) and bd qce6 (the implicit section; the address space). Read §R2 → §R3 → §R4 → §R5.
 - ⚠ **And on round 5: ROUND 6 follows §R5 (§R6)** — narrow: bd w7nm (the slot question is NULL-SOUNDNESS,
   `nullSafeSlot`, never the drop's `musttail` policy) and one slot question for every consumer.
+- ✅ **Round 6 CLEARED (r6: CLEAR-WITH-ITEMS, 0 P1). §R7 is the LANDING summary** — rounds 1–6 in one table,
+  the open follow-ups, and the owner rulings used. Read §R7 first; the §R sections are the history.
 
 Binaries (sha-256 prefixes):
 
@@ -1662,6 +1664,11 @@ is `resolvePhantomCloneArgReads`, because it is the stage that resolves the diff
 not null-safe slot: kept when classical, declined when quantum). Where the two questions differ the slot is
 READ everywhere — the conservative direction for each consumer (d0: not settled → out of place; M-A: a hop
 → more records; liveness: the operand survives). The comment in `DeadValueLiveness.h` states this.
+⚠ **FALSE for two of the three (Rule-13 r6, `review_r6_vsfp/REVIEW.md`; corrected at the source, §R7):**
+d0 holds; **liveness** is not conservative — a read propagates one clone level up and a not-null-safe inner
+dead slot brings bd `tzfa` back (F-R6-1, bd `nlfd`, OPEN, IR-only); **M-A** is not conservative — its one
+caller is the clause-3 EXEMPTION walk, where a hop EXEMPTS a record (F-R6-2, bd `x8ut`), unreachable today
+only because `resolvePhantomCloneArgReads` step 1 declines a quantum operand in such a slot first.
 
 **Mutant W2 (both consumers back to the bare record) is EQUIVALENT, argued and measured:** the questions
 differ only on a slot that is recorded dead and NOT null-safe. After round 6's split that population is:
@@ -1669,7 +1676,10 @@ pointer/`byval`-type slots (never carry a quantum value, so neither consumer eve
 `P`) and int/fp slots with a non-allowlisted attribute, which clang-19 `-O1` never emits (r5 attack 2). An
 IR-only construction (`vsfp_probes/r6/src/w2probe.ll`, a string attribute on the inner slot) lowers
 byte-identically under the SUBJECT and W2. W2 went 0/2405 on the suite. The change is uniformity (Rule 14),
-not a stream change.
+not a stream change. ⚠ **The probe was the wrong instrument** (r6 F-R6-1): `w2probe.ll`'s inner-slot operand
+is ALSO read live in `h` (`%u = add %p, %t`), so there was no phantom read to expose, and it was compared
+against W2, never against a twin. The shape that matters is the one where the not-null-safe inner slot is
+the outer parameter's ONLY reader (r6 `sa1.ll`).
 
 ## R6.3 bd ad35 (P3) — the implicit section is refused CONSERVATIVELY
 
@@ -1709,3 +1719,102 @@ ROUND 5 FAIL, SUBJECT PASS. e2e, 3 entries: `e2e-slice-spec-dropped-arg-musttail
   `…_musttail_inner_slot.ll`; **W2** (M-C (d0) and M-A back to the bare record) 0 failed — EQUIVALENT,
   argued in §R6.2. ad35 is comment-only (no mutant).
 - `python3 tools/update_code_map.py --check` → clean (regenerated).
+
+---
+
+# ROUND 7 (2026-09-27) — comment/record only; the LANDING summary
+
+Rule-13 round r6 on round 6 (`7ab83256`): **CLEAR-WITH-ITEMS, 0 P1** (`review_r6_vsfp/REVIEW.md`, committed
+unmodified with this round). Round 7 changes NO code: the rebuilt `cq-opt` is `3f6db37f5cf937b4`,
+bit-identical to round 6 (measured). It corrects two false justifications at the source and records the
+open items.
+
+## R7.1 What round 7 corrects (comments only)
+
+- **F-R6-2 / bd `x8ut` (P3).** "READ is the conservative direction for each consumer" is false for M-A:
+  `cloneArgReachesResult`'s one caller, `reachesObservingSink`, is the clause-3 EXEMPTION walk, so a hop
+  EXEMPTS a record. Replaced in `DeadValueLiveness.h`, `RotationLowering.cpp` (at the predicate and its
+  `return true`) and §R6.2 (marked inline) by the real argument: UNREACHABLE today — M-A gates are
+  rotations, rotations occur only in non-clone functions (`scanBody` declines `cq_theta` in a clone), and
+  there `resolvePhantomCloneArgReads` step 1 declines a quantum operand in a recorded-dead, not-null-safe
+  slot before `lowerRotations`. **Retirement trigger** (written at both sites): if that decline is relaxed
+  or moved after `lowerRotations`, or a rotation can occur in a clone body, M-A returns to the bare
+  `isRecordedDeadSlot`.
+- **F-R6-3 / bd `xmew` (P3).** `nullSafeSlot` asks no callee conjunct, so it admits `naked` clones (an
+  unannounced D→A vs round 5, IR-only `nk5.ll`). Sound today because the verifier forbids uses of a naked
+  function's arguments and `scanBody` declines inline asm. **Retirement note at `nullSafeSlot`**
+  (`SpecializeDetect.h`): ctz4's hazard is now held off ONLY by `scanBody`'s inline-asm decline; the day
+  `scanBody` admits inline asm, `naked` must return to `nullSafeSlot`.
+- **F-R6-1 / bd `nlfd` (P2) — recorded, OPEN, not fixed.** The w7nm MECHANISM survives for every
+  recorded-dead inner slot that is not null-safe: liveness counts it as a read, the enclosing clone's
+  parameter becomes live one level up, the outer phantom slot is never neutralised, and bd `tzfa`'s wrong
+  unitary is back (r6 `sa1.ll`: a string attribute on the inner slot; exit 0, warned; the ORACLE's stream;
+  round 4 twin-identical). IR-only as far as measured (clang-19 `-O1` emits only allowlisted attributes on
+  int/fp params; `musttail` is no longer a null-safety reason). Pre-existing on `main`. The reviewer's fix
+  directions: decline in `buildClone` (the module-level rule, one level down), or do not count an
+  `Argument` operand as a read in liveness (an `Argument` is never deleted). The source comment in
+  `DeadValueLiveness.h` now says liveness is NOT conservative and names `nlfd`.
+
+## R7.2 LANDING — bd vsfp (+ hgwx), rounds 1–6
+
+The track makes a callee parameter nothing reads stop being an argument, so a quantum operand passed only
+into such a slot no longer keeps a which-path rail alive (bd vsfp, P1 silent dephasing, population grown by
+bd 9bhg; bd hgwx, its warned sibling).
+
+| round | commit | what it did | its Rule-13 verdict |
+|---|---|---|---|
+| 1 | `5e56060b` | the pre-`specialize()` dead-argument drop; the phantom-read backstop; M-C (d0) (hgwx) | r1A + r1B NOT-CLEAR (`f8d10deb`) |
+| 2 | `0a485382` | ONE liveness predicate (`DeadValueLiveness`), not use-count; the fenv stages delete their dead cones and fold emptied arms; ctz4 (naked), m1gi, a8q5, qjoc | r2A + r2B NOT-CLEAR (`0979276f`) |
+| 3 | `671390fe` | otam (re-propagate + `declineStaleTaintSet`); tzfa (the recorded-dead slot NEUTRALISED at module level); stl3 (the global fold's arm fold) | r3A + r3B NOT-CLEAR (`d24dd1f2`) |
+| 4 | `5e38bef2` | 1xp9 (tracking condition seeds + `simplifySelectInst`); f061 (the slot's type); sqjq (exact record, inner inherit); xh17 (copy destination); the reachability ruling's section/absolute conjunct | r4A + r4B NOT-CLEAR (`3eb6bd7e`) |
+| 5 | `a3e22f5b` | 91k9 (never null a pointer/`byval` slot); qce6 (implicit section, non-default address space) | r5 NOT-CLEAR (`d84bf2fc`) — w7nm |
+| 6 | `7ab83256` | w7nm (`nullSafeSlot` vs the drop's policy); one slot question for M-C/M-A/liveness | r6 **CLEAR-WITH-ITEMS, 0 P1** |
+| 7 | (this commit) | comments/records only (x8ut, xmew, nlfd, this summary) | — |
+
+Every round's P1 was found by an independent reviewer, none by a green suite; three of the six P1s after
+round 1 (otam, 91k9, w7nm) were INTRODUCED by the previous round's fix. Each round's record is under
+`vsfp_probes/r{2..6}/` and its own §R section above.
+
+**Measured state at round 6 (the landing binary `3f6db37f5cf937b4`):** `lit ir-pass/test` 2405 discovered,
+2404 passed, 1 XFAIL; the targeted `ctest -R` entries of every round green (round 6: `musttail-inner|byval-slot`
+4/4); corpus A/B vs round 5 over 3712 modules, null 0, 4 movers all w7nm's shape; every reviewer's verdict
+script re-run with only its fixed rows moving. ⚠ **The full `ctest -j6` has NOT been run on this branch**
+(owner ruling below) — it runs once at the merge gate on `main`, and that is the gate that clears the
+landing, not anything in this file.
+
+## R7.3 Open follow-ups (filed; none blocks the landing per the r6 verdict)
+
+| bd | sev | one line |
+|---|---|---|
+| `nlfd` | P2 | a recorded-dead, not-null-safe INNER slot still makes the outer clone parameter live → tzfa's phantom read survives (IR-only; §R7.1) |
+| `rhk5` | P1 (warned), pre-existing | a clone call between a derived chain and its `cq_phi` consumer leaves the chain's rails dirty across a later Ry (the oracle identical; §R4.7) |
+| `50ho` | P2, pre-existing | the volatile folds do not constant-fold the users of a folded load (`K - 7`); + r4B F-YB-3 (a stale `select i1 true` after a φ RAUW'd to a constant) |
+| `g84t` | P3 | stages ABOVE the growing volatile folds read the earlier taint set; the one measured consequence is loud (§R4.7) |
+| `cpac` | P3, pre-existing | the inner-slot inherit covers only values rooted at a DEAD parameter (unitary unchanged) |
+| `jr8q` | P3 | M-A classifies every non-void `__cq_q_*` result as a record by name; the 2b census counts a clone call's classical result as a dirty template rail (F-XA-5) |
+| `x8ut` | P3 | M-A asks `isRewritableDeadSlot` in an exemption walk; unreachable today, retirement trigger written (§R7.1) |
+| `xmew` | P3 | `nullSafeSlot` admits naked clones; sound only while `scanBody` declines inline asm (§R7.1) |
+| `ad35` | P3 | the implicit-section refusal is conservative (kind-mismatch over-decline, owner-preferred; §R6.3) |
+| `18a7` | P3, instrument | r4B's `all.sh` argument table is dead under `/bin/bash` 3.2 |
+| `z0re` | owner question | a spec-classical scrub turns a round-1 in-place-Ry arm into a runtime-seed state prep the twin declines (d88e L2) |
+| `cepm` | over-decline, pre-existing | a same-function branch/select/op on a specialization-classical call result declines at the l3oi fence |
+
+Also for the OWNER, not a bead: §R3.8's replacement sentence for CLAUDE.md's fenv paragraph, and r4B's note
+that CLAUDE.md's "Scope of the semantic model" still states only the 2026-08-10 ruling while the 2026-09-26
+reachability extension lives only in a bd memory and source comments. CLAUDE.md is the owner's to edit; this
+track did not touch it.
+
+## R7.4 Owner rulings this track relied on
+
+- **Full suite at the gate** (owner ruling 2026-09-26): do NOT run the full `ctest -j6` on the branch; run
+  only what can witness the change (full `lit ir-pass/test`, the affected e2e entries by `ctest -R`, corpus
+  A/B and probe batteries, the mutation matrix, `update_code_map.py --check`); the full suite runs once at
+  the merge gate on `main`. Later rounds lightened the profile further on the owner's request (no allocator
+  sweeps, no composition runs, targeted mutants only).
+- **Volatile access to an unreachable object** (owner ruling 2026-09-26, bd memory
+  `owner-ruling-volatile-unreachable-object-2026-09-26`, extending the 2026-08-10 fenv ruling): a volatile
+  access is unobservable iff the object is unreachable from outside the program — internal linkage or
+  function-local, never written, address never escaping, no atomic access, not in a named section or at an
+  absolute/fixed address. `foldVolatileConstGlobalLoads` cites it (not "fenv is out of scope project-wide").
+  With it, the owner's decision of 2026-09-27 (via the coordinator) to refuse any non-default address space,
+  conservatively, and to keep the conservative implicit-section refusal (bd `ad35`).

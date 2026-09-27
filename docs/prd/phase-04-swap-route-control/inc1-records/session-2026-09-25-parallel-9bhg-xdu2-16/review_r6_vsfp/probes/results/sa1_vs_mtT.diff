@@ -1,0 +1,3 @@
+9a10,11
+> cq_template_mul_i32_hl_unc(h1, h0, 3)
+> cqrt_free(h1)
