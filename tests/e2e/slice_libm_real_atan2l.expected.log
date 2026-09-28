@@ -58,8 +58,6 @@ cqrt_free(h1)
 cq_template_sub_i32_hl(h8, 16382) -> h24
 cq_template_fmul_f80_hl(h0, 0x8p-2) -> h25
 cq_template_fabs_f80(h25) -> h26
-cq_template_fmul_f80_hl_unc(h25, h0, 0x8p-2)
-cqrt_free(h25)
 cqrt_qram_alloc_f80(4) -> a27
 cqrt_qram_alloc_f80(4) -> a28
 cq_template_bitcast_f80_to_i80(h26) -> h29
@@ -870,6 +868,10 @@ cqrt_free(h231)
 cqrt_free(h232)
 cqrt_free(h233)
 cqrt_free(h234)
+cq_template_fabs_f80_unc(h26, h25)
+cqrt_free(h26)
+cq_template_fmul_f80_hl_unc(h25, h0, 0x8p-2)
+cqrt_free(h25)
 cq_template_icmp_eq_i32_hl(h8, 32767) -> h236
 cq_template_icmp_eq_i32_hl(h14, 0) -> h237
 cqrt_alloc_i1(0) -> h238

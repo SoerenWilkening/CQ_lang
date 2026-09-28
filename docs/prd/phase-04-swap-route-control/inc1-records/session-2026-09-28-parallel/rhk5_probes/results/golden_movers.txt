@@ -1,0 +1,36 @@
+=================== slice_libm_real_atan2l
+oracle trace == committed golden: YES
+ORACLE  free_pairing_check: 1 file(s), 202 rail mint(s) of which 28 left allocated, 256 template rail mint(s) of which 13 left dirty, 417 cqrt_free site(s): 417 verified, 0 violation(s), 0 unproven
+SUBJECT free_pairing_check: 1 file(s), 202 rail mint(s) of which 28 left allocated, 256 template rail mint(s) of which 12 left dirty, 418 cqrt_free site(s): 418 verified, 0 violation(s), 0 unproven
+--- diff (golden -> subject):
+61,62d60
+< cq_template_fmul_f80_hl_unc(h25, h0, 0x8p-2)
+< cqrt_free(h25)
+872a871,874
+> cq_template_fabs_f80_unc(h26, h25)
+> cqrt_free(h26)
+> cq_template_fmul_f80_hl_unc(h25, h0, 0x8p-2)
+> cqrt_free(h25)
+entangle.py oracle: 182 findings (176 not 'UNCLASSIFIED')
+entangle.py subject: 182 findings (176 not 'UNCLASSIFIED')
+=================== slice_libm_real_coshl
+oracle trace == committed golden: YES
+ORACLE  free_pairing_check: 1 file(s), 401 rail mint(s) of which 22 left allocated, 520 template rail mint(s) of which 42 left dirty, 857 cqrt_free site(s): 857 verified, 0 violation(s), 0 unproven
+SUBJECT free_pairing_check: 1 file(s), 401 rail mint(s) of which 22 left allocated, 520 template rail mint(s) of which 39 left dirty, 860 cqrt_free site(s): 860 verified, 0 violation(s), 0 unproven
+--- diff (golden -> subject):
+26,27d25
+< cq_template_fabs_f80_unc(h10, h0)
+< cqrt_free(h10)
+2820a2819,2822
+> cq_template_fmul_f80_hl_unc(h11, h10, 0x8p-4)
+> cqrt_free(h11)
+> cq_template_fabs_f80_unc(h10, h0)
+> cqrt_free(h10)
+5618a5621,5622
+> cq_template_fabs_f80_unc(h714, h0)
+> cqrt_free(h714)
+8413a8418,8419
+> cq_template_fabs_f80_unc(h1416, h0)
+> cqrt_free(h1416)
+entangle.py oracle: 1007 findings (1007 not 'UNCLASSIFIED')
+entangle.py subject: 1007 findings (1007 not 'UNCLASSIFIED')

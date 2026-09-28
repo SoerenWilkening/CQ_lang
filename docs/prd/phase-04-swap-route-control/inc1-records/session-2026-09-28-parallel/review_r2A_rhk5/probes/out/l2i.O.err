@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged
+
