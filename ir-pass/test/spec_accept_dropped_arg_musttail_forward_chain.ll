@@ -6,7 +6,7 @@
 ; fixpoint walks the chain one site per turn — `h3`'s parameter dead → `h2`'s musttail slot
 ; `0` → `h2`'s parameter dead → `h`'s → `f`'s — with no signature to keep in step (only
 ; operands change). On `main` 9a230646 every one of those sites was refused and `main`
-; declined at the 3jru return refusal. The DROP lines pin all four drops; the MT lines that
+; declined at the 3jru return refusal. The DROP lines pin all three drops; the MT lines that
 ; every rewritten call is still a `musttail` call whose dropped slot is `0`.
 ;
 ; Caller TU (clang -O1 -include CQ.h):

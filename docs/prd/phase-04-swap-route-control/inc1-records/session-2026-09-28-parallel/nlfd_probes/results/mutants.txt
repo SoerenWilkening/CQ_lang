@@ -1,0 +1,9 @@
+N0_null	null	failed 0 / discovered 2418	cq-opt 93c65d0da41df3fc	
+N1_no_argument_clause	KILLED	failed 4 / discovered 2418	cq-opt 617dd12739980625	spec_accept_phantom_arg_read_unread_scalar_inner_arg_range.ll spec_accept_phantom_arg_read_unread_scalar_nested_arg.ll spec_accept_phantom_arg_read_unread_scalar_inner_arg.ll spec_reject_phantom_arg_read_unread_scalar_outer_nn.ll
+N2_no_scalar_type_test	MISSED	failed 0 / discovered 2418	cq-opt 7f97584944f3b1e5	
+N3_no_strip	KILLED	failed 1 / discovered 2418	cq-opt bbdef19ef646c85e	spec_accept_phantom_arg_read_unread_scalar_inner_arg_range.ll
+N4_fence_structural	KILLED	failed 2 / discovered 2418	cq-opt 31921d3da201f5f2	spec_accept_phantom_arg_read_unread_scalar_inner_inst_live.ll spec_accept_phantom_arg_read_unread_scalar_classical_inst.ll
+N5_no_handle_mask	KILLED	failed 1 / discovered 2418	cq-opt 83f6fdecb6713731	spec_accept_phantom_arg_read_unread_scalar_classical_inst.ll
+N6_no_fence	KILLED	failed 2 / discovered 2418	cq-opt 958a1c5128de0fd6	spec_reject_phantom_arg_read_unread_scalar_inner_inst.ll spec_reject_phantom_arg_read_unread_scalar_inner_inst_musttail.ll
+E1_musttail_refused	KILLED	failed 3 / discovered 2418	cq-opt 07cfc01dd0df0db7	spec_accept_dropped_arg_musttail_return.ll spec_accept_dropped_arg_musttail_kept.ll spec_accept_dropped_arg_musttail_forward_chain.ll
+D1_no_demotion	KILLED	failed 1 / discovered 2418	cq-opt de63c48fe1e80abc	spec_accept_musttail_in_clone_demoted.ll

@@ -1,0 +1,6 @@
+denominator lit: 2418 modules (0 build failures not swept)
+denominator e2e: 610 modules (26 build failures not swept)
+denominator multi: 33 modules (0 build failures not swept)
+denominator probe: 1435 modules (0 build failures not swept)
+denominator total: 4496  A=/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a333a1777db2f2295/build/ir-pass/cq-opt  B=/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a333a1777db2f2295/build/ir-pass/cq-opt
+movers 0 of 4496
