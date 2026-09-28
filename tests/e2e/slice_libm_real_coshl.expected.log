@@ -23,8 +23,6 @@ cq_template_bitcast_f80_to_i80_unc(h1, h0)
 cqrt_free(h1)
 cq_template_fabs_f80(h0) -> h10
 cq_template_fmul_f80_hl(h10, 0x8p-4) -> h11
-cq_template_fabs_f80_unc(h10, h0)
-cqrt_free(h10)
 cq_template_bitcast_f80_to_i80(h11) -> h12
 cq_template_trunc_i80_to_i64(h12) -> h13
 cq_template_and_i64_hl(h13, 9223372036854775807) -> h14
@@ -2818,6 +2816,10 @@ cqrt_free(h707)
 cqrt_free(h708)
 cqrt_free(h709)
 cqrt_free(h710)
+cq_template_fmul_f80_hl_unc(h11, h10, 0x8p-4)
+cqrt_free(h11)
+cq_template_fabs_f80_unc(h10, h0)
+cqrt_free(h10)
 cq_template_fmul_f80_hl(h711, 0x8p-4) -> h712
 cq_template_fmul_f80(h711, h712) -> h713
 cq_template_fmul_f80_hl_unc(h712, h711, 0x8p-4)
@@ -5616,6 +5618,8 @@ cqrt_free(h1410)
 cqrt_free(h1411)
 cqrt_free(h1412)
 cqrt_free(h1413)
+cq_template_fabs_f80_unc(h714, h0)
+cqrt_free(h714)
 cq_template_fmul_f80_hl(h1414, 0x8p-4) -> h1415
 cq_template_fabs_f80(h0) -> h1416
 cq_template_bitcast_f80_to_i80(h1416) -> h1417
@@ -8411,6 +8415,8 @@ cqrt_free(h2112)
 cqrt_free(h2113)
 cqrt_free(h2114)
 cqrt_free(h2115)
+cq_template_fabs_f80_unc(h1416, h0)
+cqrt_free(h1416)
 cq_template_fdiv_f80_lh(0x8p-4, h2116) -> h2117
 cq_template_fma_f80_qlq(h2116, 0x8p-4, h2117) -> h2118
 cq_template_fdiv_f80_lh_unc(h2117, 0x8p-4, h2116)

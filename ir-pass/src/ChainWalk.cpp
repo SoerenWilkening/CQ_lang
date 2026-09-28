@@ -9,10 +9,14 @@
 #include "TaintPropagation.h"
 #include "TemplateName.h"   // isHandleSlot / isUncHandleSlot — the ONE slot table
 
+#include "llvm/ADT/STLExtras.h"   // is_contained
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Metadata.h"
+
+#include <utility>
 
 using namespace llvm;
 
@@ -860,6 +864,27 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
         return false;
     return true;
   }
+  // (b′) A PHASE-6 CLONE CALL that reads the rail and provably never writes it
+  //      (bd test_C_libtooling-rhk5). The same role as (b): a consumer that reads
+  //      `R`, mints a FRESH result rail, and is finished with `R` once it has run —
+  //      the hand-inlined twin puts a `cq_template_*` producer exactly here, and
+  //      (b) admits that. What (b) gets from the symbol grammar ("a producer has
+  //      no mutating slot") a clone call cannot, so it is PROVEN from the callee
+  //      body by `cloneCallPreservesArg`, keyed on the specializer's record and
+  //      failing closed. (b)'s F5 fence — the rail must reach a QUANTUM slot — is
+  //      the record's HANDLE-slot mask here, which the predicate already requires
+  //      of every slot `R` is passed in.
+  //
+  //      THE POSITIONAL HALF IS UNCHANGED AND STILL THE DRIVER'S: that the call
+  //      has already executed at the discharge point and never re-reads `R` is
+  //      `useCompleteBeforeDischarge`'s proof, exactly as for a template reader.
+  //
+  //      Before this row a clone call DISQUALIFIED the rail (the list below said
+  //      so), which left a chain rail the hand-inlined twin discharges allocated
+  //      and entangled — `s = h(m, p)` against `s = p + 1`, measured in
+  //      TRACK_RHK5.md.
+  if (cloneCallPreservesArg(C, R, taint))
+    return true;
   // (c) AN EMITTER-RECORDED PHASE-4 FLAG STRIP, reading the rail in a SHIFTED
   //     HANDLE SLOT (bd test_C_libtooling-160a, M-B Increment 6 — clause (d2)).
   //
@@ -910,7 +935,9 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
   // `cqrt_tape_write_*` / `cqrt_copy_*` (recorded into a kept carrier the
   // reversal never touches — bd 261j(a)/5pio), any `_controlled` gate or route
   // (`cqrt_cswap`/`cqrt_x`/`cqrt_cnot`/`cqrt_toffoli` — Phase-4 owns the rail),
-  // a `__cq_q_*` clone call, a `cqrt_free`, and every `_inv`/`_unc` twin. Each
+  // a `__cq_q_*` clone call whose body (b′) could NOT prove read-only on `R`
+  // (until bd rhk5 this said "a clone call", unqualified — every clone call
+  // disqualified the rail), a `cqrt_free`, and every `_inv`/`_unc` twin. Each
   // is a Rule-6 SAFE LEAK here, never a diagnostic: M-B is leak-first and the
   // late M-A guard owns loudness for a record that is still standing at a
   // non-diagonal gate.
@@ -966,6 +993,113 @@ bool isInteriorTerminalHandle(Value *Handle, const TaintSet &taint) {
       HasForwardConsumer = true;
   }
   return HasForwardConsumer;
+}
+
+// ── bd test_C_libtooling-rhk5 — see the header for the whole argument ────────
+namespace {
+
+// A (function, formal-slot) pair currently being proved. Re-entering one is a
+// CYCLE, which refuses (fail closed): the specializer declines recursive callees,
+// so no accepted module reaches it, and "assume the formal is preserved while
+// proving it" is exactly the kind of co-inductive argument this spine does not
+// make.
+using FormalKey = std::pair<const Function *, unsigned>;
+constexpr unsigned kMaxCloneNesting = 16;
+
+bool formalLabelPreserved(const Function &F, unsigned ArgNo,
+                          const TaintSet &taint,
+                          SmallVectorImpl<FormalKey> &Active);
+
+// (C1)/(C2) and the per-slot recursion. `Active` is the proof stack.
+bool clonePassPreserves(const CallInst *C, const Value *V, const TaintSet &taint,
+                        SmallVectorImpl<FormalKey> &Active) {
+  // (C1) the callee, resolved from the called OPERAND — never
+  // `getCalledFunction()`'s name, never a prefix.
+  const auto *F = dyn_cast<Function>(C->getCalledOperand());
+  if (!F || F->isDeclaration() || F->isVarArg())
+    return false;
+  auto It = taint.SpecHandleArgMask.find(F);
+  if (It == taint.SpecHandleArgMask.end())
+    return false;  // not something the specializer recorded building.
+  const uint64_t HandleSlots = It->second;
+  // (C2) `V` reaches the body only through ARGUMENT slots. As the callee operand
+  // or inside an operand bundle it would be read by something this proof does not
+  // walk.
+  if (C->getCalledOperand() == V)
+    return false;
+  for (unsigned B = 0, E = C->getNumOperandBundles(); B != E; ++B)
+    for (const Use &U : C->getOperandBundleAt(B).Inputs)
+      if (U.get() == V)
+        return false;
+  bool Passed = false;
+  for (unsigned K = 0, E = C->arg_size(); K != E; ++K) {
+    if (C->getArgOperand(K) != V)
+      continue;
+    Passed = true;
+    if (K >= F->arg_size() || K >= 64 || !((HandleSlots >> K) & 1))
+      return false;  // not a slot the specializer recorded as a quantum HANDLE.
+    if (!formalLabelPreserved(*F, K, taint, Active))
+      return false;
+  }
+  return Passed;
+}
+
+bool formalLabelPreserved(const Function &F, unsigned ArgNo,
+                          const TaintSet &taint,
+                          SmallVectorImpl<FormalKey> &Active) {
+  const FormalKey Key{&F, ArgNo};
+  if (is_contained(Active, Key) || Active.size() >= kMaxCloneNesting)
+    return false;
+  Active.push_back(Key);
+  const Argument *A = F.getArg(ArgNo);
+  bool Preserved = true;
+  for (const Use &U : A->uses()) {
+    const auto *UC = dyn_cast<CallInst>(U.getUser());
+    // A non-call user — `ret`, a φ/select, a store, a cast, a classical op — lets
+    // the handle escape this walk or treats it as a number. Refuse.
+    if (!UC || !UC->isArgOperand(&U)) {
+      Preserved = false;
+      break;
+    }
+    const unsigned Slot = UC->getArgOperandNo(&U);
+    const auto *UCallee = dyn_cast<Function>(UC->getCalledOperand());
+    const StringRef N = UCallee ? UCallee->getName() : StringRef();
+    // (B1) a forward reassigning producer: reads every operand, mints fresh.
+    if (isTemplateProducer(UC))
+      continue;
+    // (B2) an out-first adjoint reading the formal in a HANDLE slot >= 1.
+    if (isUncHandleSlot(N, Slot))
+      continue;
+    // (B3) the SOURCE of the uncontrolled Bennett copy-out.
+    if (isCopyOutSink(UC, A))
+      continue;
+    // (B3′) the CONTROL or SOURCE of a controlled basis copy
+    //       `cqrt_copy_<W>_controlled(ctl, src, dst)` — the 5po2 clone-select
+    //       merge (`lowerCloneSelect`) reads a parameter as an arm this way. The
+    //       gate writes its LAST operand only (`dst ^= ctl ? src : 0`), the same
+    //       ABI fact `RotationLowering`'s `isCopyGate` records with every emission
+    //       site checked; VOID and arity 3 keep an off-shape same-named fake out
+    //       (the bd 1fim fence), and a formal that is ALSO the destination refuses.
+    if (N.starts_with("cqrt_copy_") && N.ends_with("_controlled") &&
+        UC->getType()->isVoidTy() && UC->arg_size() == 3 && Slot != 2 &&
+        UC->getArgOperand(2) != A)
+      continue;
+    // (B4) an inner clone / `_unc` twin call, proved the same way.
+    if (clonePassPreserves(UC, A, taint, Active))
+      continue;
+    Preserved = false;
+    break;
+  }
+  Active.pop_back();
+  return Preserved;
+}
+
+}  // namespace
+
+bool cloneCallPreservesArg(const CallInst *C, const Value *V,
+                           const TaintSet &taint) {
+  SmallVector<FormalKey, 4> Active;
+  return clonePassPreserves(C, V, taint, Active);
 }
 
 }  // namespace cq

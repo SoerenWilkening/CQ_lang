@@ -496,9 +496,11 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 //        gate on the rail that `preservesBasisUnderRecord` (Rz / addc / xorc —
 //        NOT `cqrt_ry`), a forward reassigning template producer that READS it,
 //        or — since M-B Increment 6 — an EMITTER-RECORDED Phase-4 flag strip
-//        (`TaintSet::DischargedFlagGates`) reading it in a shifted handle slot.
+//        (`TaintSet::DischargedFlagGates`) reading it in a shifted handle slot,
+//        or — since bd rhk5 — a Phase-6 CLONE CALL whose body is PROVEN not to
+//        write it (`cloneCallPreservesArg`, below).
 //        A measure, a tape write, a copy-out, a `ret`, a φ/select, a
-//        controlled gate, a route, a clone call, a `cqrt_free` or any OTHER
+//        controlled gate, a route, an UNPROVEN clone call, a `cqrt_free` or any OTHER
 //        adjoint twin all DISQUALIFY the rail (it is observed, escaped, recorded
 //        into a kept carrier, or owned by another emitter) — safe-leak, never a
 //        decline (M-A owns loudness; the driver is LEAK-FIRST).
@@ -521,6 +523,86 @@ bool isInteriorTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 // one partition free a rail another partition's adjoint still reads.
 bool isInteriorConsumer(const llvm::CallInst *C, const llvm::Value *R,
                         const TaintSet &taint);
+
+// ── bd test_C_libtooling-rhk5 — a PHASE-6 CLONE CALL THAT ONLY READS `V` ─────
+//
+// Does the call `C` — a call to a function the SPECIALIZER built (a clone
+// `__cq_q_<callee>_<mask>` or its `_unc` twin) — leave the computational-basis
+// LABEL of `V` unchanged, in EVERY argument slot `C` passes `V` in?
+//
+// WHY THIS IS A QUESTION AT ALL. A clone call executes a whole function body at
+// one program point, so for the uncompute spine it is one gate with an unknown
+// write set — and both spine predicates that meet it (`preservesBorrowedParent`,
+// the M-B clause-(d) scan, and `isInteriorConsumer` above) FAILED CLOSED on it,
+// counting it as a mutation of every argument. The hand-inlined twin of the SAME
+// program puts a `cq_template_*` producer where the call was, which both
+// predicates admit, so the twin discharged a derived chain and the clone program
+// left it allocated and ENTANGLED across a later non-diagonal gate (bd rhk5: a
+// Rule-8 wrong unitary, `opt` exit 0, one lyyf-(B) warning). Hand-inlining a pure
+// callee must not change the circuit.
+//
+// WHAT IS PROVEN, AND FROM WHAT. Nothing is read off the NAME and nothing is
+// assumed of the Bennett wrap: the answer is derived from the callee BODY as it
+// stands when the spine asks (the specializer built and lowered every clone
+// inside `specialize()`, long before `uncompute`; no later stage emits into a
+// clone). The callee must be
+//   (C1) a DEFINED, non-varargs `Function` resolved from the called OPERAND (an
+//        alias, bitcast or indirect call does not resolve — the bd xy9n lesson),
+//        RECORDED in `taint.SpecHandleArgMask` — the specializer's own record of
+//        what it built (bd l3oi F-R7-1), never the `__cq_q_` prefix;
+//   (C2) passed `V` ONLY in argument slots (never as the callee, never in an
+//        operand bundle), each of them a slot the record marks as a HANDLE;
+// and for each such slot the FORMAL parameter must be proven label-preserving in
+// the body: EVERY use of it is an argument of a `CallInst` that is one of
+//   (B1) a forward reassigning producer (`isTemplateProducer`: a `cq_template_*`
+//        or a `cqrt_qram_load_<W>`) — it reads every operand and mints a fresh
+//        rail; there is no mutating slot;
+//   (B2) an out-first `cq_template_*_unc` adjoint reading the formal in a HANDLE
+//        slot other than slot 0 (`isUncHandleSlot` — the ONE slot table): the
+//        adjoint XORs onto its slot-0 rail and leaves every other operand as it
+//        found it (DD-3). Slot 0 — the rail it WRITES — is refused;
+//   (B3) the SOURCE of an uncontrolled copy-out `cqrt_copy_<W>(src, dst)`
+//        (`isCopyOutSink`, which also refuses `src == dst`), or (B3′) the CONTROL
+//        or SOURCE of a controlled copy `cqrt_copy_<W>_controlled(ctl, src, dst)`
+//        (the 5po2 clone-select merge) — never its destination;
+//   (B4) another call this predicate proves, recursively — an inner clone call or
+//        an inner `_unc` twin call, formal for formal.
+// ANYTHING ELSE refuses the whole call: a `ret` or φ/select of the formal (an
+// alias escaping the body), a store, a classical op, `cqrt_x`, a copy DESTINATION,
+// a rotation, a measure, a free, a toffoli/cnot target or control, a formal in an
+// adjoint's literal slot. (B1) deliberately does NOT ask which slot of a forward
+// producer holds the formal — it is `preservesBorrowedParent` clause (2)'s own
+// test, and a producer has no writing slot at all, so the slot cannot bear on the
+// LABEL; `isInteriorConsumer` (b)'s handle-slot fence answers a different question
+// and is applied there.) FAILS CLOSED, and the fail direction is a LEAK (Rule 6's
+// fallback, today's behaviour byte for byte), never a misplaced adjoint. A cycle
+// (the same (function, slot) re-entered) and a nesting deeper than 16 refuse.
+//
+// WHAT THE ANSWER LICENSES, precisely: that after `C` returns, `V` holds the basis
+// label it held before `C` ran. It says nothing about ENTANGLEMENT — the clone's
+// fresh result rail is a function of `V`'s label and stays correlated with it —
+// and nothing more is needed by either caller: an out-first `_unc` is a
+// LABEL-ONLY READER (the `routeGroupFullyInside` argument in Uncomputation.cpp),
+// so a gate that leaves `V`'s label alone cannot disturb an adjoint that reads
+// `V` later, and a read-only consumer has finished with `V` once it has run.
+// Transient writes that the body undoes (a `cqrt_x` bracket pair) would ALSO
+// preserve the label at the boundary; they are refused anyway, because proving
+// the pairing is a second argument this predicate does not make.
+//
+// L3 — the THIRD predicate that meets the same gate is `Uncomputation`'s
+// moved-anchor clause-(d) scan in `reverseTerminalGroup`, which asks
+// `isInPlaceGateOn` and so ALREADY treats EVERY clone call as not mutating its
+// operands — an UNSTATED premise about clone bodies. For a body the specializer
+// SYNTHESIZES the premise holds (the Bennett wrap reads a formal only through the
+// (B1)–(B4) shapes; `inBennettClone` keeps M-C's in-place gates out), and this
+// predicate is its proof for the bodies it admits. It does NOT hold by
+// construction for a PRE-SUPPLIED `_unc` twin, which `Specialization::ensureTwin`
+// reuses verbatim and `buildClone` records like any other
+// (spec_leak_clone_read_twin_writes_arg.ll is such a body, refused here). The scan
+// is left as it is in this change — it is the whole-DAG spine, not the interior
+// partition bd rhk5 is about — and the gap is filed; see TRACK_RHK5.md.
+bool cloneCallPreservesArg(const llvm::CallInst *C, const llvm::Value *V,
+                           const TaintSet &taint);
 
 }  // namespace cq
 

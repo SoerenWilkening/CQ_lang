@@ -811,15 +811,19 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 
 // Does `M` — a user of the BORROWED parent `P` — leave P's BASIS LABEL alone?
 //
-// FAILS CLOSED, and that is the whole design: exactly two shapes are PROVEN
-// read-only and everything else counts as a mutation, a `cqrt_measure_*`
-// included. Clause (d) of the record invariant (bd memory
+// FAILS CLOSED, and that is the whole design: the shapes below — (1)/(1b) a
+// diagonal rotation, (2) a forward producer and, since bd rhk5, (3) a Phase-6 clone
+// call PROVEN read-only on `P` — are the ONLY ones admitted, and everything else
+// counts as a mutation, a `cqrt_measure_*` included. (This sentence said "exactly
+// two shapes" from Inc 5a until bd rhk5; clause (1b) had already made it three.)
+// Clause (d) of the record invariant (bd memory
 // [record-freeze-invariant-2026-08-10]) requires every register an adjoint reads
 // to hold the value it held WHEN THE FORWARD GATE RAN; the interior partition
 // cannot deliver that by reverse program order the way the whole-DAG spine does,
 // because a borrowed parent is by construction NOT walked and NOT adjointed. So
 // it must be proven un-mutated over the interval instead.
-bool preservesBorrowedParent(const CallInst *M, const Value *P) {
+bool preservesBorrowedParent(const CallInst *M, const Value *P,
+                             const TaintSet &taint) {
   const Function *Callee = M->getCalledFunction();
   StringRef N = Callee ? Callee->getName() : StringRef();
   // (1) A DIAGONAL rotation. `cqrt_rz_<W>(P, θ)` writes a phase and never a basis
@@ -892,6 +896,24 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P) {
   //     slot. This is the shape every recovered gate of the interior DAG has, so
   //     the group's own forward gates are admitted here without a special case.
   if (isTemplateProducer(M))
+    return true;
+  // (3) A PHASE-6 CLONE CALL whose callee body PROVABLY never writes the formal
+  //     it binds `P` to — bd test_C_libtooling-rhk5, and the reason is (2)'s,
+  //     one call deep. `s = h(m, q)` with `h(a,k){return k+1;}` sat between a
+  //     derived chain (`p = q*3; u = p^q`) and the chain's kickback consumer; this
+  //     predicate refused the call as a mutation of the borrowed parent `q`, the
+  //     component leaked, and `3q`, `3q^q` stood allocated and ENTANGLED across
+  //     the later `cq_theta(q, .7)` (Rule 8; `opt` exit 0 with the lyyf-(B)
+  //     warning). The hand-inlined twin puts `cq_template_add_i32_hl(q, 1)` in the
+  //     same place — admitted by (2) — and discharged both rails. The call's
+  //     effect on `P` is NOT assumed from the name or from the Bennett wrap's
+  //     design: `cloneCallPreservesArg` (ChainWalk.h) walks the callee body and
+  //     fails closed, keyed on the specializer's record. What it proves is exactly
+  //     what clause (d) needs — `P`'s LABEL after the call is its label before —
+  //     and nothing about position, which a user that never moves the label does
+  //     not need (it is harmless anywhere in the window, like (1)/(2)). Every
+  //     OTHER user of `P` is still scanned by the caller exactly as before.
+  if (cloneCallPreservesArg(M, P, taint))
     return true;
   // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
   // theta) and `cqrt_ry_<W>_controlled` (the drbq Inc-1 control-in-place arm —
@@ -1434,7 +1456,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                    // scan, where it would have hidden a missing proof — but it is
                    // made explicit so the two uses of reachability are not read
                    // as one rule.
-      if (preservesBorrowedParent(M, P))
+      if (preservesBorrowedParent(M, P, taint))
         continue;
       // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
       //

@@ -1,0 +1,6 @@
+STDERR:
+warning: <unknown>:0:0: in function slice i32 (i32): cq rotation lowering: non-diagonal gate over a live derived record
+
+free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 2 left dirty, 5 cqrt_free site(s): 5 verified, 0 violation(s), 0 unproven
+ld: warning: object file (/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a7712272d6ca568e9/build/runtime/libcq_templates.a[2](cq_templates.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
+ld: warning: object file (/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a7712272d6ca568e9/build/runtime/libcq_runtime.a[2](cq_runtime.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
