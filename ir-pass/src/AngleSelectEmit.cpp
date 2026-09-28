@@ -355,17 +355,26 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   // The first spelling RE-DERIVED `isRuntimeStatePrepSeed(Base, taint)` here,
   // at EMISSION taint, while the L1 record below trusts the classifier's
   // recorded verdict `R.RuntimeSeedAdmitted` — two answers to one question, over
-  // two taint sets. The asymmetry mattered in the direction nobody records: a
-  // region S3 proved with a TAINTED base (S8/S9 over its closure, no L1 record)
-  // whose base had become untainted by emission would have been ADMITTED here as
-  // a fresh-rail prep that no classifier accepted. Unreachable today (the only
-  // taint-shrinking stage, `specialize()`'s scrub, runs after both control
-  // rounds; r1B mutants M1/M2 survive the whole suite and its 191 probes), but a
-  // second spelling is how a later change makes it reachable. So the step-0
-  // question is now exactly the record's: an untainted base is admitted iff the
-  // CLASSIFIER admitted one. `RuntimeSeedAdmitted` is only ever set by S3's Ry
-  // stem (`IsTheta ∧ isRuntimeStatePrepSeed` at detection), so the old `IsTheta`
-  // conjunct is carried by the flag rather than re-asked. The reverse transition
+  // two taint sets. The two spellings differ on one transition: a region S3
+  // proved with a TAINTED base (S8/S9 over its closure, no L1 record) whose base
+  // has become untainted by emission — the first spelling admitted it here as a
+  // fresh-rail prep, this one declines it. ⚠ CORRECTED (Rule-13 r2 F-r2-3, L7):
+  // an earlier spelling of this comment called that admission a HAZARD; it is
+  // not. The same classical-becomes-quantum-is-proven transition occurring one
+  // stage LATER (after emission, via `specialize()`'s scrub) is an accepted,
+  // pinned stream (`spec_angle_select_runtime_base_side_door.ll`: S3 proves the
+  // tainted base, `T0` then lowers as a SOURCE, twin-identical), and S3's
+  // tainted-base proof is strictly stronger than the runtime-base admission. The
+  // transition is unreachable before emission today (every emitter `Tainted.erase`
+  // is erase-paired; r1B mutants M1/M2 and the implementer's R1/R2 survive), so
+  // the change is a Rule-14 one — ONE question, asked at classification — not a
+  // safety one, and it makes the two timings of one transition disagree (decline
+  // before emission, accept after), both benign. The step-0 question is now
+  // exactly the record's: an untainted base is admitted iff the CLASSIFIER
+  // admitted one. For an `AngleSelectRegion`, `RuntimeSeedAdmitted` is set only by
+  // S3's Ry stem (`IsTheta ∧ isRuntimeStatePrepSeed` at detection), so the old
+  // `IsTheta` conjunct is carried by the flag rather than re-asked (F1 also sets
+  // the flag, for `StatePrep` regions, which never reach this emitter). The reverse transition
   // (admitted untainted, tainted by emission — a 6.5 `%out` RAUW) passes this
   // test as a register base and is caught by the record + post-fixpoint re-ask
   // (`declineRound2QuantumPrepSeeds`), as before.

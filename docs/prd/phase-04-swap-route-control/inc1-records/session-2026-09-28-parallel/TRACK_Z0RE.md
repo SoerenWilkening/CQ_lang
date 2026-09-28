@@ -416,8 +416,9 @@ because `…_round2_quantum_from_c.ll` postdates the first full run.
   owner ruling Q4) still declines, while its `-O1` image — the angle select on a RUNTIME base — now
   accepts and lowers the ONE-rail reading Q4 described. Not reachable from C (SimplifyCFG always
   folds it), so no C twin disagrees; recorded, not resolved. ⚠ Round 2: once bd fmt3 option B
-  (`nomerge`) lands, SimplifyCFG no longer folds it, the C spelling reaches the unfolded if/else and
-  declines under Q4, and the angle-select image becomes IR-only (§R2.8).
+  (`nomerge`) lands, SimplifyCFG no longer folds it and the if/else C spelling declines under Q4;
+  the angle-select image stays reachable from C through the TERNARY spelling (§R2.9 corrects the
+  round-2 claim that it becomes IR-only).
 - **Q4 (measured seed).** A `cq_measure` result is admitted as a seed (classical feed-forward; the
   unconditional spelling already lowers on the oracle). bd yiid (reading a name after measuring it)
   is untouched.
@@ -479,9 +480,9 @@ because `…_round2_quantum_from_c.ll` postdates the first full run.
 In §1's table, the state-prep row: "controlled **state prep** (`int r = SEED; if (COND) r =
 cq_theta(SEED, θ)`) — SEED a literal **or a RUNTIME classical value (bd z0re, 2026-09-28), the same
 SSA value as the Pred incoming**". In the Ry-stem angle-select row: "**CONSTANT arms only**; a
-register base, or an untainted RUNTIME base on a fresh rail (bd z0re; unreachable from C once bd
-fmt3's `nomerge` lands — IR-pinned) — a LITERAL base still declines (bd drbq.13, IPSCCP-fold
-counter-example; owner 2026-09-28)". In §2's F1/F2 bullet: "F1 admits a literal
+register base, or an untainted RUNTIME base on a fresh rail (bd z0re; after bd fmt3's `nomerge`
+the if/else spelling stops folding and the TERNARY `cq_theta(t, c ? A : B)` is the C spelling) — a
+LITERAL base still declines (bd drbq.13, IPSCCP-fold counter-example; owner 2026-09-28)". In §2's F1/F2 bullet: "F1 admits a literal
 or a runtime seed; F2 is re-asked for a runtime seed as a relational question (masked by
 `CondWire`); a runtime seed that turns quantum after the round-2 fixpoint declines `state prep seed
 became quantum` (record on `ControlRegion::RuntimeSeedAdmitted`, re-ask after `specialize()`).
@@ -688,23 +689,63 @@ probes` as in §8.2.
   - The reviewers' own probe dirs are not in the A/B `probes` mode; they are §R2.6's battery.
 
 ### R2.8 What bd `fmt3` option B (`nomerge`, lands AFTER z0re) does to this change — recorded, not acted on
-- **The S3 untainted-base Ry-stem angle select becomes UNREACHABLE FROM C at `-O1`** (owner-accepted
-  2026-09-28). The select exists only because SimplifyCFG MERGES `if (c) r = cq_theta(t, A); else r =
-  cq_theta(t, B);` into one theta; with `nomerge` on `cq_theta_*` the if/else survives and meets the
-  two-rail clause (`if/else state prep allocates two rails`, owner ruling Q4). Consequences when fmt3
-  lands: `slice_z0re_angle_select_runtime_base{,_spec,_exact}.c` and the gates
-  `e2e-z0re-angle-select-runtime-base-twin-identical` /
-  `e2e-z0re-angle-select-runtime-base-exact-inplace-identical` must be re-derived (a retirement
-  trigger says so in `tests/e2e/CMakeLists.txt`); the reviewers' C probes `a01*`, `zi*`, `zm*`,
-  `as_*`, `p2as_*`, `L1as_exit`, `L7as_ff` move with them. **Nothing is done about it in this
-  change.** The S3 lowering itself stays owed to hand IR and any future front end and is pinned at
-  the IR level by `control_angle_select_ry_runtime_base.ll` (i32), the round-2
-  `control_angle_select_ry_runtime_base_i8.ll` (i8, `!=` orientation, negative difference) and
-  `control_angle_select_ry_runtime_base_f64.ll` (f64 base), plus
-  `spec_angle_select_runtime_base_side_door{,_twin}.ll` — all red on the ORACLE, green on the subject.
+- ⚠ **CORRECTED BY §R2.9 (Rule-13 r2 F-r2-1) — the first spelling of this bullet was FALSE.** It
+  said *"the S3 untainted-base Ry-stem angle select becomes UNREACHABLE FROM C at `-O1`"*. What is
+  true: only the IF/ELSE spelling `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);` reaches S3
+  through a SimplifyCFG theta MERGE; with `nomerge` on `cq_theta_*` it survives and meets the
+  two-rail clause (`if/else state prep allocates two rails`, owner ruling Q4). The TERNARY spelling
+  `r = cq_theta(t, c ? A : B);` gives the same IR with no merge and still accepts. Consequences when
+  fmt3 lands: `slice_z0re_angle_select_runtime_base{,_spec,_exact}.c` are to be RESPELLED as
+  ternaries (goldens and the gates `e2e-z0re-angle-select-runtime-base-twin-identical` /
+  `e2e-z0re-angle-select-runtime-base-exact-inplace-identical` stay byte-for-byte), not re-derived as
+  declines — the retirement trigger in `tests/e2e/CMakeLists.txt` says so; the reviewers' if/else C
+  probes `a01*`, `zi*`, `zm*`, `as_*`, `p2as_*`, `L1as_exit`, `L7as_ff` keep their coverage the same
+  way. **Nothing is done about it in this change.** The IR-level pins
+  `control_angle_select_ry_runtime_base.ll` (i32), `control_angle_select_ry_runtime_base_i8.ll` (i8,
+  `!=` orientation, negative difference), `control_angle_select_ry_runtime_base_f64.ll` (f64 base)
+  and `spec_angle_select_runtime_base_side_door{,_twin}.ll` hold either way — all red on the ORACLE,
+  green on the subject.
 - **The diamond runtime-seed prep is untouched by `nomerge`** — it has one theta and no merge; only
   the NESTED zt0b-fold spellings (r1A a1/a3/a5) stop folding, and they then meet F2 or a
   nested-region verdict. The post-fold IR fixtures (§R2.1) keep pinning the legitimate program.
-- **Merge-order note for the orchestrator:** z0re's C slices of the angle select are therefore
-  correct on the z0re tree and expected to move at the fmt3 landing; a fmt3 A/B measured on a base
-  that contains z0re will show them, and they are that change's, not a regression.
+- **Merge-order note for the orchestrator:** z0re's if/else C slices of the angle select are
+  correct on the z0re tree and are expected to move at the fmt3 landing unless fmt3 respells them as
+  ternaries in the same change; either way those movers are fmt3's, not a regression.
+
+### R2.9 Round-2 narrow review (`review_r2_z0re/REVIEW.md`, committed untouched) — CLEAR-WITH-ITEMS, 0 P1; TEXT-ONLY follow-up
+The reviewer found round 2's code behaviour-preserving (0 verdict/stream movers round 1 → round 2 on
+everything run; the L1 re-ask fires on the angle-select path through both sub-paths of the new step
+0). The remaining items are wording only, fixed in one comment/record-only commit — no code, no
+fixture RUN/CHECK line, no golden changed; the rebuilt `cq-opt` / `libCQPass.so` /
+`cq-opt-debugalloc` are BIT-IDENTICAL to round 2's (`8441d60db8fd77b7…` / `14d57aaa6106c742…` /
+`119f61ffa565ebcd…`).
+- **F-r2-1 (P2, L7).** "fmt3 option B makes the S3 runtime-base angle select UNREACHABLE FROM C" was
+  FALSE (the orchestrator's brief to round 2 carried the same premise). The TERNARY spelling
+  `cq_theta(t, (q > 3) ? .75 : .25)` produces the identical IR with no theta merge and still accepts
+  under a `nomerge` `CQ.h` (reviewer probe `t1nm`: trace byte-identical to the `_exact` slice's
+  golden); only the IF/ELSE spelling stops folding (`t2nm`). Corrected in the `ArmClassify.cpp` S3
+  comment, §R2.8, the retirement trigger in `tests/e2e/CMakeLists.txt` (comment text only), the
+  literal-base decline fixture's header (`t3`/`t3nm`: the literal-base decline is reachable from plain
+  C via the ternary too) and the two round-2 IR-pin headers (`…runtime_base_{i8,f64}.ll`). The plan at
+  the fmt3 landing is to RESPELL the if/else C slices as ternaries, not to turn them into declines.
+- **F-r2-2 (P3).** F2's retirement trigger (4) said fmt3's closure in the present tense; `CQ.h` has no
+  `nomerge` at this commit. Now: "WILL BE closed … once it lands; OPEN until then". The WINDOW
+  paragraph above it got the same tense fix.
+- **F-r2-3 (P3).** The step-0 comment in `AngleSelectEmit.cpp` called the round-1 re-derivation's
+  admission a hazard; the same transition one stage later is an accepted, pinned stream
+  (`spec_angle_select_runtime_base_side_door.ll`), so the change is a Rule-14 one, not a safety one —
+  reworded. It also said only S3 sets `RuntimeSeedAdmitted`; F1 sets it for `StatePrep` regions
+  (which never reach this emitter) — reworded.
+- **F-r2-4 (note).** The angle-select member of bd `nivh` (`s1C`: a 6.5 `%out` base under a condition
+  that does not read it; declines `state prep seed became quantum`, the hand-inlined twin accepts) —
+  appended to bd `nivh` by the reviewer; nothing to change here.
+- **Record-only side effect:** `CODE_MAP.md` regenerated. Beyond the comment-shifted line numbers it
+  now also lists the three round-2 e2e slices (`slice_z0re_runtime_seed_prep_literal.c`,
+  `…angle_select_runtime_base_exact{,_inplace}.c`): round 2 ran `update_code_map.py` while they were
+  still untracked, and the tool indexes tracked files only, so round 2's `--check` passed on a map
+  that missed them.
+- **Verification of "text only":** the diff of the source files has no changed line outside `//`
+  comments; the fixture diff has no changed non-comment line and no `RUN`/`CHECK`-family line; the
+  CMake diff has no changed non-comment line; no golden is touched. Rebuild (`ArmClassify.cpp` and
+  `AngleSelectEmit.cpp` recompiled for both targets): the three binaries are bit-identical to round
+  2's (full sha-256 in the commit message).

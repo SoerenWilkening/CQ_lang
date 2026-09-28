@@ -38,11 +38,14 @@
 ; module indistinguishable from a legitimate program — `…_runtime_seed_postfold*.ll`
 ; — closed at the C level by bd fmt3 option B, `nomerge` on `cq_theta_*`.)
 ;
-; ⚠ WHEN bd fmt3 OPTION B LANDS (after z0re) this C spelling stops folding at all:
+; ⚠ WHEN bd fmt3 OPTION B LANDS (after z0re) THIS if/else C spelling stops folding:
 ; `nomerge` keeps the two thetas apart, no angle select forms, and the if/else
 ; declines where the pass sees it (the inner compare survives to F2 or to the
-; if/else two-rail clause). THIS IR-LEVEL FILE STAYS the pin of the literal-base
-; decline, which is still what S3 owes a hand-IR / non-C front end.
+; if/else two-rail clause). The literal-base decline itself stays reachable from
+; PLAIN C through the TERNARY spelling `cq_theta(6, c ? .75 : .25)` (Rule-13 r2
+; probe `t3`/`t3nm`: `rotation angle` with and without `nomerge`), so this file pins
+; a plain-C decline, not only what S3 owes a hand-IR front end. (⚠ CORRECTED, r2
+; F-r2-1: an earlier spelling said "hand-IR / non-C front end" only.)
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control

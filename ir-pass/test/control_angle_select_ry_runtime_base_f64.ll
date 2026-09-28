@@ -8,10 +8,11 @@
 ; base is admitted under the owner's 2026-09-28 fp ruling; the seed's bits reach
 ; `cqrt_alloc_f64` unchanged (no fence compares a runtime seed's VALUE).
 ;
-; ⚠ WHY THIS IS AN IR-LEVEL PIN: see `control_angle_select_ry_runtime_base_i8.ll` — bd
-; fmt3 option B (`nomerge` on `cq_theta_*`) makes the untainted-base angle select
-; unreachable from C once it lands; this file keeps the lowering pinned. On the ORACLE
-; (main 9a230646) it declines `rotation angle` at S3.
+; WHY AN IR-LEVEL PIN: see `control_angle_select_ry_runtime_base_i8.ll` — bd fmt3
+; option B (`nomerge`) stops the IF/ELSE spelling from folding; the TERNARY spelling
+; still reaches S3 from C (⚠ CORRECTED, Rule-13 r2 F-r2-1: the round-2 text said
+; "unreachable from C"). This file pins the lowering whichever C spelling reaches it.
+; On the ORACLE (main 9a230646) it declines `rotation angle` at S3.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

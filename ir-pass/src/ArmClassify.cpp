@@ -2013,10 +2013,10 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 //     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
 //     this pass can ask of the IR in front of it separates the hazard from the
 //     program the module denotes. The disposition is therefore at the SOURCE
-//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) puts
+//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) WILL put
 //     `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
-//     `-O1` can no longer merge the two thetas and the inner branch survives to
-//     reach F2. The IR-level fixtures
+//     that `-O1` can no longer merge the two thetas and the inner branch
+//     survives to reach F2 (not yet in `CQ.h` at this commit). The IR-level fixtures
 //     `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`
 //     pin the post-fold modules as ACCEPTS on exactly that ground — the module is
 //     the legitimate program. ⚠ WINDOW: fmt3 lands AFTER z0re, so until it does
@@ -2057,11 +2057,13 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // now-identical literal thetas) ERASES the branch that pinned the register.
 // Neither this relational half nor the constant half looks at an erased branch:
 // this function is anchored on the REGION'S branch, and the erased branch leaves
-// nothing in the module to anchor on. The closure is bd `fmt3` option B
-// (`nomerge` on `cq_theta_*`, owner 2026-09-28), which removes the MERGE at the
-// C level. If `nomerge` is ever dropped from `CQ.h`, or a route is found that
-// erases a pinning branch WITHOUT merging two thetas, this function needs a
-// question asked of the seed's own provenance, not of the region's edges.
+// nothing in the module to anchor on. This route WILL BE closed by bd `fmt3`
+// option B (`nomerge` on `cq_theta_*`, owner 2026-09-28) once it lands — it
+// removes the MERGE at the C level — and it is OPEN until then (the WINDOW
+// above): at this commit `CQ.h` carries no `nomerge` (Rule-13 r2 F-r2-2). If
+// `nomerge` is later dropped from `CQ.h`, or a route is found that erases a
+// pinning branch WITHOUT merging two thetas, this function needs a question
+// asked of the seed's own provenance, not of the region's edges.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
@@ -9190,17 +9192,22 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // `z0re_probes/src/r2as1.c` that `-O1` keeps a 4-predecessor merge instead and
   // it declines `nested control flow` on both binaries.)
   //
-  // ⚠ UNDER bd `fmt3` OPTION B THIS WHOLE UNTAINTED-BASE ADMISSION BECOMES
-  // UNREACHABLE FROM C (owner-accepted, 2026-09-28). The angle select exists at
-  // all only because SimplifyCFG MERGES `if (c) r = cq_theta(t, A); else r =
-  // cq_theta(t, B);` into one theta; `nomerge` on `cq_theta_*` stops that, the
-  // if/else survives, and it declines `if/else state prep allocates two rails`
-  // (owner ruling Q4). The admission stays — hand IR and any future front end
-  // still produce the select — and is pinned at the IR level by
-  // `control_angle_select_ry_runtime_base{,_i8,_f64}.ll` and
-  // `spec_angle_select_runtime_base_side_door{,_twin}.ll`, so the C e2e slices
-  // `slice_z0re_angle_select_runtime_base*` going red (or re-derived) when fmt3
-  // lands does not uncover the lowering.
+  // ⚠ WHAT bd `fmt3` OPTION B (`nomerge` on `cq_theta_*`, landing AFTER z0re)
+  // DOES TO THIS ADMISSION — ONLY THE IF/ELSE SPELLING STOPS REACHING IT. The
+  // if/else `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);` reaches S3 only
+  // because SimplifyCFG MERGES the two thetas; under `nomerge` the if/else
+  // survives and declines `if/else state prep allocates two rails` (owner ruling
+  // Q4). The TERNARY spelling `r = cq_theta(t, c ? A : B);` produces the SAME
+  // one-theta-on-an-angle-select IR with NO merge at all, so it is untouched by
+  // `nomerge` and this untainted-base admission STAYS A PLAIN-C ACCEPT SURFACE
+  // (Rule-13 r2 F-r2-1, measured with a `nomerge` `CQ.h`: probe `t1nm` accepts
+  // with a trace byte-identical to `slice_z0re_angle_select_runtime_base_exact`'s
+  // golden). ⚠ CORRECTED (L7): the round-2 spelling of this paragraph said the
+  // whole admission becomes UNREACHABLE FROM C — false; the ternary reaches it.
+  // So when fmt3 lands, the if/else C slices `slice_z0re_angle_select_runtime_base*`
+  // are to be RESPELLED as ternaries (which keeps their goldens), not turned into
+  // declines. The IR-level pins `control_angle_select_ry_runtime_base{,_i8,_f64}.ll`
+  // and `spec_angle_select_runtime_base_side_door{,_twin}.ll` hold either way.
   //
   // NO SUBJECT for the register-free phase stem: it has no arg-0, no register
   // and therefore no state-prep ambiguity to fence. `RotBase` stays null there

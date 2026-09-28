@@ -5048,11 +5048,11 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 # The f64 slice has no pair: it pins the fp width of the same accept.
 # ⚠ RETIREMENT TRIGGER (L8) — bd fmt3 OPTION B (owner 2026-09-28, lands AFTER z0re):
 # `__attribute__((nomerge))` on `cq_theta_*` stops `-O1` merging two thetas, so the
-# `slice_z0re_angle_select_runtime_base*` C sources no longer fold to an angle select
-# and their goldens / twin gates must be re-derived then (the if/else survives and meets
-# the two-rail clause). The S3 lowering stays pinned at the IR level by
-# `control_angle_select_ry_runtime_base{,_i8,_f64}.ll` and
-# `spec_angle_select_runtime_base_side_door{,_twin}.ll`.
+# IF/ELSE spelling in `slice_z0re_angle_select_runtime_base*` no longer folds to an
+# angle select (it meets the two-rail clause). At that landing RESPELL those sources as
+# TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge, the goldens and the
+# twin gates stay byte-for-byte (measured, Rule-13 r2 F-r2-1) — do not turn them into
+# declines. The S3 runtime-base admission stays reachable from plain C via the ternary.
 add_test(NAME e2e-slice-z0re-runtime-seed-prep
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

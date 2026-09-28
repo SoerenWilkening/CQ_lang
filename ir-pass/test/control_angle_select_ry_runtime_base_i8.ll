@@ -10,13 +10,15 @@
 ; `alloc_i8(t); ry_i8(h, .7); ry_i8_controlled(f_eq, h, fl(.2 - .7))` — f = 0 (q != 3)
 ; Ry(.7), f = 1 Ry(.7 + (.2 - .7)) = Ry(.2) up to one ulp, inside S1's 2^-40 fence.
 ;
-; ⚠ WHY THIS IS AN IR-LEVEL PIN (round 2, the owner's bd fmt3 option B): the select
-; exists only because SimplifyCFG MERGES the two thetas. `nomerge` on `cq_theta_*`
-; (fmt3, landing after z0re) stops that, so the untainted-base admission becomes
-; UNREACHABLE FROM C and the C e2e slices of it go away. The lowering stays owed to
-; hand IR and any future front end; this file, `control_angle_select_ry_runtime_base.ll`
-; (i32) and `…_runtime_base_f64.ll` keep it pinned. Body: the probe's stage-1 IR,
-; minimised. On the ORACLE (main 9a230646) it declines `rotation angle` at S3.
+; WHY AN IR-LEVEL PIN (round 2): the if/else spelling above reaches S3 only because
+; SimplifyCFG MERGES the two thetas, and bd fmt3 option B (`nomerge` on `cq_theta_*`,
+; landing after z0re) stops that merge. ⚠ CORRECTED (Rule-13 r2 F-r2-1): the round-2
+; spelling of this paragraph said the admission then becomes UNREACHABLE FROM C — false.
+; The TERNARY spelling `r = cq_theta(t, (q != 3) ? .7 : .2);` gives this same IR with no
+; merge and is untouched by `nomerge`. This file pins the lowering independently of
+; which C spelling reaches it, alongside `control_angle_select_ry_runtime_base.ll` (i32)
+; and `…_runtime_base_f64.ll`. Body: the probe's stage-1 IR, minimised. On the ORACLE
+; (main 9a230646) it declines `rotation angle` at S3.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
