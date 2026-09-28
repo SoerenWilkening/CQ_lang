@@ -58,6 +58,23 @@ void stripStaleClassicalAttrs(Function *F) {
   // would use to substitute the borrowed input handle for the basis copy.
   for (Argument &A : F->args())
     F->removeParamAttr(A.getArgNo(), Attribute::Returned);
+  // A `musttail` marker in the body is a promise about the CLASSICAL body too
+  // (bd `test_C_libtooling-m5pn`; the nlfd/ev3m track, 2026-09-28, found by the
+  // (null-safe × musttail × recorded-dead × operand) cell table): that the call is
+  // the function's last action before `ret` and that caller and callee prototypes
+  // agree. The lowered clone breaks both — the Bennett wrap puts the copy-out and
+  // the reverse of the forward stream BETWEEN an inner clone call and the `ret`,
+  // and `cloneFor`'s fp→i32 rewrite changes prototypes — and the verifier then
+  // ABORTS the whole run (exit 134, PRE-EXISTING on `main` 9a230646 from plain C:
+  // `int h(int a,int k){ __attribute__((musttail)) return h2(a,k); }` with `h2`
+  // reading `a`). `musttail` guarantees only the tail-call LOWERING (stack reuse);
+  // the call, its operands and its result are unchanged by dropping it, and a clone
+  // is acyclic (recursion is declined), so no stack guarantee is load-bearing. The
+  // demotion goes to NO tail kind at all: a clone promises nothing it cannot prove.
+  for (BasicBlock &BB : *F)
+    for (Instruction &I : BB)
+      if (auto *CI = dyn_cast<CallInst>(&I); CI && CI->isMustTailCall())
+        CI->setTailCallKind(CallInst::TCK_None);
 }
 
 // `__cq_q_<callee>_<binary>` (DD-5). `<binary>` is `Mask` rendered MSB-first,

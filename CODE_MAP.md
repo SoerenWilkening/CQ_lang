@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 779 maintained source files, 6318 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 782 maintained source files, 6323 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -923,13 +923,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:1396` — `resolvePhantomCloneArgReads`
 - `ir-pass/src/Specialization.cpp:1490` — `specialize`
 
-### `ir-pass/src/SpecializeClone.cpp` (254 lines)
+### `ir-pass/src/SpecializeClone.cpp` (271 lines)
 
 - `ir-pass/src/SpecializeClone.cpp:40` — `stripStaleClassicalAttrs`
-- `ir-pass/src/SpecializeClone.cpp:69` — `mangleSpecName`
-- `ir-pass/src/SpecializeClone.cpp:85` — `taintArgMask`
-- `ir-pass/src/SpecializeClone.cpp:106` — `predictReturnTainted`
-- `ir-pass/src/SpecializeClone.cpp:188` — `cloneFor`
+- `ir-pass/src/SpecializeClone.cpp:86` — `mangleSpecName`
+- `ir-pass/src/SpecializeClone.cpp:102` — `taintArgMask`
+- `ir-pass/src/SpecializeClone.cpp:123` — `predictReturnTainted`
+- `ir-pass/src/SpecializeClone.cpp:205` — `cloneFor`
 
 ### `ir-pass/src/SpecializeDetect.cpp` (352 lines)
 
@@ -6921,6 +6921,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c:6` — `slice`
 - `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c:17` — `main`
 
+### `tests/e2e/slice_spec_dropped_arg_musttail_return.c` (35 lines)
+
+- `tests/e2e/slice_spec_dropped_arg_musttail_return.c:17` — `w`
+- `tests/e2e/slice_spec_dropped_arg_musttail_return.c:32` — `main`
+
+### `tests/e2e/slice_spec_dropped_arg_musttail_return_twin.c` (23 lines)
+
+- `tests/e2e/slice_spec_dropped_arg_musttail_return_twin.c:5` — `w`
+- `tests/e2e/slice_spec_dropped_arg_musttail_return_twin.c:20` — `main`
+
 ### `tests/e2e/slice_spec_dropped_arg_volatile_char.c` (37 lines)
 
 - `tests/e2e/slice_spec_dropped_arg_volatile_char.c:25` — `slice`
@@ -7054,6 +7064,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/spec_dropped_arg_musttail_lib.c:16` — `h2`
 - `tests/e2e/spec_dropped_arg_musttail_lib.c:22` — `h`
+
+### `tests/e2e/spec_dropped_arg_musttail_return_lib.c` (19 lines)
+
+- `tests/e2e/spec_dropped_arg_musttail_return_lib.c:15` — `h2`
 
 ### `tests/e2e/spec_dropped_arg_volatile_global_lib.c` (26 lines)
 
