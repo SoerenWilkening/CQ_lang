@@ -2965,6 +2965,20 @@ add_test(NAME e2e-spec-clone-read-nested-twin-equivalent
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested_twin.expected.log")
+# bd rhk5 round 2 / bd test_C_libtooling-kyy1 (Rule-13 r1B F-r1B-1): a clone call that
+# consumes a chain rail AFTER a non-diagonal gate must not cost the DEAD sibling rail
+# the discharge the pre-rhk5 compiler gave it. The golden is byte-identical to the
+# pre-rhk5 compiler's trace; there is deliberately no twin gate (the hand-inlined twin
+# leaks the sibling on every binary — a pre-existing M-B granularity defect, see the
+# source header).
+add_test(NAME e2e-slice-spec-clone-consumer-after-ry
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumer_after_ry.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumer_after_ry.expected.log")
 
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two

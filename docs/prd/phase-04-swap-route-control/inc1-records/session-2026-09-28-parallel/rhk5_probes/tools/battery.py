@@ -69,7 +69,7 @@ def side(B, tag, name, arg):
     if lk.returncode != 0:
         r['v'] = 'LINKFAIL'
         return r
-    run = subprocess.run([exe, str(arg)], capture_output=True, text=True)
+    run = subprocess.run([exe] + str(arg).split(), capture_output=True, text=True)
     os.unlink(exe)
     tr = s2 + '.trace'
     open(tr, 'w').write(run.stdout)

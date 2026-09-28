@@ -24,9 +24,18 @@ the shipped design and neither of which is a defect:
 
 So this tool decides the precise weaker relation, and nothing weaker:
 
-  CONTRACT every CONTIGUOUS single-template Bennett block (1) in BOTH traces to the
-  single line it computes, then decide TRACE EQUIVALENCE (Mazurkiewicz) up to a
-  consistent RENAMING of handles: the two streams must contain the same gates, with
+  REWRITE both traces to a fixpoint with two rules (see `contract()`):
+    rule 1 — a Bennett COPY-OUT `T(args)->a; alloc(0)->b; copy(a,b); … T_unc(a,args);
+             … free(a)` becomes `T(args)->b` (the copy must be ADJACENT to the alloc,
+             `a` used by those four lines only, the copy full-width — `result_width`
+             — and no handle among `args` written between T and its adjoint). The
+             block need NOT be contiguous, and a multi-template clone body is handled
+             one link at a time: each application contracts the LAST link (the one the
+             copy reads), and the rest of the scratch chain stays as ordinary
+             forward/adjoint/free traffic the twin must reproduce;
+    rule 2 — an inner `_unc` twin's recompute-copy-uncompute `T(args)->c; copy(c,x);
+             T_unc(c,args); free(c)` becomes the out-first adjoint `T_unc(x, args)`;
+  then decide TRACE EQUIVALENCE (Mazurkiewicz) up to a consistent RENAMING of handles: the two streams must contain the same gates, with
   the same literals and the same operand roles, and every pair of DEPENDENT gates
   must occur in the same order. Two gates are DEPENDENT iff they share a handle that
   at least one of them WRITES. Reordering only independent gates never changes the
@@ -37,15 +46,19 @@ THE MODEL IS CONSERVATIVE IN ONE DIRECTION ONLY. Every gate that touches a handl
 in any way other than an explicitly listed READ slot is a WRITE of it — including
 `cqrt_rz_*` (diagonal, so it genuinely commutes with a read-as-control, but calling
 it a write can only refuse a reordering, never admit one), `cqrt_measure_*` (a
-collapse), `cqrt_free` and every mint. So a false DIFF is possible; a false EQUIV is
-not. An UNCLASSIFIED symbol is refused (exit 2) rather than guessed — the
-free_pairing_check / entangle.py discipline.
+collapse), `cqrt_free` and every mint. So a false DIFF is possible by design. A false
+EQUIV requires one of the two rewrite rules or the effect table to be wrong: that is
+the claim the boundary controls below exist to attack, and it is an argued claim,
+not a proof — the first shipped spelling had one (rule 1's width test was a
+substring match; Rule-13 r1B found it with attack row A9, now control
+`r1B-A9-width-cast`). An UNCLASSIFIED symbol is refused (exit 2) rather than
+guessed — the free_pairing_check / entangle.py discipline.
 
-THE CONTRACTION IS DELIBERATELY NARROW: one forward template, contiguous, with the
-adjoint naming the SAME symbol and the SAME operand text, and the scratch rail used
-by nothing else anywhere in the trace. A multi-template clone body is NOT contracted
-— its scratch chain has no single twin line — so such a pair reports DIFF, the safe
-direction; judge it with entangle.py (Rule 8) and the 2b census instead.
+THE CONTRACTION IS DELIBERATELY NARROW in its CONJUNCTS (listed under rule 1 and
+rule 2 above, each pinned by a `*-clobbered` / `*-free-first` / `*-nonzero` control),
+not in the block's shape: what does not match stays in the trace, and an unmatched
+scratch chain can only make the pair compare DIFF — the safe direction — in which
+case judge it with entangle.py (Rule 8) and the 2b census instead.
 
 WHAT IT CANNOT SEE: anything the trace does not print (rail identities at a free —
 that is stage 2b's job; stderr warnings). It compares circuits, not verdicts.
@@ -86,6 +99,26 @@ def parse(lines):
 
 def is_h(tok):
     return tok is not None and HANDLE.match(tok) is not None
+
+
+def result_width(sym):
+    """The width of the rail a forward producer MINTS — which is what a full-width
+    copy-out must match. Read off the symbol grammar
+    `cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>][_hl|_lh|…]`:
+      * a cast `…_<from>_to_<to>` mints `<to>`;
+      * a compare (`icmp_*`/`fcmp_*`) mints `i1`;
+      * every other template, and `cqrt_qram_load_<W>`, mints its (first) `<W>`.
+    Returns None when no width can be read (the caller then refuses to contract).
+    bd rhk5 round 2 (r1B F-r1B-2): the first spelling asked whether `_<w>_` was a
+    SUBSTRING of the symbol, and a cast carries BOTH widths, so an i32 copy of an
+    i64 `sext` result contracted — a false EQUIV (control `r1B-A9-width-cast`)."""
+    m = re.search(r'_to_([if]\d+)(?=_|$)', sym)
+    if m:
+        return m.group(1)
+    if re.match(r'^cq_template_[if]cmp_', sym):
+        return 'i1'
+    m = re.search(r'_([if]\d+)(?=_|$)', sym)
+    return m.group(1) if m else None
 
 
 def is_fwd_producer(sym):
@@ -225,8 +258,8 @@ def contract(evs):
             if not (un['sym'] == t['sym'] + '_unc' and un['args'] == [a] + t['args']
                     and fr['sym'] == 'cqrt_free' and fr['args'] == [a]):
                 continue
-            if ('_' + w + '_') not in (t['sym'] + '_'):
-                continue            # the copy width must be the producer's width
+            if result_width(t['sym']) != w:
+                continue            # the copy width must be the producer's RESULT width
             targs = {x for x in t['args'] if is_h(x)}
             clobbered = False
             for e in evs[i + 1:u]:
@@ -278,7 +311,7 @@ def contract(evs):
             if not (un['sym'] == t['sym'] + '_unc' and un['args'] == [c] + t['args']
                     and fr['sym'] == 'cqrt_free' and fr['args'] == [c]):
                 continue
-            if ('_' + w + '_') not in (t['sym'] + '_') or x in t['args']:
+            if result_width(t['sym']) != w or x in t['args']:
                 continue
             targs = {y for y in t['args'] if is_h(y)}
             clobbered = False
@@ -568,6 +601,43 @@ cqrt_free(h1)
 """
 
 
+def _t(*lines):
+    return '\n'.join(lines) + '\n'
+
+
+_A9_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_ry_i32(h0, 0x1p-1)',
+           'cq_template_sext_i32_to_i64(h0) -> h1', 'cqrt_alloc_i32(0) -> h2',
+           'cqrt_copy_i32(h1, h2)', 'cq_template_sext_i32_to_i64_unc(h1, h0)', 'cqrt_free(h1)',
+           'cqrt_x(h2)', 'cqrt_free(h2)')
+_A9_T = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_ry_i32(h0, 0x1p-1)',
+           'cq_template_sext_i32_to_i64(h0) -> h1', 'cqrt_x(h1)', 'cqrt_free(h1)')
+_A18_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_ry_i32(h0, 0x1p-1)', 'cq_template_add_i32_hl(h0, 1) -> h1',
+            'cqrt_alloc_i32(1) -> h2', 'cqrt_copy_i32(h1, h2)',
+            'cq_template_add_i32_hl_unc(h1, h0, 1)', 'cqrt_measure_i32(h2) -> 0',
+            'cqrt_ry_i32(h0, 0x1p-2)', 'cqrt_measure_i32(h0) -> 0', 'cqrt_free(h1)')
+_A18_T = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_ry_i32(h0, 0x1p-1)', 'cq_template_add_i32_hl(h0, 1) -> h1',
+            'cqrt_measure_i32(h1) -> 0', 'cqrt_ry_i32(h0, 0x1p-2)', 'cqrt_measure_i32(h0) -> 0')
+_REC_W_S = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1',
+              'cq_template_sext_i32_to_i64(h0) -> h2', 'cqrt_copy_i32(h2, h1)',
+              'cq_template_sext_i32_to_i64_unc(h2, h0)', 'cqrt_free(h2)', 'cqrt_free(h1)')
+_REC_W_T = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1',
+              'cq_template_sext_i32_to_i64_unc(h1, h0)', 'cqrt_free(h1)')
+_A12_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(3) -> h1',
+            'cq_template_icmp_ult_i32(h0, h1) -> h2', 'cqrt_measure_i1(h2) -> 0')
+_WS_PRE = ['cqrt_alloc_i1(1) -> h0', 'cqrt_alloc_i32(5) -> h1', 'cqrt_alloc_i32(3) -> h2']
+_WRITE_SLOT_ROWS = []
+for _nm, _g in [('A22-cnot-target', 'cqrt_cnot(h0, h1)'),
+                ('A23-toffoli-target', 'cqrt_toffoli(h0, h2, h1)'),
+                ('A24-cswap-target', 'cqrt_cswap(h0, h1, h2)'),
+                ('A25-ccopy-dst', 'cqrt_copy_i32_controlled(h0, h2, h1)'),
+                ('A26-cry-target', 'cqrt_ry_i32_controlled(h0, h1, 0x1p-1)'),
+                ('A27-addc', 'cqrt_addc_i32(h1, 4)'),
+                ('A28-xorc', 'cqrt_xorc_i32(h1, 4)')]:
+    _rd = 'cq_template_add_i32_hl(h1, 1) -> h9'
+    _WRITE_SLOT_ROWS.append((_nm, _t(*_WS_PRE, _g, _rd, 'cqrt_measure_i32(h9) -> 0'),
+                             _t(*_WS_PRE, _rd, _g, 'cqrt_measure_i32(h9) -> 0')))
+
+
 def _swap(t, i, j):
     L = t.splitlines()
     L[i], L[j] = L[j], L[i]
@@ -673,7 +743,25 @@ CONTROLS = [
     # ...but NOT when the producer's operand is written before its adjoint (if this
     # contracted, the two traces would compare EQUIV).
     ("recompute-clobbered", _REC_CLOB_S, _REC_CLOB_T, 'DIFF'),
-]
+    # ── bd rhk5 round 2: Rule-13 reviewer r1B's attack rows, adopted (F-r1B-2/-3).
+    # A9: a Bennett block whose COPY width is the cast's SOURCE width (i32) while the
+    # producer's RESULT is i64 — a 32-bit copy of a 64-bit rail. The first spelling
+    # of rule 1's width test was a SUBSTRING match and contracted it (a false EQUIV).
+    ("r1B-A9-width-cast", _A9_S, _A9_T, 'DIFF'),
+    # The same width hole in RULE 2: a recompute whose XOR-copy is narrower than the
+    # recomputed rail is not `T_unc(x, args)`. (Found by this tool's own checker
+    # mutant T10, which survived every control after r1B's A9 was adopted.)
+    ("recompute-width-cast", _REC_W_S, _REC_W_T, 'DIFF'),
+    # A18: the copy-out scratch `b` does not start at |0> (alloc(1)).
+    ("r1B-A18-copyout-nonzero", _A18_S, _A18_T, 'DIFF'),
+    # A12: a compare's two handle operands swapped — `ult` is not symmetric, so the
+    # commutativity table must NOT cover a compare (r1B's mutant U14 survived every
+    # control before this row).
+    ("r1B-A12-icmp-operand-swap", _A12_S, _A12_S.replace('ult_i32(h0, h1)', 'ult_i32(h1, h0)'),
+     'DIFF'),
+    # A22–A28: one WRITE slot of each classification row no other control touches,
+    # reordered across a READ of the same rail — each must be DIFF.
+] + [(f"r1B-{nm}", a, b, 'DIFF') for nm, a, b in _WRITE_SLOT_ROWS]
 
 
 def selftest(verbose=True):

@@ -12,6 +12,14 @@ W = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a771
 SRC = open(W + '/tools/trace_twin_equiv.py').read()
 
 MUT = {
+    # round 2 (bd rhk5): the RESULT-width conjunct of each rule, deleted — r1B's
+    # U2/U4 spelled against the round-1 substring test, re-spelled here.
+    'T9_rule1_no_result_width': ("            if result_width(t['sym']) != w:\n",
+                                 "            if False:\n"),
+    'T10_rule2_no_result_width': ("            if result_width(t['sym']) != w or x in t['args']:",
+                                  "            if x in t['args']:"),
+    'T11_compare_commutes': ("COMMUTATIVE = re.compile(r'^cq_template_(add|mul|xor|and|or)_i\\d+(_unc)?$')",
+                             "COMMUTATIVE = re.compile(r'^cq_template_(add|mul|xor|and|or|icmp_\\w+)_i\\d+(_unc)?$')"),
     'T0_null': ('import os\n', 'import os  # null\n'),
     'T1_never_dependent': ('def dependent(e, f):\n    return bool(',
                            'def dependent(e, f):\n    return False and bool('),

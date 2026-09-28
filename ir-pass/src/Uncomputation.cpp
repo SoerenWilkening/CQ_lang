@@ -823,7 +823,7 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
 // because a borrowed parent is by construction NOT walked and NOT adjointed. So
 // it must be proven un-mutated over the interval instead.
 bool preservesBorrowedParent(const CallInst *M, const Value *P,
-                             const TaintSet &taint) {
+                             const TaintSet &taint, bool AdmitCloneCalls) {
   const Function *Callee = M->getCalledFunction();
   StringRef N = Callee ? Callee->getName() : StringRef();
   // (1) A DIAGONAL rotation. `cqrt_rz_<W>(P, θ)` writes a phase and never a basis
@@ -913,7 +913,11 @@ bool preservesBorrowedParent(const CallInst *M, const Value *P,
   //     and nothing about position, which a user that never moves the label does
   //     not need (it is harmless anywhere in the window, like (1)/(2)). Every
   //     OTHER user of `P` is still scanned by the caller exactly as before.
-  if (cloneCallPreservesArg(M, P, taint))
+  //
+  //     GATED BY `AdmitCloneCalls` (bd rhk5 round 2): OFF is the pre-rhk5
+  //     planner verbatim, which `collectInteriorPlans` runs beside the ON mode so
+  //     that no discharge the pre-rhk5 planner made can be lost.
+  if (AdmitCloneCalls && cloneCallPreservesArg(M, P, taint))
     return true;
   // Everything else is a mutation for this purpose: `cqrt_ry_` (the chained
   // theta) and `cqrt_ry_<W>_controlled` (the drbq Inc-1 control-in-place arm —
@@ -1117,7 +1121,8 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                            const SmallPtrSetImpl<const CallInst *> &ReversedGates,
                            const SmallPtrSetImpl<Value *> &ReversedRails,
                            DataDag &D, Instruction *&At,
-                           SmallPtrSetImpl<Value *> &BorrowedOut) {
+                           SmallPtrSetImpl<Value *> &BorrowedOut,
+                           bool AdmitCloneCalls) {
   SmallPtrSet<Value *, 16> Owned(Comp.begin(), Comp.end());
   bool Converged = false;
   for (unsigned Round = 0; Round < 8 && !Owned.empty(); ++Round) {
@@ -1206,6 +1211,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   InteriorPlan IP;
   IP.Owned = Owned;
   IP.Borrowed = Borrowed;
+  IP.AdmitCloneCalls = AdmitCloneCalls;
   BorrowedOut.insert(Borrowed.begin(), Borrowed.end());  // P0's ordering check.
   SmallVector<Value *, 16> Terms;
   for (CallInst *R : Comp)
@@ -1456,7 +1462,7 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
                    // scan, where it would have hidden a missing proof — but it is
                    // made explicit so the two uses of reachability are not read
                    // as one rule.
-      if (preservesBorrowedParent(M, P, taint))
+      if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
         continue;
       // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
       //
@@ -1608,11 +1614,24 @@ struct ComponentPlan {
   SmallPtrSet<Value *, 8> Borrowed;
 };
 
-void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
-                          PostDominatorTree &PDT, LoopInfo &LI,
-                          const SmallPtrSetImpl<const CallInst *> &ReversedGates,
-                          const SmallPtrSetImpl<Value *> &ReversedRails,
-                          SmallVectorImpl<ComponentPlan> &Plans) {
+// A plan's DISCHARGED set: the rails it will adjoint AND free (a frozen rail is
+// adjointed but kept — `emitDagReversal` — so it does not count as freed).
+void addDischargedRails(const ComponentPlan &P, SmallPtrSetImpl<Value *> &Into) {
+  for (Value *R : P.D.Rails)
+    if (!P.D.FrozenRails.count(R))
+      Into.insert(R);
+}
+
+// `AdmitCloneCalls` (bd rhk5): ON, a Phase-6 clone call proven read-only is an
+// interior consumer (`isInteriorConsumer` (b′)) and a harmless user of a borrowed
+// parent (`preservesBorrowedParent` (3)); OFF, this function is the pre-rhk5
+// planner verbatim. `collectInteriorPlans` below runs both — see its note.
+void collectInteriorPlansMode(Function &F, TaintSet &taint, DominatorTree &DT,
+                              PostDominatorTree &PDT, LoopInfo &LI,
+                              const SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                              const SmallPtrSetImpl<Value *> &ReversedRails,
+                              SmallVectorImpl<ComponentPlan> &Plans,
+                              bool AdmitCloneCalls) {
   // 1. STRUCTURAL candidates (ChainWalk::isInteriorTerminalHandle), minus every
   //    rail another owner holds. The subtractions mirror terminal selection's,
   //    one for one, because an interior rail is selected by a DIFFERENT predicate
@@ -1686,7 +1705,7 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
         continue;
       if (ReversedRails.count(H) || ReversedGates.count(H))
         continue;  // single ownership — see reverseTerminalGroup's note.
-      if (!isInteriorTerminalHandle(H, taint))
+      if (!isInteriorTerminalHandle(H, taint, AdmitCloneCalls))
         continue;
       Cand.push_back(H);
     }
@@ -1802,8 +1821,13 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
   //     cannot tell an adjoint's reads from its writes) refuses them and leaks B
   //     for no physics. Planning is pure analysis, and every emission writes and
   //     frees only rails its own component owns, so all-then-all is sound.
-  SmallVector<SmallVector<CallInst *, 8>, 4> Components;
-  {
+  // The component partition, as a function of the rail set it may use. The
+  // ALLOWED set is `Anchorable` for the primary partition; bd rhk5 round 2 (bd
+  // `kyy1`) also asks it of a component MINUS its (b′)-admitted rails — the
+  // pre-rhk5 partition of that component — so the SAME linking rules produce
+  // both, one spelling (Rule 14).
+  auto buildComponents = [&](const SmallPtrSetImpl<Value *> &Allowed,
+                             SmallVectorImpl<SmallVector<CallInst *, 8>> &Components) {
     DenseMap<Value *, unsigned> CompOf;  // rail -> component id
     auto merge = [&](unsigned A, unsigned B) {
       if (A == B)
@@ -1821,7 +1845,7 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
       return Fresh;
     };
     for (CallInst *R : Cand) {  // program order — FileCheck-stable
-      if (!Anchorable.count(R))
+      if (!Allowed.count(R))
         continue;
       // ── P0 (bd `test_C_libtooling-tu9q`): DO NOT MERGE ACROSS A MULTIPLICITY
       //    BOUNDARY, and this ARGUES WITH the written invariant twelve lines up
@@ -1861,7 +1885,7 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
       };
       auto link = [&](const CallInst *G) {
         for (Value *Op : G->args())
-          if (Op != R && Anchorable.count(Op) && sameMultiplicity(R, Op))
+          if (Op != R && Allowed.count(Op) && sameMultiplicity(R, Op))
             merge(idOf(R), idOf(Op));
       };
       idOf(R);
@@ -1873,7 +1897,7 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
     }
     DenseMap<unsigned, unsigned> Slot;  // component id -> slot in `Components`
     for (CallInst *R : Cand) {
-      if (!Anchorable.count(R))
+      if (!Allowed.count(R))
         continue;
       unsigned Id = CompOf[R];
       auto It = Slot.find(Id);
@@ -1881,14 +1905,93 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
         It = Slot.insert({Id, Components.size()}).first, Components.emplace_back();
       Components[It->second].push_back(R);
     }
-  }
+  };
+  SmallVector<SmallVector<CallInst *, 8>, 4> Components;
+  buildComponents(Anchorable, Components);
 
   // Plan EVERY component before ANY of them emits — see the note above.
+  //
+  // ── bd rhk5 round 2 (bd `kyy1`, r1B F-r1B-1, a P1): THE PER-COMPONENT
+  //    FALLBACK TO THE PRE-rhk5 PARTITION ─────────────────────────────────────
+  //
+  // Clause (b′) makes a rail whose consumer is a clone call an OWNED interior
+  // member. That rail then joins its siblings' component, and the component's
+  // ONE discharge point is anchored after ALL consumers of ALL owned rails —
+  // including the clone call. When that call sits after a non-diagonal gate on
+  // the component's borrowed parent, clause (d) refuses the WHOLE component and
+  // a DEAD sibling the pre-rhk5 planner discharged alone now leaks, entangled:
+  // `p = q & 3; u = p + q; if (u == 10) cq_phi(PI); q2 = cq_theta(q, .7);
+  // s = h(m, p);` — the oracle discharges `u` before the Ry, round 1 left it
+  // standing (the user's phase oracle erased; r1B's `b2n`).
+  //
+  // The fix plans the component both ways and keeps whichever discharges MORE:
+  // the (b′) component as one plan, or the pre-rhk5 partition of the same
+  // component — its rails minus the (b′)-admitted ones (`isInteriorTerminalHandle`
+  // asked with (b′) OFF, the ONE owner), linked by the SAME rules
+  // (`buildComponents`), each piece planned on its own, the (b′) rails left as
+  // borrowed parents. The (b′) plan wins only when its discharged set is a
+  // SUPERSET of the fallback's, so no rail the pre-rhk5 partition discharges is
+  // lost PER COMPONENT. (Every pre-rhk5 component lies inside exactly one (b′)
+  // component, because (b′) only ADDS rails and therefore only ADDS links.)
+  //
+  // ⚠ PER COMPONENT IS NOT THE WHOLE GUARANTEE, and the whole one is not made
+  // here: the cross-plan ordering check below can DROP a plan because of another,
+  // and clause (3) can make a piece plan exist that the pre-rhk5 planner refused —
+  // which can then drop an OUTER plan that planner kept. The function-level
+  // guarantee is `collectInteriorPlans`' comparison of the two FINAL plan sets.
+  // This per-component step exists so that one (b′) regression does not cost the
+  // (b′) wins elsewhere in the same function.
+  //
+  // What this does NOT fix, stated: the hand-inlined TWIN of `b2n` (`s = p + 1`)
+  // leaks `u` the same way on BOTH binaries — its `p` is interior through a
+  // template consumer, with no (b′) involved. That granularity defect is
+  // PRE-EXISTING and stays filed under bd `kyy1`; this fallback only guarantees
+  // that (b′) never makes a program worse than the pre-rhk5 planner made it.
   for (SmallVector<CallInst *, 8> &Comp : Components) {
     ComponentPlan P;
     P.At = nullptr;
-    if (planInteriorComponent(Comp, taint, DT, PDT, LI, canRepeat, ReversedGates,
-                              ReversedRails, P.D, P.At, P.Borrowed))
+    const bool Ok =
+        planInteriorComponent(Comp, taint, DT, PDT, LI, canRepeat, ReversedGates,
+                              ReversedRails, P.D, P.At, P.Borrowed,
+                              AdmitCloneCalls);
+    if (AdmitCloneCalls) {
+      SmallPtrSet<Value *, 16> PreRhk5;  // the component's non-(b′) rails
+      for (CallInst *R : Comp)
+        if (isInteriorTerminalHandle(R, taint, /*AdmitCloneCalls=*/false))
+          PreRhk5.insert(R);
+      if (PreRhk5.size() != Comp.size()) {
+        SmallVector<SmallVector<CallInst *, 8>, 4> Pieces;
+        buildComponents(PreRhk5, Pieces);
+        SmallVector<ComponentPlan, 4> PiecePlans;
+        SmallPtrSet<Value *, 16> PieceRails;
+        for (SmallVector<CallInst *, 8> &Piece : Pieces) {
+          ComponentPlan Q;
+          Q.At = nullptr;
+          if (planInteriorComponent(Piece, taint, DT, PDT, LI, canRepeat,
+                                    ReversedGates, ReversedRails, Q.D, Q.At,
+                                    Q.Borrowed, AdmitCloneCalls)) {
+            addDischargedRails(Q, PieceRails);
+            PiecePlans.push_back(std::move(Q));
+          }
+        }
+        SmallPtrSet<Value *, 16> FullRails;
+        if (Ok)
+          addDischargedRails(P, FullRails);
+        bool FullWins = Ok;
+        if (FullWins)
+          for (Value *R : PieceRails)
+            if (!FullRails.count(R)) {
+              FullWins = false;
+              break;
+            }
+        if (!FullWins) {
+          for (ComponentPlan &Q : PiecePlans)
+            Plans.push_back(std::move(Q));
+          continue;
+        }
+      }
+    }
+    if (Ok)
       Plans.push_back(std::move(P));
   }
 
@@ -1950,6 +2053,49 @@ void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
         Kept.push_back(std::move(P));
     Plans = std::move(Kept);
   }
+}
+
+// ── bd rhk5 round 2 (bd `kyy1`, r1B F-r1B-1, a P1): NEVER WORSE THAN PRE-rhk5,
+//    CHECKED ON THE FINAL PLAN SETS ────────────────────────────────────────────
+//
+// The interior planner is run twice — ON (clone calls admitted, with the
+// per-component fallback) and OFF (the pre-rhk5 planner verbatim) — and ON is
+// used only when the rails it discharges are a SUPERSET of the rails OFF
+// discharges; otherwise OFF is used, i.e. the function lowers exactly as it did
+// before rhk5. Both runs are pure analysis (plan all, then emit — the note at
+// `collectInteriorPlansMode`'s component loop), so asking twice changes nothing
+// but the cost, and the comparison is on the FINAL sets, after the cross-plan
+// ordering check, which is the only place a plan can be lost to another.
+//
+// It is a BACKSTOP to the per-component fallback, not a replacement: that step
+// makes ON a superset in the common case (r1B's `b2n` family, measured), and
+// this one makes "never worse" a checked property rather than an argued one.
+// Granularity is the FUNCTION, so where ON loses a discharge OFF makes, every
+// rhk5 win in the same function is given up too — the safe direction, and a
+// candidate for a finer rule if a customer ever shows up (none measured).
+void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
+                          PostDominatorTree &PDT, LoopInfo &LI,
+                          const SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                          const SmallPtrSetImpl<Value *> &ReversedRails,
+                          SmallVectorImpl<ComponentPlan> &Plans) {
+  SmallVector<ComponentPlan, 4> On, Off;
+  collectInteriorPlansMode(F, taint, DT, PDT, LI, ReversedGates, ReversedRails,
+                           On, /*AdmitCloneCalls=*/true);
+  collectInteriorPlansMode(F, taint, DT, PDT, LI, ReversedGates, ReversedRails,
+                           Off, /*AdmitCloneCalls=*/false);
+  SmallPtrSet<Value *, 16> OnRails, OffRails;
+  for (const ComponentPlan &P : On)
+    addDischargedRails(P, OnRails);
+  for (const ComponentPlan &P : Off)
+    addDischargedRails(P, OffRails);
+  bool OnIsSuperset = true;
+  for (Value *R : OffRails)
+    if (!OnRails.count(R)) {
+      OnIsSuperset = false;
+      break;
+    }
+  for (ComponentPlan &P : OnIsSuperset ? On : Off)
+    Plans.push_back(std::move(P));
 }
 
 void reverseInteriorGroup(Function &F, TaintSet &taint, WidthDispatch &wd,

@@ -138,6 +138,11 @@ struct DataDag {
 struct InteriorPlan {
   llvm::SmallPtrSet<llvm::Value *, 16> Owned;
   llvm::SmallPtrSet<llvm::Value *, 8> Borrowed;
+  // bd rhk5 round 2 (bd `kyy1`): whether the closure scan below may admit a
+  // Phase-6 clone call as an OWNED rail's consumer (`isInteriorConsumer` (b′)).
+  // Set by the planner from the mode it is planning in; the two must agree, or a
+  // rail planned WITHOUT (b′) could be closed WITH it.
+  bool AdmitCloneCalls = false;
 };
 
 // Recover the whole forward DAG of the registers whose live terminal handles are

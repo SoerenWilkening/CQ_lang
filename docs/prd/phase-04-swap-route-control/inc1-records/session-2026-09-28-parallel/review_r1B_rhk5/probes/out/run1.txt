@@ -1,0 +1,78 @@
+== b0 (arg 5)
+  [S] b0: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      20
+  [O] b0: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      16
+  [S] b0_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] b0_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b1 (arg 5)
+  [S] b1: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      20
+  [O] b1: ACCEPT warn=1 2b[left=2 dirty=1 viol=0 unpr=0] lines=      18
+  [S] b1_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] b1_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b2 (arg 5)
+  [S] b2: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      16
+  [O] b2: ACCEPT warn=0 2b[left=2 dirty=1 viol=0 unpr=0] lines=      18
+  [S] b2_T: ACCEPT warn=1 2b[left=1 dirty=2 viol=0 unpr=0] lines=      12
+  [O] b2_T: ACCEPT warn=1 2b[left=1 dirty=2 viol=0 unpr=0] lines=      12
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b3 (arg 5)
+  [S] b3: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      22
+  [O] b3: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      18
+  [S] b3_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      18
+  [O] b3_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      18
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b4 (arg 5)
+  [S] b4: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      32
+  [O] b4: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      28
+  [S] b4_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      19
+  [O] b4_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      19
+  equiv S-subject vs S-twin: subject 3, twin 0)
+  S!=O trace (moved)
+== b5 (arg 5)
+  [S] b5: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      20
+  [O] b5: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      16
+  [S] b5_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] b5_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b6 (arg 5)
+  [S] b6: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      20
+  [O] b6: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      16
+  [S] b6_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] b6_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== b14 (arg 5)
+  [S] b14: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      20
+  [O] b14: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      16
+  [S] b14_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] b14_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== c1 (arg 5)
+  [S] c1: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee contains a quantum primitive (cq_*); only cl
+  [O] c1: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee contains a quantum primitive (cq_*); only cl
+== c2 (arg 5)
+  [S] c2: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee measures under quantum lift
+  [O] c2: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee measures under quantum lift
+== c3 (arg 5)
+  [S] c3: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee contains a quantum primitive (cq_*); only cl
+  [O] c3: DECLINE rc=1  <unknown>:0:0: in function g i32 (i32): cq specialization: callee contains a quantum primitive (cq_*); only cl
+  [S] c3_T: ACCEPT warn=1 2b[left=1 dirty=2 viol=0 unpr=0] lines=      16
+  [O] c3_T: ACCEPT warn=1 2b[left=1 dirty=2 viol=0 unpr=0] lines=      16
+== c4 (arg 5)
+  [S] c4: DECLINE rc=1  <unknown>:0:0: in function __cq_q_g_01 i32 (i32, i32): cq specialization: mixed classical/quantum select under
+  [O] c4: DECLINE rc=1  <unknown>:0:0: in function __cq_q_g_01 i32 (i32, i32): cq specialization: mixed classical/quantum select under
+== c5 (arg 5)
+  [S] c5: ACCEPT warn=0 2b[left=3 dirty=0 viol=0 unpr=0] lines=      30
+  [O] c5: ACCEPT warn=1 2b[left=3 dirty=1 viol=0 unpr=0] lines=      28
+  [S] c5_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  [O] c5_T: ACCEPT warn=0 2b[left=1 dirty=0 viol=0 unpr=0] lines=      16
+  equiv S-subject vs S-twin: subject 3, twin 0)
+  S!=O trace (moved)
+DONE

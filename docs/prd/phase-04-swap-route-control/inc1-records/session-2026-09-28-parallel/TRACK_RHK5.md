@@ -488,6 +488,12 @@ corpus** — fences on inputs no fixture (and, as far as I could construct, no C
 program) supplies. Not MISSED in the sense of a missing fixture for a reachable
 shape; recorded as the honest limit.
 
+⚠ CORRECTED IN ROUND 2 (Rule-13 r1A F-r1A-4): "no input distinguishes M7 / M8" is
+wrong. A PRE-SUPPLIED twin separates both — `m8_twin_unrecorded_helper.ll` (the twin
+reads `k` through a DEFINED, unrecorded, read-only helper: refused by (C1), admitted by
+M8) — but ONLY in the ACCEPT direction: once the body is walked neither conjunct is
+load-bearing for soundness. They are SCOPE limiters, not fences. See §R2.2.
+
 ### §6.2 The e2e instrument — `tools/trace_twin_equiv.py`
 
 `tools/equiv_tool_mutants.py`: 8 mutants of the CHECKER + a null, each must turn its
@@ -589,3 +595,333 @@ sinks the twin's inlined op), so those pairs are gated `*-twin-equivalent` by
 independent gates, 31 boundary controls, made to fail by 8 checker mutants — and a
 DIFF from it on an M-C in-place / CSE / alias twin is a vocabulary difference the
 tool deliberately does not bridge.
+
+---
+
+# ROUND 2 — the fixes for Rule-13 round 1 (r1A, r1B: both NOT-CLEAR)
+
+Records of the two round-1 reviews: `review_r1A_rhk5/REVIEW.md`,
+`review_r1B_rhk5/REVIEW.md` (committed verbatim in the round-2 commit, content
+untouched). Their probes were COPIED verbatim to `rhk5_probes/round2/r1A/` and
+`rhk5_probes/round2/r1B/`; the reviewers' own directories were never written.
+
+## §R2.1 What changed, by file
+
+| file | change |
+|---|---|
+| `ir-pass/src/ChainWalk.cpp` | `cloneCallPreservesArg` rewritten: (C1) requires `hasExactDefinition()`; the name-keyed vocabulary (B1)–(B3) is asked ONLY of a callee the module DECLARES; (B3) CALLS `isCopyGate`; the walk returns a three-valued `Proof` with a per-query memo; the dead `callee == V` conjunct removed. `isInteriorConsumer` / `isInteriorTerminalHandle` take `AdmitCloneCalls` |
+| `ir-pass/include/ChainWalk.h` | the contract re-written: the false "Nothing is read off the NAME" corrected at the source (L7), the residual trust stated, the L3 parenthetical corrected (`_Bool` clone-select `cqrt_x` bracket), the memo / cycle argument |
+| `ir-pass/src/RotationLowering.cpp` / `.h` | `isCopyGate` EXPORTED (the anonymous namespace closed around it; body byte-identical) |
+| `ir-pass/include/DagTraversal.h` / `.cpp` | `InteriorPlan::AdmitCloneCalls`, read by the interior closure scan |
+| `ir-pass/src/Uncomputation.cpp` | `preservesBorrowedParent` clause (3) and `planInteriorComponent` gated on `AdmitCloneCalls`; the planner is `collectInteriorPlansMode(…, AdmitCloneCalls)` with the PER-COMPONENT fallback; `collectInteriorPlans` is the FUNCTION-LEVEL backstop (ON vs OFF, ON only if a superset) |
+| `tools/trace_twin_equiv.py` | `result_width` (rule 1 AND rule 2); 11 new controls (31 → 42); the module docstring corrected |
+| tests | 10 lit fixtures (6 accepts, 4 leaks); 1 e2e slice (`e2e-slice-spec-clone-consumer-after-ry`) |
+
+## §R2.2 The findings, one by one
+
+**kyy1 (r1B F-r1B-1, P1) — FIXED in two layers.** The mechanism was exactly r1B's: (b′)
+widened OWNED, and the component and its ANCHOR were computed over the widened closure
+(L2 — the question my round-1 L2 section did not ask). (1) PER COMPONENT
+(`collectInteriorPlansMode`): a component holding (b′)-admitted rails is ALSO split into
+its pre-rhk5 pieces — same linking rules (`buildComponents`, one lambda), the (b′) rails
+left as borrowed parents — and the whole plan is kept only when its discharged set is a
+SUPERSET of the pieces'. (2) PER FUNCTION (`collectInteriorPlans`): the whole planner runs
+ON and OFF (OFF = the pre-rhk5 planner verbatim), and ON is used only when its FINAL
+discharged set — after the cross-plan ordering check, the only place one plan can lose
+another's discharge — is a superset of OFF's. Layer (2) is what makes "never worse than
+the pre-rhk5 planner" a CHECKED property; layer (1) is what keeps a function's other rhk5
+wins when one component regresses. ⚠ Layer (2) exists because layer (1) alone is NOT
+total, argued and not constructed: clause (3) can make a PIECE plan exist that the
+pre-rhk5 planner refused, and that piece, as an INNER plan reading an OUTER plan's rail,
+can make the ordering check drop an outer plan the pre-rhk5 planner kept.
+Measured (`results/r2_kfamily_{oracle,r1,r2}.txt`, 7 members `k01`–`k07` around `b2n`):
+`k01` (= `b2n`), `k02` (= `b2`), `k03` (Q+Q clone after the Ry), `k04` (clone consumes the
+CONDITION rail), `k06` (a second, unrelated chain beside the shape): round-2 trace
+BYTE-IDENTICAL to the ORACLE's (round 1 lost a discharge on every one). `k05` (the clone
+consumes `p` BEFORE the Ry — the whole plan must win): round-2 trace byte-identical to
+round 1's (the oracle leaks `p`). `k07`: see F-5. The PRE-EXISTING twin half (`s = p + 1`
+leaks `u` on every binary) is NOT fixed and stays under kyy1.
+
+**fb5y (r1A F-r1A-1 + F-r1A-2, P1) — FIXED.** A name is trusted only for a DECLARED
+callee; a DEFINED one goes through (B4) (recorded + walked) or refuses; (C1) requires an
+EXACT definition. Measured: r1A's `a1f` (hand IR), `a1c_c` (2-TU C) and `a5_weak_twin`
+(with its strong interposer linked at stage 3) — round-2 traces byte-identical to the
+ORACLE's (warned leak, no dirty free); round 1 freed two dirty rails silently on each.
+The residual trust — a DECLARED name-shaped callee whose body arrives in a link-time
+object — is written into `ChainWalk.h`; it is the boundary every emitter already stands
+on, not a new one.
+
+**tcpq (r1A F-r1A-3, P2) — FIXED.** Per-query memo per (function, formal slot). Measured
+(under load 200–350): r1A `a3_d12` `opt` user time ORACLE 0.25 s · round 1 **17.84 s** ·
+round 2 **0.25 s**; `a3_d10` 0.21 / 1.30 / 0.21 s. Why the cache cannot let a cycle
+license itself: `ChainWalk.h` (two reasons; the second — one query, aborted at its first
+refusal — carries the weight, so the "never memoise a provisional refusal" rule is
+belt-and-braces, and a mutant of it could not change a verdict; recorded as argued).
+
+**P3s.** r1B F-2 (width substring) FIXED by `result_width`, which reads the RESULT width
+(`_to_<W>` for a cast, `i1` for a compare) — and the same hole in RULE 2 was then found by
+this tool's own checker mutant T10, which survived every control after A9 was adopted:
+control `recompute-width-cast` added. r1B F-3: rows A9, A12, A18, A22–A28 adopted as
+controls; r1B's own `checker_mutants.py`, re-run on the new checker
+(`round2/r1B_checker_mutants_after.txt`): U3, U6, U7, U8, U9, U10, U11 now **RED**; U2/U4
+no longer apply (their anchor was the retired substring test — re-spelled as my T9/T10,
+both RED); U14 (compare commutes) RED via A12 (my T11). Still GREEN, as r1B argued them
+equivalent on real traces: U1, U5, U12, U13 — not attacked further. r1B's
+`attack_checker.py` on the new checker: **FALSE EQUIV 0 of 28**. r1B F-4 (docstring)
+FIXED. r1B F-5 (`l1` warns on a clean trace): isolated by family member `k07` (`l1`
+minus the chain) — warns on the ORACLE, round 1 and round 2 with byte-identical traces,
+and the only record at the Ry is the per-trip clone result measured in the loop body:
+bd **58tc**'s class (an in-body observation cannot be proven before the Ry through the
+back edge), with bd jr8q's by-name record classification. Pre-existing; noted on 58tc,
+not traced inside the guard. r1B F-6 / r1A F-6: (B3) CALLS `isCopyGate` (exported). r1A
+F-4: M7/M8 are separable in the accept direction — §6.1′ corrected. r1A F-5: cycle and
+cap pinned (§R2.3). r1A F-7: the L3 parenthetical corrected at the source.
+
+**z0re reviewer's addendum — `k3L`** (literal-seed controlled state prep behind a clone
+call between a derived chain and its condition): ORACLE warned leak, `trace_twin_equiv`
+DIFF; round 1 and round 2 **EQUIV** to `k3LT` (my hand-inlined twin), no warning, 0 dirty.
+Pinned by `spec_accept_clone_read_before_state_prep.ll`. The runtime-seed `k3C` needs
+z0re and is the merge gate's (the z0re twin `k3T.c` is kept as
+`rhk5_probes/src/k3T_z0re_runtime_seed.c`).
+
+## §R2.3 Fixtures and e2e
+
+Red-green through the scratch lit config on three binaries (`tools/redgreen.sh`):
+
+| fixture | ORACLE | round 1 | round 2 |
+|---|---|---|---|
+| `spec_accept_clone_consumer_after_ry_keeps_sibling.ll` (kyy1, `b2n`) | PASS | **FAIL** | PASS |
+| `spec_accept_clone_consumer_after_ry_cond_rail.ll` (kyy1, `k04`) | PASS | **FAIL** | PASS |
+| `spec_accept_clone_consumer_before_ry_whole_plan.ll` (kyy1 control, `k05`) | **FAIL** | PASS | PASS |
+| `spec_accept_clone_two_components_both_discharged.ll` (kyy1, both layers) | **FAIL** | **FAIL** | PASS |
+| `spec_leak_clone_read_defined_template_name.ll` (fb5y, r1A `a1f` body) | PASS | **FAIL** | PASS |
+| `spec_leak_clone_read_weak_twin.ll` (fb5y, r1A `a5` body) | PASS | **FAIL** | PASS |
+| `spec_leak_clone_read_twin_cycle.ll` (r1A `cyc_self_twin` body) | PASS | PASS | PASS |
+| `spec_accept_clone_read_depth_at_cap.ll` (16 pairs) | **FAIL** | PASS | PASS |
+| `spec_leak_clone_read_depth_cap.ll` (17 pairs) | PASS | PASS | PASS |
+| `spec_accept_clone_read_before_state_prep.ll` (z0re `k3L`) | **FAIL** | PASS | PASS |
+
+The leak fixtures that pass everywhere are pinned by MUTANTS (§R2.5), not by a red on a
+shipped binary. The e2e slice `e2e-slice-spec-clone-consumer-after-ry` (the 2-TU `b2n`):
+golden **byte-identical to the ORACLE's trace**, round 1 differs (`gen_golden3.sh`);
+deliberately no twin gate (the twin is the pre-existing defect).
+
+## §R2.4 Measurements (round 2)
+
+Binaries, `shasum -a 256` prefixes: **round 2** `cq-opt` `aa0dff29ea088cde195e222c`,
+`libCQPass.so` `2d9c71bc8067627a30a637e1`, `cq-opt-debugalloc` `2da6e185c4e223b67019179e`
+(snapshot `scratchpad/rhk5/bin/cq-opt.r2`, bit-identical; the mutant tree's base build is
+bit-identical too). Round 1 = `fa71e37a…` (`cq-opt.subject_v2`); ORACLE = `3f6db37f…`.
+Load: 200–350 during the first half of the round, ~2 after the 23:52 restart.
+
+* **lit, full** (`lit -j4 ir-pass/test`, `round2/lit_r2.txt`): **2425 discovered, 2424
+  passed, 1 XFAIL** (`lowering_invert_add_i32.ll`), 0 failed, 456 s under load 200–350.
+  `ls ir-pass/test/*.ll | wc -l` = **2426** after the last fixture
+  (`spec_accept_clone_two_components_both_discharged.ll`) was added; that one was run
+  on its own and in the mutant matrix (both GREEN on round 2), not in the full run.
+* **ctest, affected** (`tools/ctest_affected.sh`, `round2/ctest_affected_r2.txt`):
+  **53/53 passed** — every `spec`/`specialize` e2e slice incl. the new
+  `e2e-slice-spec-clone-consumer-after-ry`, the three `*-twin-equivalent` gates,
+  `e2e-trace-twin-equiv-selftest` (42 controls), the two regenerated libm slices, and the
+  record gates `e2e-census-slice-sync`, `e2e-keepset-vendor-check`,
+  `e2e-free-pairing-selftest`.
+* **Corpus A/B**, same four populations as round 1 (lit 2426 · e2e 615 [26 multi-TU
+  not buildable alone, NOT swept] · multi 36 · probes 307):
+  * NULL control, round 2 against itself, run FIRST: **0 movers** (`round2/ab_null_r2_twice.txt`).
+  * ORACLE vs round 2 (`round2/ab_oracle_vs_r2.txt`): **45 movers, ALL STREAM — 0 A→D,
+    0 D→A, 0 STRING, 0 unwarned→warned.** Round 1's 39, plus 4 new lit accepts
+    (`…before_ry_whole_plan`, `…before_state_prep`, `…depth_at_cap`,
+    `…two_components_both_discharged` — each an rhk5 win the oracle leaks), plus 2 new
+    probes (`k05`, `k3L` — same). The kyy1 family members `k01`–`k04`, `k06` and the new
+    slice `slice_spec_clone_consumer_after_ry` are NOT movers: byte-identical to the oracle.
+    Warned: lit 66→57, multi 6→3, probes 40→11.
+  * ROUND 1 vs round 2 (`round2/ab_r1_vs_r2.txt`): **11 movers, all STREAM**, every one
+    the round-2 fix's own population: the 3 kyy1 lit accepts (round 1 lost a discharge),
+    the 2 fb5y leak fixtures (round 1 unwarned and freed dirty; round 2 the oracle's
+    warned leak), the new e2e slice, and probes `k01`–`k04`, `k06`. **Nothing else moved**
+    — in particular none of round 1's 39 wins (the three e2e gates, the libm goldens,
+    r2B's `k2`/`g12B`, the `d*`/`f*` family) changed.
+  * Extra (railbank pairs + `example/`, `round2/ab_extra_oracle_vs_r2.txt`): 34 sources,
+    0 movers.
+* **Both reviewers' batteries** (`round2/rbattery.py`, verbatim copies of their probes,
+  argument 5; `battery_{oracle,subject_v2,r2}.txt`, joined in `battery_compare.txt`).
+  Columns: verdict, `w`arnings, 2b `d`irty template rails, trace sha / `opt` user time;
+  `=O` = round-2 trace byte-identical to the oracle's, `=R1` = to round 1's.
+
+```
+probe                          ORACLE             ROUND 1            ROUND 2            r2 twin    flags
+A:a0_writes_arg                A w1 d2 0ed92b     A w1 d2 0ed92b     A w1 d2 0ed92b                =O =R1
+A:a1_name_producer             A w1 d3 0ed92b     A w0 d1 d97223     A w1 d3 0ed92b                =O
+A:a1b_name_unc                 A w1 d2 0ed92b     A w0 d0 d97223     A w1 d2 0ed92b                =O
+A:a1c_ccopy                    A w1 d2 833a2e     A w0 d0 cf9985     A w0 d0 cf9985                =R1
+A:a1d_direct_evil              DECLINE            DECLINE            DECLINE                       =O(decl)
+A:a1e_redefine_unc             LINKFAIL           LINKFAIL           LINKFAIL                      
+A:a1f_evil_after_uncompute     A w1 d3 44892e     A w0 d1 cb3cf0     A w1 d3 44892e                =O
+A:c1_deadterm_hostile          DECLINE            DECLINE            DECLINE                       =O(decl)
+A:c2_deadterm_hostile_nomq     A w1 d1 665a57     A w1 d1 665a57     A w1 d1 665a57                =O =R1
+A:cyc_self_twin                A w1 d2 69693d     A w1 d2 69693d     A w1 d2 69693d                =O =R1
+A:m8_twin_unrecorded_helper    A w1 d2 0cfb19     A w1 d2 0cfb19     A w1 d2 0cfb19                =O =R1
+A:m8_unrecorded_cqrt           DECLINE            DECLINE            DECLINE                       =O(decl)
+A:a5_weak_twin                 A w1 d2 44892e     A w0 d0 cb3cf0     A w1 d2 44892e                =O
+A:a1c_c                        A w1 d2 44892e     A w0 d0 cb3cf0     A w1 d2 44892e                =O
+A:a2_d3                        A w1 d2 0.19s      A w0 d0 0.19s      A w0 d0 0.19s                 
+A:a2_d6                        A w1 d2 0.20s      A w0 d0 0.19s      A w0 d0 0.20s                 
+A:a2_d9                        A w1 d2 0.20s      A w0 d0 0.20s      A w0 d0 0.20s                 
+A:a2_d12                       A w1 d2 0.23s      A w0 d0 0.24s      A w0 d0 0.24s                 
+A:a3_d6                        A w1 d2 0.20s      A w0 d0 0.20s      A w0 d0 0.20s                 
+A:a3_d8                        A w1 d2 0.20s      A w0 d0 0.26s      A w0 d0 0.20s                 
+A:a3_d10                       A w1 d2 0.21s      A w0 d0 1.30s      A w0 d0 0.21s                 
+A:a3_d12                       A w1 d2 0.25s      A w0 d0 17.84s     A w0 d0 0.25s                 
+A:a4_mem                       DECLINE            DECLINE            DECLINE                       =O(decl)
+A:a4b_rot                      DECLINE            DECLINE            DECLINE                       =O(decl)
+A:d4                           A w1 d2 ee7013     A w0 d0 135eab     A w0 d0 135eab                =R1
+A:b1_after_ry                  A w0 d1 83ae7d     A w0 d1 83ae7d     A w0 d1 83ae7d     DIFF       =O =R1
+A:b2_twoclones                 A w1 d2 7a315a     A w0 d0 738a18     A w0 d0 738a18     EQUIV      =R1
+A:b3_condcall                  A w1 d2 4c4c16     A w1 d1 b17b98     A w1 d1 b17b98     EQUIV      =R1
+A:b4_loopcall                  A w1 d2 50aa9f     A w1 d0 4c9f0f     A w1 d0 4c9f0f     n/a        =R1
+A:b5_mc_inwindow               A w1 d2 ec4641     A w1 d0 07fe6d     A w1 d0 07fe6d     EQUIV      =R1
+A:comp_deadslot                A w1 d2 40ec85     A w0 d0 2983a4     A w0 d0 2983a4     EQUIV      =R1
+B:b0                           A w1 d2 ee7013     A w0 d0 135eab     A w0 d0 135eab     EQUIV      =R1
+B:b1                           A w1 d1 82e2d4     A w0 d0 60a022     A w0 d0 60a022     EQUIV      =R1
+B:b14                          A w1 d2 224805     A w0 d0 440ab7     A w0 d0 440ab7     DIFF       =R1
+B:b2                           A w0 d1 ab78ec     A w1 d2 b3d88f     A w0 d1 ab78ec     DIFF       =O
+B:b2n                          A w0 d1 90942c     A w1 d2 783381     A w0 d1 90942c     DIFF       =O
+B:b3                           A w1 d2 597c2d     A w0 d0 b37eba     A w0 d0 b37eba     EQUIV      =R1
+B:b4                           A w1 d2 c6ae86     A w0 d0 fa06e6     A w0 d0 fa06e6     DIFF       =R1
+B:b5                           A w1 d2 f956e2     A w0 d0 35684d     A w0 d0 35684d     EQUIV      =R1
+B:b6                           A w1 d2 ee7013     A w0 d0 135eab     A w0 d0 135eab     EQUIV      =R1
+B:c1                           DECLINE            DECLINE            DECLINE                       =O(decl)
+B:c2                           DECLINE            DECLINE            DECLINE                       =O(decl)
+B:c3                           DECLINE            DECLINE            DECLINE            n/a        =O(decl)
+B:c4                           DECLINE            DECLINE            DECLINE                       =O(decl)
+B:c5                           A w1 d1 ebeef9     A w0 d0 8e5c1f     A w0 d0 8e5c1f     DIFF       =R1
+B:k2x                          A w1 d1 336b56     A w0 d0 843225     A w0 d0 843225     DIFF       =R1
+B:l1                           A w1 d2 50aa9f     A w1 d0 4c9f0f     A w1 d0 4c9f0f     n/a        =R1
+B:l2                           A w1 d2 a4f36d     A w1 d1 082812     A w1 d1 082812     EQUIV      =R1
+B:r2B_g12B                     A w1 d1 0bb081     A w0 d0 54c5bc     A w0 d0 54c5bc     DIFF       =R1
+B:r2B_k2                       A w1 d1 550d98     A w0 d0 74596a     A w0 d0 74596a     DIFF       =R1
+B:r2B_k2F                      A w1 d1 550d98     A w0 d0 74596a     A w0 d0 74596a     DIFF       =R1
+B:r2B_k2T                      A w1 d1 550d98     A w0 d0 74596a     A w0 d0 74596a     DIFF       =R1
+B:v1                           DECLINE            DECLINE            DECLINE            n/a        =O(decl)
+B:z1                           A w1 d2 429e8f     A w0 d0 9f4c9e     A w0 d0 9f4c9e     EQUIV      =R1
+B:z2                           DECLINE            DECLINE            DECLINE            n/a        =O(decl)
+```
+
+  Reading it: every r1A hostile-twin probe round 1 ADMITTED (`a1_name_producer`,
+  `a1b_name_unc`, `a1f`, `a5_weak_twin`, `a1c_c`) is `=O` on round 2 — the oracle's warned
+  leak. Every r1B kyy1 exhibit (`b2`, `b2n`) is `=O`. Every other accept is `=R1` — the
+  round-1 win kept (`d4`, `b0`–`b6`, `c5`, `k2x`, `l1`, `l2`, r2B's four, `z1`,
+  `comp_deadslot`, `b2_twoclones`, …). `a1c_ccopy` (r1A's CONTROL: a twin reading `k` as a
+  controlled copy's SOURCE) is admitted on rounds 1 and 2 — correctly; its 2b
+  `viol=1` is present on all three binaries (pre-existing, the twin names `out` as both
+  control and destination). Depth probes: `a3_d12` `opt` user time **0.25 / 17.84 / 0.25 s**
+  (oracle / round 1 / round 2), `a3_d10` 0.21 / 1.30 / 0.21 s. Declines are the same
+  string on all three binaries (`=O(decl)`).
+* **kyy1 family** (`results/r2_kfamily_{oracle,r1,r2}.txt`, `tools/battery.py`, 2-TU C
+  with hand-inlined twins): see §R2.2 — `k01`–`k04`, `k06` byte-identical to the oracle,
+  `k05` byte-identical to round 1, `k07` identical on all three.
+* **`k3L`** (argument `13 6`): round 2 `trace_twin_equiv` **EQUIV** to `k3LT`, warn 0,
+  dirty 0; oracle DIFF, warned, dirty 2.
+* **`tools/trace_twin_equiv.py`**: selftest **42/42**; r1B's `attack_checker.py` **FALSE
+  EQUIV 0 of 28** (was 1 — A9); my checker mutants T0–T11 all as required
+  (`results/equiv_tool_mutants_r2.txt`, T9/T10/T11 new); r1B's U-mutants: §R2.2.
+* **Code map**: `update_code_map.py` then `--check` → exit 0.
+
+## §R2.5 Mutants of the new conjuncts (9 + a null — one over the ≤8 budget — two of them re-spelled)
+
+`tools/mutants_r2.py` in the scratch mutant tree (synced to round 2; base bit-identical
+`aa0dff29…`; NULL `N0_null` bit-identical to the base; tree restored and rebuilt identical
+after), `tools/mutmatrix.sh` over the 411 fixtures matching
+`spec_|uncompute|clone|interior|live_record`, controls round 2 (0 failures) and ORACLE
+(10 failures — the rhk5 accepts, as expected). `round2/mutmatrix_r2_subset.txt`:
+
+| mutant | what it breaks | failures | killed by |
+|---|---|---|---|
+| N0_null | a comment | 0 | (control) |
+| R1_name_trusts_defined | a DEFINED callee with a forward-template NAME admitted by that name (round 1's hole, exactly) | 1 | `spec_leak_clone_read_defined_template_name` (re-spelled — see below) |
+| R2_interposable_ok | `hasExactDefinition` → `!isDeclaration` | 1 | `spec_leak_clone_read_weak_twin` |
+| R3_cycle_licenses | a cycle returns YES | 1 | `spec_leak_clone_read_twin_cycle` |
+| R4_no_depth_cap | cap deleted | 1 | `spec_leak_clone_read_depth_cap` |
+| R5_cap_15 | cap 16 → 15 | 1 | `spec_accept_clone_read_depth_at_cap` |
+| R6_copy_dst_admitted | (B3) admits the copy DESTINATION | 1 | `spec_leak_clone_read_twin_copy_dst` |
+| R7_whole_plan_always | per-component fallback never taken | 1 | `spec_accept_clone_two_components_both_discharged` |
+| R8_pieces_always | per-component fallback always taken | 3 | `…before_ry_whole_plan`, `…consumes_chain_rail`, `lowering_live_record_sibling_clone_arg_measured_accept` |
+| R9_no_function_backstop | function-level ON/OFF comparison removed | **0** | **SURVIVES** |
+
+* ⚠ **R1's FIRST SPELLING DID NOT RE-OPEN THE HOLE IT WAS NAMED FOR.** `if (UCallee) {`
+  sent EVERY defined callee — the recorded inner clones included — into the name
+  vocabulary, which refuses a `__cq_q_*` name, so the walk refused at the first inner
+  clone and never reached the evil call: it killed two nested ACCEPTS
+  (`…read_in_discharge_window_nested`, `…read_depth_at_cap`) and left
+  `spec_leak_clone_read_defined_template_name.ll` GREEN (`round2/mutmatrix_r2_subset.txt`).
+  Found by reading the mutant's lowered IR, not assumed. Re-spelled as round 1's exact
+  behaviour — `isDeclaration() || isTemplateProducer(UC)` — it is killed by exactly the
+  fb5y fixture and nothing else (`round2/mutmatrix_r2_R1respell.txt`). The first
+  spelling is kept in the record as what it is: a different mutant ("defined callees are
+  never walked"), whose two kills pin (B4)'s reach.
+* **R7's first spelling was EQUIVALENT BY CONSTRUCTION** (`bool FullWins = true;` — the
+  superset loop right below reset it; `round2/mutmatrix_r2_subset_R7first.txt`, 0
+  failures). Diagnosed from the code, re-spelled so the fallback branch is dead
+  (`round2/mutmatrix_r2_R7respell.txt`): killed by exactly the one fixture built to pin
+  layer (1) on its own. Counted as one mutant, not two.
+* **R9 survives** the subset AND the 325-fixture multi-`define` complement
+  (`round2/mutmatrix_r2_multidef_R9.txt`), and a full corpus A/B round 2 vs R9
+  (`round2/ab_r2_vs_R9.txt`) moves **0 of 3,384** modules. Layer (2) — the function-level
+  backstop — changes no module anywhere in the tree; it is UNPINNED, its distinguishing
+  input (§R2.6) argued and not constructed. Belt-and-braces by measurement, and an
+  `e1gr`-shaped item.
+* Not re-run: round 1's M1–M8 (their conjuncts moved but their files did not change
+  meaning: M7/M8 are the scope limiters r1A F-r1A-4 describes).
+
+## §R2.6 What round 2 did NOT do
+
+* **The kyy1 twin half** (M-B component granularity leaks the dead sibling for the
+  hand-inlined twin too) — pre-existing, left under kyy1. Splitting components by
+  consumer anchor was r1B's other suggestion; not attempted (it changes shipped streams
+  outside rhk5's population and owes its own round).
+* **Layer (2)'s distinguishing input was not constructed.** The function-level backstop
+  exists for an argued case (a clause-(3)-enabled piece dropping an outer plan through
+  the cross-plan ordering check); no fixture reaches it, so mutant R9 is expected to
+  survive (§R2.5) and that is recorded, not hidden.
+* **r1B's surviving checker mutants U1, U5, U12, U13** — argued equivalent by r1B; no
+  controls added.
+* **The residual name trust** (a DECLARED name-shaped callee supplied by a link-time
+  object) — stated in `ChainWalk.h`, not fenced; it is the same boundary every emitter
+  stands on.
+* **Allocator sweeps** — not re-run (brief: only if the memo changes allocation-sensitive
+  state). It does not: the memo is a local `DenseMap` that lives for one query and is
+  keyed on `Function *` of bodies that are final while it exists; no side table persists
+  across stages, no pointer outlives an erase.
+* **Full `ctest -j6`**, `e2e-loop-twin-matrix`, `cq-opt-equivalence-full`, `+Asserts`,
+  `taintset-scrub-guard` (no `TaintSet` member changed) — not run.
+* **`k3C`** (runtime seed) — needs z0re; for the merge gate on the composed binary.
+
+## §R2.7 ATTACK FIRST (round 2)
+
+1. **The ON/OFF comparison is on DISCHARGED RAIL SETS, not on circuits.** It guarantees
+   the pre-rhk5 compiler's discharges are all present; it does NOT compare where they
+   are placed. A rail discharged by ON at a DIFFERENT anchor than OFF discharges it at is
+   counted as present. Attack: a program where ON discharges the same rail set as OFF
+   but one discharge moves to a point that is wrong for a reason clause (d) does not see.
+2. **Clause (3) inside a PIECE plan.** The pieces are planned with clause (3) ON (the
+   (b′) rails as borrowed parents, a clone call reading them admitted). So a piece can
+   exist that the pre-rhk5 planner refused — the case layer (2) is the backstop for.
+   Construct it (a loop + a multiplicity split + a clone call in the inner plan's window)
+   and check the ordering-check interaction.
+3. **`hasExactDefinition()` is the whole F-r1A-2 fix.** It also refuses `weak_odr` /
+   `linkonce_odr` clones (conservative — the specializer builds `internal` ones). Try an
+   `alias`, an `ifunc`, a `define available_externally` pre-supplied twin, and a twin
+   reached through a `bitcast` of a function pointer.
+4. **"A DECLARED callee is the runtime."** A pre-supplied twin calling a DECLARED
+   `cq_template_evil_i32` whose body comes from a separate object is accepted. The claim
+   is that this is no different from a user object overriding `cq_template_add_i32_hl`
+   for every emitter; attack that claim if you think the clone walk makes it worse.
+5. **The memo.** One query, aborted at the first refusal — check there is no path where
+   a query continues after a `NoProvisional` (the recursion returns it upward through
+   `clonePassPreserves` and `formalLabelPreserved` without being swallowed).
+6. **The two-layer redundancy is itself an `e1gr` shape** for single-component
+   functions: layer (1) is individually pinned only by
+   `spec_accept_clone_two_components_both_discharged.ll`, and layer (2) by nothing.
+7. **The kyy1 family is 7 members plus `b2`/`b2n`.** Shapes not built: a (b′) rail read
+   by TWO clone calls on opposite sides of the Ry; a (b′) chain whose clone consumer is
+   in a loop body; a (b′) rail that is also a borrowed parent of a THIRD component.

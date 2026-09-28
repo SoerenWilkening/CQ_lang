@@ -1462,6 +1462,13 @@ bool isQramArrayHandle(const CallInst *CI) {
 // (re-verified by the Inc-3 Rule-13 round, 2026-08-28).
 // The family is SELF-INVERSE, so there is no `_unc`/`_inv` twin to exclude
 // (cq_runtime.h:269, :317).
+//
+// EXPORTED (bd rhk5 round 2, Rule 14 — r1A F-r1A-6 / r1B F-6): `ChainWalk`'s
+// clone-body proof asks the same ABI fact, and its first spelling re-derived it
+// inline. The anonymous namespace is closed around this one definition only; the
+// body is unchanged.
+}  // namespace
+
 bool isCopyGate(const CallInst *CI) {
   if (!CI->getType()->isVoidTy())
     return false;
@@ -1470,6 +1477,8 @@ bool isCopyGate(const CallInst *CI) {
     return false;
   return CI->arg_size() == 2 || CI->arg_size() == 3;
 }
+
+namespace {
 
 // What the walk does with a value it has reached.
 enum class RailKind {
