@@ -546,11 +546,16 @@ RY_REGION = {
     # A permanent decline, in the loop and out of it; one cell is the whole
     # witness (the family lives in `control_inplace_ry_reject_cond_register.ll`).
     "rcond": "        if (a == 5) { a = cq_theta(a, 0.9); }\n",
-    # SCOPED OUT of Inc 3: `clang -O1` never hands this to the pass as a diamond
-    # — SimplifyCFG merges the two arms into ONE call with a `select` on the
-    # ANGLE, which is bd drbq Inc 2b's by-difference shape, and the IN-LOOP form
-    # of that is not this increment's. One cell, so that a future increment which
-    # accidentally widens into it turns this table red.
+    # SCOPED OUT of Inc 3 — when this was written `clang -O1` never handed this
+    # to the pass as a diamond: SimplifyCFG merged the two arms into ONE call with
+    # a `select` on the ANGLE (bd drbq Inc 2b's by-difference shape), and the
+    # IN-LOOP form of that was not this increment's. One cell, so that a future
+    # increment which accidentally widens into it turns this table red.
+    # ⚠ THAT TRIGGER FIRED ON 2026-09-28 (bd test_C_libtooling-fmt3), and not by
+    # accident: `include/CQ.h` puts `nomerge` on every `cq_theta_*` (owner ruling,
+    # option B), so the if/else stays an if/else, reaches the rolled in-place Ry
+    # arm's if/else form, and the cell is now ACCEPT-IDENTICAL (expected file
+    # updated by hand, with the reason, in the same change).
     "rifelse": "        if (a == 5) { r = cq_theta(r, 0.9); }"
                " else { r = cq_theta(r, 0.3); }\n",
     # ── the OPAQUE-THRESHOLD family, and it is not decoration: it is this
@@ -3645,6 +3650,9 @@ EXPECTED_HEADER = """\
 #   `control flow under quantum control`, not an R4-specific one, so a future
 #   R4 message change moves this row), and `m_none_rifelse_none_none_none` is the
 #   drbq Inc 2b angle-select shape, scoped OUT of Inc 3.
+#   ⚠ (2026-09-28, bd test_C_libtooling-fmt3) `m_none_rifelse_none_none_none` is
+#   now ACCEPT-IDENTICAL: CQ.h's `nomerge` on `cq_theta_*` keeps the if/else an
+#   if/else, so it is no longer the angle-select shape — see the expected file.
 #
 # ── bd test_C_libtooling-drbq INCREMENT 3 — 15 CELLS ARE NOT IN THIS FILE AT
 #    ALL, AND THAT IS DELIBERATE (2026-09-04) ──────────────────────────

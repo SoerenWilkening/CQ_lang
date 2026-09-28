@@ -10,6 +10,13 @@
 ; SHAPE (exactly what `clang -O1` produces — SimplifyCFG merges the two arms of
 ; `if (c) r = R(r, A); else r = R(r, B);` into ONE call with a `select` on the
 ; ANGLE, so the branch CFG is gone before the pass runs, Rule 9).
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): for `cq_theta` the sentence above is
+; no longer true. `include/CQ.h` puts `nomerge` on every `cq_theta_*`, so `-O1` keeps
+; that if/else an if/else (it lowers through the in-place Ry arm, the same unitary).
+; THIS select shape now comes from C only when the select is written out,
+; `r = cq_theta(r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
+; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
+; unchanged; only the C spelling that reaches them moved.
 ;
 ; LOWERED BY DIFFERENCE (control-in-place-PRD §12.3): `R(h, B)` unconditional,
 ; the ordinary flag mint, ONE `cqrt_{ry,rz}_<W>_controlled(f, h, A-B)`, the

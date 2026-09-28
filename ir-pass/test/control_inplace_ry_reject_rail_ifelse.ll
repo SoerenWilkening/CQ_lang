@@ -5,6 +5,11 @@
 ; ONE `cq_theta` call whose ANGLE is a tainted-condition `select`, which is
 ; `classifyAngleSelect`'s Ry stem and is sub-increment **l4x4.a**, a separate
 ; increment. So this is a hand-IR shape and the decline is a SCOPE boundary.
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): NO LONGER UNREACHABLE FROM PLAIN C. With
+; `nomerge` on every `cq_theta_*` (CQ.h) the two arms are not merged, so
+; `bool b = …; if (b) r = cq_theta(r,A); else r = cq_theta(r,B);` arrives as this
+; if/else and declines here with the SAME string it got at the l4x4.a gate before
+; (`fmt3_probes/src/n23.c`, measured on both headers).
 ;
 ; WHY IT IS NOT FREE. l4x4.b's answer to anti-control is Ry ADDITIVITY —
 ; `ry(h,θ); cry(h_b,h,−θ)` — argued and pinned for ONE content arm. For two the

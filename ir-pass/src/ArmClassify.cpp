@@ -921,10 +921,25 @@ CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
 //
 // THE RESIDUAL that argument leaves is REAL and is written down rather than
 // implied (PRD §14.2b / §14.11 Q3, notes §12): InstCombine's RELATIONSHIP folds
-// (`x - x`, `simplifyWithOpReplaced`) can mint a constant no lattice sees, and
-// every one measured DELETES the register — which is the DELETED-REGISTER
-// residual §14.11 Q3 already owns, re-measured in notes §12. That is a
-// measurement over the round-1/round-3 program corpus, not a theorem.
+// (`x - x`, `simplifyWithOpReplaced`) can mint a constant no lattice sees. The
+// sentence that stood here said "every one measured DELETES the register — which
+// is the DELETED-REGISTER residual §14.11 Q3 already owns". ⚠ THAT WAS FALSE
+// (bd test_C_libtooling-fmt3, 2026-09-28, measured): SimplifyCFG sinks two
+// `cq_theta` arms that differ in ONE operand, FoldTwoEntryPHINode builds
+// `select (q == 20), t, 5`, and `simplifyWithOpReplaced(t, q := 20)` folds it to
+// the literal with `t` LIVE and MEASURED (`fmt3_probes/src/n13.c`, `n14.c`,
+// `n17.c`, `n17f.c`) — and, worse, the branch whose edge proved the pin was
+// ERASED, so this function's question (asked on the REGION's own two edges) could
+// not see it at all, and in the no-region members there was no region to ask
+// about. That class is closed UPSTREAM, not here: `include/CQ.h` puts `nomerge`
+// on every `cq_theta_*`, so the arms are never merged and the erasing fold never
+// happens (owner ruling, option B). What survives of this paragraph is the
+// DELETED-register residual (§14.11 Q3) for the non-merge relationship folds,
+// still a measurement and not a theorem. The other premise above — "the seed can
+// only BE a fold if `clang` PERFORMED that fold [with this machinery]" — also
+// assumed the pinning edge is the region's own; with the merge gone that
+// assumption is what `nomerge` now guarantees, and a future `-O1` transform that
+// erases a branch WITHOUT merging calls would re-open it (retirement trigger).
 //
 // MONOTONE, exactly as before: this block only ever DECLINES. A range that is
 // too WIDE loses a decline (the residual); a range that is too NARROW, or a
@@ -5103,11 +5118,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //     `ry(h,θ); cry(h_b,h,−θ)` — see `emitInPlaceRotationRegion` step 2)
       //     was argued and pinned for ONE arm. Chaining it for two
       //     (`ry(h,B); cry(h_b,h,−B); cry(h_b,h,A)`) is a different emission
-      //     order with a different M-β target and owes its own round. UNREACHABLE
-      //     FROM PLAIN C — `-O1` (SimplifyCFG) merges two rotation arms into ONE
-      //     call with an ANGLE SELECT, which is `classifyAngleSelect`'s Ry stem
-      //     and is sub-increment l4x4.a — so this is a hand-IR decline, and it is
+      //     order with a different M-β target and owes its own round. It is
       //     `kBareRailCondReason` because the refusal is about the condition kind.
+      //     ⚠ REACHABLE FROM PLAIN C SINCE bd test_C_libtooling-fmt3 (2026-09-28).
+      //     This used to say "UNREACHABLE FROM PLAIN C — `-O1` (SimplifyCFG)
+      //     merges two rotation arms into ONE call with an ANGLE SELECT", and that
+      //     stopped being true when `include/CQ.h` put `nomerge` on every
+      //     `cq_theta_*`: `bool b = …; if (b) r = cq_theta(r,A); else
+      //     r = cq_theta(r,B);` now arrives as this two-arm if/else and declines
+      //     HERE (`fmt3_probes/src/n23.c`, measured) with the SAME string it got at
+      //     `classifyAngleSelect`'s l4x4.a gate before — so the verdict and the
+      //     diagnostic are unchanged; only the fence that speaks moved.
       if (RailCond && Arms.size() > 1)
         return declineRailClass();
       // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
@@ -5277,11 +5298,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // rails except a reading in which SSA names are wires. The observation is
         // on the owner's desk as PRD §14.11 Q4; do NOT "fix" it here.
         //
-        // From plain C this clause is unreachable: `-O1` (SimplifyCFG) merges the
-        // two arms into ONE theta with a tainted-condition ANGLE SELECT, which
-        // lands in `classifyAngleSelect` and is refused at S3 (probe `p14a`,
-        // `rotation angle`; see control_angle_select_reject_state_prep.ll and
-        // PRD §14.11 Q5 / follow-on `drbq.13`).
+        // ⚠ REACHABLE FROM PLAIN C SINCE bd test_C_libtooling-fmt3 (2026-09-28).
+        // It used to be unreachable because `-O1` (SimplifyCFG) merged the two
+        // arms into ONE theta with a tainted-condition ANGLE SELECT, refused at
+        // `classifyAngleSelect`'s S3 (probe `p14a`, `rotation angle`;
+        // control_angle_select_reject_state_prep.ll, PRD §14.11 Q5 / `drbq.13`).
+        // With `nomerge` on every `cq_theta_*` (CQ.h) the if/else survives:
+        // drbq.13's own counter-example `if (t == 5) r = cq_theta(t,.9); else
+        // r = cq_theta(5,.3);` and fmt3's no-region member `n9.c` now decline
+        // HERE (`fmt3_probes/src/d13a1.c`, `n9.c`, measured; pinned by
+        // `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`). The
+        // ANGLE-SELECT spelling (`r = cq_theta(SEED, c ? A : B)`) still reaches S3.
         //
         // ⚠ THE STRING IS SPLIT BY WHAT THE OTHER ARM IS, ADDED 2026-09-05
         // (round-1 Rule-13 review, lens L7 finding F-L7-8, owner-approved in the
@@ -8294,14 +8321,19 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
 // ---- ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3, bd
 //      test_C_libtooling-drbq Inc 2b) — BOTH ROTATION STEMS ------------------
 //
-// THE SHAPE, which is exactly what `clang -O1` makes of the C the user writes:
+// THE SHAPE, which is what `clang -O1` makes of the C the user writes:
 //
-//     if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);   // or cq_phi
-//     r = cq_theta(r, q == 5 ? A : B);                           // same IR
+//     r = cq_theta(r, q == 5 ? A : B);                  // the select, written out
+//     if (q == 5) cq_phi(A); else cq_phi(B);            // Rz stem: still merged
 //
-// SimplifyCFG merges the two arms into ONE call whose ANGLE is a select, so the
-// branch CFG is GONE before the pass runs (Rule 9) and there is no diamond to
-// route:
+// ⚠ CHANGED 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling, option B): the
+// if/else `if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);` NO LONGER
+// reaches this function. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
+// (the same merge could erase a branch and hand the pass a different program),
+// so that if/else stays an if/else and lowers through the in-place Ry arm. For
+// `cq_phi` (no `nomerge`) SimplifyCFG still merges the two arms into ONE call
+// whose ANGLE is a select, so the branch CFG is GONE before the pass runs
+// (Rule 9) and there is no diamond to route. Either way the IR is:
 //
 //     %c = icmp eq i32 %q, 5
 //     %a = select i1 %c, double A, double B          ; A, B CLASSICAL

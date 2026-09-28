@@ -28,22 +28,64 @@
 extern "C" {
 #endif
 
-/* cq_theta — Ry(θ) rotation; the sole taint source. */
-bool                cq_theta_i1  (bool               x, double angle);
-char                cq_theta_c   (char               x, double angle);
-signed char         cq_theta_si8 (signed char        x, double angle);
-unsigned char       cq_theta_ui8 (unsigned char      x, double angle);
-short               cq_theta_si16(short              x, double angle);
-unsigned short      cq_theta_ui16(unsigned short     x, double angle);
-int                 cq_theta_si32(int                x, double angle);
-unsigned int        cq_theta_ui32(unsigned int       x, double angle);
-long                cq_theta_sl  (long               x, double angle);
-unsigned long       cq_theta_ul  (unsigned long      x, double angle);
-long long           cq_theta_sll (long long          x, double angle);
-unsigned long long  cq_theta_ull (unsigned long long x, double angle);
-float               cq_theta_f32 (float              x, double angle);
-double              cq_theta_f64 (double             x, double angle);
-_Float16            cq_theta_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
+/* cq_theta — Ry(θ) rotation; the sole taint source.
+
+   EVERY cq_theta_* DECLARATION CARRIES `nomerge` (bd test_C_libtooling-fmt3,
+   owner ruling 2026-09-28, option B). `clang -O1` may otherwise MERGE two
+   cq_theta calls that CQ reads as DIFFERENT registers, and the merge erases
+   the branch between them — after which no pass can recover what the source
+   said. Measured (inc1-records/session-2026-09-28-parallel/TRACK_FMT3.md §1):
+
+       int t = q / 4;  int r = 5;
+       if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+
+   IPSCCP substitutes t := 5 into the first arm, the two arms become the
+   identical call cq_theta(5, .9), and the late SimplifyCFG hoists the pair
+   and DELETES the inner branch. The module that reaches cq-lowering is then
+   the stage-1 IR of the unrelated LEGITIMATE program
+   `if (q2 > 3) r = cq_theta(5, .9);` — identical, trace for trace — so it
+   was compiled as a fresh |5> prep and `t` was never rotated. A second
+   route (sink the two calls with ONE phi, fold `select (q == 20), t, 5` by
+   simplifyWithOpReplaced) produces the SAME module from a source whose
+   rotated register is NOT the compare's operand, so the two readings cannot
+   be told apart in IR by anything, and neither from the legitimate one.
+   `nomerge` keeps both calls and the branch; the pass then sees the shape
+   and declines it (nested control / two-rail if/else / 2c) instead of
+   silently accepting a different program.
+
+   ⚠ COST, ACCEPTED BY THE OWNER: the IF/ELSE spelling over ONE register,
+   `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);`, no longer folds into
+   one call with a SELECTED ANGLE; it lowers as two controlled Ry — the same
+   unitary. The TERNARY spelling `r = cq_theta(r, c ? A : B);` still produces
+   the select-angle call directly (no merge needed) and still reaches
+   AngleSelectEmit's by-difference Ry stem. `cq_phi` and `cq_measure`
+   deliberately do NOT carry `nomerge` (TRACK_FMT3.md §9.6).
+
+   ⚠ A compiler without the attribute is REFUSED below rather than silently
+   re-opening the merge: CQ's stage 1 is stock clang, where it exists. */
+#if defined(__has_attribute)
+#  if __has_attribute(nomerge)
+#    define CQ_THETA_NOMERGE_ __attribute__((nomerge))
+#  endif
+#endif
+#ifndef CQ_THETA_NOMERGE_
+#  error "CQ.h: this compiler lacks __attribute__((nomerge)); cq_theta calls could be merged across branches (bd fmt3)"
+#endif
+CQ_THETA_NOMERGE_ bool                cq_theta_i1  (bool               x, double angle);
+CQ_THETA_NOMERGE_ char                cq_theta_c   (char               x, double angle);
+CQ_THETA_NOMERGE_ signed char         cq_theta_si8 (signed char        x, double angle);
+CQ_THETA_NOMERGE_ unsigned char       cq_theta_ui8 (unsigned char      x, double angle);
+CQ_THETA_NOMERGE_ short               cq_theta_si16(short              x, double angle);
+CQ_THETA_NOMERGE_ unsigned short      cq_theta_ui16(unsigned short     x, double angle);
+CQ_THETA_NOMERGE_ int                 cq_theta_si32(int                x, double angle);
+CQ_THETA_NOMERGE_ unsigned int        cq_theta_ui32(unsigned int       x, double angle);
+CQ_THETA_NOMERGE_ long                cq_theta_sl  (long               x, double angle);
+CQ_THETA_NOMERGE_ unsigned long       cq_theta_ul  (unsigned long      x, double angle);
+CQ_THETA_NOMERGE_ long long           cq_theta_sll (long long          x, double angle);
+CQ_THETA_NOMERGE_ unsigned long long  cq_theta_ull (unsigned long long x, double angle);
+CQ_THETA_NOMERGE_ float               cq_theta_f32 (float              x, double angle);
+CQ_THETA_NOMERGE_ double              cq_theta_f64 (double             x, double angle);
+CQ_THETA_NOMERGE_ _Float16            cq_theta_f16 (_Float16           x, double angle);  /* Phase 7.1 Inc D */
 
 /* cq_phi — BRANCH PHASE (bd test_C_libtooling-3qlq Inc 1, PRD
    `retire-swap-route-PRD.md` §4.1, owner decision D1, 2026-09-05).
@@ -108,7 +150,7 @@ _Float16            cq_measure_f16 (_Float16           x);  /* Phase 7.1 Inc D *
        so a separate arm would be a duplicate-type error).
    The angle operand stays `double` at every width (Rule 3). */
 #if __LDBL_MANT_DIG__ == 64
-long double         cq_theta_f80 (long double         x, double angle);
+CQ_THETA_NOMERGE_ long double         cq_theta_f80 (long double         x, double angle);
 long double         cq_measure_f80 (long double        x);
 #  define CQ_THETA_LDBL_   long double: cq_theta_f80,
 #  define CQ_MEASURE_LDBL_ long double: cq_measure_f80,

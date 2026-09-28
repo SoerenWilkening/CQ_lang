@@ -170,7 +170,9 @@ dispatch on.
 #include <stdbool.h>
 #include <stdint.h>
 
-/* Per-type specializations — return type matches operand type */
+/* Per-type specializations — return type matches operand type.
+   EVERY cq_theta_* declaration carries __attribute__((nomerge)) through the
+   CQ_THETA_NOMERGE_ macro (bd fmt3; "Why `nomerge`" below). Omitted here. */
 bool                cq_theta_i1  (bool               x, double angle);
 char                cq_theta_c   (char               x, double angle);
 signed char         cq_theta_si8 (signed char        x, double angle);
@@ -224,6 +226,50 @@ Two notes on the dispatch:
   (`_sl` vs `_sll`) identifies the operand at the call site, and Clang
   lowers `long` and `long long` to whatever LLVM integer width matches
   the target ABI.
+
+#### Why every `cq_theta_*` is `nomerge` (bd `test_C_libtooling-fmt3`, owner ruling 2026-09-28)
+
+`cq_theta(x, θ)` on a quantum `x` rotates **that register**; on a classical `x`
+it prepares a **fresh** one. Register identity is therefore part of what a call
+means, and it is not part of C's value semantics — so `clang -O1` is free to treat
+two `cq_theta` calls with equal operands as the same call. It does, and the result
+can be a *different program*:
+
+```c
+int t = q / 4;  int r = 5;
+if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+```
+
+IPSCCP substitutes `t := 5` into the first arm, both arms become the identical call
+`cq_theta(5, .9)`, and the late SimplifyCFG hoists the pair and **deletes the inner
+branch**. What reaches the pass is, instruction for instruction, the stage-1 IR of
+the unrelated program `if (q2 > 3) r = cq_theta(5, .9);` — which prepares a fresh
+`|5⟩` and never rotates `t`. A second route (sink two calls that differ in one
+operand, then fold `select (q == 20), t, 5` to `5` by InstSimplify's
+`simplifyWithOpReplaced`) produces the **same module** from a source whose rotated
+register is *not* the compare's operand. Because those programs and the legitimate
+one are the same IR, **no pass-side fence can separate them** (a coarse fence was
+measured: it cannot reach the members with no enclosing region at all, where the
+merge leaves an *unconditional* prep, and it declines the owner's own cascade and
+Grover slices). The evidence exists only until SimplifyCFG runs, so the fix is in
+the header: `__attribute__((nomerge))` forbids merging the calls, the branch
+survives, and the pass declines the shape it now sees (nested control / an if/else
+of two rails / a rotation on the condition's wire) instead of accepting a different
+program. The measurements are in
+`docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/TRACK_FMT3.md`.
+
+**The accepted cost.** `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);` — an
+if/else over **one** register — used to be folded into one call with a *selected
+angle* (the Ry stem of the angle select). The if/else spelling no longer folds: it
+stays an if/else and lowers as two controlled Ry, the same unitary. The **ternary**
+spelling `r = cq_theta(r, c ? A : B);` produces the select-angle call directly (no
+merge is involved) and still reaches the angle select's by-difference Ry stem,
+byte-identical to what the folded if/else used to give. `cq_phi` and `cq_measure` do **not** carry
+`nomerge`: a branch phase has no register whose identity a merge could confuse, so
+`if (c) cq_phi(A); else cq_phi(B);` still folds to `cq_phi(c ? A : B)`.
+
+A compiler without `nomerge` is refused with an `#error` rather than silently
+re-opening the merge.
 
 ### 3.2 `cq_theta` (Ry) — the only taint source
 
@@ -886,6 +932,11 @@ Stage-1 risks at `-O3` add one more hazard:
 If a user pushes `-O3` at Stage 1 before vector-tainted templates
 exist, the workaround is `-fno-vectorize -fno-slp-vectorize` to
 suppress the vectorizers while keeping the rest of `-O3` active.
+
+Stage-1 at `-O1` itself: **SimplifyCFG merges identical calls across the two arms
+of a branch** (hoist/sink-common-insts) and so can delete a branch whose arms only
+became identical because IPSCCP substituted a pinned register. For `cq_theta` that
+is a miscompile, and CQ.h forbids it with `nomerge` (§3.1, "Why `nomerge`").
 
 Raising the Stage-1 default above `-O1` requires a regression test
 matrix: small CQ programs compiled at each `-O` level, lowered IR

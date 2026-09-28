@@ -220,6 +220,17 @@
 #   `control flow under quantum control`, not an R4-specific one, so a future
 #   R4 message change moves this row), and `m_none_rifelse_none_none_none` is the
 #   drbq Inc 2b angle-select shape, scoped OUT of Inc 3.
+#   ⚠ `m_none_rifelse_none_none_none` MOVED, DELIBERATELY, on 2026-09-28 (bd
+#   test_C_libtooling-fmt3): DECLINE-BOTH-DIFFERENT → ACCEPT-IDENTICAL. Its
+#   trigger fired exactly as written ("so that a future increment which
+#   accidentally widens into it turns this table red"), and the widening is NOT
+#   in the pass: `include/CQ.h` now puts `nomerge` on every `cq_theta_*` (owner
+#   ruling, option B), so `-O1` no longer merges the two arms into an ANGLE
+#   select; the if/else reaches the Inc-3 rolled in-place Ry arm's if/else form
+#   (both sides accept, byte-identical — the same result the e2e pair
+#   `slice_control_inplace_ry_loop_ifelse{,_unrolled}.c` pins with
+#   `e2e-inplace-ry-loop-ifelse-twin-identical`). Measured: it is the ONLY one of
+#   the 382 cells the header moves (`TRACK_FMT3.md` §9).
 #
 # ── bd test_C_libtooling-drbq INCREMENT 3 — 15 CELLS ARE NOT IN THIS FILE AT
 #    ALL, AND THAT IS DELIBERATE (2026-09-04) ──────────────────────────
@@ -752,7 +763,7 @@ m_none_req_none_none_rypost ACCEPT-IDENTICAL
 m_none_req_none_none_rypre ACCEPT-IDENTICAL
 m_none_req_none_none_rzpost ACCEPT-IDENTICAL
 m_none_req_ry_none_none  ACCEPT-IDENTICAL
-m_none_rifelse_none_none_none DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_none_none ACCEPT-IDENTICAL
 m_none_rne_add_none_none ACCEPT-IDENTICAL
 m_none_rne_none_none_none ACCEPT-IDENTICAL
 m_none_rne_none_none_rypost ACCEPT-IDENTICAL

@@ -18,6 +18,10 @@
 ; constant, `Routed` is anchored by the first arm to that `Constant` and the
 ; second arm's `RotBase` is the pointer-identical `Constant`, so
 ; `RotBase != Routed` is FALSE.
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): NO LONGER TRUE — this shape now DOES reach
+; `classifyArms` from plain C. With `nomerge` on every `cq_theta_*` (CQ.h) the arms are
+; not merged: drbq.13's `a1.c` and fmt3's no-region `n9.c` decline here (measured),
+; pinned by `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`.
 ;
 ; ⚠ AND THE LOWERING M-β WOULD PRODUCE IS PHYSICALLY CORRECT FOR THE SOURCE. The
 ; two hoisted gates would chain onto ONE rail carrying

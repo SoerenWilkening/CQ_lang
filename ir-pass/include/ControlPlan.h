@@ -139,8 +139,10 @@ struct ControlRegion {
   // (`select i1 %c, double A, double B`) whose SOLE user is the arg-1 slot of a
   // chained `cq_theta`/`cq_phi` `T`. `Merge` is the select, `Condition` the bare
   // single-user compare, and `Shadow` holds exactly ONE element: the consuming
-  // rotation. Every block field stays NULL (there is no CFG diamond — `clang -O1`
-  // SimplifyCFG already merged the two arms into this one call), which makes the
+  // rotation. Every block field stays NULL (there is no CFG diamond — the user
+  // wrote the select, or, for `cq_phi` only, `clang -O1` SimplifyCFG merged the
+  // two arms into this one call; for `cq_theta` that merge is forbidden by CQ.h's
+  // `nomerge` since bd test_C_libtooling-fmt3, 2026-09-28), which makes the
   // region inert to `lowerControlRegions`' cross-region pre-flight exactly like a
   // `SelectRegion`.
   //

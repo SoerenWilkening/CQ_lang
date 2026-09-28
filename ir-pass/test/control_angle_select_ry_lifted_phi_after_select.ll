@@ -41,6 +41,13 @@
 ;                     return cq_measure(q) + cq_measure(r); }
 ; (SimplifyCFG merges the two arms into ONE call with a `select` on the ANGLE —
 ; PRD §12.3 — which is why this is the 2b emitter and not a diamond.)
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): for `cq_theta` the sentence above is
+; no longer true. `include/CQ.h` puts `nomerge` on every `cq_theta_*`, so `-O1` keeps
+; that if/else an if/else (it lowers through the in-place Ry arm, the same unitary).
+; THIS select shape now comes from C only when the select is written out,
+; `r = cq_theta(r, c ? A : B)` (`tests/e2e/slice_control_angle_select_ry*_ternary.c`,
+; measured to give the pre-fmt3 fold's function bodies). The IR and this fixture are
+; unchanged; only the C spelling that reaches them moved.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
