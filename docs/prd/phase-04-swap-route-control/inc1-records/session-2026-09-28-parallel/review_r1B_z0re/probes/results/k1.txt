@@ -1,0 +1,41 @@
+== k1C S
+free_pairing_check: 1 file(s), 6 rail mint(s) of which 6 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      23 lowered=     110
+cqrt_alloc_i32(6) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_sgt_i32_hl(h0, 5) -> h1
+cqrt_alloc_i32(0) -> h2
+cqrt_alloc_i32(51) -> h3
+cqrt_copy_i32_controlled(h1, h3, h2)
+cqrt_x(h1)
+cqrt_alloc_i32(0) -> h4
+cqrt_copy_i32_controlled(h1, h4, h2)
+cqrt_x(h1)
+cq_template_icmp_sgt_i32_hl_unc(h1, h0, 5)
+cqrt_free(h1)
+cqrt_alloc_i32(4) -> h5
+cqrt_ry_i32(h5, 0x1.3333333333333p-2)
+cq_template_icmp_sgt_i32_hl(h5, 3) -> h6
+cqrt_alloc_i32(7) -> h7
+cqrt_ry_i32_controlled(h6, h7, 0x1.999999999999ap-3)
+cq_template_icmp_sgt_i32_hl_unc(h6, h5, 3)
+cqrt_free(h6)
+cqrt_measure_i32(h7) -> 0
+cqrt_measure_i32(h0) -> 0
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h5) -> 0
+== k1T S
+DECLINE rc=0 : lowering: control flow under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+== k2C S
+DECLINE rc=0 : lowering: state prep seed became quantum under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed became quantum under quantum control
+== k1C S
+free_pairing_check: 1 file(s), 6 rail mint(s) of which 6 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      23 lowered=     110
+== k2C O
+DECLINE rc=0 : lowering: state prep seed does not match the merge incoming under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+== k1C O
+DECLINE rc=0 : lowering: state prep seed does not match the merge incoming under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed does not match the merge incoming under quantum control

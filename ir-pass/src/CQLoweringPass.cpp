@@ -996,6 +996,20 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   if (declineScrubbedHandleReads(M, taint))
     return PreservedAnalyses::none();
 
+  // bd `test_C_libtooling-z0re` — the GROWTH-direction twin of the l3oi re-ask
+  // just above, for the RUNTIME state-prep seed the owner admitted 2026-09-28. F1
+  // (and S3 for the angle select) accepted the seed as CLASSICAL at the taint of
+  // its detection round; a 6.5/4.5 `%out` derivative is quantum after the
+  // round-2 fixpoint, and `lowerRotations` below decides `Chained` on EXACTLY
+  // this taint (nothing between `specialize()` and it writes `taint.Tainted`) —
+  // so a seed that turned quantum would lower as an in-place controlled Ry that
+  // R4/R6/S8/S9 never vetted. Re-asked on the record the two emitters took.
+  // After the l3oi fence and before the stale-reader backstop, so it speaks
+  // only where the premise it re-asks is the one that failed. A no-op for every
+  // module whose preps have literal seeds — every module before this increment.
+  if (declineRound2QuantumPrepSeeds(M, taint))
+    return PreservedAnalyses::none();
+
   // The lowered calls are erased inside each step, so nothing dangles and
   // there is no separate dead-init sweep.
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
@@ -1633,6 +1647,11 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // control emitter already read the value as a handle. Loud, and ahead of
   // everything after it except the d88e re-ask and the 2qyz re-sweep above.
   if (declineScrubbedHandleReads(M, taint))
+    return false;
+  // bd `test_C_libtooling-z0re` — the runtime state-prep seed's L1 re-ask, same
+  // slot as run() and for the same reason (twin-pipeline parity is MANDATORY,
+  // WI-1.12).
+  if (declineRound2QuantumPrepSeeds(M, taint))
     return false;
   // (bd test_C_libtooling-3d8q, P1) THE STALE-READER BACKSTOP — drains the record
   // `recordStaleQuantumReaders` took at the EARLY slot (the linear rule,

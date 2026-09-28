@@ -1,20 +1,26 @@
-; spec_reject_dropped_arg_statepred_runtime_seed.ll — DECLINE with the hand-inlined twin's
-; verdict and string (bd test_C_libtooling-vsfp; the OWNER QUESTION bd z0re's member
-; `l12C`, d88e probes).
+; spec_reject_dropped_arg_statepred_runtime_seed.ll — ⚠ NOW AN ACCEPT (bd
+; test_C_libtooling-z0re, OWNER RULING 2026-09-28, option (a)). The file keeps its
+; `_reject_` name DELIBERATELY (the bd gahu precedent — a `git mv` can be resurrected
+; by a merge, CLAUDE.md L8); read the verdict off the RUN lines. RETIREMENT
+; TRIGGER (L8): rename to `spec_dropped_arg_statepred_runtime_seed.ll` in bd gahu's
+; batch rename (the bead lists this file), then run the duplicate-body scan.
 ;
-; On the oracle (`main` aee8f4f8) `t = h(q, m)` was a Phase-6 site: round 1 read the
-; conservatively-tainted `t` as a register and classified `if (q2 > 3) r = cq_theta(t, .2)`
-; as an IN-PLACE controlled-Ry arm; after `specialize()` scrubbed `t` it lowered as a
-; controlled state prep seeded by a RUNTIME value — a correct unitary by bd z0re's
-; reading, but one the direct path's F1 fence refuses (the seed must be a literal, PRD
-; §14.11 Q2, open in bd drbq.14). The twin (`int t = m + 1;`) declines at F1.
+; The OWNER QUESTION bd z0re's member `l12C` (d88e probes). On `main` aee8f4f8 `t =
+; h(q, m)` was a Phase-6 site: round 1 read the conservatively-tainted `t` as a
+; register and classified `if (q2 > 3) r = cq_theta(t, .2)` as an IN-PLACE
+; controlled-Ry arm; after `specialize()` scrubbed `t` it lowered as a controlled
+; state prep seeded by a RUNTIME value, while the hand-inlined twin (`int t = m + 1;`)
+; declined at F1 (literal-only seed). bd vsfp's dead-argument drop then turned the
+; call into `h(0, m)`, so the module IS the twin and it declined with F1's string —
+; this file pinned that, and its own header said "THIS IS NOT A RULING ON bd z0re".
 ;
-; With the drop the call is `h(0, m)`, `t` is classical from the start, and the module IS
-; the twin: F1 declines with this very string. ⚠ THIS IS NOT A RULING ON bd z0re: it is
-; what twin parity (the definition of "fixed" for bd vsfp) does to the DEAD-parameter
-; spelling of z0re's side door — the program no longer goes through the side door at
-; all. The side door itself (a clone that READS its argument yet returns classical) is
-; unchanged and still awaits the owner's (a)/(b). RED on the oracle (exit 0 there).
+; THE RULING: option (a) — admit the runtime seed on the DIRECT path, so twin and
+; side door agree by ACCEPTING. The drop still fires (first CHECK, stderr); the
+; module then lowers exactly as the twin `slice_z0re_runtime_seed_prep.c` does: the
+; fresh rail is `cqrt_alloc_i32(%9)` with `%9` the classical `h(0, m)` result, rotated
+; by `.2` under the flag from `q2 > 3`. The side door that still READS its argument
+; is pinned separately (`spec_stateprep_runtime_seed_side_door{,_twin}.ll`). RED on
+; the ORACLE (main 9a230646), which declined.
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
@@ -28,10 +34,25 @@
 ;   clang -O1 -emit-llvm -S lib.c -o lib.ll      (plain C, no CQ.h)
 ;   llvm-link -S caller.ll lib.ll -o <this file's body>
 ;
-; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
-; RUN:   | %filecheck %s
-; CHECK: CQ_DEADARG_DBG: drop arg 0 of @h in @main (inst)
-; CHECK: error{{.*}}cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
+; RUN:   -o %t.cqd0.ll 2> %t.err
+; RUN: %filecheck %s --check-prefix=DBG < %t.err
+; RUN: %filecheck %s < %t.cqd0.ll
+; DBG: CQ_DEADARG_DBG: drop arg 0 of @h in @main (inst)
+; DBG-NOT: error
+; CHECK-LABEL: define i32 @main(
+; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %5)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q]], double 5.000000e-01)
+; CHECK-NEXT: %[[T:[0-9]+]] = tail call i32 @h(i32 noundef 0, i32 noundef %5)
+; CHECK-NEXT: %[[Q2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %8)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Q2]], double 3.000000e-01)
+; CHECK-NEXT: %[[F:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[Q2]], i32 3)
+; CHECK-NEXT: %[[R:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T]])
+; CHECK-NEXT: call void @cqrt_ry_i32_controlled(i32 %[[F]], i32 %[[R]], double 2.000000e-01)
+; CHECK-NEXT: call void @cq_template_icmp_sgt_i32_hl_unc(i32 %[[F]], i32 %[[Q2]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[F]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[R]])
+; CHECK-NEXT: call i32 @cqrt_measure_i32(i32 %[[Q2]])
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

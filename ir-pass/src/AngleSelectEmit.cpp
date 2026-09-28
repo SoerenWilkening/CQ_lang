@@ -345,7 +345,41 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
   Value *Base = T->getArgOperand(0);
-  if (!taint.Tainted.count(Base)) {
+  // The base is a live register (Inc 2b), or — bd `test_C_libtooling-z0re`,
+  // owner ruling 2026-09-28 — an UNTAINTED RUNTIME value on the Ry stem, which
+  // S3 admitted as controlled state prep on a fresh rail. A LITERAL base is still
+  // refused, as at S3 (owner ruling 2026-09-28 on bd drbq.13; S3 carries the
+  // counter-example).
+  //
+  // ⚠ ONE QUESTION, AND IT IS THE CLASSIFIER'S (Rule-13 r1B F-r1B-2, Rule 14).
+  // The first spelling RE-DERIVED `isRuntimeStatePrepSeed(Base, taint)` here,
+  // at EMISSION taint, while the L1 record below trusts the classifier's
+  // recorded verdict `R.RuntimeSeedAdmitted` — two answers to one question, over
+  // two taint sets. The two spellings differ on one transition: a region S3
+  // proved with a TAINTED base (S8/S9 over its closure, no L1 record) whose base
+  // has become untainted by emission — the first spelling admitted it here as a
+  // fresh-rail prep, this one declines it. ⚠ CORRECTED (Rule-13 r2 F-r2-3, L7):
+  // an earlier spelling of this comment called that admission a HAZARD; it is
+  // not. The same classical-becomes-quantum-is-proven transition occurring one
+  // stage LATER (after emission, via `specialize()`'s scrub) is an accepted,
+  // pinned stream (`spec_angle_select_runtime_base_side_door.ll`: S3 proves the
+  // tainted base, `T0` then lowers as a SOURCE, twin-identical), and S3's
+  // tainted-base proof is strictly stronger than the runtime-base admission. The
+  // transition is unreachable before emission today (every emitter `Tainted.erase`
+  // is erase-paired; r1B mutants M1/M2 and the implementer's R1/R2 survive), so
+  // the change is a Rule-14 one — ONE question, asked at classification — not a
+  // safety one, and it makes the two timings of one transition disagree (decline
+  // before emission, accept after), both benign. The step-0 question is now
+  // exactly the record's: an untainted base is admitted iff the CLASSIFIER
+  // admitted one. For an `AngleSelectRegion`, `RuntimeSeedAdmitted` is set only by
+  // S3's Ry stem (`IsTheta ∧ isRuntimeStatePrepSeed` at detection), so the old
+  // `IsTheta` conjunct is carried by the flag rather than re-asked (F1 also sets
+  // the flag, for `StatePrep` regions, which never reach this emitter). The reverse transition
+  // (admitted untainted, tainted by emission — a 6.5 `%out` RAUW) passes this
+  // test as a register base and is caught by the record + post-fixpoint re-ask
+  // (`declineRound2QuantumPrepSeeds`), as before.
+  const bool UntaintedBase = !taint.Tainted.count(Base);
+  if (UntaintedBase && !R.RuntimeSeedAdmitted) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
@@ -503,6 +537,18 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.Tainted.insert(T0);
   taint.BirthOrder[T0] = taint.NextBirth++;
   Work.insert(Slot, T0);
+  // bd `test_C_libtooling-z0re` — THE RECORD HALF of the runtime-seed L1 re-ask,
+  // at the site that commits it. For an UNTAINTED base `T0` is the SOURCE theta
+  // (`lowerRotations` will mint `cqrt_alloc_<W>(Base)` for it); if `Base` turns
+  // quantum after the round-2 fixpoint, `T0` would lower CHAINED on it — a
+  // tainted-base select S8/S9 never vetted — and `declineRound2QuantumPrepSeeds`
+  // refuses exactly that. A tainted base (Inc 2b) owes no record. ⚠ KEYED ON
+  // THE CLASSIFIER'S VERDICT (`R.RuntimeSeedAdmitted`), never on `UntaintedBase`
+  // as asked here: a 6.5 region emitted earlier in the same loop can already
+  // have RAUW'd the base to its tainted `%out`, and then this emitter sees a
+  // "tainted" base S8/S9 never vetted (`ControlRegion::RuntimeSeedAdmitted`).
+  if (R.RuntimeSeedAdmitted)
+    taint.RuntimeSeedSourceThetas.push_back(T0);
 
   // ---- 3. THE FLAG MINT, at the consumer.
   //
@@ -552,7 +598,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //     IS a condition register (PRD §3c — the stem separator);
   //   * for `cq_theta` S8 proved the rotated register's PHYSICAL rail is disjoint
   //     from every rail the condition reads, so the condition's basis at the
-  //     strip is the basis the mint read (PRD §3).
+  //     strip is the basis the mint read (PRD §3). ⚠ For an UNTAINTED (runtime)
+  //     base (bd z0re) S8 is SKIPPED, not proved: the rotated rail is the one
+  //     `T0` mints (`cqrt_alloc_<W>(Base)`), so it is disjoint from every
+  //     condition rail BY CONSTRUCTION — the state-prep licence §14.5 gives the
+  //     diamond, and the `RuntimeSeedSourceThetas` re-ask is what keeps "fresh"
+  //     true at FINAL taint.
   //
   // `DischargedFlagGates` records the strip. THE JUSTIFICATION FOR THAT RECORD IS
   // NOT S8 (round-1 Rule-13 review, lens L1-2 — the first draft said "if S8 is
