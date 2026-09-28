@@ -194,25 +194,32 @@ set_tests_properties(ir-pass-scrub-on-delete-selftest-sysalloc
 # The STRUCTURAL half: a compiler-assisted check that no raw Value-identity table
 # is (re)added to `cq::TaintSet` or to anything it reaches, and that every
 # self-cleaning member is exercised by the selftest above. It is NOT a proof — its
-# docstring names its RESIDUALS R1-R9. ASKED OF THE COMPILER (r1A F-EA-2 / r1B
+# docstring names its RESIDUALS R1-R11. ASKED OF THE COMPILER (r1A F-EA-2 / r1B
 # F-EB-2) IN EVERY BUILD CONFIGURATION (r2 F-R2-2 / bd a66j; bd 7gri): it reads, from
 # `compile_commands.json` (exported by the top-level CMakeLists), every distinct
 # command of a TU that includes the header, and for each one asks the compiler the
 # CANONICAL type of every member and the AST identity of every project type it
 # reaches — the specialization the build selects, never a record found by name (bd
-# wop9) — descending into allowlisted members too, where every associative KEY is
-# still strict (bd jk56). The gate's own run uses no precompiled header (bd 7gri).
-# `--selftest` is its own mutant validation (the r1A/r1B/r2/r3 fool corpora + its own
-# mutants, each required to be refused for the RIGHT reason). A missing compile
-# database or a parse error = the gate FAILS CLOSED.
+# wop9) — descending into allowlisted members too (bd jk56), and checks that the
+# header preprocesses the same after the headers the TUs include (review r1 F-R1-4).
+# The gate's own run uses no precompiled header (bd 7gri). `--selftest` is its own
+# mutant validation (the r1A/r1B/r2/r3 fool corpora, review r1's probes, and its own
+# mutants, each required to be refused for the RIGHT reason); it is SHARDED over
+# three ctest entries and every entry bounds its own compilers with `--jobs`, so the
+# gate's -j is respected (review r1 F-R1-13). A missing compile database, an
+# unparsable entry of this tree or a parse error = the gate FAILS CLOSED.
 find_program(CQ_SCRUB_GUARD_PYTHON NAMES python3 python)
 if(CQ_SCRUB_GUARD_PYTHON)
+  set(_CQ_SCRUB_GUARD "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py")
   add_test(NAME taintset-scrub-guard
-    COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py"
-            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json")
-  add_test(NAME taintset-scrub-guard-selftest
-    COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${CMAKE_CURRENT_SOURCE_DIR}/../tools/taintset_scrub_guard.py"
-            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json" --selftest)
+    COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${_CQ_SCRUB_GUARD}"
+            --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json" --jobs 2)
+  foreach(_k 1 2 3)
+    add_test(NAME taintset-scrub-guard-selftest-${_k}of3
+      COMMAND "${CQ_SCRUB_GUARD_PYTHON}" "${_CQ_SCRUB_GUARD}"
+              --compile-commands "${CMAKE_BINARY_DIR}/compile_commands.json"
+              --selftest --shard ${_k}/3 --jobs 2)
+  endforeach()
 endif()
 
 # LIT/FileCheck harness for the pass. Lives in test/ alongside the *.ll

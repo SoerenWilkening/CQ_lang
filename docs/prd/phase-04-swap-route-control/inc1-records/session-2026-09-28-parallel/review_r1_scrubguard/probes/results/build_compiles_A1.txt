@@ -1,0 +1,4 @@
+A1   unnamed struct type DEFINED OUTSIDE TaintSet, held by value via decltype
+    scrub_selftest.cpp[cq-opt cfg]: exit 0
+    CQLoweringPass.cpp[CQPass cfg]: exit 0
+    usage TU[CQPass cfg]: exit 0

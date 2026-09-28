@@ -1,0 +1,34 @@
+ok  null-clean     N0   NULL: pristine tree  [75 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 54s]
+ok  pos-refused    C1   POS: unnamed struct DEFINED INSIDE TaintSet holding std::set<Value*>  [77 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 31s]
+        ERR  cq::TaintSet::(anonymous)::T: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [inside the KEY of `
+ok  pos-refused    C2   POS: const llvm::Value ** (T ** judged by innermost pointee)  [76 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 31s]
+        ERR  cq::TaintSet::RvSlots2: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  pos-refused    C3   POS: std::set<llvm::Value *> static member (no macro)  [76 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 33s]
+        ERR  cq::TaintSet::RvOrderIdx0: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [inside the KEY of `std
+ok  pos-refused    C4   POS: explicit specialization IN THE HEADER of the pointed-at template  [77 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 62s]
+        ERR  cq::RvImpl<int>::T: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [inside the KEY of `std::set` 
+ok  pos-refused    K1   POS: KEY record whose BASE holds a WeakVH  [77 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 74s]
+        ERR  cq::RvKB::H: a value HANDLE (`llvm::WeakVH`) in the KEY of `std::set` held by `cq::TaintSet::RvKS` — a handle is nulled/retargeted IN PLACE, which breaks the container's ordering/hash invariant; refused
+ok  pos-refused    K2   POS: KEY std::tuple<WeakVH,int>  [76 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 57s]
+        ERR  cq::TaintSet::RvKT: a value HANDLE (`llvm::WeakVH`) in the KEY of `std::set` held by `cq::TaintSet::RvKT` — a handle is nulled/retargeted IN PLACE, which breaks the container's ordering/hash invariant; refused
+ok  pos-refused    K3   POS: KEY std::variant<int,WeakVH> of a std::map  [76 members, 1 problem(s), 15 tolerated, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)], 52s]
+        ERR  cq::TaintSet::RvKV: a value HANDLE (`llvm::WeakVH`) in the KEY of `std::map` held by `cq::TaintSet::RvKV` — a handle is nulled/retargeted IN PLACE, which breaks the container's ordering/hash invariant; refused
+MISSED             A1   unnamed struct type DEFINED OUTSIDE TaintSet, held by value via decltype  [76 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 51s]
+MISSED             A1b  same, via a global unnamed-struct variable and an alias, as a STATIC member  [76 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 47s]
+MISSED             A2   const llvm::Value *const * (inner pointer cv-qualified) — a hand-rolled slot table  [77 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 31s]
+MISSED             A2b  llvm::Value *volatile * (writable) inside a SmallVector  [76 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 21s]
+MISSED             A3   template PIMPL: primary clean in the header, explicit specialization (raw table) in a .cpp  [77 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 32s]
+MISSED             A4   base re-spelled through an ANONYMOUS NAMESPACE (R8 by another mechanism)  [78 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 45s]
+MISSED             A4b  base that is a LOCAL CLASS whose name re-spells as a same-named global base  [77 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 57s]
+MISSED             A5   INCLUDE-ORDER: static raw table under #ifdef of a header real TUs include BEFORE TaintPropagation.h  [75 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 29s]
+MISSED             A6   ALLOWLIST over-claim: llvm::EquivalenceClasses<llvm::Value *> (a std::set-backed identity table) in LoopBreakRegion  [76 members, 0 problem(s), 16 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 36s]
+        NOTE cq::LoopBreakRegion::RvEq: RAW POINTER to `llvm::Value`, which derives from llvm::Value (a FIELD of an allowlisted member)
+MISSED             A6b  ALLOWLIST over-claim: llvm::UniqueVector<llvm::Value *> (a std::map-backed identity table) in LoopBreakRegion  [76 members, 0 problem(s), 16 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 34s]
+        NOTE cq::LoopBreakRegion::RvUV: RAW POINTER to `llvm::Value`, which derives from llvm::Value (a FIELD of an allowlisted member)
+MISSED             A7   R1: by-value LIBRARY-NAMED template declared by the project in namespace llvm  [76 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 41s]
+MISSED             A8   type-erasure by a builtin pointer: std::set<const char *> (reinterpret_cast'd Values)  [76 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 38s]
+
+controls bad: 0 []; attacks 12, MISSED 12 ['A1', 'A1b', 'A2', 'A2b', 'A3', 'A4', 'A4b', 'A5', 'A6', 'A6b', 'A7', 'A8']
+elapsed 856s; guard sha256 prefix: 99a7df7cf90bb6a2
+python3 $R/probes/guard_fool_r1.py $W  727,08s user 101,54s system 96% cpu 14:18,13 total
+exit=0

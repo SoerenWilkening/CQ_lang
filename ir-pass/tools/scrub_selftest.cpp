@@ -29,8 +29,9 @@
 // `SmallVector`/`std::set` still COMPILES here (the APIs are compatible) and
 // FAILS at (3). `tools/taintset_scrub_guard.py` is the other half: a
 // compiler-assisted check for a NEW raw pointer-keyed member this file does not
-// know about — not a proof (its docstring names its residuals R1-R9; bd wop9 /
-// 7gri / jk56 closed the r3 gaps).
+// know about — not a proof (its docstring names its residuals R1-R11; bd wop9 /
+// 7gri / jk56 closed the r3 gaps, the review-r1 beads hdxo ehni ofvm ngfa 5ci2 s6ma
+// the next ones).
 
 #include "TaintPropagation.h"
 

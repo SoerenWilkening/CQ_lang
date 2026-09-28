@@ -372,3 +372,32 @@ needed), and for the Build & Test *Timing* paragraph, one sentence:
 > configurations with and without a PCH per clean verdict: ~850 s real at load ~400, ~627 s in a
 > loaded `ctest -R scrub` — a candidate long pole next to `e2e-loop-twin-matrix`; the gate's own
 > run is ~23 s on a quiet box.
+
+---
+
+# ROUND 2 — the review r1 findings (bd hdxo P1 · ehni · ofvm · ngfa · 5ci2 P2 · s6ma P3)
+
+The first review of the rewrite is `review_r1_scrubguard/REVIEW.md` (verdict **NOT-CLEAR**). Its
+directory is committed untouched with this round. It found 13 headers the build compiles in both
+configurations, each with a raw identity table reachable from `cq::TaintSet`, that passed the
+committed guard `99a7df7c`. Three of them (A1, A4, A4b) are regressions against the old guard.
+
+## R2.1 What changed, finding by finding
+
+| finding | bead | fix |
+|---|---|---|
+| F-R1-1 unnamed type defined OUTSIDE the walked record (A1, A1b) | hdxo | An unnamed record is identified by the compiler's `(unnamed struct at FILE:LINE:COL)`. A field of unnamed type is accepted only when THAT record was walked through a declarator of the record being walked. Anything else is refused as "defined outside the record". A pointer to an unnamed type follows the same rule. |
+| F-R1-2 `*const` / `*volatile` / `*__restrict` misparsed (A2, A2b) | ehni | `parse_type` strips cv/restrict right after `*`/`&` as well. Defence in depth: a pointee the compiler says is neither a class, a union nor an enum now REFUSES instead of accepting (source mutant N2 shows this second layer catching A2/A2b by itself). |
+| F-R1-3 template pimpl (A3) | ngfa | Identity lookup no longer forces instantiation. A class-template specialization the header never instantiates, reached by pointer or by `unique_ptr`, is REFUSED ("only POINTED AT"), the same contract as the non-template pimpl. The primary's forced instantiation is walked as well. Contract in docstring (3) + R11. |
+| F-R1-4 include-order dependent member (A5) | ngfa | A new check (docstring (6)). For every clean verdict, in the no-PCH pass of each configuration, the header's include closure is `-E`'d twice and must be textually identical: once alone, and once after every header any TU of that configuration includes plus every project header (closure guards pre-defined, then undefined). What it cannot see is R10: a `.cpp`'s own `#define`s, macro COMBINATIONS, and TU-local headers. The false clause "so the preprocessing context is the build's" is struck. |
+| F-R1-5 `scrub::Set<StorageT, P>` storage never walked (A9) | ofvm | Every scrub container must have the shape ScrubOnDelete.h ships: `Set<std::set<P> \| SmallPtrSet<P, N>, P>`, `List<P, N>`, `PairSet<P1, P2>`, `Map<P, V>` (with V walked). Any other shape is refused. |
+| F-R1-6 base re-spelled through an anonymous namespace / a local class (A4, A4b) | 5ci2 | A base must satisfy `is_base_of<S, D>` AND `is_same<typename D::<short>, S>`: the base's injected-class-name, looked up through the derived class, must be the spelled record. The lookup is ambiguous for A4 and names the local class for A4b/A4b′, so both fail. The `_spell` comment is corrected (L7). |
+| F-R1-7 malformed DB entry drops a configuration (F1) | s6ma | `_configs_from` raises on any entry of this tree that cannot be parsed, and on any entry without `file`. |
+| F-R1-8 `llvm::SmallPtrSetImplBase *` (A10) | s6ma | A pointer to a LIBRARY non-template record is now CLOSED WORLD: refused unless listed in `APPROVED_POINTEES` (empty; the tree holds none). `TYPE_ERASED_TEMPLATES` (`llvm::SmallVectorBase`) is refused by value and behind a pointer. |
+| F-R1-9 identity tables inside the allowlisted `LoopBreakRegion` (A6, A6b) | — | `ALLOWLIST_POLICY`. Under "fields" (the default; BreakRegions), a raw pointer is tolerated only as a record's OWN field. Inside ANY library container the argument walk is strict, so `SmallVector<Value *>` (the old R2) is refused too. Under "any" (RestoringRoutes, whose reason is "no writer"), raw pointers are tolerated anywhere except in a KEY. EquivalenceClasses / UniqueVector / priority_queue joined ASSOCIATIVE. The ALLOWLIST reason and the `TaintPropagation.h` / CMake comments now say what is checked (L7). |
+| F-R1-10 builtin-pointer / byte-storage type erasure (A8) | s6ma | Listed under OUT OF SCOPE; A8 is pinned in the self-test as a known pass. |
+| F-R1-11 crash misreported | s6ma | A compiler killed by a signal is a GuardError. A member-type probe with no answer and no error is a GuardError. The final probe carries a CANARY `static_assert` whose absence is a GuardError. |
+| F-R1-12 by-value library-named template (A7) | gqda | Note appended to bd gqda. Pinned in the self-test as "RESIDUAL R1 pinned". |
+| F-R1-13 unbounded concurrency | s6ma | A global compile semaphore (`--jobs N` / `CQ_GUARD_JOBS`). The self-test is SHARDED (`--shard K/3`) into three ctest entries, each `--jobs 2`; the gate run uses `--jobs 2`. |
+
+## R2.2 Measurements (the fields marked FINAL come from the committed guard; see R2.4)

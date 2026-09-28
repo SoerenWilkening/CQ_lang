@@ -55,13 +55,15 @@ struct SpecPlan;
 // fresh clone instruction answering `Tainted.count() == true` and being lowered
 // as quantum (bd 8e5r, `cq_template_mul_i32_hl(7 /*as a handle*/, m)`).
 //   * Adding a table: use `ScrubPtrSet` / `ScrubMap` / `ScrubCallList` /
-//     `scrub::PairSet`, or value handles (`WeakVH` / `WeakTrackingVH`). A raw
-//     pointer-keyed member FAILS the `taintset-scrub-guard` ctest, which asks the
-//     compiler (every build configuration) for each member's canonical type and
-//     walks the project types it reaches by their AST identity — still not a
-//     proof: its docstring names residuals R1-R9 (e.g. a type a project header
-//     declares inside `namespace llvm`; bd wop9 / 7gri / jk56); a new self-cleaning
-//     member must be added to `ir-pass/tools/scrub_selftest.cpp` (the gate checks).
+//     `scrub::PairSet`, or value handles (`WeakVH` / `WeakTrackingVH`). The
+//     `taintset-scrub-guard` ctest refuses a raw pointer-keyed member in every
+//     spelling its self-test carries — it asks the compiler (every build
+//     configuration) for each member's canonical type and walks the project types it
+//     reaches by their AST identity — but it is NOT a proof: its docstring names the
+//     residuals R1-R11 and the out-of-scope cases (e.g. a type a project header
+//     declares inside `namespace llvm`, an address laundered through a `const char *`;
+//     bd wop9 / 7gri / jk56 / gqda). A new self-cleaning member must be added to
+//     `ir-pass/tools/scrub_selftest.cpp` (the gate checks).
 //   * Membership is by IDENTITY and never follows a RAUW — exactly the raw
 //     pointer's meaning. A table that must follow a RAUW uses `WeakTrackingVH`.
 //   * A deleted key is only MARKED dead, never physically removed, so surviving
