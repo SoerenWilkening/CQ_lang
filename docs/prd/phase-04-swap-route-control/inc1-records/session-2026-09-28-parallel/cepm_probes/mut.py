@@ -21,6 +21,7 @@ os.makedirs(MD, exist_ok=True)
 SC = "ir-pass/src/SpecializeClone.cpp"
 SP = "ir-pass/src/Specialization.cpp"
 AC = "ir-pass/src/ArmClassify.cpp"
+TP = "ir-pass/src/TaintPropagation.cpp"
 RET = "  return !predictReturnTainted(Callee, Mask);\n}"
 GUARD = "    if (Rec.ReturnTainted && !ResultWasTainted)\n"
 MUT = {
@@ -36,6 +37,19 @@ MUT = {
     "M7": [(SC, RET, "  (void)Mask;\n  return true;\n}"), (SP, GUARD, "    if (false)\n")],
     "M8": [(AC, "      Taint.Tainted.count(Call) || readsTaintedValue(*Call, Taint))",
             "      Taint.Tainted.count(Call))")],
+    # ---- round 1b (the settle step, the sticky rule, LaterTaintOracle) ----
+    "N1": [(TP, "    if (Flip.empty())\n      return;", "    if (Flip.empty() || Flip.size() > 1000000000u)\n      return;")],
+    "R1": [(TP, "  settleSpecPredictions(ThetaFns, PhiFns, MeasureFns, out, skipRuntimeCalls);\n}",
+            "  (void)0;\n}")],
+    "R2": [(TP, "        if (Recorded && out.SpecPredictedClassical.lookup(CI) <", "        if (false && Recorded && out.SpecPredictedClassical.lookup(CI) <")],
+    "R3": [(TP, "  settleSpecPredictions(ThetaFns, PhiFns, MeasureFns, out, skipRuntimeCalls);\n}", "  (void)0;\n}"),
+           (TP, "        if (Recorded && out.SpecPredictedClassical.lookup(CI) <", "        if (false && Recorded && out.SpecPredictedClassical.lookup(CI) <")],
+    "R4": [(TP, "      if (condGrows(terminatorCondition(M), Seen))\n        return true;\n      SmallPtrSet<BasicBlock *, 16> Vis;",
+            "      if (false)\n        return true;\n      SmallPtrSet<BasicBlock *, 16> Vis;"),
+           (TP, "        if (condGrows(terminatorCondition(X), Seen))\n          return true;\n        if (X == Top)",
+            "        if (false)\n          return true;\n        if (X == Top)")],
+    "R5": [(TP, "    if (T.Tainted.count(C))\n      return true;  // a tainted decider", "    if (false)\n      return true;  // a tainted decider")],
+    "R6": [(TP, "      if (G && !G->isDeclaration() && calleeMayYieldQuantum(G))", "      if (false && G && !G->isDeclaration() && calleeMayYieldQuantum(G))")],
 }
 
 
@@ -83,9 +97,13 @@ def run(names):
     fx = ([l.strip() for l in open(sub) if l.strip()] if sub
           else sorted(glob.glob(os.path.join(W, "ir-pass/test/*.ll"))))
     tag = ".sub.txt" if sub else ".txt"
-    base = os.path.join(MD, "base.txt")
+    # MUT_BASE=<tag>: the subject binary is $S/cepm/cq-opt.<tag>, its verdicts base.<tag>.txt
+    # (default: subj1 / base.txt, round 1).
+    btag = os.environ.get("MUT_BASE")
+    base = os.path.join(MD, f"base.{btag}.txt" if btag else "base.txt")
     if not os.path.exists(base):
-        subprocess.run(["python3", os.path.join(D, "fixrun.py"), os.path.join(S, "cepm/cq-opt.subj1"), base] + fx)
+        subprocess.run(["python3", os.path.join(D, "fixrun.py"),
+                        os.path.join(S, "cepm/cq-opt." + (btag or "subj1")), base] + fx)
     b = verdicts(base)
     if sub:
         keep = {os.path.basename(f) for f in fx}

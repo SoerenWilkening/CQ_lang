@@ -5,6 +5,14 @@ Session 2026-09-28 (parallel). Branch `worktree-agent-a3c46257bc3bd028d`, based 
 `test_C_libtooling-3zr4` (P3, over-decline from C). Both stay OPEN for the Rule-13 rounds.
 Probes, harnesses and raw results: `cepm_probes/` next to this file.
 
+> **ROUND 1b (commit after `3a2d690e`, §12) — READ §12 FIRST.** The orchestrator ruled that a
+> round-2 MASK-GROWTH site (`r2b`/`r2d`) must behave as on the oracle. Round 1b adds a SETTLE
+> step and a STICKY rule inside the propagation drain; `r2b`/`r2d` now decline with the oracle's
+> string, every other measured verdict is unchanged, and the compiler-kept copy-out class went
+> to the owner (bd `ffir`). The FINAL subject is round 1b's `cq-opt` `02522b6a4fdb8911eafe965e`
+> (§1). Sections 0–11 describe round 1 and are corrected in place where round 1b falsified them
+> (§4.4's L1 table, §5.2.1, §10 item 5).
+
 ## 0. Headline
 
 - **The fix is the bead's candidate route, used as written.** `propagateWorklist` — every
@@ -61,10 +69,12 @@ Probes, harnesses and raw results: `cepm_probes/` next to this file.
 | ORACLE `main` 9a230646 (frozen) | `3f6db37f5cf937b4d70f5736` | `356df92e0b58bbf787c41a25` | |
 | worktree, unmodified | `3f6db37f5cf937b4d70f5736` | `356df92e0b58bbf787c41a25` | BUILD NULL CONTROL: bit-identical |
 | subject v1 (before the §4.3 L3 fix) | `f9ee08b029dc3807865a8339` | — | battery `new1` only |
-| **SUBJECT (final)** | **`cb4ed3c2f6251bc7e85bf8dc`** | **`d3e11a7e55d0b18966d62c84`** | `cq-opt-debugalloc` `3b9f963b1da8351197ac0d6e`; frozen copy `scratchpad/cepm/cq-opt.subj1` |
+| subject round 1 (commit `3a2d690e`) | `cb4ed3c2f6251bc7e85bf8dc` | `d3e11a7e55d0b18966d62c84` | `cq-opt-debugalloc` `3b9f963b1da8351197ac0d6e`; frozen copy `scratchpad/cepm/cq-opt.subj1` |
+| **SUBJECT (final, round 1b, §12)** | **`02522b6a4fdb8911eafe965e`** | **`49e7c01f5c0ba2417e287ddc`** | `cq-opt-debugalloc` `d73534dc2decb0c933d87d22`; frozen copy `scratchpad/cepm/cq-opt.subj2` |
 
 The comment-only L7 edits made after `cb4ed3c2` was frozen rebuild to the SAME hash
-(`cb4ed3c2`, measured), so every measurement below is on the final binary. After the
+(`cb4ed3c2`, measured), so every round-1 measurement in §§5–6 is on the round-1 binary; §12's
+are on round 1b's (whose later comment edit also rebuilt to the same hash, measured). After the
 mutation builds the restored tree rebuilt bit-identical to it (`cb4ed3c2`).
 
 ## 2. Mechanism (measured, read off the lowered IR — Rule 11)
@@ -204,8 +214,8 @@ it is not this bead's.
 |---|---|---|---|
 | `propagate` (each of ~12 calls before detection) | yes (in `propagateWorklist`) | mask grows later | next drain that taints the argument revisits the call (monotone) |
 | `declineStaleTaintSet` (fresh `propagate` vs carried) | yes — same rule both sides | — | — |
-| round-2 `repropagateControlMerges` drain | yes | mask grows in round 2 (`r2g`/`r2b`: round-1 `01` classical, round-2 `11` quantum) | the round-2 drain itself: `t` is tainted IN ROUND 2, exactly when the twin's `t = y + 1` is |
-| `detectAndLowerOnwardControl`'s drains | yes | same | same |
+| round-2 `repropagateControlMerges` drain | yes | mask grows in round 2 (`r2g`/`r2b`: round-1 `01` classical, round-2 `11` quantum) | ⚠ ROUND 1 said "the round-2 drain itself: `t` is tainted IN ROUND 2" — that is what accepted `r2b`/`r2d` and it is REPLACED in round 1b (§12): the round-1 SETTLE step taints such a site at round 1, and a site still classical from an earlier drain is STICKY (never tainted later; `specialize()`'s check declines if its clone returns a register) |
+| `detectAndLowerOnwardControl`'s drains | yes | same | same (each drain opens a new generation) |
 | `propagateFromSeeds` (MergePhiPeel ×3, delta) | yes | same | same |
 | every stage between the last drain and `specialize()` (both control rounds, lowerLoops, IO/QRAM/Shadow, promote, classical-mux guard + lift) | read the result as CLASSICAL | the clone returns a register (argued impossible, §4.1) | `specialize()`'s check, in both entry points (the shim calls `specialize()` too); `DS_Error` exits, so nothing a window stage did reaches the output |
 
@@ -215,11 +225,10 @@ Yes: the withheld result and its forward cone. That cone was previously scrubbed
 `specialize()` for a classical verdict; now it is never tainted, so the scrub finds
 nothing to scrub (`taint.Tainted.count(Site)` false) and bd l3oi's record stays empty for
 it.
-**Round-2 shift (r2g/r2b/r2d/r2l).** A site whose return depends only on a round-2 argument
-is now tainted in round 2 instead of round 1. That class already exists on the oracle (any
-round-2-only site, e.g. `h(c, y)`); the shift adds members to it, and it is the twin's
-timing. Measured: `r2l` DECL-SAME; `r2b` oracle DECLINE → subject ACCEPT, semantically the
-twin's circuit (§5.3); `r2d` both warn `live derived record` and accept.
+**Round-2 shift (r2g/r2b/r2d/r2l).** ⚠ SUPERSEDED BY ROUND 1b (§12). Round 1 tainted a
+round-1-recorded site whose return depends on a round-2 argument IN ROUND 2, and `r2b`/`r2d`
+moved oracle DECLINE → ACCEPT with streams that are not the twin's (§5.2.1). The orchestrator
+ruled they must behave as on the oracle; round 1b taints such sites at round 1.
 
 ### 4.5 L2 — other sets computed over the same closure
 
@@ -289,7 +298,7 @@ Final subject, every member (see `results/` for the raw lines). "v" = void-`g` f
 | zl12, zl17, za02, za01 | **C ACCEPTS** (side door), T declines | **DECL-SAME** | bd z0re's side door (§9) |
 | all `…i` (int-`g`) members | as their "v" twin but ACC-DIFF where "v" is ACC-SAME | ACC-DIFF | the twin's top-level `g(q)` leaves g's result rail allocated (a known twin-side leak; warned when a non-diagonal gate follows: `lki` both warn); h's clone discharges it in its own Bennett wrap. C differs from T by exactly g's reverse block |
 
-#### 5.2.1 ⚠ r2b / r2d — two D→A moves that are NOT twin-identical, disclosed
+#### 5.2.1 ⚠ r2b / r2d — two D→A moves that are NOT twin-identical, disclosed (ROUND 1 — FIXED in round 1b, §12: both decline again, as on the oracle)
 
 These are the round-2 MASK-GROWTH members (`h(q, y)`, `y` a 6.5 `%out`): the round-1 mask
 `01` predicts classical, the round-2 mask `11` predicts (and is) QUANTUM (`k + 1` over `y`).
@@ -450,14 +459,26 @@ drop already sends them down the direct path on the oracle (0 movers in the prob
    `LoopUnrollPrepass` U7 (`lp` measured). A predicted-classical site is identity on its
    quantum arguments, so hoisting it is unitary-correct — but a DUPLICATED copy that is
    not in `Pending` would call the original callee with a HANDLE id as data.
-5. **Round-2 mask growth (`r2g`/`r2b`/`r2d`/`r2l`).** A round-1-classical, round-2-quantum
-   result consumed in round 1 by a stage that is not re-run in round 2 (the loop layer is
-   the obvious one; `r2l` declines on both sides — find one that accepts). `r2b`/`r2d` are
-   D→A moves into the pre-existing quantum-clone copy-out class (§5.2.1): decide whether the
-   lyyf-(B) ruling covers a record the COMPILER keeps (the copy-out) rather than one the
-   user's source keeps, and whether cepm should instead keep such a site tainted from
-   round 1 (i.e. predict with the site's FINAL mask) — which would restore the oracle's
-   decline for exactly these two.
+5. **Round-2 mask growth — ROUND 1b (§12), attack these first.**
+   - **`LaterTaintOracle` completeness.** Construct a growth it misses: an argument that a
+     later drain taints without its backward slice reaching a tainted φ-decider or a
+     rotation-holding callee. (The claim is that every taint-growth event starts at a φ a
+     later round replaces or at a 3jru crossing; the direct-insert list in `drainWorklist`'s
+     3jru comment is the enumeration to check.) A miss must END at `specialize()`'s check
+     (sticky); if it ends in an ACCEPT, that is the finding.
+   - **The sticky rule's reach.** A site recorded in one generation and grown in a later one
+     must stay untainted AND be replanned. Find a grown site that is NOT replanned (its
+     grown argument not in the reseed/delta set), so the clone is built with the old mask
+     and the now-quantum argument rides a classical slot.
+   - **The φ-decider region.** Blocks between `idom(M)` and `M`, plus `M`'s own terminator.
+     Find a φ whose incoming choice is decided by a terminator OUTSIDE that walk (an
+     irreducible CFG, a multi-entry region, an `invoke`/`callbr` edge).
+   - **Generations.** `propagate()`'s drains all share generation 0; is there a pair of
+     generation-0 drains with a taint READER between them (so a gen-0 record should have
+     been sticky)? `propagate()` is called ~12 times before detection, each rebuilding
+     the whole set.
+   - The copy-out class itself (`nq`, `r2g`, and `r2b`/`r2d` under round 1) is an OWNER
+     question, bd `ffir` — not for the reviewers to rule.
 6. **The mask the drain saw vs `Cand.Mask`.** `replanReseedSpecialization` / round-2
    detection compute masks from `taintArgMask` at their own time; construct a site whose
    Pending mask contains an argument tainted by a DIRECT insert no drain visited (the
@@ -472,7 +493,125 @@ drop already sends them down the direct path on the oracle (0 movers in the prob
    and then `f`'s own call site re-used as a Phase-6 argument elsewhere (bd 1yeu: every
    corpus is one function per module).
 
-## 11. Proposed CLAUDE.md text (not applied — the orchestrator owns CLAUDE.md)
+## 12. Round 1b — a round-2 MASK-GROWTH site behaves as on the oracle
+
+**Orchestrator ruling (2026-09-28, before the Rule-13 rounds):** `r2b`/`r2d` violate the twin
+criterion (they accept, their streams are not the twin's — §5.2.1) and must not become new
+accepts through this change; a round-2 mask-growth site must behave as on the oracle; the
+compiler-kept copy-out class goes to an owner ruling (NEW bd `test_C_libtooling-ffir`, P3, owner
+question, with the `r2b`/`r2d`/`nq`/`r2g` evidence; note appended to bd `cepm`).
+
+### 12.1 What went wrong in round 1, precisely
+
+A site RECORDED classical in round 1 (`h(q, y)`, mask `01`) had its mask grown in round 2 (`y`
+is a 6.5 `%out`), the round-2 drain re-asked with `11`, got "quantum", and tainted the result IN
+ROUND 2. The oracle tainted it at round 1. Everything in between — `lowerLoops`, round-1
+control emission — had read it as classical, so the round-2 control emitter accepted a region
+the oracle's round 1 declined (`r2b`: `if (t > 3) q2 = cq_theta(q2, .2)`).
+
+### 12.2 The change (TaintPropagation.cpp, TaintPropagation.h, SpecializeClone.h comment)
+
+Three pieces, all inside the one drain function every drain uses (`propagateWorklist` →
+`drainWorklist` + `settleSpecPredictions`):
+
+1. **A record.** `TaintSet::SpecPredictedClassical` (a `ScrubMap<const CallInst *, unsigned>`,
+   self-cleaning): every site a drain leaves classical on the predictor's word, mapped to the
+   drain GENERATION that first did (`TaintSet::SpecPredictGeneration`: 0 for every drain
+   `propagate()` runs; +1 at the entry of every GROWTH drain — `skipRuntimeCalls`, i.e. the
+   round-2 reseed, its onward fixpoint and `propagateFromSeeds`, each of which runs after some
+   stage has read the taint set).
+2. **The SETTLE step** (end of every drain, to a fixpoint): each site recorded in THIS
+   generation is re-asked with its POSSIBLE final mask — its tainted arguments plus every
+   argument `LaterTaintOracle::mayGain` says a later drain can taint — and tainted now (then
+   drained) if the predictor calls that quantum. `mayGain` is reachability over the backward
+   use-def slice (operands, a call's arguments, a φ's incomings AND the conditional terminators
+   of the blocks between the φ's block's idom and the block) to a SEED: a tainted φ-decider (the
+   φ a later round replaces with a merge `%out` / a peel select), or a call to a defined callee
+   holding a `cq_theta` transitively, or an indirect call (a 3jru crossing may taint its result).
+   It runs on the drain's COMPLETE taint, so it is order-independent.
+3. **The STICKY rule** (in `drainWorklist`): a site recorded by an EARLIER generation is never
+   tainted by a later drain. If its grown (replanned) mask then makes the clone return a
+   register, `specialize()`'s check declines loudly. This is the backstop for any growth
+   `mayGain` misses: such a site can no longer be ACCEPTED in round 2.
+
+### 12.3 Why it is sound (and why the new predicate needs no completeness proof)
+
+- `mayGain` OVER-approximating (true too often) taints a site at round 1 = exactly what every
+  drain did before bd cepm: the oracle's behaviour, the conservative direction for this change.
+- `mayGain` UNDER-approximating (missing a growth) leaves the site recorded; the sticky rule keeps
+  it untainted in the later drain; `replanReseedSpecialization` grows its Pending mask (the grown
+  argument is in the reseed/delta set by construction); the clone returns a register; the check
+  declines. **No path accepts.** Measured: mutants R1/R4/R5 (§12.5) disable the settle step or
+  blind the oracle, and `r2b`/`r2d` then decline with the check's string instead of the oracle's.
+- The sticky rule only withholds taint from a result nothing has tainted yet; it never ADDS a
+  gate. Its failure mode is the check's decline.
+- `settleSpecPredictions` only inserts sites into `Tainted` and drains them (the pre-cepm drain);
+  it terminates (each round taints ≥1 site from a finite record).
+- `declineStaleTaintSet`'s fresh `propagate()` runs the same settle step, so the carried and fresh
+  sets agree (0 lit movers).
+
+### 12.4 L1 / L2 / L3 for round 1b
+
+- **L1.** The premise the record carries ("this site's result is classical") is exactly what a
+  round-2 delta can falsify; round 1b RECORDS it (the map) and makes the round-2 answer a CHECKED
+  one (sticky + `specialize()`), never a silent re-taint. The settle step makes the round-1 answer
+  the oracle's whenever the growth is visible at round 1.
+- **L2.** Widened: the set of sites tainted at round 1 (by the settle step). The other set over
+  the same closure is `SpecPredictedClassical` itself — kept consistent (a site tainted by settle
+  or by an in-drain revisit is erased from it).
+- **L3.** Narrowed: the set of drains that may taint a recorded site (the sticky rule). The other
+  predicate that names the same result is `specialize()`'s check (`ResultWasTainted`), which now
+  carries the whole burden for a sticky site whose clone is quantum — measured reachable (R1).
+
+### 12.5 Measurements (subject `cq-opt` `02522b6a4fdb8911eafe965e`, `libCQPass.so` `49e7c01f5c0ba2417e287ddc`, `cq-opt-debugalloc` `d73534dc2decb0c933d87d22`)
+
+- **Red-green.** `spec_reject_predicted_classical_round2_mask_growth{,_ry}.ll` (r2b, r2d; the
+  oracle's string `cq controlled lowering: control flow under quantum control`): FAIL 2/2 on the
+  round-1 subject `cb4ed3c2`, PASS 2/2 on the oracle and on the round-1b subject. All 20
+  `spec_*_predicted_*` fixtures: 20/20 on round 1b.
+- **lit** (`lit -j4 ir-pass/test`, round 1b): **2427 discovered, 2426 passed, 1 XFAIL, 0 failed**
+  (255 s).
+- **Twin battery** (66 pairs): ORACLE 18 twin-identical, round 1 43, **round 1b 43**. The ONLY
+  verdict changes round 1 → round 1b are `r2b` and `r2d` (ACC-DIFF → oracle's decline,
+  VERDICT-DIFF vs the accepting twin, as on the oracle). `r2g` unchanged (ACC-DIFF, the oracle's
+  stream), `r2l` unchanged (DECL-SAME).
+- **Corpus A/B vs the frozen ORACLE** (null control = subject twice, run first, 0 everywhere):
+  lit **2427** → 13 movers, exactly round 1's (12 D→A + 1 STRING, all this change's fixtures; the
+  2 new fixtures are NOT movers — identical to the oracle); e2e **608** → 0; multi **36** → 2
+  D→A (the new slices); probes **377** → **36** (round 1: 38): 28 D→A + 4 STRING + 4 A→D
+  (z0re's side door, §9) — `r2bC`/`r2dC` no longer move.
+- **Mutants** (subset of 486 fixtures that call a defined function; base = round-1b subject):
+
+| mutant | removes / forces | result |
+|---|---|---|
+| N1 | nothing (`|| Flip.size() > 1e9`) — NULL | **0 of 486** |
+| R1 | the settle step | **KILLED 2** (r2b, r2d) — both now decline with `specialize()`'s check string, i.e. the STICKY backstop is live and total for them |
+| R2 | the sticky rule | MISSED — every known growth is caught by the settle step first; the rule is a backstop by design (R1/R4/R5 show it firing when the settle step misses) |
+| R3 | settle AND sticky (= round 1) | **KILLED 2** — both ACCEPT again |
+| R4 | `mayGain`'s φ-decider check | **KILLED 2** (declines via the check) |
+| R5 | "a tainted decider is a seed" | **KILLED 2** (declines via the check) |
+| R6 | the callee-may-yield-quantum seed | MISSED — no fixture/probe reaches a site whose argument is the result of a call to a function holding a `cq_theta` (such a callee's result is either tainted already or 3jru-refused); argued, not constructed |
+
+- **Round 1 vs round 1b directly** (`ab.py cq-opt.subj1 cq-opt.subj2` over the 377 probes, null
+  0 of 377): **2 movers, both A→D: `r2bC`, `r2dC`** — no other probe's verdict, string or stream
+  changed.
+
+### 12.6 Gates run on round 1b
+
+- `lit -j4 ir-pass/test`: 2427 / 2426 passed / 1 XFAIL / 0 failed.
+- Affected ctest (`-R 'spec|specialize|classical-call|scrub|cq-opt-equivalence|free-pairing-selftest'`,
+  53 entries): 51/53 on the first run — **`taintset-scrub-guard` and its selftest FAILED**: the
+  new `TaintSet::SpecPredictedClassical` member was not exercised by
+  `ir-pass/tools/scrub_selftest.cpp` (the gate's rule). Added
+  `checkMap("SpecPredictedClassical", …, Call, 2u)`; re-run `ctest -R scrub`: **8/8 passed**
+  (incl. both scrub-on-delete selftests and both guard entries). `cq-opt`/`libCQPass.so` hashes
+  unchanged by that edit (measured).
+- `update_code_map.py --check`: clean.
+- Allocator sweeps (plain vs `lifo` vs `nofree`, round-1b build): lit **2427 modules, 0
+  disagreements**; probes **377 modules, 0 disagreements**.
+- NOT run: full `ctest -j6` (merge gate), `cq-opt-equivalence-full`, `+Asserts`, Guard Malloc.
+
+## 13. Proposed CLAUDE.md text (not applied — the orchestrator owns CLAUDE.md)
 
 > **bd cepm / 3zr4 (2026-09-28): a Phase-6 call whose lifted callee is PREDICTED to return a
 > classical value is not tainted at propagation.** `specCallResultPredictedClassical`
@@ -483,4 +622,10 @@ drop already sends them down the direct path on the oracle (0 movers in the prob
 > classical is IR-only from C" was FALSE: a read through a call the pass cannot prove pure
 > (a callee in another TU whose own callee is in yet another) is C-reachable. bd l3oi's fence
 > keeps the predictor's over-approximation: an inner classical clone, a branch that does not
-> reach the return.
+> reach the return. ⚠ **A prediction is per DRAIN, and a later drain may not overturn it**
+> (round 1b): a site whose argument a later round can taint (`LaterTaintOracle`) is tainted by
+> the SETTLE step in the drain that recorded it (the pre-cepm behaviour); a site an earlier
+> drain left classical is STICKY, and if its grown mask makes the clone quantum `specialize()`
+> declines. Tainting it in round 2 instead accepted programs the oracle declines, with streams
+> that are not the twin's (`r2b`/`r2d`); the compiler-kept copy-out class behind them is an
+> owner question (bd `ffir`).

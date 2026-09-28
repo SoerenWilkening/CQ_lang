@@ -46,9 +46,15 @@ bool predictReturnTainted(llvm::Function *Callee, SpecMask Mask);
 // (every drain: `propagate`, the round-2 reseed and its onward fixpoint,
 // `propagateFromSeeds`) at the moment it would taint `CI` as a user of a tainted
 // argument: a true answer leaves the RESULT classical, so no stage between propagation
-// and `specialize()` ever reads it as a register (the hand-inlined twin's view). Each
-// drain asks with the mask it sees; a later drain that taints another argument visits
-// `CI` again and re-asks with the grown mask (the predictor is monotone in `Mask`).
+// and `specialize()` ever reads it as a register (the hand-inlined twin's view). WITHIN
+// one drain a revisit with a grown mask re-asks (the predictor is monotone in `Mask`).
+// ⚠ ACROSS drains it does not (round 1b, TaintPropagation.cpp; "a later drain … re-asks
+// with the grown mask" stood here and let a ROUND-2 mask-growth site be tainted in
+// round 2, accepting programs the oracle declines, TRACK_CEPM_3ZR4.md §5.2.1): the
+// drain's SETTLE step taints, in the drain that recorded it, every site whose POSSIBLE
+// final mask (plus the arguments a later round can taint — `LaterTaintOracle`) predicts
+// a quantum return — the pre-cepm behaviour for such a site — and a site a drain of an
+// EARLIER generation left classical is STICKY: a later drain never taints it.
 // Why it is safe, and what backstops it:
 //   * every call this answers true for is a Phase-6 site or a loud decline — it reads a
 //     tainted argument and calls a definition, so `detectSpecializations` (round 1, or
@@ -56,7 +62,9 @@ bool predictReturnTainted(llvm::Function *Callee, SpecMask Mask);
 //     is refused by `declineTaintEscapes`' `kMsgUnknownCallee`;
 //   * for a `Pending` site, `specialize()` CHECKS the prediction: a site whose result
 //     was NOT tainted when it resolves but whose clone returns a register is a LOUD
-//     decline (`kMsgPredictedClassicalQuantum`), never the old silent re-mark.
+//     decline (`kMsgPredictedClassicalQuantum`), never the old silent re-mark. It is
+//     what the STICKY rule falls back on when the settle step under-approximates a
+//     later round's growth.
 // Defined in SpecializeClone.cpp.
 bool specCallResultPredictedClassical(const llvm::CallInst &CI,
                                       const TaintSet &taint);

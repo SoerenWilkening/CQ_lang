@@ -318,6 +318,36 @@ fix("spec_reject_predicted_classical_recursive_subcall", "DECLINE", "bd test_C_l
     """; CHECK: cq specialization: recursive callee has no static depth bound
 """)
 
+# ---------------------------------------------------------------- ROUND 1b: mask growth
+R2 = """\
+; bd cepm ROUND 1b — a ROUND-2 MASK-GROWTH site. `t = h(q, y)` with `y` a 6.5 classical-call-arm
+; merge `%out` (`if (q > 5) y = ext_f(7);`), tainted only in ROUND 2. At round 1 the mask is `01`
+; and `predictReturnTainted(h, 01)` is FALSE (`k + 1` reads only `y`); at round 2 it is `11`
+; and the return is QUANTUM. Round 1 of bd cepm left `t` classical at round 1 and tainted it in
+; ROUND 2, which ACCEPTED this module with a stream that is NOT the hand-inlined twin's (the
+; clone's copy-out rail `copy(y + 1)` stays allocated where the twin's `-O1` folded `y + 1 > 3`
+; to `y > 2`; TRACK_CEPM_3ZR4.md §5.2.1). Orchestrator ruling 2026-09-28: such a site must behave
+; as on the oracle. The SETTLE step (`settleSpecPredictions`) asks `LaterTaintOracle`: `y` is a φ
+; decided by the TAINTED `q > 5`, so a later round can taint it, the POSSIBLE mask is `11`, the
+; prediction is quantum, and `t` is tainted AT ROUND 1 — the oracle's taint set, hence the
+; oracle's verdict and string. RETIREMENT TRIGGER (L8): an owner ruling that a compiler-kept
+; clone copy-out is acceptable (bd filed with this change) would make this an accept; re-derive,
+; do not delete."""
+fix("spec_reject_predicted_classical_round2_mask_growth", "DECLINE", "bd test_C_libtooling-cepm (round 1b)", "r2bC",
+    R2 + "\n; Here `t` decides an in-place Ry of an unrelated register `q2`.",
+    "Oracle 9a230646: the same DECLINE (byte-identical first error line). Round 1 of bd cepm: ACCEPT.",
+    "Hand-inlined twin (r2bT.c: `g(q); int t = y + 1;`) ACCEPTS with a different stream — the\n"
+    "compiler-kept copy-out class, left for an owner ruling.",
+    """; CHECK: cq controlled lowering: control flow under quantum control
+""")
+fix("spec_reject_predicted_classical_round2_mask_growth_ry", "DECLINE", "bd test_C_libtooling-cepm (round 1b)", "r2dC",
+    R2 + "\n; Here, besides r2b's region, a trailing Ry on `y` (round 1 of bd cepm accepted it and BOTH\n"
+    "; sides warned `live derived record`).",
+    "Oracle 9a230646: the same DECLINE (byte-identical first error line). Round 1 of bd cepm: ACCEPT.",
+    "Hand-inlined twin (r2dT.c) ACCEPTS (warned) with a different stream.",
+    """; CHECK: cq controlled lowering: control flow under quantum control
+""")
+
 for (name, kind, bead, probe, prose, oracle, twin, checks) in FIX:
     body = open(os.path.join(P, probe + ".s1.ll")).read()
     assert len(body) > 200, probe

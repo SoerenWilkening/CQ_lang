@@ -890,6 +890,29 @@ struct TaintSet {
   // `declineScrubbedHandleReads` — the scrub-direction twin of CLAUDE.md L1.
   llvm::SmallVector<llvm::WeakVH, 4> ScrubbedByReturnTaint;
 
+  // bd `test_C_libtooling-cepm` round 1b — every would-be Phase-6 site whose RESULT
+  // a drain left CLASSICAL on `predictReturnTainted`'s word
+  // (`specCallResultPredictedClassical`, SpecializeClone.h), mapped to the drain
+  // GENERATION that first did so (`SpecPredictGeneration` below). Read by
+  // `propagateWorklist` for two purposes, both in TaintPropagation.cpp:
+  //   * the SETTLE step at the end of every drain: a site recorded in THIS
+  //     generation whose POSSIBLE final mask (its tainted arguments plus every
+  //     argument `mayGainTaintLater` says a later drain can taint) predicts a
+  //     quantum return is tainted now — the oracle's behaviour for a round-2
+  //     MASK-GROWTH site;
+  //   * the STICKY rule in a later-generation drain: a site recorded EARLIER is
+  //     never tainted by a later drain (stages in between read it as classical);
+  //     if its grown mask then makes the clone return a register, `specialize()`
+  //     declines loudly (`kMsgPredictedClassicalQuantum`).
+  // Self-cleaning (`ScrubOnDelete.h`): a deleted call drops its key.
+  ScrubMap<const llvm::CallInst *, unsigned> SpecPredictedClassical;
+  // The drain generation: 0 for every drain `propagate()` runs (nothing reads
+  // taint between them), incremented at the entry of every GROWTH drain
+  // (`propagateWorklist` with `skipRuntimeCalls` — the round-2 reseed, its onward
+  // fixpoint, `propagateFromSeeds`), each of which runs after some stage has read
+  // the taint set.
+  unsigned SpecPredictGeneration = 0;
+
   // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
   // record of every function it built, with the argument slots that are QUANTUM
   // HANDLES in it: a clone `__cq_q_*` maps to its detection-time `SpecMask`; its
