@@ -604,30 +604,43 @@ void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
   }
 }
 
-// bd `test_C_libtooling-cepm` round 1b — CAN A LATER DRAIN TAINT THIS VALUE?
+// bd `test_C_libtooling-cepm` round 1b (narrowed in round 2) — CAN A LATER DRAIN
+// TAINT THIS VALUE?
 //
 // Every taint-GROWTH event after `propagate()` starts at a φ the round's control
 // emission (or `MergePhiPeel`) REPLACES: the 6.5 / 4.5 / IO-sink merge `%out`
 // rails (`UntaintedMergeRails`) and the peel's `select` each replace an UNTAINTED
-// merge φ whose region is decided by a TAINTED condition; their cascades are φs
-// decided by a condition derived from such a rail; and bd 3jru's return crossing
-// taints the result of a call whose callee grows a tainted `ret`. So `V` can gain
-// taint later only if its backward use-def slice (operands; a call's arguments; a
-// φ's incomings AND the conditions that decide which incoming arrives) reaches
-//   * a CONDITION that is tainted now — the decider of a φ some later round can
-//     replace — or,
-//   * a call to a defined callee that holds a front-end rotation (transitively), or
-//     an indirect call: its return may be tainted later.
-// A φ's deciders are the conditional terminators of the blocks between its
-// block's immediate dominator and the block (a backward walk from the block's
-// predecessors that stops at the idom, including the block's own terminator —
-// a loop header's exit test). Plain reachability, so a per-query visited set is
-// exact. It OVER-approximates growth, and over-approximation is the SAFE
-// direction here: a site it names is tainted in the drain that recorded it —
-// what every drain did before bd cepm. An UNDER-approximation is what the
-// STICKY rule in `drainWorklist` and `specialize()`'s check exist for: such a
-// site stays classical and, if its clone then returns a register, the module
-// declines loudly. Neither direction is a silent one.
+// merge φ whose incoming is SELECTED by a TAINTED condition; their cascades are φs
+// selected by a condition derived from such a rail. So `V` can gain taint later
+// only if its backward use-def slice (operands; a call's arguments; a φ's
+// incomings AND the branches that SELECT which incoming arrives) reaches a
+// CONDITION that is tainted now. It OVER-approximates growth, and
+// over-approximation is the SAFE direction here: a site it names is tainted in the
+// drain that recorded it — what every drain did before bd cepm. An
+// UNDER-approximation is what the STICKY rule in `drainWorklist` and
+// `specialize()`'s check exist for: such a site stays classical and, if its
+// replanned clone then returns a register, the module declines loudly. Neither
+// direction is a silent one.
+//
+// ⚠ ROUND 2 — TWO RULES REMOVED, and why (Rule-13 r1A F-r1A-1 / bd `we38`, r1B
+// F-r1B-2):
+//   * "a call to a defined callee that holds a `cq_theta` (transitively), or an
+//     indirect call" was a SYNTACTIC answer (L5) to "can this call's RESULT be
+//     tainted later?". The only channel by which a call RESULT gains taint other
+//     than through its operands (which the walk follows) is bd 3jru's return
+//     crossing, and a module where it happens is refused by
+//     `declineQuantumReturnCalls` at the post-fixpoint slot, before `specialize()`,
+//     in both entry points (review probe `r6a`: identical decline with and without
+//     the rule). An indirect call is never crossed (the crossing requires the call
+//     to name the function directly). The rule's only measured effect was an
+//     over-decline (`r6b`: a callee that holds a `cq_theta` but returns a MEASURED
+//     classical value). Should the 3jru refusal ever be relaxed, a missed crossing
+//     still ends at the sticky rule + `specialize()`'s check — loud.
+//   * "a φ's deciders are EVERY conditional terminator between its block's idom and
+//     the block" counted a loop body's own branches as deciding the loop's header φ
+//     (review probe `lpp`: `for (i<3) { t = h(q, i+m); if (q > t) cq_phi(.2); }`,
+//     whose tainted `br` reconverges before the latch). A branch now counts only if
+//     it SELECTS the incoming (`selectsIncoming`).
 class LaterTaintOracle {
 public:
   explicit LaterTaintOracle(const TaintSet &T) : T(T) {}
@@ -640,60 +653,12 @@ public:
 private:
   const TaintSet &T;
   DenseMap<const Function *, std::unique_ptr<DominatorTree>> DTs;
-  DenseMap<const Function *, bool> CalleeMemo;
 
   DominatorTree &dt(Function &F) {
     auto &Slot = DTs[&F];
     if (!Slot)
       Slot = std::make_unique<DominatorTree>(F);
     return *Slot;
-  }
-
-  // Does `F`, or a defined function it reaches by direct calls, hold a front-end
-  // rotation site (or an indirect call, which could reach one)? Conservatively
-  // true while `F` is still being answered (a call cycle).
-  bool calleeMayYieldQuantum(const Function *F) {
-    auto It = CalleeMemo.find(F);
-    if (It != CalleeMemo.end())
-      return It->second;
-    CalleeMemo[F] = true;
-    bool R = false;
-    for (const BasicBlock &BB : *F) {
-      for (const Instruction &I : BB) {
-        const auto *CB = dyn_cast<CallBase>(&I);
-        if (!CB)
-          continue;
-        if (const auto *CI = dyn_cast<CallInst>(CB);
-            CI && T.ThetaCalls.contains(const_cast<CallInst *>(CI))) {
-          R = true;
-          break;
-        }
-        const Function *G = CB->getCalledFunction();
-        if (!G) {
-          if (!CB->isInlineAsm()) {
-            R = true;
-            break;
-          }
-          continue;
-        }
-        if (!G->isDeclaration() && calleeMayYieldQuantum(G)) {
-          R = true;
-          break;
-        }
-      }
-      if (R)
-        break;
-    }
-    CalleeMemo[F] = R;
-    return R;
-  }
-
-  bool condGrows(Value *C, SmallPtrSetImpl<const Value *> &Seen) {
-    if (!C)
-      return false;
-    if (T.Tainted.count(C))
-      return true;  // a tainted decider: a later round may replace the φ.
-    return walk(C, Seen);
   }
 
   static Value *terminatorCondition(BasicBlock *B) {
@@ -703,6 +668,66 @@ private:
     if (auto *SI = dyn_cast_or_null<SwitchInst>(Term))
       return SI->getCondition();
     return nullptr;
+  }
+
+  // Does `X`'s terminator SELECT which incoming edge of `M` arrives? For each
+  // successor S of `X`, E(S) is the set of predecessors P of `M` such that some
+  // path from S first reaches `M` through the edge P -> M. `X` selects iff the sets
+  // are not all one and the same single block: sets that differ mean the outcome
+  // picks the edge; an EMPTY set (an arm that never reaches `M`) or a set of two
+  // or more blocks (the choice is left to later branches the outcome may still
+  // steer) is conservatively counted as selecting. A loop body's branch whose arms
+  // reconverge before the latch yields {latch} on every arm and does not select;
+  // a diamond's or triangle's branch yields one arm per edge and does. Budget:
+  // visiting more than `kSelectBudget` blocks from one successor answers "selects"
+  // (the conservative direction).
+  static constexpr unsigned kSelectBudget = 4096;
+  static bool selectsIncoming(BasicBlock *X, BasicBlock *M) {
+    SmallVector<SmallPtrSet<BasicBlock *, 4>, 4> Sets;
+    for (BasicBlock *S : successors(X)) {
+      SmallPtrSet<BasicBlock *, 4> E;
+      if (S == M) {
+        E.insert(X);
+      } else {
+        SmallPtrSet<BasicBlock *, 32> Vis;
+        SmallVector<BasicBlock *, 16> WL{S};
+        Vis.insert(S);
+        while (!WL.empty()) {
+          if (Vis.size() > kSelectBudget)
+            return true;
+          BasicBlock *B = WL.pop_back_val();
+          for (BasicBlock *Succ : successors(B)) {
+            if (Succ == M)
+              E.insert(B);
+            else if (Vis.insert(Succ).second)
+              WL.push_back(Succ);
+          }
+        }
+      }
+      Sets.push_back(std::move(E));
+    }
+    if (Sets.empty())
+      return false;
+    for (const auto &E : Sets)
+      if (E.size() != 1)
+        return true;
+    for (const auto &E : Sets)
+      if (*E.begin() != *Sets.front().begin())
+        return true;
+    return false;
+  }
+
+  // A branch at `X` that selects `M`'s incoming, whose condition is tainted now or
+  // may gain taint. ⚠ `selectsIncoming` is asked FIRST: a condition's slice walked
+  // and then discarded would leave its nodes in `Seen` as if they could not reach
+  // a seed, and a later path through them would under-report.
+  bool decides(BasicBlock *X, BasicBlock *M, SmallPtrSetImpl<const Value *> &Seen) {
+    Value *C = terminatorCondition(X);
+    if (!C || !selectsIncoming(X, M))
+      return false;
+    if (T.Tainted.count(C))
+      return true;  // a tainted selector: a later round may replace the φ.
+    return walk(C, Seen);
   }
 
   bool walk(Value *V, SmallPtrSetImpl<const Value *> &Seen) {
@@ -726,7 +751,17 @@ private:
       if (!N || !N->getIDom())
         return true;  // unreachable / no dominator: do not argue — grow.
       BasicBlock *Top = N->getIDom()->getBlock();
-      if (condGrows(terminatorCondition(M), Seen))
+      // The candidate selectors: `M`'s own terminator (a self-loop's exit test)
+      // and every conditional terminator on a path from `idom(M)` to `M`. ⚠ THE
+      // CLIMB PAST `M`'s DIRECT PREDECESSORS IS UNPINNED AND, TODAY, UNREACHABLE
+      // (Rule-13 r1A F-r1A-2): every growth channel whose tainted branch is not a
+      // direct predecessor of the merge (an if/else with two classical-call arms,
+      // review probe `gie`; a switch with a non-empty default, `gsw`; a forwarding
+      // block on the straight-through edge, `ir_fwdC.ll`) declines in round 1.
+      // RETIREMENT TRIGGER (L8): the day 6.5 / 4.5 / the IO-sink mux / the peel
+      // admits a merge whose tainted branch is not a direct predecessor, add that
+      // program (`gie` / `ir_fwdC.ll`) as a fixture here — it is the climb's pin.
+      if (decides(M, M, Seen))
         return true;
       SmallPtrSet<BasicBlock *, 16> Vis;
       SmallVector<BasicBlock *, 16> WL(pred_begin(M), pred_end(M));
@@ -734,20 +769,13 @@ private:
         BasicBlock *X = WL.pop_back_val();
         if (X == M || !Vis.insert(X).second)
           continue;
-        if (condGrows(terminatorCondition(X), Seen))
+        if (decides(X, M, Seen))
           return true;
         if (X == Top)
           continue;
         WL.append(pred_begin(X), pred_end(X));
       }
       return false;
-    }
-    if (auto *CB = dyn_cast<CallBase>(I)) {
-      const Function *G = CB->getCalledFunction();
-      if (!G && !CB->isInlineAsm())
-        return true;  // an indirect call: its callee's return is unknown.
-      if (G && !G->isDeclaration() && calleeMayYieldQuantum(G))
-        return true;
     }
     for (Value *Op : I->operands())
       if (walk(Op, Seen))

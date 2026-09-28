@@ -187,6 +187,23 @@ reading("za02", "int q = cq_theta(m, .5); int t = h(q, m); int r = t; if (q > 3)
         "int q = cq_theta(m, .5); g(q); int t = m + 1; int r = t; if (q > 3) r = cq_theta(t, .7); return cq_measure(r) + cq_measure(q);", families=("v",))
 reading("za01", "int q = cq_theta(m, .5); int t = h(q, m); int r; if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q);",
         "int q = cq_theta(m, .5); g(q); int t = m + 1; int r; if (q > 3) r = cq_theta(t, .7); else r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q);", families=("v",))
+# ---- ROUND 2 (Rule-13 r1A F-r1A-1, r1B F-r1B-2): the reviewers' probes, respelled ----
+# r6a: F's ret is a 6.5 %out (a 3jru crossing in round 2) — declineQuantumReturnCalls owns it.
+# r6b: F holds a cq_theta but returns a MEASURED classical value — the callee seed over-declined it.
+# (lib TUs include CQ.h explicitly; gen.sh passes -I include to every TU.)
+LIBS["rfa"] = ('#include "CQ.h"\nint ext_f(int a);\n'
+               "int F(int n) { int r = cq_theta(n, .3); int y = 0; if (r > 5) y = ext_f(7); return y; }\n")
+LIBS["rfb"] = '#include "CQ.h"\nint F(int n) { int r = cq_theta(n, .3); return n + cq_measure(r); }\n'
+for nm, lib in (("r6a", "rfa"), ("r6b", "rfb")):
+    reading(nm, "int q = cq_theta(m, .5); int y = F(n); int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+            "int q = cq_theta(m, .5); int y = F(n); g(q); int t = y + 1; int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+            cextra="int F(int n);\n", textra="int F(int n);\n", xlibs=["x3", lib], families=("v",))
+# lpp: a tainted branch in a loop body that does NOT select the header φ `i`; lpq: its loop-invariant control.
+reading("lpp", "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { int t = h(q, i + m); if (q > t) cq_phi(0.2); } return cq_measure(q);",
+        "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { g(q); int t = i + m + 1; if (q > t) cq_phi(0.2); } return cq_measure(q);", families=("v",))
+reading("lpq", "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { int t = h(q, m); if (q > t + i) cq_phi(0.2); } return cq_measure(q);",
+        "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { g(q); int t = m + 1; if (q > t + i) cq_phi(0.2); } return cq_measure(q);", families=("v",))
+
 # the result PRINTED (an IO sink with a classical argument)
 reading("pr", "int q = cq_theta(m, .5); int t = h(q, m); printf(\"%d\\n\", t); return cq_measure(q);",
         "int q = cq_theta(m, .5); g(q); int t = m + 1; printf(\"%d\\n\", t); return cq_measure(q);",

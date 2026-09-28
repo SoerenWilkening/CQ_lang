@@ -185,7 +185,17 @@ fix("spec_accept_predicted_classical_bank", "ACCEPT", "bd test_C_libtooling-cepm
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK:       store i32 %[[T]], ptr
 ; CHECK-NOT:   railbank
+; CHECK:       %[[L:[0-9]+]] = load i32, ptr
+; CHECK-NEXT:  add nsw i32 %[[L]],
 ; CHECK:       ret i32
+; ROUND 2 (Rule-13 r1B F-r1B-6): the property that separates right from wrong here is that
+; `cq_measure(b[i])` over a loaded CLASSICAL integer lowers to the VALUE (bd 21mg) — the load feeds
+; the sum directly (CHECK-NEXT above) — and that the ONLY measurement gate in the module is the one
+; on `q`'s handle. MEAS is a whole-file prefix (Rule 12 (a): counts never inside a negative prefix):
+; exactly one measurement CALL, and none after it (a regression that measured each loaded integer
+; as a handle — the Rule-3 wire crossing — would add three).
+; MEAS-COUNT-1: call i32 @cqrt_measure_i32(
+; MEAS-NOT:     call i32 @cqrt_measure_i32(
 """)
 fix("spec_accept_predicted_classical_fp_return", "ACCEPT", "bd test_C_libtooling-cepm", "fpC",
     READING.replace("returns the CLASSICAL `k + 1`", "returns the CLASSICAL `k * 2.0`")
@@ -348,10 +358,69 @@ fix("spec_reject_predicted_classical_round2_mask_growth_ry", "DECLINE", "bd test
     """; CHECK: cq controlled lowering: control flow under quantum control
 """)
 
+# ---------------------------------------------------------------- ROUND 2 (Rule-13 r1A/r1B)
+RUN_OVERRIDE = {
+    "spec_accept_predicted_classical_bank":
+        ("; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.bank.ll\n"
+         "; RUN: %filecheck %s < %t.bank.ll\n"
+         "; RUN: %filecheck --check-prefix=MEAS %s < %t.bank.ll\n"),
+}
+fix("spec_accept_predicted_classical_measured_callee", "ACCEPT", "bd test_C_libtooling-cepm (round 2; bd we38)", "r6bC",
+    READING + "\n; Here the site's SECOND argument is `F(n)`, where `F` holds a `cq_theta` but returns a MEASURED\n"
+    "; classical value (`F(n){ r = cq_theta(n,.3); return n + cq_measure(r); }`). Round 1b's\n"
+    "; `LaterTaintOracle` counted any call to a callee holding a `cq_theta` as a value a later round can\n"
+    "; taint (a SYNTACTIC answer, L5), predicted the site quantum, tainted `t` at round 1, and bd l3oi's\n"
+    "; fence declined. Round 2 removed that seed (Rule-13 r1A F-r1A-1 / bd we38): the only channel by which\n"
+    "; a call RESULT gains taint beyond its operands is bd 3jru's return crossing, and that growth is\n"
+    "; refused by `declineQuantumReturnCalls` before `specialize()` (`spec_reject_predicted_classical_\n"
+    "; round2_return_crossing.ll` pins it). RETIREMENT TRIGGER (L8): the day that refusal is relaxed, a\n"
+    "; crossing the oracle does not foresee ends at `specialize()`'s check — re-derive this pair then.",
+    "Oracle 9a230646: DECLINE `classical call result used as a quantum register`. Round 1b: same.",
+    TWIN_SAME.format(t="r6bT", rec=REC),
+    """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[Y:[0-9]+]] = tail call i32 @F(
+; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %{{[A-Za-z0-9_.]+}}, i32 noundef %[[Y]])
+; CHECK:       %[[C:[0-9]+]] = icmp sgt i32 %[[T]], 3
+; CHECK-NEXT:  br i1 %[[C]],
+; CHECK-NOT:   cq_template_icmp
+; CHECK:       ret i32
+""")
+fix("spec_reject_predicted_classical_round2_return_crossing", "DECLINE", "bd test_C_libtooling-cepm (round 2; bd we38)", "r6aC",
+    "; The decline twin of `spec_accept_predicted_classical_measured_callee.ll`: here `F`'s RETURN is a 6.5\n"
+    "; merge `%out` (`F(n){ r = cq_theta(n,.3); y = 0; if (r > 5) y = ext_f(7); return y; }`), so bd 3jru's\n"
+    "; return crossing taints `F(n)` in ROUND 2 and the site `h(q, F(n))`'s mask grows. That growth is\n"
+    "; refused by `declineQuantumReturnCalls` at the post-fixpoint slot, before `specialize()` — with or\n"
+    "; without round 1b's callee seed (measured by Rule-13 r1A: identical decline string). THE STRING IS\n"
+    "; THE PIN: it is the 3jru owner's, not `specialize()`'s check and not bd l3oi's.",
+    "Oracle 9a230646: the same DECLINE (byte-identical first error line).",
+    "Hand-inlined twin (r6aT.c) declines with the SAME string.",
+    """; CHECK: cq taint escape: quantum value returned across a function boundary
+""")
+fix("spec_accept_predicted_classical_loop_body_branch", "ACCEPT", "bd test_C_libtooling-cepm (round 2)", "lppC",
+    READING + "\n; Here the site sits in a ROLLED loop, reads the loop counter (`h(q, i + m)`), and its result is\n"
+    "; compared against `q` by a tainted phase branch in the same body (`if (q > t) cq_phi(.2)`). Round 1b's\n"
+    "; settle step counted EVERY conditional terminator between the header's idom and the header as a\n"
+    "; decider of the header φ `i` — the whole loop body — so the tainted `br (q > t)` made `i` \"may gain\n"
+    "; taint\", the site was tainted at round 1, and the compare became Q+Q (Rule-13 r1B F-r1B-2; round 1\n"
+    "; ACCEPTED it twin-identically). Round 2 counts a branch only if it SELECTS which incoming edge of the\n"
+    "; φ arrives (`selectsIncoming`): this branch's arms reconverge before the latch, so both reach the\n"
+    "; header through the latch and it selects nothing.",
+    "Oracle 9a230646: DECLINE `quantum-quantum compare condition under quantum control`. Round 1b: same.",
+    TWIN_SAME.format(t="lppT", rec=REC),
+    """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
+; CHECK:       %[[I:[0-9]+]] = phi i32
+; CHECK-NEXT:  %[[A:[0-9]+]] = add nsw i32 %[[I]],
+; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]], i32 noundef %[[A]])
+; CHECK-NEXT:  %[[F:[A-Za-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 %[[T]])
+; CHECK-NEXT:  call void @cqrt_rz_i1(i32 %[[F]], double 2.000000e-01)
+; CHECK-NOT:   cq_template_icmp_sgt_i32(
+""")
+
 for (name, kind, bead, probe, prose, oracle, twin, checks) in FIX:
     body = open(os.path.join(P, probe + ".s1.ll")).read()
     assert len(body) > 200, probe
-    run = ACC_RUN if kind == "ACCEPT" else DEC_RUN
+    run = RUN_OVERRIDE.get(name) or (ACC_RUN if kind == "ACCEPT" else DEC_RUN)
     txt = header(name, kind, bead, probe, prose, oracle, twin) + run + checks + "\n" + body
     with open(os.path.join(W, "ir-pass/test", name + ".ll"), "w") as f:
         f.write(txt)

@@ -1466,11 +1466,19 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
     // guard and its lifts — has read the result as an ordinary integer. A clone that
     // returns a REGISTER after all would make every one of those readings wrong, and
     // the re-mark below (`taint.Tainted.insert`) would taint the call but none of its
-    // consumers: the handle id read as data, verify-clean. The predictor is argued a
-    // sound over-approximation (SpecializeClone.h) and nothing between propagation and
-    // here is known to change a callee body, so this is argued UNREACHABLE — it is
-    // CHECKED rather than assumed, and LOUD, because the argument is the kind CLAUDE.md
-    // L7 says hardens unruled. `LLVMContext::diagnose` exits on the `DS_Error` in
+    // consumers: the handle id read as data, verify-clean. ⚠ WHAT REACHES THIS (round
+    // 1b; Rule-13 r1A F-r1A-3 corrected the earlier text here, which called the check
+    // "argued UNREACHABLE" because "nothing between propagation and here is known to
+    // change a callee body" — the wrong mechanism): the predictor is a sound
+    // over-approximation FOR A FIXED MASK (SpecializeClone.h), but the clone is built
+    // with `Cand.Mask`, which a later round can GROW (`replanReseedSpecialization`).
+    // The propagation drain's SETTLE step taints such a site at round 1 whenever
+    // `LaterTaintOracle` foresees the growth; a site it does not foresee stays
+    // classical under the STICKY rule, and THIS CHECK is that rule's designated
+    // backstop — reached by a REPLANNED MASK, with the callee body untouched
+    // (measured: mutants that disable the settle step or blind the oracle make the
+    // round-2 mask-growth fixtures decline here). It is LOUD, never a silent re-mark.
+    // `LLVMContext::diagnose` exits on the `DS_Error` in
     // `opt` (bd br4a), so nothing any window stage did reaches the output; on a host
     // whose handler returns, the drain carries on (the site is retargeted and
     // re-marked below, as every other specializer decline leaves its site).

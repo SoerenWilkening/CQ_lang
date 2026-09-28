@@ -897,20 +897,28 @@ struct TaintSet {
   // `propagateWorklist` for two purposes, both in TaintPropagation.cpp:
   //   * the SETTLE step at the end of every drain: a site recorded in THIS
   //     generation whose POSSIBLE final mask (its tainted arguments plus every
-  //     argument `mayGainTaintLater` says a later drain can taint) predicts a
-  //     quantum return is tainted now — the oracle's behaviour for a round-2
-  //     MASK-GROWTH site;
+  //     argument `LaterTaintOracle::mayGain` says a later drain can taint: its
+  //     backward slice reaches a tainted branch that SELECTS a φ's incoming)
+  //     predicts a quantum return is tainted now — the oracle's behaviour for a
+  //     round-2 MASK-GROWTH site;
   //   * the STICKY rule in a later-generation drain: a site recorded EARLIER is
   //     never tainted by a later drain (stages in between read it as classical);
   //     if its grown mask then makes the clone return a register, `specialize()`
   //     declines loudly (`kMsgPredictedClassicalQuantum`).
   // Self-cleaning (`ScrubOnDelete.h`): a deleted call drops its key.
   ScrubMap<const llvm::CallInst *, unsigned> SpecPredictedClassical;
-  // The drain generation: 0 for every drain `propagate()` runs (nothing reads
-  // taint between them), incremented at the entry of every GROWTH drain
-  // (`propagateWorklist` with `skipRuntimeCalls` — the round-2 reseed, its onward
-  // fixpoint, `propagateFromSeeds`), each of which runs after some stage has read
-  // the taint set.
+  // The drain generation: 0 for the one drain each `propagate()` runs,
+  // incremented at the entry of every GROWTH drain (`propagateWorklist` with
+  // `skipRuntimeCalls` — the round-2 reseed, its onward fixpoint,
+  // `propagateFromSeeds`), each of which runs after some stage has read the taint
+  // set. ⚠ Round 1b said "0 for every drain `propagate()` runs (nothing reads taint
+  // between them)" — FALSE as written (Rule-13 r1A F-r1A-4: at least
+  // `dropDeadCallArguments`, `promoteFp80Union`, `flattenPredMuxRegions`,
+  // `unrollConstTripLoops` and `recognizeCtlzIdiomLoops` read and act on the set
+  // between successive `propagate()` calls). The real ground: every
+  // `taint = propagate(M, wd)` builds a FRESH `TaintSet` containing exactly ONE
+  // generation-0 drain, so no record outlives the set a stage read; the other
+  // three `propagateWorklist` call sites are all growth drains.
   unsigned SpecPredictGeneration = 0;
 
   // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
@@ -1860,7 +1868,9 @@ void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
 // (tainted) condition. A `phi` is NOT a user of the branch condition, so a
 // constant-armed merge `phi` is UNTAINTED; a `select` IS one, so the identical
 // mux written in the source is TAINTED (`propagateWorklist` taints every user of
-// a tainted value bar a measure sink and an angle-only edge). Recording only the
+// a tainted value bar a measure sink, an angle-only edge and — since bd cepm — the
+// RESULT of a would-be Phase-6 call predicted to return a classical value; a
+// `select` is none of those, Rule-13 r1B F-r1B-5). Recording only the
 // select — or, worse, copying the `phi`'s taint — leaves its downstream users
 // classical, and an `add nsw i32 %m, %out` over a 4.4 merge OUT-RAIL then reaches
 // the backend UN-LOWERED: it adds the runtime HANDLE TAG instead of the

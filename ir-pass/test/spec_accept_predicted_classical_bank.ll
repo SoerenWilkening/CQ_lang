@@ -41,13 +41,24 @@
 ; twin passes stage 2b STRICT).
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh a03C, then mkfix.py.
 ;
-; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s \
-; RUN:   | %filecheck %s
+; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.bank.ll
+; RUN: %filecheck %s < %t.bank.ll
+; RUN: %filecheck --check-prefix=MEAS %s < %t.bank.ll
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK:       store i32 %[[T]], ptr
 ; CHECK-NOT:   railbank
+; CHECK:       %[[L:[0-9]+]] = load i32, ptr
+; CHECK-NEXT:  add nsw i32 %[[L]],
 ; CHECK:       ret i32
+; ROUND 2 (Rule-13 r1B F-r1B-6): the property that separates right from wrong here is that
+; `cq_measure(b[i])` over a loaded CLASSICAL integer lowers to the VALUE (bd 21mg) — the load feeds
+; the sum directly (CHECK-NEXT above) — and that the ONLY measurement gate in the module is the one
+; on `q`'s handle. MEAS is a whole-file prefix (Rule 12 (a): counts never inside a negative prefix):
+; exactly one measurement CALL, and none after it (a regression that measured each loaded integer
+; as a handle — the Rule-3 wire crossing — would add three).
+; MEAS-COUNT-1: call i32 @cqrt_measure_i32(
+; MEAS-NOT:     call i32 @cqrt_measure_i32(
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

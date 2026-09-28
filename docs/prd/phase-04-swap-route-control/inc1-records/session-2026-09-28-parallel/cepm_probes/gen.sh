@@ -27,7 +27,7 @@ for b in "$@"; do
   i=0
   for f in "${libs[@]}"; do
     i=$((i+1))
-    "$L/clang" -O1 -emit-llvm -S "$f" -o "$P/$b.lib$i.ll" 2>/dev/null || { echo "GENFAIL $b lib $f"; continue 2; }
+    "$L/clang" "-I$W/include" -O1 -emit-llvm -S "$f" -o "$P/$b.lib$i.ll" 2>/dev/null || { echo "GENFAIL $b lib $f"; continue 2; }
     parts+=("$P/$b.lib$i.ll")
   done
   if [ "${#parts[@]}" -gt 1 ]; then

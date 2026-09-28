@@ -5,6 +5,11 @@ Session 2026-09-28 (parallel). Branch `worktree-agent-a3c46257bc3bd028d`, based 
 `test_C_libtooling-3zr4` (P3, over-decline from C). Both stay OPEN for the Rule-13 rounds.
 Probes, harnesses and raw results: `cepm_probes/` next to this file.
 
+> **ROUND 2 (after the Rule-13 round-1 reviews, §14) — READ §14, THEN §12.** The callee seed is
+> removed (bd `we38`), a φ-decider must SELECT the incoming, and the P3 comments are fixed at the
+> source. The FINAL subject is round 2's `cq-opt` `89186a3011a22882d44bc201`. ⚠ This branch must
+> not land alone: landing order is rhk5 → z0re → cepm (§14.4).
+>
 > **ROUND 1b (commit after `3a2d690e`, §12) — READ §12 FIRST.** The orchestrator ruled that a
 > round-2 MASK-GROWTH site (`r2b`/`r2d`) must behave as on the oracle. Round 1b adds a SETTLE
 > step and a STICKY rule inside the propagation drain; `r2b`/`r2d` now decline with the oracle's
@@ -70,7 +75,8 @@ Probes, harnesses and raw results: `cepm_probes/` next to this file.
 | worktree, unmodified | `3f6db37f5cf937b4d70f5736` | `356df92e0b58bbf787c41a25` | BUILD NULL CONTROL: bit-identical |
 | subject v1 (before the §4.3 L3 fix) | `f9ee08b029dc3807865a8339` | — | battery `new1` only |
 | subject round 1 (commit `3a2d690e`) | `cb4ed3c2f6251bc7e85bf8dc` | `d3e11a7e55d0b18966d62c84` | `cq-opt-debugalloc` `3b9f963b1da8351197ac0d6e`; frozen copy `scratchpad/cepm/cq-opt.subj1` |
-| **SUBJECT (final, round 1b, §12)** | **`02522b6a4fdb8911eafe965e`** | **`49e7c01f5c0ba2417e287ddc`** | `cq-opt-debugalloc` `d73534dc2decb0c933d87d22`; frozen copy `scratchpad/cepm/cq-opt.subj2` |
+| subject round 1b (commit `7f0be42f`, §12) | `02522b6a4fdb8911eafe965e` | `49e7c01f5c0ba2417e287ddc` | `cq-opt-debugalloc` `d73534dc2decb0c933d87d22`; frozen copy `scratchpad/cepm/cq-opt.subj2` |
+| **SUBJECT (final, round 2, §14)** | **`89186a3011a22882d44bc201`** | **`7dfff7e13c395111f3818d5c`** | `cq-opt-debugalloc` `ce5f3060e69a5e17904b02af`; frozen copy `scratchpad/cepm/cq-opt.subj3` |
 
 The comment-only L7 edits made after `cb4ed3c2` was frozen rebuild to the SAME hash
 (`cb4ed3c2`, measured), so every round-1 measurement in §§5–6 is on the round-1 binary; §12's
@@ -143,7 +149,10 @@ the literal slot (fixture `spec_accept_predicted_classical_round2_site.ll`).
    Pending site BEFORE `resolveSite` (an fp-return retarget erases the call); if the clone
    `ReturnTainted` and the result was not tainted, `kMsgPredictedClassicalQuantum` —
    "cq specialization: lifted callee returns a quantum register where propagation
-   predicted a classical result". Argued UNREACHABLE (§4.1); pinned by mutant only (§6.4).
+   predicted a classical result". ⚠ Round 1 called it "argued UNREACHABLE (§4.1)"; since round
+   1b it is the STICKY rule's designated backstop, reached by a REPLANNED MASK with the callee body
+   untouched (§12.3, Rule-13 r1A F-r1A-3). Pinned by mutants only (§6, §12.5): no C program reaches
+   it on the shipped predictor.
 4. **The 6.5 L3 conjunct** (ArmClassify.cpp `classifyClassicalCallArm`): `||
    readsTaintedValue(*Call, Taint)` beside the result-taint test; `readsTaintedValue` moved
    out of TaintPropagation.cpp's anonymous namespace and declared in TaintPropagation.h.
@@ -381,7 +390,7 @@ subject passes and the mutant does not.
 | M2 | the non-void conjunct | MISSED — a void call has no reader; argued equivalent |
 | M3 | the reserved-name conjunct (`cq_`/`__cq_`/`cqrt_`) | MISSED — no fixture defines a reserved-name callee called with a tainted argument; scope conjunct (§3 item 1) |
 | M4 | `hasExactDefinition()` | MISSED — an interposable callee is refused by `scanBody` at detection either way (same string) |
-| M5 | the `specialize()` check | MISSED — **argued unreachable** (§4.1); no subject exists, as the argument predicts |
+| M5 | the `specialize()` check | MISSED — no subject exists with the round-1 predictor (§4.1). ⚠ Since round 1b the check is the sticky rule's backstop and IS reached by R1/R4/R5 (§12.5) — "argued unreachable" is round-1 text |
 | M6 | a WRONG predictor: every site predicted classical, check ON | **KILLED 100 of 484 — 87 by the `specialize()` check itself**; 5 decline earlier at the classical-mux guard, 1 at F1; the remaining 7 are sites whose clone IS classical (the six l3oi fixtures + `…_degenerate`), where "always classical" is right and they now accept |
 | M7 | the same wrong predictor with the check OFF | KILLED 24 of 484 (14 accept with a wrong stream, 4 ABORT at exit 134) — **76 fixtures that M6 declines ACCEPT under M7**: the check is the ONLY thing standing between a wrong predictor and those modules |
 | M8 | the 6.5 `readsTaintedValue` conjunct | **KILLED 1**: `spec_reject_predicted_classical_value_arm.ll` (the string moves to 6.5's `control flow`) |
@@ -414,8 +423,15 @@ M6/M7, `lowering_reject_break_uncollected_clone.ll`, is a SKIP fixture whose fir
   RESULT without asking whether that result is quantum, so a classical-verdict clone call
   reading `q` makes a later non-diagonal gate on `q` warn `live derived record`.
   PRE-EXISTING on the oracle (`ang`, `un`, `lk`, `j2` warn and accept there); this change
-  adds customers (`br`, `fp`, `ch`, `cph`, `yc`, `sw`, `tp` — traces twin-identical; `tp`'s
-  twin warns too).
+  adds customers (`br`, `fp`, `ch`, `cph`, `yc`, `sw` — traces twin-identical). ⚠ **`tp` was
+  listed here in round 1 and that was WRONG** (Rule-13 r1B F-r1B-1): `tp` (`p = q * 3; t = h(p, m);
+  if (t > 3) q = cq_theta(q, .2)`) is NOT an over-warn. The template rail `p` is passed only to the
+  classical-verdict clone and never uncomputed before the Ry on `q` — a which-path record of `q`
+  across a non-diagonal gate, a TRUE positive and a wrong unitary on BOTH sides (C and its twin
+  alike). That is bd `rhk5`'s defect (a clone call inside a derived chain's discharge window);
+  cepm routes the branch/switch/xor spellings `tp`/`tps`/`tpx` into it (the oracle declined
+  them; `tpk`, the same leak with no branch on `t`, accepts on the oracle). On cepm + rhk5 both
+  sides discharge `p` before the Ry (r1B measured). See §14.4 for the landing-order note.
 - **Stale fixture header (P3, NEW bd `test_C_libtooling-swtv`; pre-existing, noted in the file):**
   `lowering_reject_classical_mux_phi_spec_scrubbed_base_fp.ll` says "the added lines in
   `@hf` (a branch-only read) keep the parameter live" — `@hf` has none, and the file's
@@ -492,6 +508,9 @@ drop already sends them down the direct path on the oracle (0 movers in the prob
 9. **Cross-function:** a predicted-classical result returned from `f` (3jru never crosses)
    and then `f`'s own call site re-used as a Phase-6 argument elsewhere (bd 1yeu: every
    corpus is one function per module).
+
+10. **ROUND 2 additions — see §14.6** (`selectsIncoming`'s unreached conservative cases, selectors
+    outside the idom region, the removed callee seed).
 
 ## 12. Round 1b — a round-2 MASK-GROWTH site behaves as on the oracle
 
@@ -611,14 +630,159 @@ Three pieces, all inside the one drain function every drain uses (`propagateWork
   disagreements**; probes **377 modules, 0 disagreements**.
 - NOT run: full `ctest -j6` (merge gate), `cq-opt-equivalence-full`, `+Asserts`, Guard Malloc.
 
+## 14. Round 2 — the Rule-13 round-1 items (r1A + r1B, both CLEAR-WITH-ITEMS, 0 P1)
+
+Reviews committed untouched with this round: `review_r1A_cepm/` (Surface A, the prediction) and
+`review_r1B_cepm/` (Surface B, the emitted circuits and composition), each with its probes.
+
+### 14.1 F-r1A-1 (P2, bd `we38`) — the callee seed was SYNTACTIC; REMOVED
+
+`LaterTaintOracle` counted "a call to a defined callee that holds a `cq_theta` (transitively), or an
+indirect call" as a value a later round can taint. That answers "can this call's RESULT be tainted
+later?" by NAME (L5). The only channel by which a call result gains taint beyond its operands (which
+the walk already follows) is bd 3jru's return crossing, and that growth is refused by
+`declineQuantumReturnCalls` at the post-fixpoint slot, before `specialize()`, in both entry points.
+An indirect call is never crossed (the crossing requires the call to name the function). So the seed
+protected no program, and cost one: `r6b` (`F` holds a `cq_theta` but returns `n + cq_measure(r)`).
+
+**Removed, not narrowed.** Which program does any remaining part protect? None is kept. A future
+relaxation of the 3jru refusal would make a missed crossing reach the STICKY rule, whose backstop
+is `specialize()`'s loud check — never an accept. The retirement trigger is written in the new
+fixture header and at the source.
+
+Pins (red on the oracle and on round 1b where they are accepts):
+- `spec_accept_predicted_classical_measured_callee.ll` (`r6b`): ACCEPT, twin-identical (argv `5 7`,
+  `2 9`), 2b STRICT clean. Oracle and round 1b decline `classical call result used as a quantum
+  register`.
+- `spec_reject_predicted_classical_round2_return_crossing.ll` (`r6a`): DECLINE with the 3jru
+  owner's exact string `cq taint escape: quantum value returned across a function boundary` on the
+  oracle, round 1b and round 2. The STRING is the pin (it is not `specialize()`'s, not l3oi's).
+
+### 14.2 F-r1B-2 (P2) — the φ-decider region was "any branch between idom and block"; now SELECTS
+
+Round 1b counted every conditional terminator between the φ block's idom and the block as a decider.
+For a loop header that is the whole body, so `lpp`
+(`for (i<3) { t = h(q, i+m); if (q > t) cq_phi(.2); }`) had `i` "may gain taint" from its own body's
+tainted phase branch, the site was tainted at round 1 and the compare became Q+Q — round 1 accepted it
+twin-identically, round 1b declined it.
+
+Now a branch counts only if it SELECTS which incoming edge of the φ arrives
+(`LaterTaintOracle::selectsIncoming`): for each successor S of the branch, E(S) is the set of the φ
+block's predecessors through which some path from S FIRST reaches it; the branch selects unless every
+E(S) is the same single block. An empty E(S) (an arm that never reaches the φ) or |E(S)| ≥ 2 counts as
+selecting (conservative), and a successor walk over `kSelectBudget` (4096) blocks answers "selects".
+`lpp`'s branch reconverges before the latch, so every arm yields {latch}: not a selector.
+`r2b`/`r2d`'s 6.5 diamond yields one arm per merge edge: a selector — they keep declining.
+`decides()` asks `selectsIncoming` BEFORE walking the condition, so a discarded condition's slice
+never pollutes the per-query `Seen` set.
+
+Pin: `spec_accept_predicted_classical_loop_body_branch.ll` (`lpp`): ACCEPT, twin-identical, 2b
+STRICT clean; rolled kickback `cq_template_icmp_sgt_i32_hl(h, t)` + `cqrt_rz_i1`, with `t` the
+clone's classical result in the literal slot. The oracle and round 1b decline
+`quantum-quantum compare condition`.
+
+### 14.3 The P3s
+
+- **F-r1A-2** (the idom climb is unpinned and, today, unreachable): the retirement trigger is written at
+  the source, in `LaterTaintOracle::walk`: the day 6.5 / 4.5 / the IO-sink mux / the peel admits a merge
+  whose tainted branch is not a direct predecessor, add `gie` / `ir_fwdC.ll` as a fixture there.
+- **F-r1A-3**: `Specialization.cpp`'s check comment no longer says "argued UNREACHABLE … nothing
+  changes a callee body"; it names the real mechanism (a REPLANNED mask; the sticky rule's
+  backstop) and the mutants that reach it. The TRACK's §3 item 3 and §6 M5 row were corrected too.
+- **F-r1A-4**: `TaintSet::SpecPredictGeneration`'s ground is now the real one: each
+  `taint = propagate(M, wd)` builds a FRESH set with exactly one generation-0 drain, so no record
+  outlives the set a stage read. The false "nothing reads taint between them" is quoted and retired
+  in place.
+- **F-r1B-4** (L7): `valueArmIsPureChain`'s (K1) prose ("a classical op consuming a chain link would
+  itself be tainted") is corrected at the source — false since cepm for a predicted-classical call —
+  and (K5)'s "sole fence" enumeration gains the fourth member: an untainted Phase-6 call reading a
+  quantum non-chain value, which (K2) refuses in every C spelling and (K5) alone refuses for an
+  IR-level `speculatable memory(none)` callee.
+- **F-r1B-5** (L7): `TaintPropagation.h`'s peel paragraph ("taints every user … bar a measure sink and
+  an angle-only edge") gains the cepm exception, as `MergePhiPeel.cpp:573` did in round 1.
+- **F-r1B-6**: `spec_accept_predicted_classical_bank.ll` now pins the property that separates right
+  from wrong: the loaded classical integer feeds the sum directly (`CHECK` + `CHECK-NEXT`), and a
+  whole-file `MEAS` prefix counts exactly one `cqrt_measure_i32` call and none after it (Rule 12 (a):
+  counts are never inside a negative prefix; the RUN writes the output once to `%t.bank.ll`).
+  Mutation-validated (`cepm_probes/bankmut.py`): null passes both prefixes; injecting a
+  `cqrt_measure_i32` on a loaded integer fails BOTH; routing the load through an extra op fails
+  `CHECK`.
+- **TRACK §8's `tp` row** (F-r1B-1): corrected — `tp` is a TRUE-positive warning and a wrong unitary on
+  both sides (bd `rhk5`'s class), not a 9k30 over-warn.
+
+### 14.4 F-r1B-1 / F-r1B-3 — composition, NO action on this branch (orchestrator ruling)
+
+- `tp` / `tps` / `tpx` (a template rail `p = q*3` passed only to a classical-verdict clone, then an Ry
+  on `q`) route into bd `rhk5` on THIS branch alone: accepted, twin-identical, both sides warn, `p`
+  never discharged — a wrong unitary on both sides. On cepm + rhk5 both sides discharge `p` before the
+  Ry (r1B measured on `1c0a4e17`).
+- The side-door programs `zl12` / `zl17` / `za02` / `za01` / `sp` decline on THIS branch alone (the
+  oracle accepted them through the side door, correctly) and accept twin-identically on cepm + z0re
+  (r1A measured on `6a77a6c9`).
+- **Landing order is rhk5 → z0re → cepm.** After those two land, the orchestrator will ask this branch
+  to merge `main` and add `tpC`/`tpT` (an accept whose `mul_unc` + `free` of `%h_op` precede the Ry) and
+  the side-door programs as pins. Until then this branch must not land alone.
+
+### 14.5 Measurements (round-2 subject `cq-opt` `89186a3011a22882d44bc201`, `libCQPass.so` `7dfff7e13c395111f3818d5c`, `cq-opt-debugalloc` `ce5f3060e69a5e17904b02af`; frozen copy `scratchpad/cepm/cq-opt.subj3`)
+
+- **Red-green** (`cepm_probes/rg3.sh`, 6 fixtures): ORACLE 3 pass / 3 fail (the 3 accepts red); round 1b
+  4 pass / 2 fail (`loop_body_branch`, `measured_callee` red); round 2 6/6.
+- **lit** (`cd build && lit -j4 ir-pass/test`): **2430 discovered, 2429 passed, 1 XFAIL, 0 failed**
+  (213.9 s).
+- **Affected ctest** (`-R "spec|specialize|classical-call|scrub|cq-opt-equivalence|free-pairing-selftest"`,
+  incl. `taintset-scrub-guard{,-selftest}` and both scrub-on-delete selftests): **53/53 passed**.
+- **Reviewers' batteries, with their own harnesses** (`cepm_probes/revbat.sh` + `revdiff.py`; round 1b →
+  round 2): r1A 27 pairs, 1 change: `r6b` VERDICT-DIFF → **ACC-SAME**. r1B 27 pairs, 1 change: `lpp`
+  VERDICT-DIFF → **ACC-SAME**. No other verdict moved in either battery.
+- **Corpus A/B vs the frozen ORACLE** (null control = subject twice, first, 0 in every set):
+  lit **2430** → 15 movers (14 D→A + 1 STRING, all this bead's fixtures); e2e **608** → 0; multi **36**
+  → 2 D→A (the two new slices); probes **385** → 39 (31 D→A + 4 STRING + 4 A→D, the same classes as
+  round 1b plus `lppC`, `lpqC`, `r6bC`, the 3 D→A of the 8 new battery modules).
+- **Round 1b vs round 2 directly** (null 0): lit 2430 → **2 D→A** (the two new accept fixtures);
+  probes 385 → **2 D→A** (`lppC`, `r6bC`). Nothing else moved.
+- **Mutants** (the 489 fixtures that call a defined function; base = round-2 subject; `mut.py`):
+
+| mutant | removes / forces | result |
+|---|---|---|
+| N2 | nothing (`|| Sets.size() > 1e9`) — NULL | **0 of 489** |
+| S1 | `selectsIncoming` (every branch in the region decides = round 1b) | **KILLED 1**: `…_loop_body_branch` |
+| S2 | no branch ever selects | **KILLED 2**: `…_round2_mask_growth{,_ry}` (they then decline at the check) |
+| S3 | an EMPTY arm set no longer counts as selecting | MISSED — no fixture has an arm that cannot reach the φ block; conservative-direction conjunct |
+| S4 | differing single-block sets no longer select | **KILLED 2**: `…_round2_mask_growth{,_ry}` |
+| S5 | a MULTI-block arm set no longer counts as selecting | MISSED — conservative-direction conjunct, unreached |
+| S6 | the walk budget set to 0 (every branch selects) | **KILLED 1**: `…_loop_body_branch` |
+| R7 | re-add the syntactic callee seed | **KILLED 1**: `…_measured_callee` |
+
+  Totals: 7 mutants + the null; 5 KILLED, 2 MISSED (S3, S5: both relax a conservative
+  "counts as selecting" case, so each could only turn a round-1-taint into a sticky site whose
+  failure mode is `specialize()`'s loud check — and no C program in the corpus or the batteries
+  reaches either shape).
+- `update_code_map.py --check`: clean.
+- **NOT run this round:** the full `ctest -j6` (merge gate), allocator sweeps, `cq-opt-equivalence-full`
+  (sampled entry only), `+Asserts`, Guard Malloc.
+
+### 14.6 ATTACK FIRST for the next round (added to §10)
+
+1. **`selectsIncoming`'s conservative cases.** S3/S5 are unreached; construct a C program whose
+   φ-decider has an arm that never reaches the φ block (an `abort` arm, a `noreturn` call) or reaches it
+   through two predecessors, where a later round replaces the φ — does the site stay classical
+   wrongly? (It must end at the check, not in an accept.)
+2. **A selector that is NOT between idom and the block** — an irreducible region, an `invoke`/`callbr`
+   edge, a switch with duplicate successors (`successors()` repeats a block: E(S) is computed per
+   successor, and equal successors produce equal sets, so a switch whose two cases go to the same arm
+   is treated as not selecting through them — check that this is right).
+3. **The removed callee seed.** Construct a call whose RESULT a later drain taints without the 3jru
+   crossing and without its operands being tainted.
+
 ## 13. Proposed CLAUDE.md text (not applied — the orchestrator owns CLAUDE.md)
 
 > **bd cepm / 3zr4 (2026-09-28): a Phase-6 call whose lifted callee is PREDICTED to return a
 > classical value is not tainted at propagation.** `specCallResultPredictedClassical`
 > (SpecializeClone.h) asks `predictReturnTainted` inside every `propagateWorklist` drain;
 > `specialize()` CHECKS it (`kMsgPredictedClassicalQuantum`). ⚠ **A call's RESULT taint is no
-> longer a proof about its INPUTS** — ask `readsTaintedValue` (6.5 was the one predicate
-> caught relying on the proxy, CLAUDE.md L3). ⚠ "A callee that READS its argument yet returns
+> longer a proof about its INPUTS** — ask `readsTaintedValue` (6.5 relied on the proxy in CODE and
+> was fixed; `valueArmIsPureChain`'s (K1)/(K5) prose relied on it in ARGUMENT and was corrected —
+> there (K5), refusing every non-intrinsic call, is the fence; CLAUDE.md L3). ⚠ "A callee that READS its argument yet returns
 > classical is IR-only from C" was FALSE: a read through a call the pass cannot prove pure
 > (a callee in another TU whose own callee is in yet another) is C-reachable. bd l3oi's fence
 > keeps the predictor's over-approximation: an inner classical clone, a branch that does not

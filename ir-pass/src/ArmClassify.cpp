@@ -2357,12 +2357,17 @@ namespace {
 // ⚠ FOUR CONJUNCTS, AND EACH IS LOAD-BEARING FOR A DIFFERENT REASON:
 //   (K1) UNTAINTED. A tainted stray is a quantum value the chain does not
 //        thread — the Rule-3 wire-crossing and the original fan-out hazard.
-//        It ALSO makes the cone strictly independent of the chain: a classical
-//        op consuming a chain link would itself be tainted by forward
-//        propagation, so (K1) already implies "no cone member reads a chain
-//        link". The explicit operand test below is kept anyway, because that
-//        implication rests on the completeness of a DIFFERENT stage (L1: never
-//        let one stage's conclusion be another stage's unstated premise).
+//        ⚠ It does NOT make the cone independent of the chain on its own. The
+//        text here said "a classical op consuming a chain link would itself be
+//        tainted by forward propagation, so (K1) already implies 'no cone member
+//        reads a chain link'", and since bd cepm that is FALSE for one op: a
+//        would-be Phase-6 call whose callee is predicted to return a classical
+//        value (`specCallResultPredictedClassical`) READS a quantum value and
+//        has an UNTAINTED result (Rule-13 r1B F-r1B-4; CLAUDE.md L3 — the proxy
+//        6.5 relied on, one function over). The explicit operand test below is
+//        what refuses a cone member reading a chain link, and (K5) refuses every
+//        non-intrinsic call outright, so the code was and is safe; the implication
+//        was never the fence.
 //   (K2) NO WRITE, NO SIDE EFFECT. A `store` arm belongs to the 7.5 guarded-
 //        store owner and must keep declining here, exactly as before; and it is
 //        what makes (K4)'s memory argument true.
@@ -2411,7 +2416,12 @@ namespace {
 //        or produce taint), so (K5) is the SOLE fence only for `cq_phi`,
 //        `cq_measure` and the invert BRACKETS. Say that precisely: two fences on
 //        two of the families and one on the other three is not "belt and braces
-//        everywhere".
+//        everywhere". ⚠ And since bd cepm a FOURTH: an untainted Phase-6 call
+//        predicted to return a classical value that reads a quantum NON-chain
+//        value (the condition register, say). (K1) passes it (untainted result);
+//        (K2) refuses every C spelling (clang never marks such a callee
+//        `speculatable`), and for an IR-level `speculatable memory(none)` callee
+//        (K5) is the only fence (Rule-13 r1B F-r1B-4).
 //   (K4) `isSafeToSpeculativelyExecute`. The hoist runs the op UNCONDITIONALLY,
 //        which is not a choice: the condition is QUANTUM, so the emitted circuit
 //        has no classical branch to hide behind. This is LLVM's own predicate —

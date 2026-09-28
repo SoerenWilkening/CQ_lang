@@ -50,6 +50,25 @@ MUT = {
             "        if (false)\n          return true;\n        if (X == Top)")],
     "R5": [(TP, "    if (T.Tainted.count(C))\n      return true;  // a tainted decider", "    if (false)\n      return true;  // a tainted decider")],
     "R6": [(TP, "      if (G && !G->isDeclaration() && calleeMayYieldQuantum(G))", "      if (false && G && !G->isDeclaration() && calleeMayYieldQuantum(G))")],
+    # ---- round 2 (selectsIncoming; the callee seed removed). Base: round-2 subject. ----
+    "N2": [(TP, "    if (Sets.empty())\n      return false;", "    if (Sets.empty() || Sets.size() > 1000000000u)\n      return false;")],
+    "S1": [(TP, "    if (!C || !selectsIncoming(X, M))", "    if (!C)")],
+    "S2": [(TP, "    if (!C || !selectsIncoming(X, M))", "    if (!C || true)")],
+    "S3": [(TP, "      if (E.size() != 1)\n        return true;", "      if (E.size() > 1)\n        return true;"),
+           (TP, "      if (*E.begin() != *Sets.front().begin())",
+            "      if (!E.empty() && !Sets.front().empty() && *E.begin() != *Sets.front().begin())")],
+    "S4": [(TP, "      if (*E.begin() != *Sets.front().begin())", "      if (false && *E.begin() != *Sets.front().begin())")],
+    "S5": [(TP, "      if (E.size() != 1)\n        return true;", "      if (E.empty())\n        return true;")],
+    "S6": [(TP, "  static constexpr unsigned kSelectBudget = 4096;", "  static constexpr unsigned kSelectBudget = 0;")],
+    "R7": [(TP, "    for (Value *Op : I->operands())\n      if (walk(Op, Seen))\n        return true;\n    return false;\n  }\n};",
+            "    if (auto *CB = dyn_cast<CallBase>(I))\n"
+            "      if (const Function *G = CB->getCalledFunction(); G && !G->isDeclaration())\n"
+            "        for (const BasicBlock &BB : *G)\n"
+            "          for (const Instruction &J : BB)\n"
+            "            if (const auto *CJ = dyn_cast<CallInst>(&J);\n"
+            "                CJ && T.ThetaCalls.contains(const_cast<CallInst *>(CJ)))\n"
+            "              return true;\n"
+            "    for (Value *Op : I->operands())\n      if (walk(Op, Seen))\n        return true;\n    return false;\n  }\n};")],
 }
 
 

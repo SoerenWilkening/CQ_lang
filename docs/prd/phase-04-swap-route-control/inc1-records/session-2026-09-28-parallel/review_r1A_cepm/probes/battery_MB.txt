@@ -1,0 +1,12 @@
+gie      cq-opt.main_9a230646 DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control | 
+gsw      cq-opt.main_9a230646 DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+r2g      cq-opt.main_9a230646 ACC-DIFF                     C: accept | lines=51 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 7 left allocated, 11 template rail mint(s) of which 1 left dirty, 9 cqrt_free site(s): 9 verified, 0 violation(s), 0 unproven
+denominator: 3 pairs, 2 twin-identical
+gie      cq-opt.base DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control | 
+gsw      cq-opt.base DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+r2g      cq-opt.base ACC-DIFF                     C: accept | lines=51 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 7 left allocated, 11 template rail mint(s) of which 1 left dirty, 9 cqrt_free site(s): 9 verified, 0 violation(s), 0 unproven
+denominator: 3 pairs, 2 twin-identical
+gie      cq-opt.MB DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control | 
+gsw      cq-opt.MB DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+r2g      cq-opt.MB ACC-DIFF                     C: accept | lines=51 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 7 left allocated, 11 template rail mint(s) of which 1 left dirty, 9 cqrt_free site(s): 9 verified, 0 violation(s), 0 unproven
+denominator: 3 pairs, 2 twin-identical
