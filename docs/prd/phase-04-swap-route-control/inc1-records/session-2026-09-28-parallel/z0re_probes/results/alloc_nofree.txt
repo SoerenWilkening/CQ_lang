@@ -1,0 +1,2 @@
+denominator: 2425 fixtures  mode=nofree
+disagreements 0 of 2425

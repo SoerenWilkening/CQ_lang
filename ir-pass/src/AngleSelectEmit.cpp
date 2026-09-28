@@ -345,7 +345,20 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
     return;
   }
   Value *Base = T->getArgOperand(0);
-  if (!taint.Tainted.count(Base)) {
+  // The base is a live register (Inc 2b), or — bd `test_C_libtooling-z0re`,
+  // owner ruling 2026-09-28 — an UNTAINTED RUNTIME value on the Ry stem, which
+  // S3 admitted as controlled state prep on a fresh rail. Re-asked in lockstep
+  // with S3 by CALLING the same predicate (Rule 14), never re-derived. A LITERAL
+  // base is still refused here, as at S3: the reason is S3's, and it is the
+  // `drbq.13` counter-example written there (IPSCCP folds a live register to the
+  // literal on one edge before SimplifyCFG sinks the arms; F2 has no edge to
+  // ask a select about).
+  //
+  // ⚠ THE `IsTheta` HALF IS NOT DECORATION. The retired `cq_phi_<sfx>` stem is
+  // refused upstream as a reserved name, but this emitter must not become the
+  // place where an untainted Rz base is first admitted.
+  const bool UntaintedBase = !taint.Tainted.count(Base);
+  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(Base, taint))) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }
@@ -503,6 +516,18 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   taint.Tainted.insert(T0);
   taint.BirthOrder[T0] = taint.NextBirth++;
   Work.insert(Slot, T0);
+  // bd `test_C_libtooling-z0re` — THE RECORD HALF of the runtime-seed L1 re-ask,
+  // at the site that commits it. For an UNTAINTED base `T0` is the SOURCE theta
+  // (`lowerRotations` will mint `cqrt_alloc_<W>(Base)` for it); if `Base` turns
+  // quantum after the round-2 fixpoint, `T0` would lower CHAINED on it — a
+  // tainted-base select S8/S9 never vetted — and `declineRound2QuantumPrepSeeds`
+  // refuses exactly that. A tainted base (Inc 2b) owes no record. ⚠ KEYED ON
+  // THE CLASSIFIER'S VERDICT (`R.RuntimeSeedAdmitted`), never on `UntaintedBase`
+  // as asked here: a 6.5 region emitted earlier in the same loop can already
+  // have RAUW'd the base to its tainted `%out`, and then this emitter sees a
+  // "tainted" base S8/S9 never vetted (`ControlRegion::RuntimeSeedAdmitted`).
+  if (R.RuntimeSeedAdmitted)
+    taint.RuntimeSeedSourceThetas.push_back(T0);
 
   // ---- 3. THE FLAG MINT, at the consumer.
   //
@@ -552,7 +577,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   //     IS a condition register (PRD §3c — the stem separator);
   //   * for `cq_theta` S8 proved the rotated register's PHYSICAL rail is disjoint
   //     from every rail the condition reads, so the condition's basis at the
-  //     strip is the basis the mint read (PRD §3).
+  //     strip is the basis the mint read (PRD §3). ⚠ For an UNTAINTED (runtime)
+  //     base (bd z0re) S8 is SKIPPED, not proved: the rotated rail is the one
+  //     `T0` mints (`cqrt_alloc_<W>(Base)`), so it is disjoint from every
+  //     condition rail BY CONSTRUCTION — the state-prep licence §14.5 gives the
+  //     diamond, and the `RuntimeSeedSourceThetas` re-ask is what keeps "fresh"
+  //     true at FINAL taint.
   //
   // `DischargedFlagGates` records the strip. THE JUSTIFICATION FOR THAT RECORD IS
   // NOT S8 (round-1 Rule-13 review, lens L1-2 — the first draft said "if S8 is

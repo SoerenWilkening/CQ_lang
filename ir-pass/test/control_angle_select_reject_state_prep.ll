@@ -32,6 +32,19 @@
 ; verbatim. It also inherits S1-S10 wholesale, which is a second increment's
 ; worth of surface. Not folded in.
 ;
+; ⚠ bd test_C_libtooling-z0re (OWNER RULING 2026-09-28, option (a)) ADMITTED THE
+; SAME SHAPE WITH A **RUNTIME** BASE — `control_angle_select_ry_runtime_base.ll`
+; lowers `alloc(t); ry(h, B); ry_controlled(f, h, A−B)`, which is exactly the
+; lowering sketched above. THIS FILE STAYS A DECLINE, because its base is a
+; LITERAL, and the literal is refused for a measured reason rather than for scope:
+; `-O1`'s IPSCCP can fold a live register the condition tests INTO the literal on
+; one edge before SimplifyCFG sinks the two thetas, leaving that register live
+; and unrotated (`control_angle_select_reject_literal_base_offwire_fold.ll`, probe
+; a1) — the hazard F2 guards at the diamond prep, and F2 is an edge analysis a
+; select does not have. The "prepped vs |0>" worry in the first paragraph is NOT
+; the reason (the theta runs on both components, so there is no inactive one); it
+; is kept as history. Owner decision pending on bd drbq.13.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 ; 3qlq: migrated from register cq_phi (dead declare erased)

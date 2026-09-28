@@ -5034,6 +5034,82 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_seed_eq_k.expected.log")
 
+# ----------------------------------------------------------------------------
+# bd test_C_libtooling-z0re — OWNER RULING 2026-09-28, option (a): a RUNTIME
+# state-prep seed (PRD §14.11 Q2, bd drbq.14) and an UNTAINTED Ry-stem
+# angle-select base are admitted on the DIRECT path, so the hand-inlined twin and
+# the spec-classical side door ACCEPT with the same circuit. Every golden below was
+# a DECLINE on the oracle (main 9a230646). Three `*-twin-identical` gates:
+#   * prep / angle select — the 2-TU `h(q, m)` spelling vs the hand-inlined twin.
+#     ⚠ Since bd vsfp the dead-argument drop makes the C call `h(0, m)`, so from C
+#     both spellings reach the DIRECT path; the side door itself is reachable only
+#     from hand IR and is pinned by lit (`spec_*_side_door{,_twin}.ll`).
+#   * loop — ROLLED vs HAND-UNROLLED, a seed the loop re-computes every trip.
+# The f64 slice has no pair: it pins the fp width of the same accept.
+add_test(NAME e2e-slice-z0re-runtime-seed-prep
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-prep-spec
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-prep-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-spec
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.expected.log")
+add_test(NAME e2e-z0re-angle-select-runtime-base-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-f64
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.expected.log")
+
 
 # ============================================================================
 # bd test_C_libtooling-l4x4, sub-increment l4x4.b — THE IN-PLACE CONTROLLED-Ry
