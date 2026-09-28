@@ -1,0 +1,37 @@
+ok  control-clean      NULL: pristine header  [57 members]
+ok  control-clean      NULL: pristine + extra includes  [57 members]
+ok  control-clean      NULL: bitfield member  [58 members]
+ok  control-refused    POS: raw llvm::Value * member  [58 members]
+        cq::TaintSet::R3Stray: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  control-refused    POS: raw ptr in a BASE of a project record  [60 members]
+        cq::R3Base::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  control-refused    POS: project template base instantiated with a Value type  [59 members]
+        cq::R3DD::<base>: `llvm::Instruction` (derives from llvm::Value) held BY VALUE as a template argument of `cq::R3TB` — the tell of an UNAPPROVED handle (e.g. AssertingVH is a bare pointer at LLVM_ENABLE_ABI_BREAKING_CHECK
+ok  control-refused    POS: pimpl to a type defined only in a .cpp  [58 members]
+        cq::TaintSet::R3Pimpl: project type `cq::R3Fwd` is reached, but no complete definition was found — refused
+ok  control-refused    POS: raw pointer to a type forward-declared only  [58 members]
+        cq::TaintSet::R3FwdP: pointer to INCOMPLETE type `cq::R3Fwd2` — cannot prove it is not an llvm::Value (closed world: refused)
+        cq::TaintSet::R3FwdP: project type `cq::R3Fwd2` is reached, but no complete definition was found — refused
+ok  control-refused    POS: lambda static member capturing a Value*  [59 members]
+        cq::TaintSet::(anonymous)::<unnamed>: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+        cq::TaintSet::R3L: function type `cq::TaintSet::(lambda at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_lvgiv46t/TaintPropagation.h:117:28)` — not understood by the walker (closed world: refused)
+ok  control-refused    POS: std::function returning Value*  [58 members]
+        cq::TaintSet::R3Fn: function type `llvm::Value *()` — not understood by the walker (closed world: refused)
+ok  control-refused    POS: named union with a Value* arm  [60 members]
+        cq::R3U::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  control-refused    POS: pair<WeakVH,int> KEY of std::map (HKEY positive twin of B7)  [58 members]
+        cq::TaintSet::R3PK: a value HANDLE in the KEY of `std::map` — a handle is nulled/retargeted IN PLACE, which breaks the container's ordering/hash invariant; refused
+MISSED                 B1 explicit FULL specialization of a project class template holds a raw Value*  [59 members]
+MISSED                 B2 PARTIAL specialization of a project class template holds a raw Value*  [59 members]
+MISSED                 B2b full specialization selected only under NDEBUG (Release) via a constexpr flag  [59 members]
+MISSED                 B3 raw member present in cq-opt's build but not in CQPass's (#ifndef CQPass_EXPORTS)  [57 members]
+MISSED                 B4 raw member hidden by the guard's PCH context (#ifndef LLVM_ANALYSIS_LOOPINFO_H)  [57 members]
+MISSED                 B7 value handle wrapped in a project record, as an ordered std::set KEY  [59 members]
+MISSED                 B8 unqualified pointer to an ALIAS whose short name is also a clean record's  [59 members]
+ok  control-refused    B8b qualified pointer to a project record whose short name a clean record shares (control)  [58 members]
+        trait probe did not compile:
+MISSED                 B14 raw identity table added to allowlisted LoopBreakRegion (LoopPlan.h)  [57 members]
+
+controls bad: 0 []
+attacks: 8, MISSED 8: ['B1 explicit FULL specialization of a project class template holds a raw Value*', 'B2 PARTIAL specialization of a project class template holds a raw Value*', 'B2b full specialization selected only under NDEBUG (Release) via a constexpr flag', "B3 raw member present in cq-opt's build but not in CQPass's (#ifndef CQPass_EXPORTS)", "B4 raw member hidden by the guard's PCH context (#ifndef LLVM_ANALYSIS_LOOPINFO_H)", 'B7 value handle wrapped in a project record, as an ordered std::set KEY', "B8 unqualified pointer to an ALIAS whose short name is also a clean record's", 'B14']
+PCH state: ok  USE_PCH=True  elapsed 74.2s

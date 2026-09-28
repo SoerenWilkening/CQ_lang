@@ -56,12 +56,12 @@ struct SpecPlan;
 // as quantum (bd 8e5r, `cq_template_mul_i32_hl(7 /*as a handle*/, m)`).
 //   * Adding a table: use `ScrubPtrSet` / `ScrubMap` / `ScrubCallList` /
 //     `scrub::PairSet`, or value handles (`WeakVH` / `WeakTrackingVH`). A raw
-//     pointer-keyed member in the common spellings FAILS the
-//     `taintset-scrub-guard` ctest — a BEST-EFFORT check with named gaps (a
-//     pointer to a library table, template specializations, short-name aliases,
-//     pointees outside `cq::`, one compile configuration; bd wop9 / 7gri / jk56),
-//     so do not rely on it as a proof; a new self-cleaning member must be added
-//     to `ir-pass/tools/scrub_selftest.cpp` (the same gate checks that it is).
+//     pointer-keyed member FAILS the `taintset-scrub-guard` ctest, which asks the
+//     compiler (every build configuration) for each member's canonical type and
+//     walks the project types it reaches by their AST identity — still not a
+//     proof: its docstring names residuals R1-R9 (e.g. a type a project header
+//     declares inside `namespace llvm`; bd wop9 / 7gri / jk56); a new self-cleaning
+//     member must be added to `ir-pass/tools/scrub_selftest.cpp` (the gate checks).
 //   * Membership is by IDENTITY and never follows a RAUW — exactly the raw
 //     pointer's meaning. A table that must follow a RAUW uses `WeakTrackingVH`.
 //   * A deleted key is only MARKED dead, never physically removed, so surviving

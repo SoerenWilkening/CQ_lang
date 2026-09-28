@@ -1,0 +1,13 @@
+ok  rc=1 traceback=False  missing database
+      taintset_scrub_guard: compile database not found: /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/sg_failclosed_w5mnbnio/absent.json — configure the build (CMAKE_EXPORT_COMPILE_COMMANDS is ON) or pass --compile-commands
+ok  rc=1 traceback=False  database of ANOTHER tree (files exist there)
+      taintset_scrub_guard: no command in /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/sg_failclosed_w5mnbnio/other.json compiles a translation unit of /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent
+ok  rc=1 traceback=False  garbage JSON
+      taintset_scrub_guard: compile database /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/sg_failclosed_w5mnbnio/garbage.json is not a JSON list of commands: Expecting property name enclosed in double quotes: line 1 column
+ok  rc=1 traceback=False  JSON object, not a list
+      taintset_scrub_guard: compile database /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/sg_failclosed_w5mnbnio/obj.json is not a JSON list of commands:  — this gate FAILS CLOSED, it never skips
+ok  rc=1 traceback=False  nonexistent compiler
+      taintset_scrub_guard: cannot run `/nonexistent/c++` (from /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/sg_failclosed_w5mnbnio/nocc.json): [Errno 2] No such file or directory: '/nonexistent/c++' — this gate FAILS CLOS
+ok  rc=2 traceback=False  unknown argument
+      taintset_scrub_guard: unknown argument `--bogus`
+6 cases, 0 bad
