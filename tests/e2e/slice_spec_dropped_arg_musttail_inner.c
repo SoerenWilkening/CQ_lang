@@ -11,7 +11,12 @@
    stream byte-for-byte. Round 6 asks only null-soundness there (a constant in a `musttail` slot
    changes no signature), and `e2e-spec-dropped-arg-musttail-inner-twin-identical` pins this
    golden to the hand-inlined twin's: the `mul_i32_hl_unc` and `cqrt_free` of `p` precede the Ry.
-   RED on round 5 and on the ORACLE (measured). `m` comes from argv (argc + 4, bd 46oo). */
+   RED on round 5 and on the ORACLE (measured). `m` comes from argv (argc + 4, bd 46oo).
+   ⚠ Since bd ev3m (2026-09-28) no clone is built for this program: a `musttail` site is
+   drop-eligible, so the pre-specialize drop takes the chain (`h2`'s slot, `h`'s parameter, this
+   caller's slot) before `specialize()` runs. The golden is unchanged (the twin's, measured); the
+   in-clone `musttail` slot is pinned at IR level only
+   (spec_accept_phantom_arg_read_musttail_inner_slot.ll, re-spelled with a branch-only read). */
 int h(int a, int k);
 
 __attribute__((noinline)) int slice(int m) {

@@ -79,10 +79,20 @@ bool readsTainted(const CallInst *CI, const TaintSet &taint) {
 // A call SITE is eligible only if it calls the callee directly with the callee's
 // own function type (DAE's own site rule: an address-taken callee's OTHER uses are
 // simply not rewritten, and since the parameter is dead in the body, no caller's
-// value there matters) and is not `musttail` (STRICTER than DAE's site rewrite,
-// which refuses `musttail` only where it would change a SIGNATURE — a constant
-// argument changes none; pinned as a conservatism by
-// spec_accept_dropped_arg_musttail_kept.ll). A PARAMETER is eligible only if it is an
+// value there matters). A `musttail` site IS eligible (bd `test_C_libtooling-ev3m`,
+// 2026-09-28): rounds 1–6 refused it as a POLICY conservatism, and that refusal was
+// the whole reason a callee forwarding its ignored quantum argument through
+// `musttail` (r5 `mt2`, r6 `mm1`) kept a phantom read and declined at the 3jru
+// return refusal while its plain-`tail` twin compiled. Replacing an OPERAND by a
+// constant changes no signature, no calling convention and no ABI-impacting
+// attribute (the LLVM 19 verifier's `musttail` rules compare the caller's and the
+// call's prototypes and their sret/byval/inalloca/inreg/alignstack/swiftself/
+// swiftasync/swifterror/preallocated/byref attributes — the strip below touches
+// only `range`/`nofpclass`), and the call still immediately precedes its `ret`; a
+// forwarding chain (`h(a,k){ musttail return h2(a,k); }`) is handled by the
+// fixpoint, one site per turn, with no signature to keep in step.
+// spec_accept_dropped_arg_musttail_kept.ll pins the drop (its name records the
+// retired conservatism; not renamed — L8). A PARAMETER is eligible only if it is an
 // integer or floating-point scalar (scope: a pointer is never rewritten), carries
 // none of `returned` / `swifterror` / a pass-pointee-by-value-copy attribute
 // (`byval`/`inalloca`/`preallocated`), and every attribute on it and on the call
@@ -138,8 +148,8 @@ bool dropEligibleSlot(const CallBase &CB, unsigned A) {
   const Function *Callee = CB.getCalledFunction();
   if (!dropEligibleCallee(Callee) || CB.getFunctionType() != Callee->getFunctionType())
     return false;
-  if (const auto *CI = dyn_cast<CallInst>(&CB); CI && CI->isMustTailCall())
-    return false;  // POLICY, not soundness: a constant changes no signature.
+  // No `musttail` refusal since bd ev3m: a constant changes no signature (see the
+  // precondition list above).
   return nullSafeSlot(CB, A);
 }
 
@@ -174,9 +184,9 @@ bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
     MapVector<Function *, SmallVector<Value *, 4>> Seeds;
     for (CallInst *CI : Sites) {
       Function *Callee = CI->getCalledFunction();
-      if (!dropEligibleCallee(Callee) || CI->isMustTailCall() ||
+      if (!dropEligibleCallee(Callee) ||
           CI->getFunctionType() != Callee->getFunctionType())
-        continue;
+        continue;  // (a `musttail` site is eligible since bd ev3m — see above)
       auto It = DeadMask.find(Callee);
       if (It == DeadMask.end())
         It = DeadMask.try_emplace(Callee, deadParamMask(*Callee, taint)).first;

@@ -1396,7 +1396,8 @@ bool userProgramReads(const Value *V, const FunctionLiveness &L,
 bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
   // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
   //    non-clone function that is NULL-SAFE (an int/fp scalar with allowlisted
-  //    attributes — `nullSafeSlot`; never the drop's `musttail` policy, bd `w7nm`)
+  //    attributes — `nullSafeSlot`; never the drop's POLICY, bd `w7nm` — whose
+  //    `musttail` refusal bd ev3m has since retired)
   //    gets a null constant with the `range`/`nofpclass` strip, asked with the SAME predicate's record
   //    (`isRecordedDeadSlot`). ⚠ Round 4 said "exactly the drop's rewrite" and
   //    applied none of the drop's eligibility — it nulled pointer and `byval`

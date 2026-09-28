@@ -105,7 +105,8 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // A recorded-dead slot that the one rewrite may also NULL: `isRecordedDeadSlot` AND
 // `nullSafeSlot` (SpecializeDetect.h — an int/fp scalar, no `byval`/`returned`/
 // `swifterror`/…, only allowlisted attributes). ⚠ NOT the drop's whole eligibility
-// (`dropEligibleSlot`): round 5 asked that, and its `musttail` POLICY conservatism
+// (`dropEligibleSlot`): round 5 asked that, and its then-`musttail` POLICY conservatism
+// (retired by bd ev3m, 2026-09-28)
 // turned an inner dead slot into a read, one clone level up into a LIVE outer slot,
 // and bd `tzfa`'s wrong unitary back (bd `w7nm`, r5 F-Z-1). THE ONE SLOT QUESTION
 // (Rule 14): the rewrite, M-C arm (d0) (ArithLowering.cpp) and M-A's

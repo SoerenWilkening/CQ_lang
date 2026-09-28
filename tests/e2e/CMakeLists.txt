@@ -2866,6 +2866,11 @@ add_test(NAME e2e-slice-spec-dropped-arg-byval-slot
 # `musttail` POLICY, the outer phantom slot was never neutralised and `p = 3q` stayed DIRTY across
 # the Ry — bd tzfa's wrong unitary, exit 0. RED on round 5 and the ORACLE (their stream lacks the
 # `mul_i32_hl_unc` + free), GREEN here; pinned to the hand-inlined twin.
+# ⚠ Since bd ev3m (2026-09-28) this C program no longer reaches a clone at all: a `musttail` site is
+# drop-eligible, so the pre-specialize drop takes the whole chain (`h2`'s slot, `h`'s parameter,
+# `slice`'s slot). The golden is unchanged (still the twin's, measured) but the pair now witnesses
+# the DROP; the in-clone `musttail` slot it was written for is pinned only at IR level, by
+# spec_accept_phantom_arg_read_musttail_inner_slot.ll (re-spelled with a branch-only read).
 add_test(NAME e2e-slice-spec-dropped-arg-musttail-inner
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
@@ -2885,6 +2890,33 @@ add_test(NAME e2e-spec-dropped-arg-musttail-inner-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_inner_twin.expected.log")
+
+# bd test_C_libtooling-ev3m (r5 `mt2` / r6 `mm1`, the residual of bd 9bhg). A quantum function ENDS
+# in `musttail return h2(p, k + z)` with `h2` ignoring `p` (a volatile-fold arm, dead at the drop's
+# slot B), and its result is used. The drop refused a `musttail` SITE as a POLICY, so the call kept
+# reading `p`, its result stayed conservatively tainted, and `main` DECLINED `cq taint escape:
+# quantum value returned across a function boundary` on the ORACLE (measured) while the plain-tail
+# spelling and the twin compile. Since ev3m the `musttail` slot is dropped to `0` (an operand change:
+# no signature moves) and `p` is discharged before the `Ry(0.7)` exactly as in the hand-inlined twin.
+add_test(NAME e2e-slice-spec-dropped-arg-musttail-return
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_musttail_return_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return.expected.log")
+add_test(NAME e2e-slice-spec-dropped-arg-musttail-return-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return_twin.expected.log")
+add_test(NAME e2e-spec-dropped-arg-musttail-return-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return_twin.expected.log")
 
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two

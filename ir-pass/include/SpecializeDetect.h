@@ -89,9 +89,9 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // preconditions: a `naked` callee (its asm reads the argument REGISTERS) had its
 // argument rewritten, a classical miscompile at exit 0 (bd ctz4, r1A F-VA-1).
 // The preconditions now mirrored, each at its definition in SpecializeDetect.cpp:
-// exact definition, not `naked`, not variadic and not a `musttail` site (both
-// STRICTER than DAE's call-site rewrite — conservatism, pinned), the call's
-// function type equal to the callee's (DAE's own rule), and a
+// exact definition, not `naked`, not variadic (STRICTER than DAE's call-site
+// rewrite — conservatism, pinned), the call's function type equal to the callee's
+// (DAE's own rule), and a
 // parameter carrying none of `returned`/`swifterror`/`byval`/`inalloca`/
 // `preallocated`, with every attribute in the whitelist
 // `noundef`/`signext`/`zeroext`/`inreg`/`range`/`nofpclass` (the last two
@@ -148,13 +148,16 @@ bool nullSafeSlot(const llvm::CallBase &CB, unsigned A);
 
 // THE DROP'S SLOT ELIGIBILITY: `nullSafeSlot` AND the drop's POLICY conservatisms —
 // a direct, exact, non-`naked`, non-variadic callee called with its own function
-// type, and not `musttail`. Asked ONLY by the pre-`specialize()` drop's loop.
-// ⚠ Round 5 made the rewrite and the liveness rule ask this whole predicate, so the
-// `musttail` conservatism became load-bearing for CORRECTNESS: an inner `musttail`
-// dead slot counted as a READ, the enclosing clone's parameter became live, the
-// outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary came back
-// (r5 F-Z-1, bd `w7nm`, probe `mt1`: exit 0, the ORACLE's wrong stream). A constant in
-// a `musttail` slot changes no signature and is what round 4 emitted, verify-clean.
+// type. Asked ONLY by the pre-`specialize()` drop's loop.
+// ⚠ Round 5 made the rewrite and the liveness rule ask this whole predicate, so its
+// then-`musttail` conservatism became load-bearing for CORRECTNESS: an inner
+// `musttail` dead slot counted as a READ, the enclosing clone's parameter became
+// live, the outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary
+// came back (r5 F-Z-1, bd `w7nm`, probe `mt1`: exit 0, the ORACLE's wrong stream). A
+// constant in a `musttail` slot changes no signature and is what round 4 emitted,
+// verify-clean — and since bd `ev3m` (2026-09-28) the drop itself writes it: the
+// `musttail` refusal is RETIRED, so a callee forwarding its ignored quantum argument
+// through `musttail` compiles like its plain-`tail` twin (r5 `mt2`, r6 `mm1`).
 bool dropEligibleSlot(const llvm::CallBase &CB, unsigned A);
 
 }  // namespace cq

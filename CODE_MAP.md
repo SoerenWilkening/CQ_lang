@@ -33,8 +33,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/TaintPropagation.h` — 2029 physical lines
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
-- `ir-pass/src/CQLoweringPass.cpp` — 1753 physical lines
-- `ir-pass/src/Specialization.cpp` — 1553 physical lines
+- `ir-pass/src/CQLoweringPass.cpp` — 1754 physical lines
+- `ir-pass/src/Specialization.cpp` — 1554 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
@@ -337,12 +337,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ByRefInline.cpp:255` — `cloneExpr`
 - `ir-pass/src/ByRefInline.cpp:277` — `lowerByRefInline`
 
-### `ir-pass/src/CQLoweringPass.cpp` (1753 lines)
+### `ir-pass/src/CQLoweringPass.cpp` (1754 lines)
 
 - `ir-pass/src/CQLoweringPass.cpp:54` — `eraseDeadDecls`
 - `ir-pass/src/CQLoweringPass.cpp:88` — `declineSurvivingIntrinsicCalls`
 - `ir-pass/src/CQLoweringPass.cpp:114` — `CQLoweringPass::run`
-- `ir-pass/src/CQLoweringPass.cpp:1229` — `CQLoweringPass::runOnFunction`
+- `ir-pass/src/CQLoweringPass.cpp:1230` — `CQLoweringPass::runOnFunction`
 
 ### `ir-pass/src/CastLowering.cpp` (135 lines)
 
@@ -899,7 +899,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1553 lines)
+### `ir-pass/src/Specialization.cpp` (1554 lines)
 
 - `ir-pass/src/Specialization.cpp:68` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:85` — `isForwardQramLoad`
@@ -921,7 +921,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:1332` — `isCopyDestination`
 - `ir-pass/src/Specialization.cpp:1363` — `userProgramReads`
 - `ir-pass/src/Specialization.cpp:1396` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1489` — `specialize`
+- `ir-pass/src/Specialization.cpp:1490` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (254 lines)
 
@@ -931,17 +931,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeClone.cpp:106` — `predictReturnTainted`
 - `ir-pass/src/SpecializeClone.cpp:188` — `cloneFor`
 
-### `ir-pass/src/SpecializeDetect.cpp` (342 lines)
+### `ir-pass/src/SpecializeDetect.cpp` (352 lines)
 
 - `ir-pass/src/SpecializeDetect.cpp:43` — `intrinsicSites`
 - `ir-pass/src/SpecializeDetect.cpp:60` — `readsTainted`
-- `ir-pass/src/SpecializeDetect.cpp:94` — `dropEligibleCallee`
-- `ir-pass/src/SpecializeDetect.cpp:99` — `dropEligibleParamAttrs`
-- `ir-pass/src/SpecializeDetect.cpp:118` — `dropEligibleParam`
-- `ir-pass/src/SpecializeDetect.cpp:128` — `nullSafeSlot`
-- `ir-pass/src/SpecializeDetect.cpp:137` — `dropEligibleSlot`
-- `ir-pass/src/SpecializeDetect.cpp:146` — `dropDeadCallArguments`
-- `ir-pass/src/SpecializeDetect.cpp:253` — `detectSpecializations`
+- `ir-pass/src/SpecializeDetect.cpp:104` — `dropEligibleCallee`
+- `ir-pass/src/SpecializeDetect.cpp:109` — `dropEligibleParamAttrs`
+- `ir-pass/src/SpecializeDetect.cpp:128` — `dropEligibleParam`
+- `ir-pass/src/SpecializeDetect.cpp:138` — `nullSafeSlot`
+- `ir-pass/src/SpecializeDetect.cpp:147` — `dropEligibleSlot`
+- `ir-pass/src/SpecializeDetect.cpp:156` — `dropDeadCallArguments`
+- `ir-pass/src/SpecializeDetect.cpp:263` — `detectSpecializations`
 
 ### `ir-pass/src/SpecializeReject.cpp` (1019 lines)
 
@@ -6911,10 +6911,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_spec_dropped_arg_inplace_twin.c:6` — `slice`
 - `tests/e2e/slice_spec_dropped_arg_inplace_twin.c:15` — `main`
 
-### `tests/e2e/slice_spec_dropped_arg_musttail_inner.c` (32 lines)
+### `tests/e2e/slice_spec_dropped_arg_musttail_inner.c` (37 lines)
 
-- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:17` — `slice`
-- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:28` — `main`
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:22` — `slice`
+- `tests/e2e/slice_spec_dropped_arg_musttail_inner.c:33` — `main`
 
 ### `tests/e2e/slice_spec_dropped_arg_musttail_inner_twin.c` (21 lines)
 
@@ -7050,10 +7050,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/spec_dropped_arg_lib.c:18` — `h`
 
-### `tests/e2e/spec_dropped_arg_musttail_lib.c` (23 lines)
+### `tests/e2e/spec_dropped_arg_musttail_lib.c` (24 lines)
 
-- `tests/e2e/spec_dropped_arg_musttail_lib.c:15` — `h2`
-- `tests/e2e/spec_dropped_arg_musttail_lib.c:21` — `h`
+- `tests/e2e/spec_dropped_arg_musttail_lib.c:16` — `h2`
+- `tests/e2e/spec_dropped_arg_musttail_lib.c:22` — `h`
 
 ### `tests/e2e/spec_dropped_arg_volatile_global_lib.c` (26 lines)
 
