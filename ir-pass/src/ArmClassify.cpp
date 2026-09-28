@@ -3723,8 +3723,10 @@ void markRailCondRead(TaintSet &Taint, Value *Rail, Instruction *FirstRead) {
 // `lowerQramReads`, `lowerShadowMemory` (the last two RAUW a `load` onto a
 // tainted value, the exact `Chained` input) and `specialize` (which also SHRINKS
 // taint through `scrubForwardCone`). None re-opens the window, for reasons that
-// live in OTHER files: `propagateWorklist` taints EVERY user of a tainted value,
-// so a QROM/Shadow load at a tainted index is already tainted at round 1
+// live in OTHER files: `propagateWorklist` taints every user of a tainted value
+// (bar a measure sink, an angle-only edge and — since bd cepm — the RESULT of a
+// would-be Phase-6 call predicted to return a classical value; a `load` is none of
+// those), so a QROM/Shadow load at a tainted index is already tainted at round 1
 // (measured: the QROM sibling program declines on both binaries, and the
 // sibling-free one lowers CHAINED onto `cqrt_qram_load_i1`), and a
 // classical-index Shadow access declines `alloca array mixes a tainted-index and
@@ -8016,19 +8018,23 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // load-bearing on TWO axes:
   //   * it keeps a phase gate (`cq_phi`, tainted) and a value chain (`add`,
   //     tainted) OUT of this path — they classify in `classifyArms`;
-  //   * it IS the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3). `propagate`
-  //     taints EVERY non-measure, non-angle user of a tainted value
-  //     (TaintPropagation.cpp:307), and a generic (non-`cq_`) call has no
-  //     angle-operand exclusion — so ANY tainted operand (an argument OR the
-  //     called operand, an indirect call through a tainted pointer) taints the
-  //     result. A CLASSICAL result therefore proves every input is classical:
-  //     the clone × route composition (quantum data under quantum control) is OUT
-  //     of 6.5 (deferred Phase 4×6) and is excluded HERE — it declines via
-  //     `classifyArms` (a tainted call result is value-changing → `arm rewrites a
-  //     condition operand`, WI-5.6) rather than being mis-claimed as a 6.5 site.
+  //   * the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3): the clone ×
+  //     route composition (quantum data under quantum control) is OUT of 6.5
+  //     (deferred Phase 4×6) and is excluded HERE — it declines via `classifyArms`
+  //     rather than being mis-claimed as a 6.5 site.
+  //   ⚠ THE SECOND AXIS USED TO BE THE FIRST GATE ALONE, AND bd cepm FALSIFIED THE
+  //     PROXY (CLAUDE.md L3). The text here said "`propagate` taints EVERY
+  //     non-measure, non-angle user of a tainted value … A CLASSICAL result
+  //     therefore proves every input is classical". Since bd cepm it does NOT: a
+  //     would-be Phase-6 site whose callee is predicted to return a classical value
+  //     (`specCallResultPredictedClassical`) reads a quantum argument and has an
+  //     UNTAINTED result. So the inputs are now asked DIRECTLY (`readsTaintedValue`,
+  //     the one operand test — arguments, bundle operands and the called operand),
+  //     which keeps this path's population exactly the pre-cepm one: such a site
+  //     reaches `classifyArms` as it did when its result was tainted.
   auto *Call = dyn_cast<CallInst>(ArmIncoming);
   if (!Call || Call->getParent() != Region.Arm ||
-      Taint.Tainted.count(Call))
+      Taint.Tainted.count(Call) || readsTaintedValue(*Call, Taint))
     return ClassicalCallDisp::NotApplicable;
 
   // A front-end intrinsic (`cq_theta`/`cq_phi`/`cq_measure`) is NEVER a 6.5

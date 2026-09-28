@@ -1580,6 +1580,17 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 bool declineStaleTaintSet(llvm::Module &M, WidthDispatch &wd,
                           const TaintSet &taint);
 
+// Does `I` read at least one value in `taint.Tainted` (any operand — for a call,
+// its arguments, bundle operands and the called operand)? The OPERAND test, never
+// the result's own taint. ⚠ Exported by bd `test_C_libtooling-cepm`, because since
+// that change a call's RESULT taint is no longer a proof about its INPUTS: a
+// would-be Phase-6 site whose callee is predicted to return a classical value
+// (`specCallResultPredictedClassical`, SpecializeClone.h) reads a quantum argument
+// and is NOT itself tainted. A predicate that used "the call is untainted" to mean
+// "every input is classical" must ask this instead (`classifyClassicalCallArm`, the
+// one such predicate found — CLAUDE.md L3).
+bool readsTaintedValue(const llvm::Instruction &I, const TaintSet &taint);
+
 // bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
 // of the defined function `F` returns a value in `taint.Tainted` (a quantum
 // register's HANDLE). The closure itself lives in `propagateWorklist` (drained

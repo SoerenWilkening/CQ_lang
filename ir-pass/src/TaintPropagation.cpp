@@ -14,6 +14,7 @@
 #include "QramLowering.h"
 #include "RailBankPromote.h"  // railBankOfPointer / isRailBankAlloca / the W1 second half
 #include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
+#include "SpecializeClone.h"    // specCallResultPredictedClassical (bd cepm / 3zr4)
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
@@ -465,9 +466,11 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
 
 // Shared forward-taint work-list loop (extracted for reuse by both the initial
 // `propagate` and the dugh second round `repropagateControlMerges`). Each tainted
-// SSA value's user instructions become tainted, except measure sinks and the
-// arg-1 angle edge of a rotation. The work-list discipline (insert-then-push)
-// processes each value exactly once.
+// SSA value's user instructions become tainted, except measure sinks, the
+// arg-1 angle edge of a rotation, and (bd cepm / 3zr4) the RESULT of a would-be
+// Phase-6 site whose lifted callee is predicted to return a classical value
+// (`specCallResultPredictedClassical`, SpecializeClone.h). The work-list
+// discipline (insert-then-push) processes each value exactly once.
 //
 // `skipRuntimeCalls` is set ONLY by the dugh second round: at that point the IR
 // already carries the control emitter's own `cqrt_*` / `cq_template_*`
@@ -510,6 +513,25 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
           if (N.starts_with("cqrt_") || N.starts_with("cq_template_"))
             continue;
         }
+        // bd `test_C_libtooling-cepm` / bd `test_C_libtooling-3zr4` — a
+        // would-be Phase-6 site whose lifted callee PROVABLY returns a
+        // classical value (`predictReturnTainted` false for the mask this
+        // drain sees) does NOT taint its RESULT. Before this, every such
+        // result was tainted CONSERVATIVELY and only `specialize()` — after
+        // both control rounds — scrubbed it, so a round-1 emitter had already
+        // read the integer as a register and bd l3oi's fence declined a
+        // program the hand-inlined twin compiles (cepm: `t = h(q, m); if (t >
+        // 3)`), and a round-1 site reading a round-2 site's result was cloned
+        // from a mask the scrub then falsified (3zr4). The call is NOT marked
+        // visited: a later drain that taints another argument reaches it again
+        // as that argument's user and re-asks with the grown mask (the
+        // predictor is monotone), and the 3jru return crossing below inserts
+        // it directly whatever this says. The two backstops (a loud decline in
+        // `specialize()` if the clone returns a register after all; the
+        // escape guard for a site that never becomes `Pending`) are in
+        // SpecializeClone.h.
+        if (specCallResultPredictedClassical(*CI, out))
+          continue;
       }
       if (out.Tainted.insert(I).second) {
         Worklist.push_back(I);
@@ -694,6 +716,18 @@ void foldIdentityBitcasts(Module &M, TaintSet &taint,
   }
 }
 
+// Does `I` read at least one tainted SSA value? Operand-level test (not
+// result-taint): the escape is the EDGE from a quantum value into a consumer
+// the lowering cannot rewrite. For a CallBase, `operands()` includes the
+// called operand, so an indirect call THROUGH a tainted pointer also trips.
+// Exported (bd cepm) — see TaintPropagation.h.
+bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
+  for (const Value *Op : I.operands())
+    if (taint.Tainted.count(const_cast<Value *>(Op)))
+      return true;
+  return false;
+}
+
 namespace {
 
 // The exact diagnostic strings the taint-escape guard owns
@@ -725,16 +759,6 @@ void diagnoseEscape(Instruction *I, StringRef Msg) {
       *I->getFunction(), Msg, I->getDebugLoc()));
 }
 
-// Does `I` read at least one tainted SSA value? Operand-level test (not
-// result-taint): the escape is the EDGE from a quantum value into a consumer
-// the lowering cannot rewrite. For a CallBase, `operands()` includes the
-// called operand, so an indirect call THROUGH a tainted pointer also trips.
-bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
-  for (const Value *Op : I.operands())
-    if (taint.Tainted.count(const_cast<Value *>(Op)))
-      return true;
-  return false;
-}
 
 // ── Phase-7.1 Increment B: the freeze-passthrough R-B narrowing ─────────────
 // A tainted `freeze` is, semantically, a basis-level identity (freeze of an
@@ -1440,7 +1464,9 @@ constexpr char kMsgClassicalPhi[] =
 // (P1, found by bd 9bhg's Rule-13 round r1A, F-9A-1). Conjuncts (2) and (3) ask
 // `taint.Tainted`, and this lift runs BEFORE `specialize()`. A Phase-6 call
 // result `t = h(q, m)` is tainted CONSERVATIVELY by `propagate` (it reads a
-// tainted argument); if the clone proves `h` returns a classical value,
+// tainted argument — ⚠ since bd cepm only when `predictReturnTainted` says the
+// clone MAY return a register: a result predicted classical is never tainted and
+// no lift is ever proved over it); if the clone proves `h` returns a classical value,
 // `scrubForwardCone` UNTAINTS `t` after this lift has already RAUW'd
 // `phi(t, cq_theta(t, θ))` onto it. "One register" was then never true: the arm's
 // `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail (`Chained` is decided at
@@ -1831,7 +1857,10 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
 // `Tainted.insert` re-marks a spec-site result the clone proves QUANTUM, and
 // that result was already tainted at propagation (or is the rebuilt call that
 // replaced one which was), so a terminator reading it was already refused by
-// (5). What CAN move is (2)/(3): the scrub removes taint, and a removed base
+// (5). ⚠ Since bd cepm propagation can leave a result CLASSICAL on the
+// predictor's word; a clone that then proves it quantum is refused loudly inside
+// `specialize()` (`kMsgPredictedClassicalQuantum`) before this slot, so the
+// "already tainted" premise is CHECKED there, not assumed. What CAN move is (2)/(3): the scrub removes taint, and a removed base
 // ends the wire walk at the arm's gate (a SOURCE theta) instead of at the base.
 // So exactly (2)/(3) are re-run, by CALLING `resolveWireBase` with the same gate
 // set (`collectLiftGateCalls`, Rule 14) — never a second spelling of the walk.

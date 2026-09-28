@@ -13,10 +13,53 @@
 #include "SpecializePlan.h"
 
 namespace llvm {
+class CallInst;
 class Function;
 }  // namespace llvm
 
 namespace cq {
+
+struct TaintSet;
+
+// The RETURN-TAINT PREDICTOR (bd 3c6m.54, 5po2 I2): does `Callee`'s return value,
+// with the parameters in `Mask` quantum, carry taint? A pure forward transitive-user
+// closure from the masked parameters — the closure `seedClone` builds on the clone —
+// plus "any conditional terminator in that closure ⇒ tainted". A sound
+// OVER-approximation of the `ReturnTainted` verdict `buildClone` later computes: every
+// clone stage after `seedClone` either removes taint (the inner classical-clone scrub,
+// the dead-slot deletion) or replaces a value already in the closure (the PredMux
+// flatten's selects replace φs / branches the closure reaches; `lowerCloneSelect`,
+// `lowerQramReads` and `lowerOps` RAUW members of the closure). So `false` means the
+// clone's return is classical. Two consumers, and the first is no longer the only one:
+//   * `cloneFor` — the fp-return signature (i32 handle vs the fp value);
+//   * `specCallResultPredictedClassical` below — the propagation-time classical verdict
+//     for a would-be Phase-6 site's RESULT (bd cepm / bd 3zr4).
+// Defined in SpecializeClone.cpp.
+bool predictReturnTainted(llvm::Function *Callee, SpecMask Mask);
+
+// bd `test_C_libtooling-cepm` / bd `test_C_libtooling-3zr4` — THE PROPAGATION-TIME
+// CLASSICAL VERDICT for a call that will be a Phase-6 site. True iff `CI` is a direct
+// call to an exact, non-variadic, non-reserved-name DEFINITION of arity ≤
+// `kSpecMaxArity`, called with the callee's own function type, with a non-void result,
+// not a front-end intrinsic site, with ≥1 argument in `taint.Tainted`, and
+// `predictReturnTainted(callee, <that mask>)` is FALSE. Asked by `propagateWorklist`
+// (every drain: `propagate`, the round-2 reseed and its onward fixpoint,
+// `propagateFromSeeds`) at the moment it would taint `CI` as a user of a tainted
+// argument: a true answer leaves the RESULT classical, so no stage between propagation
+// and `specialize()` ever reads it as a register (the hand-inlined twin's view). Each
+// drain asks with the mask it sees; a later drain that taints another argument visits
+// `CI` again and re-asks with the grown mask (the predictor is monotone in `Mask`).
+// Why it is safe, and what backstops it:
+//   * every call this answers true for is a Phase-6 site or a loud decline — it reads a
+//     tainted argument and calls a definition, so `detectSpecializations` (round 1, or
+//     round 2 on its reseed set) puts it in `Pending` or diagnoses it; one in neither
+//     is refused by `declineTaintEscapes`' `kMsgUnknownCallee`;
+//   * for a `Pending` site, `specialize()` CHECKS the prediction: a site whose result
+//     was NOT tainted when it resolves but whose clone returns a register is a LOUD
+//     decline (`kMsgPredictedClassicalQuantum`), never the old silent re-mark.
+// Defined in SpecializeClone.cpp.
+bool specCallResultPredictedClassical(const llvm::CallInst &CI,
+                                      const TaintSet &taint);
 
 // Clone `Cand.Callee`, mangle `__cq_q_<callee>_<mask>`, set internal linkage,
 // strip the stale pure-classical attributes (see `stripStaleClassicalAttrs`),
