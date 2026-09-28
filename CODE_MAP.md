@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 779 maintained source files, 6316 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 779 maintained source files, 6318 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -34,8 +34,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1753 physical lines
+- `ir-pass/src/Specialization.cpp` — 1553 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
-- `ir-pass/src/Specialization.cpp` — 1497 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/Fp80Union.cpp` — 1442 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1442 physical lines
@@ -84,6 +84,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/LiteralIntegrity.h` — 489 physical lines
 - `ir-pass/include/ArmAnalysis.h` — 488 physical lines
 - `tests/e2e/railbank_deadcell_matrix.c` — 482 physical lines
+- `ir-pass/src/DeadValueLiveness.cpp` — 473 physical lines
 - `tools/gen_templates.py` — 473 physical lines
 - `tools/library_coverage/loop_bounds/LoopBoundProbe.cpp` — 471 physical lines
 - `tools/record_census/census_common.py` — 468 physical lines
@@ -91,7 +92,6 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
-- `ir-pass/src/DeadValueLiveness.cpp` — 440 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 440 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
 - `ir-pass/src/DagTraversal.cpp` — 436 physical lines
@@ -449,7 +449,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DagTraversal.cpp:24` — `isInvertEscape`
 - `ir-pass/src/DagTraversal.cpp:39` — `recoverDataDag`
 
-### `ir-pass/src/DeadValueLiveness.cpp` (440 lines)
+### `ir-pass/src/DeadValueLiveness.cpp` (473 lines)
 
 - `ir-pass/src/DeadValueLiveness.cpp:35` — `isFrontEndIntrinsicSite`
 - `ir-pass/src/DeadValueLiveness.cpp:44` — `isEmptyUncondArm`
@@ -457,11 +457,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/DeadValueLiveness.cpp:88` — `isLivenessRoot`
 - `ir-pass/src/DeadValueLiveness.cpp:131` — `isRecordedDeadSlot`
 - `ir-pass/src/DeadValueLiveness.cpp:142` — `isRewritableDeadSlot`
-- `ir-pass/src/DeadValueLiveness.cpp:147` — `rewriteRecordedDeadSlotUse`
-- `ir-pass/src/DeadValueLiveness.cpp:165` — `FunctionLiveness::FunctionLiveness`
-- `ir-pass/src/DeadValueLiveness.cpp:208` — `FunctionLiveness::isLive`
-- `ir-pass/src/DeadValueLiveness.cpp:210` — `deadParamMask`
-- `ir-pass/src/DeadValueLiveness.cpp:219` — `deleteDeadCones`
+- `ir-pass/src/DeadValueLiveness.cpp:147` — `isUnreadScalarSlot`
+- `ir-pass/src/DeadValueLiveness.cpp:158` — `stripUnreadSlotValueConstraints`
+- `ir-pass/src/DeadValueLiveness.cpp:166` — `rewriteRecordedDeadSlotUse`
+- `ir-pass/src/DeadValueLiveness.cpp:180` — `FunctionLiveness::FunctionLiveness`
+- `ir-pass/src/DeadValueLiveness.cpp:238` — `FunctionLiveness::isLive`
+- `ir-pass/src/DeadValueLiveness.cpp:240` — `deadParamMask`
+- `ir-pass/src/DeadValueLiveness.cpp:249` — `deleteDeadCones`
 
 ### `ir-pass/src/EmitInverse.cpp` (440 lines)
 
@@ -897,29 +899,29 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1497 lines)
+### `ir-pass/src/Specialization.cpp` (1553 lines)
 
-- `ir-pass/src/Specialization.cpp:59` — `isForwardTemplate`
-- `ir-pass/src/Specialization.cpp:76` — `isForwardQramLoad`
-- `ir-pass/src/Specialization.cpp:87` — `scrubCloneTaint`
-- `ir-pass/src/Specialization.cpp:110` — `mintCondNetwork`
-- `ir-pass/src/Specialization.cpp:277` — `lowerCloneSelect`
-- `ir-pass/src/Specialization.cpp:437` — `reseedCloneTaintFromParams`
-- `ir-pass/src/Specialization.cpp:471` — `normalizeReturnMerge`
-- `ir-pass/src/Specialization.cpp:521` — `lowerCloneControl`
-- `ir-pass/src/Specialization.cpp:632` — `scrubForwardCone`
-- `ir-pass/src/Specialization.cpp:691` — `synthUncomputeTwin`
-- `ir-pass/src/Specialization.cpp:738` — `ensureTwin`
-- `ir-pass/src/Specialization.cpp:795` — `retargetSite`
-- `ir-pass/src/Specialization.cpp:822` — `resolveSite`
-- `ir-pass/src/Specialization.cpp:833` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1223` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1242` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1248` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1277` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1308` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1341` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1433` — `specialize`
+- `ir-pass/src/Specialization.cpp:68` — `isForwardTemplate`
+- `ir-pass/src/Specialization.cpp:85` — `isForwardQramLoad`
+- `ir-pass/src/Specialization.cpp:96` — `scrubCloneTaint`
+- `ir-pass/src/Specialization.cpp:119` — `mintCondNetwork`
+- `ir-pass/src/Specialization.cpp:286` — `lowerCloneSelect`
+- `ir-pass/src/Specialization.cpp:446` — `reseedCloneTaintFromParams`
+- `ir-pass/src/Specialization.cpp:480` — `normalizeReturnMerge`
+- `ir-pass/src/Specialization.cpp:530` — `lowerCloneControl`
+- `ir-pass/src/Specialization.cpp:641` — `scrubForwardCone`
+- `ir-pass/src/Specialization.cpp:700` — `synthUncomputeTwin`
+- `ir-pass/src/Specialization.cpp:747` — `ensureTwin`
+- `ir-pass/src/Specialization.cpp:804` — `retargetSite`
+- `ir-pass/src/Specialization.cpp:831` — `resolveSite`
+- `ir-pass/src/Specialization.cpp:842` — `buildClone`
+- `ir-pass/src/Specialization.cpp:1284` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1297` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1303` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1332` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1363` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1396` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1489` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (254 lines)
 

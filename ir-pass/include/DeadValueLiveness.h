@@ -48,9 +48,11 @@
 // THE CALL-SLOT RULE — the only place the predicate is interprocedural. An argument
 // in a slot the callee is RECORDED never to read (`isRecordedDeadSlot`: the
 // specializer's `taint.SpecDeadArgMask`, written by `buildClone` with THIS
-// predicate) does not become live through that call. Nothing else is looked up:
-// before `specialize()` no record exists, so every slot of every call counts as a
-// read — the dead-argument drop gets its interprocedural reach from its own
+// predicate) does not become live through that call when the slot is REWRITABLE
+// (null-safe), or when it is an int/fp UNREAD SCALAR slot and the operand is a
+// function ARGUMENT (bd `nlfd`; see `isUnreadScalarSlot`). Nothing else is looked
+// up: before `specialize()` no record exists, so every slot of every call counts
+// as a read — the dead-argument drop gets its interprocedural reach from its own
 // fixpoint (it REWRITES a dead slot to a constant, which cannot be read).
 //
 // LIMITS, stated so a reader does not assume more (L7):
@@ -106,23 +108,25 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // (`dropEligibleSlot`): round 5 asked that, and its `musttail` POLICY conservatism
 // turned an inner dead slot into a read, one clone level up into a LIVE outer slot,
 // and bd `tzfa`'s wrong unitary back (bd `w7nm`, r5 F-Z-1). THE ONE SLOT QUESTION
-// (Rule 14): the liveness call-slot rule, the rewrite, M-C arm (d0)
-// (ArithLowering.cpp) and M-A's `cloneArgReachesResult` (RotationLowering.cpp) all
-// ask THIS; only `resolvePhantomCloneArgReads` also asks the bare record, because
-// it is the stage that resolves the difference (a recorded-dead, not null-safe
-// slot: kept when its operand is classical, declined when quantum). A slot this
-// calls "read" but the record calls dead is treated as READ everywhere. ⚠ That is
-// NOT "the conservative direction for each consumer", which round 6 wrote here
-// (bd vsfp Rule-13 r6: F-R6-1 / bd `nlfd`, F-R6-2 / bd `x8ut`). Per consumer:
+// (Rule 14): the rewrite, M-C arm (d0) (ArithLowering.cpp) and M-A's
+// `cloneArgReachesResult` (RotationLowering.cpp) ask THIS; the liveness call-slot
+// rule asks it AND `isUnreadScalarSlot` (below — bd `nlfd`); `resolvePhantomClone
+// ArgReads` also asks the bare record, because it is the stage that resolves the
+// difference at module level (a recorded-dead, not null-safe slot: kept when its
+// operand is classical, declined when quantum). A slot this calls "read" but the
+// record calls dead is treated as READ by the rewrite, M-C and M-A. ⚠ That is NOT
+// "the conservative direction for each consumer", which round 6 wrote here (bd vsfp
+// Rule-13 r6: F-R6-1 / bd `nlfd`, F-R6-2 / bd `x8ut`). Per consumer:
 //   * M-C (d0): conservative — "not settled" falls to the out-of-place path.
-//   * LIVENESS: NOT conservative (bd `nlfd`, OPEN, P2, IR-only). A read counted
-//     here propagates one clone level up through `deadParamMask`: a recorded-dead
-//     inner slot that is not null-safe makes the enclosing clone's parameter LIVE,
-//     the outer (null-safe) phantom slot is never neutralised, and bd `tzfa`'s
-//     wrong unitary is back (r6 `sa1.ll`: a string attribute on the inner slot;
-//     exit 0, warned, the ORACLE's stream). IR-only as far as measured: clang-19
-//     `-O1` emits only allowlisted attributes on int/fp parameters, and `musttail`
-//     (the one C-reachable reason, bd `w7nm`) is no longer a null-safety reason.
+//   * LIVENESS: was NOT conservative (bd `nlfd`, P2, IR-only) and no longer asks
+//     this alone. A read counted there propagates one clone level up through
+//     `deadParamMask`: a recorded-dead inner slot that is not null-safe made the
+//     enclosing clone's parameter LIVE, the outer (null-safe) phantom slot was
+//     never neutralised, and bd `tzfa`'s wrong unitary was back (r6 `sa1.ll`: a
+//     string attribute on the inner slot; exit 0, warned, the ORACLE's stream).
+//     Since bd `nlfd` an ARGUMENT in an unread scalar slot is not a read, and an
+//     INSTRUCTION there that keeps a HANDLE parameter alive declines in
+//     `buildClone` (see `isUnreadScalarSlot`).
 //   * M-A (`cloneArgReachesResult`): NOT conservative — its one caller,
 //     `reachesObservingSink`, is the clause-3 EXEMPTION walk, where a hop EXEMPTS
 //     a record. It is UNREACHABLE today: M-A gates are rotations, which occur only
@@ -135,6 +139,33 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 //     clone's result depend on this argument?", not "is a null safe here?").
 bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
                           const TaintSet &taint);
+
+// bd `test_C_libtooling-nlfd` — an UNREAD SCALAR slot: `isRecordedDeadSlot` AND the
+// slot is an integer or floating-point scalar (by the call's function type). No
+// VALUE placed there is observed: the callee never reads it (the record is exact
+// for the built clone, bd sqjq) and a scalar is not dereferenced by the call (a
+// `byval`/`inalloca`/`preallocated` slot is a pointer and copies its pointee AT
+// THE CALL — never this). It is the premise LLVM's own DAE rests on when it puts
+// `poison` in a dead slot whatever the slot's other attributes; the only way a value
+// here can still matter is a VALUE CONSTRAINT on the slot (`noundef`: a real value
+// never violates it; `range`/`nofpclass`: stripped by
+// `stripUnreadSlotValueConstraints` wherever a null can now arrive). `returned` and
+// `allocalign` cannot bite: clones carry no `returned` (`stripStaleClassicalAttrs`)
+// and never return a pointer (SpecializeReject's ABI-return clause).
+// ⚠ It is NOT a licence to WRITE a constant there — that is `nullSafeSlot`'s
+// question, whose attribute allowlist is a POLICY (the drop leaves a string or
+// unknown attribute alone). Its two uses are the liveness call-slot rule (an
+// ARGUMENT operand of such a slot is not a read — the value reaching it is decided
+// one level up, where the slot IS null-safe) and `SlotReads::Value`.
+bool isUnreadScalarSlot(const llvm::CallBase &CB, unsigned ArgNo,
+                        const TaintSet &taint);
+
+// Strip the two VALUE CONSTRAINTS a null can violate — `range` and `nofpclass` —
+// from parameter `ArgNo` of `CB`'s callee and from the call site's slot. Part of the
+// one rewrite (`rewriteRecordedDeadSlotUse`), and asked on its own by `buildClone`
+// for an unread scalar slot whose operand is a parameter the record calls dead: the
+// caller's neutralised `0` arrives there through that parameter (bd `nlfd`).
+void stripUnreadSlotValueConstraints(llvm::CallBase &CB, unsigned ArgNo);
 
 // THE ONE REWRITE of a recorded-dead slot (bd vsfp round 4; Rule 14 — three sites
 // used to spell it): if `U` is an argument operand of a call in a slot
@@ -159,10 +190,23 @@ bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // dead INSTRUCTION) — so a nested clone call inherits the dead slot (bd sqjq).
 bool rewriteRecordedDeadSlotUse(llvm::Use &U, const TaintSet &taint);
 
+// Which call-slot operands a recorded-dead slot keeps alive (the call-slot rule).
+//   * Existence (the default, every client but one): must this value still EXIST?
+//     A rewritable slot's operand does not (the rewrite nulls it); an unread scalar
+//     slot's ARGUMENT operand does not (an argument is never deleted); an unread
+//     scalar slot's INSTRUCTION operand that the rewrite may not null DOES (it is
+//     still a use of the call).
+//   * Value: is this value's VALUE ever observed? No unread scalar slot observes
+//     its operand. Asked only by `buildClone` (bd `nlfd`): a HANDLE parameter live
+//     under Existence and dead under Value is kept alive only by a computation
+//     whose result nothing reads — a phantom read the caller's slot cannot shed.
+enum class SlotReads { Existence, Value };
+
 // The liveness of one function body, computed once at construction.
 class FunctionLiveness {
 public:
-  FunctionLiveness(const llvm::Function &F, const TaintSet &taint);
+  FunctionLiveness(const llvm::Function &F, const TaintSet &taint,
+                   SlotReads Mode = SlotReads::Existence);
   // `V` is an Instruction or Argument OF THIS FUNCTION; anything else (a
   // constant, a global, another function's value) answers false.
   bool isLive(const llvm::Value *V) const;
@@ -171,9 +215,10 @@ private:
   llvm::SmallPtrSet<const llvm::Value *, 32> Live;
 };
 
-// Bit i set ⇔ parameter i of `F` is DEAD under `FunctionLiveness`. Parameters at
-// index ≥ 64 are reported LIVE (never droppable, never "phantom").
-uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint);
+// Bit i set ⇔ parameter i of `F` is DEAD under `FunctionLiveness` in `Mode`.
+// Parameters at index ≥ 64 are reported LIVE (never droppable, never "phantom").
+uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint,
+                       SlotReads Mode = SlotReads::Existence);
 
 // Delete the DEAD part of the backward cone of `Seeds` in `F`: every dead
 // instruction reachable from a seed through operands of dead instructions, closed

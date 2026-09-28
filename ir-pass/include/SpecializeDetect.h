@@ -127,8 +127,12 @@ bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 // null can violate; the rewrite strips them). A POINTER slot is never null-safe (so
 // neither is `byref`/`sret`/`nonnull`/`dereferenceable`) — bd `91k9`: a nulled
 // `byval` slot compiled clean and the executable SIGSEGVed. This is the ONLY slot
-// question the post-`specialize()` rewrite and the liveness call-slot rule ask
-// (`isRewritableDeadSlot`, DeadValueLiveness.h).
+// question the post-`specialize()` REWRITE asks (`isRewritableDeadSlot`,
+// DeadValueLiveness.h). ⚠ The liveness call-slot rule asks it AND, since bd `nlfd`,
+// `isUnreadScalarSlot` — "may a constant be WRITTEN here?" (this) is not "is the
+// value here OBSERVED?" (that). The attribute allowlist is a WRITE policy: a string
+// or unknown attribute leaves the IR operand alone, while an argument forwarded into
+// such a slot is still no read of the enclosing parameter.
 // ⚠ IT ASKS NO CALLEE CONJUNCT, and that admits `naked` clones (bd `xmew`, r6
 // F-R6-3): `CloneFunction` copies `naked` onto the clone, so round 6 rewrites a
 // naked clone's dead slot where round 5 declined (an unannounced D→A, IR-only probe
