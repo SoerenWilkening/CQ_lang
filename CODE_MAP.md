@@ -26,7 +26,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_link_smoke.c` — 2933 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 2804 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
-- `tools/taintset_scrub_guard.py` — 2427 physical lines
+- `tools/taintset_scrub_guard.py` — 2435 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2164 physical lines
@@ -8521,7 +8521,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/taintset_scrub_guard.py` (2427 lines)
+### `tools/taintset_scrub_guard.py` (2435 lines)
 
 - `tools/taintset_scrub_guard.py:380` — `set_jobs`
 - `tools/taintset_scrub_guard.py:386` — `_run`
@@ -8595,10 +8595,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/taintset_scrub_guard.py:1887` — `_mutants.lb`
 - `tools/taintset_scrub_guard.py:2261` — `_db_cases`
 - `tools/taintset_scrub_guard.py:2269` — `_db_cases.mal`
-- `tools/taintset_scrub_guard.py:2298` — `_shard_of`
-- `tools/taintset_scrub_guard.py:2303` — `selftest`
-- `tools/taintset_scrub_guard.py:2347` — `selftest.run`
-- `tools/taintset_scrub_guard.py:2377` — `main`
+- `tools/taintset_scrub_guard.py:2298` — `_shards`
+- `tools/taintset_scrub_guard.py:2309` — `selftest`
+- `tools/taintset_scrub_guard.py:2355` — `selftest.run`
+- `tools/taintset_scrub_guard.py:2385` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 

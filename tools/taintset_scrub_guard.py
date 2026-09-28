@@ -246,8 +246,8 @@ and every spelling of the five Rule-13 fool corpora it was built against (r1A
 mutants REFUSED FOR THE RIGHT REASON (the expected diagnostic substring is checked,
 so a compile error is not a kill). Known passes (R1, the builtin-pointer out-of-scope
 case) are pinned as expected-clean entries labelled RESIDUAL / OUT OF SCOPE, so the
-day one of them starts refusing the self-test says so. `--shard K/N` runs the entries
-whose label hashes to K-1 mod N (the configuration and PCH controls in shard 1), and
+day one of them starts refusing the self-test says so. `--shard K/N` runs the K-th of N
+balanced, deterministic slices (`_shards`; the configuration and PCH controls in shard 1), and
 `--jobs N` (or CQ_GUARD_JOBS) bounds the compilers this process runs at once; the
 ctest entries pass both, so the gate's own -j is respected.
 
@@ -2295,15 +2295,22 @@ def _db_cases():
     return out
 
 
-def _shard_of(label, n):
-    import hashlib
-    return int(hashlib.sha256(label.encode()).hexdigest(), 16) % n
+def _shards(entries, n):
+    """-> {label: shard index 0..n-1}, deterministic and BALANCED: the expected-clean
+    entries (the costly ones — every pass, the no-PCH re-ask and the include-order check)
+    round-robin by label first, starting at shard 2 because shard 1 also runs the PCH
+    equivalence control; then the mutants, continuing the rotation. (A label-hash split
+    measured 754 / 395 / 458 s under load: shard 1 drew the nulls.)"""
+    nulls = sorted(m[0] for m in entries if m[5] is None)
+    muts = sorted(m[0] for m in entries if m[5] is not None)
+    return {l: (i + 1) % n for i, l in enumerate(nulls + muts)}
 
 
 def selftest(jobs=None, shard=(1, 1)):
-    """The guard's own mutant validation. `shard` = (k, n): run only the mutants whose label
-    hashes to k-1 mod n (the configuration and PCH-equivalence controls run in shard 1), so
-    the corpus can be split across ctest entries; `jobs` bounds the compilers in flight."""
+    """The guard's own mutant validation. `shard` = (k, n): run only the k-th of n balanced
+    slices of the entries (`_shards`; the configuration and PCH-equivalence controls run in
+    shard 1), so the corpus can be split across ctest entries; `jobs` bounds the compilers
+    in flight."""
     jobs = jobs or JOBS
     k, n = shard
     hdr = open(HEADER).read()
@@ -2339,7 +2346,8 @@ def selftest(jobs=None, shard=(1, 1)):
     if dup:   # the shard key is the label: two entries with one label would share a fate
         print(f"  BAD duplicate mutant labels: {dup}")
         bad.append("duplicate labels")
-    muts = [m for m in every if _shard_of(m[0], n) == k - 1]
+    assign = _shards(every, n)
+    muts = [m for m in every if assign[m[0]] == k - 1]
     if not muts:
         print(f"  BAD shard {k}/{n} selected no mutant — a vacuous shard is a failure")
         bad.append("empty shard")
