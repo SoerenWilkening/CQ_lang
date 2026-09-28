@@ -11,6 +11,10 @@
 ; the proof recurses on the native stack. RETIREMENT TRIGGER (L8): if the walk is
 ; made iterative, retire the cap and turn the other file into an accept.
 ;
+; ⚠ (Rule-13 r2B F-r2B-3) This file is RED on the oracle — it distinguishes rhk5 — but
+; the claim that it fixes the cap's VALUE rests on the out-of-tree mutant matrix
+; (`rhk5_probes/tools/mutants_r2.py` R5, cap 16 → 15), which is not a ctest gate.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll

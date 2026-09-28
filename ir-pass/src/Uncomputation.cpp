@@ -1942,6 +1942,12 @@ void collectInteriorPlansMode(Function &F, TaintSet &taint, DominatorTree &DT,
   // This per-component step exists so that one (b′) regression does not cost the
   // (b′) wins elsewhere in the same function.
   //
+  // ⚠ It compares exactly TWO candidates — every (b′) rail owned, or none — and
+  // searches no subset. A mixed plan (demote only the (b′) rail whose clone consumer
+  // lies past the non-diagonal gate) can satisfy clause (d) where both candidates
+  // fail; it is then a MISSED WIN, never a regression (r2A F-r2A-3, probe `f2.c`,
+  // byte-identical to the oracle; filed as bd `test_C_libtooling-ezyg`).
+  //
   // What this does NOT fix, stated: the hand-inlined TWIN of `b2n` (`s = p + 1`)
   // leaks `u` the same way on BOTH binaries — its `p` is interior through a
   // template consumer, with no (b′) involved. That granularity defect is
@@ -2073,6 +2079,35 @@ void collectInteriorPlansMode(Function &F, TaintSet &taint, DominatorTree &DT,
 // Granularity is the FUNCTION, so where ON loses a discharge OFF makes, every
 // rhk5 win in the same function is given up too — the safe direction, and a
 // candidate for a finer rule if a customer ever shows up (none measured).
+//
+// ⚠ SCOPE OF "CHECKED" (bd rhk5 Rule-13 r2A F-r2A-4, L7): the comparison is made on
+// the module THIS CALL sees. `planInteriorDischarges` calls this same wrapper in the
+// M-C late round (`ArithLowering`, arm (d2)), one stage EARLIER, on the module BEFORE
+// M-C converts a reassignment in place; the OFF run inside `uncompute` then plans on
+// a module the pre-rhk5 compiler would not have produced. So "never worse than
+// pre-rhk5" is checked per call, not end to end. Why that is still safe is ARGUED
+// (r2A, not constructed; two probes never reached a conversion): M-C converts only
+// when every prior reader is discharged by the chosen plan provably before the
+// in-place gate; a later flip to OFF leaves that record live — a leak with the
+// out-of-place spelling's entanglement, never a dirty free — and every plan re-runs
+// clause (d) against the new in-place gate, so no `_unc` reads a relabelled register.
+//
+// ⚠ THIS LAYER IS UNPINNED (r2A F-r2A-1, P2, disclosed). Mutant R9 (the comparison
+// removed) moves 0 of 3,384 corpus modules and fails no fixture. Its customer, argued
+// in TRACK_RHK5.md §R2.2, is a clause-(3)-enabled PIECE plan that, as an INNER plan
+// reading an OUTER plan's rail, makes the cross-plan ordering check drop the outer
+// plan — which needs a multiplicity split (a marked loop body) and a loop exit the
+// body's discharge point does not dominate. r2A wrote 13 C programs for it
+// (`review_r2A_rhk5/probes/src/l2a.c`…`l2m.c`): every spelling that makes the
+// ordering check fire DECLINES EARLIER on both binaries — at the P4 cross-block gap
+// (`condition predates a non-diagonal gate`, any guard or `break` between the hoisted
+// rail and the body's condition) or at clause (ii-d), which refuses a hoisted rail
+// with any out-of-loop user (`rolled body leaks a rail entangled with a rotated
+// register`). It fails safe: it can only choose OFF, the pre-rhk5 plan.
+// RETIREMENT TRIGGER (L8): the day P4 admits a guarded / `break`-exited loop over a
+// hoisted rail, or (ii-d) admits a hoisted rail with an out-of-loop user, this layer
+// gains a customer — the bd tu9q P0 split plus a clone consumer — and owes a fixture
+// that fails with it removed (mutant R9 in rhk5_probes/tools/mutants_r2.py).
 void collectInteriorPlans(Function &F, TaintSet &taint, DominatorTree &DT,
                           PostDominatorTree &PDT, LoopInfo &LI,
                           const SmallPtrSetImpl<const CallInst *> &ReversedGates,

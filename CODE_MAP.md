@@ -26,8 +26,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_link_smoke.c` — 2933 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 2804 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 2364 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 2329 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2173 physical lines
 - `ir-pass/include/TaintPropagation.h` — 2029 physical lines
@@ -54,12 +54,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/full_surface/full_census.py` — 877 physical lines
 - `tools/record_census/shipped_guard_model.py` — 866 physical lines
 - `ir-pass/src/IOSinkLowering.cpp` — 860 physical lines
+- `tools/trace_twin_equiv.py` — 843 physical lines
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
-- `tools/trace_twin_equiv.py` — 824 physical lines
 - `ir-pass/include/LoopPlan.h` — 762 physical lines
 - `ir-pass/include/ControlPlan.h` — 728 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
-- `ir-pass/include/ChainWalk.h` — 670 physical lines
+- `ir-pass/include/ChainWalk.h` — 673 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 660 physical lines
 - `tests/e2e/railbank_stale_matrix.c` — 654 physical lines
@@ -1073,7 +1073,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TemplateName.cpp:117` — `isUncHandleSlot`
 - `ir-pass/src/TemplateName.cpp:133` — `castName`
 
-### `ir-pass/src/Uncomputation.cpp` (2329 lines)
+### `ir-pass/src/Uncomputation.cpp` (2364 lines)
 
 - `ir-pass/src/Uncomputation.cpp:84` — `diagnose`
 - `ir-pass/src/Uncomputation.cpp:92` — `isDataProducer`
@@ -1090,11 +1090,11 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:1118` — `planInteriorComponent`
 - `ir-pass/src/Uncomputation.cpp:1619` — `addDischargedRails`
 - `ir-pass/src/Uncomputation.cpp:1629` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2076` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:2101` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:2116` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:2157` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:2253` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:2111` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:2136` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:2151` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:2192` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:2288` — `planInteriorDischarges`
 
 ### `ir-pass/src/WidthDispatch.cpp` (581 lines)
 
@@ -8598,7 +8598,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/taintset_scrub_guard.py:1088` — `selftest.run`
 - `tools/taintset_scrub_guard.py:1116` — `main`
 
-### `tools/trace_twin_equiv.py` (824 lines)
+### `tools/trace_twin_equiv.py` (843 lines)
 
 - `tools/trace_twin_equiv.py:85` — `parse`
 - `tools/trace_twin_equiv.py:100` — `is_h`
@@ -8616,12 +8616,12 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/trace_twin_equiv.py:418` — `equivalent.rec`
 - `tools/trace_twin_equiv.py:451` — `compare_text`
 - `tools/trace_twin_equiv.py:604` — `_t`
-- `tools/trace_twin_equiv.py:641` — `_swap`
-- `tools/trace_twin_equiv.py:647` — `_move`
-- `tools/trace_twin_equiv.py:654` — `_drop`
-- `tools/trace_twin_equiv.py:660` — `_sub`
-- `tools/trace_twin_equiv.py:767` — `selftest`
-- `tools/trace_twin_equiv.py:790` — `main`
+- `tools/trace_twin_equiv.py:647` — `_swap`
+- `tools/trace_twin_equiv.py:653` — `_move`
+- `tools/trace_twin_equiv.py:660` — `_drop`
+- `tools/trace_twin_equiv.py:666` — `_sub`
+- `tools/trace_twin_equiv.py:786` — `selftest`
+- `tools/trace_twin_equiv.py:809` — `main`
 
 ### `tools/update_code_map.py` (221 lines)
 

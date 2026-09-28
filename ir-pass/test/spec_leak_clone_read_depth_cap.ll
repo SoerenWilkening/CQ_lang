@@ -5,6 +5,13 @@
 ; spec_accept_clone_read_depth_at_cap.ll for why this is an over-leak, pinned
 ; deliberately, and its retirement trigger.
 ;
+; ⚠ THIS FILE DOES NOT BY ITSELF DISTINGUISH THE FIX (Rule-13 r2B F-r2B-3): it is GREEN
+; on the oracle (main 9a230646), on rhk5 round 1 and on round 2 — the program leaks on
+; all three. What makes it a pin is the MUTANT MATRIX, which is NOT a ctest gate:
+; `rhk5_probes/tools/mutants_r2.py` R4 (cap deleted) turns it red (TRACK_RHK5.md
+; §R2.5). Its companion spec_accept_clone_read_depth_at_cap.ll IS red on the oracle,
+; but what it pins about the CAP (lower it and it goes red) also rests on mutant R5.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LEAK < %t.cqd0.ll

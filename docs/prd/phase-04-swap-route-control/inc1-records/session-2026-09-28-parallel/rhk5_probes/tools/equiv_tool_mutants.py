@@ -12,6 +12,10 @@ W = '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a771
 SRC = open(W + '/tools/trace_twin_equiv.py').read()
 
 MUT = {
+    # round 3 (bd rhk5; r2B F-r2B-1): r1B's U12 / U13, now pinned by r2B's pairs.
+    'T12_measure_is_read': ("    elif s.startswith('cqrt_measure_') and len(a) == 1:\n        W(0)",
+                            "    elif s.startswith('cqrt_measure_') and len(a) == 1:\n        R(0)"),
+    'T13_renaming_not_injective': ("            elif y in bwd:\n", "            elif False:\n"),
     # round 2 (bd rhk5): the RESULT-width conjunct of each rule, deleted — r1B's
     # U2/U4 spelled against the round-1 substring test, re-spelled here.
     'T9_rule1_no_result_width': ("            if result_width(t['sym']) != w:\n",

@@ -368,7 +368,11 @@ land under the sweep.
 
 **ORACLE vs SUBJECT** (`results/ab_oracle_vs_subject_v2.txt`): **39 movers, every one
 STREAM; 0 D→A, 0 A→D, 0 STRING.** Warned modules: lit 58 → 53, multi 6 → 3, probes
-33 → 6, e2e 5 → 5.
+33 → 6, e2e 5 → 5. ⚠ (Round 3, Rule-13 r2A F-r2A-2.) "0 D→A" covers the SWEPT corpus
+ONLY. r2A found a D→A mover outside every swept population — `l2i`, a clone call reading
+a LICM-hoisted `p = q*3` inside a rolled loop: the oracle declines at bd tu9q's
+postcondition (`hoisted invariant rail admitted for in-loop discharge was not
+discharged`), rhk5 accepts, matching the hand-unrolled twin. Now pinned (§R3).
 
 | population | movers | classification |
 |---|---|---|
@@ -665,8 +669,12 @@ control `recompute-width-cast` added. r1B F-3: rows A9, A12, A18, A22–A28 adop
 controls; r1B's own `checker_mutants.py`, re-run on the new checker
 (`round2/r1B_checker_mutants_after.txt`): U3, U6, U7, U8, U9, U10, U11 now **RED**; U2/U4
 no longer apply (their anchor was the retired substring test — re-spelled as my T9/T10,
-both RED); U14 (compare commutes) RED via A12 (my T11). Still GREEN, as r1B argued them
-equivalent on real traces: U1, U5, U12, U13 — not attacked further. r1B's
+both RED); U14 (compare commutes) RED via A12 (my T11). Still GREEN: U1, U5, U12, U13 —
+~~as r1B argued them equivalent on real traces~~ ⚠ CORRECTED IN ROUND 3 (Rule-13 r2B
+F-r2B-1): U12 and U13 were NOT equivalent — they were UNPINNED-BUT-SOUND (correct
+conjuncts with no control), and r2B built a non-equivalent pair for each that the shipped
+checker calls DIFF and the mutant calls EQUIV; both are now pinned (§R3). U1/U5 remain
+unpinned-but-sound on real compiler traces (r2B F-r2B-2, §R3). r1B's
 `attack_checker.py` on the new checker: **FALSE EQUIV 0 of 28**. r1B F-4 (docstring)
 FIXED. r1B F-5 (`l1` warns on a clean trace): isolated by family member `k07` (`l1`
 minus the chain) — warns on the ORACLE, round 1 and round 2 with byte-identical traces,
@@ -729,7 +737,8 @@ Load: 200–350 during the first half of the round, ~2 after the 23:52 restart.
   not buildable alone, NOT swept] · multi 36 · probes 307):
   * NULL control, round 2 against itself, run FIRST: **0 movers** (`round2/ab_null_r2_twice.txt`).
   * ORACLE vs round 2 (`round2/ab_oracle_vs_r2.txt`): **45 movers, ALL STREAM — 0 A→D,
-    0 D→A, 0 STRING, 0 unwarned→warned.** Round 1's 39, plus 4 new lit accepts
+    0 D→A, 0 STRING, 0 unwarned→warned** (⚠ over the SWEPT corpus only — r2A's `l2i`,
+    outside it, is a D→A mover; §R3). Round 1's 39, plus 4 new lit accepts
     (`…before_ry_whole_plan`, `…before_state_prep`, `…depth_at_cap`,
     `…two_components_both_discharged` — each an rhk5 win the oracle leaks), plus 2 new
     probes (`k05`, `k3L` — same). The kyy1 family members `k01`–`k04`, `k06` and the new
@@ -884,7 +893,8 @@ after), `tools/mutmatrix.sh` over the 411 fixtures matching
   the cross-plan ordering check); no fixture reaches it, so mutant R9 is expected to
   survive (§R2.5) and that is recorded, not hidden.
 * **r1B's surviving checker mutants U1, U5, U12, U13** — argued equivalent by r1B; no
-  controls added.
+  controls added. ⚠ Superseded in round 3: U12/U13 were unpinned-but-sound, NOT
+  equivalent, and are now pinned; U1/U5 stay unpinned (§R3).
 * **The residual name trust** (a DECLARED name-shaped callee supplied by a link-time
   object) — stated in `ChainWalk.h`, not fenced; it is the same boundary every emitter
   stands on.
@@ -925,3 +935,84 @@ after), `tools/mutmatrix.sh` over the 411 fixtures matching
 7. **The kyy1 family is 7 members plus `b2`/`b2n`.** Shapes not built: a (b′) rail read
    by TWO clone calls on opposite sides of the Ry; a (b′) chain whose clone consumer is
    in a loop body; a (b′) rail that is also a borrowed parent of a THIRD component.
+
+---
+
+# ROUND 3 — the round-2 review items (both reviews CLEAR-WITH-ITEMS, 0 P1)
+
+Records: `review_r2A_rhk5/REVIEW.md`, `review_r2B_rhk5/REVIEW.md`, committed verbatim in
+this commit (content untouched; 475 files, sha-256 manifest checked before commit). This
+round changes **no pass source code**: comments, fixtures, the checker's controls and
+records only. The rebuilt binaries are **bit-identical** to round 2's:
+
+| binary | sha-256 |
+|---|---|
+| `cq-opt` | `aa0dff29ea088cde195e222c350c6d20e5e37d14ec52ccb6fd6c616164b92e09` |
+| `libCQPass.so` | `2d9c71bc8067627a30a637e147c1423e9e83e66b5a57d8a485c208f3f4c70003` |
+| `cq-opt-debugalloc` | `2da6e185c4e223b67019179e0d7be20a6e6f2967206791c356c1e0b8caddecc7` |
+
+## §R3.1 Items
+
+* **r2A F-r2A-1 (P2, disclosed) — layer (2) unpinned.** The source comment at
+  `collectInteriorPlans` now says it is unpinned (R9 moves 0 of 3,384 modules, no
+  fixture fails), WHY no C program reaches it (r2A's 13 probes `l2a`–`l2m`: every
+  spelling that makes the cross-plan ordering check fire declines earlier on both
+  binaries — the P4 cross-block gap, or clause (ii-d) refusing a hoisted rail with an
+  out-of-loop user), that it fails safe (it can only choose OFF), and its RETIREMENT
+  TRIGGER (P4 admitting a guarded / `break`-exited loop over a hoisted rail, or (ii-d)
+  admitting a hoisted rail with an out-of-loop user — then it owes a fixture that fails
+  under R9).
+* **r2A F-r2A-2 (P3) — `l2i` pinned.** New ACCEPT fixture
+  `ir-pass/test/spec_accept_clone_read_hoisted_rail_in_rolled_loop.ll`, body = r2A's
+  stage-1 `l2i.s1.ll` VERBATIM. Four prefixes: SILENT (no warning), EXIT (`mul_unc(h_op)`
+  + free immediately before the trailing `cqrt_ry(h, .9)`), BODY (no `mul_unc` between
+  the clone call and the back edge), ONCE (exactly one `mul_unc` in the module, its own
+  prefix). Red-green (`tools/redgreen.sh`): **FAIL on the oracle** (it declines), PASS on
+  rounds 1 and 2. Injection check (`tools/inject_l2i.py`, `round2/inject_l2i.txt`): null
+  passes; discharge moved into the body, an extra discharge in the body, discharge after
+  the Ry, discharge dropped, free dropped — **MISSED 0 of 5**. The "0 D→A" statements
+  in §5.3 and §R2.4 are corrected to say they cover the swept corpus only.
+* **r2A F-r2A-3 (P3) — filed** as bd **`test_C_libtooling-ezyg`** (P3, discovered-from
+  rhk5, related kyy1): layer (1) tries only all (b′) rails or none; a mixed plan clause
+  (d) would accept (`f2.c`) is a missed win, byte-identical to the oracle. A comment at
+  the per-component fallback names it.
+* **r2A F-r2A-4 (P3, L7) — comment scoped.** `collectInteriorPlans` and `ChainWalk.h`
+  now say "never worse than pre-rhk5" is checked PER CALL, on the module the call sees:
+  the M-C late round (`planInteriorDischarges`, `ArithLowering` arm (d2)) asks the same
+  ON/OFF question one stage earlier, and why that stays safe is r2A's argument
+  (recorded as argued, not constructed).
+* **r2B F-r2B-1 (P3) — U12/U13 pinned.** Two controls added to
+  `tools/trace_twin_equiv.py` (44 total), both r2B's pairs: `r2B-U12-measure-past-copy-src`
+  (a measure reordered past a copy that reads the same rail) and
+  `r2B-U13-renaming-injective` (two CNOTs on two targets vs one target twice — no mints,
+  on purpose: r2B's alloc-first spelling does not reach the conjunct, measured by
+  `tools/u12_u13_probe.py`: shipped DIFF / U13 DIFF). Checker mutants T12 (measure is a
+  read) and T13 (injectivity dropped) are now RED, each killed by exactly its control;
+  T0 null GREEN; all 14 as required (`results/equiv_tool_mutants_r3.txt`). The three
+  e2e gate pairs stay EQUIV. The record's "equivalent" for U12/U13 is corrected to
+  "unpinned-but-sound, now pinned".
+* **r2B F-r2B-2 (P3, pre-existing) — U1/U5 noted, not pinned.** The contraction's
+  narrowness conjuncts (`len(ua) != 4`, `uc[1] != j`) remain unpinned; r2B argues them
+  sound on real compiler traces (a scratch rail is used by exactly its four Bennett
+  lines and downstream checks reject the relaxed cases). No control added.
+* **r2B F-r2B-3 (P3) — fixture headers.** `spec_leak_clone_read_twin_cycle.ll`,
+  `spec_leak_clone_read_depth_cap.ll` (green on oracle, round 1 and round 2) now say in
+  their headers that they do not by themselves distinguish the fix and rest on the
+  out-of-tree mutant matrix (R3, R4); `spec_accept_clone_read_depth_at_cap.ll` says its
+  cap-value claim rests on R5.
+* **r2B F-r2B-4** is r2A F-r2A-1 (above).
+
+## §R3.2 What was run
+
+* Rebuilt all four targets; `cq-opt`, `libCQPass.so`, `cq-opt-debugalloc` bit-identical
+  to round 2 (table above).
+* lit, the new and changed fixtures only (`spec_accept_clone_read_hoisted_rail_in_rolled_loop`,
+  `spec_leak_clone_read_twin_cycle`, `spec_leak_clone_read_depth_cap`,
+  `spec_accept_clone_read_depth_at_cap`): **4/4 PASS**. The new fixture red-green on
+  oracle / round 1 / round 2: FAIL / PASS / PASS.
+* ctest `e2e-trace-twin-equiv-selftest` + the three `e2e-spec-clone-*-twin-equivalent`
+  gates: **4/4**. Selftest **44/44** controls.
+* `update_code_map.py` then `--check`: exit 0.
+* NOT run (per the orchestrator's round-3 profile): full lit, full ctest, corpus A/B,
+  mutant matrix — no pass source changed and the binaries are bit-identical.
+

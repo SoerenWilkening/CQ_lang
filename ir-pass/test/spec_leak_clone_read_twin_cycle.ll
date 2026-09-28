@@ -11,6 +11,13 @@
 ; the two are mutually redundant for the VERDICT (r1A measured this). The cap is
 ; pinned on its own by spec_leak_clone_read_depth_cap.ll.
 ;
+; ⚠ THIS FILE DOES NOT BY ITSELF DISTINGUISH THE FIX (Rule-13 r2B F-r2B-3): it is GREEN
+; on the oracle (main 9a230646), on rhk5 round 1 and on round 2 — the program leaks on
+; all three. What makes it a pin is the MUTANT MATRIX, which is NOT a ctest gate:
+; `rhk5_probes/tools/mutants_r2.py` R3 (a cycle returns YES) turns it red and nothing
+; else in the suite does (TRACK_RHK5.md §R2.5). If the cycle test regresses in a way
+; R3 does not model, the shipped suite can stay green.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LEAK < %t.cqd0.ll

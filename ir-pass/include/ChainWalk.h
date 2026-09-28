@@ -514,9 +514,12 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 // `isInteriorConsumer` — a Phase-6 clone call proven read-only — on or off. OFF
 // reproduces the pre-rhk5 candidate set EXACTLY; `Uncomputation`'s interior driver
 // plans both ways and keeps the plan set that discharges a SUPERSET of the other's
-// rails, so no discharge the pre-rhk5 compiler made can be lost (r1B F-r1B-1 lost
-// one: a rail (b′) made interior dragged its dead sibling's discharge point past a
-// non-diagonal gate). Pass it explicitly; there is no default on purpose.
+// rails, so no discharge the pre-rhk5 planner makes ON THE MODULE IT IS ASKED ABOUT
+// can be lost (r1B F-r1B-1 lost one: a rail (b′) made interior dragged its dead
+// sibling's discharge point past a non-diagonal gate). ⚠ "On the module it is asked
+// about": the M-C late round asks the same question one stage earlier, so the claim
+// is per call, not end to end — see `collectInteriorPlans` (r2A F-r2A-4). Pass it
+// explicitly; there is no default on purpose.
 bool isInteriorTerminalHandle(llvm::Value *Handle, const TaintSet &taint,
                               bool AdmitCloneCalls);
 

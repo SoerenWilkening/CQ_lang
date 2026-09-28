@@ -1,0 +1,18 @@
+cqrt_alloc_i32(5) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_rz_i1(h1, 0x1.921f9f01b866ep+1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cq_template_mul_i32_hl(h0, 3) -> h2
+cq_template_add_i32_hl(h2, 1) -> h3
+cqrt_alloc_i32(0) -> h4
+cqrt_copy_i32(h3, h4)
+cq_template_add_i32_hl_unc(h3, h2, 1)
+cqrt_free(h3)
+cq_template_mul_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cq_template_add_i32_hl(h0, -1) -> h5
+cqrt_ry_i32(h5, 0x1.6666666666666p-1)
+cqrt_measure_i32(h4) -> 0
+cqrt_measure_i32(h5) -> 0

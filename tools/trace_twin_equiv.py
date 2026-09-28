@@ -622,6 +622,12 @@ _REC_W_S = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1'
               'cq_template_sext_i32_to_i64_unc(h2, h0)', 'cqrt_free(h2)', 'cqrt_free(h1)')
 _REC_W_T = _t('cqrt_alloc_i32(1) -> h0', 'cq_template_sext_i32_to_i64(h0) -> h1',
               'cq_template_sext_i32_to_i64_unc(h1, h0)', 'cqrt_free(h1)')
+_U12_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
+            'cqrt_copy_i32(h0, h1)', 'cqrt_measure_i32(h0) -> 0', 'cqrt_free(h1)')
+_U12_T = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(0) -> h1',
+            'cqrt_measure_i32(h0) -> 0', 'cqrt_copy_i32(h0, h1)', 'cqrt_free(h1)')
+_U13_S = _t('cqrt_cnot(h0, h1)', 'cqrt_cnot(h0, h2)')
+_U13_T = _t('cqrt_cnot(h0, h1)', 'cqrt_cnot(h0, h1)')
 _A12_S = _t('cqrt_alloc_i32(5) -> h0', 'cqrt_alloc_i32(3) -> h1',
             'cq_template_icmp_ult_i32(h0, h1) -> h2', 'cqrt_measure_i1(h2) -> 0')
 _WS_PRE = ['cqrt_alloc_i1(1) -> h0', 'cqrt_alloc_i32(5) -> h1', 'cqrt_alloc_i32(3) -> h2']
@@ -752,6 +758,19 @@ CONTROLS = [
     # recomputed rail is not `T_unc(x, args)`. (Found by this tool's own checker
     # mutant T10, which survived every control after r1B's A9 was adopted.)
     ("recompute-width-cast", _REC_W_S, _REC_W_T, 'DIFF'),
+    # ── bd rhk5 round 3 (Rule-13 r2B F-r2B-1): two conjuncts that were correct but
+    # pinned by NO control — r1B's checker mutants U12 and U13 survived every control
+    # above. Both pairs are r2B's (review_r2B_rhk5/probes/checker/width_battery.py and
+    # REVIEW.md Q5), measured to flip to EQUIV under exactly one mutant each
+    # (rhk5_probes/tools/u12_u13_probe.py).
+    # U12: a MEASURE is a collapse, not a read — reordering it past a copy that READS
+    # the same rail changes the circuit.
+    ("r2B-U12-measure-past-copy-src", _U12_S, _U12_T, 'DIFF'),
+    # U13: the handle renaming must be INJECTIVE — two gates on two distinct targets
+    # are not one gate twice on one target. (The pair has no mints on purpose: a mint
+    # binds the name first, and then forward consistency alone decides — r2B's first,
+    # alloc-first spelling did not reach the conjunct.)
+    ("r2B-U13-renaming-injective", _U13_S, _U13_T, 'DIFF'),
     # A18: the copy-out scratch `b` does not start at |0> (alloc(1)).
     ("r1B-A18-copyout-nonzero", _A18_S, _A18_T, 'DIFF'),
     # A12: a compare's two handle operands swapped — `ult` is not symmetric, so the
