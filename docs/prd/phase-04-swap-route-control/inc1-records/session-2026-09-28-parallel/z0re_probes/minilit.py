@@ -18,7 +18,11 @@ import tempfile
 
 W = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a284a60d747f2ed82"
 LLVM = "/usr/local/opt/llvm@19/bin"
-OPT = sys.argv[1]
+OPT = os.path.abspath(sys.argv[1])  # RUN lines execute in a temp cwd
+if not (os.path.isfile(OPT) and os.access(OPT, os.X_OK)):
+    # A missing binary makes every RUN line fail and reads as "all KILLED" / "all red on the
+    # oracle" — measured once in round 2 with a mistyped path. Refuse instead.
+    sys.exit(f"minilit: {OPT} is not an executable file")
 files = [os.path.abspath(x) for x in sys.argv[2:]]
 if not files:
     sys.exit("minilit: no fixtures given (a 0-fixture run proves nothing)")

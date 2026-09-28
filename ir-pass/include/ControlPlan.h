@@ -649,7 +649,9 @@ struct ControlRegion {
   // `classifyAngleSelect`'s S3 for an untainted Ry-stem base. The EMITTER reads
   // it — never the taint it sees at emission time — to decide whether to record
   // the source theta in `TaintSet::RuntimeSeedSourceThetas` for the post-fixpoint
-  // re-ask. ⚠ THAT IS THE WHOLE POINT OF THE FIELD, AND IT IS MEASURED: when a
+  // re-ask, and (since Rule-13 r1B F-r1B-2) `emitAngleSelectRegion`'s step 0
+  // reads it to decide whether an untainted base is admitted at all, so the
+  // admission and the record are one question. ⚠ THAT IS THE WHOLE POINT OF THE FIELD, AND IT IS MEASURED: when a
   // 6.5 region earlier in the same `lowerControlRegions` loop RAUWs the seed to
   // its fresh `%out` rail, the seed is ALREADY tainted when this region is
   // emitted, so an emission-time "is the seed untainted?" test would skip the

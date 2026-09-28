@@ -1,7 +1,9 @@
 ; spec_reject_dropped_arg_statepred_runtime_seed.ll — ⚠ NOW AN ACCEPT (bd
 ; test_C_libtooling-z0re, OWNER RULING 2026-09-28, option (a)). The file keeps its
 ; `_reject_` name DELIBERATELY (the bd gahu precedent — a `git mv` can be resurrected
-; by a merge, CLAUDE.md L8); read the verdict off the RUN lines.
+; by a merge, CLAUDE.md L8); read the verdict off the RUN lines. RETIREMENT
+; TRIGGER (L8): rename to `spec_dropped_arg_statepred_runtime_seed.ll` in bd gahu's
+; batch rename (the bead lists this file), then run the duplicate-body scan.
 ;
 ; The OWNER QUESTION bd z0re's member `l12C` (d88e probes). On `main` aee8f4f8 `t =
 ; h(q, m)` was a Phase-6 site: round 1 read the conservatively-tainted `t` as a

@@ -3,7 +3,10 @@
 ; bd drbq.14). The file keeps its `_reject_` name DELIBERATELY — the bd gahu
 ; precedent: a `git mv` can be resurrected by a merge into one module under two
 ; names with contradictory verdicts (CLAUDE.md L8). Read the verdict off the RUN
-; lines, not off the name.
+; lines, not off the name. RETIREMENT TRIGGER (L8, Rule-13 r1A P3-1): rename to
+; `control_inplace_ry_stateprep_runtime_seed_arg.ll` in bd gahu's batch rename
+; (the bead lists this file), once no merge that could resurrect the old name is
+; pending — and run the duplicate-body scan after it.
 ;
 ;     int slice(int seed){ int r = seed; if (q == 5) r = cq_theta(seed, .9); }
 ;     // probe `p16`, from C

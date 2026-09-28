@@ -10,8 +10,12 @@
 ; `%x == %s` holds, so a live tainted value IS equal to the seed there — `%x`, the
 ; compare's own operand, a member of `CondWire`, excluded at the TEST by the
 ; owner's 2026-09-11 ruling. A mutant that drops the exclusion DECLINES this file
-; (`state prep seed is proven equal to the condition register`; TRACK_Z0RE.md §7),
-; which is what makes the fp relational half measured-live rather than dead.
+; (`state prep seed is proven equal to the condition register`; TRACK_Z0RE.md
+; §8.4, M3). ⚠ CORRECTED (Rule-13 r1A F-r1A-3, L7): that measures the EXCLUSION,
+; not the fp relational half — the first spelling called the half "measured-live
+; rather than dead". With the exclusion in place the half is fully masked by
+; CondWire and NO fixture, this one included, can pin it (ArmClassify.cpp, F2's
+; runtime-seed header).
 ;
 ; (LLVM 19 does not substitute across `fcmp oeq` at all — `+0.0 == -0.0` — so the
 ; in-place rival `r = cq_theta(x, .2)` could not produce this module even with an

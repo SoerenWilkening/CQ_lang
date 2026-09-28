@@ -66,6 +66,39 @@ MUTANTS = {
 }
 
 
+# ---- Round 2 (Rule-13 r1A/r1B items): mutants of the conjuncts round 2 CHANGED.
+MUTANTS_R2 = {
+    # NULL: reorder the two type disjuncts — no behaviour change. MUST move 0.
+    "R0_null": [(AC,
+                 "  return Ty->isIntegerTy() || Ty->isFloatingPointTy();\n}",
+                 "  return Ty->isFloatingPointTy() || Ty->isIntegerTy();\n}")],
+    # step 0 reverted to the round-1 spelling (re-derive at emission taint).
+    "R1_step0_rederive": [(AS,
+                           "  if (UntaintedBase && !R.RuntimeSeedAdmitted) {",
+                           "  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(Base, taint))) {")],
+    # step 0 never declines an untainted base.
+    "R2_step0_never": [(AS,
+                        "  if (UntaintedBase && !R.RuntimeSeedAdmitted) {",
+                        "  if (false && UntaintedBase && !R.RuntimeSeedAdmitted) {")],
+    # step 0 declines EVERY untainted base (ignores the classifier's verdict).
+    "R3_step0_always": [(AS,
+                         "  if (UntaintedBase && !R.RuntimeSeedAdmitted) {",
+                         "  if (UntaintedBase) {")],
+    # step 0 keyed on the flag ALONE (declines every non-admitted region, tainted bases too).
+    "R4_step0_flag_only": [(AS,
+                            "  if (UntaintedBase && !R.RuntimeSeedAdmitted) {",
+                            "  if (!R.RuntimeSeedAdmitted) {")],
+    # isRuntimeStatePrepSeed: re-add the removed `isa<Constant>` (claimed SUBSUMED).
+    "R5_readd_constant": [(AC,
+                           "  if (!V || (!isa<Instruction>(V) && !isa<Argument>(V)))",
+                           "  if (!V || isa<Constant>(V) || (!isa<Instruction>(V) && !isa<Argument>(V)))")],
+    # isRuntimeStatePrepSeed: DROP the scope line (admit Constants/undef/ConstantExpr).
+    "R6_no_scope_line": [(AC,
+                          "  if (!V || (!isa<Instruction>(V) && !isa<Argument>(V)))",
+                          "  if (!V)")],
+}
+
+
 def build_one(name, edits):
     backups = {}
     try:
@@ -94,6 +127,7 @@ def build_one(name, edits):
 
 if __name__ == "__main__":
     os.makedirs(BINS, exist_ok=True)
-    which = sys.argv[2:] or list(MUTANTS)
+    table = MUTANTS_R2 if sys.argv[1] == "build_r2" else MUTANTS
+    which = sys.argv[2:] or list(table)
     for m in which:
-        build_one(m, MUTANTS[m])
+        build_one(m, table[m])

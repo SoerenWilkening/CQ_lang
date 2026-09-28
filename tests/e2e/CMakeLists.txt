@@ -5046,6 +5046,13 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 #     from hand IR and is pinned by lit (`spec_*_side_door{,_twin}.ll`).
 #   * loop — ROLLED vs HAND-UNROLLED, a seed the loop re-computes every trip.
 # The f64 slice has no pair: it pins the fp width of the same accept.
+# ⚠ RETIREMENT TRIGGER (L8) — bd fmt3 OPTION B (owner 2026-09-28, lands AFTER z0re):
+# `__attribute__((nomerge))` on `cq_theta_*` stops `-O1` merging two thetas, so the
+# `slice_z0re_angle_select_runtime_base*` C sources no longer fold to an angle select
+# and their goldens / twin gates must be re-derived then (the if/else survives and meets
+# the two-rail clause). The S3 lowering stays pinned at the IR level by
+# `control_angle_select_ry_runtime_base{,_i8,_f64}.ll` and
+# `spec_angle_select_runtime_base_side_door{,_twin}.ll`.
 add_test(NAME e2e-slice-z0re-runtime-seed-prep
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
@@ -5109,6 +5116,44 @@ add_test(NAME e2e-slice-z0re-runtime-seed-f64
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.expected.log")
+# bd z0re Rule-13 r1B F-r1B-6 — the INDEPENDENT witnesses. Every gate above
+# compares two spellings that BOTH run the new runtime-seed code, so they witness
+# consistency, not correctness. These two compare a z0re stream with the same
+# program written through code that PREDATES z0re and whose golden the frozen
+# ORACLE (main 9a230646) reproduces byte for byte (measured, TRACK_Z0RE.md §R2):
+#   * the runtime-seed prep vs the LITERAL-seed prep (F1's literal path, drbq Inc 4)
+#     with the literal equal to the runtime value under the harness (argc = 1);
+#   * the runtime-base angle select with EXACT angles (.75/.25) vs an unconditional
+#     literal prep + an in-place controlled-Ry ARM (drbq Inc 1).
+add_test(NAME e2e-slice-z0re-runtime-seed-prep-literal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-prep-literal-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-exact
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-exact-inplace
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
+add_test(NAME e2e-z0re-angle-select-runtime-base-exact-inplace-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
 
 
 # ============================================================================

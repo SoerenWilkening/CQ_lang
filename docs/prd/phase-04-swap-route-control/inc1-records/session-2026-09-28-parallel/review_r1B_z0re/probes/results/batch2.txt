@@ -1,0 +1,94 @@
+== p2as_ne_twin SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      12 lowered=      64
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(6) -> h1
+cqrt_ry_i32(h1, 0x1.999999999999ap-3)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h2
+cqrt_x(h2)
+cqrt_ry_i32_controlled(h2, h1, 0x1.fffffffffffffp-2)
+cqrt_x(h2)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+== p2as_inexact SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      10 lowered=      60
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(6) -> h1
+cqrt_ry_i32(h1, 0x1p+0)
+cq_template_icmp_sgt_i32_hl(h0, 3) -> h2
+cqrt_ry_i32_controlled(h2, h1, -0x1p+0)
+cq_template_icmp_sgt_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+== p2as_inf SUBJ
+DECLINE rc=0 : lowering: rotation angle under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+== p2as_big SUBJ
+DECLINE rc=0 : lowering: rotation angle under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+== p2as_rtarm SUBJ
+DECLINE rc=0 : lowering: rotation angle under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+== p2as_bool SUBJ
+DECLINE rc=0 : lowering: bare i1 register condition under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: bare i1 register condition under quantum control
+== p2as_and SUBJ
+DECLINE rc=0 : lowering: control flow under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+== p2as_f64 SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      10 lowered=      70
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_f64(0x1.8p+2) -> h1
+cqrt_ry_f64(h1, 0x1.999999999999ap-3)
+cq_template_icmp_sgt_i32_hl(h0, 3) -> h2
+cqrt_ry_f64_controlled(h2, h1, 0x1.fffffffffffffp-2)
+cq_template_icmp_sgt_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_f64(h1) -> 0x0p+0
+cqrt_measure_i32(h0) -> 0
+== p2as_ne_twin ORA
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      12 lowered=      64
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cqrt_alloc_i32(6) -> h1
+cqrt_ry_i32(h1, 0x1.999999999999ap-3)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h2
+cqrt_x(h2)
+cqrt_ry_i32_controlled(h2, h1, 0x1.fffffffffffffp-2)
+cqrt_x(h2)
+cq_template_icmp_eq_i32_hl_unc(h2, h0, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h1) -> 0
+cqrt_measure_i32(h0) -> 0
+== p2as_inexact_reg ORA
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      11 lowered=      61
+cqrt_alloc_i32(6) -> h0
+cqrt_ry_i32(h0, 0x1.999999999999ap-4)
+cqrt_alloc_i32(4) -> h1
+cqrt_ry_i32(h1, 0x1.3333333333333p-2)
+cqrt_ry_i32(h0, 0x1p+0)
+cq_template_icmp_sgt_i32_hl(h1, 3) -> h2
+cqrt_ry_i32_controlled(h2, h0, -0x1p+0)
+cq_template_icmp_sgt_i32_hl_unc(h2, h1, 3)
+cqrt_free(h2)
+cqrt_measure_i32(h0) -> 0
+cqrt_measure_i32(h1) -> 0
+== p2as_big ORA
+DECLINE rc=0 : lowering: rotation angle under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+== p2as_bool ORA
+DECLINE rc=0 : lowering: rotation angle under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+== p2as_and ORA
+DECLINE rc=0 : lowering: control flow under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control

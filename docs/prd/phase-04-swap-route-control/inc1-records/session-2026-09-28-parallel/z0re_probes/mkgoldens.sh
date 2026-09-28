@@ -38,4 +38,8 @@ one slice_z0re_angle_select_runtime_base_spec spec_lift_classical_lib
 one slice_z0re_runtime_seed_loop
 one slice_z0re_runtime_seed_loop_unrolled
 one slice_z0re_runtime_seed_f64
+# Round 2 (Rule-13 r1B F-r1B-6): the independent-witness spellings.
+one slice_z0re_runtime_seed_prep_literal
+one slice_z0re_angle_select_runtime_base_exact
+one slice_z0re_angle_select_runtime_base_exact_inplace
 rm -rf "$T"

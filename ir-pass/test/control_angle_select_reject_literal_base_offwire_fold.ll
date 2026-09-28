@@ -16,18 +16,33 @@
 ; unrotated — the F-R1-1 class of F2's header, OFF the condition's wire (the
 ; compare reads `and q, -4`, a sibling of `t`), so NOT the owner-ruled α trade.
 ;
-; The DIAMOND prep refuses the identical hazard at F2 (probe `a8`: `int r = 5; if
-; (t == 5) r = cq_theta(t, .9);` declines `state prep seed is proven equal to the
-; condition register`). F2 is an EDGE analysis (`LazyValueInfo::
-; getConstantRangeOnEdge`), a select has no edge, and LLVM 19 exposes LVI's
-; condition analysis only through a branch edge or a select-OPERAND use — so the
-; literal angle-select base stays declined, with the string it has always had,
-; until an owner decision on how to ask F2 of a select condition (bd drbq.13).
+; The FLAT DIAMOND prep refuses the identical hazard at F2 (probe `a8`: `int r = 5;
+; if (t == 5) r = cq_theta(t, .9);` declines `state prep seed is proven equal to
+; the condition register`), because there the pin is on the REGION'S own edge.
+; ⚠ CORRECTED (Rule-13 r1A F-r1A-2, L7): an earlier spelling of this paragraph
+; read as "the diamond is safe". It is not in general — bd `fmt3` (PRE-EXISTING P1)
+; is this very fold NESTED inside a diamond prep: the pinning branch is an INNER
+; one `-O1` deletes, and F2, anchored on the OUTER region's edges, misses it
+; (r1A probe `a6` accepts on BOTH binaries; its flat twin `a6f` declines). F2 is
+; an EDGE analysis (`LazyValueInfo::getConstantRangeOnEdge`), a select has no
+; edge, and LLVM 19 exposes LVI's condition analysis only through a branch edge or
+; a select-OPERAND use — so the literal angle-select base stays declined, with the
+; string it has always had (OWNER RULING 2026-09-28 on bd drbq.13: the literal
+; base STAYS DECLINED).
 ;
-; A RUNTIME base cannot be the image of this fold (IPSCCP substitutes only
+; A RUNTIME base cannot be the image of this CONSTANT fold (IPSCCP substitutes only
 ; constants, and SimplifyCFG sinks a call only when at most ONE operand needs a φ,
 ; so arg-0 must already agree in both arms — probes a3/a4 keep the if/else unsunk),
-; which is why `control_angle_select_ry_runtime_base.ll` ACCEPTS.
+; which is why `control_angle_select_ry_runtime_base.ll` ACCEPTS. (The RELATIONAL
+; fold of bd zt0b can put a runtime value into an arg-0; its diamond-prep image is a
+; module indistinguishable from a legitimate program — `…_runtime_seed_postfold*.ll`
+; — closed at the C level by bd fmt3 option B, `nomerge` on `cq_theta_*`.)
+;
+; ⚠ WHEN bd fmt3 OPTION B LANDS (after z0re) this C spelling stops folding at all:
+; `nomerge` keeps the two thetas apart, no angle select forms, and the if/else
+; declines where the pass sees it (the inner compare survives to F2 or to the
+; if/else two-rail clause). THIS IR-LEVEL FILE STAYS the pin of the literal-base
+; decline, which is still what S3 owes a hand-IR / non-C front end.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control

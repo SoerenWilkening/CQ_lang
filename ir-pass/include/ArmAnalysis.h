@@ -302,11 +302,15 @@ bool declineRound2TaintedArmCone(llvm::Module &M, TaintSet &Taint);
 // `ConstantExpr` / `GlobalValue` address / `undef` / `poison` is refused by
 // BOTH — each keeps the reason F1's header gives it.
 //
-// TWO CALLERS, ONE SPELLING (Rule 14): F1's seed clause in `classifyArms` (the
-// DIAMOND state prep, `int r = s; if (c) r = cq_theta(s, θ);`) and S3 of
-// `classifyAngleSelect` plus its emitter's step-0 re-ask (the UNTAINTED Ry-stem
-// base, `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);`, which `-O1`
-// folds into one theta with an angle select).
+// TWO CLASSIFIER SITES, ONE SPELLING (Rule 14): F1's seed clause in
+// `classifyArms` (the DIAMOND state prep, `int r = s; if (c) r = cq_theta(s, θ);`,
+// asked again where the accept sets `ControlRegion::RuntimeSeedAdmitted`) and S3
+// of `classifyAngleSelect` (the UNTAINTED Ry-stem base, `if (c) r = cq_theta(t,
+// A); else r = cq_theta(t, B);`, which `-O1` folds into one theta with an angle
+// select). ⚠ The EMITTERS do NOT call it: they consume the classifier's
+// recorded verdict (`RuntimeSeedAdmitted`), both for the L1 record and — since
+// Rule-13 r1B F-r1B-2 — for `emitAngleSelectRegion`'s step-0 admission, so the
+// question is asked once, at detection, and carried.
 //
 // ⚠ "UNTAINTED" IS A ROUND-1 (or round-2) VERDICT, NOT A FINAL ONE — CLAUDE.md
 // L1's PREDICATE species. A value derived from a 6.5/4.5 merge `%out` is

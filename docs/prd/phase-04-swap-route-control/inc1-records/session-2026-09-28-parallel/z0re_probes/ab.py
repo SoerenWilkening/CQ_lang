@@ -137,9 +137,12 @@ for t, p in jobs:
         print(f"NOT-SWEPT\t{t}")
 
 
+EXTRA = os.environ.get("AB_EXTRA")  # optional third binary, compared against B (e.g. the previous round's subject)
+
+
 def one(tp):
     t, p = tp
-    return t, run(B, p), run(B, p), run(A, p)
+    return t, run(B, p), run(B, p), run(A, p), (run(EXTRA, p) if EXTRA else None)
 
 
 with ThreadPoolExecutor(4) as ex:
@@ -157,5 +160,8 @@ def report(title, pairs):
         print(f"{kind}\t{t}\tA={a}\tB={b}")
 
 
-report("NULL CONTROL (B vs B, must move 0)", [(t, b1, b2) for t, b1, b2, _ in res])
-report("A/B (A vs B)", [(t, a, b1) for t, b1, _, a in res])
+report("NULL CONTROL (B vs B, must move 0)", [(t, b1, b2) for t, b1, b2, _, _ in res])
+report("A/B (A vs B)", [(t, a, b1) for t, b1, _, a, _ in res])
+if EXTRA:
+    print(f"EXTRA={EXTRA}")
+    report("EXTRA vs B", [(t, x, b1) for t, b1, _, _, x in res])

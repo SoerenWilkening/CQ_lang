@@ -1986,38 +1986,82 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 //     evaluated before the branch, so only a condition OPERAND is renamed along
 //     the edge, and IPSCCP renames it to a constant);
 //   * what is left is the RELATIONAL rewrite — replacing a tainted `W` by `s`
-//     where the edge proves `W == s`. That needs an equality-propagating pass
-//     (GVN / NewGVN / JumpThreading / CorrelatedValuePropagation), and NONE is
-//     in the `-O1` pipeline at LLVM 19 (MEASURED with `-print-pipeline-passes`:
-//     1× ipsccp, 1× sccp, 2× early-cse, 8× instcombine, 9× simplifycfg, no
-//     gvn/newgvn/jump-threading/correlated-propagation — TRACK_Z0RE.md §3), and
+//     where some edge proves `W == s`. On the REGION'S OWN edges it needs an
+//     equality-propagating pass (GVN / NewGVN / JumpThreading /
+//     CorrelatedValuePropagation), and NONE is in the `-O1` pipeline at LLVM 19
+//     (MEASURED with `-print-pipeline-passes`: 1× ipsccp, 1× sccp, 2× early-cse,
+//     8× instcombine, 9× simplifycfg, no gvn/newgvn/jump-threading/correlated-
+//     propagation — TRACK_Z0RE.md §3). Measured from C: `if (q == s) r =
+//     cq_theta(q, θ)` keeps `%q` as arg-0, `r = q; if (q != s) r = cq_theta(s,
+//     θ)` keeps `%q` as the Pred incoming (probes e02/e09/e10/e15/e16).
+//   ⚠ CORRECTED (Rule-13 r1A F-r1A-1, L7): this bullet used to end "and
 //     InstCombine's relational simplification (`select (X == Y), X, Y → Y`)
 //     acts on a SELECT, which a diamond whose arm holds a `cq_theta` CALL never
-//     becomes (the call is not speculatable). Measured from C: `if (q == s)
-//     r = cq_theta(q, θ)` keeps `%q` as arg-0, `r = q; if (q != s) r =
-//     cq_theta(s, θ)` keeps `%q` as the Pred incoming (probes e02/e09/e10/e15/
-//     e16).
-// So the question is ASKED ANYWAY, as the relation itself and with LLVM's own
-// implication engine rather than a hand-picked shape list (L5): on each edge,
-// is some live tainted value of the seed's type PROVABLY EQUAL to `s` —
-// `isImpliedCondition(BranchCond, ICMP_EQ, V, s, DL, /*LHSIsTrue=*/edge)` for an
-// integer seed, the SAME `fcmpEqualityHoldsOnEdge` table the fp anchor uses for
-// an fp seed — with the THREE exclusions applied at the same TEST, by the same
-// lambda (`CondWire`, `PeelClones`, the φ-descendant set). ⚠ READ WHAT THAT
-// MEANS TODAY: for the single-compare and bare-rail conditions that reach this
-// clause, the only values a branch condition can imply equal to `s` are the
-// compare's own operands, which are in `CondWire` by construction — so the
-// relational half is FULLY MASKED by the owner's 2026-09-11 CondWire ruling
-// (the α trade, applied to a runtime seed exactly as to a literal). It is
-// MEASURED live rather than dead: a mutant that drops the exclusion at this
-// test declines `control_inplace_ry_stateprep_runtime_seed_cond_operand.ll`.
+//     becomes". FALSE as a class statement. `-O1` DOES perform ONE relational
+//     rewrite into a call operand: an if/else of two thetas differing in ONE
+//     operand (`if (q == s) r = cq_theta(q, θ); else r = cq_theta(s, θ);`) is
+//     SUNK by SimplifyCFG into one call reading a φ, `FoldTwoEntryPHINode` turns
+//     that φ into `select (q == s), q, s`, and InstSimplify folds it to `s` —
+//     the pinning branch is ERASED. Flat, that is an UNCONDITIONAL prep with no
+//     region (bd `zt0b`). NESTED in an outer tainted diamond it IS a runtime-seed
+//     prep that reaches F1 — the outer arm is `cq_theta(s, θ)` with Pred
+//     incoming `s` — and F2 cannot see it, because the pin lived on an edge that
+//     is NOT the region's (review_r1A_z0re probes a1/a3/a5). ⚠ The post-fold
+//     module is INDISTINGUISHABLE from a legitimate program: bd `fmt3` measured
+//     that the rotated register need not even be the erased compare's operand
+//     (probe n13: inner `q == 20`, rotated `t = q / 4`) and that the folded IR is
+//     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
+//     this pass can ask of the IR in front of it separates the hazard from the
+//     program the module denotes. The disposition is therefore at the SOURCE
+//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) puts
+//     `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
+//     `-O1` can no longer merge the two thetas and the inner branch survives to
+//     reach F2. The IR-level fixtures
+//     `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`
+//     pin the post-fold modules as ACCEPTS on exactly that ground — the module is
+//     the legitimate program. ⚠ WINDOW: fmt3 lands AFTER z0re, so until it does
+//     the C spellings a1/a3/a5 still fold and still accept (the same fold with a
+//     LITERAL seed accepts on the oracle today — fmt3's own population).
+// So the question is ASKED ANYWAY for the region's own edges, as the relation
+// itself and with LLVM's own implication engine rather than a hand-picked shape
+// list (L5): on each edge, is some live tainted value of the seed's type
+// PROVABLY EQUAL to `s` — `isImpliedCondition(BranchCond, ICMP_EQ, V, s, DL,
+// /*LHSIsTrue=*/edge)` for an integer seed, the SAME `fcmpEqualityHoldsOnEdge`
+// table the fp anchor uses for an fp seed — with the THREE exclusions applied at
+// the same TEST, by the same lambda (`CondWire`, `PeelClones`, the φ-descendant
+// set).
+// ⚠ AND IT IS UNPINNABLE TODAY — SAID PLAINLY, CORRECTING THE FIRST SPELLING OF
+// THIS COMMENT (Rule-13 r1A F-r1A-3, L7), which read "It is MEASURED live rather
+// than dead: a mutant that drops the exclusion at this test declines
+// `…_runtime_seed_cond_operand.ll`". That mutant measured the EXCLUSION
+// (`excludedAtTest`), not this half: it shows the implication loop RUNS and
+// finds the compare operand, not that it ever changes a verdict. For every
+// condition that reaches a state prep today — a single compare or a bare rail;
+// a compound condition declines `control flow` first (r1A `e20.c`) — the only
+// values a branch condition can imply equal to `s` are the compare's own
+// operands, all in `CondWire` by construction. So with the exclusion in place
+// DELETING THE WHOLE RELATIONAL HALF IS AN EQUIVALENT MUTANT ON EVERY REACHABLE
+// INPUT, and no fixture can distinguish it from its absence (Rule 12 has no
+// subject for an unreachable shape). It is kept as the honest spelling of the
+// question — the analysis that must already be in place the day a trigger below
+// fires — not as a fence that is doing work today.
 // RETIREMENT TRIGGERS: (1) the day an equality-propagating pass enters the
 // `-O1` pipeline (or CQ moves off `-O1`), the "no subject" argument for the
 // constant walk and the forward half must be re-derived for runtime seeds; (2)
 // the day compound conditions reach a state prep (F2's own compound-condition
-// trigger, below), `isImpliedCondition` starts deriving equalities about
-// values OFF the leaves' wires, and this half stops being masked; (3) F2's
-// `railWireClosure`-vs-`CondRails` trigger applies unchanged.
+// trigger, below), `isImpliedCondition` starts deriving equalities about values
+// OFF the leaves' wires, and this half becomes PINNABLE and load-bearing; (3)
+// F2's `railWireClosure`-vs-`CondRails` trigger applies unchanged; (4) — the
+// route (1) misses, and the one that EXISTS at `-O1` today — SimplifyCFG
+// MERGING two thetas (the sink described above, and bd `fmt3`'s hoist of two
+// now-identical literal thetas) ERASES the branch that pinned the register.
+// Neither this relational half nor the constant half looks at an erased branch:
+// this function is anchored on the REGION'S branch, and the erased branch leaves
+// nothing in the module to anchor on. The closure is bd `fmt3` option B
+// (`nomerge` on `cq_theta_*`, owner 2026-09-28), which removes the MERGE at the
+// C level. If `nomerge` is ever dropped from `CQ.h`, or a route is found that
+// erases a pinning branch WITHOUT merging two thetas, this function needs a
+// question asked of the seed's own provenance, not of the region's edges.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
@@ -3897,23 +3941,41 @@ bool declineRound2TaintedArmCone(Module &M, TaintSet &Taint) {
   return false;
 }
 
-// bd `test_C_libtooling-z0re` — see `ArmAnalysis.h` for the contract and the two
-// callers. The `Constant` exclusion is the whole scope line: a literal is F1's
-// `ConstantInt`/`ConstantFP` clause, and a `ConstantExpr` / `GlobalValue` /
-// `undef` / `poison` stays refused for the reasons F1's header gives each (an
-// unreadable link-time value; the bd `xy9n` literal-integrity defect). What is
-// left is a value computed at run time — an `Instruction` or an `Argument` —
-// which `cqrt_alloc_<W>` takes as it takes the unconditional prep's
-// `cq_theta(atoi(v[1]), θ)` seed today.
+// bd `test_C_libtooling-z0re` — see `ArmAnalysis.h` for the contract and the
+// callers. A literal is F1's `ConstantInt`/`ConstantFP` clause, and a
+// `ConstantExpr` / `GlobalValue` / `undef` / `poison` stays refused for the
+// reasons F1's header gives each (an unreadable link-time value; the bd `xy9n`
+// literal-integrity defect). What is admitted is a value computed at run time —
+// an `Instruction` or an `Argument` — which `cqrt_alloc_<W>` takes as it takes
+// the unconditional prep's `cq_theta(atoi(v[1]), θ)` seed today.
+//
+// ⚠ WHICH CONJUNCTS ARE FENCES AND WHICH ARE MEANING (Rule-13 r1A P3-2, r1B M4).
+// Measured and argued: at EVERY current caller only the first test below
+// discriminates anything.
+//   * `Instruction`/`Argument` — THE scope line. It also excludes every
+//     `Constant` (a `Constant` is neither), which is why the separate
+//     `isa<Constant>` test the first spelling carried is GONE: it was subsumed,
+//     and the old header's "the `Constant` exclusion is the whole scope line"
+//     described documentation, not a fence.
+//   * `!Tainted` — UNPINNABLE at every caller, and KEPT: F1 reaches here only
+//     with `StatePrep` (arg-0 untainted by construction) and S3 only with
+//     `UntaintedBase`, so no input separates it (r1A P3-2). It stays because it
+//     IS the predicate's meaning ("a seed, not a register"); a caller that asked
+//     about a tainted value and got `true` would be told a register is a seed.
+//   * int-or-fp type — UNPINNABLE at every caller, and KEPT for the same
+//     reason: collection-time prototype validation refuses a non-int/fp
+//     `cq_theta` arg-0 and F1's clause 3 re-checks the width (r1B mutant M4
+//     survives the whole suite). It is the ABI half of the meaning:
+//     `cqrt_alloc_<W>` takes nothing else.
+// Rule 12 can supply no fixture for the two kept conjuncts; that is recorded
+// here rather than implied by a green suite.
 //
 // ⚠ UNTAINTED IS ASKED OF `Taint` AS HANDED IN — at DETECTION that is round-1
 // (or round-2) taint, NOT final. The L1 half is not this predicate's job: see
 // `declineRound2QuantumPrepSeeds` below.
 bool isRuntimeStatePrepSeed(Value *V, const TaintSet &Taint) {
-  if (!V || isa<Constant>(V))
-    return false;
-  if (!isa<Instruction>(V) && !isa<Argument>(V))
-    return false;  // a `BasicBlock` / `InlineAsm` / `MetadataAsValue` — never a seed.
+  if (!V || (!isa<Instruction>(V) && !isa<Argument>(V)))
+    return false;  // a `Constant` / `BasicBlock` / `InlineAsm` / `MetadataAsValue`.
   if (Taint.Tainted.count(V))
     return false;  // a REGISTER: a chained (in-place) base, not a seed.
   Type *Ty = V->getType();
@@ -9092,11 +9154,19 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // ---- A LITERAL BASE STAYS DECLINED (bd `drbq.13` — NOT covered by this
   //      increment, and the reason is a MEASURED counter-example, not scope).
   //
-  // The DIAMOND prep of a literal is safe only because F2 asks whether a live
-  // tainted register is pinned to the literal on one of the branch's edges —
-  // `-O1`'s IPSCCP folds a register the condition tests into the literal on
-  // that edge. The angle select inherits exactly that hazard and then HIDES the
-  // edge: `int t = q / 4; int r; if (t == 5) r = cq_theta(t, .9); else r =
+  // At the DIAMOND prep of a literal F2 asks whether a live tainted register is
+  // pinned to the literal on one of the REGION'S two edges — `-O1`'s IPSCCP folds
+  // a register the condition tests into the literal on that edge. ⚠ CORRECTED
+  // (Rule-13 r1A F-r1A-2, L7): the first spelling of this sentence said the
+  // diamond "is safe ONLY because" of that, which reads as "the diamond IS
+  // safe". It is not, in general: bd `fmt3` (PRE-EXISTING P1, lowered IR
+  // byte-identical on the oracle) is this very fold NESTED inside a diamond prep
+  // — the pinning branch is an INNER one that `-O1` deletes, so F2, anchored on
+  // the OUTER region's edges, never sees it (r1A probe `a6`; its flat twin `a6f`
+  // declines at F2). fmt3 is its own track; what matters HERE is that the
+  // diamond's F2 is NOT a fence the literal angle select could borrow even in
+  // principle. The angle select inherits the hazard and then HIDES the edge:
+  // `int t = q / 4; int r; if (t == 5) r = cq_theta(t, .9); else r =
   // cq_theta(5, .3); … cq_measure(t)` (probe `a1`, TRACK_Z0RE.md §4) compiles
   // at `-O1` to `cq_theta(i32 5, select((q & -4) == 20, .9, .3))` with `t =
   // sdiv q, 4` STILL LIVE and measured — IPSCCP pinned `t` to 5 in the true arm,
@@ -9108,10 +9178,29 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // and a select has no edge; LLVM 19 exposes LVI's condition analysis only
   // through a branch edge or a select-OPERAND use. So the literal stays on the
   // owner's desk (bd drbq.13), refused with the string it has always had.
-  // A RUNTIME base cannot be the image of that fold: IPSCCP substitutes only
-  // constants, and SimplifyCFG sinks a call only when at most ONE operand needs
-  // a φ (`NumPHIInsts <= 1`), so arg-0 must already AGREE in both arms before
-  // the sink — measured, `a3`/`a4` keep the if/else unsunk.
+  // A RUNTIME base cannot be the image of that CONSTANT fold: IPSCCP
+  // substitutes only constants, and SimplifyCFG sinks a call only when at most
+  // ONE operand needs a φ (`NumPHIInsts <= 1`), so arg-0 must already AGREE in
+  // both arms before the sink — measured, `a3`/`a4` keep the if/else unsunk.
+  // (The RELATIONAL select fold of bd `zt0b` — `select (q == s), q, s → s` —
+  // can put a runtime `s` into an arg-0; its diamond-prep image is a module
+  // indistinguishable from a legitimate program, see F2's runtime-seed header and
+  // bd `fmt3`. An ANGLE-SELECT image of it would need two such inner folds under
+  // an outer if/else that differ only in the angle; MEASURED on
+  // `z0re_probes/src/r2as1.c` that `-O1` keeps a 4-predecessor merge instead and
+  // it declines `nested control flow` on both binaries.)
+  //
+  // ⚠ UNDER bd `fmt3` OPTION B THIS WHOLE UNTAINTED-BASE ADMISSION BECOMES
+  // UNREACHABLE FROM C (owner-accepted, 2026-09-28). The angle select exists at
+  // all only because SimplifyCFG MERGES `if (c) r = cq_theta(t, A); else r =
+  // cq_theta(t, B);` into one theta; `nomerge` on `cq_theta_*` stops that, the
+  // if/else survives, and it declines `if/else state prep allocates two rails`
+  // (owner ruling Q4). The admission stays — hand IR and any future front end
+  // still produce the select — and is pinned at the IR level by
+  // `control_angle_select_ry_runtime_base{,_i8,_f64}.ll` and
+  // `spec_angle_select_runtime_base_side_door{,_twin}.ll`, so the C e2e slices
+  // `slice_z0re_angle_select_runtime_base*` going red (or re-derived) when fmt3
+  // lands does not uncover the lowering.
   //
   // NO SUBJECT for the register-free phase stem: it has no arg-0, no register
   // and therefore no state-prep ambiguity to fence. `RotBase` stays null there

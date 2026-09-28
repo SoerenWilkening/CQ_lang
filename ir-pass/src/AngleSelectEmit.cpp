@@ -347,18 +347,30 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
   Value *Base = T->getArgOperand(0);
   // The base is a live register (Inc 2b), or — bd `test_C_libtooling-z0re`,
   // owner ruling 2026-09-28 — an UNTAINTED RUNTIME value on the Ry stem, which
-  // S3 admitted as controlled state prep on a fresh rail. Re-asked in lockstep
-  // with S3 by CALLING the same predicate (Rule 14), never re-derived. A LITERAL
-  // base is still refused here, as at S3: the reason is S3's, and it is the
-  // `drbq.13` counter-example written there (IPSCCP folds a live register to the
-  // literal on one edge before SimplifyCFG sinks the arms; F2 has no edge to
-  // ask a select about).
+  // S3 admitted as controlled state prep on a fresh rail. A LITERAL base is still
+  // refused, as at S3 (owner ruling 2026-09-28 on bd drbq.13; S3 carries the
+  // counter-example).
   //
-  // ⚠ THE `IsTheta` HALF IS NOT DECORATION. The retired `cq_phi_<sfx>` stem is
-  // refused upstream as a reserved name, but this emitter must not become the
-  // place where an untainted Rz base is first admitted.
+  // ⚠ ONE QUESTION, AND IT IS THE CLASSIFIER'S (Rule-13 r1B F-r1B-2, Rule 14).
+  // The first spelling RE-DERIVED `isRuntimeStatePrepSeed(Base, taint)` here,
+  // at EMISSION taint, while the L1 record below trusts the classifier's
+  // recorded verdict `R.RuntimeSeedAdmitted` — two answers to one question, over
+  // two taint sets. The asymmetry mattered in the direction nobody records: a
+  // region S3 proved with a TAINTED base (S8/S9 over its closure, no L1 record)
+  // whose base had become untainted by emission would have been ADMITTED here as
+  // a fresh-rail prep that no classifier accepted. Unreachable today (the only
+  // taint-shrinking stage, `specialize()`'s scrub, runs after both control
+  // rounds; r1B mutants M1/M2 survive the whole suite and its 191 probes), but a
+  // second spelling is how a later change makes it reachable. So the step-0
+  // question is now exactly the record's: an untainted base is admitted iff the
+  // CLASSIFIER admitted one. `RuntimeSeedAdmitted` is only ever set by S3's Ry
+  // stem (`IsTheta ∧ isRuntimeStatePrepSeed` at detection), so the old `IsTheta`
+  // conjunct is carried by the flag rather than re-asked. The reverse transition
+  // (admitted untainted, tainted by emission — a 6.5 `%out` RAUW) passes this
+  // test as a register base and is caught by the record + post-fixpoint re-ask
+  // (`declineRound2QuantumPrepSeeds`), as before.
   const bool UntaintedBase = !taint.Tainted.count(Base);
-  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(Base, taint))) {
+  if (UntaintedBase && !R.RuntimeSeedAdmitted) {
     diagnoseUnderControl(Sel, "control flow");
     return;
   }

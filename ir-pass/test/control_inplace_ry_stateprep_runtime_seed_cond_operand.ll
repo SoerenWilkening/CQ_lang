@@ -13,8 +13,14 @@
 ; accept therefore rests on the exclusion, and that is what this file pins:
 ; a mutant that drops `excludedAtTest` from the relational test DECLINES it
 ; (`state prep seed is proven equal to the condition register`), measured in
-; TRACK_Z0RE.md §7 — so the relational half is LIVE, and fully MASKED by CondWire
-; for every single-compare condition that reaches a state prep today.
+; TRACK_Z0RE.md §8.4 (M2).
+; ⚠ CORRECTED (Rule-13 r1A F-r1A-3, L7): the first spelling of this header
+; concluded "so the relational half is LIVE". That mutant measures the EXCLUSION,
+; not the relational half. With the exclusion in place the relational half is
+; FULLY MASKED by CondWire for every condition that reaches a state prep today,
+; so deleting it is an equivalent mutant on every reachable input and NO fixture
+; — this one included — can pin it. See F2's runtime-seed header in
+; ArmClassify.cpp for why, and for the retirement triggers that make it pinnable.
 ;
 ; The rival that would make the mask matter — `if (q == s) r = cq_theta(q, .2)`,
 ; an in-place Ry on the CONDITION register — does NOT fold to this module at -O1

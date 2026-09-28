@@ -1,0 +1,47 @@
+== c1clone vs twin(S)
+DECLINE rc=0 : 
+error: <unknown>:0:0: in function f i32 (i32, i32): cq specialization: callee contains a quantum primitive (cq_*); only classical functions are lifted
+free_pairing_check: 1 file(s), 4 rail mint(s) of which 4 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      19 lowered=      77
+TRACE-DIFF
+0a1,19
+> cqrt_alloc_i32(4) -> h0
+> cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+> cq_template_icmp_sgt_i32_hl(h0, 3) -> h1
+> cqrt_alloc_i32(6) -> h2
+> cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+> cq_template_icmp_sgt_i32_hl_unc(h1, h0, 3)
+> cqrt_free(h1)
+> cqrt_measure_i32(h2) -> 0
+> cqrt_measure_i32(h0) -> 0
+> cqrt_alloc_i32(6) -> h3
+> cqrt_ry_i32(h3, 0x1p-1)
+> cqrt_alloc_i32(4) -> h4
+> cqrt_ry_i32(h4, 0x1.3333333333333p-2)
+> cq_template_icmp_sgt_i32_hl(h4, 3) -> h5
+> cqrt_ry_i32_controlled(h5, h3, 0x1.999999999999ap-3)
+> cq_template_icmp_sgt_i32_hl_unc(h5, h4, 3)
+> cqrt_free(h5)
+> cqrt_measure_i32(h3) -> 0
+> cqrt_measure_i32(h4) -> 0
+== c2leaf vs lit(O)
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      13 lowered=      68
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      13 lowered=      65
+TRACE-IDENTICAL (      13 lines)
+== c3cascade vs lit(O)
+free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      15 lowered=      71
+free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 2 template rail mint(s) of which 0 left dirty, 2 cqrt_free site(s): 2 verified, 0 violation(s), 0 unproven
+exit=0 lines=      15 lowered=      65
+TRACE-IDENTICAL (      15 lines)
+== c4bool vs lit(O)
+DECLINE rc=0 : lowering: control flow under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+DECLINE rc=0 : lowering: control flow under quantum control
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+TRACE-IDENTICAL (       0 lines)
+== c5inv S
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+LINKFAIL

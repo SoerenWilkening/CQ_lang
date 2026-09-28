@@ -28,15 +28,18 @@ byte-identical to the snapshot `z0re_bins/cq-opt.subj_v2` every measurement belo
    untouched. S7's rail prong, S8 and S9 are SKIPPED for that base (the §14.5 argument).
 3. **A LITERAL angle-select base stays DECLINED** — bd drbq.13 is **not** included. Counter-example
    `a1` (§4): `-O1`'s IPSCCP folds a LIVE register into the literal on one edge before SimplifyCFG
-   sinks the arms, and F2 — the fence for exactly that at the diamond — is an edge analysis a
-   select does not have. **This is the report-back item.**
+   sinks the arms, and F2 — the fence for exactly that at the FLAT diamond (a NESTED diamond
+   escapes it too: bd `fmt3`, PRE-EXISTING P1, r1A F-r1A-2) — is an edge analysis a select does not
+   have. OWNER RULING 2026-09-28: the literal base STAYS DECLINED.
 4. **F2 is re-asked for a non-`Constant` seed** as a RELATIONAL question with LLVM's own
    implication engine (`isImpliedCondition` for integers; the fp anchor's own polarity table,
    extracted as `fcmpEqualityHoldsOnEdge`, for fp), in the same function, over the same candidate
    list, behind the same three exclusions (now one lambda, `excludedAtTest`). It is **fully masked
-   by `CondWire`** for every condition that reaches a state prep today and **measured live**
-   (mutants M2/M3 kill one fixture each). The constant walk and its `Truncated` half do not run for
-   a runtime seed; the argument is §5.2.
+   by `CondWire`** for every condition that reaches a state prep today. ⚠ **CORRECTED in round 2
+   (r1A F-r1A-3):** this item said "and **measured live** (mutants M2/M3 kill one fixture each)".
+   M2/M3 measure the EXCLUSION, not the half: with the exclusion in place, deleting the relational
+   half is an equivalent mutant on every reachable input, so it is **UNPINNABLE today** (§R2.3). The
+   constant walk and its `Truncated` half do not run for a runtime seed; the argument is §5.2.
 5. **A NEW L1 obligation, and the first spelling of its record was WRONG.** A literal seed can
    never turn quantum; a runtime seed derived from a 6.5/4.5 merge `%out` can, between F1's round-1
    verdict and `lowerRotations`' FINAL-taint `Chained` decision — and then the "prep" lowers as an
@@ -103,11 +106,17 @@ CONSTANTS (PredicateInfo copies of a condition operand pinned to a constant).
 `int t = q/4; int r; if (t == s) r = cq_theta(t, .9); else r = cq_theta(s, .9); … cq_measure(t)`
 compiles at `-O1` to an **UNCONDITIONAL** `cq_theta(s, .9)` with `t` live and measured — SimplifyCFG
 sinks the two calls (ONE differing operand ⇒ one φ), `FoldTwoEntryPHINode` makes the φ a select,
-and InstSimplify folds `select (t == s), t, s` → `s`. The oracle accepts it (exit 0). It produces
-no REGION, so neither admitted site is reached; it is the α trade the owner ruled 2026-09-11 for a
-folded self-controlled rotation, in an unconditional spelling. Filed as an owner-awareness bead
-(§10). It is also why the F2 header says "a diamond whose arm holds a `cq_theta` CALL never becomes
-a select" and not "no relational substitution happens at `-O1`".
+and InstSimplify folds `select (t == s), t, s` → `s`. The oracle accepts it (exit 0). Filed as an
+owner-awareness bead (§10). ⚠ **CORRECTED in round 2 (r1A F-r1A-1, L7).** This paragraph went on:
+*"It produces no REGION, so neither admitted site is reached"*, and the F2 header said *"a diamond
+whose arm holds a `cq_theta` CALL never becomes a select"*. Both are FALSE as class statements:
+**nested inside an outer tainted diamond, the same fold IS a runtime-seed prep that reaches F1**
+(r1A `a1`/`a3`/`a5`: the outer arm is `cq_theta(s, .9)`, Pred incoming `s`; F2 is asked of the outer
+edges and cannot see the erased inner pin). The post-fold module is INDISTINGUISHABLE from a
+legitimate program (bd `fmt3` n12/n13; measured again for a1/a3/a5 in §R2.1), so the closure is at
+the C level — bd `fmt3` option B, `nomerge` on `cq_theta_*` (owner 2026-09-28) — and the post-fold
+IR modules are pinned as ACCEPTS on that ground only (§R2.1). Both sentences are corrected at the
+source.
 
 ## 4. Why the LITERAL angle-select base (bd drbq.13) is NOT included — the report-back
 
@@ -124,8 +133,11 @@ cq_measure(r) + cq_measure(t);` compiles at `-O1` to
 IPSCCP pinned `t` to 5 in the true arm, SimplifyCFG sank the now-arg-0-identical thetas, InstCombine
 moved the compare SIDEWAYS off `t`. The source rotated `t` IN PLACE on the `t == 5` branch; admitting
 a literal base prepares a fresh |5⟩ and leaves `t` unrotated. `t` is OFF the condition's wire (the
-compare reads `and q, -4`), so this is F2's F-R1-1 class, not the owner-ruled α trade. The diamond
-spelling `a8` declines at F2 on both binaries. **F2 cannot be asked of a select**: it anchors on
+compare reads `and q, -4`), so this is F2's F-R1-1 class, not the owner-ruled α trade. The FLAT
+diamond spelling `a8` declines at F2 on both binaries (⚠ round 2, r1A F-r1A-2: the NESTED diamond
+spelling `a6` ACCEPTS on BOTH binaries — bd `fmt3`, a PRE-EXISTING P1 on its own track; the diamond
+is not "safe" in general, it is fenced only where the pin is on the region's own edge). **F2 cannot
+be asked of a select**: it anchors on
 `LazyValueInfo::getConstantRangeOnEdge`, and LLVM 19 exposes LVI's condition analysis only through
 a branch edge or a select-OPERAND use (`getConstantRangeAtUse`) — neither exists for the candidates.
 `a2/a5/a7/a9/a10` (on-wire, deleted-register and plain literal spellings) also land on S3's literal
@@ -170,11 +182,14 @@ stale records (`…_runtime_seed_classical_reads.ll`).
   agree on every rail anything reads). The PRED slot cannot receive one (only a condition operand is
   renamed along the edge, to a constant).
 - **The relational rewrite** (replace tainted `W` by `s` where the edge proves `W == s`) has no `-O1`
-  producer (§3) and is asked anyway: `isImpliedCondition(BrCond, ICMP_EQ, V, s, DL, edge)` over
-  `Cand`, and the fp polarity table over the branch's own `fcmp`, both behind `excludedAtTest`. For
-  a single-compare or bare-rail condition the only values a branch can imply equal to `s` are its
-  own operands, all in `CondWire` → **fully masked** (the owner's α trade, applied unchanged). M2/M3
-  (drop the exclusion) each kill exactly the fixture built for it.
+  producer ON THE REGION'S OWN EDGES (§3) and is asked anyway: `isImpliedCondition(BrCond,
+  ICMP_EQ, V, s, DL, edge)` over `Cand`, and the fp polarity table over the branch's own `fcmp`,
+  both behind `excludedAtTest`. For a single-compare or bare-rail condition the only values a
+  branch can imply equal to `s` are its own operands, all in `CondWire` → **fully masked** (the
+  owner's α trade, applied unchanged). M2/M3 (drop the exclusion) each kill exactly the fixture
+  built for it — ⚠ round 2: that measures the EXCLUSION; the half itself is UNPINNABLE (§R2.3). And
+  the relational rewrite DOES have an `-O1` producer on an ERASED INNER edge — the SimplifyCFG sink
+  of r1A F-r1A-1 — which this function never looks at (§R2.1, trigger (4)).
 - `excludedAtTest` and `fcmpEqualityHoldsOnEdge` are behaviour-preserving extractions of the
   literal path (one spelling for both TESTs, Rule 14); measured by the corpus A/B (§8.2) — no
   constant-seed module moved.
@@ -394,13 +409,15 @@ because `…_round2_quantum_from_c.ll` postdates the first full run.
 
 ## 9. Open questions for the owner / orchestrator
 - **Q1 (drbq.13).** The literal Ry-stem angle-select base is kept declined on a measured
-  counter-example (§4). Options (a)/(b)/(c) there.
+  counter-example (§4). Options (a)/(b)/(c) there. **RULED 2026-09-28: stays declined** (§R2).
 - **Q2 (fp).** fp runtime seeds are admitted on the ruling's purpose (bd z0re's f64 member `zxdC`);
-  pull with one conjunct if the owner meant integer only.
+  pull with one conjunct if the owner meant integer only. **RULED 2026-09-28: fp admitted** (§R2).
 - **Q3 (Q4 asymmetry).** The hand-IR if/else two-prep (`if/else state prep allocates two rails`,
   owner ruling Q4) still declines, while its `-O1` image — the angle select on a RUNTIME base — now
   accepts and lowers the ONE-rail reading Q4 described. Not reachable from C (SimplifyCFG always
-  folds it), so no C twin disagrees; recorded, not resolved.
+  folds it), so no C twin disagrees; recorded, not resolved. ⚠ Round 2: once bd fmt3 option B
+  (`nomerge`) lands, SimplifyCFG no longer folds it, the C spelling reaches the unfolded if/else and
+  declines under Q4, and the angle-select image becomes IR-only (§R2.8).
 - **Q4 (measured seed).** A `cq_measure` result is admitted as a seed (classical feed-forward; the
   unconditional spelling already lowers on the oracle). bd yiid (reading a name after measuring it)
   is untouched.
@@ -412,8 +429,10 @@ because `…_round2_quantum_from_c.ll` postdates the first full run.
   `!= 0` spelling `e12b` accepts).
 - **NEW bd `test_C_libtooling-zt0b`** (P3, owner awareness, PRE-EXISTING — oracle exit 0): `src/p1.c`,
   the one relational fold `-O1` performs into a call operand, which produces an UNCONDITIONAL prep
-  from an if/else whose one arm rotated the condition's operand in place (the α trade with no
-  region).
+  from an if/else whose one arm rotated the condition's operand in place (no region, so no fence
+  is asked; ⚠ round 2: closed at the C level by bd `fmt3` option B, `nomerge` on `cq_theta_*`,
+  owner 2026-09-28 — an earlier gloss of this as "the α trade" is withdrawn with the ruling it
+  leaned on).
 - Appended: bd `z0re` (this implementation), bd `drbq.14` (Q2 implemented; the Q4 asymmetry; fp),
   bd `drbq.13` (NOT included — the a1 counter-example and options), bd `ix2v` (population grown:
   `cqrt_alloc_i8(253)` for a runtime `-3`, identical on the unconditional path on the oracle).
@@ -460,8 +479,232 @@ because `…_round2_quantum_from_c.ll` postdates the first full run.
 In §1's table, the state-prep row: "controlled **state prep** (`int r = SEED; if (COND) r =
 cq_theta(SEED, θ)`) — SEED a literal **or a RUNTIME classical value (bd z0re, 2026-09-28), the same
 SSA value as the Pred incoming**". In the Ry-stem angle-select row: "**CONSTANT arms only**; a
-register base, or an untainted RUNTIME base on a fresh rail (bd z0re) — a LITERAL base still
-declines (bd drbq.13, IPSCCP-fold counter-example)". In §2's F1/F2 bullet: "F1 admits a literal
+register base, or an untainted RUNTIME base on a fresh rail (bd z0re; unreachable from C once bd
+fmt3's `nomerge` lands — IR-pinned) — a LITERAL base still declines (bd drbq.13, IPSCCP-fold
+counter-example; owner 2026-09-28)". In §2's F1/F2 bullet: "F1 admits a literal
 or a runtime seed; F2 is re-asked for a runtime seed as a relational question (masked by
 `CondWire`); a runtime seed that turns quantum after the round-2 fixpoint declines `state prep seed
-became quantum` (record on `ControlRegion::RuntimeSeedAdmitted`, re-ask after `specialize()`)."
+became quantum` (record on `ControlRegion::RuntimeSeedAdmitted`, re-ask after `specialize()`).
+An inner branch that `-O1` ERASES by merging two thetas is invisible to F2 (bd fmt3); its closure
+is `nomerge` on `cq_theta_*` in `CQ.h`, not a question F2 asks."
+
+
+---
+
+## R2. Round 2 — both Rule-13 round-1 reviews `CLEAR-WITH-ITEMS`, 0 INTRODUCED P1
+
+Records: `review_r1A_z0re/REVIEW.md` (Surface A: F1, relational F2, L1 re-ask) and
+`review_r1B_z0re/REVIEW.md` (Surface B: circuits, movers, widths, loops, composition), committed
+UNTOUCHED with this round. Binaries: the round-1 subject the reviewers examined, `cq-opt`
+`51b5f78d84de5c6befe82496` (`z0re_bins/cq-opt.subj_v2`); the round-2 subject, `cq-opt`
+`8441d60db8fd77b74bd7e660`, `libCQPass.so` `14d57aaa6106c74246bd1bd1`, `cq-opt-debugalloc`
+`119f61ffa565ebcdf4fe0e5f` (`z0re_bins/cq-opt.subj_r2`; the tree was rebuilt after the round-2
+mutant builds and re-hashed byte-identical).
+
+**Owner rulings since round 1** (recorded on bd z0re / drbq.13 / zt0b): (1) drbq.13's LITERAL base
+STAYS DECLINED; (2) fp runtime seeds ARE admitted; (3) bd `fmt3` (r1A's pre-existing P1) is its
+own track, landing AFTER z0re, and the owner chose its OPTION B: `__attribute__((nomerge))` on the
+`cq_theta_*` declarations in `CQ.h`, so `-O1` can no longer merge two thetas and a pinning inner
+branch survives to reach F2; no z0re sentence may call the diamond safe without citing fmt3.
+⚠ **A ruling given between round 1 and this round — that the 2026-09-11 α trade EXTENDS to a
+runtime seed pinned by an erased inner branch "whose compare operand is the rotated register" — was
+WITHDRAWN before this round landed**: its premise is false (fmt3 probe n13, inner `q == 20` rotating
+`t = q / 4` OFF the compare, lowers to IR byte-identical to the legitimate
+`if (q2 > 3) r = cq_theta(5, .9);`, orchestrator-verified). Nothing in this change cites the
+extension; the post-fold accepts rest on "the module is the legitimate program" plus fmt3's nomerge.
+
+### R2.1 F-r1A-1 (P2) — the post-fold modules pinned as the LEGITIMATE programs they are; two false reasons CORRECTED AT THE SOURCE
+- **MEASURED (`z0re_probes/foldcmp.sh`):** r1A's `a1`/`a3`/`a5` compile at `-O1` to function bodies
+  IDENTICAL to the legitimate `r = s; if (q2 > 3) r = cq_theta(s, .9); …`
+  (`z0re_probes/src/{a1,a3,a5}legit.c`) up to the ORDER of the merge φ's two incomings — the same
+  "modulo phi order" identity bd `fmt3` measured for its literal-seed members n12/n13. No question
+  the pass can ask of that IR separates the hazard from the program it denotes.
+- **Three IR-level ACCEPT fixtures** pin the post-fold modules on exactly that ground (never on an α
+  argument): `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`, bodies the
+  reviewer's stage-1 IR (function arguments for `atoi`). Each header says: the module IS the
+  legitimate program; the C-level fold that produces it is prevented by bd `fmt3` option B (`nomerge`,
+  owner 2026-09-28), which lands after z0re, so until then the C spelling still folds and accepts —
+  the known window, whose LITERAL-seed members accept on the oracle today. Red on the ORACLE (F1
+  literal-only; 3 of 3 FAIL under `minilit.py`), green on the subject.
+- **Corrected at the source (L7):** the F2 runtime-seed header in `ArmClassify.cpp` (the sentence
+  *"… acts on a SELECT, which a diamond whose arm holds a `cq_theta` CALL never becomes"* is now
+  marked FALSE as a class statement, with the nested mechanism, the indistinguishability and the
+  fmt3/nomerge disposition), and TRACK §3 (*"It produces no REGION, so neither admitted site is
+  reached"*). bd `zt0b`'s own text was corrected by the reviewer's appended note.
+- **Retirement trigger (4)** added to F2's header: SimplifyCFG MERGING two thetas (the sink here,
+  fmt3's hoist for literals) erases a pinning branch, which trigger (1) ("an equality-propagating
+  pass enters `-O1`") misses; closed at the C level by fmt3's `nomerge`, and re-opened the day
+  `nomerge` leaves `CQ.h` or a route erases a pinning branch without merging two thetas.
+- **Measured (`z0re_probes/src/r2as1.c`):** the same relational fold does NOT produce a runtime-base
+  ANGLE SELECT when two inner folds sit under an outer if/else that differs only in the angle —
+  `-O1` keeps a 4-predecessor merge and it declines `nested control flow` on both binaries. S3's
+  comment records it.
+
+### R2.2 F-r1A-2 — bd `fmt3` (PRE-EXISTING P1), its own track; every "diamond is safe" sentence now cites it
+Changed at: `ArmClassify.cpp` S3 comment (the "safe ONLY because" wording, corrected), F2's trigger
+(4), `control_angle_select_reject_literal_base_offwire_fold.ll`,
+`control_angle_select_reject_state_prep.ll`, TRACK §1 item 3 and §4. `a6` (nested literal prep)
+ACCEPTS on the oracle, round 1 and round 2 alike; its flat twin `a6f` declines at F2 on all three.
+
+### R2.3 F-r1A-3 (P2) — the relational half of F2 is UNPINNABLE today; the claim is corrected at the source
+The source said "MEASURED live rather than dead" on the strength of mutants M2/M3, which measure the
+EXCLUSION (`excludedAtTest`), not the half. With the exclusion in place, deleting the whole
+relational half is an equivalent mutant on every reachable input: every condition reaching a prep
+is a single compare or a bare rail (a compound one declines `control flow` first, r1A `e20.c`), and
+a single compare implies equality only about its own operands, all in `CondWire`. The F2 header now
+says so, says the half is kept as the honest spelling of the question (not as a working fence), and
+names when it becomes pinnable — trigger (2) compound conditions reach a prep; trigger (4) the sink
+route. Corrected in the same change: the headers of `…_runtime_seed_cond_operand.ll` and
+`…_runtime_seed_fcmp_cond_operand.ll`, TRACK §1 item 4 and §5.2.
+
+### R2.4 r1A P3s
+- **P3-1** (`control_inplace_ry_reject_stateprep_runtime_seed.ll` is an ACCEPT named reject): NOT
+  renamed (bd gahu — a `git mv` can be resurrected by a merge, L8). Both it and
+  `spec_reject_dropped_arg_statepred_runtime_seed.ll` already said "NOW AN ACCEPT"; both headers now
+  carry the rename target as a RETIREMENT TRIGGER. r1B appended both to bd `gahu`.
+- **P3-2** (`isRuntimeStatePrepSeed`'s sub-conjuncts unpinnable at every caller):
+  - `isa<Constant>` REMOVED — subsumed by `Instruction`/`Argument`. Mutant R5 (re-add it) SURVIVES
+    250/250, which is the measured equivalence.
+  - `!Tainted` and the int/fp type test KEPT, documented in place as UNPINNABLE-AND-MEANINGFUL: they
+    are what the predicate means ("a seed, not a register"; "what `cqrt_alloc_<W>` takes"), and a
+    future caller that did not pre-filter would get a wrong answer without them. r1B's M4 (type test
+    → true) survived its whole suite; the point is that it cannot be separated, not that it is dead.
+  - The `Instruction`/`Argument` scope line IS pinned: mutant R6 (drop it) is KILLED by 4 fixtures
+    (the two literal-base angle-select declines and the two `constexpr` seed declines).
+- **P3-3** (`l6C`: a 6.5 `%out` seed whose condition does not read it declines `state prep seed
+  became quantum` where the inlined twin `l6T` accepts): filed **bd `test_C_libtooling-nivh`** (P3
+  over-decline; the oracle declined too, at F1 — a string-only move).
+- **P3-4** (`g1C`/`g1T`: the runtime-base angle select declines ROLLED, accepts UNROLLED): filed
+  **bd `test_C_libtooling-y2b3`** (P3 over-decline — S7's pre-existing flat-only policy, new
+  population).
+- **P3-5** (bd `zt0b` text): corrected by the reviewer's appended note; the source and TRACK
+  corrections are §R2.1.
+
+### R2.5 r1B items
+- **F-r1B-1 (P2, bd `rhk5` population, context only).** `k3C` (a runtime-seed prep behind a clone
+  call) moves D→A into rhk5's pre-existing wrong circuit (two template rails left dirty across a later
+  Ry; `k3L`, the literal spelling, produces it on the oracle too). No action here: **rhk5's fix lands
+  on main BEFORE z0re, and the orchestrator will check `k3C` on the composed binary.** Round 2 does
+  not change it (`k3C` round-1 == round-2 verdict and trace; `k3C` vs `k3T` stays ACC-DIFF — the
+  rhk5 rails).
+- **F-r1B-2 (P3) — step 0 is now ONE question with the record.** `emitAngleSelectRegion` admits an
+  untainted base iff the CLASSIFIER did (`UntaintedBase && !R.RuntimeSeedAdmitted` → decline); it no
+  longer re-derives `isRuntimeStatePrepSeed` at emission taint. The `IsTheta` conjunct is carried by
+  the flag (only S3's Ry stem sets it). The reverse transition (admitted untainted, tainted by
+  emission) passes step 0 as a register base and is caught by the record + post-fixpoint re-ask, as
+  before. Mutants (§R2.6): R1 (revert to the re-derivation) and R2 (step 0 never declines) SURVIVE —
+  the tainted→untainted transition they differ on is unreachable, as r1B measured, and Rule 12 can
+  supply no fixture for it; R3 (decline every untainted base) KILLED by 4; R4 (decline on the flag
+  alone, i.e. every tainted base too) KILLED by 16. Both halves of the conjunction are pinned where
+  reachable.
+- **F-r1B-3** (i16 also affected by bd `ix2v`): appended by the reviewer; no change here.
+- **F-r1B-4** — `slice_z0re_runtime_seed_prep.c`'s header said "the one `cqrt_free`"; the golden
+  has two (the dead `q` is reverse-played and freed first). Header corrected, with the stream spelled
+  out; golden unchanged (regenerated byte-identical).
+- **F-r1B-5** (bd gahu note): appended by the reviewer; the headers carry the trigger (§R2.4).
+- **F-r1B-6 — INDEPENDENT witnesses, two new gates.** The round-1 `*-twin-identical` gates compare
+  two spellings that BOTH run the new path. Two new pairs compare a z0re stream with the same program
+  through code that PREDATES z0re, whose golden the frozen ORACLE reproduces byte for byte:
+  - `slice_z0re_runtime_seed_prep_literal.c` — the prep with the seed written as the literal the
+    runtime value takes under the harness (`t = 6`), i.e. F1's LITERAL path (drbq Inc 4). Gate
+    `e2e-z0re-runtime-seed-prep-literal-identical` compares it with `slice_z0re_runtime_seed_prep`'s
+    golden.
+  - `slice_z0re_angle_select_runtime_base_exact.c` (angles `.75`/`.25`, so `A − B = .5` is exact in
+    binary64) vs `slice_z0re_angle_select_runtime_base_exact_inplace.c` (an UNCONDITIONAL literal prep
+    `cq_theta(6, .25)` followed by an in-place controlled-Ry ARM of `.5` — drbq Inc 1). Gate
+    `e2e-z0re-angle-select-runtime-base-exact-inplace-identical`. (The existing `.7`/`.2` slice cannot
+    be compared byte-wise with a literal twin: `fl(.7 − .2) = 0x1.fffffffffffffp-2 ≠ .5`.)
+  - MEASURED (`z0re_probes/indep.sh`): the witness goldens were GENERATED BY THE ORACLE first
+    (`mkgoldens.sh` with `cq-opt.main_9a230646`: 13 and 10 lines), then regenerated by the subject
+    byte-identically; `lit.ora == rt.sub` and `inp.ora == ex.sub`; the z0re halves decline on the
+    oracle (F1 / `rotation angle`), as they must.
+
+### R2.6 What was run, literally (round 2)
+- `cd build && lit -j4 ir-pass/test` on the FINAL round-2 tree (re-run after the session pause and
+  the §R2.1 rename): **2430 discovered, 2429 passed, 1 XFAIL, 0 failed** (284 s;
+  `results/lit_r2.txt`).
+- `ctest --test-dir build -j2 -R 'z0re|stateprep|angle-select|spec-lift|spec-dropped|inplace-ry|cq-opt-equivalence'`
+  on the final tree: **96/96 passed** (incl. the 3 new slices and the 2 new identity gates;
+  `cq-opt-equivalence` samples).
+- `python3 tools/update_code_map.py` then `--check`: rc 0.
+- **Both reviewers' probe batteries** (`z0re_probes/review_battery.py`, run from this directory
+  without writing into the review dirs; `results/r2_review_battery.txt`): **120 probe sources, 120
+  built**; verdicts on ORACLE / round 1 / round 2: **round-1 → round-2 verdict movers: 0**; every
+  round-2 accept STRICT 2b `0 violation(s), 0 unproven`; round-1 vs round-2 traces identical at argv
+  `5 7` and `-3 11` for every accept except `c5inv`/`c5inv_lit`, which do not LINK on any binary (bd
+  `ixao`, r1B). Twin pairs by file name: **24, of which 13 twin-identical**; the 11 others are, every
+  one, the reviewers' own recorded items and unchanged by round 2: `g1C/g1T` (bd y2b3), `l6C/l6T`
+  (bd nivh), `L2arr` ×2 (r1B, pre-existing condition-shape decline, literal too), `L3carry` and
+  `L4guard` (both halves decline, different strings), `c1clone` (Phase-6 scope, r1B), `k3C/k3T`
+  (rhk5), `p2as_ne/_twin` (r1B: the mirror stream, the same unitary to 1 ulp), `c5inv` (link), and
+  `c3cascade` vs `_lit` — a HARNESS ARTEFACT of this battery (the probe reads `argv[3]`, the battery
+  passes two arguments): re-run with its three arguments `6 4 9` it is trace-identical to the literal
+  on the ORACLE (16 lines), as r1B reported.
+- **Mutation matrix, changed conjuncts only** (`z0re_probes/mutants.py build_r2`, `mutmatrix_r2.sh`,
+  `results/mutmatrix_r2.txt`, over 250 fixtures = every angle-select, every state-prep and every
+  runtime-seed fixture (`results/r2_mut_fixtures.txt`, regenerated after the §R2.1 rename and the
+  two new IR pins; the matrix was RE-RUN on it after the session pause); boundary controls first; `minilit.py` now refuses a non-executable binary
+  path — measured once in this round, a mistyped path made every fixture "FAIL" and read as red on
+  the oracle):
+
+  | binary | edit | verdict |
+  |---|---|---|
+  | subj_r2 | — | 250/250 PASS (boundary) |
+  | R0_null | swap the type disjuncts | 250/250 PASS (moves 0) |
+  | R1 | step 0 back to the round-1 re-derivation | SURVIVED (unreachable transition, §R2.5) |
+  | R2 | step 0 never declines an untainted base | SURVIVED (same) |
+  | R3 | step 0 declines every untainted base | KILLED (4: the three IR pins i32/i8/f64 + the side-door twin) |
+  | R4 | step 0 keyed on the flag alone | KILLED (16) |
+  | R5 | re-add `isa<Constant>` | SURVIVED (the measured equivalence of its removal) |
+  | R6 | drop the `Instruction`/`Argument` scope line | KILLED (4) |
+
+- **Corpus A/B** — §R2.7.
+- NOT run: the full `ctest -j6` (the merge gate's); allocator sweeps (once per bead — round 1, §8.6);
+  a mutant of the relational half itself (argued equivalent, §R2.3; round 1's M2/M3 stand).
+
+### R2.7 Corpus A/B (`z0re_probes/ab.py`, `results/ab_r2.txt`)
+One pass (run after the session pause; the in-flight pre-pause run's partial file was discarded):
+stage 1 once, the round-2 subject twice (NULL CONTROL), the ORACLE once, and the ROUND-1 subject
+(`cq-opt.subj_v2`, the binary both reviewers examined) once, ≤4 workers; modes `lit e2e multi
+probes` as in §8.2.
+- **Denominator: 3665 jobs; 3640 runnable; 25 NOT swept** (the same 25 `*_lib.c` library TUs).
+- **NULL CONTROL: 0 movers of 3640.**
+- **ROUND-1 subject vs ROUND-2 subject: 0 movers of 3640** (accepts 2011 = 2011). The round-2 code
+  changes (step 0 keyed on the classifier's verdict; the subsumed `isa<Constant>` removed) move
+  nothing on the whole corpus, which is what §R2.5/§R2.4 predicted.
+- **ORACLE vs ROUND-2 subject: 120 movers — 107 D→A, 13 STRING, 0 A→D, 0 STREAM** (accepts 1904 →
+  2011). Versus round 1's 92 the growth is new corpus members only:
+  - D→A (107): 17 lit (every z0re accept fixture, incl. the three post-fold and the two new IR
+    angle-select pins), 6 e2e + 2 multi (the z0re slices, incl. `…_exact.c`; the two independent
+    witnesses `…_prep_literal.c` / `…_exact_inplace.c` ACCEPT on both binaries and do not move, which
+    is the point of them), and 82 probe sources — the prior sessions' d88e / r1A / r1B pairs and this
+    track's `z0re_probes/src` (incl. the round-2 `a1legit`/`a3legit`/`a5legit`). Every one is a
+    runtime-seed prep or a runtime-base angle select.
+  - STRING (13): the four L1 / no-cloning decline fixtures (`…_round2_quantum{,_from_c}`,
+    `…_quantum_incoming`, `…runtime_base_round2_quantum`), probe `e09` (F1 → `merged with a quantum
+    register`), and the round-1 L1 probes `l1C/T`, `l2C/T` (F1 → `control flow` at the hcrg
+    precedence check, bd 35t0) and `l3C/T`, `l4C/T` (F1 → `state prep seed became quantum`).
+  - No pre-existing fixture, e2e slice or multi module moved except the three round 1 re-derived.
+  - The reviewers' own probe dirs are not in the A/B `probes` mode; they are §R2.6's battery.
+
+### R2.8 What bd `fmt3` option B (`nomerge`, lands AFTER z0re) does to this change — recorded, not acted on
+- **The S3 untainted-base Ry-stem angle select becomes UNREACHABLE FROM C at `-O1`** (owner-accepted
+  2026-09-28). The select exists only because SimplifyCFG MERGES `if (c) r = cq_theta(t, A); else r =
+  cq_theta(t, B);` into one theta; with `nomerge` on `cq_theta_*` the if/else survives and meets the
+  two-rail clause (`if/else state prep allocates two rails`, owner ruling Q4). Consequences when fmt3
+  lands: `slice_z0re_angle_select_runtime_base{,_spec,_exact}.c` and the gates
+  `e2e-z0re-angle-select-runtime-base-twin-identical` /
+  `e2e-z0re-angle-select-runtime-base-exact-inplace-identical` must be re-derived (a retirement
+  trigger says so in `tests/e2e/CMakeLists.txt`); the reviewers' C probes `a01*`, `zi*`, `zm*`,
+  `as_*`, `p2as_*`, `L1as_exit`, `L7as_ff` move with them. **Nothing is done about it in this
+  change.** The S3 lowering itself stays owed to hand IR and any future front end and is pinned at
+  the IR level by `control_angle_select_ry_runtime_base.ll` (i32), the round-2
+  `control_angle_select_ry_runtime_base_i8.ll` (i8, `!=` orientation, negative difference) and
+  `control_angle_select_ry_runtime_base_f64.ll` (f64 base), plus
+  `spec_angle_select_runtime_base_side_door{,_twin}.ll` — all red on the ORACLE, green on the subject.
+- **The diamond runtime-seed prep is untouched by `nomerge`** — it has one theta and no merge; only
+  the NESTED zt0b-fold spellings (r1A a1/a3/a5) stop folding, and they then meet F2 or a
+  nested-region verdict. The post-fold IR fixtures (§R2.1) keep pinning the legitimate program.
+- **Merge-order note for the orchestrator:** z0re's C slices of the angle select are therefore
+  correct on the z0re tree and expected to move at the fmt3 landing; a fmt3 A/B measured on a base
+  that contains z0re will show them, and they are that change's, not a regression.
