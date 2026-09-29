@@ -816,10 +816,11 @@ CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
   // are asked ONCE, of both classes, and cannot drift apart.
   //
   // ⚠ IT ADMITS ANY UNTAINTED arg-0, INCLUDING `undef` / a `ConstantExpr` / a
-  // function ARGUMENT — deliberately. F1 is where the `ConstantInt`/`ConstantFP`
-  // narrowing lives, and it is one clause with one string; splitting the test
-  // across two functions is how "the fence fires, but nobody can find which"
-  // happens (§14.2a item 1).
+  // function ARGUMENT — deliberately. F1 is where the narrowing lives (a
+  // `ConstantInt`/`ConstantFP`, or since bd z0re a RUNTIME SSA value —
+  // `isRuntimeStatePrepSeed`), and it is one clause with one string; splitting
+  // the test across two functions is how "the fence fires, but nobody can find
+  // which" happens (§14.2a item 1).
   if (!Taint.Tainted.count(T->getArgOperand(0)))
     StatePrep = true;
   if (!T->hasOneUse() || T->user_back() != MergePhi)
@@ -1937,7 +1938,133 @@ void collectStatePrepPhiDescendants(const Value *Merge, const Function *F,
   }
 }
 
-bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
+// The fp EQUALITY polarity table, ONE spelling for F2's two fp questions (the
+// constant fp ANCHOR and the runtime seed's relational fp half, bd z0re): on
+// which successor of a conditional `br` on `fcmp <P>` do the two operands
+// compare EQUAL? `oeq`/`ueq` on the TRUE edge, `one`/`une` on the FALSE edge,
+// nowhere for every other predicate. (`E == 0` is the TRUE successor — LLVM
+// invariant.) `ueq`-true and `one`-false also admit NaN, an OVER-approximation
+// of "equal" — the safe direction for a fence that only ever declines.
+// Extracted verbatim from the anchor's `switch` (behaviour-preserving), so the
+// two callers cannot disagree about which edge an equality holds on.
+bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
+  switch (P) {
+  case FCmpInst::FCMP_OEQ:
+  case FCmpInst::FCMP_UEQ:
+    return TrueEdge;
+  case FCmpInst::FCMP_ONE:
+  case FCmpInst::FCMP_UNE:
+    return !TrueEdge;
+  default:
+    return false;
+  }
+}
+
+// ---- THE RUNTIME SEED (bd `test_C_libtooling-z0re`, owner ruling 2026-09-28,
+//      option (a); PRD §14.11 Q2) — F2 RE-ASKED FOR A NON-`Constant` SEED ----
+//
+// F2's question is *"could the arm's seed be `-O1`'s rewrite of a live tainted
+// register the source rotated in place?"*. For a LITERAL seed the rewrite in
+// question is a CONSTANT FOLD, and the machinery below the relational branch
+// (LVI ranges + the forward `ConstantRange`/`ConstantFold`/`KnownBits`
+// evaluation + the `Truncated` conservative half) is exactly LLVM's own
+// constant lattice asked on both edges. For a RUNTIME seed `s` (an untainted
+// `Instruction`/`Argument`, `isRuntimeStatePrepSeed`) that half has NO SUBJECT,
+// and the argument is about the pipeline's IMAGE, not about a survey:
+//   * every constant-producing pass `clang -O1` runs (IPSCCP/SCCP's
+//     `ValueLattice`, InstCombine's `KnownBits`, `ConstantFolding`) substitutes
+//     a CONSTANT, so a non-`Constant` seed is never the image of such a fold —
+//     `f2Exact(V, S) == Seed` cannot hold, and `Truncated`'s premise ("a function
+//     of a pinned register we cannot evaluate might have folded to the seed")
+//     is a premise about a CONSTANT the fold could have produced;
+//   * the one way a fold CAN leave a runtime value in the ARM slot is an
+//     arm-local expression over a pinned register that simplifies to `s`
+//     (`smax(W, s)` with `W` pinned to `INT_MIN`, `W + s - k` with `W` pinned to
+//     `k`) — an out-of-place rail the fold DELETES, i.e. PRD §14.11 Q3's
+//     deleted-register residual, where both readings agree on every rail
+//     anything reads; the PRED slot cannot receive one at all (a φ incoming is
+//     evaluated before the branch, so only a condition OPERAND is renamed along
+//     the edge, and IPSCCP renames it to a constant);
+//   * what is left is the RELATIONAL rewrite — replacing a tainted `W` by `s`
+//     where some edge proves `W == s`. On the REGION'S OWN edges it needs an
+//     equality-propagating pass (GVN / NewGVN / JumpThreading /
+//     CorrelatedValuePropagation), and NONE is in the `-O1` pipeline at LLVM 19
+//     (MEASURED with `-print-pipeline-passes`: 1× ipsccp, 1× sccp, 2× early-cse,
+//     8× instcombine, 9× simplifycfg, no gvn/newgvn/jump-threading/correlated-
+//     propagation — TRACK_Z0RE.md §3). Measured from C: `if (q == s) r =
+//     cq_theta(q, θ)` keeps `%q` as arg-0, `r = q; if (q != s) r = cq_theta(s,
+//     θ)` keeps `%q` as the Pred incoming (probes e02/e09/e10/e15/e16).
+//   ⚠ CORRECTED (Rule-13 r1A F-r1A-1, L7): this bullet used to end "and
+//     InstCombine's relational simplification (`select (X == Y), X, Y → Y`)
+//     acts on a SELECT, which a diamond whose arm holds a `cq_theta` CALL never
+//     becomes". FALSE as a class statement. `-O1` DOES perform ONE relational
+//     rewrite into a call operand: an if/else of two thetas differing in ONE
+//     operand (`if (q == s) r = cq_theta(q, θ); else r = cq_theta(s, θ);`) is
+//     SUNK by SimplifyCFG into one call reading a φ, `FoldTwoEntryPHINode` turns
+//     that φ into `select (q == s), q, s`, and InstSimplify folds it to `s` —
+//     the pinning branch is ERASED. Flat, that is an UNCONDITIONAL prep with no
+//     region (bd `zt0b`). NESTED in an outer tainted diamond it IS a runtime-seed
+//     prep that reaches F1 — the outer arm is `cq_theta(s, θ)` with Pred
+//     incoming `s` — and F2 cannot see it, because the pin lived on an edge that
+//     is NOT the region's (review_r1A_z0re probes a1/a3/a5). ⚠ The post-fold
+//     module is INDISTINGUISHABLE from a legitimate program: bd `fmt3` measured
+//     that the rotated register need not even be the erased compare's operand
+//     (probe n13: inner `q == 20`, rotated `t = q / 4`) and that the folded IR is
+//     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
+//     this pass can ask of the IR in front of it separates the hazard from the
+//     program the module denotes. The disposition is therefore at the SOURCE
+//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) WILL put
+//     `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
+//     that `-O1` can no longer merge the two thetas and the inner branch
+//     survives to reach F2 (not yet in `CQ.h` at this commit). The IR-level fixtures
+//     `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`
+//     pin the post-fold modules as ACCEPTS on exactly that ground — the module is
+//     the legitimate program. ⚠ WINDOW: fmt3 lands AFTER z0re, so until it does
+//     the C spellings a1/a3/a5 still fold and still accept (the same fold with a
+//     LITERAL seed accepts on the oracle today — fmt3's own population).
+// So the question is ASKED ANYWAY for the region's own edges, as the relation
+// itself and with LLVM's own implication engine rather than a hand-picked shape
+// list (L5): on each edge, is some live tainted value of the seed's type
+// PROVABLY EQUAL to `s` — `isImpliedCondition(BranchCond, ICMP_EQ, V, s, DL,
+// /*LHSIsTrue=*/edge)` for an integer seed, the SAME `fcmpEqualityHoldsOnEdge`
+// table the fp anchor uses for an fp seed — with the THREE exclusions applied at
+// the same TEST, by the same lambda (`CondWire`, `PeelClones`, the φ-descendant
+// set).
+// ⚠ AND IT IS UNPINNABLE TODAY — SAID PLAINLY, CORRECTING THE FIRST SPELLING OF
+// THIS COMMENT (Rule-13 r1A F-r1A-3, L7), which read "It is MEASURED live rather
+// than dead: a mutant that drops the exclusion at this test declines
+// `…_runtime_seed_cond_operand.ll`". That mutant measured the EXCLUSION
+// (`excludedAtTest`), not this half: it shows the implication loop RUNS and
+// finds the compare operand, not that it ever changes a verdict. For every
+// condition that reaches a state prep today — a single compare or a bare rail;
+// a compound condition declines `control flow` first (r1A `e20.c`) — the only
+// values a branch condition can imply equal to `s` are the compare's own
+// operands, all in `CondWire` by construction. So with the exclusion in place
+// DELETING THE WHOLE RELATIONAL HALF IS AN EQUIVALENT MUTANT ON EVERY REACHABLE
+// INPUT, and no fixture can distinguish it from its absence (Rule 12 has no
+// subject for an unreachable shape). It is kept as the honest spelling of the
+// question — the analysis that must already be in place the day a trigger below
+// fires — not as a fence that is doing work today.
+// RETIREMENT TRIGGERS: (1) the day an equality-propagating pass enters the
+// `-O1` pipeline (or CQ moves off `-O1`), the "no subject" argument for the
+// constant walk and the forward half must be re-derived for runtime seeds; (2)
+// the day compound conditions reach a state prep (F2's own compound-condition
+// trigger, below), `isImpliedCondition` starts deriving equalities about values
+// OFF the leaves' wires, and this half becomes PINNABLE and load-bearing; (3)
+// F2's `railWireClosure`-vs-`CondRails` trigger applies unchanged; (4) — the
+// route (1) misses, and the one that EXISTS at `-O1` today — SimplifyCFG
+// MERGING two thetas (the sink described above, and bd `fmt3`'s hoist of two
+// now-identical literal thetas) ERASES the branch that pinned the register.
+// Neither this relational half nor the constant half looks at an erased branch:
+// this function is anchored on the REGION'S branch, and the erased branch leaves
+// nothing in the module to anchor on. This route WILL BE closed by bd `fmt3`
+// option B (`nomerge` on `cq_theta_*`, owner 2026-09-28) once it lands — it
+// removes the MERGE at the C level — and it is OPEN until then (the WINDOW
+// above): at this commit `CQ.h` carries no `nomerge` (Rule-13 r2 F-r2-2). If
+// `nomerge` is later dropped from `CQ.h`, or a route is found that erases a
+// pinning branch WITHOUT merging two thetas, this function needs a question
+// asked of the seed's own provenance, not of the region's edges.
+bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
                                 const SmallPtrSetImpl<Value *> &CondWire,
                                 bool &Truncated) {
@@ -2027,6 +2154,54 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
           DT->dominates(&In, BI))
         Cand.push_back(&In);
 
+  // THE THREE EXCLUSIONS, ONE SPELLING for both of F2's TESTs (the literal
+  // seed's constant test in the walk below, the runtime seed's relational test
+  // right here). Each conjunct's argument is in this function's header and at
+  // the walk's TEST; they are a filter on the ANSWER, never on a seed of the
+  // walk (H-6).
+  auto excludedAtTest = [&](Value *V) {
+    return CondWire.count(V) || Taint.isPeelClone(V) || PhiDesc.count(V);
+  };
+
+  // ---- THE RUNTIME SEED (bd z0re) — the RELATIONAL half. See the header
+  //      block immediately above this function for why it replaces the
+  //      constant walk for a non-`Constant` seed rather than running beside it.
+  auto *Seed = dyn_cast<Constant>(SeedV);
+  if (!Seed) {
+    Value *BrCond = BI->getCondition();
+    auto *BrFC = dyn_cast<FCmpInst>(BrCond);
+    for (unsigned E = 0; E < BI->getNumSuccessors(); ++E) {
+      const bool TrueEdge = (E == 0);
+      // INTEGER: every live tainted value of the seed's type (the same `Cand`
+      // the LVI anchor reads — available at the branch, in function order).
+      if (SeedV->getType()->isIntegerTy())
+        for (Value *V : Cand) {
+          if (V->getType() != SeedV->getType() || excludedAtTest(V))
+            continue;
+          if (isImpliedCondition(BrCond, ICmpInst::ICMP_EQ, V, SeedV, DL,
+                                 /*LHSIsTrue=*/TrueEdge)
+                  .value_or(false))
+            return true;
+        }
+      // fp: an EQUALITY `fcmp` between the seed and a tainted value pins that
+      // value to the seed's run-time BITS on the edge where the equality holds
+      // (±0 and NaN make it an over-approximation — the decline direction).
+      // `isImpliedCondition` is an `icmp` engine, so the fp half reads the
+      // branch's own `fcmp`, exactly as the constant fp ANCHOR does.
+      if (BrFC && SeedV->getType()->isFloatingPointTy() &&
+          fcmpEqualityHoldsOnEdge(BrFC->getPredicate(), TrueEdge))
+        for (unsigned K = 0; K < 2; ++K) {
+          if (BrFC->getOperand(K) != SeedV)
+            continue;
+          Value *H = BrFC->getOperand(1 - K);
+          if (H->getType() == SeedV->getType() && Taint.Tainted.count(H) &&
+              !excludedAtTest(H))
+            return true;
+        }
+    }
+    return false;
+  }
+
   // The fp ANCHOR's operands, read ONCE from the branch's own condition. It is
   // deliberately NOT `Region.Condition`: the pin is an EDGE fact, and the edge
   // is the branch's, so the value asked about must be the value the branch
@@ -2101,24 +2276,10 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
     // reverse. `ueq`/`one` are kept rather than dropped so the clause has no
     // edge to get backwards, the same argument F2's integer half makes by
     // asking both edges.
-    if (FpK) {
-      const bool TrueEdge = (E == 0);
-      bool EqHolds = false;
-      switch (FC->getPredicate()) {
-      case FCmpInst::FCMP_OEQ:
-      case FCmpInst::FCMP_UEQ:
-        EqHolds = TrueEdge;
-        break;
-      case FCmpInst::FCMP_ONE:
-      case FCmpInst::FCMP_UNE:
-        EqHolds = !TrueEdge;
-        break;
-      default:
-        break;
-      }
-      if (EqHolds)
-        f2NoteConst(FpH, FpK, S);
-    }
+    // (The table lives in `fcmpEqualityHoldsOnEdge` since bd z0re, which reads
+    // it a second time for the runtime seed's fp half; extracted verbatim.)
+    if (FpK && fcmpEqualityHoldsOnEdge(FC->getPredicate(), /*TrueEdge=*/E == 0))
+      f2NoteConst(FpH, FpK, S);
     unsigned Steps = 0;
     while (!S.WL.empty()) {
       if (++Steps > kF2MaxSteps) {
@@ -2234,8 +2395,11 @@ bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Constant *Seed,
       // construction"), and they are the red-green for that: `step_cap_over`,
       // `unfoldable_curated_call`, `unevaluable_pinned_operand`,
       // `control_peel_reject_fp_stateprep`.
-      if (V->getType() == Seed->getType() && !CondWire.count(V) &&
-          !Taint.isPeelClone(V) && !PhiDesc.count(V) && f2Exact(V, S) == Seed)
+      // (`excludedAtTest` is the three conjuncts `!CondWire.count(V) &&
+      // !Taint.isPeelClone(V) && !PhiDesc.count(V)`, spelled once since bd z0re
+      // so the runtime seed's relational test cannot drift from this one.)
+      if (V->getType() == Seed->getType() && !excludedAtTest(V) &&
+          f2Exact(V, S) == Seed)
         return true;
       for (User *U : V->users()) {
         auto *I = dyn_cast<Instruction>(U);
@@ -3779,6 +3943,88 @@ bool declineRound2TaintedArmCone(Module &M, TaintSet &Taint) {
   return false;
 }
 
+// bd `test_C_libtooling-z0re` — see `ArmAnalysis.h` for the contract and the
+// callers. A literal is F1's `ConstantInt`/`ConstantFP` clause, and a
+// `ConstantExpr` / `GlobalValue` / `undef` / `poison` stays refused for the
+// reasons F1's header gives each (an unreadable link-time value; the bd `xy9n`
+// literal-integrity defect). What is admitted is a value computed at run time —
+// an `Instruction` or an `Argument` — which `cqrt_alloc_<W>` takes as it takes
+// the unconditional prep's `cq_theta(atoi(v[1]), θ)` seed today.
+//
+// ⚠ WHICH CONJUNCTS ARE FENCES AND WHICH ARE MEANING (Rule-13 r1A P3-2, r1B M4).
+// Measured and argued: at EVERY current caller only the first test below
+// discriminates anything.
+//   * `Instruction`/`Argument` — THE scope line. It also excludes every
+//     `Constant` (a `Constant` is neither), which is why the separate
+//     `isa<Constant>` test the first spelling carried is GONE: it was subsumed,
+//     and the old header's "the `Constant` exclusion is the whole scope line"
+//     described documentation, not a fence.
+//   * `!Tainted` — UNPINNABLE at every caller, and KEPT: F1 reaches here only
+//     with `StatePrep` (arg-0 untainted by construction) and S3 only with
+//     `UntaintedBase`, so no input separates it (r1A P3-2). It stays because it
+//     IS the predicate's meaning ("a seed, not a register"); a caller that asked
+//     about a tainted value and got `true` would be told a register is a seed.
+//   * int-or-fp type — UNPINNABLE at every caller, and KEPT for the same
+//     reason: collection-time prototype validation refuses a non-int/fp
+//     `cq_theta` arg-0 and F1's clause 3 re-checks the width (r1B mutant M4
+//     survives the whole suite). It is the ABI half of the meaning:
+//     `cqrt_alloc_<W>` takes nothing else.
+// Rule 12 can supply no fixture for the two kept conjuncts; that is recorded
+// here rather than implied by a green suite.
+//
+// ⚠ UNTAINTED IS ASKED OF `Taint` AS HANDED IN — at DETECTION that is round-1
+// (or round-2) taint, NOT final. The L1 half is not this predicate's job: see
+// `declineRound2QuantumPrepSeeds` below.
+bool isRuntimeStatePrepSeed(Value *V, const TaintSet &Taint) {
+  if (!V || (!isa<Instruction>(V) && !isa<Argument>(V)))
+    return false;  // a `Constant` / `BasicBlock` / `InlineAsm` / `MetadataAsValue`.
+  if (Taint.Tainted.count(V))
+    return false;  // a REGISTER: a chained (in-place) base, not a seed.
+  Type *Ty = V->getType();
+  return Ty->isIntegerTy() || Ty->isFloatingPointTy();
+}
+
+// bd `test_C_libtooling-z0re` — the L1 re-ask (contract in `ArmAnalysis.h`,
+// hazard in `TaintSet::RuntimeSeedSourceThetas`).
+//
+// ⚠ THE SLOT IS THE ARGUMENT, and it is AFTER `specialize()` on purpose. The
+// question this re-asks is EXACTLY `lowerRotations`' `Chained =
+// taint.Tainted.count(arg0)`, so it is asked at the taint `lowerRotations` starts
+// from — the CQLoweringPass comment at the d88e re-ask records that nothing
+// between `specialize()` and `lowerRotations` writes `taint.Tainted`. Placed
+// earlier (beside `declineRound2TaintedArmCone`, before `specialize()`) it would
+// be SOUND for the same reason — a seed untainted at classification is not a
+// Phase-6 site that `specialize()` could re-mark — but it would decline the
+// exotic seed that round 2 taints through a spec call and `specialize()` then
+// scrubs back to classical, i.e. an over-decline for no unitary.
+//
+// WHAT IT WITNESSES AND WHAT IT DOES NOT. It witnesses that no recorded runtime
+// seed is QUANTUM at the taint `lowerRotations` reads, i.e. that every recorded
+// source theta lowers as the SOURCE (`cqrt_alloc_<W>(seed)`) its classifier
+// accepted. It does NOT re-ask F1's identity clause or F2 (the SSA identity of the
+// seed and the Pred incoming is preserved by every RAUW, which rewrites both
+// uses at once; F2's relational half is argued in its own header) and it says
+// nothing about a literal seed, which cannot turn quantum and is never recorded.
+//
+// Anchored at the SOURCE theta, which is the hoisted user `cq_theta` (it keeps
+// the arm's `!dbg`) or the angle select's unconditional twin (stamped with the
+// select's `!dbg`), so the diagnostic points at the user's own rotation.
+bool declineRound2QuantumPrepSeeds(Module &M, TaintSet &Taint) {
+  (void)M;  // the record is module-wide already; kept for the slot's signature.
+  for (const WeakTrackingVH &H : Taint.RuntimeSeedSourceThetas) {
+    auto *T = dyn_cast_or_null<CallInst>(static_cast<Value *>(H));
+    // A nulled or re-typed entry names no theta any more: nothing will lower
+    // `Chained` from it, so there is no unitary left to refuse.
+    if (!T || !isThetaCall(T) || T->arg_size() < 1)
+      continue;
+    if (!Taint.Tainted.count(T->getArgOperand(0)))
+      continue;
+    diagnoseUnderControl(T, "state prep seed became quantum");
+    return true;
+  }
+  return false;
+}
+
 bool reverifyRailCondReads(Module &M, TaintSet &Taint) {
   if (Taint.RailCondReads.empty())
     return false;  // no rail was ever read as a control — every module until 1b.
@@ -4464,7 +4710,10 @@ Value *straightThroughConstFoldHandle(const ControlRegion &Region, Value *Routed
 //        dichotomy: minted ONCE before the loop, or minted FRESH every trip. A
 //        clean mint lowers to `cqrt_alloc_<W>` + `cqrt_ry_<W>`, so a mint inside
 //        the body IS K fresh rails — precisely what K copies of the arm do.
-//        ⚠ For a STATE PREP the base is the seed `Constant` and there is no
+//        ⚠ For a STATE PREP the base is the SEED — a literal, or since bd z0re
+//        a RUNTIME classical value, possibly one the loop re-computes every trip
+//        (`s + k`), which the in-body alloc then reads per activation exactly as
+//        the unrolled twin's k-th copy reads its own — and there is no
 //        pre-region SSA name for the rail at all (§14.5); the mint is the
 //        HOISTED `T` itself, which is why `MintSeed` is `T` there. That also
 //        answers the deferred item recorded in
@@ -5279,9 +5528,15 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //
         // From plain C this clause is unreachable: `-O1` (SimplifyCFG) merges the
         // two arms into ONE theta with a tainted-condition ANGLE SELECT, which
-        // lands in `classifyAngleSelect` and is refused at S3 (probe `p14a`,
-        // `rotation angle`; see control_angle_select_reject_state_prep.ll and
-        // PRD §14.11 Q5 / follow-on `drbq.13`).
+        // lands in `classifyAngleSelect`. There a LITERAL seed is refused at S3
+        // (probe `p14a`, `rotation angle`; see
+        // control_angle_select_reject_state_prep.ll and PRD §14.11 Q5 /
+        // follow-on `drbq.13`), and since bd z0re (owner ruling 2026-09-28) a
+        // RUNTIME seed is ADMITTED there and lowered by difference on ONE fresh
+        // rail — `alloc(t); ry(h, B); ry_controlled(f, h, A−B)` — which is the
+        // one-rail reading Q4 describes. This hand-IR clause is NOT moved by that
+        // ruling: Q4 ("two preps = two rails = decline") stands for the unfolded
+        // shape, and the asymmetry is recorded rather than resolved here.
         //
         // ⚠ THE STRING IS SPLIT BY WHAT THE OTHER ARM IS, ADDED 2026-09-05
         // (round-1 Rule-13 review, lens L7 finding F-L7-8, owner-approved in the
@@ -5322,9 +5577,10 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // is a mux between a prepared rail and an unrelated value, which is a
         // DATA MUX and has no rotation-arm lowering.
         //
-        // THE SEED MUST BE A `ConstantInt` OR `ConstantFP` — and the two
-        // exclusions have DIFFERENT reasons, so neither may be dropped as
-        // "obviously covered by the other":
+        // THE SEED MUST BE A `ConstantInt`, A `ConstantFP`, OR A RUNTIME SSA
+        // VALUE (`isRuntimeStatePrepSeed`: an untainted `Instruction` or
+        // `Argument`). The two CONSTANT exclusions have DIFFERENT reasons, so
+        // neither may be dropped as "obviously covered by the other":
         //   * a `ConstantExpr` (or a `GlobalValue` address) is a LINK-TIME
         //     constant whose value this compiler CANNOT READ, so "the rail starts
         //     at |SEED>" is unverifiable — the Inc-2b round-2 finding, one family
@@ -5334,13 +5590,38 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         //     slots is read as TWO DIFFERENT VALUES at the `-O0` stage 3, so the
         //     claim is not even well-formed. This is also the `-O1` shape of
         //     `int r; if (…) r = cq_theta(0,θ);` (probe `p11`), i.e. reachable.
-        // A function ARGUMENT (a RUNTIME seed, probe `p16`) is refused by the
-        // same test. It is a FREE widening — the pred incoming and the seed are
-        // literally the same SSA value there, and `cqrt_alloc_<W>` takes a
-        // runtime value — and it ships DECLINED because the owner's scope says
-        // `Constant` (PRD §14.11 Q2). Note the `Constant` spelling is not
-        // redundant even if Q2 is granted: it is what makes `-0.0` a decline,
-        // because value identity on a UNIQUED constant already IS bit identity.
+        //
+        // ---- THE RUNTIME SEED — bd `test_C_libtooling-z0re`, OWNER RULING
+        //      2026-09-28, option (a); PRD §14.11 Q2 GRANTED (bd `drbq.14`).
+        //
+        // A function ARGUMENT, a load, a call result, a classical φ, a
+        // `cq_measure` RESULT (a measurement is the taint SINK — Rule 3 — so its
+        // value is classical feed-forward, exactly as for an UNCONDITIONAL
+        // `cq_theta(cq_measure(q0), θ)`, which the oracle already lowers to
+        // `cqrt_alloc_<W>(<measured value>)`): probe `p16` and the z0re battery.
+        // Until 2026-09-28 it was refused by this very test and it was a FREE
+        // widening — the clause below (the Pred incoming must be POINTER-IDENTICAL
+        // to the seed) makes the merge faithful by SSA identity, and
+        // `cqrt_alloc_<W>` takes a runtime value at every width F1's third clause
+        // admits. The owner granted it so that the hand-inlined twin of bd z0re's
+        // spec-classical side door (`int t = m + 1;` in place of a clone call)
+        // ACCEPTS with the side door's circuit instead of declining here.
+        //
+        // WHAT A RUNTIME SEED OWES THAT A LITERAL DOES NOT, and where each is paid:
+        //   * F2 — re-asked for a non-`Constant` seed as a RELATIONAL question
+        //     (`f2SeedPinnedByLiveRegister`'s header, "THE RUNTIME SEED").
+        //   * L1 — a literal can never turn quantum; a runtime seed derived from
+        //     a 6.5/4.5 `%out` can, between this round-1 verdict and
+        //     `lowerRotations`' FINAL-taint `Chained` decision. The emitter
+        //     RECORDS it (`TaintSet::RuntimeSeedSourceThetas`) and
+        //     `declineRound2QuantumPrepSeeds` re-asks it in BOTH entry points.
+        //   * `-0.0` — the `Constant` spelling was "what makes `-0.0` a decline,
+        //     because value identity on a UNIQUED constant already IS bit
+        //     identity". For a runtime seed SSA IDENTITY does the same job one
+        //     level up: the `f=0` component's rail holds whatever BITS the one
+        //     SSA value carries at run time, and the straight-through edge
+        //     carries THOSE SAME bits, so there is no second value to disagree
+        //     with. (`-0.0` is simply not a compile-time fact here.)
         //
         // BIT IDENTITY, SPELLED AS BIT IDENTITY. `-0.0` vs `0.0` must decline and
         // is reachable from plain C in BOTH directions (probes `p07b`/`p07c`).
@@ -5352,10 +5633,13 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // runtime-i32 rail for a promoted bank cell. It is already |0>, and the
         // faithful merge below must name that SAME handle on the skipped edge.
         // No source value is inferred or cloned, so F2's folded-live-register
-        // rival has no subject. Every user-written/runtime argument spelling
-        // remains behind the literal-only fence.
+        // rival has no subject. (It is ALSO an untainted `Instruction`, so
+        // `isRuntimeStatePrepSeed` would admit it on its own; the explicit
+        // disjunct is kept so its F2 skip and its record exclusion below stay
+        // keyed on the one predicate that names it, `isRailBankSeedAlloc`.)
         if (!PreallocatedBankSeed && !isa<ConstantInt>(RotBase) &&
-            !isa<ConstantFP>(RotBase)) {
+            !isa<ConstantFP>(RotBase) &&
+            !isRuntimeStatePrepSeed(RotBase, Taint)) {
           declineArm(T, "state prep seed does not match the merge incoming");
           return ArmDisposition::Declined;
         }
@@ -5634,9 +5918,16 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // the same string, because a search that stopped looking is exactly the
         // "we stopped and accepted" shape this fence exists to stop. (`Truncated`
         // is NOT narrowed by `CondWire`; SCOPE H-8.)
+        //
+        // bd `test_C_libtooling-z0re`: the seed is handed over as a `Value *`
+        // (it was `cast<Constant>` while F1 admitted literals only). A RUNTIME
+        // seed takes F2's RELATIONAL branch — the same function, the same
+        // candidate list, the same three exclusions at the same TEST — whose
+        // argument is in `f2SeedPinnedByLiveRegister`'s header ("THE RUNTIME
+        // SEED"); a literal takes the constant-fold path byte-for-byte as before.
         if (!PreallocatedBankSeed)
-          Pinned = f2SeedPinnedByLiveRegister(Region, cast<Constant>(RotBase),
-                                              Taint, DT, CondWire, Truncated) ||
+          Pinned = f2SeedPinnedByLiveRegister(Region, RotBase, Taint, DT,
+                                              CondWire, Truncated) ||
                    Truncated;
         if (Pinned) {
           declineArm(declAnchor(Region),
@@ -5740,7 +6031,11 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // and decline `stale rail record read past a controlled Ry` on a program
       // with no record at all. (Users in OTHER functions are skipped only because
       // `DT->isReachableFromEntry` returns false for a foreign block — i.e. by
-      // accident of a guard written for a different purpose.) R4 has the mirror
+      // accident of a guard written for a different purpose.) ⚠ bd z0re: a
+      // RUNTIME seed makes the same point without the uniquing: `{ %s }` would
+      // enumerate every CLASSICAL read of `s` after the region (`printf(s)`,
+      // `return s + …`) as a "stale record" of a rail it never was — the skip
+      // is what keeps those classical reads legal. R4 has the mirror
       // hazard in the harmless direction: a degenerate `cq_phi(0, θ)` on the
       // condition's provenance can put a `Constant` into `CondRails` (see
       // `railWireClosure`'s own comment), so R4 would decline on a literal
@@ -6084,6 +6379,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       // emitter's refusal cannot be satisfied by accident.
       if (RailCond)
         Region.RailLadderProven = true;
+      // bd `test_C_libtooling-z0re` — CARRY the classifier's runtime-seed
+      // verdict to the emitter, which records the source theta for the
+      // post-fixpoint re-ask ON THIS FLAG and never on the taint it sees at
+      // emission (a 6.5 region emitted earlier in the same loop can already have
+      // RAUW'd the seed to its tainted `%out` — `ControlRegion::
+      // RuntimeSeedAdmitted`'s header has the measured failure). The rail bank's
+      // compiler-owned seed is excluded: `lowerRotations` adopts it through
+      // `isRailBankSeedAlloc`, not through taint.
+      if (StatePrep && !PreallocatedBankSeed &&
+          isRuntimeStatePrepSeed(RotBase, Taint))
+        Region.RuntimeSeedAdmitted = true;
       continue;
     }
 
@@ -8816,15 +9122,99 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
       return AngleSelectDisp::NotApplicable;
   }
 
-  // S3 — a CHAINED rotation on a live register. A classical arg-0 is controlled
-  // state prep (PRD S5 / Inc 4): the alloc would have to move with the gate and
-  // the "prepped vs |0⟩" disposition of the fresh rail is unproven here.
+  // S3 — THE ROTATION'S arg-0. A TAINTED base is a CHAINED rotation on a live
+  // register (Inc 2b, byte-for-byte unchanged). An UNTAINTED base is controlled
+  // STATE PREP on a fresh rail — the plain-C spelling of the if/else two-prep
+  // shape, `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);`, which `-O1`'s
+  // SimplifyCFG sinks into ONE theta reading an angle `select` (PRD §14.2e /
+  // §14.11 Q5, bd `drbq.13`).
+  //
+  // ---- bd `test_C_libtooling-z0re` (OWNER RULING 2026-09-28, option (a)) —
+  //      A RUNTIME UNTAINTED BASE IS ADMITTED, Ry STEM ONLY.
+  //
+  // The emitter's by-difference stream then reads `alloc(t); ry(h, B);
+  // ry_controlled(f, h, A−B)`: the theta is UNCONDITIONAL in the source (only
+  // its ANGLE is conditional), so the fresh rail is prepared at |t⟩ on BOTH
+  // components and rotated by `B` or by `B + (A−B) = A` — there is no "inactive
+  // component" whose `prepped vs |0⟩` disposition could be unproven (the
+  // concern this clause used to cite, which was the DIAMOND prep's, not this
+  // shape's). Every §12.3 arithmetic fence is inherited unchanged — S1's
+  // constant-arms-only `angleSelectArmsAdmissible` ran above. What is SKIPPED
+  // for it is the base's wire closure (S7's rail prong, S8, S9 below), for the
+  // §14.5 reason: the rotated rail is MINTED by the emitter's unconditional
+  // twin, so NO pre-region SSA name for it exists — no wire to intersect with
+  // the condition's (S8), no record to read stale (S9), no pre-region rail to be
+  // in a cycle (S7-rail) — and walking the classical `t` instead would
+  // enumerate its CLASSICAL users as "stale records" (the literal-use-list
+  // hazard §14.5 measured for a `ConstantInt`). ⚠ A base that is untainted HERE
+  // can be quantum at FINAL taint (a 6.5/4.5 `%out` derivative, CLAUDE.md L1),
+  // and then `lowerRotations` lowers the twin CHAINED on it — a tainted-base
+  // select S8/S9 never vetted. The emitter RECORDS the twin
+  // (`TaintSet::RuntimeSeedSourceThetas`) and `declineRound2QuantumPrepSeeds`
+  // re-asks in both entry points.
+  //
+  // ---- A LITERAL BASE STAYS DECLINED (bd `drbq.13` — NOT covered by this
+  //      increment, and the reason is a MEASURED counter-example, not scope).
+  //
+  // At the DIAMOND prep of a literal F2 asks whether a live tainted register is
+  // pinned to the literal on one of the REGION'S two edges — `-O1`'s IPSCCP folds
+  // a register the condition tests into the literal on that edge. ⚠ CORRECTED
+  // (Rule-13 r1A F-r1A-2, L7): the first spelling of this sentence said the
+  // diamond "is safe ONLY because" of that, which reads as "the diamond IS
+  // safe". It is not, in general: bd `fmt3` (PRE-EXISTING P1, lowered IR
+  // byte-identical on the oracle) is this very fold NESTED inside a diamond prep
+  // — the pinning branch is an INNER one that `-O1` deletes, so F2, anchored on
+  // the OUTER region's edges, never sees it (r1A probe `a6`; its flat twin `a6f`
+  // declines at F2). fmt3 is its own track; what matters HERE is that the
+  // diamond's F2 is NOT a fence the literal angle select could borrow even in
+  // principle. The angle select inherits the hazard and then HIDES the edge:
+  // `int t = q / 4; int r; if (t == 5) r = cq_theta(t, .9); else r =
+  // cq_theta(5, .3); … cq_measure(t)` (probe `a1`, TRACK_Z0RE.md §4) compiles
+  // at `-O1` to `cq_theta(i32 5, select((q & -4) == 20, .9, .3))` with `t =
+  // sdiv q, 4` STILL LIVE and measured — IPSCCP pinned `t` to 5 in the true arm,
+  // SimplifyCFG sank the two now-arg-0-identical thetas, and InstCombine moved
+  // the compare SIDEWAYS off `t`. Admitting a literal base would prepare a fresh
+  // |5⟩ and leave `t` unrotated where the source rotated `t` in place (the
+  // F-R1-1 class, off the condition's wire, so not the owner-ruled α trade). F2
+  // cannot be asked here: it is an EDGE analysis (`getConstantRangeOnEdge`)
+  // and a select has no edge; LLVM 19 exposes LVI's condition analysis only
+  // through a branch edge or a select-OPERAND use. So the literal stays on the
+  // owner's desk (bd drbq.13), refused with the string it has always had.
+  // A RUNTIME base cannot be the image of that CONSTANT fold: IPSCCP
+  // substitutes only constants, and SimplifyCFG sinks a call only when at most
+  // ONE operand needs a φ (`NumPHIInsts <= 1`), so arg-0 must already AGREE in
+  // both arms before the sink — measured, `a3`/`a4` keep the if/else unsunk.
+  // (The RELATIONAL select fold of bd `zt0b` — `select (q == s), q, s → s` —
+  // can put a runtime `s` into an arg-0; its diamond-prep image is a module
+  // indistinguishable from a legitimate program, see F2's runtime-seed header and
+  // bd `fmt3`. An ANGLE-SELECT image of it would need two such inner folds under
+  // an outer if/else that differ only in the angle; MEASURED on
+  // `z0re_probes/src/r2as1.c` that `-O1` keeps a 4-predecessor merge instead and
+  // it declines `nested control flow` on both binaries.)
+  //
+  // ⚠ WHAT bd `fmt3` OPTION B (`nomerge` on `cq_theta_*`, landing AFTER z0re)
+  // DOES TO THIS ADMISSION — ONLY THE IF/ELSE SPELLING STOPS REACHING IT. The
+  // if/else `if (c) r = cq_theta(t, A); else r = cq_theta(t, B);` reaches S3 only
+  // because SimplifyCFG MERGES the two thetas; under `nomerge` the if/else
+  // survives and declines `if/else state prep allocates two rails` (owner ruling
+  // Q4). The TERNARY spelling `r = cq_theta(t, c ? A : B);` produces the SAME
+  // one-theta-on-an-angle-select IR with NO merge at all, so it is untouched by
+  // `nomerge` and this untainted-base admission STAYS A PLAIN-C ACCEPT SURFACE
+  // (Rule-13 r2 F-r2-1, measured with a `nomerge` `CQ.h`: probe `t1nm` accepts
+  // with a trace byte-identical to `slice_z0re_angle_select_runtime_base_exact`'s
+  // golden). ⚠ CORRECTED (L7): the round-2 spelling of this paragraph said the
+  // whole admission becomes UNREACHABLE FROM C — false; the ternary reaches it.
+  // So when fmt3 lands, the if/else C slices `slice_z0re_angle_select_runtime_base*`
+  // are to be RESPELLED as ternaries (which keeps their goldens), not turned into
+  // declines. The IR-level pins `control_angle_select_ry_runtime_base{,_i8,_f64}.ll`
+  // and `spec_angle_select_runtime_base_side_door{,_twin}.ll` hold either way.
   //
   // NO SUBJECT for the register-free phase stem: it has no arg-0, no register
   // and therefore no state-prep ambiguity to fence. `RotBase` stays null there
   // and every clause below that reads it is `IsPhase`-guarded.
   Value *RotBase = IsPhase ? nullptr : T->getArgOperand(0);
-  if (!IsPhase && !Taint.Tainted.count(RotBase))
+  const bool UntaintedBase = !IsPhase && !Taint.Tainted.count(RotBase);
+  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(RotBase, Taint)))
     return AngleSelectDisp::NotApplicable;
 
   // S4 — a BARE lowerable compare, ONE tainted operand, ONE user.
@@ -9080,7 +9470,15 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   // rounds for every loop widening.)
   SmallPtrSet<Value *, 16> BaseWire;
   SmallVector<Value *, 16> BaseWireOrder;
-  if (!IsPhase)
+  // bd z0re — SKIPPED WHOLE for an UNTAINTED (runtime) base, and so are the
+  // two readers below that iterate `BaseWireOrder` (S8, S9): the rotated rail is
+  // minted by the emitter's unconditional twin, so it has no pre-region SSA
+  // name for this closure to collect (S3's comment carries the argument). An
+  // EMPTY `BaseWireOrder` makes all three loops vacuous — which is the skip, and
+  // it is NOT "hand `railWireClosure` the classical seed", whose `Out.insert(W)`
+  // runs BEFORE its taint gate and would enumerate `t`'s classical users as
+  // stale records of a rail they never were (§14.5's measured trap).
+  if (!IsPhase && !UntaintedBase)
     railWireClosure(RotBase, Taint, WireDir::BothWays, nullptr, nullptr,
                     BaseWire, &BaseWireOrder, /*Exclude=*/T);
   for (Value *W : BaseWireOrder) {
@@ -9227,6 +9625,11 @@ AngleSelectDisp classifyAngleSelect(SelectInst *Sel, const CondTree &Tree,
   R.Merge = Sel;
   R.Condition = Cond;
   R.Shadow.assign(1, T);
+  // bd `test_C_libtooling-z0re` — the classifier's runtime-base verdict, carried
+  // to `emitAngleSelectRegion` for the L1 record (see
+  // `ControlRegion::RuntimeSeedAdmitted`). The Ry stem is the only one that can
+  // reach here with an untainted base (S3).
+  R.RuntimeSeedAdmitted = UntaintedBase;
   plan.Regions.push_back(R);
   return AngleSelectDisp::Accepted;
 }

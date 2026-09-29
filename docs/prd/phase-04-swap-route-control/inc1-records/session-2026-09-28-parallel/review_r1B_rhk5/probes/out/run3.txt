@@ -1,0 +1,31 @@
+== z1 (arg 5)
+  [S] z1: ACCEPT warn=0 2b[left=3 dirty=0 viol=0 unpr=0] lines=      23
+  [O] z1: ACCEPT warn=1 2b[left=3 dirty=2 viol=0 unpr=0] lines=      19
+  [S] z1_T: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      19
+  [O] z1_T: ACCEPT warn=0 2b[left=2 dirty=0 viol=0 unpr=0] lines=      19
+  equiv S-subject vs S-twin: subject 1, twin 0)
+  S!=O trace (moved)
+== z2 (arg 5)
+  [S] z2: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: state prep seed does not match the merge i
+  [O] z2: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: state prep seed does not match the merge i
+  [S] z2_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: state prep seed does not match the merge i
+  [O] z2_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: state prep seed does not match the merge i
+== v1 (arg 5)
+  [S] v1: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: arm rewrites a condition operand under qua
+  [O] v1: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: arm rewrites a condition operand under qua
+  [S] v1_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+  [O] v1_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control
+== l1 (arg 5)
+  [S] l1: ACCEPT warn=1 2b[left=2 dirty=0 viol=0 unpr=0] lines=      44
+  [O] l1: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      40
+  [S] l1_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate
+  [O] l1_T: DECLINE rc=1  <unknown>:0:0: in function slice i32 (i32): cq opcode lowering: operand predates a non-diagonal gate
+  S!=O trace (moved)
+== l2 (arg 5)
+  [S] l2: ACCEPT warn=1 2b[left=2 dirty=1 viol=0 unpr=0] lines=      42
+  [O] l2: ACCEPT warn=1 2b[left=2 dirty=2 viol=0 unpr=0] lines=      40
+  [S] l2_T: ACCEPT warn=1 2b[left=1 dirty=1 viol=0 unpr=0] lines=      22
+  [O] l2_T: ACCEPT warn=1 2b[left=1 dirty=1 viol=0 unpr=0] lines=      22
+  equiv S-subject vs S-twin: subject 5, twin 0)
+  S!=O trace (moved)
+DONE

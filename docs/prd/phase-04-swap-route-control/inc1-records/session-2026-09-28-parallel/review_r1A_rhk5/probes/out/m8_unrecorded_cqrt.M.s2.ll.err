@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function cqrt_myread i32 (i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (nested call)
+

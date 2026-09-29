@@ -34,6 +34,7 @@
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=SILENT --allow-empty < %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=RHK5 < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
@@ -72,3 +73,19 @@ define internal fastcc i32 @inner(i32 %x) {
 ; this family would have kept passing while silently pinning nothing. `SILENT`
 ; reads the pass's stderr and is the pin that survived the severity change.
 ; SILENT-NOT: non-diagonal gate over a live derived record
+
+; bd test_C_libtooling-rhk5 (2026-09-28) — A STREAM THIS FILE DID NOT PIN MOVED, and it
+; is pinned now. `c`'s only forward reader is the clone call, and until rhk5
+; `ChainWalk::isInteriorConsumer` disqualified every clone call, so `c` (3a, a record
+; of `a`) was LEFT ALLOCATED to the end of the function. `cloneCallPreservesArg` now
+; proves from `@__cq_q_inner_1`'s body that the call only READS its argument, so the
+; M-B interior partition discharges `c` right after the call — the stream the
+; hand-inlined twin (`z = c * 3`) gets (measured, TRACK_RHK5.md §5.3). The discharge
+; is still AFTER the gate `T` (the chained Ry on the wire), so everything above —
+; `c` undischarged and entangled AT the gate, exempted by the clause-3 walk through
+; the clone hop, `SILENT` — is unchanged (the default prefix above pins the gate
+; before the call).
+; RHK5: %[[Z2:[a-zA-Z0-9_.]+]] = call fastcc i32 @__cq_q_inner_1(i32 %[[C2:[a-zA-Z0-9_.]+]])
+; RHK5-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[C2]], i32 %{{[a-zA-Z0-9_.]+}}, i32 3)
+; RHK5-NEXT: call void @cqrt_free(i32 %[[C2]])
+; RHK5-NEXT: call i32 @cqrt_measure_i32(i32 %[[Z2]])

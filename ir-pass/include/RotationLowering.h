@@ -318,6 +318,15 @@ void lowerRotations(llvm::Module &M, WidthDispatch &wd, TaintSet &taint,
 // mutates nothing.
 bool warnLiveRecordRotations(llvm::Module &M, const TaintSet &taint);
 
+// A void BASIS COPY gate `cqrt_copy_<W>(src, dst)` / `cqrt_copy_<W>_controlled(ctl,
+// src, dst)` — the DESTINATION is the LAST operand and every other operand is
+// only READ (the argument, with every emission site checked, is at the definition
+// in RotationLowering.cpp). The ONE statement of that ABI fact: `ChainWalk`'s
+// clone-body proof calls it (bd rhk5 round 2, Rule 14). NAME-keyed through the
+// called operand — a caller that must not trust a module-DEFINED function of that
+// name asks `isDeclaration()` of the callee itself, as `ChainWalk` does.
+bool isCopyGate(const llvm::CallInst *CI);
+
 }  // namespace cq
 
 #endif  // CQ_IRPASS_ROTATION_LOWERING_H_

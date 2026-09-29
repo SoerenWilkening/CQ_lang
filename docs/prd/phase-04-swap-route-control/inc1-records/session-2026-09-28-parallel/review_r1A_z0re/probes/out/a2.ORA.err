@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: nested control flow under quantum control
+

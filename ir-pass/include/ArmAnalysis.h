@@ -293,6 +293,49 @@ bool reverifyRailCondReads(llvm::Module &M, TaintSet &Taint);
 // which is every module that lowered before this increment.
 bool declineRound2TaintedArmCone(llvm::Module &M, TaintSet &Taint);
 
+// bd `test_C_libtooling-z0re` (owner ruling 2026-09-28, option (a); bd
+// `drbq.14` §14.11 Q2) — THE ONE SPELLING OF "is this untainted rotation arg-0 a
+// RUNTIME state-prep seed?". TRUE iff `V` is an SSA value that is NOT a
+// `Constant` (an `Instruction` or an `Argument`), is UNTAINTED under `Taint`,
+// and has a scalar integer or floating-point type. A literal is NOT this
+// predicate's subject (F1's `ConstantInt`/`ConstantFP` clause owns it), and a
+// `ConstantExpr` / `GlobalValue` address / `undef` / `poison` is refused by
+// BOTH — each keeps the reason F1's header gives it.
+//
+// TWO CLASSIFIER SITES, ONE SPELLING (Rule 14): F1's seed clause in
+// `classifyArms` (the DIAMOND state prep, `int r = s; if (c) r = cq_theta(s, θ);`,
+// asked again where the accept sets `ControlRegion::RuntimeSeedAdmitted`) and S3
+// of `classifyAngleSelect` (the UNTAINTED Ry-stem base, `if (c) r = cq_theta(t,
+// A); else r = cq_theta(t, B);`, which `-O1` folds into one theta with an angle
+// select). ⚠ The EMITTERS do NOT call it: they consume the classifier's
+// recorded verdict (`RuntimeSeedAdmitted`), both for the L1 record and — since
+// Rule-13 r1B F-r1B-2 — for `emitAngleSelectRegion`'s step-0 admission, so the
+// question is asked once, at detection, and carried.
+//
+// ⚠ "UNTAINTED" IS A ROUND-1 (or round-2) VERDICT, NOT A FINAL ONE — CLAUDE.md
+// L1's PREDICATE species. A value derived from a 6.5/4.5 merge `%out` is
+// classical when the classifier asks and quantum once `repropagateControlMerges`
+// re-seeds, and `lowerRotations` decides `Chained` on the FINAL taint — so an
+// accepted runtime seed that turns quantum would lower as an UNVETTED in-place
+// controlled Ry (R4/R6/S8/S9 were skipped for it). Each classifier that admits
+// a runtime seed sets `ControlRegion::RuntimeSeedAdmitted`; the emitter that
+// commits the region RECORDS its source theta in
+// `TaintSet::RuntimeSeedSourceThetas` ON THAT FLAG (not on the taint it sees —
+// the seed may already be an `%out` by then); and `declineRound2QuantumPrepSeeds`
+// re-asks this predicate's taint half at FINAL taint. A literal can never turn
+// quantum, which is why the constant path owes no record.
+bool isRuntimeStatePrepSeed(llvm::Value *V, const TaintSet &Taint);
+
+// bd `test_C_libtooling-z0re` — THE L1 RE-ASK of `isRuntimeStatePrepSeed`'s
+// taint half, at the taint `lowerRotations` decides `Chained` on. For every
+// recorded source theta (`TaintSet::RuntimeSeedSourceThetas`) whose arg-0 — the
+// runtime seed, followed through every RAUW — is now TAINTED, declines LOUDLY
+// (`state prep seed became quantum`) and lowers nothing. Runs in BOTH entry
+// points after `specialize()` (whose scrub can only SHRINK taint, so a seed that
+// is classical here is classical at `lowerRotations`) and before `lowerRotations`
+// (which erases the recorded thetas). Returns true iff it declined.
+bool declineRound2QuantumPrepSeeds(llvm::Module &M, TaintSet &Taint);
+
 // Whether a control/data `CmpInst`'s predicate has a lowering template — the
 // predicate axis of `compareInScope`, with the icmp/fcmp family derived from the
 // instruction. An out-of-scope fcmp predicate (outside {oeq,une,olt,ogt,ole,oge})

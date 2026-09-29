@@ -1,0 +1,11 @@
+subject_v2 | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=0 | 
+oracle | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=5 | spec_accept_clone_read_in_discharge_window.ll spec_accept_clone_read_in_discharge_window_identity.ll spec_accept_clone_read_in_discharge_window_nested.ll spec_accept_clone_consumes_chain_rail.ll spec_accept_clone_read_in_discharge_window_select.ll 
+N0_null | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=0 | 
+M1_trust_record | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=4 | spec_leak_clone_read_twin_copy_dst.ll spec_leak_clone_read_twin_alias.ll spec_leak_clone_read_twin_writes_arg.ll spec_leak_clone_read_twin_unc_out.ll 
+M2_ccopy_dst | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=1 | spec_leak_clone_read_twin_copy_dst.ll 
+M3_no_clause3 | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=4 | spec_accept_clone_read_in_discharge_window_select.ll spec_accept_clone_read_in_discharge_window.ll spec_accept_clone_read_in_discharge_window_identity.ll spec_accept_clone_read_in_discharge_window_nested.ll 
+M4_no_bprime | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=1 | spec_accept_clone_consumes_chain_rail.ll 
+M5_skip_noncall | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=1 | spec_leak_clone_read_twin_alias.ll 
+M6_unc_any_slot | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=4 | spec_leak_clone_read_twin_alias.ll spec_leak_clone_read_twin_unc_out.ll spec_leak_clone_read_twin_copy_dst.ll spec_leak_clone_read_twin_writes_arg.ll 
+M7_no_handle_mask | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=0 | 
+M8_no_record | Total Discovered Tests: 2416  Excluded: 2015 (83.40%) | failed=0 | 
