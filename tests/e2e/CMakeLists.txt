@@ -78,20 +78,25 @@ endif()
 # make it LIE, so every key component is content and never a timestamp.
 # Cache lives under the build dir => `rm -rf build` is a full reset.
 # run_slice_multi.sh shares this cache since bd test_C_libtooling-2dfk (it was
-# "deliberately NOT cached" at 20 entries; there are 42 now): its CQ TU uses this
-# exact key, and its lib TUs (compiled WITHOUT `-include CQ.h`) add a tag to it.
+# "deliberately NOT cached" at 20 entries; there are 42 now), through the ONE
+# helper `cq_s1_compile` (tests/e2e/stage_cache.sh), each TU keyed by the literal
+# flag array it is compiled with (bd test_C_libtooling-ffm0).
 set(_E2E_S1_CACHE "${CMAKE_CURRENT_BINARY_DIR}/.s1cache")
-# ⚠ THE KEY BELOW IS COMPUTED AT CONFIGURE TIME, so every header it hashes must be
-# a CONFIGURE DEPENDENCY — otherwise editing include/CQ.h and running
-# `cmake --build` keeps the OLD key and every slice is served the OLD header's
-# stage-1 IR. MEASURED (bd test_C_libtooling-fmt3, 2026-09-28): with the
-# `nomerge` header in place and no reconfigure,
-# `e2e-slice-control-angle-select-ry` PASSED against its PRE-nomerge golden,
-# although the new header changes that slice's stage-1 IR and its trace. The
-# glob is the same extension set s1_cache_key.py walks (.h/.hpp/.inc), and
-# CONFIGURE_DEPENDS also catches a header ADDED under include/. RESIDUAL: `ctest`
-# without a preceding build still runs whatever the last configure keyed — the
-# same contract as running ctest on an un-rebuilt plugin.
+# ⚠ THE KEY BELOW IS COMPUTED AT CONFIGURE TIME. The headers it hashes are still a
+# CONFIGURE DEPENDENCY (bd test_C_libtooling-fmt3 measured a stale-header pass
+# before it was), BUT THAT IS NO LONGER WHAT PROTECTS A HEADER EDIT: since bd
+# test_C_libtooling-dbjh every stage-1 key ALSO hashes, AT TEST TIME, the bytes of
+# every header under each `-I` directory and each `-include` file its flags name
+# (`_cq_hdr_digest` / `header_digest`), so a CQ.h edit with NO reconfigure and NO
+# build is a miss (r2 F-r2-1 measured the opposite before: 8/8 warm PASS vs 1/8
+# uncached with every cq_theta angle doubled). ⚠ The sentence that stood here —
+# "ctest without a preceding build still runs whatever the last configure keyed:
+# the same contract as running ctest on an un-rebuilt plugin" — was FALSE for
+# headers: an un-rebuilt plugin is equally stale cached and uncached, while an
+# edited header is read by every UNCACHED stage 1, so only the cache masked it.
+# What stays configure-time is the TOOLCHAIN half (clang version, sysroot +
+# SDKSettings.json, clang's configuration file): after a Command Line Tools or
+# macOS update, reconfigure or run with CQ_E2E_NO_CACHE=1 (r2 F-r2-3).
 file(GLOB_RECURSE _E2E_S1_HDRS CONFIGURE_DEPENDS
      "${CMAKE_SOURCE_DIR}/include/*.h" "${CMAKE_SOURCE_DIR}/include/*.hpp"
      "${CMAKE_SOURCE_DIR}/include/*.inc")

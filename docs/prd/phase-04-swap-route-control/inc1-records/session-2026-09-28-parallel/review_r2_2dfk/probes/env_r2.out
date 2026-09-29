@@ -1,0 +1,18 @@
+== warm-up (unmodified env)
+SUMMARY 2/2 passed (cache)
+== (E) CLANG_NO_DEFAULT_CONFIG=1
+  WARM:     PASS e2e-slice-control-abort
+PASS e2e-railbank-dynamic-admission-matrix
+SUMMARY 2/2 passed (cache)
+  NO_CACHE:    | /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_2dfk/tests/e2e/slice_control_abort.c:36:10: fatal error: 'stdlib.h' file not found
+   |    36 | #include <stdlib.h>
+   |       |          ^~~~~~~~~~
+   | 1 error generated.
+FAIL e2e-railbank-dynamic-admission-matrix  rc=1
+   |       |          ^~~~~~~~~~
+   | 1 error generated.
+   | 
+   | CASE=14: link failed
+   | clang: error: no such file or directory: '/var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/tmpfbvjsyxy/case-14.lowered.ll'
+   | clang: error: no input files
+SUMMARY 0/2 passed (NO_CACHE)

@@ -53,6 +53,12 @@ component.
 
 - `CQ_E2E_NO_CACHE=1 ctest --test-dir build -j6` — every stage runs, nothing is
   read or recorded (a from-scratch run).
+- **After a Command Line Tools, `xcode-select -s` or macOS update: reconfigure
+  (`cmake -S . -B build`) or run with `CQ_E2E_NO_CACHE=1`.** The toolchain half
+  of the key (clang version, the SDK clang compiles against, clang's config
+  file, `ld -v`, the OS build) is computed at configure time, and a build does
+  not reconfigure for those (a `brew upgrade llvm@19` it does pick up). Header
+  edits under `include/` need nothing: their bytes are hashed at test time.
 - `rm -rf build/tests/e2e/.s1cache build/tests/e2e/.runcache` — reset.
 - A by-hand `bash tests/e2e/run_slice.sh …` without the ctest environment caches
   nothing.

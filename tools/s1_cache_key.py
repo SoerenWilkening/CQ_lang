@@ -100,6 +100,19 @@ def main():
     else:
         h.update(b"no-SDKSettings.json")
 
+    # 4b. clang's CONFIGURATION FILE(S) (bd dbjh, r2 F-r2-2): Homebrew clang reads
+    #     /usr/local/etc/clang/<triple>.cfg on every call, and that file is where
+    #     its `-isysroot` comes from. Their BYTES, as named by the same -### job.
+    #     (CLANG_NO_DEFAULT_CONFIG, which turns them off, is keyed per test.)
+    #     Configure time, like everything in this key.
+    h.update(b"\0clang-config\0")
+    for line in job.stderr.splitlines():
+        if line.startswith("Configuration file: "):
+            cfg = line[len("Configuration file: "):].strip()
+            h.update(cfg.encode() + b"\0")
+            if os.path.isfile(cfg):
+                feed_file(cfg)
+
     # 5. the exact flags
     h.update(b"\0flags\0")
     h.update("\0".join(flags).encode())

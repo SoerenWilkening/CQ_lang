@@ -63,7 +63,7 @@ HARNESS = (("tests/e2e/run_slice.sh", os.path.join(E2E, "run_slice.sh")),
            ("tests/e2e/stage_cache.sh", os.path.join(E2E, "stage_cache.sh")),
            ("tools/cq_stage_cache.py", os.path.join(HERE, "cq_stage_cache.py")),
            ("tools/free_pairing_check.py", os.path.join(HERE, "free_pairing_check.py")))
-EXPECTED_ROWS = 66
+EXPECTED_ROWS = 69
 # The environment of the bash key-function probes: EXPLICIT, like every other
 # row's. Measured: probes that inherited the ambient environment went red under
 # `CQ_E2E_NO_CACHE=1 ctest`, because the off switch they inherited correctly
@@ -456,13 +456,33 @@ def main():
                    rc != 0 and n3 == 1, "rc=%d s3=%d" % (rc, n3))
             # r1's (d): run_slice.sh's own stage-1 flags at -O0.
             h = harness_copy("o0", [("tests/e2e/run_slice.sh",
-                                     'S1_FLAGS=(-I"$INC" -include CQ.h -O1 -emit-llvm -S)',
-                                     'S1_FLAGS=(-I"$INC" -include CQ.h -O0 -emit-llvm -S)')])
+                                     'S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)',
+                                     'S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O0 -emit-llvm -S)')])
             rc, out, n1, n3, npy = run(warm_copy("rcO0"), harness=h)
             expect("HD stage-1 flags -O1 -> -O0: MISS and RED",
                    rc != 0 and n1 == 1, "rc=%d s1=%d" % (rc, n1))
 
         # ── G/H: off switches ─────────────────────────────────────────────
+        # ── HDR: header BYTES at test time (bd dbjh, r2 F-r2-1) ────────────
+        CQH_OLD = "    _Float16:           cq_theta_f16               \\\n)(x, angle)"
+        CQH_NEW = "    _Float16:           cq_theta_f16               \\\n)(x, (angle) * 2.0)"
+
+        def gHDR2(expect):
+            # r2's plant: every cq_theta angle doubled, header still compiles,
+            # CQ_S1_BASE left as configured (no reconfigure, no build). A PRIVATE
+            # include dir, so no other row sees the edit.
+            incd = os.path.join(tmp, "inc_hdr")
+            shutil.copytree(a.include, incd)
+            rch = warm_copy("rcHDR")
+            rc, out, n1, n3, npy = run(rch, inc=incd)
+            rc2, out2, n1b, n3b, npyb = run(rch, inc=incd)
+            expect("HDR (setup) private include dir warms, then hits",
+                   rc == 0 and rc2 == 0 and n1b == 0, "rc=%d/%d s1=%d" % (rc, rc2, n1b))
+            edit(os.path.join(incd, "CQ.h"), CQH_OLD, CQH_NEW)
+            rc, out, n1, n3, npy = run(rch, inc=incd)
+            expect("HDR CQ.h BYTES changed, CQ_S1_BASE unchanged: stage 1 MISS and RED",
+                   rc != 0 and n1 == 1 and "0x1p+0" in out, "rc=%d s1=%d" % (rc, n1))
+
         def gGH(expect):
             rcg = warm_copy("rcG")
             before = (count(os.path.join(rcg, "run")), count(os.path.join(rcg, "2b")))
@@ -562,6 +582,15 @@ def main():
             (src2,) = private_src("ps1b", theta_src)
             r = pyrun(step.replace(repr(src), repr(src2)) + "out['i'] = once(%r)\n" % (flags,), envp)
             expect("PS1 python file key: same bytes at a NEW PATH misses", r["i"][1] == 1, str(r["i"]))
+            incp = os.path.join(tmp, "inc_ps1")
+            shutil.copytree(a.include, incp)
+            pflags = ["-I" + incp, "-include", os.path.join(incp, "CQ.h")] + flags[3:]
+            r = pyrun(step + "out['j'] = once(%r)\nout['k'] = once(%r)\n" % (pflags, pflags), envp)
+            edit(os.path.join(incp, "CQ.h"), CQH_OLD, CQH_NEW)
+            r2 = pyrun(step + "out['l'] = once(%r)\n" % (pflags,), envp)
+            expect("PS1 python file key: header BYTES changed (same dir, same flags) misses",
+                   r["j"][1] == 1 and r["k"][1] == 0 and r2["l"][1] == 1,
+                   str([r["j"], r["k"], r2["l"]]))
             edit(src, "int y = x + 1;", "int y = x + 2;")
             r = pyrun(step + "out['f'] = once(%r)\n" % (flags,), envp)
             expect("PS1 python file key: source BYTES changed (same path) misses",
@@ -674,7 +703,8 @@ def main():
             groups = [("BJC", gBJC), ("D", gD), ("E", gE), ("RT", gRT), ("TPL", gTPL),
                       ("LD", gLD), ("BASE", gBASE), ("CL", gCL), ("ENV", gENV), ("2B", g2B),
                       ("SRC", gSRC), ("LIB", gLIB), ("HD", gHD), ("HDR", gHDR), ("GH", gGH),
-                      ("PY", gPY), ("PS1", gPS1), ("CR", gCR), ("S3", gS3)]
+                      ("PY", gPY), ("PS1", gPS1), ("CR", gCR), ("S3", gS3),
+                      ("HDR2", gHDR2)]
             with concurrent.futures.ThreadPoolExecutor(max_workers=6) as pool:
                 futs = [(n, pool.submit(group, n, fn)) for n, fn in groups]
                 for n, fut in futs:

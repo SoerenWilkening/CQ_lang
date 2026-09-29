@@ -1,0 +1,7 @@
+== warm-up (unmodified)
+100% tests passed, 0 tests failed out of 8
+planted in CQ.h
+  WARM:     13% tests passed, 7 tests failed out of 8
+  NO_CACHE: 13% tests passed, 7 tests failed out of 8
+== restored, warm
+100% tests passed, 0 tests failed out of 8

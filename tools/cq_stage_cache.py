@@ -45,15 +45,34 @@ whose result depends on it) and deliberately NOT in the harness digest: two
 copies of one component make a key that drops one of them undetectable by any
 row (an equivalent mutant), and the selftest must be able to see every drop.
 
+THE HEADERS ARE PROJECT SOURCE, NOT MACHINE STATE (bd dbjh, r2 F-r2-1 — this
+docstring used to file "the headers under include/" under the machine, and
+tests/e2e/CMakeLists.txt called their staleness "the same contract as an
+un-rebuilt plugin"; both were wrong: an un-rebuilt plugin is equally stale cached
+and uncached, while an edited header is read by every UNCACHED stage 1, so only
+the cache masked it). Every stage-1 key therefore hashes, AT TEST TIME, the bytes
+of every header under each `-I` directory and each `-include` file its flags
+name (`header_digest`); the runners' `-include` is ABSOLUTE (`$INC/CQ.h`,
+F-r2-4), because a relative one is resolved from the working directory first.
+
 WHAT A HIT DOES NOT RE-WITNESS, stated so its absence is not read as coverage:
   * the MACHINE — "this toolchain still links and runs this IR on this box
-    today". The toolchain half of the key (clang version, the headers under
-    include/, the SYSROOT clang uses and its SDKSettings.json — see
+    today". The toolchain half of the key (clang version, the SYSROOT clang uses
+    and its SDKSettings.json, the clang CONFIGURATION FILE's bytes — see
     s1_cache_key.py; the ld wrapper, `ld -v`, `sw_vers`) is computed at
-    CONFIGURE time: a `brew upgrade llvm@19` or a Command Line Tools update with
-    no reconfigure is served stale, the same contract the build has. The clang
-    DRIVER's bytes are hashed per run (`clang_id`); its dylibs
-    (libclang-cpp/libLLVM) only through `clang --version`;
+    CONFIGURE time. A `brew upgrade llvm@19` IS picked up by the next build (the
+    build lists LLVMConfig.cmake, so it reconfigures); a Command Line Tools
+    update, an `xcode-select -s` or a macOS update is NOT (r2 F-r2-3): after one
+    of those, RECONFIGURE (`cmake -S . -B build`) or run with
+    `CQ_E2E_NO_CACHE=1`. The clang DRIVER's bytes are hashed per run
+    (`clang_id`); its dylibs (libclang-cpp/libLLVM) only through
+    `clang --version`;
+  * the python INTERPRETER's bytes — the 2b key names it by PATH (a pyenv path
+    embeds its version, so a version change is a miss; an in-place replacement
+    at the same path is not; r2 F-r2-5);
+  * environment variables outside KEY_ENV_VARS (an allowlist, a policy — r2
+    F-r2-2 added CLANG_NO_DEFAULT_CONFIG, which turns clang's configuration
+    file off);
   * a header included RELATIVE TO A SOURCE (`#include "x.h"` outside include/)
     — measured 0 such includes in the e2e and railbank-pair sources today;
   * an in-place edit of a file INSIDE the SDK that leaves SDKSettings.json alone.
@@ -123,7 +142,7 @@ S1_VERSION = "cq-s1-v2"
 S3_CC_FLAGS = ("-c",)
 # SORTED; identical to stage_cache.sh's CQ_KEY_ENV_VARS.
 KEY_ENV_VARS = (
-    "CCC_OVERRIDE_OPTIONS", "COMPILER_PATH", "CPATH", "CPLUS_INCLUDE_PATH",
+    "CCC_OVERRIDE_OPTIONS", "CLANG_NO_DEFAULT_CONFIG", "COMPILER_PATH", "CPATH", "CPLUS_INCLUDE_PATH",
     "C_INCLUDE_PATH", "DEVELOPER_DIR", "DYLD_FALLBACK_LIBRARY_PATH",
     "DYLD_INSERT_LIBRARIES", "DYLD_LIBRARY_PATH", "LIBRARY_PATH",
     "MACOSX_DEPLOYMENT_TARGET", "OBJCPLUS_INCLUDE_PATH", "OBJC_INCLUDE_PATH",
@@ -205,6 +224,38 @@ def env_digest(env=None):
     return sha_bytes(frame(fields))
 
 
+HEADER_EXTS = (".h", ".hpp", ".inc")
+
+
+def header_digest(flags):
+    """The bytes of the HEADERS a stage-1 command can see, read AT TEST TIME (bd
+    test_C_libtooling-dbjh, Rule-13 r2 F-r2-1): every *.h/*.hpp/*.inc under each
+    `-I` directory and each `-include` file named in `flags` (paths AND bytes; a
+    missing `-include` file is keyed as absent). CQ_S1_BASE hashes include/ only
+    at CONFIGURE time, so a CQ.h edit with no reconfigure used to be replayed as
+    the old IR. Same rule as stage_cache.sh's `_cq_hdr_digest`. Not memoised: a
+    header may be edited between two calls of one long-running harness."""
+    fields = ["cq-hdr-v1"]
+    prev = ""
+    for a in flags:
+        d = ""
+        if prev == "-I":
+            d = a
+        elif prev == "-include":
+            fields += (["inc", a, sha_file(a)] if os.path.isfile(a) else ["inc-absent", a])
+        if a.startswith("-I") and len(a) > 2:
+            d = a[2:]
+        if d and os.path.isdir(d):
+            fields += ["dir", d]
+            found = []
+            for root, _dirs, files in os.walk(d):
+                found += [os.path.join(root, n) for n in files if n.endswith(HEADER_EXTS)]
+            for f in sorted(found, key=lambda s: s.encode("utf-8", "surrogateescape")):
+                fields += [f, sha_file(f)]
+        prev = a
+    return sha_bytes(frame(fields))
+
+
 @functools.lru_cache(maxsize=None)
 def clang_id(clang):
     """sha256 of the clang executable's bytes (symlinks followed); None if it
@@ -257,6 +308,7 @@ def s1_key(kind, clang, flags, src_path, src_digest):
               env_digest()]
     fields += counted("flags", list(flags))
     fields += ["src", src_path, src_digest]
+    fields += ["hdr", header_digest(flags)]
     return sha_bytes(frame(fields))
 
 

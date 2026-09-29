@@ -42,6 +42,7 @@ MUTANTS = [
                        "printf 'src\\0%s\\0%s\\0' \"X\" \"$sd\"")]),
     ("s1_bytes_b", [(B, "printf 'src\\0%s\\0%s\\0' \"$src\" \"$sd\"",
                         "printf 'src\\0%s\\0%s\\0' \"$src\" \"X\"")]),
+    ("s1_hdr_b", [(B, "printf 'hdr\\0%s\\0' \"$hdrd\"", "printf 'hdr\\0%s\\0' \"X\"")]),
     # ── python stage-1 key ──
     ("s1_hd_p", [(P, 'fields = [S1_VERSION + "-" + kind, harness_digest(), _env("CQ_S1_BASE"), cid,',
                      'fields = [S1_VERSION + "-" + kind, "X", _env("CQ_S1_BASE"), cid,')]),
@@ -53,6 +54,7 @@ MUTANTS = [
                       '              "X"]\n    fields += counted("flags", list(flags))')]),
     ("s1_flags_p", [(P, 'fields += counted("flags", list(flags))', 'fields += counted("flags", [])')]),
     ("s1_path_p", [(P, 'fields += ["src", src_path, src_digest]', 'fields += ["src", "X", src_digest]')]),
+    ("s1_hdr_p", [(P, 'fields += ["hdr", header_digest(flags)]', 'fields += ["hdr", "X"]')]),
     ("s1_bytes_p", [(P, 'fields += ["src", src_path, src_digest]', 'fields += ["src", src_path, "X"]')]),
     # ── run key, BOTH spellings ──
     ("run_hd", [(B, '"$CQ_HD" "$CQ_RUN_BASE" "$CQ_CLANG_ID" "${#CQ_S3_CC_FLAGS[@]}"',

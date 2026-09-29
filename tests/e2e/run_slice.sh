@@ -38,7 +38,10 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # shellcheck source=stage_cache.sh
 . "$HERE/stage_cache.sh"
 cq_cache_init
-S1_FLAGS=(-I"$INC" -include CQ.h -O1 -emit-llvm -S)
+# `-include "$INC/CQ.h"` is ABSOLUTE (bd dbjh, r2 F-r2-4): a relative `-include
+# CQ.h` is resolved from the working directory FIRST, so a stray CQ.h there would
+# be used (measured) — and the working directory is in no key. Byte-identical IR.
+S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)
 s1="$TMP/s1.ll"
 cq_s1_compile "$s1" "$SRC" "${S1_FLAGS[@]}"
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$s1" -o "$TMP/s2.ll"          # Stage 2

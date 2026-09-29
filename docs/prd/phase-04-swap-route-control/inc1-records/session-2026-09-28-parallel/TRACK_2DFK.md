@@ -606,3 +606,39 @@ spelling is inside HD-covered files — and the CR guard).
    HD-covered files; their key component is observable only through the direct
    key-function probe and the python run-time override (rows S3). A reviewer who
    finds a cheaper observable spelling should say so.
+
+---
+
+## ROUND 3 — Rule-13 r2 CLEAR-WITH-ITEMS (0 P1); the P2 bd `dbjh` and three P3s
+
+Review: `review_r2_2dfk/REVIEW.md` + `probes/` (committed untouched with this round).
+
+- **F-r2-1 (P2, bd `dbjh`) — header BYTES at test time.** A `CQ.h` edit with no
+  reconfigure was replayed warm (header content reached the stage-1 key only through
+  configure-time `CQ_S1_BASE`; r2: 8/8 warm PASS vs 1/8 uncached with every angle
+  doubled). Every stage-1 key, both spellings, now also carries a header digest
+  (`_cq_hdr_digest` / `header_digest`): the paths and bytes of every `*.h/*.hpp/*.inc`
+  under each `-I` directory and each `-include` file its flags name, read per call.
+  The false comment in `tests/e2e/CMakeLists.txt` (*"the same contract as running
+  ctest on an un-rebuilt plugin"*) is replaced by the correct statement (an edited
+  header is read by every UNCACHED stage 1, so only the cache masked it), and
+  `cq_stage_cache.py`'s docstring no longer files the headers under "the machine"
+  (L7, both at the source). **Measured**: r2's plant re-run on this tree
+  (`2dfk_probes/cqh_r3.sh`, no reconfigure, no build): **WARM 1/8 = NO_CACHE 1/8**
+  (r2: warm 8/8); restored → 8/8.
+- **F-r2-4 — absolute `-include "$INC/CQ.h"`** in both runners (a relative one is
+  resolved from the working directory first). Stage-1 IR byte-identical, measured on
+  4 slices (grover, theta, control-abort, spec-qram-read).
+- **F-r2-2 — `CLANG_NO_DEFAULT_CONFIG`** added to both env lists (the ENV-LIST parity
+  row covers it); the clang configuration file's BYTES (as named by `clang -###`,
+  `/usr/local/etc/clang/x86_64-apple-darwin25.cfg`) join the configure-time
+  `CQ_S1_BASE` in `s1_cache_key.py`.
+- **F-r2-3 / F-r2-5 — documented**: `cq_stage_cache.py` docstring, `tests/README.md`
+  (after a CLT / `xcode-select` / macOS update: reconfigure or `CQ_E2E_NO_CACHE=1`;
+  a `brew upgrade llvm@19` is picked up by the next build), the 2b interpreter keyed
+  by path.
+- **Selftest: 69/69** (+3 rows: bash private-include warm-then-hit; bash CQ.h bytes
+  changed with CQ_S1_BASE fixed → stage-1 MISS and RED with `0x1p+0` in the trace;
+  python `stage1_file` header bytes changed → MISS). **Meta-mutation** of the two new
+  components (`s1_hdr_b`, `s1_hdr_p`, header digest dropped from each key): **2/2
+  CAUGHT**, null green, files restored (`meta_mut_r3_hdr.out`).

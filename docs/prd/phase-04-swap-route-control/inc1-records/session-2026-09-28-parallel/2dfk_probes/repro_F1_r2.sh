@@ -43,7 +43,7 @@ echo -n "  WARM:     "; v ctest -R "$T1" -j4
 echo -n "  NO_CACHE: "; v env CQ_E2E_NO_CACHE=1 ctest -R "$T1" -j4
 restore
 echo "== (d) run_slice.sh stage 1 at -O0 (r1: PRE-EXISTING half, bd dgn5)"
-plant tests/e2e/run_slice.sh 'S1_FLAGS=(-I"$INC" -include CQ.h -O1 -emit-llvm -S)' 'S1_FLAGS=(-I"$INC" -include CQ.h -O0 -emit-llvm -S)'
+plant tests/e2e/run_slice.sh 'S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)' 'S1_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O0 -emit-llvm -S)'
 echo -n "  WARM:     "; v ctest -R "$T4" -j4
 echo -n "  NO_CACHE: "; v env CQ_E2E_NO_CACHE=1 ctest -R "$T4" -j4
 restore

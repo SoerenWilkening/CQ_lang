@@ -41,7 +41,9 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # shellcheck source=stage_cache.sh
 . "$HERE/stage_cache.sh"
 cq_cache_init
-CQ_FLAGS=(-I"$INC" -include CQ.h -O1 -emit-llvm -S)
+# Absolute `-include` (bd dbjh, r2 F-r2-4): a relative one is resolved from the
+# working directory first, and the working directory is in no key.
+CQ_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)
 LIB_FLAGS=(-I"$INC" -O1 -emit-llvm -S)
 
 # Stage 1a — the CQ TU: -include CQ.h, -O1 (never -O0/-O2/-O3).

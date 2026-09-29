@@ -50,7 +50,7 @@ CQ_S3_CC_FLAGS=(-c)
 # variable before a protected binary such as /bin/bash starts (measured), so in
 # THIS spelling they always read as unset — which is the truth for everything a
 # bash runner launches; the python spelling sees them, and so do its programs.
-CQ_KEY_ENV_VARS="CCC_OVERRIDE_OPTIONS COMPILER_PATH CPATH CPLUS_INCLUDE_PATH C_INCLUDE_PATH DEVELOPER_DIR DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH LIBRARY_PATH MACOSX_DEPLOYMENT_TARGET OBJCPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH PYTHONHOME PYTHONPATH SDKROOT SOURCE_DATE_EPOCH"
+CQ_KEY_ENV_VARS="CCC_OVERRIDE_OPTIONS CLANG_NO_DEFAULT_CONFIG COMPILER_PATH CPATH CPLUS_INCLUDE_PATH C_INCLUDE_PATH DEVELOPER_DIR DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES DYLD_LIBRARY_PATH LIBRARY_PATH MACOSX_DEPLOYMENT_TARGET OBJCPLUS_INCLUDE_PATH OBJC_INCLUDE_PATH PYTHONHOME PYTHONPATH SDKROOT SOURCE_DATE_EPOCH"
 
 _cq_sha() { /usr/bin/openssl dgst -sha256 | awk '{print $NF}'; }
 
@@ -99,21 +99,55 @@ cq_cache_init() {
         CQ_HD=""; CQ_ENVD=""; CQ_CLANG_ID=""; }
 }
 
+# The bytes of the HEADERS a stage-1 command can see, read AT TEST TIME (bd
+# test_C_libtooling-dbjh, Rule-13 r2 F-r2-1): every *.h/*.hpp/*.inc under each
+# `-I` directory and each `-include` file named in the flags. CQ_S1_BASE hashes
+# include/ too, but only at CONFIGURE time — so a CQ.h edit with no reconfigure
+# (Rule 19's own CQ.h inner loop: `ctest -R frontend-lit` + e2e, no build) was
+# replayed as the old IR (measured by r2: 8/8 warm PASS vs 1/8 uncached with
+# every cq_theta angle doubled). Paths and bytes are both keyed; a missing file
+# is keyed as absent. Same rule, same order, as cq_stage_cache.py's
+# header_digest (the two namespaces are separate, so parity is not required,
+# only totality).
+_cq_hdr_digest() {
+    local a prev="" d f
+    { printf 'cq-hdr-v1\0'
+      for a in "$@"; do
+          d=""
+          case "$prev" in
+              -I) d=$a ;;
+              -include) if [ -f "$a" ]; then printf 'inc\0%s\0%s\0' "$a" "$(_cq_sha < "$a")"
+                        else printf 'inc-absent\0%s\0' "$a"; fi ;;
+          esac
+          case "$a" in -I?*) d=${a#-I} ;; esac
+          if [ -n "$d" ] && [ -d "$d" ]; then
+              printf 'dir\0%s\0' "$d"
+              find "$d" -type f \( -name '*.h' -o -name '*.hpp' -o -name '*.inc' \) \
+                  | LC_ALL=C sort | while IFS= read -r f; do
+                      printf '%s\0%s\0' "$f" "$(_cq_sha < "$f")"; done
+          fi
+          prev=$a
+      done; } | _cq_sha
+}
+
 # Stage 1, cached. `cq_s1_compile <out> <src> <clang flags...>` leaves the IR at
 # <out> (a hit is COPIED there, so the consumer sees the same path either way).
-# Key: CQ_HD, CQ_S1_BASE (clang bytes + version + headers + sysroot, configure
-# time), CQ_CLANG_ID, CQ_ENVD, the literal flags (count-prefixed), the source
-# PATH (clang bakes it into `source_filename`) and the source BYTES.
+# Key: CQ_HD, CQ_S1_BASE (clang bytes + version + sysroot + clang config file,
+# configure time), CQ_CLANG_ID, CQ_ENVD, the literal flags (count-prefixed), the
+# source PATH (clang bakes it into `source_filename`) and BYTES, and the HEADER
+# bytes the flags expose (`_cq_hdr_digest`, test time).
 cq_s1_compile() {
-    local out=$1 src=$2 key hit sd
+    local out=$1 src=$2 key hit sd hdrd
     shift 2
     if [ -n "$CQ_HD" ] && [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
         sd=$(_cq_sha < "$src")
+        hdrd=$(_cq_hdr_digest "$@")
         key=$( { printf 'cq-s1-v2\0%s\0%s\0%s\0%s\0flags\0%s\0' \
                    "$CQ_HD" "$CQ_S1_BASE" "$CQ_CLANG_ID" "$CQ_ENVD" "$#"
                  printf '%s\0' "$@"
-                 printf 'src\0%s\0%s\0' "$src" "$sd"; } | _cq_sha)
-        if _cq_is_hex64 "$sd" && _cq_is_hex64 "$key"; then
+                 printf 'src\0%s\0%s\0' "$src" "$sd"
+                 printf 'hdr\0%s\0' "$hdrd"; } | _cq_sha)
+        if _cq_is_hex64 "$sd" && _cq_is_hex64 "$hdrd" && _cq_is_hex64 "$key"; then
             hit="$CQ_S1CACHE/$key.ll"
             if [ -f "$hit" ]; then
                 cp -f "$hit" "$out"

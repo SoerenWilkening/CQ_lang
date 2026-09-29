@@ -1,0 +1,7 @@
+== warm-up (unmodified)
+SUMMARY 8/8 passed (cache)
+planted in CQ.h
+  WARM:     SUMMARY 8/8 passed (cache)
+  NO_CACHE: SUMMARY 1/8 passed (NO_CACHE)
+== restored, warm
+SUMMARY 8/8 passed (cache)
