@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 816 maintained source files, 6447 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 816 maintained source files, 6456 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -7528,14 +7528,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache.py:267` — `run_base`
 - `tools/cq_stage_cache.py:291` — `main`
 
-### `tools/cq_stage_cache_test.py` (255 lines)
+### `tools/cq_stage_cache_test.py` (308 lines)
 
-- `tools/cq_stage_cache_test.py:44` — `expect`
 - `tools/cq_stage_cache_test.py:50` — `count`
-- `tools/cq_stage_cache_test.py:54` — `main`
-- `tools/cq_stage_cache_test.py:68` — `main.script`
-- `tools/cq_stage_cache_test.py:78` — `main.opt_wrapper`
-- `tools/cq_stage_cache_test.py:105` — `main.slice_run`
+- `tools/cq_stage_cache_test.py:56` — `main`
+- `tools/cq_stage_cache_test.py:70` — `main.script`
+- `tools/cq_stage_cache_test.py:83` — `main.opt_wrapper`
+- `tools/cq_stage_cache_test.py:112` — `main.slice_run`
+- `tools/cq_stage_cache_test.py:130` — `main.group`
+- `tools/cq_stage_cache_test.py:140` — `main.warm_copy`
+- `tools/cq_stage_cache_test.py:151` — `main.gA`
+- `tools/cq_stage_cache_test.py:160` — `main.gBJC`
+- `tools/cq_stage_cache_test.py:172` — `main.gD`
+- `tools/cq_stage_cache_test.py:183` — `main.gE`
+- `tools/cq_stage_cache_test.py:193` — `main.gF`
+- `tools/cq_stage_cache_test.py:222` — `main.gG`
+- `tools/cq_stage_cache_test.py:231` — `main.gH`
+- `tools/cq_stage_cache_test.py:239` — `main.gIK`
 
 ### `tools/dedup_lit_runs.py` (136 lines)
 
