@@ -2358,12 +2358,12 @@ def _mutants(hdr, st, sc, loopplan):
              "template <> struct RvImpl<int> { std::set<llvm::Value *> T; };\n"), st, sc, AL, RAW),
         ("r1 A1 unnamed struct type DEFINED OUTSIDE TaintSet, held by value via decltype (bd hdxo)",
          ins("decltype(RvHolder::U) RvAnon;", "struct RvHolder { struct { std::set<llvm::Value *> T; } U; };\n"),
-         st, sc, AL, "defined outside the record"),
+         st, sc, AL, ANON),
         ("r1 A1b a global unnamed struct via an alias, as a STATIC member (bd hdxo)",
          ins_global("static inline RvAnonT RvAnonS;",
                     "inline struct { std::set<llvm::Value *> T; } RvGlobalAnon;\n").replace(
              ANCH, "using RvAnonT = decltype(::RvGlobalAnon);\n" + ANCH, 1),
-         st, sc, AL, "defined outside the record"),
+         st, sc, AL, ANON),
         ("r1 A2 const llvm::Value *const * (cv on the inner pointer, bd ehni)",
          ins("const llvm::Value *const *RvSlots = nullptr; unsigned RvNumSlots = 0;"), st, sc, AL, RAW),
         ("r1 A2b llvm::Value *volatile * inside a SmallVector (bd ehni)",
@@ -2385,7 +2385,7 @@ def _mutants(hdr, st, sc, loopplan):
         ("r1 A4' a SINGLE anonymous-namespace base shadowed by a clean same-named record (bd 5ci2)",
          ins("RvMid3 RvM3;", "struct RvB3 { int Clean = 0; };\n"
              "namespace { struct RvB3 { std::set<llvm::Value *> T; }; struct RvMid3 : RvB3 {}; }\n"),
-         st, sc, AL, "base's canonical spelling"),
+         st, sc, AL, ANONNS),
         ("r1 A4b a LOCAL class base re-spelled as a same-named global base (bd 5ci2)",
          ins_global("::RvMid2 RvM2;", "struct RvL { int Clean = 0; };\n"
                     "inline auto rvMake() { struct RvL { std::set<llvm::Value *> T; }; return RvL{}; }\n"
