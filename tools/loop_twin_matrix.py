@@ -124,8 +124,11 @@ matter to the uncompute spine (direct compare, and the derived `sqrt` one that
 brings four template rails in) crossed with the FULL second-register gate axis;
 the three RECORD shapes on the ROTATED register `r` (the 8h7d.5 F-1 / F-3 / F1
 programs, moved off the condition register onto the rotated one); one triple
-with the record on `a` while the arm rotates `r`; two singleton DECLINE
-controls; and the drbq-Inc-4 CONTROLLED STATE-PREP decline control. 118 cells.
+with the record on `a` while the arm rotates `r`; one singleton DECLINE
+control (`rcond`); the drbq-Inc-4 CONTROLLED STATE-PREP decline control; and,
+since bd fmt3 round 2 (2026-09-29), the 24 crossings of the if/else region
+`rifelse` (sub-grid E1), which stopped being a decline control when CQ.h's
+`nomerge` made it a C-reachable ACCEPT. 141 cells.
 
 AND ONE THING THAT HAD TO BE MEASURED RATHER THAN DESIGNED (Rule 11), because it
 decides whether most of those cells witness anything at all. An Ry arm rotates a
@@ -715,13 +718,30 @@ RECORD_ALL = dict(RECORD, **RECORD_R, **RECORD_B)
 #   B2  every remaining region at the one second-register gate that refreshes 6
 #   C   the RECORD axis on the ROTATED register (opaque, so it is live)      24
 #   D   the RECORD axis on the CONDITION register while the arm rotates `r`   3
-#   E   the two decline controls                                              2
+#   E   the decline control (`rcond`)                                         1
+#   E1  the if/else region `rifelse` crossed with the A-star, RGATE, C and D
+#       axes — r1B's 24-cell set (bd fmt3 round 2; see RY_IFELSE_REGION)     24
 #   E2  the CONTROLLED STATE-PREP decline control (bd drbq Inc 4/drbq.5)      1
 RY_CORE_REGION = ("req", "rder")
 RY_OTHER_REGION = ("rne", "req0", "rrange", "rzry", "ryrz")
 RY_OPAQUE_REGION = ("oeq", "one", "oder")
 RY_OPAQUE_CORE = ("oeq", "oder")
-RY_DECLINE_REGION = ("rcond", "rifelse")
+RY_DECLINE_REGION = ("rcond",)
+# ⚠ bd test_C_libtooling-fmt3 round 2 (Rule-13 r1B F-r1B-5, 2026-09-29): `rifelse`
+# WAS the second "decline control" here. When `include/CQ.h` put `nomerge` on every
+# `cq_theta_*`, `-O1` stopped merging its two arms into an angle select, the if/else
+# reached the rolled in-place Ry arm's if/else form, and the cell became
+# ACCEPT-IDENTICAL — so the name "decline control" was false (L7), and a C-reachable
+# ACCEPT deserved the crossings `req` gets. Sub-grid E1 gives it exactly the 24
+# cells r1B measured with this file's own generator and `verdict()`
+# (`review_r1B_fmt3/probes/src/rifelse_cross.py`): the A-star (5), the RGATE axis
+# (4), the C axis (2 suffixes x 3 rotated-register records x {none, rypost}) and
+# the D axis (3 condition-register records). ⚠ The threshold is the LITERAL
+# `a == 5`, so the cells with no a-register gate are hoist-inert on the rolled side
+# (the OPAQUE-THRESHOLD phenomenon above) and decline on both sides — r1B measured
+# `rifelse` == `req` CELL FOR CELL on these 24, which is the point: the if/else is
+# treated exactly as the single-arm diamond it generalises.
+RY_IFELSE_REGION = "rifelse"
 RY_A_GATES = ("none", "ry", "add")          # PREFIX and SUFFIX, on `a`
 RY_A_STAR = (("none", "none"), ("ry", "none"), ("none", "ry"),
              ("add", "none"), ("none", "add"))
@@ -2447,7 +2467,7 @@ def cell_name(cell):
 
       `m_<prefix>_<region>_<suffix>`                    the 120 record-free cells
       `m_<prefix>_<region>_<suffix>_<record>`           the 36 RECORD cells
-      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 118 Ry-ARM cells,
+      `m_<prefix>_<region>_<suffix>_<record>_<rgate>`   the 141 Ry-ARM cells,
                                                        the 50 `_Bool` cells and
                                                        the 21 BANK cells
 
@@ -2505,8 +2525,15 @@ def ry_cells():
     # D — the RECORD axis on the CONDITION register while the arm rotates `r`.
     out += [("none", "oeq", "none", k, "none")
             for k in RECORD if k != "none"]
-    # E — the two decline controls.
+    # E — the decline control.
     out += [("none", g, "none", "none", "none") for g in RY_DECLINE_REGION]
+    # E1 — the if/else region's crossings (bd fmt3 round 2; see RY_IFELSE_REGION).
+    g = RY_IFELSE_REGION
+    out += [(p, g, s, "none", "none") for p, s in RY_A_STAR]
+    out += [("none", g, "none", "none", rg) for rg in RGATE if rg != "none"]
+    out += [("none", g, s, k, rg)
+            for s in RY_C_SUFFIX for k in RECORD_R for rg in ("none", "rypost")]
+    out += [("none", g, "none", k, "none") for k in RECORD if k != "none"]
     # E2 — the CONTROLLED STATE-PREP decline control (bd drbq Inc 4 / drbq.5).
     # Spelled with the `ry` PREFIX rather than at the `none` the other two
     # decline controls use, and that is not a style choice — it was MEASURED,
@@ -2891,7 +2918,7 @@ def trace_floor(side):
 def cells_of_matrix():
     """The full cell list: the 120-cell PREFIX x REGION x SUFFIX product with no
     record, plus the 36-cell record sub-grid (see `RECORD_GRID_*`), plus the
-    118-cell controlled-Ry-arm sub-grids (see `RY_*`, whose sub-grid E2 is the
+    141-cell controlled-Ry-arm sub-grids (see `RY_*`, whose sub-grid E2 is the
     bd drbq Inc-4 controlled-state-prep decline control), plus the 10-cell
     MIXED-LOOP sub-grid F (see `F_*` — bd 3qlq Inc 1, the Rule-13 CLEARANCE
     finding C-1, the axis 274 cells did not have, plus its review round's F3
@@ -2905,7 +2932,8 @@ def cells_of_matrix():
     axis 359 cells did not have and the reason bd emkg, a P1 over-accept, passed
     every gate in this tree; landed BEFORE the accept it exists to watch, for the
     third time and for the same reason).
-    382 cells.
+    405 cells (382 until bd fmt3 round 2 added sub-grid E1's 24 `rifelse`
+    crossings and retired the one `rifelse` decline control they include).
 
     The sizes are ASSERTED, not commented: this gate costs ~2 minutes of the
     suite's ~130-230s band and an axis edit that silently doubles it should stop
@@ -2923,7 +2951,7 @@ def cells_of_matrix():
     k = bank_cells()
     n = nest_cells()
     assert (len(base), len(rec), len(ry), len(f), len(b), len(k), len(n)) \
-        == (120, 36, 118, 14, 50, 21, 23), \
+        == (120, 36, 141, 14, 50, 21, 23), \
         "sub-grid sizes moved: %d/%d/%d/%d/%d/%d/%d" % (
             len(base), len(rec), len(ry), len(f), len(b), len(k), len(n))
     cells = base + rec + ry + f + b + k + n
@@ -3443,7 +3471,7 @@ EXPECTED_HEADER = """\
 #
 # ONE LINE PER CELL, `m_<prefix>_<region>_<suffix>` — plus a fourth `_<record>`
 # segment on the 36 RECORD-axis cells (bd drbq Inc 2a round-1 review), plus a
-# fifth `_<rgate>` segment on the 118 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
+# fifth `_<rgate>` segment on the 141 CONTROLLED-Ry-ARM cells (bd drbq Inc 3,
 # plus the one bd drbq Inc-4 controlled-state-prep decline control
 # `m_ry_rprep_none_none_none`; their region token always starts `r`) — then its
 # verdict. A name longer than the 24-column pad simply runs past it and is still

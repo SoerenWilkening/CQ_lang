@@ -1,7 +1,10 @@
 # TRACK_FMT3 — bd `test_C_libtooling-fmt3`: the erased-inner-branch fold
 
-**Status: PHASE 2 IMPLEMENTED (option B, owner ruling 2026-09-28) — see §9, which supersedes the
-Phase-1 recommendation text in §7. §1–§8 are the Phase-1 record, kept as written (dated 2026-09-28).**
+**Status: ROUND 2 DONE (2026-09-29) — §10. Option B implemented (owner ruling 2026-09-28, §9) and
+re-affirmed 2026-09-29 for landing with its residuals OPEN as their own beads: `nomerge` does NOT close
+the fmt3 class (bd `4e4p` function-pointer route and bd `uw5u` arg-0 select fold, both P1 PRE-EXISTING;
+bd `4l5q` and bd `cx6j`, the option-B over-declines). §1–§8 are the Phase-1 record, §9 Phase 2; both are
+kept as written except where a dated round-2 correction is marked inline.**
 Branch `worktree-agent-aea6988dda116aa5b`, off `main` `9a230646`. Frozen oracle
 `cq-opt.main_9a230646` (sha-256 `3f6db37f5cf937b4d70f5736…`). My clean build of `9a230646`
 is BIT-IDENTICAL to it (`cq-opt` `3f6db37f…`, `libCQPass.so` `356df92e…`, re-measured after the
@@ -111,7 +114,7 @@ unrelated reasons.
 |---|---|---|---|---|---|
 | **(A1)** coarse F2, typed: decline a Constant-seed prep that passed F2 if any tainted value of the seed's type ANYWHERE in the function (off `CondWire`/`PeelClones`/`PhiDesc`, not the arm) has an unconditional range containing the seed | **NO.** Region members only (`a6`…`n17`); cannot reach `n9`, `n17f`, `zt_p1` — no region, F2 never asked. Must scan past the region (the rotated register is SUNK after it), so it is "any other register" in practice | **lit 34 of 115** · **e2e 16 of 35** · probe dirs 18 of 23 (15 intended) | **the owner's programs**: `slice_control_cascade_three_bools`, `slice_grover_oracle_uncompute`, `slice_railbank_owner_cascade`, `slice_control_cascade_loop_carried_handle`, `slice_4jok_owner_plus_hoisted`, + 11 more e2e goldens | sound for what it reaches; declines the legitimate `n12` (same IR) | ~40 lines at F2 |
 | **(A2)** as A1, any int/fp type | same gap | lit 49 of 115 · e2e **24 of 35** · probes 18 of 23 | A1's + the two-bools cascades, `slice_control_phase_mergephi*`, the undef-seed slices | as A1 | as A1 |
-| **(B)** `__attribute__((nomerge))` on the 16 `cq_theta_*` declarations in `CQ.h` | **YES** — all 19 measured members decline (nested/no-region, literal/runtime, i1/i32/f64, loop) | e2e: **0 A→D**; stage 1 moves in **3 of 608** (source, CASE) jobs, all STREAM (below) · probe dirs: the 15 members + `zt_*` (4, incl. **owner-ruled accepts**) | 3 goldens restream: `slice_control_angle_select_ry{,_derived_base,_ne}` (same unitary: `cRy(f,A); X f; cRy(f,B); X f` instead of the by-difference `Ry(B); cRy(f,A−B)`, STRICT 2b clean), so `e2e-angle-select-ry-twin-identical` (and any gate pinned to that stream) goes red; the IF/ELSE spelling no longer folds into `AngleSelectEmit`'s Ry stem (⚠ CORRECTED in Phase 2, §9.3: the TERNARY spelling still reaches it — this cell first claimed C could no longer reach it, which was wrong) | keeps the evidence: the branch survives and the EXISTING fences (nested / two-rail / 2c / F2) decline it; `nomerge` is honoured by LLVM 19's SimplifyCFG hoist and sink (measured: `cq_theta_nomerge.c` red → green) | 16 attribute tokens + 1 frontend fixture + 3 goldens; reverses today's zt0b ACCEPT ruling |
+| **(B)** `__attribute__((nomerge))` on the 16 `cq_theta_*` declarations in `CQ.h` | **YES for the 19 measured members** (nested/no-region, literal/runtime, i1/i32/f64, loop) — ⚠ **NOT the class** (round 2, r1A): only DIRECT calls carry the attribute (bd `4e4p`, function-pointer route, P1 PRE-EXISTING) and the arg-0 `select` fold needs no merge (bd `uw5u`, P1 PRE-EXISTING); see §10 | e2e: **0 A→D**; stage 1 moves in **3 of 608** (source, CASE) jobs, all STREAM (below) · probe dirs: the 15 members + `zt_*` (4, incl. **owner-ruled accepts**) | 3 goldens restream: `slice_control_angle_select_ry{,_derived_base,_ne}` (same unitary: `cRy(f,A); X f; cRy(f,B); X f` instead of the by-difference `Ry(B); cRy(f,A−B)`, STRICT 2b clean), so `e2e-angle-select-ry-twin-identical` (and any gate pinned to that stream) goes red; the IF/ELSE spelling no longer folds into `AngleSelectEmit`'s Ry stem (⚠ CORRECTED in Phase 2, §9.3: the TERNARY spelling still reaches it — this cell first claimed C could no longer reach it, which was wrong) | keeps the evidence: the branch survives and the EXISTING fences (nested / two-rail / 2c / F2) decline it; `nomerge` is honoured by LLVM 19's SimplifyCFG hoist and sink (measured: `cq_theta_nomerge.c` red → green) | 16 attribute tokens + 1 frontend fixture + 3 goldens; reverses today's zt0b ACCEPT ruling |
 | **(C)** rule it acceptable (extend α to every erased-branch pin, literal or runtime, any rotated register) | n/a — documents it | 0 | 0 | the α argument extends: every well-formed rival of a merged branch is an if/else of rotation arms on DIFFERENT registers (a register mux, which CQ declines — "two rails = decline"), and the only observable difference is a STALE read the unfolded program would be refused for (`n21`). Retirement trigger: the day a register-mux if/else of rotation arms, or a read past an in-place rotation, lowers | docs + a pin fixture + the L7 corrections (§6) |
 
 Option-A population details: the prototype printed, at every literal prep that PASSES F2, whether A1/A2
@@ -234,7 +237,7 @@ on `r`'s rail. Per-qubit Ry about one axis composes additively, `R(a)R(b) = R(a+
   self-inverse, and restores `f` before `icmp_eq_…_unc` strips it (so the free is at |0⟩ — STRICT 2b
   `2 verified, 0 violation`; two free sites because `main` inlines `slice`, as before).
 * `…_ne` (`q != 5`; `-O1` canonicalises to `icmp eq`, TRUE successor = the source's ELSE arm). NEW:
-  `cR_f(0.3); X f; cR_f(0.9); X f` → q==5: `R(0.3)`, q!=5: `R(0.9)`. OLD: `R(0.9); cR_f(−fl(0.6))`.
+  `cR_f(0.3); X f; cR_f(0.9); X f` → q==5: `R(0.3)`, q!=5: `R(0.9)`. OLD: `R(0.9); cR_f(-0x1.3333333333334p-1)` — i.e. `−(fl(0.9) − fl(0.3))`, one ulp from `−fl(0.6)` = `-0x1.3333333333333p-1` (round 2, r1B F-r1B-7: this bullet first wrote `−fl(0.6)`, the very slip the if/else slice's header warns about), so the old q==5 branch realised `fl(0.3) − 2^-54`.
   Same map. STRICT 2b `2 verified, 0 violation`.
 * `…_derived_base` (the same on the out-of-place `mul` rail `h2`, then `addc(h2, 1)`). Same argument;
   the FREEZE this slice probes still holds (one `cqrt_free`, the flag's; the `mul` rail left allocated;
@@ -294,20 +297,30 @@ retirement trigger for the day nesting lowers.
 `m1` / `m2` (`if (t == 5) m = cq_measure(t); else m = cq_measure(5);` and the `q == 20` / `t` variant):
 `-O1` merges the two measures into `cq_measure(5)` — a CLASSICAL measure, no trace line — so the
 user-written measure of `t` vanishes (base and committed header alike; with `nomerge` on `cq_measure`
-too they would decline `value-arm swap-route`, measured with a variant header). ARGUED SOUND: the pin is
-EXACT, so on the pinned branch the measured register is in the eigenstate `|5⟩`, the outcome is 5 on
-EVERY branch, no which-branch information is extracted and nothing collapses — `m = 5` with nothing
-measured is the same channel. That is the difference from `cq_theta`, whose in-place rotation CHANGES
-the pinned register. `m3` (`if (q > 5) m = cq_measure(a); else m = cq_measure(b);`, two live
+too they would decline `value-arm swap-route`, measured with a variant header). ⚠ THE REASON I FIRST
+GAVE HERE ("the measured register is in the eigenstate `|5⟩`") IS TOO NARROW (round 2, r1A F-r1A-7):
+`mreg` (`if (t == s) m = cq_measure(t); else m = cq_measure(s);`, two QUANTUM registers) merges to an
+unconditional `cq_measure(s)` and `t` is NOT in an eigenstate there. The right ground: LLVM merges two
+measures only when their operand VALUES agree on every path, and under CQ's COHERENT-CONTROL model the
+two branches' outcome projectors then coincide (on `t == s`, `|k⟩⟨k|_t` and `|k⟩⟨k|_s` select the same
+branch of the state), so the merged measure has the source's outcome distribution. That model is a
+CHOICE nobody has ruled: under a model in which a measurement that fires on ONE branch leaves a
+which-branch record, the merge (and the flat `m1` fold) removes a decoherence the source has — it
+belongs with bd `yiid` (`cq_measure` is not modelled as a wire event). The conclusion — no `nomerge` on
+`cq_measure` — stands on the coherent model; it is not a theorem. That is the difference from
+`cq_theta`, whose in-place rotation CHANGES the pinned register under every model. `m3` (`if (q > 5) m = cq_measure(a); else m = cq_measure(b);`, two live
 registers): it merges into a measure of the 4.4 controlled-copy mux and ACCEPTS (16 lines, STRICT 2b
 clean) — sound (measuring a basis copy is measuring the source); `nomerge` on `cq_measure` would turn it
 into a DECLINE (measured). So the evidence is AGAINST adding it; not added, reported to the coordinator.
 
-The ternary spelling is safe for the same reason (coordinator addendum; z0re round 2's `t5nm`): a
-select written on ARG-0 (`cq_theta((q == s) ? q : s, θ)`) is a VALUE — CQ reads it as a 4.4 mux into a
-FRESH rail, never as an in-place rotation of `q` — so InstSimplify folding it to `s` changes nothing
-observable. Register identity is claimed only when arg-0 IS the register, and only a MERGE of two calls
-could conflate two such identities; `nomerge` forbids exactly that.
+⚠ WITHDRAWN (round 2, r1A F-r1A-2 — measured, analytic P(1) 0.262 vs 0.515): the paragraph that stood
+here claimed that a select written on ARG-0 (`cq_theta((q == s) ? q : s, θ)`) is harmless because CQ
+reads it as a VALUE (a 4.4 mux into a fresh rail) and "InstSimplify folding it to `s` changes nothing
+observable". That is FALSE whenever `s` is QUANTUM: before the fold the pass rotates a fresh basis copy of
+`s`; after it, it rotates `s` IN PLACE — a different unitary, and the pass's own `DeadValueLiveness`
+fold performs the same substitution. It is harmless only for a LITERAL or CLASSICAL `s`. Filed as bd
+`uw5u` (P1, PRE-EXISTING, no header attribute can reach it). The ANGLE ternary `cq_theta(r, c ? A : B)`
+the addendum was about is a different thing (the select is on arg-1, a classical angle) and is fine.
 
 ### 9.7 What I ran, literally (Phase 2)
 
@@ -342,7 +355,9 @@ Binaries: no pass code changed. `cq-opt` `3f6db37f…`, `libCQPass.so` `356df92e
 * NOT RUN: full `ctest -j6` (Rule 19 — the merge gate); allocator sweeps and `cq-opt-equivalence-full`
   (no pass code changed: the binaries are the oracle's, bit for bit); `tools/angle_select_twin_matrix.py`
   and `tools/inplace_twin_matrix.py` (instruments, not gates; the former's Ry SUBJECT is the if/else
-  spelling and will now DIVERGE from its by-difference twin — noted on bd `gjn2`); the z0re S3 slices
+  spelling and will now DIVERGE from its by-difference twin — noted on bd `gjn2`; ⚠ WRONG, round 2
+  r1B F-r1B-4: it goes VACUOUS, not divergent — all 9 Ry cells `DEGENERATE-FOLD`, `flagged 0`, rc 0;
+  corrected on bd `gjn2`); the z0re S3 slices
   (not on this branch; the orchestrator re-runs the header A/B after z0re lands).
 
 ### 9.8 L1 / L2 / L3
@@ -395,3 +410,158 @@ Binaries: no pass code changed. `cq-opt` `3f6db37f…`, `libCQPass.so` `356df92e
 * Build & Test: the stage-1 cache key is computed at configure time; `include/*.h` is now a configure
   dependency (a header edit + `cmake --build` reconfigures). Before this fix a CQ.h edit served STALE
   stage-1 IR to every e2e slice (measured).
+
+---
+
+## 10. ROUND 2 (2026-09-29) — merge main, respell z0re, pin all 16 tokens, correct the over-claims
+
+Inputs: `review_r1A_fmt3/REVIEW.md` and `review_r1B_fmt3/REVIEW.md` (both `CLEAR-WITH-ITEMS` for
+landing; committed untouched with this round) and the owner ruling of 2026-09-29: **land option B now;
+the residuals stay open as their own beads** — bd `4e4p` (function-pointer route, P1 PRE-EXISTING), bd
+`uw5u` (arg-0 `select` fold, P1 PRE-EXISTING), bd `4l5q` and bd `cx6j` (the option-B over-declines).
+None of the four is touched here. ⚠ **r1A's answer to "is `nomerge` a complete fix?" is NO**, and every
+text this track wrote that said or implied "closes the class" is corrected below, at the source (L7).
+
+### 10.1 Merge
+
+`git merge main` (bd rhk5 `9ad22639`, bd z0re `ba4fdad4`) → merge commit `95c9ac8f`. Conflicts:
+`ArmClassify.cpp` (the two-prep if/else clause's comment — z0re's runtime-seed S3 admission and fmt3's
+"reachable from plain C since `nomerge`" merged into one paragraph) and `CODE_MAP.md` (regenerated with
+`tools/update_code_map.py`, `--check` rc 0). ⚠ **A TRAP I HIT, and `--check` did not see it:** I
+regenerated `CODE_MAP.md` while `ArmClassify.cpp` was still UNMERGED in the index, and the tool
+enumerates sources with `ls-files`, which lists an unmerged path once per conflict STAGE — so the merge
+commit's map lists `ArmClassify.cpp` THREE times (806 files / 6521 functions instead of 804 / 6399), and
+`--check` passed because it re-derived the same wrong answer from the same index. The round-2 commit
+regenerates it from a clean index (804 / 6399). Resolve and stage every conflict BEFORE regenerating
+(bd memory `update-code-map-unmerged-index-trap`). main did not change `include/CQ.h`
+(`git diff 9a230646 main -- include/` empty), so the pre-fmt3 header `orig_inc/CQ.h` is still the right
+A-side. The merged tree's binaries: `cq-opt` `ac02fafabb9e62b1…` — **bit-identical to main's**
+(`scratchpad/frozen/cq-opt.main_ba4fdad4`, same sha-256); `libCQPass.so` `6fe5ee7740ff888f…`;
+`cq-opt-debugalloc` `c7bae2a69c1dd80e…`. Re-hashed after the round-2 edits (all comment-only in pass
+sources): unchanged. **This track changes no pass code.**
+
+### 10.2 The header A/B on the merged tree — before and after the z0re respell
+
+`ab_round2.sh` (the merged tree's own `cq-opt`; NULL CONTROL FIRST, committed header vs itself; then the
+pre-fmt3 header vs the committed one; single-TU `ab_hdr.py` and multi-TU `ab_hdr_multi.py`):
+
+| run | single-TU | multi-TU |
+|---|---|---|
+| NULL (both times) | 656 jobs, 630 compiled on both, 26 need other TUs/flags (not swept) — **0 / 0** movers | 38 entries, 38 built — **0 / 0** |
+| REAL, before the respell (`*.premerge-respell.*`) | **7 verdict/stream movers**: 3 STREAM (the restreamed if/else goldens) · 2 D→A (the in-loop if/else pair, §9.4) · **2 A→D: `slice_z0re_angle_select_runtime_base{,_exact}.c`** `if/else state prep allocates two rails` — r1B F-r1B-2 reproduced on the merged tree (plus `…_spec.c` moving at stage 1 only: it cannot build single-TU) | **1 A→D: `e2e-slice-z0re-angle-select-runtime-base-spec`** (same string) |
+| REAL, after the respell (`*.final.*`) | **5 movers** = 3 STREAM + 2 D→A; **0 A→D** | **0 / 0** |
+
+### 10.3 z0re's S3 slices respelled as TERNARIES (not declines)
+
+`slice_z0re_angle_select_runtime_base{,_exact,_spec}.c`: `int r; if (q > 3) r = cq_theta(t, A); else
+r = cq_theta(t, B);` → `int r = cq_theta(t, (q > 3) ? A : B);`, a dated note in each header. Goldens
+UNCHANGED and passing: `ctest -R z0re` **15/15** (incl. `…-twin-identical` and
+`…-exact-inplace-identical`, the independent witness against cleared pre-z0re code). z0re's L8 trigger in
+`tests/e2e/CMakeLists.txt` rewritten as FIRED. The if/else spelling's decline is pinned at the IR level:
+**NEW `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`** (the module `-O1` now
+produces for the old spelling) — an over-decline priced by the owner, whose L8 trigger names bd `gjn2` and
+the exact stream it must ACCEPT with when that lands. z0re's comments that said fmt3 "WILL" close the
+route were updated to the landed state, with the direct-calls-only caveat (bd `4e4p`: r1A's `fpzt_a1`
+still accepts through a pointer): `ArmClassify.cpp` (two places),
+`control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`,
+`control_angle_select_ry_runtime_base_i8.ll`, `control_angle_select_reject_literal_base_offwire_fold.ll`.
+
+### 10.4 All 16 `nomerge` tokens pinned — and the mutation matrix (r1A F-r1A-5 / r1B F-r1B-3, P2)
+
+NEW `tests/frontend/cq_theta_nomerge_widths.c`: one MERGE PROBE per `_Generic` row (i1, c, si8, ui8, si16,
+ui16, si32, ui32, sl, ul, sll, ull, f32, f64, f16, f80) — an if/else of two `cq_theta` on one register
+differing only in the angle; `CHECK: br i1` + two calls. `fmt3_probes/mut16.sh` → `mut16.txt`, controls
+FIRST:
+
+| fixture | NULL (committed header) | ALL 16 deleted | OLD header (9a230646) | per-token mutants (16) |
+|---|---|---|---|---|
+| `cq_theta_nomerge_widths.c` | PASS | FAIL | FAIL | **16 CAUGHT / 0 MISSED**; each mutant fails EXACTLY its own row's function (`@nm_<row>`, map in `mut16.txt`) |
+| `cq_theta_nomerge.c` (Phase 2) | PASS | FAIL | FAIL | 1 CAUGHT (si32) / 15 MISSED — the reviewers' finding, reproduced |
+
+Each mutant deletes one token from the COMMITTED header (1 line changed, checked). `frontend-lit` runs
+both fixtures.
+
+### 10.5 Over-claims corrected at the source (r1A F-r1A-8, r1B F-r1B-6, P3)
+
+* `include/CQ.h`: "`nomerge` keeps both calls" → **for DIRECT calls**; a new block names what it does
+  NOT close (bd `4e4p`, bd `uw5u`) and prices the costs (the restream; the over-declines bd `cx6j` and
+  bd `4l5q`; the D→A moves).
+* `docs/frontend.md` §3.1: the same, in full — the two open P1s, the four priced costs (with the ternary
+  as the accepting spelling where one exists), and the `cq_measure` ground (below); §8's "CQ.h forbids
+  it" now says "for DIRECT calls".
+* `ArmClassify.cpp` F2 header (my Phase-2 paragraph): "That class is closed UPSTREAM" → "only PARTLY",
+  naming both routes. `tests/frontend/cq_theta_nomerge.c` header: direct calls only.
+* This record: §3 row B "closes the class? YES" → "YES for the 19 measured members, NOT the class"; the
+  §9.6 ternary paragraph **WITHDRAWN** (it claimed the arg-0 `select` fold "changes nothing observable" —
+  false for a quantum `s`, r1A F-r1A-2, analytic P(1) 0.262 vs 0.515; that is bd `uw5u`); §9.2's `_ne`
+  angle now the exact hex `-0x1.3333333333334p-1` (r1B F-r1B-7); §9.7's "will DIVERGE" → VACUOUS.
+* **r1A F-r1A-7** — `cq_measure` stays mergeable, and the stated ground is now the COHERENT model (LLVM
+  merges two measures only when their operand VALUES agree on every path; under coherent control the two
+  branches' outcome projectors then coincide), not "the register is in an eigenstate" (false for r1A's
+  `mreg`). Called out as an unruled modelling choice tied to bd `yiid` — in §9.6, `docs/frontend.md` and
+  `CQ.h`.
+
+### 10.6 r1A F-r1A-6 and the r1B P3s
+
+* `…_nomerge_noregion_pin.ll`: RETIREMENT TRIGGER added — the day the two-rail clause lifts, the module
+  must STILL decline, because the true edge pins the LIVE `%t`; the replacement must ask F2 on each ARM's
+  edge. Never an accept that prepares a fresh |5⟩.
+* **r1B F-r1B-5** — `tools/loop_twin_matrix.py`: `rifelse` removed from `RY_DECLINE_REGION` (now
+  `("rcond",)`) into its own sub-grid **E1** (`RY_IFELSE_REGION`, 24 cells: A-star 5, RGATE 4, C 12, D 3 —
+  r1B's set); `ry_cells()` 118 → 141, total 382 → **405**, sizes re-asserted. The 23 NEW rows were ADDED
+  BY HAND to `loop_twin_matrix.expected.txt` (never `--regenerate`) from `fmt3_probes/rifelse_rows.py`,
+  which runs the tool's own `ry_cells()`/`run_cell`/`verdict()`: 24 cells, **0 failure reports**,
+  14 ACCEPT-IDENTICAL / 8 DECLINE-BOTH / 2 DECLINE-BOTH-DIFFERENT — exactly r1B's counts; the 9 cells with a
+  committed `req` twin carry the twin's verdict cell for cell (the other 15 have none committed). The
+  existing row `m_none_rifelse_none_none_none ACCEPT-IDENTICAL` is unchanged. A first full run on the new
+  grid (before the rows were added) failed on exactly those 23 `NEW CELL` rows and nothing else (read from
+  its output before a second, stopped run interleaved into the same file; that file is garbled and NOT
+  committed). The committed evidence that no other cell moved is the post-add run
+  `loop_twin_matrix.R2b.txt`: every one of the 405 cells matches the expected table, whose only change is
+  the 23 added rows.
+* **r1B F-r1B-4** — bd `gjn2` note corrected: `angle_select_twin_matrix.py` goes VACUOUS
+  (`DEGENERATE-FOLD`, rc 0), not divergent; the fix belongs to whoever next runs it.
+
+### 10.7 What I ran, literally (round 2)
+
+Binaries (merged tree, re-hashed at the end): `cq-opt` `ac02fafabb9e62b184d54b8a…` (= main `ba4fdad4`'s,
+bit for bit), `libCQPass.so` `6fe5ee7740ff888f85a4e96c…`, `cq-opt-debugalloc` `c7bae2a69c1dd80e29b3fa2c…`.
+The configured stage-1 cache key equals `s1_cache_key.py` over the committed headers (`dc88144f…`).
+Box load 110–180 throughout (other sessions); every run at `-j4` or less.
+
+* **Header A/B** (§10.2): single-TU 656 jobs / 630 compiled on both / 26 not swept; multi-TU 38/38.
+  NULL first, 0/0 both. REAL after the respell: 5 movers (3 STREAM + 2 D→A), 0 A→D; multi 0.
+* **Mutation matrix** (§10.4): 16/16 CAUGHT for the widths fixture, each on its own row; controls
+  NULL-pass / ALL-fail / OLD-fail for both fixtures.
+* **`e2e-loop-twin-matrix`**, as the tool with `--jobs 3`: first run on the 405-cell grid FAILED on exactly
+  the 23 `NEW CELL` rows (nothing else moved); after the rows were added by hand: **405 cells, all match
+  the expected table, 70 quarantined cells diverge with their pinned signature, 4/4 boundary controls,
+  rc 0** (`fmt3_probes/loop_twin_matrix.R2b.txt`). `loop_twin_matrix_quarantine_test.py`: 58 cases,
+  0 failures.
+* **`lit -j4 ir-pass/test`**: **2455 discovered, 2454 passed, 1 XFAIL** (`lowering_invert_add_i32.ll`),
+  0 failed, 321.9 s.
+* **ctest** `-R 'frontend|angle-select|stateprep|inplace|z0re|loop-twin-quarantine|railbank-register'
+  -E 'e2e-loop-twin-matrix$' -j3`: **87/87 passed** (frontend-lit runs both nomerge fixtures; the 14
+  angle-select entries; the in-loop Ry if/else pair and its twin gate; the 15 z0re entries; the two
+  railbank register-twin gates, which compile C with the new header). Earlier in the round, after the
+  respell: `-R z0re` 15/15.
+* `update_code_map.py` + `--check`: rc 0, regenerated from a clean index (804 / 6399).
+* **NOT RUN**: full `ctest -j6` (Rule 19 — the merge gate on `main`); allocator sweeps and
+  `cq-opt-equivalence-full` (no pass code changed; the binaries are main's); `angle_select_twin_matrix.py`
+  and `inplace_twin_matrix.py` (instruments, not gates; the former is VACUOUS under the new header, bd
+  `gjn2`); anything on bd `4e4p` / `uw5u` / `4l5q` / `cx6j` (owner: out of this track).
+
+### 10.8 ATTACK FIRST (round 2)
+
+1. The sub-grid E1 rows were added by hand from a script that calls the tool's own functions — attack the
+   script (`rifelse_rows.py`): a cell it could have mis-built would be blessed. The full-matrix run's
+   `NEW CELL` list (23, exactly the new names) and the post-add green run are the cross-check.
+2. The z0re respell: the ternary is argued "same IR, no merge"; the goldens are byte-unchanged and 15/15
+   z0re entries pass — attack a ternary spelling whose stage 1 differs from the old fold (none found).
+3. `cq_theta_nomerge_widths.c` pins the ATTRIBUTE per row, not the fmt3 hazard per row; the hazard is
+   pinned at si32 only (`cq_theta_nomerge.c`) and at the IR level. A width where the attribute is present
+   but the fold still happens by another route would pass both.
+4. The four open beads (`4e4p`, `uw5u`, `4l5q`, `cx6j`) are unchanged by design; the text now says so in
+   `CQ.h`, `docs/frontend.md`, `ArmClassify.cpp` and here — check that no remaining sentence anywhere
+   still says the class is closed.
+

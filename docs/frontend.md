@@ -258,15 +258,52 @@ of two rails / a rotation on the condition's wire) instead of accepting a differ
 program. The measurements are in
 `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/TRACK_FMT3.md`.
 
-**The accepted cost.** `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);` — an
-if/else over **one** register — used to be folded into one call with a *selected
-angle* (the Ry stem of the angle select). The if/else spelling no longer folds: it
-stays an if/else and lowers as two controlled Ry, the same unitary. The **ternary**
-spelling `r = cq_theta(r, c ? A : B);` produces the select-angle call directly (no
-merge is involved) and still reaches the angle select's by-difference Ry stem,
-byte-identical to what the folded if/else used to give. `cq_phi` and `cq_measure` do **not** carry
-`nomerge`: a branch phase has no register whose identity a merge could confuse, so
-`if (c) cq_phi(A); else cq_phi(B);` still folds to `cq_phi(c ? A : B)`.
+**What `nomerge` does NOT close — two open P1s, both PRE-EXISTING.** It closes the
+fold for **DIRECT calls** to the `cq_theta_*` declarations only. clang puts
+`nomerge` on each CALL SITE that names the attributed declaration; it does not reach
+the LLVM declaration itself. So:
+
+- **bd `4e4p`** — a call through a FUNCTION POINTER (`int (*f)(int, double) =
+  cq_theta_si32;`, `(&cq_theta_si32)(…)`, a higher-order helper
+  `apply(cq_theta_si32, …)`) is turned back into a direct call by `-O1` *without*
+  the attribute, and the fmt3 fold returns byte-for-byte.
+- **bd `uw5u`** — `cq_theta((t == s) ? t : s, θ)` (or the same written as an
+  if/else of assignments before one call) is folded by InstSimplify to
+  `cq_theta(s, θ)` with **no merge at all**. When `s` is quantum that turns a
+  rotation of a fresh copy into an in-place rotation of `s` — a different unitary —
+  and the pass's own dead-cone stage performs the same fold. No header attribute can
+  reach it.
+
+**The priced costs** (all measured; the owner accepted option B with them):
+
+- **The restream.** `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);` — an
+  if/else over **one** register — used to be folded into one call with a *selected
+  angle* (the Ry stem of the angle select). The if/else spelling no longer folds: with
+  a **quantum** condition it stays an if/else and lowers as two controlled Ry, the
+  same unitary. The **ternary** spelling `r = cq_theta(r, c ? A : B);` produces the
+  select-angle call directly (no merge is involved) and still reaches the angle
+  select's by-difference Ry stem, byte-identical to what the folded if/else used to
+  give.
+- **bd `cx6j` (over-decline)** — with a **classical** condition inside a loop,
+  `if (i & 1) p = cq_theta(p, .9); else p = cq_theta(p, .3);` now DECLINES
+  (`loop-carried tainted value crosses iterations`); so does an if/else whose two
+  arms prepare the same literal (`r = cq_theta(5, .9)` in both, beside other work).
+  The ternary spelling still accepts.
+- **bd `4l5q` (over-decline)** — a legitimate common-code merge on ONE register, e.g.
+  `if (c) { r = Ry(r, .9); r = Ry(r, .1); } else { r = Ry(r, .1); }`, used to be
+  sunk into the correct diamond and now DECLINES.
+- **Declines that became accepts** (all measured correct against their twins): the
+  in-loop if/else of two Ry on one register under a quantum condition, and a family
+  of flat programs the in-place Ry arm can lower but the angle select could not
+  (a trailing non-diagonal gate on the condition register, run-time angles,
+  sequential if/else regions sharing one compare).
+
+`cq_phi` and `cq_measure` do **not** carry `nomerge`: a branch phase has no register
+whose identity a merge could confuse, so `if (c) cq_phi(A); else cq_phi(B);` still
+folds to `cq_phi(c ? A : B)`; and LLVM merges two `cq_measure` calls only when their
+operand VALUES agree on every path, which under CQ's coherent-control model leaves
+the outcome distribution unchanged (the unruled question of whether a measurement
+on ONE branch should leave a which-branch record belongs to bd `yiid`).
 
 A compiler without `nomerge` is refused with an `#error` rather than silently
 re-opening the merge.
@@ -936,7 +973,9 @@ suppress the vectorizers while keeping the rest of `-O3` active.
 Stage-1 at `-O1` itself: **SimplifyCFG merges identical calls across the two arms
 of a branch** (hoist/sink-common-insts) and so can delete a branch whose arms only
 became identical because IPSCCP substituted a pinned register. For `cq_theta` that
-is a miscompile, and CQ.h forbids it with `nomerge` (§3.1, "Why `nomerge`").
+is a miscompile, and CQ.h forbids it with `nomerge` for DIRECT calls (§3.1, "Why
+`nomerge`" — a call through a function pointer escapes it, bd `4e4p`, and the
+`select` fold at arg-0 needs no merge at all, bd `uw5u`).
 
 Raising the Stage-1 default above `-O1` requires a regression test
 matrix: small CQ programs compiled at each `-O` level, lowered IR

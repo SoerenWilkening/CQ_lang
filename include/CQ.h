@@ -49,17 +49,33 @@ extern "C" {
    simplifyWithOpReplaced) produces the SAME module from a source whose
    rotated register is NOT the compare's operand, so the two readings cannot
    be told apart in IR by anything, and neither from the legitimate one.
-   `nomerge` keeps both calls and the branch; the pass then sees the shape
-   and declines it (nested control / two-rail if/else / 2c) instead of
-   silently accepting a different program.
+   For DIRECT calls, `nomerge` keeps both calls and the branch; the pass then
+   sees the shape and declines it (nested control / two-rail if/else / 2c)
+   instead of silently accepting a different program.
 
-   ⚠ COST, ACCEPTED BY THE OWNER: the IF/ELSE spelling over ONE register,
-   `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);`, no longer folds into
-   one call with a SELECTED ANGLE; it lowers as two controlled Ry — the same
-   unitary. The TERNARY spelling `r = cq_theta(r, c ? A : B);` still produces
-   the select-angle call directly (no merge needed) and still reaches
-   AngleSelectEmit's by-difference Ry stem. `cq_phi` and `cq_measure`
-   deliberately do NOT carry `nomerge` (TRACK_FMT3.md §9.6).
+   ⚠ WHAT IT DOES NOT CLOSE (two open P1s, both PRE-EXISTING): clang puts
+   `nomerge` on each CALL SITE naming these declarations, not on the LLVM
+   declaration, so a call through a FUNCTION POINTER (`f = cq_theta_si32;`,
+   `(&cq_theta_si32)(…)`, a higher-order helper) reaches -O1 without it and the
+   fold returns (bd 4e4p); and `cq_theta((t == s) ? t : s, θ)` is folded to
+   `cq_theta(s, θ)` with NO merge at all, which for a quantum `s` is a different
+   unitary (bd uw5u). Neither is reachable by a header attribute.
+
+   ⚠ COST, ACCEPTED BY THE OWNER (docs/frontend.md §3.1 prices each):
+   - the IF/ELSE spelling over ONE register under a QUANTUM condition,
+     `if (c) r = cq_theta(r, A); else r = cq_theta(r, B);`, no longer folds into
+     one call with a SELECTED ANGLE; it lowers as two controlled Ry — the same
+     unitary. The TERNARY spelling `r = cq_theta(r, c ? A : B);` still produces
+     the select-angle call directly (no merge) and still reaches
+     AngleSelectEmit's by-difference Ry stem;
+   - over-declines: that if/else under a CLASSICAL condition inside a loop, and
+     an if/else preparing the same literal on both arms (bd cx6j); a legitimate
+     common-code merge on ONE register (bd 4l5q);
+   - some programs moved DECLINE → ACCEPT, measured correct against their twins
+     (the in-loop Ry if/else, flat programs the in-place Ry arm lowers).
+   `cq_phi` and `cq_measure` deliberately do NOT carry `nomerge`
+   (TRACK_FMT3.md §9.6: a merged measure keeps the outcome distribution under
+   CQ's coherent-control model, an unruled choice tied to bd yiid).
 
    ⚠ A compiler without the attribute is REFUSED below rather than silently
    re-opening the merge: CQ's stage 1 is stock clang, where it exists. */

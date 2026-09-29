@@ -1,0 +1,24 @@
+m_none_rifelse_none_none_none            DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_ry_rifelse_none_none_none              DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_none_rifelse_ry_none_none              DECLINE-BOTH	cq controlled lowering: condition predates a non-diagonal gate under quantum control
+m_add_rifelse_none_none_none             UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rifelse_add_none_none             UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rifelse_none_none_rypre           DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_none_rypost          DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_none_rzpost          DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_none_addpost         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_rpremark_none        DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_rpremark_rypost      DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_rpostmark_none       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_rpostmark_rypost     DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_rbodyread_none       DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_rbodyread_rypost     DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rpremark_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_add_rpremark_rypost       DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_add_rpostmark_none        UNROLLED-ONLY	cq controlled lowering: control flow inside a loop body under quantum control
+m_none_rifelse_add_rpostmark_rypost      DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_rifelse_add_rbodyread_none        DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rbodyread_rypost      DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_premark_none         DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_postmark_none        DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+m_none_rifelse_none_bodyread_none        DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control

@@ -5226,13 +5226,17 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 #     from hand IR and is pinned by lit (`spec_*_side_door{,_twin}.ll`).
 #   * loop — ROLLED vs HAND-UNROLLED, a seed the loop re-computes every trip.
 # The f64 slice has no pair: it pins the fp width of the same accept.
-# ⚠ RETIREMENT TRIGGER (L8) — bd fmt3 OPTION B (owner 2026-09-28, lands AFTER z0re):
+# ✅ RETIREMENT TRIGGER FIRED (L8) — bd fmt3 OPTION B landed after z0re (2026-09-29).
 # `__attribute__((nomerge))` on `cq_theta_*` stops `-O1` merging two thetas, so the
-# IF/ELSE spelling in `slice_z0re_angle_select_runtime_base*` no longer folds to an
-# angle select (it meets the two-rail clause). At that landing RESPELL those sources as
-# TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge, the goldens and the
-# twin gates stay byte-for-byte (measured, Rule-13 r2 F-r2-1) — do not turn them into
-# declines. The S3 runtime-base admission stays reachable from plain C via the ternary.
+# IF/ELSE spelling that `slice_z0re_angle_select_runtime_base{,_exact,_spec}.c` used
+# stopped folding to an angle select and declined at the two-rail clause (measured,
+# fmt3 round-2 header A/B on the merged tree: exactly those 3 slices A→D). They were
+# RESPELLED AS TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge — and the
+# goldens and the twin gates are byte-for-byte unchanged (measured, and r1B F-r1B-2 /
+# z0re r2 F-r2-1 measured it before). The S3 runtime-base admission is reachable from
+# plain C via the ternary. The if/else spelling's decline is pinned at the IR level by
+# `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`, whose own
+# trigger names bd gjn2 (teaching the pass the unmerged if/else by difference).
 add_test(NAME e2e-slice-z0re-runtime-seed-prep
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

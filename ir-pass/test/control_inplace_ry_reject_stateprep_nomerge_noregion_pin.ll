@@ -19,6 +19,18 @@
 ; arms are identical literal-5 preps — and an if/else of two preps under one
 ; condition is refused (drbq.13 Q4, owner ruling "two rails = decline").
 ;
+; ⚠ RETIREMENT TRIGGER (L8; Rule-13 r1A F-r1A-6). This file declines ONLY because
+; the two-rail clause speaks first. The day that clause lifts — drbq.13 Q4 is an
+; owner ruling that can be revisited, and bd `gjn2` works right next to it — this
+; module is two IDENTICAL literal-5 preps under `(q & -4) == 20`, which a
+; one-rail if/else prep lowering would happily emit as `alloc(5); Ry(.9)` on both
+; edges: the fmt3 miscompile again (`t` measured unrotated). It must still
+; DECLINE, and the reason it must is that the TRUE edge pins the LIVE register
+; `%t` (= `sdiv %q, 4`, defined after the region and measured) to the seed 5 — so
+; whatever replaces the two-rail clause must ask F2's question on EACH ARM'S edge
+; (the arm-edge pin, not only the region edge). Re-derive the verdict then; do not
+; delete this file, and never let it become an ACCEPT that prepares a fresh |5>.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; ⚠ A `DS_Error` decline writes ZERO bytes to stdout; the property is pinned by the
 ; `not` on the RUN line, not by any IR-text check.

@@ -2,7 +2,11 @@
 
 // bd test_C_libtooling-fmt3 (owner ruling 2026-09-28, option B): every
 // `cq_theta_*` declaration in CQ.h carries `nomerge`, so `-O1` can no longer MERGE
-// two `cq_theta` calls that CQ reads as DIFFERENT registers.
+// two DIRECT `cq_theta` calls that CQ reads as DIFFERENT registers. ⚠ Direct calls
+// only: clang puts `nomerge` on the call site, so a call through a function pointer
+// still merges (bd `4e4p`), and the arg-0 `select` fold needs no merge (bd `uw5u`) —
+// both open, PRE-EXISTING. This file pins only `cq_theta_si32`'s token;
+// `cq_theta_nomerge_widths.c` pins all 16.
 //
 // WHY. IPSCCP substitutes a register pinned on an edge (`t := 5` under `t == 5`)
 // into the arm's `cq_theta`; if the other arm is `cq_theta(5, θ)` the two calls

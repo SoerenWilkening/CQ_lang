@@ -932,15 +932,20 @@ CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
 // `n17.c`, `n17f.c`) — and, worse, the branch whose edge proved the pin was
 // ERASED, so this function's question (asked on the REGION's own two edges) could
 // not see it at all, and in the no-region members there was no region to ask
-// about. That class is closed UPSTREAM, not here: `include/CQ.h` puts `nomerge`
-// on every `cq_theta_*`, so the arms are never merged and the erasing fold never
-// happens (owner ruling, option B). What survives of this paragraph is the
-// DELETED-register residual (§14.11 Q3) for the non-merge relationship folds,
-// still a measurement and not a theorem. The other premise above — "the seed can
-// only BE a fold if `clang` PERFORMED that fold [with this machinery]" — also
-// assumed the pinning edge is the region's own; with the merge gone that
-// assumption is what `nomerge` now guarantees, and a future `-O1` transform that
-// erases a branch WITHOUT merging calls would re-open it (retirement trigger).
+// about. That class is closed UPSTREAM, not here, and only PARTLY: `include/CQ.h`
+// puts `nomerge` on every `cq_theta_*`, so two DIRECT calls are never merged and
+// the erasing fold does not happen for them (owner ruling, option B). ⚠ It is NOT
+// closed (fmt3 round 2, Rule-13 r1A): clang puts `nomerge` on the CALL SITE, so a
+// call through a FUNCTION POINTER is merged exactly as before (bd `4e4p`, P1,
+// PRE-EXISTING); and the arg-0 `select (t == s), t, s` → `s` fold erases a quantum
+// register's identity with NO merge at all (bd `uw5u`, P1, PRE-EXISTING — the
+// pass's own `DeadValueLiveness` fold performs it too). What else survives of this
+// paragraph is the DELETED-register residual (§14.11 Q3) for the non-merge
+// relationship folds, still a measurement and not a theorem. The other premise
+// above — "the seed can only BE a fold if `clang` PERFORMED that fold [with this
+// machinery]" — also assumed the pinning edge is the region's own; `nomerge`
+// guarantees that only for direct calls, and any `-O1` route that erases a branch
+// WITHOUT merging two direct calls re-opens it (retirement trigger; 4e4p is one).
 //
 // MONOTONE, exactly as before: this block only ever DECLINES. A range that is
 // too WIDE loses a decline (the residual); a range that is too NARROW, or a
@@ -2028,15 +2033,17 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 //     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
 //     this pass can ask of the IR in front of it separates the hazard from the
 //     program the module denotes. The disposition is therefore at the SOURCE
-//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) WILL put
-//     `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
-//     that `-O1` can no longer merge the two thetas and the inner branch
-//     survives to reach F2 (not yet in `CQ.h` at this commit). The IR-level fixtures
+//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28, LANDED after
+//     z0re, 2026-09-29) puts `__attribute__((nomerge))` on the `cq_theta_*`
+//     declarations in `CQ.h`, so that `-O1` can no longer merge two DIRECT calls
+//     and the inner branch survives (measured: a1/a3/a5 now decline `nested control
+//     flow`). The IR-level fixtures
 //     `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`
 //     pin the post-fold modules as ACCEPTS on exactly that ground — the module is
-//     the legitimate program. ⚠ WINDOW: fmt3 lands AFTER z0re, so until it does
-//     the C spellings a1/a3/a5 still fold and still accept (the same fold with a
-//     LITERAL seed accepts on the oracle today — fmt3's own population).
+//     the legitimate program. ⚠ THE WINDOW IS CLOSED ONLY FOR DIRECT CALLS: clang
+//     puts `nomerge` on the call SITE, so the same programs written through a
+//     FUNCTION POINTER still fold and still accept (fmt3 r1A `fpzt_a1`, measured on
+//     the composed binary — bd `4e4p`, P1, PRE-EXISTING).
 // So the question is ASKED ANYWAY for the region's own edges, as the relation
 // itself and with LLVM's own implication engine rather than a hand-picked shape
 // list (L5): on each edge, is some live tainted value of the seed's type
@@ -2072,12 +2079,14 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // now-identical literal thetas) ERASES the branch that pinned the register.
 // Neither this relational half nor the constant half looks at an erased branch:
 // this function is anchored on the REGION'S branch, and the erased branch leaves
-// nothing in the module to anchor on. This route WILL BE closed by bd `fmt3`
-// option B (`nomerge` on `cq_theta_*`, owner 2026-09-28) once it lands — it
-// removes the MERGE at the C level — and it is OPEN until then (the WINDOW
-// above): at this commit `CQ.h` carries no `nomerge` (Rule-13 r2 F-r2-2). If
-// `nomerge` is later dropped from `CQ.h`, or a route is found that erases a
-// pinning branch WITHOUT merging two thetas, this function needs a question
+// nothing in the module to anchor on. This route IS closed for DIRECT calls by bd
+// `fmt3` option B (`nomerge` on `cq_theta_*`, owner 2026-09-28, landed 2026-09-29) —
+// it removes the MERGE at the C level — and it stays OPEN through a FUNCTION POINTER
+// (bd `4e4p`: the attribute is on the call site, not the declaration). A route that
+// erases the register's identity WITHOUT merging two thetas exists too: the arg-0
+// `select (t == s), t, s` → `s` fold (bd `uw5u`, P1, PRE-EXISTING — no header can
+// reach it). If `nomerge` is later dropped from `CQ.h`, or another route is found
+// that erases a pinning branch WITHOUT merging two thetas, this function needs a question
 // asked of the seed's own provenance, not of the region's edges.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
