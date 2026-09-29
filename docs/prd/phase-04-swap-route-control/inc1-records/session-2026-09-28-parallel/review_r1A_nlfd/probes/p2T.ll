@@ -1,0 +1,19 @@
+target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
+target triple = "x86_64-apple-macosx16.0.0"
+declare i32 @atoi(ptr nocapture noundef)
+declare i32 @cq_theta_si32(i32 noundef, double noundef)
+declare void @cq_phi(double noundef)
+declare i32 @cq_measure_si32(i32 noundef)
+define i32 @main(i32 noundef %argc, ptr noundef %argv) {
+e:
+  %a1p = getelementptr inbounds ptr, ptr %argv, i64 1
+  %a1 = load ptr, ptr %a1p
+  %m = call i32 @atoi(ptr noundef %a1)
+  %m7 = and i32 %m, 7
+  %q = call i32 @cq_theta_si32(i32 noundef %m7, double noundef 5.000000e-01)
+  %r = add nsw i32 %m, 1
+  %q2 = call i32 @cq_theta_si32(i32 noundef %q, double noundef 0x3FE6666666666666)
+  %z = call i32 @cq_measure_si32(i32 noundef %q2)
+  %s = add nsw i32 %z, %r
+  ret i32 %s
+}
