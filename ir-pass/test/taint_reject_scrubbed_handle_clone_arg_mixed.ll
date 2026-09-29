@@ -8,8 +8,18 @@
 ; stream (bd cepm's over-decline, removed for a callee that ignores the argument) —
 ; pinned by `spec_accept_dropped_arg_scrubbed_handle_branch.ll`.
 ; The added lines in `@h` (a branch-only read — see ROUND 2 below) keep the parameter live, so this file still reaches the fence it was written for. That
-; residual population — a callee that READS the argument yet returns classical — is
-; IR-ONLY from C at -O1 (the library TU deletes a dead read). The `env
+; residual population — a callee that READS the argument yet returns classical — was
+; called "IR-ONLY from C at -O1 (the library TU deletes a dead read)" here, and that is
+; FALSE (bd test_C_libtooling-cepm, 2026-09-28): a callee whose read reaches a liveness
+; ROOT the pass cannot clear — a call to a function in ANOTHER TU whose own callee is in
+; yet another TU (`g(a); return k + 1;`, `-O1` infers `g` nothing) — keeps the parameter
+; live from C (cepm_probes/, battery `br`…`z3`). That population no longer reaches this
+; fence at all: since bd cepm propagation asks `predictReturnTainted` and leaves such a
+; call's RESULT classical (`spec_accept_predicted_classical_*.ll`). THIS subject still
+; reaches it because the predictor treats ANY tainted conditional terminator as a tainted
+; return — even this EMPTY diamond — so `t` is still tainted conservatively; a predictor
+; that asks whether the branch reaches the return retires this subject (L8: re-derive it,
+; e.g. from `spec_reject_predicted_classical_inner_clone.ll`'s inner-clone shape). The `env
 ; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
 ; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
 ; and must re-derive it (CLAUDE.md L8).

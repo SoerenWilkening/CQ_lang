@@ -1,0 +1,5 @@
+tmpdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/fmt3multiyuvq3llt
+denominator: 38 run_slice_multi.sh entries parsed; 38 built on BOTH headers; 0 failed to build
+CQ-TU stage-1 movers (normalised): 1; stage-2 verdict/stream movers: 1
+S1MOVE e2e-slice-z0re-angle-select-runtime-base-spec (0, '39e5f2c58d0e4b52', '') (1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq controlled lowering: if/else state prep allocates two rails under quantum control')
+VMOVE e2e-slice-z0re-angle-select-runtime-base-spec (0, '39e5f2c58d0e4b52', '') (1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq controlled lowering: if/else state prep allocates two rails under quantum control')

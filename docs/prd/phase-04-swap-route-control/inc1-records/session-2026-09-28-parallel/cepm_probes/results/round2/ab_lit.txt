@@ -1,0 +1,48 @@
+[lit] denominator: 2430 modules (0 missing/0-byte excluded)  A=cq-opt.main_9a230646  B=cq-opt.subj3
+[lit] NULL CONTROL (subject twice): 0 of 2430 differ
+[lit] accepts A=1226 B=1240; movers 15 of 2430: {'D->A': 14, 'STRING': 1}
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_bank.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq rail bank: a cell parks a value that is not a rail handle')
+    B=(0, '7d47a361c8d04efe', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_branch.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control')
+    B=(0, '98a9d92537a0fa21', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_classical_phi.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control')
+    B=(0, 'c67f6984f68422e2', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_clone_arg.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, 'c75d837076ad75ea', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_fp_return.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control')
+    B=(0, '2c13a9f8628219ec', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_lift.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi')
+    B=(0, 'f1538a10b1b223cd', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_loop_body_branch.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: quantum-quantum compare condition under quantum control')
+    B=(0, '63520fe4d503e545', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_loop_break.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: loop under quantum control')
+    B=(0, 'd823a6aff905c660', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_measured_callee.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, 'd8359edf4d9ab602', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_phase.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, 'e1c357269655445f', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_return.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary')
+    B=(0, 'ba9b1cbfcf67ae1e', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_round2_site.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, '3af7906388dafdb0', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_select.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, 'ff2a35e688882afa', '')
+[lit] D->A	$W/ir-pass/test/spec_accept_predicted_classical_switch.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control')
+    B=(0, 'e35435ad9547ecb3', '')
+[lit] STRING	$W/ir-pass/test/spec_reject_predicted_classical_stale_record.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagonal gate')
+    B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi')

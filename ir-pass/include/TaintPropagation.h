@@ -924,6 +924,37 @@ struct TaintSet {
   // `declineScrubbedHandleReads` — the scrub-direction twin of CLAUDE.md L1.
   llvm::SmallVector<llvm::WeakVH, 4> ScrubbedByReturnTaint;
 
+  // bd `test_C_libtooling-cepm` round 1b — every would-be Phase-6 site whose RESULT
+  // a drain left CLASSICAL on `predictReturnTainted`'s word
+  // (`specCallResultPredictedClassical`, SpecializeClone.h), mapped to the drain
+  // GENERATION that first did so (`SpecPredictGeneration` below). Read by
+  // `propagateWorklist` for two purposes, both in TaintPropagation.cpp:
+  //   * the SETTLE step at the end of every drain: a site recorded in THIS
+  //     generation whose POSSIBLE final mask (its tainted arguments plus every
+  //     argument `LaterTaintOracle::mayGain` says a later drain can taint: its
+  //     backward slice reaches a tainted branch that SELECTS a φ's incoming)
+  //     predicts a quantum return is tainted now — the oracle's behaviour for a
+  //     round-2 MASK-GROWTH site;
+  //   * the STICKY rule in a later-generation drain: a site recorded EARLIER is
+  //     never tainted by a later drain (stages in between read it as classical);
+  //     if its grown mask then makes the clone return a register, `specialize()`
+  //     declines loudly (`kMsgPredictedClassicalQuantum`).
+  // Self-cleaning (`ScrubOnDelete.h`): a deleted call drops its key.
+  ScrubMap<const llvm::CallInst *, unsigned> SpecPredictedClassical;
+  // The drain generation: 0 for the one drain each `propagate()` runs,
+  // incremented at the entry of every GROWTH drain (`propagateWorklist` with
+  // `skipRuntimeCalls` — the round-2 reseed, its onward fixpoint,
+  // `propagateFromSeeds`), each of which runs after some stage has read the taint
+  // set. ⚠ Round 1b said "0 for every drain `propagate()` runs (nothing reads taint
+  // between them)" — FALSE as written (Rule-13 r1A F-r1A-4: at least
+  // `dropDeadCallArguments`, `promoteFp80Union`, `flattenPredMuxRegions`,
+  // `unrollConstTripLoops` and `recognizeCtlzIdiomLoops` read and act on the set
+  // between successive `propagate()` calls). The real ground: every
+  // `taint = propagate(M, wd)` builds a FRESH `TaintSet` containing exactly ONE
+  // generation-0 drain, so no record outlives the set a stage read; the other
+  // three `propagateWorklist` call sites are all growth drains.
+  unsigned SpecPredictGeneration = 0;
+
   // bd `test_C_libtooling-l3oi` (Rule-13 round 7 F-R7-1) — the SPECIALIZER'S OWN
   // record of every function it built, with the argument slots that are QUANTUM
   // HANDLES in it: a clone `__cq_q_*` maps to its detection-time `SpecMask`; its
@@ -1614,6 +1645,17 @@ TaintSet propagate(llvm::Module &M, WidthDispatch &wd);
 bool declineStaleTaintSet(llvm::Module &M, WidthDispatch &wd,
                           const TaintSet &taint);
 
+// Does `I` read at least one value in `taint.Tainted` (any operand — for a call,
+// its arguments, bundle operands and the called operand)? The OPERAND test, never
+// the result's own taint. ⚠ Exported by bd `test_C_libtooling-cepm`, because since
+// that change a call's RESULT taint is no longer a proof about its INPUTS: a
+// would-be Phase-6 site whose callee is predicted to return a classical value
+// (`specCallResultPredictedClassical`, SpecializeClone.h) reads a quantum argument
+// and is NOT itself tainted. A predicate that used "the call is untainted" to mean
+// "every input is classical" must ask this instead (`classifyClassicalCallArm`, the
+// one such predicate found — CLAUDE.md L3).
+bool readsTaintedValue(const llvm::Instruction &I, const TaintSet &taint);
+
 // bd `test_C_libtooling-3jru` — TAINT ACROSS A CALL RETURN. True iff some `ret`
 // of the defined function `F` returns a value in `taint.Tainted` (a quantum
 // register's HANDLE). The closure itself lives in `propagateWorklist` (drained
@@ -1860,7 +1902,9 @@ void repropagateControlMerges(llvm::Module &M, WidthDispatch &wd,
 // (tainted) condition. A `phi` is NOT a user of the branch condition, so a
 // constant-armed merge `phi` is UNTAINTED; a `select` IS one, so the identical
 // mux written in the source is TAINTED (`propagateWorklist` taints every user of
-// a tainted value bar a measure sink and an angle-only edge). Recording only the
+// a tainted value bar a measure sink, an angle-only edge and — since bd cepm — the
+// RESULT of a would-be Phase-6 call predicted to return a classical value; a
+// `select` is none of those, Rule-13 r1B F-r1B-5). Recording only the
 // select — or, worse, copying the `phi`'s taint — leaves its downstream users
 // classical, and an `add nsw i32 %m, %out` over a 4.4 merge OUT-RAIL then reaches
 // the backend UN-LOWERED: it adds the runtime HANDLE TAG instead of the

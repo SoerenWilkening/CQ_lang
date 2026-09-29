@@ -1,0 +1,97 @@
+denominator: 484 fixtures (subset $S/cepm/mut/subset.txt)
+cq-opt.N0: denominator 484 fixtures: {'PASS': 479, 'SKIP': 5}
+N0: MISSED (0 fixtures)
+cq-opt.M1: denominator 484 fixtures: {'PASS': 466, 'SKIP': 5, 'FAIL': 13}
+M1: KILLED (13 fixtures)
+    spec_accept_predicted_classical_bank.ll PASS -> FAIL
+    spec_accept_predicted_classical_branch.ll PASS -> FAIL
+    spec_accept_predicted_classical_classical_phi.ll PASS -> FAIL
+    spec_accept_predicted_classical_clone_arg.ll PASS -> FAIL
+    spec_accept_predicted_classical_fp_return.ll PASS -> FAIL
+    spec_accept_predicted_classical_lift.ll PASS -> FAIL
+    spec_accept_predicted_classical_loop_break.ll PASS -> FAIL
+    spec_accept_predicted_classical_phase.ll PASS -> FAIL
+    spec_accept_predicted_classical_return.ll PASS -> FAIL
+    spec_accept_predicted_classical_round2_site.ll PASS -> FAIL
+    spec_accept_predicted_classical_select.ll PASS -> FAIL
+    spec_accept_predicted_classical_switch.ll PASS -> FAIL
+    spec_reject_predicted_classical_stale_record.ll PASS -> FAIL
+cq-opt.M2: denominator 484 fixtures: {'PASS': 479, 'SKIP': 5}
+M2: MISSED (0 fixtures)
+cq-opt.M3: denominator 484 fixtures: {'PASS': 479, 'SKIP': 5}
+M3: MISSED (0 fixtures)
+cq-opt.M4: denominator 484 fixtures: {'PASS': 479, 'SKIP': 5}
+M4: MISSED (0 fixtures)
+cq-opt.M5: denominator 484 fixtures: {'PASS': 479, 'SKIP': 5}
+M5: MISSED (0 fixtures)
+cq-opt.M6: denominator 484 fixtures: {'PASS': 379, 'FAIL': 101, 'SKIP': 4}
+M6: KILLED (100 fixtures); other moves 1
+    control_classical_call_arm_accept_onward_ctl_spec_newcand.ll PASS -> FAIL
+    control_classical_call_arm_accept_onward_ctl_spec_replan.ll PASS -> FAIL
+    control_classical_call_arm_accept_onward_spec_call.ll PASS -> FAIL
+    control_classical_call_arm_accept_onward_spec_newcand.ll PASS -> FAIL
+    control_classical_call_arm_accept_onward_spec_transitive.ll PASS -> FAIL
+    control_inplace_ry_clone_base_frozen.ll PASS -> FAIL
+    control_peel_clone_measured.ll PASS -> FAIL
+    control_peel_clone_stale_mask.ll PASS -> FAIL
+    control_peel_reject_escape_clone_store.ll PASS -> FAIL
+    control_predmux_accept_i80_cmp_purecallee.ll PASS -> FAIL
+    control_predmux_accept_i80_cmp_purecallee_clonecall.ll PASS -> FAIL
+    control_predmux_accept_i80_cmp_purecallee_transitive.ll PASS -> FAIL
+    control_swap_accept_diamond_aliased_cond.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_fp_rebuilt.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_switch_nway.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll PASS -> FAIL
+    lowering_io_user_defined_callee.ll PASS -> FAIL
+    lowering_live_record_clone_call_measured_accept.ll PASS -> FAIL
+    lowering_live_record_clone_return_rail_live_accept.ll PASS -> FAIL
+    lowering_live_record_clone_return_rail_measured_accept.ll PASS -> FAIL
+    lowering_live_record_sibling_clone_arg_measured_accept.ll PASS -> FAIL
+    lowering_predmux_purecallee_memo_cost.ll PASS -> FAIL
+    lowering_predmux_speccall_flatten.ll PASS -> FAIL
+    lowering_predmux_speccall_flatten_qrom.ll PASS -> FAIL
+    lowering_reject_classical_mux_phi_lift_stale_spec_quantum_base.ll PASS -> FAIL
+    lowering_reject_lift_resweep_spec_rebuilt_consumer.ll PASS -> FAIL
+    lowering_reject_lift_resweep_surviving_consumer.ll PASS -> FAIL
+    lowering_reject_live_record_clone_call_hop.ll PASS -> FAIL
+    lowering_reject_live_record_clone_return_rail.ll PASS -> FAIL
+    lowering_reject_live_record_clone_unused_arg.ll PASS -> FAIL
+    lowering_reject_taint_escape_inmodule_body.ll PASS -> FAIL
+    lowering_volatile_arm_fold_repropagate.ll PASS -> FAIL
+    lowering_volatile_arm_fold_stale_taint_redgreen.ll PASS -> FAIL
+    lowering_volatile_constfold_arm_repropagate.ll PASS -> FAIL
+    spec_accept_blockaddress_clone_artifact.ll PASS -> FAIL
+    spec_accept_compare_body.ll PASS -> FAIL
+    spec_accept_diamond_body.ll PASS -> FAIL
+    spec_accept_diamond_fpret.ll PASS -> FAIL
+cq-opt.M7: denominator 484 fixtures: {'PASS': 455, 'FAIL': 25, 'SKIP': 4}
+M7: KILLED (24 fixtures); other moves 1
+    control_inplace_ry_clone_base_frozen.ll PASS -> FAIL
+    control_peel_reject_escape_clone_store.ll PASS -> FAIL
+    control_predmux_accept_i80_cmp_purecallee.ll PASS -> FAIL
+    control_predmux_accept_i80_cmp_purecallee_transitive.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_fp_rebuilt.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_reversed_layout.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_quantum_base_switch_nway.ll PASS -> FAIL
+    lowering_classical_mux_phi_onereg_spec_scrubbed_base_degenerate.ll PASS -> FAIL
+    lowering_live_record_clone_return_rail_measured_accept.ll PASS -> FAIL
+    lowering_predmux_speccall_flatten.ll PASS -> FAIL
+    lowering_predmux_speccall_flatten_qrom.ll PASS -> FAIL
+    lowering_reject_classical_mux_phi_lift_stale_spec_quantum_base.ll PASS -> FAIL
+    spec_accept_diamond_fpret.ll PASS -> FAIL
+    spec_accept_fp_select_return.ll PASS -> FAIL
+    spec_reject_fp_return_used_as_angle.ll PASS -> FAIL
+    spec_reject_predicted_classical_inner_clone.ll PASS -> FAIL
+    taint_reject_quantum_return_9bhg_quantum_twin.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_branch.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_branch2.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_clone_arg.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_clone_arg_branch.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_clone_arg_mixed.ll PASS -> FAIL
+    taint_reject_scrubbed_handle_mixed_select.ll PASS -> FAIL
+cq-opt.M8: denominator 484 fixtures: {'PASS': 478, 'SKIP': 5, 'FAIL': 1}
+M8: KILLED (1 fixtures)
+    spec_reject_predicted_classical_value_arm.ll PASS -> FAIL

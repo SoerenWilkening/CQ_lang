@@ -1,0 +1,111 @@
+Test project $W/build
+      Start 233: e2e-slice-spec-predicted-classical-round2
+      Start 230: e2e-slice-spec-predicted-classical-branch
+ 1/53 Test #230: e2e-slice-spec-predicted-classical-branch .............   Passed   13.56 sec
+      Start 231: e2e-slice-spec-predicted-classical-branch-twin
+ 2/53 Test #233: e2e-slice-spec-predicted-classical-round2 .............   Passed   15.44 sec
+      Start 234: e2e-slice-spec-predicted-classical-round2-twin
+ 3/53 Test #231: e2e-slice-spec-predicted-classical-branch-twin ........   Passed   12.02 sec
+      Start 235: e2e-spec-predicted-classical-round2-twin-identical
+ 4/53 Test #235: e2e-spec-predicted-classical-round2-twin-identical ....   Passed    0.04 sec
+      Start 232: e2e-spec-predicted-classical-branch-twin-identical
+ 5/53 Test #232: e2e-spec-predicted-classical-branch-twin-identical ....   Passed    0.04 sec
+      Start  13: ir-pass-scrub-on-delete-selftest-lifo
+ 6/53 Test  #13: ir-pass-scrub-on-delete-selftest-lifo .................   Passed    2.06 sec
+      Start  14: ir-pass-scrub-on-delete-selftest-sysalloc
+ 7/53 Test  #14: ir-pass-scrub-on-delete-selftest-sysalloc .............   Passed    0.05 sec
+      Start  15: taintset-scrub-guard
+ 8/53 Test #234: e2e-slice-spec-predicted-classical-round2-twin ........   Passed   14.02 sec
+      Start  16: taintset-scrub-guard-selftest
+ 9/53 Test  #15: taintset-scrub-guard ..................................   Passed   37.74 sec
+      Start  18: cq-opt-equivalence
+10/53 Test  #18: cq-opt-equivalence ....................................   Passed   74.83 sec
+      Start 118: e2e-spec-fp80-union
+11/53 Test #118: e2e-spec-fp80-union ...................................   Passed    9.22 sec
+      Start 119: e2e-spec-scrub-dangling-key
+12/53 Test #119: e2e-spec-scrub-dangling-key ...........................   Passed    8.30 sec
+      Start 120: e2e-spec-fp-arg
+13/53 Test #120: e2e-spec-fp-arg .......................................   Passed    8.71 sec
+      Start 210: e2e-slice-specialize-2file
+14/53 Test #210: e2e-slice-specialize-2file ............................   Passed    8.34 sec
+      Start 211: e2e-slice-specialize-select
+15/53 Test #211: e2e-slice-specialize-select ...........................   Passed    8.64 sec
+      Start 212: e2e-slice-specialize-twoarm-select
+16/53 Test #212: e2e-slice-specialize-twoarm-select ....................   Passed    8.41 sec
+      Start 213: e2e-slice-spec-lift-quantum-base
+17/53 Test #213: e2e-slice-spec-lift-quantum-base ......................   Passed    8.92 sec
+      Start 214: e2e-slice-spec-lift-scrubbed-elsewhere
+18/53 Test #214: e2e-slice-spec-lift-scrubbed-elsewhere ................   Passed    8.69 sec
+      Start 215: e2e-slice-spec-lift-scrubbed-elsewhere-twin
+19/53 Test #215: e2e-slice-spec-lift-scrubbed-elsewhere-twin ...........   Passed    6.41 sec
+      Start 216: e2e-spec-lift-scrubbed-elsewhere-twin-identical
+20/53 Test #216: e2e-spec-lift-scrubbed-elsewhere-twin-identical .......   Passed    0.05 sec
+      Start 217: e2e-slice-spec-dropped-arg-boolsel
+21/53 Test #217: e2e-slice-spec-dropped-arg-boolsel ....................   Passed    8.54 sec
+      Start 218: e2e-slice-spec-dropped-arg-boolsel-twin
+22/53 Test #218: e2e-slice-spec-dropped-arg-boolsel-twin ...............   Passed    6.13 sec
+      Start 219: e2e-spec-dropped-arg-boolsel-twin-identical
+23/53 Test #219: e2e-spec-dropped-arg-boolsel-twin-identical ...........   Passed    0.04 sec
+      Start 220: e2e-slice-spec-dropped-arg-inplace
+24/53 Test #220: e2e-slice-spec-dropped-arg-inplace ....................   Passed    7.97 sec
+      Start 221: e2e-slice-spec-dropped-arg-inplace-twin
+25/53 Test #221: e2e-slice-spec-dropped-arg-inplace-twin ...............   Passed    6.28 sec
+      Start 222: e2e-spec-dropped-arg-inplace-twin-identical
+26/53 Test #222: e2e-spec-dropped-arg-inplace-twin-identical ...........   Passed    0.05 sec
+      Start 223: e2e-slice-spec-dropped-arg-volatile-char
+27/53 Test #223: e2e-slice-spec-dropped-arg-volatile-char ..............   Passed    8.40 sec
+      Start 224: e2e-spec-dropped-arg-volatile-char-twin-identical
+28/53 Test #224: e2e-spec-dropped-arg-volatile-char-twin-identical .....   Passed    0.04 sec
+      Start 225: e2e-slice-spec-dropped-arg-dead-smax
+29/53 Test  #16: taintset-scrub-guard-selftest .........................   Passed  230.92 sec
+      Start 226: e2e-spec-dropped-arg-dead-smax-twin-identical
+30/53 Test #226: e2e-spec-dropped-arg-dead-smax-twin-identical .........   Passed    0.05 sec
+      Start 227: e2e-slice-spec-dropped-arg-volatile-global
+31/53 Test #225: e2e-slice-spec-dropped-arg-dead-smax ..................   Passed    8.38 sec
+      Start 228: e2e-slice-spec-dropped-arg-volatile-global-twin
+32/53 Test #228: e2e-slice-spec-dropped-arg-volatile-global-twin .......   Passed    6.43 sec
+      Start 229: e2e-spec-dropped-arg-volatile-global-twin-identical
+33/53 Test #229: e2e-spec-dropped-arg-volatile-global-twin-identical ...   Passed    0.06 sec
+      Start 242: e2e-slice-spec-dropped-arg-byval-slot
+34/53 Test #227: e2e-slice-spec-dropped-arg-volatile-global ............   Passed    9.90 sec
+      Start 243: e2e-slice-spec-dropped-arg-musttail-inner
+35/53 Test #242: e2e-slice-spec-dropped-arg-byval-slot .................   Passed    8.67 sec
+      Start 244: e2e-slice-spec-dropped-arg-musttail-inner-twin
+36/53 Test #243: e2e-slice-spec-dropped-arg-musttail-inner .............   Passed    9.31 sec
+      Start 245: e2e-spec-dropped-arg-musttail-inner-twin-identical
+37/53 Test #245: e2e-spec-dropped-arg-musttail-inner-twin-identical ....   Passed    0.05 sec
+      Start 246: e2e-slice-specialize-multiexit-fp80
+38/53 Test #244: e2e-slice-spec-dropped-arg-musttail-inner-twin ........   Passed   11.36 sec
+      Start 247: e2e-slice-specialize-fp-select
+39/53 Test #246: e2e-slice-specialize-multiexit-fp80 ...................   Passed   13.15 sec
+      Start 248: e2e-slice-specialize-fp-select-const
+40/53 Test #247: e2e-slice-specialize-fp-select ........................   Passed    9.65 sec
+      Start 249: e2e-slice-specialize-fp-select-fcmp
+41/53 Test #248: e2e-slice-specialize-fp-select-const ..................   Passed   10.40 sec
+      Start 250: e2e-slice-specialize-intrinsic
+42/53 Test #249: e2e-slice-specialize-fp-select-fcmp ...................   Passed    9.90 sec
+      Start 251: e2e-slice-spec-qram-read
+43/53 Test #250: e2e-slice-specialize-intrinsic ........................   Passed    9.26 sec
+      Start 252: e2e-slice-spec-qram-read-under-control
+44/53 Test #251: e2e-slice-spec-qram-read ..............................   Passed    6.62 sec
+      Start 253: e2e-slice-spec-qrom-read-arm-escape
+45/53 Test #252: e2e-slice-spec-qram-read-under-control ................   Passed    6.87 sec
+      Start 254: e2e-slice-specialize-multiarg
+46/53 Test #253: e2e-slice-spec-qrom-read-arm-escape ...................   Passed    6.64 sec
+      Start 255: e2e-slice-specialize-transitive
+47/53 Test #254: e2e-slice-specialize-multiarg .........................   Passed    8.39 sec
+      Start 256: e2e-slice-classical-call-under-control
+48/53 Test #255: e2e-slice-specialize-transitive .......................   Passed    9.93 sec
+      Start 258: e2e-slice-control-spec-replan
+49/53 Test #256: e2e-slice-classical-call-under-control ................   Passed    9.38 sec
+      Start 259: e2e-slice-control-spec-newcand
+50/53 Test #258: e2e-slice-control-spec-replan .........................   Passed   11.75 sec
+      Start 260: e2e-slice-control-spec-chained-ctl
+51/53 Test #259: e2e-slice-control-spec-newcand ........................   Passed   11.56 sec
+      Start 337: e2e-free-pairing-selftest
+52/53 Test #260: e2e-slice-control-spec-chained-ctl ....................   Passed   12.09 sec
+53/53 Test #337: e2e-free-pairing-selftest .............................   Passed    8.33 sec
+
+100% tests passed, 0 tests failed out of 53
+
+Total Test time (real) = 357.10 sec

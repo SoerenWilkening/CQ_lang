@@ -1,0 +1,7 @@
+pkdC mutC1: in function main i32 (i32, ptr): cq specialization: lifted callee returns a quantum register where propagation predicted a classical result
+pk1C mutC1: 
+pk2C mutC1: 
+lppC mutC1: 
+r6bC mutC1: 
+l3C mutC1: 
+fp1C mutC1: 

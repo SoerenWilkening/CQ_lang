@@ -1314,11 +1314,16 @@ void classifySelectRegion(SelectInst *Sel, TaintSet &taint,
   // both-halves wording from the round-2 one lens R1 item 1, constant-arms-only
   // narrowing from the CLEARANCE review, finding F-11 / owner option (2)) and is
   // byte-identical to the
-  // manual by-difference twin the Inc-1/2a in-place diamond already lowers. That is
-  // exactly the IR `clang -O1` makes of `if (q==5) r=cq_theta(r,A); else
-  // r=cq_theta(r,B);` — SimplifyCFG merges the arms into ONE call with a select
-  // on the ANGLE — so this is the shape that makes the C `if/else` with two
-  // rotations on one register compile.
+  // manual by-difference twin the Inc-1/2a in-place diamond already lowers. It is
+  // the IR `clang -O1` makes of `r = cq_theta(r, q==5 ? A : B);` and of
+  // `if (q==5) cq_phi(A); else cq_phi(B);` (SimplifyCFG merges the phase arms into
+  // ONE call with a select on the ANGLE). ⚠ Since bd test_C_libtooling-fmt3
+  // (2026-09-28) it is NO LONGER what `-O1` makes of the `cq_theta` if/else
+  // `if (q==5) r=cq_theta(r,A); else r=cq_theta(r,B);` — `include/CQ.h` puts
+  // `nomerge` on every `cq_theta_*`, so that if/else stays an if/else and lowers
+  // through the in-place Ry arm (same unitary). The sentence that stood here said
+  // this select was "the shape that makes the C `if/else` with two rotations on
+  // one register compile"; for `cq_theta` that is now false (L7).
   //
   // WHAT DID NOT CHANGE, and it is the load-bearing half: `classifyAngleSelect`
   // returns `NotApplicable` for everything outside that one shape, and the

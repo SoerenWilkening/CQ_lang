@@ -922,10 +922,30 @@ CallInst *inPlaceRotationArmTheta(Value *ArmIncoming, const BasicBlock *ArmBB,
 //
 // THE RESIDUAL that argument leaves is REAL and is written down rather than
 // implied (PRD §14.2b / §14.11 Q3, notes §12): InstCombine's RELATIONSHIP folds
-// (`x - x`, `simplifyWithOpReplaced`) can mint a constant no lattice sees, and
-// every one measured DELETES the register — which is the DELETED-REGISTER
-// residual §14.11 Q3 already owns, re-measured in notes §12. That is a
-// measurement over the round-1/round-3 program corpus, not a theorem.
+// (`x - x`, `simplifyWithOpReplaced`) can mint a constant no lattice sees. The
+// sentence that stood here said "every one measured DELETES the register — which
+// is the DELETED-REGISTER residual §14.11 Q3 already owns". ⚠ THAT WAS FALSE
+// (bd test_C_libtooling-fmt3, 2026-09-28, measured): SimplifyCFG sinks two
+// `cq_theta` arms that differ in ONE operand, FoldTwoEntryPHINode builds
+// `select (q == 20), t, 5`, and `simplifyWithOpReplaced(t, q := 20)` folds it to
+// the literal with `t` LIVE and MEASURED (`fmt3_probes/src/n13.c`, `n14.c`,
+// `n17.c`, `n17f.c`) — and, worse, the branch whose edge proved the pin was
+// ERASED, so this function's question (asked on the REGION's own two edges) could
+// not see it at all, and in the no-region members there was no region to ask
+// about. That class is closed UPSTREAM, not here, and only PARTLY: `include/CQ.h`
+// puts `nomerge` on every `cq_theta_*`, so two DIRECT calls are never merged and
+// the erasing fold does not happen for them (owner ruling, option B). ⚠ It is NOT
+// closed (fmt3 round 2, Rule-13 r1A): clang puts `nomerge` on the CALL SITE, so a
+// call through a FUNCTION POINTER is merged exactly as before (bd `4e4p`, P1,
+// PRE-EXISTING); and the arg-0 `select (t == s), t, s` → `s` fold erases a quantum
+// register's identity with NO merge at all (bd `uw5u`, P1, PRE-EXISTING — the
+// pass's own `DeadValueLiveness` fold performs it too). What else survives of this
+// paragraph is the DELETED-register residual (§14.11 Q3) for the non-merge
+// relationship folds, still a measurement and not a theorem. The other premise
+// above — "the seed can only BE a fold if `clang` PERFORMED that fold [with this
+// machinery]" — also assumed the pinning edge is the region's own; `nomerge`
+// guarantees that only for direct calls, and any `-O1` route that erases a branch
+// WITHOUT merging two direct calls re-opens it (retirement trigger; 4e4p is one).
 //
 // MONOTONE, exactly as before: this block only ever DECLINES. A range that is
 // too WIDE loses a decline (the residual); a range that is too NARROW, or a
@@ -2013,15 +2033,17 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 //     byte-identical to `if (q2 > 3) r = cq_theta(5, .9);` (n12) — so NO question
 //     this pass can ask of the IR in front of it separates the hazard from the
 //     program the module denotes. The disposition is therefore at the SOURCE
-//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28) WILL put
-//     `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
-//     that `-O1` can no longer merge the two thetas and the inner branch
-//     survives to reach F2 (not yet in `CQ.h` at this commit). The IR-level fixtures
+//     level, not here: bd `fmt3` OPTION B (owner ruling 2026-09-28, LANDED after
+//     z0re, 2026-09-29) puts `__attribute__((nomerge))` on the `cq_theta_*`
+//     declarations in `CQ.h`, so that `-O1` can no longer merge two DIRECT calls
+//     and the inner branch survives (measured: a1/a3/a5 now decline `nested control
+//     flow`). The IR-level fixtures
 //     `control_inplace_ry_stateprep_runtime_seed_postfold{,_offwire,_noread}.ll`
 //     pin the post-fold modules as ACCEPTS on exactly that ground — the module is
-//     the legitimate program. ⚠ WINDOW: fmt3 lands AFTER z0re, so until it does
-//     the C spellings a1/a3/a5 still fold and still accept (the same fold with a
-//     LITERAL seed accepts on the oracle today — fmt3's own population).
+//     the legitimate program. ⚠ THE WINDOW IS CLOSED ONLY FOR DIRECT CALLS: clang
+//     puts `nomerge` on the call SITE, so the same programs written through a
+//     FUNCTION POINTER still fold and still accept (fmt3 r1A `fpzt_a1`, measured on
+//     the composed binary — bd `4e4p`, P1, PRE-EXISTING).
 // So the question is ASKED ANYWAY for the region's own edges, as the relation
 // itself and with LLVM's own implication engine rather than a hand-picked shape
 // list (L5): on each edge, is some live tainted value of the seed's type
@@ -2057,12 +2079,14 @@ bool fcmpEqualityHoldsOnEdge(FCmpInst::Predicate P, bool TrueEdge) {
 // now-identical literal thetas) ERASES the branch that pinned the register.
 // Neither this relational half nor the constant half looks at an erased branch:
 // this function is anchored on the REGION'S branch, and the erased branch leaves
-// nothing in the module to anchor on. This route WILL BE closed by bd `fmt3`
-// option B (`nomerge` on `cq_theta_*`, owner 2026-09-28) once it lands — it
-// removes the MERGE at the C level — and it is OPEN until then (the WINDOW
-// above): at this commit `CQ.h` carries no `nomerge` (Rule-13 r2 F-r2-2). If
-// `nomerge` is later dropped from `CQ.h`, or a route is found that erases a
-// pinning branch WITHOUT merging two thetas, this function needs a question
+// nothing in the module to anchor on. This route IS closed for DIRECT calls by bd
+// `fmt3` option B (`nomerge` on `cq_theta_*`, owner 2026-09-28, landed 2026-09-29) —
+// it removes the MERGE at the C level — and it stays OPEN through a FUNCTION POINTER
+// (bd `4e4p`: the attribute is on the call site, not the declaration). A route that
+// erases the register's identity WITHOUT merging two thetas exists too: the arg-0
+// `select (t == s), t, s` → `s` fold (bd `uw5u`, P1, PRE-EXISTING — no header can
+// reach it). If `nomerge` is later dropped from `CQ.h`, or another route is found
+// that erases a pinning branch WITHOUT merging two thetas, this function needs a question
 // asked of the seed's own provenance, not of the region's edges.
 bool f2SeedPinnedByLiveRegister(const ControlRegion &Region, Value *SeedV,
                                 TaintSet &Taint, const DominatorTree *DT,
@@ -2521,12 +2545,19 @@ namespace {
 // ⚠ FOUR CONJUNCTS, AND EACH IS LOAD-BEARING FOR A DIFFERENT REASON:
 //   (K1) UNTAINTED. A tainted stray is a quantum value the chain does not
 //        thread — the Rule-3 wire-crossing and the original fan-out hazard.
-//        It ALSO makes the cone strictly independent of the chain: a classical
-//        op consuming a chain link would itself be tainted by forward
-//        propagation, so (K1) already implies "no cone member reads a chain
-//        link". The explicit operand test below is kept anyway, because that
-//        implication rests on the completeness of a DIFFERENT stage (L1: never
-//        let one stage's conclusion be another stage's unstated premise).
+//        ⚠ It does NOT make the cone independent of the chain on its own. The
+//        text here said "a classical op consuming a chain link would itself be
+//        tainted by forward propagation, so (K1) already implies 'no cone member
+//        reads a chain link'". That implication was NEVER true: a `cq_measure`
+//        sink reads a quantum value and has an untainted result (the (K5)
+//        paragraph below says "(K1) cannot see it"), and since bd cepm a second
+//        op joins it — a would-be Phase-6 call whose callee is predicted to return
+//        a classical value (`specCallResultPredictedClassical`). So the gap is
+//        neither new with cepm nor one op (Rule-13 r1B F-r1B-4, ground corrected
+//        by r2 F-r2-3; CLAUDE.md L3). What refuses a cone member reading a chain
+//        link is the EXPLICIT operand test below, backed by the chain's
+//        `hasOneUse` check (a link read by a cone member has a second user); the
+//        code was and is safe, and the implication was never the fence.
 //   (K2) NO WRITE, NO SIDE EFFECT. A `store` arm belongs to the 7.5 guarded-
 //        store owner and must keep declining here, exactly as before; and it is
 //        what makes (K4)'s memory argument true.
@@ -2575,7 +2606,18 @@ namespace {
 //        or produce taint), so (K5) is the SOLE fence only for `cq_phi`,
 //        `cq_measure` and the invert BRACKETS. Say that precisely: two fences on
 //        two of the families and one on the other three is not "belt and braces
-//        everywhere".
+//        everywhere". ⚠ And since bd cepm a FOURTH: an untainted Phase-6 call
+//        predicted to return a classical value that reads a quantum NON-chain
+//        value (the condition register, say). (K1) passes it (untainted result).
+//        In C it cannot reach (K5): after `-O1` a callee that reads its argument
+//        LIVE while returning a classical value needs a side effect (the liveness
+//        root that keeps the argument), so (K2) refuses the call; and (K4) refuses
+//        every C spelling anyway, clang never marking such a callee
+//        `speculatable`. ⚠ The first version of this sentence credited (K2) with
+//        the `speculatable` fact, which is (K4)'s criterion — a callee clang
+//        infers `memory(none) nounwind willreturn` PASSES (K2) (Rule-13 r2
+//        F-r2-3). For an IR-level `speculatable memory(none)` callee (K5) is the
+//        only fence (Rule-13 r1B F-r1B-4).
 //   (K4) `isSafeToSpeculativelyExecute`. The hoist runs the op UNCONDITIONALLY,
 //        which is not a choice: the condition is QUANTUM, so the emitted circuit
 //        has no classical branch to hide behind. This is LLVM's own predicate —
@@ -3887,8 +3929,10 @@ void markRailCondRead(TaintSet &Taint, Value *Rail, Instruction *FirstRead) {
 // `lowerQramReads`, `lowerShadowMemory` (the last two RAUW a `load` onto a
 // tainted value, the exact `Chained` input) and `specialize` (which also SHRINKS
 // taint through `scrubForwardCone`). None re-opens the window, for reasons that
-// live in OTHER files: `propagateWorklist` taints EVERY user of a tainted value,
-// so a QROM/Shadow load at a tainted index is already tainted at round 1
+// live in OTHER files: `propagateWorklist` taints every user of a tainted value
+// (bar a measure sink, an angle-only edge and — since bd cepm — the RESULT of a
+// would-be Phase-6 call predicted to return a classical value; a `load` is none of
+// those), so a QROM/Shadow load at a tainted index is already tainted at round 1
 // (measured: the QROM sibling program declines on both binaries, and the
 // sibling-free one lowers CHAINED onto `cqrt_qram_load_i1`), and a
 // classical-index Shadow access declines `alloca array mixes a tainted-index and
@@ -5352,11 +5396,17 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
       //     `ry(h,θ); cry(h_b,h,−θ)` — see `emitInPlaceRotationRegion` step 2)
       //     was argued and pinned for ONE arm. Chaining it for two
       //     (`ry(h,B); cry(h_b,h,−B); cry(h_b,h,A)`) is a different emission
-      //     order with a different M-β target and owes its own round. UNREACHABLE
-      //     FROM PLAIN C — `-O1` (SimplifyCFG) merges two rotation arms into ONE
-      //     call with an ANGLE SELECT, which is `classifyAngleSelect`'s Ry stem
-      //     and is sub-increment l4x4.a — so this is a hand-IR decline, and it is
+      //     order with a different M-β target and owes its own round. It is
       //     `kBareRailCondReason` because the refusal is about the condition kind.
+      //     ⚠ REACHABLE FROM PLAIN C SINCE bd test_C_libtooling-fmt3 (2026-09-28).
+      //     This used to say "UNREACHABLE FROM PLAIN C — `-O1` (SimplifyCFG)
+      //     merges two rotation arms into ONE call with an ANGLE SELECT", and that
+      //     stopped being true when `include/CQ.h` put `nomerge` on every
+      //     `cq_theta_*`: `bool b = …; if (b) r = cq_theta(r,A); else
+      //     r = cq_theta(r,B);` now arrives as this two-arm if/else and declines
+      //     HERE (`fmt3_probes/src/n23.c`, measured) with the SAME string it got at
+      //     `classifyAngleSelect`'s l4x4.a gate before — so the verdict and the
+      //     diagnostic are unchanged; only the fence that speaks moved.
       if (RailCond && Arms.size() > 1)
         return declineRailClass();
       // R2 — the angle is CLASSICAL (Rule 3). `taintedAngleGate` above walks a
@@ -5526,17 +5576,24 @@ ArmDisposition classifyArms(ControlRegion &Region, TaintSet &Taint,
         // rails except a reading in which SSA names are wires. The observation is
         // on the owner's desk as PRD §14.11 Q4; do NOT "fix" it here.
         //
-        // From plain C this clause is unreachable: `-O1` (SimplifyCFG) merges the
-        // two arms into ONE theta with a tainted-condition ANGLE SELECT, which
-        // lands in `classifyAngleSelect`. There a LITERAL seed is refused at S3
-        // (probe `p14a`, `rotation angle`; see
-        // control_angle_select_reject_state_prep.ll and PRD §14.11 Q5 /
-        // follow-on `drbq.13`), and since bd z0re (owner ruling 2026-09-28) a
-        // RUNTIME seed is ADMITTED there and lowered by difference on ONE fresh
-        // rail — `alloc(t); ry(h, B); ry_controlled(f, h, A−B)` — which is the
-        // one-rail reading Q4 describes. This hand-IR clause is NOT moved by that
-        // ruling: Q4 ("two preps = two rails = decline") stands for the unfolded
-        // shape, and the asymmetry is recorded rather than resolved here.
+        // ⚠ REACHABLE FROM PLAIN C SINCE bd test_C_libtooling-fmt3 (2026-09-28).
+        // It used to be unreachable because `-O1` (SimplifyCFG) merged the two
+        // arms into ONE theta with a tainted-condition ANGLE SELECT, which lands in
+        // `classifyAngleSelect`: a LITERAL seed is refused at S3 (probe `p14a`,
+        // `rotation angle`; control_angle_select_reject_state_prep.ll, PRD §14.11
+        // Q5 / `drbq.13`), and since bd z0re (owner ruling 2026-09-28) a RUNTIME
+        // seed is ADMITTED there and lowered by difference on ONE fresh rail —
+        // `alloc(t); ry(h, B); ry_controlled(f, h, A−B)` — the one-rail reading
+        // Q4 describes. With `nomerge` on every `cq_theta_*` (CQ.h) the IF/ELSE
+        // spelling no longer folds: it survives to HERE and declines — drbq.13's
+        // own counter-example `if (t == 5) r = cq_theta(t,.9); else
+        // r = cq_theta(5,.3);`, fmt3's no-region member `n9.c` (measured,
+        // `fmt3_probes/src/d13a1.c`, `n9.c`; pinned by
+        // `control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll`) and z0re's
+        // own if/else runtime-seed spelling. The TERNARY spelling
+        // (`r = cq_theta(SEED, c ? A : B)`) still reaches S3, and z0re's C slices
+        // are spelled that way since fmt3. Q4 ("two preps = two rails = decline")
+        // stands for the unfolded shape; the asymmetry is recorded, not resolved.
         //
         // ⚠ THE STRING IS SPLIT BY WHAT THE OTHER ARM IS, ADDED 2026-09-05
         // (round-1 Rule-13 review, lens L7 finding F-L7-8, owner-approved in the
@@ -8322,19 +8379,23 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // load-bearing on TWO axes:
   //   * it keeps a phase gate (`cq_phi`, tainted) and a value chain (`add`,
   //     tainted) OUT of this path — they classify in `classifyArms`;
-  //   * it IS the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3). `propagate`
-  //     taints EVERY non-measure, non-angle user of a tainted value
-  //     (TaintPropagation.cpp:307), and a generic (non-`cq_`) call has no
-  //     angle-operand exclusion — so ANY tainted operand (an argument OR the
-  //     called operand, an indirect call through a tainted pointer) taints the
-  //     result. A CLASSICAL result therefore proves every input is classical:
-  //     the clone × route composition (quantum data under quantum control) is OUT
-  //     of 6.5 (deferred Phase 4×6) and is excluded HERE — it declines via
-  //     `classifyArms` (a tainted call result is value-changing → `arm rewrites a
-  //     condition operand`, WI-5.6) rather than being mis-claimed as a 6.5 site.
+  //   * the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3): the clone ×
+  //     route composition (quantum data under quantum control) is OUT of 6.5
+  //     (deferred Phase 4×6) and is excluded HERE — it declines via `classifyArms`
+  //     rather than being mis-claimed as a 6.5 site.
+  //   ⚠ THE SECOND AXIS USED TO BE THE FIRST GATE ALONE, AND bd cepm FALSIFIED THE
+  //     PROXY (CLAUDE.md L3). The text here said "`propagate` taints EVERY
+  //     non-measure, non-angle user of a tainted value … A CLASSICAL result
+  //     therefore proves every input is classical". Since bd cepm it does NOT: a
+  //     would-be Phase-6 site whose callee is predicted to return a classical value
+  //     (`specCallResultPredictedClassical`) reads a quantum argument and has an
+  //     UNTAINTED result. So the inputs are now asked DIRECTLY (`readsTaintedValue`,
+  //     the one operand test — arguments, bundle operands and the called operand),
+  //     which keeps this path's population exactly the pre-cepm one: such a site
+  //     reaches `classifyArms` as it did when its result was tainted.
   auto *Call = dyn_cast<CallInst>(ArmIncoming);
   if (!Call || Call->getParent() != Region.Arm ||
-      Taint.Tainted.count(Call))
+      Taint.Tainted.count(Call) || readsTaintedValue(*Call, Taint))
     return ClassicalCallDisp::NotApplicable;
 
   // A front-end intrinsic (`cq_theta`/`cq_phi`/`cq_measure`) is NEVER a 6.5
@@ -8600,14 +8661,19 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
 // ---- ANGLE-SELECT BY DIFFERENCE (control-in-place-PRD §12.3, bd
 //      test_C_libtooling-drbq Inc 2b) — BOTH ROTATION STEMS ------------------
 //
-// THE SHAPE, which is exactly what `clang -O1` makes of the C the user writes:
+// THE SHAPE, which is what `clang -O1` makes of the C the user writes:
 //
-//     if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);   // or cq_phi
-//     r = cq_theta(r, q == 5 ? A : B);                           // same IR
+//     r = cq_theta(r, q == 5 ? A : B);                  // the select, written out
+//     if (q == 5) cq_phi(A); else cq_phi(B);            // Rz stem: still merged
 //
-// SimplifyCFG merges the two arms into ONE call whose ANGLE is a select, so the
-// branch CFG is GONE before the pass runs (Rule 9) and there is no diamond to
-// route:
+// ⚠ CHANGED 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling, option B): the
+// if/else `if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);` NO LONGER
+// reaches this function. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
+// (the same merge could erase a branch and hand the pass a different program),
+// so that if/else stays an if/else and lowers through the in-place Ry arm. For
+// `cq_phi` (no `nomerge`) SimplifyCFG still merges the two arms into ONE call
+// whose ANGLE is a select, so the branch CFG is GONE before the pass runs
+// (Rule 9) and there is no diamond to route. Either way the IR is:
 //
 //     %c = icmp eq i32 %q, 5
 //     %a = select i1 %c, double A, double B          ; A, B CLASSICAL

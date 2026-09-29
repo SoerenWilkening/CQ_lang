@@ -12,6 +12,15 @@
 ; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
 ; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
 ; and must re-derive it (CLAUDE.md L8).
+; ⚠ bd test_C_libtooling-cepm (2026-09-28) — the "IR-ONLY from C at -O1" claim just above
+; is FALSE: a read that reaches a call the pass cannot prove pure (a callee in another TU
+; whose own callee is in yet another TU: `h(a,k) { g(a); return k + 1; }`) keeps the
+; parameter live from C. Since bd cepm such a call's RESULT is left classical at
+; propagation (`predictReturnTainted` false): it is never tainted at all. THIS file's
+; subject still is, because its read is a BRANCH and the predictor counts any tainted
+; conditional terminator as a tainted return — so its result is tainted conservatively
+; exactly as before (retirement trigger: a predictor that asks whether the branch
+; reaches the return).
 ; ⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B): round 1's DEAD `mul` read no longer keeps the
 ; parameter used — the drop now asks LIVENESS (`DeadValueLiveness.h`), and a value that
 ; reaches no root is dead. The read is therefore a BRANCH-ONLY one now: `%vsfp.c` and an
