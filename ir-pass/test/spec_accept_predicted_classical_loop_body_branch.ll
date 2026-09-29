@@ -39,7 +39,7 @@
 ;   int f3(int a) { return a * 3; }
 ;
 ; Oracle 9a230646: DECLINE `quantum-quantum compare condition under quantum control`. Round 1b: same.
-; Hand-inlined twin (lppT.c: `g(q); int t = m + 1;`) is TRACE-IDENTICAL under argv
+; Hand-inlined twin (lppT.c: `g(q); int t = i + m + 1;`) is TRACE-IDENTICAL under argv
 ; `5 7` and `2 9`, stage 2b STRICT clean on both (docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/twincmp.sh).
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh lppC, then mkfix.py.
 ;

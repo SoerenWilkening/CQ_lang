@@ -5,6 +5,9 @@ Session 2026-09-28 (parallel). Branch `worktree-agent-a3c46257bc3bd028d`, based 
 `test_C_libtooling-3zr4` (P3, over-decline from C). Both stay OPEN for the Rule-13 rounds.
 Probes, harnesses and raw results: `cepm_probes/` next to this file.
 
+> **ROUND 3 (pre-merge, §15)** — the round-2 review's items (comments, fixtures; no pass-code change),
+> then the merge of `main` (rhk5 + z0re) and the composition pins (§15.7 onward).
+>
 > **ROUND 2 (after the Rule-13 round-1 reviews, §14) — READ §14, THEN §12.** The callee seed is
 > removed (bd `we38`), a φ-decider must SELECT the incoming, and the P3 comments are fixed at the
 > source. The FINAL subject is round 2's `cq-opt` `89186a3011a22882d44bc201`. ⚠ This branch must
@@ -683,6 +686,9 @@ clone's classical result in the literal slot. The oracle and round 1b decline
 
 ### 14.3 The P3s
 
+- ⚠ **CORRECTED IN ROUND 3 (§15.1): the climb is NOT unreachable** — the merge-φ peel reaches it
+  (Rule-13 r2 F-r2-1, pinned by `spec_accept_predicted_classical_peel_diamond_climb.ll`). The bullet
+  below is round 2's text and is wrong in its premise.
 - **F-r1A-2** (the idom climb is unpinned and, today, unreachable): the retirement trigger is written at
   the source, in `LaterTaintOracle::walk`: the day 6.5 / 4.5 / the IO-sink mux / the peel admits a merge
   whose tainted branch is not a direct predecessor, add `gie` / `ir_fwdC.ll` as a fixture there.
@@ -773,6 +779,79 @@ clone's classical result in the literal slot. The oracle and round 1b decline
    is treated as not selecting through them — check that this is right).
 3. **The removed callee seed.** Construct a call whose RESULT a later drain taints without the 3jru
    crossing and without its operands being tainted.
+
+## 15. Round 3 (pre-merge) — the Rule-13 round-2 items (`review_r2_cepm`, CLEAR-WITH-ITEMS, 0 P1)
+
+Review committed untouched with this round: `review_r2_cepm/` (with probes). **Part 1 is a commit with
+NO pass-code change**: comments, fixtures, records. The rebuilt binaries are BIT-IDENTICAL to round 2's
+(`cq-opt` `89186a3011a22882d44bc201`, `libCQPass.so` `7dfff7e13c395111f3818d5c`,
+`cq-opt-debugalloc` `ce5f3060e69a5e17904b02af`; measured after the last comment edit, and again after
+each mutant build restored the tree).
+
+### 15.1 F-r2-1 (P2) — the climb IS reachable; pinned
+
+Round 2's comment at `LaterTaintOracle::walk` called the climb past the φ block's direct predecessors
+"UNPINNED AND, TODAY, UNREACHABLE". That was true of the 6.5 channel only (`gie`, `gsw`, `ir_fwdC.ll`
+decline in round 1) and false of the **merge-φ peel**. Take an if/else diamond with two NON-EMPTY phase
+arms and two pred-available merge φs: the peel turns a φ into a tainted `select` in a GROWTH drain, the
+tainted `br` is the entry block's, and both of the merge's direct predecessors are arm blocks.
+
+- **Pin:** `spec_accept_predicted_classical_peel_diamond_climb.ll`, built from the reviewer's hand IR
+  (`review_r2_cepm/probes/ir/pkdC.s1.ll`, copied verbatim to `cepm_probes/ir/`).
+- **Mutant C1 (climb removed, re-measured here, `cq-opt.C1` `85175c61…`):** FAIL, the fixture declines
+  with `specialize()`'s check string — a loud over-decline. The other new accepts pass under C1.
+- The fixture is **green on the oracle** (same stream): its red is the mutant, not the oracle, and the
+  header says so. The C ≠ T stream difference is the compiler-kept copy-out class (bd `ffir`), identical
+  on the oracle.
+- The comment now says what reaches the climb and what happens without it, and quotes and retires
+  round 2's sentence (L7). No C spelling is known (`-O1` sinks the common trailing `cq_phi`, `pk1`/`pk2`).
+
+### 15.2 F-r2-2 (P3) — fixture headers named the wrong twin
+
+`mkfix.py`'s `TWIN_SAME` hard-coded round 1's `g(q); int t = m + 1;`. It is now a parameter
+(`twin_same()` + `TWIN_LINE`), and regeneration corrected **four** headers, not two: `measured_callee`
+(`y + 1`), `loop_body_branch` (`i + m + 1`), and — found by the same regeneration — `loop_break`
+(`g(q); if (i + m + 1 > 5) break;`) and `classical_phi` (`g(q); t = m + 1;`). The twin-identity claims
+themselves were already measured and hold. The regeneration changed nothing else in any fixture.
+
+Also, per the review's note, `measured_callee`'s `CHECK-NOT: cq_template_icmp` moved from between `br`
+and `ret` (decorative) to between the site and its classical compare.
+
+### 15.3 F-r2-3 (P3) — the (K1)/(K5) grounds (`ArmClassify.cpp`)
+
+- **(K1):** the implication "a classical op reading a chain link is tainted" was NEVER true —
+  `cq_measure` already broke it before cepm (the (K5) paragraph said so). The comment now says cepm adds
+  a SECOND member, and names the real fences: the explicit operand test and the chain's `hasOneUse`.
+- **(K5):** the round-2 text credited (K2) with the `speculatable` fact, which is (K4)'s criterion. It
+  now says: in C, (K2) refuses because a callee that reads its argument live while returning a
+  classical value needs a side effect after `-O1`, and (K4) refuses every C spelling anyway.
+
+### 15.4 F-r2-4 (P3) — the indirect half of the removed seed; fp1/fp3/l3
+
+- **Pin:** `spec_accept_predicted_classical_indirect_call_arg.ll` (`fp3`: `fp = (m > 4) ? G : G2`, both
+  classical; `t = h(q, fp(n))`). Red on the oracle and on round 1b; green on round 2.
+- **Mutant R8** (re-add ONLY the indirect-call seed, `cq-opt.R8` `9e5ba542…`): FAIL on this fixture and
+  on no other of the four checked. The callee-name half stays pinned by `measured_callee` (R7).
+- **Correct new accepts of round 2, not in round 2's own A/B** (all twin-identical, argv `5 7` / `2 9`,
+  2b STRICT clean; oracle and round 1b decline): `fp1` (fp → a `cq_theta`-holding, measured-return
+  callee), `fp3`, `l3` (`lpp` with a runtime trip count `n`). All three are in the probe battery now.
+
+### 15.5 F-r2-5 (P3) — the premise behind "a relaxed 3jru stays loud"
+
+The oracle comment now splits the case: a crossing onto an ARGUMENT of a recorded site ends at the
+sticky rule + check; a crossing onto the recorded SITE ITSELF bypasses the sticky rule (3jru inserts
+directly) and would satisfy `ResultWasTainted` — what keeps it loud today is `scanBody`'s refusal of a
+callee holding a `cq_*` primitive. Both are named as the retirement trigger, and the
+`measured_callee` fixture header says the same.
+
+### 15.6 Part 1 — what I ran
+
+- The six changed/new fixtures on the oracle, round 1b and round 2 (`rg3.sh`): round 2 6/6; oracle 1/6
+  (only `peel_diamond_climb`, green by design); round 1b 3/6.
+- Mutants C1 and R8 on the new fixtures (above).
+- `lit -j4 ir-pass/test --filter predicted`: 25/25.
+- Hash identity after every rebuild (above).
+- Nothing else: part 2 re-runs the full gates on the MERGED binary.
 
 ## 13. Proposed CLAUDE.md text (not applied — the orchestrator owns CLAUDE.md)
 

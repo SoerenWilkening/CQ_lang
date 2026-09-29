@@ -204,6 +204,19 @@ reading("lpp", "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { int t = h
 reading("lpq", "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { int t = h(q, m); if (q > t + i) cq_phi(0.2); } return cq_measure(q);",
         "int q = cq_theta(m, .5); for (int i = 0; i < 3; i++) { g(q); int t = m + 1; if (q > t + i) cq_phi(0.2); } return cq_measure(q);", families=("v",))
 
+# ---- ROUND 3 (Rule-13 r2 F-r2-4): the INDIRECT-call half of the removed callee seed, and lpp with a
+# runtime trip count. fp1: fp → {F (holds cq_theta, measured return), G}; fp3: fp → {G, G2}, both classical.
+LIBS["fm"] = '#include "CQ.h"\nint F(int n) { int r = cq_theta(n, .3); return n + cq_measure(r); }\nint G(int n) { return n * 5 + 1; }\n'
+LIBS["gg"] = "int G(int n) { return n * 5 + 1; }\nint G2(int n) { return n - 3; }\n"
+reading("fp1", "int (*fp)(int) = (m > 4) ? F : G; int q = cq_theta(m, .5); int y = fp(n); int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+        "int (*fp)(int) = (m > 4) ? F : G; int q = cq_theta(m, .5); int y = fp(n); g(q); int t = y + 1; int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+        cextra="int F(int n); int G(int n);\n", textra="int F(int n); int G(int n);\n", xlibs=["fm"], families=("v",))
+reading("fp3", "int (*fp)(int) = (m > 4) ? G : G2; int q = cq_theta(m, .5); int y = fp(n); int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+        "int (*fp)(int) = (m > 4) ? G : G2; int q = cq_theta(m, .5); int y = fp(n); g(q); int t = y + 1; int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q);",
+        cextra="int G(int n); int G2(int n);\n", textra="int G(int n); int G2(int n);\n", xlibs=["gg"], families=("v",))
+reading("l3", "int q = cq_theta(m, .5); for (int i = 0; i < n; i++) { int t = h(q, i + m); if (q > t) cq_phi(0.2); } return cq_measure(q);",
+        "int q = cq_theta(m, .5); for (int i = 0; i < n; i++) { g(q); int t = i + m + 1; if (q > t) cq_phi(0.2); } return cq_measure(q);", families=("v",))
+
 # the result PRINTED (an IO sink with a classical argument)
 reading("pr", "int q = cq_theta(m, .5); int t = h(q, m); printf(\"%d\\n\", t); return cq_measure(q);",
         "int q = cq_theta(m, .5); g(q); int t = m + 1; printf(\"%d\\n\", t); return cq_measure(q);",

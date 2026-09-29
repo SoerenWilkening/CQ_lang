@@ -42,6 +42,16 @@ def libs_of(probe):
 
 
 def header(name, kind, bead, probe, prose, oracle, twin):
+    if not os.path.exists(os.path.join(SRC, probe + ".c")):
+        # a HAND-IR probe (cepm_probes/ir/<probe>.s1.ll): no C source; the prose describes it.
+        lines = [f"; {name}.ll — {kind} ({bead})."]
+        lines += prose.splitlines()
+        lines.append(";")
+        lines += ["; " + l for l in oracle.splitlines()]
+        lines += ["; " + l for l in twin.splitlines()]
+        lines.append(f"; Regenerate: copy {REC}/ir/{probe}.s1.ll to the probe dir (r3gen.sh), then mkfix.py.")
+        lines.append(";")
+        return "\n".join(l if l.startswith(";") else "; " + l for l in lines) + "\n"
     c = open(os.path.join(SRC, probe + ".c")).read().strip().splitlines()
     libs = libs_of(probe)
     lines = [f"; {name}.ll — {kind} ({bead})."]
@@ -68,15 +78,23 @@ def fix(name, kind, bead, probe, prose, oracle, twin, checks):
     FIX.append((name, kind, bead, probe, prose, oracle, twin, checks))
 
 
-TWIN_SAME = ("Hand-inlined twin ({t}.c: `g(q); int t = m + 1;`) is TRACE-IDENTICAL under argv\n"
+# ⚠ The twin's inlined line is a PARAMETER (Rule-13 r2 F-r2-2): round 1 hard-coded
+# `g(q); int t = m + 1;`, which is wrong for r6b (`y + 1`), lpp (`i + m + 1`), a04 and cph.
+TWIN_SAME = ("Hand-inlined twin ({t}.c: `{line}`) is TRACE-IDENTICAL under argv\n"
              "`5 7` and `2 9`, stage 2b STRICT clean on both ({rec}/twincmp.sh).")
+TWIN_LINE = {"a04T": "g(q); if (i + m + 1 > 5) break;", "cphT": "g(q); t = m + 1;",
+             "r6bT": "g(q); int t = y + 1;", "lppT": "g(q); int t = i + m + 1;"}
+
+
+def twin_same(t):
+    return TWIN_SAME.format(t=t, rec=REC, line=TWIN_LINE.get(t, "g(q); int t = m + 1;"))
 
 # ---------------------------------------------------------------- ACCEPTS (bd cepm)
 fix("spec_accept_predicted_classical_branch", "ACCEPT", "bd test_C_libtooling-cepm", "brC",
     READING + "\n; Here the result is a BRANCH condition over an in-place Ry of `q`: a CLASSICAL branch.",
     "Oracle 9a230646: DECLINE `condition predates a non-diagonal gate under quantum control` (the\n"
     "conservative taint made `t > 3` a quantum condition on the handle `t`).",
-    TWIN_SAME.format(t="brT", rec=REC),
+    twin_same("brT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]], i32 noundef %{{[0-9]+}})
@@ -93,7 +111,7 @@ fix("spec_accept_predicted_classical_select", "ACCEPT", "bd test_C_libtooling-ce
     "; (bd l3oi's `taint_reject_scrubbed_handle_branch.ll` shape, with a callee that READS.)",
     "Oracle 9a230646: DECLINE `classical call result used as a quantum register` (bd l3oi: the 4.4\n"
     "emitter minted `icmp_sgt_i32_hl` on the integer `t` as a handle).",
-    TWIN_SAME.format(t="selT", rec=REC),
+    twin_same("selT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]], i32 noundef %{{[0-9]+}})
@@ -108,7 +126,7 @@ fix("spec_accept_predicted_classical_phase", "ACCEPT", "bd test_C_libtooling-cep
     "; deleted (Rule 3) — no kickback, no flag.",
     "Oracle 9a230646: DECLINE `classical call result used as a quantum register` (the kickback flag\n"
     "was minted on the handle `t`).",
-    TWIN_SAME.format(t="ph1T", rec=REC),
+    twin_same("ph1T"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK-NEXT:  icmp sgt i32 %[[T]],
@@ -122,7 +140,7 @@ fix("spec_accept_predicted_classical_return", "ACCEPT", "bd test_C_libtooling-ce
     "; bd 9bhg's reported class, reached with a callee that READS its argument (bd vsfp's drop\n"
     "; covers only a callee that ignores it).",
     "Oracle 9a230646: DECLINE `quantum value returned across a function boundary` (bd 3jru).",
-    TWIN_SAME.format(t="rt9T", rec=REC),
+    twin_same("rt9T"),
     """; CHECK-LABEL: define i32 @f(
 ; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]],
@@ -139,7 +157,7 @@ fix("spec_accept_predicted_classical_clone_arg", "ACCEPT", "bd test_C_libtooling
     "; `10` (only `q` quantum) and `t` rides the clone's LITERAL slot. Before bd cepm the mask was\n"
     "; `11` from the conservative taint and bd l3oi's clone-reader clause declined.",
     "Oracle 9a230646: DECLINE `classical call result used as a quantum register` (clone-reader clause).",
-    TWIN_SAME.format(t="ybT", rec=REC),
+    twin_same("ybT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[H]],
@@ -152,7 +170,7 @@ fix("spec_accept_predicted_classical_lift", "ACCEPT", "bd test_C_libtooling-cepm
     "; lift's conjunct (6) sees the twin's shape. Before bd cepm it was a conservatively CHAINED theta\n"
     "; outside the arm and the lift refused.",
     "Oracle 9a230646: DECLINE `tainted value muxed by a classical-condition phi`.",
-    TWIN_SAME.format(t="l19T", rec=REC),
+    twin_same("l19T"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK-NEXT:  %[[R:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T]])
@@ -163,7 +181,7 @@ fix("spec_accept_predicted_classical_lift", "ACCEPT", "bd test_C_libtooling-cepm
 fix("spec_accept_predicted_classical_loop_break", "ACCEPT", "bd test_C_libtooling-cepm (bd d88e's `a04`)", "a04C",
     READING + "\n; Here the result decides a loop `break`: a CLASSICAL exit test, an ordinary classical loop.",
     "Oracle 9a230646: DECLINE `loop under quantum control`.",
-    TWIN_SAME.format(t="a04T", rec=REC),
+    twin_same("a04T"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK-NEXT:  %[[C:[0-9]+]] = icmp sgt i32 %[[T]], 5
@@ -213,7 +231,7 @@ fix("spec_accept_predicted_classical_fp_return", "ACCEPT", "bd test_C_libtooling
 fix("spec_accept_predicted_classical_switch", "ACCEPT", "bd test_C_libtooling-cepm", "swC",
     READING + "\n; Here the result is a `switch` scrutinee over in-place rotations: a CLASSICAL switch.",
     "Oracle 9a230646: DECLINE `control flow under quantum control`.",
-    TWIN_SAME.format(t="swT", rec=REC),
+    twin_same("swT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK-NEXT:  switch i32 %[[T]],
@@ -224,7 +242,7 @@ fix("spec_accept_predicted_classical_classical_phi", "ACCEPT", "bd test_C_libtoo
     READING + "\n; Here the call sits on a CLASSICAL branch (`if (n > 3) t = h(q, m);`), so `t` is merged by a\n"
     "; classical-condition φ — of two classical values, which the classical-mux guard never asks about.",
     "Oracle 9a230646: DECLINE `control flow under quantum control`.",
-    TWIN_SAME.format(t="cphT", rec=REC),
+    twin_same("cphT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
 ; CHECK-NEXT:  icmp sgt i32 %[[T]], 4
@@ -373,17 +391,21 @@ fix("spec_accept_predicted_classical_measured_callee", "ACCEPT", "bd test_C_libt
     "; fence declined. Round 2 removed that seed (Rule-13 r1A F-r1A-1 / bd we38): the only channel by which\n"
     "; a call RESULT gains taint beyond its operands is bd 3jru's return crossing, and that growth is\n"
     "; refused by `declineQuantumReturnCalls` before `specialize()` (`spec_reject_predicted_classical_\n"
-    "; round2_return_crossing.ll` pins it). RETIREMENT TRIGGER (L8): the day that refusal is relaxed, a\n"
-    "; crossing the oracle does not foresee ends at `specialize()`'s check — re-derive this pair then.",
+    "; round2_return_crossing.ll` pins it). RETIREMENT TRIGGER (L8): the day that refusal is relaxed,\n"
+    "; a crossing onto an ARGUMENT the oracle does not foresee ends at `specialize()`'s check; a crossing\n"
+    "; onto the recorded SITE ITSELF is kept loud only by `scanBody`'s refusal of a callee that holds a\n"
+    "; `cq_*` primitive (Rule-13 r2 F-r2-5) — re-derive this pair then.",
     "Oracle 9a230646: DECLINE `classical call result used as a quantum register`. Round 1b: same.",
-    TWIN_SAME.format(t="r6bT", rec=REC),
+    twin_same("r6bT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[Y:[0-9]+]] = tail call i32 @F(
 ; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %{{[A-Za-z0-9_.]+}}, i32 noundef %[[Y]])
+; CHECK-NOT:   cq_template_icmp
 ; CHECK:       %[[C:[0-9]+]] = icmp sgt i32 %[[T]], 3
 ; CHECK-NEXT:  br i1 %[[C]],
-; CHECK-NOT:   cq_template_icmp
 ; CHECK:       ret i32
+; (Rule-13 r2: the CHECK-NOT sat between `br` and `ret`, where no icmp could appear — decorative. It
+; now sits between the site and its classical compare, where a quantum compare template would be.)
 """)
 fix("spec_reject_predicted_classical_round2_return_crossing", "DECLINE", "bd test_C_libtooling-cepm (round 2; bd we38)", "r6aC",
     "; The decline twin of `spec_accept_predicted_classical_measured_callee.ll`: here `F`'s RETURN is a 6.5\n"
@@ -406,7 +428,7 @@ fix("spec_accept_predicted_classical_loop_body_branch", "ACCEPT", "bd test_C_lib
     "; φ arrives (`selectsIncoming`): this branch's arms reconverge before the latch, so both reach the\n"
     "; header through the latch and it selects nothing.",
     "Oracle 9a230646: DECLINE `quantum-quantum compare condition under quantum control`. Round 1b: same.",
-    TWIN_SAME.format(t="lppT", rec=REC),
+    twin_same("lppT"),
     """; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[H:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(
 ; CHECK:       %[[I:[0-9]+]] = phi i32
@@ -415,6 +437,53 @@ fix("spec_accept_predicted_classical_loop_body_branch", "ACCEPT", "bd test_C_lib
 ; CHECK-NEXT:  %[[F:[A-Za-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[H]], i32 %[[T]])
 ; CHECK-NEXT:  call void @cqrt_rz_i1(i32 %[[F]], double 2.000000e-01)
 ; CHECK-NOT:   cq_template_icmp_sgt_i32(
+""")
+
+# ---------------------------------------------------------------- ROUND 3 (Rule-13 r2)
+fix("spec_accept_predicted_classical_peel_diamond_climb", "ACCEPT", "bd test_C_libtooling-cepm (round 3; Rule-13 r2 F-r2-1)", "pkdC",
+    "; HAND IR (Rule-13 r2 review probe `review_r2_cepm/probes/ir/pkdC.s1.ll`, copied verbatim to\n"
+    "; `cepm_probes/ir/`): an if/else diamond on the tainted `q > 5` with two NON-EMPTY phase arms\n"
+    "; (`cq_phi(.2)` | `cq_phi(.3); cq_phi(.1)`) and two pred-available merge φs `y=[m|n]`, `z=[n|m]`, feeding\n"
+    "; `t = h(q, z); if (t > 3) q2 = cq_theta(q2, .2)` with the READING callee (`h(a,k){ g(a); return k+1; }`).\n"
+    ";\n"
+    "; THIS FILE PINS `LaterTaintOracle::walk`'s CLIMB past the φ block's direct predecessors. The merge-φ\n"
+    "; peel (`MergePhiPeel`) replaces `z` by a tainted `select` in a GROWTH drain, so `h(q, z)`'s mask grows\n"
+    "; `01` → `11` and its clone returns a register. The tainted `br` is the ENTRY block's; both of the\n"
+    "; merge's direct predecessors are ARM blocks with unconditional terminators. The round-1 settle step\n"
+    "; therefore taints the site at round 1 only because the climb reaches that `br`. Remove the climb and\n"
+    "; the site stays STICKY, the peel's growth replans its mask to `11`, and `specialize()` declines\n"
+    "; `lifted callee returns a quantum register where propagation predicted a classical result` — a LOUD\n"
+    "; over-decline, never an accept (Rule-13 r2 mutant C1; re-measured in round 3, TRACK §15).\n"
+    "; Round 2's comment at the climb called it \"UNPINNED AND, TODAY, UNREACHABLE\" (F-r2-1; L7). No C\n"
+    "; spelling is known: `-O1` sinks the arms' common trailing `cq_phi` into the merge (probes `pk1`/`pk2`).",
+    "Oracle 9a230646: the same ACCEPT with a BYTE-IDENTICAL stream (so this file is green on the oracle; its\n"
+    "red is the climb-less mutant, not the oracle).",
+    "Hand-inlined twin (pkdT.s1.ll) ACCEPTS with a different stream: the quantum-returning clone keeps its\n"
+    "copy-out rail (the compiler-kept copy-out class, bd ffir, owner question), identical on the oracle.",
+    """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_11(i32 noundef %[[H:[A-Za-z0-9_.]+]], i32 noundef %{{[A-Za-z0-9_.]+}})
+; CHECK:       %[[F:[A-Za-z0-9_.]+]] = call i32 @cq_template_icmp_sgt_i32_hl(i32 %[[T]], i32 3)
+; CHECK-NEXT:  call void @cqrt_ry_i32_controlled(i32 %[[F]],
+; CHECK:       ret i32
+""")
+fix("spec_accept_predicted_classical_indirect_call_arg", "ACCEPT", "bd test_C_libtooling-cepm (round 3; Rule-13 r2 F-r2-4)", "fp3C",
+    READING + "\n; Here the site's SECOND argument is `fp(n)`, an INDIRECT call through a function pointer chosen at\n"
+    "; run time (`fp = (m > 4) ? G : G2`, both classical). Round 1b's `LaterTaintOracle` counted ANY indirect\n"
+    "; call as a value a later round can taint, predicted the site quantum, tainted `t` at round 1 and bd\n"
+    "; l3oi's fence declined. Round 2 removed that seed with the callee seed (bd we38): an indirect call is\n"
+    "; never crossed by bd 3jru (the crossing requires the call to NAME the function). THIS FILE PINS the\n"
+    "; indirect half, which `spec_accept_predicted_classical_measured_callee.ll` (the callee-name half) does\n"
+    "; not (Rule-13 r2 F-r2-4). Sibling probe `fp1` (fp → a `cq_theta`-holding, measured-return callee)\n"
+    "; accepts twin-identically too.",
+    "Oracle 9a230646: DECLINE `classical call result used as a quantum register`. Round 1b: same.",
+    TWIN_SAME.format(t="fp3T", rec=REC, line="g(q); int t = y + 1;"),
+    """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[Y:[0-9]+]] = tail call i32 %{{[0-9]+}}(
+; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %{{[A-Za-z0-9_.]+}}, i32 noundef %[[Y]])
+; CHECK-NOT:   cq_template_icmp
+; CHECK:       %[[C:[0-9]+]] = icmp sgt i32 %[[T]], 3
+; CHECK-NEXT:  br i1 %[[C]],
+; CHECK:       ret i32
 """)
 
 for (name, kind, bead, probe, prose, oracle, twin, checks) in FIX:

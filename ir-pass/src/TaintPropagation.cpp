@@ -635,7 +635,17 @@ void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
 //     to name the function directly). The rule's only measured effect was an
 //     over-decline (`r6b`: a callee that holds a `cq_theta` but returns a MEASURED
 //     classical value). Should the 3jru refusal ever be relaxed, a missed crossing
-//     still ends at the sticky rule + `specialize()`'s check — loud.
+//     ONTO AN ARGUMENT of a recorded site still ends at the sticky rule +
+//     `specialize()`'s check — loud. ⚠ A crossing onto the recorded SITE ITSELF is
+//     NOT covered by that mechanism (Rule-13 r2 F-r2-5): `drainWorklist`'s 3jru
+//     branch inserts the call into `Tainted` directly, bypassing the sticky rule, and
+//     `specialize()`'s check would then see `ResultWasTainted` true. What keeps that
+//     path loud TODAY is a DIFFERENT stage: `scanBody` (SpecializeReject.cpp) refuses
+//     a callee that transitively holds a `cq_*` primitive (`callee contains a quantum
+//     primitive (cq_*); only classical functions are lifted`), so a LIFTED callee's
+//     `ret` has no source to grow from. RETIREMENT TRIGGER (L1/L8): the day `scanBody`
+//     admits a callee holding a `cq_*` primitive, OR the 3jru refusal is relaxed,
+//     re-derive this paragraph and give the site-itself crossing its own check.
 //   * "a φ's deciders are EVERY conditional terminator between its block's idom and
 //     the block" counted a loop body's own branches as deciding the loop's header φ
 //     (review probe `lpp`: `for (i<3) { t = h(q, i+m); if (q > t) cq_phi(.2); }`,
@@ -752,15 +762,22 @@ private:
         return true;  // unreachable / no dominator: do not argue — grow.
       BasicBlock *Top = N->getIDom()->getBlock();
       // The candidate selectors: `M`'s own terminator (a self-loop's exit test)
-      // and every conditional terminator on a path from `idom(M)` to `M`. ⚠ THE
-      // CLIMB PAST `M`'s DIRECT PREDECESSORS IS UNPINNED AND, TODAY, UNREACHABLE
-      // (Rule-13 r1A F-r1A-2): every growth channel whose tainted branch is not a
-      // direct predecessor of the merge (an if/else with two classical-call arms,
-      // review probe `gie`; a switch with a non-empty default, `gsw`; a forwarding
-      // block on the straight-through edge, `ir_fwdC.ll`) declines in round 1.
-      // RETIREMENT TRIGGER (L8): the day 6.5 / 4.5 / the IO-sink mux / the peel
-      // admits a merge whose tainted branch is not a direct predecessor, add that
-      // program (`gie` / `ir_fwdC.ll`) as a fixture here — it is the climb's pin.
+      // and every conditional terminator on a path from `idom(M)` to `M`. The
+      // CLIMB PAST `M`'s DIRECT PREDECESSORS IS REACHABLE AND PINNED — through the
+      // `MergePhiPeel` channel: an if/else diamond with two NON-EMPTY phase arms and
+      // two pred-available merge φs (the tainted `br` is the entry block's; both of
+      // the merge's direct predecessors are ARM blocks, whose terminators are
+      // unconditional). `spec_accept_predicted_classical_peel_diamond_climb.ll`
+      // (Rule-13 r2 review probe `pkdC.s1.ll`, hand IR) ACCEPTS only because the
+      // climb reaches that `br`; without it the site stays sticky, the peel's growth
+      // drain replans its mask and `specialize()`'s check declines — a LOUD
+      // over-decline, never an accept (measured with the climb removed). ⚠ Round 2
+      // wrote here that the climb was "UNPINNED AND, TODAY, UNREACHABLE" because
+      // every 6.5 shape with a non-direct tainted predecessor (`gie`, `gsw`,
+      // `ir_fwdC.ll`) declines in round 1 — TRUE of the 6.5 channel and FALSE of the
+      // peel, which the list did not cover (Rule-13 r2 F-r2-1; L7). No C spelling of
+      // the peel diamond is known: `-O1` sinks the arms' common trailing `cq_phi`
+      // into the merge and leaves a triangle (review probes `pk1`/`pk2`).
       if (decides(M, M, Seen))
         return true;
       SmallPtrSet<BasicBlock *, 16> Vis;

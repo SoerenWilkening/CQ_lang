@@ -16,8 +16,10 @@
 ; fence declined. Round 2 removed that seed (Rule-13 r1A F-r1A-1 / bd we38): the only channel by which
 ; a call RESULT gains taint beyond its operands is bd 3jru's return crossing, and that growth is
 ; refused by `declineQuantumReturnCalls` before `specialize()` (`spec_reject_predicted_classical_
-; round2_return_crossing.ll` pins it). RETIREMENT TRIGGER (L8): the day that refusal is relaxed, a
-; crossing the oracle does not foresee ends at `specialize()`'s check — re-derive this pair then.
+; round2_return_crossing.ll` pins it). RETIREMENT TRIGGER (L8): the day that refusal is relaxed,
+; a crossing onto an ARGUMENT the oracle does not foresee ends at `specialize()`'s check; a crossing
+; onto the recorded SITE ITSELF is kept loud only by `scanBody`'s refusal of a callee that holds a
+; `cq_*` primitive (Rule-13 r2 F-r2-5) — re-derive this pair then.
 ;
 ; 7 TUs, each `clang -O1`, llvm-linked as tests/e2e/run_slice_multi.sh does.
 ; Caller TU (-include CQ.h):
@@ -47,7 +49,7 @@
 ;   int F(int n) { int r = cq_theta(n, .3); return n + cq_measure(r); }
 ;
 ; Oracle 9a230646: DECLINE `classical call result used as a quantum register`. Round 1b: same.
-; Hand-inlined twin (r6bT.c: `g(q); int t = m + 1;`) is TRACE-IDENTICAL under argv
+; Hand-inlined twin (r6bT.c: `g(q); int t = y + 1;`) is TRACE-IDENTICAL under argv
 ; `5 7` and `2 9`, stage 2b STRICT clean on both (docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/twincmp.sh).
 ; Regenerate: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/cepm_probes/mkprobes.py + gen.sh r6bC, then mkfix.py.
 ;
@@ -56,10 +58,12 @@
 ; CHECK-LABEL: define i32 @main(
 ; CHECK:       %[[Y:[0-9]+]] = tail call i32 @F(
 ; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %{{[A-Za-z0-9_.]+}}, i32 noundef %[[Y]])
+; CHECK-NOT:   cq_template_icmp
 ; CHECK:       %[[C:[0-9]+]] = icmp sgt i32 %[[T]], 3
 ; CHECK-NEXT:  br i1 %[[C]],
-; CHECK-NOT:   cq_template_icmp
 ; CHECK:       ret i32
+; (Rule-13 r2: the CHECK-NOT sat between `br` and `ret`, where no icmp could appear — decorative. It
+; now sits between the site and its classical compare, where a quantum compare template would be.)
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

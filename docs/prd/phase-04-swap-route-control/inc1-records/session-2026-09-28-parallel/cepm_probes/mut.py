@@ -60,6 +60,15 @@ MUT = {
     "S4": [(TP, "      if (*E.begin() != *Sets.front().begin())", "      if (false && *E.begin() != *Sets.front().begin())")],
     "S5": [(TP, "      if (E.size() != 1)\n        return true;", "      if (E.empty())\n        return true;")],
     "S6": [(TP, "  static constexpr unsigned kSelectBudget = 4096;", "  static constexpr unsigned kSelectBudget = 0;")],
+    # ---- round 3: Rule-13 r2's C1 (no climb past the φ block's direct predecessors) ----
+    "C1": [(TP, "        if (X == Top)\n          continue;\n        WL.append(pred_begin(X), pred_end(X));",
+            "        if (X == Top)\n          continue;\n        (void)0;")],
+    # R8: re-add ONLY the indirect-call half of the removed seed (Rule-13 r2 F-r2-4)
+    "R8": [(TP, "    for (Value *Op : I->operands())\n      if (walk(Op, Seen))\n        return true;\n    return false;\n  }\n};",
+            "    if (auto *CB = dyn_cast<CallBase>(I))\n"
+            "      if (!CB->getCalledFunction() && !CB->isInlineAsm())\n"
+            "        return true;\n"
+            "    for (Value *Op : I->operands())\n      if (walk(Op, Seen))\n        return true;\n    return false;\n  }\n};")],
     "R7": [(TP, "    for (Value *Op : I->operands())\n      if (walk(Op, Seen))\n        return true;\n    return false;\n  }\n};",
             "    if (auto *CB = dyn_cast<CallBase>(I))\n"
             "      if (const Function *G = CB->getCalledFunction(); G && !G->isDeclaration())\n"

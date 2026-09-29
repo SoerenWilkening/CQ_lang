@@ -2360,14 +2360,16 @@ namespace {
 //        ⚠ It does NOT make the cone independent of the chain on its own. The
 //        text here said "a classical op consuming a chain link would itself be
 //        tainted by forward propagation, so (K1) already implies 'no cone member
-//        reads a chain link'", and since bd cepm that is FALSE for one op: a
-//        would-be Phase-6 call whose callee is predicted to return a classical
-//        value (`specCallResultPredictedClassical`) READS a quantum value and
-//        has an UNTAINTED result (Rule-13 r1B F-r1B-4; CLAUDE.md L3 — the proxy
-//        6.5 relied on, one function over). The explicit operand test below is
-//        what refuses a cone member reading a chain link, and (K5) refuses every
-//        non-intrinsic call outright, so the code was and is safe; the implication
-//        was never the fence.
+//        reads a chain link'". That implication was NEVER true: a `cq_measure`
+//        sink reads a quantum value and has an untainted result (the (K5)
+//        paragraph below says "(K1) cannot see it"), and since bd cepm a second
+//        op joins it — a would-be Phase-6 call whose callee is predicted to return
+//        a classical value (`specCallResultPredictedClassical`). So the gap is
+//        neither new with cepm nor one op (Rule-13 r1B F-r1B-4, ground corrected
+//        by r2 F-r2-3; CLAUDE.md L3). What refuses a cone member reading a chain
+//        link is the EXPLICIT operand test below, backed by the chain's
+//        `hasOneUse` check (a link read by a cone member has a second user); the
+//        code was and is safe, and the implication was never the fence.
 //   (K2) NO WRITE, NO SIDE EFFECT. A `store` arm belongs to the 7.5 guarded-
 //        store owner and must keep declining here, exactly as before; and it is
 //        what makes (K4)'s memory argument true.
@@ -2418,10 +2420,16 @@ namespace {
 //        two of the families and one on the other three is not "belt and braces
 //        everywhere". ⚠ And since bd cepm a FOURTH: an untainted Phase-6 call
 //        predicted to return a classical value that reads a quantum NON-chain
-//        value (the condition register, say). (K1) passes it (untainted result);
-//        (K2) refuses every C spelling (clang never marks such a callee
-//        `speculatable`), and for an IR-level `speculatable memory(none)` callee
-//        (K5) is the only fence (Rule-13 r1B F-r1B-4).
+//        value (the condition register, say). (K1) passes it (untainted result).
+//        In C it cannot reach (K5): after `-O1` a callee that reads its argument
+//        LIVE while returning a classical value needs a side effect (the liveness
+//        root that keeps the argument), so (K2) refuses the call; and (K4) refuses
+//        every C spelling anyway, clang never marking such a callee
+//        `speculatable`. ⚠ The first version of this sentence credited (K2) with
+//        the `speculatable` fact, which is (K4)'s criterion — a callee clang
+//        infers `memory(none) nounwind willreturn` PASSES (K2) (Rule-13 r2
+//        F-r2-3). For an IR-level `speculatable memory(none)` callee (K5) is the
+//        only fence (Rule-13 r1B F-r1B-4).
 //   (K4) `isSafeToSpeculativelyExecute`. The hoist runs the op UNCONDITIONALLY,
 //        which is not a choice: the condition is QUANTUM, so the emitted circuit
 //        has no classical branch to hide behind. This is LLVM's own predicate —
