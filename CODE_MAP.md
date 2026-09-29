@@ -34,7 +34,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp` — 1964 physical lines
 - `tools/inplace_twin_matrix.py` — 1774 physical lines
 - `ir-pass/src/CQLoweringPass.cpp` — 1773 physical lines
-- `ir-pass/src/Specialization.cpp` — 1626 physical lines
+- `ir-pass/src/Specialization.cpp` — 1632 physical lines
 - `tools/record_census/census_01_guard_population.py` — 1515 physical lines
 - `tools/library_coverage/probe.py` — 1456 physical lines
 - `ir-pass/src/SelectClassify.cpp` — 1447 physical lines
@@ -908,7 +908,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SelectMergeEmit.cpp:76` — `materializeCopySource`
 - `ir-pass/src/SelectMergeEmit.cpp:87` — `emitSelectRegion`
 
-### `ir-pass/src/Specialization.cpp` (1626 lines)
+### `ir-pass/src/Specialization.cpp` (1632 lines)
 
 - `ir-pass/src/Specialization.cpp:68` — `isForwardTemplate`
 - `ir-pass/src/Specialization.cpp:85` — `isForwardQramLoad`
@@ -924,13 +924,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Specialization.cpp:804` — `retargetSite`
 - `ir-pass/src/Specialization.cpp:831` — `resolveSite`
 - `ir-pass/src/Specialization.cpp:842` — `buildClone`
-- `ir-pass/src/Specialization.cpp:1310` — `shouldSpecialize`
-- `ir-pass/src/Specialization.cpp:1332` — `isQuantumCallerValue`
-- `ir-pass/src/Specialization.cpp:1338` — `isRuntimeCall`
-- `ir-pass/src/Specialization.cpp:1367` — `isCopyDestination`
-- `ir-pass/src/Specialization.cpp:1398` — `userProgramReads`
-- `ir-pass/src/Specialization.cpp:1431` — `resolvePhantomCloneArgReads`
-- `ir-pass/src/Specialization.cpp:1525` — `specialize`
+- `ir-pass/src/Specialization.cpp:1316` — `shouldSpecialize`
+- `ir-pass/src/Specialization.cpp:1338` — `isQuantumCallerValue`
+- `ir-pass/src/Specialization.cpp:1344` — `isRuntimeCall`
+- `ir-pass/src/Specialization.cpp:1373` — `isCopyDestination`
+- `ir-pass/src/Specialization.cpp:1404` — `userProgramReads`
+- `ir-pass/src/Specialization.cpp:1437` — `resolvePhantomCloneArgReads`
+- `ir-pass/src/Specialization.cpp:1531` — `specialize`
 
 ### `ir-pass/src/SpecializeClone.cpp` (334 lines)
 
@@ -941,7 +941,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeClone.cpp:226` — `specCallResultPredictedClassical`
 - `ir-pass/src/SpecializeClone.cpp:268` — `cloneFor`
 
-### `ir-pass/src/SpecializeDetect.cpp` (352 lines)
+### `ir-pass/src/SpecializeDetect.cpp` (361 lines)
 
 - `ir-pass/src/SpecializeDetect.cpp:43` — `intrinsicSites`
 - `ir-pass/src/SpecializeDetect.cpp:60` — `readsTainted`
@@ -951,7 +951,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SpecializeDetect.cpp:138` — `nullSafeSlot`
 - `ir-pass/src/SpecializeDetect.cpp:147` — `dropEligibleSlot`
 - `ir-pass/src/SpecializeDetect.cpp:156` — `dropDeadCallArguments`
-- `ir-pass/src/SpecializeDetect.cpp:263` — `detectSpecializations`
+- `ir-pass/src/SpecializeDetect.cpp:272` — `detectSpecializations`
 
 ### `ir-pass/src/SpecializeReject.cpp` (1043 lines)
 

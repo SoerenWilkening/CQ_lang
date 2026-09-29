@@ -168,7 +168,11 @@ bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // `noundef range(…)` / `nofpclass(zero)` twin parameter (LLVM-level UB, latent,
 // IR-only). The same gap stood since bd vsfp for NULL-SAFE slots (the module-level
 // rewrite strips the clone's parameter after its twin exists). The strip at the
-// clone's own record closes both: no twin of a clone exists before its record.
+// clone's own record closes both for SYNTHESIZED twins: no synthesized twin of a
+// clone exists before its record. ⚠ A PRE-SUPPLIED `<clone>_unc` definition is used
+// verbatim by `ensureTwin` and keeps its input attributes (Rule-13 r2 F-r2-3) — the
+// larger hazard there, a wrong body used as the adjoint, is bd
+// `test_C_libtooling-9oob` (P1, PRE-EXISTING).
 // ⚠ It is NOT a licence to WRITE a constant there — that is `nullSafeSlot`'s
 // question, whose attribute allowlist is a POLICY (the drop leaves a string or
 // unknown attribute alone). Its two uses are the liveness call-slot rule (an
@@ -179,8 +183,9 @@ bool isUnreadScalarSlot(const llvm::CallBase &CB, unsigned ArgNo,
 
 // Strip the two VALUE CONSTRAINTS a null can violate — `range` and `nofpclass` —
 // from parameter `ArgNo` of `F` (bd `vaep`). `buildClone` asks it for every
-// parameter its record calls dead, at the record — before any `_unc` twin of the
-// clone exists, so every twin inherits the stripped set. Removing a constraint from
+// parameter its record calls dead, at the record — before any SYNTHESIZED `_unc`
+// twin of the clone exists, so every synthesized twin inherits the stripped set (a
+// pre-supplied twin does not — bd `9oob`, see `isUnreadScalarSlot`). Removing a constraint from
 // a parameter nothing reads is always sound (a weakening).
 void stripParamValueConstraints(llvm::Function &F, unsigned ArgNo);
 

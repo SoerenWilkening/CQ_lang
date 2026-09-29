@@ -1019,9 +1019,15 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   taint.SpecDeadArgMask[Clone] = DeadSlots;
   // bd `test_C_libtooling-vaep` (Rule-13 r1A F-r1A-1): strip the value constraints
   // of every recorded-dead parameter HERE, at the clone's own record — before any
-  // `_unc` twin of it exists (`ensureTwin` runs in the ENCLOSING clone's inner-call
-  // loop after this build returns, and the module-level spine only ever calls a twin
-  // that loop made), so every twin copies the stripped set. A caller's null
+  // SYNTHESIZED `_unc` twin of it exists (`ensureTwin` runs in the ENCLOSING clone's
+  // inner-call loop after this build returns), so every synthesized twin copies the
+  // stripped set. ⚠ NOT a pre-supplied twin (Rule-13 r2 F-r2-3): `ensureTwin`
+  // short-circuits on an existing `<clone>_unc` DEFINITION and uses it verbatim, so
+  // its parameters keep whatever `range`/`nofpclass` the input gave them (measured:
+  // r2 `probes/pt_pretwin.ll` receives `i32 0` into `noundef range(i32 1, 100)`, on
+  // `main` and here alike). The attribute is the least of it — a pre-supplied twin
+  // with a wrong body is used as the adjoint unchecked: bd `test_C_libtooling-9oob`
+  // (P1, PRE-EXISTING); strip or refuse it there, not here. A caller's null
   // (neutralised at module level, inherited by an inner call, or forwarded through a
   // dead parameter) reaches the forward clone AND its twin; before this, the twin
   // kept `noundef range(…)` / `nofpclass(…)` on the slot the null arrived in.

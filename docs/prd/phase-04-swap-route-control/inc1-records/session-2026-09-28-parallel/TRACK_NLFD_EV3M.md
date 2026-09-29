@@ -826,3 +826,37 @@ deterministic and has no timeout, so contention cost wall-clock only.
   the nlfd × rhk5 composition over-decline).
 - **Notes appended**: bd `vaep` (fixed here; F-r1A-5 recorded), bd `m5pn`, bd `ev3m`, bd `nlfd`. None
   closed.
+
+---
+
+## R3. Pre-merge step (2026-09-29) — round 2 CLEARED; merge of `main` d21a59b0; the round-2 P3s
+
+Rule-13 round 2 (`review_r2_nlfd/REVIEW.md`, committed unmodified at `0b1aaca5`): `CLEAR-WITH-ITEMS`,
+0 introduced P1/P2, 3 P3, plus a PRE-EXISTING P1 filed by the reviewer (bd `9oob`, F-r2-4).
+Orchestrator decision: bd `ur72` stays OPEN (retiring the fence is its own later round).
+
+- **Merge** (`524dda86`): `main` d21a59b0 (bd cepm 80e829b5 + bd fmt3 — `nomerge` on every
+  `cq_theta_*` in `CQ.h`). Conflicts: `Specialization.cpp` (textual — main's
+  `kMsgPredictedClassicalQuantum` beside the `kMsgPhantomArgRead` this branch moved to the top; both
+  kept, one definition each) and `CODE_MAP.md` (regenerated from a clean index). Reconfigured
+  (`CQ.h` is a configure dependency) and rebuilt.
+- **F-r2-1** (decline locations unpinned): two fixtures from the reviewer's probes, verbatim, with the
+  location pinned character for character — `spec_reject_phantom_arg_read_unread_scalar_inner_inst_loc.ll`
+  (`fence.c:6:22`, the CALL, not the `t = a*5` at 5:11) and `spec_reject_musttail_forward_preallocated_loc.ll`
+  (`pa.c:4:17`). Generator `nlfd_probes/r2/mkloc_r3.py` (`--check` clean).
+- **F-r2-2** (Rule 14, the `{Range, NoFPClass}` set spelled three times): NOT refactored — routing the
+  drop's inline loop through the helper replaces inlined code with a call into another translation unit
+  (no LTO), so it cannot be a bit-identical refactor, the coordinator's condition. Recorded at the site
+  (`SpecializeDetect.cpp`) with its retirement trigger (bd `uyhx`).
+- **F-r2-3** (L7): "no twin of a clone exists before its record" qualified to SYNTHESIZED twins at both
+  sites (`Specialization.cpp`, `DeadValueLiveness.h` ×2); a pre-supplied `<clone>_unc` keeps its input
+  attributes and — the real hazard — is used as the adjoint unchecked: bd `9oob`.
+- **Binaries** (merged tree + the P3 commit): `cq-opt` `e42a3dd742d7b69d53e7f80a`, `libCQPass.so`
+  `0dca36104b717fe681508540`, `cq-opt-debugalloc` `af50339f5045bac84151a191`. The comment-only P3 edits
+  left `cq-opt` and `libCQPass.so` BIT-IDENTICAL (measured before/after).
+- **Run, literally, on that binary** (targeted, per the coordinator; no full lit, no A/B, no sweeps):
+  `lit ir-pass/test --filter "unc_twin|forward_preallocated|clone_demoted_inalloca|_loc"` → **15/15**
+  (the round-2 fixtures + the two new ones + unrelated `_loc`-named files); `lit -j4 ir-pass/test
+  --filter "spec|specialize"` → **315 passed, 0 failed** (2507 discovered, 2192 excluded);
+  `ctest -j4 -R "spec-musttail|trace-twin-equiv-selftest"` → **10/10** (the nine e2e musttail entries +
+  the selftest); `tools/update_code_map.py --check` clean.

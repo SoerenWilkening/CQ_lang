@@ -211,6 +211,15 @@ bool dropDeadCallArguments(Module &M, const TaintSet &taint) {
           errs() << "CQ_DEADARG_DBG: drop arg " << A << " of @"
                  << Callee->getName() << " in @" << CI->getFunction()->getName()
                  << (isa<Instruction>(Op) ? " (inst)" : " (arg)") << "\n";
+        // ⚠ Rule 14 debt, recorded (Rule-13 r2 F-r2-2): "the value constraints a
+        // null can violate" is spelled here a THIRD time, beside
+        // `stripParamValueConstraints` / `stripUnreadSlotValueConstraints`
+        // (DeadValueLiveness). All three agree today. Not routed through the helper
+        // in the nlfd/ev3m round: the call crosses a translation unit, so it is not
+        // a bit-identical refactor. RETIREMENT TRIGGER (L8): the day
+        // `dropEligibleParamAttrs` admits another value constraint (owner question
+        // bd `uyhx`), move all three together — or route this one through the
+        // helper in that change.
         for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
           Callee->removeParamAttr(A, K);
           CI->removeParamAttr(A, K);
