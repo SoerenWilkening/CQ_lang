@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 798 maintained source files, 6430 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 798 maintained source files, 6431 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -25,8 +25,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwapRouteEmit.cpp` — 3089 physical lines
 - `runtime/cq_link_smoke.c` — 2933 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 2804 physical lines
+- `tools/taintset_scrub_guard.py` — 2749 physical lines
 - `runtime/cq_templates.h` — 2497 physical lines
-- `tools/taintset_scrub_guard.py` — 2435 physical lines
 - `ir-pass/src/Uncomputation.cpp` — 2364 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
@@ -8620,84 +8620,85 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tools/slice_census_sync_check.py:64` — `main`
 
-### `tools/taintset_scrub_guard.py` (2435 lines)
+### `tools/taintset_scrub_guard.py` (2749 lines)
 
-- `tools/taintset_scrub_guard.py:380` — `set_jobs`
-- `tools/taintset_scrub_guard.py:386` — `_run`
-- `tools/taintset_scrub_guard.py:403` — `Config.__init__`
-- `tools/taintset_scrub_guard.py:415` — `_includes_header`
-- `tools/taintset_scrub_guard.py:443` — `_normalize`
-- `tools/taintset_scrub_guard.py:465` — `_configs`
-- `tools/taintset_scrub_guard.py:474` — `_load_db`
-- `tools/taintset_scrub_guard.py:486` — `_configs_from`
-- `tools/taintset_scrub_guard.py:524` — `_base_command`
-- `tools/taintset_scrub_guard.py:558` — `_pch`
-- `tools/taintset_scrub_guard.py:585` — `Ctx.__init__`
-- `tools/taintset_scrub_guard.py:590` — `Ctx.fresh`
-- `tools/taintset_scrub_guard.py:596` — `_compile`
-- `tools/taintset_scrub_guard.py:612` — `_json_docs`
-- `tools/taintset_scrub_guard.py:624` — `_dump`
-- `tools/taintset_scrub_guard.py:636` — `_iter_nodes`
-- `tools/taintset_scrub_guard.py:645` — `_error_lines`
-- `tools/taintset_scrub_guard.py:655` — `_first_errors`
-- `tools/taintset_scrub_guard.py:662` — `_split_top`
-- `tools/taintset_scrub_guard.py:679` — `_split_scope`
-- `tools/taintset_scrub_guard.py:698` — `_balanced`
-- `tools/taintset_scrub_guard.py:711` — `parse_type`
-- `tools/taintset_scrub_guard.py:764` — `_render`
-- `tools/taintset_scrub_guard.py:778` — `_spell`
-- `tools/taintset_scrub_guard.py:792` — `_spellable`
-- `tools/taintset_scrub_guard.py:797` — `_library`
-- `tools/taintset_scrub_guard.py:801` — `_all_library`
-- `tools/taintset_scrub_guard.py:815` — `FieldJob.__init__`
-- `tools/taintset_scrub_guard.py:822` — `FieldJob.access`
-- `tools/taintset_scrub_guard.py:827` — `Walk.__init__`
-- `tools/taintset_scrub_guard.py:851` — `Walk._err_as`
-- `tools/taintset_scrub_guard.py:863` — `Walk._err`
-- `tools/taintset_scrub_guard.py:866` — `Walk._hkey`
-- `tools/taintset_scrub_guard.py:873` — `Walk._world_noncanon`
-- `tools/taintset_scrub_guard.py:879` — `Walk.field_top`
-- `tools/taintset_scrub_guard.py:896` — `Walk._t`
-- `tools/taintset_scrub_guard.py:920` — `Walk._ptr`
-- `tools/taintset_scrub_guard.py:957` — `Walk._tmpl`
-- `tools/taintset_scrub_guard.py:1012` — `Walk._arg`
-- `tools/taintset_scrub_guard.py:1022` — `Walk._named`
-- `tools/taintset_scrub_guard.py:1038` — `Walk._project`
-- `tools/taintset_scrub_guard.py:1045` — `_anon_key`
-- `tools/taintset_scrub_guard.py:1057` — `_scrub_shape_problem`
-- `tools/taintset_scrub_guard.py:1061` — `_scrub_shape_problem.ptr`
-- `tools/taintset_scrub_guard.py:1091` — `_decl_prefix`
-- `tools/taintset_scrub_guard.py:1095` — `_walk_record`
-- `tools/taintset_scrub_guard.py:1196` — `_check_line`
-- `tools/taintset_scrub_guard.py:1218` — `_undefs`
-- `tools/taintset_scrub_guard.py:1228` — `_head`
-- `tools/taintset_scrub_guard.py:1236` — `_tag_line`
-- `tools/taintset_scrub_guard.py:1244` — `_rob_line`
-- `tools/taintset_scrub_guard.py:1251` — `_rob_results`
-- `tools/taintset_scrub_guard.py:1264` — `_new_k`
-- `tools/taintset_scrub_guard.py:1272` — `_rob`
-- `tools/taintset_scrub_guard.py:1313` — `_identify`
-- `tools/taintset_scrub_guard.py:1406` — `_final`
-- `tools/taintset_scrub_guard.py:1493` — `_closure`
-- `tools/taintset_scrub_guard.py:1506` — `_guard_macro`
-- `tools/taintset_scrub_guard.py:1516` — `_preprocessed`
-- `tools/taintset_scrub_guard.py:1536` — `_context_problem`
-- `tools/taintset_scrub_guard.py:1593` — `_check_one`
-- `tools/taintset_scrub_guard.py:1771` — `check`
-- `tools/taintset_scrub_guard.py:1792` — `check.label`
-- `tools/taintset_scrub_guard.py:1824` — `_strip_comments`
-- `tools/taintset_scrub_guard.py:1864` — `_mutants`
-- `tools/taintset_scrub_guard.py:1865` — `_mutants.ins`
-- `tools/taintset_scrub_guard.py:1871` — `_mutants.ins_noextra`
-- `tools/taintset_scrub_guard.py:1874` — `_mutants.ins_global`
-- `tools/taintset_scrub_guard.py:1879` — `_mutants.after_taintset`
-- `tools/taintset_scrub_guard.py:1887` — `_mutants.lb`
-- `tools/taintset_scrub_guard.py:2261` — `_db_cases`
-- `tools/taintset_scrub_guard.py:2269` — `_db_cases.mal`
-- `tools/taintset_scrub_guard.py:2298` — `_shards`
-- `tools/taintset_scrub_guard.py:2309` — `selftest`
-- `tools/taintset_scrub_guard.py:2355` — `selftest.run`
-- `tools/taintset_scrub_guard.py:2385` — `main`
+- `tools/taintset_scrub_guard.py:435` — `set_jobs`
+- `tools/taintset_scrub_guard.py:441` — `_run`
+- `tools/taintset_scrub_guard.py:458` — `Config.__init__`
+- `tools/taintset_scrub_guard.py:470` — `_includes_header`
+- `tools/taintset_scrub_guard.py:498` — `_normalize`
+- `tools/taintset_scrub_guard.py:520` — `_configs`
+- `tools/taintset_scrub_guard.py:529` — `_load_db`
+- `tools/taintset_scrub_guard.py:541` — `_configs_from`
+- `tools/taintset_scrub_guard.py:579` — `_base_command`
+- `tools/taintset_scrub_guard.py:613` — `_pch`
+- `tools/taintset_scrub_guard.py:640` — `Ctx.__init__`
+- `tools/taintset_scrub_guard.py:645` — `Ctx.fresh`
+- `tools/taintset_scrub_guard.py:651` — `_compile`
+- `tools/taintset_scrub_guard.py:669` — `_json_docs`
+- `tools/taintset_scrub_guard.py:681` — `_dump`
+- `tools/taintset_scrub_guard.py:693` — `_iter_nodes`
+- `tools/taintset_scrub_guard.py:702` — `_error_lines`
+- `tools/taintset_scrub_guard.py:712` — `_first_errors`
+- `tools/taintset_scrub_guard.py:719` — `_split_top`
+- `tools/taintset_scrub_guard.py:736` — `_split_scope`
+- `tools/taintset_scrub_guard.py:755` — `_balanced`
+- `tools/taintset_scrub_guard.py:768` — `parse_type`
+- `tools/taintset_scrub_guard.py:821` — `_render`
+- `tools/taintset_scrub_guard.py:835` — `_spell`
+- `tools/taintset_scrub_guard.py:849` — `_spellable`
+- `tools/taintset_scrub_guard.py:854` — `_library`
+- `tools/taintset_scrub_guard.py:858` — `_all_library`
+- `tools/taintset_scrub_guard.py:872` — `FieldJob.__init__`
+- `tools/taintset_scrub_guard.py:879` — `FieldJob.access`
+- `tools/taintset_scrub_guard.py:884` — `Walk.__init__`
+- `tools/taintset_scrub_guard.py:917` — `Walk._err_as`
+- `tools/taintset_scrub_guard.py:929` — `Walk._err`
+- `tools/taintset_scrub_guard.py:932` — `Walk._hkey`
+- `tools/taintset_scrub_guard.py:939` — `Walk._world_noncanon`
+- `tools/taintset_scrub_guard.py:945` — `Walk.field_top`
+- `tools/taintset_scrub_guard.py:965` — `Walk._anon_use`
+- `tools/taintset_scrub_guard.py:977` — `Walk._t`
+- `tools/taintset_scrub_guard.py:1001` — `Walk._ptr`
+- `tools/taintset_scrub_guard.py:1038` — `Walk._tmpl`
+- `tools/taintset_scrub_guard.py:1096` — `Walk._arg`
+- `tools/taintset_scrub_guard.py:1106` — `Walk._named`
+- `tools/taintset_scrub_guard.py:1122` — `Walk._project`
+- `tools/taintset_scrub_guard.py:1126` — `_scrub_shape_problem`
+- `tools/taintset_scrub_guard.py:1130` — `_scrub_shape_problem.ptr`
+- `tools/taintset_scrub_guard.py:1160` — `_decl_prefix`
+- `tools/taintset_scrub_guard.py:1164` — `_walk_record`
+- `tools/taintset_scrub_guard.py:1296` — `_check_line`
+- `tools/taintset_scrub_guard.py:1319` — `_undefs`
+- `tools/taintset_scrub_guard.py:1329` — `_head`
+- `tools/taintset_scrub_guard.py:1337` — `_tag_line`
+- `tools/taintset_scrub_guard.py:1345` — `_rob_line`
+- `tools/taintset_scrub_guard.py:1352` — `_rob_results`
+- `tools/taintset_scrub_guard.py:1365` — `_new_k`
+- `tools/taintset_scrub_guard.py:1373` — `_rob`
+- `tools/taintset_scrub_guard.py:1414` — `_identify`
+- `tools/taintset_scrub_guard.py:1507` — `_final`
+- `tools/taintset_scrub_guard.py:1620` — `_guard_macro`
+- `tools/taintset_scrub_guard.py:1630` — `_in_dir`
+- `tools/taintset_scrub_guard.py:1638` — `_preprocessed`
+- `tools/taintset_scrub_guard.py:1676` — `_context_problem`
+- `tools/taintset_scrub_guard.py:1773` — `_check_one`
+- `tools/taintset_scrub_guard.py:1958` — `check`
+- `tools/taintset_scrub_guard.py:1980` — `check.label`
+- `tools/taintset_scrub_guard.py:2012` — `_strip_comments`
+- `tools/taintset_scrub_guard.py:2057` — `_mutants`
+- `tools/taintset_scrub_guard.py:2058` — `_mutants.ins`
+- `tools/taintset_scrub_guard.py:2064` — `_mutants.ins_noextra`
+- `tools/taintset_scrub_guard.py:2067` — `_mutants.ins_global`
+- `tools/taintset_scrub_guard.py:2072` — `_mutants.after_taintset`
+- `tools/taintset_scrub_guard.py:2080` — `_mutants.lb`
+- `tools/taintset_scrub_guard.py:2551` — `_db_cases`
+- `tools/taintset_scrub_guard.py:2559` — `_db_cases.mal`
+- `tools/taintset_scrub_guard.py:2588` — `_cmake_shards_problem`
+- `tools/taintset_scrub_guard.py:2606` — `_shards`
+- `tools/taintset_scrub_guard.py:2617` — `selftest`
+- `tools/taintset_scrub_guard.py:2669` — `selftest.run`
+- `tools/taintset_scrub_guard.py:2699` — `main`
 
 ### `tools/trace_twin_equiv.py` (843 lines)
 

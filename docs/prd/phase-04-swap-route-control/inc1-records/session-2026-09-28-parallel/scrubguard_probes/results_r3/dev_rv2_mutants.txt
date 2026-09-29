@@ -1,0 +1,59 @@
+ok  expect=None                   NULL: pristine tree  [76 members, 0 problems]
+ok  expect='preprocesses DIFFERENTLY' r1 A5 INCLUDE ORDER: a raw table under #ifdef of a header real TUs include first (bd ngfa)  [76 members, 1 problems]
+      `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallList<llvm::Ca
+ok  expect='preprocesses DIFFERENTLY' r1 A5' INCLUDE ORDER through an LLVM header only a .cpp includes (#ifdef LLVM_ANALYSIS_LAZYVALUEINFO_H)  [76 members, 1 problems]
+      `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallList<llvm::Ca
+BAD expect='RAW POINTER'          r1 A5'' a member under #ifdef of an LLVM header the PCH holds (refused by the PCH pass itself)  [76 members, 1 problems]
+      `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallList<llvm::Ca
+ok  expect='RAW POINTER'          r1 A6 llvm::EquivalenceClasses<llvm::Value *> in the ALLOWLISTED LoopBreakRegion (F-R1-9)  [77 members, 1 problems]
+      cq::LoopBreakRegion::RvEq: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [inside the KEY of `llv
+ok  expect='RAW POINTER'          r1 A6b llvm::UniqueVector<llvm::Value *> in the ALLOWLISTED LoopBreakRegion (F-R1-9)  [77 members, 1 problems]
+      cq::LoopBreakRegion::RvUV: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [inside the KEY of `llv
+ok  expect='RAW POINTER'          r1 A6' a raw pointer SEQUENCE in the ALLOWLISTED LoopBreakRegion (was RESIDUAL R2)  [77 members, 1 problems]
+      cq::LoopBreakRegion::RvList: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  expect='RAW POINTER'          rv2 C1 an unnamed struct with a raw pointer ARRAY held STRICTLY in a project record  [80 members, 1 problems]
+      cq::RvMidC::(anonymous)::Tab: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  expect='preprocesses DIFFERENTLY' rv2 C2 the include-order member written in TaintPropagation.h itself  [76 members, 1 problems]
+      `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallList<llvm::Ca
+ok  expect='per the compiler'     rv2 B1 an unnamed struct walked RELAXED in LoopBreakRegion, reused STRICTLY by decltype (bd hdxo)  [81 members, 2 problems]
+      cq::LoopBreakRegion::(anonymous)::Tab: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+      cq::RvMid::E: unnamed type `cq::LoopBreakRegion::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_ggybf24j/LoopPlan.h:76:3)` is not — per the compiler — the type of any unnamed record this walk we
+ok  expect='per the compiler'     rv2 B1' the same with ONE tolerated pointer field (only the mode rule refuses it, bd hdxo)  [80 members, 1 problems]
+      cq::RvMid1::E: unnamed type `cq::LoopBreakRegion::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_if1z5fuw/LoopPlan.h:76:3)` is not — per the compiler — the type of any unnamed record this walk w
+ok  expect='per the compiler'     rv2 B4 unnamed-record location COLLISION by one macro expansion (deliberate; bd hdxo)  [79 members, 1 problems]
+      cq::TaintSet::RvEvil4: unnamed type `cq::TaintSet::RvH4<>::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_3nilwmd0/TaintPropagation.h:120:3)` is not — per the compiler — the type of any unnamed 
+ok  expect='per the compiler'     rv2 B5 unnamed-record location FORGED by #line (deliberate; bd hdxo)  [79 members, 1 problems]
+      cq::TaintSet::RvEvil5: unnamed type `cq::RvHolder5::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_1p1dipj6/TaintPropagation.h:7000:3)` is not — per the compiler — the type of any unnamed record
+ok  expect='RAW POINTER'          rv2 B2a a raw pointer ARRAY field in the ALLOWLISTED LoopBreakRegion (F-R2-7)  [77 members, 1 problems]
+      cq::LoopBreakRegion::RvTab: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  expect='RAW POINTER'          rv2 B2b a pointer-to-pointer field in the ALLOWLISTED LoopBreakRegion (F-R2-7)  [78 members, 1 problems]
+      cq::LoopBreakRegion::RvHeap: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  expect='RAW POINTER'          rv2 B2c a SmallVector of a one-pointer record in the ALLOWLISTED LoopBreakRegion (F-R2-7)  [79 members, 1 problems]
+      cq::LoopBreakRegion::RvSlot::V: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  expect='ANONYMOUS NAMESPACE'  rv2 B3 anonymous-namespace RAW base + the derived class's own `using RvB = ::cq::RvB` (bd 5ci2)  [77 members, 2 problems]
+      cq::RvD::<base>: `cq::RvD` declares its own member `RvB`, named like its base `cq::RvB` — that name would steer the base's identity check (closed world: refused)
+      cq::RvD::<base>: base `cq::(anonymous namespace)::RvB` is in an ANONYMOUS NAMESPACE — its spelling is lossy, so its identity cannot be verified (closed world: refused)
+ok  expect='declares its own member' rv2 B3' LOCAL-class RAW base + the derived class's own `using RvL3 = ::RvL3` (bd 5ci2)  [77 members, 1 problems]
+      RvMid5::<base>: `RvMid5` declares its own member `RvL3`, named like its base `RvL3` — that name would steer the base's identity check (closed world: refused)
+ok  expect='whose meaning depends on where' rv2 B6 include-order member behind `#line 1 "RvElsewhere.h"` (deliberate; refused cheaply)  [76 members, 1 problems]
+      `TaintPropagation.h` (in the header's include closure) uses `#line`, whose meaning depends on where the file is included or which forges line attribution (closed world: refused)
+ok  expect='preprocesses DIFFERENTLY' rv2 B7 include-order member in a project header reached by an ANGLE include (F-R2-4)  [78 members, 1 problems]
+      `RvCtx7.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `};` vs in context `std::set<llvm
+ok  expect='preprocesses DIFFERENTLY' rv2 B8 include-order member in a project header reached by a COMPUTED include (F-R2-4)  [78 members, 1 problems]
+      `RvCtx8.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `};` vs in context `std::set<llvm
+ok  expect='preprocesses DIFFERENTLY' rv2 D1 include-order member in a SUBDIRECTORY project header (F-R2-4)  [78 members, 1 problems]
+      `detail/RvSub.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `};` vs in context `std::se
+ok  expect='preprocesses DIFFERENTLY' rv2 D2 include-order member in an X-macro `.def` included INSIDE TaintSet (F-R2-4)  [76 members, 1 problems]
+      `TaintMembers.def` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `<end>` vs in context `st
+ok  expect='whose meaning depends on where' rv2 B9 `#if __INCLUDE_LEVEL__ > 1` (deliberate; refused cheaply)  [76 members, 1 problems]
+      `TaintPropagation.h` (in the header's include closure) uses `__INCLUDE_LEVEL__`, whose meaning depends on where the file is included or which forges line attribution (closed world: refused)
+ok  expect=None                   RESIDUAL R12 pinned (review r2 B10, deliberate): SFINAE on the COMPLETENESS of cq::CQLoweringPass  [77 members, 0 problems]
+ok  expect='preprocesses DIFFERENTLY' rv2 B11 a CLOSURE file's own guard tested before it is included (LoopPlan.h first, F-R2-5)  [76 members, 1 problems]
+      `TaintPropagation.h` preprocesses DIFFERENTLY after the closure's other headers are included first (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallList<llvm::
+ok  expect='RAW POINTER'          rv2 B12 library-template battery (14 members, each refused)  [88 members, 13 problems]
+      cq::TaintSet::RvE10: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+      cq::TaintSet::RvE12: function or lambda type `void ()` — not understood by the walker (closed world: refused)
+      cq::TaintSet::RvE13: `llvm::Value` (derives from llvm::Value) held BY VALUE as a template argument of `std::reference_wrapper` — the tell of an UNAPPROVED handle (e.g. AssertingVH is a bare pointer at LLVM_ENABLE_ABI_BREAKING_CHEC
+ok  expect=None                   NULL: a CLEAN unnamed struct defined in TaintSet, reused by decltype in a STRICT record  [80 members, 0 problems]
+ok  expect=None                   NULL: a CLEAN X-macro `.def` included inside TaintSet and a CLEAN subdirectory header  [79 members, 0 problems]
+29 mutants, 1 bad, 1593.3s, PCH None USE_PCH=False

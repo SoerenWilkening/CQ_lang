@@ -1,0 +1,5 @@
+CAUGHT   B1   MODE CONFUSION: unnamed struct walked RELAXED inside the allowlisted LoopBreakRegion, its type reuse [main guard, 59 members, 1 problem(s), 18s]
+        ERR  cq::RvMid::E: function type `cq::LoopBreakRegion::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_8asv3azl/LoopPlan.h:76:3)` — not understood by the walker (closed world: refused)
+MISSED   B2   ALLOWLISTED LoopBreakRegion: identity TABLES spelled as direct fields (C array, heap array, SmallVec [main guard, 57 members, 0 problem(s), 3s]
+MISSED   B7   INCLUDE ORDER through an ANGLE include of a project header (not in the quote-only closure) [main guard, 59 members, 0 problem(s), 6s]
+MISSED   B8   INCLUDE ORDER through a COMPUTED include (#include MACRO) [main guard, 59 members, 0 problem(s), 4s]

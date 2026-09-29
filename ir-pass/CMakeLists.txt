@@ -194,7 +194,7 @@ set_tests_properties(ir-pass-scrub-on-delete-selftest-sysalloc
 # The STRUCTURAL half: a compiler-assisted check that no raw Value-identity table
 # is (re)added to `cq::TaintSet` or to anything it reaches, and that every
 # self-cleaning member is exercised by the selftest above. It is NOT a proof — its
-# docstring names its RESIDUALS R1-R11. ASKED OF THE COMPILER (r1A F-EA-2 / r1B
+# docstring names its RESIDUALS R1-R12. ASKED OF THE COMPILER (r1A F-EA-2 / r1B
 # F-EB-2) IN EVERY BUILD CONFIGURATION (r2 F-R2-2 / bd a66j; bd 7gri): it reads, from
 # `compile_commands.json` (exported by the top-level CMakeLists), every distinct
 # command of a TU that includes the header, and for each one asks the compiler the

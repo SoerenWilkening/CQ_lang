@@ -11,6 +11,15 @@ is listed under RESIDUALS and OUT OF SCOPE; read both before quoting a green run
 The per-table deterministic pin is `ir-pass/tools/scrub_selftest.cpp`; this gate is
 the structural backstop in front of it.
 
+THREAT MODEL (owner ruling 2026-09-29, bd memory
+`owner-ruling-scrub-guard-threat-model-2026-09-29`): the guard defends against raw
+identity tables an agent PLAUSIBLY WRITES BY MISTAKE, in any natural spelling.
+Deliberate evasion tricks — `#line` forging, macro-expanded locations, base-name
+aliasing to a shadow record, SFINAE on class completeness, `__INCLUDE_LEVEL__` /
+`#line "file"` games — are OUT OF SCOPE (listed under RESIDUALS, R12, graded P3). A
+REGRESSION against main's guard on any spelling is still a finding. Several such tricks
+are refused anyway because refusing them was cheap; R12 says which.
+
 `cq::TaintSet` (ir-pass/include/TaintPropagation.h) is where every stage keeps
 pointers to IR values across stages that ERASE IR. Since bd 8e5r every such table is
 a self-cleaning container (`ir-pass/include/ScrubOnDelete.h`): a key whose Value is
@@ -41,13 +50,20 @@ because an adversarial round passed a raw member through the previous one):
     re-spelled as clean records, a malformed database entry that silently dropped a
     configuration, a pointer to a type-erased library base, and identity tables inside
     an allowlisted member. Each is answered below; the self-test carries every probe.
+  * review r2 (bd hdxo 5ci2 ngfa s6ma, 2026-09-28): an unnamed record walked RELAXED in
+    an allowlisted member was accepted STRICTLY elsewhere (the record key had no mode), the
+    unnamed-record key was a PRINTED location a macro or `#line` forges, a derived class's
+    own alias steered the base check, the include-order check followed only quote
+    includes of top-level `.h` files and never simulated "a closure file included first",
+    it failed OPEN on a silent preprocessor, and "fields" tolerated pointer arrays and
+    pointer-to-pointers. Answered in round 3 (below); what is not is R10 / R12.
 
 HOW IT ASKS (2026-09-28). Every type the walk judges comes from the COMPILER, never
 from the header's text:
   (1) EVERY BUILD CONFIGURATION. The configurations are the distinct compile
       commands in `compile_commands.json` of the translation units that include
-      `TaintPropagation.h` (found by a quote-include closure over `ir-pass/include`
-      and the TU's own directory). Today there are two: CQPass (`-DCQPass_EXPORTS
+      `TaintPropagation.h` (found by a textual quote-or-angle include closure over
+      `ir-pass/include` and the TU's own directory — R3). Today there are two: CQPass (`-DCQPass_EXPORTS
       -fPIC`) and cq-opt / cq-scrub-selftest (neither). A problem in ANY
       configuration refuses; a missing database, a missing entry, an entry of this
       tree that cannot be parsed (review r1 F-R1-7) or a header that does not compile
@@ -73,10 +89,13 @@ from the header's text:
       would then use a body no header shows (a template pimpl, review r1 F-R1-3; the
       non-template pimpl, a pointer to a forward-declared record, was already
       refused). Its primary's forced instantiation is walked as well, so a raw
-      primary is reported too. An unnamed record is identified by the compiler's
-      `(unnamed struct at FILE:LINE:COL)`: a field of unnamed type is accepted only
-      when that very record was walked through a declarator of the record being
-      walked (review r1 F-R1-1).
+      primary is reported too. A field (or pointee) of UNNAMED record type is accepted
+      only when the COMPILER agrees (`std::is_same` over the robbed member types, cv /
+      reference / pointer / extents stripped) that it IS the type of an unnamed record
+      the walk went through by its own declarator, in a mode at least as strict as the
+      use (relaxed < strict < key). The printed `(unnamed struct at FILE:LINE:COL)` is
+      never an identity: a macro expansion or `#line` forges it (review r1 F-R1-1, r2
+      F-R2-1/F-R2-2).
   (4) THE SPELLING IS VERIFIED. The canonical text is re-spelled (every qualified
       name rooted at `::`) and `std::is_same` against the field's real type is
       asserted, so a printed type that does not denote the field's type (an
@@ -85,7 +104,10 @@ from the header's text:
       base (`std::is_base_of`) AND be what its own injected-class-name names when
       looked up THROUGH the derived class (`typename D::B`) — an anonymous-namespace
       or local-class base that re-spells as a same-named clean record fails that
-      (review r1 F-R1-6). Both assertions are asked inside an explicit
+      (review r1 F-R1-6). Because a derived class's OWN member named like the base
+      (`using B = ::clean::B;`) would steer that lookup, such a member is refused, and a
+      base in an ANONYMOUS NAMESPACE is refused outright — its re-spelling is lossy
+      (review r2 F-R2-3). Both assertions are asked inside an explicit
       instantiation's template argument, so a PRIVATE nested type is no access
       error there.
   (5) NO PCH IN THE GATE'S OWN RUN. `main()` asks every configuration WITHOUT a
@@ -93,15 +115,22 @@ from the header's text:
       reviewers' harnesses) compiles with a per-configuration PCH for speed and
       RE-ASKS EVERY CLEAN VERDICT WITHOUT IT — clean is the only verdict a PCH can
       falsify. A refusal under the PCH is reported as is: it can only over-refuse.
-  (6) THE INCLUDE-ORDER CHECK (review r1 F-R1-4). No PCH is NOT the same as "the
-      build's preprocessing context": a real TU includes other headers BEFORE
-      `TaintPropagation.h`, and a member under `#ifdef <a macro one of them defines>`
-      exists in the build and not in the probe. So every clean verdict (in the no-PCH
-      pass of each configuration) also preprocesses the header's include closure
-      twice — alone, and after every header any TU of that configuration includes
-      plus every project header (the closure's include guards pre-defined and undefined
-      just before it, so it is really re-preprocessed in that context) — and refuses if
-      any closure file's text differs. What it cannot see is RESIDUAL R10.
+  (6) THE INCLUDE-ORDER CHECK (review r1 F-R1-4, r2 F-R2-4/5/6/8). No PCH is NOT the
+      same as "the build's preprocessing context": a real TU includes other headers
+      BEFORE `TaintPropagation.h`, and a member under `#ifdef <a macro one of them
+      defines>` exists in the build and not in the probe. So every clean verdict (in the
+      no-PCH pass of each configuration) also preprocesses the header's include CLOSURE
+      — taken from the COMPILER's own line markers: every file under the probe directory,
+      whether reached by a quote, angle, computed, subdirectory or `.def` include (the
+      whole `ir-pass/include` tree is copied and put FIRST on `-I`) — in three contexts:
+      alone; after every header any TU of that configuration includes plus every project
+      header (the closure's guards pre-defined and undefined just before, so it is really
+      re-preprocessed there); and after the closure's OTHER guarded files (a real TU that
+      includes `LoopPlan.h` first). Any difference in any closure file's text refuses. A
+      closure file using `#line`, a line marker, `__INCLUDE_LEVEL__`, `__COUNTER__` or
+      `__FILE__`, guarded by `#pragma once`, or a closure file OUTSIDE the probe
+      directory is refused; a preprocessor that attributes nothing to the header FAILS
+      CLOSED. What it cannot see is RESIDUAL R10.
   Two details every probe TU shares, both found by attacking this design: every
   identifier a generated line uses is `#undef`ined after the header (a macro defined
   AFTER the record — `#define Evil Tainted` — would otherwise make
@@ -156,12 +185,16 @@ type the walker cannot parse; a header that does not compile.
 ALLOWLISTED members (`ALLOWLIST`, keyed by QUALIFIED member path) are STILL WALKED
 (r3 B14 / bd jk56), in a RELAXED mode set per entry by `ALLOWLIST_POLICY`:
   "fields" (the default; `BreakRegions`) — a raw pointer, `Loop *`, incomplete
-      pointee or unapproved handle is tolerated (listed as a note) only as a record's
-      OWN FIELD; any pointer inside a LIBRARY container there (a sequence or a keyed
-      container, listed in ASSOCIATIVE or not) is walked strictly (review r1 F-R1-9:
-      `EquivalenceClasses<Value *>` and `UniqueVector<Value *>` used to pass as notes).
-      That is what makes the reason "never a table asked by IDENTITY" a checked
-      premise.
+      pointee or unapproved handle is tolerated (listed as a note) only as ONE pointer
+      held directly as a record's FIELD. An ARRAY of pointers, a pointer-to-pointer,
+      and every argument of a LIBRARY container (a sequence or a keyed container,
+      listed in ASSOCIATIVE or not — records held in one too) are walked STRICTLY there;
+      the one exception is the element records of the allowlisted member's OWN top-level
+      container (`SmallVector<LoopBreakRegion, 2>`), whose fields the policy is about
+      (review r1 F-R1-9, r2 F-R2-7). So the reason "never a table asked by IDENTITY" is
+      checked for every table SHAPE the walk knows: an array, a pointer-to-pointer, a
+      container. (A hand-rolled table spelled as N separate pointer fields is not a
+      shape the walk can tell from a record.)
   "any" (`RestoringRoutes`, whose reason is "no writer", not a structure) — raw
       pointers tolerated anywhere but an associative KEY.
 Every KEY is strict and every closed-world rule applies in both. The walk of a record
@@ -177,15 +210,16 @@ RESIDUALS — what this version does NOT close; a reviewer should start here:
      The same holds for the `cq::scrub::` containers, the approved HANDLES and
      LEAVES: each is trusted by its name (a project specialization of one is not
      walked). Pinned in the self-test as a known pass (review r1 A7); bd gqda.
-  R2 An allowlisted member tolerates raw pointer FIELDS by design; under policy
+  R2 An allowlisted member tolerates ONE raw pointer per FIELD by design; under policy
      "any" (`RestoringRoutes` only) also raw pointer SEQUENCE elements, on which
-     `is_contained` would be an identity question. Policy "fields" refuses them.
+     `is_contained` would be an identity question. Policy "fields" refuses arrays,
+     pointer-to-pointers and containers.
   R3 The configurations come from `compile_commands.json` TUs that include the
-     header through QUOTE includes (`#include "X.h"`) resolvable in `ir-pass/include`
-     or the TU's directory; a TU reaching it through a computed `#include MACRO`
-     in a target with its own flags is not recognised. Only CONFIGURED builds are
-     checked (a member only under `#ifndef NDEBUG` is unseen until a Debug tree is
-     configured).
+     header through quote or angle includes resolvable in `ir-pass/include` (any
+     subdirectory) or the TU's directory; a TU reaching it through a computed
+     `#include MACRO` in a target with its own flags is not recognised. Only CONFIGURED
+     builds are checked (a member only under `#ifndef NDEBUG` is unseen until a Debug
+     tree is configured).
   R4 A field whose access path cannot be spelled (a named record nested inside an
      unnamed struct, a member of an unnamed struct reached through a POINTER field)
      is not asked of the compiler; any non-builtin type there is REFUSED — an
@@ -202,23 +236,39 @@ RESIDUALS — what this version does NOT close; a reviewer should start here:
      by name too (`TYPE_ERASED_TEMPLATES`).
   R8 A BASE is verified by `is_base_of` plus its injected-class-name looked up
      through the derived class. A derived class that declares its OWN member named
-     like the base (`struct D : B { using B = int; };`) is refused (over-refusal);
-     an injected-class-name that is ambiguous is refused too.
+     like the base (any member: `using B = ::B;`, `int B;`) is refused, and so is a base
+     in an anonymous namespace — both are over-refusals of legal code, never passes; an
+     ambiguous injected-class-name is refused too.
   R9 A PRIVATE nested project type reached through the identity lookup (a KEY, or
      a pointer from another mode) is refused as "no complete definition": the
      identity alias is subject to access checking. An over-refusal, never a pass.
-  R10 The include-order check approximates "every real TU's context" by ONE context:
-     every header the configuration's TUs include (in first-seen order) plus every
-     project header, before the closure. It does not see (a) a `#define` a `.cpp`
-     writes before its includes, (b) a condition true only for a COMBINATION of
-     macros that neither the lone header nor that union context produces
-     (`#if defined(A) && !defined(B)`), (c) a TU-local header the probe directory
-     cannot reach. Whatever it sees differently is refused; the rest is IFNDR the
-     compiler cannot catch either (TaintSet's token sequence would differ per TU).
+  R10 The include-order check approximates "every real TU's context" by THREE
+     synthetic ones (docstring (6)); it does not preprocess the real TUs (bd j2fp, the
+     total fix). It does not see (a) a `#define` a `.cpp` writes before its includes,
+     (b) a condition true only for a COMBINATION of macros that none of the three
+     contexts produces (`#if defined(A) && !defined(B)`, or "a closure file first AND
+     another header's macro"), (c) a TU-local header the probe directory cannot reach,
+     (d) a macro defined by a header only a real TU's include ORDER puts before the
+     closure when that header is not itself in the union's list. Whatever it sees
+     differently is refused; the rest is IFNDR the compiler cannot catch either
+     (TaintSet's token sequence would differ per TU).
   R11 A template pimpl is refused only when the header never instantiates the
      specialization; a `.cpp` that specializes a template the header DOES
      instantiate is a compile error ("explicit specialization after instantiation"),
      so no pass there.
+  R12 DELIBERATE EVASION — out of the threat model (owner ruling 2026-09-29), graded
+     P3. Each, with what happens today:
+     * SFINAE on a class's COMPLETENESS (`Sel<CQLoweringPass>::type` is `unsigned`
+       alone and a raw table where the class is complete first — review r2 B10): the
+       token text is identical in every context, so no textual check sees it. PASSES
+       (pinned in the self-test as a known pass).
+     * `#line` / GNU line markers / `__INCLUDE_LEVEL__` / `__COUNTER__` / `__FILE__` in a
+       closure file (r2 B6, B9): REFUSED (cheap).
+     * a forged or macro-expanded unnamed-record location (r2 B4, B5): REFUSED — the
+       identity is asked of the compiler, not read from the location.
+     * base-name aliasing to a shadow record (r2 B3, an anonymous-namespace or local-class
+       base plus `using B = ::clean::B;`): REFUSED.
+     * library code declared by the project inside `namespace llvm`/`std` (R1): PASSES.
 
 INTENTIONALLY OUT OF SCOPE, and why:
   * an address laundered through a PLAIN INTEGER type (`unsigned long`, `size_t`, or
@@ -240,14 +290,16 @@ member is not exercised by `ir-pass/tools/scrub_selftest.cpp` (comments stripped
 
 `--selftest` is its own mutant validation: null controls clean (in every
 configuration and without the PCH), the configuration layer's fail-closed databases,
-and every spelling of the five Rule-13 fool corpora it was built against (r1A
+and every spelling of the six Rule-13 fool corpora it was built against (r1A
 `guard_bypass.py`, r1B `guard_fool.py`, r2 `guard_fool_r2.py`, r3
-`guard_fool_r3{,b}.py`, review r1 of the rewrite `rv_mutations.py`) plus its own
+`guard_fool_r3{,b}.py`, reviews r1 and r2 of the rewrite `rv_mutations.py` and
+`rv2_mutations.py` + `tree_probes_r2.py`, labelled `r1 ` and `rv2 `) plus its own
 mutants REFUSED FOR THE RIGHT REASON (the expected diagnostic substring is checked,
-so a compile error is not a kill). Known passes (R1, the builtin-pointer out-of-scope
+so a compile error is not a kill). Known passes (R1, R12's SFINAE case, the builtin-pointer out-of-scope
 case) are pinned as expected-clean entries labelled RESIDUAL / OUT OF SCOPE, so the
 day one of them starts refusing the self-test says so. `--shard K/N` runs the K-th of N
-balanced, deterministic slices (`_shards`; the configuration and PCH controls in shard 1), and
+balanced, deterministic slices (`_shards`; the configuration and PCH controls, and the check
+that `ir-pass/CMakeLists.txt` registers every shard, in shard 1), and
 `--jobs N` (or CQ_GUARD_JOBS) bounds the compilers this process runs at once; the
 ctest entries pass both, so the gate's own -j is respected.
 
@@ -297,15 +349,18 @@ ALLOWLIST = {
     "cq::TaintSet::BreakRegions": (
         "a per-loop RECORD (`LoopBreakRegion`, LoopPlan.h) of raw block/value/`Loop *` "
         "FIELDS that `lowerLoops` writes and `lowerBreakReversePlay` dereferences — "
-        "never a table asked by IDENTITY. That premise is CHECKED (policy \"fields\", bd "
-        "jk56 + review r1 F-R1-9): the walk descends into `LoopBreakRegion` and tolerates "
-        "a raw pointer only as a direct FIELD; a raw pointer inside any library container "
-        "there (EquivalenceClasses, UniqueVector, SmallVector, a map, ...) is refused. Its "
+        "never a table asked by IDENTITY. That premise is CHECKED for every table SHAPE "
+        "the walk knows (policy \"fields\", bd jk56 + review r1 F-R1-9 + r2 F-R2-7): the "
+        "walk descends into `LoopBreakRegion` and tolerates ONE raw pointer held directly "
+        "as a FIELD; a pointer ARRAY, a pointer-to-pointer, and anything inside a library "
+        "container there (EquivalenceClasses, UniqueVector, SmallVector, a map, a vector "
+        "of one-pointer records, ...) is refused. Its "
         "hazard is a different one (a dangling RECORD field, UAF-on-read) and is NOT "
         "closed by bd 8e5r; filed as bd test_C_libtooling-emof."),
 }
 ALLOWLIST_POLICY = {"cq::TaintSet::RestoringRoutes": "any"}   # every other entry: "fields"
 RELAXED_MODES = ("relaxed_fields", "relaxed_any")
+MODE_RANK = {"relaxed_any": 0, "relaxed_fields": 1, "strict": 2, "key": 3}   # key refuses a superset
 # Pointers to LIBRARY non-template records the walk accepts without seeing into them, each
 # with its reason. CLOSED WORLD since review r1 F-R1-8: a pointer to any other library
 # record that is not Value-derived is refused (`llvm::SmallPtrSetImplBase *` erased the
@@ -408,7 +463,7 @@ class Config:
 
 _CFGS = None
 _CFGS_LOCK = threading.Lock()
-_QINC = re.compile(r'^\s*#\s*include\s+"([^"]+)"', re.M)
+_QINC = re.compile(r'^\s*#\s*include\s*[<"]([^>"]+)[>"]', re.M)
 _CXX_EXT = (".cpp", ".cc", ".cxx", ".c++", ".C")
 
 
@@ -598,8 +653,10 @@ def _compile(ctx, tu, extra, retry=True):
     uses one; `retry` recompiles a FAILED PCH compile without it (for TUs that are
     expected to compile; probe TUs with per-line errors pass retry=False)."""
     cfg = ctx.cfg
-    cmd = cfg.argv + ["-fsyntax-only", "-fno-color-diagnostics", "-ferror-limit=0", "-w",
-                      f"-I{ctx.tmp}"]
+    # the probe dir FIRST: a project header is found there by quote, angle or computed
+    # include alike (review r2 F-R2-4), never in the real tree the build's -I names
+    cmd = [cfg.argv[0], f"-I{ctx.tmp}"] + cfg.argv[1:] + [
+        "-fsyntax-only", "-fno-color-diagnostics", "-ferror-limit=0", "-w"]
     if ctx.use_pch:
         pch = _pch(cfg)
         if pch:
@@ -810,13 +867,13 @@ def _all_library(text):
 # ----------------------------------------------------------------------------
 class FieldJob:
     __slots__ = ("path", "name", "prefix", "sugared", "fallback", "top_level", "mode",
-                 "origin", "k", "canon", "ident")
+                 "origin", "k", "canon", "ident", "allow_root")
 
     def __init__(self, path, name, prefix, sugared, fallback, top_level, mode, origin):
         self.path, self.name, self.prefix = path, name, prefix
         self.sugared, self.fallback, self.top_level = sugared, fallback, top_level
         self.mode, self.origin = mode, origin
-        self.k, self.canon, self.ident = None, None, None
+        self.k, self.canon, self.ident, self.allow_root = None, None, None, False
 
     @property
     def access(self):
@@ -845,7 +902,16 @@ class Walk:
         self.origin = None    # (member path, container) while mode == "key"
         self.canonical = True
         self.cur_ident = None  # the identified record whose tree is being walked (speculation key)
-        self.anon_walked = set()  # location keys of the unnamed records walked through their field
+        # Unnamed records (bd hdxo; review r2 F-R2-1/F-R2-2). `anon_decls`: (declarator FieldJob,
+        # MODE the record's body was walked in) for every unnamed record walked through its own
+        # declarator. `anon_uses`: (FieldJob, mode, path) of every field / pointee of unnamed
+        # type. `_final` asserts, of the COMPILER, that each use's type IS the type of some
+        # declarator walked in a mode at least as strict — the printed `(unnamed struct at
+        # FILE:LINE:COL)` is never an identity (a macro expansion or `#line` forges it).
+        self.anon_decls = []
+        self.anon_uses = []
+        self.cur_job = None    # the FieldJob whose type is being walked
+        self.allow_root = False  # walking an allowlisted member's OWN top-level type
 
     # -- diagnostics -----------------------------------------------------------
     def _err_as(self, path, msg, cls, mode, origin):
@@ -877,21 +943,36 @@ class Walk:
 
     # -- the type walk -----------------------------------------------------------
     def field_top(self, path, node, top_level, name):
+        is_arr = node[0] == "arr"
         while node[0] == "arr":
             node = node[1]
         if node[0] == "anon":
-            # A field of unnamed record type is accepted ONLY when that very record — keyed by
-            # the compiler's own `(unnamed struct at FILE:LINE:COL)` — was walked through a
-            # declarator of the record being walked (bd hdxo / review r1 F-R1-1: an unnamed
-            # type DEFINED ELSEWHERE, `decltype(Other::U) M;`, used to be accepted unwalked).
-            if _anon_key(node[1]) in self.anon_walked:
-                return
-            self._err(path, f"unnamed type `{node[1]}` defined outside the record the walk is in — "
-                            f"the walk cannot follow it (closed world: refused)", "world")
+            return self._anon_use(path, node[1])
+        saved = (self.mode, self.origin)
+        # Policy "fields" tolerates a raw pointer only as ONE pointer held directly as a field:
+        # an ARRAY of pointers or a pointer-to-pointer IS a table (review r2 F-R2-7), so such a
+        # field is walked strictly.
+        if self.mode == "relaxed_fields" and (
+                is_arr or (node[0] == "ptr" and node[1][0] in ("ptr", "arr"))):
+            self.mode, self.origin = "strict", None
+        try:
+            if node[0] == "tmpl":
+                return self._tmpl(path, node, top_level, name)
+            return self._t(path, node)
+        finally:
+            self.mode, self.origin = saved
+
+    def _anon_use(self, path, text):
+        # A field (or pointee) of UNNAMED record type is accepted ONLY when the compiler agrees
+        # it IS the type of an unnamed record the walk went through by its own declarator, in
+        # a mode at least as strict as this use's (asserted in `_final`; bd hdxo, review r1
+        # F-R1-1 and r2 F-R2-1/F-R2-2). Without a canonical member question there is nothing
+        # to assert with: refused.
+        if not self.canonical or self.cur_job is None or self.cur_job.canon is None:
+            self._err(path, f"unnamed type `{text}` whose identity cannot be asked of the compiler "
+                            f"(closed world: refused)", "world")
             return
-        if node[0] == "tmpl":
-            return self._tmpl(path, node, top_level, name)
-        return self._t(path, node)
+        self.anon_uses.append((self.cur_job, self.mode, path, text))
 
     def _t(self, path, node):
         k = node[0]
@@ -983,10 +1064,13 @@ class Walk:
             return
         saved = (self.mode, self.origin)
         # An allowlisted member's premise under policy "fields" is "raw pointer FIELDS, never a
-        # table": a LIBRARY container's argument that is not a record held by value (a
-        # pointer, an array of pointers, ...) is walked STRICTLY there (bd jk56 / review r1
-        # F-R1-9); a record held by value keeps the policy for its own fields.
+        # table" (bd jk56 / review r1 F-R1-9 / r2 F-R2-7): EVERY argument of a LIBRARY
+        # container is walked STRICTLY there — records too, so `SmallVector<Slot>` of a
+        # one-pointer record is refused — except the element RECORDS of the allowlisted
+        # member's OWN top-level container (`SmallVector<LoopBreakRegion, 2>`), whose own
+        # fields are what the policy is about.
         strict_args = self.mode == "relaxed_fields" and _library(nm)
+        root, self.allow_root = self.allow_root, False
         try:
             rest = args
             if nm in ASSOCIATIVE and args:
@@ -998,7 +1082,7 @@ class Walk:
                     self.mode, self.origin = saved
                 rest = args[1:]
             for a in rest:
-                if strict_args and a[0] not in ("named", "tmpl", "lit"):
+                if strict_args and not (root and a[0] in ("named", "lit")):
                     self.mode, self.origin = "strict", None
                 try:
                     self._arg(path, a, nm)
@@ -1037,21 +1121,6 @@ class Walk:
 
     def _project(self, path, qname):
         self.foreign.setdefault((qname, self.mode), (path, self.origin))
-
-
-_ANON_AT = re.compile(r"\((?:unnamed|anonymous) (?:struct|class|union|enum) at ([^()]*)\)")
-
-
-def _anon_key(text):
-    """`(unnamed struct at /tmp/x/TaintPropagation.h:116:19)` -> `TaintPropagation.h:116:19`:
-    the compiler's own identity for an unnamed record (its definition's location)."""
-    m = _ANON_AT.search(text or "")
-    if not m:
-        return None
-    loc = m.group(1)
-    head, _, tail = loc.rpartition(":")
-    head2, _, mid = head.rpartition(":")
-    return f"{os.path.basename(head2)}:{mid}:{tail}"
 
 
 def _scrub_shape_problem(nm, args):
@@ -1105,10 +1174,27 @@ def _walk_record(W, rec, path, qname, prefix, top_level):
     W.walked.add(key)
     if qname:   # a named record walked here (nested, in this mode) needs no identity lookup later
         W.foreign_done.add((qname, W.mode))
+    inner = rec.get("inner", []) or []
+    # Names this record declares itself (a member alias `using B = ::clean::B;` steers the
+    # base check's `typename D::B` lookup, review r2 F-R2-3).
+    own_names = {c.get("name") for c in inner if c.get("name") and not c.get("isImplicit")
+                 and c.get("kind") not in ("CXXConstructorDecl", "CXXDestructorDecl")}
     for b in rec.get("bases", []) or []:
         bt = b.get("type", {})
         text = bt.get("desugaredQualType") or bt.get("qualType", "")
         bpath = path + "::<base>"
+        bshort = _split_scope(text)[-1].split("<")[0].strip() if text else ""
+        if "(anonymous namespace)" in text:
+            # The re-spelling drops the anonymous namespace, so the base could not be told from a
+            # same-named record (review r2 F-R2-3): refused, never walked under another name.
+            W._err(bpath, f"base `{text}` is in an ANONYMOUS NAMESPACE — its spelling is lossy, so "
+                          f"its identity cannot be verified (closed world: refused)", "world")
+            continue
+        if bshort in own_names:
+            W._err(bpath, f"`{qname or path}` declares its own member `{bshort}`, named like its base "
+                          f"`{text}` — that name would steer the base's identity check (closed world: "
+                          f"refused)", "world")
+            continue
         if qname and _spellable(text):
             W.bases.append((bpath, text, qname))
             saved = W.canonical
@@ -1124,7 +1210,6 @@ def _walk_record(W, rec, path, qname, prefix, top_level):
                 W._t(bpath, parse_type(text))
             finally:
                 W.canonical = saved
-    inner = rec.get("inner", []) or []
     for i, c in enumerate(inner):
         kind = c.get("kind")
         if kind in ("FieldDecl", "VarDecl"):
@@ -1137,9 +1222,11 @@ def _walk_record(W, rec, path, qname, prefix, top_level):
             t = c.get("type", {})
             sugared = t.get("qualType", "")
             mode, origin = W.mode, W.origin
+            allow_root = False
             if p in W.allowlist and mode == "strict":
                 pol = ALLOWLIST_POLICY.get(p, "fields")
                 mode, origin = ("relaxed_any" if pol == "any" else "relaxed_fields"), None
+                allow_root = True
             if INTPTR_SUGAR.search(sugared):
                 W._err_as(p, f"`{sugared}` — an address laundered through uintptr_t/intptr_t can "
                              f"alias a Value; refused", "world", mode, origin)
@@ -1147,7 +1234,13 @@ def _walk_record(W, rec, path, qname, prefix, top_level):
             job = FieldJob(p, nm, prefix, sugared, t.get("desugaredQualType") or sugared,
                            top_level, mode, origin)
             job.ident = W.cur_ident
+            job.allow_root = allow_root
             W.jobs.append(job)
+            prev = inner[i - 1] if i > 0 else None
+            if (prev is not None and prev.get("kind") == "CXXRecordDecl" and not prev.get("name")
+                    and prev.get("completeDefinition") and not prev.get("isImplicit")):
+                # THE declarator of the unnamed record just walked, in the mode it was walked in
+                W.anon_decls.append((job, W.mode))
         elif kind == "VarTemplateDecl":
             W._err(f"{path}::{c.get('name')}", "member VARIABLE TEMPLATE — its instantiations are "
                                                "storage the walk does not follow (closed world: "
@@ -1166,9 +1259,6 @@ def _walk_record(W, rec, path, qname, prefix, top_level):
             if "(unnamed " not in ntext and "(anonymous " not in ntext:
                 continue
             nq = ntype.get("qualType", "").rstrip()
-            key = _anon_key(ntext)
-            if key:
-                W.anon_walked.add(key)
             if not nxt.get("name"):
                 sub = prefix                                   # anonymous: members injected
             elif prefix and nq.endswith("]") and "*" not in nq and "&" not in nq:
@@ -1189,6 +1279,16 @@ template <class Tag, class T> struct robt { friend constexpr auto get(Tag) { ret
 template <bool B> struct req;
 template <> struct req<true> { using type = int; };
 template <class C, int K> struct chk {};
+template <class B> struct unbox;
+template <class T> struct unbox<box<T>> { using type = T; };
+template <class T> struct core;
+template <class T> struct core_i { using type = T; };
+template <class T> struct core_i<T *> { using type = typename core<T>::type; };
+template <class T> struct core_i<T &> { using type = typename core<T>::type; };
+template <class T> struct core_i<T &&> { using type = typename core<T>::type; };
+template <class T> struct core_i<T[]> { using type = typename core<T>::type; };
+template <class T, decltype(sizeof(0)) N> struct core_i<T[N]> { using type = typename core<T>::type; };
+template <class T> struct core { using type = typename core_i<typename std::remove_cv<T>::type>::type; };
 }
 """
 
@@ -1212,7 +1312,8 @@ void volatile wchar_t while xor _Bool __int128""".split())
 
 
 _HELPER_NAMES = ("std declval get complete derived llvm Value ValueHandleBase is_same is_base_of "
-                 "is_enum is_class conjunction void_t false_type true_type req chk type value")
+                 "is_enum is_class conjunction void_t false_type true_type req chk type value "
+                 "unbox core core_i remove_cv")
 
 
 def _undefs(texts):
@@ -1441,6 +1542,24 @@ def _final(ctx, W, state, names):
             cond = "false"   # a base the check cannot name is not trusted
         lines.append(_check_line(1000000 + b, cond))
         role[len(lines)] = ("base", (bpath, text))
+    # Unnamed record types (bd hdxo; review r2 F-R2-1/F-R2-2): each use must BE, per the
+    # compiler, the type of an unnamed record walked through its own declarator in a mode at
+    # least as strict — compared through the robbed member types, never by printed location.
+    anon_none, seen_use = [], set()
+    for u, (uj, umode, upath, utext) in enumerate(W.anon_uses):
+        if (uj.k, MODE_RANK[umode]) in seen_use:
+            continue
+        seen_use.add((uj.k, MODE_RANK[umode]))
+        cands = sorted({dj.k for dj, dmode in W.anon_decls
+                        if dj.canon is not None and dj.k is not None
+                        and MODE_RANK[dmode] >= MODE_RANK[umode]})
+        if not cands:
+            anon_none.append(("anon", upath, utext))
+            continue
+        core = lambda k: f"typename ::cq_guard_canon::core<typename ::cq_guard_canon::unbox<::cq_guard_canon::c{k}>::type>::type"
+        cond = " || ".join(f"std::is_same<{core(uj.k)}, {core(dk)}>::value" for dk in cands)
+        lines.append(_check_line(2000000 + u, f"({cond})"))
+        role[len(lines)] = ("anon", (upath, utext))
     names = sorted(names)
     for i, n in enumerate(names):
         T = _spell(n)
@@ -1475,32 +1594,27 @@ def _final(ctx, W, state, names):
             ro = role.get(int(m.group(1)))
             if ro and ro[0] == "spell":
                 spell_bad.append(("field", ro[1].path, ro[1].canon))
-            elif ro and ro[0] == "base":
-                spell_bad.append(("base",) + tuple(ro[1]))
+            elif ro and ro[0] in ("base", "anon"):
+                spell_bad.append((ro[0],) + tuple(ro[1]))
             else:
                 other.append(line)
         elif " error: " in line or line.startswith("error:"):
             other.append(line)
     if other:
         raise GuardError("trait/spelling probe did not compile:\n  " + "\n  ".join(other[:8]))
-    return props, sorted(set(spell_bad))
+    return props, sorted(set(spell_bad + anon_none))
 
 
 _INC_ANY = re.compile(r'^\s*#\s*include\s*([<"])([^>"]+)[>"]', re.M)
 _MARKER = re.compile(r'^#\s+\d+\s+"((?:[^"\\]|\\.)*)"')
 
 
-def _closure(tmp, start="TaintPropagation.h"):
-    seen, stack = [], [start]
-    while stack:
-        f = stack.pop()
-        if f in seen:
-            continue
-        seen.append(f)
-        for q, name in _INC_ANY.findall(open(os.path.join(tmp, f), errors="ignore").read()):
-            if q == '"' and os.path.isfile(os.path.join(tmp, name)):
-                stack.append(name)
-    return seen
+# Tokens whose value differs between a file's inclusion contexts WITHOUT any macro a header
+# defines, or that forge where lines are attributed: refused in closure files (review r2
+# F-R2-6; under the owner ruling of 2026-09-29 these are deliberate-evasion spellings, refused
+# because it is cheap, not because the threat model requires it).
+_CTX_TOKENS = re.compile(r"^\s*#\s*line\b|^\s*#\s*\d|\b__INCLUDE_LEVEL__\b|\b__COUNTER__\b|"
+                         r"\b__FILE__\b|\b__BASE_FILE__\b|\b__FILE_NAME__\b", re.M)
 
 
 def _guard_macro(text):
@@ -1513,43 +1627,96 @@ def _guard_macro(text):
     return None
 
 
-def _preprocessed(ctx, text, stem, files):
-    """-E `text` in the probe dir -> {file: [non-empty lines]} for the files in `files`."""
+def _in_dir(path, d):
+    d = os.path.realpath(d)
+    return os.path.realpath(path).startswith(d + os.sep)
+
+
+_SENTINEL = "cq_guard_ctx_sentinel"
+
+
+def _preprocessed(ctx, text, stem):
+    """-E `text` (which carries a `_SENTINEL` line) with the probe dir FIRST on the include
+    path -> ({file under the probe dir, relative: [non-empty lines AFTER the sentinel]},
+    {files under the probe dir ENTERED after the sentinel}, {every file named by a line
+    marker anywhere, realpath}). No sentinel in the output FAILS CLOSED."""
     tu = ctx.fresh(stem)
     open(tu, "w").write(text)
-    r = _run(ctx.cfg.argv + ["-E", "-w", f"-I{ctx.tmp}", tu], ctx.cfg.cwd)
+    argv = ctx.cfg.argv
+    r = _run([argv[0], f"-I{ctx.tmp}"] + argv[1:] + ["-E", "-w", tu], ctx.cfg.cwd)
     if r.returncode != 0:
         raise GuardError("the include-order check could not preprocess:\n  "
                          + "\n  ".join(_first_errors(r.stderr, 4)))
-    want = {os.path.realpath(os.path.join(ctx.tmp, f)): f for f in files}
-    out, cur = {}, None
+    tmp = os.path.realpath(ctx.tmp)
+    out, entered, seen, cur, started = {}, set(), set(), None, False
     for line in r.stdout.splitlines():
         m = _MARKER.match(line)
         if m:
-            cur = want.get(os.path.realpath(m.group(1).encode().decode("unicode_escape")))
+            f = m.group(1).encode().decode("unicode_escape")
+            if f.startswith("<"):
+                cur = None
+                continue
+            f = os.path.realpath(os.path.join(ctx.cfg.cwd, f))
+            seen.add(f)
+            cur = os.path.relpath(f, tmp) if f.startswith(tmp + os.sep) else None
+            if started and cur is not None and "1" in line[m.end():].split():
+                entered.add(cur)
             continue
-        if cur is not None and line.strip():
+        if line.strip() == _SENTINEL:
+            started = True
+            continue
+        if started and cur is not None and line.strip():
             out.setdefault(cur, []).append(" ".join(line.split()))
-    return out
+    if not started:
+        raise GuardError("the include-order check's preprocessor output lost its sentinel line "
+                         "(no output?) — this gate fails closed")
+    return out, entered, seen
 
 
 def _context_problem(ctx):
-    """bd ngfa / review r1 F-R1-4: the probe TUs include `TaintPropagation.h` FIRST, while a
-    real TU includes other headers before it — a member under `#ifdef <a macro another
-    header defines>` exists in the build and not in the probe. Preprocess the header's
-    include closure twice — alone (the probe's context) and after EVERY header any TU of this
-    configuration includes plus every project header (the closure's include guards defined
-    first and undefined just before, so it is really re-preprocessed in that context) — and
-    refuse if any closure file's text differs. -> a problem string, or None."""
-    files = _closure(ctx.tmp)
+    """bd ngfa / review r1 F-R1-4, review r2 F-R2-4/5/6/8: the probe TUs include
+    `TaintPropagation.h` FIRST, while a real TU includes other headers before it — a member
+    under `#ifdef <a macro another header defines>` exists in the build and not in the
+    probe. The header's include CLOSURE is taken from the COMPILER (the files its own `-E`
+    ENTERS, per the line markers: every file under the probe directory — quote, angle,
+    computed, subdirectory and `.def` includes alike) and preprocessed in THREE contexts:
+    alone; after every header any TU of this configuration includes plus every project
+    header (the closure's guards defined first and undefined just before, so it is really
+    re-preprocessed there); and after the closure's OTHER guarded files (a real TU that
+    includes `LoopPlan.h` first). The set of closure files entered and every closure file's
+    text must be the same in all three; any difference refuses. A preprocessor output
+    without line markers, without the sentinel, or attributing nothing to the header FAILS
+    CLOSED (review r2 F-R2-8). -> a problem string, or None."""
+    lo, lo_in, seen = _preprocessed(ctx, f'{_SENTINEL}\n#include "TaintPropagation.h"\n', "cq_guard_ctxmin")
+    if not lo.get("TaintPropagation.h") or "TaintPropagation.h" not in lo_in:
+        raise GuardError("the include-order check's preprocessor output attributes no line to "
+                         "`TaintPropagation.h` (no output, or no line markers) — this gate fails closed")
+    files = sorted(lo_in)
+    texts = {f: open(os.path.join(ctx.tmp, f), errors="ignore").read() for f in files}
+    for f in files:   # first: a forged attribution would otherwise hide the file's own lines
+        m = _CTX_TOKENS.search(_strip_comments(texts[f]))
+        if m:
+            return (f"`{f}` (in the header's include closure) uses `{m.group(0).strip()}`, whose "
+                    f"meaning depends on where the file is included or which forges line "
+                    f"attribution (closed world: refused)")
+    root = os.path.realpath(ROOT) + os.sep
+    outside = sorted(f for f in seen if f.startswith(root) and not _in_dir(f, ctx.tmp))
+    if outside:
+        return (f"the header's include closure reaches a project file OUTSIDE the probe directory "
+                f"(`{os.path.relpath(outside[0], root)}`), which no check can re-preprocess "
+                f"(closed world: refused)")
     guards = {}
     for f in files:
-        g = _guard_macro(open(os.path.join(ctx.tmp, f), errors="ignore").read())
-        if not g:
-            return (f"`{f}` has no `#ifndef X / #define X` include guard, so the include-order "
-                    f"check cannot re-preprocess it in the build's context (closed world: refused)")
-        guards[f] = g
-    incs, seen = [], set()
+        text = texts[f]
+        body = _strip_comments(text)
+        g = _guard_macro(text)
+        if g:
+            guards[f] = g
+        elif re.search(r"^\s*#\s*pragma\s+once\b", body, re.M):
+            return (f"`{f}` is guarded by `#pragma once`, which the include-order check cannot "
+                    f"reset to re-preprocess it in context (closed world: refused)")
+        # no guard at all (an X-macro `.def`): re-included wherever it is included
+    incs, dup = [], set()
     for src in ctx.cfg.srcs:
         try:
             text = open(src, errors="ignore").read()
@@ -1560,33 +1727,46 @@ def _context_problem(ctx):
                                  or name.startswith(("llvm/", "llvm-c/"))):
                 continue   # a TU-local header this probe dir cannot reach
             line = f'#include "{name}"' if q == '"' else f"#include <{name}>"
-            if line not in seen:
-                seen.add(line)
+            if line not in dup:
+                dup.add(line)
                 incs.append(line)
-    for f in sorted(os.listdir(ctx.tmp)):
-        if f.endswith(".h") and f'#include "{f}"' not in seen:
-            seen.add(f'#include "{f}"')
-            incs.append(f'#include "{f}"')
-    maxi = ("\n".join(f"#define {g}" for g in guards.values()) + "\n" + "\n".join(incs) + "\n"
-            + "\n".join(f"#undef {g}" for g in guards.values()) + '\n#include "TaintPropagation.h"\n')
+    tmp_real = os.path.realpath(ctx.tmp)
+    for dp, _, fs in sorted(os.walk(tmp_real)):
+        for f in sorted(fs):
+            if f.endswith(".h"):
+                rel = os.path.relpath(os.path.join(dp, f), tmp_real)
+                if f'#include "{rel}"' not in dup:
+                    dup.add(f'#include "{rel}"')
+                    incs.append(f'#include "{rel}"')
+    union = ("\n".join(f"#define {g}" for g in guards.values()) + "\n" + "\n".join(incs) + "\n"
+             + "\n".join(f"#undef {g}" for g in guards.values())
+             + f'\n{_SENTINEL}\n#include "TaintPropagation.h"\n')
+    first = f"{_SENTINEL}\n" + "".join(
+        f'#include "{f}"\n' for f in files if f in guards and f != "TaintPropagation.h") \
+        + '#include "TaintPropagation.h"\n'
     with ThreadPoolExecutor(2) as ex:
-        f_min = ex.submit(_preprocessed, ctx, '#include "TaintPropagation.h"\n', "cq_guard_ctxmin", files)
-        f_max = ex.submit(_preprocessed, ctx, maxi, "cq_guard_ctxmax", files)
-        lo, hi = f_min.result(), f_max.result()
-    for f in files:
-        a, b = lo.get(f), hi.get(f)
-        if a == b:
-            continue
-        if a is None or b is None:
-            return (f"`{f}` is not preprocessed in both contexts of the include-order check "
-                    f"(closed world: refused)")
-        i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
-        da = a[i] if i < len(a) else "<end>"
-        db = b[i] if i < len(b) else "<end>"
-        return (f"`{f}` preprocesses DIFFERENTLY after the headers this configuration's TUs "
-                f"include (an include-order dependent member, e.g. under `#ifdef` of another "
-                f"header's macro?) — first difference: alone `{da[:120]}` vs in context "
-                f"`{db[:120]}` (closed world: refused)")
+        fu = ex.submit(_preprocessed, ctx, union, "cq_guard_ctxmax")
+        ff = ex.submit(_preprocessed, ctx, first, "cq_guard_ctxfirst")
+        contexts = (("after the headers this configuration's TUs include", fu.result()),
+                    ("after the closure's other headers are included first", ff.result()))
+    for what, (hi, hi_in, _) in contexts:
+        if not hi.get("TaintPropagation.h"):
+            raise GuardError("the include-order check's preprocessor output attributes no line to "
+                             "`TaintPropagation.h` in a context — this gate fails closed")
+        if hi_in != lo_in:
+            extra = sorted(hi_in ^ lo_in)
+            return (f"the header's include closure ENTERS different files {what} (`{extra[0]}` "
+                    f"differs — an include-order dependent `#include`?) (closed world: refused)")
+        for f in files:
+            a, b = lo.get(f, []), hi.get(f, [])
+            if a == b:
+                continue
+            i = next((k for k in range(min(len(a), len(b))) if a[k] != b[k]), min(len(a), len(b)))
+            da = a[i] if i < len(a) else "<end>"
+            db = b[i] if i < len(b) else "<end>"
+            return (f"`{f}` preprocesses DIFFERENTLY {what} (an include-order dependent member, "
+                    f"e.g. under `#ifdef` of another header's macro?) — first difference: alone "
+                    f"`{da[:120]}` vs in context `{db[:120]}` (closed world: refused)")
     return None
 
 
@@ -1617,6 +1797,7 @@ def _check_one(tmp, cfg, use_pch, allowlist, selftest_src):
             _rob(ctx, [j for j in jobs if j.prefix is not None], state)
             for j in jobs:
                 W.mode, W.origin = j.mode, j.origin
+                W.cur_job, W.allow_root = j, j.allow_root
                 if j.canon is not None:
                     W.canonical = True
                     W.done_jobs.append(j)
@@ -1625,6 +1806,7 @@ def _check_one(tmp, cfg, use_pch, allowlist, selftest_src):
                     W.canonical = False
                     W.field_top(j.path, parse_type(j.fallback), j.top_level, j.name)
             W.mode, W.origin, W.canonical = "strict", None, True
+            W.cur_job, W.allow_root = None, False
         todo = [k for k in W.foreign if k not in W.foreign_done]
         if not todo and not W.jobs:
             break
@@ -1682,7 +1864,12 @@ def _check_one(tmp, cfg, use_pch, allowlist, selftest_src):
                     _TRAIT_CACHE[(cache_key, n)] = v
     props.update(cached)
     for what, path, text in spell_bad:
-        if what == "base":
+        if what == "anon":
+            W.errs.append(f"{path}: unnamed type `{text}` is not — per the compiler — the type of any "
+                          f"unnamed record this walk went through by its own declarator in a mode at "
+                          f"least as strict as this use (defined elsewhere, a forged location, or "
+                          f"walked only inside an allowlisted member) — closed world: refused")
+        elif what == "base":
             W.errs.append(f"{path}: the base's canonical spelling `{text}` does not name this "
                           f"record's base when re-spelled (an anonymous-namespace or local class "
                           f"re-spelled as a same-named record, or an AS-WRITTEN specialization?) — "
@@ -1780,13 +1967,14 @@ def check(header_src, selftest_src, allowlist, scrub_src=None, extra_headers=Non
         return ([f"{ex} — this gate FAILS CLOSED, it never skips"], 0)
     tmp = tempfile.mkdtemp(prefix="cq_scrub_guard_")
     try:
-        for f in os.listdir(INCLUDE_DIR):
-            if f.endswith(".h"):
-                shutil.copyfile(os.path.join(INCLUDE_DIR, f), os.path.join(tmp, f))
+        # the WHOLE include tree — every extension and subdirectory (review r2 F-R2-4: `.def`
+        # and `detail/` files used to be read from the real tree and never compared)
+        shutil.copytree(INCLUDE_DIR, tmp, dirs_exist_ok=True)
         open(os.path.join(tmp, "TaintPropagation.h"), "w").write(header_src)
         if scrub_src is not None:
             open(os.path.join(tmp, "ScrubOnDelete.h"), "w").write(scrub_src)
         for f, text in (extra_headers or {}).items():
+            os.makedirs(os.path.dirname(os.path.join(tmp, f)), exist_ok=True)
             open(os.path.join(tmp, f), "w").write(text)
 
         def label(i, cfg, pch):
@@ -1859,6 +2047,11 @@ HKEY = "HANDLE"
 NOCOMPILE = "does not compile"
 SPELL = "canonical spelling"
 NOREC = "no complete definition"
+ANON = "per the compiler"
+ANONNS = "ANONYMOUS NAMESPACE"
+OWNNAME = "declares its own member"
+CTXDIFF = "preprocesses DIFFERENTLY"
+CTXTOK = "whose meaning depends on where"
 
 
 def _mutants(hdr, st, sc, loopplan):
@@ -2238,6 +2431,103 @@ def _mutants(hdr, st, sc, loopplan):
          ins("std::map<std::variant<int, llvm::WeakVH>, int> RvKV;", more="#include <variant>\n"),
          st, sc, AL, HKEY),
     ]
+    # -- review r2 of the rewrite (guard_fool_r2.py / rv2_mutations.py / tree_probes_r2.py; bd
+    #    hdxo 5ci2 ngfa s6ma) + this round's own variants
+    CTX = "CQ_IRPASS_CQ_LOWERING_PASS_H_"
+    ctxhdr = lambda g, nm: (f"#ifndef {g}\n#define {g}\n#include <set>\n#include \"llvm/IR/Value.h\"\n"
+                            f"namespace cq {{\nstruct {nm} {{\n  unsigned N = 0;\n#ifdef {CTX}\n"
+                            f"  std::set<llvm::Value *> S;\n#endif\n}};\n}}\n#endif\n")
+    TPG = "#define CQ_IRPASS_TAINT_PROPAGATION_H_\n"
+    assert hdr.count(TPG) == 1
+    M += [
+        ("rv2 C1 an unnamed struct with a raw pointer ARRAY held STRICTLY in a project record",
+         ins("RvMidC RvMC;", "struct RvMidC { struct { llvm::Value *Tab[64]; unsigned N = 0; } U; };\n"),
+         st, sc, AL, RAW),
+        ("rv2 C2 the include-order member written in TaintPropagation.h itself",
+         ins(f"#ifdef {CTX}\n  std::set<llvm::Value *> RvCtxSelf;\n#endif"), st, sc, AL, CTXDIFF),
+        ("rv2 B1 an unnamed struct walked RELAXED in LoopBreakRegion, reused STRICTLY by decltype (bd hdxo)",
+         ins("RvMid RvM;", "struct RvMid { decltype(LoopBreakRegion::RvU) E; };\n"), st, sc, AL, ANON,
+         lb("struct { llvm::Value *Tab[64]; unsigned N = 0; } RvU;")),
+        ("rv2 B1' the same with ONE tolerated pointer field (only the mode rule refuses it, bd hdxo)",
+         ins("RvMid1 RvM1;", "struct RvMid1 { decltype(LoopBreakRegion::RvU1) E; };\n"), st, sc, AL, ANON,
+         lb("struct { llvm::Value *P = nullptr; } RvU1;")),
+        ("rv2 B4 unnamed-record location COLLISION by one macro expansion (deliberate; bd hdxo)",
+         ins("#define RV_TWO struct { unsigned N = 0; } RvClean4; template <class = void> struct RvH4 "
+             "{ struct { std::set<llvm::Value *> T; } U; };\n  RV_TWO\n  decltype(RvH4<>::U) RvEvil4;"),
+         st, sc, AL, ANON),
+        ("rv2 B5 unnamed-record location FORGED by #line (deliberate; bd hdxo)",
+         ins("\n#line 7000\n  struct { unsigned N = 0; } RvClean5; decltype(RvHolder5::U) RvEvil5;",
+             "struct RvHolder5 {\n#line 7000\n  struct { std::set<llvm::Value *> T; } U; };\n"),
+         st, sc, AL, ANON),
+        ("rv2 B2a a raw pointer ARRAY field in the ALLOWLISTED LoopBreakRegion (F-R2-7)",
+         hdr, st, sc, AL, RAW, lb("llvm::Value *RvTab[64] = {};")),
+        ("rv2 B2b a pointer-to-pointer field in the ALLOWLISTED LoopBreakRegion (F-R2-7)",
+         hdr, st, sc, AL, RAW, lb("llvm::Value **RvHeap = nullptr; unsigned RvN = 0;")),
+        ("rv2 B2c a SmallVector of a one-pointer record in the ALLOWLISTED LoopBreakRegion (F-R2-7)",
+         hdr, st, sc, AL, RAW,
+         lb("struct RvSlot { llvm::Value *V = nullptr; }; llvm::SmallVector<RvSlot, 8> RvSlots;")),
+        ("rv2 B3 anonymous-namespace RAW base + the derived class's own `using RvB = ::cq::RvB` (bd 5ci2)",
+         ins("RvD RvDV;", "struct RvB { unsigned N = 0; };\n"
+             "namespace { struct RvB { std::set<llvm::Value *> S; }; using RvRawB = RvB; }\n"
+             "struct RvD : ::cq::RvB, RvRawB { using RvB = ::cq::RvB; };\n"), st, sc, AL, ANONNS),
+        ("rv2 B3' LOCAL-class RAW base + the derived class's own `using RvL3 = ::RvL3` (bd 5ci2)",
+         ins_global("::RvMid5 RvM5;", "struct RvL3 { int Clean = 0; };\n"
+                    "inline auto rvMake5() { struct RvL3 { std::set<llvm::Value *> T; }; return RvL3{}; }\n"
+                    "struct RvMid5 : decltype(rvMake5()), ::RvL3 { using RvL3 = ::RvL3; };\n"),
+         st, sc, AL, OWNNAME),
+        ("rv2 B6 include-order member behind `#line 1 \"RvElsewhere.h\"` (deliberate; refused cheaply)",
+         ins(f"\n#line 1 \"RvElsewhere.h\"\n#ifdef {CTX}\n  static inline std::set<llvm::Value *> RvLineCtx;\n#endif"),
+         st, sc, AL, CTXTOK),
+        ("rv2 B7 include-order member in a project header reached by an ANGLE include (F-R2-4)",
+         ins("RvCtx7 RvC7;", more="#include <RvCtx7.h>\n"), st, sc, AL, CTXDIFF,
+         {"RvCtx7.h": ctxhdr("RV_CTX7_H", "RvCtx7")}),
+        ("rv2 B8 include-order member in a project header reached by a COMPUTED include (F-R2-4)",
+         ins("RvCtx8 RvC8;", more="#define RV_CTX8_HDR \"RvCtx8.h\"\n#include RV_CTX8_HDR\n"), st, sc, AL,
+         CTXDIFF, {"RvCtx8.h": ctxhdr("RV_CTX8_H", "RvCtx8")}),
+        ("rv2 D1 include-order member in a SUBDIRECTORY project header (F-R2-4)",
+         ins("RvSub RvSubM;", more="#include \"detail/RvSub.h\"\n"), st, sc, AL, CTXDIFF,
+         {"detail/RvSub.h": ctxhdr("RV_SUB_H", "RvSub")}),
+        ("rv2 D2 include-order member in an X-macro `.def` included INSIDE TaintSet (F-R2-4)",
+         ins("\n#include \"TaintMembers.def\""), st, sc, AL, CTXDIFF,
+         {"TaintMembers.def": f"#ifdef {CTX}\n  std::set<llvm::Value *> RvDefMember;\n#endif\n"}),
+        ("rv2 B9 `#if __INCLUDE_LEVEL__ > 1` (deliberate; refused cheaply)",
+         ins("\n#if __INCLUDE_LEVEL__ > 1\n  static inline std::set<llvm::Value *> RvLevel;\n#endif"),
+         st, sc, AL, CTXTOK),
+        ("RESIDUAL R12 pinned (review r2 B10, deliberate): SFINAE on the COMPLETENESS of cq::CQLoweringPass",
+         ins("RvSel<CQLoweringPass>::type RvCtxSem;",
+             "struct CQLoweringPass;\ntemplate <class T, class = void> struct RvSel { using type = unsigned; };\n"
+             "template <class T> struct RvSel<T, std::void_t<decltype(sizeof(T))>> "
+             "{ using type = std::set<llvm::Value *>; };\n"), st, sc, AL, None),
+        ("rv2 B11 a CLOSURE file's own guard tested before it is included (LoopPlan.h first, F-R2-5)",
+         ins("\n#ifdef CQ_RV_LOOPPLAN_FIRST\n  static inline std::set<llvm::Value *> RvLpFirst;\n#endif")
+         .replace(TPG, TPG + "#ifdef CQ_IRPASS_LOOP_PLAN_H_\n#define CQ_RV_LOOPPLAN_FIRST 1\n#endif\n", 1),
+         st, sc, AL, CTXDIFF),
+        ("rv2 B12 library-template battery (14 members, each refused)",
+         ins("llvm::SmallVectorImpl<llvm::Value *> *RvE1 = nullptr;\n"
+             "  std::function<void()> RvE2;\n"
+             "  llvm::PointerIntPair<llvm::Value *, 1> RvE3;\n"
+             "  llvm::PointerUnion<llvm::Value *, llvm::BasicBlock *> RvE4;\n"
+             "  llvm::MutableArrayRef<llvm::Value *> RvE5;\n"
+             "  std::any RvE6;\n"
+             "  llvm::unique_function<void()> RvE7;\n"
+             "  llvm::SmallVectorTemplateCommon<llvm::Value *> *RvE10 = nullptr;\n"
+             "  llvm::function_ref<void()> RvE12;\n"
+             "  std::reference_wrapper<llvm::Value> *RvE13 = nullptr;\n"
+             "  llvm::iterator_range<llvm::Value **> *RvE14 = nullptr;\n"
+             "  std::pair<llvm::Value *, int> *RvE15 = nullptr;",
+             more="#include <any>\n#include \"llvm/ADT/PointerUnion.h\"\n#include \"llvm/ADT/FunctionExtras.h\"\n"
+                  "#include \"llvm/ADT/STLFunctionalExtras.h\"\n#include \"llvm/ADT/iterator_range.h\"\n"),
+         st, sc, AL, RAW),
+        ("NULL: a CLEAN unnamed struct defined in TaintSet, reused by decltype in a STRICT record",
+         after_taintset(ins("struct { unsigned N = 0; } RvCleanU;\n  RvUseHolder *RvUH = nullptr;",
+                            "struct RvUseHolder;\n"),
+                        "struct RvUseHolder { decltype(TaintSet::RvCleanU) E; };"),
+         st, sc, AL, None),
+        ("NULL: a CLEAN X-macro `.def` included inside TaintSet and a CLEAN subdirectory header",
+         ins("\n#include \"RvClean.def\"\n  RvOkSub RvOkM;", more="#include \"detail/RvOk.h\"\n"), st, sc, AL, None,
+         {"RvClean.def": "unsigned RvDefN = 0;\n",
+          "detail/RvOk.h": "#ifndef RV_OK_H\n#define RV_OK_H\nnamespace cq { struct RvOkSub { unsigned N = 0; }; }\n#endif\n"}),
+    ]
     # -- extra spellings
     M += [
         ("new: static data member", ins("static inline llvm::Value *Global = nullptr;"), st, sc, AL, RAW),
@@ -2295,6 +2585,24 @@ def _db_cases():
     return out
 
 
+def _cmake_shards_problem(n):
+    """review r2 F-R2-9(b): a shard nobody registers is a slice of the corpus nobody runs.
+    -> a problem string if ir-pass/CMakeLists.txt does not register exactly shards 1..n."""
+    try:
+        text = open(os.path.join(ROOT, "ir-pass", "CMakeLists.txt")).read()
+    except OSError as ex:
+        return f"cannot read ir-pass/CMakeLists.txt: {ex}"
+    m = re.search(r"foreach\(\s*(\w+)\s+([\d\s]+)\)\s*add_test\(\s*NAME\s+taintset-scrub-guard-selftest-"
+                  r"\$\{\1\}of(\d+)[\s\S]*?--shard\s+\$\{\1\}/(\d+)", text)
+    if not m:
+        return "ir-pass/CMakeLists.txt registers no `taintset-scrub-guard-selftest-${k}ofN` foreach loop"
+    ks = [int(x) for x in m.group(2).split()]
+    if ks != list(range(1, n + 1)) or int(m.group(3)) != n or int(m.group(4)) != n:
+        return (f"ir-pass/CMakeLists.txt registers shards {ks} of {m.group(3)}/{m.group(4)}, "
+                f"not 1..{n} of {n} — part of the corpus would never run")
+    return None
+
+
 def _shards(entries, n):
     """-> {label: shard index 0..n-1}, deterministic and BALANCED: the expected-clean
     entries (the costly ones — every pass, the no-PCH re-ask and the include-order check)
@@ -2320,6 +2628,12 @@ def selftest(jobs=None, shard=(1, 1)):
     global USE_PCH
     bad = []
     cfgs = _configs()
+    if k == 1 and n > 1:
+        prob = _cmake_shards_problem(n)
+        print(f"  {'ok ' if not prob else 'BAD'} CMake registers every shard 1..{n}"
+              + (f": {prob}" if prob else ""), flush=True)
+        if prob:
+            bad.append("CMake shard registration")
     if k == 1:
         for label, ok, detail in _db_cases():
             print(f"  {'ok ' if ok else 'BAD'} {label}: {detail}", flush=True)

@@ -60,7 +60,7 @@ struct SpecPlan;
 //     spelling its self-test carries — it asks the compiler (every build
 //     configuration) for each member's canonical type and walks the project types it
 //     reaches by their AST identity — but it is NOT a proof: its docstring names the
-//     residuals R1-R11 and the out-of-scope cases (e.g. a type a project header
+//     residuals R1-R12 and the out-of-scope cases (e.g. a type a project header
 //     declares inside `namespace llvm`, an address laundered through a `const char *`;
 //     bd wop9 / 7gri / jk56 / gqda). A new self-cleaning member must be added to
 //     `ir-pass/tools/scrub_selftest.cpp` (the gate checks).
