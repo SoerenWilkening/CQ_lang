@@ -340,6 +340,21 @@ from a COPY of A's populated cache (`warm_copy`, commented as load-bearing), and
 the meta-mutation is back to **5 of 5 caught, by the same rows as the serial
 version** (M1: D; M2: C, D; M3: E; M4: F, I; M5: E); null green.
 
+### FAST tier on the final commit `4d1fb919` (warm)
+
+`ctest -LE heavy -j6`: **561/561 in 163 s**, load 9 at start and **168 at end**
+(other agents launched mid-run). Summed 974 s; slices 431 s (median 0.81 s);
+wall = `ir-pass-lit` 153 s under that load (85–130 s on a quieter box), then
+`cq-opt-equivalence` 84, `code_map_drift` 56, `e2e-fixture-guard-liveness` 51,
+`taintset-scrub-guard` 50. `lit -j4 ir-pass/test`: **2 483 discovered, 2 482
+passed, 1 XFAIL**, 199 s.
+
+**Summary of the tiers, before → after:** FAST 520.6 s (load 25/107) → 145–163 s
+warm (loads rising to 168–193) / 378 s cold; HEAVY at the gates 64–2 040 s per
+entry → 409 s cold / 57 s warm for the whole tier; FULL 832–2 360 s at the gates
+→ 311 s warm (load to 98). The remaining walls are `ir-pass-lit` (fast) and
+`taintset-scrub-guard-selftest` (heavy; another branch is sharding it).
+
 ### Heavy tier measured (after stage 2, `da6cc584`)
 
 `ctest -L heavy -j6`: **cold 409 s** (load 33→6; the wall is the loop matrix's
