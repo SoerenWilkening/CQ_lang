@@ -39,10 +39,17 @@ test)** → free-pairing check (2b) → link (3) → run (4) → compare. Stages
 and 4 are pure functions of their input bytes, so they are content-addressed
 under `build/tests/e2e/.s1cache` and `.runcache` and a previous SUCCESS is
 replayed; **stage 2 and every comparison (trace vs golden, rolled vs unrolled,
-verdict vs table) run every time**. The key covers the lowered module, both
-runtime archives, the link wrapper and the toolchain, so a pass change, a
-rebuilt runtime or a new clang is a miss. Read `tools/cq_stage_cache.py` for the
-argument; `e2e-stage-cache-selftest` makes the cache fail on purpose.
+verdict vs table) run every time**. The key covers the input (source, or the
+lowered module), both runtime archives, the link wrapper, the clang bytes, the
+toolchain and SDK, the environment variables that steer clang/ld/python, **and
+the command**: the literal flag arrays and a digest of the harness files
+themselves (`run_slice.sh`, `run_slice_multi.sh`, `stage_cache.sh`,
+`tools/cq_stage_cache.py`), so **editing the harness invalidates the whole
+cache** (bd `ffm0`: before that, a harness edit that must fail was replayed as
+the old pass). A pass change, a rebuilt runtime or a new clang is a miss. Read
+`tools/cq_stage_cache.py` for the argument and its declared residuals;
+`e2e-stage-cache-selftest` makes the cache fail on purpose, one row per key
+component.
 
 - `CQ_E2E_NO_CACHE=1 ctest --test-dir build -j6` — every stage runs, nothing is
   read or recorded (a from-scratch run).

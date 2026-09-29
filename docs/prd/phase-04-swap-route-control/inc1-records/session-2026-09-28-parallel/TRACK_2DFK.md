@@ -461,3 +461,81 @@ NOT RUN: a full `lit ir-pass/test` sweep on this branch beyond the fast tier's
 `ir-pass-lit` entry (which ran it: 2 483 fixtures, green in both after runs);
 `cq-opt-equivalence-full` (no pass change); allocator sweeps (no pass change); the
 taintset scrub-guard files (out of scope, another branch).
+
+---
+
+## ROUND 2 — Rule-13 r1 NOT-CLEAR (bd `test_C_libtooling-ffm0`, P1) and its fix
+
+Review: `review_r1_2dfk/REVIEW.md` + `probes/` (committed untouched with this round).
+
+### F-r1-1 (P1, INTRODUCED; one half PRE-EXISTING) — the command was in no key
+
+**The reviewer was right, and the TRACK's own table said otherwise.** Stage 1's row
+read "CQ_S1_BASE + flags + source PATH + source bytes"; that was true of the python
+spelling and false of both bash runners, whose flags were keyed only through the
+DUPLICATE flag string CMake hands `s1_cache_key.py` (pre-existing, bd dgn5) — and the
+lib TUs of `run_slice_multi.sh` by a constant TAG (mine). Stage 3's `clang -c` flags
+and the ld command were keyed by nothing (mine). So a harness edit that must fail —
+r1 measured the C18 tripwire (`-include CQ.h` on lib TUs: 31 of 33 breaking entries
+passed WARM) and the bd szpr pin (`-O2` at stage 3: 5 slices red uncached, 0 warm) —
+was replayed as the old pass. That is exactly the edit class Rule 19 item 3 sends to
+the full gate, and the gate would have run warm.
+
+**The fix — every key now carries the command:**
+
+| key | components (NUL-terminated fields; lists count-prefixed) |
+|---|---|
+| S1 (bash, `cq_s1_compile`, one helper for BOTH runners) | `cq-s1-v2`, **HD**, CQ_S1_BASE, **clang bytes**, **ENVD**, **the literal flag array** (`S1_FLAGS` / `CQ_FLAGS` / `LIB_FLAGS`, the same arrays the commands run with), source path, source bytes |
+| S1 (python, `stage1_file` / `stage1_generated`) | `cq-s1-v2-{file,gen}`, **HD**, CQ_S1_BASE, **clang bytes**, **ENVD**, flags, path, bytes |
+| 2b (bash) | `cq-2b-v2`, **HD**, **ENVD**, lowered module, checker bytes, checker flags, interpreter path |
+| run (bash ≡ python, one namespace) | `cq-run-v2`, **HD**, CQ_RUN_BASE, **clang bytes**, **`s3cc` flag array**, lowered module, templates, runtime, wrapper, **ENVD**, **argc + argv** |
+
+- **HD — the harness digest**: sha-256 over the bytes of `run_slice.sh`,
+  `run_slice_multi.sh`, `stage_cache.sh`, `cq_stage_cache.py` (every file a cached
+  command is written in), computed at TEST time from the runner's own location, so
+  an edit invalidates the whole cache with no reconfigure. `free_pairing_check.py`
+  is deliberately NOT in HD: it is keyed by its bytes in the 2b key, and a second
+  copy of the same component would make dropping the first an equivalent mutant no
+  row could see. Python HD == bash HD, measured.
+- **The stage-3 flags** are one array per spelling (`CQ_S3_CC_FLAGS`, `S3_CC_FLAGS`)
+  that both the command and the key read; the lib-TU tag is gone (the literal
+  `LIB_FLAGS` array is keyed).
+- **Clang identity** (r1 P3): the bytes of the clang the stage was handed (160 KB
+  driver; per-run hash) — `railbank_register_twin_gate.py`'s `$CQ_LLVM_BIN/clang` is
+  now keyed as itself.
+- **ENVD** (r1 P3): `CCC_OVERRIDE_OPTIONS COMPILER_PATH CPATH CPLUS_INCLUDE_PATH
+  C_INCLUDE_PATH DEVELOPER_DIR DYLD_FALLBACK_LIBRARY_PATH DYLD_INSERT_LIBRARIES
+  DYLD_LIBRARY_PATH LIBRARY_PATH MACOSX_DEPLOYMENT_TARGET OBJCPLUS_INCLUDE_PATH
+  OBJC_INCLUDE_PATH PYTHONHOME PYTHONPATH SDKROOT SOURCE_DATE_EPOCH`; set-to-empty ≠
+  unset. ⚠ **Measured: macOS SIP strips every `DYLD_*` before `/bin/bash` starts**,
+  so in the bash spelling they always read unset — which is the truth for everything
+  a bash runner launches; the python spelling (pyenv python, not SIP-protected) sees
+  them and so do its programs. The parity row compares over what bash receives.
+- **The SDK** (r1 P3, and `s1_cache_key.py`'s false docstring corrected at the
+  source, L7): CQ_S1_BASE now hashes the sysroot clang actually uses — read from
+  `clang -###` (`/Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk`), NOT from
+  `xcrun` (which reports the Xcode SDK, a different one) — and its SDKSettings.json.
+- **CR** (r1 F-r1-3): a ModuleID line containing CR is hashed whole (never stripped),
+  both spellings. **Framing** (r1 F-r1-5): NUL-terminated fields, count-prefixed
+  lists (argv, flags). **Eviction / `.tmp`** (r1 F-r1-5): documented in both files'
+  headers and tests/README.md (no eviction; the reset is `rm -rf` of the two dirs; a
+  killed publish leaves an unread `.tmp`), not built.
+- **Declared residuals, now written where they apply**: configure-time toolchain half
+  (brew/CLT upgrade without reconfigure); clang's dylibs only via `--version`; a
+  header included relative to a source (r1 measured 0 today); an in-place edit inside
+  the SDK that leaves SDKSettings.json alone.
+
+### F-r1-2 (P2) — one selftest row per key component, and the meta-mutation
+
+`tools/cq_stage_cache_test.py` rewritten: an A-phase populates a warm cache (single
+TU, the `-O2`-sensitive QRAM slice, a two-TU slice); every other row starts from a
+COPY of it (or warms its own private source), changes ONE component, and requires a
+MISS (the stage visibly re-runs — the logging wrappers count stage-1 clang, stage-3
+clang and checker invocations separately) and a RED where the change breaks the
+program. **66 expectations**, incl. r1's repro cases as rows (lib-TU `-include
+CQ.h` → MISS+RED "C18 violation"; stage-3 `-O2` → MISS+RED on QRAM; stage-1 `-O0` →
+MISS+RED), two NULL controls (a no-op cq-opt wrapper hits; an UNMODIFIED harness copy
+at another path hits — HD is content, not path), parity rows (python run key == the
+bash entry; ENVD with every variable set), and direct key-function probes for the two
+components no end-to-end edit can move alone (the stage-3 flag array — its only
+spelling is inside HD-covered files — and the CR guard).

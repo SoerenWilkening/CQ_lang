@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 816 maintained source files, 6456 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 816 maintained source files, 6480 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -59,6 +59,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/LoopPlan.h` — 762 physical lines
 - `ir-pass/include/ControlPlan.h` — 749 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
+- `tools/cq_stage_cache_test.py` — 693 physical lines
 - `ir-pass/include/ChainWalk.h` — 673 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 665 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 662 physical lines
@@ -92,6 +93,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
+- `tools/cq_stage_cache.py` — 443 physical lines
 - `ir-pass/src/DeadValueLiveness.cpp` — 440 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 440 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
@@ -7510,41 +7512,65 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_opt_equivalence.py:44` — `_compare`
 - `tools/cq_opt_equivalence.py:66` — `main`
 
-### `tools/cq_stage_cache.py` (307 lines)
+### `tools/cq_stage_cache.py` (443 lines)
 
-- `tools/cq_stage_cache.py:78` — `_env`
-- `tools/cq_stage_cache.py:82` — `disabled`
-- `tools/cq_stage_cache.py:86` — `s1_enabled`
-- `tools/cq_stage_cache.py:90` — `run_enabled`
-- `tools/cq_stage_cache.py:94` — `sha_bytes`
-- `tools/cq_stage_cache.py:98` — `sha_file`
-- `tools/cq_stage_cache.py:106` — `lowered_digest`
-- `tools/cq_stage_cache.py:117` — `_publish`
-- `tools/cq_stage_cache.py:135` — `stage1_generated`
-- `tools/cq_stage_cache.py:170` — `stage1_file`
-- `tools/cq_stage_cache.py:195` — `run_manifest`
-- `tools/cq_stage_cache.py:206` — `LinkRun.__init__`
-- `tools/cq_stage_cache.py:214` — `link_and_run`
-- `tools/cq_stage_cache.py:267` — `run_base`
-- `tools/cq_stage_cache.py:291` — `main`
+- `tools/cq_stage_cache.py:141` — `_env`
+- `tools/cq_stage_cache.py:145` — `disabled`
+- `tools/cq_stage_cache.py:149` — `s1_enabled`
+- `tools/cq_stage_cache.py:154` — `run_enabled`
+- `tools/cq_stage_cache.py:159` — `sha_bytes`
+- `tools/cq_stage_cache.py:163` — `sha_file`
+- `tools/cq_stage_cache.py:171` — `frame`
+- `tools/cq_stage_cache.py:182` — `counted`
+- `tools/cq_stage_cache.py:188` — `harness_digest`
+- `tools/cq_stage_cache.py:201` — `env_digest`
+- `tools/cq_stage_cache.py:209` — `clang_id`
+- `tools/cq_stage_cache.py:218` — `lowered_digest`
+- `tools/cq_stage_cache.py:232` — `_publish`
+- `tools/cq_stage_cache.py:250` — `s1_key`
+- `tools/cq_stage_cache.py:263` — `stage1_generated`
+- `tools/cq_stage_cache.py:299` — `stage1_file`
+- `tools/cq_stage_cache.py:322` — `run_manifest`
+- `tools/cq_stage_cache.py:337` — `LinkRun.__init__`
+- `tools/cq_stage_cache.py:345` — `link_and_run`
+- `tools/cq_stage_cache.py:399` — `run_base`
+- `tools/cq_stage_cache.py:423` — `main`
 
-### `tools/cq_stage_cache_test.py` (308 lines)
+### `tools/cq_stage_cache_test.py` (693 lines)
 
-- `tools/cq_stage_cache_test.py:50` — `count`
-- `tools/cq_stage_cache_test.py:56` — `main`
-- `tools/cq_stage_cache_test.py:70` — `main.script`
-- `tools/cq_stage_cache_test.py:83` — `main.opt_wrapper`
-- `tools/cq_stage_cache_test.py:112` — `main.slice_run`
-- `tools/cq_stage_cache_test.py:130` — `main.group`
-- `tools/cq_stage_cache_test.py:140` — `main.warm_copy`
-- `tools/cq_stage_cache_test.py:151` — `main.gA`
-- `tools/cq_stage_cache_test.py:160` — `main.gBJC`
-- `tools/cq_stage_cache_test.py:172` — `main.gD`
-- `tools/cq_stage_cache_test.py:183` — `main.gE`
-- `tools/cq_stage_cache_test.py:193` — `main.gF`
-- `tools/cq_stage_cache_test.py:222` — `main.gG`
-- `tools/cq_stage_cache_test.py:231` — `main.gH`
-- `tools/cq_stage_cache_test.py:239` — `main.gIK`
+- `tools/cq_stage_cache_test.py:69` — `count`
+- `tools/cq_stage_cache_test.py:75` — `main`
+- `tools/cq_stage_cache_test.py:90` — `main.script`
+- `tools/cq_stage_cache_test.py:107` — `main.opt_wrapper`
+- `tools/cq_stage_cache_test.py:127` — `main.e2e`
+- `tools/cq_stage_cache_test.py:140` — `main.harness_copy`
+- `tools/cq_stage_cache_test.py:163` — `main.run`
+- `tools/cq_stage_cache_test.py:193` — `main.pyrun`
+- `tools/cq_stage_cache_test.py:206` — `main.group`
+- `tools/cq_stage_cache_test.py:216` — `main.warm_copy`
+- `tools/cq_stage_cache_test.py:226` — `main.private_src`
+- `tools/cq_stage_cache_test.py:236` — `main.edit`
+- `tools/cq_stage_cache_test.py:245` — `main.gA`
+- `tools/cq_stage_cache_test.py:260` — `main.gBJC`
+- `tools/cq_stage_cache_test.py:276` — `main.gD`
+- `tools/cq_stage_cache_test.py:287` — `main.gE`
+- `tools/cq_stage_cache_test.py:299` — `main.rearchive`
+- `tools/cq_stage_cache_test.py:308` — `main.gRT`
+- `tools/cq_stage_cache_test.py:329` — `main.gTPL`
+- `tools/cq_stage_cache_test.py:335` — `main.gLD`
+- `tools/cq_stage_cache_test.py:348` — `main.gBASE`
+- `tools/cq_stage_cache_test.py:356` — `main.gCL`
+- `tools/cq_stage_cache_test.py:361` — `main.gENV`
+- `tools/cq_stage_cache_test.py:373` — `main.g2B`
+- `tools/cq_stage_cache_test.py:389` — `main.gSRC`
+- `tools/cq_stage_cache_test.py:408` — `main.gLIB`
+- `tools/cq_stage_cache_test.py:421` — `main.gHD`
+- `tools/cq_stage_cache_test.py:437` — `main.gHDR`
+- `tools/cq_stage_cache_test.py:461` — `main.gGH`
+- `tools/cq_stage_cache_test.py:478` — `main.gPY`
+- `tools/cq_stage_cache_test.py:528` — `main.gPS1`
+- `tools/cq_stage_cache_test.py:580` — `main.gCR`
+- `tools/cq_stage_cache_test.py:605` — `main.gS3`
 
 ### `tools/dedup_lit_runs.py` (136 lines)
 
@@ -8739,10 +8765,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/record_census/source_ir.py:355` — `analyse`
 - `tools/record_census/source_ir.py:377` — `_validate`
 
-### `tools/s1_cache_key.py` (86 lines)
+### `tools/s1_cache_key.py` (111 lines)
 
-- `tools/s1_cache_key.py:41` — `main`
-- `tools/s1_cache_key.py:52` — `main.feed_file`
+- `tools/s1_cache_key.py:51` — `main`
+- `tools/s1_cache_key.py:62` — `main.feed_file`
 
 ### `tools/slice_census_sync_check.py` (195 lines)
 

@@ -198,22 +198,26 @@ function(_cq_e2e_apply_env)
 endfunction()
 cmake_language(DEFER CALL _cq_e2e_apply_env)
 
-# THE CACHE'S OWN MUTANT VALIDATION (bd 2dfk; CLAUDE.md L10 — a cache in front of
-# a check is exactly the instrument that can turn a red into a green, so it is
-# made to fail on purpose). Through the REAL run_slice.sh, in a PRIVATE cache:
-# a warm hit really skips clang + the checker; a perturbed golden, lowering,
-# checker-rejected module and runtime archive each still FAIL (twice, where a
-# recorded entry could mask it); CQ_E2E_NO_CACHE and a by-hand run record
-# nothing; the python and bash key spellings agree; a no-op wrapper still hits.
-# Meta-validated: five planted cache defects each turn it red (TRACK_2DFK.md).
-# Registered only when the cache is configured — with no key there is no cache.
+# THE CACHE'S OWN MUTANT VALIDATION (bd 2dfk, bd ffm0; CLAUDE.md L10 — a cache in
+# front of a check is exactly the instrument that can turn a red into a green, so
+# it is made to fail on purpose). Through the REAL run_slice.sh /
+# run_slice_multi.sh and the python API, in PRIVATE caches: ONE ROW PER KEY
+# COMPONENT (the lowering, both archives, the link wrapper, CQ_RUN_BASE,
+# CQ_S1_BASE, the clang bytes, the environment, the checker bytes / flags /
+# interpreter, source and lib-TU bytes at the same path, each of the four harness
+# files, the stage-1 / lib-TU / stage-3 flags incl. r1's C18 and -O2 repros,
+# argv), each starting from a WARM cache and requiring a MISS, and a RED where
+# the change breaks the program. Meta-validated by deleting each key component
+# from both spellings (TRACK_2DFK.md). Registered only when the cache is
+# configured — with no key there is no cache.
 if(_E2E_RUN_BASE)
   add_test(NAME e2e-stage-cache-selftest
     COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/cq_stage_cache_test.py"
       --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
       --include "${CMAKE_SOURCE_DIR}/include"
       --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
-      --ld "${_E2E_LINK_WRAPPER}" --s1-base "${_E2E_S1_BASE}")
+      --ld "${_E2E_LINK_WRAPPER}" --s1-base "${_E2E_S1_BASE}"
+      --llvm-link "${_E2E_LLVM_LINK}")
 endif()
 
 # Phase 2 canonical slice: theta -> add_hl -> measure.

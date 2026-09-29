@@ -1,0 +1,13 @@
+control_angle_select_reject_cond_alias.ll -> control_angle_select_reject_cond_register.ll
+   module=True (13)  directives=True (2)  kept base==subject (module,directives)=(True, True)  prose lines 15, not verbatim in kept: 0
+control_inplace_ry_reject_stale_diag_alias_backward.ll -> control_inplace_ry_reject_stale_diag_alias_forward.ll
+   module=True (20)  directives=True (3)  kept base==subject (module,directives)=(True, True)  prose lines 13, not verbatim in kept: 0
+control_predmux_reject_selectform_rotation_hop_chained.ll -> control_predmux_reject_selectform_rotation_poison_arg.ll
+   module=True (28)  directives=True (3)  kept base==subject (module,directives)=(True, True)  prose lines 32, not verbatim in kept: 0
+control_swap_diamond_derived.ll -> control_swap_diamond.ll
+   module=True (22)  directives=True (33)  kept base==subject (module,directives)=(True, True)  prose lines 76, not verbatim in kept: 0
+control_swap_reject_nested_inner_clobber.ll -> control_swap_reject_nested_value_mixed.ll
+   module=True (21)  directives=True (2)  kept base==subject (module,directives)=(True, True)  prose lines 19, not verbatim in kept: 0
+spec_overaccept_probe_callbr_visible.ll -> spec_reject_callbr.ll
+   module=True (14)  directives=True (2)  kept base==subject (module,directives)=(True, True)  prose lines 5, not verbatim in kept: 0
+NOT-EXACT pairs: 0

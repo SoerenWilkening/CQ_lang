@@ -31,40 +31,21 @@ PY=${CQ_PYTHON:-python3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
-# Stage 1 per TU, through the SAME content-addressed cache run_slice.sh uses (bd
-# test_C_libtooling-2dfk; it was "deliberately NOT cached" at 20 entries, and
-# there are 42 now). The key is run_slice.sh's — (CQ_S1_BASE, path, bytes) — plus
-# a TAG, because the lib TUs are compiled WITHOUT `-include CQ.h` and CQ_S1_BASE
-# only covers the CQ-TU flag string; the CQ TU's tag is empty, so its key IS
-# run_slice.sh's key (same flags, same path, same bytes => same IR). A hit is
-# COPIED to the exact $TMP path a miss writes, so llvm-link sees byte-identical
-# inputs at identical paths either way.
-s1_tu() {  # <out> <src> <tag> <clang flags...>
-    local out=$1 src=$2 tag=$3 key hit
-    shift 3
-    if [ -z "${CQ_E2E_NO_CACHE:-}" ] && [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
-        if [ -z "$tag" ]; then
-            key=$({ printf '%s\0%s\0' "$CQ_S1_BASE" "$src"; cat "$src"; } \
-                  | /usr/bin/openssl dgst -sha256 | awk '{print $NF}')
-        else
-            key=$({ printf '%s\0%s\0%s\0' "$CQ_S1_BASE" "$tag" "$src"; cat "$src"; } \
-                  | /usr/bin/openssl dgst -sha256 | awk '{print $NF}')
-        fi
-        hit="$CQ_S1CACHE/$key.ll"
-        if [ -f "$hit" ]; then
-            cp -f "$hit" "$out"
-            return 0
-        fi
-        "$CLANG" "$@" "$src" -o "$out"
-        mkdir -p "$CQ_S1CACHE"
-        cp -f "$out" "$hit.$$.tmp" && mv -f "$hit.$$.tmp" "$hit"
-        return 0
-    fi
-    "$CLANG" "$@" "$src" -o "$out"
-}
+# Stage 1 per TU, through the SAME content-addressed helper run_slice.sh uses
+# (`cq_s1_compile`, tests/e2e/stage_cache.sh; bd test_C_libtooling-2dfk, re-keyed
+# by bd test_C_libtooling-ffm0). Each TU's key carries the LITERAL flag array it
+# is compiled with — the CQ TU's `CQ_FLAGS`, the lib TUs' `LIB_FLAGS` (no
+# `-include CQ.h`, C18) — never a tag standing in for them: the first version
+# keyed the lib TUs by a constant tag, so adding `-include CQ.h` to the lib line
+# (the C18 tripwire below) passed WARM in 31 of the 33 entries it breaks.
+# shellcheck source=stage_cache.sh
+. "$HERE/stage_cache.sh"
+cq_cache_init
+CQ_FLAGS=(-I"$INC" -include CQ.h -O1 -emit-llvm -S)
+LIB_FLAGS=(-I"$INC" -O1 -emit-llvm -S)
 
 # Stage 1a — the CQ TU: -include CQ.h, -O1 (never -O0/-O2/-O3).
-s1_tu "$TMP/cq.ll" "$CQSRC" "" -I"$INC" -include CQ.h -O1 -emit-llvm -S
+cq_s1_compile "$TMP/cq.ll" "$CQSRC" "${CQ_FLAGS[@]}"
 
 # Stage 1b — classical libs: NO -include CQ.h, -O1. $LIBSRCS is a single
 # space-separated string, word-split here; empty means zero lib modules. `set -f`
@@ -75,7 +56,7 @@ i=0
 set -f
 for lib in $LIBSRCS; do
     set +f
-    s1_tu "$TMP/lib_$i.ll" "$lib" "lib-no-CQ.h" -I"$INC" -O1 -emit-llvm -S
+    cq_s1_compile "$TMP/lib_$i.ll" "$lib" "${LIB_FLAGS[@]}"
     linkin+=("$TMP/lib_$i.ll")
     i=$((i + 1))
     set -f
@@ -93,8 +74,6 @@ set +f
 # the run + golden byte-diff, through the SAME content-addressed helper
 # run_slice.sh uses (bd test_C_libtooling-2dfk; see that file and
 # tools/cq_stage_cache.py). The pass above and the diff always run.
-# shellcheck source=stage_cache.sh
-. "$HERE/stage_cache.sh"
 FPC="$HERE/../../tools/free_pairing_check.py"
 cq_cache_keys "$FPC" "$FREECHECK_FLAGS"
 cq_stage_2b "$FPC" "$FREECHECK_FLAGS"                    # Stage 3b
