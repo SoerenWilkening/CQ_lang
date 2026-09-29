@@ -401,3 +401,190 @@ committed guard `99a7df7c`. Three of them (A1, A4, A4b) are regressions against 
 | F-R1-13 unbounded concurrency | s6ma | A global compile semaphore (`--jobs N` / `CQ_GUARD_JOBS`). The self-test is SHARDED (`--shard K/3`) into three ctest entries, each `--jobs 2`; the gate run uses `--jobs 2`. |
 
 ## R2.2 Measurements (the fields marked FINAL come from the committed guard; see R2.4)
+
+Guard shas:
+- `99a7df7c` is round 1's committed guard, the one the reviewer measured.
+- `bbf1a106` is the round-2 commit `6453baa7`. Every "FINAL" row below was measured on it.
+- `e4ab4f28` is commit `30e7a590`. It changes ONLY the self-test's shard assignment and its
+  docstring (`_shard_of` → `_shards`; the diff is quoted in that commit), and `check()` is
+  byte-identical. Only the cost rows were re-measured on it.
+
+The binaries are unchanged. After the rebuild, `cq-opt` is `3f6db37f5cf937b4d70f5736`,
+`libCQPass.so` is `356df92e0b58bbf787c41a25` and `cq-opt-debugalloc` is `36033dbf6641b168d7917bc4`,
+the same as the frozen oracle. The two C++ edits are comment lines. So lit, corpus A/B and the
+allocator sweeps were NOT re-run: they would be vacuous (§6).
+
+### Review r1's probes (`guard_fool_r1.py`, imported unmodified, gate semantics USE_PCH=False)
+
+| probe | before (`99a7df7c`, the reviewer's run) | after, FINAL (`bbf1a106`) |
+|---|---|---|
+| controls N0, C1-C5, K1-K3 | 0 bad | **0 bad** |
+| A1, A1b (unnamed type elsewhere) | MISSED | CAUGHT: "defined outside the record" |
+| A2, A2b (`*const`, `*volatile`) | MISSED | CAUGHT: RAW POINTER |
+| A3 (template pimpl) | MISSED | CAUGHT: "only POINTED AT" |
+| A4, A4b (anon-ns / local base) | MISSED | CAUGHT: "base's canonical spelling … does not name this record's base" |
+| A5 (include order) | MISSED | CAUGHT: "preprocesses DIFFERENTLY" |
+| A6, A6b (allowlisted identity tables) | MISSED (a note) | CAUGHT: RAW POINTER |
+| A9 (scrub::Set storage) | MISSED | CAUGHT: "not an approved backing" |
+| A10 (`SmallPtrSetImplBase *`) | MISSED | CAUGHT: "APPROVED_POINTEES" |
+| A7 (R1 by-value library-named template) | MISSED | MISSED, **by contract** (R1, bd gqda; pinned in the self-test) |
+| A8 (`std::set<const char *>`) | MISSED | MISSED, **by contract** (OUT OF SCOPE; pinned) |
+
+Totals: **14 attacks, 12 CAUGHT, 2 MISSED**, and both misses are documented known passes
+(`results_r2/final_guard_fool_r1.txt`, 613 s).
+
+### The r3 corpora (FINAL, `bbf1a106`, `results/final_r2_r3*.txt`)
+
+| probe | result |
+|---|---|
+| `guard_fool_r3` with PCH | controls bad 0, attacks 8, **MISSED 0** (415 s) |
+| `guard_fool_r3 --no-pch` | controls bad 0, attacks 8, **MISSED 0** (451 s) |
+| `guard_fool_r3b` | controls bad 0, attacks 6, **MISSED 0** (108 s) |
+
+### Fail-closed (FINAL)
+
+| probe | result |
+|---|---|
+| `fail_closed.py` (main, via the CLI) | **6 cases, 0 bad** |
+| reviewer's `fail_open.py` | **6 of 6 refused** |
+
+`fail_open.py` rows, each refused with a truthful reason:
+- the control (the intact DB with the `#ifndef CQPass_EXPORTS` member): `[cq-opt/cq-scrub-selftest, no PCH] … RAW POINTER`;
+- F1 malformed entries: "the entry for … cannot be parsed" (was **CLEAN** in review r1);
+- F2 SIGKILL on the final TU: "killed by signal 9";
+- F3 SIGKILL on member-type TUs: "killed by signal 9" (was a misleading "access path cannot be spelled");
+- F4 silent on the final TU: "did not report its canary";
+- F5 silent on identity TUs: "no complete `cq::TaintSet` definition could be identified".
+
+The self-test also carries five database cases, run in shard 1, all correct.
+
+### The guard's self-test
+
+Contents: 153 entries (16 expected-clean, including two pinned known passes, and 137 mutants),
+plus 5 DB cases and the PCH equivalence control.
+
+| run | guard | result |
+|---|---|---|
+| FINAL `ctest -R scrub -j4` | `bbf1a106` | **10/10 passed**: `taintset-scrub-guard` 28.40 s; selftest-1of3 754.32 s, -2of3 395.31 s, -3of3 458.01 s; plus the six other scrub entries (`results_r2/final_ctest_scrub.txt`, load 40 → 103) |
+| development run, the three shards concurrently | earlier dev version | 0 failed apart from one entry (`dev1_*`). That entry was A5′: `#ifdef LLVM_ANALYSIS_LOOPINFO_H` was refused by the PCH pass as RAW, for a different reason than expected, because the PCH holds LoopInfo.h. It is now two entries: A5′ uses `LLVM_ANALYSIS_LAZYVALUEINFO_H`, a header only `.cpp` files include, and is caught by the include-order check; A5″ is the LoopInfo case, expected RAW. |
+
+### Source mutants of the round-2 mechanisms (`source_mutants_r2.py`, `results_r2/source_mutants_r2.txt`, on `bbf1a106`)
+
+| id | disables | result |
+|---|---|---|
+| N0 | null (a comment edit), run FIRST | **0 of 17 checks moved** |
+| N1 | the unnamed-type location key | KILLED 2/2 (A1, A1b become clean) |
+| N2 | cv/restrict stripping after `*` | KILLED 3/4. A2/A2b are still REFUSED, now by the second layer ("neither a class, a union nor an enum"), which shows the misparse fails closed. A2″ held. |
+| N3 | the scrub shape check | KILLED 1/1 |
+| N4 | force every instantiation (the round-1 behaviour) | KILLED 2/2 (A3, A3′ become clean) |
+| N5 | base check = `is_base_of` only | KILLED 3/4. A4′ held: a single shadowed anonymous-namespace base is not a base under `is_base_of` either. |
+| N6 | the include-order check | KILLED 2/2 (A5, A5′) |
+| N7 | the fail-closed DB parse | KILLED: DB F1 now yields 1 configuration |
+| N8 | strict library-container arguments under "fields" | KILLED 1/1 (A6′) |
+
+Total 1618 s. `APPROVED_POINTEES` (A10) was not given a source mutant, to stay within the ≤8
+budget. Its self-test entry pins it.
+
+### Composition (read-only, FINAL `bbf1a106`, `results_r2/final_composition.txt`)
+
+| worktree | HEAD | verdict |
+|---|---|---|
+| cepm `agent-a3c46257bc3bd028d` | `1f5dbf98` (moved from `7f0be42f`) | **clean**: 77 members, 0 problems |
+| z0re `agent-a284a60d747f2ed82` | `5651797e` | **clean**: 76 members, 0 problems |
+
+Both were also clean with the dev guard `bbf1a106` while cepm was still at `7f0be42f` and z0re at
+`9a68064f`. cepm's `SpecPredictedClassical` is exercised by its `scrub_selftest.cpp`.
+
+## R2.3 ATTACK FIRST (round 2) — where I would try to fool it next
+
+1. **The include-order check's single union context (R10).** Three ways in, each argued and not
+   measured:
+   - a `.cpp` that `#define`s a macro before its includes;
+   - `#if defined(A) && !defined(B)` where the union context defines both;
+   - a TU that includes a header through a relative path the probe directory cannot reach.
+   Also `__COUNTER__` / `__INCLUDE_LEVEL__` in the header, which would make the two contexts
+   differ spuriously. That is an over-refusal.
+2. **The `-E` segment attribution.** The check compares only lines attributed to closure files by
+   line markers. Two routes around it:
+   - a member produced by a macro whose *expansion text* is identical but whose meaning differs
+     (a type alias defined differently before the header);
+   - a closure file without a classic guard, which is refused. Try to make `_guard_macro` pass on a
+     header whose guard is not really a guard (`#ifndef X` / `#define X` followed by more
+     preprocessor logic).
+3. **The unnamed-record location key.** Its identity is `basename:line:col`. Try two different
+   unnamed records at the same line and column in two DIFFERENT closure headers with the SAME
+   basename, which is impossible in one directory. Also try a macro that defines two unnamed
+   structs whose spelling locations coincide (`(unnamed struct at <scratch space>`...).
+4. **Base identity by injected-class-name.**
+   - A derived class that hides the base's injected name with its own member of the SAME type:
+     `struct D : Raw { using Raw = Raw; }` is legal only if the alias names the same type.
+   - A base reached through `using Base::Base;` inheriting constructors.
+   - Dependent bases in a walked partial specialization's body.
+5. **The scrub shape check.** `Set<std::set<P, Cmp>, P>` with a custom comparator that dereferences
+   P is refused, by design. `Set<llvm::SmallPtrSet<P, N>, P>` where N is an expression. A `List<P, N>`
+   whose P is a pointer to a project type holding raw pointers: scrub keys are trusted as pointers
+   to Values (`asValue` `static_cast`s them), so they must be Value-derived to compile.
+6. **The pimpl rule.**
+   - A specialization the header instantiates only inside an unevaluated context (`sizeof` in a
+     static_assert): that counts as instantiated, and a `.cpp` cannot specialize it afterwards.
+   - A partial specialization declared in a `.cpp` for arguments the header never instantiates
+     (refused: "only POINTED AT").
+   - A member template or a nested class of an instantiated template, specialized in a `.cpp`
+     (R5-adjacent, not measured).
+7. **APPROVED_POINTEES / TYPE_ERASED_TEMPLATES.** A library TEMPLATE whose arguments do not say what
+   it holds and that is not on the list: `llvm::SmallVectorTemplateCommon<char>`, `std::any`
+   (non-template, so refused), `llvm::detail::…`, `std::function<void()>` (refused as fn). R7-class.
+8. **R1 / gqda.** A project type or specialization inside `namespace llvm`/`std` is still trusted by
+   name (A7 pinned). This is the biggest known pass.
+9. **The self-test shards.** Every entry runs in exactly one shard: `_shards` is a function of the
+   full, sorted entry list. A reviewer could check that a shard failure cannot hide as "0 mutants
+   selected". An empty shard is refused, and duplicate labels are refused.
+10. **Concurrency.** `--jobs` bounds compilers per PROCESS. Three shards plus the gate run is at most
+    8 compilers from the scrub entries. `ctest -j6` can still co-schedule them with the twin
+    matrix.
+
+## R2.4 Cost (the reviewer's recommendation, implemented and measured)
+
+What changed:
+- A global compile semaphore: `--jobs N` / `CQ_GUARD_JOBS`.
+- The self-test is SHARDED into `taintset-scrub-guard-selftest-{1,2,3}of3`, each run with
+  `--jobs 2`; the gate run is `taintset-scrub-guard --jobs 2`. Every ctest entry therefore runs at
+  most 2 compilers, whatever `-j` the gate uses.
+- `_shards` deals the costly expected-clean entries round-robin: 5+46 / 6+46 / 5+46 entries.
+
+The corpus is kept whole (153 entries). All timings come from `/usr/bin/time -p` (children
+included) and run old and new BACK TO BACK. The load was NOT quiet: other agents ran throughout,
+so each row carries its load.
+
+| run | old guard `d2686266` (main) | new (`e4ab4f28`; check() = `bbf1a106`) | load |
+|---|---|---|---|
+| gate run, pair 1 | 31.31 s real / 12.2 s cpu | 63.98 s real / 57.6 s cpu (default --jobs 4) | 8 → 82 → 169 |
+| gate run, pair 2 | 8.80 s real / 8.2 s cpu | 26.68 s real / 44.1 s cpu | 169 → 144 → 97 |
+| gate run inside `ctest -R taintset-scrub-guard -j4` | — | 54.89 s (--jobs 2) | 94 → 6 |
+| self-test | 130.61 s real / 343.6 s cpu (one process, unbounded, 7 + 74 checks) | `ctest -R taintset-scrub-guard -j4`: **389.22 s real** / 1917.4 s cpu; shards 388.72 / 360.33 / 347.28 s (153 entries + 5 DB + PCH control) | 77 → 94 → 6 |
+| self-test, hash-sharded (before `_shards`) | — | `ctest -R scrub -j4`: shards 754.32 / 395.31 / 458.01 s | 40 → 103 |
+| self-test, round 1 (for reference) | — | one process: 853.20 s real / 1659.2 s cpu (122 checks, ~24 compilers) | ~400 |
+
+Reading:
+- The gate's WALL time for the self-test is the longest shard, about 389 s here. Balanced shards
+  took the long pole from 754 s to 389 s.
+- CPU is about 5.6× the old guard's, and that is structural. Every clean verdict costs two
+  configurations × (a PCH pass, a no-PCH pass and the `-E` include-order check). The corpus is
+  1.9× larger (153 entries against 81).
+- CPU is no longer a burst: 2 compilers per entry, instead of the ~24 that starved the other
+  entries in round 1.
+- If the owner wants fewer seconds, the lever is a path trigger at the gate: run the self-test only
+  when `tools/taintset_scrub_guard.py`, `ir-pass/include/*.h` or the toolchain changes. That is an
+  owner ruling (Rule 19), not taken here.
+
+## R2.5 Not run / open
+
+- **Not run:** lit, e2e, corpus A/B and the allocator sweeps. The binaries are the oracle's and
+  nothing the pass compiles changed (two comment edits). The full `ctest -j6` is the merge gate's.
+- **Not run:** a Debug-configured tree, and a non-Apple toolchain.
+- **Proposed CLAUDE.md timing text.** It replaces round 1's §10 proposal; I have not applied it.
+  > `taintset-scrub-guard` is now 1 gate entry plus 3 self-test shards (`--jobs 2` each); the shards
+  > took ~350–390 s each in a `-j4` run at load ~90, and CPU is structural (two configurations ×
+  > PCH / no-PCH / include-order check per clean verdict).
+- **Open for the orchestrator:** whether to keep the self-test at every gate or behind a path
+  trigger (an owner ruling).

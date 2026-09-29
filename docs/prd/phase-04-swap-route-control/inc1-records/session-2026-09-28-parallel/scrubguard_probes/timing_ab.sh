@@ -12,6 +12,6 @@ trap 'rm -f "$OLD"' EXIT
 extra=""
 [ "$WHAT" = selftest ] && extra="--selftest"
 for i in $(seq 1 "$N"); do
-  bash "$R/timed_guard.sh" "$R/results/timing_${WHAT}_before_$i.txt" --guard "$OLD" $extra | grep -E "^real|^user|^sys|^rc=|problem|selftest:"
-  bash "$R/timed_guard.sh" "$R/results/timing_${WHAT}_after_$i.txt" $extra | grep -E "^real|^user|^sys|^rc=|problem|selftest:"
+  bash "$R/timed_guard.sh" "$R/results_r2/timing_${WHAT}_before_$i.txt" --guard "$OLD" $extra | grep -E "^real|^user|^sys|^rc=|problem|selftest:"
+  bash "$R/timed_guard.sh" "$R/results_r2/timing_${WHAT}_after_$i.txt" $extra | grep -E "^real|^user|^sys|^rc=|problem|selftest:"
 done
