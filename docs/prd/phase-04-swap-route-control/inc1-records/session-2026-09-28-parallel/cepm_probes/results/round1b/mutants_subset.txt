@@ -1,0 +1,24 @@
+cq-opt.subj2: denominator 486 fixtures: {'PASS': 481, 'SKIP': 5}
+denominator: 486 fixtures (subset $S/cepm/mut/subset2.txt)
+cq-opt.N1: denominator 486 fixtures: {'PASS': 481, 'SKIP': 5}
+N1: MISSED (0 fixtures)
+cq-opt.R1: denominator 486 fixtures: {'PASS': 479, 'SKIP': 5, 'FAIL': 2}
+R1: KILLED (2 fixtures)
+    spec_reject_predicted_classical_round2_mask_growth.ll PASS -> FAIL
+    spec_reject_predicted_classical_round2_mask_growth_ry.ll PASS -> FAIL
+cq-opt.R2: denominator 486 fixtures: {'PASS': 481, 'SKIP': 5}
+R2: MISSED (0 fixtures)
+cq-opt.R3: denominator 486 fixtures: {'PASS': 479, 'SKIP': 5, 'FAIL': 2}
+R3: KILLED (2 fixtures)
+    spec_reject_predicted_classical_round2_mask_growth.ll PASS -> FAIL
+    spec_reject_predicted_classical_round2_mask_growth_ry.ll PASS -> FAIL
+cq-opt.R4: denominator 486 fixtures: {'PASS': 479, 'SKIP': 5, 'FAIL': 2}
+R4: KILLED (2 fixtures)
+    spec_reject_predicted_classical_round2_mask_growth.ll PASS -> FAIL
+    spec_reject_predicted_classical_round2_mask_growth_ry.ll PASS -> FAIL
+cq-opt.R5: denominator 486 fixtures: {'PASS': 479, 'SKIP': 5, 'FAIL': 2}
+R5: KILLED (2 fixtures)
+    spec_reject_predicted_classical_round2_mask_growth.ll PASS -> FAIL
+    spec_reject_predicted_classical_round2_mask_growth_ry.ll PASS -> FAIL
+cq-opt.R6: denominator 486 fixtures: {'PASS': 481, 'SKIP': 5}
+R6: MISSED (0 fixtures)

@@ -1233,6 +1233,12 @@ static constexpr char kMsgPhantomArgRead[] =
     "cq specialization: quantum argument to a parameter the lifted callee never "
     "reads";
 
+// bd `test_C_libtooling-cepm` — the check on the propagation-time classical
+// prediction (`specialize()`); see there.
+static constexpr char kMsgPredictedClassicalQuantum[] =
+    "cq specialization: lifted callee returns a quantum register where "
+    "propagation predicted a classical result";
+
 namespace {
 
 // Is `V` a caller-side QUANTUM value at this slot: tainted, or a rail a control
@@ -1446,8 +1452,40 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
   for (size_t i = 0; i < plan.Pending.size(); ++i) {
     SpecCandidate Cand = plan.Pending[i];
     StringRef OrigW = abiWidthFromType(Cand.Site->getType());  // pre-retarget width.
+    // bd `test_C_libtooling-cepm` — asked on the site AS PROPAGATION LEFT IT, i.e.
+    // before `resolveSite` can rebuild it (an fp-return retarget erases the call and
+    // the new one is not in `Tainted`).
+    const bool ResultWasTainted =
+        Cand.Site->getType()->isVoidTy() || taint.Tainted.count(Cand.Site);
     SpecRecord Rec =
         resolveSite(Cand.Site, Cand.Callee, Cand.Mask, M, wd, taint, plan);
+    // THE CHECK ON THE PROPAGATION-TIME PREDICTION (bd cepm / bd 3zr4). Propagation
+    // leaves a site's RESULT classical when `predictReturnTainted` says the clone
+    // returns a classical value (`specCallResultPredictedClassical`), and every stage
+    // since — both control rounds, the IO/QRAM/Shadow lowerings, the classical-mux
+    // guard and its lifts — has read the result as an ordinary integer. A clone that
+    // returns a REGISTER after all would make every one of those readings wrong, and
+    // the re-mark below (`taint.Tainted.insert`) would taint the call but none of its
+    // consumers: the handle id read as data, verify-clean. ⚠ WHAT REACHES THIS (round
+    // 1b; Rule-13 r1A F-r1A-3 corrected the earlier text here, which called the check
+    // "argued UNREACHABLE" because "nothing between propagation and here is known to
+    // change a callee body" — the wrong mechanism): the predictor is a sound
+    // over-approximation FOR A FIXED MASK (SpecializeClone.h), but the clone is built
+    // with `Cand.Mask`, which a later round can GROW (`replanReseedSpecialization`).
+    // The propagation drain's SETTLE step taints such a site at round 1 whenever
+    // `LaterTaintOracle` foresees the growth; a site it does not foresee stays
+    // classical under the STICKY rule, and THIS CHECK is that rule's designated
+    // backstop — reached by a REPLANNED MASK, with the callee body untouched
+    // (measured: mutants that disable the settle step or blind the oracle make the
+    // round-2 mask-growth fixtures decline here). It is LOUD, never a silent re-mark.
+    // `LLVMContext::diagnose` exits on the `DS_Error` in
+    // `opt` (bd br4a), so nothing any window stage did reaches the output; on a host
+    // whose handler returns, the drain carries on (the site is retargeted and
+    // re-marked below, as every other specializer decline leaves its site).
+    if (Rec.ReturnTainted && !ResultWasTainted)
+      M.getContext().diagnose(DiagnosticInfoUnsupported(
+          *Cand.Site->getFunction(), kMsgPredictedClassicalQuantum,
+          Cand.Site->getDebugLoc()));
     Retargeted.push_back({Cand.Site, Rec.ReturnTainted});
     // fp-ABI result HandleWidth (bd 3c6m.54): a tainted fp return is an i32 handle
     // at the call site (`retargetSite` rebuilt the call to i32), but its logical
@@ -1462,15 +1500,20 @@ void specialize(Module &M, WidthDispatch &wd, TaintSet &taint, SpecPlan &plan) {
       taint.HandleWidth[Cand.Site] = OrigW;
   }
 
-  // §2.7 return-taint re-seed. The original `propagate` conservatively tainted
-  // EVERY specialized-call result (a call reading a tainted arg, :305-306). The
-  // clone's post-lowering `ReturnTainted` is the precise verdict:
+  // §2.7 return-taint re-seed. `propagate` taints a specialized-call result
+  // CONSERVATIVELY whenever `predictReturnTainted` says the clone MAY return a
+  // register — ⚠ since bd cepm NOT "every specialized-call result" (that was the
+  // text here, and it stopped being true): a site predicted classical was never
+  // tainted, is skipped by both branches below, and its prediction was checked
+  // above. The clone's post-lowering `ReturnTainted` is the precise verdict:
   //   * true  → the result is genuine quantum data; leave it tainted (already in
   //     `taint`, downstream already propagated) — the caller's `:115` uncompute
   //     owns it (C-Taint).
-  //   * false → the conservative taint was wrong (the return derives from
-  //     classical params only); scrub the result and the forward cone that loses
-  //     all taint, so a downstream caller op stays CLASSICAL (WI-1.9).
+  //   * false → the conservative taint was wrong (the predictor over-approximated:
+  //     e.g. an inner clone that returns classical, or a tainted branch the clone's
+  //     flatten removes); scrub the result and the forward cone that loses all
+  //     taint, so a downstream caller op stays CLASSICAL (WI-1.9) — and bd l3oi's
+  //     fence refuses whatever an emitter already read as a register.
   // Never-scrub roots: every value whose taint is INDEPENDENT of a scrubbed
   // call result — the primary `cq_theta` sources (a theta result is quantum
   // regardless of its arg-0 seed, Rule 3) and every genuinely-tainted

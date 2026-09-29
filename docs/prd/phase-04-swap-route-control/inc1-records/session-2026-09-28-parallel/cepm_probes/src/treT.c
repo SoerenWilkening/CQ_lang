@@ -1,0 +1,4 @@
+#include <stdlib.h>
+void g(int a);
+int k3(int k);
+int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); g(q); int t = k3(m); int r = m; if (t > 3) r = m + 5; return cq_measure(r) + cq_measure(q); }

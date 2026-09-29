@@ -14,6 +14,7 @@
 #include "QramLowering.h"
 #include "RailBankPromote.h"  // railBankOfPointer / isRailBankAlloca / the W1 second half
 #include "RotationLowering.h"  // normalizeUndefRotationSeed (bd z9t1)
+#include "SpecializeClone.h"    // specCallResultPredictedClassical (bd cepm / 3zr4)
 #include "SpecializeDetect.h"   // detectSpecializations (9paa round-2 re-detection)
 #include "SpecializePlan.h"
 #include "SpecializeReject.h"  // classifyCandidate / diagnoseReject (0vvq Inc 2 re-plan)
@@ -465,9 +466,11 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
 
 // Shared forward-taint work-list loop (extracted for reuse by both the initial
 // `propagate` and the dugh second round `repropagateControlMerges`). Each tainted
-// SSA value's user instructions become tainted, except measure sinks and the
-// arg-1 angle edge of a rotation. The work-list discipline (insert-then-push)
-// processes each value exactly once.
+// SSA value's user instructions become tainted, except measure sinks, the
+// arg-1 angle edge of a rotation, and (bd cepm / 3zr4) the RESULT of a would-be
+// Phase-6 site whose lifted callee is predicted to return a classical value
+// (`specCallResultPredictedClassical`, SpecializeClone.h). The work-list
+// discipline (insert-then-push) processes each value exactly once.
 //
 // `skipRuntimeCalls` is set ONLY by the dugh second round: at that point the IR
 // already carries the control emitter's own `cqrt_*` / `cq_template_*`
@@ -476,9 +479,12 @@ void resolveSources(WidthDispatch &wd, FnSet &ThetaFns, FnSet &PhiFns,
 // merge out-rail exactly as it treats a tainted-merge one) nor recurse through it.
 // At first `propagate` time no such runtime calls exist, so the flag is false and
 // this is a pure no-op there.
-void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
-                       const FnSet &PhiFns, const FnSet &MeasureFns,
-                       TaintSet &out, bool skipRuntimeCalls) {
+//
+// bd cepm round 1b: the drain itself is `drainWorklist`; `propagateWorklist`
+// (below) wraps it with the drain-generation count and the SETTLE step.
+void drainWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
+                   const FnSet &PhiFns, const FnSet &MeasureFns,
+                   TaintSet &out, bool skipRuntimeCalls) {
   while (!Worklist.empty()) {
     Value *V = Worklist.back();
     Worklist.pop_back();
@@ -510,6 +516,50 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
           if (N.starts_with("cqrt_") || N.starts_with("cq_template_"))
             continue;
         }
+        // bd `test_C_libtooling-cepm` / bd `test_C_libtooling-3zr4` — a
+        // would-be Phase-6 site whose lifted callee PROVABLY returns a
+        // classical value (`predictReturnTainted` false for the mask this
+        // drain sees) does NOT taint its RESULT. Before this, every such
+        // result was tainted CONSERVATIVELY and only `specialize()` — after
+        // both control rounds — scrubbed it, so a round-1 emitter had already
+        // read the integer as a register and bd l3oi's fence declined a
+        // program the hand-inlined twin compiles (cepm: `t = h(q, m); if (t >
+        // 3)`), and a round-1 site reading a round-2 site's result was cloned
+        // from a mask the scrub then falsified (3zr4). The call is NOT marked
+        // visited: a later drain that taints another argument reaches it again
+        // as that argument's user and re-asks with the grown mask (the
+        // predictor is monotone), and the 3jru return crossing below inserts
+        // it directly whatever this says. The two backstops (a loud decline in
+        // `specialize()` if the clone returns a register after all; the
+        // escape guard for a site that never becomes `Pending`) are in
+        // SpecializeClone.h.
+        //
+        // ⚠ ROUND 1b — THE STICKY RULE. "Re-asks with the grown mask" is right
+        // only WITHIN one drain. A site an EARLIER-generation drain left
+        // classical has since been read as an integer by whatever ran in
+        // between (lowerLoops, both control rounds …); tainting it now — in
+        // ROUND 2 — was measured to accept programs the oracle declines and
+        // whose streams are not the hand-inlined twin's (TRACK_CEPM_3ZR4.md
+        // §5.2.1, battery `r2b`/`r2d`). So a later drain NEVER taints it: its
+        // result stays classical, `replanReseedSpecialization` grows its
+        // Pending mask, and if the clone then returns a register
+        // `specialize()` declines loudly (`kMsgPredictedClassicalQuantum`).
+        // The SETTLE step (`settleSpecPredictions`) is what keeps the known
+        // growth patterns from reaching this: it taints such a site in the
+        // drain that recorded it, as the oracle did.
+        const bool Recorded = out.SpecPredictedClassical.count(CI) != 0;
+        if (Recorded && out.SpecPredictedClassical.lookup(CI) <
+                            out.SpecPredictGeneration)
+          continue;
+        if (specCallResultPredictedClassical(*CI, out)) {
+          if (!Recorded)
+            out.SpecPredictedClassical[CI] = out.SpecPredictGeneration;
+          continue;
+        }
+        // Tainted below: a record of THIS generation (a smaller mask seen
+        // earlier in this drain) is no longer a prediction.
+        if (Recorded)
+          out.SpecPredictedClassical.erase(CI);
       }
       if (out.Tainted.insert(I).second) {
         Worklist.push_back(I);
@@ -552,6 +602,268 @@ void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
       }
     }
   }
+}
+
+// bd `test_C_libtooling-cepm` round 1b (narrowed in round 2) — CAN A LATER DRAIN
+// TAINT THIS VALUE?
+//
+// Every taint-GROWTH event after `propagate()` starts at a φ the round's control
+// emission (or `MergePhiPeel`) REPLACES: the 6.5 / 4.5 / IO-sink merge `%out`
+// rails (`UntaintedMergeRails`) and the peel's `select` each replace an UNTAINTED
+// merge φ whose incoming is SELECTED by a TAINTED condition; their cascades are φs
+// selected by a condition derived from such a rail. So `V` can gain taint later
+// only if its backward use-def slice (operands; a call's arguments; a φ's
+// incomings AND the branches that SELECT which incoming arrives) reaches a
+// CONDITION that is tainted now. It OVER-approximates growth, and
+// over-approximation is the SAFE direction here: a site it names is tainted in the
+// drain that recorded it — what every drain did before bd cepm. An
+// UNDER-approximation is what the STICKY rule in `drainWorklist` and
+// `specialize()`'s check exist for: such a site stays classical and, if its
+// replanned clone then returns a register, the module declines loudly. Neither
+// direction is a silent one.
+//
+// ⚠ ROUND 2 — TWO RULES REMOVED, and why (Rule-13 r1A F-r1A-1 / bd `we38`, r1B
+// F-r1B-2):
+//   * "a call to a defined callee that holds a `cq_theta` (transitively), or an
+//     indirect call" was a SYNTACTIC answer (L5) to "can this call's RESULT be
+//     tainted later?". The only channel by which a call RESULT gains taint other
+//     than through its operands (which the walk follows) is bd 3jru's return
+//     crossing, and a module where it happens is refused by
+//     `declineQuantumReturnCalls` at the post-fixpoint slot, before `specialize()`,
+//     in both entry points (review probe `r6a`: identical decline with and without
+//     the rule). An indirect call is never crossed (the crossing requires the call
+//     to name the function directly). The rule's only measured effect was an
+//     over-decline (`r6b`: a callee that holds a `cq_theta` but returns a MEASURED
+//     classical value). Should the 3jru refusal ever be relaxed, a missed crossing
+//     ONTO AN ARGUMENT of a recorded site still ends at the sticky rule +
+//     `specialize()`'s check — loud. ⚠ A crossing onto the recorded SITE ITSELF is
+//     NOT covered by that mechanism (Rule-13 r2 F-r2-5): `drainWorklist`'s 3jru
+//     branch inserts the call into `Tainted` directly, bypassing the sticky rule, and
+//     `specialize()`'s check would then see `ResultWasTainted` true. What keeps that
+//     path loud TODAY is a DIFFERENT stage: `scanBody` (SpecializeReject.cpp) refuses
+//     a callee that transitively holds a `cq_*` primitive (`callee contains a quantum
+//     primitive (cq_*); only classical functions are lifted`), so a LIFTED callee's
+//     `ret` has no source to grow from. RETIREMENT TRIGGER (L1/L8): the day `scanBody`
+//     admits a callee holding a `cq_*` primitive, OR the 3jru refusal is relaxed,
+//     re-derive this paragraph and give the site-itself crossing its own check.
+//   * "a φ's deciders are EVERY conditional terminator between its block's idom and
+//     the block" counted a loop body's own branches as deciding the loop's header φ
+//     (review probe `lpp`: `for (i<3) { t = h(q, i+m); if (q > t) cq_phi(.2); }`,
+//     whose tainted `br` reconverges before the latch). A branch now counts only if
+//     it SELECTS the incoming (`selectsIncoming`).
+class LaterTaintOracle {
+public:
+  explicit LaterTaintOracle(const TaintSet &T) : T(T) {}
+
+  bool mayGain(Value *V) {
+    SmallPtrSet<const Value *, 32> Seen;
+    return walk(V, Seen);
+  }
+
+private:
+  const TaintSet &T;
+  DenseMap<const Function *, std::unique_ptr<DominatorTree>> DTs;
+
+  DominatorTree &dt(Function &F) {
+    auto &Slot = DTs[&F];
+    if (!Slot)
+      Slot = std::make_unique<DominatorTree>(F);
+    return *Slot;
+  }
+
+  static Value *terminatorCondition(BasicBlock *B) {
+    Instruction *Term = B->getTerminator();
+    if (auto *BI = dyn_cast_or_null<BranchInst>(Term))
+      return BI->isConditional() ? BI->getCondition() : nullptr;
+    if (auto *SI = dyn_cast_or_null<SwitchInst>(Term))
+      return SI->getCondition();
+    return nullptr;
+  }
+
+  // Does `X`'s terminator SELECT which incoming edge of `M` arrives? For each
+  // successor S of `X`, E(S) is the set of predecessors P of `M` such that some
+  // path from S first reaches `M` through the edge P -> M. `X` selects iff the sets
+  // are not all one and the same single block: sets that differ mean the outcome
+  // picks the edge; an EMPTY set (an arm that never reaches `M`) or a set of two
+  // or more blocks (the choice is left to later branches the outcome may still
+  // steer) is conservatively counted as selecting. A loop body's branch whose arms
+  // reconverge before the latch yields {latch} on every arm and does not select;
+  // a diamond's or triangle's branch yields one arm per edge and does. Budget:
+  // visiting more than `kSelectBudget` blocks from one successor answers "selects"
+  // (the conservative direction).
+  static constexpr unsigned kSelectBudget = 4096;
+  static bool selectsIncoming(BasicBlock *X, BasicBlock *M) {
+    SmallVector<SmallPtrSet<BasicBlock *, 4>, 4> Sets;
+    for (BasicBlock *S : successors(X)) {
+      SmallPtrSet<BasicBlock *, 4> E;
+      if (S == M) {
+        E.insert(X);
+      } else {
+        SmallPtrSet<BasicBlock *, 32> Vis;
+        SmallVector<BasicBlock *, 16> WL{S};
+        Vis.insert(S);
+        while (!WL.empty()) {
+          if (Vis.size() > kSelectBudget)
+            return true;
+          BasicBlock *B = WL.pop_back_val();
+          for (BasicBlock *Succ : successors(B)) {
+            if (Succ == M)
+              E.insert(B);
+            else if (Vis.insert(Succ).second)
+              WL.push_back(Succ);
+          }
+        }
+      }
+      Sets.push_back(std::move(E));
+    }
+    if (Sets.empty())
+      return false;
+    for (const auto &E : Sets)
+      if (E.size() != 1)
+        return true;
+    for (const auto &E : Sets)
+      if (*E.begin() != *Sets.front().begin())
+        return true;
+    return false;
+  }
+
+  // A branch at `X` that selects `M`'s incoming, whose condition is tainted now or
+  // may gain taint. ⚠ `selectsIncoming` is asked FIRST: a condition's slice walked
+  // and then discarded would leave its nodes in `Seen` as if they could not reach
+  // a seed, and a later path through them would under-report.
+  bool decides(BasicBlock *X, BasicBlock *M, SmallPtrSetImpl<const Value *> &Seen) {
+    Value *C = terminatorCondition(X);
+    if (!C || !selectsIncoming(X, M))
+      return false;
+    if (T.Tainted.count(C))
+      return true;  // a tainted selector: a later round may replace the φ.
+    return walk(C, Seen);
+  }
+
+  bool walk(Value *V, SmallPtrSetImpl<const Value *> &Seen) {
+    if (!Seen.insert(V).second)
+      return false;
+    auto *I = dyn_cast<Instruction>(V);
+    if (!I)
+      return false;  // an Argument, a Constant, a global: no drain taints it.
+    if (T.Tainted.count(I))
+      return false;  // already tainted: counted by the caller's current mask.
+    if (auto *CI = dyn_cast<CallInst>(I);
+        CI && T.MeasureCalls.contains(CI))
+      return false;  // a measurement result is classical forever.
+    if (auto *P = dyn_cast<PHINode>(I)) {
+      for (Value *In : P->incoming_values())
+        if (walk(In, Seen))
+          return true;
+      BasicBlock *M = P->getParent();
+      DominatorTree &DT = dt(*M->getParent());
+      DomTreeNode *N = DT.getNode(M);
+      if (!N || !N->getIDom())
+        return true;  // unreachable / no dominator: do not argue — grow.
+      BasicBlock *Top = N->getIDom()->getBlock();
+      // The candidate selectors: `M`'s own terminator (a self-loop's exit test)
+      // and every conditional terminator on a path from `idom(M)` to `M`. The
+      // CLIMB PAST `M`'s DIRECT PREDECESSORS IS REACHABLE AND PINNED — through the
+      // `MergePhiPeel` channel: an if/else diamond with two NON-EMPTY phase arms and
+      // two pred-available merge φs (the tainted `br` is the entry block's; both of
+      // the merge's direct predecessors are ARM blocks, whose terminators are
+      // unconditional). `spec_accept_predicted_classical_peel_diamond_climb.ll`
+      // (Rule-13 r2 review probe `pkdC.s1.ll`, hand IR) ACCEPTS only because the
+      // climb reaches that `br`; without it the site stays sticky, the peel's growth
+      // drain replans its mask and `specialize()`'s check declines — a LOUD
+      // over-decline, never an accept (measured with the climb removed). ⚠ Round 2
+      // wrote here that the climb was "UNPINNED AND, TODAY, UNREACHABLE" because
+      // every 6.5 shape with a non-direct tainted predecessor (`gie`, `gsw`,
+      // `ir_fwdC.ll`) declines in round 1 — TRUE of the 6.5 channel and FALSE of the
+      // peel, which the list did not cover (Rule-13 r2 F-r2-1; L7). No C spelling of
+      // the peel diamond is known: `-O1` sinks the arms' common trailing `cq_phi`
+      // into the merge and leaves a triangle (review probes `pk1`/`pk2`).
+      if (decides(M, M, Seen))
+        return true;
+      SmallPtrSet<BasicBlock *, 16> Vis;
+      SmallVector<BasicBlock *, 16> WL(pred_begin(M), pred_end(M));
+      while (!WL.empty()) {
+        BasicBlock *X = WL.pop_back_val();
+        if (X == M || !Vis.insert(X).second)
+          continue;
+        if (decides(X, M, Seen))
+          return true;
+        if (X == Top)
+          continue;
+        WL.append(pred_begin(X), pred_end(X));
+      }
+      return false;
+    }
+    for (Value *Op : I->operands())
+      if (walk(Op, Seen))
+        return true;
+    return false;
+  }
+};
+
+// The POSSIBLE final mask of a recorded site: its tainted arguments plus every
+// argument `LaterTaintOracle` says a later drain can taint. True iff the
+// predictor calls the return quantum under it — the site must then be tainted
+// NOW, as the oracle (every drain before bd cepm) taints every tainted-argument
+// site.
+bool specCallResultMayTurnQuantum(CallInst &CI, const TaintSet &taint,
+                                  LaterTaintOracle &O) {
+  Function *Callee = CI.getCalledFunction();
+  if (!Callee)
+    return true;  // not a site the predicate would have recorded; defensive.
+  SpecMask M = taintArgMask(&CI, taint);
+  for (unsigned A = 0, E = CI.arg_size(); A < E && A < kSpecMaxArity; ++A)
+    if (!((M >> A) & 1) && O.mayGain(CI.getArgOperand(A)))
+      M |= SpecMask(1) << A;
+  return predictReturnTainted(Callee, M);
+}
+
+// bd `test_C_libtooling-cepm` round 1b — THE SETTLE STEP. After a drain, every
+// site THIS generation recorded as predicted-classical is re-asked with its
+// POSSIBLE final mask; one that would then be quantum is tainted now and drained
+// (which may taint the deciders of further φs, so it repeats to a fixpoint —
+// each round taints ≥1 site, so it terminates). Order-independent: it runs on
+// the drain's COMPLETE taint, not on the partial taint a drain sees mid-way.
+void settleSpecPredictions(const FnSet &ThetaFns, const FnSet &PhiFns,
+                           const FnSet &MeasureFns, TaintSet &out,
+                           bool skipRuntimeCalls) {
+  for (;;) {
+    const unsigned Gen = out.SpecPredictGeneration;
+    LaterTaintOracle O(out);
+    SmallVector<CallInst *, 4> Flip;
+    for (const auto &KV : out.SpecPredictedClassical) {
+      if (KV.second != Gen)
+        continue;
+      auto *CI = const_cast<CallInst *>(KV.first);
+      if (out.Tainted.count(CI))
+        continue;
+      if (specCallResultMayTurnQuantum(*CI, out, O))
+        Flip.push_back(CI);
+    }
+    if (Flip.empty())
+      return;
+    std::vector<Value *> WL;
+    for (CallInst *CI : Flip) {
+      out.SpecPredictedClassical.erase(CI);
+      if (out.Tainted.insert(CI).second)
+        WL.push_back(CI);
+    }
+    drainWorklist(WL, ThetaFns, PhiFns, MeasureFns, out, skipRuntimeCalls);
+  }
+}
+
+// The drain every caller uses. A GROWTH drain (`skipRuntimeCalls`: the round-2
+// reseed and its onward fixpoint, `propagateFromSeeds`) opens a new generation,
+// so a site an earlier drain left classical is STICKY in it (see
+// `drainWorklist`); `propagate()`'s drains all share generation 0. Then the
+// settle step.
+void propagateWorklist(std::vector<Value *> &Worklist, const FnSet &ThetaFns,
+                       const FnSet &PhiFns, const FnSet &MeasureFns,
+                       TaintSet &out, bool skipRuntimeCalls) {
+  if (skipRuntimeCalls)
+    ++out.SpecPredictGeneration;
+  drainWorklist(Worklist, ThetaFns, PhiFns, MeasureFns, out, skipRuntimeCalls);
+  settleSpecPredictions(ThetaFns, PhiFns, MeasureFns, out, skipRuntimeCalls);
 }
 
 }  // namespace
@@ -694,6 +1006,18 @@ void foldIdentityBitcasts(Module &M, TaintSet &taint,
   }
 }
 
+// Does `I` read at least one tainted SSA value? Operand-level test (not
+// result-taint): the escape is the EDGE from a quantum value into a consumer
+// the lowering cannot rewrite. For a CallBase, `operands()` includes the
+// called operand, so an indirect call THROUGH a tainted pointer also trips.
+// Exported (bd cepm) — see TaintPropagation.h.
+bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
+  for (const Value *Op : I.operands())
+    if (taint.Tainted.count(const_cast<Value *>(Op)))
+      return true;
+  return false;
+}
+
 namespace {
 
 // The exact diagnostic strings the taint-escape guard owns
@@ -725,16 +1049,6 @@ void diagnoseEscape(Instruction *I, StringRef Msg) {
       *I->getFunction(), Msg, I->getDebugLoc()));
 }
 
-// Does `I` read at least one tainted SSA value? Operand-level test (not
-// result-taint): the escape is the EDGE from a quantum value into a consumer
-// the lowering cannot rewrite. For a CallBase, `operands()` includes the
-// called operand, so an indirect call THROUGH a tainted pointer also trips.
-bool readsTaintedValue(const Instruction &I, const TaintSet &taint) {
-  for (const Value *Op : I.operands())
-    if (taint.Tainted.count(const_cast<Value *>(Op)))
-      return true;
-  return false;
-}
 
 // ── Phase-7.1 Increment B: the freeze-passthrough R-B narrowing ─────────────
 // A tainted `freeze` is, semantically, a basis-level identity (freeze of an
@@ -1440,7 +1754,9 @@ constexpr char kMsgClassicalPhi[] =
 // (P1, found by bd 9bhg's Rule-13 round r1A, F-9A-1). Conjuncts (2) and (3) ask
 // `taint.Tainted`, and this lift runs BEFORE `specialize()`. A Phase-6 call
 // result `t = h(q, m)` is tainted CONSERVATIVELY by `propagate` (it reads a
-// tainted argument); if the clone proves `h` returns a classical value,
+// tainted argument — ⚠ since bd cepm only when `predictReturnTainted` says the
+// clone MAY return a register: a result predicted classical is never tainted and
+// no lift is ever proved over it); if the clone proves `h` returns a classical value,
 // `scrubForwardCone` UNTAINTS `t` after this lift has already RAUW'd
 // `phi(t, cq_theta(t, θ))` onto it. "One register" was then never true: the arm's
 // `cq_theta(t, θ)` lowers as a SOURCE on a fresh rail (`Chained` is decided at
@@ -1831,7 +2147,10 @@ void declineClassicalMuxes(Module &M, TaintSet &taint) {
 // `Tainted.insert` re-marks a spec-site result the clone proves QUANTUM, and
 // that result was already tainted at propagation (or is the rebuilt call that
 // replaced one which was), so a terminator reading it was already refused by
-// (5). What CAN move is (2)/(3): the scrub removes taint, and a removed base
+// (5). ⚠ Since bd cepm propagation can leave a result CLASSICAL on the
+// predictor's word; a clone that then proves it quantum is refused loudly inside
+// `specialize()` (`kMsgPredictedClassicalQuantum`) before this slot, so the
+// "already tainted" premise is CHECKED there, not assumed. What CAN move is (2)/(3): the scrub removes taint, and a removed base
 // ends the wire walk at the arm's gate (a SOURCE theta) instead of at the base.
 // So exactly (2)/(3) are re-run, by CALLING `resolveWireBase` with the same gate
 // set (`collectLiftGateCalls`, Rule 14) — never a second spelling of the walk.

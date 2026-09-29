@@ -571,7 +571,9 @@ bool peelIndependentMergePhis(Module &M, TaintSet &taint,
         // WRONG — this is a MEASURED correction, not a style choice.
         //
         // `propagateWorklist` taints EVERY user of a tainted value (bar a measure
-        // sink and an angle-only edge). A `phi` in the merge is NOT a user of the
+        // sink, an angle-only edge and — since bd cepm — the RESULT of a would-be
+        // Phase-6 call predicted to return a classical value; a `select` is none
+        // of those). A `phi` in the merge is NOT a user of the
         // branch condition, so a constant-armed merge `phi` is UNTAINTED; a
         // `select` IS one, so the IDENTICAL mux written in the source is TAINTED.
         // Copying the φ's taint therefore produces a module the source spelling

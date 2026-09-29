@@ -2521,12 +2521,19 @@ namespace {
 // ⚠ FOUR CONJUNCTS, AND EACH IS LOAD-BEARING FOR A DIFFERENT REASON:
 //   (K1) UNTAINTED. A tainted stray is a quantum value the chain does not
 //        thread — the Rule-3 wire-crossing and the original fan-out hazard.
-//        It ALSO makes the cone strictly independent of the chain: a classical
-//        op consuming a chain link would itself be tainted by forward
-//        propagation, so (K1) already implies "no cone member reads a chain
-//        link". The explicit operand test below is kept anyway, because that
-//        implication rests on the completeness of a DIFFERENT stage (L1: never
-//        let one stage's conclusion be another stage's unstated premise).
+//        ⚠ It does NOT make the cone independent of the chain on its own. The
+//        text here said "a classical op consuming a chain link would itself be
+//        tainted by forward propagation, so (K1) already implies 'no cone member
+//        reads a chain link'". That implication was NEVER true: a `cq_measure`
+//        sink reads a quantum value and has an untainted result (the (K5)
+//        paragraph below says "(K1) cannot see it"), and since bd cepm a second
+//        op joins it — a would-be Phase-6 call whose callee is predicted to return
+//        a classical value (`specCallResultPredictedClassical`). So the gap is
+//        neither new with cepm nor one op (Rule-13 r1B F-r1B-4, ground corrected
+//        by r2 F-r2-3; CLAUDE.md L3). What refuses a cone member reading a chain
+//        link is the EXPLICIT operand test below, backed by the chain's
+//        `hasOneUse` check (a link read by a cone member has a second user); the
+//        code was and is safe, and the implication was never the fence.
 //   (K2) NO WRITE, NO SIDE EFFECT. A `store` arm belongs to the 7.5 guarded-
 //        store owner and must keep declining here, exactly as before; and it is
 //        what makes (K4)'s memory argument true.
@@ -2575,7 +2582,18 @@ namespace {
 //        or produce taint), so (K5) is the SOLE fence only for `cq_phi`,
 //        `cq_measure` and the invert BRACKETS. Say that precisely: two fences on
 //        two of the families and one on the other three is not "belt and braces
-//        everywhere".
+//        everywhere". ⚠ And since bd cepm a FOURTH: an untainted Phase-6 call
+//        predicted to return a classical value that reads a quantum NON-chain
+//        value (the condition register, say). (K1) passes it (untainted result).
+//        In C it cannot reach (K5): after `-O1` a callee that reads its argument
+//        LIVE while returning a classical value needs a side effect (the liveness
+//        root that keeps the argument), so (K2) refuses the call; and (K4) refuses
+//        every C spelling anyway, clang never marking such a callee
+//        `speculatable`. ⚠ The first version of this sentence credited (K2) with
+//        the `speculatable` fact, which is (K4)'s criterion — a callee clang
+//        infers `memory(none) nounwind willreturn` PASSES (K2) (Rule-13 r2
+//        F-r2-3). For an IR-level `speculatable memory(none)` callee (K5) is the
+//        only fence (Rule-13 r1B F-r1B-4).
 //   (K4) `isSafeToSpeculativelyExecute`. The hoist runs the op UNCONDITIONALLY,
 //        which is not a choice: the condition is QUANTUM, so the emitted circuit
 //        has no classical branch to hide behind. This is LLVM's own predicate —
@@ -3887,8 +3905,10 @@ void markRailCondRead(TaintSet &Taint, Value *Rail, Instruction *FirstRead) {
 // `lowerQramReads`, `lowerShadowMemory` (the last two RAUW a `load` onto a
 // tainted value, the exact `Chained` input) and `specialize` (which also SHRINKS
 // taint through `scrubForwardCone`). None re-opens the window, for reasons that
-// live in OTHER files: `propagateWorklist` taints EVERY user of a tainted value,
-// so a QROM/Shadow load at a tainted index is already tainted at round 1
+// live in OTHER files: `propagateWorklist` taints every user of a tainted value
+// (bar a measure sink, an angle-only edge and — since bd cepm — the RESULT of a
+// would-be Phase-6 call predicted to return a classical value; a `load` is none of
+// those), so a QROM/Shadow load at a tainted index is already tainted at round 1
 // (measured: the QROM sibling program declines on both binaries, and the
 // sibling-free one lowers CHAINED onto `cqrt_qram_load_i1`), and a
 // classical-index Shadow access declines `alloca array mixes a tainted-index and
@@ -8322,19 +8342,23 @@ ClassicalCallDisp classifyClassicalCallArm(ControlRegion &Region,
   // load-bearing on TWO axes:
   //   * it keeps a phase gate (`cq_phi`, tainted) and a value chain (`add`,
   //     tainted) OUT of this path — they classify in `classifyArms`;
-  //   * it IS the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3). `propagate`
-  //     taints EVERY non-measure, non-angle user of a tainted value
-  //     (TaintPropagation.cpp:307), and a generic (non-`cq_`) call has no
-  //     angle-operand exclusion — so ANY tainted operand (an argument OR the
-  //     called operand, an indirect call through a tainted pointer) taints the
-  //     result. A CLASSICAL result therefore proves every input is classical:
-  //     the clone × route composition (quantum data under quantum control) is OUT
-  //     of 6.5 (deferred Phase 4×6) and is excluded HERE — it declines via
-  //     `classifyArms` (a tainted call result is value-changing → `arm rewrites a
-  //     condition operand`, WI-5.6) rather than being mis-claimed as a 6.5 site.
+  //   * the all-classical-INPUTS check (§2.13 / WI-5.6 / Rule 3): the clone ×
+  //     route composition (quantum data under quantum control) is OUT of 6.5
+  //     (deferred Phase 4×6) and is excluded HERE — it declines via `classifyArms`
+  //     rather than being mis-claimed as a 6.5 site.
+  //   ⚠ THE SECOND AXIS USED TO BE THE FIRST GATE ALONE, AND bd cepm FALSIFIED THE
+  //     PROXY (CLAUDE.md L3). The text here said "`propagate` taints EVERY
+  //     non-measure, non-angle user of a tainted value … A CLASSICAL result
+  //     therefore proves every input is classical". Since bd cepm it does NOT: a
+  //     would-be Phase-6 site whose callee is predicted to return a classical value
+  //     (`specCallResultPredictedClassical`) reads a quantum argument and has an
+  //     UNTAINTED result. So the inputs are now asked DIRECTLY (`readsTaintedValue`,
+  //     the one operand test — arguments, bundle operands and the called operand),
+  //     which keeps this path's population exactly the pre-cepm one: such a site
+  //     reaches `classifyArms` as it did when its result was tainted.
   auto *Call = dyn_cast<CallInst>(ArmIncoming);
   if (!Call || Call->getParent() != Region.Arm ||
-      Taint.Tainted.count(Call))
+      Taint.Tainted.count(Call) || readsTaintedValue(*Call, Taint))
     return ClassicalCallDisp::NotApplicable;
 
   // A front-end intrinsic (`cq_theta`/`cq_phi`/`cq_measure`) is NEVER a 6.5

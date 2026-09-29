@@ -13,6 +13,15 @@
 ; CQ_DEADARG_DBG=1` + `CHECK-NOT: CQ_DEADARG_DBG` pair pins that the drop does NOT
 ; fire here: a widening of the drop (e.g. to dataflow liveness) retires this subject
 ; and must re-derive it (CLAUDE.md L8).
+; ⚠ bd test_C_libtooling-cepm (2026-09-28) — the "IR-ONLY from C at -O1" claim just above
+; is FALSE: a read that reaches a call the pass cannot prove pure (a callee in another TU
+; whose own callee is in yet another TU: `h(a,k) { g(a); return k + 1; }`) keeps the
+; parameter live from C. Since bd cepm such a call's RESULT is left classical at
+; propagation (`predictReturnTainted` false) and never reaches this fence. ⚠ AND THIS
+; FILE'S "added lines in `@hf`" SENTENCE ABOVE IS STALE (found 2026-09-28, pre-existing):
+; `@hf` below carries NO branch-only read, and the CHECK lines pin that the drop DOES
+; fire (`drop arg 0 of @hf`), so this module declines at the classical-mux guard with
+; `t` classical from the start — the d88e re-ask is NOT its owner.
 ; ⚠⚠ ROUND 2 (bd vsfp, Rule-13 r1A/r1B) — THIS FILE'S d88e SUBJECT IS NOT CONSTRUCTIBLE
 ; ANY MORE, AND IT NOW PINS THE TWIN'S VERDICT. Round 1 kept `@hf`'s first parameter
 ; "used" with a dead `fmul`; round 2's drop asks LIVENESS, so that read is dead. The

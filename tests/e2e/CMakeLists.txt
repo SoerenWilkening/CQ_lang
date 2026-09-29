@@ -2799,6 +2799,60 @@ add_test(NAME e2e-spec-dropped-arg-volatile-global-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_volatile_global_twin.expected.log")
 
+# bd test_C_libtooling-cepm / bd test_C_libtooling-3zr4 (2026-09-28). A callee that READS its
+# quantum argument yet returns a CLASSICAL value (`spec_reading_h_lib.c`: `h(a, k) { g(a);
+# return k + 1; }`, with `g` a liveness root — bd vsfp's dead-argument drop does NOT apply).
+# Propagation now asks `predictReturnTainted` and leaves such a call's RESULT classical, so no
+# stage before `specialize()` reads it as a register. Both 2-TU-plus entries DECLINE on the
+# oracle (main 9a230646): the branch one at the condition-wire fence, the round-2 one (bd
+# 3zr4: a round-1 site reading a round-2 site's result) at bd l3oi's clone-reader clause.
+# Each golden is pinned BYTE-IDENTICAL to its hand-inlined twin's (`g(q); int t = m + 1;`),
+# which runs through the same multi-TU harness because `g` itself lives in other TUs. ⚠ The
+# branch subject prints the M-A `non-diagonal gate over a live derived record` WARNING and its
+# twin does not (a classical-verdict clone call counted as a derived record of `q` — the
+# pre-existing over-warn this change adds customers to; TRACK_CEPM_3ZR4.md); the gates here
+# compare TRACES only and cannot see stderr.
+add_test(NAME e2e-slice-spec-predicted-classical-branch
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_h_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_g_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f2_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f3_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch.expected.log")
+add_test(NAME e2e-slice-spec-predicted-classical-branch-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch_twin.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_g_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f2_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f3_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch_twin.expected.log")
+add_test(NAME e2e-spec-predicted-classical-branch-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_branch_twin.expected.log")
+add_test(NAME e2e-slice-spec-predicted-classical-round2
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_h_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_g_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f2_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f3_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_round2_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2.expected.log")
+add_test(NAME e2e-slice-spec-predicted-classical-round2-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2_twin.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_g_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f2_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_reading_f3_lib.c ${CMAKE_CURRENT_SOURCE_DIR}/spec_round2_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2_twin.expected.log")
+add_test(NAME e2e-spec-predicted-classical-round2-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_predicted_classical_round2_twin.expected.log")
+
 # bd vsfp ROUND 3 (Rule-13 r2A F-WA-1 — bd otam, probe `stale3c`). The fenv store erasure
 # empties a quantum-conditioned arm and its cone deletion folds the two-entry φ into a NEW
 # tainted `select`; round 2 never re-propagated, so `f(r)` was treated as classical, `f`

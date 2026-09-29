@@ -1,0 +1,67 @@
+br       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+bri      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+sel      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+seli     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+ph1      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+ph1i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+ar       ora   ACC-SAME                     C: accept | lines=33 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+ari      ora   ACC-DIFF                     C: accept | lines=33 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+l19      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi | T: accept
+l19i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi | T: accept
+a04      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: loop under quantum control | T: accept
+a04i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: loop under quantum control | T: accept
+a03      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq rail bank: a cell parks a value that is not a rail handle | T: accept
+a03i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq rail bank: a cell parks a value that is not a rail handle | T: accept
+l04      ora   DECL-DIFF                    C: <unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagonal gate | T: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+l04i     ora   DECL-DIFF                    C: <unknown>:0:0: in function f i32 (i32): cq opcode lowering: operand predates a non-diagonal gate | T: <unknown>:0:0: in function f i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi
+rt9      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary | T: accept
+rt9i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary | T: accept
+yc       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+yci      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+yb       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+ybi      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+lk       ora   ACC-SAME                     C: accept | lines=34 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+lki      ora   ACC-DIFF                     C: accept | lines=34 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+va       ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control | 
+vai      ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control | 
+pa       ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+pai      ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+in2      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+in2i     ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+ang      ora   ACC-SAME                     C: accept | lines=34 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+ch       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+cph      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | T: accept
+un       ora   ACC-SAME                     C: accept | lines=34 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 8 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+fp       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+r2g      ora   ACC-DIFF                     C: accept | lines=51 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 7 left allocated, 11 template rail mint(s) of which 1 left dirty, 9 cqrt_free site(s): 9 verified, 0 violation(s), 0 unproven
+r2b      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | T: accept
+r2d      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | T: accept
+r2l      ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+lp       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: loop-carried tainted value crosses iterations | T: accept
+tp       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | T: accept
+gs       ora   DECL-DIFF                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory | T: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control
+zl12     ora   VERDICT-DIFF(C rc=0, T rc=1) C: accept | T: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+zl17     ora   VERDICT-DIFF(C rc=0, T rc=1) C: accept | T: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+za02     ora   VERDICT-DIFF(C rc=0, T rc=1) C: accept | T: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed does not match the merge incoming under quantum control
+za01     ora   VERDICT-DIFF(C rc=0, T rc=1) C: accept | T: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: rotation angle under quantum control
+pr       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+nq2      ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: condition predates a non-diagonal gate under quantum control | 
+pk       ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+pk2      ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | 
+j2       ora   ACC-SAME                     C: accept | lines=35 2b: free_pairing_check: 1 file(s), 3 rail mint(s) of which 3 left allocated, 9 template rail mint(s) of which 1 left dirty, 7 cqrt_free site(s): 7 verified, 0 violation(s), 0 unproven
+sw       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control | T: accept
+ld       ora   DECL-DIFF                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: loop under quantum control | T: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value muxed by a classical-condition phi
+selvl    ora   ACC-SAME                     C: accept | lines=3 2b: free_pairing_check: 1 file(s), 1 rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+selvg    ora   DECL-DIFF                    C: <unknown>:0:0: in function h i32 (i32, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (volatile) | T: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+selig    ora   ACC-SAME                     C: accept | lines=3 2b: free_pairing_check: 1 file(s), 1 rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+nq       ora   ACC-DIFF                     C: accept | lines=49 2b: free_pairing_check: 1 file(s), 7 rail mint(s) of which 7 left allocated, 10 template rail mint(s) of which 1 left dirty, 9 cqrt_free site(s): 9 verified, 0 violation(s), 0 unproven
+np       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function __cq_q_h_01 i32 (i32, i32): cq specialization: mixed classical/quantum select under quantum lift | T: accept
+nm       ora   DECL-DIFF                    C: <unknown>:0:0: in function h i32 (i32, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access) | T: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value stored to memory
+nr       ora   ACC-SAME                     C: accept | lines=3 2b: free_pairing_check: 1 file(s), 1 rail mint(s) of which 1 left allocated, 0 template rail mint(s) of which 0 left dirty, 0 cqrt_free site(s): 0 verified, 0 violation(s), 0 unproven
+nr2      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function k2 i32 (i32): cq specialization: recursive callee has no static depth bound | T: accept
+tre      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+nd       ora   DECL-SAME                    C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: tainted value consumed by an unknown callee | 
+z3       ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+z3i      ora   VERDICT-DIFF(C rc=1, T rc=0) C: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register | T: accept
+z3ig     ora   ACC-SAME                     C: accept | lines=23 2b: free_pairing_check: 1 file(s), 5 rail mint(s) of which 5 left allocated, 4 template rail mint(s) of which 0 left dirty, 3 cqrt_free site(s): 3 verified, 0 violation(s), 0 unproven
+denominator: 66 pairs, 18 twin-identical
