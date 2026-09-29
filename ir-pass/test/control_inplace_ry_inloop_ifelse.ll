@@ -9,6 +9,12 @@
 ; on any cycle stays DECLINED (`classifyAngleSelect` S7, PRD §13.6). The genuine
 ; two-block `BranchRegion` below is reachable only from hand-written IR, and it IS
 ; in the accept class.
+; ⚠⚠ bd test_C_libtooling-fmt3 (2026-09-28): for `cq_theta` the C-level half above is
+; HISTORY. With `nomerge` on every `cq_theta_*` (CQ.h) the if/else is not merged, so
+; the C spelling now REACHES this rolled if/else lowering and ACCEPTS — measured,
+; `tests/e2e/slice_control_inplace_ry_loop_ifelse.c`, byte-identical to its
+; hand-unrolled twin (`e2e-inplace-ry-loop-ifelse-twin-identical`), K-independent
+; (62 lowered lines at K=3 and K=1000). It DECLINED on the pre-fmt3 header.
 ;
 ; THE CHAIN RULE IS THE ASSERTION HERE (M-β, PRD §13.4). Both arms hoist into the
 ; pred in emission order, and the SECOND gate's arg-0 is set to the FIRST gate's

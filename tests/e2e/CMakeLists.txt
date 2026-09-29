@@ -81,6 +81,21 @@ endif()
 # per test and there are only 20 such entries (~9s CPU), so the added key
 # surface is not worth it.
 set(_E2E_S1_CACHE "${CMAKE_CURRENT_BINARY_DIR}/.s1cache")
+# ⚠ THE KEY BELOW IS COMPUTED AT CONFIGURE TIME, so every header it hashes must be
+# a CONFIGURE DEPENDENCY — otherwise editing include/CQ.h and running
+# `cmake --build` keeps the OLD key and every slice is served the OLD header's
+# stage-1 IR. MEASURED (bd test_C_libtooling-fmt3, 2026-09-28): with the
+# `nomerge` header in place and no reconfigure,
+# `e2e-slice-control-angle-select-ry` PASSED against its PRE-nomerge golden,
+# although the new header changes that slice's stage-1 IR and its trace. The
+# glob is the same extension set s1_cache_key.py walks (.h/.hpp/.inc), and
+# CONFIGURE_DEPENDS also catches a header ADDED under include/. RESIDUAL: `ctest`
+# without a preceding build still runs whatever the last configure keyed — the
+# same contract as running ctest on an un-rebuilt plugin.
+file(GLOB_RECURSE _E2E_S1_HDRS CONFIGURE_DEPENDS
+     "${CMAKE_SOURCE_DIR}/include/*.h" "${CMAKE_SOURCE_DIR}/include/*.hpp"
+     "${CMAKE_SOURCE_DIR}/include/*.inc")
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${_E2E_S1_HDRS})
 execute_process(
   COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/s1_cache_key.py"
           "${_E2E_CLANG}" "${CMAKE_SOURCE_DIR}/include"
@@ -723,16 +738,58 @@ add_test(NAME e2e-slice-control-angle-select-ry-derived-base
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_derived_base.expected.log")
 
-# THE THREE TWIN GATES. `cmp` over committed goldens — no clang, no opt, no
+# ⚠⚠ bd test_C_libtooling-fmt3 (2026-09-28): THE if/else SLICES ABOVE NO LONGER
+# REACH THE ANGLE SELECT. `include/CQ.h` puts `nomerge` on every `cq_theta_*`
+# declaration (owner ruling, option B), so `-O1` keeps
+# `if (c) r = cq_theta(r,A); else r = cq_theta(r,B);` as an if/else and it lowers
+# through the in-place Ry arm (`cRy(f,r,A); X f; cRy(f,r,B); X f` — the same
+# unitary, the X pair on the compare ancilla). Their three goldens were
+# REGENERATED deliberately to that stream, and the text above about "clang -O1
+# NEVER hands that to the pass as a diamond" is HISTORY for them.
+# THE ANGLE SELECT ITSELF IS STILL REACHED FROM C, by writing the select:
+# `r = cq_theta(r, c ? A : B);`. The three `_ternary` slices below are that
+# spelling; each hands the pass the SAME function bodies the pre-fmt3 fold did
+# (measured, `fmt3_probes/ternary_module_eq.py`) and each golden is the pre-fmt3
+# golden of its if/else sibling BYTE FOR BYTE — moved, not regenerated. So the
+# two twin gates keep their names and their oracle (the unchanged by-difference
+# `_twin` slices) and now compare the `_ternary` goldens. `AngleSelectEmit`'s Ry
+# stem also stays pinned at the IR level by the `control_angle_select_*.ll`
+# fixtures. All STRICT stage 2b.
+add_test(NAME e2e-slice-control-angle-select-ry-ternary
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ternary.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ternary.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-ne-ternary
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_ternary.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_ternary.expected.log")
+
+add_test(NAME e2e-slice-control-angle-select-ry-derived-base-ternary
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_derived_base_ternary.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_derived_base_ternary.expected.log")
+
+# THE TWIN GATES. `cmp` over committed goldens — no clang, no opt, no
 # plugin, milliseconds. Same construction as the 8h7d.5 rolled-loop twin gates.
+# Since fmt3 the SUBJECT side is the `_ternary` spelling (above).
 add_test(NAME e2e-angle-select-ry-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ternary.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_twin.expected.log")
 
 add_test(NAME e2e-angle-select-ry-ne-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
-    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_ternary.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_angle_select_ry_ne_twin.expected.log")
 
 # REMOVED 2026-09-05 (3qlq Inc 1, prep-b2): `e2e-angle-select-rz-twin-identical`.
@@ -5084,6 +5141,35 @@ add_test(NAME e2e-inplace-ry-loop-two-regs-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_two_regs_unrolled.expected.log")
 
+# bd test_C_libtooling-fmt3 (2026-09-28) — AN ACCEPT THE HEADER CHANGE CREATED.
+# With `nomerge` on every `cq_theta_*` (CQ.h, owner ruling option B) the if/else of
+# two chained Ry on ONE register is no longer merged into an angle select, so the
+# ROLLED in-loop form reaches the drbq Inc-3 in-place Ry arm's if/else lowering
+# (until now reachable only from hand IR, `control_inplace_ry_inloop_ifelse.ll`).
+# BOTH slices DECLINED on the pre-fmt3 header (`condition predates a non-diagonal
+# gate`, measured on the frozen oracle); both ACCEPT now, and the rolled golden is
+# byte-identical to the hand-unrolled twin's (39 lines). STRICT stage 2b.
+add_test(NAME e2e-slice-control-inplace-ry-loop-ifelse
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse.expected.log")
+
+add_test(NAME e2e-slice-control-inplace-ry-loop-ifelse-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse_unrolled.expected.log")
+
+add_test(NAME e2e-inplace-ry-loop-ifelse-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_ifelse_unrolled.expected.log")
+
 add_test(NAME e2e-inplace-ry-loop-derived-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_loop_derived.expected.log"
@@ -5194,13 +5280,17 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
 #     from hand IR and is pinned by lit (`spec_*_side_door{,_twin}.ll`).
 #   * loop — ROLLED vs HAND-UNROLLED, a seed the loop re-computes every trip.
 # The f64 slice has no pair: it pins the fp width of the same accept.
-# ⚠ RETIREMENT TRIGGER (L8) — bd fmt3 OPTION B (owner 2026-09-28, lands AFTER z0re):
+# ✅ RETIREMENT TRIGGER FIRED (L8) — bd fmt3 OPTION B landed after z0re (2026-09-29).
 # `__attribute__((nomerge))` on `cq_theta_*` stops `-O1` merging two thetas, so the
-# IF/ELSE spelling in `slice_z0re_angle_select_runtime_base*` no longer folds to an
-# angle select (it meets the two-rail clause). At that landing RESPELL those sources as
-# TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge, the goldens and the
-# twin gates stay byte-for-byte (measured, Rule-13 r2 F-r2-1) — do not turn them into
-# declines. The S3 runtime-base admission stays reachable from plain C via the ternary.
+# IF/ELSE spelling that `slice_z0re_angle_select_runtime_base{,_exact,_spec}.c` used
+# stopped folding to an angle select and declined at the two-rail clause (measured,
+# fmt3 round-2 header A/B on the merged tree: exactly those 3 slices A→D). They were
+# RESPELLED AS TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge — and the
+# goldens and the twin gates are byte-for-byte unchanged (measured, and r1B F-r1B-2 /
+# z0re r2 F-r2-1 measured it before). The S3 runtime-base admission is reachable from
+# plain C via the ternary. The if/else spelling's decline is pinned at the IR level by
+# `control_inplace_ry_reject_stateprep_nomerge_ifelse_runtime_seed.ll`, whose own
+# trigger names bd gjn2 (teaching the pass the unmerged if/else by difference).
 add_test(NAME e2e-slice-z0re-runtime-seed-prep
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"

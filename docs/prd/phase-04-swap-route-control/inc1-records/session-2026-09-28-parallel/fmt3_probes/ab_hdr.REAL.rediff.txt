@@ -1,0 +1,4 @@
+608 pairs; 3 stage-1 movers after normalisation
+S1MOVE slice_control_angle_select_ry.c
+S1MOVE slice_control_angle_select_ry_derived_base.c
+S1MOVE slice_control_angle_select_ry_ne.c

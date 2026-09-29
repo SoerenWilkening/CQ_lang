@@ -11,6 +11,9 @@
 ; Over-decline-safe and outside the target shape: `clang -O1` puts the whole
 ; construct in one block (SimplifyCFG produced the select precisely by merging the
 ; blocks away).
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): for `cq_theta` no merge produces the
+; select any more (CQ.h `nomerge`); from C it is the user's own `c ? A : B`, which
+; `-O1` also keeps in one block.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control

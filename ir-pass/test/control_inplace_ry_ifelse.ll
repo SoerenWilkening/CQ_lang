@@ -18,6 +18,11 @@
 ; source spelling; it is kept because the classifier and emitter support it
 ; symmetrically with the diamond and a future frontend/optimization change must
 ; not silently lose it.
+; ⚠⚠ bd test_C_libtooling-fmt3 (2026-09-28) — THE TRIGGER ABOVE FIRED. `include/CQ.h`
+; now puts `nomerge` on every `cq_theta_*`, so `clang -O1` DOES emit this shape from
+; the C above: this accept is now the C-level lowering of that if/else (e2e:
+; `slice_control_angle_select_ry.c`, golden regenerated to this very stream, STRICT
+; 2b clean). The paragraph above is HISTORY for `cq_theta`.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

@@ -1,0 +1,12 @@
+tmpdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/fmt3hdrw6of6zgu
+denominator: 656 (source, CASE) jobs; 630 compiled at stage 1 on BOTH headers; 26 did not (need other TUs / flags) and were NOT swept
+stage-1 movers (normalised): 8 of 630
+stage-2 verdict/stream movers: 7 of 630
+S1MOVE	STREAM	slice_control_angle_select_ry.c	A=(0, 'aa1237d3fd96ef0f', '')	B=(0, '7a4eef61db43eab7', '')
+S1MOVE	STREAM	slice_control_angle_select_ry_derived_base.c	A=(0, '496603d05a7533b7', '')	B=(0, '78a556d6d94302e8', '')
+S1MOVE	STREAM	slice_control_angle_select_ry_ne.c	A=(0, '064a0488afbd0af1', '')	B=(0, 'c955fd2c5d386005', '')
+S1MOVE	D->A	slice_control_inplace_ry_loop_ifelse.c	A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control')	B=(0, '1de5201f38c48449', '')
+S1MOVE	D->A	slice_control_inplace_ry_loop_ifelse_unrolled.c	A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control')	B=(0, '2a0879ec12c7d05f', '')
+S1MOVE	A->D	slice_z0re_angle_select_runtime_base.c	A=(0, '0486707432b4f8c8', '')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq controlled lowering: if/else state prep allocates two rails under quantum control')
+S1MOVE	A->D	slice_z0re_angle_select_runtime_base_exact.c	A=(0, 'c813be89c5699e80', '')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq controlled lowering: if/else state prep allocates two rails under quantum control')
+S1MOVE	SAME	slice_z0re_angle_select_runtime_base_spec.c	A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq taint escape: tainted value consumed by an unknown callee')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq taint escape: tainted value consumed by an unknown callee')

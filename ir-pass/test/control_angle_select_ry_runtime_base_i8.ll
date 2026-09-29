@@ -12,7 +12,7 @@
 ;
 ; WHY AN IR-LEVEL PIN (round 2): the if/else spelling above reaches S3 only because
 ; SimplifyCFG MERGES the two thetas, and bd fmt3 option B (`nomerge` on `cq_theta_*`,
-; landing after z0re) stops that merge. ⚠ CORRECTED (Rule-13 r2 F-r2-1): the round-2
+; landed after z0re, 2026-09-29) stops that merge for direct calls. ⚠ CORRECTED (Rule-13 r2 F-r2-1): the round-2
 ; spelling of this paragraph said the admission then becomes UNREACHABLE FROM C — false.
 ; The TERNARY spelling `r = cq_theta(t, (q != 3) ? .7 : .2);` gives this same IR with no
 ; merge and is untouched by `nomerge`. This file pins the lowering independently of

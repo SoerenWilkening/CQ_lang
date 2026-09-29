@@ -42,6 +42,10 @@
 ;   * the four `ifelse` arithmetic cells DO decline, but on `rotation angle`
 ;     (`-O1` merges the two arms into one theta with an angle select, S3), not on
 ;     this fixture's clause, so they are not members of this class either.
+;     ⚠ bd test_C_libtooling-fmt3 (2026-09-28): with `nomerge` on every `cq_theta_*`
+;     the `ifelse` cells are no longer merged into an angle select, so the `rotation
+;     angle` disposition above is PRE-fmt3; their post-fmt3 disposition was NOT
+;     re-measured by fmt3 (the cells are not in the e2e or lit corpora).
 ;
 ; Read as "48 cells in ONE class, with two measured cfgs that show the class's
 ; own boundary" — a characterization, not a count of everything that declines.

@@ -23,6 +23,11 @@
 ; hand-IR if/else form is a separate explicit decline
 ; (`control_inplace_ry_reject_stateprep_ifelse_two_preps.ll`,
 ; `if/else state prep allocates two rails`).
+; ⚠ bd test_C_libtooling-fmt3 (2026-09-28): the if/else half of the sentence above is
+; no longer true. With `nomerge` on every `cq_theta_*` (CQ.h) the if/else is NOT merged;
+; it reaches `classifyArms` and declines `if/else state prep allocates two rails`
+; (drbq.13's own counter-example `a1.c` measured, `fmt3_probes/src/d13a1.c`). This
+; fixture's select shape comes from C only as `r = cq_theta(SEED, c ? A : B)`.
 ;
 ; What S3 would need is an Inc-2b-shaped BY-DIFFERENCE lowering on a fresh rail —
 ; `alloc(SEED); cqrt_ry_<W>(h, B); cqrt_ry_<W>_controlled(f, h, A-B)` — and it

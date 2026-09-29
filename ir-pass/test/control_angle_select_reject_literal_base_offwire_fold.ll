@@ -36,12 +36,13 @@
 ; which is why `control_angle_select_ry_runtime_base.ll` ACCEPTS. (The RELATIONAL
 ; fold of bd zt0b can put a runtime value into an arg-0; its diamond-prep image is a
 ; module indistinguishable from a legitimate program — `…_runtime_seed_postfold*.ll`
-; — closed at the C level by bd fmt3 option B, `nomerge` on `cq_theta_*`.)
+; — closed at the C level for DIRECT calls by bd fmt3 option B, `nomerge` on
+; `cq_theta_*`; still open through a function pointer, bd `4e4p`.)
 ;
-; ⚠ WHEN bd fmt3 OPTION B LANDS (after z0re) THIS if/else C spelling stops folding:
+; ⚠ SINCE bd fmt3 OPTION B LANDED (2026-09-29) THIS if/else C spelling no longer folds:
 ; `nomerge` keeps the two thetas apart, no angle select forms, and the if/else
-; declines where the pass sees it (the inner compare survives to F2 or to the
-; if/else two-rail clause). The literal-base decline itself stays reachable from
+; declines where the pass sees it — measured, drbq.13's `a1.c` (fmt3 `d13a1.c`)
+; now declines `if/else state prep allocates two rails`. The literal-base decline itself stays reachable from
 ; PLAIN C through the TERNARY spelling `cq_theta(6, c ? .75 : .25)` (Rule-13 r2
 ; probe `t3`/`t3nm`: `rotation angle` with and without `nomerge`), so this file pins
 ; a plain-C decline, not only what S3 owes a hand-IR front end. (⚠ CORRECTED, r2

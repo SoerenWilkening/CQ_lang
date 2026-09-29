@@ -1,0 +1,7 @@
+cqrt_alloc_f16(0x1.4cp+6) -> h0
+cqrt_ry_f16(h0, 0x1p-1)
+cq_template_fmul_f16_hl(h0, 0x1p-2) -> h1
+cqrt_alloc_f16(0x1.4p+2) -> h2
+cqrt_ry_f16(h2, 0x1.ccccccccccccdp-1)
+cqrt_measure_f16(h2) -> 0x0p+0
+cqrt_measure_f16(h1) -> 0x0p+0
