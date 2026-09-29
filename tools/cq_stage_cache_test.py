@@ -64,6 +64,11 @@ HARNESS = (("tests/e2e/run_slice.sh", os.path.join(E2E, "run_slice.sh")),
            ("tools/cq_stage_cache.py", os.path.join(HERE, "cq_stage_cache.py")),
            ("tools/free_pairing_check.py", os.path.join(HERE, "free_pairing_check.py")))
 EXPECTED_ROWS = 66
+# The environment of the bash key-function probes: EXPLICIT, like every other
+# row's. Measured: probes that inherited the ambient environment went red under
+# `CQ_E2E_NO_CACHE=1 ctest`, because the off switch they inherited correctly
+# produced no key — the selftest must measure the cache, not its caller's env.
+PROBE_ENV = {"PATH": "/usr/bin:/bin", "HOME": os.environ.get("HOME", "/tmp")}
 
 
 def count(d, ext=""):
@@ -596,7 +601,8 @@ def main():
                            " cq_cache_keys %s ''; echo \"$CQ_RUN_KEY\"; rm -rf \"$TMP\"; done\n"
                            % (E2E, a.clang, a.templates, a.runtime, a.ld, pa, pb,
                               os.path.join(HERE, "free_pairing_check.py")))
-            keys = subprocess.run(["bash", probe], capture_output=True, text=True).stdout.split()
+            keys = subprocess.run(["bash", probe], capture_output=True, text=True,
+                                  env=PROBE_ENV).stdout.split()
             expect("CR bash: the same two modules get two run keys",
                    len(keys) == 2 and keys[0] != keys[1] and all(len(k) == 64 for k in keys),
                    str([k[:12] for k in keys]))
@@ -619,7 +625,8 @@ def main():
                               theta_gold,   # any file: the probe drives the key function only
                               os.path.join(HERE, "free_pairing_check.py"),
                               os.path.join(HERE, "free_pairing_check.py")))
-            keys = subprocess.run(["bash", probe], capture_output=True, text=True).stdout.split()
+            keys = subprocess.run(["bash", probe], capture_output=True, text=True,
+                                  env=PROBE_ENV).stdout.split()
             expect("S3 bash: CQ_S3_CC_FLAGS is in the run key",
                    len(keys) == 2 and keys[0] != keys[1] and all(len(k) == 64 for k in keys),
                    str([k[:12] for k in keys]))

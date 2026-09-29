@@ -58,8 +58,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/angle_select_twin_matrix.py` — 833 physical lines
 - `ir-pass/include/LoopPlan.h` — 762 physical lines
 - `ir-pass/include/ControlPlan.h` — 749 physical lines
+- `tools/cq_stage_cache_test.py` — 700 physical lines
 - `runtime/cq_runtime.h` — 693 physical lines
-- `tools/cq_stage_cache_test.py` — 693 physical lines
 - `ir-pass/include/ChainWalk.h` — 673 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 665 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 662 physical lines
@@ -7536,41 +7536,41 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_stage_cache.py:399` — `run_base`
 - `tools/cq_stage_cache.py:423` — `main`
 
-### `tools/cq_stage_cache_test.py` (693 lines)
+### `tools/cq_stage_cache_test.py` (700 lines)
 
-- `tools/cq_stage_cache_test.py:69` — `count`
-- `tools/cq_stage_cache_test.py:75` — `main`
-- `tools/cq_stage_cache_test.py:90` — `main.script`
-- `tools/cq_stage_cache_test.py:107` — `main.opt_wrapper`
-- `tools/cq_stage_cache_test.py:127` — `main.e2e`
-- `tools/cq_stage_cache_test.py:140` — `main.harness_copy`
-- `tools/cq_stage_cache_test.py:163` — `main.run`
-- `tools/cq_stage_cache_test.py:193` — `main.pyrun`
-- `tools/cq_stage_cache_test.py:206` — `main.group`
-- `tools/cq_stage_cache_test.py:216` — `main.warm_copy`
-- `tools/cq_stage_cache_test.py:226` — `main.private_src`
-- `tools/cq_stage_cache_test.py:236` — `main.edit`
-- `tools/cq_stage_cache_test.py:245` — `main.gA`
-- `tools/cq_stage_cache_test.py:260` — `main.gBJC`
-- `tools/cq_stage_cache_test.py:276` — `main.gD`
-- `tools/cq_stage_cache_test.py:287` — `main.gE`
-- `tools/cq_stage_cache_test.py:299` — `main.rearchive`
-- `tools/cq_stage_cache_test.py:308` — `main.gRT`
-- `tools/cq_stage_cache_test.py:329` — `main.gTPL`
-- `tools/cq_stage_cache_test.py:335` — `main.gLD`
-- `tools/cq_stage_cache_test.py:348` — `main.gBASE`
-- `tools/cq_stage_cache_test.py:356` — `main.gCL`
-- `tools/cq_stage_cache_test.py:361` — `main.gENV`
-- `tools/cq_stage_cache_test.py:373` — `main.g2B`
-- `tools/cq_stage_cache_test.py:389` — `main.gSRC`
-- `tools/cq_stage_cache_test.py:408` — `main.gLIB`
-- `tools/cq_stage_cache_test.py:421` — `main.gHD`
-- `tools/cq_stage_cache_test.py:437` — `main.gHDR`
-- `tools/cq_stage_cache_test.py:461` — `main.gGH`
-- `tools/cq_stage_cache_test.py:478` — `main.gPY`
-- `tools/cq_stage_cache_test.py:528` — `main.gPS1`
-- `tools/cq_stage_cache_test.py:580` — `main.gCR`
-- `tools/cq_stage_cache_test.py:605` — `main.gS3`
+- `tools/cq_stage_cache_test.py:74` — `count`
+- `tools/cq_stage_cache_test.py:80` — `main`
+- `tools/cq_stage_cache_test.py:95` — `main.script`
+- `tools/cq_stage_cache_test.py:112` — `main.opt_wrapper`
+- `tools/cq_stage_cache_test.py:132` — `main.e2e`
+- `tools/cq_stage_cache_test.py:145` — `main.harness_copy`
+- `tools/cq_stage_cache_test.py:168` — `main.run`
+- `tools/cq_stage_cache_test.py:198` — `main.pyrun`
+- `tools/cq_stage_cache_test.py:211` — `main.group`
+- `tools/cq_stage_cache_test.py:221` — `main.warm_copy`
+- `tools/cq_stage_cache_test.py:231` — `main.private_src`
+- `tools/cq_stage_cache_test.py:241` — `main.edit`
+- `tools/cq_stage_cache_test.py:250` — `main.gA`
+- `tools/cq_stage_cache_test.py:265` — `main.gBJC`
+- `tools/cq_stage_cache_test.py:281` — `main.gD`
+- `tools/cq_stage_cache_test.py:292` — `main.gE`
+- `tools/cq_stage_cache_test.py:304` — `main.rearchive`
+- `tools/cq_stage_cache_test.py:313` — `main.gRT`
+- `tools/cq_stage_cache_test.py:334` — `main.gTPL`
+- `tools/cq_stage_cache_test.py:340` — `main.gLD`
+- `tools/cq_stage_cache_test.py:353` — `main.gBASE`
+- `tools/cq_stage_cache_test.py:361` — `main.gCL`
+- `tools/cq_stage_cache_test.py:366` — `main.gENV`
+- `tools/cq_stage_cache_test.py:378` — `main.g2B`
+- `tools/cq_stage_cache_test.py:394` — `main.gSRC`
+- `tools/cq_stage_cache_test.py:413` — `main.gLIB`
+- `tools/cq_stage_cache_test.py:426` — `main.gHD`
+- `tools/cq_stage_cache_test.py:442` — `main.gHDR`
+- `tools/cq_stage_cache_test.py:466` — `main.gGH`
+- `tools/cq_stage_cache_test.py:483` — `main.gPY`
+- `tools/cq_stage_cache_test.py:533` — `main.gPS1`
+- `tools/cq_stage_cache_test.py:585` — `main.gCR`
+- `tools/cq_stage_cache_test.py:611` — `main.gS3`
 
 ### `tools/dedup_lit_runs.py` (136 lines)
 

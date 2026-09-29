@@ -105,6 +105,11 @@ MUTANTS = [
     ("cr_p", [(P, '        if b"\\r" not in first:', '        if True:')]),
 ]
 
+# META_ONLY=a,b,c runs only those mutants (the null control always runs).
+_only = {x for x in os.environ.get("META_ONLY", "").split(",") if x}
+if _only:
+    MUTANTS = [m for m in MUTANTS if m[0] == "null" or m[0] in _only]
+
 orig = {f: open(f, "rb").read() for f in (SC, PY)}
 sha0 = {f: hashlib.sha256(b).hexdigest() for f, b in orig.items()}
 caught = missed = notplanted = 0
