@@ -1,0 +1,7 @@
+m_null                   OK (null passes)
+m_discharge_in_body      caught by ['EXIT', 'BODY']
+m_extra_in_body          caught by ['BODY', 'ONCE']
+m_after_ry               caught by ['EXIT']
+m_dropped                caught by ['EXIT', 'ONCE']
+m_free_dropped           caught by ['EXIT']
+MISSED 0 of 5

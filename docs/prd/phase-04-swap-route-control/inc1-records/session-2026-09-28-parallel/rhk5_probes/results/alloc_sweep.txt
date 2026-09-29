@@ -1,0 +1,3 @@
+boundary control: CQ_OPT_DEBUG_ALLOC=BOGUS -> exit 2 (must be 2)
+denominator: 2416 fixtures
+disagreements: 0 of 2416

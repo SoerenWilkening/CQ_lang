@@ -1,0 +1,12 @@
+r2 | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=0 | 
+oracle | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=10 | spec_accept_clone_read_in_discharge_window_select.ll spec_accept_clone_read_in_discharge_window.ll spec_accept_clone_read_in_discharge_window_nested.ll spec_accept_clone_consumer_before_ry_whole_plan.ll spec_accept_clone_read_depth_at_cap.ll spec_accept_clone_read_in_discharge_window_identity.ll spec_accept_clone_two_components_both_discharged.ll lowering_live_record_sibling_clone_arg_measured_accept.ll spec_accept_clone_read_before_state_prep.ll spec_accept_clone_consumes_chain_rail.ll 
+N0_null | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=0 | 
+R1_name_trusts_defined | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=2 | spec_accept_clone_read_in_discharge_window_nested.ll spec_accept_clone_read_depth_at_cap.ll 
+R2_interposable_ok | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_leak_clone_read_weak_twin.ll 
+R3_cycle_licenses | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_leak_clone_read_twin_cycle.ll 
+R4_no_depth_cap | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_leak_clone_read_depth_cap.ll 
+R5_cap_15 | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_accept_clone_read_depth_at_cap.ll 
+R6_copy_dst_admitted | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_leak_clone_read_twin_copy_dst.ll 
+R7_whole_plan_always | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=0 | 
+R8_pieces_always | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=3 | lowering_live_record_sibling_clone_arg_measured_accept.ll spec_accept_clone_consumer_before_ry_whole_plan.ll spec_accept_clone_consumes_chain_rail.ll 
+R9_no_function_backstop | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=0 | 

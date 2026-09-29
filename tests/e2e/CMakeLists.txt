@@ -2918,6 +2918,100 @@ add_test(NAME e2e-spec-dropped-arg-musttail-return-twin-identical
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return_twin.expected.log")
 
+# bd test_C_libtooling-rhk5 (Rule-13 r3A F-XA-4). A Phase-6 clone call scheduled INSIDE
+# the M-B discharge window of a derived chain — between `p = q*3; u = p^q` and the
+# chain's kickback consumer — was counted by the uncompute spine as a MUTATION of what
+# it passed (`preservesBorrowedParent`) or as a disqualifying consumer
+# (`isInteriorConsumer`), so the chain was never uncomputed and stood ENTANGLED with
+# `q` across the later `cq_theta(q, .7)`: a Rule-8 wrong unitary, `opt` exit 0 with
+# the lyyf-(B) warning, on programs whose hand-inlined twins are clean.
+# `cloneCallPreservesArg` now proves from the clone body that the call only READS.
+#
+# ⚠ NOT `*-twin-identical`, AND IT CANNOT BE. A clone returning a quantum value is
+# Bennett-wrapped (compute, copy out, uncompute: four lines the inlined twin does not
+# have), and `-O1` sinks the twin's inlined op past the oracle while a cross-TU call
+# stays where it is written. The `*-twin-equivalent` gates run
+# tools/trace_twin_equiv.py over the two COMMITTED goldens: the same circuit up to
+# the Bennett contraction and commuting independent gates (read its header for
+# exactly what that does and does not witness). Like `compare_files` they are
+# binary-independent; what is RED on the ORACLE is each 2-TU slice's own entry (its
+# stream has no `xor_i32_unc` / `mul_i32_hl_unc`), and the checker reports DIFF on the
+# oracle's streams (measured, TRACK_RHK5.md). The checker's own boundary controls run
+# on every invocation and as `e2e-trace-twin-equiv-selftest`.
+add_test(NAME e2e-trace-twin-equiv-selftest
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --selftest)
+add_test(NAME e2e-slice-spec-clone-read-in-window
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window.expected.log")
+add_test(NAME e2e-slice-spec-clone-read-in-window-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window_twin.expected.log")
+add_test(NAME e2e-spec-clone-read-in-window-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_in_window_twin.expected.log")
+add_test(NAME e2e-slice-spec-clone-consumes-chain-rail
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail.expected.log")
+add_test(NAME e2e-slice-spec-clone-consumes-chain-rail-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail_twin.expected.log")
+add_test(NAME e2e-spec-clone-consumes-chain-rail-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumes_chain_rail_twin.expected.log")
+add_test(NAME e2e-slice-spec-clone-read-nested
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_clone_read_nested_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested.expected.log")
+add_test(NAME e2e-slice-spec-clone-read-nested-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested_twin.expected.log")
+add_test(NAME e2e-spec-clone-read-nested-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_read_nested_twin.expected.log")
+# bd rhk5 round 2 / bd test_C_libtooling-kyy1 (Rule-13 r1B F-r1B-1): a clone call that
+# consumes a chain rail AFTER a non-diagonal gate must not cost the DEAD sibling rail
+# the discharge the pre-rhk5 compiler gave it. The golden is byte-identical to the
+# pre-rhk5 compiler's trace; there is deliberately no twin gate (the hand-inlined twin
+# leaks the sibling on every binary — a pre-existing M-B granularity defect, see the
+# source header).
+add_test(NAME e2e-slice-spec-clone-consumer-after-ry
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumer_after_ry.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_dropped_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_clone_consumer_after_ry.expected.log")
+
 # Phase 6 / issue 5po2 I2 (multi-exit controlled-return in a lifted fp80 clone —
 # the openlibm `expl`-family shape). spec_multiexit_lib.c `mini_expl`: two
 # classical-SENTINEL early returns (`if(x>MAX) return C; if(x<MIN) return C'`)
@@ -5065,6 +5159,127 @@ add_test(NAME e2e-slice-control-inplace-ry-stateprep-seed-eq-k
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_seed_eq_k.c"
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_control_inplace_ry_stateprep_seed_eq_k.expected.log")
+
+# ----------------------------------------------------------------------------
+# bd test_C_libtooling-z0re — OWNER RULING 2026-09-28, option (a): a RUNTIME
+# state-prep seed (PRD §14.11 Q2, bd drbq.14) and an UNTAINTED Ry-stem
+# angle-select base are admitted on the DIRECT path, so the hand-inlined twin and
+# the spec-classical side door ACCEPT with the same circuit. Every golden below was
+# a DECLINE on the oracle (main 9a230646). Three `*-twin-identical` gates:
+#   * prep / angle select — the 2-TU `h(q, m)` spelling vs the hand-inlined twin.
+#     ⚠ Since bd vsfp the dead-argument drop makes the C call `h(0, m)`, so from C
+#     both spellings reach the DIRECT path; the side door itself is reachable only
+#     from hand IR and is pinned by lit (`spec_*_side_door{,_twin}.ll`).
+#   * loop — ROLLED vs HAND-UNROLLED, a seed the loop re-computes every trip.
+# The f64 slice has no pair: it pins the fp width of the same accept.
+# ⚠ RETIREMENT TRIGGER (L8) — bd fmt3 OPTION B (owner 2026-09-28, lands AFTER z0re):
+# `__attribute__((nomerge))` on `cq_theta_*` stops `-O1` merging two thetas, so the
+# IF/ELSE spelling in `slice_z0re_angle_select_runtime_base*` no longer folds to an
+# angle select (it meets the two-rail clause). At that landing RESPELL those sources as
+# TERNARIES, `r = cq_theta(t, c ? A : B);` — same IR, no merge, the goldens and the
+# twin gates stay byte-for-byte (measured, Rule-13 r2 F-r2-1) — do not turn them into
+# declines. The S3 runtime-base admission stays reachable from plain C via the ternary.
+add_test(NAME e2e-slice-z0re-runtime-seed-prep
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-prep-spec
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-prep-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_spec.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-spec
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_lift_classical_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.expected.log")
+add_test(NAME e2e-z0re-angle-select-runtime-base-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_spec.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-loop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-loop-unrolled
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-loop-twin-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_loop_unrolled.expected.log")
+add_test(NAME e2e-slice-z0re-runtime-seed-f64
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_f64.expected.log")
+# bd z0re Rule-13 r1B F-r1B-6 — the INDEPENDENT witnesses. Every gate above
+# compares two spellings that BOTH run the new runtime-seed code, so they witness
+# consistency, not correctness. These two compare a z0re stream with the same
+# program written through code that PREDATES z0re and whose golden the frozen
+# ORACLE (main 9a230646) reproduces byte for byte (measured, TRACK_Z0RE.md §R2):
+#   * the runtime-seed prep vs the LITERAL-seed prep (F1's literal path, drbq Inc 4)
+#     with the literal equal to the runtime value under the harness (argc = 1);
+#   * the runtime-base angle select with EXACT angles (.75/.25) vs an unconditional
+#     literal prep + an in-place controlled-Ry ARM (drbq Inc 1).
+add_test(NAME e2e-slice-z0re-runtime-seed-prep-literal
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.expected.log")
+add_test(NAME e2e-z0re-runtime-seed-prep-literal-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_runtime_seed_prep_literal.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-exact
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log")
+add_test(NAME e2e-slice-z0re-angle-select-runtime-base-exact-inplace
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
+add_test(NAME e2e-z0re-angle-select-runtime-base-exact-inplace-identical
+  COMMAND "${CMAKE_COMMAND}" -E compare_files
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_z0re_angle_select_runtime_base_exact_inplace.expected.log")
 
 
 # ============================================================================

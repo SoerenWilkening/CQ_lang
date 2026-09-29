@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function __cq_q_g_01 i32 (i32, i32): cq specialization: mixed classical/quantum select under quantum lift
+

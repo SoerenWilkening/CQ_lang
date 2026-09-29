@@ -1,0 +1,18 @@
+A=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rhk5/bin/cq-opt.subject_v2
+B=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rhk5/bin/cq-opt.r2
+[lit] denominator 2426 swept, 0 not buildable alone (NOT swept); accepts A=1245 B=1245; warned A=58 B=57; movers 5
+  STREAM	lit:spec_accept_clone_consumer_after_ry_cond_rail.ll	A=(0, '61d0c7f094ad96d0', '', True)	B=(0, '1c9b6a3f72211fd1', '', False)
+  STREAM	lit:spec_accept_clone_consumer_after_ry_keeps_sibling.ll	A=(0, '1d84db45d0aa072b', '', True)	B=(0, 'fd5d28be1fbf6bdc', '', False)
+  STREAM	lit:spec_accept_clone_two_components_both_discharged.ll	A=(0, 'e0416973fbcf9c07', '', True)	B=(0, '8419192f9b4d74ed', '', False)
+  STREAM	lit:spec_leak_clone_read_defined_template_name.ll	A=(0, 'f05cbb5a165b065c', '', False)	B=(0, 'dc6d8de386173815', '', True)
+  STREAM	lit:spec_leak_clone_read_weak_twin.ll	A=(0, 'c67739ca344cdf6f', '', False)	B=(0, '90b8218acca65c84', '', True)
+[e2e] denominator 615 swept, 26 not buildable alone (NOT swept); accepts A=502 B=502; warned A=5 B=5; movers 0
+[multi] denominator 36 swept, 0 not buildable alone (NOT swept); accepts A=36 B=36; warned A=4 B=3; movers 1
+  STREAM	multi:slice_spec_clone_consumer_after_ry.c	A=(0, '2043a561dca5bf3a', '', True)	B=(0, 'd0fa08fa91c38f1e', '', False)
+[probes] denominator 307 swept, 0 not buildable alone (NOT swept); accepts A=260 B=260; warned A=16 B=11; movers 5
+  STREAM	probe:phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/rhk5_probes/src/k01.c	A=(0, '24efb0fbb6a89be9', '', True)	B=(0, 'a7d13e6e21a7227c', '', False)
+  STREAM	probe:phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/rhk5_probes/src/k02.c	A=(0, '50fdd9bca7d1a3c2', '', True)	B=(0, 'bb19d5025ee88fb0', '', False)
+  STREAM	probe:phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/rhk5_probes/src/k03.c	A=(0, 'e34a778257aff669', '', True)	B=(0, 'd3fd70c7a42a632f', '', False)
+  STREAM	probe:phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/rhk5_probes/src/k04.c	A=(0, '14041bcb8911ad49', '', True)	B=(0, '8ab90cbbae354c7e', '', False)
+  STREAM	probe:phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/rhk5_probes/src/k06.c	A=(0, '9b118141f89315f6', '', True)	B=(0, '2a8c120d4f78c213', '', False)
+TOTAL movers 11

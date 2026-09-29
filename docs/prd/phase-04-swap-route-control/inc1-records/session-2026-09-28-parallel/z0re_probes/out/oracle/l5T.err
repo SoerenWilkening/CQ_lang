@@ -1,0 +1,2 @@
+error: <unknown>:0:0: in function main i32 (i32, ptr): no template for opcode 'icmp i1' in tainted context
+

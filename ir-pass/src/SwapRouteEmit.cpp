@@ -789,15 +789,17 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
       return;
     }
     // ⚠ FOR A CONTROLLED STATE PREP (PRD §14, bd test_C_libtooling-drbq Inc 4)
-    // `Base` IS THE SEED `Constant`, and `T->getArgOperand(0) != Base` therefore
-    // passes by UNIQUED-CONSTANT POINTER IDENTITY — LLVM uniques `ConstantInt`
-    // on type+bits and `ConstantFP` on the `APFloat` bits, so this test is
-    // *also* a seed check here, by representation. It is recorded rather than
-    // relied on: the REAL seed fence is F1 in `ArmClassify`, which has its own
-    // string (`state prep seed does not match the merge incoming`) and its own
-    // fixtures. This line keeps its own string for the shape it is about — the
-    // plan not describing the IR (§14.2a item 1: "passes for a reason nobody
-    // wrote down" is what F1 exists to retire).
+    // `Base` IS THE SEED, and `T->getArgOperand(0) != Base` therefore passes by
+    // IDENTITY — for a literal by UNIQUED-CONSTANT POINTER IDENTITY (LLVM uniques
+    // `ConstantInt` on type+bits and `ConstantFP` on the `APFloat` bits), and
+    // for a RUNTIME seed (bd z0re, 2026-09-28) by SSA identity, both slots
+    // having been RAUW-updated together through `R.RoutedBase`'s tracking
+    // handle. So this test is *also* a seed check here, by representation. It
+    // is recorded rather than relied on: the REAL seed fence is F1 in
+    // `ArmClassify`, which has its own string (`state prep seed does not match
+    // the merge incoming`) and its own fixtures. This line keeps its own string
+    // for the shape it is about — the plan not describing the IR (§14.2a item 1:
+    // "passes for a reason nobody wrote down" is what F1 exists to retire).
     auto *T = Shadow.size() == 1 ? dyn_cast<CallInst>(Shadow.front()) : nullptr;
     if (!T || T->getParent() != A.BB || T->arg_size() < 2 ||
         T->getArgOperand(0) != Base) {
@@ -943,6 +945,25 @@ void emitInPlaceRotationRegion(const ControlRegion &R, BranchInst *BI,
   //    is an ancilla this emitter owns, the bracket is self-inverse, and every
   //    shipped golden depends on it.
   FunctionCallee X = csyms.xFn();
+  // bd `test_C_libtooling-z0re` — THE RECORD HALF of the runtime-seed L1 re-ask,
+  // taken HERE, at the one emitter that commits a controlled state prep (the
+  // hoist below is the irreversible step; the `ValueArmConeOps` precedent). The
+  // SOURCE theta is the first gate, whose arg-0 IS `Base` (checked above) — for
+  // the rail-negated arm it stays the unconditional twin and the clone becomes
+  // the cancelling gate, so capturing it BEFORE the loop names the right call in
+  // both spellings. Recorded only for a RUNTIME seed (a literal can never turn
+  // quantum, and the rail bank's preallocated seed is compiler-owned and adopted
+  // by `lowerRotations` through `isRailBankSeedAlloc`, not through taint) — and
+  // KEYED ON THE CLASSIFIER'S VERDICT (`R.RuntimeSeedAdmitted`), NOT on
+  // `isRuntimeStatePrepSeed(Base, taint)` asked here. ⚠ The first spelling asked
+  // the taint HERE and it MISSED the very case the record exists for: a 6.5
+  // region emitted earlier in this loop had already RAUW'd the seed to its
+  // tainted `%out`, so "is it untainted now?" answered no, nothing was recorded,
+  // and `…_runtime_seed_round2_quantum.ll` ACCEPTED an unvetted in-place Ry on
+  // `%out` (measured, TRACK_Z0RE.md §7).
+  CallInst *SourceTheta = Gates.front().first;
+  if (R.RuntimeSeedAdmitted)
+    taint.RuntimeSeedSourceThetas.push_back(SourceTheta);
   CallInst *Prev = nullptr;
   for (auto &G : Gates) {
     if (Prev == G.first) {

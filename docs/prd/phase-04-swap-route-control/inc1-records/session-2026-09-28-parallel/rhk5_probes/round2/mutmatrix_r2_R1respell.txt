@@ -1,0 +1,1 @@
+R1_name_trusts_defined | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_leak_clone_read_defined_template_name.ll 
