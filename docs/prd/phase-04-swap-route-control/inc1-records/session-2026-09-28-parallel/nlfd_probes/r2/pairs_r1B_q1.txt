@@ -1,0 +1,14 @@
+q1/q1_byval q1/q1_byvalT
+q1/q1_byval q1/q1_byvalN
+q1/q1_diamond q1/q1_diamondT
+q1/q1_diamond q1/q1_diamondN
+q1/q1_inreg q1/q1_inregT
+q1/q1_inreg q1/q1_inregN
+q1/q1_plain q1/q1_plainT
+q1/q1_plain q1/q1_plainN
+q1/q1_qdiamond q1/q1_qdiamondT
+q1/q1_qdiamond q1/q1_qdiamondN
+q1/q1_swtailcc q1/q1_swtailccT
+q1/q1_swtailcc q1/q1_swtailccN
+q1/q1_tailcc q1/q1_tailccT
+q1/q1_tailcc q1/q1_tailccN

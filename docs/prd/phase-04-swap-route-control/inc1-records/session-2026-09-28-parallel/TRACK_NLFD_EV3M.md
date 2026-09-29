@@ -6,13 +6,22 @@ vsfp's dead-argument liveness / clone-building area. Branch `worktree-agent-a333
 attack list). Probes, harnesses and raw results: `nlfd_probes/` (tools in `nlfd_probes/tools/`,
 sources in `nlfd_probes/src/`, raw outputs in `nlfd_probes/results/`).
 
-⚠ **READ §5 FIRST — a stop-and-ask condition fired and is reported, not pressed past.** Two of the
-three changes (the ev3m drop and the clone-`musttail` demotion) make the `musttail` spelling of a
-program behave exactly like its plain-`tail` spelling — which is the right invariant — and so they
-ADD CUSTOMERS to the open P1 bd `rhk5` (warned): `musttail` spellings of rhk5-shaped programs that
-the ORACLE declined (3jru) or aborted on (exit 134) now compile into rhk5's warned divergence,
-byte-identical to what the ORACLE already emits for their plain-`tail` spelling. The three changes
-are in THREE SEPARATE COMMITS (§0) so the orchestrator can land nlfd alone.
+⚠ **ROUND 2 (2026-09-29) — READ §R2 AT THE END FIRST.** Both Rule-13 round-1 reviews came back
+`CLEAR-WITH-ITEMS`, 0 P1 (`review_r1A_nlfd/`, `review_r1B_nlfd/`). The OWNER RULED on §5's
+stop-and-ask: **land A+B+C together** — a `musttail` spelling compiles exactly like its plain-`tail`
+spelling, including the three programs (r1B `b1`, `d2m`, `c4`) that thereby join the open, warned
+bd `ffir` class. bd `rhk5` (9ad22639) and bd `z0re` (ba4fdad4) landed on `main`; this branch merged
+`main` and, on the merged binary, §5's three rhk5 customers (`ev9`/`ev7`/`mtl`) are CLEAN and
+twin-equivalent (pinned by three new e2e pairs). Every round-1 sentence §R2 corrects is corrected
+IN PLACE below as well, marked `⚠ R2`, so no stale claim survives in this file (L7).
+
+~~⚠ **READ §5 FIRST — a stop-and-ask condition fired and is reported, not pressed past.**~~ (round
+1; resolved by the owner's ruling above) Two of the three changes (the ev3m drop and the
+clone-`musttail` demotion) make the `musttail` spelling of a program behave exactly like its
+plain-`tail` spelling — which is the right invariant — and so they ADD CUSTOMERS to the classes that
+spelling is in: on round 1's base that was the open P1 bd `rhk5` (since fixed on `main`), and — r1B
+F-r1B-1 — the open, warned bd `ffir` (still open; its three `musttail` customers land by the
+owner's ruling). The three changes are in THREE SEPARATE COMMITS (§0).
 
 ## 0. Headline
 
@@ -62,9 +71,14 @@ counting it answered (ii) wrongly, one clone level up.
 **The instruction sub-class is different** (cells `i_inst_*_nn_{cd,pd}`, §6). `h(a,k){ t = a*5;
 return h2(t,k); }` with `h2`'s slot not null-safe and dead: `%t` MUST survive (the call uses it and
 the rewrite may not null the slot), so it reads `%a`; `%a` is live under (i) and dead under (ii).
-Neither accept is the twin's: keeping `main`'s slot is bd tzfa's phantom read (the ORACLE: exit 0,
-warned, TRACE-DIFF); neutralising it would lower `t = a*5` on runtime handle 0 (bd sqjq's hazard).
-With `musttail` the ORACLE ABORTED instead (exit 134, §4).
+For a DERIVED caller operand (`p = q*3`, the cells above, r1A `p8`) neither accept is the twin's:
+keeping `main`'s slot is bd tzfa's phantom read (the ORACLE: exit 0, warned, TRACE-DIFF);
+neutralising it would lower `t = a*5` on runtime handle 0 (bd sqjq's hazard). With `musttail` the
+ORACLE ABORTED instead (exit 134, §4). ⚠ R2 (r1A F-r1A-2): round 1 wrote "neither accept is the
+twin's" of the whole sub-class — FALSE for a `cq_theta` SOURCE operand (r1A
+`p2_theta_src_inst_nn.ll`): there the oracle's keep-the-slot accept computed and uncomputed `t` on
+the user's own register, the TWIN's unitary (2b clean), and the fence declines it — a known,
+IR-only over-decline, filed as bd `test_C_libtooling-w109` (P3).
 
 ## 2. bd nlfd — the fix and why it is sound
 
@@ -90,10 +104,18 @@ Soundness argument (the reviewers should attack each step):
    reversible fp widths only), `immarg` (intrinsics only). `inreg`/`signext`/`zeroext`/`alignstack`/
    `swiftself`/`swiftasync` are ABI placement, satisfied by any value. A string attribute has no IR
    semantics.
-4. *Where a `0` now arrives, the two violable constraints are stripped.* After the record, for each
-   parameter recorded dead, each use in an unread scalar slot the rewrite may not null gets
-   `stripUnreadSlotValueConstraints` (the strip of the one rewrite, factored out of
-   `rewriteRecordedDeadSlotUse`, without the write). Pinned by `…_inner_arg_range.ll` (mutant N3).
+4. *Where a `0` now arrives, the two violable constraints are stripped.* ⚠ R2: round 1's version of
+   this step was FALSE (r1A F-r1A-1, P2, bd `test_C_libtooling-vaep`). It stripped the call site and
+   the FORWARD inner clone's parameter only; the inner clone's `_unc` TWIN is built (`ensureTwin`, in
+   the enclosing clone's inner-call loop) before the enclosing clone's strip and copies the forward
+   clone's parameter attributes, and the Bennett wrap's REVERSE call passes the same `0` — into a
+   `noundef range(…)` / `nofpclass(…)` twin parameter (LLVM-level UB, latent, IR-only; the same gap
+   stood since bd vsfp for NULL-SAFE slots). Round 2: `buildClone` strips `range`/`nofpclass` from
+   every recorded-dead parameter AT THE CLONE'S OWN RECORD (`stripParamValueConstraints`), before any
+   twin of that clone exists, so every twin inherits the stripped set; the call-site half
+   (`stripUnreadSlotValueConstraints` in the inherit loop, and the one rewrite) is kept. Pinned by
+   `…_inner_arg_range.ll` (call site, mutant N3/V4) and the three `spec_accept_phantom_arg_read_unc_twin_*`
+   fixtures (twin signatures, mutants V1/V2).
 5. *The IR operand of a not-null-safe slot is never rewritten* — `nullSafeSlot`'s allowlist stays a
    WRITE policy (the drop and the module-level resolution keep leaving such a slot alone). The
    enclosing parameter is simply passed along; the runtime value it carries is decided one level up,
@@ -103,8 +125,10 @@ Soundness argument (the reviewers should attack each step):
 **(A) the fence** (`Specialization.cpp`, `buildClone`, right after the record): if a HANDLE
 parameter (`Mask`) is live under `SlotReads::Existence` (the record) but dead under
 `SlotReads::Value` (no unread scalar slot observes its operand), decline with
-`kMsgPhantomArgRead`, located at the first call whose not-null-safe unread scalar slot holds an
-instruction. Existence and Value liveness differ ONLY at such slots, so the condition is exactly
+`kMsgPhantomArgRead`, located at the first call with an argument operand live under Existence and
+dead under Value (⚠ R2, r1A F-r1A-4: round 1 re-derived the slot predicate to find the location — a
+second spelling of the condition; the location now comes from the same two `FunctionLiveness`
+objects that decide the verdict). Existence and Value liveness differ ONLY at such slots, so the condition is exactly
 "a surviving instruction keeps a handle parameter alive for a slot nobody reads". The string is the
 module-level one (`resolvePhantomCloneArgReads` step 1), moved above `buildClone`. Precision
 controls: `…_inner_inst_live.ll` (the instruction is ALSO read by a live root → no decline, mutant
@@ -113,11 +137,13 @@ mutant N5).
 
 What (A) over-declines, knowingly: every module in the instruction sub-class, although the
 hand-inlined twin accepts; IR-only as far as measured (clang-19 `-O1` on x86-64 puts only
-`noundef`/`signext`/`zeroext`/`range`/`nofpclass` on an int/fp parameter — r5/r6's measurement, not
-re-derived here), and a caller operand that is a `cq_theta` SOURCE (the module-level step 2 would
-have exempted it). A twin-identical accept of that sub-class needs a constant written into the
-not-null-safe slot — exactly what `nullSafeSlot`'s policy forbids — so it is an OWNER question
-(§15, Q1), not an implementation gap.
+`noundef`/`signext`/`zeroext`/`range`/`nofpclass` on an int/fp parameter THAT CAN BE RECORDED DEAD
+— ⚠ R2, r1A F-r1A-3: round 1 said "on an int/fp parameter", false: FunctionAttrs infers `returned`
+on a RETURNED parameter, which is live and so never in this population; r1A measured 15 C
+spellings), and a caller operand that is a `cq_theta` SOURCE (the module-level step 2 would have
+exempted it; bd `w109`). A twin-identical accept of that sub-class needs a constant written into
+the not-null-safe slot — exactly what `nullSafeSlot`'s policy forbids — so it is an OWNER question
+(bd `test_C_libtooling-uyhx`, filed round 2), not an implementation gap.
 
 ## 3. bd ev3m — the mechanism and the fix
 
@@ -158,12 +184,31 @@ PRE-EXISTING (nothing in this track creates the marker), C-reachable, loud (an a
 accept). Fix (commit C): `stripStaleClassicalAttrs` — applied to every clone and every `_unc` twin —
 demotes each `musttail` call in the body to no tail kind. `musttail` guarantees only the tail-call
 LOWERING; the call, its operands and its result are unchanged, and a clone is acyclic (recursion is
-declined), so no stack guarantee is load-bearing. Measured: each such module's trace is then
+declined), so no stack guarantee is load-bearing. ⚠ R2 (r1B F-r1B-2): "only the lowering" is false
+for a `preallocated` argument, which is legal only on a `musttail` call or with the
+`"preallocated"` bundle — r1B `pa2.ll` still ABORTED after the demotion (IR-only, 32-bit Windows
+C++ ABI); round 2 makes `scanBody` DECLINE a lifted body that musttail-forwards one
+(`spec_reject_musttail_forward_preallocated.ll`). `inalloca` is legal on a plain call and is NOT
+declined (`…_demoted_inalloca.ll`, byte-identical to its plain spelling). ⚠ R2 (r1B F-r1B-4): the
+source comment's second cause, "`cloneFor`'s fp→i32 rewrite changes prototypes", was unmeasured and
+false on the reachable surface (a return-type-changing retarget REPLACES the call without a tail
+kind); it is removed, leaving the one cause, code emitted after the call. Measured: each such module's trace is then
 byte-identical to its plain-`tail` spelling's trace on the ORACLE (`mtl`≡`mtlN`, `ev7`≡`ev7N`, and the
 four `i_*_mt_*_lv` ≡ `i_*_tc_*_lv` cells). Pinned by `spec_accept_musttail_in_clone_demoted.ll`
 (mutant D1). Filed as a new bead (§17).
 
 ## 5. ⚠ STOP-AND-ASK: commits B and C add customers to the open P1 bd `rhk5`
+
+⚠ R2 — RESOLVED. **Owner ruling 2026-09-29: land A+B+C together** (a `musttail` spelling compiles
+exactly like its plain-`tail` spelling). bd `rhk5` landed on `main` (9ad22639) and, on this branch
+merged with it, the three probes below are CLEAN — 0 warnings, 0 dirty template rails, 2b STRICT —
+and TRACE-EQUIV with their hand-inlined twins (`tools/trace_twin_equiv.py`; §R2.3), pinned by
+`e2e-spec-musttail-{rhk5-window,clone-partial-drop,clone-live-arg}-twin-equivalent`. What round 1
+did NOT name (r1B F-r1B-1, P2): B and C also grow the open, warned bd `ffir` class (a
+quantum-returning clone's copy-out rail read by a phase and never uncomputed before a later Ry) —
+r1B `b1` (B: 3jru decline → warned stream), `d2m`, `c4` (C: abort 134 → warned stream), each
+byte-identical to its plain-`tail` spelling; rhk5 does not reach them. The owner's ruling covers
+exactly these three, recorded on bd `ev3m`/`ffir`. The round-1 text follows unchanged.
 
 bd `rhk5` (P1, warned, PRE-EXISTING): a tainted-arg clone call scheduled between a derived chain
 (`p = q*3`) and that chain's phase consumer leaves the chain's template rails dirty across a later
@@ -407,8 +452,12 @@ would have pinned the wrong owner; it now returns `w(…) - argc - 1` (exit 0 un
 **The existing `e2e-slice-spec-dropped-arg-musttail-inner` pair changed what it witnesses**: since
 commit B the drop takes that program before `specialize()` (census: `drop arg 0 of @h2 in @h`,
 `drop arg 0 of @h in @slice`), its golden is unchanged (measured == the committed golden), and its
-CMake comment and C header now say so; the in-clone `musttail` slot it was written for is pinned
-at IR level only (the re-spelled fixture above).
+CMake comment and C header now say so. ~~the in-clone `musttail` slot it was written for is pinned
+at IR level only (the re-spelled fixture above).~~ ⚠ R2 (r1B F-r1B-3): FALSE — commit C demotes a
+clone's `musttail` in `cloneFor`, before any record or slot question, so from commit C on NOTHING
+can pin a `musttail` slot inside a clone; the re-spelled fixture pins the generic inner-slot
+neutralisation on the demoted plain call. Corrected in the fixture header, the CMake comment and the
+C header in round 2; the demotion is linked by the round-2 e2e pairs (§R2.3).
 
 ## 10. Measurements (literal)
 
@@ -589,12 +638,17 @@ and `=nofree` — exit code, stdout sha-256 and first error line compared across
   UB-implying ones), and (B) relies on exactly that premise for the RUNTIME value. Relaxing the
   policy to DAE's standard (keep the pointer/`byval` refusal — that one is soundness, bd 91k9) would
   retire the fence's over-decline, `resolvePhantomCloneArgReads` step 1's IR-only over-decline,
-  `x_outer_nn`'s, and the `m_*_nn_pd` 3jru residual. Keep the policy?
-- **Q2 (orchestrator/owner).** §5: land commit A alone, or A+B+C with bd rhk5's population growth
-  recorded, or hold B and C for rhk5?
+  `x_outer_nn`'s, and the `m_*_nn_pd` 3jru residual. Keep the policy? ⚠ R2: filed as bd
+  `test_C_libtooling-uyhx` (P3, owner question) — NOT this round, per the coordinator.
+- ~~**Q2 (orchestrator/owner).** §5: land commit A alone, or A+B+C with bd rhk5's population growth
+  recorded, or hold B and C for rhk5?~~ ⚠ R2: ANSWERED by the owner 2026-09-29 — land A+B+C together.
 - **Q3.** The brief asked that "a `musttail` forward of a LIVE quantum arg must still behave as its
   twin": it now behaves as its plain-`tail` twin (byte-identical), which itself differs from the
-  hand-inlined twin by bd rhk5 — so that requirement is met only up to rhk5.
+  hand-inlined twin by bd rhk5 — so that requirement is met only up to rhk5. ⚠ R2: with rhk5 merged
+  it is met: `ev7`/`mtl`/`ev9` are TRACE-EQUIV with their hand-inlined twins (§R2.3).
+- **Q4 (R2, owner/orchestrator).** bd `test_C_libtooling-ur72`: after rhk5 the nlfd fence and the
+  step-1 decline it newly reaches are IR-only over-declines of programs `main` compiles correctly.
+  Retire the fence (an accept-direction change owing its own round), or keep both until bd uyhx?
 
 ## 16. Proposed CLAUDE.md text (the owner's to apply)
 
@@ -621,3 +675,154 @@ For §5 "Open follow-ons", replacing nothing (an addition; the owner edits CLAUD
   m5pn's description, because the defect is rhk5's and the decision is the orchestrator's (Q2).
 - NOT filed: the mutation harness's own mtime defect (§11) — an instrument of this track, fixed in the
   same session before any verdict was taken from it.
+
+---
+
+## R2. ROUND 2 (2026-09-29) — the Rule-13 round-1 items, the merge of `main`, and a composition finding
+
+**Inputs.** Rule-13 round 1, both `CLEAR-WITH-ITEMS`, **0 P1**: `review_r1A_nlfd/REVIEW.md` (commit A;
+2 P2, 3 P3) and `review_r1B_nlfd/REVIEW.md` (commits B, C; 1 P2, 4 P3), committed unmodified (`876bdb62`).
+**Owner ruling 2026-09-29** on §5's stop-and-ask: **land A+B+C together** — `musttail` compiles exactly
+like its plain-`tail` spelling, including r1B's `b1`, `d2m`, `c4`, which thereby join the open, warned
+bd `ffir` class (recorded on bd `ev3m`/`ffir` by the orchestrator). bd `rhk5` (9ad22639) and bd `z0re`
+(ba4fdad4) landed on `main`.
+
+### R2.1 Commits and binaries
+
+| commit | what |
+|---|---|
+| `876bdb62` | the two review dirs, untouched |
+| `76c0d965` | `git merge main` (ba4fdad4): conflicts `tests/e2e/CMakeLists.txt` (both sides appended; union) and `CODE_MAP.md` (regenerated) |
+| `a8d86576` | the round-2 fix: the items below — code + fixtures + e2e |
+| round-2 record commit (last) | this section, `nlfd_probes/r2/`, `nlfd_probes/results/r2/`, the mkfix edits |
+
+| binary | `cq-opt` | `libCQPass.so` | `cq-opt-debugalloc` |
+|---|---|---|---|
+| `main` ba4fdad4 (frozen oracle `OB`) | `ac02fafabb9e62b1` | — | — |
+| merged, before the round-2 fixes (`M`) | `ab9f5450d3a3b345` | `4217b47ec1b9b205` | `5021f80a3b436285` |
+| **SUBJECT = `a8d86576`** | **`73cfb84713d6b7ba35451cf0`** | **`690dd78110175302203fd751`** | **`57623bf5a10304da82f9907a`** |
+
+The SUBJECT hash was re-measured after the last (comment-only) edits: unchanged. It is the binary the
+mutation matrix's base, the corpus A/B, the batteries and lit all ran on.
+
+### R2.2 Items, one by one
+
+| item | disposition | pinned by |
+|---|---|---|
+| r1A **F-r1A-1** (P2, bd `vaep`): the `range`/`nofpclass` strip never reached the inner clone's `_unc` TWIN (built by `ensureTwin` in the enclosing clone's loop, before the enclosing strip; copies the forward clone's parameter attributes) — a neutralised `0`/`0.0` into `noundef range(i32 1,100)`/`nofpclass(zero)`; the null-safe variant pre-existing since vsfp | **FIXED as the reviewer suggested**: `buildClone` strips `range`/`nofpclass` from every recorded-dead PARAMETER of the clone at its own record (`stripParamValueConstraints`), before any twin of it exists; the call-site half kept. Header comment and §2 step 4 corrected at the source | `spec_accept_phantom_arg_read_unc_twin_range_stripped{,_nullsafe}.ll`, `…_unc_twin_nofpclass_stripped.ll` (r1A's `p1_twin_range_nn/_ns`, `p7_fp_classical_slot_nn`, verbatim; TWIN-LABEL lines on both signatures). Mutants V1, V2 |
+| r1A **F-r1A-2** (P2, record): the fence declines `p2_theta_src_inst_nn`, which the oracle compiled to the twin's unitary | record corrected (§1, §2, source comment, fixture header); filed **bd `test_C_libtooling-w109`** (P3). ⚠ **Generalised by R2.4**: on `main` ba4fdad4 it is every member, not only the theta source | — |
+| r1A **F-r1A-3** (P3): "clang-19 -O1 puts only allowlisted attributes on an int/fp parameter" — FunctionAttrs infers `returned` | corrected to "…on an int/fp parameter that CAN BE RECORDED DEAD" in `Specialization.cpp`, the fixture header and §2 | — |
+| r1A **F-r1A-4** (P3, Rule 14): the fence's location loop re-derived the condition | the location now comes from the SAME two `FunctionLiveness` objects that decide the verdict (new `deadParamMask(F, const FunctionLiveness&)` overload; first call with an argument live under Existence and dead under Value) | mutant V7 (Value := Existence) kills the fence's two declines |
+| r1A **F-r1A-5** (P3, pre-existing): value-domain `range` on live HANDLE slots (`p5_cache_hit`) | noted on bd `vaep` (the natural extension); NOT changed — it moves no trace | — |
+| r1B **F-r1B-1** (P2, record): B/C also grow bd `ffir` (`b1`, `d2m`, `c4`) | resolved by the owner's ruling; §5 and the header now name it | — (the owner accepted the growth) |
+| r1B **F-r1B-2** (P3): a clone forwarding a `preallocated` argument via `musttail` still ABORTED after demotion | **cheap loud decline taken**: `scanBody` declines a lifted body that `musttail`-forwards a `preallocated` argument (`NonReversibilizable`, "musttail forward of a preallocated argument"). ⚠ An interim spelling ALSO declined `inalloca`; measured before landing — a forwarded `inalloca` is legal on a plain call and, demoted, byte-identical to its plain spelling (`src/r2/ia2.ll` ≡ `iaN.ll`), so declining it would over-decline the owner's invariant: withdrawn. The comment's "only the lowering" claim now names the exception | `spec_reject_musttail_forward_preallocated.ll` (r1B `pa2.ll` verbatim), `spec_accept_musttail_in_clone_demoted_inalloca.ll`. Mutants V5, V6 |
+| r1B **F-r1B-3** (P3): three records said the re-spelled `musttail_inner_slot` fixture still tests a `musttail` inside a clone | corrected in the fixture header, the CMake comment and the slice C header (commit C demotes before any slot question — nothing can pin that slot); the demotion is pinned by the demoted fixtures and by two new linked e2e pairs | `spec_accept_musttail_in_clone_demoted{,_inalloca}.ll`, `e2e-*-musttail-clone-{live-arg,partial-drop}*` |
+| r1B **F-r1B-4** (P3): the "fp→i32 rewrite changes prototypes" cause was unmeasured and false | replaced by the real, single cause (code emitted after the call), in `SpecializeClone.{h,cpp}` and the fixture header | — |
+| r1B **F-r1B-5** (P3): the demotion fixture's "1 warning" comment goes stale with rhk5 | re-derived against the merged stream: `main`'s stream is now PINNED (clean, twin-equivalent); likewise `…_inner_inst_live.ll` and `…_classical_inst.ll` (both previously left unpinned for rhk5's reason) | the fixtures; `e2e-spec-musttail-*-twin-equivalent` |
+| coordinator: pin `ev9`/`ev7`/`mtl` | three e2e 2-TU slices + hand-inlined twins + `tools/trace_twin_equiv.py` gates: `e2e-{slice-spec-musttail-rhk5-window, …-clone-partial-drop, …-clone-live-arg}` (+`-twin`, +`e2e-spec-musttail-*-twin-equivalent`). Each: exit 0, 0 warnings, 0 dirty template rails, 2b STRICT, EQUIV; on `main` 9a230646 AND ba4fdad4 the slice DECLINES (3jru, `rhk5_window`) or ABORTS (134, the other two) — measured with the harness recipe (`r2/gold_r2.sh`) | 9 ctest entries (unrolled literally, see R2.5) |
+| coordinator: Q1 owner question | filed **bd `test_C_libtooling-uyhx`** (P3) with r1A's recommendation and evidence; nothing changed | — |
+
+### R2.3 The three rhk5-routed programs on the merged binary (the coordinator's check)
+
+`ev9`, `ev7`, `mtl` (probe sources in `nlfd_probes/src/`) on `M` and on the SUBJECT: exit 0, **0 warnings,
+0 dirty**, 2b STRICT (`4`/`6`/`6 verified, 0 violation(s), 0 unproven`), `tools/trace_twin_equiv.py`
+**EQUIV** vs `ev9T`/`ev7T`/`mtlT`, and byte-IDENT to their plain-`tail` spellings. On `main` ba4fdad4:
+`ev9` declines (3jru), `ev7`/`mtl` ABORT (134) — rhk5 alone does not compile them (`results/r2/mine_r2_{OB,M,R2}.txt`).
+
+### R2.4 ⚠ A COMPOSITION FINDING: nlfd × rhk5 — bd `test_C_libtooling-ur72` (P2, filed, NOT fixed)
+
+Neither round-1 reviewer could see it: both used `main` 9a230646 as the oracle, before rhk5. Measured on
+`main` ba4fdad4 (both batteries + my cells, `results/r2/*_OB.txt`, tables `table_*_OB_R2.md`):
+
+- rhk5's `cloneCallPreservesArg` lets the spine discharge a derived chain whose rail a clone call only
+  READS — which is exactly bd tzfa's phantom read. So on ba4fdad4, **without nlfd**:
+  - the ARGUMENT class (r6 `sa1`, `i_arg_*_nn_{cd,pd}`, `x_nested_arg`, `x_arg_range`, `x_outer_nn`) is
+    already TRACE-IDENT with the twins (with one lyyf-(B) over-warn);
+  - the INSTRUCTION class — the fence's whole population (`i_inst_tc_nn_{cd,pd}`, r1A `p8`, `p9`, `p2`) — is
+    the twin's stream plus an IDENTITY compute/uncompute pair on a scratch rail (e.g.
+    `mul_hl(h1,5)->h2; mul_hl_unc(h2,h1,5); free(h2)`), 2b STRICT, 0 dirty: the same circuit.
+- So after rhk5, nlfd's **Argument clause** is a strict improvement (no phantom operand, no over-warn,
+  still twin-identical), but **the `buildClone` fence and the step-1 decline it newly reaches
+  (`x_outer_nn`) DECLINE programs `main` compiles correctly** — IR-only over-declines. The landing-delta
+  A/B below shows them: every `A→D` mover is exactly this population.
+- Not fixed here: it is an ACCEPT-direction change (retire the fence / narrow step 1's quantum decline) and
+  owes its own round; its alternative is the owner's bd `uyhx`. The source comment, the three decline
+  fixture headers and the liveness header now say so (L7).
+
+### R2.5 Measurements (literal)
+
+LOAD-CAVEAT: the box carried other agents' load throughout (1-min load average 120–470); every sweep is
+deterministic and has no timeout, so contention cost wall-clock only.
+
+- **Merge + build**: `cmake --build build -j4`, rc 0.
+- **lit** (SUBJECT): `lit -j4 ir-pass/test` → **2466 discovered, 2465 passed, 1 XFAIL, 0 failed**.
+- **ctest** (SUBJECT): `ctest -j4 -R "spec|twin-identical|twin-equivalent|multi|scrub|taintset|volatile|free-pairing-selftest|trace-twin-equiv|cq-opt-equivalence$"`
+  → **131/131** (604.99 s; `cq-opt-equivalence` is the SAMPLED entry, the full sweep was not run); after
+  unrolling the `foreach` and reconfiguring, `ctest -j4 -R "spec-musttail|musttail-inner|musttail-return|trace-twin-equiv-selftest"` → **16/16**.
+- **Red-green**, round-2 changed/new fixtures through their own RUN lines on five binaries
+  (`r2/redgreen_r2.sh`, `results/r2/redgreen_r2.txt`): SUBJECT **12/12**; `main` 9a230646 1/12; `main`
+  ba4fdad4 3/12; round-1 (`93c65d0d`) 5/12; merged pre-fix `M` 8/12 (the four red on `M` are exactly the
+  round-2 fixes: three vaep twin signatures + the preallocated decline).
+- **Batteries vs twins** (mine + both reviewers', `r2/run_r2.sh`; tools/trace_twin_equiv.py for every
+  non-identical accepted pair): 138 rows on OB, M, M2 and SUBJECT (`results/r2/`). `M` → SUBJECT moves
+  exactly r1B `pa2` (abort → the preallocated decline) and `pa` (first owner changes, both loud); every
+  other row byte-identical. OB → SUBJECT, per family: tables `results/r2/table_*_OB_R2.md`.
+- **Corpus A/B** (`r2/ab_r2.sh`; corpus now incl. both reviewers' batteries): denominator **4729**
+  (lit 2466, e2e 633 [30 build failures not swept], multi 39 [1 build failure — the three round-2
+  multi slices were a single unparsed `foreach` entry at build time; unrolled since, their OB/SUBJECT
+  verdicts are in R2.2], probe 1591).
+
+  | A → B | movers |
+  |---|---|
+  | SUBJECT → SUBJECT (NULL, run FIRST) | **0 of 4729** |
+  | `main` ba4fdad4 → SUBJECT (the landing delta) | **130**: D→A 66, A→D 11, STRING 8, STREAM 45 |
+  | merged pre-fix `M` → SUBJECT (round 2's own delta) | **9**: the 3 vaep fixtures + their 3 r1A source probes (STREAM, signature attributes only), the preallocated fixture + r1B `pa`/`pa2` (STRING: abort → loud decline / owner change) |
+
+  Every OB→SUBJECT **A→D** (11) is the R2.4 population (`…_inner_inst.ll`, `…_outer_nn.ll`, cells
+  `i_inst_tc_nn_{cd,pd}` ×2 spellings, `x_outer_nn` ×2, r1A `p2`/`p8`/`p9`) — none other. The D→A are
+  the ev3m/m5pn accepts (fixtures, the `musttail-return` slice, r5/r6/r1B probes, cells).
+- **Drop census** OB → SUBJECT over the 146 corpus modules containing `musttail`: **89 movers**, all this
+  track's fixtures/probes, both reviewers' musttail batteries, r5/r6 probes and the two musttail e2e
+  pairs; the two lit DECLINE fixtures in the list moved rc only (abort → decline). No decline fixture
+  lost its subject.
+- **Mutation matrix** (`r2/mutants_r2.py`; scratch tree, base = SUBJECT `73cfb847`, boundary control
+  around every mutant, full lit 2466 each; `results/r2/mutants_r2.txt`, `mutants_r2_log.txt`):
+
+  | mutant | removes / changes | failed | verdict |
+  |---|---|---|---|
+  | N0_null_r2 | a comment | 0 | null (binary = base) |
+  | V1 | the record-time strip | 3 (the three `unc_twin` fixtures) | KILLED |
+  | V2 | record-time strip `Range` only | 1 (`…_nofpclass_stripped`) | KILLED |
+  | V3 | record-time strip on EVERY parameter, not only dead ones | 0 | **MISSED — equivalent in effect**: dropping a value constraint from a live parameter is a sound weakening that changes no trace or verdict (and is r1A F-r1A-5's suggested extension for handle slots); the fixtures do not pin minimality, deliberately |
+  | V4 | the call-site strip | 1 (`…_inner_arg_range`) | KILLED |
+  | V5 | the decline widened to `inalloca` | 1 (`…_demoted_inalloca`) | KILLED |
+  | V6 | the preallocated decline removed | 1 (`spec_reject_musttail_forward_preallocated`) | KILLED |
+  | V7 | the fence's Value liveness := Existence | 2 (the fence's declines) | KILLED |
+
+  Closing control: restored rebuild = base `73cfb847`.
+- `tools/update_code_map.py --check` clean.
+- **Not run**: the full `ctest -j6` (merge-gate only); `cq-opt-equivalence-full`; the allocator sweep
+  (round 2 adds no allocation-order-sensitive code); `+Asserts`; Guard Malloc; a composition with
+  bd `cepm`/`3zr4` (`main` moved to `80e829b5` during round 2 — this branch is merged with ba4fdad4 only).
+
+### R2.6 ATTACK FIRST (for round 2)
+
+1. **The record-time strip's timing claim** — "no twin of a clone exists before its record". Attack the
+   cache: a clone reached a second time (cache hit) after its twin exists; a clone whose record is
+   re-derived; the round-2 re-plan (`Specialization.cpp` ~1507).
+2. **The strip vs `deleteDeadCones`**: a parameter recorded dead whose `range` a still-live INSTRUCTION
+   relies on (V3's population is the mirror).
+3. **R2.4**: is there any member of the fence's population where rhk5 does NOT make the keep-the-slot
+   accept correct (a WRITE, a nested clone, a loop)? If so the fence is not purely an over-decline.
+4. **The preallocated decline's reach**: a `preallocated` forward via a NON-`musttail` call (invalid
+   input?), a clone whose OWN caller passes `preallocated` (not a forward), a `swifterror` forward.
+5. **The unrolled CMake block** (a harness edit): the nine entries run under ctest (16/16 above); the
+   full suite at the merge gate owes the rest.
+
+### R2.7 Beads (round 2)
+
+- **Filed**: bd `test_C_libtooling-w109` (P3, the theta-source over-decline — generalised by ur72), bd
+  `test_C_libtooling-uyhx` (P3, OWNER QUESTION: relax `nullSafeSlot`), bd `test_C_libtooling-ur72` (P2,
+  the nlfd × rhk5 composition over-decline).
+- **Notes appended**: bd `vaep` (fixed here; F-r1A-5 recorded), bd `m5pn`, bd `ev3m`, bd `nlfd`. None
+  closed.

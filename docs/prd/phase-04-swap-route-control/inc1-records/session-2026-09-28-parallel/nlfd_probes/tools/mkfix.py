@@ -24,6 +24,9 @@ W = pathlib.Path("/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktre
 T = W / "ir-pass/test"
 BIN = W / "build/ir-pass/cq-opt"
 SRC = V / "src"
+# Round 2: the Rule-13 round-1 reviewers' own probes (read-only; committed under their dirs).
+RA = V.parent / "review_r1A_nlfd" / "probes"
+RB = V.parent / "review_r1B_nlfd" / "probes" / "q2"
 
 STREAM_NOT = "call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}"
 
@@ -141,12 +144,21 @@ E(name="spec_reject_phantom_arg_read_unread_scalar_inner_inst",
 ; flatten). The inner slot's operand is an INSTRUCTION: it cannot be deleted while the call
 ; uses it, and the rewrite may not null the slot, so `%t` survives and keeps `h`'s HANDLE
 ; parameter live — while nothing observes `%t`'s value (`SlotReads::Value` calls the
-; parameter dead). Both accepts are wrong: keeping `main`'s slot is bd tzfa's phantom read
-; (what the ORACLE does: exit 0, a warning, `p`'s rail dirty across the Ry — TRACE-DIFF vs
-; the twin), and neutralising it would lower `t = a * 5` on runtime handle 0 (bd sqjq). The
-; hand-inlined twin (`r = m + 1`) ACCEPTS: this is a knowing over-decline of an IR-only shape
-; (clang-19 -O1 emits only allowlisted attributes on an int parameter). Retirement trigger:
-; the day `nullSafeSlot` admits string/unknown attributes, this module accepts.""")
+; parameter dead). On `main` 9a230646, for THIS caller operand (a DERIVED `p = q * 3`), both
+; accepts were wrong: keeping `main`'s slot was bd tzfa's phantom read (exit 0, a warning, `p`'s
+; rail dirty across the Ry — TRACE-DIFF vs the twin), and neutralising it would lower
+; `t = a * 5` on runtime handle 0 (bd sqjq); for a `cq_theta` SOURCE operand the keep-the-slot
+; accept already was the twin's unitary (Rule-13 r1A F-r1A-2, bd test_C_libtooling-w109).
+; ⚠ SINCE bd rhk5 (9ad22639) THE KEEP-THE-SLOT ACCEPT IS CORRECT HERE TOO (bd
+; test_C_libtooling-ur72, measured on `main` ba4fdad4): the spine discharges `p` although the
+; clone call reads it, and the stream is the twin's plus an identity compute/uncompute pair on a
+; scratch rail (2b STRICT, 0 dirty). So this file now pins an IR-only OVER-DECLINE of a program
+; `main` compiles correctly, kept pending the owner's decision on bd ur72. The hand-inlined twin
+; (`r = m + 1`) ACCEPTS: a knowing over-decline
+; of an IR-only shape (clang-19 -O1 emits only allowlisted attributes on an int/fp parameter
+; that CAN BE RECORDED DEAD — it infers `returned` on a returned, hence live, one; r1A
+; F-r1A-3). Retirement trigger: the day `nullSafeSlot` admits string/unknown attributes (owner
+; question bd test_C_libtooling-uyhx), this module accepts.""")
 
 E(name="spec_reject_phantom_arg_read_unread_scalar_inner_inst_musttail",
   module=SRC / "cells/i_inst_mt_nn_pd.ll", kind="decline", fn="__cq_q_h_01",
@@ -161,7 +173,8 @@ E(name="spec_reject_phantom_arg_read_unread_scalar_inner_inst_musttail",
 ; `h`'s clone was no longer followed by `ret` once `t`'s template was Bennett-reversed after
 ; it). The fence speaks inside `buildClone` right after the record — before the Bennett wrap
 ; emits anything — so this file declines with or without the same track's clone-`musttail`
-; demotion (commit C).""")
+; demotion (commit C). ⚠ Like `…_inner_inst.ll`, an IR-only over-decline since bd rhk5 (bd
+; test_C_libtooling-ur72).""")
 
 E(name="spec_reject_phantom_arg_read_unread_scalar_outer_nn",
   module=SRC / "cells/x_outer_nn.ll", kind="decline", fn="main",
@@ -172,31 +185,31 @@ E(name="spec_reject_phantom_arg_read_unread_scalar_outer_nn",
 ; `h2(x "opaque", k)` reading `x` only in an empty diamond. Since bd nlfd the record calls
 ; `h`'s parameter dead (an ARGUMENT in an unread scalar slot is not a read), so
 ; `resolvePhantomCloneArgReads` step 1 now SEES `main`'s slot: recorded dead, not null-safe,
-; quantum operand — its existing decline. On the ORACLE the record called the parameter live
-; and the module ACCEPTED with bd tzfa's phantom read (TRACE-DIFF vs the twin `r = m + 1`, `p`
-; dirty across the Ry, warned). A wrong accept became the module-level rule's (IR-only,
-; knowing) over-decline; the twin accepts. Retirement trigger: `nullSafeSlot` admitting
-; string attributes (owner question, TRACK_NLFD_EV3M.md §15 Q1).""")
+; quantum operand — its existing decline. On `main` 9a230646 the record called the parameter
+; live and the module ACCEPTED with bd tzfa's phantom read (TRACE-DIFF vs the twin `r = m + 1`,
+; `p` dirty across the Ry, warned). ⚠ On `main` ba4fdad4 (bd rhk5) that same accept is
+; TRACE-IDENT with the twin (one lyyf-(B) over-warn): this decline is now an IR-only
+; OVER-DECLINE of a program `main` compiles correctly, introduced by nlfd in composition with
+; rhk5 (bd test_C_libtooling-ur72). Retirement triggers: bd ur72, or `nullSafeSlot` admitting
+; string attributes (owner question bd test_C_libtooling-uyhx).""")
 
 E(name="spec_accept_phantom_arg_read_unread_scalar_inner_inst_live",
   module=SRC / "cells/x_inst_live.ll", kind="accept",
-  streams=[("CLONE", "__cq_q_h_01")], drop=False,
-  extra=["; CHECK-LABEL: define {{.*}}@main(",
-         "; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})"],
-  twin="`r = m + 1 + 5p` (cells/x_inst_liveT.ll) — TRACE-DIFF on the ORACLE too (bd rhk5's shape: the clone call sits between `p` and its phase consumer)",
+  streams=[("CHECK", "main"), ("CLONE", "__cq_q_h_01")], drop=False,
+  twin="`r = m + 1 + 5p` (cells/x_inst_liveT.ll) — since bd rhk5 landed (9ad22639): 0 warnings, 0 dirty template rails; tools/trace_twin_equiv.py reports DIFF only because the clone computes `r` OUT OF PLACE (`add_hl(t,6)->r`, then `t` uncomputed and freed) where the twin adds IN PLACE (`cqrt_addc_i32(t, 6)`), a representation that instrument does not contract (measured with its --show)",
   head="""ACCEPT — the PRECISION control of bd test_C_libtooling-nlfd's fence
 ; (hand-written IR).
 ;
 ; As `spec_reject_phantom_arg_read_unread_scalar_inner_inst.ll`, except that `h` ALSO returns
 ; `t` (`return h2(t, k) + t;`): the instruction in the not-null-safe dead slot is read by a
 ; live root, so its VALUE is observed, `h`'s parameter is live under `SlotReads::Value` too,
-; and the fence must NOT fire. The CLONE stream is pinned (the ORACLE's, byte-for-byte,
-; measured); `main`'s is DELIBERATELY NOT: it is not the hand-inlined twin's — the clone call
-; sits between `p = q * 3` and its phase consumer, which is bd rhk5 (P1, warned, PRE-EXISTING:
-; one lyyf-(B) warning, `p`'s rail left dirty across the Ry, on the ORACLE and here alike) — and
-; a golden of a known-wrong stream would bless it (bd jlf8's lesson). `main` is pinned only to
-; keep the clone call's operand (the slot is live). Fence without its value-liveness test →
-; this file declines (mutant N4).""")
+; and the fence must NOT fire. Both streams are pinned. ⚠ Until bd rhk5 landed (9ad22639,
+; 2026-09-28) `main`'s was deliberately NOT: the clone call sits between `p = q * 3` and its
+; phase consumer, which was rhk5's warned wrong unitary (`p`'s rail dirty across the Ry) on the
+; oracle and on this track's round 1 alike, and a golden of a known-wrong stream would have
+; blessed it (bd jlf8). On the merged binary it is clean (0 warnings, 0 dirty, 2b STRICT) — the
+; retirement trigger round 1 recorded. Fence without its value-liveness test → this file
+; declines (mutant N4).""")
 
 E(name="spec_accept_phantom_arg_read_unread_scalar_nested_arg",
   module=SRC / "cells/x_nested_arg.ll", kind="accept",
@@ -214,10 +227,8 @@ E(name="spec_accept_phantom_arg_read_unread_scalar_nested_arg",
 
 E(name="spec_accept_phantom_arg_read_unread_scalar_classical_inst",
   module=SRC / "cells/x_classical_inst.ll", kind="accept",
-  streams=[("CLONE", "__cq_q_h_001")], drop=False,
-  extra=["; CHECK-LABEL: define {{.*}}@main(",
-         "; CHECK: call i32 @__cq_q_h_001(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})"],
-  twin="`r = m + p` (cells/x_classical_instT.ll) — TRACE-DIFF on the ORACLE too (bd rhk5's shape)",
+  streams=[("CHECK", "main"), ("CLONE", "__cq_q_h_001")], drop=False,
+  twin="`r = m + p` (cells/x_classical_instT.ll) — TRACE-EQUIV (tools/trace_twin_equiv.py) since bd rhk5 landed; TRACE-DIFF (rhk5's warned shape) on `main` 9a230646",
   head="""ACCEPT — the HANDLE-MASK control of bd test_C_libtooling-nlfd's
 ; fence (hand-written IR).
 ;
@@ -225,9 +236,9 @@ E(name="spec_accept_phantom_arg_read_unread_scalar_classical_inst",
 ; `h2` never reading parameter 0, which carries a string attribute. The surviving `t` keeps
 ; `c` live for nothing — but `c` is not a handle, `main`'s operand there is classical, and a
 ; classical phantom read costs nothing (no rail, no spine), so the fence (which asks only the
-; clone's HANDLE parameters) must not fire. The CLONE stream is pinned (the ORACLE's,
-; byte-for-byte, measured); `main`'s is deliberately NOT, for `…_inst_live.ll`'s reason (bd
-; rhk5's pre-existing warned divergence from the twin). Fence without the handle-mask
+; clone's HANDLE parameters) must not fire. Both streams are pinned; `main`'s was not until bd
+; rhk5 landed, for `…_inst_live.ll`'s reason (rhk5's pre-existing warned divergence from the
+; twin), and it is now the twin's circuit (TRACE-EQUIV). Fence without the handle-mask
 ; conjunct → this file declines (mutant N5).""")
 
 # ── bd ev3m ────────────────────────────────────────────────────────────────────
@@ -270,12 +281,10 @@ E(name="spec_accept_dropped_arg_musttail_forward_chain", module=SRC / "ev2.s1.ll
   extra_prefix="MT")
 
 E(name="spec_accept_musttail_in_clone_demoted", module=SRC / "mtl.s1.ll", kind="accept",
-  streams=[], drop=False,
-  twin="its plain-`tail` spelling `mtlN` (byte-identical traces, measured); the hand-inlined twin `mtlT` differs on BOTH (bd rhk5's shape)",
+  streams=[("CHECK", "main")], drop=False,
+  twin="its plain-`tail` spelling `mtlN` (byte-identical traces) and the hand-inlined twin `mtlT` (TRACE-EQUIV, tools/trace_twin_equiv.py) — both measured on the binary merged with bd rhk5 9ad22639; the e2e pair `e2e-spec-musttail-clone-live-arg-twin-equivalent` links it",
   csrc=[SRC / "mtl.c", SRC / "mtl.lib.c"],
-  extra=["; CHECK-LABEL: define {{.*}}@main(",
-         "; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})",
-         "; CHECK-LABEL: define {{.*}}@h(",
+  extra=["; CHECK-LABEL: define {{.*}}@h(",
          "; CHECK-NEXT: musttail call i32 @h2(",
          "; CLONE-LABEL: define internal i32 @__cq_q_h_01(",
          "; CLONE-NOT: musttail",
@@ -291,14 +300,121 @@ E(name="spec_accept_musttail_in_clone_demoted", module=SRC / "mtl.s1.ll", kind="
 ; clone's Bennett wrap copies it out AFTER the inner call — and on `main` 9a230646 the
 ; `musttail` marker cloned from `h` was then no longer followed by `ret`: the verifier ABORTED
 ; the whole run (exit 134, `musttail call must precede a ret`). `musttail` promises only the
-; tail-call lowering, so `stripStaleClassicalAttrs` now demotes it in every clone body (the
-; CLONE lines; the ORIGINAL `h`, a non-clone, keeps its `musttail` — the CHECK-NEXT line). The
-; trace is then byte-identical to the plain-`tail` spelling's on the ORACLE (measured). ⚠ That
-; trace is NOT the hand-inlined twin's: the clone call sits between `p = q * 3` and its phase
-; consumer — bd rhk5 (P1, warned, PRE-EXISTING), whose population this demotion GROWS by the
-; `musttail` spellings (previously exit 134) — so `main`'s stream is deliberately NOT pinned
-; here (a golden of a known-wrong stream would bless it, bd jlf8). See TRACK_NLFD_EV3M.md.
-; Remove the demotion and this file ABORTS again (mutant D1).""")
+; tail-call lowering (for every argument kind reachable from C; a `preallocated` forward is
+; declined earlier, `spec_reject_musttail_forward_preallocated.ll`), so `stripStaleClassicalAttrs`
+; now demotes it in every clone body (the CLONE lines; the ORIGINAL `h`, a non-clone, keeps its
+; `musttail` — the CHECK-NEXT line). ⚠ The one cause is code emitted after the call; round 1's
+; second reason ("the fp→i32 rewrite changes prototypes") was false on the reachable surface
+; (Rule-13 r1B F-r1B-4). The trace is byte-identical to the plain-`tail` spelling's. ⚠ Until
+; bd rhk5 landed (9ad22639) that trace was rhk5's warned wrong unitary (the clone call sits
+; between `p = q * 3` and its phase consumer) and `main`'s stream was deliberately NOT pinned
+; (bd jlf8); on the merged binary it is clean (0 warnings, 0 dirty, 2b STRICT) and the
+; hand-inlined twin's circuit, so it is pinned now (r1B F-r1B-5 — whose note that round 1's
+; "1 warning" comment would go stale was the retirement trigger). Remove the demotion and this
+; file ABORTS again (mutant D1).""")
+
+
+# ── round 2 (Rule-13 round-1 items) ────────────────────────────────────────────
+E(name="spec_accept_phantom_arg_read_unc_twin_range_stripped", module=RA / "p1_twin_range_nn.ll",
+  kind="accept", streams=[("CHECK", "main")], drop=False,
+  twin="the null-safe spelling r1A `p1_twin_range_ns` on `main` 9a230646 (byte-identical trace, r1A); vs the hand-inlined r1A `p1T` the only difference is the out-of-place `add_hl` + copy-out where the twin adds in place (`cqrt_addc_i32`), which tools/trace_twin_equiv.py does not contract",
+  extra=["; TWIN-LABEL: define internal i32 @__cq_q_h_11(",
+         "; TWIN: call void @__cq_q_h2_11_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %a, i32 %k)",
+         "; TWIN-LABEL: define internal i32 @__cq_q_h2_11(i32 noundef \"cq.probe.opaque\" %x, i32 noundef %k)",
+         "; TWIN-LABEL: define internal void @__cq_q_h2_11_unc(i32 %out, i32 noundef \"cq.probe.opaque\" %x, i32 noundef %k)"],
+  extra_prefix="TWIN",
+  head="""ACCEPT, and the dead slot's `range` STRIPPED FROM THE `_unc` TWIN
+; (bd test_C_libtooling-vaep; Rule-13 r1A F-r1A-1, probe `p1_twin_range_nn.ll`, verbatim; IR-only).
+;
+; `h(a,k){ return h2(a,k); }`; `h2(x noundef range(i32 1,100) "cq.probe.opaque", k)` never reads
+; `x` and returns the QUANTUM `k + 1`, so `h2`'s clone has an `_unc` twin. The record calls `h`'s
+; parameter dead (bd nlfd) and `main`'s slot is `0`, which reaches `h2`'s slot through the
+; parameter — on the FORWARD call and on the Bennett wrap's REVERSE call to `h2`'s twin. Round 1
+; stripped `range` from the forward clone's parameter and the forward call site only: the twin is
+; built (`ensureTwin`, the enclosing clone's inner-call loop) BEFORE the enclosing clone's
+; strip, and inherited `noundef range(i32 1, 100)` — so the neutralised `0` landed in a
+; parameter that excludes it (LLVM-level UB; latent, measured by r1A: traces correct, `opt -O2`
+; does not exploit it). Since round 2 `buildClone` strips `range`/`nofpclass` from every
+; recorded-dead parameter AT ITS OWN RECORD, before any twin of it exists; the TWIN lines pin
+; the forward clone's and the twin's signatures character-for-character (no `range`). RED on
+; `main` 9a230646 and on round 1 (measured). Remove the record-time strip and it goes red
+; (mutant V1).""")
+
+E(name="spec_accept_phantom_arg_read_unc_twin_range_stripped_nullsafe",
+  module=RA / "p1_twin_range_ns.ll", kind="accept", streams=[("CHECK", "main")], drop=False,
+  twin="none needed: the stream is the `main` 9a230646 oracle's byte-for-byte (r1A); this file pins the signature",
+  extra=["; TWIN-LABEL: define internal i32 @__cq_q_h_11(",
+         "; TWIN: call void @__cq_q_h2_11_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 0, i32 %k)",
+         "; TWIN-LABEL: define internal i32 @__cq_q_h2_11(i32 noundef %x, i32 noundef %k)",
+         "; TWIN-LABEL: define internal void @__cq_q_h2_11_unc(i32 %out, i32 noundef %x, i32 noundef %k)"],
+  extra_prefix="TWIN",
+  head="""ACCEPT, the NULL-SAFE sibling: the same `_unc`-twin gap was
+; PRE-EXISTING since bd vsfp (bd test_C_libtooling-vaep; r1A F-r1A-1, probe `p1_twin_range_ns.ll`,
+; verbatim; IR-only).
+;
+; As `spec_accept_phantom_arg_read_unc_twin_range_stripped.ll` without the string attribute:
+; `h2`'s slot is null-safe, so the inherited-dead-slot rewrite writes `0` into `h`'s clone's
+; call to `h2` and into the reverse call to `h2`'s twin — whose parameter, on `main` 9a230646,
+; still carried `noundef range(i32 1, 100)` (the inherited rewrite strips the clone's parameter
+; AFTER its twin exists). The record-time strip (round 2) covers this too: the TWIN lines pin
+; both signatures without `range`. RED on `main` 9a230646 (measured).""")
+
+E(name="spec_accept_phantom_arg_read_unc_twin_nofpclass_stripped",
+  module=RA / "p7_fp_classical_slot_nn.ll", kind="accept", streams=[("CHECK", "main")], drop=False,
+  twin="r1A `p7T` (TRACE-EQUIV, tools/trace_twin_equiv.py)",
+  extra=["; TWIN-LABEL: define internal i32 @__cq_q_h_001(",
+         "; TWIN: call void @__cq_q_h2_001_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %a, double %c, i32 %k)",
+         "; TWIN-LABEL: define internal i32 @__cq_q_h2_001(i32 noundef %x, double noundef \"cq.probe.opaque\" %y, i32 noundef %k)",
+         "; TWIN-LABEL: define internal void @__cq_q_h2_001_unc(i32 %out, i32 noundef %x, double noundef \"cq.probe.opaque\" %y, i32 noundef %k)"],
+  extra_prefix="TWIN",
+  head="""ACCEPT, and a CLASSICAL fp dead slot's `nofpclass(zero)` STRIPPED
+; FROM THE `_unc` TWIN (bd test_C_libtooling-vaep; r1A F-r1A-1, probe `p7_fp_classical_slot_nn.ll`,
+; verbatim; IR-only).
+;
+; A classical `double noundef nofpclass(zero)` slot beside a quantum one; `h2` never reads it
+; and its parameter carries a string attribute. The record calls `h`'s fp parameter dead, so
+; `main` passes `double 0.0` — which reaches `h2`'s twin through the reverse call. On round 1 the
+; twin kept `nofpclass(zero)` (the ORACLE passed the real `%md` there, so round 1 INTRODUCED
+; this customer of the vaep class). The TWIN lines pin the forward clone's and the twin's
+; signatures without `nofpclass`. RED on round 1 (measured).""")
+
+E(name="spec_reject_musttail_forward_preallocated", module=RB / "pa2.ll", kind="decline", fn="h",
+  msg="cq specialization: callee contains a non-reversibilizable construct under quantum lift (musttail forward of a preallocated argument)",
+  head="""DECLINE, loudly, where `main` 9a230646 and round 1 ABORTED (bd
+; test_C_libtooling-m5pn round 2; Rule-13 r1B F-r1B-2, probe `pa2.ll`, verbatim; IR-only).
+;
+; `h(ptr preallocated(i32) %s, i32 %a){ musttail return h2(%s, %a); }`, `h2` reading `a`. A
+; `preallocated` operand is legal only on a `musttail` call or on one carrying the
+; `"preallocated"` operand bundle — which a forwarded argument has no token for — so the clone's
+; demoted call is invalid IR and the verifier aborted the whole run (exit 134: round 1 with the
+; bundle rule, the ORACLE also with the old `musttail … must precede a ret` rule). There is no
+; valid plain-`tail` spelling to be identical to (r1B's `paN.ll` is exactly that spelling, and
+; it is invalid input). `scanBody` now declines a lifted body that musttail-forwards a
+; `preallocated` argument: a clean exit 1 with this string. IR-only: clang emits
+; `preallocated` only for the 32-bit Windows C++ ABI. ⚠ `inalloca` is NOT declined — see
+; `spec_accept_musttail_in_clone_demoted_inalloca.ll`.""")
+
+E(name="spec_accept_musttail_in_clone_demoted_inalloca", module=SRC / "r2/ia2.ll", kind="accept",
+  streams=[("CHECK", "main")], drop=False,
+  twin="its plain-`tail` spelling `r2/iaN.ll` (byte-identical traces, measured)",
+  extra=["; CLONE-LABEL: define {{.*}}@h(",
+         "; CLONE-NEXT: musttail call i32 @h2(",
+         "; CLONE-LABEL: define internal i32 @__cq_q_h_01(",
+         "; CLONE-NOT: musttail",
+         "; CLONE: call i32 @__cq_q_h2_01(i32 %a, ptr inalloca(i32) %s)",
+         "; CLONE-NOT: musttail",
+         "; CLONE: ret i32"],
+  extra_prefix="CLONE",
+  head="""ACCEPT — a `musttail` forward of an `inalloca` argument inside a
+; CLONE is demoted like any other (bd test_C_libtooling-m5pn round 2; r1B F-r1B-2's sibling;
+; hand-written IR, IR-only).
+;
+; r1B's `pa2.ll` with `inalloca` in place of `preallocated` (last parameter, as the verifier
+; requires). Unlike `preallocated`, a forwarded `inalloca` argument is legal on a PLAIN call
+; (the verifier checks `inalloca` provenance only when the operand is an `alloca`), so after the
+; demotion the module is byte-identical to its plain-`tail` spelling's — the owner's 2026-09-29
+; invariant — and it is not declined. On `main` 9a230646 it ABORTED (exit 134, measured). Mutant
+; V5 (the `preallocated` decline widened to `inalloca`) turns this file into a decline.""")
 
 
 def src_comment(paths):
@@ -323,10 +439,12 @@ def build(e):
     if e["kind"] == "decline":
         if rc == 0:
             raise SystemExit(f"{e['name']}: expected a decline, got exit 0")
+        if rc != 1:
+            raise SystemExit(f"{e['name']}: expected a LOUD decline (exit 1), got exit {rc}: {err[:300]}")
         L += ["; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \\",
               ";   RUN:   | %filecheck %s".replace(";   RUN", "; RUN"),
               "; CHECK-NOT: CQ_DEADARG_DBG",
-              f"; CHECK: error: {{{{.*}}}}in function {e['fn']}{{{{.*}}}}{MSG}"]
+              f"; CHECK: error: {{{{.*}}}}in function {e['fn']}{{{{.*}}}}{e.get('msg', MSG)}"]
     else:
         if rc != 0:
             raise SystemExit(f"{e['name']}: expected an accept, got exit {rc}: {err[:300]}")

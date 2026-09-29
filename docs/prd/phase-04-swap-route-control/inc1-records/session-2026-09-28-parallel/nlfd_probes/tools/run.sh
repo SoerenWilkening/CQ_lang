@@ -10,6 +10,7 @@ SP=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1
 case "$1" in
   S) B=$W/build/ir-pass/cq-opt;;
   O) B=$SP/frozen/cq-opt.main_9a230646;;
+  OB) B=$SP/frozen/cq-opt.main_ba4fdad4;;
   *) B=$1;;
 esac
 T=$(basename "$1"); IN=$2; shift 2

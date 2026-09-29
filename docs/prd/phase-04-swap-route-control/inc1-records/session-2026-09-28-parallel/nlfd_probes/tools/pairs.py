@@ -16,11 +16,13 @@ import argparse
 import concurrent.futures as cf
 import os
 import subprocess
+import sys
 
 H = os.path.dirname(os.path.abspath(__file__))
 SRC = os.path.join(H, "..", "src")
 SP = "/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad"
 OUT = os.path.join(SP, "nlfd", "out")
+EQ = "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a333a1777db2f2295/tools/trace_twin_equiv.py"
 
 
 def build(n):
@@ -43,7 +45,11 @@ def main():
     ap.add_argument("--args", nargs="*", default=["5", "7"])
     ap.add_argument("--jobs", type=int, default=4)
     ap.add_argument("--no-build", action="store_true")
+    ap.add_argument("--src", default=None, help="probe root (default ../src)")
     a = ap.parse_args()
+    global SRC
+    if a.src:
+        SRC = os.path.abspath(a.src)
     os.makedirs(OUT, exist_ok=True)
     pairs = []
     for line in open(a.pairfile):
@@ -67,6 +73,13 @@ def main():
             tt = os.path.join(OUT, os.path.basename(t) + "." + tb + ".trace")
             same = open(ts, "rb").read() == open(tt, "rb").read()
             v = "TRACE-IDENT" if same else "TRACE-DIFF"
+            if not same:
+                # round 2: tools/trace_twin_equiv.py (bd rhk5) decides the weaker
+                # relation — same circuit up to the Bennett contraction and commuting
+                # independent gates; its boundary controls run on every call.
+                e = subprocess.run([sys.executable, EQ, "--quiet-controls", ts, tt],
+                                   capture_output=True, text=True)
+                v = {0: "TRACE-EQUIV", 1: "TRACE-DIFF"}.get(e.returncode, "EQ-REFUSED")
         elif not acs and not act:
             es, et = rs.split(" ", 1)[-1], rt.split(" ", 1)[-1]
             v = "DECL-SAME" if es == et and rs.startswith("opt=1 ") else "DECL-DIFF"

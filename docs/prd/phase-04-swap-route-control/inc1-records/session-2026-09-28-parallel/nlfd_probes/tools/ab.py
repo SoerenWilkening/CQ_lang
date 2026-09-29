@@ -30,7 +30,10 @@ PROBE_DIRS = [R + "/session-2026-09-25-parallel-9bhg-xdu2-16/" + d for d in
               ["review_r1A_vsfp", "review_r1B_vsfp", "review_r2A_vsfp", "review_r2B_vsfp",
                "review_r3A_vsfp", "review_r3B_vsfp", "review_r4A_vsfp", "review_r4B_vsfp",
                "review_r5_vsfp", "review_r6_vsfp", "vsfp_probes", "review_r2A_9bhg"]] + \
-             [R + "/session-2026-09-28-parallel/nlfd_probes/src"]
+             [R + "/session-2026-09-28-parallel/nlfd_probes/src",
+              # round 2: both Rule-13 round-1 reviewers' probe batteries
+              R + "/session-2026-09-28-parallel/review_r1A_nlfd/probes",
+              R + "/session-2026-09-28-parallel/review_r1B_nlfd/probes"]
 
 
 def sh(cmd):
