@@ -1,0 +1,4 @@
+null             rc=0 green (NULL CONTROL, expected) 
+run_s3           rc=1 CAUGHT   3 bash: CQ_S3_CC_FLAGS is in the run key                ; 3 python: S3_CC_FLAGS is in the run key (warm hit, then 
+cr_b             rc=1 CAUGHT   R bash: the same two modules get two run keys           
+meta_mut_r2: 2 mutant(s): 2 CAUGHT, 0 MISSED, 0 NOT PLANTED; files restored: True

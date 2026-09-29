@@ -31,8 +31,23 @@ PY=${CQ_PYTHON:-python3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
+# Stage 1 per TU, through the SAME content-addressed helper run_slice.sh uses
+# (`cq_s1_compile`, tests/e2e/stage_cache.sh; bd test_C_libtooling-2dfk, re-keyed
+# by bd test_C_libtooling-ffm0). Each TU's key carries the LITERAL flag array it
+# is compiled with — the CQ TU's `CQ_FLAGS`, the lib TUs' `LIB_FLAGS` (no
+# `-include CQ.h`, C18) — never a tag standing in for them: the first version
+# keyed the lib TUs by a constant tag, so adding `-include CQ.h` to the lib line
+# (the C18 tripwire below) passed WARM in 31 of the 33 entries it breaks.
+# shellcheck source=stage_cache.sh
+. "$HERE/stage_cache.sh"
+cq_cache_init
+# Absolute `-include` (bd dbjh, r2 F-r2-4): a relative one is resolved from the
+# working directory first, and the working directory is in no key.
+CQ_FLAGS=(-I"$INC" -include "$INC/CQ.h" -O1 -emit-llvm -S)
+LIB_FLAGS=(-I"$INC" -O1 -emit-llvm -S)
+
 # Stage 1a — the CQ TU: -include CQ.h, -O1 (never -O0/-O2/-O3).
-"$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$CQSRC" -o "$TMP/cq.ll"
+cq_s1_compile "$TMP/cq.ll" "$CQSRC" "${CQ_FLAGS[@]}"
 
 # Stage 1b — classical libs: NO -include CQ.h, -O1. $LIBSRCS is a single
 # space-separated string, word-split here; empty means zero lib modules. `set -f`
@@ -43,7 +58,7 @@ i=0
 set -f
 for lib in $LIBSRCS; do
     set +f
-    "$CLANG" -I"$INC" -O1 -emit-llvm -S "$lib" -o "$TMP/lib_$i.ll"
+    cq_s1_compile "$TMP/lib_$i.ll" "$lib" "${LIB_FLAGS[@]}"
     linkin+=("$TMP/lib_$i.ll")
     i=$((i + 1))
     set -f
@@ -56,22 +71,12 @@ set +f
 # Stage 3 — the single cq-lowering pass over the combined module.
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$TMP/combined.ll" -o "$TMP/s2.ll"
 
-# Stage 3b — Rule-6 free-pairing check over the lowered IR (bd 8txa).
-# shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
-"$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"
-
-# Stage 4 — link: templates BEFORE runtime (load-bearing, C18). Deliberately
-# NO -O flag (clang default -O0): the lowered IR is the verified artifact; an
-# optimized link stage could const-fold/reorder the classical remainder and
-# desynchronize the trace from the golden (bd szpr pin, mirrors run_slice.sh).
-# $CQ_LD is the derived linker wrapper (bd dgn5) — see run_slice.sh stage 3 for
-# the rationale; unset falls back to the driver, exactly equivalent, slower.
-if [ -n "${CQ_LD:-}" ] && [ -x "${CQ_LD}" ]; then
-    "$CLANG" -c "$TMP/s2.ll" -o "$TMP/s2.o"
-    "$CQ_LD" -o "$TMP/slice" "$TMP/s2.o" "$TPL" "$RT"
-else
-    "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
-fi
-
-# Stage 5 — run + byte-diff the trace against the golden.
-"$TMP/slice" | diff -u - "$GOLDEN"
+# Stages 3b / 4 / 5 — the Rule-6 free-pairing check (bd 8txa), the link
+# (templates BEFORE runtime, load-bearing, C18; deliberately -O0, bd szpr) and
+# the run + golden byte-diff, through the SAME content-addressed helper
+# run_slice.sh uses (bd test_C_libtooling-2dfk; see that file and
+# tools/cq_stage_cache.py). The pass above and the diff always run.
+FPC="$HERE/../../tools/free_pairing_check.py"
+cq_cache_keys "$FPC" "$FREECHECK_FLAGS"
+cq_stage_2b "$FPC" "$FREECHECK_FLAGS"                    # Stage 3b
+cq_stage_34_diff "$CLANG" "$GOLDEN"                      # Stages 4, 5

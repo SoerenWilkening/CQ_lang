@@ -1,0 +1,16 @@
+warm-up (unmodified harness)
+100% tests passed, 0 tests failed out of 12
+== (a) run_slice_multi.sh lib TUs get -include CQ.h (the C18 tripwire)
+  WARM:     0% tests passed, 5 tests failed out of 5
+  NO_CACHE: 0% tests passed, 5 tests failed out of 5
+== (b) stage 3 compiled at -O2 (the bd szpr pin)
+  WARM:     0% tests passed, 5 tests failed out of 5
+  NO_CACHE: 0% tests passed, 5 tests failed out of 5
+== (c) lib TUs at -O0
+  WARM:     20% tests passed, 4 tests failed out of 5
+  NO_CACHE: 20% tests passed, 4 tests failed out of 5
+== (d) run_slice.sh stage 1 at -O0 (r1: PRE-EXISTING half, bd dgn5)
+  WARM:     0% tests passed, 2 tests failed out of 2
+  NO_CACHE: 0% tests passed, 2 tests failed out of 2
+== after restore (must be all green, warm)
+100% tests passed, 0 tests failed out of 12

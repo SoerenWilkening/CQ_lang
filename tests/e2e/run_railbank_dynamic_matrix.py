@@ -28,12 +28,27 @@ denominator so a vacuous run (0 cases) can never read as a pass (CLAUDE.md L10).
 
 from __future__ import annotations
 
+import concurrent.futures
 import json
+import os
 import pathlib
 import re
 import subprocess
 import sys
 import tempfile
+
+# bd test_C_libtooling-2dfk: stage 1 and the twins' link+run go through the
+# content-addressed stage cache (tools/cq_stage_cache.py — read its docstring:
+# the pass runs every time, every row's check runs every time). A by-hand run
+# with no CQ_* environment caches nothing.
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools"))
+import cq_stage_cache  # noqa: E402
+
+# Rows are independent (each compiles and lowers its own -DCASE=N module), so
+# they run on a small THREAD pool — the work is subprocess-bound. The verdicts
+# and the error list are assembled in sorted case order afterwards, so the
+# output does not depend on scheduling. CQ_MATRIX_JOBS=1 is the serial run.
+JOBS = max(1, int(os.environ.get("CQ_MATRIX_JOBS", "4")))
 
 
 def run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
@@ -177,36 +192,43 @@ def main() -> int:
 
     with tempfile.TemporaryDirectory() as temp_dir:
         temp = pathlib.Path(temp_dir)
-        for case_id, spec in sorted(cases.items()):
-            stage1 = temp / f"case-{case_id}.ll"
+
+        def one_case(case_id: int, spec: dict) -> list[str]:
+            rc, err, s1 = cq_stage_cache.stage1_file(
+                clang, [f"-I{include}", "-include", "CQ.h", "-O1",
+                        "-emit-llvm", "-S", f"-DCASE={case_id}"],
+                source, str(temp / f"case-{case_id}.ll"))
+            if rc != 0:
+                return [f"CASE={case_id}: clang failed\n{err}"]
+            stage1 = pathlib.Path(s1)
             lowered = temp / f"case-{case_id}.lowered.ll"
-            compile_result = run([
-                clang, f"-I{include}", "-include", "CQ.h", "-O1",
-                "-emit-llvm", "-S", f"-DCASE={case_id}", source,
-                "-o", str(stage1),
-            ])
-            if compile_result.returncode != 0:
-                errors.append(f"CASE={case_id}: clang failed\n{compile_result.stderr}")
-                continue
             lower_result = run([
                 cq_opt, "-load-pass-plugin", plugin, "-passes=cq-lowering",
                 "-S", str(stage1), "-o", str(lowered),
             ])
-            errors += check_case(case_id, spec, twin_sides, stage1, lowered,
-                                 lower_result)
+            return check_case(case_id, spec, twin_sides, stage1, lowered,
+                              lower_result)
 
+        with concurrent.futures.ThreadPoolExecutor(max_workers=JOBS) as pool:
+            futs = {cid: pool.submit(one_case, cid, spec)
+                    for cid, spec in sorted(cases.items())}
+            for cid in sorted(futs):
+                errors += futs[cid].result()
+
+        ld = os.environ.get("CQ_LD", "")
         for tw in twins:
             rolled, twin = tw["rolled"], tw["twin"]
             dropped = set(tw.get("dropped_twin_lines", []))
             traces = []
             for case_id in (rolled, twin):
-                exe = temp / f"case-{case_id}.exe"
-                link = run([clang, str(temp / f"case-{case_id}.lowered.ll"),
-                            templates, runtime, "-o", str(exe)])
-                if link.returncode != 0:
-                    errors.append(f"CASE={case_id}: link failed\n{link.stderr}")
+                lr = cq_stage_cache.link_and_run(
+                    clang, ld, str(temp / f"case-{case_id}.lowered.ll"),
+                    templates, runtime, str(temp), f"case-{case_id}",
+                    tw.get("argv", []))
+                if lr.link_rc != 0:
+                    errors.append(f"CASE={case_id}: link failed\n{lr.link_stderr}")
                     break
-                traces.append(run([str(exe), *tw.get("argv", [])]).stdout.splitlines())
+                traces.append(lr.stdout.splitlines())
             if len(traces) != 2:
                 continue
             rolled_trace = traces[0]

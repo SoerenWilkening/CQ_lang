@@ -23,6 +23,34 @@
 ; the base closure); the two fences overlap here on purpose, and the ORDER is what
 ; picks the message.
 ;
+;
+; ── MERGED 2026-09-29 (bd test_C_libtooling-2dfk, exact-duplicate removal) ──
+; `control_angle_select_reject_cond_alias.ll` was DELETED: it was this module with this
+; file's RUN and CHECK lines byte-for-byte (every non-comment line and every
+; directive identical, so it re-ran this exact test). Why: its `qd = cq_phi(q, .1)` alias hop was deleted by the bd 3qlq register-free cq_phi migration, so the module is this one.
+; Its unique header prose follows VERBATIM, because it carries the history (and
+; any retirement trigger) of the shape it once pinned:
+;
+; │ control_angle_select_reject_cond_alias.ll — DECLINE: the rotated base is a
+; │ DIAGONAL ALIAS of the condition register (bd drbq Inc 2b).
+; │
+; │ int qd = cq_phi(q, .1);
+; │ qd = cq_theta(qd, q == 5 ? .9 : .3);   // rotates q's OWN physical rail
+; │
+; │ SSA-value disjointness is NOT wire disjointness: rotation lowering RAUWs
+; │ `%qd = cq_phi(%q, .)` and `%q` onto the SAME `cqrt_alloc_i32` handle, so this
+; │ Ry lands on the rail the condition reads. Same physics as
+; │ `..._reject_cond_register.ll`, one alias hop out.
+; │
+; │ GATE 2c fires first here too (prong (a) crosses the diagonal `cq_phi` and finds
+; │ the `cq_theta` on `%q`'s wire), so the message is `condition predates a
+; │ non-diagonal gate`. S8 is the backstop and would name the same rail through
+; │ `railWireClosure`'s `cq_phi` hop; neither is redundant — 2c is position-free
+; │ over the CONDITION's provenance while S8 intersects two RAIL closures, and the
+; │ shapes they cover are only overlapping, not equal.
+; │
+; │ 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control
 ; 3qlq: migrated from register cq_phi (dead declare erased)

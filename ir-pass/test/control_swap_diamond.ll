@@ -49,6 +49,35 @@
 ;
 ; 30 line(s) of prose that annotated the OLD CHECK block were removed with
 ; it — they described the pre-Inc-1 gate stream line by line.
+;
+; ── MERGED 2026-09-29 (bd test_C_libtooling-2dfk, exact-duplicate removal) ──
+; `control_swap_diamond_derived.ll` was DELETED: it was this module with this
+; file's RUN and CHECK lines byte-for-byte (every non-comment line and every
+; directive identical, so it re-ran this exact test). Why: its pre-region `qd = cq_phi(q, .)` was deleted by the bd 3qlq register-free cq_phi migration, so the DERIVED base is the plain base.
+; Its unique header prose follows VERBATIM, because it carries the history (and
+; any retirement trigger) of the shape it once pinned:
+;
+; │ control_swap_diamond_derived.ll — ACCEPT: diamond routing a DERIVED base (pre-region cq_phi).
+; │
+; │ `q = rz(q, 0.9); if (q > 5) { rz(q, a); rz(q, b); }` — the merge phi's
+; │ straight-through (Pred-edge) incoming AND the arm's spine base are both the
+; │ PRE-REGION `%qd = cq_phi(%q, ·)`: Base == StraightThrough, a DERIVED tainted
+; │ base (§0 criterion 3; test_C_libtooling-9hh). Gating on %qd is correct because
+; │ %qd is the LIVE register (the pre-rotation fires unconditionally before the
+; │ region) and Rz is diagonal, so the flag minted from icmp(%qd) is recoverable
+; │ by icmp_inv(%qd) after the arm — same argument as the un-derived diamond, the
+; │ pre-region Rz changes nothing the flag can see. That argument is about the
+; │ REGISTER, not the route, so it survives the §6a control-in-place collapse
+; │ verbatim: the arm gates now fire as `cqrt_rz_i32_controlled(flag, %qd, ·)`
+; │ directly on the derived base, with no work rail and no CSWAP.
+; │
+; │ The diamond used to decline this shape only via the SSA-conservative
+; │ `isPhiCall(Base)` guard (WI-3); the lowered stream is control_swap_diamond.ll
+; │ plus one unconditional `cqrt_rz` strictly BEFORE the flag mint. The point of the
+; │ fixture is that the pre-region rotation stays UNCONTROLLED and ahead of the mint,
+; │ while the arm rotations are the controlled ones — the two are distinguishable by
+; │ symbol (`cqrt_rz_i32` vs `cqrt_rz_i32_controlled`).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOROUTE < %t.cqd0.ll

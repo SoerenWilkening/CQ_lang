@@ -45,9 +45,15 @@ module that is vacuous (0 `define` or 0 `@cq_` calls — bd memory
 passthrough early-out), and on a pair whose compile fails.  Its own mutant
 validation is `railbank_register_twin_gate_test.py`.
 """
-import argparse, hashlib, os, re, shutil, subprocess, sys, tempfile
+import argparse, concurrent.futures, hashlib, os, re, shutil, subprocess, sys, tempfile
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import cq_stage_cache  # noqa: E402  (bd 2dfk: stage 1 + link/run are content-addressed)
 
 LLVM = os.environ.get("CQ_LLVM_BIN", "/usr/local/opt/llvm@19/bin")
+# Pairs are independent; they run on a small thread pool (subprocess-bound) and
+# are REPORTED in sorted order, so the output does not depend on scheduling.
+JOBS = max(1, int(os.environ.get("CQ_MATRIX_JOBS", "4")))
 
 # ── the PURE decision layer.  Kept free of subprocesses so the selftest can
 #    drive it directly with synthetic rows (a checker whose verdict logic can
@@ -73,12 +79,12 @@ FAIL_VERDICTS = {VIOLATION, MISMATCH}
 
 
 def stage1(src, work, tag, include_dir):
-    out = os.path.join(work, tag + ".s1.ll")
-    r = subprocess.run([os.path.join(LLVM, "clang"), "-I", include_dir, "-include", "CQ.h",
-                        "-O1", "-emit-llvm", "-S", src, "-o", out],
-                       capture_output=True, text=True)
-    if r.returncode != 0:
-        return None, "clang failed: " + r.stderr.strip().splitlines()[0][:120]
+    rc, err, out = cq_stage_cache.stage1_file(
+        os.path.join(LLVM, "clang"),
+        ["-I", include_dir, "-include", "CQ.h", "-O1", "-emit-llvm", "-S"],
+        src, os.path.join(work, tag + ".s1.ll"))
+    if rc != 0:
+        return None, "clang failed: " + err.strip().splitlines()[0][:120]
     txt = open(out).read()
     ndef = len(re.findall(r"^define", txt, re.M))
     ncq = txt.count("@cq_")
@@ -96,7 +102,6 @@ def run_one(s1, work, tag, build):
                        capture_output=True, text=True)
     if r.returncode != 0:
         return r.returncode, ""
-    exe = os.path.join(work, tag + ".exe")
     tpl = os.path.join(build, "runtime", "libcq_templates.a")
     rt = os.path.join(build, "runtime", "libcq_runtime.a")
     # ⚠ LINK ORDER IS LOAD-BEARING: `libcq_templates.a` BEFORE `libcq_runtime.a`
@@ -111,22 +116,20 @@ def run_one(s1, work, tag, build):
     # slower. MEASURED here, on this box under concurrent load: 29.4 s -> 22.6 s
     # for the 8 pairs, same verdicts (Rule 19 — the number is a run, not a
     # guess, and the load is stated because the two are not comparable across it).
-    cq_ld = os.environ.get("CQ_LD", "")
-    if cq_ld and os.access(cq_ld, os.X_OK):
-        obj = os.path.join(work, tag + ".o")
-        c = subprocess.run([os.path.join(LLVM, "clang"), "-c", s2, "-o", obj],
-                           capture_output=True, text=True)
-        l = c if c.returncode != 0 else subprocess.run(
-            [cq_ld, "-o", exe, obj, tpl, rt], capture_output=True, text=True)
-    else:
-        l = subprocess.run([os.path.join(LLVM, "clang"), s2, tpl, rt, "-o", exe],
-                           capture_output=True, text=True)
-    if l.returncode != 0:
+    #
+    # bd 2dfk: link + run through tools/cq_stage_cache.py::link_and_run — the
+    # SAME split link (clang -c + $CQ_LD) or driver fallback as above, plus a
+    # content-addressed replay of a previous clean run of this exact lowered
+    # module against these exact archives and toolchain. The verdict below is
+    # recomputed every time from the traces either way.
+    lr = cq_stage_cache.link_and_run(os.path.join(LLVM, "clang"),
+                                     os.environ.get("CQ_LD", ""), s2, tpl, rt, work, tag)
+    if lr.link_rc != 0:
         # A link failure on an ACCEPTED module is a finding in its own right —
         # it is the ONE thing the golden layer proves (every emitted symbol
         # resolves).  Surface it rather than scoring the pair on an empty trace.
-        return 0, "<<LINK-FAILED>> " + l.stderr.strip()[:200]
-    return 0, subprocess.run([exe], capture_output=True, text=True).stdout
+        return 0, "<<LINK-FAILED>> " + lr.link_stderr.strip()[:200]
+    return 0, lr.stdout
 
 
 def main():
@@ -145,32 +148,41 @@ def main():
         return 2
     work = tempfile.mkdtemp(prefix="rbtwin.")
     rows, bad = [], 0
+
+    def one(n):
+        """-> (line to print or None, row or None, is_bad). Pure per pair."""
+        bank_c = os.path.join(a.pairs, n + ".bank.c")
+        reg_c = os.path.join(a.pairs, n + ".reg.c")
+        if not os.path.exists(reg_c):
+            return ("  %-28s FAIL — missing register twin %s" % (n, os.path.basename(reg_c)),
+                    None, True)
+        b1, e1 = stage1(bank_c, work, n + ".bank", inc)
+        r1, e2 = stage1(reg_c, work, n + ".reg", inc)
+        if e1 or e2:
+            return "  %-28s FAIL — %s" % (n, e1 or e2), None, True
+        brc, btr = run_one(b1, work, n + ".bank", a.build)
+        rrc, rtr = run_one(r1, work, n + ".reg", a.build)
+        v = verdict_pair(brc, rrc, btr, rtr)
+        line = None
+        if not a.quiet:
+            line = ("  %-28s %-14s bank_rc=%d reg_rc=%d%s"
+                    % (n, v, brc, rrc,
+                       "" if v != MISMATCH else "  bank_sha=%s reg_sha=%s"
+                       % (hashlib.sha256(btr.encode()).hexdigest()[:12],
+                          hashlib.sha256(rtr.encode()).hexdigest()[:12])))
+        return line, (n, v, brc, rrc), v in FAIL_VERDICTS
+
     try:
-        for n in names:
-            bank_c = os.path.join(a.pairs, n + ".bank.c")
-            reg_c = os.path.join(a.pairs, n + ".reg.c")
-            if not os.path.exists(reg_c):
-                print("  %-28s FAIL — missing register twin %s" % (n, os.path.basename(reg_c)))
-                bad += 1
-                continue
-            b1, e1 = stage1(bank_c, work, n + ".bank", inc)
-            r1, e2 = stage1(reg_c, work, n + ".reg", inc)
-            if e1 or e2:
-                print("  %-28s FAIL — %s" % (n, e1 or e2))
-                bad += 1
-                continue
-            brc, btr = run_one(b1, work, n + ".bank", a.build)
-            rrc, rtr = run_one(r1, work, n + ".reg", a.build)
-            v = verdict_pair(brc, rrc, btr, rtr)
-            rows.append((n, v, brc, rrc))
-            if v in FAIL_VERDICTS:
-                bad += 1
-            if not a.quiet:
-                print("  %-28s %-14s bank_rc=%d reg_rc=%d%s"
-                      % (n, v, brc, rrc,
-                         "" if v != MISMATCH else "  bank_sha=%s reg_sha=%s"
-                         % (hashlib.sha256(btr.encode()).hexdigest()[:12],
-                            hashlib.sha256(rtr.encode()).hexdigest()[:12])))
+        with concurrent.futures.ThreadPoolExecutor(max_workers=JOBS) as pool:
+            futs = [(n, pool.submit(one, n)) for n in names]
+            for n, fut in futs:          # `names` is sorted: output order is fixed
+                line, row, is_bad = fut.result()
+                if line is not None:
+                    print(line)
+                if row is not None:
+                    rows.append(row)
+                if is_bad:
+                    bad += 1
     finally:
         shutil.rmtree(work, ignore_errors=True)
     nviol = sum(1 for _, v, _, _ in rows if v == VIOLATION)

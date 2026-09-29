@@ -24,9 +24,19 @@ does not make a test slow, it makes it LIE: the pass would be exercised against
 IR that no longer corresponds to the source. So every component is CONTENT,
 never a timestamp -- a stale hit requires a SHA-256 collision, not clock skew.
 Hashing the clang BINARY (not just its version string) is what catches an
-in-place toolchain upgrade that keeps the same version number. System SDK
-headers are not walked directly, but they cannot move without the clang bytes or
-version changing, so they are covered transitively.
+in-place toolchain upgrade that keeps the same version number.
+
+⚠ CORRECTED (bd test_C_libtooling-ffm0, Rule-13 r1 F-r1-4, L7 at the source):
+this paragraph used to say the system SDK headers "cannot move without the clang
+bytes or version changing, so they are covered transitively". That is FALSE on
+this box: Homebrew clang takes its sysroot from the Command Line Tools
+(`-isysroot /Library/Developer/CommandLineTools/SDKs/MacOSX26.sdk`), which update
+independently of clang. So the key now hashes the SYSROOT clang actually uses
+(read from `clang -###`, not from `xcrun`, which reports the Xcode SDK — a
+different one) and that SDK's SDKSettings.json (its name + version). Residuals,
+declared: an in-place edit of a header inside the SDK that leaves SDKSettings.json
+alone; the environment that steers clang at TEST time (SDKROOT, CPATH, ...) is
+keyed per test by tests/e2e/stage_cache.sh / tools/cq_stage_cache.py, not here.
 
 Any failure is fatal and loud. A cache that silently degraded to a fixed key
 would serve one slice's IR to every other slice -- the exact silent-miscompile
@@ -75,7 +85,35 @@ def main():
                 h.update(b"\0")
                 feed_file(p)
 
-    # 4. the exact flags
+    # 4. the SYSROOT this clang compiles against, as the driver itself reports it
+    #    (`-isysroot <dir>` in its -### job), plus that SDK's SDKSettings.json.
+    #    No sysroot (a non-Darwin driver) is keyed as its absence.
+    h.update(b"\0sysroot\0")
+    job = subprocess.run([clang, "-###", "-x", "c", "-c", os.devnull],
+                         capture_output=True, text=True, check=True)
+    toks = [x.strip('"') for x in job.stderr.split()]
+    sysroot = toks[toks.index("-isysroot") + 1] if "-isysroot" in toks else ""
+    h.update(sysroot.encode() + b"\0")
+    settings = os.path.join(sysroot, "SDKSettings.json") if sysroot else ""
+    if settings and os.path.isfile(settings):
+        feed_file(settings)
+    else:
+        h.update(b"no-SDKSettings.json")
+
+    # 4b. clang's CONFIGURATION FILE(S) (bd dbjh, r2 F-r2-2): Homebrew clang reads
+    #     /usr/local/etc/clang/<triple>.cfg on every call, and that file is where
+    #     its `-isysroot` comes from. Their BYTES, as named by the same -### job.
+    #     (CLANG_NO_DEFAULT_CONFIG, which turns them off, is keyed per test.)
+    #     Configure time, like everything in this key.
+    h.update(b"\0clang-config\0")
+    for line in job.stderr.splitlines():
+        if line.startswith("Configuration file: "):
+            cfg = line[len("Configuration file: "):].strip()
+            h.update(cfg.encode() + b"\0")
+            if os.path.isfile(cfg):
+                feed_file(cfg)
+
+    # 5. the exact flags
     h.update(b"\0flags\0")
     h.update("\0".join(flags).encode())
 

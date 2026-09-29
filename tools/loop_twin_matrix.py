@@ -329,6 +329,9 @@ import tempfile
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
+if HERE not in sys.path:
+    sys.path.insert(0, HERE)
+import cq_stage_cache  # noqa: E402  (bd 2dfk: stage 1 + stages 3/4 are content-addressed)
 
 # ── THE MATRIX ──────────────────────────────────────────────────────────────
 # PREFIX x REGION x SUFFIX over one loop body. The axes are chosen so that each
@@ -2167,16 +2170,15 @@ def _first_diag(text):
 
 def build_side(cfg, work, name, csrc):
     s = Side()
-    cpath = os.path.join(work, name + ".c")
-    with open(cpath, "w") as f:
-        f.write(csrc)
-    s1 = os.path.join(work, name + ".s1.ll")
-    r = subprocess.run(
-        [cfg.clang, "-I", cfg.include, "-include", "CQ.h", "-O1", "-emit-llvm", "-S",
-         cpath, "-o", s1],
-        capture_output=True, text=True)
-    if r.returncode != 0:
-        s.error = "stage 1 (clang -O1) failed:\n" + r.stderr
+    # Stage 1 through the content-addressed cache (bd 2dfk, tools/cq_stage_cache.py):
+    # the generated source is compiled from a CONTENT-ADDRESSED path, so its
+    # `source_filename` is a function of the key; with no CQ_S1CACHE in the
+    # environment it is the old `<work>/<name>.c` compile, byte for byte.
+    rc, err, s1 = cq_stage_cache.stage1_generated(
+        cfg.clang, ["-I", cfg.include, "-include", "CQ.h", "-O1", "-emit-llvm", "-S"],
+        csrc, work, name)
+    if rc != 0:
+        s.error = "stage 1 (clang -O1) failed:\n" + err
         return s
     s2 = os.path.join(work, name + ".s2.ll")
     r = subprocess.run(
@@ -2208,31 +2210,26 @@ def build_side(cfg, work, name, csrc):
     if rc != 0:
         s.error = "stage 2b (free_pairing_check, STRICT) failed:\n" + out
         return s
-    exe = os.path.join(work, name + ".exe")
     # Stage 3, SPLIT (bd dgn5, the same trick `run_slice.sh` uses and for the same
     # reason): the clang DRIVER dlopens libLTO -> libLLVM (140MB) on every -O0
     # link that never uses LTO, MEASURED at ~1.0s per cell, i.e. 200s of CPU for
     # this gate alone. `$CQ_LD` is the wrapper CMake derives from this same clang
     # via `clang -###` with `-lto_library` removed; unset (by-hand invocation) the
     # driver runs and is exactly equivalent, only slower.
-    if cfg.ld and os.access(cfg.ld, os.X_OK):
-        obj = os.path.join(work, name + ".o")
-        r = subprocess.run([cfg.clang, "-c", s2, "-o", obj],
-                           capture_output=True, text=True)
-        if r.returncode == 0:
-            r = subprocess.run([cfg.ld, "-o", exe, obj, cfg.templates, cfg.runtime],
-                               capture_output=True, text=True)
-    else:
-        r = subprocess.run([cfg.clang, s2, cfg.templates, cfg.runtime, "-o", exe],
-                           capture_output=True, text=True)
-    if r.returncode != 0:
-        s.error = "stage 3 (link) failed:\n" + r.stderr
+    #
+    # Stages 3 + 4 go through tools/cq_stage_cache.py::link_and_run (bd 2dfk):
+    # the same split link and run, plus a replay of a previous CLEAN run of this
+    # exact lowered module against these exact archives and toolchain. The pass
+    # (stage 2 above) and every comparison below run every time.
+    lr = cq_stage_cache.link_and_run(cfg.clang, cfg.ld, s2, cfg.templates,
+                                     cfg.runtime, work, name)
+    if lr.link_rc != 0:
+        s.error = "stage 3 (link) failed:\n" + lr.link_stderr
         return s
-    r = subprocess.run([exe], capture_output=True, text=True)
-    if r.returncode != 0:
-        s.error = "stage 4 (run) exited %d" % r.returncode
+    if lr.run_rc != 0:
+        s.error = "stage 4 (run) exited %d" % lr.run_rc
         return s
-    s.trace = r.stdout
+    s.trace = lr.stdout
     return s
 
 
@@ -3112,6 +3109,12 @@ def main():
                          "writes ITS OWN expected table and quarantine "
                          "(`SURFACE_TABLES`), so no file on disk is ever read as "
                          "a measurement of a surface it was not measured on.")
+    ap.add_argument("--dump-sides", default="",
+                    help="also write EVERY side of EVERY cell (opt exit, first "
+                         "diagnostic, warning count, trace, harness error, "
+                         "residual cq_phi) to FILE as JSON. A MEASUREMENT aid "
+                         "(bd 2dfk: the before/after record that a harness change "
+                         "is verdict- AND trace-neutral); never read by the gate.")
     ap.add_argument("--out", default="",
                     help="also write the verdict table to FILE (name + verdict, "
                          "one row per cell, the same two columns --regenerate "
@@ -3191,6 +3194,11 @@ def main():
         for name, rolled, unrolled in ex.map(_run_cell_star,
                                              [(cfg, c) for c in cells]):
             results[name] = (rolled, unrolled)
+    if cfg.dump_sides:
+        import json
+        with open(cfg.dump_sides, "w") as f:
+            json.dump({n: [vars(s) for s in results[n]] for n in sorted(results)},
+                      f, indent=0, sort_keys=True)
 
     # UNDER `void` THE QUARANTINE IS READ FOR ITS CELL NAMES AND NOT FOR ITS
     # SIGNATURES, and the split is exactly the split between what the file claims

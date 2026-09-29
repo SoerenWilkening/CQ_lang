@@ -77,21 +77,26 @@ endif()
 # header before touching this: a stale hit would not make a test slow, it would
 # make it LIE, so every key component is content and never a timestamp.
 # Cache lives under the build dir => `rm -rf build` is a full reset.
-# NOTE: run_slice_multi.sh is deliberately NOT cached -- it compiles several TUs
-# per test and there are only 20 such entries (~9s CPU), so the added key
-# surface is not worth it.
+# run_slice_multi.sh shares this cache since bd test_C_libtooling-2dfk (it was
+# "deliberately NOT cached" at 20 entries; there are 42 now), through the ONE
+# helper `cq_s1_compile` (tests/e2e/stage_cache.sh), each TU keyed by the literal
+# flag array it is compiled with (bd test_C_libtooling-ffm0).
 set(_E2E_S1_CACHE "${CMAKE_CURRENT_BINARY_DIR}/.s1cache")
-# ⚠ THE KEY BELOW IS COMPUTED AT CONFIGURE TIME, so every header it hashes must be
-# a CONFIGURE DEPENDENCY — otherwise editing include/CQ.h and running
-# `cmake --build` keeps the OLD key and every slice is served the OLD header's
-# stage-1 IR. MEASURED (bd test_C_libtooling-fmt3, 2026-09-28): with the
-# `nomerge` header in place and no reconfigure,
-# `e2e-slice-control-angle-select-ry` PASSED against its PRE-nomerge golden,
-# although the new header changes that slice's stage-1 IR and its trace. The
-# glob is the same extension set s1_cache_key.py walks (.h/.hpp/.inc), and
-# CONFIGURE_DEPENDS also catches a header ADDED under include/. RESIDUAL: `ctest`
-# without a preceding build still runs whatever the last configure keyed — the
-# same contract as running ctest on an un-rebuilt plugin.
+# ⚠ THE KEY BELOW IS COMPUTED AT CONFIGURE TIME. The headers it hashes are still a
+# CONFIGURE DEPENDENCY (bd test_C_libtooling-fmt3 measured a stale-header pass
+# before it was), BUT THAT IS NO LONGER WHAT PROTECTS A HEADER EDIT: since bd
+# test_C_libtooling-dbjh every stage-1 key ALSO hashes, AT TEST TIME, the bytes of
+# every header under each `-I` directory and each `-include` file its flags name
+# (`_cq_hdr_digest` / `header_digest`), so a CQ.h edit with NO reconfigure and NO
+# build is a miss (r2 F-r2-1 measured the opposite before: 8/8 warm PASS vs 1/8
+# uncached with every cq_theta angle doubled). ⚠ The sentence that stood here —
+# "ctest without a preceding build still runs whatever the last configure keyed:
+# the same contract as running ctest on an un-rebuilt plugin" — was FALSE for
+# headers: an un-rebuilt plugin is equally stale cached and uncached, while an
+# edited header is read by every UNCACHED stage 1, so only the cache masked it.
+# What stays configure-time is the TOOLCHAIN half (clang version, sysroot +
+# SDKSettings.json, clang's configuration file): after a Command Line Tools or
+# macOS update, reconfigure or run with CQ_E2E_NO_CACHE=1 (r2 F-r2-3).
 file(GLOB_RECURSE _E2E_S1_HDRS CONFIGURE_DEPENDS
      "${CMAKE_SOURCE_DIR}/include/*.h" "${CMAKE_SOURCE_DIR}/include/*.hpp"
      "${CMAKE_SOURCE_DIR}/include/*.inc")
@@ -126,6 +131,98 @@ else()
                   "(${_E2E_LINK_ERR}); falling back to the clang driver. "
                   "Tests stay correct, the e2e layer is just slower.")
   set(_E2E_LINK_WRAPPER "")
+endif()
+
+# bd test_C_libtooling-2dfk — the STAGE 2b/3/4 cache (tools/cq_stage_cache.py;
+# bash spelling tests/e2e/stage_cache.sh). Free-pairing check, link and run are
+# PURE functions of the lowered module + the toolchain, so each is keyed on
+# exactly those bytes and a previous SUCCESS is replayed; the pass (stage 2) and
+# the golden diff run every time. This is the toolchain half of that key,
+# computed once per configure like CQ_S1_BASE: CQ_S1_BASE (clang bytes +
+# version), the derived link wrapper, `ld -v`, the OS build. The per-test half
+# (the lowered module, BOTH archives, the wrapper) is hashed at test time, so a
+# rebuilt runtime or a changed lowering is a miss without any reconfigure.
+# DEGRADES GRACEFULLY: no S1 base or no wrapper => no key => every stage runs.
+# `CQ_E2E_NO_CACHE=1 ctest ...` switches every cache (S1 included) off.
+set(_E2E_RUN_CACHE "${CMAKE_CURRENT_BINARY_DIR}/.runcache")
+set(_E2E_RUN_BASE "")
+if(_E2E_S1_BASE AND _E2E_LINK_WRAPPER)
+  execute_process(
+    COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/cq_stage_cache.py"
+            run-base "${_E2E_S1_BASE}" "${_E2E_LINK_WRAPPER}"
+    RESULT_VARIABLE _E2E_RUN_RV
+    OUTPUT_VARIABLE _E2E_RUN_BASE
+    ERROR_VARIABLE _E2E_RUN_ERR)
+  if(NOT _E2E_RUN_RV EQUAL 0)
+    message(WARNING "cq e2e: stage-3/4 cache key failed (${_E2E_RUN_ERR}); "
+                    "caching disabled, tests stay correct and merely slower.")
+    set(_E2E_RUN_BASE "")
+  endif()
+endif()
+if(_E2E_RUN_BASE)
+  message(STATUS "cq e2e: stage-2b/3/4 cache key ${_E2E_RUN_BASE}")
+endif()
+
+# THE e2e TEST ENVIRONMENT, applied to EVERY test registered in this directory by
+# a DEFERRED call that runs when this file has been fully processed — so an entry
+# a parallel track appends at the very bottom gets it too, with no
+# set_tests_properties of its own. Each variable is APPENDED only if the test does
+# not already set it; an entry's own ENVIRONMENT (e.g. CQ_OPT_DEBUG_ALLOC=lifo) is
+# never replaced. ⚠ The pass this replaced was a plain `set_tests_properties(...
+# ENVIRONMENT ...)` over the tests registered so far: it REPLACED each test's
+# ENVIRONMENT, which silently dropped e2e-spec-scrub-dangling-key's
+# `CQ_OPT_DEBUG_ALLOC=lifo` from 818f8afa (2026-09-25) on, and it could not reach
+# anything registered below it (bd 2dfk, measured with ctest --show-only=json-v1).
+set(_E2E_ENV
+  "CQ_PYTHON=${_E2E_PYTHON}"
+  "CQ_LD=${_E2E_LINK_WRAPPER}"
+  "CQ_S1CACHE=${_E2E_S1_CACHE}"
+  "CQ_S1_BASE=${_E2E_S1_BASE}"
+  "CQ_RUNCACHE=${_E2E_RUN_CACHE}"
+  "CQ_RUN_BASE=${_E2E_RUN_BASE}")
+function(_cq_e2e_apply_env)
+  get_property(_tests DIRECTORY PROPERTY TESTS)
+  foreach(_t IN LISTS _tests)
+    get_test_property(${_t} ENVIRONMENT _have)
+    if(NOT _have)
+      set(_have "")
+    endif()
+    foreach(_kv IN LISTS _E2E_ENV)
+      string(REGEX REPLACE "=.*$" "" _k "${_kv}")
+      set(_set FALSE)
+      foreach(_h IN LISTS _have)
+        if(_h MATCHES "^${_k}=")
+          set(_set TRUE)
+        endif()
+      endforeach()
+      if(NOT _set)
+        set_property(TEST ${_t} APPEND PROPERTY ENVIRONMENT "${_kv}")
+      endif()
+    endforeach()
+  endforeach()
+endfunction()
+cmake_language(DEFER CALL _cq_e2e_apply_env)
+
+# THE CACHE'S OWN MUTANT VALIDATION (bd 2dfk, bd ffm0; CLAUDE.md L10 — a cache in
+# front of a check is exactly the instrument that can turn a red into a green, so
+# it is made to fail on purpose). Through the REAL run_slice.sh /
+# run_slice_multi.sh and the python API, in PRIVATE caches: ONE ROW PER KEY
+# COMPONENT (the lowering, both archives, the link wrapper, CQ_RUN_BASE,
+# CQ_S1_BASE, the clang bytes, the environment, the checker bytes / flags /
+# interpreter, source and lib-TU bytes at the same path, each of the four harness
+# files, the stage-1 / lib-TU / stage-3 flags incl. r1's C18 and -O2 repros,
+# argv), each starting from a WARM cache and requiring a MISS, and a RED where
+# the change breaks the program. Meta-validated by deleting each key component
+# from both spellings (TRACK_2DFK.md). Registered only when the cache is
+# configured — with no key there is no cache.
+if(_E2E_RUN_BASE)
+  add_test(NAME e2e-stage-cache-selftest
+    COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/cq_stage_cache_test.py"
+      --clang "${_E2E_CLANG}" --opt "${_E2E_OPT}" --plugin "$<TARGET_FILE:CQPass>"
+      --include "${CMAKE_SOURCE_DIR}/include"
+      --runtime "$<TARGET_FILE:cq_runtime>" --templates "$<TARGET_FILE:cq_templates>"
+      --ld "${_E2E_LINK_WRAPPER}" --s1-base "${_E2E_S1_BASE}"
+      --llvm-link "${_E2E_LLVM_LINK}")
 endif()
 
 # Phase 2 canonical slice: theta -> add_hl -> measure.
@@ -7312,9 +7409,12 @@ add_test(NAME e2e-slice-grover-oracle-uncompute
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_grover_oracle_uncompute.expected.log")
 
-get_property(_E2E_ALL_TESTS DIRECTORY PROPERTY TESTS)
-set_tests_properties(${_E2E_ALL_TESTS} PROPERTIES
-  ENVIRONMENT "CQ_PYTHON=${_E2E_PYTHON};CQ_LD=${_E2E_LINK_WRAPPER};CQ_S1CACHE=${_E2E_S1_CACHE};CQ_S1_BASE=${_E2E_S1_BASE}")
+# (The directory-wide ENVIRONMENT pass that stood here REPLACED every earlier
+# test's ENVIRONMENT and could not reach the tests below; it is now the DEFERRED,
+# appending `_cq_e2e_apply_env` at the top of this file, which covers every entry
+# wherever it is registered. The per-entry ENVIRONMENT copies below are kept —
+# harmless, and they keep a parallel track's merge conflict-free — but a NEW entry
+# does not need one. bd test_C_libtooling-2dfk.)
 # bd xdu2.1 (Track B): the stale-reader memory-hop matrix — stale parked-rail reads decline, capability/legit-order rows accept.
 cq_railbank_matrix(e2e-railbank-stale-matrix railbank_stale_matrix.c)
 
