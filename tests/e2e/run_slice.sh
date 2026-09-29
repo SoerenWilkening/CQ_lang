@@ -40,7 +40,7 @@ TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 # it saves. Here we add only the source bytes: one `openssl dgst` over one small
 # .c, MEASURED 0.006s CPU against the 0.428s of stage 1 it replaces.
 s1="$TMP/s1.ll"
-if [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
+if [ -z "${CQ_E2E_NO_CACHE:-}" ] && [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
     # The PATH is keyed as well as the content: clang bakes the source path into
     # `ModuleID`/`source_filename`, so two byte-identical slices at different
     # paths do NOT produce byte-identical IR and must not share an entry.
@@ -70,8 +70,13 @@ if [ "$NO_QRAM" = "--forbid-qram" ] && grep -Eq 'store i32 0, ptr %cq\.bank\.add
     echo "run_slice: rail-bank cell was seeded with literal handle 0" >&2
     exit 1
 fi
-# shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
-"$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"       # Stage 2b
+# Stages 2b / 3 / 4 — CONTENT-ADDRESSED (bd test_C_libtooling-2dfk). Each is a
+# pure function of the lowered module + the toolchain, so tests/e2e/stage_cache.sh
+# keys it on exactly those bytes and replays a previous SUCCESS; stage 2 above
+# (the pass under test) and the golden diff below run every time. A miss, a
+# failure, CQ_E2E_NO_CACHE=1, or a by-hand run (no CQ_RUNCACHE) runs every stage
+# exactly as before. Read tools/cq_stage_cache.py's docstring before touching it.
+#
 # Stage 3 (link) — deliberately NO -O flag (clang default -O0): the lowered IR
 # is the verified artifact; an optimized stage 3 could const-fold/reorder the
 # classical remainder (e.g. the volatile-const-fold literals) and desynchronize
@@ -83,10 +88,9 @@ fi
 # from the link MEASURED 0.74-0.94s -> 0.35-0.44s per slice. Unset (by-hand
 # invocation, or a platform CMake could not derive a line for) -> the original
 # single driver command, which is exactly equivalent and only slower.
-if [ -n "${CQ_LD:-}" ] && [ -x "${CQ_LD}" ]; then
-    "$CLANG" -c "$TMP/s2.ll" -o "$TMP/s2.o"
-    "$CQ_LD" -o "$TMP/slice" "$TMP/s2.o" "$TPL" "$RT"
-else
-    "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
-fi
-"$TMP/slice" | diff -u - "$GOLDEN"                                                     # Stage 4 (run + diff)
+# shellcheck source=stage_cache.sh
+. "$HERE/stage_cache.sh"
+FPC="$HERE/../../tools/free_pairing_check.py"
+cq_cache_keys "$FPC" "$FREECHECK_FLAGS"
+cq_stage_2b "$FPC" "$FREECHECK_FLAGS"                                                  # Stage 2b
+cq_stage_34_diff "$CLANG" "$GOLDEN"                                                    # Stages 3, 4 (run + diff)

@@ -31,8 +31,40 @@ PY=${CQ_PYTHON:-python3}
 HERE=$(cd "$(dirname "$0")" && pwd)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 
+# Stage 1 per TU, through the SAME content-addressed cache run_slice.sh uses (bd
+# test_C_libtooling-2dfk; it was "deliberately NOT cached" at 20 entries, and
+# there are 42 now). The key is run_slice.sh's — (CQ_S1_BASE, path, bytes) — plus
+# a TAG, because the lib TUs are compiled WITHOUT `-include CQ.h` and CQ_S1_BASE
+# only covers the CQ-TU flag string; the CQ TU's tag is empty, so its key IS
+# run_slice.sh's key (same flags, same path, same bytes => same IR). A hit is
+# COPIED to the exact $TMP path a miss writes, so llvm-link sees byte-identical
+# inputs at identical paths either way.
+s1_tu() {  # <out> <src> <tag> <clang flags...>
+    local out=$1 src=$2 tag=$3 key hit
+    shift 3
+    if [ -z "${CQ_E2E_NO_CACHE:-}" ] && [ -n "${CQ_S1CACHE:-}" ] && [ -n "${CQ_S1_BASE:-}" ]; then
+        if [ -z "$tag" ]; then
+            key=$({ printf '%s\0%s\0' "$CQ_S1_BASE" "$src"; cat "$src"; } \
+                  | /usr/bin/openssl dgst -sha256 | awk '{print $NF}')
+        else
+            key=$({ printf '%s\0%s\0%s\0' "$CQ_S1_BASE" "$tag" "$src"; cat "$src"; } \
+                  | /usr/bin/openssl dgst -sha256 | awk '{print $NF}')
+        fi
+        hit="$CQ_S1CACHE/$key.ll"
+        if [ -f "$hit" ]; then
+            cp -f "$hit" "$out"
+            return 0
+        fi
+        "$CLANG" "$@" "$src" -o "$out"
+        mkdir -p "$CQ_S1CACHE"
+        cp -f "$out" "$hit.$$.tmp" && mv -f "$hit.$$.tmp" "$hit"
+        return 0
+    fi
+    "$CLANG" "$@" "$src" -o "$out"
+}
+
 # Stage 1a — the CQ TU: -include CQ.h, -O1 (never -O0/-O2/-O3).
-"$CLANG" -I"$INC" -include CQ.h -O1 -emit-llvm -S "$CQSRC" -o "$TMP/cq.ll"
+s1_tu "$TMP/cq.ll" "$CQSRC" "" -I"$INC" -include CQ.h -O1 -emit-llvm -S
 
 # Stage 1b — classical libs: NO -include CQ.h, -O1. $LIBSRCS is a single
 # space-separated string, word-split here; empty means zero lib modules. `set -f`
@@ -43,7 +75,7 @@ i=0
 set -f
 for lib in $LIBSRCS; do
     set +f
-    "$CLANG" -I"$INC" -O1 -emit-llvm -S "$lib" -o "$TMP/lib_$i.ll"
+    s1_tu "$TMP/lib_$i.ll" "$lib" "lib-no-CQ.h" -I"$INC" -O1 -emit-llvm -S
     linkin+=("$TMP/lib_$i.ll")
     i=$((i + 1))
     set -f
@@ -56,22 +88,14 @@ set +f
 # Stage 3 — the single cq-lowering pass over the combined module.
 "$OPT" -load-pass-plugin "$PASS" -passes=cq-lowering -S "$TMP/combined.ll" -o "$TMP/s2.ll"
 
-# Stage 3b — Rule-6 free-pairing check over the lowered IR (bd 8txa).
-# shellcheck disable=SC2086  # $FREECHECK_FLAGS is an intentional word-split
-"$PY" "$HERE/../../tools/free_pairing_check.py" -q $FREECHECK_FLAGS "$TMP/s2.ll"
-
-# Stage 4 — link: templates BEFORE runtime (load-bearing, C18). Deliberately
-# NO -O flag (clang default -O0): the lowered IR is the verified artifact; an
-# optimized link stage could const-fold/reorder the classical remainder and
-# desynchronize the trace from the golden (bd szpr pin, mirrors run_slice.sh).
-# $CQ_LD is the derived linker wrapper (bd dgn5) — see run_slice.sh stage 3 for
-# the rationale; unset falls back to the driver, exactly equivalent, slower.
-if [ -n "${CQ_LD:-}" ] && [ -x "${CQ_LD}" ]; then
-    "$CLANG" -c "$TMP/s2.ll" -o "$TMP/s2.o"
-    "$CQ_LD" -o "$TMP/slice" "$TMP/s2.o" "$TPL" "$RT"
-else
-    "$CLANG" "$TMP/s2.ll" "$TPL" "$RT" -o "$TMP/slice"
-fi
-
-# Stage 5 — run + byte-diff the trace against the golden.
-"$TMP/slice" | diff -u - "$GOLDEN"
+# Stages 3b / 4 / 5 — the Rule-6 free-pairing check (bd 8txa), the link
+# (templates BEFORE runtime, load-bearing, C18; deliberately -O0, bd szpr) and
+# the run + golden byte-diff, through the SAME content-addressed helper
+# run_slice.sh uses (bd test_C_libtooling-2dfk; see that file and
+# tools/cq_stage_cache.py). The pass above and the diff always run.
+# shellcheck source=stage_cache.sh
+. "$HERE/stage_cache.sh"
+FPC="$HERE/../../tools/free_pairing_check.py"
+cq_cache_keys "$FPC" "$FREECHECK_FLAGS"
+cq_stage_2b "$FPC" "$FREECHECK_FLAGS"                    # Stage 3b
+cq_stage_34_diff "$CLANG" "$GOLDEN"                      # Stages 4, 5

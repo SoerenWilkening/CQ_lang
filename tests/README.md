@@ -31,3 +31,21 @@ nothing is a configure WARNING.
 
 If the FULL gate fails, bisect over the batch's merge commits (fast tier first,
 then the failing heavy entry alone: `ctest --test-dir build -R '^<name>$'`).
+
+## The stage cache (why a second run is fast)
+
+Every e2e check is clang -O1 (stage 1) → **cq-opt (stage 2, the pass under
+test)** → free-pairing check (2b) → link (3) → run (4) → compare. Stages 1, 2b, 3
+and 4 are pure functions of their input bytes, so they are content-addressed
+under `build/tests/e2e/.s1cache` and `.runcache` and a previous SUCCESS is
+replayed; **stage 2 and every comparison (trace vs golden, rolled vs unrolled,
+verdict vs table) run every time**. The key covers the lowered module, both
+runtime archives, the link wrapper and the toolchain, so a pass change, a
+rebuilt runtime or a new clang is a miss. Read `tools/cq_stage_cache.py` for the
+argument; `e2e-stage-cache-selftest` makes the cache fail on purpose.
+
+- `CQ_E2E_NO_CACHE=1 ctest --test-dir build -j6` — every stage runs, nothing is
+  read or recorded (a from-scratch run).
+- `rm -rf build/tests/e2e/.s1cache build/tests/e2e/.runcache` — reset.
+- A by-hand `bash tests/e2e/run_slice.sh …` without the ctest environment caches
+  nothing.

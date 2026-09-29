@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 814 maintained source files, 6424 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 814 maintained source files, 6426 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -18,7 +18,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ArmClassify.cpp` — 9703 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 7413 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5405 physical lines
-- `tools/loop_twin_matrix.py` — 4102 physical lines
+- `tools/loop_twin_matrix.py` — 4110 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3628 physical lines
 - `tools/free_pairing_check.py` — 3423 physical lines
 - `tools/free_pairing_check_test.py` — 3203 physical lines
@@ -4595,15 +4595,16 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/railbank_stale_matrix.c:646` — `slice`
 - `tests/e2e/railbank_stale_matrix.c:650` — `main`
 
-### `tests/e2e/run_railbank_dynamic_matrix.py` (231 lines)
+### `tests/e2e/run_railbank_dynamic_matrix.py` (253 lines)
 
-- `tests/e2e/run_railbank_dynamic_matrix.py:39` — `run`
-- `tests/e2e/run_railbank_dynamic_matrix.py:43` — `load_expectations`
-- `tests/e2e/run_railbank_dynamic_matrix.py:45` — `load_expectations.no_duplicate_keys`
-- `tests/e2e/run_railbank_dynamic_matrix.py:85` — `_stores`
-- `tests/e2e/run_railbank_dynamic_matrix.py:98` — `literal_bank_stores`
-- `tests/e2e/run_railbank_dynamic_matrix.py:133` — `check_case`
-- `tests/e2e/run_railbank_dynamic_matrix.py:166` — `main`
+- `tests/e2e/run_railbank_dynamic_matrix.py:54` — `run`
+- `tests/e2e/run_railbank_dynamic_matrix.py:58` — `load_expectations`
+- `tests/e2e/run_railbank_dynamic_matrix.py:60` — `load_expectations.no_duplicate_keys`
+- `tests/e2e/run_railbank_dynamic_matrix.py:100` — `_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:113` — `literal_bank_stores`
+- `tests/e2e/run_railbank_dynamic_matrix.py:148` — `check_case`
+- `tests/e2e/run_railbank_dynamic_matrix.py:181` — `main`
+- `tests/e2e/run_railbank_dynamic_matrix.py:196` — `main.one_case`
 
 ### `tests/e2e/slice_4jok_bank_cell_from_hoisted.c` (57 lines)
 
@@ -8204,43 +8205,43 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/llvm_discovery.py:12` — `_cmakedir_from`
 - `tools/llvm_discovery.py:25` — `discover_llvm_dir`
 
-### `tools/loop_twin_matrix.py` (4102 lines)
+### `tools/loop_twin_matrix.py` (4110 lines)
 
-- `tools/loop_twin_matrix.py:1224` — `phi_surface_of_header`
-- `tools/loop_twin_matrix.py:1238` — `phi_void_source`
-- `tools/loop_twin_matrix.py:1245` — `phi_void_source.one`
-- `tools/loop_twin_matrix.py:1414` — `_bank_text`
-- `tools/loop_twin_matrix.py:1635` — `sources`
-- `tools/loop_twin_matrix.py:1693` — `_wrap`
-- `tools/loop_twin_matrix.py:1996` — `control_sources`
-- `tools/loop_twin_matrix.py:2013` — `run_boundary_controls`
-- `tools/loop_twin_matrix.py:2106` — `_pair_check`
-- `tools/loop_twin_matrix.py:2127` — `Side.__init__`
-- `tools/loop_twin_matrix.py:2148` — `_resid`
-- `tools/loop_twin_matrix.py:2160` — `_first_diag`
-- `tools/loop_twin_matrix.py:2168` — `build_side`
-- `tools/loop_twin_matrix.py:2239` — `counts`
-- `tools/loop_twin_matrix.py:2273` — `divergence_signature`
-- `tools/loop_twin_matrix.py:2335` — `split_header`
-- `tools/loop_twin_matrix.py:2351` — `resolve_header`
-- `tools/loop_twin_matrix.py:2376` — `write_preserving_header`
-- `tools/loop_twin_matrix.py:2398` — `load_quarantine`
-- `tools/loop_twin_matrix.py:2446` — `write_quarantine`
-- `tools/loop_twin_matrix.py:2464` — `cell_name`
-- `tools/loop_twin_matrix.py:2496` — `ry_cells`
-- `tools/loop_twin_matrix.py:2703` — `f_cells`
-- `tools/loop_twin_matrix.py:2722` — `bool_cells`
-- `tools/loop_twin_matrix.py:2792` — `bank_cells`
-- `tools/loop_twin_matrix.py:2839` — `nest_cells`
-- `tools/loop_twin_matrix.py:2885` — `_bank_floor`
-- `tools/loop_twin_matrix.py:2894` — `_floor_is_a_lower_bound`
-- `tools/loop_twin_matrix.py:2912` — `trace_floor`
-- `tools/loop_twin_matrix.py:2918` — `cells_of_matrix`
-- `tools/loop_twin_matrix.py:2963` — `run_cell`
-- `tools/loop_twin_matrix.py:2977` — `_run_cell_star`
-- `tools/loop_twin_matrix.py:2981` — `verdict`
-- `tools/loop_twin_matrix.py:3073` — `main`
-- `tools/loop_twin_matrix.py:3270` — `main.write_out`
+- `tools/loop_twin_matrix.py:1227` — `phi_surface_of_header`
+- `tools/loop_twin_matrix.py:1241` — `phi_void_source`
+- `tools/loop_twin_matrix.py:1248` — `phi_void_source.one`
+- `tools/loop_twin_matrix.py:1417` — `_bank_text`
+- `tools/loop_twin_matrix.py:1638` — `sources`
+- `tools/loop_twin_matrix.py:1696` — `_wrap`
+- `tools/loop_twin_matrix.py:1999` — `control_sources`
+- `tools/loop_twin_matrix.py:2016` — `run_boundary_controls`
+- `tools/loop_twin_matrix.py:2109` — `_pair_check`
+- `tools/loop_twin_matrix.py:2130` — `Side.__init__`
+- `tools/loop_twin_matrix.py:2151` — `_resid`
+- `tools/loop_twin_matrix.py:2163` — `_first_diag`
+- `tools/loop_twin_matrix.py:2171` — `build_side`
+- `tools/loop_twin_matrix.py:2236` — `counts`
+- `tools/loop_twin_matrix.py:2270` — `divergence_signature`
+- `tools/loop_twin_matrix.py:2332` — `split_header`
+- `tools/loop_twin_matrix.py:2348` — `resolve_header`
+- `tools/loop_twin_matrix.py:2373` — `write_preserving_header`
+- `tools/loop_twin_matrix.py:2395` — `load_quarantine`
+- `tools/loop_twin_matrix.py:2443` — `write_quarantine`
+- `tools/loop_twin_matrix.py:2461` — `cell_name`
+- `tools/loop_twin_matrix.py:2493` — `ry_cells`
+- `tools/loop_twin_matrix.py:2700` — `f_cells`
+- `tools/loop_twin_matrix.py:2719` — `bool_cells`
+- `tools/loop_twin_matrix.py:2789` — `bank_cells`
+- `tools/loop_twin_matrix.py:2836` — `nest_cells`
+- `tools/loop_twin_matrix.py:2882` — `_bank_floor`
+- `tools/loop_twin_matrix.py:2891` — `_floor_is_a_lower_bound`
+- `tools/loop_twin_matrix.py:2909` — `trace_floor`
+- `tools/loop_twin_matrix.py:2915` — `cells_of_matrix`
+- `tools/loop_twin_matrix.py:2960` — `run_cell`
+- `tools/loop_twin_matrix.py:2974` — `_run_cell_star`
+- `tools/loop_twin_matrix.py:2978` — `verdict`
+- `tools/loop_twin_matrix.py:3070` — `main`
+- `tools/loop_twin_matrix.py:3278` — `main.write_out`
 
 ### `tools/loop_twin_matrix_quarantine_test.py` (1110 lines)
 
@@ -8380,12 +8381,13 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/predmux_probe_gen.py:376` — `run`
 - `tools/predmux_probe_gen.py:431` — `main`
 
-### `tools/railbank_register_twin_gate.py` (186 lines)
+### `tools/railbank_register_twin_gate.py` (198 lines)
 
-- `tools/railbank_register_twin_gate.py:59` — `verdict_pair`
-- `tools/railbank_register_twin_gate.py:75` — `stage1`
-- `tools/railbank_register_twin_gate.py:90` — `run_one`
-- `tools/railbank_register_twin_gate.py:132` — `main`
+- `tools/railbank_register_twin_gate.py:65` — `verdict_pair`
+- `tools/railbank_register_twin_gate.py:81` — `stage1`
+- `tools/railbank_register_twin_gate.py:96` — `run_one`
+- `tools/railbank_register_twin_gate.py:135` — `main`
+- `tools/railbank_register_twin_gate.py:152` — `main.one`
 
 ### `tools/railbank_register_twin_gate_test.py` (156 lines)
 
