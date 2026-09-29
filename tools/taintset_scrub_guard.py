@@ -228,9 +228,10 @@ RESIDUALS — what this version does NOT close; a reviewer should start here:
      not walked (the old version walked its PATTERN).
   R6 A handle inside a project record that a KEY reaches only through a POINTER is
      refused (conservative: a pointer key's ordering does not read the pointee).
-  R7 Associative containers are known BY NAME (`ASSOCIATIVE`). An unlisted keyed
-     library container (`llvm::EquivalenceClasses`, `llvm::FoldingSet`, ...) is
-     judged like a sequence: a raw `Value *` in it is still refused (strictly under
+  R7 Associative containers are known BY NAME (`ASSOCIATIVE`; `EquivalenceClasses`,
+     `UniqueVector` and `std::priority_queue` joined it in round 2). An unlisted keyed
+     library container (`llvm::FoldingSet`, `llvm::IntervalMap`, ...) is judged like a
+     sequence: a raw `Value *` in it is still refused (strictly under
      policy "fields" too), but a HANDLE as its key passes, and under policy "any" a
      raw pointer key passes as a note. Type-erased library TEMPLATE bases are known
      by name too (`TYPE_ERASED_TEMPLATES`).
@@ -468,8 +469,8 @@ _CXX_EXT = (".cpp", ".cc", ".cxx", ".c++", ".C")
 
 
 def _includes_header(src, cache):
-    """Does `src` reach TaintPropagation.h through QUOTE includes resolvable in its own
-    directory or ir-pass/include? (Textual closure — RESIDUAL R3.)"""
+    """Does `src` reach TaintPropagation.h through quote or angle includes resolvable in its
+    own directory or ir-pass/include (subdirectories too)? (Textual closure — RESIDUAL R3.)"""
     seen, stack = set(), [os.path.realpath(src)]
     while stack:
         f = stack.pop()
