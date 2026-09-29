@@ -1,0 +1,80 @@
+== p1ne_else SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=       9 lowered=      61
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+== p1ne_else_lit SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=       9 lowered=      58
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+== p1ne_then SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      11 lowered=      63
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_x(h1)
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cqrt_x(h1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+== p1ne_then_lit SUBJ
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      11 lowered=      60
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_x(h1)
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cqrt_x(h1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+== p1ne_else_lit ORA
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=       9 lowered=      58
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+== p1ne_then_lit ORA
+free_pairing_check: 1 file(s), 2 rail mint(s) of which 2 left allocated, 1 template rail mint(s) of which 0 left dirty, 1 cqrt_free site(s): 1 verified, 0 violation(s), 0 unproven
+exit=0 lines=      11 lowered=      60
+cqrt_alloc_i32(4) -> h0
+cqrt_ry_i32(h0, 0x1.3333333333333p-2)
+cq_template_icmp_eq_i32_hl(h0, 3) -> h1
+cqrt_x(h1)
+cqrt_alloc_i32(6) -> h2
+cqrt_ry_i32_controlled(h1, h2, 0x1.999999999999ap-3)
+cqrt_x(h1)
+cq_template_icmp_eq_i32_hl_unc(h1, h0, 3)
+cqrt_free(h1)
+cqrt_measure_i32(h2) -> 0
+cqrt_measure_i32(h0) -> 0
+
+[exited with code 0]

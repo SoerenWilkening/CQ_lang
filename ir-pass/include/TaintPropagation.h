@@ -323,6 +323,38 @@ struct TaintSet {
   // witness.
   ScrubPtrSet<llvm::Instruction *, 4> ValueArmConeOps;
 
+  // bd `test_C_libtooling-z0re` (owner ruling 2026-09-28, option (a)) — THE
+  // RUNTIME STATE-PREP SEED, as a ROUND-2 OBLIGATION. Every emitter that commits
+  // a controlled state prep (or an untainted Ry-stem angle-select base) whose
+  // arg-0 is a RUNTIME value (`isRuntimeStatePrepSeed`) records the SOURCE theta
+  // it hoisted or minted — `emitInPlaceRotationRegion`'s hoisted `T`,
+  // `emitAngleSelectRegion`'s unconditional twin `T0`. `declineRound2QuantumPrep-
+  // Seeds` re-asks, at the taint `lowerRotations` reads, whether that theta's
+  // arg-0 has since become TAINTED, and declines loudly if it has.
+  //
+  // ⚠ THE L1 PREDICATE SPECIES VERBATIM, and it is NEW with the ruling. A
+  // LITERAL seed can never be tainted, so the Inc-4 accept had no window. A
+  // runtime seed can: a value derived from a 6.5/4.5 merge `%out` is classical
+  // when `classifyArms` asks F1 and quantum after `repropagateControlMerges`,
+  // and `lowerRotations` decides `Chained = Tainted(arg0)` on the FINAL taint —
+  // so it would lower the "prep" as an in-place controlled Ry on the `%out` rail
+  // that R4/R6 (skipped for a prep) never vetted.
+  //
+  // ⚠ THE RECORD IS KEYED ON THE CLASSIFIER'S VERDICT, CARRIED ON THE REGION
+  // (`ControlRegion::RuntimeSeedAdmitted`), NEVER ON THE TAINT AT EMISSION TIME.
+  // A 6.5 region emitted earlier in the same `lowerControlRegions` loop can have
+  // RAUW'd the seed to its tainted `%out` before this region is emitted; an
+  // emission-time taint test then skips the record and the re-ask is blind —
+  // MEASURED on the first spelling (`…_runtime_seed_round2_quantum.ll` accepted).
+  //
+  // `WeakTrackingVH`: the record names the THETA, and nothing RAUWs a `cq_theta`
+  // call before `lowerRotations`; the seed is read LIVE off its arg-0 at the
+  // re-ask, so a RAUW of the seed itself (the 6.5 `%out` rewrite is exactly
+  // that) is followed for free. A nulled entry was erased and is skipped. Not a
+  // `scrub::` container for the same reason `PeelClones` is not one: a tracking
+  // handle cannot dangle, and `taintset-scrub-guard` admits it.
+  llvm::SmallVector<llvm::WeakTrackingVH, 2> RuntimeSeedSourceThetas;
+
   // ⚠ `LiftedConsumers` — the one-register merge-phi lift's direct consumers,
   // once the "a lift OCCURRED" witness for the bd 2qyz re-sweep — was REMOVED by
   // bd test_C_libtooling-ec7r (Rule-13 delta round r2 F-R2-1). Its only reader

@@ -1,0 +1,2 @@
+warning: <unknown>:0:0: in function f i32 (i32, i32): cq rotation lowering: non-diagonal gate over a live derived record
+

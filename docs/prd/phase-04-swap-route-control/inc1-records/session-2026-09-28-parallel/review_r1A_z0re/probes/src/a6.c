@@ -1,0 +1,5 @@
+#include <stdlib.h>
+/* LITERAL, OFF-WIRE (drbq.13's a1 shape) nested in a diamond prep region on q2: the pin is on an ERASED inner edge */
+int main(int c, char **v) { int m = atoi(v[1]); int q = cq_theta(m, .5); int t = q / 4; int q2 = cq_theta(7, .4); int r = 5;
+  if (q2 > 3) { if (t == 5) r = cq_theta(t, .9); else r = cq_theta(5, .9); }
+  return cq_measure(r) + cq_measure(t) + cq_measure(q2); }
