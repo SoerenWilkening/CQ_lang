@@ -486,6 +486,83 @@ fix("spec_accept_predicted_classical_indirect_call_arg", "ACCEPT", "bd test_C_li
 ; CHECK:       ret i32
 """)
 
+# ---------------------------------------------------------------- ROUND 3b: COMPOSITION PINS
+# (after merging main = bd rhk5 9ad22639 + bd z0re ba4fdad4; TRACK §15.7). The reference binary for
+# these headers is MAIN ba4fdad4, not the old oracle 9a230646.
+def twin_line(t, line):
+    return TWIN_SAME.format(t=t, rec=REC, line=line).replace(
+        "is TRACE-IDENTICAL", "is TRACE-IDENTICAL on the merged (cepm + rhk5 + z0re) binary")
+
+
+TP_PROSE = (READING + "\n; Here the site's quantum argument is a TEMPLATE RAIL `p = q {op}` read ONLY by the classical-verdict\n"
+    "; clone call, and a NON-DIAGONAL gate (`cq_theta(q, .2)`) follows under the classical `{cond}`. THIS FILE\n"
+    "; PINS THE bd cepm x bd rhk5 COMPOSITION (Rule-13 r1B F-r1B-1): `p` is a which-path record of `q` and\n"
+    "; must be discharged (`_unc` + `cqrt_free`) BEFORE the Ry — rhk5's discharge window through a clone\n"
+    "; call. On cepm ALONE this module ACCEPTED with `p` never discharged (a wrong unitary on both C and its\n"
+    "; twin; the CHECK-NEXT chain below fails there). On main (rhk5 + z0re, no cepm) C declines (the result\n"
+    "; `t` is conservatively tainted). Only the composition compiles it correctly.")
+TP_CHECKS = """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[OP:[A-Za-z0-9_.]+]] = call i32 @cq_template_{tmpl}_i32_hl(i32 %[[H:[A-Za-z0-9_.]+]], i32 {lit})
+; CHECK-NEXT:  %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(i32 noundef %[[OP]], i32 noundef
+; CHECK-NEXT:  call void @cq_template_{tmpl}_i32_hl_unc(i32 %[[OP]], i32 %[[H]], i32 {lit})
+; CHECK-NEXT:  call void @cqrt_free(i32 %[[OP]])
+; CHECK-NEXT:  {after}
+; CHECK:       call void @cqrt_ry_i32(i32 %[[H]], double {ang})
+"""
+fix("spec_accept_predicted_classical_template_rail_discharge", "ACCEPT", "bd test_C_libtooling-cepm x bd rhk5 (round 3b)", "tpC",
+    TP_PROSE.format(op="* 3", cond="if (t > 3)"),
+    "Main ba4fdad4: DECLINE `condition predates a non-diagonal gate under quantum control`. cepm alone\n"
+    "(round 2, 89186a30): ACCEPT with `p` never discharged (this file fails there).",
+    twin_line("tpT", "g(p); int t = m + 1;") + "\ntools/trace_twin_equiv.py: EQUIV.",
+    TP_CHECKS.format(tmpl="mul", lit="3", after="%[[C:[0-9]+]] = icmp sgt i32 %[[T]], 3", ang="2.000000e-01"))
+fix("spec_accept_predicted_classical_template_rail_discharge_switch", "ACCEPT", "bd test_C_libtooling-cepm x bd rhk5 (round 3b)", "tpsC",
+    TP_PROSE.format(op="* 3", cond="switch (t)"),
+    "Main ba4fdad4: DECLINE `control flow under quantum control`. cepm alone (round 2, 89186a30): ACCEPT\n"
+    "with `p` never discharged (this file fails there).",
+    twin_line("tpsT", "g(p); int t = m + 1;") + "\ntools/trace_twin_equiv.py: EQUIV.",
+    TP_CHECKS.format(tmpl="mul", lit="3", after="switch i32 %[[T]],", ang="%{{[0-9]+}}"))
+fix("spec_accept_predicted_classical_template_rail_discharge_xor", "ACCEPT", "bd test_C_libtooling-cepm x bd rhk5 (round 3b)", "tpxC",
+    TP_PROSE.format(op="^ 5", cond="if (t > n)"),
+    "Main ba4fdad4: DECLINE `condition predates a non-diagonal gate under quantum control`. cepm alone\n"
+    "(round 2, 89186a30): ACCEPT with `p` never discharged (this file fails there).",
+    twin_line("tpxT", "g(p); int t = m + 1;") + "\ntools/trace_twin_equiv.py: EQUIV.",
+    TP_CHECKS.format(tmpl="xor", lit="5", after="%[[C:[0-9]+]] = icmp sgt i32 %[[T]],", ang="2.000000e-01"))
+
+SD_PROSE = (READING + "\n; Here the classical-verdict result `t` is the SEED of a controlled state prep (`r = t; if (COND)\n"
+    "; r = cq_theta(t, θ)`), or the base of an if/else angle select. THIS FILE PINS THE bd cepm x bd z0re\n"
+    "; COMPOSITION (Rule-13 r1B F-r1B-3 / r1A): with `t` classical it takes z0re's DIRECT path — a RUNTIME\n"
+    "; state-prep seed (`cqrt_alloc_<W>(t)` + `cqrt_ry_<W>_controlled` on the fresh rail) or an UNTAINTED\n"
+    "; angle-select base. On cepm ALONE it DECLINED (the direct path did not exist; the oracle 9a230646 had\n"
+    "; accepted it through the SIDE DOOR on the conservatively tainted `t`). On main (z0re, no cepm) it\n"
+    "; ACCEPTS with a BYTE-IDENTICAL lowered module, so it is not a corpus mover: it pins that the landing\n"
+    "; of cepm does not take this accept away.")
+SD_CHECKS = """; CHECK-LABEL: define i32 @main(
+; CHECK:       %[[T:[0-9]+]] = tail call i32 @__cq_q_h_01(
+; CHECK:       %[[R:[A-Za-z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %[[T]])
+; CHECK-NEXT:  call void @cqrt_ry_i32{next}
+"""
+SD = [
+    ("state_prep_seed", "zl12C", "zl12T", "g(q); int t = m + 1;", "`state prep seed does not match the merge incoming under quantum control`",
+     "_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 2.000000e-01)"),
+    ("state_prep_seed_bool", "zl17C", "zl17T", "g(q); int t = m + 1;", "`state prep seed does not match the merge incoming under quantum control`",
+     "_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 2.000000e-01)"),
+    ("state_prep_seed_same_cond", "za02C", "za02T", "g(q); int t = m + 1;", "`state prep seed does not match the merge incoming under quantum control`",
+     "_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 0x3FE6666666666666)"),
+    ("angle_select_base", "za01C", "za01T", "g(q); int t = m + 1;", "`rotation angle under quantum control`",
+     "(i32 %[[R]], double 2.000000e-01)\n; CHECK:       call void @cqrt_ry_i32_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 0x3FDFFFFFFFFFFFFF)"),
+    ("state_prep_seed_q2", "spC", "spT", "g(q); int s = m + 1;", "`state prep seed does not match the merge incoming under quantum control`",
+     "_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 3.000000e-01)"),
+    ("state_prep_seed_const_q2", "cpC", "cpT", "g(q); int t = n + 1;", "`state prep seed does not match the merge incoming under quantum control`",
+     "_controlled(i32 %{{[A-Za-z0-9_.]+}}, i32 %[[R]], double 2.000000e-01)"),
+]
+for suffix, c, t, line, cepm_alone, nxt in SD:
+    fix("spec_accept_predicted_classical_" + suffix, "ACCEPT", "bd test_C_libtooling-cepm x bd z0re (round 3b)", c,
+        SD_PROSE,
+        "Main ba4fdad4: ACCEPT, byte-identical lowered module. cepm alone (round 2, 89186a30): DECLINE\n"
+        + cepm_alone + ".",
+        twin_line(t, line) + "\ntools/trace_twin_equiv.py: EQUIV.",
+        SD_CHECKS.format(next=nxt))
+
 for (name, kind, bead, probe, prose, oracle, twin, checks) in FIX:
     body = open(os.path.join(P, probe + ".s1.ll")).read()
     assert len(body) > 200, probe

@@ -6,7 +6,8 @@ Session 2026-09-28 (parallel). Branch `worktree-agent-a3c46257bc3bd028d`, based 
 Probes, harnesses and raw results: `cepm_probes/` next to this file.
 
 > **ROUND 3 (pre-merge, §15)** — the round-2 review's items (comments, fixtures; no pass-code change),
-> then the merge of `main` (rhk5 + z0re) and the composition pins (§15.7 onward).
+> then the merge of `main` (rhk5 + z0re) and the composition pins (§15.7 onward). The FINAL subject is
+> the MERGED binary `cq-opt` `45c895c2f50757a63f583889` (§15.7).
 >
 > **ROUND 2 (after the Rule-13 round-1 reviews, §14) — READ §14, THEN §12.** The callee seed is
 > removed (bd `we38`), a φ-decider must SELECT the incoming, and the P3 comments are fixed at the
@@ -852,6 +853,65 @@ callee holding a `cq_*` primitive. Both are named as the retirement trigger, and
 - `lit -j4 ir-pass/test --filter predicted`: 25/25.
 - Hash identity after every rebuild (above).
 - Nothing else: part 2 re-runs the full gates on the MERGED binary.
+
+### 15.7 Part 2 — merge of `main` (bd rhk5 `9ad22639` + bd z0re `ba4fdad4`)
+
+- Commit `d13a7413`: `git merge main`. One conflict, `CODE_MAP.md`, resolved by regeneration
+  (`tools/update_code_map.py`; `--check` clean). `TaintPropagation.h`, `ArmClassify.cpp` and
+  `tests/e2e/CMakeLists.txt` auto-merged; the four targets build.
+- **Merged binary:** `cq-opt` `45c895c2f50757a63f583889` — the same hash as Rule-13 r2's private
+  composed build (`1f5dbf98` + `ba4fdad4`), measured independently; `libCQPass.so`
+  `2d6493e852831ed8b1226629`; `cq-opt-debugalloc` `82ebc3ea45f9e90aab3ff4f7`. Frozen copy
+  `scratchpad/cepm/cq-opt.merged`. Reference: frozen main `cq-opt.main_ba4fdad4` (`ac02fafabb9e62b1…`).
+
+### 15.8 The composition pins (TRACK §14.4's owed list)
+
+Nine accept fixtures, generated from C probes (`mkprobes.py`, `comp.sh`); each C program is
+**twin-identical** with its hand-inlined twin on the merged binary (argv `5 7`, `2 9`, stage 2b STRICT
+clean) and `tools/trace_twin_equiv.py` (rhk5's instrument, its boundary controls passing) says **EQUIV**
+on both argv for every pair.
+
+| fixture | probe | main `ba4fdad4` | cepm alone (round 2) | merged |
+|---|---|---|---|---|
+| `…_template_rail_discharge` | `tp` (r1B) | FAIL (C declines `condition predates…`) | FAIL (accepts, `p` never discharged) | PASS |
+| `…_template_rail_discharge_switch` | `tps` (r1B) | FAIL (`control flow`) | FAIL (same leak) | PASS |
+| `…_template_rail_discharge_xor` | `tpx` (r1B) | FAIL (`condition predates…`) | FAIL (same leak) | PASS |
+| `…_state_prep_seed` | `zl12` | PASS (byte-identical module) | FAIL (`state prep seed does not match…`) | PASS |
+| `…_state_prep_seed_bool` | `zl17` | PASS | FAIL | PASS |
+| `…_state_prep_seed_same_cond` | `za02` | PASS | FAIL | PASS |
+| `…_angle_select_base` | `za01` | PASS | FAIL (`rotation angle`) | PASS |
+| `…_state_prep_seed_q2` | `sp` (r1B) | PASS | FAIL | PASS |
+| `…_state_prep_seed_const_q2` | `cp` (r1A, z0re's `comp2.c` with the reading callee) | PASS | FAIL | PASS |
+
+- The `tp` family's CHECK is the property: `%h_op`'s `mul_unc`/`xor_unc` and `cqrt_free` sit between
+  the clone call and the classical compare, i.e. BEFORE the Ry on `q`. That is exactly what cepm
+  alone lacked (bd rhk5's class).
+- The side-door family's CHECK is z0re's direct path on a CLASSICAL seed: `cqrt_alloc_i32(t)` and then
+  `cqrt_ry_i32_controlled` on the fresh rail (or, for `za01`, an unconditional `ry` plus a controlled
+  `ry` by difference). On main these programs accept with a **byte-identical lowered module** (both
+  sides, `mainvsmerged.py`), so they are pins against a regression, not movers.
+
+### 15.9 Gates on the merged binary
+
+- `cd build && lit -j4 ir-pass/test`: **2484 discovered, 2483 passed, 1 XFAIL, 0 failed** (216 s),
+  including all 9 composition pins.
+- Affected ctest (`-R "spec|specialize|classical-call|scrub|cq-opt-equivalence|free-pairing-selftest|
+  z0re|twin-equiv"`, which covers rhk5's `twin-equivalent` gates, z0re's slices and twin gates, the
+  scrub guard and its selftests): **79/79 passed**.
+- `update_code_map.py --check`: clean.
+- **Corpus A/B vs frozen main `ba4fdad4`** (null control = subject twice, run first, **0 in every set**):
+
+| set | denominator | movers | classification |
+|---|---|---|---|
+| lit | 2484 | 19: 18 D→A + 1 STRING | 15 cepm accept fixtures (the 12 of round 1, `loop_body_branch`, `measured_callee`, `indirect_call_arg`) + the 3 new `tp` pins; STRING = `…_stale_record` (cepm, §5.1). `peel_diamond_climb`, the 6 side-door pins and the `round2_mask_growth` pair do NOT move |
+| e2e | 634 (26 need other TUs/flags, not swept) | **0** | — |
+| multi | 42 | 2 D→A | the two cepm slices |
+| probes | 401 (245 prior-session + 156 battery) | 40: 36 D→A + 4 STRING | 30 cepm battery members already classified (§5.2/§14) + `fp1`/`fp3`/`l3` (§15.4) + `tp`/`tps`/`tpx` (new pins); STRING `gs`/`l04`/`l04i`/`ld` → the twin's string (§5.3). **0 A→D** (round 1b's four z0re side-door A→D are gone: those programs accept on both). 0 prior-session probe moved |
+
+  **Every mover is a cepm mover already classified in this record or a new pin. No other mover.**
+- **NOT run on the merged binary:** the full `ctest -j6` (merge gate), allocator sweeps,
+  `cq-opt-equivalence-full`, `+Asserts`, Guard Malloc, the mutation matrix (the pass code is unchanged
+  since round 2 apart from main's own commits, which carry their own rounds).
 
 ## 13. Proposed CLAUDE.md text (not applied — the orchestrator owns CLAUDE.md)
 

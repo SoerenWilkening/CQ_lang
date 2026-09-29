@@ -217,6 +217,17 @@ reading("fp3", "int (*fp)(int) = (m > 4) ? G : G2; int q = cq_theta(m, .5); int 
 reading("l3", "int q = cq_theta(m, .5); for (int i = 0; i < n; i++) { int t = h(q, i + m); if (q > t) cq_phi(0.2); } return cq_measure(q);",
         "int q = cq_theta(m, .5); for (int i = 0; i < n; i++) { g(q); int t = i + m + 1; if (q > t) cq_phi(0.2); } return cq_measure(q);", families=("v",))
 
+# ---- ROUND 3 composition pins (after merging main = bd rhk5 + bd z0re), from the Rule-13 reviews ----
+# r1B F-r1B-1: tps / tpx (tp itself is above). r1B F-r1B-3: sp. r1A: cp (z0re's comp2.c, reading callee).
+reading("tps", "int q = cq_theta(m, .5); int p = q * 3; int t = h(p, m); switch (t) { case 4: q = cq_theta(q, .2); break; case 6: q = cq_theta(q, .3); break; default: break; } return cq_measure(q);",
+        "int q = cq_theta(m, .5); int p = q * 3; g(p); int t = m + 1; switch (t) { case 4: q = cq_theta(q, .2); break; case 6: q = cq_theta(q, .3); break; default: break; } return cq_measure(q);", families=("v",))
+reading("tpx", "int q = cq_theta(m, .5); int p = q ^ 5; int t = h(p, m); if (t > n) q = cq_theta(q, .2); return cq_measure(q);",
+        "int q = cq_theta(m, .5); int p = q ^ 5; g(p); int t = m + 1; if (t > n) q = cq_theta(q, .2); return cq_measure(q);", families=("v",))
+reading("sp", "int q = cq_theta(m, .5); int q2 = cq_theta(n, .4); int s = h(q, m); int r = s; if (q2 > 5) r = cq_theta(s, .3); return cq_measure(r) + cq_measure(q) + cq_measure(q2);",
+        "int q = cq_theta(m, .5); int q2 = cq_theta(n, .4); g(q); int s = m + 1; int r = s; if (q2 > 5) r = cq_theta(s, .3); return cq_measure(r) + cq_measure(q) + cq_measure(q2);", families=("v",))
+reading("cp", "int q = cq_theta(m, .5); int q2 = cq_theta(7, .4); int t = h(q, n); int r = t; if (q2 > 3) r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q) + cq_measure(q2);",
+        "int q = cq_theta(m, .5); int q2 = cq_theta(7, .4); g(q); int t = n + 1; int r = t; if (q2 > 3) r = cq_theta(t, .2); return cq_measure(r) + cq_measure(q) + cq_measure(q2);", families=("v",))
+
 # the result PRINTED (an IO sink with a classical argument)
 reading("pr", "int q = cq_theta(m, .5); int t = h(q, m); printf(\"%d\\n\", t); return cq_measure(q);",
         "int q = cq_theta(m, .5); g(q); int t = m + 1; printf(\"%d\\n\", t); return cq_measure(q);",
