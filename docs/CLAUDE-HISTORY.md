@@ -4170,3 +4170,61 @@ the denominator caught it; same class as round 3's `export -f` bashism, one shel
 ⚠ The G-13 standing probe was RUN and **did not reach this fence** — rolled and unrolled decline
 identically on both binaries at EARLIER walls — so it is a non-divergence measured at the wrong
 wall, not a clearance.
+
+
+## ARCHIVED 2026-09-29 — CLAUDE.md §4k, verbatim (the 2026-09-27 rounds)
+
+### 4k. The 2026-09-27 rounds — the fence is CLEARED, and both reviewers found the SAME over-decline
+
+bd `u460` CLOSED. Two rounds on disjoint surfaces, **concurrent on a frozen subject** (no fix landed
+between them, so what sequencing buys — round 2 auditing round 1's fix — was not in play), both `CLEAR-WITH-ITEMS`, **0 P1 each**.
+Records: `.../session-2026-09-27-orchestrator/`.
+
+⚠ **THEY CONVERGED INDEPENDENTLY ON ONE P2 AND IT IS AN OVER-DECLINE THE CHANGE'S OWN INSTRUMENTS
+COULD NOT SEE** (bd `707a`). `Leaves` is committed at the E6 **ADMISSION** while `run()` mints edge
+predicates **LAZILY** — `convertPhis` skips an incoming under `In[I].second == Acc`, and a merge
+with no φ demands no literal at all — so a region can RECORD a rail φ its emission never READS;
+`sweepDead`'s rail-φ exclusion keeps it alive and a later claim's **vacuous RAUW** declines a module
+the oracle compiled correctly. Four exhibits, two per round. ⚠ **The one-line
+`!P->use_empty()` gate is MEASURED INSUFFICIENT** — both rounds built it, both found it recovers the
+never-minted sub-class and **not** the minted-then-dead one — so the class has ≥2 members and the
+total fix records at the READ. Narrowing a decline is an ACCEPT-direction change and owes its own
+round.
+
+⚠ **WHY IT WAS INVISIBLE IS THE LESSON.** Of the change's 8 probes **both accepting rows
+commit nothing**, so the matrix had **no cell in the quadrant "record populated ∧ module accepts"**,
+and the corpus cannot supply one (5 commit modules in 2157, none converts). *A clean `A→D = 0` over
+a population with no members of the class is not evidence about the class* — this file's own
+caveat, unapplied to the row that needed it. Neither round reached the fence from C.
+
+Corrected **at the source** in the same change: the `xor` mechanism (§4j); `AtFn`'s window, three
+nested fixpoints and not "a few statements" (conclusion re-verified by enumerating every
+`eraseFromParent` in it); and `declineConvertedRailPhiLeaves` **silently accepting** on
+`Converted && !AtFn` — the *opposite* direction to the one its own trigger worried about (bd
+`qs5w`). Open: bd `tzw2` (the
+record is keyed on SSA identity across two **cloning** pre-passes — ARGUED, and the measurement that
+would close it free is written nowhere), bd `lit8`, bd `nkgt` (the pre-emptive slot
+**masks** a real `cq taint escape` — constructed; an owner question), bd `0ues` (G-13 is **live**
+here, not vacuous — the record spans three fixpoints — merely unreached).
+
+⚠ **`+Asserts` IS A FOUR-FIXTURE BILL, NOT A STRUCTURAL IMPOSSIBILITY** (bd `r4f6`): round B built
+one and swept 2157 — **4 aborts, exactly round 3's four, woa0 adds none**. That retires a claim
+three briefs carried, and it is the gate the unchecked-`cast<>` family has never had.
+
+
+## ARCHIVED 2026-09-29 — CLAUDE.md's 2026-09-26 counts paragraph, verbatim
+
+**Counts, measured 2026-09-26 at the bd `woa0` close (`cq-opt` `15adcac40d4455a7f2d9f785`,
+`libCQPass.so` `bab2a8b70c57c6b036c859f8`; re-measured, not copied).** ctest **479** · `^e2e-`
+**469** · `^e2e-slice-` **410** · `twin-identical` **45** · `ls ir-pass/test/*.ll | wc -l` **2157** ·
+`ls tests/e2e/*.expected.log | wc -l` **412** · twin matrix **312** + **70** = **382** cells
+(unchanged). `lit ir-pass/test`: **2157 discovered, 2156 passed, 1 XFAIL** in 85.57 s. Full
+`ctest -j6`: **479/479 in 795.22 s**, ⚠ **quoted with its load — 248 falling to 13**, because it was
+started while the load from this session's own `lit` run (12 internal workers) was still decaying.
+Not comparable with a quiet-box figure; every row was GREEN, and a pass under contention is still a
+pass (starvation cannot make a wrong answer right) — a RED row would have owed a serial re-run.
+⚠ The fixture count moved **+2** (one decline, one accept) and ctest/e2e/goldens did **not**: this
+increment adds no accept SHAPE that runs, so it adds no slice, and `ir-pass-lit` is ONE ctest entry
+wrapping every `.ll`. Corpus A/B over all 2157: **0 A→D · 0 D→A · 1 decline-string move · 0 stream
+moves**, and the one mover is the increment's own new decline fixture; null control **0 of 2156**
+run FIRST, positive control 1 of 1. Earlier chain follows.

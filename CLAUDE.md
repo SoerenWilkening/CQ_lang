@@ -59,7 +59,7 @@ decline** (merge-gate sweep, `MERGE_REPORT.md` §5a). ⚠ **That is not "no
 correctness debt", and do not quote it as such.** The same Rule-13 rounds filed a
 NEW P1 over-accept of their own (a rail φ carrying a dtzb-mutated `cq_theta`
 result IN PLACE — `IMPL_D.md` §15.4, cross-referenced to bd `a3z7` / bd `0njv`),
-and bd `lo7u`, bd `s82e`, bd `yiid` and bd `cfmv` are open P1s today. Count the
+and bd `lo7u`, bd `s82e`, bd `yiid`, bd `cfmv`, and (2026-09-29, all PRE-EXISTING) bd `4e4p`, bd `uw5u` and bd `9oob` are open P1s today. Count the
 known ones; never claim zero.
 
 ⚠ **Phase 4 has had THREE generations, and the first two are traps.** The
@@ -517,15 +517,21 @@ turns into "probably contention". Measured inner-loop costs, all on a quiet box:
 | pass source, iterating | `ctest --test-dir build -R ir-pass-lit` | **~60–105s** |
 | docs / comments only | nothing | 0s |
 
-**Where the full `ctest -j6` runs — ONCE, at the merge gate on `main`, before
-`git push`** (owner ruling 2026-09-26, narrowing 2026-08-13; bd memory
-`owner-ruling-fullsuite-at-gate-2026-09-26`). Implementation and fix rounds on a
-worktree BRANCH do **not** run it; they run what can witness the change — full
-`lit ir-pass/test`, the affected `ctest -R` entries, corpus A/B + reviewer probe
-batteries, the mutation matrix, `update_code_map.py --check`, and
-`taintset-scrub-guard` when a `TaintSet` member changes. The gate on `main` is
-**MANDATORY, no judgement call**, whenever the merged range (or a commit made
-directly on `main`) contains any of:
+**Where the suite runs — TWO TIERS, ONE BATCH GATE** (owner ruling 2026-09-29, bd
+memory `owner-ruling-batch-gate-two-tier-2026-09-29`; supersedes the per-merge half
+of the 2026-09-26 ruling). Worktree BRANCHES never run the full suite; they run what
+can witness the change (full `lit ir-pass/test`, the affected `ctest -R` entries,
+corpus A/B + reviewer probes, mutants for changed predicates, `update_code_map.py
+--check`). Branches that clear Rule 13 are merged to `main` locally in a BATCH; an
+intermediate merge runs at most the **FAST tier** `ctest --test-dir build -LE heavy
+-j6`. **Once per batch**, normally at session end before `git push`, the **BATCH
+GATE** runs the FULL suite `ctest -j6` (no label filter) + `cq-opt-equivalence-full`
++ `update_code_map.py --check`; if it fails, bisect over the batch's merge commits.
+The HEAVY tier (`ctest -N -L heavy`: loop twin matrix, railbank/condtree matrices,
+register-twin gate + selftest, scrub-guard selftest shards) is labelled by NAME
+PATTERN in `cmake/CQTestTiers.cmake`; a label can only move an entry out of the fast
+tier — the batch gate has no filter. The batch gate is **MANDATORY, no judgement
+call**, whenever the batch contains any of:
 1. **A change to the Rule-13 lowering core.**
 2. **Any change to code, fixtures, goldens, or the harness** being pushed. A push
    that is *purely* docs/comments does not need it.
@@ -1223,40 +1229,37 @@ the OUTCOME. The observation covers `convertPhis` in `PredMuxFlatten.cpp` only; 
 
 ### 4k. The 2026-09-27 rounds — the fence is CLEARED, and both reviewers found the SAME over-decline
 
-bd `u460` CLOSED. Two rounds on disjoint surfaces, **concurrent on a frozen subject** (no fix landed
-between them, so what sequencing buys — round 2 auditing round 1's fix — was not in play), both `CLEAR-WITH-ITEMS`, **0 P1 each**.
-Records: `.../session-2026-09-27-orchestrator/`.
+⚠ **ARCHIVED VERBATIM to [`docs/CLAUDE-HISTORY.md`](docs/CLAUDE-HISTORY.md) on 2026-09-29** (the same
+treatment §4b–§4j received). **What survives here:** bd `u460` CLOSED; bd `707a` (the E6 record read vs
+lazily minted literals — a spurious decline two concurrent rounds found independently) is OPEN; and the
+lesson: *a clean `A→D = 0` over a population with no members of the class is not evidence about the class.*
 
-⚠ **THEY CONVERGED INDEPENDENTLY ON ONE P2 AND IT IS AN OVER-DECLINE THE CHANGE'S OWN INSTRUMENTS
-COULD NOT SEE** (bd `707a`). `Leaves` is committed at the E6 **ADMISSION** while `run()` mints edge
-predicates **LAZILY** — `convertPhis` skips an incoming under `In[I].second == Acc`, and a merge
-with no φ demands no literal at all — so a region can RECORD a rail φ its emission never READS;
-`sweepDead`'s rail-φ exclusion keeps it alive and a later claim's **vacuous RAUW** declines a module
-the oracle compiled correctly. Four exhibits, two per round. ⚠ **The one-line
-`!P->use_empty()` gate is MEASURED INSUFFICIENT** — both rounds built it, both found it recovers the
-never-minted sub-class and **not** the minted-then-dead one — so the class has ≥2 members and the
-total fix records at the READ. Narrowing a decline is an ACCEPT-direction change and owes its own
-round.
+### 4l. The 2026-09-28/29 session — six tracks landed in batches; the owner's speed rulings
 
-⚠ **WHY IT WAS INVISIBLE IS THE LESSON.** Of the change's 8 probes **both accepting rows
-commit nothing**, so the matrix had **no cell in the quadrant "record populated ∧ module accepts"**,
-and the corpus cannot supply one (5 commit modules in 2157, none converts). *A clean `A→D = 0` over
-a population with no members of the class is not evidence about the class* — this file's own
-caveat, unapplied to the row that needed it. Neither round reached the fence from C.
-
-Corrected **at the source** in the same change: the `xor` mechanism (§4j); `AtFn`'s window, three
-nested fixpoints and not "a few statements" (conclusion re-verified by enumerating every
-`eraseFromParent` in it); and `declineConvertedRailPhiLeaves` **silently accepting** on
-`Converted && !AtFn` — the *opposite* direction to the one its own trigger worried about (bd
-`qs5w`). Open: bd `tzw2` (the
-record is keyed on SSA identity across two **cloning** pre-passes — ARGUED, and the measurement that
-would close it free is written nowhere), bd `lit8`, bd `nkgt` (the pre-emptive slot
-**masks** a real `cq taint escape` — constructed; an owner question), bd `0ues` (G-13 is **live**
-here, not vacuous — the record spans three fixpoints — merely unreached).
-
-⚠ **`+Asserts` IS A FOUR-FIXTURE BILL, NOT A STRUCTURAL IMPOSSIBILITY** (bd `r4f6`): round B built
-one and swept 2157 — **4 aborts, exactly round 3's four, woa0 adds none**. That retires a claim
-three briefs carried, and it is the gate the unchecked-`cast<>` family has never had.
+Record: `docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/` (one `TRACK_*.md`
+per track + every review dir). Landed: bd `rhk5` (+`kyy1` introduced half, `fb5y`, `tcpq`) · bd `z0re` ·
+bd `cepm`+`3zr4`+`we38` · bd `fmt3` · bd `nlfd`+`ev3m`+`m5pn`+`vaep` · the scrub-guard rewrite (bd
+`wop9`/`7gri`/`jk56` + six review beads) · bd `2dfk` (tiers + stage cache).
+- **Owner rulings that change the rules.** (1) A **RUNTIME state-prep seed** and an **UNTAINTED Ry-stem
+  base** are ADMITTED on the direct path (bd `z0re`; fp seeds included; bd `drbq.13`'s LITERAL base stays
+  declined). (2) **`include/CQ.h` marks every `cq_theta_*` `nomerge`** (bd `fmt3`): `-O1` could pin a
+  register on an inner branch, merge two identical thetas and ERASE the branch, leaving IR byte-identical to
+  a legitimate prep (probes n12 vs n13) — no pass-side fence can tell them apart. ⚠ It closes DIRECT calls
+  only: a function-pointer call drops the attribute (bd `4e4p`, P1) and `cq_theta((t==s)?t:s, θ)` folds
+  regardless (bd `uw5u`, P1); the if/else Ry angle select no longer folds (the TERNARY spelling still
+  reaches `AngleSelectEmit`); over-declines bd `4l5q`, `cx6j`. (3) The same-day **α-extension ruling was
+  WITHDRAWN** — its premise ("the rotated register is always the erased compare's operand") was measured
+  false. (4) **Batch gate + two tiers** (Rule 19 above). (5) The scrub guard defends against ACCIDENTAL
+  spellings; deliberate evasion is out of scope (residuals R1–R12 in its docstring).
+- ⚠ **The lesson this session paid for twice: a ruling is only as good as the summary it was given.** The
+  α extension was granted on a premise one probe falsified an hour later; the `nomerge` cost was first
+  stated as "angle select unreachable from C", which a reviewer measured false. Carry the measured
+  counter-example to the owner with the question, not after it.
+- ⚠ **Composition was cleared by building the composed binary**, not by argument: rhk5 × z0re (`k3C`),
+  rhk5 × nlfd (`ev9`/`ev7`/`mtl` clean only with rhk5), cepm × z0re (side-door programs) and cepm × rhk5
+  (`tp`) each had a probe run on a merged build before landing.
+- **New open P1s (all PRE-EXISTING):** bd `4e4p`, `uw5u`, `9oob` (a user-defined `__cq_q_*_unc` twin with a
+  wrong body is trusted), and `kyy1`'s twin half.
 
 ### 5. Open follow-ons, by bd id
 
@@ -1588,41 +1591,37 @@ cd build && lit -v ir-pass/test --filter 'lowering_basic'
   | /usr/local/opt/llvm@19/bin/FileCheck ir-pass/test/lowering_basic.ll
 ```
 
-**Counts, measured 2026-09-26 at the bd `woa0` close (`cq-opt` `15adcac40d4455a7f2d9f785`,
-`libCQPass.so` `bab2a8b70c57c6b036c859f8`; re-measured, not copied).** ctest **479** · `^e2e-`
-**469** · `^e2e-slice-` **410** · `twin-identical` **45** · `ls ir-pass/test/*.ll | wc -l` **2157** ·
-`ls tests/e2e/*.expected.log | wc -l` **412** · twin matrix **312** + **70** = **382** cells
-(unchanged). `lit ir-pass/test`: **2157 discovered, 2156 passed, 1 XFAIL** in 85.57 s. Full
-`ctest -j6`: **479/479 in 795.22 s**, ⚠ **quoted with its load — 248 falling to 13**, because it was
-started while the load from this session's own `lit` run (12 internal workers) was still decaying.
-Not comparable with a quiet-box figure; every row was GREEN, and a pass under contention is still a
-pass (starvation cannot make a wrong answer right) — a RED row would have owed a serial re-run.
-⚠ The fixture count moved **+2** (one decline, one accept) and ctest/e2e/goldens did **not**: this
-increment adds no accept SHAPE that runs, so it adds no slice, and `ir-pass-lit` is ONE ctest entry
-wrapping every `.ll`. Corpus A/B over all 2157: **0 A→D · 0 D→A · 1 decline-string move · 0 stream
-moves**, and the one mover is the increment's own new decline fixture; null control **0 of 2156**
-run FIRST, positive control 1 of 1. Earlier chain follows.
+**Counts, measured 2026-09-29 at the batch-2 gate (`main` `c3e35a04`, `cq-opt` `e42a3dd742d7b69d`;
+re-measured, not copied).** ctest **585** (12 `heavy`) · `^e2e-` **564** · `^e2e-slice-` **470** ·
+`twin-identical` **63** · `twin-equivalent` **6** · `ls ir-pass/test/*.ll | wc -l` **2501** ·
+`ls tests/e2e/*.expected.log | wc -l` **473**. Full `ctest -j6`: **585/585 in 983.8 s on a COLD stage cache**
+(load 31–69); `cq-opt-equivalence-full` 2501/0. ⚠ With the cache warm, the long pole is the scrub-guard
+self-test (three shards, 682–797 s each under that load), not the loop twin matrix. Earlier chain follows.
 
 **⚠ Only the CURRENT counts link is inline.** The 2026-09-23 / -22 / -21 / -19 links were
 archived VERBATIM to `docs/CLAUDE-HISTORY.md` on 2026-09-27 (the -17 and -15 links went the same
 way on 2026-09-26) — the mechanism this file prescribes for itself rather than cutting a
 paragraph. Every earlier figure is there. **Re-measure, never quote.**
 
-**Timing.** ~**130–230 s** at `-j6` on a **quiet** box (the spread tracks how
-warm the stage-1 content-addressed cache is), down from 825 s serial. **Under
-concurrent agent load, 250–460 s** — not comparable; budget command timeouts from
-the loaded figure and only ever compare two runs taken under the same load. The
-long pole is now `e2e-loop-twin-matrix` (~180–400 s, starts first and finishes
-last), not `ir-pass-lit` (~35–55 s). `-j6` is the pick: `-j12` oversubscribes (6
-physical / 12 logical cores) **and** `ir-pass-lit` already forks 12 lit workers
-internally, so `-j6` is ~17-way concurrent already. The suite is embarrassingly
-parallel by construction (every slice in its own `mktemp -d`, every fixture on
-`%t`, zero `RUN_SERIAL`/`FIXTURES_*`/`RESOURCE_LOCK` in the tree). **Contention
-causes false FAILURES, never false passes** — re-run any `-j` failure serially
-BEFORE calling it a regression; use `-j1` only to isolate a suspected flake. The
-suite got 5× faster by removing process spawns (`-j6`, lit opt-spawn dedup,
-python shim bypass, the stage-3 link split — bd `dgn5`), **without deleting a
-test or regenerating a golden**.
+**Timing, and the stage cache** (bd `2dfk`, 2026-09-29). Every e2e check is clang
+-O1 (1) → cq-opt (2, the pass under test) → free-pairing check (2b) → link (3) →
+run (4) → compare. Stages 1, 2b, 3, 4 are CONTENT-ADDRESSED (`tools/cq_stage_cache.py`,
+`tests/e2e/stage_cache.sh`; `build/tests/e2e/{.s1cache,.runcache}`): a previous
+SUCCESS of the same input bytes, under the same COMMAND (a digest of the harness files
+and the literal flag arrays), the same headers (hashed at TEST time), archives, clang,
+SDK and env is replayed. **Stage 2 and every comparison run every time.** ⚠ The first
+version keyed inputs only, and a harness edit that must fail passed warm (bd `ffm0`);
+a `CQ.h` edit without reconfigure likewise (bd `dbjh`) — both fixed, and
+`e2e-stage-cache-selftest` makes the cache fail on purpose, one row per key component.
+`CQ_E2E_NO_CACHE=1` switches every cache off; after a Command Line Tools / Xcode /
+macOS update, reconfigure or run uncached. Measured 2026-09-29: FULL 620 s cold /
+216 s warm; FAST tier 533 s cold / 147 s warm (the gates of that morning took
+832–2360 s under load). `-j6` is the pick (`ir-pass-lit` forks 12 lit workers
+itself). **Contention causes false FAILURES, never false passes** — re-run any `-j`
+red serially before calling it a regression; quote the load with every figure. A new
+e2e entry needs no ENVIRONMENT property: a deferred pass APPENDS the `CQ_*` variables
+to every e2e test (⚠ its predecessor REPLACED them, so `e2e-spec-scrub-dangling-key`
+ran without `CQ_OPT_DEBUG_ALLOC=lifo` from `818f8afa` to bd `2dfk`).
 
 **Full pipeline for one `.c`** (mirrors `tests/e2e/run_slice.sh`;
 `LLVM=/usr/local/opt/llvm@19/bin`):

@@ -1,0 +1,106 @@
+\labsessionheader{2026-09-29}{Six tracks landed; runtime state-prep seeds; nomerge in CQ.h; the test suite made fast}%
+  {c3e35a04}{01NouZgEuS5PVeoF7rVTKhxq}{docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/}
+
+\subsection*{Goal}
+Work the follow-ups entry 025 left, as parallel tracks run by an orchestrator
+with independent implementer and reviewer agents: \bd{rhk5} (a warned wrong
+circuit), \bd{cepm}/\bd{3zr4} and \bd{nlfd}/\bd{ev3m} (Phase-6 over-declines and
+a liveness defect), the \texttt{taintset\_scrub\_guard} gaps, and the owner
+question \bd{z0re}. A seventh track, \bd{fmt3}, was added when a review found a
+pre-existing wrong circuit; an eighth, \bd{2dfk}, when the owner ruled the test
+cycle too slow.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{9ad22639} --- \bd{rhk5} (+\bd{fb5y}, \bd{tcpq}) --- a Phase-6 clone
+    call inside a derived chain's discharge window is proved read-only from the
+    callee body, so the chain is uncomputed as in the hand-inlined twin. Round 1
+    was NOT-CLEAR twice (a lost oracle discharge, \bd{kyy1}; a proof that trusted
+    callee names, \bd{fb5y}); round 2 cleared.
+  \item \commit{ba4fdad4} --- \bd{z0re} --- owner ruling: a runtime state-prep seed
+    and an untainted Ry-stem angle-select base are admitted on the direct path,
+    with the seed's classicality recorded and asked again after
+    \texttt{specialize()}.
+  \item \commit{80e829b5} --- \bd{cepm}, \bd{3zr4}, \bd{we38} --- a call whose
+    lifted callee is predicted to return a classical value is not tainted at
+    propagation; \texttt{specialize()} checks every prediction and declines loudly
+    if one was wrong.
+  \item \commit{d21a59b0} --- \bd{fmt3} --- every \texttt{cq\_theta\_*}
+    declaration in \texttt{CQ.h} is \texttt{nomerge}.
+  \item \commit{ea6252ff} --- \bd{nlfd}, \bd{ev3m}, \bd{m5pn}, \bd{vaep} --- an
+    argument forwarded into an unread scalar clone slot is not a read; the
+    dead-argument drop sees through \texttt{musttail}; \texttt{musttail} inside a
+    clone is demoted instead of aborting the verifier.
+  \item \commit{34e13163} --- \bd{wop9}, \bd{7gri}, \bd{jk56} + six review beads ---
+    the scrub guard asks the compiler for canonical types and AST identities;
+    three review rounds.
+  \item \commit{c3e35a04} --- \bd{2dfk} (+\bd{ffm0}, \bd{dbjh}) --- two ctest tiers
+    and a content-addressed stage cache; six exact-duplicate fixtures removed.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ \fpreexisting\ \bd{fmt3}: \texttt{clang -O1} pinned a register
+    to a literal on an inner branch, merged the two now-identical
+    \texttt{cq\_theta} calls and deleted the branch. The pass then saw IR
+    byte-identical to a legitimate literal prep (probes \texttt{n13} and
+    \texttt{n12} lower to identical modules), so it compiled a prep where the
+    source rotated a live register. No pass-side fence can separate the two;
+    the owner chose the frontend fix.
+  \item \fconfirmed\ \fpreexisting\ \bd{4e4p}, \bd{uw5u}: the fix above does not
+    reach a call through a function pointer (clang puts \texttt{nomerge} on call
+    sites only) or the fold of \texttt{cq\_theta((t==s)?t:s, $\theta$)} to
+    \texttt{cq\_theta(s, $\theta$)}. Both open.
+  \item \fconfirmed\ \fpreexisting\ \bd{9oob}: a library that defines its own
+    \texttt{\_\_cq\_q\_*\_unc} twin with a wrong body is trusted as the adjoint;
+    stage 2b reports it clean. Open.
+  \item \fconfirmed\ Review rounds caught two regressions the fixes introduced
+    before they landed: \bd{kyy1} (rhk5 round 1 lost a discharge the oracle made)
+    and \bd{fb5y} (a module-defined \texttt{cq\_template\_*} was trusted by name
+    and dirty rails were freed with no warning).
+  \item \foverdecline\ Introduced by \bd{fmt3}'s option B and accepted by the
+    owner: \bd{4l5q}, \bd{cx6j}. Filed: \bd{ur72}, \bd{w109}, \bd{nivh},
+    \bd{y2b3}.
+  \item \fdoc\ An owner ruling (the ``$\alpha$ extension'' for erased inner
+    branches) was granted on a premise that a probe falsified within the hour,
+    and was withdrawn; the cost of \texttt{nomerge} was first stated too high
+    (the ternary spelling still reaches the angle select). Both corrected in the
+    bead notes and \texttt{CLAUDE.md} \S4l.
+  \item \fdoc\ \bd{2dfk} found that \texttt{e2e-spec-scrub-dangling-key} had run
+    without its \texttt{CQ\_OPT\_DEBUG\_ALLOC=lifo} setting since
+    \commit{818f8afa}; fixed.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+ctest entries & 585 & \measured{ctest --test-dir build -N | tail -1} \\
+heavy-tier entries & 12 & \measured{ctest --test-dir build -N -L heavy | tail -1} \\
+lit fixtures & 2501 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+gate wall, rhk5 merge (load 32--42) & 1377.6\,s & \measured{ctest --test-dir build -j6} \\
+gate wall, cepm merge (load 40--60) & 2359.5\,s & \measured{ctest --test-dir build -j6} \\
+batch gate 1 (load 44--82) & 1658.9\,s & \measured{ctest --test-dir build -j6} \\
+batch gate 2 (after bd 2dfk, cold cache) & 983.8\,s & \measured{ctest --test-dir build -j6} \\
+full suite, bd 2dfk, cold / warm & 620\,s / 216\,s & \measured{TRACK\_2DFK.md} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Each landing ran the full \texttt{ctest -j6} plus \texttt{cq-opt-equivalence-full}
+until the owner's 2026-09-29 ruling; after it, one gate per batch: rhk5
+543/543, z0re 558/558, cepm 564/564, batch 1 (fmt3, nlfd, scrub guard) 584/584,
+batch 2 (\bd{2dfk}) 585/585 (+ equivalence 2501/0); in it the three scrub-guard self-test shards (682--797\,s each) and the cold loop twin matrix (797\,s) were the long poles. Every lowering change had independent Rule-13
+review; the scrub-guard round 3 landed without a further review by owner
+instruction. Not run: allocator sweeps on the merged \texttt{main}.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item P1s, all pre-existing: \bd{4e4p}, \bd{uw5u}, \bd{9oob}, \bd{kyy1} (the twin's
+    half), plus the older ones listed in \texttt{CLAUDE.md}.
+  \item Owner questions: \bd{ffir} (a clone copy-out rail kept where the twin
+    folds it), \bd{uyhx} (relax \texttt{nullSafeSlot}).
+  \item Over-declines to remove: \bd{ur72}, \bd{4l5q}, \bd{cx6j}, \bd{gjn2}.
+  \item Scrub guard: \bd{j2fp} (preprocess real translation units), \bd{gqda}.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
