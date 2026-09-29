@@ -20,6 +20,26 @@
 ; message with the same tail.
 ; OLD: mixed phase/value arm under quantum control
 ; NEW: cq controlled lowering: mixed phase/value arm under quantum control
+;
+; ── MERGED 2026-09-29 (bd test_C_libtooling-2dfk, exact-duplicate removal) ──
+; `control_swap_reject_nested_inner_clobber.ll` was DELETED: it was this module with this
+; file's RUN and CHECK lines byte-for-byte (every non-comment line and every
+; directive identical, so it re-ran this exact test). Why: the two were byte-identical modules with identical RUN/CHECK lines from creation (ac5f90f6) — its own header said "Same -O1 shape".
+; Its unique header prose follows VERBATIM, because it carries the history (and
+; any retirement trigger) of the shape it once pinned:
+;
+; │ control_swap_reject_nested_inner_clobber.ll — DECLINE: inner VALUE-write whose
+; │ chain rewrites the register the inner condition read (the §3c clobber).
+; │
+; │ `if (q>5) { q = rz(q,b); if (q<9) { q = q*7; q = q+3; } }` — the inner arm
+; │ value-rewrites q, which the inner condition `q<9` read. The §12.5 union-§3c
+; │ provenance is BUILT but VACUOUS in 4.3: a value-write IS a value arm, so the
+; │ tree-homogeneity gate (a phase Mid beside a value inner arm) fires FIRST,
+; │ `mixed phase/value arm` — NOT `arm rewrites a condition operand`, which is
+; │ dead-in-4.3 (homogeneity precedes §3c; IMPLEMENTATION-4.3 §12.5). Same -O1
+; │ shape as control_swap_reject_nested_value_mixed.ll; pinned separately as the
+; │ clobber-specific contract that the §3c string does NOT leak through.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
 declare void @cq_phi(double)

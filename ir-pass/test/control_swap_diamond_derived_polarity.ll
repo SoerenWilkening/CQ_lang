@@ -4,7 +4,8 @@
 ; `icmp eq; br eq, Merge, Arm`, swapping successors) COMPOSED with the derived
 ; base (test_C_libtooling-9hh): the gate arm is the FALSE successor and both its
 ; spine base and the merge straight-through are the pre-region %qd. Must lower
-; to the IDENTICAL stream as control_swap_diamond_derived.ll except that the arm's
+; to the IDENTICAL stream as control_swap_diamond.ll (which absorbed the former
+; control_swap_diamond_derived.ll, bd 2dfk — see its MERGED block) except that the arm's
 ; gate run is ¬flag-bracketed (`cqrt_x(flag)` self-inverse pair), exactly like the
 ; un-derived control_swap_diamond_polarity.ll. Arms are resolved by merge-phi
 ; incoming IDENTITY, not edge order.
