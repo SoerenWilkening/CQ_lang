@@ -1,0 +1,27 @@
+guard bbf1a106a84e79ad
+Test project /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/build
+      Start  15: taintset-scrub-guard
+      Start 121: e2e-spec-scrub-dangling-key
+      Start 216: e2e-slice-spec-lift-scrubbed-elsewhere
+      Start 217: e2e-slice-spec-lift-scrubbed-elsewhere-twin
+ 1/10 Test #217: e2e-slice-spec-lift-scrubbed-elsewhere-twin .......   Passed   18.61 sec
+      Start  13: ir-pass-scrub-on-delete-selftest-lifo
+ 2/10 Test #216: e2e-slice-spec-lift-scrubbed-elsewhere ............   Passed   19.21 sec
+      Start  14: ir-pass-scrub-on-delete-selftest-sysalloc
+ 3/10 Test #121: e2e-spec-scrub-dangling-key .......................   Passed   21.41 sec
+      Start 218: e2e-spec-lift-scrubbed-elsewhere-twin-identical
+ 4/10 Test #218: e2e-spec-lift-scrubbed-elsewhere-twin-identical ...   Passed    0.03 sec
+      Start  16: taintset-scrub-guard-selftest-1of3
+ 5/10 Test  #15: taintset-scrub-guard ..............................   Passed   28.40 sec
+      Start  17: taintset-scrub-guard-selftest-2of3
+ 6/10 Test  #14: ir-pass-scrub-on-delete-selftest-sysalloc .........   Passed   10.13 sec
+      Start  18: taintset-scrub-guard-selftest-3of3
+ 7/10 Test  #13: ir-pass-scrub-on-delete-selftest-lifo .............   Passed   10.74 sec
+ 8/10 Test  #17: taintset-scrub-guard-selftest-2of3 ................   Passed  395.31 sec
+ 9/10 Test  #18: taintset-scrub-guard-selftest-3of3 ................   Passed  458.01 sec
+10/10 Test  #16: taintset-scrub-guard-selftest-1of3 ................   Passed  754.32 sec
+
+100% tests passed, 0 tests failed out of 10
+
+Total Test time (real) = 775.82 sec
+rc=0

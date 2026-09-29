@@ -1,0 +1,22 @@
+ok  control-clean      NULL: pristine  [75 members]
+ok  control-refused    POS: std::set<Value*> by value  [76 members]
+        cq::TaintSet::R3S: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [
+ok  control-refused    POS: unique_ptr<std::set<Value*>>  [76 members]
+        cq::TaintSet::R3U: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason [
+CAUGHT                 C1 raw POINTER to a library container of raw Value*: std::set<llvm::Value *> *  [76 members]
+        cq::TaintSet::R3SetPtr: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a rea
+CAUGHT                 C2 raw POINTER to llvm::DenseMap<llvm::Value *, unsigned>  [76 members]
+        cq::TaintSet::R3MapPtr: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a rea
+CAUGHT                 C3 raw POINTER to llvm::SmallPtrSet<llvm::Instruction *, 4>  [76 members]
+        cq::TaintSet::R3SPSPtr: RAW POINTER to `llvm::Instruction`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with
+CAUGHT                 C4 pointer to a GLOBAL-namespace record holding a raw Value*  [77 members]
+        R3G::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+ok  control-refused    C4b the same GLOBAL record held BY VALUE (control: closed world refuses)  [77 members]
+        R3G::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+CAUGHT                 C5 pointer to a record in a NON-cq project namespace holding a raw Value*  [77 members]
+        cqx::R3X::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+CAUGHT                 C6 SmallVector of POINTERS to a raw library table  [76 members]
+        cq::TaintSet::R3VecOfTblPtr: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with 
+
+controls bad: 0; attacks 6, MISSED 0
+elapsed 303.2s PCH ok

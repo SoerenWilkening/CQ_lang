@@ -1,0 +1,19 @@
+guard /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_scrubguard/wt_main/tools/taintset_scrub_guard.py sha256 d26862662f12f1f5 USE_PCH=True extra_headers=no db=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_scrubguard/cc_wt_main.json
+ok null  N0   NULL: pristine tree [57 members, 0 problem(s), 11s]
+SKIPPED  B1   (needs extra_headers, which this guard's check() does not take)
+CAUGHT   B4   KEY COLLISION by macro: one expansion defines a clean unnamed field and a raw unnamed struct inside a member c [62 members, 4 problem(s), 9s]
+        ERR  cq::TaintSet::RvClean4: function type `cq::TaintSet::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_akrgpkm5/TaintPropagation.h:118:3)` — not understood by the walker (closed world: refused)
+        ERR  cq::TaintSet::RvEvil4: function type `cq::TaintSet::RvH4<>::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_akrgpkm5/TaintPropagation.h:118:3)` — not understood by the walker (closed world: refus
+CAUGHT   B5   KEY COLLISION by #line: a raw unnamed struct outside TaintSet forged to the clean one's FILE:LINE:COL [60 members, 2 problem(s), 2s]
+        ERR  cq::TaintSet::RvClean5: function type `cq::TaintSet::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_cov3ndm3/TaintPropagation.h:7000:3)` — not understood by the walker (closed world: refused)
+        ERR  cq::TaintSet::RvEvil5: function type `cq::RvHolder5::(unnamed struct at /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/cq_scrub_guard_cov3ndm3/TaintPropagation.h:7000:3)` — not understood by the walker (closed world: refused)
+SKIPPED  B2   (needs extra_headers, which this guard's check() does not take)
+CAUGHT   B3   BASE ALIAS: D : cq::RvB (clean), anon-ns RvB (raw); D declares `using RvB = cq::RvB` so `typename D::RvB` is u [62 members, 2 problem(s), 10s]
+        ERR  cq::(anonymous namespace)::RvB::S: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+        ERR  cq::RvB::S: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason
+MISSED   B6   INCLUDE ORDER through `#line N "other"`: the member's -E lines are attributed to a non-closure file [57 members, 0 problem(s), 4s]
+SKIPPED  B7   (needs extra_headers, which this guard's check() does not take)
+SKIPPED  B8   (needs extra_headers, which this guard's check() does not take)
+MISSED   B9   INCLUDE DEPTH: `#if __INCLUDE_LEVEL__ > 1` (every probe includes the header at level 1; real TUs reach it deep [57 members, 0 problem(s), 2s]
+MISSED   B10  SEMANTIC include-order dependence (no macro): SFINAE on the COMPLETENESS of cq::CQLoweringPass — identical tok [58 members, 0 problem(s), 2s]
+MISSED   B11  INCLUDE ORDER through a CLOSURE file's own guard: `#ifdef CQ_IRPASS_LOOP_PLAN_H_` tested BEFORE TaintPropagati [57 members, 0 problem(s), 2s]

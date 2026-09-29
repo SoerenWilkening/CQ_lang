@@ -1,0 +1,13 @@
+guard /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_scrubguard/wt_r1/tools/taintset_scrub_guard.py sha256 99a7df7cf90bb6a2 USE_PCH=False extra_headers=yes db=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_scrubguard/cc_wt_r1.json
+ok null  N0   NULL: pristine tree [75 members, 0 problem(s), 17s]
+MISSED   B1   MODE CONFUSION: unnamed struct walked RELAXED inside the allowlisted LoopBreakRegion, its type reused by a STR [80 members, 0 problem(s), 31s]
+MISSED   B4   KEY COLLISION by macro: one expansion defines a clean unnamed field and a raw unnamed struct inside a member c [78 members, 0 problem(s), 36s]
+MISSED   B5   KEY COLLISION by #line: a raw unnamed struct outside TaintSet forged to the clean one's FILE:LINE:COL [78 members, 0 problem(s), 34s]
+MISSED   B2   ALLOWLISTED LoopBreakRegion: identity TABLES spelled as direct fields (C array, heap array, SmallVector of a o [80 members, 0 problem(s), 30s]
+MISSED   B3   BASE ALIAS: D : cq::RvB (clean), anon-ns RvB (raw); D declares `using RvB = cq::RvB` so `typename D::RvB` is u [78 members, 0 problem(s), 38s]
+MISSED   B6   INCLUDE ORDER through `#line N "other"`: the member's -E lines are attributed to a non-closure file [75 members, 0 problem(s), 11s]
+MISSED   B7   INCLUDE ORDER through an ANGLE include of a project header (not in the quote-only closure) [77 members, 0 problem(s), 20s]
+MISSED   B8   INCLUDE ORDER through a COMPUTED include (#include MACRO) [77 members, 0 problem(s), 19s]
+MISSED   B9   INCLUDE DEPTH: `#if __INCLUDE_LEVEL__ > 1` (every probe includes the header at level 1; real TUs reach it deep [75 members, 0 problem(s), 12s]
+MISSED   B10  SEMANTIC include-order dependence (no macro): SFINAE on the COMPLETENESS of cq::CQLoweringPass — identical tok [76 members, 0 problem(s), 19s]
+MISSED   B11  INCLUDE ORDER through a CLOSURE file's own guard: `#ifdef CQ_IRPASS_LOOP_PLAN_H_` tested BEFORE TaintPropagati [75 members, 0 problem(s), 11s]

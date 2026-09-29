@@ -1,0 +1,63 @@
+guard /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/tools/taintset_scrub_guard.py sha256 af81708488920d90  args: --selftest --shard 1/3 --jobs 2
+load before: 100,92 106,72 84,02
+  ok  DB control: the intact database (2+ configurations): 2 configuration(s)
+  ok  DB F1: MALFORMED entries of ONE configuration (review r1 F-R1-7): compile database <selftest db>: the entry for /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/ir-pass/tools/cq_opt_main
+  ok  DB: an entry without `file`: compile database <selftest db>: entry 135 has no `file` — refused (fail closed)
+  ok  DB: a database of ANOTHER tree: no command in <selftest db> compiles a translation unit of /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0 that include
+  ok  DB: not a list of commands: not a JSON list of commands
+  ok  PCH equivalence control: without PCH 75 members / 0 problems, with PCH 75 / 0 (PCH ok; 2 configurations: CQPass, cq-opt/cq-scrub-selftest)
+  ok  clean                        NULL: pristine tree   [75 members]
+  ok  clean                        NULL: a CLEAN NESTED TaintSet record held by an unqualified pointer   [76 members]
+  ok  clean                        NULL: a CLEAN project record held by pointer   [78 members]
+  ok  clean                        NULL: a CLEAN explicit specialization (the primary holds a raw Value*; the one used does not)   [77 members]
+  ok  clean                        NULL: a CLEAN project enum by value and a PRIVATE clean member   [78 members]
+  ok  clean                        NULL: a CLEAN PRIVATE nested record type held by value (the spelling check is access-free)   [77 members]
+  ok  clean                        CONFIG: a raw member under `#ifndef NDEBUG` is invisible in a Release build (the gate checks the CONFIGURED build)   [75 members]
+  ok  clean                        RESIDUAL R1 pinned (bd gqda, review r1 A7): a by-value template a PROJECT header declares in namespace llvm   [76 members]
+  ok  KILLED (right reason)        self: raw revert of Tainted   [75 members]
+  ok  KILLED (right reason)        self: raw pointer field   [76 members]
+  ok  KILLED (right reason)        self: raw field in a nested record   [76 members]
+  ok  KILLED (right reason)        self: foreign record list (not allowlisted)   [94 members]
+  ok  KILLED (right reason)        r1A std::multiset<Value*>   [76 members]
+  ok  KILLED (right reason)        r1A llvm::StringMap<Value*>   [76 members]
+  ok  KILLED (right reason)        r1A lowercase ptr typedef in container   [76 members]
+  ok  KILLED (right reason)        r1A template alias container   [76 members]
+  ok  KILLED (right reason)        r1A brace-init raw DenseMap (X{})   [76 members]
+  ok  KILLED (right reason)        r1A unique_ptr to raw map   [76 members]
+  ok  KILLED (right reason)        r1B G1 brace-initialized std::set<Value*>   [76 members]
+  ok  KILLED (right reason)        r1B G3 alias declared outside TaintSet   [76 members]
+  ok  KILLED (right reason)        r1B G4 typedef inside TaintSet   [76 members]
+  ok  KILLED (right reason)        r1B G10 pointer in a pair KEY   [76 members]
+  ok  KILLED (right reason)        r1B G14 StringMap<Value*>   [76 members]
+  ok  KILLED (right reason)        r1B G24 nested record with a BASE class carrying the pointer   [78 members]
+  ok  KILLED (right reason)        r1B G25 AssertingVH<Instruction> member   [76 members]
+  ok  KILLED (right reason)        r1B G27 AssertingVH as a ScrubMap MAPPED value   [76 members]
+  ok  KILLED (right reason)        r2 A3 type-erased identity set SmallPtrSet<const void *>   [76 members]
+  ok  KILLED (right reason)        r2 A4 uintptr_t-keyed DenseMap   [76 members]
+  ok  KILLED (right reason)        r2 A11 std::set<llvm::WeakVH> (a handle as an ORDERED key)   [76 members]
+  ok  KILLED (right reason)        r2 A6 vector of POINTERS to a project record holding raw Value*   [77 members]
+  ok  KILLED (right reason)        r3 B2 PARTIAL specialization of a project class template holds a raw Value*   [77 members]
+  ok  KILLED (right reason)        r3 B7 value handle wrapped in a project record, as an ordered std::set KEY   [77 members]
+  ok  KILLED (right reason)        r3 C2 raw POINTER to llvm::DenseMap<llvm::Value *, unsigned>   [76 members]
+  ok  KILLED (right reason)        r3 C3 raw POINTER to llvm::SmallPtrSet<llvm::Instruction *, 4>   [76 members]
+  ok  KILLED (right reason)        new: a PRIVATE raw member of a project record held by value   [78 members]
+  ok  KILLED (right reason)        new: a raw REFERENCE member   [76 members]
+  ok  KILLED (right reason)        new: an explicit specialization whose AS-WRITTEN argument re-spells as a clean decoy   [78 members]
+  ok  KILLED (right reason)        new: many project template INSTANCES identified in one round, one raw   [87 members]
+  ok  KILLED (right reason)        r1 C2 const llvm::Value ** (innermost pointee)   [76 members]
+  ok  KILLED (right reason)        r1 A2 const llvm::Value *const * (cv on the inner pointer, bd ehni)   [77 members]
+  ok  KILLED (right reason)        r1 A4b a LOCAL class base re-spelled as a same-named global base (bd 5ci2)   [77 members]
+  ok  KILLED (right reason)        r1 A4' a SINGLE anonymous-namespace base shadowed by a clean same-named record (bd 5ci2)   [77 members]
+  ok  KILLED (right reason)        r1 A6 llvm::EquivalenceClasses<llvm::Value *> in the ALLOWLISTED LoopBreakRegion (F-R1-9)   [76 members]
+  ok  KILLED (right reason)        r1 A6b llvm::UniqueVector<llvm::Value *> in the ALLOWLISTED LoopBreakRegion (F-R1-9)   [76 members]
+  ok  KILLED (right reason)        r1 A10' llvm::SmallVectorBase<unsigned> * (a type-erased library TEMPLATE base)   [76 members]
+  ok  KILLED (right reason)        new: Value** double pointer   [76 members]
+  ok  KILLED (right reason)        new: unknown non-template record   [76 members]
+  ok  KILLED (right reason)        new: pair<WeakVH,int> as a DenseSet KEY   [76 members]
+  ok  KILLED (right reason)        new: project record written UNQUALIFIED, held by pointer   [77 members]
+taintset_scrub_guard selftest shard 1/77 (--jobs 2): 14 null/configuration/equivalence controls, 41 mutants (of 153 entries in all shards), 0 failed
+real 715,25
+user 805,82
+sys 171,41
+rc=0
+load after: 56,93 71,67 79,52

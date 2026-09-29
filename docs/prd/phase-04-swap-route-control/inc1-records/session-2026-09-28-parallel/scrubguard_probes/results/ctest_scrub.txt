@@ -1,0 +1,24 @@
+1f74fca8d9ce7b0e
+14:06  up 3 days,  2:26, 4 users, load averages: 444,93 442,47 376,81
+Test project /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/build
+    Start  13: ir-pass-scrub-on-delete-selftest-lifo
+    Start  14: ir-pass-scrub-on-delete-selftest-sysalloc
+    Start  15: taintset-scrub-guard
+    Start  16: taintset-scrub-guard-selftest
+1/8 Test  #13: ir-pass-scrub-on-delete-selftest-lifo .............   Passed    3.06 sec
+    Start 119: e2e-spec-scrub-dangling-key
+2/8 Test  #14: ir-pass-scrub-on-delete-selftest-sysalloc .........   Passed    3.05 sec
+    Start 214: e2e-slice-spec-lift-scrubbed-elsewhere
+3/8 Test #214: e2e-slice-spec-lift-scrubbed-elsewhere ............   Passed   20.38 sec
+    Start 215: e2e-slice-spec-lift-scrubbed-elsewhere-twin
+4/8 Test #119: e2e-spec-scrub-dangling-key .......................   Passed   23.05 sec
+    Start 216: e2e-spec-lift-scrubbed-elsewhere-twin-identical
+5/8 Test #216: e2e-spec-lift-scrubbed-elsewhere-twin-identical ...   Passed    0.14 sec
+6/8 Test #215: e2e-slice-spec-lift-scrubbed-elsewhere-twin .......   Passed   10.01 sec
+7/8 Test  #15: taintset-scrub-guard ..............................   Passed   83.87 sec
+8/8 Test  #16: taintset-scrub-guard-selftest .....................   Passed  1176.42 sec
+
+100% tests passed, 0 tests failed out of 8
+
+Total Test time (real) = 1176.81 sec
+rc=0

@@ -1,0 +1,55 @@
+N0 NULL: a comment edit: NULL OK (0 moved)  [17 checks, 240s]
+    held  expect=None                         NULL: pristine tree
+    held  expect='defined outside the record' r1 A1 unnamed struct type DEFINED OUTSIDE TaintSet, held by value via decltype (bd hdxo)
+    held  expect='defined outside the record' r1 A1b a global unnamed struct via an alias, as a STATIC member (bd hdxo)
+    held  expect='RAW POINTER'                r1 A2 const llvm::Value *const * (cv on the inner pointer, bd ehni)
+    held  expect='RAW POINTER'                r1 A2b llvm::Value *volatile * inside a SmallVector (bd ehni)
+    held  expect='RAW POINTER'                r1 A2' a CONST raw pointer member, llvm::Value *const
+    held  expect='RAW POINTER'                r1 A2'' llvm::Value *__restrict * (restrict on the inner pointer)
+    held  expect='only POINTED AT'            r1 A3 template PIMPL: a clean primary only POINTED AT (a .cpp may specialize it, bd ngfa)
+    held  expect='only POINTED AT'            r1 A3' the same pimpl through std::unique_ptr (no completeness required, bd ngfa)
+    held  expect="base's canonical spelling"  r1 A4 a base re-spelled through an ANONYMOUS NAMESPACE (bd 5ci2)
+    held  expect="base's canonical spelling"  r1 A4' a SINGLE anonymous-namespace base shadowed by a clean same-named record (bd 5ci2)
+    held  expect="base's canonical spelling"  r1 A4b a LOCAL class base re-spelled as a same-named global base (bd 5ci2)
+    held  expect="base's canonical spelling"  r1 A4b' a LOCAL class base that DERIVES from the same-named clean record (single base, bd 5ci2)
+    held  expect='preprocesses DIFFERENTLY'   r1 A5 INCLUDE ORDER: a raw table under #ifdef of a header real TUs include first (bd ngfa)
+    held  expect='preprocesses DIFFERENTLY'   r1 A5' INCLUDE ORDER through an LLVM header only a .cpp includes (#ifdef LLVM_ANALYSIS_LAZYVALUEINFO_H)
+    held  expect='RAW POINTER'                r1 A6' a raw pointer SEQUENCE in the ALLOWLISTED LoopBreakRegion (was RESIDUAL R2)
+    held  expect='trusted by name'            r1 A9 scrub::Set<StorageT, P> whose StorageT is a project record with a raw table (bd ofvm)
+N1 unnamed type accepted whatever record defines it (the r3 behaviour, F-R1-1): KILLED (2/2 targets flip)  [3 checks, 384s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='defined outside the record' r1 A1 unnamed struct type DEFINED OUTSIDE TaintSet, held by value via decltype (bd hdxo)
+    MOVED expect='defined outside the record' r1 A1b a global unnamed struct via an alias, as a STATIC member (bd hdxo)
+N2 cv / restrict after `*` no longer stripped (F-R1-2): KILLED (3/4 targets flip)  [5 checks, 215s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='RAW POINTER'                r1 A2 const llvm::Value *const * (cv on the inner pointer, bd ehni)  -> cq::TaintSet::RvSlots: pointer to `llvm::Value *const`, which the compiler says is neither a class, a union nor an enum — the walk
+    MOVED expect='RAW POINTER'                r1 A2b llvm::Value *volatile * inside a SmallVector (bd ehni)  -> cq::TaintSet::RvVSlots: pointer to `llvm::Value *volatile`, which the compiler says is neither a class, a union nor an enum — the 
+    MOVED expect='RAW POINTER'                r1 A2' a CONST raw pointer member, llvm::Value *const  -> cq::TaintSet::RvCP: record type `llvm::Value *const` is not a scalar, an approved handle/leaf, a scrub:: container or a project re
+    held  expect='RAW POINTER'                r1 A2'' llvm::Value *__restrict * (restrict on the inner pointer)
+N3 scrub:: argument shapes not checked (F-R1-5): KILLED (1/1 targets flip)  [2 checks, 144s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='trusted by name'            r1 A9 scrub::Set<StorageT, P> whose StorageT is a project record with a raw table (bd ofvm)
+N4 every identity lookup forces the instantiation (the r3 behaviour, F-R1-3): KILLED (2/2 targets flip)  [3 checks, 175s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='only POINTED AT'            r1 A3 template PIMPL: a clean primary only POINTED AT (a .cpp may specialize it, bd ngfa)
+    MOVED expect='only POINTED AT'            r1 A3' the same pimpl through std::unique_ptr (no completeness required, bd ngfa)
+N5 base verified by is_base_of alone (F-R1-6): KILLED (3/4 targets flip)  [5 checks, 243s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect="base's canonical spelling"  r1 A4 a base re-spelled through an ANONYMOUS NAMESPACE (bd 5ci2)
+    held  expect="base's canonical spelling"  r1 A4' a SINGLE anonymous-namespace base shadowed by a clean same-named record (bd 5ci2)
+    MOVED expect="base's canonical spelling"  r1 A4b a LOCAL class base re-spelled as a same-named global base (bd 5ci2)
+    MOVED expect="base's canonical spelling"  r1 A4b' a LOCAL class base that DERIVES from the same-named clean record (single base, bd 5ci2)
+N6 no include-order check (F-R1-4): KILLED (2/2 targets flip)  [3 checks, 155s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='preprocesses DIFFERENTLY'   r1 A5 INCLUDE ORDER: a raw table under #ifdef of a header real TUs include first (bd ngfa)
+    MOVED expect='preprocesses DIFFERENTLY'   r1 A5' INCLUDE ORDER through an LLVM header only a .cpp includes (#ifdef LLVM_ANALYSIS_LAZYVALUEINFO_H)
+N7 an unparsable database entry of this tree is skipped (F-R1-7): KILLED (1/4 targets flip)  [5 checks, 2s]
+    held  expect=None                         DB control: the intact database (2+ configurations)
+    MOVED expect='fails closed'               DB F1: MALFORMED entries of ONE configuration (review r1 F-R1-7)  -> 1 configuration(s)
+    held  expect='fails closed'               DB: an entry without `file`
+    held  expect='fails closed'               DB: a database of ANOTHER tree
+    held  expect='fails closed'               DB: not a list of commands
+N8 policy "fields": library-container arguments not made strict (F-R1-9): KILLED (1/1 targets flip)  [2 checks, 61s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='RAW POINTER'                r1 A6' a raw pointer SEQUENCE in the ALLOWLISTED LoopBreakRegion (was RESIDUAL R2)
+total 1618s

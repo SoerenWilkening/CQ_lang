@@ -1,0 +1,6 @@
+guard 44ad3cb0c8d83923
+Traceback (most recent call last):
+  File "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/scrubguard_probes/composition.py", line 40, in <module>
+    extra = {f: open(os.path.join(inc, f)).read() for f in os.listdir(inc) if f.endswith(".h")}
+                                                           ^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a3c46257bc3bd028d/ir-pass/include'

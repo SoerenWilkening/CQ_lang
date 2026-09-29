@@ -1,0 +1,13 @@
+ok  D0 gate exit 0 (want 0) — NULL: pristine private worktree
+      gate: taintset_scrub_guard: 75 members walked [CQPass: 0 problem(s), cq-opt/cq-scrub-selftest: 0 problem(s)] (flags from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratch
+ok  D3 gate exit 1 (want 1) — POS: the member directly in TaintPropagation.h (A5 shape)
+      gate: taintset_scrub_guard: `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `
+      gate: taintset_scrub_guard: 75 members walked [CQPass: 1 problem(s), cq-opt/cq-scrub-selftest: 1 problem(s)] (flags from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratch
+      build: CQLoweringPass.cpp -E exit 0, -fsyntax-only exit 0, `RvDirect`: ['std::set<llvm::Value *> RvDirect;']
+BAD D1 gate exit 0 (want 1) — ATTACK: the same member in a SUBDIRECTORY project header (#include "detail/RvSub.h")
+      gate: taintset_scrub_guard: 77 members walked [CQPass: 0 problem(s), cq-opt/cq-scrub-selftest: 0 problem(s)] (flags from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratch
+      build: CQLoweringPass.cpp -E exit 0, -fsyntax-only exit 0, `RvSubS`: ['std::set<llvm::Value *> RvSubS;']
+BAD D2 gate exit 0 (want 1) — ATTACK: the same member in an X-MACRO .def file included INSIDE TaintSet
+      gate: taintset_scrub_guard: 75 members walked [CQPass: 0 problem(s), cq-opt/cq-scrub-selftest: 0 problem(s)] (flags from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratch
+      build: CQLoweringPass.cpp -E exit 0, -fsyntax-only exit 0, `RvDefMember`: ['std::set<llvm::Value *> RvDefMember;']
+cases 4, BAD 2

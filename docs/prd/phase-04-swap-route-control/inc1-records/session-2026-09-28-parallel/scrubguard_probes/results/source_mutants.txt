@@ -1,0 +1,47 @@
+S0 NULL: a comment edit: NULL OK (0 moved)  [15 checks, 954s]
+    held  expect=None                   NULL: pristine tree
+    held  expect='RAW POINTER'          r3 B3 raw member present in cq-opt's build but not in CQPass's (#ifndef CQPass_EXPORTS)
+    held  expect='RAW POINTER'          r3 B4 raw member hidden by the PCH context (#ifndef LLVM_ANALYSIS_LOOPINFO_H)
+    held  expect='HANDLE'               r3 B7 value handle wrapped in a project record, as an ordered std::set KEY
+    held  expect='HANDLE'               r3 B7' the same record as a DenseMap KEY through a std::pair
+    held  expect='RAW POINTER'          r3 B14 raw identity table added to the ALLOWLISTED LoopBreakRegion (LoopPlan.h)
+    held  expect='HANDLE'               r3 B14' a handle-keyed set added to the ALLOWLISTED LoopBreakRegion
+    held  expect='IR-OWNED'             r3 B14'' a Loop*-keyed map added to the ALLOWLISTED LoopBreakRegion
+    held  expect='RAW POINTER'          r3 C1 raw POINTER to a library container of raw Value*: std::set<llvm::Value *> *
+    held  expect='RAW POINTER'          r3 C2 raw POINTER to llvm::DenseMap<llvm::Value *, unsigned>
+    held  expect='RAW POINTER'          r3 C3 raw POINTER to llvm::SmallPtrSet<llvm::Instruction *, 4>
+    held  expect='RAW POINTER'          r3 C6 SmallVector of POINTERS to a raw library table
+    held  expect='canonical spelling'   new: an explicit specialization whose AS-WRITTEN argument re-spells as a clean decoy
+    held  expect='RAW POINTER'          new: a macro defined AFTER TaintSet renames a raw member to a scrub member
+    held  expect='RAW POINTER'          new: many project template INSTANCES in one round, one raw (AST ids of separate compiles)
+S1 spelling check dropped: KILLED (1/1 targets flip)  [2 checks, 339s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='canonical spelling'   new: an explicit specialization whose AS-WRITTEN argument re-spells as a clean decoy
+S2 no #undef of generated identifiers: KILLED (1/1 targets flip)  [2 checks, 181s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='RAW POINTER'          new: a macro defined AFTER TaintSet renames a raw member to a scrub member  -> self-cleaning member `cq::TaintSet::R4Evil` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+S3 walked-key without the producing identity: MISSED  [2 checks, 194s]
+    held  expect=None                   NULL: pristine tree
+    held  expect='RAW POINTER'          new: many project template INSTANCES in one round, one raw (AST ids of separate compiles)
+S4 KEY mode does not enter project records: KILLED (2/2 targets flip)  [3 checks, 501s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='HANDLE'               r3 B7 value handle wrapped in a project record, as an ordered std::set KEY
+    MOVED expect='HANDLE'               r3 B7' the same record as a DenseMap KEY through a std::pair
+S5 allowlist exempts the whole subtree (the r3 behaviour): KILLED (3/3 targets flip)  [4 checks, 392s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='RAW POINTER'          r3 B14 raw identity table added to the ALLOWLISTED LoopBreakRegion (LoopPlan.h)
+    MOVED expect='HANDLE'               r3 B14' a handle-keyed set added to the ALLOWLISTED LoopBreakRegion
+    MOVED expect='IR-OWNED'             r3 B14'' a Loop*-keyed map added to the ALLOWLISTED LoopBreakRegion
+S6 one configuration only (the first): KILLED (1/1 targets flip)  [2 checks, 193s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='RAW POINTER'          r3 B3 raw member present in cq-opt's build but not in CQPass's (#ifndef CQPass_EXPORTS)
+S7 no re-ask without the PCH: KILLED (1/1 targets flip)  [2 checks, 185s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='RAW POINTER'          r3 B4 raw member hidden by the PCH context (#ifndef LLVM_ANALYSIS_LOOPINFO_H)
+S8 a pointer to a LIBRARY template is not walked (the r3 behaviour): KILLED (4/4 targets flip)  [5 checks, 816s]
+    held  expect=None                   NULL: pristine tree
+    MOVED expect='RAW POINTER'          r3 C1 raw POINTER to a library container of raw Value*: std::set<llvm::Value *> *
+    MOVED expect='RAW POINTER'          r3 C2 raw POINTER to llvm::DenseMap<llvm::Value *, unsigned>
+    MOVED expect='RAW POINTER'          r3 C3 raw POINTER to llvm::SmallPtrSet<llvm::Instruction *, 4>
+    MOVED expect='RAW POINTER'          r3 C6 SmallVector of POINTERS to a raw library table
+total 3755s

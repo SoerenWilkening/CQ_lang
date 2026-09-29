@@ -1,0 +1,12 @@
+B6   INCLUDE ORDER through `#line N "other"`: the member's -E lines are attributed to a non-closure file
+    scrub_selftest.cpp[cq-opt cfg]: exit 0
+    CQLoweringPass.cpp[CQPass cfg]: exit 0
+    usage TU[CQPass cfg]: exit 0
+    CQLoweringPass.cpp -E: exit 0, `RvLineCtx` lines: ['static inline std::set<llvm::Value *> RvLineCtx;']
+    SpecializeSeed.cpp -E: exit 0, `RvLineCtx` lines: []
+B9   INCLUDE DEPTH: `#if __INCLUDE_LEVEL__ > 1` (every probe includes the header at level 1; real TUs reach it deeper)
+    scrub_selftest.cpp[cq-opt cfg]: exit 0
+    CQLoweringPass.cpp[CQPass cfg]: exit 0
+    usage TU[CQPass cfg]: exit 0
+    CQLoweringPass.cpp -E: exit 0, `RvLevel` lines: []
+    SpecializeSeed.cpp -E: exit 0, `RvLevel` lines: ['static inline std::set<llvm::Value *> RvLevel;']

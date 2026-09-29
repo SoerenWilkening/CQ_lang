@@ -10,11 +10,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # bd test_C_libtooling-a66j (Rule-13 r2 F-R2-2): `taintset-scrub-guard` parses
-# `TaintPropagation.h` with a REAL build compile command read from this file (the
-# CQPass one: its compiler, defines incl. `-DNDEBUG`, include paths, `-std`) — a
-# guard that parsed with other flags missed a raw member inside `#ifdef NDEBUG`.
-# ⚠ ONE configuration only: cq-opt compiles the same file without
-# `-DCQPass_EXPORTS` (a known gap, bd test_C_libtooling-7gri).
+# `TaintPropagation.h` with the REAL build compile commands read from this file (their
+# compiler, defines incl. `-DNDEBUG`, include paths, `-std`) — a guard that parsed
+# with other flags missed a raw member inside `#ifdef NDEBUG`. Since bd
+# test_C_libtooling-7gri it asks EVERY distinct command of a TU that includes the
+# header (today two: CQPass with `-DCQPass_EXPORTS -fPIC`, cq-opt/cq-scrub-selftest
+# without), and it asks them without a precompiled header.
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 # Propagate -Wall -Wextra to every sub-build (warnings only, not -Werror,
