@@ -1,0 +1,55 @@
+diff --git a/ir-pass/src/AngleSelectEmit.cpp b/ir-pass/src/AngleSelectEmit.cpp
+index 3e1344e0..fa9c0919 100644
+--- a/ir-pass/src/AngleSelectEmit.cpp
++++ b/ir-pass/src/AngleSelectEmit.cpp
+@@ -12,6 +12,7 @@
+ // the earlier "five-step" wording counted only the emitting half and is corrected
+ // here rather than in the step numbering, round-1 review lens L6-N11.)
+ 
++#include <cstdlib>
+ #include "AngleSelectEmit.h"
+ 
+ #include "ArmAnalysis.h"       // angleSelectArmsAdmissible / comparePredLowerable
+@@ -358,7 +359,12 @@ void emitAngleSelectRegion(const ControlRegion &R, WidthDispatch &wd,
+   // refused upstream as a reserved name, but this emitter must not become the
+   // place where an untainted Rz base is first admitted.
+   const bool UntaintedBase = !taint.Tainted.count(Base);
+-  if (UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(Base, taint))) {
++  bool R1BStep0 = UntaintedBase && !(IsTheta && isRuntimeStatePrepSeed(Base, taint));
++  { const char *E = getenv("R1B_MUT"); int Mu = E ? atoi(E) : 0;
++    if (Mu == 1) R1BStep0 = false;
++    if (Mu == 2) R1BStep0 = UntaintedBase && !R.RuntimeSeedAdmitted;
++    if (Mu == 3) R1BStep0 = UntaintedBase && !isRuntimeStatePrepSeed(Base, taint); }
++  if (R1BStep0) {
+     diagnoseUnderControl(Sel, "control flow");
+     return;
+   }
+diff --git a/ir-pass/src/ArmClassify.cpp b/ir-pass/src/ArmClassify.cpp
+index ca45a244..7b1b0bd0 100644
+--- a/ir-pass/src/ArmClassify.cpp
++++ b/ir-pass/src/ArmClassify.cpp
+@@ -20,6 +20,7 @@
+ //     `control flow`; mixed content → `mixed phase/value arm`; fan-out/stray
+ //     → `impure value arm`; Q+Q link → `value-arm swap-route`).
+ 
++#include <cstdlib>
+ #include "ArmClassify.h"
+ 
+ #include "ArmAnalysis.h"
+@@ -3917,6 +3918,7 @@ bool isRuntimeStatePrepSeed(Value *V, const TaintSet &Taint) {
+   if (Taint.Tainted.count(V))
+     return false;  // a REGISTER: a chained (in-place) base, not a seed.
+   Type *Ty = V->getType();
++  { const char *E = getenv("R1B_MUT"); if (E && atoi(E) == 4) return true; }
+   return Ty->isIntegerTy() || Ty->isFloatingPointTy();
+ }
+ 
+diff --git a/ir-pass/test/lit.cfg.py b/ir-pass/test/lit.cfg.py
+index 33184454..5ebb75ae 100644
+--- a/ir-pass/test/lit.cfg.py
++++ b/ir-pass/test/lit.cfg.py
+@@ -119,3 +119,4 @@ if _llvm_bin:
+     config.environment["PATH"] = _llvm_bin + os.pathsep + os.environ.get(
+         "PATH", ""
+     )
++config.environment['R1B_MUT'] = os.environ.get('R1B_MUT', '0')

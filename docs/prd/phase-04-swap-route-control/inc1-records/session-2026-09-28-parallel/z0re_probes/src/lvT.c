@@ -1,0 +1,2 @@
+#include <stdlib.h>
+int main(int c, char **v) { int m = atoi(v[1]), s = atoi(v[2]); int acc = 0; { int q = cq_theta(m + 0, .5); int r = s + 0; if (q > 0) r = cq_theta(s + 0, .2); acc += cq_measure(r); } { int q = cq_theta(m + 1, .5); int r = s + 1; if (q > 1) r = cq_theta(s + 1, .2); acc += cq_measure(r); } { int q = cq_theta(m + 2, .5); int r = s + 2; if (q > 2) r = cq_theta(s + 2, .2); acc += cq_measure(r); } return acc; }

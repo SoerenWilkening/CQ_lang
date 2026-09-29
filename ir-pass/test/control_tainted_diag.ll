@@ -38,13 +38,27 @@
 ; the loose tail, so the assertion is unchanged and true; the ground is not, and
 ; is restated here instead of being quietly inherited.
 ;
+; ===========================================================================
+; bd test_C_libtooling-z0re (OWNER RULING 2026-09-28, option (a)): RE-SPELLED A
+; SECOND TIME, and for the reason the paragraph above predicts. The shape above —
+; `phi [cq_theta(%y0, θ), arm], [%y0, entry]` with `%y0` a classical ARGUMENT — is
+; a controlled state prep with a RUNTIME seed, which the owner has now ADMITTED:
+; it ACCEPTS (`alloc(%y0)` + `ry_controlled`). Left as it was, this file would have
+; gone red for the right reason, and green again only by pinning an accept it does
+; not claim to be about. Its property is "a tainted `br` the compiler cannot PROVE
+; declines loudly", so the straight-through incoming is now a DIFFERENT classical
+; value `%z0`: a data mux between a prepared rail and an unrelated value, which F1's
+; identity clause still refuses (`state prep seed does not match the merge
+; incoming`). The loose tail is unchanged. MEASURED: without this re-spelling the
+; subject binary ACCEPTS the old body.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}under quantum control
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 
-define i32 @example(i32 %y0) {
+define i32 @example(i32 %y0, i32 %z0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 3, double 5.000000e-01)
   %c = icmp sgt i32 %q, 5
@@ -53,7 +67,7 @@ arm:
   %y1 = call i32 @cq_theta_si32(i32 %y0, double 2.500000e-01)  ; rotates the CLASSICAL %y0
   br label %merge
 merge:
-  %y = phi i32 [ %y1, %arm ], [ %y0, %entry ]
+  %y = phi i32 [ %y1, %arm ], [ %z0, %entry ]   ; a DIFFERENT classical value (z0re)
   %m = call i32 @cq_measure_si32(i32 %y)
   ret i32 %m
 }

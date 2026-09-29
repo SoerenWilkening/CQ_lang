@@ -845,12 +845,18 @@ void lowerRotations(Module &M, WidthDispatch &wd, TaintSet &taint,
       // to fire the gate under the flag.
       //
       // The two fences that make that sound live in `classifyArms`, not here:
-      // F1 (the merge φ's Pred incoming is a `ConstantInt`/`ConstantFP`
-      // bit-identical to the seed, so the `f=0` component's |SEED> IS the
-      // source's straight-through value) and F2 (the seed is not the compare
-      // literal of an equality, so this is not a `-O1`-folded in-place Ry on the
-      // CONDITION register). Nothing is re-derived here; this stage owns the
-      // SYMBOL, detection owns the PROOF.
+      // F1 (the merge φ's Pred incoming is IDENTICAL to the seed — a
+      // `ConstantInt`/`ConstantFP` bit-identical by uniquing, or since bd z0re
+      // (2026-09-28) the SAME runtime SSA value — so the `f=0` component's
+      // |SEED> IS the source's straight-through value) and F2 (no live tainted
+      // register off the condition's wire is provably equal to the seed on
+      // either edge, so this is not a `-O1`-folded in-place Ry). Nothing is
+      // re-derived here; this stage owns the SYMBOL, detection owns the PROOF.
+      // ⚠ `Chained` above is decided on FINAL taint while F1 read the seed's
+      // taint at its detection round: a RUNTIME seed that turned quantum in
+      // between would land in the `Chained` arm as an unvetted in-place Ry.
+      // `declineRound2QuantumPrepSeeds` refuses that before this loop runs; a
+      // literal seed cannot turn quantum (bd z0re, the L1 record).
       // ⚠ NO SECOND BAIL HERE — the null-guard that used to sit on this line was
       // HOISTED with its sibling, above the alloc (round-1 Rule-13 review, lens
       // L3 finding F-6). It asked the SAME predicate with the SAME arguments and
@@ -1462,6 +1468,13 @@ bool isQramArrayHandle(const CallInst *CI) {
 // (re-verified by the Inc-3 Rule-13 round, 2026-08-28).
 // The family is SELF-INVERSE, so there is no `_unc`/`_inv` twin to exclude
 // (cq_runtime.h:269, :317).
+//
+// EXPORTED (bd rhk5 round 2, Rule 14 — r1A F-r1A-6 / r1B F-6): `ChainWalk`'s
+// clone-body proof asks the same ABI fact, and its first spelling re-derived it
+// inline. The anonymous namespace is closed around this one definition only; the
+// body is unchanged.
+}  // namespace
+
 bool isCopyGate(const CallInst *CI) {
   if (!CI->getType()->isVoidTy())
     return false;
@@ -1470,6 +1483,8 @@ bool isCopyGate(const CallInst *CI) {
     return false;
   return CI->arg_size() == 2 || CI->arg_size() == 3;
 }
+
+namespace {
 
 // What the walk does with a value it has reached.
 enum class RailKind {

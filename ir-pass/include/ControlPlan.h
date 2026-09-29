@@ -645,6 +645,25 @@ struct ControlRegion {
   // an erased one nulls and forces the mismatch decline.
   llvm::SmallVector<llvm::WeakTrackingVH, 2> CondLiterals;
 
+  // bd `test_C_libtooling-z0re` (owner ruling 2026-09-28) — set by the
+  // CLASSIFIER on ACCEPT iff it admitted a RUNTIME state-prep seed
+  // (`isRuntimeStatePrepSeed`): `classifyArms`' F1 for a diamond state prep,
+  // `classifyAngleSelect`'s S3 for an untainted Ry-stem base. The EMITTER reads
+  // it — never the taint it sees at emission time — to decide whether to record
+  // the source theta in `TaintSet::RuntimeSeedSourceThetas` for the post-fixpoint
+  // re-ask, and (since Rule-13 r1B F-r1B-2) `emitAngleSelectRegion`'s step 0
+  // reads it to decide whether an untainted base is admitted at all, so the
+  // admission and the record are one question. ⚠ THAT IS THE WHOLE POINT OF THE FIELD, AND IT IS MEASURED: when a
+  // 6.5 region earlier in the same `lowerControlRegions` loop RAUWs the seed to
+  // its fresh `%out` rail, the seed is ALREADY tainted when this region is
+  // emitted, so an emission-time "is the seed untainted?" test would skip the
+  // record and the re-ask would never fire — the first spelling of this
+  // increment did exactly that and ACCEPTED
+  // `control_inplace_ry_reject_stateprep_runtime_seed_round2_quantum.ll` with an
+  // unvetted in-place Ry on `%out`. The verdict is the classifier's; the emitter
+  // only carries it.
+  bool RuntimeSeedAdmitted = false;
+
   // bd test_C_libtooling-8h7d.5 (7.3 Inc 3) — this region sits WHOLLY INSIDE a
   // reducible `LoopInfo` loop and was admitted by
   // `ControlDetect::flatRegionRollableInLoop`. Set at detection, read only by
