@@ -61,16 +61,27 @@ void stripStaleClassicalAttrs(Function *F) {
   // A `musttail` marker in the body is a promise about the CLASSICAL body too
   // (bd `test_C_libtooling-m5pn`; the nlfd/ev3m track, 2026-09-28, found by the
   // (null-safe × musttail × recorded-dead × operand) cell table): that the call is
-  // the function's last action before `ret` and that caller and callee prototypes
-  // agree. The lowered clone breaks both — the Bennett wrap puts the copy-out and
-  // the reverse of the forward stream BETWEEN an inner clone call and the `ret`,
-  // and `cloneFor`'s fp→i32 rewrite changes prototypes — and the verifier then
-  // ABORTS the whole run (exit 134, PRE-EXISTING on `main` 9a230646 from plain C:
-  // `int h(int a,int k){ __attribute__((musttail)) return h2(a,k); }` with `h2`
-  // reading `a`). `musttail` guarantees only the tail-call LOWERING (stack reuse);
-  // the call, its operands and its result are unchanged by dropping it, and a clone
-  // is acyclic (recursion is declined), so no stack guarantee is load-bearing. The
-  // demotion goes to NO tail kind at all: a clone promises nothing it cannot prove.
+  // the function's last action before `ret`. The lowered clone breaks it — the
+  // Bennett wrap puts the copy-out and the reverse of the forward stream BETWEEN an
+  // inner clone call and the `ret` — and the verifier then ABORTS the whole run
+  // (exit 134, PRE-EXISTING on `main` 9a230646 from plain C: `int h(int a,int k){
+  // __attribute__((musttail)) return h2(a,k); }` with `h2` reading `a`). ⚠ Round 1
+  // also named "`cloneFor`'s fp→i32 rewrite changes prototypes" as a cause — FALSE
+  // on the reachable surface (Rule-13 r1B F-r1B-4, probe `f1`): a retarget to a clone
+  // whose return type differs REPLACES the call with a fresh `CreateCall` (no tail
+  // kind, `retargetSite`), and an unchanged return type keeps matching prototypes;
+  // the fp spelling compiles on the ORACLE byte-identically to its plain-tail one.
+  // Code emitted after the call is the one cause. `musttail` guarantees only the
+  // tail-call LOWERING (stack reuse) for every argument kind the pass can reach from
+  // C: the call, its operands and its result are unchanged by dropping it, and a
+  // clone is acyclic (recursion is declined), so no stack guarantee is
+  // load-bearing. ⚠ NOT for a `preallocated` argument (legal only on a `musttail`
+  // call or with the `"preallocated"` bundle — the demotion would leave the verifier
+  // aborting): `scanBody` DECLINES a lifted body that `musttail`-forwards one (r1B
+  // F-r1B-2, IR-only — the 32-bit Windows C++ ABI), so none reaches this loop. An
+  // `inalloca` forward IS demoted and is then byte-identical to its plain-`tail`
+  // spelling (measured). The demotion goes to NO tail kind at all: a clone promises
+  // nothing it cannot prove.
   for (BasicBlock &BB : *F)
     for (Instruction &I : BB)
       if (auto *CI = dyn_cast<CallInst>(&I); CI && CI->isMustTailCall())

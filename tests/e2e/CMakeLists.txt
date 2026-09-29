@@ -2869,8 +2869,12 @@ add_test(NAME e2e-slice-spec-dropped-arg-byval-slot
 # ⚠ Since bd ev3m (2026-09-28) this C program no longer reaches a clone at all: a `musttail` site is
 # drop-eligible, so the pre-specialize drop takes the whole chain (`h2`'s slot, `h`'s parameter,
 # `slice`'s slot). The golden is unchanged (still the twin's, measured) but the pair now witnesses
-# the DROP; the in-clone `musttail` slot it was written for is pinned only at IR level, by
-# spec_accept_phantom_arg_read_musttail_inner_slot.ll (re-spelled with a branch-only read).
+# the DROP. ⚠ Round 1 wrote here that the in-clone `musttail` slot "is pinned only at IR level" —
+# FALSE (Rule-13 r1B F-r1B-3): since commit C a clone's `musttail` is demoted in `cloneFor`, before
+# any slot question, so NO test can pin a `musttail` slot inside a clone any more; the re-spelled
+# spec_accept_phantom_arg_read_musttail_inner_slot.ll pins the generic inner-slot neutralisation on
+# a (demoted) plain call. The demotion is linked by `e2e-slice-spec-musttail-clone-{live-arg,
+# partial-drop}` below.
 add_test(NAME e2e-slice-spec-dropped-arg-musttail-inner
   COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
     "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
@@ -2917,6 +2921,72 @@ add_test(NAME e2e-spec-dropped-arg-musttail-return-twin-identical
   COMMAND "${CMAKE_COMMAND}" -E compare_files
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return.expected.log"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_dropped_arg_musttail_return_twin.expected.log")
+
+# bd ev3m / bd m5pn round 2 (Rule-13 r1B F-r1B-5; owner ruling 2026-09-29: a `musttail` spelling
+# compiles exactly like its plain-`tail` spelling). Three programs the ORACLE (`main` 9a230646)
+# declined (`rhk5_window`, 3jru) or ABORTED on (`clone_live_arg`, `clone_partial_drop`, exit 134)
+# and that round 1 routed into bd rhk5's warned wrong unitary — CLEAN since bd rhk5 landed
+# (9ad22639): 0 warnings, 0 dirty template rails, 2b STRICT. Each links a DEMOTED clone (m5pn) or a
+# DROPPED `musttail` slot (ev3m). ⚠ `*-twin-equivalent`, not `*-twin-identical`: each calls a clone
+# whose result is quantum, so byte identity is impossible (Bennett copy-out, cross-TU position —
+# tools/trace_twin_equiv.py's header). RED on `main` 9a230646 (decline / abort, measured).
+add_test(NAME e2e-slice-spec-musttail-rhk5-window
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_musttail_rhk5_window_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window.expected.log")
+add_test(NAME e2e-slice-spec-musttail-rhk5-window-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window_twin.expected.log")
+add_test(NAME e2e-spec-musttail-rhk5-window-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_rhk5_window_twin.expected.log")
+add_test(NAME e2e-slice-spec-musttail-clone-partial-drop
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_musttail_clone_partial_drop_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop.expected.log")
+add_test(NAME e2e-slice-spec-musttail-clone-partial-drop-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop_twin.expected.log")
+add_test(NAME e2e-spec-musttail-clone-partial-drop-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_partial_drop_twin.expected.log")
+add_test(NAME e2e-slice-spec-musttail-clone-live-arg
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice_multi.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "${_E2E_LLVM_LINK}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg.c"
+    "${CMAKE_CURRENT_SOURCE_DIR}/spec_musttail_clone_live_arg_lib.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg.expected.log")
+add_test(NAME e2e-slice-spec-musttail-clone-live-arg-twin
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg_twin.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg_twin.expected.log")
+add_test(NAME e2e-spec-musttail-clone-live-arg-twin-equivalent
+  COMMAND "${_E2E_PYTHON}" "${CMAKE_SOURCE_DIR}/tools/trace_twin_equiv.py" --quiet-controls
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg.expected.log"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_spec_musttail_clone_live_arg_twin.expected.log")
 
 # bd test_C_libtooling-rhk5 (Rule-13 r3A F-XA-4). A Phase-6 clone call scheduled INSIDE
 # the M-B discharge window of a derived chain — between `p = q*3; u = p^q` and the

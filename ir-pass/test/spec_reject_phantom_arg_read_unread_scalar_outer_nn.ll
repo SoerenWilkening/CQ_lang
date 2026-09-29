@@ -5,11 +5,13 @@
 ; `h2(x "opaque", k)` reading `x` only in an empty diamond. Since bd nlfd the record calls
 ; `h`'s parameter dead (an ARGUMENT in an unread scalar slot is not a read), so
 ; `resolvePhantomCloneArgReads` step 1 now SEES `main`'s slot: recorded dead, not null-safe,
-; quantum operand — its existing decline. On the ORACLE the record called the parameter live
-; and the module ACCEPTED with bd tzfa's phantom read (TRACE-DIFF vs the twin `r = m + 1`, `p`
-; dirty across the Ry, warned). A wrong accept became the module-level rule's (IR-only,
-; knowing) over-decline; the twin accepts. Retirement trigger: `nullSafeSlot` admitting
-; string attributes (owner question, TRACK_NLFD_EV3M.md §15 Q1).
+; quantum operand — its existing decline. On `main` 9a230646 the record called the parameter
+; live and the module ACCEPTED with bd tzfa's phantom read (TRACE-DIFF vs the twin `r = m + 1`,
+; `p` dirty across the Ry, warned). ⚠ On `main` ba4fdad4 (bd rhk5) that same accept is
+; TRACE-IDENT with the twin (one lyyf-(B) over-warn): this decline is now an IR-only
+; OVER-DECLINE of a program `main` compiles correctly, introduced by nlfd in composition with
+; rhk5 (bd test_C_libtooling-ur72). Retirement triggers: bd ur72, or `nullSafeSlot` admitting
+; string attributes (owner question bd test_C_libtooling-uyhx).
 ;
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s

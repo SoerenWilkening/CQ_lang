@@ -32,8 +32,8 @@ llvm::Function *cloneFor(const SpecCandidate &Cand);
 // void clone call whose result is unused (the Phase-6.3 twin), freeing the
 // entangled rail DIRTY — a hidden measurement (Rule 6/8). It also demotes every
 // `musttail` call in the body to no tail kind (the Bennett wrap emits code after an
-// inner clone call, and the fp→i32 rewrite changes prototypes — a kept `musttail`
-// aborts the verifier, exit 134; see the definition).
+// inner clone call, so a kept `musttail` aborts the verifier, exit 134 — bd m5pn;
+// a `preallocated` forward is declined earlier by `scanBody`; see the definition).
 void stripStaleClassicalAttrs(llvm::Function *F);
 
 }  // namespace cq

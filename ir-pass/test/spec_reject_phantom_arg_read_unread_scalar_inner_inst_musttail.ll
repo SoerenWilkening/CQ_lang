@@ -9,7 +9,8 @@
 ; `h`'s clone was no longer followed by `ret` once `t`'s template was Bennett-reversed after
 ; it). The fence speaks inside `buildClone` right after the record — before the Bennett wrap
 ; emits anything — so this file declines with or without the same track's clone-`musttail`
-; demotion (commit C).
+; demotion (commit C). ⚠ Like `…_inner_inst.ll`, an IR-only over-decline since bd rhk5 (bd
+; test_C_libtooling-ur72).
 ;
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s

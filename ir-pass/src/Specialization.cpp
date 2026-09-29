@@ -1014,40 +1014,64 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // not predict from the ORIGINAL callee (the clone's own flatten removed its
   // last read — e.g. a condition-only use of an empty diamond — or a drop
   // precondition refused the slot).
-  const uint64_t DeadSlots = deadParamMask(*Clone, taint);
+  const FunctionLiveness Existence(*Clone, taint);
+  const uint64_t DeadSlots = deadParamMask(*Clone, Existence);
   taint.SpecDeadArgMask[Clone] = DeadSlots;
+  // bd `test_C_libtooling-vaep` (Rule-13 r1A F-r1A-1): strip the value constraints
+  // of every recorded-dead parameter HERE, at the clone's own record — before any
+  // `_unc` twin of it exists (`ensureTwin` runs in the ENCLOSING clone's inner-call
+  // loop after this build returns, and the module-level spine only ever calls a twin
+  // that loop made), so every twin copies the stripped set. A caller's null
+  // (neutralised at module level, inherited by an inner call, or forwarded through a
+  // dead parameter) reaches the forward clone AND its twin; before this, the twin
+  // kept `noundef range(…)` / `nofpclass(…)` on the slot the null arrived in.
+  for (Argument &Arg : Clone->args())
+    if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+      stripParamValueConstraints(*Clone, Arg.getArgNo());
   // bd `test_C_libtooling-nlfd` (vsfp Rule-13 r6 F-R6-1) — THE RULE OF
   // `resolvePhantomCloneArgReads` step 1, ONE CLONE LEVEL DOWN. A HANDLE parameter
   // (`Mask`) that the record calls LIVE only because a surviving INSTRUCTION feeds
   // an unread scalar slot the rewrite may not null (a recorded-dead inner slot with
   // an attribute outside `nullSafeSlot`'s allowlist) is kept alive by a
   // computation whose result nothing observes — `SlotReads::Value` calls it dead.
-  // Its caller's slot then stays a phantom read (the module-level spine sees an
-  // extra consumer of the caller's rail: bd tzfa's wrong unitary), and it cannot be
-  // neutralised either: the surviving instruction would then be lowered on runtime
-  // handle 0 (bd sqjq's hazard). Neither accept is the twin's, so it DECLINES, with
-  // the module-level string. IR-only as measured (clang-19 `-O1` puts only
-  // allowlisted attributes on an int/fp parameter). An ARGUMENT forwarded into such
-  // a slot needs no fence: the liveness call-slot rule does not count it
-  // (`isUnreadScalarSlot`), the record calls the parameter dead, and the caller's
-  // null-safe slot is neutralised (value constraints stripped below).
-  // OVER-DECLINES, knowingly: a caller operand that is a `cq_theta` SOURCE (step 2
-  // exempts those) and the whole class where the hand-inlined twin accepts.
+  // Its caller's slot then stays a phantom read, and it cannot be neutralised either:
+  // the surviving instruction would then be lowered on runtime handle 0 (bd sqjq's
+  // hazard). On `main` 9a230646, for a DERIVED caller operand (`p = q*3`), the
+  // phantom read was bd tzfa's wrong unitary (the module-level spine saw an extra
+  // consumer of `p`'s rail) and neither accept was the twin's; for a `cq_theta` SOURCE
+  // operand the keep-the-slot accept already was the twin's unitary (Rule-13 r1A
+  // F-r1A-2, bd `test_C_libtooling-w109`). ⚠ SINCE bd rhk5 (9ad22639) THE PREMISE IS
+  // FALSE FOR EVERY MEMBER MEASURED (bd `test_C_libtooling-ur72`): the spine now
+  // discharges a derived chain whose rail a clone call only reads, so the keep-the-slot
+  // accept is the twin's circuit plus an identity compute/uncompute pair on a scratch
+  // rail (2b clean) for the derived operands too — this fence is an IR-only
+  // OVER-DECLINE of programs `main` compiles correctly, kept pending the owner's
+  // decision on bd ur72 / bd uyhx (a clone is shared by every caller of its
+  // `(callee, mask)` and cannot see its callers' operands, so it cannot be narrowed to
+  // the harmful members from here). It DECLINES with the module-level string. IR-only as measured: clang-19 `-O1` puts only allowlisted
+  // attributes on an int/fp parameter that CAN BE RECORDED DEAD (it does infer
+  // `returned` on a returned — hence live — parameter; r1A F-r1A-3). An ARGUMENT
+  // forwarded into such a slot needs no fence: the liveness call-slot rule does not
+  // count it (`isUnreadScalarSlot`), the record calls the parameter dead, and the
+  // caller's null-safe slot is neutralised (value constraints stripped above).
   // RETIREMENT TRIGGER (L8): the day `nullSafeSlot` admits string/unknown attributes
-  // (the owner question in TRACK_NLFD_EV3M.md), this fence and step 1's decline both
-  // shrink to what is left outside it.
+  // (owner question bd `test_C_libtooling-uyhx`), this fence and step 1's decline
+  // both shrink to what is left outside it.
   if (const uint64_t HandleLive = Mask & ~DeadSlots) {
-    const uint64_t ValueDead =
-        deadParamMask(*Clone, taint, SlotReads::Value) & HandleLive;
-    if (ValueDead) {
+    const FunctionLiveness Value(*Clone, taint, SlotReads::Value);
+    if (deadParamMask(*Clone, Value) & HandleLive) {
+      // Only the diagnostic's LOCATION (the verdict is decided above): the first call
+      // with an argument operand live under Existence and dead under Value — the
+      // frontier where the SAME two answers diverge (r1A F-r1A-4: the first spelling
+      // re-derived the slot predicate here, a second spelling of the condition).
       DebugLoc Where;
       for (Instruction &I : instructions(*Clone))
-        if (auto *CB = dyn_cast<CallBase>(&I))
-          for (unsigned A = 0, E = CB->arg_size(); A < E && !Where; ++A)
-            if (isa<Instruction>(CB->getArgOperand(A)) &&
-                isUnreadScalarSlot(*CB, A, taint) &&
-                !isRewritableDeadSlot(*CB, A, taint))
+        if (auto *CB = dyn_cast<CallBase>(&I); CB && !Where)
+          for (const Use &U : CB->args())
+            if (Existence.isLive(U.get()) && !Value.isLive(U.get())) {
               Where = CB->getDebugLoc();
+              break;
+            }
       Clone->getContext().diagnose(
           DiagnosticInfoUnsupported(*Clone, kMsgPhantomArgRead, Where));
       plan.Cache[Key].ReturnTainted = false;
@@ -1090,7 +1114,9 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
     // `nullSafeSlot`'s allowlist — the only other way a dead parameter can still
     // have a use, see `isUnreadScalarSlot`) keeps the parameter as its operand; the
     // caller's neutralised `0` reaches it through the parameter, so the two value
-    // constraints a null can violate are stripped there too.
+    // constraints a null can violate are stripped there too — the CALL-SITE half
+    // matters (the inner callee's parameter, and so its `_unc` twin, was already
+    // stripped at the inner clone's own record, bd `vaep`).
     for (Argument &Arg : Clone->args())
       if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
         for (Use &U : make_early_inc_range(Arg.uses()))

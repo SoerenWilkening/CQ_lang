@@ -5,12 +5,12 @@
 ; `h2` never reading parameter 0, which carries a string attribute. The surviving `t` keeps
 ; `c` live for nothing — but `c` is not a handle, `main`'s operand there is classical, and a
 ; classical phantom read costs nothing (no rail, no spine), so the fence (which asks only the
-; clone's HANDLE parameters) must not fire. The CLONE stream is pinned (the ORACLE's,
-; byte-for-byte, measured); `main`'s is deliberately NOT, for `…_inst_live.ll`'s reason (bd
-; rhk5's pre-existing warned divergence from the twin). Fence without the handle-mask
+; clone's HANDLE parameters) must not fire. Both streams are pinned; `main`'s was not until bd
+; rhk5 landed, for `…_inst_live.ll`'s reason (rhk5's pre-existing warned divergence from the
+; twin), and it is now the twin's circuit (TRACE-EQUIV). Fence without the handle-mask
 ; conjunct → this file declines (mutant N5).
 ;
-; Twin (trace-compared, tools/pairs.py): `r = m + p` (cells/x_classical_instT.ll) — TRACE-DIFF on the ORACLE too (bd rhk5's shape).
+; Twin (trace-compared, tools/pairs.py): `r = m + p` (cells/x_classical_instT.ll) — TRACE-EQUIV (tools/trace_twin_equiv.py) since bd rhk5 landed; TRACE-DIFF (rhk5's warned shape) on `main` 9a230646.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -21,6 +21,43 @@
 ; names wildcarded, constants — every dropped `0` and every angle — kept). Between
 ; consecutive matches NO other runtime/clone call may appear, so the stream is pinned
 ; EXACTLY, not as a subsequence.
+; CHECK-LABEL: define {{.*}}@main(
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @atoi(ptr noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_mul_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 3)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @__cq_q_h_001(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_rz_i1(i32 %{{[a-zA-Z0-9_.]+}}, double 3.141590e+00), !cq.branchphase !0
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_xor_i32_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_mul_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 3)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 0x3FE6666666666666)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: ret 
 ; CLONE-LABEL: define {{.*}}@__cq_q_h_001(
 ; CLONE-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CLONE: call i32 @__cq_q_h2_010(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
@@ -34,10 +71,7 @@
 ; CLONE: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
 ; CLONE-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CLONE: ret 
-; CHECK-LABEL: define {{.*}}@main(
-; CHECK: call i32 @__cq_q_h_001(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
 ; NODROP-NOT: CQ_DEADARG_DBG
-; (stderr also carries 1 warning line(s) — the ORACLE's, see the header.)
 
 target datalayout = "e-m:o-p270:32:32-p271:32:32-p272:64:64-i64:64-i128:128-f80:128-n8:16:32:64-S128"
 target triple = "x86_64-apple-macosx16.0.0"

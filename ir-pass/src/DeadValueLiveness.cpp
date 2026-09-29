@@ -155,12 +155,18 @@ bool isUnreadScalarSlot(const CallBase &CB, unsigned ArgNo,
   return T->isIntegerTy() || T->isFloatingPointTy();
 }
 
+void stripParamValueConstraints(Function &F, unsigned ArgNo) {
+  if (ArgNo < F.arg_size())
+    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass})
+      F.removeParamAttr(ArgNo, K);
+}
+
 void stripUnreadSlotValueConstraints(CallBase &CB, unsigned ArgNo) {
-  if (Function *Callee = CB.getCalledFunction(); Callee && ArgNo < Callee->arg_size())
-    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
-      Callee->removeParamAttr(ArgNo, K);
+  if (Function *Callee = CB.getCalledFunction(); Callee && ArgNo < Callee->arg_size()) {
+    stripParamValueConstraints(*Callee, ArgNo);
+    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass})
       CB.removeParamAttr(ArgNo, K);
-    }
+  }
 }
 
 bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
@@ -208,7 +214,10 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint,
       //     was NOT the conservative direction: through `deadParamMask` it made
       //     the ENCLOSING clone's parameter LIVE one level up, the outer
       //     (null-safe) phantom slot was never neutralised, and bd `tzfa`'s wrong
-      //     unitary came back (r6 `sa1.ll`: a string attribute on the inner slot).
+      //     unitary came back (r6 `sa1.ll`: a string attribute on the inner slot)
+      //     — on `main` 9a230646; since bd rhk5 the phantom read is not a wrong
+      //     unitary any more (bd `test_C_libtooling-ur72`), and this clause is kept
+      //     as a strict improvement (no phantom operand, no over-warn).
       //   * in `SlotReads::Value` mode, EVERY unread scalar slot — the question
       //     "is the VALUE observed?", asked only by `buildClone`'s bd `nlfd` fence.
       // ⚠ bd `91k9` (round 5): a recorded-dead slot that is NOT null-safe keeps an
@@ -238,7 +247,10 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint,
 bool FunctionLiveness::isLive(const Value *V) const { return Live.count(V); }
 
 uint64_t deadParamMask(const Function &F, const TaintSet &taint, SlotReads Mode) {
-  FunctionLiveness L(F, taint, Mode);
+  return deadParamMask(F, FunctionLiveness(F, taint, Mode));
+}
+
+uint64_t deadParamMask(const Function &F, const FunctionLiveness &L) {
   uint64_t Mask = 0;
   for (const Argument &A : F.args())
     if (A.getArgNo() < 64 && !L.isLive(&A))

@@ -6,14 +6,18 @@
 ; clone's Bennett wrap copies it out AFTER the inner call — and on `main` 9a230646 the
 ; `musttail` marker cloned from `h` was then no longer followed by `ret`: the verifier ABORTED
 ; the whole run (exit 134, `musttail call must precede a ret`). `musttail` promises only the
-; tail-call lowering, so `stripStaleClassicalAttrs` now demotes it in every clone body (the
-; CLONE lines; the ORIGINAL `h`, a non-clone, keeps its `musttail` — the CHECK-NEXT line). The
-; trace is then byte-identical to the plain-`tail` spelling's on the ORACLE (measured). ⚠ That
-; trace is NOT the hand-inlined twin's: the clone call sits between `p = q * 3` and its phase
-; consumer — bd rhk5 (P1, warned, PRE-EXISTING), whose population this demotion GROWS by the
-; `musttail` spellings (previously exit 134) — so `main`'s stream is deliberately NOT pinned
-; here (a golden of a known-wrong stream would bless it, bd jlf8). See TRACK_NLFD_EV3M.md.
-; Remove the demotion and this file ABORTS again (mutant D1).
+; tail-call lowering (for every argument kind reachable from C; a `preallocated` forward is
+; declined earlier, `spec_reject_musttail_forward_preallocated.ll`), so `stripStaleClassicalAttrs`
+; now demotes it in every clone body (the CLONE lines; the ORIGINAL `h`, a non-clone, keeps its
+; `musttail` — the CHECK-NEXT line). ⚠ The one cause is code emitted after the call; round 1's
+; second reason ("the fp→i32 rewrite changes prototypes") was false on the reachable surface
+; (Rule-13 r1B F-r1B-4). The trace is byte-identical to the plain-`tail` spelling's. ⚠ Until
+; bd rhk5 landed (9ad22639) that trace was rhk5's warned wrong unitary (the clone call sits
+; between `p = q * 3` and its phase consumer) and `main`'s stream was deliberately NOT pinned
+; (bd jlf8); on the merged binary it is clean (0 warnings, 0 dirty, 2b STRICT) and the
+; hand-inlined twin's circuit, so it is pinned now (r1B F-r1B-5 — whose note that round 1's
+; "1 warning" comment would go stale was the retirement trigger). Remove the demotion and this
+; file ABORTS again (mutant D1).
 ;
 ; Caller TU (clang -O1 -include CQ.h):
 ;   #include <stdlib.h>
@@ -33,7 +37,7 @@
 ; -emit-llvm -S the caller with -I<repo>/include -include CQ.h, the library without it,
 ; then llvm-link -S caller.ll lib.ll.
 ;
-; Twin (trace-compared, tools/pairs.py): its plain-`tail` spelling `mtlN` (byte-identical traces, measured); the hand-inlined twin `mtlT` differs on BOTH (bd rhk5's shape).
+; Twin (trace-compared, tools/pairs.py): its plain-`tail` spelling `mtlN` (byte-identical traces) and the hand-inlined twin `mtlT` (TRACE-EQUIV, tools/trace_twin_equiv.py) — both measured on the binary merged with bd rhk5 9ad22639; the e2e pair `e2e-spec-musttail-clone-live-arg-twin-equivalent` links it.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -45,7 +49,42 @@
 ; consecutive matches NO other runtime/clone call may appear, so the stream is pinned
 ; EXACTLY, not as a subsequence.
 ; CHECK-LABEL: define {{.*}}@main(
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @atoi(ptr nocapture noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_alloc_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 5.000000e-01)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_mul_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 3)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @__cq_q_h_01(i32 noundef %{{[a-zA-Z0-9_.]+}}, i32 noundef %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_xor_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cq_template_icmp_eq_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_rz_i1(i32 %{{[a-zA-Z0-9_.]+}}, double 3.141590e+00), !cq.branchphase !10
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_icmp_eq_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 10)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_xor_i32_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cq_template_mul_i32_hl_unc(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}}, i32 3)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_free(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call void @cqrt_ry_i32(i32 %{{[a-zA-Z0-9_.]+}}, double 0x3FE6666666666666)
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
+; CHECK: ret 
 ; CHECK-LABEL: define {{.*}}@h(
 ; CHECK-NEXT: musttail call i32 @h2(
 ; CLONE-LABEL: define internal i32 @__cq_q_h_01(
@@ -54,7 +93,6 @@
 ; CLONE-NOT: musttail
 ; CLONE: ret i32
 ; NODROP-NOT: CQ_DEADARG_DBG
-; (stderr also carries 1 warning line(s) — the ORACLE's, see the header.)
 
 ; ModuleID = 'llvm-link'
 source_filename = "llvm-link"

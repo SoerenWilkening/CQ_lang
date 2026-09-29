@@ -6,12 +6,21 @@
 ; flatten). The inner slot's operand is an INSTRUCTION: it cannot be deleted while the call
 ; uses it, and the rewrite may not null the slot, so `%t` survives and keeps `h`'s HANDLE
 ; parameter live — while nothing observes `%t`'s value (`SlotReads::Value` calls the
-; parameter dead). Both accepts are wrong: keeping `main`'s slot is bd tzfa's phantom read
-; (what the ORACLE does: exit 0, a warning, `p`'s rail dirty across the Ry — TRACE-DIFF vs
-; the twin), and neutralising it would lower `t = a * 5` on runtime handle 0 (bd sqjq). The
-; hand-inlined twin (`r = m + 1`) ACCEPTS: this is a knowing over-decline of an IR-only shape
-; (clang-19 -O1 emits only allowlisted attributes on an int parameter). Retirement trigger:
-; the day `nullSafeSlot` admits string/unknown attributes, this module accepts.
+; parameter dead). On `main` 9a230646, for THIS caller operand (a DERIVED `p = q * 3`), both
+; accepts were wrong: keeping `main`'s slot was bd tzfa's phantom read (exit 0, a warning, `p`'s
+; rail dirty across the Ry — TRACE-DIFF vs the twin), and neutralising it would lower
+; `t = a * 5` on runtime handle 0 (bd sqjq); for a `cq_theta` SOURCE operand the keep-the-slot
+; accept already was the twin's unitary (Rule-13 r1A F-r1A-2, bd test_C_libtooling-w109).
+; ⚠ SINCE bd rhk5 (9ad22639) THE KEEP-THE-SLOT ACCEPT IS CORRECT HERE TOO (bd
+; test_C_libtooling-ur72, measured on `main` ba4fdad4): the spine discharges `p` although the
+; clone call reads it, and the stream is the twin's plus an identity compute/uncompute pair on a
+; scratch rail (2b STRICT, 0 dirty). So this file now pins an IR-only OVER-DECLINE of a program
+; `main` compiles correctly, kept pending the owner's decision on bd ur72. The hand-inlined twin
+; (`r = m + 1`) ACCEPTS: a knowing over-decline
+; of an IR-only shape (clang-19 -O1 emits only allowlisted attributes on an int/fp parameter
+; that CAN BE RECORDED DEAD — it infers `returned` on a returned, hence live, one; r1A
+; F-r1A-3). Retirement trigger: the day `nullSafeSlot` admits string/unknown attributes (owner
+; question bd test_C_libtooling-uyhx), this module accepts.
 ;
 ; RUN: env CQ_DEADARG_DBG=1 not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o /dev/null 2>&1 \
 ; RUN:   | %filecheck %s

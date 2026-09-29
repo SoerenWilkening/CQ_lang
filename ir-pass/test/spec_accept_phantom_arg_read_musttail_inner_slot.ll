@@ -20,9 +20,17 @@
 ; built — this file went RED on its NODROP and CLONE lines while its C spelling (the e2e pair
 ; `e2e-spec-dropped-arg-musttail-inner-twin-identical`) stayed green for the TWIN's reason. `h2`
 ; now reads `a` in a BRANCH-ONLY empty diamond (IR-only: `-O1` folds one away), which the drop
-; sees as a live read and only the CLONE's flatten kills, so the in-clone `musttail` slot is
-; still the subject. The same track (commit C) demotes a clone's `musttail` to a plain call
-; (`stripStaleClassicalAttrs`); the CLONE line matches either spelling.;
+; sees as a live read and only the CLONE's flatten kills. ⚠ CORRECTED in round 2 (Rule-13 r1B
+; F-r1B-3): round 1 wrote here that "the in-clone `musttail` slot is still the subject" — FALSE.
+; The same track's commit C demotes a clone's `musttail` in `cloneFor` (`stripStaleClassicalAttrs`,
+; the first statement of `buildClone`), BEFORE any record or liveness question is asked, so from
+; commit C on NO slot question is ever asked of a `musttail` call inside a clone: the w7nm
+; mechanism is retired twice (commit B removed the drop's refusal, commit C the marker). What this
+; file still pins is the GENERIC inner-slot neutralisation (`h2`'s clone records slot 0 dead, `h`'s
+; clone passes `0` into its now-PLAIN inner call, `main` passes `0`) — worth keeping, but not the
+; subject it was written for. The demotion itself is pinned by
+; `spec_accept_musttail_in_clone_demoted{,_inalloca}.ll` and the e2e slices
+; `e2e-slice-spec-musttail-{clone-live-arg,clone-partial-drop}` (linked, twin-equivalent).;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll

@@ -124,10 +124,15 @@ bool isRecordedDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 //     `deadParamMask`: a recorded-dead inner slot that is not null-safe made the
 //     enclosing clone's parameter LIVE, the outer (null-safe) phantom slot was
 //     never neutralised, and bd `tzfa`'s wrong unitary was back (r6 `sa1.ll`: a
-//     string attribute on the inner slot; exit 0, warned, the ORACLE's stream).
-//     Since bd `nlfd` an ARGUMENT in an unread scalar slot is not a read, and an
-//     INSTRUCTION there that keeps a HANDLE parameter alive declines in
-//     `buildClone` (see `isUnreadScalarSlot`).
+//     string attribute on the inner slot; exit 0, warned, the stream of `main`
+//     9a230646). Since bd `nlfd` an ARGUMENT in an unread scalar slot is not a read,
+//     and an INSTRUCTION there that keeps a HANDLE parameter alive declines in
+//     `buildClone` (see `isUnreadScalarSlot`). ⚠ Since bd rhk5 (9ad22639) the phantom
+//     read itself is no longer a wrong unitary (the spine discharges a rail a clone
+//     call only reads): sa1 is twin-identical on `main` ba4fdad4 WITHOUT this rule,
+//     and the `buildClone` decline is an IR-only over-decline (bd
+//     `test_C_libtooling-ur72`). The Argument clause stays a strict improvement (no
+//     phantom operand, no lyyf over-warn).
 //   * M-A (`cloneArgReachesResult`): NOT conservative — its one caller,
 //     `reachesObservingSink`, is the clause-3 EXEMPTION walk, where a hop EXEMPTS
 //     a record. It is UNREACHABLE today: M-A gates are rotations, which occur only
@@ -149,10 +154,21 @@ bool isRewritableDeadSlot(const llvm::CallBase &CB, unsigned ArgNo,
 // THE CALL — never this). It is the premise LLVM's own DAE rests on when it puts
 // `poison` in a dead slot whatever the slot's other attributes; the only way a value
 // here can still matter is a VALUE CONSTRAINT on the slot (`noundef`: a real value
-// never violates it; `range`/`nofpclass`: stripped by
-// `stripUnreadSlotValueConstraints` wherever a null can now arrive). `returned` and
-// `allocalign` cannot bite: clones carry no `returned` (`stripStaleClassicalAttrs`)
-// and never return a pointer (SpecializeReject's ABI-return clause).
+// never violates it; `range`/`nofpclass`: stripped — from every recorded-dead
+// PARAMETER of a clone at its own record, `stripParamValueConstraints`, which every
+// later `_unc` twin inherits, and from each CALL SITE a null reaches,
+// `stripUnreadSlotValueConstraints`). `returned` and `allocalign` cannot bite:
+// clones carry no `returned` (`stripStaleClassicalAttrs`) and never return a pointer
+// (SpecializeReject's ABI-return clause).
+// ⚠ bd `test_C_libtooling-vaep` (Rule-13 r1A F-r1A-1, P2): round 1 said the call-site
+// strip reached "wherever a null can now arrive" — FALSE: the inner clone's `_unc`
+// TWIN is synthesised (`ensureTwin`) inside the ENCLOSING clone's inner-call loop,
+// BEFORE that clone's record and strip, and copies the forward clone's parameter
+// attributes; the Bennett wrap's reverse then passed the neutralised `0` into a
+// `noundef range(…)` / `nofpclass(zero)` twin parameter (LLVM-level UB, latent,
+// IR-only). The same gap stood since bd vsfp for NULL-SAFE slots (the module-level
+// rewrite strips the clone's parameter after its twin exists). The strip at the
+// clone's own record closes both: no twin of a clone exists before its record.
 // ⚠ It is NOT a licence to WRITE a constant there — that is `nullSafeSlot`'s
 // question, whose attribute allowlist is a POLICY (the drop leaves a string or
 // unknown attribute alone). Its two uses are the liveness call-slot rule (an
@@ -162,10 +178,19 @@ bool isUnreadScalarSlot(const llvm::CallBase &CB, unsigned ArgNo,
                         const TaintSet &taint);
 
 // Strip the two VALUE CONSTRAINTS a null can violate — `range` and `nofpclass` —
-// from parameter `ArgNo` of `CB`'s callee and from the call site's slot. Part of the
-// one rewrite (`rewriteRecordedDeadSlotUse`), and asked on its own by `buildClone`
-// for an unread scalar slot whose operand is a parameter the record calls dead: the
-// caller's neutralised `0` arrives there through that parameter (bd `nlfd`).
+// from parameter `ArgNo` of `F` (bd `vaep`). `buildClone` asks it for every
+// parameter its record calls dead, at the record — before any `_unc` twin of the
+// clone exists, so every twin inherits the stripped set. Removing a constraint from
+// a parameter nothing reads is always sound (a weakening).
+void stripParamValueConstraints(llvm::Function &F, unsigned ArgNo);
+
+// The same strip on parameter `ArgNo` of `CB`'s callee (`stripParamValueConstraints`)
+// AND on the call site's slot. Part of the one rewrite (`rewriteRecordedDeadSlotUse`),
+// and asked on its own by `buildClone` for an unread scalar slot whose operand is a
+// parameter the record calls dead: the caller's neutralised `0` arrives there
+// through that parameter (bd `nlfd`). ⚠ It reaches the FORWARD callee and this call
+// site only, never a `_unc` twin of the callee that already exists — that is what
+// the record-time strip above is for (bd `vaep`).
 void stripUnreadSlotValueConstraints(llvm::CallBase &CB, unsigned ArgNo);
 
 // THE ONE REWRITE of a recorded-dead slot (bd vsfp round 4; Rule 14 — three sites
@@ -220,6 +245,9 @@ private:
 // Parameters at index ≥ 64 are reported LIVE (never droppable, never "phantom").
 uint64_t deadParamMask(const llvm::Function &F, const TaintSet &taint,
                        SlotReads Mode = SlotReads::Existence);
+// The same mask from an already-computed liveness of `F` (so a caller that also
+// needs the liveness itself — `buildClone`'s fence — computes it once).
+uint64_t deadParamMask(const llvm::Function &F, const FunctionLiveness &L);
 
 // Delete the DEAD part of the backward cone of `Seeds` in `F`: every dead
 // instruction reachable from a seed through operands of dead instructions, closed
