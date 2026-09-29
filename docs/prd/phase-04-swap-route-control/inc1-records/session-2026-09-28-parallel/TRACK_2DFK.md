@@ -120,7 +120,16 @@ stage 1 uncached; **its selftest's B1 re-runs the whole gate**.
 `tools/cq_stage_cache.py` (python API + configure-time `run-base`) and
 `tests/e2e/stage_cache.sh` (the bash spelling, byte-identical key text).
 
-| stage | cached? | key |
+> ⚠ **CORRECTED in round 2 (bd `ffm0`, Rule-13 r1 F-r1-1 — L7, at the source).**
+> The table below is the stage-2 FIRST version and it was WRONG about the command:
+> the stage-1 row's "flags" was true of the python spelling only — both bash
+> runners keyed their flags only through CMake's duplicate flag string, and the
+> lib TUs through a constant TAG — and no row keyed the stage-3 command. A harness
+> edit that must fail was therefore replayed warm. Read the ROUND 2 section below
+> for the key as it is now (harness digest + literal flags + clang bytes + env in
+> every key).
+
+| stage | cached? | key (FIRST VERSION — superseded, see round 2) |
 |---|---|---|
 | 1 clang -O1 | yes (run_slice already; now also run_slice_multi's TUs, the loop matrix's generated sources, the railbank / register sources) | CQ_S1_BASE + flags + source PATH + source bytes (generated sources are written to a content-addressed path first) |
 | **2 cq-opt** | **NEVER** — the pass under test | — |
@@ -394,13 +403,18 @@ and everything after them) with:**
 > the pass under test) → free-pairing check (2b) → link (3) → run (4) → compare.
 > Stages 1, 2b, 3 and 4 are pure functions of their input bytes and are
 > CONTENT-ADDRESSED (`tools/cq_stage_cache.py`, `tests/e2e/stage_cache.sh`;
-> `build/tests/e2e/{.s1cache,.runcache}`): a previous SUCCESS of the same lowered
-> module against the same archives and toolchain is replayed. **Stage 2 and every
-> comparison — trace vs golden, rolled vs unrolled, verdict vs table — run every
-> time.** `CQ_E2E_NO_CACHE=1` switches every cache off; `e2e-stage-cache-selftest`
-> makes it fail on purpose. Measured 2026-09-29 (bd `2dfk`): FAST tier 521 s →
-> 145 s warm (378 s cold); a warm slice 0.25 s; HEAVY tier 409 s cold, 57 s warm
-> (loop twin matrix 568 s → 26 s at `--jobs 4`); the fast tier's wall is now
+> `build/tests/e2e/{.s1cache,.runcache}`): a previous SUCCESS of the same input,
+> under the same COMMAND, against the same archives, clang, SDK and toolchain is
+> replayed. **Every key carries the command** — a digest of the harness files
+> themselves and the literal flag arrays — so **any edit to `run_slice*.sh`,
+> `stage_cache.sh` or `tools/cq_stage_cache.py` invalidates the whole cache** (bd
+> `ffm0`: the first version keyed inputs only, and a harness edit that must fail
+> passed warm). **Stage 2 and every comparison — trace vs golden, rolled vs
+> unrolled, verdict vs table — run every time.** `CQ_E2E_NO_CACHE=1` switches
+> every cache off; `e2e-stage-cache-selftest` makes it fail on purpose, one row per
+> key component. Measured 2026-09-29 (bd `2dfk`): FULL suite 620 s cold / 216 s
+> warm; FAST tier 332 s with every cache off / 190 s warm, identical pass/fail on
+> all 561 entries; loop twin matrix 568 s → 26 s warm; the fast tier's wall is now
 > `ir-pass-lit`, the heavy tier's `taintset-scrub-guard-selftest`. Quote loads with
 > every figure — contention causes false FAILURES, never false passes; re-run a
 > `-j` red serially before calling it a regression.
@@ -539,3 +553,56 @@ at another path hits — HD is content, not path), parity rows (python run key =
 bash entry; ENVD with every variable set), and direct key-function probes for the two
 components no end-to-end edit can move alone (the stage-3 flag array — its only
 spelling is inside HD-covered files — and the CR guard).
+
+### Round-2 measurements (`bbce5793` + `7acf3583`; `cq-opt` `45c895c2f50757a63f583889`, unchanged)
+
+- **`e2e-stage-cache-selftest`: 66/66**, 15–17 s at load ~1–5, with AND without an
+  ambient `CQ_E2E_NO_CACHE=1`. ⚠ **L10 on my own instrument, again**: the first
+  round-2 version passed alone but went RED inside `CQ_E2E_NO_CACHE=1 ctest` — its
+  two bash key-function probes (CR, stage-3 flags) inherited the ambient off switch,
+  which correctly produced no key. Every row now runs with an explicit environment
+  (`7acf3583`); the two mutants those probes own re-checked CAUGHT.
+- **Meta-mutation** (`2dfk_probes/meta_mut_r2.py`, output `meta_mut_r2.out`): **36
+  key components**, each deleted one at a time from BOTH spellings where both exist
+  (so the parity row cannot catch it by construction), each checked PLANTED —
+  **36 CAUGHT, 0 MISSED, 0 NOT PLANTED**, null green, files restored byte-identical.
+  Covers r1's six MISSED (templates, wrapper, CQ_RUN_BASE, checker bytes, checker
+  flags, S1 source bytes) plus HD (in every key and per file), clang, env, flags,
+  path, argv, s2d, runtime, interpreter, the CR guard. r1's own `meta_mut_r1.sh`
+  patterns target the old key lines and would now plant nothing; this set subsumes
+  them.
+- **r1's repro, re-spelled for the new code** (`2dfk_probes/repro_F1_r2.sh`, every
+  edit checked PLANTED; output `repro_F1_r2.out`), warm vs `CQ_E2E_NO_CACHE=1`:
+  (a) C18 tripwire 5/5 red **warm** = 5/5 red no-cache; (b) stage-3 `-O2` 5/5 = 5/5;
+  (c) lib TUs `-O0` 4/5 = 4/5; (d) run_slice.sh stage-1 `-O0` 2/2 = 2/2; restored →
+  12/12 green warm. **Before the fix (r1): (a) 5/5 PASS warm, (b) 5/5 PASS warm.**
+- **Fast tier, same committed tree, every cache OFF vs WARM**: `CQ_E2E_NO_CACHE=1
+  ctest -LE heavy -j6` **561/561 in 332 s** (load 4→7) vs warm **561/561 in 190 s**
+  (load 7→203: another agent's run started mid-way); `cmp_junit.py`: same 561 names,
+  **0 tests whose pass/fail differs**. (An earlier no-cache run showed 560/561, the
+  one red being `code_map_drift` from my own UNCOMMITTED selftest edit — tree state,
+  not the cache; re-run after committing.)
+- **Full suite** (caches cleared: every key changed): **cold 571/571 in 620 s** (load
+  2→5); **warm 571/571 in 216 s** (load 4→169, other agents started mid-run).
+
+### ATTACK FIRST — round 2
+
+1. **HD's file list is closed by hand.** It names the four files a cached command
+   is written in today. A NEW file that a runner sources or execs (a second helper,
+   a python module `cq_stage_cache.py` imports) must be added to BOTH spellings'
+   lists; nothing enforces it. Try adding a sourced helper and editing it.
+2. **Python callers' own bytes are not in HD** (`loop_twin_matrix.py`,
+   `run_railbank_dynamic_matrix.py`, `railbank_register_twin_gate.py`): argued
+   unnecessary because every cached operation runs inside `cq_stage_cache.py` with
+   its command fully in explicit arguments (flags, argv) that ARE keyed. Attack: find
+   a caller-side transform of a cached input or output that the key does not see.
+3. **ENVD's variable list** is a policy, not a proof: a variable that steers clang
+   and is not listed (e.g. `CLANG_*`, `TMPDIR` for `-save-temps` — none used) is
+   unkeyed. `DYLD_*` are unreachable in the bash spelling by SIP (measured).
+4. **`CQ_S1_BASE`/`CQ_RUN_BASE` are still configure-time** (declared): an SDK or
+   clang dylib update without reconfigure is served stale; the clang DRIVER bytes
+   are per-run.
+5. **Equivalent-mutant boundary**: the stage-3 flag arrays are literals inside
+   HD-covered files; their key component is observable only through the direct
+   key-function probe and the python run-time override (rows S3). A reviewer who
+   finds a cheaper observable spelling should say so.
