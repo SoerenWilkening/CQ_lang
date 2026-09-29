@@ -1,0 +1,8 @@
+Mutants (private worktree at 7f0be42f; build-null control: rebuilt cq-opt = 02522b6a4fdb8911eafe965e, bit-identical to the subject)
+All edits in ir-pass/src/TaintPropagation.cpp (LaterTaintOracle), cq-opt target only.
+N0  null   : mayGain() opens with `if (T.SpecPredictGeneration > 4000000000u) return true;`   cq-opt c0a42303ef3453d76b1fa6a5
+MA  R6     : walk(): `if (false && G && !G->isDeclaration() && calleeMayYieldQuantum(G)) return true;`  cq-opt 2636bfb0749c1e1e3e6376c4
+MB  idom   : φ-decider walk: `WL.append(pred_begin(X), pred_end(X));` -> `(void)0;` (direct preds + M's own terminator only)  cq-opt 2b56e31c0ef0f3e48fcec91a
+COMP       : subject 7f0be42f + `git merge --no-commit 369c61b9` (bd z0re; CODE_MAP.md conflict taken --ours) cq-opt 6a77a6c96cc973e89d45ef6e
+Lit subset: cepm_probes/subset.py (486 fixtures calling a module-defined function), run with cepm_probes/fixrun.py (4 workers).
+Results: base 481 PASS + 5 SKIP; N0/MA/MB each 0 movers vs base (fx_*.txt).

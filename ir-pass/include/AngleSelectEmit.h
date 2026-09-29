@@ -6,10 +6,24 @@
 // (via `SelectClassify`'s gate 3). Runs AFTER detection and BEFORE
 // `lowerRotations`, exactly like every other Phase-4 emitter.
 //
-// THE INPUT, which is what `clang -O1` makes of the C the user actually writes
-// (`if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);` — SimplifyCFG
-// merges the two arms into ONE call with a `select` on the ANGLE, so the branch
-// CFG is gone before the pass ever runs, Rule 9):
+// THE INPUT, which is what `clang -O1` makes of the C the user writes — and WHICH
+// C that is CHANGED on 2026-09-28 (bd test_C_libtooling-fmt3, owner ruling,
+// option B), so read both halves:
+//   * Ry STEM (`cq_theta`): `include/CQ.h` puts `nomerge` on every `cq_theta_*`,
+//     so the if/else `if (q == 5) r = cq_theta(r, A); else r = cq_theta(r, B);`
+//     is NO LONGER merged into one call — it stays an if/else and lowers through
+//     the in-place Ry arm (two controlled Ry, the same unitary). The C spelling
+//     that reaches THIS emitter is the select written out:
+//     `r = cq_theta(r, (q == 5) ? A : B);` — measured to hand the pass the same
+//     function bodies the old fold did (`slice_control_angle_select_ry*_ternary.c`,
+//     whose goldens are the pre-fmt3 ones byte for byte). Hand IR reaches it as
+//     before (the `control_angle_select_*.ll` fixtures).
+//   * Rz STEM (`cq_phi`): unchanged — `cq_phi` carries no `nomerge`, so
+//     `if (c) cq_phi(A); else cq_phi(B);` is still merged into ONE call with a
+//     `select` on the ANGLE and the branch CFG is gone before the pass runs
+//     (Rule 9).
+// The sentence that stood here said the Ry-stem if/else is ALWAYS merged; since
+// fmt3 that is false, and it is corrected here rather than only in a record (L7).
 //
 //     %c = icmp eq i32 %q, 5
 //     %a = select i1 %c, double A, double B            ; A, B CLASSICAL

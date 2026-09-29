@@ -1,0 +1,60 @@
+== base
+shasum: /tmp/mp.55485.ll: No such file or directory
+r2b   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+shasum: /tmp/mp.55485.ll: No such file or directory
+r2d   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+z3    rc=0 5078910830de 
+r6a   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac
+r6b   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use
+st2   rc=0 5b257b828a1c 
+xf    rc=0 34b3464770e5 
+xg    rc=0 915f4f222bc0 
+ry    rc=0 481524f1f915 
+lq2   rc=0 90c23b432eef 
+br    rc=0 9ca67ffa5c69 
+cp    rc=1 9ca67ffa5c69 <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do
+== N0
+shasum: /tmp/mp.55875.ll: No such file or directory
+r2b   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+shasum: /tmp/mp.55875.ll: No such file or directory
+r2d   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+z3    rc=0 5078910830de 
+r6a   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac
+r6b   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use
+st2   rc=0 5b257b828a1c 
+xf    rc=0 34b3464770e5 
+xg    rc=0 915f4f222bc0 
+ry    rc=0 481524f1f915 
+lq2   rc=0 90c23b432eef 
+br    rc=0 9ca67ffa5c69 
+cp    rc=1 9ca67ffa5c69 <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do
+== MA
+shasum: /tmp/mp.56195.ll: No such file or directory
+r2b   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+shasum: /tmp/mp.56195.ll: No such file or directory
+r2d   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+z3    rc=0 5078910830de 
+r6a   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac
+r6b   rc=0 bf77cf527533 
+st2   rc=0 5b257b828a1c 
+xf    rc=0 34b3464770e5 
+xg    rc=0 915f4f222bc0 
+ry    rc=0 481524f1f915 
+lq2   rc=0 90c23b432eef 
+br    rc=0 9ca67ffa5c69 
+cp    rc=1 9ca67ffa5c69 <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do
+== MB
+shasum: /tmp/mp.55483.ll: No such file or directory
+r2b   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+shasum: /tmp/mp.55483.ll: No such file or directory
+r2d   rc=1  <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under
+z3    rc=0 5078910830de 
+r6a   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned ac
+r6b   rc=1 5078910830de <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result use
+st2   rc=0 5b257b828a1c 
+xf    rc=0 34b3464770e5 
+xg    rc=0 915f4f222bc0 
+ry    rc=0 481524f1f915 
+lq2   rc=0 90c23b432eef 
+br    rc=0 9ca67ffa5c69 
+cp    rc=1 9ca67ffa5c69 <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: state prep seed do

@@ -1,0 +1,19 @@
+loop_twin_matrix [--phi-surface void]: 382 cells — 185 ACCEPT-IDENTICAL, 74 DECLINE, 123 other; 70 quarantined (pinned signatures), 4 boundary controls
+    ACCEPT-IDENTICAL                   184
+    ACCEPT-IDENTICAL-WARN              1
+    DECLINE-BOTH                       37
+    DECLINE-BOTH-DIFFERENT             37
+    ROLLED-ONLY                        7
+    TRACE-DIVERGENCE                   70
+    UNROLLED-ONLY                      46
+    control q_armoncond                TRACE-DIVERGENCE
+    control q_nestinline               ACCEPT-IDENTICAL
+    control q_nestinlineplain          ACCEPT-IDENTICAL
+    control q_noregion                 ACCEPT-IDENTICAL
+
+FAILED (1):
+m_none_rifelse_none_none_none: verdict changed
+    expected: DECLINE-BOTH-DIFFERENT	cq controlled lowering: control flow inside a loop body under quantum control	cq controlled lowering: rotation angle under quantum control
+    got     : ACCEPT-IDENTICAL
+
+rc=1

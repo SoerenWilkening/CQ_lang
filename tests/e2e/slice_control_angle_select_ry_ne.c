@@ -1,6 +1,20 @@
 /* slice_control_angle_select_ry_ne.c — the `!=` POLARITY of the angle select,
    at the LINK layer (bd test_C_libtooling-drbq Increment 2b).
 
+   ⚠⚠ SINCE bd test_C_libtooling-fmt3 (2026-09-28) THIS FILE NO LONGER REACHES THE
+   ANGLE SELECT; the text below about the select is HISTORY. With `nomerge` on
+   `cq_theta_*` (CQ.h) the if/else stays an if/else, `-O1` still canonicalises
+   the compare to `icmp eq q, 5` (so the TRUE successor is the ELSE arm), and it
+   lowers through the in-place Ry arm's if/else form:
+       f = (q == 5); cRy(f, r, 0.3); X f; cRy(f, r, 0.9); X f; strip; free
+   — the SAME unitary (q == 5: Ry(0.3); q != 5: Ry(0.9)). There IS now a `cqrt_x`
+   pair in the trace, on the compare ANCILLA only, self-inverse, so the flag is
+   back to its value at the strip; the "no `cqrt_x` anywhere" assertion below
+   belongs to the select form, which moved (golden byte for byte) to
+   `slice_control_angle_select_ry_ne_ternary.c` together with
+   `e2e-angle-select-ry-ne-twin-identical`. Golden REGENERATED deliberately,
+   STRICT 2b: 2 verified, 0 violation.
+
        if (q != 5) r = cq_theta(r, 0.9); else r = cq_theta(r, 0.3);
 
    `clang -O1` canonicalizes `q != 5` to `icmp eq i32 %q, 5` and then SWAPS the

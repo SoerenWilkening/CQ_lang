@@ -15,12 +15,14 @@
 ; the class (n12/n13: the rotated register need not even be the erased compare's
 ; operand), so no question the pass can ask of this IR separates the two readings.
 ;
-; THE DISPOSITION IS AT THE SOURCE LEVEL: bd fmt3 OPTION B (owner ruling 2026-09-28)
-; puts `__attribute__((nomerge))` on the `cq_theta_*` declarations in `CQ.h`, so
-; `-O1` can no longer merge the two thetas; the inner branch then survives to reach
-; F2. That track lands AFTER z0re; until it does, the C spelling above still folds to
-; this module and still accepts — the known window, whose LITERAL-seed members
-; accept on the oracle today (bd fmt3's own population).
+; THE DISPOSITION IS AT THE SOURCE LEVEL: bd fmt3 OPTION B (owner ruling 2026-09-28,
+; LANDED after z0re on 2026-09-29) puts `__attribute__((nomerge))` on the `cq_theta_*`
+; declarations in `CQ.h`, so `-O1` can no longer merge two DIRECT calls; the inner
+; branch survives and the C spelling now declines `nested control flow` (measured,
+; fmt3 r1A `nm_a*` and the implementer's `zt_a*`). ⚠ ONLY DIRECT CALLS: clang puts
+; `nomerge` on the call SITE, so the same source through a FUNCTION POINTER still folds
+; to this module and still accepts (r1A `fpzt_a1`, on the composed binary — bd `4e4p`,
+; P1, PRE-EXISTING). This file pins the legitimate program's lowering either way.
 ;
 ; On the ORACLE (main 9a230646) this module DECLINES at F1's literal-only clause.
 ; RETIREMENT TRIGGER (L8): none for this file — it pins the legitimate program's

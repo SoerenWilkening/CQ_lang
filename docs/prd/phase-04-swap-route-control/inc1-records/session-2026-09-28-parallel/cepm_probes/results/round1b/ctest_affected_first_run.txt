@@ -1,0 +1,208 @@
+Test project $W/build
+      Start  16: taintset-scrub-guard-selftest
+      Start  18: cq-opt-equivalence
+ 1/53 Test  #18: cq-opt-equivalence ....................................   Passed   56.77 sec
+      Start  15: taintset-scrub-guard
+ 2/53 Test  #15: taintset-scrub-guard ..................................***Failed   32.39 sec
+taintset_scrub_guard: self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+taintset_scrub_guard: 59 TaintSet members walked (compiler: /usr/bin/c++, flags from $W/build/compile_commands.json, PCH ok), 1 problem(s), 2 allowlisted
+
+      Start 233: e2e-slice-spec-predicted-classical-round2
+ 3/53 Test #233: e2e-slice-spec-predicted-classical-round2 .............   Passed   12.28 sec
+      Start 230: e2e-slice-spec-predicted-classical-branch
+ 4/53 Test #230: e2e-slice-spec-predicted-classical-branch .............   Passed   11.23 sec
+      Start 234: e2e-slice-spec-predicted-classical-round2-twin
+ 5/53 Test #234: e2e-slice-spec-predicted-classical-round2-twin ........   Passed   13.19 sec
+      Start 231: e2e-slice-spec-predicted-classical-branch-twin
+ 6/53 Test #231: e2e-slice-spec-predicted-classical-branch-twin ........   Passed    9.27 sec
+      Start 246: e2e-slice-specialize-multiexit-fp80
+ 7/53 Test #246: e2e-slice-specialize-multiexit-fp80 ...................   Passed    6.35 sec
+      Start 260: e2e-slice-control-spec-chained-ctl
+ 8/53 Test #260: e2e-slice-control-spec-chained-ctl ....................   Passed    8.28 sec
+      Start 258: e2e-slice-control-spec-replan
+ 9/53 Test #258: e2e-slice-control-spec-replan .........................   Passed   10.10 sec
+      Start 259: e2e-slice-control-spec-newcand
+10/53 Test #259: e2e-slice-control-spec-newcand ........................   Passed    8.44 sec
+      Start 244: e2e-slice-spec-dropped-arg-musttail-inner-twin
+11/53 Test #244: e2e-slice-spec-dropped-arg-musttail-inner-twin ........   Passed    2.97 sec
+      Start 248: e2e-slice-specialize-fp-select-const
+12/53 Test #248: e2e-slice-specialize-fp-select-const ..................   Passed    5.67 sec
+      Start 255: e2e-slice-specialize-transitive
+13/53 Test #255: e2e-slice-specialize-transitive .......................   Passed    6.53 sec
+      Start 249: e2e-slice-specialize-fp-select-fcmp
+14/53 Test  #16: taintset-scrub-guard-selftest .........................***Failed  184.85 sec
+  BAD PCH equivalence control: without PCH 59 members / 1 problems, with PCH 59 / 1 (PCH ok)
+  BAD PROBLEMS                     NULL: pristine tree   [59 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  BAD PROBLEMS                     NULL: pristine + the mutants' extra includes   [59 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  BAD PROBLEMS                     NULL: a CLEAN project class template (T only) held by value   [62 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  BAD PROBLEMS                     NULL: a CLEAN NESTED TaintSet record held by an unqualified pointer (lookup resolves it)   [60 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  BAD PROBLEMS                     NULL: a CLEAN project record held by pointer   [62 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  BAD PROBLEMS                     CONFIG: a raw member under `#ifndef NDEBUG` is invisible in a Release build (the gate checks the CONFIGURED build)   [59 members]
+        self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)
+  ok  KILLED (right reason)        self: raw SmallPtrSet member   [60 members]
+  ok  KILLED (right reason)        self: raw pointer field   [60 members]
+  ok  KILLED (right reason)        self: stale allowlist   [59 members]
+  ok  KILLED (right reason)        self: allowlist keyed by a bare name does not exempt   [59 members]
+  ok  KILLED (right reason)        self: unexercised wrapped member   [60 members]
+  ok  KILLED (right reason)        self: raw revert of Tainted   [59 members]
+  ok  KILLED (right reason)        self: raw field in a nested record   [60 members]
+  ok  KILLED (right reason)        self: foreign record list (not allowlisted)   [78 members]
+  ok  KILLED (right reason)        self/M11: TaintedValueSet retargeted to a raw std::set   [59 members]
+  ok  KILLED (right reason)        self: ScrubMap retargeted to a raw DenseMap   [59 members]
+  ok  KILLED (right reason)        self: d88e's raw LiftedMergePhi::F restored (F-EB-1)   [59 members]
+  ok  KILLED (right reason)        self: AssertingVH for F (a bare pointer here)   [60 members]
+  ok  KILLED (right reason)        self: a header that does not compile fails closed   [0 members]
+  ok  KILLED (right reason)        r1A llvm::SmallSet<Value*>   [60 members]
+  ok  KILLED (right reason)        r1A std::multiset<Value*>   [60 members]
+  ok  KILLED (right reason)        r1A std::array<Value*,4>   [60 members]
+  ok  KILLED (right reason)        r1A std::optional<Value*>   [60 members]
+  ok  KILLED (right reason)        r1A llvm::StringMap<Value*>   [60 members]
+  ok  KILLED (right reason)        r1A std::pair<Value*,int> by value   [60 members]
+  ok  KILLED (right reason)        r1A lowercase ptr typedef in container   [60 members]
+  ok  KILLED (right reason)        r1A template alias container   [60 members]
+  ok  KILLED (right reason)        r1A by-value foreign record   [78 members]
+  ok  KILLED (right reason)        r1A default init with parens   [60 members]
+  ok  KILLED (right reason)        r1A alignas member   [60 members]
+  ok  KILLED (right reason)        r1A raw ptr, brace-init   [60 members]
+  ok  KILLED (right reason)        r1A brace-init raw DenseMap (X{})   [60 members]
+  ok  KILLED (right reason)        r1A brace-init raw SmallPtrSet (X{})   [60 members]
+  ok  KILLED (right reason)        r1A unique_ptr to raw map   [60 members]
+  ok  KILLED (right reason)        r1B G1 brace-initialized std::set<Value*>   [60 members]
+  ok  KILLED (right reason)        r1B G2 llvm::SmallSet<Value*,8>   [60 members]
+  ok  KILLED (right reason)        r1B G3 alias declared outside TaintSet   [60 members]
+  ok  KILLED (right reason)        r1B G4 typedef inside TaintSet   [60 members]
+  ok  KILLED (right reason)        r1B G5 macro-spelled type   [60 members]
+  ok  KILLED (right reason)        r1B G6 parenthesised template arg   [60 members]
+  ok  KILLED (right reason)        r1B G7 std::unordered_map<const Value*,..>   [60 members]
+  ok  KILLED (right reason)        r1B G8 SmallDenseMap   [60 members]
+  ok  KILLED (right reason)        r1B G9 MapVector   [60 members]
+  ok  KILLED (right reason)        r1B G10 pointer in a pair KEY   [60 members]
+  ok  KILLED (right reason)        r1B G11 std::array<Value*,4>   [60 members]
+  ok  KILLED (right reason)        r1B G12 std::optional<Instruction*>   [60 members]
+  ok  KILLED (right reason)        r1B G13 std::pair<Value*,unsigned> field   [60 members]
+  ok  KILLED (right reason)        r1B G14 StringMap<Value*>   [60 members]
+  ok  KILLED (right reason)        r1B G15 nested record declared final   [61 members]
+  ok  KILLED (right reason)        r1B G16 anonymous struct member   [61 members]
+  ok  KILLED (right reason)        r1B G17 union member   [62 members]
+  ok  KILLED (right reason)        r1B G18 raw key, wrapped MAPPED type + a selftest mention   [60 members]
+  ok  KILLED (right reason)        r1B G19 wrapped member 'exercised' by a COMMENT only   [60 members]
+  ok  KILLED (right reason)        r1B G20 foreign record held directly   [78 members]
+  ok  KILLED (right reason)        r1B G21 decltype/paren default initializer   [60 members]
+  ok  KILLED (right reason)        r1B G22 ScrubMap with a RAW MAPPED pointer (+ exercised)   [60 members]
+  ok  KILLED (right reason)        r1B G23 class-scope alias shadowing ScrubPtrSet   [59 members]
+  ok  KILLED (right reason)        r1B G24 nested record with a BASE class carrying the pointer   [62 members]
+  ok  KILLED (right reason)        r1B G25 AssertingVH<Instruction> member   [60 members]
+  ok  KILLED (right reason)        r1B G27 AssertingVH as a ScrubMap MAPPED value   [60 members]
+  ok  KILLED (right reason)        r2 A1 project CLASS TEMPLATE holding a raw Value*, instantiated <int>   [62 members]
+  ok  KILLED (right reason)        r2 A2 SmallVector of a project class template spec   [62 members]
+  ok  KILLED (right reason)        r2 A3 type-erased identity set SmallPtrSet<const void *>   [60 members]
+  ok  KILLED (right reason)        r2 A4 uintptr_t-keyed DenseMap   [60 members]
+  ok  KILLED (right reason)        r2 A5 #ifdef NDEBUG raw member (the Release build defines NDEBUG)   [60 members]
+  ok  KILLED (right reason)        r2 A6 vector of POINTERS to a project record holding raw Value*   [61 members]
+  ok  KILLED (right reason)        r2 A7 ScrubMap MAPPED pointer to a project record holding raw Value*   [61 members]
+  ok  KILLED (right reason)        r2 A8 std::shared_ptr<void>   [60 members]
+  ok  KILLED (right reason)        r2 A9 DenseMap<llvm::Loop *, unsigned>   [60 members]
+  ok  KILLED (right reason)        r2 A10 SmallVector<llvm::Use *>   [60 members]
+  ok  KILLED (right reason)        r2 A11 std::set<llvm::WeakVH> (a handle as an ORDERED key)   [60 members]
+  ok  KILLED (right reason)        r2 A12 raw ptr behind `using` in another header, by value   [60 members]
+  ok  KILLED (right reason)        new: static data member   [60 members]
+  ok  KILLED (right reason)        new: Value** double pointer   [60 members]
+  ok  KILLED (right reason)        new: C array of raw pointers   [60 members]
+  ok  KILLED (right reason)        new: unknown non-template record   [60 members]
+  ok  KILLED (right reason)        new: project template reached only by POINTER   [62 members]
+  ok  KILLED (right reason)        new: pair<WeakVH,int> as a DenseSet KEY   [60 members]
+  ok  KILLED (right reason)        new: project record written UNQUALIFIED, held by pointer   [61 members]
+  ok  KILLED (right reason)        new: NESTED TaintSet record with a raw field, held by an unqualified pointer   [61 members]
+taintset_scrub_guard selftest: 7 null/equivalence controls, 74 mutants, 7 failed
+
+      Start 227: e2e-slice-spec-dropped-arg-volatile-global
+15/53 Test #249: e2e-slice-specialize-fp-select-fcmp ...................   Passed    5.06 sec
+      Start 247: e2e-slice-specialize-fp-select
+16/53 Test #227: e2e-slice-spec-dropped-arg-volatile-global ............   Passed    5.09 sec
+      Start 256: e2e-slice-classical-call-under-control
+17/53 Test #247: e2e-slice-specialize-fp-select ........................   Passed    5.00 sec
+      Start 243: e2e-slice-spec-dropped-arg-musttail-inner
+18/53 Test #256: e2e-slice-classical-call-under-control ................   Passed    4.70 sec
+      Start 250: e2e-slice-specialize-intrinsic
+19/53 Test #243: e2e-slice-spec-dropped-arg-musttail-inner .............   Passed    4.72 sec
+      Start 118: e2e-spec-fp80-union
+20/53 Test #250: e2e-slice-specialize-intrinsic ........................   Passed    4.75 sec
+      Start 213: e2e-slice-spec-lift-quantum-base
+21/53 Test #118: e2e-spec-fp80-union ...................................   Passed    4.75 sec
+      Start 120: e2e-spec-fp-arg
+22/53 Test #213: e2e-slice-spec-lift-quantum-base ......................   Passed    4.86 sec
+      Start 214: e2e-slice-spec-lift-scrubbed-elsewhere
+23/53 Test #120: e2e-spec-fp-arg .......................................   Passed    4.57 sec
+      Start 242: e2e-slice-spec-dropped-arg-byval-slot
+24/53 Test #214: e2e-slice-spec-lift-scrubbed-elsewhere ................   Passed    4.43 sec
+      Start 211: e2e-slice-specialize-select
+25/53 Test #242: e2e-slice-spec-dropped-arg-byval-slot .................   Passed    4.23 sec
+      Start 217: e2e-slice-spec-dropped-arg-boolsel
+26/53 Test #211: e2e-slice-specialize-select ...........................   Passed    4.30 sec
+      Start 212: e2e-slice-specialize-twoarm-select
+27/53 Test #217: e2e-slice-spec-dropped-arg-boolsel ....................   Passed    4.35 sec
+      Start 223: e2e-slice-spec-dropped-arg-volatile-char
+28/53 Test #212: e2e-slice-specialize-twoarm-select ....................   Passed    4.50 sec
+      Start 254: e2e-slice-specialize-multiarg
+29/53 Test #223: e2e-slice-spec-dropped-arg-volatile-char ..............   Passed    4.54 sec
+      Start 225: e2e-slice-spec-dropped-arg-dead-smax
+30/53 Test #254: e2e-slice-specialize-multiarg .........................   Passed    4.70 sec
+      Start 210: e2e-slice-specialize-2file
+31/53 Test #225: e2e-slice-spec-dropped-arg-dead-smax ..................   Passed    4.47 sec
+      Start 337: e2e-free-pairing-selftest
+32/53 Test #210: e2e-slice-specialize-2file ............................   Passed    4.66 sec
+      Start 119: e2e-spec-scrub-dangling-key
+33/53 Test #337: e2e-free-pairing-selftest .............................   Passed    4.70 sec
+      Start 220: e2e-slice-spec-dropped-arg-inplace
+34/53 Test #119: e2e-spec-scrub-dangling-key ...........................   Passed    6.79 sec
+      Start 252: e2e-slice-spec-qram-read-under-control
+35/53 Test #220: e2e-slice-spec-dropped-arg-inplace ....................   Passed    6.22 sec
+      Start 253: e2e-slice-spec-qrom-read-arm-escape
+36/53 Test #252: e2e-slice-spec-qram-read-under-control ................   Passed    3.67 sec
+      Start 251: e2e-slice-spec-qram-read
+37/53 Test #253: e2e-slice-spec-qrom-read-arm-escape ...................   Passed    3.25 sec
+      Start 228: e2e-slice-spec-dropped-arg-volatile-global-twin
+38/53 Test #251: e2e-slice-spec-qram-read ..............................   Passed    3.27 sec
+      Start 215: e2e-slice-spec-lift-scrubbed-elsewhere-twin
+39/53 Test #228: e2e-slice-spec-dropped-arg-volatile-global-twin .......   Passed    3.01 sec
+      Start 221: e2e-slice-spec-dropped-arg-inplace-twin
+40/53 Test #215: e2e-slice-spec-lift-scrubbed-elsewhere-twin ...........   Passed    6.59 sec
+      Start 218: e2e-slice-spec-dropped-arg-boolsel-twin
+41/53 Test #221: e2e-slice-spec-dropped-arg-inplace-twin ...............   Passed    6.00 sec
+      Start  13: ir-pass-scrub-on-delete-selftest-lifo
+42/53 Test  #13: ir-pass-scrub-on-delete-selftest-lifo .................   Passed    2.59 sec
+      Start 235: e2e-spec-predicted-classical-round2-twin-identical
+43/53 Test #235: e2e-spec-predicted-classical-round2-twin-identical ....   Passed    0.05 sec
+      Start 229: e2e-spec-dropped-arg-volatile-global-twin-identical
+44/53 Test #229: e2e-spec-dropped-arg-volatile-global-twin-identical ...   Passed    0.07 sec
+      Start 222: e2e-spec-dropped-arg-inplace-twin-identical
+45/53 Test #222: e2e-spec-dropped-arg-inplace-twin-identical ...........   Passed    0.05 sec
+      Start 232: e2e-spec-predicted-classical-branch-twin-identical
+46/53 Test #232: e2e-spec-predicted-classical-branch-twin-identical ....   Passed    0.08 sec
+      Start 245: e2e-spec-dropped-arg-musttail-inner-twin-identical
+47/53 Test #245: e2e-spec-dropped-arg-musttail-inner-twin-identical ....   Passed    0.05 sec
+      Start  14: ir-pass-scrub-on-delete-selftest-sysalloc
+48/53 Test  #14: ir-pass-scrub-on-delete-selftest-sysalloc .............   Passed    0.05 sec
+      Start 226: e2e-spec-dropped-arg-dead-smax-twin-identical
+49/53 Test #226: e2e-spec-dropped-arg-dead-smax-twin-identical .........   Passed    0.05 sec
+      Start 216: e2e-spec-lift-scrubbed-elsewhere-twin-identical
+50/53 Test #216: e2e-spec-lift-scrubbed-elsewhere-twin-identical .......   Passed    0.09 sec
+      Start 224: e2e-spec-dropped-arg-volatile-char-twin-identical
+51/53 Test #224: e2e-spec-dropped-arg-volatile-char-twin-identical .....   Passed    0.06 sec
+      Start 219: e2e-spec-dropped-arg-boolsel-twin-identical
+52/53 Test #219: e2e-spec-dropped-arg-boolsel-twin-identical ...........   Passed    0.05 sec
+53/53 Test #218: e2e-slice-spec-dropped-arg-boolsel-twin ...............   Passed    5.45 sec
+
+96% tests passed, 2 tests failed out of 53
+
+Total Test time (real) = 252.71 sec
+
+The following tests FAILED:
+	 15 - taintset-scrub-guard (Failed)
+	 16 - taintset-scrub-guard-selftest (Failed)
+Errors while running CTest

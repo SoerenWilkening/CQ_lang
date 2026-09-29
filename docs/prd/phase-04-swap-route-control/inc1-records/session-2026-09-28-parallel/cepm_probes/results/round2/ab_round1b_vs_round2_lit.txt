@@ -1,0 +1,9 @@
+[lit-r1b-vs-r2] denominator: 2430 modules (0 missing/0-byte excluded)  A=cq-opt.subj2  B=cq-opt.subj3
+[lit-r1b-vs-r2] NULL CONTROL (subject twice): 0 of 2430 differ
+[lit-r1b-vs-r2] accepts A=1238 B=1240; movers 2 of 2430: {'D->A': 2}
+[lit-r1b-vs-r2] D->A	$W/ir-pass/test/spec_accept_predicted_classical_loop_body_branch.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: quantum-quantum compare condition under quantum control')
+    B=(0, '63520fe4d503e545', '')
+[lit-r1b-vs-r2] D->A	$W/ir-pass/test/spec_accept_predicted_classical_measured_callee.ll
+    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: classical call result used as a quantum register')
+    B=(0, 'd8359edf4d9ab602', '')

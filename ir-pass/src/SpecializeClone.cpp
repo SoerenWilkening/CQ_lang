@@ -170,9 +170,14 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
   //     if ANY conditional terminator is tainted (a tainted-controlled diamond),
   //     predict the return tainted. SOUND one-directional — an OVER-prediction is
   //     caught by the `buildClone` fp-mispredict guards (a clean decline); an
-  //     UNDER-prediction is the broken module. Affects ONLY the fp-return rewrite
-  //     (`cloneFor` calls this solely when the return is a reversible-fp width; an
-  //     int/void return never consults it, so this is inert there).
+  //     UNDER-prediction is the broken module. ⚠ "Affects ONLY the fp-return
+  //     rewrite … inert for an int/void return" stood here and is FALSE since bd
+  //     cepm: `specCallResultPredictedClassical` (below) asks this for EVERY
+  //     would-be Phase-6 site at propagation, whatever its return type, and a
+  //     `false` there leaves the call's RESULT classical. An UNDER-prediction
+  //     there is caught by `specialize()`'s `kMsgPredictedClassicalQuantum`
+  //     check (a loud decline, never a silent one); an over-prediction there is
+  //     the pre-cepm conservative taint (the scrub + bd l3oi's fence).
   for (BasicBlock &BB : *Callee) {
     const Instruction *T = BB.getTerminator();
     if (const auto *BI = dyn_cast<BranchInst>(T)) {
@@ -191,6 +196,53 @@ bool predictReturnTainted(Function *Callee, SpecMask Mask) {
       if (Value *RV = R->getReturnValue(); RV && Tainted.count(RV))
         return true;
   return false;
+}
+
+// bd `test_C_libtooling-cepm` / bd `test_C_libtooling-3zr4` — see SpecializeClone.h
+// for the contract and the two backstops. Every conjunct below narrows the set of
+// calls the prediction is asked about (a false return keeps today's conservative
+// taint), so each is the SAFE direction on its own:
+//   * a DIRECT `CallInst` to an EXACT, non-intrinsic, non-variadic DEFINITION, called
+//     with the callee's own function type and of arity ≤ `kSpecMaxArity` — the
+//     candidate shape `detectSpecializations` / `scanBody` accept (an invoke, an
+//     indirect call, a declaration, an interposable body, a vararg tail — whose
+//     argument `taintArgMask` would count and `predictReturnTainted` would not see
+//     — and a 65th parameter the mask cannot hold all keep their taint);
+//   * a non-VOID result (a void call carries no value; tainting it is today's
+//     behaviour and nothing reads it);
+//   * not a front-end intrinsic site, by MEMBERSHIP (a module may DEFINE
+//     `cq_theta_si32`), and not a callee in a reserved namespace (`cq_`, `__cq_`,
+//     `cqrt_` — the name used ONLY to keep taint, the conservative direction, the
+//     `DeadValueLiveness.h` roots precedent);
+//   * ≥1 argument in `taint.Tainted` (an operand-bundle-only read keeps its taint);
+//   * and the predictor says the return is classical.
+// ⚠ NOT EXCLUDED, AND WHY (L8 retirement trigger): a `naked` callee. Its parameters
+// have no IR uses (the verifier forbids them), so the predictor calls its return
+// classical even though its inline asm reads the argument REGISTERS (bd ctz4's
+// hazard). Sound today only because `scanBody` declines inline asm, so such a site
+// is refused loudly at detection whatever its result's taint — the SAME trigger
+// `nullSafeSlot` carries (SpecializeDetect.h): the day `scanBody` admits inline asm,
+// add `!Callee->hasFnAttribute(Attribute::Naked)` here in the same change.
+bool specCallResultPredictedClassical(const CallInst &CI, const TaintSet &taint) {
+  Function *Callee = CI.getCalledFunction();
+  if (!Callee || Callee->isDeclaration() || Callee->isIntrinsic() ||
+      !Callee->hasExactDefinition() || Callee->isVarArg())
+    return false;
+  if (CI.getType()->isVoidTy() ||
+      CI.getFunctionType() != Callee->getFunctionType() ||
+      Callee->arg_size() > kSpecMaxArity)
+    return false;
+  CallInst *Site = const_cast<CallInst *>(&CI);
+  if (taint.ThetaCalls.contains(Site) || taint.PhiCalls.contains(Site) ||
+      taint.PhaseCalls.contains(Site) || taint.MeasureCalls.contains(Site))
+    return false;
+  const StringRef N = Callee->getName();
+  if (N.starts_with("cq_") || N.starts_with("__cq_") || N.starts_with("cqrt_"))
+    return false;
+  const SpecMask Mask = taintArgMask(&CI, taint);
+  if (Mask == 0)
+    return false;
+  return !predictReturnTainted(Callee, Mask);
 }
 
 // Clone + mangle + internal linkage. Two paths (bd 3c6m.54):

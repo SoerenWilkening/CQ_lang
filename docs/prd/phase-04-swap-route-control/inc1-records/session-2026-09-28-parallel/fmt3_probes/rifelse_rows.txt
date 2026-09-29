@@ -1,0 +1,24 @@
+m_add_rifelse_none_none_none ACCEPT-IDENTICAL
+m_none_rifelse_add_none_none ACCEPT-IDENTICAL
+m_none_rifelse_add_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_add_rpostmark_none ACCEPT-IDENTICAL
+m_none_rifelse_add_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_rifelse_add_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_add_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_none_bodyread_none ACCEPT-IDENTICAL
+m_none_rifelse_none_none_addpost ACCEPT-IDENTICAL
+m_none_rifelse_none_none_none ACCEPT-IDENTICAL
+m_none_rifelse_none_none_rypost ACCEPT-IDENTICAL
+m_none_rifelse_none_none_rypre ACCEPT-IDENTICAL
+m_none_rifelse_none_none_rzpost ACCEPT-IDENTICAL
+m_none_rifelse_none_postmark_none ACCEPT-IDENTICAL
+m_none_rifelse_none_premark_none ACCEPT-IDENTICAL
+m_none_rifelse_none_rbodyread_none DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_rbodyread_rypost DECLINE-BOTH	cq opcode lowering: operand predates a non-diagonal gate
+m_none_rifelse_none_rpostmark_none ACCEPT-IDENTICAL
+m_none_rifelse_none_rpostmark_rypost DECLINE-BOTH-DIFFERENT	cq loop lowering: rail record read past an in-place gate on the same rail	cq opcode lowering: rotation/measure operand predates a non-diagonal gate
+m_none_rifelse_none_rpremark_none DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_none_rpremark_rypost DECLINE-BOTH	cq controlled lowering: stale rail record read past a controlled Ry under quantum control
+m_none_rifelse_ry_none_none ACCEPT-IDENTICAL
+m_ry_rifelse_none_none_none ACCEPT-IDENTICAL
