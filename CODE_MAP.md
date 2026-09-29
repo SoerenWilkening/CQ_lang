@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 814 maintained source files, 6426 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 816 maintained source files, 6447 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -7509,6 +7509,33 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/cq_opt_equivalence.py:37` — `_init`
 - `tools/cq_opt_equivalence.py:44` — `_compare`
 - `tools/cq_opt_equivalence.py:66` — `main`
+
+### `tools/cq_stage_cache.py` (307 lines)
+
+- `tools/cq_stage_cache.py:78` — `_env`
+- `tools/cq_stage_cache.py:82` — `disabled`
+- `tools/cq_stage_cache.py:86` — `s1_enabled`
+- `tools/cq_stage_cache.py:90` — `run_enabled`
+- `tools/cq_stage_cache.py:94` — `sha_bytes`
+- `tools/cq_stage_cache.py:98` — `sha_file`
+- `tools/cq_stage_cache.py:106` — `lowered_digest`
+- `tools/cq_stage_cache.py:117` — `_publish`
+- `tools/cq_stage_cache.py:135` — `stage1_generated`
+- `tools/cq_stage_cache.py:170` — `stage1_file`
+- `tools/cq_stage_cache.py:195` — `run_manifest`
+- `tools/cq_stage_cache.py:206` — `LinkRun.__init__`
+- `tools/cq_stage_cache.py:214` — `link_and_run`
+- `tools/cq_stage_cache.py:267` — `run_base`
+- `tools/cq_stage_cache.py:291` — `main`
+
+### `tools/cq_stage_cache_test.py` (255 lines)
+
+- `tools/cq_stage_cache_test.py:44` — `expect`
+- `tools/cq_stage_cache_test.py:50` — `count`
+- `tools/cq_stage_cache_test.py:54` — `main`
+- `tools/cq_stage_cache_test.py:68` — `main.script`
+- `tools/cq_stage_cache_test.py:78` — `main.opt_wrapper`
+- `tools/cq_stage_cache_test.py:105` — `main.slice_run`
 
 ### `tools/dedup_lit_runs.py` (136 lines)
 
