@@ -1,0 +1,34 @@
+P0 NULL: a comment edit: NULL OK (0 moved)  [12 checks, 280s]
+    held  expect=None                         NULL: pristine tree
+    held  expect='per the compiler'           rv2 B1' the same with ONE tolerated pointer field (only the mode rule refuses it, bd hdxo)
+    held  expect='per the compiler'           rv2 B4 unnamed-record location COLLISION by one macro expansion (deliberate; bd hdxo)
+    held  expect='per the compiler'           rv2 B5 unnamed-record location FORGED by #line (deliberate; bd hdxo)
+    held  expect='RAW POINTER'                rv2 B2a a raw pointer ARRAY field in the ALLOWLISTED LoopBreakRegion (F-R2-7)
+    held  expect='RAW POINTER'                rv2 B2b a pointer-to-pointer field in the ALLOWLISTED LoopBreakRegion (F-R2-7)
+    held  expect='RAW POINTER'                rv2 B2c a SmallVector of a one-pointer record in the ALLOWLISTED LoopBreakRegion (F-R2-7)
+    held  expect='declares its own member'    rv2 B3' LOCAL-class RAW base + the derived class's own `using RvL3 = ::RvL3` (bd 5ci2)
+    held  expect='preprocesses DIFFERENTLY'   rv2 D1 include-order member in a SUBDIRECTORY project header (F-R2-4)
+    held  expect='preprocesses DIFFERENTLY'   rv2 D2 include-order member in an X-macro `.def` included INSIDE TaintSet (F-R2-4)
+    held  expect='whose meaning depends on where' rv2 B9 `#if __INCLUDE_LEVEL__ > 1` (deliberate; refused cheaply)
+    held  expect='preprocesses DIFFERENTLY'   rv2 B11 a CLOSURE file's own guard tested before it is included (LoopPlan.h first, F-R2-5)
+P1 unnamed-record use accepted whatever MODE the declarator was walked in (F-R2-1): KILLED (1/1 targets flip)  [2 checks, 36s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='per the compiler'           rv2 B1' the same with ONE tolerated pointer field (only the mode rule refuses it, bd hdxo)
+P2 unnamed-record identity not asked of the compiler (F-R2-2): KILLED (2/2 targets flip)  [3 checks, 43s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='per the compiler'           rv2 B4 unnamed-record location COLLISION by one macro expansion (deliberate; bd hdxo)
+    MOVED expect='per the compiler'           rv2 B5 unnamed-record location FORGED by #line (deliberate; bd hdxo)  -> `TaintPropagation.h` (in the header's include closure) uses `#line`, whose meaning depends on where the file is included or which 
+P3 a derived class's own member named like its base not refused (F-R2-3): KILLED (1/1 targets flip)  [2 checks, 67s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='declares its own member'    rv2 B3' LOCAL-class RAW base + the derived class's own `using RvL3 = ::RvL3` (bd 5ci2)
+P4 no token ban in closure files (F-R2-6): KILLED (1/1 targets flip)  [2 checks, 70s]
+    held  expect=None                         NULL: pristine tree
+    MOVED expect='whose meaning depends on where' rv2 B9 `#if __INCLUDE_LEVEL__ > 1` (deliberate; refused cheaply)
+Traceback (most recent call last):
+  File "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/scrubguard_probes/source_mutants_r3.py", line 85, in <module>
+    G = load(edits, sid)
+        ^^^^^^^^^^^^^^^^
+  File "/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-28-parallel/scrubguard_probes/source_mutants_r3.py", line 54, in load
+    assert src.count(old) == 1, f"{tag}: anchor found {src.count(old)} times: {old[:70]!r}"
+           ^^^^^^^^^^^^^^^^^^^
+AssertionError: P5: anchor found 0 times: 'first = "".join(f\'#include "{f}"\\n\' for f in files if f in guards and '

@@ -588,3 +588,139 @@ Reading:
   > PCH / no-PCH / include-order check per clean verdict).
 - **Open for the orchestrator:** whether to keep the self-test at every gate or behind a path
   trigger (an owner ruling).
+
+---
+
+# ROUND 3 — the review r2 findings (bd hdxo · 5ci2 · ngfa · s6ma), under the owner's threat-model ruling
+
+The review is `review_r2_scrubguard/REVIEW.md` (verdict **NOT-CLEAR**). Its directory is committed
+untouched with this round.
+
+Two owner rulings govern this round (2026-09-29, bd memory
+`owner-ruling-scrub-guard-threat-model-2026-09-29`):
+1. **Threat model.** The guard defends against raw identity tables an agent PLAUSIBLY WRITES BY
+   MISTAKE. Deliberate evasion is out of scope, listed as residual R12 and graded P3. A regression
+   against main's guard on any spelling is still a finding.
+2. The self-test runs at every merge gate, and the three shards stay as they are.
+
+Main was merged twice before the battery:
+- `25e44ab9` brought in rhk5 and z0re;
+- `53eb9486` brought in cepm and fmt3, which landed during the round.
+
+Both times CODE_MAP.md was regenerated rather than hand-merged. The C++ diff of this branch against
+main is comment lines only (0 non-comment lines, measured).
+
+## R3.1 What changed, finding by finding
+
+| finding | fix |
+|---|---|
+| F-R2-1 (P1, regression): an unnamed struct walked RELAXED in `LoopBreakRegion` was accepted STRICTLY elsewhere via `decltype` | Every unnamed-record USE is now asked of the compiler. `_final` asserts `is_same` between the use's robbed member type and the robbed type of some DECLARATOR through which an unnamed record was walked, after `core<>` strips cv, references, pointers and extents. The declarator must have been walked in a mode at least as strict as the use (`MODE_RANK`: relaxed_any < relaxed_fields < strict < key). |
+| F-R2-2 (P1, regression, deliberate): a location key forged by one macro expansion or by `#line` | Closed by the same assertion. The printed `(unnamed struct at FILE:LINE:COL)` is no longer an identity anywhere, and `_anon_key` is deleted. |
+| F-R2-3 (P1, regression, deliberate): the derived class's own `using RvB = ::cq::RvB` steered the base check | A base whose canonical text contains `(anonymous namespace)` is refused. So is a derived class that declares its OWN member named like a base (any kind of member). The second rule also closes the local-class variant, rv2 B3′. |
+| F-R2-4 (P1 by the old standard): the closure was quote-only, top-level `.h` | Cheap improvements. `check()` copies the WHOLE `ir-pass/include` tree, and the probe dir is FIRST on `-I` for every probe TU. The closure is the set of files the compiler's `-E` ENTERS under the probe dir (from line markers), so quote, angle, computed, subdirectory and `.def` includes all count. A closure file outside the probe dir, anywhere under the repo, is refused. Real-TU preprocessing is filed as **bd `test_C_libtooling-j2fp` (P2)**. |
+| F-R2-5 (P1 by the old standard): "a closure file included first" was never simulated | A third context includes the closure's OTHER guarded files, then the header. Real TUs are still not preprocessed (R10, bd j2fp). |
+| F-R2-6 (P2): `#line "other"`, `__INCLUDE_LEVEL__`, SFINAE | `#line`, GNU line markers, `__INCLUDE_LEVEL__`, `__COUNTER__`, `__FILE__`, `__BASE_FILE__` and `__FILE_NAME__` in a closure file are refused; this is cheap, even though these are deliberate spellings. SFINAE on completeness (B10) is residual R12, pinned in the self-test as a known pass. |
+| F-R2-7 (P2): "fields" tolerated `Value *Tab[64]`, `Value **`, `SmallVector<struct{Value*}>` | Under policy "fields" a raw pointer is tolerated only as ONE pointer held directly as a field. A pointer array, a pointer-to-pointer, and EVERY argument of a library container are walked strictly; the one exception is the element records of the allowlisted member's own top-level container. The ALLOWLIST reason and the docstring now say exactly this (L7). |
+| F-R2-8 (P2, introduced in round 2): the include-order check failed OPEN on a silent preprocessor | Every `-E` TU carries a sentinel line. Missing sentinel, missing line markers, or no line attributed to `TaintPropagation.h` in any context is a `GuardError`, so the gate fails closed. The check also compares the SET of closure files each context ENTERS; this is what caught D2, the `.def` whose lines exist only in context. |
+| F-R2-9 (P3) | (a) The round-2 ATTACK-FIRST prediction about `__INCLUDE_LEVEL__` had the wrong direction; corrected in R12. (b) Shard 1 now checks that `ir-pass/CMakeLists.txt` registers exactly shards 1..n. |
+
+**A defect in round 3's own first version.** It took the closure as "files with attributed lines",
+which missed a `.def` whose content is entirely context-conditional (rv2 D2). It is now "files
+entered".
+
+**Instrument notes.**
+- The first `ctest -R scrub` on the fix (`first_ctest_scrub_5d769485.txt`) failed shards 1 and 3.
+  Three entries, r1 A1, A1b and A4′, were killed FOR THE WRONG REASON: they are now refused by the
+  new mechanisms, with new messages. Their expected reasons were updated in `e86c5f45`;
+  `check()` is unchanged.
+- My `run_mutants.py --no-pch` run reported r1 A5″ as wrong-reason. That entry is designed for
+  the PCH pass. In gate semantics (no PCH) the include-order check refuses it first. This is an
+  artefact of the harness mode, not a guard defect.
+
+## R3.2 Measurements (committed guard `44ad3cb0c8d83923`, commit `e86c5f45`)
+
+`scrubguard_probes/final_battery_r3.sh` runs sequentially and aborts if the guard changes under it.
+Binaries of the merged tree (`53eb9486`): `cq-opt` `45c895c2f50757a63f583889`, `libCQPass.so`
+`2d6493e852831ed8b1226629`, `cq-opt-debugalloc` `82ebc3ea45f9e90aab3ff4f7`, `cq-scrub-selftest`
+`efe8356a637afdfb7ac9b944`. These are main's code: this branch's C++ is comments only.
+
+The guard on the real merged tree is **clean**: 76 members in both configurations, 15 tolerated notes.
+
+| layer | before (reviewer's run on `e4ab4f28`) | after, FINAL (`44ad3cb0`) |
+|---|---|---|
+| `ctest -R scrub -j4` | — | **10/10 passed**: the gate entry took 51.27 s; selftest shards 1/2/3 took 733.19 / 629.89 / 636.00 s; 733.60 s real; load 41 → 13 (`final_ctest_scrub.txt`) |
+| review r2 corpus (`guard_fool_r2.py`, gate semantics) | 11 attacks (10 + B11), **11 MISSED** | controls 0 bad; 11 attacks, **10 CAUGHT, 1 MISSED: B10**. B10 is the SFINAE case, R12 by the ruling, and is pinned. |
+| review r1 corpus (`guard_fool_r1.py`) | (round 2: 12 caught) | controls 0 bad; 14 attacks, **12 CAUGHT, 2 MISSED: A7, A8**. A7 is R1 and A8 is out of scope; both are pinned. |
+| r3 `guard_fool_r3` PCH / no-PCH, `guard_fool_r3b` | (round 2: 0/0/0 missed) | **0 / 0 / 0 MISSED**, controls 0 bad |
+| reviewer `fail_open_r2.py` (F-R2-8) | G1 **CLEAN**, G2 **CLEAN** (fail-open) | **4/4 refused**, each with a truthful message: G1 "lost its sentinel line", G2 "attributes no line to TaintPropagation.h", G3 "killed by signal 9" |
+| reviewer `fail_open.py` (r1) | 6/6 | **6/6 refused** |
+| `fail_closed.py` (databases, via the CLI) | 6/6 | **6/6** |
+| source mutants `source_mutants_r3.py` | — | P0 null **0 of 12 moved**; P1-P8 **all KILLED** (see below) |
+| code map | — | `update_code_map.py --check` passes after each merge and commit |
+
+Per-probe reasons, all right-reason (`final_guard_fool_r2.txt`):
+
+| probe | refused as |
+|---|---|
+| B1 | RAW (the `Tab[64]` array, now strict under "fields") **and** the unnamed-type use "is not — per the compiler — the type of any unnamed record …" |
+| B4, B5 | "per the compiler" |
+| B2 | RAW, for each of the three shapes |
+| B3 | both "ANONYMOUS NAMESPACE" and "declares its own member `RvB`" |
+| B6, B9 | "uses `#line` / `__INCLUDE_LEVEL__`" |
+| B7, B8, B11 | "preprocesses DIFFERENTLY"; B11 in the "closure's other headers first" context |
+
+Source mutants (`final_source_mutants_r3.txt` P0-P4; P5-P8 in `final_source_mutants_r3_P5_P8.txt`,
+re-run after a stale P5 anchor made the first run stop at P5; guard unchanged, sha `44ad3cb0`):
+
+| id | disables | result |
+|---|---|---|
+| P1 | the mode rank on unnamed uses | KILLED 1/1 (rv2 B1′) |
+| P2 | the compiler identity check | KILLED 2/2 (rv2 B4, B5) |
+| P3 | the own-member-named-like-base rule | KILLED 1/1 (rv2 B3′) |
+| P4 | the token ban | KILLED 1/1 (rv2 B9) |
+| P5 | the "closure first" context | KILLED 1/1 (rv2 B11) |
+| P6 | a top-level-`.h` closure | KILLED 2/2 (rv2 D1, D2) |
+| P7 | the array / pointer-to-pointer strictness | KILLED 2/2 (rv2 B2a, B2b) |
+| P8 | container-record strictness | KILLED 1/1 (rv2 B2c) |
+
+The F-R2-8 fail-closed rule has no source mutant; it is measured by `fail_open_r2.py` instead.
+
+**Composition.** cepm and z0re both LANDED on main during this round, and their worktrees are gone.
+`composition.py` therefore hit a missing directory (the traceback is in the battery log). The
+answer is the real-tree run on the merged tree, which contains both TaintSet members:
+`taintset-scrub-guard` passed, clean. cepm's `SpecPredictedClassical` is exercised by the merged
+`scrub_selftest.cpp`.
+
+**Self-test inventory.**
+- 176 entries: 19 expected-clean, including three pinned known passes (R1 / A7, R12 SFINAE B10,
+  and the A8 out-of-scope case), and 157 mutants.
+- Shards: 6+52 / 7+52 / 6+53.
+- Shard 1 also runs 5 database cases, the PCH control and the CMake shard-registration control.
+
+## R3.3 Not run
+
+- The reviewer's `tree_probes_r2.py`. It needs a private `git worktree` of this commit.
+  - D1 (subdirectory) and D2 (`.def`) are covered as self-test entries rv2 D1 and D2 through
+    `check(extra_headers=…)`. `main()` reaches the same code: `check()` copies the whole include tree.
+  - Its D0/D3 controls correspond to the pristine run and rv2 C2.
+- `build_compiles_r2.py` was not re-run; the reviewer established that every attack header compiles.
+- lit, e2e and corpus A/B: this branch changes no compiled code (comments only).
+- The full `ctest -j6`: that is the merge gate's.
+
+## R3.4 ATTACK FIRST (round 3)
+
+1. **R10, the include-order check's synthetic contexts** (bd j2fp is the total fix):
+   - a `.cpp`'s own `#define` before its includes;
+   - "a closure file first AND another header's macro" combinations;
+   - a header only a real TU's ORDER puts first.
+2. **The unnamed-record rule's declarator detection.** A candidate is the FieldDecl immediately after
+   an unnamed complete CXXRecordDecl in the same record. Look for a construct where that FieldDecl's
+   type is NOT that record, which would make a raw unnamed type a candidate. The is_same check
+   compares use against candidate, not candidate against record.
+3. **The own-member rule.** It collects names of all non-implicit inner nodes. Test inherited-member
+   `using` declarations, and bases named through a template-id.
+4. **The token ban** is textual over comment-stripped closure files. Try `__LINE__`-dependent
+   spellings, `_Pragma("line …")`, and string-literal tricks inside macros.
+5. **The sentinel line** is a bare identifier. A macro named `cq_guard_ctx_sentinel` defined by a
+   closure header would change it; that is deliberate, R12-class.
+6. **The known passes:** R1 (bd gqda), R12's SFINAE case, A8 byte/char erasure.
