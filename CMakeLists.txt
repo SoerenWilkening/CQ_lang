@@ -204,3 +204,10 @@ add_test(
             -Dcq_install_libdir=${CMAKE_INSTALL_LIBDIR}
             -Dcq_config=$<CONFIG>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/package-consumer/run_test.cmake)
+
+# THE TWO-TIER SUITE (owner ruling 2026-09-29, bd test_C_libtooling-2dfk).
+# `ctest -LE heavy -j6` = FAST tier (intermediate merges); `ctest -j6` = FULL
+# suite (the batch gate). Keep this call LAST: it labels every test registered
+# anywhere in the tree so far, by the patterns in cmake/CQTestTiers.cmake.
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CQTestTiers.cmake")
+cq_apply_test_tiers("${CMAKE_CURRENT_SOURCE_DIR}")
