@@ -1,0 +1,5 @@
+DECL-DIFF    cells/x_inst_live        vs cells/x_inst_liveT | S: EMPTY INPUT | T: EMPTY INPUT
+DECL-DIFF    cells/x_nested_arg       vs cells/x_nested_argT | S: EMPTY INPUT | T: EMPTY INPUT
+DECL-DIFF    cells/x_arg_range        vs cells/x_arg_rangeT | S: EMPTY INPUT | T: EMPTY INPUT
+DECL-DIFF    cells/x_classical_inst   vs cells/x_classical_instT | S: EMPTY INPUT | T: EMPTY INPUT
+DECL-DIFF    cells/x_outer_nn         vs cells/x_outer_nnT | S: EMPTY INPUT | T: EMPTY INPUT

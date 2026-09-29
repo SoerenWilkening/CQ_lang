@@ -5,7 +5,8 @@
 
    `h` forwards its first argument through a `musttail` call to `h2`, whose only read of it is the
    condition of an arm that reads a never-stored internal volatile global (the fold empties the
-   arm, so `h2`'s clone records the slot dead). */
+   arm). Until bd ev3m `h2`'s CLONE recorded the slot dead; since ev3m the pre-specialize drop
+   (slot B, after the fold) drops it through the `musttail` site and no clone is built. */
 #ifdef cq_theta
 #error "C18 violation: CQ.h was -include'd into a classical lib TU (must compile without it)"
 #endif

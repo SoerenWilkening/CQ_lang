@@ -133,7 +133,8 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // (`DeadValueLiveness.h` — mark-from-roots, not `use_empty()`) becomes a null
   // constant, and the operand's dead cone is deleted by the same predicate. That
   // is LLVM's dead-argument elimination, with DAE's own preconditions mirrored
-  // (exact definition, not `naked`, not `musttail`, …), applied across the TU
+  // (exact definition, not `naked`, not variadic, …; a `musttail` site IS rewritten
+  // since bd ev3m — only an operand changes, no signature), applied across the TU
   // boundary `clang -O1` cannot see. Without it a Phase-6 clone that never reads
   // a slot was still PASSED the operand, and that phantom read kept a which-path
   // rail (a 4.4 bool-select `%out`, a 6.5 `%out`, a template rail) alive and

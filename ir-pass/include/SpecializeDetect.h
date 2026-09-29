@@ -89,9 +89,9 @@ void detectSpecializations(llvm::Module &M, const TaintSet &taint,
 // preconditions: a `naked` callee (its asm reads the argument REGISTERS) had its
 // argument rewritten, a classical miscompile at exit 0 (bd ctz4, r1A F-VA-1).
 // The preconditions now mirrored, each at its definition in SpecializeDetect.cpp:
-// exact definition, not `naked`, not variadic and not a `musttail` site (both
-// STRICTER than DAE's call-site rewrite — conservatism, pinned), the call's
-// function type equal to the callee's (DAE's own rule), and a
+// exact definition, not `naked`, not variadic (STRICTER than DAE's call-site
+// rewrite — conservatism, pinned), the call's function type equal to the callee's
+// (DAE's own rule), and a
 // parameter carrying none of `returned`/`swifterror`/`byval`/`inalloca`/
 // `preallocated`, with every attribute in the whitelist
 // `noundef`/`signext`/`zeroext`/`inreg`/`range`/`nofpclass` (the last two
@@ -127,8 +127,12 @@ bool dropDeadCallArguments(llvm::Module &M, const TaintSet &taint);
 // null can violate; the rewrite strips them). A POINTER slot is never null-safe (so
 // neither is `byref`/`sret`/`nonnull`/`dereferenceable`) — bd `91k9`: a nulled
 // `byval` slot compiled clean and the executable SIGSEGVed. This is the ONLY slot
-// question the post-`specialize()` rewrite and the liveness call-slot rule ask
-// (`isRewritableDeadSlot`, DeadValueLiveness.h).
+// question the post-`specialize()` REWRITE asks (`isRewritableDeadSlot`,
+// DeadValueLiveness.h). ⚠ The liveness call-slot rule asks it AND, since bd `nlfd`,
+// `isUnreadScalarSlot` — "may a constant be WRITTEN here?" (this) is not "is the
+// value here OBSERVED?" (that). The attribute allowlist is a WRITE policy: a string
+// or unknown attribute leaves the IR operand alone, while an argument forwarded into
+// such a slot is still no read of the enclosing parameter.
 // ⚠ IT ASKS NO CALLEE CONJUNCT, and that admits `naked` clones (bd `xmew`, r6
 // F-R6-3): `CloneFunction` copies `naked` onto the clone, so round 6 rewrites a
 // naked clone's dead slot where round 5 declined (an unannounced D→A, IR-only probe
@@ -144,13 +148,16 @@ bool nullSafeSlot(const llvm::CallBase &CB, unsigned A);
 
 // THE DROP'S SLOT ELIGIBILITY: `nullSafeSlot` AND the drop's POLICY conservatisms —
 // a direct, exact, non-`naked`, non-variadic callee called with its own function
-// type, and not `musttail`. Asked ONLY by the pre-`specialize()` drop's loop.
-// ⚠ Round 5 made the rewrite and the liveness rule ask this whole predicate, so the
-// `musttail` conservatism became load-bearing for CORRECTNESS: an inner `musttail`
-// dead slot counted as a READ, the enclosing clone's parameter became live, the
-// outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary came back
-// (r5 F-Z-1, bd `w7nm`, probe `mt1`: exit 0, the ORACLE's wrong stream). A constant in
-// a `musttail` slot changes no signature and is what round 4 emitted, verify-clean.
+// type. Asked ONLY by the pre-`specialize()` drop's loop.
+// ⚠ Round 5 made the rewrite and the liveness rule ask this whole predicate, so its
+// then-`musttail` conservatism became load-bearing for CORRECTNESS: an inner
+// `musttail` dead slot counted as a READ, the enclosing clone's parameter became
+// live, the outer phantom slot was never neutralised, and bd `tzfa`'s wrong unitary
+// came back (r5 F-Z-1, bd `w7nm`, probe `mt1`: exit 0, the ORACLE's wrong stream). A
+// constant in a `musttail` slot changes no signature and is what round 4 emitted,
+// verify-clean — and since bd `ev3m` (2026-09-28) the drop itself writes it: the
+// `musttail` refusal is RETIRED, so a callee forwarding its ignored quantum argument
+// through `musttail` compiles like its plain-`tail` twin (r5 `mt2`, r6 `mm1`).
 bool dropEligibleSlot(const llvm::CallBase &CB, unsigned A);
 
 }  // namespace cq

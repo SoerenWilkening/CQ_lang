@@ -1,19 +1,36 @@
 ; spec_accept_phantom_arg_read_musttail_inner_slot.ll — ACCEPT with the hand-inlined twin's stream (bd
 ; test_C_libtooling-w7nm; bd vsfp Rule-13 r5 F-Z-1, probe `mt1`; 2 TUs llvm-linked, stage 1 as the
-; reviewer recorded it).
+; reviewer recorded it — ⚠ RE-SPELLED by bd ev3m, see below).
 ;
 ; r2B's `k19` main (`p = q * 3` feeds `h`'s dead slot and the oracle `(p ^ q) == 10`) with
-; `int h(int a, int k) { __attribute__((musttail)) return h2(a, k); }` and `h2` reading `a` only in
-; a volatile-fold empty diamond. `h2`'s clone records slot 0 dead; inside `h`'s clone that slot is
-; on a `musttail` call. Round 5 asked the drop's WHOLE eligibility (`dropEligibleSlot`, whose
-; `musttail` refusal is a POLICY conservatism) in the liveness call-slot rule, so the inner slot
-; counted as a READ, `h`'s parameter became live, the outer phantom slot was never neutralised, and
-; the spine left `p`'s template rail dirty across `Ry(0.7)` — bd tzfa's wrong unitary, exit 0, the
-; ORACLE's stream byte-for-byte. Round 6 asks `nullSafeSlot` there (slot type + attributes only). The
-; CLONE prefix pins that `h`'s clone passes `0` into the inner `musttail` call and holds no
-; template; the main CHECKs pin the twin's stream (the `mul_i32_hl_unc` + `cqrt_free` of `p` before
-; the second Ry). The e2e pair `e2e-spec-dropped-arg-musttail-inner-twin-identical` links it.
+; `int h(int a, int k) { __attribute__((musttail)) return h2(a, k); }`. `h2`'s clone records slot
+; 0 dead; inside `h`'s clone that slot is on a `musttail` call. Round 5 asked the drop's WHOLE
+; eligibility (`dropEligibleSlot`, whose `musttail` refusal was then a POLICY conservatism) in the
+; liveness call-slot rule, so the inner slot counted as a READ, `h`'s parameter became live, the
+; outer phantom slot was never neutralised, and the spine left `p`'s template rail dirty across
+; `Ry(0.7)` — bd tzfa's wrong unitary, exit 0, the ORACLE's stream byte-for-byte. Round 6 asks
+; `nullSafeSlot` there (slot type + attributes only). The CLONE prefix pins that `h`'s clone passes
+; `0` into the inner call and holds no template; the main CHECKs pin the twin's stream (the
+; `mul_i32_hl_unc` + `cqrt_free` of `p` before the second Ry).
 ;
+; ⚠ bd ev3m (2026-09-28) RE-SPELLED THIS FILE, because it would otherwise have stopped pinning
+; anything (CLAUDE.md Rule 12(c)). `h2` originally read `a` in a volatile-fold diamond, which is
+; dead once the fenv stages run; ev3m made a `musttail` site drop-eligible, so the pre-specialize
+; drop removed the whole chain (`h2` slot → `h`'s parameter → `main`'s slot) and no clone was ever
+; built — this file went RED on its NODROP and CLONE lines while its C spelling (the e2e pair
+; `e2e-spec-dropped-arg-musttail-inner-twin-identical`) stayed green for the TWIN's reason. `h2`
+; now reads `a` in a BRANCH-ONLY empty diamond (IR-only: `-O1` folds one away), which the drop
+; sees as a live read and only the CLONE's flatten kills. ⚠ CORRECTED in round 2 (Rule-13 r1B
+; F-r1B-3): round 1 wrote here that "the in-clone `musttail` slot is still the subject" — FALSE.
+; The same track's commit C demotes a clone's `musttail` in `cloneFor` (`stripStaleClassicalAttrs`,
+; the first statement of `buildClone`), BEFORE any record or liveness question is asked, so from
+; commit C on NO slot question is ever asked of a `musttail` call inside a clone: the w7nm
+; mechanism is retired twice (commit B removed the drop's refusal, commit C the marker). What this
+; file still pins is the GENERIC inner-slot neutralisation (`h2`'s clone records slot 0 dead, `h`'s
+; clone passes `0` into its now-PLAIN inner call, `main` passes `0`) — worth keeping, but not the
+; subject it was written for. The demotion itself is pinned by
+; `spec_accept_musttail_in_clone_demoted{,_inalloca}.ll` and the e2e slices
+; `e2e-slice-spec-musttail-{clone-live-arg,clone-partial-drop}` (linked, twin-equivalent).;
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -110,16 +127,15 @@ declare i32 @cq_measure_si32(i32 noundef) local_unnamed_addr #2
 
 ; Function Attrs: mustprogress nofree noinline norecurse nounwind ssp willreturn memory(readwrite, argmem: none) uwtable
 define range(i32 -2147483647, -2147483648) i32 @h2(i32 noundef %0, i32 noundef %1) local_unnamed_addr #3 {
-  %3 = icmp sgt i32 %0, 3
-  br i1 %3, label %4, label %6
+  %3 = icmp sgt i32 %0, 3   ; bd ev3m re-spell: a BRANCH-ONLY read (IR-only) — live before
+  br i1 %3, label %nlfd.arm, label %nlfd.join   ; specialize, killed by the CLONE's flatten
 
-4:                                                ; preds = %2
-  %5 = load volatile i32, ptr @K, align 4, !tbaa !10
-  br label %6
+nlfd.arm:
+  br label %nlfd.join
 
-6:                                                ; preds = %4, %2
-  %7 = add nsw i32 %1, 1
-  ret i32 %7
+nlfd.join:
+  %4 = add nsw i32 %1, 1
+  ret i32 %4
 }
 
 ; Function Attrs: mustprogress nofree norecurse nounwind ssp willreturn uwtable

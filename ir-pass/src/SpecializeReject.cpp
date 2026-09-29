@@ -691,6 +691,30 @@ SpecReject scanBody(Function *Callee, const IntrinsicSets &Sets,
           pop();
           return SpecReject::NonReversibilizable;
         }
+        // bd nlfd/ev3m round 2 (Rule-13 r1B F-r1B-2): a `musttail` call that
+        // forwards a `preallocated` argument. The clone of this body DEMOTES every
+        // `musttail` (`stripStaleClassicalAttrs`, bd m5pn — its Bennett wrap emits code
+        // after an inner clone call), and a `preallocated` operand is legal only on a
+        // `musttail` call or on one carrying the `"preallocated"` bundle — which a
+        // forwarded argument has no token for: the verifier then ABORTED the run
+        // (exit 134; the ORACLE aborted too, on the old `musttail … must precede a
+        // ret` rule). There is no plain-`tail` spelling to be identical to (the same
+        // call without `musttail` is invalid input IR), so this is a decline of a
+        // shape with no valid alternative spelling, loud instead of an abort. ⚠ NOT
+        // `inalloca`: a forwarded `inalloca` argument is legal on a plain call (the
+        // verifier checks `inalloca` provenance only when the operand is an `alloca`),
+        // and after demotion the module is byte-identical to its plain-`tail`
+        // spelling's (measured, nlfd_probes/src/r2/ia2.ll vs iaN.ll — the owner's
+        // 2026-09-29 invariant). IR-only: clang emits both attributes only for the
+        // 32-bit Windows C++ ABI.
+        if (CI->isMustTailCall())
+          for (unsigned A = 0, E = CI->arg_size(); A < E; ++A)
+            if (CI->paramHasAttr(A, Attribute::Preallocated)) {
+              WhereOut = &I;
+              KindOut = "musttail forward of a preallocated argument";
+              pop();
+              return SpecReject::NonReversibilizable;
+            }
         Function *Inner = CI->getCalledFunction();
         // syscall: a direct call to the libc `syscall` trap is an irreversible
         // kernel side effect. The ONE exact-name match in the classifier — an

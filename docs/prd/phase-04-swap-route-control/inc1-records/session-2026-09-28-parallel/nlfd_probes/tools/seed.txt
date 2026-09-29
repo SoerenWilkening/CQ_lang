@@ -1,0 +1,6 @@
+sa1 mtT
+mt1 mtT
+mtN mtT
+mm1 mmT
+mmN mmT
+mt2 mt2T

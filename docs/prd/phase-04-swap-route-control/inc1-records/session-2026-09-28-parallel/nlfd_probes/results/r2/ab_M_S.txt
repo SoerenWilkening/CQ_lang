@@ -1,0 +1,15 @@
+denominator lit: 2466 modules (0 build failures not swept)
+denominator e2e: 633 modules (30 build failures not swept)
+denominator multi: 39 modules (1 build failures not swept)
+denominator probe: 1591 modules (0 build failures not swept)
+denominator total: 4729  A=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/nlfd/bin/cq-opt.M  B=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/nlfd/bin/cq-opt.R2
+movers 9 of 4729
+STREAM	lit	spec_accept_phantom_arg_read_unc_twin_nofpclass_stripped.ll	A=(0, '188ff526f2dc639e', '')	B=(0, '1474b95ca5f4eb7b', '')
+STREAM	lit	spec_accept_phantom_arg_read_unc_twin_range_stripped.ll	A=(0, 'bc3856720edb9006', '')	B=(0, 'acc6ebd3ef62b8cd', '')
+STREAM	lit	spec_accept_phantom_arg_read_unc_twin_range_stripped_nullsafe.ll	A=(0, '9bfed39b86b503cc', '')	B=(0, '2fed26c8154a59f0', '')
+STRING	lit	spec_reject_musttail_forward_preallocated.ll	A=(-6, 'e3b0c44298fc1c14', '')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function h i32 (ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (musttail forward of a preallocated argument)')
+STREAM	probe	session-2026-09-28-parallel/review_r1A_nlfd/probes/p1_twin_range_nn.ll	A=(0, '744c974a11e376fe', '')	B=(0, '5994631e8ad9bafb', '')
+STREAM	probe	session-2026-09-28-parallel/review_r1A_nlfd/probes/p1_twin_range_ns.ll	A=(0, 'fc527bccb1a020dd', '')	B=(0, '807fc567a0d9767a', '')
+STREAM	probe	session-2026-09-28-parallel/review_r1A_nlfd/probes/p7_fp_classical_slot_nn.ll	A=(0, 'e9be7bc8967ed9c9', '')	B=(0, '560079ceeeca1881', '')
+STRING	probe	session-2026-09-28-parallel/review_r1B_nlfd/probes/q2/pa.ll	A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function h2 i32 (ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function h i32 (ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (musttail forward of a preallocated argument)')
+STRING	probe	session-2026-09-28-parallel/review_r1B_nlfd/probes/q2/pa2.ll	A=(-6, 'e3b0c44298fc1c14', '')	B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function h i32 (ptr, i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (musttail forward of a preallocated argument)')

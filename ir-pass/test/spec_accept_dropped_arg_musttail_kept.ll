@@ -1,17 +1,25 @@
-; spec_accept_dropped_arg_musttail_kept.ll — ACCEPT, no argument dropped (bd
-; test_C_libtooling-vsfp ROUND 2 — the drop's `musttail` refusal; hand-written IR).
+; spec_accept_dropped_arg_musttail_kept.ll — ACCEPT, the argument DROPPED through a `musttail`
+; forward (bd test_C_libtooling-ev3m, 2026-09-28; hand-written IR). ⚠ THE FILE NAME IS HISTORY:
+; it records the bd vsfp ROUND-2 conservatism this file pinned until ev3m RETIRED it — kept
+; rather than renamed, because a rename can be resurrected by a merge (CLAUDE.md L8, bd gahu).
 ;
-; `@g` forwards `a` to `@h` by a `musttail` call and `@h` ignores it. The drop refuses a
-; `musttail` SITE, so `@h(%a, %k)` is kept, `a` stays live in `@g`, and `main`'s `g(%m, …)`
-; is kept too (NODROP). ⚠ This pins a CONSERVATISM, not a soundness property: a constant
-; argument changes no signature, and LLVM's DAE refuses `musttail` only where it would
-; change one. It is the mirror the reviewers asked for (bd vsfp r1A F-VA-1), pinned so
-; that relaxing it is a decision (mutant R7 flips it).
-;
+; `@g` forwards `a` to `@h` by a `musttail` call and `@h` ignores it. Rounds 1–6 of bd vsfp
+; refused a `musttail` SITE as a POLICY (this file's old header: "a CONSERVATISM, not a soundness
+; property: a constant argument changes no signature … pinned so that relaxing it is a decision
+; (mutant R7 flips it)"). bd ev3m is that decision: the conservatism was the whole reason a
+; callee forwarding its ignored QUANTUM argument through `musttail` kept a phantom read and
+; declined at the 3jru return refusal while its plain-`tail` twin compiled (r5 `mt2`, r6 `mm1`;
+; pinned from C by `spec_accept_dropped_arg_musttail_return.ll` and the e2e pair
+; `e2e-spec-dropped-arg-musttail-return-twin-identical`). The drop's fixpoint now takes the
+; chain one site per turn — `@h`'s parameter dead → `@g`'s musttail slot `0` → `@g`'s parameter
+; dead → `main`'s slot `0` — and the `musttail` call stays a `musttail` call (the MT line): only
+; an OPERAND changed, so no signature, calling convention or ABI-impacting attribute moved.
+; Restore the refusal and the DROP/MT lines go red (mutant E1).
 ;
 ; RUN: env CQ_DEADARG_DBG=1 %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NODROP --allow-empty < %t.err
+; RUN: %filecheck %s --check-prefix=MT < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=DROP < %t.err
 ;
 ; The ordered call sequence of @main (derived from the lowered module; SSA names
 ; wildcarded, constants — every dropped `0` and every angle — kept):
@@ -25,10 +33,17 @@
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: call i32 @cqrt_measure_i32(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
-; CHECK: call i32 @g(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
+; CHECK: call i32 @g(i32 0, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK-NOT: call {{.*}}@{{(cqrt_|cq_template_|__cq_q_)}}
 ; CHECK: ret i32
-; NODROP-NOT: CQ_DEADARG_DBG
+;
+; MT-LABEL: define i32 @g(
+; MT-NEXT: {{^}}  %r = musttail call i32 @h(i32 0, i32 %k)
+; MT-NEXT: {{^}}  ret i32 %r
+;
+; DROP: CQ_DEADARG_DBG: drop arg 0 of @h in @g (arg)
+; DROP: CQ_DEADARG_DBG: drop arg 0 of @g in @main (arg)
+; DROP-NOT: CQ_DEADARG_DBG
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

@@ -1,0 +1,23 @@
+warning: <unknown>:0:0: in function main i32 (i32, ptr): cq rotation lowering: non-diagonal gate over a live derived record
+
+musttail call must precede a ret with an optional bitcast
+  %4 = musttail call i32 @__cq_q_h2_011(i32 noundef 0, i32 noundef %1, i32 noundef %2)
+LLVM ERROR: Broken module found, compilation aborted!
+PLEASE submit a bug report to https://github.com/Homebrew/homebrew-core/issues and include the crash backtrace.
+Stack dump:
+0.	Program arguments: /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/frozen/cq-opt.main_9a230646 -passes=cq-lowering -S clone_partial_drop.s1.ll -o clone_partial_drop.O9.s2.ll
+1.	Running pass "VerifierPass" on module "clone_partial_drop.s1.ll"
+Stack dump without symbol names (ensure you have llvm-symbolizer in your PATH or set the environment var `LLVM_SYMBOLIZER_PATH` to point to it):
+0  cq-opt.main_9a230646     0x000000010a0a2488 llvm::sys::PrintStackTrace(llvm::raw_ostream&, int) + 40
+1  cq-opt.main_9a230646     0x000000010a0a01a9 llvm::sys::RunSignalHandlers() + 233
+2  cq-opt.main_9a230646     0x000000010a0a2c49 SignalHandler(int) + 313
+3  libsystem_platform.dylib 0x00007ff8092c83bd _sigtramp + 29
+4  libsystem_platform.dylib 000000000000000000 _sigtramp + 18446603370427022432
+5  libsystem_c.dylib        0x00007ff8091ce754 abort + 126
+6  cq-opt.main_9a230646     0x000000010a00170c llvm::report_fatal_error(llvm::Twine const&, bool) + 476
+7  cq-opt.main_9a230646     0x000000010a001529 llvm::report_fatal_error(char const*, bool) + 41
+8  cq-opt.main_9a230646     0x00000001099d94e4 llvm::VerifierPass::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 164
+9  cq-opt.main_9a230646     0x0000000109a96772 llvm::detail::PassModel<llvm::Module, llvm::VerifierPass, llvm::AnalysisManager<llvm::Module>>::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 18
+10 cq-opt.main_9a230646     0x00000001099a56cf llvm::PassManager<llvm::Module, llvm::AnalysisManager<llvm::Module>>::run(llvm::Module&, llvm::AnalysisManager<llvm::Module>&) + 463
+11 cq-opt.main_9a230646     0x0000000109719400 main + 2944
+12 dyld                     0x00007ff808ed91c8 start + 3240

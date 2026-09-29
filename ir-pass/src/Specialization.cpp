@@ -34,6 +34,7 @@
 #include "llvm/IR/DiagnosticInfo.h"
 #include "llvm/IR/Function.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/InstIterator.h"
 #include "llvm/IR/Instructions.h"
 #include "llvm/IR/Module.h"
 #include "llvm/IR/Type.h"
@@ -49,6 +50,14 @@
 using namespace llvm;
 
 namespace cq {
+
+// bd `test_C_libtooling-vsfp` — see Specialization.h. Mirrored
+// character-for-character by `spec_reject_phantom_arg_read*.ll`. Asked by
+// `resolvePhantomCloneArgReads` (module level) and, since bd `nlfd`, by
+// `buildClone` (the same rule one clone level down).
+static constexpr char kMsgPhantomArgRead[] =
+    "cq specialization: quantum argument to a parameter the lifted callee never "
+    "reads";
 
 namespace {
 
@@ -993,17 +1002,89 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // OPCODE. Not later: `lowerCloneSelect`/`lowerOps` turn reads into runtime
   // calls, which are roots, and would make every parameter live. A slot recorded
   // here is one no LIVE ROOT of the clone reads — and, since bd vsfp round 4 (bd
-  // sqjq), one the built clone never reads at all, because the dead cone below is
-  // deleted right after the record (⚠ round 3 wrote "never reads" of the record
-  // alone, and a dead-but-lowered op on the slot falsified it, r3A F-XA-2). It is
-  // the question the phantom-read resolution and M-C arm (d0) ask, by CALLING
-  // `isRecordedDeadSlot`. A dead
+  // sqjq), one whose VALUE the built clone never observes, because the dead cone
+  // below is deleted right after the record (⚠ round 3 wrote "never reads" of the
+  // record alone, and a dead-but-lowered op on the slot falsified it, r3A F-XA-2).
+  // ⚠ Since bd `nlfd` the parameter may still be an OPERAND: forwarded as-is into
+  // an inner clone's unread scalar slot that the rewrite may not null
+  // (`isUnreadScalarSlot`) — passed along, never read. It is the question the
+  // phantom-read resolution, M-C arm (d0) and M-A ask (by CALLING
+  // `isRecordedDeadSlot` / `isRewritableDeadSlot`). A dead
   // parameter that reaches this point at all is one the dead-argument drop could
   // not predict from the ORIGINAL callee (the clone's own flatten removed its
   // last read — e.g. a condition-only use of an empty diamond — or a drop
   // precondition refused the slot).
-  const uint64_t DeadSlots = deadParamMask(*Clone, taint);
+  const FunctionLiveness Existence(*Clone, taint);
+  const uint64_t DeadSlots = deadParamMask(*Clone, Existence);
   taint.SpecDeadArgMask[Clone] = DeadSlots;
+  // bd `test_C_libtooling-vaep` (Rule-13 r1A F-r1A-1): strip the value constraints
+  // of every recorded-dead parameter HERE, at the clone's own record — before any
+  // SYNTHESIZED `_unc` twin of it exists (`ensureTwin` runs in the ENCLOSING clone's
+  // inner-call loop after this build returns), so every synthesized twin copies the
+  // stripped set. ⚠ NOT a pre-supplied twin (Rule-13 r2 F-r2-3): `ensureTwin`
+  // short-circuits on an existing `<clone>_unc` DEFINITION and uses it verbatim, so
+  // its parameters keep whatever `range`/`nofpclass` the input gave them (measured:
+  // r2 `probes/pt_pretwin.ll` receives `i32 0` into `noundef range(i32 1, 100)`, on
+  // `main` and here alike). The attribute is the least of it — a pre-supplied twin
+  // with a wrong body is used as the adjoint unchecked: bd `test_C_libtooling-9oob`
+  // (P1, PRE-EXISTING); strip or refuse it there, not here. A caller's null
+  // (neutralised at module level, inherited by an inner call, or forwarded through a
+  // dead parameter) reaches the forward clone AND its twin; before this, the twin
+  // kept `noundef range(…)` / `nofpclass(…)` on the slot the null arrived in.
+  for (Argument &Arg : Clone->args())
+    if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
+      stripParamValueConstraints(*Clone, Arg.getArgNo());
+  // bd `test_C_libtooling-nlfd` (vsfp Rule-13 r6 F-R6-1) — THE RULE OF
+  // `resolvePhantomCloneArgReads` step 1, ONE CLONE LEVEL DOWN. A HANDLE parameter
+  // (`Mask`) that the record calls LIVE only because a surviving INSTRUCTION feeds
+  // an unread scalar slot the rewrite may not null (a recorded-dead inner slot with
+  // an attribute outside `nullSafeSlot`'s allowlist) is kept alive by a
+  // computation whose result nothing observes — `SlotReads::Value` calls it dead.
+  // Its caller's slot then stays a phantom read, and it cannot be neutralised either:
+  // the surviving instruction would then be lowered on runtime handle 0 (bd sqjq's
+  // hazard). On `main` 9a230646, for a DERIVED caller operand (`p = q*3`), the
+  // phantom read was bd tzfa's wrong unitary (the module-level spine saw an extra
+  // consumer of `p`'s rail) and neither accept was the twin's; for a `cq_theta` SOURCE
+  // operand the keep-the-slot accept already was the twin's unitary (Rule-13 r1A
+  // F-r1A-2, bd `test_C_libtooling-w109`). ⚠ SINCE bd rhk5 (9ad22639) THE PREMISE IS
+  // FALSE FOR EVERY MEMBER MEASURED (bd `test_C_libtooling-ur72`): the spine now
+  // discharges a derived chain whose rail a clone call only reads, so the keep-the-slot
+  // accept is the twin's circuit plus an identity compute/uncompute pair on a scratch
+  // rail (2b clean) for the derived operands too — this fence is an IR-only
+  // OVER-DECLINE of programs `main` compiles correctly, kept pending the owner's
+  // decision on bd ur72 / bd uyhx (a clone is shared by every caller of its
+  // `(callee, mask)` and cannot see its callers' operands, so it cannot be narrowed to
+  // the harmful members from here). It DECLINES with the module-level string. IR-only as measured: clang-19 `-O1` puts only allowlisted
+  // attributes on an int/fp parameter that CAN BE RECORDED DEAD (it does infer
+  // `returned` on a returned — hence live — parameter; r1A F-r1A-3). An ARGUMENT
+  // forwarded into such a slot needs no fence: the liveness call-slot rule does not
+  // count it (`isUnreadScalarSlot`), the record calls the parameter dead, and the
+  // caller's null-safe slot is neutralised (value constraints stripped above).
+  // RETIREMENT TRIGGER (L8): the day `nullSafeSlot` admits string/unknown attributes
+  // (owner question bd `test_C_libtooling-uyhx`), this fence and step 1's decline
+  // both shrink to what is left outside it.
+  if (const uint64_t HandleLive = Mask & ~DeadSlots) {
+    const FunctionLiveness Value(*Clone, taint, SlotReads::Value);
+    if (deadParamMask(*Clone, Value) & HandleLive) {
+      // Only the diagnostic's LOCATION (the verdict is decided above): the first call
+      // with an argument operand live under Existence and dead under Value — the
+      // frontier where the SAME two answers diverge (r1A F-r1A-4: the first spelling
+      // re-derived the slot predicate here, a second spelling of the condition).
+      DebugLoc Where;
+      for (Instruction &I : instructions(*Clone))
+        if (auto *CB = dyn_cast<CallBase>(&I); CB && !Where)
+          for (const Use &U : CB->args())
+            if (Existence.isLive(U.get()) && !Value.isLive(U.get())) {
+              Where = CB->getDebugLoc();
+              break;
+            }
+      Clone->getContext().diagnose(
+          DiagnosticInfoUnsupported(*Clone, kMsgPhantomArgRead, Where));
+      plan.Cache[Key].ReturnTainted = false;
+      retargetSite(Site, Clone);
+      return SpecRecord{Clone, false};
+    }
+  }
   // …AND MAKE THE RECORD EXACT FOR THE BUILT CLONE (bd `test_C_libtooling-sqjq`,
   // Rule-13 r3A F-XA-2). "Dead" means no live root reads the parameter — not that
   // no instruction does. A dead instruction still standing here (the chain of a
@@ -1013,7 +1094,8 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
   // neutralises the caller's slot to `0`, that read addresses runtime handle h0, a
   // register the caller never passed (at the wrong width when h0 is a `_Bool`).
   // Delete that dead cone now, with the same predicate that took the record: the
-  // parameter is then genuinely unread, and an inner clone call inherits the dead
+  // parameter's value is then genuinely unobserved (its only remaining uses are
+  // inner unread scalar slots, bd `nlfd`), and an inner clone call inherits the dead
   // slot (its operand becomes a constant, `deleteDeadCones` step 3). Deleting
   // rather than recording later (after `lowerOps`) keeps the record on the
   // stock-opcode body, where every read is still visible as a stock use. The clone
@@ -1034,10 +1116,21 @@ SpecRecord buildClone(CallInst *&Site, Function *Callee, SpecMask Mask, Module &
       deleteDeadCones(*Clone, DeadUsers, taint, "clone-dead-slot");
     // A dead PARAMETER passed straight into an inner clone call's dead slot (the
     // instruction case is `deleteDeadCones` step 3): the inner call inherits it.
+    // A slot the rewrite may NOT null (bd `nlfd`: an unread scalar slot outside
+    // `nullSafeSlot`'s allowlist — the only other way a dead parameter can still
+    // have a use, see `isUnreadScalarSlot`) keeps the parameter as its operand; the
+    // caller's neutralised `0` reaches it through the parameter, so the two value
+    // constraints a null can violate are stripped there too — the CALL-SITE half
+    // matters (the inner callee's parameter, and so its `_unc` twin, was already
+    // stripped at the inner clone's own record, bd `vaep`).
     for (Argument &Arg : Clone->args())
       if (Arg.getArgNo() < 64 && ((DeadSlots >> Arg.getArgNo()) & 1))
         for (Use &U : make_early_inc_range(Arg.uses()))
-          rewriteRecordedDeadSlotUse(U, taint);
+          if (!rewriteRecordedDeadSlotUse(U, taint))
+            if (auto *CB = dyn_cast<CallBase>(U.getUser());
+                CB && CB->isArgOperand(&U) &&
+                isUnreadScalarSlot(*CB, CB->getArgOperandNo(&U), taint))
+              stripUnreadSlotValueConstraints(*CB, CB->getArgOperandNo(&U));
   }
 
   // 5po2: lift any LIFTABLE tainted `select` in the clone body to a 4.4
@@ -1227,11 +1320,8 @@ bool shouldSpecialize(const CallInst *CI, const SpecPlan &plan) {
   return false;
 }
 
-// bd `test_C_libtooling-vsfp` — see Specialization.h. Mirrored
-// character-for-character by `spec_reject_phantom_arg_read*.ll`.
-static constexpr char kMsgPhantomArgRead[] =
-    "cq specialization: quantum argument to a parameter the lifted callee never "
-    "reads";
+// (`kMsgPhantomArgRead` is defined at the top of this file since bd `nlfd`:
+// `buildClone` asks it too.)
 
 // bd `test_C_libtooling-cepm` — the check on the propagation-time classical
 // prediction (`specialize()`); see there.
@@ -1347,7 +1437,8 @@ bool userProgramReads(const Value *V, const FunctionLiveness &L,
 bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
   // 1. NEUTRALISE. Every recorded-dead slot of every call to a clone in a
   //    non-clone function that is NULL-SAFE (an int/fp scalar with allowlisted
-  //    attributes — `nullSafeSlot`; never the drop's `musttail` policy, bd `w7nm`)
+  //    attributes — `nullSafeSlot`; never the drop's POLICY, bd `w7nm` — whose
+  //    `musttail` refusal bd ev3m has since retired)
   //    gets a null constant with the `range`/`nofpclass` strip, asked with the SAME predicate's record
   //    (`isRecordedDeadSlot`). ⚠ Round 4 said "exactly the drop's rewrite" and
   //    applied none of the drop's eligibility — it nulled pointer and `byval`
@@ -1391,8 +1482,9 @@ bool resolvePhantomCloneArgReads(Module &M, const TaintSet &taint) {
           if (!rewriteRecordedDeadSlotUse(CB->getArgOperandUse(A), taint)) {
             // A slot that is not NULL-SAFE (bd `91k9`, round 5: a pointer, a
             // `byval`, an attribute outside the allowlist) is left in place. This
-            // is the one consumer that asks both the bare record and the rewritable
-            // question — it is where their difference is resolved. A
+            // is where their difference is resolved AT MODULE LEVEL (one clone
+            // level down it is `buildClone`'s bd `nlfd` fence and the liveness
+            // rule's unread-scalar-slot clause). A
             // classical value there is harmless — no rail, no consumer set, no
             // spine. A QUANTUM one would stay a phantom read, exactly bd `tzfa`'s
             // extra consumer, so it declines (the same string as step 2).

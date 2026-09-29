@@ -144,6 +144,31 @@ bool isRewritableDeadSlot(const CallBase &CB, unsigned ArgNo,
   return isRecordedDeadSlot(CB, ArgNo, taint) && nullSafeSlot(CB, ArgNo);
 }
 
+bool isUnreadScalarSlot(const CallBase &CB, unsigned ArgNo,
+                        const TaintSet &taint) {
+  if (!isRecordedDeadSlot(CB, ArgNo, taint))
+    return false;
+  FunctionType *FT = CB.getFunctionType();
+  if (ArgNo >= FT->getNumParams())
+    return false;
+  Type *T = FT->getParamType(ArgNo);
+  return T->isIntegerTy() || T->isFloatingPointTy();
+}
+
+void stripParamValueConstraints(Function &F, unsigned ArgNo) {
+  if (ArgNo < F.arg_size())
+    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass})
+      F.removeParamAttr(ArgNo, K);
+}
+
+void stripUnreadSlotValueConstraints(CallBase &CB, unsigned ArgNo) {
+  if (Function *Callee = CB.getCalledFunction(); Callee && ArgNo < Callee->arg_size()) {
+    stripParamValueConstraints(*Callee, ArgNo);
+    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass})
+      CB.removeParamAttr(ArgNo, K);
+  }
+}
+
 bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
   auto *CB = dyn_cast<CallBase>(U.getUser());
   if (!CB || !CB->isArgOperand(&U) || isa<Constant>(U.get()))
@@ -153,16 +178,13 @@ bool rewriteRecordedDeadSlotUse(Use &U, const TaintSet &taint) {
     return false;
   FunctionType *FT = CB->getFunctionType();
   Type *SlotTy = A < FT->getNumParams() ? FT->getParamType(A) : U.get()->getType();
-  if (Function *Callee = CB->getCalledFunction(); Callee && A < Callee->arg_size())
-    for (Attribute::AttrKind K : {Attribute::Range, Attribute::NoFPClass}) {
-      Callee->removeParamAttr(A, K);
-      CB->removeParamAttr(A, K);
-    }
+  stripUnreadSlotValueConstraints(*CB, A);
   U.set(Constant::getNullValue(SlotTy));
   return true;
 }
 
-FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
+FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint,
+                                   SlotReads Mode) {
   SmallVector<const Instruction *, 64> Worklist;
   auto markLive = [&](const Value *V) {
     if (!isa<Instruction>(V) && !isa<Argument>(V))
@@ -179,23 +201,40 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
   while (!Worklist.empty()) {
     const Instruction *I = Worklist.pop_back_val();
     if (const auto *CB = dyn_cast<CallBase>(I)) {
-      // Operands of a call: the argument slots the callee is RECORDED never to
-      // read AND that the one rewrite may null (`isRewritableDeadSlot`) do not
-      // propagate; the called operand, bundle operands and every other slot do.
-      // ⚠ bd `91k9` (round 5): a recorded-dead slot that is NOT NULL-SAFE (a
-      // pointer, a `byval`, an attribute outside the allowlist) is never rewritten,
-      // so its operand stays a use of the call — counting it as a read keeps
-      // `deleteDeadCones` step 3 from deleting a value that call still uses.
-      // ⚠ bd `w7nm` (round 6): the question is NULL-SOUNDNESS only, never the
-      // drop's policy (`musttail`, callee conjuncts). A read counted here is NOT
-      // local: through `deadParamMask` it makes the enclosing clone's parameter
-      // LIVE one level up, where the outer slot is null-safe and would otherwise
-      // be neutralised — round 5 asked `dropEligibleSlot` here, an inner `musttail`
-      // dead slot became a read, and tzfa's phantom read came back (r5 `mt1`).
+      // Operands of a call: an argument slot the callee is RECORDED never to read
+      // does not propagate when nothing in THIS function has to keep its operand
+      // alive; the called operand, bundle operands and every other slot do.
+      //   * a REWRITABLE slot (`isRewritableDeadSlot`: recorded dead AND
+      //     null-safe) — the one rewrite nulls it, so its operand is not a use;
+      //   * an UNREAD SCALAR slot (`isUnreadScalarSlot`: recorded dead, int/fp)
+      //     whose operand is an ARGUMENT — bd `nlfd` (vsfp Rule-13 r6 F-R6-1). An
+      //     argument is never deleted, so "the operand must survive" asks nothing
+      //     of it, and its VALUE is never observed there (the callee never reads
+      //     the slot; a scalar slot is not dereferenced by the call). Counting it
+      //     was NOT the conservative direction: through `deadParamMask` it made
+      //     the ENCLOSING clone's parameter LIVE one level up, the outer
+      //     (null-safe) phantom slot was never neutralised, and bd `tzfa`'s wrong
+      //     unitary came back (r6 `sa1.ll`: a string attribute on the inner slot)
+      //     — on `main` 9a230646; since bd rhk5 the phantom read is not a wrong
+      //     unitary any more (bd `test_C_libtooling-ur72`), and this clause is kept
+      //     as a strict improvement (no phantom operand, no over-warn).
+      //   * in `SlotReads::Value` mode, EVERY unread scalar slot — the question
+      //     "is the VALUE observed?", asked only by `buildClone`'s bd `nlfd` fence.
+      // ⚠ bd `91k9` (round 5): a recorded-dead slot that is NOT null-safe keeps an
+      // INSTRUCTION operand live in the default (existence) mode — it is never
+      // rewritten, so that value is still a use of the call and `deleteDeadCones`
+      // step 3 must not delete it. A pointer slot (`byval` copies its pointee at
+      // the CALL) is never an unread scalar slot. ⚠ bd `w7nm` (round 6): the
+      // rewrite question is NULL-SOUNDNESS only, never the drop's policy.
       for (const Use &U : CB->operands()) {
-        if (CB->isArgOperand(&U) &&
-            isRewritableDeadSlot(*CB, CB->getArgOperandNo(&U), taint))
-          continue;
+        if (CB->isArgOperand(&U)) {
+          const unsigned A = CB->getArgOperandNo(&U);
+          if (isRewritableDeadSlot(*CB, A, taint))
+            continue;
+          if ((Mode == SlotReads::Value || isa<Argument>(U.get())) &&
+              isUnreadScalarSlot(*CB, A, taint))
+            continue;
+        }
         markLive(U.get());
       }
       continue;
@@ -207,8 +246,11 @@ FunctionLiveness::FunctionLiveness(const Function &F, const TaintSet &taint) {
 
 bool FunctionLiveness::isLive(const Value *V) const { return Live.count(V); }
 
-uint64_t deadParamMask(const Function &F, const TaintSet &taint) {
-  FunctionLiveness L(F, taint);
+uint64_t deadParamMask(const Function &F, const TaintSet &taint, SlotReads Mode) {
+  return deadParamMask(F, FunctionLiveness(F, taint, Mode));
+}
+
+uint64_t deadParamMask(const Function &F, const FunctionLiveness &L) {
   uint64_t Mask = 0;
   for (const Argument &A : F.args())
     if (A.getArgNo() < 64 && !L.isLive(&A))
@@ -268,8 +310,11 @@ unsigned deleteDeadCones(Function &F, ArrayRef<Value *> Seeds,
     salvageDebugInfo(*I);
   }
   // A dead value may still be an operand of a LIVE call — exactly when that call's
-  // slot is one the specializer RECORDED dead (the call-slot rule is the one place
-  // liveness does not follow an operand). Such a slot gets the null constant of the
+  // slot is one the specializer RECORDED dead AND the rewrite may null
+  // (`isRewritableDeadSlot`; the call-slot rule is the one place liveness does not
+  // follow an operand, and for an INSTRUCTION operand of a recorded-dead slot that
+  // is NOT null-safe it does follow it — bd 91k9 — so that operand is never in
+  // `Del`). Such a slot gets the null constant of the
   // CALLEE PARAMETER's type (bd `f061`'s lesson: after retargeting, an fp slot is an
   // `i32` handle), with `range`/`nofpclass` stripped — the drop's own rewrite. Only
   // reachable after `specialize()` has written a record, i.e. inside a clone body

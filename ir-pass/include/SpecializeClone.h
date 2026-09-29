@@ -81,7 +81,10 @@ llvm::Function *cloneFor(const SpecCandidate &Cand);
 // return `range`). MUST be applied to every quantum-lowered clone AND its
 // uncompute twin: a stale `memory(none) willreturn` lets the backend delete a
 // void clone call whose result is unused (the Phase-6.3 twin), freeing the
-// entangled rail DIRTY — a hidden measurement (Rule 6/8).
+// entangled rail DIRTY — a hidden measurement (Rule 6/8). It also demotes every
+// `musttail` call in the body to no tail kind (the Bennett wrap emits code after an
+// inner clone call, so a kept `musttail` aborts the verifier, exit 134 — bd m5pn;
+// a `preallocated` forward is declined earlier by `scanBody`; see the definition).
 void stripStaleClassicalAttrs(llvm::Function *F);
 
 }  // namespace cq
