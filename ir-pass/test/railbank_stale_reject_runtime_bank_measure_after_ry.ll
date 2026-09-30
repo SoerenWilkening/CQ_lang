@@ -1,37 +1,14 @@
-; railbank_stale_reject_runtime_bank_measure_after_ry.ll — bd `xdu2.1` (Track B,
-; session 2026-09-24-railbank-parallel), the RUNTIME-SIZED spelling of review F-1.
+; railbank_stale_reject_runtime_bank_measure_after_ry.ll
 ;
-; bd `xdu2.4` (2026-09-24) admitted a runtime-sized `int b[n]` bank — `alloca i32,
-; i64 %n`, an ARRAY ALLOCATION rather than an `[N x i32]` object.  The stale-reader
-; fence's memory hop (`railBankParkedRails`) recovers the cell type by a DIFFERENT
-; branch for that shape (`Bank->isArrayAllocation()`), and every pre-existing F-1
-; fixture is a FIXED bank.  So this is the question "does the hop still see
-; through the NEW bank shape?", asked of the program F-1 is about: one
-; LOOP-INVARIANT rail's name parked in every cell, relabelled by a non-diagonal
-; Ry, the cells measured AFTER.  There is no valid circuit for it (reading the
-; pre-rotation value of a qubit rotated since needs cloning, Rule 8), and its
-; register spelling declines with this string on the same binary
-; (`tools/railbank_twin_pairs/p09_rt_stale_invariant_park.reg.c`).
+; A runtime-sized bank parks one rail before an Ry, then explicitly measures its cells.
 ;
-; RE-MEASURED 2026-09-24 on `d0720cb1` (`cq-opt` c6f61f80a5d524c6): DECLINES with
-; the 3d8q string.  RED-GREEN is shown by SOURCE MUTATION (TRACK_B.md §4): with
-; the memory hop disabled (`railBankParkedRails` ignored) this module ACCEPTS and
-; this fixture goes red.
-;
-; ⚠ A `DS_Error` decline writes 0 bytes to stdout, so the property is pinned by
-; the `not` inversion plus the character-for-character string (Rule 12 (b)).
-;
-; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, verbatim:
-;   __attribute__((noinline)) int slice(int n, int seed) {
-;     if (n <= 1) return 0;
-;     int q = cq_theta(seed, 0.5);
-;     int b[n]; int s = 0;
-;     for (int i = 0; i < n; ++i) b[i] = q;
-;     q = cq_theta(q, 0.7);
-;     for (int i = 0; i < n; ++i) s += cq_measure(b[i]);
-;     return s + cq_measure(q);
-;   }
-;   int main(int argc, char **argv) { (void)argv; return slice(argc + 2, 1); }
+; Safety net for stale quantum values reached through bank storage.
+; Reusing the rotated rail silently changes what these explicit measures observe.
+; Coherent basis fanout at the park point can retain earlier basis values and
+; their correlations; that operation is not unknown-state cloning (NORTHSTAR
+;  goal 1). The current lowering lacks that history and must keep its loud fence.
+; Retire this negative when a proved lowering preserves the parked values,
+; subsequent interference and explicit measures, with analytic and trace evidence.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

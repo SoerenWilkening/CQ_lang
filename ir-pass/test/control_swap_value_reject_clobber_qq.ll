@@ -1,19 +1,20 @@
-; control_swap_value_reject_clobber_qq.ll — a Q+Q link that REWRITES the
-; condition register is still the §3c PERMANENT reject, not the QQ defer
-; (4.2 WI-3 adversarial probe; PRD Part II §8.3 disposition order: the
-; base-identity + provenance checks run BEFORE the QQ-defer check).
+; control_swap_value_reject_clobber_qq.ll
 ;
-; `if (q > 5) { q = q + p; }` — the link consumes a second tainted operand
-; (%p), but the chain bottoms at the routed slot %q (the QQ walk threads the
-; operand identical to the routed straight-through) and %q is in the
-; condition's provenance: the arm overwrites the very register the flag was
-; minted from. Labeling this with the deferred-subset string would promise a
-; future QQ increment could accept it — it cannot (the §3c bind is
-; information-theoretic, not a missing feature). Permanent reject.
+; The q+p arm has a second quantum operand and changes the condition register.
+;
+; Safety net for the current condition/arm lowering (NORTHSTAR goal 1).
+; Reversing the predicate from a changed source can leave its flag dirty; freeing
+; that flag would introduce an implicit measurement. Preserve the loud fence.
+; A coherent basis copy or retained source history can preserve the original
+; condition while an out-of-place arm computes its answer. CNOT basis fanout is
+; valid and does not clone an unknown quantum state. This is a lowering gap.
+; Retire this negative after a proved lowering preserves the predicate, answer
+; and interference, and cleans any rail it frees without an implicit measure.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}arm rewrites a condition operand under quantum control
 ; CHECK-NOT: value-arm swap-route
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0, i32 %v0) {

@@ -1,0 +1,80 @@
+test_C_libtooling-6uqc.1	KEEP	Over-decline in preservesBorrowedParent; one-clause fix, needs fixture re-disposition. Real gap.	
+test_C_libtooling-j31l	KEEP	Stage-2b checker cannot prove a sound cross-block discharge; first slice of that shape fails STRICT.	
+test_C_libtooling-58tc	KEEP	Real loss for Grover-style loops; now an over-warn since lyyf, so retitle optional.	
+test_C_libtooling-yldg	KEEP	Silent leak of entangled flags on a measured rail; xor-true non-Strict recursion still in code.	
+test_C_libtooling-3c6m.66	REFRAME	Census SCOPE table cites retired grounds (decided-decline, g387); re-derive scopes under northstar goal 2.	Census SCOPE table: stale labels and retired grounds (g387, decided-decline); re-derive as compile gaps and add reason-freshness checks
+test_C_libtooling-3c6m.65	REFRAME	Real switch-claim-witness gap plus FP_* encoding harness bug; bucketing/progress-bearing decisions obsolete under northstar.	fpclassify: PredMux switch-rooted claim witness for select-incoming data-mux, and fix census FP_* encoding mismatch
+test_C_libtooling-3c6m.64	KEEP	Real compiler work: lower llvm.is.fpclass on tainted operands; also fix probe.py intrinsic mislabel.	
+test_C_libtooling-c6yw	KEEP	LoopInfo irreducible-cycle blindness bypasses tryBreak B4 and U1 fences; ww4c precedent was a real over-accept.	
+test_C_libtooling-etj3	KEEP	Real ABI bug (no signext/zeroext on narrow literals, trace corrupted); ix2v in other chunk is duplicate to close.	
+test_C_libtooling-66rz	REFRAME	Leans on retired Rule-18 logbl ruling and deleted SCOPING-L3; valuable finding: probe with genuine static-K peel.	Data-dependent-trip loop probes: measure deeper layers with genuine static-K peel, never back-edge excision
+test_C_libtooling-k02s	REFRAME	Valid safety constraint: derived loop bounds must hold unconditionally, not just guard-conditionally; framed as edit to deleted SCOPING-L3.	Loop-bound derivation must be guard-independent: attach reachability obligation before recovering a bound (ilogbl.f80, logbl)
+test_C_libtooling-m57l	REFRAME	Owner ruling it awaited is now northstar: user-supplied or derived bound is valid; lift Q1 decline accordingly.	Lower quantum-dependent-trip loops rolled at classical bound B (derived or user-supplied) with predicated still-running flag
+test_C_libtooling-t2fw	KEEP	Stack-overflow SIGILL pre-empts loud decline in three sites, plus cubic flatten reachable from ordinary C.	
+test_C_libtooling-3c4i	KEEP	scanBody self-recursion SIGILLs at ~4000 nodes, crash pre-empting loud decline; needs iterative rewrite.	
+test_C_libtooling-hp0x	KEEP	Poison hoisted unfrozen at dereferenceable-without-noundef params; use isPassingUndefUB at both sites; silent-miscompile class.	
+test_C_libtooling-iwr7	KEEP	Dead zext beside qram_load still in goldens (verified line 13 of exp golden); orphan rail never freed.	
+test_C_libtooling-iwz1	CLOSE	Landed in 9hea (72da1f2c): freeze set computed pre-hoist at both sites; comments cite iwz1.	
+test_C_libtooling-thqy	KEEP	Flag drops can flip non-monotone Inv0!=Inv1 loop gate toward accept; needs closure or fence.	
+test_C_libtooling-ixui	KEEP	Ordering-only protection of fp80 flag-blocker; one-token tripwire fixture converts prose invariant to check.	
+test_C_libtooling-vei8	KEEP	Silent OOB: >4GB const global truncates to i32 cell count; needs loud refusal or widened count.	
+test_C_libtooling-8h7d.4	KEEP	Latent silent dirty free from over-collected break-cond chain member; needs postcondition check.	
+test_C_libtooling-615s	KEEP	nofpclass survives poison-annotation strip and invalidates defined-leaf assumption; reachable via -ffinite-math-only.	
+test_C_libtooling-2pj9	KEEP	Exponential compile time on doubling call graph, cause unlocalized; latent DoS to fix.	
+test_C_libtooling-3c6m.14.8	KEEP	Drop-all-opportunistic policy removes an unrelated good lowering; real over-decline to fix at root cause.	
+test_C_libtooling-3c6m.14.7	KEEP	Three PredMux accepts created by S3 seed widening have no fixtures; coverage and record debt.	
+test_C_libtooling-3c6m.14.3	KEEP	E4 call admission flattens before site-ABI gate: post-mutation decline seam; mirror the gate.	
+test_C_libtooling-sj30	DEFER	Surface-scope owner call: Bessel/sincos/lgamma_r are math.h and belong; complex.h is not; confirm before modelling.	
+test_C_libtooling-3c6m.59	KEEP	Northstar goal 2 needs real body: probe must read the out-param; resolves the recorded owner decision.	
+test_C_libtooling-3c6m.57	CLOSE	Bennett-parity keep criterion retired by northstar; frem lowers fmod, so retire-vs-keep decision is moot.	
+test_C_libtooling-8h7d.1	KEEP	Real-source Payne-Hanek trig requires bounded loops plus predication; core northstar goal 2 work.	
+test_C_libtooling-3c6m.52	KEEP	frexp by-ref family still declines (multi-exit + by-ref store under control); real lowering gap.	
+test_C_libtooling-3c6m.49	REFRAME	Historic census-build task with pre-northstar numbers; live work is re-scoring under non-trivial-input, all-arg-combination rule.	Full-surface libm census: re-score under non-trivial-input, all classical/quantum arg combinations (northstar goal 2)
+test_C_libtooling-3c6m.11	REFRAME	Leans on hand-authored L1 branchless leaves; real work is closure-injecting inner callees from real openlibm source.	libm: closure-inject inner openlibm callees (atan2->atan, sinh/cosh/erf->exp, asinh/acosh->log) from real source
+test_C_libtooling-jx32	KEEP	Physics-valid non-i32 quantum return is a compiler gap; frozen-ABI framing obsolete, consider un-deferring.	
+test_C_libtooling-c9gw	DEFER	Qubit-count optimization plus loop two-quantum adder; static-K unroll fallback exists; not blocking northstar goals.	
+test_C_libtooling-y05j.3	REFRAME	Valid loop-break widening, but titled by retired phase/increment numbering.	Loop break: lower multiple break sites via single R/idx latch encoding (iteration, site)
+test_C_libtooling-iw81.13	REFRAME	Valid QRAM-in-loop gap; framed as Bennett parity/PARITY_MAP (deleted) and gated on shipped 7.3.	Lower QRAM / tainted-index memory access inside a loop (today kMsgQramLoop decline)
+test_C_libtooling-iw81.6	REFRAME	Valid QRAM gap; framed as Bennett parity with deleted PARITY_MAP and decline-safe.	Lower multi-origin pointer phi/select QRAM access via guarded fan-out (today kMsgQramMultiOrigin)
+test_C_libtooling-iw81.5	REFRAME	Valid QRAM-over-pointer-parameter gap; framed as Bennett parity with deleted PARITY_MAP.	Lower QRAM over known-shape pointer/array parameters (today kMsgQramProvenance decline)
+test_C_libtooling-iw81	CLOSE	Bennett-parity epic; PARITY_MAP deleted and parity framing retired by northstar; children stand alone.	
+test_C_libtooling-42t	REFRAME	cq_invert_begin/_end is still unimplemented (XFAIL fixture) and in CQ.h; text is stale roadmap-phase framing.	Lower cq_invert_begin/_end brackets to the adjoint sequence (manual inversion)
+test_C_libtooling-be6u	KEEP	Instrument check is vacuous (summary line always contains VIOLATION); L10 class, cheap fix.	
+test_C_libtooling-uyhx	DEFER	Explicit owner question on relaxing nullSafeSlot; waiting on owner ruling; would retire nlfd over-declines.	
+test_C_libtooling-w109	DEFER	IR-only over-decline (attribute clang never emits); retired outright if uyhx relaxes nullSafeSlot.	
+test_C_libtooling-ezyg	KEEP	Missed rhk5 win: subset search of borrowed/owned rails; accept-widening owes its own Rule-13 round.	
+test_C_libtooling-y2b3	KEEP	Over-decline: rolled Ry-stem angle select on runtime base while unrolled twin accepts.	
+test_C_libtooling-nivh	KEEP	Over-decline: realizable in-place controlled Ry declined at round 2; should re-classify instead.	
+test_C_libtooling-gqda	DEFER	Residuals of scrub guard; owner ruled guard covers accidental spellings only, deliberate evasion out of scope.	
+test_C_libtooling-ffir	DEFER	Explicit owner question on whether compiler-kept clone copy-out rail falls under lyyf-(B) ruling.	
+test_C_libtooling-swtv	KEEP	Decline fixture lost its subject and pins nothing (Rule 12c); re-spell and re-derive.	
+test_C_libtooling-9k30	CLOSE	Duplicate of jr8q: same M-A isCloneCallHop classifies classical-verdict clone result as record, over-warn.	
+test_C_libtooling-jzwo	KEEP	Checker treats classical clone results as rails; gates out valid slice of that shape at stage 2b.	
+test_C_libtooling-zt0b	CLOSE	Fixed by fmt3 nomerge on cq_theta: measured, both arm thetas survive -O1 and region declines loudly.	
+test_C_libtooling-whd4	KEEP	Over-decline: runtime _Bool state-prep seed materialized twice by -O1; needs cone hoist and semantic identity.	
+test_C_libtooling-xmew	KEEP	Write retirement trigger at nullSafeSlot (naked callee depends on scanBody inline-asm decline); small L8 item.	
+test_C_libtooling-x8ut	KEEP	Predicate direction mismatch (hop exempts records) with false conservative comment; revert or write unreachability argument.	
+test_C_libtooling-18a7	DEFER	Record-only defect in historical review probe script; verdicts stay comparable; negligible value.	
+test_C_libtooling-ad35	DEFER	Rare pragma-section over-decline; exact fix needs TargetMachine; correct comment now, refine later.	
+test_C_libtooling-cpac	DEFER	Sound trace-only difference from DAE twin (extra compute/uncompute scratch); coverage nicety, unitary unchanged.	
+test_C_libtooling-g84t	KEEP	L1 re-ask gap: taint grown after upstream consumers is never re-asked; loud today, needs written argument or re-run.	
+test_C_libtooling-jr8q	KEEP	Over-warn and census miscount from by-name clone-result classification; 9k30 duplicates it.	
+test_C_libtooling-3a43	KEEP	Module-wide lift re-sweep declines unrelated shipped Grover accept; scope it to functions with a lift.	
+test_C_libtooling-r77x	KEEP	User intrinsic deleted by non-owner is skipped silently: vanishing-gate class; add loud postcondition.	
+test_C_libtooling-p5p7	KEEP	Dangling-key pins lack positive control; instrument could silently stop witnessing.	
+test_C_libtooling-mg6f	KEEP	Integer clone arg declines with wrong floating-point message; narrow/wide integer clone args are over-declined.	
+test_C_libtooling-d152	KEEP	Over-decline plus armed trap: natural fix creates silent miscompile stage 2b cannot see; needs verdict-aware handle test.	
+test_C_libtooling-emof	KEEP	Hygiene: raw block/value pointers in BreakRegions; cheap fix (drop dead field, weak handles).	
+test_C_libtooling-ibtq	KEEP	Audit ~40 local raw TaintSet snapshots across erase windows; latent dangling-pointer hazard, unmeasured.	
+test_C_libtooling-8osk	KEEP	Over-decline of valid circuit: classical-condition mux of classical seed and cq_theta result; promote seed at branch.	
+test_C_libtooling-xdu2.24	KEEP	Void-user clause refuses read-only _unc borrow; false comment plus over-decline.	
+test_C_libtooling-xdu2.23	KEEP	Over-decline: -O1 folds make more rotated-select cells rolled-only; safe direction.	
+test_C_libtooling-xdu2.22	KEEP	Over-decline: CSE-shared condition tree between data select and phase kickback.	
+test_C_libtooling-xdu2.21	KEEP	Over-decline: rolled compound tree over hoisted template rail; twin accepts.	
+test_C_libtooling-s07e	DEFER	IR-level only (layout order not emitted by clang -O1); fix is per-function RPO drain; low value.	
+test_C_libtooling-xdu2.20	KEEP	Twin matrix lacks the hoisted compound-tree data-select axis; witness gap.	
+test_C_libtooling-xdu2.19	KEEP	Over-decline: prong (c) refuses theta on disjoint register; make it wire-aware.	
+test_C_libtooling-6gqw	KEEP	Real capability gap: lowering quantum register returned from defined function; needed for state-prep helper routines.	
+test_C_libtooling-xdu2.18	KEEP	Over-decline: whole i1 cone marked predicted-quantum; narrow to sub-cone.	
+test_C_libtooling-xdu2.17	KEEP	Over-decline of valid program: re-classify round-2 quantum leaf instead of declining.	
+test_C_libtooling-xdu2.15	KEEP	Over-decline of valid rolled circuit after in-place op with parked value; needs per-trip copy.	

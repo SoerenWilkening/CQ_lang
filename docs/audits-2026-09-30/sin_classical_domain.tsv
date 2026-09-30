@@ -1,0 +1,7 @@
+input	CQ-leaf	host-sin	leaf-signbit	host-signbit
+-0x0p+0	0x0p+0	-0x0p+0	0	1
+0x1p-1	0x1.eaee8744b05fp-2	0x1.eaee8744b05fp-2	0	0
+0x1.e848p+19	-0x1.6664b2568d867p-2	-0x1.6664b2568d867p-2	1	1
+0x1.5af1d78b58c4p+66	0x1.6a09e667f3bccp-1	-0x1.4a5e605fd645p-1	0	1
+inf	-0x1.6a09e667f3bcdp-1	nan	1	1
+nan	-0x1.6a09e667f3bcdp-1	nan	1	0

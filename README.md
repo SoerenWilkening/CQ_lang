@@ -159,7 +159,7 @@ when no installer selection exists.
 > [northstar](NORTHSTAR.md) goal-2 rule: a function counts only when it compiles for
 > non-trivial input (every classical/quantum argument combination, and classical values
 > that exercise the real body, so `powf` at exponents `0.5`/`2.0` does not count). They
-> are to be re-scored under that rule.
+> have now been re-scored with runtime operands; see the [2026-09-30 recheck](docs/audits-2026-09-30/RECHECK.md) and its separate provider rows. The new measurements do not bless additional semantic goldens.
 
 **Baseline coverage:** `math.h` **159/183 cells (87%)** — **101/120** real-body
 injection, **6/6** CQ-provided leaves, **42/42** recognition cases, **10/12**

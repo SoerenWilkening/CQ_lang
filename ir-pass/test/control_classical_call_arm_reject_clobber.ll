@@ -1,21 +1,19 @@
-; control_classical_call_arm_reject_clobber.ll — §3c reject (DD-7 / WI-5.3): a
-; classical call inside a tainted-condition diamond arm whose result then
-; VALUE-CHANGES the condition's own register feeds the condition's lineage.
+; control_classical_call_arm_reject_clobber.ll
 ;
-; `if (q > 5) { r = pure_f(7); q2 = q + r; }` — the merge contribution is `q2 =
-; add q, r`, a value-changing redefinition of `q`, and `q` is the diamond's
-; straight-through (Pred-edge) incoming AND the icmp's tainted operand. Because
-; the arm's merge incoming is NOT a direct call result (it is the `add`), the 6.5
-; `classifyClassicalCallArm` recognizer DECLINES to claim it (its disjointness
-; obligation: the call result must reach the merge directly, never through a
-; rewrite of a condition operand). It falls to `classifyArms`, whose value-arm §3c
-; closure (`diagonalAliasHit`/`condProvenance`) fires the PERMANENT clobber
-; diagnostic: once `q`'s computational-basis value is overwritten, the flag
-; `icmp(q0)` references a value no longer in any live register (conservation of
-; information — SCOPING §3c). NEVER lowered.
+; The pure classical call result feeds an add that changes the condition register.
+;
+; Safety net for the current condition/arm lowering (NORTHSTAR goal 1).
+; Reversing the predicate from a changed source can leave its flag dirty; freeing
+; that flag would introduce an implicit measurement. Preserve the loud fence.
+; A coherent basis copy or retained source history can preserve the original
+; condition while an out-of-place arm computes its answer. CNOT basis fanout is
+; valid and does not clone an unknown quantum state. This is a lowering gap.
+; Retire this negative after a proved lowering preserves the predicate, answer
+; and interference, and cleans any rail it frees without an implicit measure.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}arm rewrites a condition operand under quantum control
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 declare i32 @pure_f(i32) #0

@@ -1,0 +1,81 @@
+id	verdict	reason	suggested_title
+test_C_libtooling-9oob	KEEP	Silent wrong unitary: pre-supplied __cq_q_*_unc twin trusted verbatim, C-reachable via reserved identifier; fix owed.	
+test_C_libtooling-uw5u	KEEP	Silent wrong unitary: select(t==s,t,s) folds to in-place rotation of quantum s; owner kept open 2026-09-29.	
+test_C_libtooling-4e4p	KEEP	Function-pointer cq_theta call lacks nomerge, so -O1 merge miscompile returns silently; header or pass fix owed.	
+test_C_libtooling-kyy1	REFRAME	Introduced half fixed and landed (9ad22639); only the pre-existing twin-side component-granularity leak remains.	Component-granularity leak: dead sibling rail stays entangled across a Ry when a later template/clone consumer joins its component (twin half of kyy1)
+test_C_libtooling-41g3	REFRAME	Silent-unitary defect fixed by M4 and cleared; residual is an over-decline of a realizable interior rail phi.	PredMux E6: lower an interior rail phi by recording it so convertPhis cannot select-chain it (retire the M4 over-decline)
+test_C_libtooling-fn1q	REFRAME	Owner example now compiles; bead text and bisection stale; residuals are one-accumulator W witness, ClaimAll table path, L1 window.	fn1q umbrella: remaining classical constant-table read over-declines in rolled loops (one-accumulator W witness, ClaimAll path)
+test_C_libtooling-jlf8	REFRAME	Goldens already deleted; open residue is the straight-line unrolled twin still compiling a dephasing which-path leak.	Straight-line which-path leak compiles silently: unrolled inplace_ry_loop_leak leaves interior rails entangled across a non-diagonal cqrt_ry
+test_C_libtooling-3n29	KEEP	Rolled outer loop with inner loop never discharges its per-trip rail while flat twin does; quarantined class D deficiency.	
+test_C_libtooling-zujr	CLOSE	Headline delivered 2026-09-19, three Rule-13 rounds met; subsumed beads 832l, x5fp, tu9q tracked separately.	
+test_C_libtooling-y65i	KEEP	Dead i1 phi over tainted op aborts VerifierPass (exit 134) with no diagnostic; loud-failure violation, IR-level only.	
+test_C_libtooling-hlhh	REFRAME	Original questions done; bead itself says retitle to the residual independent round on composed accepts c1/c2.	Independent Rule-13 round on the F-prime x P-prime composed accepts c1/c2 (module-level composition surface)
+test_C_libtooling-n74d	CLOSE	B4-prime clause (tests load observation points, not GEPs) landed with railbank fixes in 95949550; present in tree.	
+test_C_libtooling-de8n	CLOSE	Carve clause C7 splitting Bank/BankRaw landed in 95949550; three bankraw lit fixtures present in tree.	
+test_C_libtooling-tu9q	KEEP	Capability half only partly delivered (P0+P3 landed); remaining rolled-loop leaks still gated by s82e decline fixtures.	
+test_C_libtooling-s82e	KEEP	Open P1 silent wrong unitary: region-independent in-loop leak of entangled which-path rails; loud fence still narrow.	
+test_C_libtooling-yiid	REFRAME	Owner ruled 2026-09-14 this is a capability, not a decline: reuse after cq_measure re-allocs seeded from the outcome.	Reading/rotating a name after cq_measure lowers as a fresh cqrt_alloc seeded from the measured value (owner-ruled capability)
+test_C_libtooling-3qlq	CLOSE	Epic goal (retire swap route: register-free cq_phi, controlled-copy merge) delivered; open follow-on children stand alone.	
+test_C_libtooling-a3z7	REFRAME	Title calls rolled circuit "better"; notes re-raised to P1: phi carrying dtzb in-place operand yields a wrong circuit.	Rail phi carrying a dtzb in-place add/xor result across the back edge yields a different circuit than the straight-line twin (tryCaseA counts no PHI user)
+test_C_libtooling-wt3l	CLOSE	Premised on cq_phi(r,theta) register operand, retired 2026-09-05; register-free kickback supersedes all three treatments.	
+test_C_libtooling-drbq	CLOSE	Inc 0-4 delivered; Rz peephole since retired (would restore tensored gate); open child beads stand alone.	
+test_C_libtooling-0njv	CLOSE	Both reproducers now decline loudly ("operand predates a non-diagonal gate") via bd 3d8q stale-reader fence; verified on current cq-opt.	
+test_C_libtooling-3c6m	REFRAME	Epic text predates NORTHSTAR goal 2: coverage must hold for non-trivial input across all classical/quantum argument combinations.	math.h coverage epic: every cell compiles for non-trivial input, all cc/cq/qc/qq combinations (NORTHSTAR goal 2); re-score baseline
+test_C_libtooling-d773	KEEP	Real test-infra cost: scrub-guard self-test shards are the heavy tier long pole; cache design sketched.	
+test_C_libtooling-ur72	KEEP	IR-only over-decline from nlfd x rhk5 composition; needs fence retirement decision, still valid.	
+test_C_libtooling-j2fp	KEEP	Instrument hardening for scrub-guard include-order check; residual gaps documented, cost measurement owed.	
+test_C_libtooling-cx6j	KEEP	Over-decline introduced by nomerge header: classical if/else of two Ry in a loop; realizable, must compile.	
+test_C_libtooling-4l5q	KEEP	Over-decline introduced by nomerge: same-register common-code if/else merges now decline; realizable circuit.	
+test_C_libtooling-gjn2	KEEP	Optimisation of correct lowering: emit unmerged if/else of two Ry by difference; low priority but valid.	
+test_C_libtooling-50ho	KEEP	Volatile-const fold leaves users unfolded so clone over-lifts; twin divergence, pre-existing, fix direction stated.	
+test_C_libtooling-xdu2.7	KEEP	Runtime bool rail-bank storage rewrite: explicitly an implementation over-decline, not physics.	
+test_C_libtooling-xdu2.6	KEEP	Fresh runtime rail bank per outer-loop activation: explicitly implementation over-decline.	
+test_C_libtooling-xdu2.5	KEEP	calloc-backed rail bank: physically valid, implementation over-decline; needs provenance proof.	
+test_C_libtooling-59hy	KEEP	LoopLowering.cpp is 7413 lines against the 400-line policy in AGENTS.md; decomposition valid.	
+test_C_libtooling-ob3r	KEEP	ArmClassify.cpp is 9703 lines against the 400-line file policy; decomposition valid.	
+test_C_libtooling-x4ft	KEEP	Generated runtime files exceed 400-line policy; generator split valid, must edit YAML/generator only.	
+test_C_libtooling-lit8	KEEP	Fixture hygiene: half the stream pins are injection-vacuous and one NEG directive cannot fail; validate by mutation.	
+test_C_libtooling-tzw2	KEEP	woa0 record keyed on SSA identity across cloning pre-passes: argued hole in a silent-miscompile fence, unconstructed.	
+test_C_libtooling-707a	KEEP	Over-decline of realizable module (record committed at admission, not read); four exhibits, fix direction measured.	
+test_C_libtooling-0fly	KEEP	Re-scoped to clause (4): irreducible-cycle case through R.Merge remains argued, not proven or fenced.	
+test_C_libtooling-0w8n	KEEP	Over-decline under owner ruling: rail phi whose prep sits under classical condition is realizable; route named.	
+test_C_libtooling-depz	KEEP	Over-decline: one-accumulator value arm with classical table read declines at W witness; twin accepts.	
+test_C_libtooling-3slt	DEFER	Filed tripwire against s82e; owner ruled 2026-09-20 decide when the wall actually moves.	
+test_C_libtooling-7xds	KEEP	Possible silent leak (multi-exit loop, hoisted rail) unconstructed; owes construction or source argument.	
+test_C_libtooling-z8cz	KEEP	Over-decline: nested spelling of a program whose single-loop form accepts; realizable.	
+test_C_libtooling-tsw0	KEEP	Instrument bug: twin matrix prints QUARANTINE STALE for HARNESS-ERROR cells, inviting deletion of live gate.	
+test_C_libtooling-eigw	KEEP	Class E twin divergence (rail minted different number of times); check whether tu9q landing moved it.	
+test_C_libtooling-0kjo	KEEP	L1 window: collapseFlattenedLoopRails grants still record nothing for round-2 re-ask; single recordRound1RailGrant call site.	
+test_C_libtooling-vpde	CLOSE	Superseded: InPlaceRailOps and IterationLocalBlocks are now ScrubPtrSet self-cleaning containers (818f8afa).	
+test_C_libtooling-xdu2.3	KEEP	Composition over-decline: rail bank plus disjoint-register in-place gate; no shared wire, realizable.	
+test_C_libtooling-xdu2.2	KEEP	Over-decline: hand-unrolled twin of accepted rolled rail bank declines; also instrument loses non-vacuity floor.	
+test_C_libtooling-boj5	KEEP	Adjudication owed: 5048 left-dirty template rails now visible to stage 2b; decides leak versus wrong unitary.	
+test_C_libtooling-bbu0	DEFER	Warn-vs-decline ruling A/B/C awaits owner; measurement (D) delivered, recommendation C sequenced after zujr.	
+test_C_libtooling-r9ws	KEEP	Round-1 residue: fixtures no longer isolate their clauses, back-to-back bank loop over-decline, overclaiming comment.	
+test_C_libtooling-zwtm	CLOSE	Owner ruled 2026-09-15: example/ stays excluded, e2e slice is the record; slice_grover_oracle_uncompute.c now committed.	
+test_C_libtooling-1ro3	KEEP	Over-decline: rolled w2g_mut_d3_invread declines while hand-unrolled twin accepts at 34 lines.	
+test_C_libtooling-onq1	KEEP	Over-decline: measured-only per-trip template rail declines at conjunct 2; forced-off stream is twin-identical.	
+test_C_libtooling-1yeu	KEEP	Structural instrument gap: no multi-function or multi-region axis; two over-accepts slipped through every gate.	
+test_C_libtooling-dnqo	CLOSE	Owner ruled 2026-09-15: keep accepting undef angle, by-design scope boundary; bead says close as wontfix.	
+test_C_libtooling-3q6f	DEFER	F2 fp one-edge hole has no observed consequence; only matters if bd om35 R-2-prime is ever built.	
+test_C_libtooling-p25o	KEEP	Diagnostic honesty: F2 decline anchors !dbg on condition line, misattributing region; cheap fix, still open.	
+test_C_libtooling-832l	KEEP	Still declines: bool b=0; for(){b=cq_theta(b,t);} (measured); zujr reopened it; preheader alloc root mint missing.	
+test_C_libtooling-x5fp	DEFER	Built and parked; no program where clobber fence is the only wall until bd r903/ej5w moves.	
+test_C_libtooling-xdu2	REFRAME	Rail array cascade now compiles (xdu2.1/.4 done); premise "declines at every N" stale; epic tracks remaining bank widenings.	Rail bank epic (bool b[N] of tainted rails, classical index): remaining bank over-declines and widenings
+test_C_libtooling-xqgx	KEEP	Real over-decline widenings: compare-select S-dagger asymmetry, SawValueArm, AllowLogicalSelect for data selects.	
+test_C_libtooling-35t0	KEEP	Over-decline: 6.5 classical-call arm followed by a flat region declines at hcrg reorderable(); circuit is valid.	
+test_C_libtooling-lo7u	REFRAME	Switch minting eq-flags from a measured name should follow the yiid post-measure ruling and agree with icmp+br.	4.5 switch on a register read after cq_measure: make eq-flag minting agree with the icmp+br verdict under the post-measure re-prep ruling (bd yiid)
+test_C_libtooling-f8eu	KEEP	Test debt: 57 missed injection mutations over 17 state-prep accept fixtures; add whole-file count prefixes.	
+test_C_libtooling-54ur	KEEP	Feature gap: 6.5 classical-call arm on bare _Bool condition declines; compare twin accepts; design scoped.	
+test_C_libtooling-l4x4	REFRAME	l4x4.b and .c (wx8g) landed; only l4x4.a (Ry-stem angle select on a bool) remains.	Ry-stem angle select on a bare _Bool condition (l4x4.a): cqrt_ry_controlled with the register as control
+test_C_libtooling-drbq.14	REFRAME	Most rulings taken (i1 reversed, runtime seed landed); remaining items are state-prep F2 over-declines.	State-prep F2 residuals: seed==literal and fp-seed over-declines, F2 scope = whole function, deleted-register-fold residual
+test_C_libtooling-drbq.13	REFRAME	Literal-base state-prep angle select is realizable; fenced by counter-example a1.c (IPSCCP-sunk aliasing), not by physics.	State-prep angle select "if(c) r=cq_theta(0,A); else r=cq_theta(0,B)": lower by difference on a fresh rail, keeping a1.c fenced
+test_C_libtooling-67s8	CLOSE	cq_phi(v,.05) register form retired; cq_theta variant now declines via 3d8q stale-reader fence (verified).	
+test_C_libtooling-45fd	KEEP	Cheap python record gate for fixture-integrity classes that shipped through green suites (15 assertions disabled).	
+test_C_libtooling-drbq.9	DEFER	Owner cost decision pending: promote twin matrix and flag-order checker to ctest gates (6.5 min at -j8).	
+test_C_libtooling-ixao	KEEP	cq_invert_begin/_end accepted at exit 0, forward stream only, unresolved symbols at link (verified); implement or fail loudly.	
+test_C_libtooling-8h7d.9	KEEP	Stage 2b false UNPROVEN on correct addc/addc pair with runtime immediate; blocks writing such a slice.	
+test_C_libtooling-8h7d.8	KEEP	Still declines (verified): classical if around rotation in bounded loop; hand-unrolled twin compiles.	
+test_C_libtooling-ixhy	KEEP	Still declines (verified): loop-carried a -= off X1-declines while straight-line M-C lowers it in place.	
+test_C_libtooling-ln16	KEEP	Noinline oracle helper leaves clone result rail entangled (warned dephasing); clone result as interior producer unimplemented.	
+test_C_libtooling-6uqc.2	KEEP	Reachable leak: 4.4 select compare-operand rail left allocated; extend recorded-strip discharge to select emitter.	

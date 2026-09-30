@@ -1,17 +1,14 @@
-; control_inplace_ry_reject_tainted_angle.ll — DECLINE: the arm rotation's ANGLE
-; is quantum-derived (control-in-place-PRD §4 R2; Rule 3; bd
-; test_C_libtooling-drbq).
+; control_inplace_ry_reject_tainted_angle.ll
 ;
-; The arg-1 angle of a rotation is CLASSICAL, per-operand-use, always: a
-; quantum-derived angle names no fixed unitary, and the emitter would have to pass
-; a qubit HANDLE in the `double` slot — the f64/angle miscompile family.
+; The rotation-arm classifier checks a tainted angle before emitting a controlled Ry.
 ;
-; This is checked in the rotation-arm clause and not by the pre-existing
-; `taintedAngleGate`, and that is the finding worth pinning: `taintedAngleGate`
-; walks a `cq_phi` SPINE from the arm's merge incoming and inspects a derived
-; base, so it never looks at a `cq_theta` sitting AT the incoming and returns null
-; for this module. Same predicate (`rotationAngleIsTainted`, one spelling), same
-; message, new asker.
+; Known lowering gap: coherent quantum-derived angles (NORTHSTAR goal 1; bd 94ad).
+; The current gate ABI takes a classical double angle. Passing a quantum handle
+; into that slot would miscompile the program, so this test pins the loud fence.
+; An angle register and bit-controlled rotation ladder can implement the operation;
+; its absence is a compiler gap, not a no-unitary proof. Never insert a measure.
+; Retire this negative when that lowering preserves the data and angle semantics
+; and has analytic and trace evidence for this consumer.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control

@@ -1,21 +1,17 @@
-; lowering_reject_tainted_angle_theta.ll — DECLINE: quantum-derived ANGLE on a
-; `cq_theta` (Ry), straight-line. Mirrors the cq_phi guard on the theta path.
+; lowering_reject_tainted_angle_theta.ll
 ;
-; `%ang = sitofp i32 %q to double` is TAINTED and feeds the SECOND theta's
-; arg-1 ANGLE slot. Without the guard the lowering mints a fresh handle for the
-; classical operand `%u1` and emits `cqrt_ry(h2, %ang)` with a quantum-derived
-; angle: an Ry by a function of a value in superposition has no fixed unitary;
-; decline loudly, lower nothing (test_C_libtooling-659).
+; The sitofp result feeds the second cq_theta call, whose angle is argument 1.
 ;
-; PRODUCER CHOICE (test_C_libtooling-bxv re-shape): the original opaque-call
-; producer (`%ang = call double @ext(i32 %q)`) now declines EARLIER at the
-; module-wide taint-escape guard — @ext consuming the handle is an escape in
-; its own right, pinned by lowering_reject_taint_escape_opaque_call.ll — and
-; opt exits at the first error diagnostic. A sitofp producer is NOT an escape
-; (casts are lowerOps' class), so this fixture keeps pointing at the
-; THETA-slot path of RotationLowering::declineTaintedAngle it exists to pin.
+; Known lowering gap: coherent quantum-derived angles (NORTHSTAR goal 1; bd 94ad).
+; The current gate ABI takes a classical double angle. Passing a quantum handle
+; into that slot would miscompile the program, so this test pins the loud fence.
+; An angle register and bit-controlled rotation ladder can implement the operation;
+; its absence is a compiler gap, not a no-unitary proof. Never insert a measure.
+; Retire this negative when that lowering preserves the data and angle semantics
+; and has analytic and trace evidence for this consumer.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 

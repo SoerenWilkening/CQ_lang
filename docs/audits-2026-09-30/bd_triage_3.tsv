@@ -1,0 +1,80 @@
+test_C_libtooling-xdu2.14	KEEP	Over-decline: loop-variant guarded classical read declines at undischarged hoisted-rail postcondition; investigate clause (ii-d) placement.	
+test_C_libtooling-yiid.1	REFRAME	Post-measure gate is physically legal; register spelling's decline is an over-decline while the rail bank already lowers it.	Register spelling of park->measure->Ry->measure declines 'gate applied to handle after measurement'; lower it as the rail bank does
+test_C_libtooling-xdu2.12	KEEP	Well-defined program over-declines at literal-cell postcondition; fold must be re-asked after the later folder.	
+test_C_libtooling-xdu2.11	KEEP	Over-decline: speculated-select and switch spellings of a dead bank cell decline while flat twins compile.	
+test_C_libtooling-uol8	KEEP	Matches new CLAUDE.md 400-line maintained-file rule; no budget checker or exception model exists yet.	
+test_C_libtooling-ns7f	KEEP	Oversized Python tools violate the 400-line rule; refactor still owed.	
+test_C_libtooling-r4f6	KEEP	Fixing four fixtures yields a usable +Asserts cq-opt, which would gate the unchecked-cast family.	
+test_C_libtooling-0ues	KEEP	Rolled-vs-unrolled probe of the woa0 fence never reached it; first real clearance still owed.	
+test_C_libtooling-qs5w	KEEP	Silent accept on null blame pointer, unlocated diagnostic, and shim return value; small code fixes owed.	
+test_C_libtooling-nkgt	KEEP	Constructed masking of a taint-escape diagnostic by the early re-ask slot; half is a free fix, half an owner question.	
+test_C_libtooling-4hnu	KEEP	Wrong comments still in source (e.g. SelectClassify.h:167); corrections owed at the source.	
+test_C_libtooling-sgaf	KEEP	Five identical-body fixture pairs, one with opposite verdicts; scan and per-pair adjudication still owed.	
+test_C_libtooling-wk6o	KEEP	Arm (1c) of classicalTableReadIsSpeculatable has zero pinning fixtures; test debt.	
+test_C_libtooling-vyne	KEEP	Two-cone if/else value region has no twin fixture; coverage gap, not known defect.	
+test_C_libtooling-5zwz	KEEP	Verified example/ still untracked (git ls-files: 0), so canonical programs are ungated.	
+test_C_libtooling-2uz1	KEEP	Switch mirror of the stray-op rule still differs from valueArmIsPureChain; duplicate predicate and over-decline remain.	
+test_C_libtooling-46oo	KEEP	Probe-design trap not yet carried into session protocol; round-3 multi-exit row remains unevidenced.	
+test_C_libtooling-a945	KEEP	L3 exemption's stated ground is wrong on the composed binary; re-derive comment at source.	
+test_C_libtooling-1fev	KEEP	Verified: four of five example/grover files still use retired two-argument cq_phi; Grover is a northstar corpus routine.	
+test_C_libtooling-6hy4	KEEP	Session-close order (hash read before git pull --rebase) still in protocol; labreport still exists.	
+test_C_libtooling-xfso	KEEP	Unguarded zero-trip carried-handle accept has no fixture; add fixture and (Z7) argument.	
+test_C_libtooling-fhh3	KEEP	Retirement-trigger comment names the wrong door; rewrite greppable trigger in LoopLowering.cpp.	
+test_C_libtooling-lgu8	KEEP	Multi-exit carried handle over-declines; named on CLAUDE.md over-decline list.	
+test_C_libtooling-xt20	KEEP	(P1) gate's stated ground is false; state the contingent closure or build a real predicate.	
+test_C_libtooling-ix2v	KEEP	Real ABI defect: narrow _hl literals lack signext so goldens encode unsigned rendering; fix and regenerate goldens.	
+test_C_libtooling-hyhl	KEEP	Five declines degraded to a generic message; diagnostic-precision debt.	
+test_C_libtooling-5j2e	KEEP	Checker conservatism: (T4g) is stream-local and leaves a proven discharge unproven; extend to successor blocks.	
+test_C_libtooling-z0cv	KEEP	Class H adjudication (fold versus dropped discharge, possible s82e-class leak) still owed.	
+test_C_libtooling-ud0y	KEEP	Injection harness reports N/A hole on one fixture; teach mutator the exit-block slot.	
+test_C_libtooling-uh3j	KEEP	M-A warning noisy in both directions; over-warn on conditionally executed measure still open.	
+test_C_libtooling-av9x	DEFER	Over-decline residual with no measured customer; construct one first, needs its own review round.	
+test_C_libtooling-42yv	DEFER	Blessed quarantine anchor for phase-neutral twin-matrix cells; not actionable until cells stop diverging.	
+test_C_libtooling-svoi	DEFER	Blessed quarantine anchor for CSE'd-compare twin divergence; explicitly not a defect, not actionable now.	
+test_C_libtooling-hu1c	KEEP	Middle-loop rail in a 3-deep nest leaks where the flat twin discharges; over-decline to remove.	
+test_C_libtooling-ztyc	KEEP	Hoisted select-i1 tree node in a loop declines while flat twin accepts; capability gap.	
+test_C_libtooling-mi43	KEEP	Chained theta behind in-place-candidate add over-declines; needs M-C verdict at detection time.	
+test_C_libtooling-nexz	KEEP	Volatile-immediate in-place base over-declines; fixture header names the wrong retiring owner.	
+test_C_libtooling-xutm	KEEP	trackCondCone call has no fixture; Idx=1-only witness unbuilt; mutation test debt.	
+test_C_libtooling-e1gr	DEFER	No fixture can separate the two clauses until F1 admits if/else state prep; trigger not yet met.	
+test_C_libtooling-5idk	KEEP	Checker's L3 refusal and the pass's D5 allow-list are two spellings that can drift; both now exist.	
+test_C_libtooling-oej0	KEEP	Merge gate samples compositions via corpus instead of enumerating tuples; process fix still valid.	
+test_C_libtooling-g7mg	KEEP	Leg 1b over-declines zext-of-IV and and-tree guards; accept-direction widening owed.	
+test_C_libtooling-f8ov	KEEP	kMsgCrossIter decline reports unknown location; diagnostic honesty, fix together with p25o/br4a/zvto/r59u.	
+test_C_libtooling-r59u	KEEP	Three phi-anchored declines lack usable source location; fix with sibling diagnostic-location beads.	
+test_C_libtooling-qtza	DEFER	Dead runOnFunction shim has zero callers; act only if it gains one, or simply delete the shim.	
+test_C_libtooling-zvto	KEEP	Row-W decline lacks source location even with -g; diagnostic honesty.	
+test_C_libtooling-sfw2	KEEP	Dead fp router phi makes the pass abort (exit 134) instead of declining loudly; Rule-1 third path.	
+test_C_libtooling-u7z9	KEEP	Golden depends on -O0 materialisation of undef f64; document dependency or normalize undef allocator operands.	
+test_C_libtooling-gahu	KEEP	Six fixtures named *_reject_* are now accepts; rename in a quiet commit no merge crosses.	
+test_C_libtooling-bwsh	KEEP	Undef-seed decline message is misleading; split message, add one fixture.	
+test_C_libtooling-hqor	KEEP	Region before bool-controlled prep over-declines; measure each firing fence and decide per L6.	
+test_C_libtooling-rcsw	DEFER	F2 collider on zext of peeled select reachable only from hand IR; no C spelling found.	
+test_C_libtooling-br4a	KEEP	Two MeasureLowering diagnostics render <unknown>:0:0 and comments misdescribe diagnose(); Rule-1 fix.	
+test_C_libtooling-qta2	DEFER	Named NOROUTE-NOT: phi fixtures already fixed (now 'phi i32'); residual sweep of bare-word NOTs is low value.	
+test_C_libtooling-gy1w	KEEP	Measured still declines: classical cq_measure in a tainted arm is an identity and valid; over-decline.	
+test_C_libtooling-fg9k	KEEP	Value arm on bare _Bool via unfolded diamond still declines; feature on open over-decline list.	
+test_C_libtooling-r903	KEEP	Negated rail levels and derived-i1 conditions still decline 'bare i1 condition'; feature.	
+test_C_libtooling-boi6	KEEP	Loop-carried _Bool condition and region-merge-phi rail still decline; feature on open list.	
+test_C_libtooling-3qlq.14	KEEP	Value diamond with arm base derived from the condition over-declines while its select twin accepts.	
+test_C_libtooling-3qlq.13	KEEP	Residual C-1 leaks and over-declines from re-clearance; re-measure on the current binary first.	
+test_C_libtooling-67n5	CLOSE	Superseded by bd 3d8q stale-reader fence: measure and ret probes now decline 'operand predates a non-diagonal gate'.	
+test_C_libtooling-3qlq.12	KEEP	Once-only stages before round-2 fixpoint (no unmark, IO sinks and loops not re-run); L1-class gap remains.	
+test_C_libtooling-3qlq.11	DEFER	Needs owner ruling: reserved-name decline for a defined cq_phi versus documented capture (foot-gun question).	
+test_C_libtooling-3qlq.10	CLOSE	Asks new decline for unused retired declaration; harmless (uses already decline), not physics-forbidden nor miscompile-protecting.	
+test_C_libtooling-3qlq.9	KEEP	Flat interleaved round-1/round-2 kickback regions over-decline while rolled form accepts.	
+test_C_libtooling-3qlq.8	REFRAME	Measured: tainted i128 compare branch condition now declines generic 'control flow'; it should lower instead.	Lower tainted i128 compare as branch condition (phase/value/select/switch); currently declines generic 'control flow under quantum control'
+test_C_libtooling-3qlq.7	CLOSE	Measured: two cq_phi in one arm lower to two cqrt_rz_i1 on the flag; the exact N-gates option shipped.	
+test_C_libtooling-3qlq.6	KEEP	In-loop value arms still declined; valid feature.	
+test_C_libtooling-3qlq.5	DEFER	Garbage-free value-arm source; bead itself says reopen only when a customer runs out of qubits.	
+test_C_libtooling-drbq.15	KEEP	Measured still declines: post-region arithmetic on a state-prepped register.	
+test_C_libtooling-j2ac	CLOSE	Rz-stem in-place region retired with register-form cq_phi; the shape no longer exists.	
+test_C_libtooling-rhwb	KEEP	Measured flat spelling still declines while the rolled in-loop arm accepts.	
+test_C_libtooling-drbq.11	KEEP	Angle select in rolled loop lacks a rail-record fence; separate increment, still valid.	
+test_C_libtooling-drbq.10	CLOSE	Rz peephole (M-alpha) retired with cq_phi_ family; isHoistedRegionArmGate now vacuous, no split left to unify.	
+test_C_libtooling-qxkl	KEEP	Measured still declines: flagship angle-select shape inside a classical if.	
+test_C_libtooling-nsvk	KEEP	Source-order-dependent over-decline of angle-select consumer inside following region's compare window.	
+test_C_libtooling-aght	CLOSE	Repro used retired cq_phi(r,theta); register-free equivalent (angle select then phase diamond) measured accepting.	
+test_C_libtooling-drbq.8	CLOSE	Measured: identical repro (two Ry regions, different registers, one condition) now lowers with two controlled Ry.	
+test_C_libtooling-drbq.7	KEEP	Ry-arm repro now accepts; phase-arm variant (if (r==3) cq_phi after rotating r) still declines; retitle.	
+test_C_libtooling-8h7d.10	KEEP	Latent over-reversal (wrong unitary) held up only by markIfRailLocal coincidence; needs real multiplicity check.	

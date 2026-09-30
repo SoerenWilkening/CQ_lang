@@ -1,65 +1,14 @@
-; railbank_reject_measure_after_nondiagonal_on_parked_rail.ll — THE RED HALF.
+; railbank_reject_measure_after_nondiagonal_on_parked_rail.ll
 ;
-; bd `xdu2` / L-1a W1, Rule-13 review FINDING F-1 (session 2026-09-15): THE RAIL
-; BANK LAUNDERED bd `3d8q` THROUGH MEMORY — the project's one KNOWN verify-clean
-; silent miscompile, closed on 2026-09-14 and re-opened here by a `cq_measure`
-; whose operand is a bank cell LOAD rather than a rail NAME.
+; A fixed bank parks one rail before an Ry, then reads and explicitly measures the parked values.
 ;
-; MEASURED BEFORE THE FIX, on Track B's reviewed binary (`cq-opt`
-; `784c14fa05c16c50…`): `opt` exit 0, stderr EMPTY, STRICT stage 2b
-; `2 rail mint(s) of which 2 left allocated, 0 cqrt_free site(s): 0 verified,
-; 0 violation(s), 0 unproven`, and a plausible SEVEN-line trace —
-;   cqrt_alloc_i32(1) -> h0
-;   cqrt_ry_i32(h0, 0x1p-1)
-;   cqrt_ry_i32(h0, 0x1.6666666666666p-1)   <-- the 0.7 rotation, BEFORE every measure
-;   cqrt_measure_i32(h0) -> 0   x4
-; — in which the THREE BANK MEASURES observe `h0` AFTER a rotation the source
-; places AFTER them.  There is no valid quantum circuit for this source:
-; obtaining the pre-rotation value of a qubit that is subsequently rotated
-; requires CLONING (Rule 8).  The Prime-Directive answer is a loud decline.
-;
-; ⚠ THE DISCRIMINATOR IS THE **PARKED RAIL'S ORIGIN**, NOT THE BANK.  This
-; module parks ONE LOOP-INVARIANT rail's name (`%3`, minted OUTSIDE the walk
-; loop) into every cell.  The capability the bank exists for is the opposite —
-; a DISTINCT THETA PER CELL, minted INSIDE the loop, per trip — and it is
-; pinned as an ACCEPT by `railbank_accept_{bool_prep,int_cells}_measureloop.ll`
-; and by `railbank_accept_percell_theta_sibling_register_rotated.ll`, which
-; carries a non-diagonal gate between the two loops on a DIFFERENT wire and must
-; still accept.  A fix that declines those has over-declined the capability.
-;
-; ⚠ AND THE REFUSAL'S GROUND IS **ORDERING, NOT ALIASING**.  Parking one rail's
-; name in N cells and measuring all N is NOT refused: see
-; `railbank_accept_invariant_rail_measured_before_gate.ll`, which is this module
-; with the measure loop moved ABOVE the 0.7 rotation and whose emitted stream is
-; BYTE-IDENTICAL to its array-free register twin (a program the ORACLE accepts).
-; What is refused is a rail-relabelling gate BETWEEN the park and the read —
-; exactly the question `recordStaleQuantumReaders` asks of a register, now asked
-; through the memory hop `railBankParkedRails`.  Putting the refusal on
-; aliasing/no-cloning grounds instead would ALSO decline that accept, which is
-; an over-decline of a valid circuit (owner ruling 2026-09-11).
-;
-; ⚠ THE REGISTER SPELLING OF THIS PROGRAM DECLINES ON EVERY BINARY IN THE TREE
-; with the SAME STRING — ORACLE `0e280fc6`, BASE `b6554935` and the reviewed
-; SUBJECT `784c14fa` alike (`bfix/probes/f02_register_twin_of_f01.c`, measured).
-; That is the red half's red-green: this fixture FAILS on all three, because on
-; all three the module ACCEPTS or declines with a different string.
-;
-; ⚠ A `DS_Error` DECLINE WRITES 0 BYTES TO STDOUT, so an IR-text `CHECK-NOT`
-; here would be VACUOUS (Rule 12 hygiene defect (b)).  The property is pinned by
-; the `not` INVERSION on the RUN line plus the character-for-character string.
-;
-; SOURCE — `clang -Iinclude -include CQ.h -O1 -emit-llvm -S`, VERBATIM, of
-; `…/session-2026-09-15-orchestrator/bfix/probes/f01_bank_stale_reader.c`:
-;   int slice(int seed) {
-;     int q = cq_theta(seed, 0.5);
-;     int b0[3]; int s = 0;
-;     for (int i = 0; i < 3; ++i) b0[i] = q;
-;     q = cq_theta(q, 0.7);                     /* NON-DIAGONAL, relabels the wire */
-;     for (int i = 0; i < 3; ++i) s += cq_measure(b0[i]);
-;     return s + cq_measure(q);
-;   }
-;   int main(void) { return slice(1); }
-; (with `-g` the diagnostic is source-located at `f01…:10:29`, the bank measure.)
+; Safety net for stale quantum values reached through bank storage.
+; Reusing the rotated rail silently changes what these explicit measures observe.
+; Coherent basis fanout at the park point can retain earlier basis values and
+; their correlations; that operation is not unknown-state cloning (NORTHSTAR
+;  goal 1). The current lowering lacks that history and must keep its loud fence.
+; Retire this negative when a proved lowering preserves the parked values,
+; subsequent interference and explicit measures, with analytic and trace evidence.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 \
 ; RUN:   | %filecheck %s

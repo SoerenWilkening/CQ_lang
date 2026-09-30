@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 828 maintained source files, 6554 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 829 maintained source files, 6560 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -8316,6 +8316,15 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/library_coverage/probe.py:1353` — `update_readme`
 - `tools/library_coverage/probe.py:1416` — `bless`
 - `tools/library_coverage/probe.py:1439` — `main`
+
+### `tools/library_coverage/runtime_census.py` (274 lines)
+
+- `tools/library_coverage/runtime_census.py:31` — `run`
+- `tools/library_coverage/runtime_census.py:36` — `variants`
+- `tools/library_coverage/runtime_census.py:53` — `source`
+- `tools/library_coverage/runtime_census.py:85` — `measure`
+- `tools/library_coverage/runtime_census.py:175` — `render_report`
+- `tools/library_coverage/runtime_census.py:217` — `main`
 
 ### `tools/link_smoke_selftest.py` (142 lines)
 

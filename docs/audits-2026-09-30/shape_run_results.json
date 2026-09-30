@@ -1,0 +1,2930 @@
+[
+ {
+  "fixture": "condtree_classical_leaf_reject_angle_select.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "condtree_classical_leaf_reject_callee_quantum_return_nested.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function g i32 (i32): cq taint escape: quantum value returned across a function boundary\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "condtree_classical_leaf_reject_phase.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "condtree_classical_leaf_reject_rail_sibling.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "condtree_classical_leaf_reject_xor.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_empty_arm_phi.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_in_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_nested_sel.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_phi_and_theta.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_sharecond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_phase_reject_two_consumers.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_cmp_data_use.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_cmp_shared_with_region.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: condition data use neither escaped nor measured under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_compound_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_constexpr_arm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_cross_block_consumer.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_datamux_qq_after_rauw.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_in_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_in_loop_rz.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_inf_arm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_irreducible_cycle.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_irreducible_cycle_rz.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_literal_base_offwire_fold.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_loop_rail_exit_block.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_nan_arm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_nested_select.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_overflow_difference.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_qq_compare.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_raw_i1_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_rounding_above_bound.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_rounding_pi_1e16.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_runtime_arms.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, double, double): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_runtime_one_arm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_second_select_same_cmp.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_state_prep.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_angle_select_reject_theta_between.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_two_consumers.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_angle_select_reject_two_phi_consumers.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_block_lifetime.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge1 gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=merge1 merge=merge2 gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_fp_result.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %r = call double @fp_f(double 7.000000e+00)\nerror: <unknown>:0:0: in function example double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_frozen_arg_callee_nonnull.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, ptr, i64): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_frozen_arg_callee_range.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_frozen_arg_range.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_partial_callee.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: pure-callee partial_f fails at:   %r = sdiv i32 100, %x\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_poisonbr_callee.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: pure-callee pf fails at poison-capable conditional branch:   br i1 %c, label %t, label %f\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_classical_call_arm_reject_qrom_callee.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: pure-callee lookup fails at deferred-bounds memory op:   %p = getelementptr inbounds [4 x i32], ptr @tab, i64 0, i64 %w\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_flat_rotated_dead.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_alias.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: stale rail record read past a controlled Ry under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_cond_register.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_derived_base.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_frozen_dtzb_carry.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: stale rail record read past a controlled Ry under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_frozen_leading_gate.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: stale rail record read past a controlled Ry under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_irreducible.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pred merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_iterlocal_derived_mint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_iterlocal_escape.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: iteration-local value read after the loop under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_iterlocal_no_root_derived.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_iterlocal_outside_mint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_iterlocal_twofn.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @kernel_a entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @kernel_b entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function kernel_b i32 (): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_j4.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: stale rail record read past a controlled Ry under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_lifted_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_multilatch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=head merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=mo gate=E4-dataflow at:   %rt = call i32 @cq_theta_si32(i32 %r, double 9.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=mi gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_nested_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=ihead merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_premark.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: stale rail record read past a controlled Ry under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_second_cycle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pred merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_sharecond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation arm shares the condition flag under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_stalecond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_tainted_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_inloop_two_gates.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %rt = call i32 @cq_theta_si32(i32 %r, double 9.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: impure phase arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_post_region_theta_stalecond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_inloop_carried_invariant_read.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_inloop_multilatch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_inloop_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=inner merge=imerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_inloop_tainted_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_inloop_tainted_exit.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=merge merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_multigate_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_negated_inf_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_negated_nan_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_negated_neginf_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_negated_undef_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_rail_stateprep_negated_inf_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_compound_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_fanout.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %rt = call i32 @cq_theta_si32(i32 0, double 9.000000e-01)\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_inloop_carried.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: state prep merged with a quantum register under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %rt = call i32 @cq_theta_si32(i32 0, double 9.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: impure phase arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_nomerge_nested_offoperand.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %rf = call i32 @cq_theta_si32(i32 5, double 9.000000e-01) #1\nCQ_PREDMUX_DBG: leave @example entry=inner merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_nomerge_nested_pin.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %rf = call i32 @cq_theta_si32(i32 5, double 9.000000e-01) #1\nCQ_PREDMUX_DBG: leave @example entry=inner merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_nomerge_noregion_offoperand.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation arm on a condition wire under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_nomerge_noregion_pin.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: if/else state prep allocates two rails under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_stray_op.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_sunk_arith.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_switch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_theta_phi_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stateprep_two_gates.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_stray_op.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_switch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_theta_phi_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_two_bases.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_inplace_ry_reject_two_thetas.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_arm_defined_speculatable.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %t1 = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_cond_tree.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=m gate=E4-dataflow at:   %t = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_identity_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry= merge= gate=E4-dataflow at:   %4 = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_inloop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=hdr merge=m gate=E4-dataflow at:   tail call void @cq_phi(double noundef 0x3FE6666666666666)\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_one_phi_void_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_stateprep_two_region_foreign_clone.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry=entry merge=mA gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry=mA merge=mB gate=E4-dataflow at:   %tb = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)\nerror: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_three_pred_merge.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=p merge=m gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_peel_reject_two_arm_defined.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry= merge= gate=E4-dataflow at:   %4 = tail call i32 @cq_theta_si32(i32 noundef 0, double noundef 5.000000e-01)\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_mixed_claim_across_loops_leak_control.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_phase_kickback_mixed_preheader_volatile_imm_leak_control.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_bare_i1_loop_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=header merge=latch gate=W-witness\nerror: <unknown>:0:0: in function example i1 (i1): cq controlled lowering: branch phase on a bare i1 condition under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_compound_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_inloop_hoisted_tree_node.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_irreducible_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=A merge=Amerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_mergephi_inloop_latch_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=header merge=latch gate=W-witness\nerror: <unknown>:0:0: in function example i1 (i1): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_mergephi_nest.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=merge merge=done gate=E4-dataflow at:   call void @cq_phi(double 9.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=done gate=W-witness\nerror: <unknown>:0:0: in function example i1 (i1, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_preloop_commit_stale.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_tree_classical_leaf.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_kickback_reject_tree_notform.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_block_order.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=pred merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.500000e-01)\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_depth3.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.500000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nCQ_PREDMUX_DBG: leave @example entry=mid2 merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_in_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=head merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.500000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_qq_leaf.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.500000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: quantum-quantum compare condition under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_rail_negated_inner.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i1, i32): cq controlled lowering: branch phase on a bare i1 condition under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_nest_reject_rail_negated_outer.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double 2.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i1, i32): cq controlled lowering: branch phase on a bare i1 condition under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_switch_reject_default_edge.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_switch_reject_grouped.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_switch_reject_merge_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_phase_switch_reject_scrutinee_datause.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: condition data use neither escaped nor measured under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_fp_diamond_rzlineage_declines.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_fp_diamond_stalecond_declines.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe double (double): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_i1phi_offgrammar_fallback.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_call_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v1 = call i32 @mystery(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq taint escape: tainted value consumed by an unknown callee\n\n",
+  "class_before": "PHYSICS-d"
+ },
+ {
+  "fixture": "control_predmux_leave_classical_branch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E6-classicalbr at:   br i1 %cc, label %arm, label %merge\nerror: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_fp128_arith.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %w = fpext double %q to fp128\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example double (double): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_i128_merge.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E6-condtree at:   br i1 %c1, label %mid, label %merge\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i64 (i64): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_inloop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_int_diamond_solephi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_merge_outside_pred.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=inner merge=merge gate=E3-mergepred\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_multiexit.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "PHYSICS-b"
+ },
+ {
+  "fixture": "control_predmux_leave_selectchain_foldthendecline.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_selectchain_offgrammar.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_store_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   store i32 %v1, ptr @gsink, align 4\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq taint escape: tainted value stored to memory\n\n",
+  "class_before": "PHYSICS-b"
+ },
+ {
+  "fixture": "control_predmux_leave_unreachable_multiret.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=quad merge=merge gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_unreachable_store_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   store i32 %q, ptr @g, align 4\nCQ_PREDMUX_DBG: leave @probe entry=quad merge=merge gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq taint escape: tainted value stored to memory\n\n",
+  "class_before": "PHYSICS-b"
+ },
+ {
+  "fixture": "control_predmux_leave_w6_classical_merge_br.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=isn gate=W-witness\nCQ_PREDMUX_DBG: leave @probe entry=body merge=join gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_w6_cond_reads_no_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=isn gate=W-witness\nCQ_PREDMUX_DBG: leave @probe entry=isn merge=out gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_w6_i1cmp_shield.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=isn gate=W-witness\nCQ_PREDMUX_DBG: leave @probe entry=entry merge=isn gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_leave_w6_selectchain_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=isn gate=W-witness\nCQ_PREDMUX_DBG: leave @probe entry=isn merge=out gate=E6-condtree at:   br i1 %c1, label %out, label %body\nCQ_PREDMUX_DBG: leave @probe entry=body merge=join gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_blockaddress_inregion.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32, i32): cq literal integrity: address-taken block erased under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_br_in_region.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-classicalbr at:   br i1 %cc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_inloop_willtaint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=latch gate=E4-gep at:   %g = getelementptr inbounds [4 x i32], ptr @c, i64 0, i64 %r\nCQ_PREDMUX_DBG: leave @probe entry=r1 merge=j gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i64): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_load_arm_unprovable.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-load at:   %z = load i32, ptr %gz, align 4\nerror: <unknown>:0:0: in function probe i32 (i64): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_mutable_masked.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-gep at:   %gz = getelementptr inbounds [4 x i32], ptr @m_z, i64 0, i64 %j\nerror: <unknown>:0:0: in function probe i32 (i64): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_qrom_laundering.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-gep at:   %gz = getelementptr inbounds [4 x i32], ptr @c, i64 0, i64 %idx\nCQ_PREDMUX_DBG: leave @probe entry=outer merge=join gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i64): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_trip_exceeds_table.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=latch gate=E4-gep at:   %gz = getelementptr inbounds [3 x i32], ptr @g_z, i64 0, i64 %i\nerror: <unknown>:0:0: in function probe i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_classical_table_unbounded_index.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-gep at:   %gz = getelementptr inbounds [3 x i32], ptr @g_z, i64 0, i64 %i\nerror: <unknown>:0:0: in function probe i32 (i64): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_degenerate_phi_classical.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=J gate=E6-classicalbr at:   br i1 %cc, label %J, label %Ag\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_entryphi_via_compare.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=rentry merge=merge gate=E6-classicalbr at:   br i1 %cc, label %t, label %f\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_equal_incomings_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=J gate=E6-classicalbr at:   br i1 %cc, label %J, label %Ag\nCQ_PREDMUX_DBG: leave @probe entry=A merge=A3 gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i1cmp_shield_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-classicalbr at:   br i1 %cc, label %t, label %f\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i1phi_entry_block.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=rentry merge=merge gate=E6-classicalbr at:   br i1 %ep, label %t, label %f\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_i1phi_offgrammar_trunc.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %p, label %tb, label %merge\nCQ_PREDMUX_DBG: leave @probe entry=rhs merge=merge gate=E3-sideentry\nCQ_PREDMUX_DBG: leave @probe entry=sc merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i1phi_offgrammar_xor.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %flag, label %ja, label %jb\nCQ_PREDMUX_DBG: leave @probe entry=inner merge=ijoin gate=W-witness\nCQ_PREDMUX_DBG: leave @probe entry=ijoin merge=jjoin gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i1phi_single_pred.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %flag, label %ta, label %tb\nCQ_PREDMUX_DBG: leave @probe entry=ijoin merge=tjoin gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_arm_op.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @i80arm entry=entry merge=m gate=E4-dataflow at:   %s = add i80 %bc, 1\nerror: <unknown>:0:0: in function i80arm i64 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_branchcond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %ic, label %in1, label %in2\nCQ_PREDMUX_DBG: leave @probe entry=outer merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function probe x86_fp80 (x86_fp80): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_clonemode.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @__cq_q_leaf_1 entry=entry merge=merge gate=E4-dataflow at:   %eq = icmp eq i80 %m, 555\nerror: <unknown>:0:0: in function __cq_q_leaf_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_purecallee_armdiamond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @__cq_q_inner_1 entry=e merge=m gate=E4-dataflow at:   %eq = icmp eq i80 %n, 555\nerror: <unknown>:0:0: in function __cq_q_inner_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_purecallee_conedef.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_purecallee_constconst.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: pure-callee leaf fails at:   %eq = icmp eq i80 9223372036854775808, 9223372036854775808\nCQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   %r = call x86_fp80 @leaf(x86_fp80 %q)\nerror: <unknown>:0:0: in function probe x86_fp80 (x86_fp80): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_purecallee_qq.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: pure-callee leaf fails at:   %eq = icmp eq i80 %man, %other\nCQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   %r = call x86_fp80 @leaf(x86_fp80 %q)\nerror: <unknown>:0:0: in function probe x86_fp80 (x86_fp80): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_i80_cmp_qq.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   %eq = icmp eq i80 %man, %bc\nerror: <unknown>:0:0: in function probe x86_fp80 (x86_fp80): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_backedge_merge.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=body merge=head gate=E2-loopbackedge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_header_nonentry.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=A merge=L2 gate=E2-loopheader\nCQ_PREDMUX_DBG: leave @probe entry=L1 merge=H gate=E2-loopbackedge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_inner_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=latch gate=E2-loopstraddle\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_irreducible.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=join gate=E2-regioncycle\nCQ_PREDMUX_DBG: leave @probe entry=C merge=join gate=E2-regioncycle\nCQ_PREDMUX_DBG: leave @probe entry=D merge=join gate=E2-regioncycle\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_irreducible_inregion.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=join gate=E2-regioncycle\nCQ_PREDMUX_DBG: leave @probe entry=P merge=join gate=E2-regioncycle\nCQ_PREDMUX_DBG: leave @probe entry=Q merge=join gate=E2-regioncycle\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_inloop_tainted_exit.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=head merge=exit gate=E2-loopstraddle\nCQ_PREDMUX_DBG: leave @probe entry=mid merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function probe i32 (i32): cq loop lowering: multiple early-break sites\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_nonrail_i1_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %t, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_notcond_no_rail.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_rail_leaf_under_xor.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %x, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_rail_phi_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_rail_phi_converted_by_later_claim.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=Bm gate=E6-condtree at:   br i1 %rp, label %Aarm, label %Am\nCQ_PREDMUX_DBG: leave @probe entry=Bt merge=A gate=W-witness\nCQ_PREDMUX_DBG: converted recorded rail phi @probe blk=A phi=%rp\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: emitted predicate tree's rail phi converted by a later flatten\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_rail_phi_false_edge.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_rail_phi_interior_convertible.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry= merge= gate=E6-condtree at:   br i1 %16, label %28, label %18\nCQ_PREDMUX_DBG: leave @probe entry= merge= gate=E6-condtree at:   br i1 %14, label %27, label %17\nCQ_PREDMUX_DBG: leave @probe entry= merge= gate=E3-mergepred\nerror: <unknown>:0:0: in function probe i32 (i32, ptr): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_dead_storage.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-gep at:   %38 = getelementptr inbounds i32, ptr %6, i64 %27\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_dead_storage_stackrestore.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-gep at:   %38 = getelementptr inbounds i32, ptr %6, i64 %27\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_lifetime_start_in_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-dataflow at:   call void @llvm.lifetime.start.p0(i64 -1, ptr %6)\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_misaligned_stride.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-gep at:   %38 = getelementptr inbounds i32, ptr %6, i64 %27\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_overaligned_load.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-gep at:   %38 = getelementptr inbounds i32, ptr %6, i64 %27\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_runtime_vla_underaligned_base.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run_bank entry= merge= gate=E4-gep at:   %37 = getelementptr inbounds i64, ptr %6, i64 %26\nerror: <unknown>:0:0: in function run_bank void (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_bare_arg.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_curated_poison_immarg.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_load_in_cone.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_nofpclass_arg_redgreen.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %c, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_purecallee_inherentpoison.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_purecallee_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_purecallee_poisonflag.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_purecallee_retpoison.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function leaf i32 (i32): cq specialization: callee return value denotes no value (undef/poison)\n\n",
+  "class_before": "INPUT-ERROR"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_range_arg.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_rotation_hop_inherent_poison.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe_hop entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe_hop i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_rotation_poison_arg.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_rotation_theta_poison_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "INPUT-ERROR"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_shift_wide_amount.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_selectform_undef_leaf.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %sc, label %arm, label %merge\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_predmux_reject_undef_freeze_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-classicalbr at:   br i1 %cc, label %t, label %f\nCQ_PREDMUX_DBG: leave @probe entry=a merge=b gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32, i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_xor_offgrammar_operand.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_predmux_reject_xor_shielded_select_operand.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E6-condtree at:   br i1 %cc, label %inband, label %merge\nCQ_PREDMUX_DBG: leave @probe entry=inband merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function probe i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_reject_measure_classical_in_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_defer_switch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_defer_value_qq.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_blockaddress_nested_mid.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq literal integrity: address-taken block erased under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_branch_datamux_exp2.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32, i32): cq controlled lowering: impure value arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_crosshandle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_eqfold_cross_handle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_eqfold_wrong_literal.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_freeze_phi_angle.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_diamond_irreducible.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=body merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_multilatch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=head merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_second_cycle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pred merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_stalecond_invariant.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=head merge=latch gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, double, double, i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_switch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_inloop_value_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow inside a loop body under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_loop_under_control.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=cont gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "control_swap_reject_measure_in_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_botharm_asym.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=then merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=else merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_botharm_sym.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %a)\nCQ_PREDMUX_DBG: leave @example entry=then merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=else merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_cond_datause_dead.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: condition used outside the branch under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_cond_datause_inner.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_cond_datause_measure_early.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: condition used outside the branch under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_cond_datause_outer.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: condition used outside the branch under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_cond_datause_unlowerable_cast.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: condition used outside the branch under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_depth3.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %a)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nCQ_PREDMUX_DBG: leave @example entry=mid2 merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, double): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_distinct_base.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32, i32, double, double): cq controlled lowering: impure phase arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_inner_cond_unlowerable_fcmp.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example double (double, double, double): cq controlled lowering: control condition has no template under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_inner_derived.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_loop_irreducible.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pred merge=merge gate=E2-cycle\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, i32, i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_mid_stray.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_multireg_derived.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_select.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: arm rewrites a condition operand under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_stalecond_direct.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pre merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, i1): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_stalecond_router.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=pre merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, i1): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_switch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %g = call i32 @cq_theta_si32(i32 %q, double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: impure phase arm under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_nested_value_mixed.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32, double, double): cq controlled lowering: mixed phase/value arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_nested_value_pure.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %t2 = udiv i32 %g, %q\nCQ_PREDMUX_DBG: leave @example entry=mid merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_post_region_theta_and_between.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, double, double): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_post_region_theta_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double %a)\nCQ_PREDMUX_DBG: leave @slice entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, double): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_post_region_theta_sharecond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, double): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_post_region_theta_valuearm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_alias.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_angle_cast.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_badcond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_cmp_inloop_measure_after.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_cmp_inloop_measure_after_constarm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (): cq controlled lowering: condition measured before the control route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_coherent.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_alias.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_angle_fanout.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example float (float, i32, float): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_coherent.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_coherent_call_derived.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_freeze_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_freeze_operand.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_phase_sibling_alias.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_fp_theta_fork.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example double (double, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_freeze.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_i1_operand_leaf.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_i1sel_combinator.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_mergephi_other_class.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_mergephi_three_incoming.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=b merge=merge gate=E3-mergepred\nerror: <unknown>:0:0: in function example i32 (i1, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_mergephi_two_rails.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_mergephi_unclaimed.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_mergephi_value_region.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i1): cq controlled lowering: bare i1 register condition under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_or_selfdup.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_phase_sibling_alias_i32.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_qq_i1leaf.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_rail_inloop_measure_after.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq controlled lowering: condition measured before the control route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_rail_inloop_measure_after_constarm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i1): cq controlled lowering: condition measured before the control route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_rail_inloop_stale_theta.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i1): cq controlled lowering: condition predates a non-diagonal gate under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_select_rail_phi_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i1, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_rail_trunc_cond.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_tree_br_crossregion.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_xor_notform.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_select_xor_selfdup.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_seq_io_sinks.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=m1 gate=W-witness\nCQ_PREDMUX_DBG: leave @slice entry=m1 merge=m2 gate=W-witness\nerror: <unknown>:0:0: in function slice void (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_seq_then_nest.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=m1 gate=W-witness\nCQ_PREDMUX_DBG: leave @example entry=m1 merge=mn gate=E4-dataflow at:   call void @cq_phi(double %b)\nCQ_PREDMUX_DBG: leave @example entry=mid merge=mn gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_straightthrough_cross_handle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_angle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_datamux_dirtyarm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_datause.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: condition data use neither escaped nor measured under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_foreign_pred.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=sw merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i1): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_fpdata.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_grouped.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_impure_phase.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_impure_value.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: impure value arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_mixed.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: mixed phase/value arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_multiphi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_muxexch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   call void @cq_phi(double 3.000000e-01)\nCQ_PREDMUX_DBG: leave @example entry=a0 merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_nonempty_default.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_phase_foreign_default.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_phase_passthrough_dirty.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_value_passthrough_dirty.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_reject_switch_value_qq.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_switch_value_swaproute.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_ifelse_qq_readcond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_ifelse_readcond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_inarm_bottom.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i16, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_mixed.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: impure value arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_mixed_ifelse.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, double): cq controlled lowering: impure phase arm under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_reject_value_mux_derived.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: non-routable value multiplexer under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_switch_value_reject_speculation.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: value arm op that cannot run unconditionally under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_value_reject_arm_cone_angle_select_consumer.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_value_reject_arm_cone_angle_select_escape.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: rotation angle under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_value_reject_arm_cone_cq_call.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: impure value arm under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_value_reject_arm_cone_unspeculatable.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: impure value arm under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_swap_value_reject_qq_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "control_swap_value_reject_speculation.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32, i32): cq controlled lowering: value arm op that cannot run unconditionally under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "control_tainted_diag.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, i32): cq controlled lowering: state prep seed does not match the merge incoming under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "loop_carried_handle_reject_accumulator.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function f i32 (): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "loop_carried_handle_reject_narrow_untyped_call_user.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32): cq taint escape: tainted value muxed by a classical-condition phi\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_carried_handle_reject_postloop_rotation.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_carried_handle_reject_tainted_seed.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function f i32 (): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "loop_condtree_select_reject_nulled_root_not_rederivable.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_condtree_select_reject_nulled_root_rederived_escape.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_arm_minted_interior_rail.ll",
+  "exit": 1,
+  "stderr": "warning: <unknown>:0:0: in function slice i32 (i32): cq rotation lowering: non-diagonal gate over a live derived record\n\nwarning: <unknown>:0:0: in function main i32 (i32, ptr): cq rotation lowering: non-diagonal gate over a live derived record\n\nerror: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_arm_minted_unmarked_control.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nwarning: <unknown>:0:0: in function slice i32 (): cq rotation lowering: non-diagonal gate over a live derived record\n\nerror: <unknown>:0:0: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_nested_depth3_middle_rail.ll",
+  "exit": 1,
+  "stderr": "error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/r1_triple_nest_mid_rail.c:11:18: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_nested_iic_inner.ll",
+  "exit": 1,
+  "stderr": "error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n3_nested_iic_inner.c:9:14: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_nested_iterlocal_inner.ll",
+  "exit": 1,
+  "stderr": "error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n1_nested_marked_inner.c:11:14: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_nested_marked_inner.ll",
+  "exit": 1,
+  "stderr": "error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/loopfix/probes/n2_nested_unmarked_inner.c:10:14: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_leak_dephase_reject_twoblock_unmarked_control.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq loop lowering: rolled body leaks a rail entangled with a rotated register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_pairing_reject_nest_multiexit_hoisted.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: hoisted invariant rail admitted for in-loop discharge was not discharged\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "loop_pairing_reject_round2_falsified_postloop_read.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: round-1 iteration-local marking falsified by round-2 taint\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_guarded_no_preshift.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @ilogb_lx_loop entry=entry merge=merge gate=E2-cycle\nCQ_PREDMUX_DBG: leave @ilogb_lx_loop entry=loop merge=merge gate=W-witness\nCQ_PREDMUX_DBG: leave @ilogb_lx_loop entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function ilogb_lx_loop i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_ashr.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_ashr entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_ashr i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_blockaddress_header.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @blockaddress_header entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function blockaddress_header i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_body_call.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_body_call entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_body_call i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_counter_nonconst_init.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_nonconst_seed entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_nonconst_seed i32 (i32, i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_counter_step.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_counter_step entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_counter_step i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_counter_width_mismatch.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @counter_width_mismatch entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function counter_width_mismatch i64 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_dead_counter.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @dead_counter entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function dead_counter i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_derived_compare.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_derived_compare entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_derived_compare i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_dynamic_shift.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_dynamic_shift entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_dynamic_shift i32 (i32, i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_escaping_counter_phi.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @escaping_counter_phi entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function escaping_counter_phi i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_escaping_shift.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_escaping_shift entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_escaping_shift i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_i128.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_i128 entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_i128 i64 (i64): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_irreducible_cycle.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @irr2 entry=scan merge=out gate=W-witness\nerror: <unknown>:0:0: in function irr2 i32 (i32, i1, i1): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_mask_shift_f80.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @ilogbl_mask_scan entry=scan merge=out gate=W-witness\nerror: <unknown>:0:0: in function ilogbl_mask_scan i32 (i64): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_multi_exit.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_multi_exit entry=head merge=exit gate=E2-loopstraddle\nCQ_PREDMUX_DBG: leave @reject_multi_exit entry=latch merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function reject_multi_exit i32 (i32): cq loop lowering: multiple early-break sites\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_nested_in_outer_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_nested entry=inner merge=latch gate=W-witness\nerror: <unknown>:0:0: in function reject_nested i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_predicate_ne.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_predicate_ne entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_predicate_ne i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_shift_amount_2.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_stride2 entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_stride2 i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_three_phis.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @reject_three_phis entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function reject_three_phis i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_ctlz_idiom_reject_two_preds.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @two_preds entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function two_preds i32 (i32, i1): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_loop_break_step.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_step entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_step i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_predmux_leave_selectform_offgrammar.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E6-condtree at:   br i1 %c1, label %outer, label %merge\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_predmux_leave_selectform_poisoncone.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E6-condtree at:   br i1 %c1, label %outer, label %merge\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_classicalargs.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %u)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_impure.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: pure-callee purefn fails at:   store i32 %a, ptr @g, align 4\nCQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function purefn i32 (i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)\n\n",
+  "class_before": "PHYSICS-b"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32): cq controlled lowering: nested control flow under quantum control\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_nonqram.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: pure-callee purefn fails at:   %p = getelementptr inbounds [4 x i32], ptr @G, i64 0, i64 %idx\nCQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function purefn i32 (i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (unsupported instruction)\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_qrom_unbounded.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function __cq_q_purefn_1 i32 (i32): cq QRAM load: speculated const-global table read in a specialized clone: index not provably in-bounds\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_recursive.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: pure-callee purefn fails at call:   %r = call i32 @purefn(i32 %a1)\nCQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function purefn i32 (i32): cq specialization: recursive callee has no static depth bound\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "lowering_predmux_leave_speccall_weak.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=E4-dataflow at:   %v = call i32 @purefn(i32 %q)\nCQ_PREDMUX_DBG: leave @example entry=outer merge=outmerge gate=W-witness\nerror: <unknown>:0:0: in function purefn i32 (i32): cq specialization: callee has a non-link-exact definition (interposable/derefinable linkage); the linker may bind a different body\n\n",
+  "class_before": "PHYSICS-d"
+ },
+ {
+  "fixture": "lowering_predmux_purecallee_cycle_under_memo.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nCQ_PREDMUX_DBG: pure-callee fa fails at call:   %c = call i32 @fa(i32 %h)\nCQ_PREDMUX_DBG: pure-callee f0 fails at call:   %t = call i32 @fa(i32 %s)\nerror: <unknown>:0:0: in function example void (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_predmux_purecallee_deep_chain.ll",
+  "exit": 0,
+  "stderr": "",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_railbank_bankraw_inloop_read.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32): cq taint escape: tainted value stored to memory\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_bitcast_angle_control.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i64 (i64): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_break_addrail_prevalue.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_addrail_pre entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_addrail_pre i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_escape_not_rail.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_escderiv entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_escderiv i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_escape_zerotrip.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_ztrip entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_ztrip i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_intermediate_rail.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_inter entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_inter i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_loopvariant_immediate.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_loopvar_imm entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_loopvar_imm i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_mint_in_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_mint entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_mint i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_multiple_sites.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_multi entry=loop merge=exit gate=E2-loopstraddle\nCQ_PREDMUX_DBG: leave @break_multi entry=body2 merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function break_multi i32 (i32, i32): cq loop lowering: multiple early-break sites\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_break_nested_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_nested entry=inner merge=inner.exit gate=W-witness\nerror: <unknown>:0:0: in function break_nested i32 (i32, i32, i32): cq loop lowering: early break across nested loops\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_break_nonreconverging.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function break_nonreconv i32 (i32, i32): cq loop lowering: early break does not reconverge\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_break_nonzero_start.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_nonzero_start entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_nonzero_start i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_phase_answer.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_phase entry=loop merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function break_phase double (double, i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_phase_answer_kickback.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @run entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @run entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function run i32 (i32, i32): cq loop lowering: early break preserves a phase answer\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_preloop_mutation.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_preloop entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_preloop i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_stray_taint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_stray entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_stray i32 (i32, i32): cq loop lowering: early break body is not a provable rolled single-rail loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_uncollected_clone.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_uncollected_clone entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function break_uncollected_clone i32 (i32, i32): cq loop lowering: break reverse-play cannot re-emit an uncollected body value\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_uncollected_mint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_uncollected_mint entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function break_uncollected_mint i32 (i32, i32): cq loop lowering: break reverse-play cannot re-emit an uncollected body value\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_uncollected_stray.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_stray_call entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_stray_call i32 (i32, i32): cq loop lowering: break reverse-play cannot re-emit an uncollected body value\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_uninvertible_cond.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_uninvertible entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_uninvertible i32 (i32, i32): cq loop lowering: break reverse-play cannot invert a lowered body gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_break_uninvertible_cond_tail.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @break_uninvertible_tail entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function break_uninvertible_tail i32 (i32, i32): cq loop lowering: break reverse-play cannot invert a lowered body gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_classical_mux_phi_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32, i32): cq taint escape: tainted value muxed by a classical-condition phi\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_classical_mux_phi_onereg_nway_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32, i32, i32): cq taint escape: tainted value muxed by a classical-condition phi\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_fp80_union_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function loop_rmw x86_fp80 (): cq taint escape: tainted value stored to memory\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_fp80_union_nested_aggregate.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function nested x86_fp80 (): cq fp80 union: padding byte observed without a mask\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_control_cross_iter.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_inloop_control_rail_fanout.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: loop-carried rail has multiple in-place consumers\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_alias_shared_mint.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_frozen_gate_first.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_identity_carry.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_escape.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_merge_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_midbody.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_add.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_dyn.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_ret.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @inner entry=loop merge=latch gate=W-witness\nerror: <unknown>:0:0: in function inner i32 (): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_rz.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=latch gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_rz_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_offchain_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=latch gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_onepath_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_postloop_theta.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_theta_chain.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=merge gate=W-witness\nerror: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_inloop_rail_record_three_hops.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @example entry=loop merge=latch gate=W-witness\nerror: <unknown>:0:0: in function example i32 (): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_io_controlled_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=E4-dataflow at:   %s = call i32 (ptr, ...) @printf(ptr @.str, i32 %q)\nCQ_PREDMUX_DBG: leave @slice entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice void (i32, i32): cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_live_record_switch_mux_out_masked.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=entry merge=merge gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_loop_cross_iter.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function crossiter double (double, i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_loop_nested_quantum.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice void (i32, i32, i32): cq uncompute: tainted handle live range crosses a loop backedge\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_loop_quantum_bound.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @qbound entry=entry merge=exit gate=E2-cycle\nCQ_PREDMUX_DBG: leave @qbound entry=loop merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function qbound double (double): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "lowering_reject_loop_quantum_bound_dead_counter.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @qbound_dead_counter entry=entry merge=exit gate=E2-cycle\nCQ_PREDMUX_DBG: leave @qbound_dead_counter entry=loop merge=exit gate=E2-loopstraddle\nerror: <unknown>:0:0: in function qbound_dead_counter i32 (i32, i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_loop_quantum_bound_diverging.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @qbound_diverging entry=entry merge=exit gate=E2-cycle\nCQ_PREDMUX_DBG: leave @qbound_diverging entry=loop merge=exit gate=W-witness\nerror: <unknown>:0:0: in function qbound_diverging i32 (i32): cq controlled lowering: loop under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_loop_rail_fanout.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function fanout i32 (i32, i32): cq loop lowering: loop-carried rail has multiple in-place consumers\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_loop_rail_fanout_rot.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function fanout_rot double (double, i32): cq loop lowering: loop-carried rail has multiple in-place consumers\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_loop_rail_record_measure.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, double, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_loop_rail_record_offchain_theta.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_loop_value_accum_nonbijection.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function nonbij i32 (i32, i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_loop_value_accum_two_quantum.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function twoq i32 (i32, i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_qram_guarded_store_nested.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @nested entry=entry merge=merge gate=E4-gep at:   %g = getelementptr inbounds [8 x i32], ptr %arr, i64 0, i64 %sk\nCQ_PREDMUX_DBG: leave @nested entry=mid merge=merge gate=W-witness\nerror: <unknown>:0:0: in function nested i32 (i32, i32, i32): cq taint escape: tainted value reaches an unsupported instruction\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_qram_in_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function loopread void (i32, i32): cq QRAM access: tainted-index memory access inside a loop\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_qram_read_defer_region_declines.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   call void @sink(double %v)\nerror: <unknown>:0:0: in function probe double (double): cq taint escape: tainted value consumed by an unknown callee\n\n",
+  "class_before": "PHYSICS-d"
+ },
+ {
+  "fixture": "lowering_reject_railbank_dynamic_lifetime_start_in_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq rail bank: array storage is not live at every access\n\n",
+  "class_before": "INPUT-ERROR"
+ },
+ {
+  "fixture": "lowering_reject_railbank_inloop_read.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq rail bank: array has cells no iteration writes\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_railbank_nested_walk.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq rail bank: the cell walk is re-executed by an enclosing loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_railbank_tainted_index_in_loop_keeps_qram.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq QRAM access: tainted-index memory access inside a loop\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_stale_reader_inloop_invariant_seed.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_stale_reader_inloop_repeatable_guard.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_stale_record_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, double, double, i32): cq opcode lowering: operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_stale_record_loop_nontracking_phi.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, double, double, double, i32): cq opcode lowering: operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_uncompute_divergent_arm_taped.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice void (i32, i1): cq uncompute: dead chain spans divergent control-flow arms\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_uncompute_exclusive_arm_sink.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function excl_arm void (i32, i1): cq uncompute: dead chain spans divergent control-flow arms\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_uncompute_loopsink_keeps_decline.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function loopsink_keeps_decline void (i32, i32, i1): cq uncompute: dead chain spans divergent control-flow arms\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_uncompute_premeasure_taped.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq uncompute: dead chain would free a measured register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_uncompute_uninvertible_taped.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice void (i32): cq uncompute: dead chain contains an un-invertible primitive\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_reject_volatile_local_gep_user.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   store volatile double 0x41F0000000000000, ptr %vd, align 8\nCQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   store volatile double 0x41F0000000000000, ptr %vd, align 8\nerror: <unknown>:0:0: in function probe double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_reject_volatile_local_typepun.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   store volatile double 0x41F0000000000000, ptr %vd, align 8\nCQ_PREDMUX_DBG: leave @probe entry=entry merge=merge gate=E4-dataflow at:   store volatile double 0x41F0000000000000, ptr %vd, align 8\nerror: <unknown>:0:0: in function probe double (double): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_stale_record_loop_tracking_phi.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function example i32 (i32, double, double, i32): cq taint escape: tainted value muxed by a classical-condition phi\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_uncompute_dead_sibling_premeasure.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32): cq uncompute: dead chain would free a measured register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_divergent_arm.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice void (i32, i1): cq uncompute: dead chain spans divergent control-flow arms\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_escape_unrecognized.ll",
+  "exit": 1,
+  "stderr": "error: esc.c:4:9: in function slice void (i32, i1): cq uncompute: tainted handle reaches an unrecognized user\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_uncompute_leak_irreducible_dead_spine.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function dead_spine_irreducible void (i32, i1, i1): cq uncompute: tainted handle live range crosses a loop backedge\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_loop_backedge.ll",
+  "exit": 1,
+  "stderr": "error: loop.c:4:9: in function slice void (i32, i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_loop_backedge_irreducible.ll",
+  "exit": 1,
+  "stderr": "error: loop_irreducible.c:4:9: in function slice void (i32, i1, i1): cq opcode lowering: rotation/measure operand predates a non-diagonal gate\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_measured_intermediate_qq.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (i32, i32): cq uncompute: dead chain would free a measured register\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_uncompute_uninvertible.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice void (i32): cq uncompute: dead chain contains an un-invertible primitive\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_unroll_leave_qram_read_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function qloop2 i32 (i32): cq QRAM access: tainted-index memory access inside a loop\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_unroll_leave_shadow_store_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function shloop i32 (i32): cq QRAM access: tainted-index memory access inside a loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "lowering_unroll_reject_dynamic_trip.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function horner double (double, double, i32): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_unroll_reject_overmax_trip.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function horner double (double, double): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_volatile_arm_fold_cascade_merge_phi.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "lowering_volatile_arm_fold_repropagate_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: loop-carried tainted value crosses iterations\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_addrspace.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %gp = getelementptr inbounds i32, ptr addrspace(5) %7, i64 %gi\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_and_false_edge.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %23 = getelementptr inbounds i32, ptr %7, i64 %22\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_arraydecay_gep.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry=start merge=mg gate=E4-gep at:   %g = getelementptr inbounds [4 x i32], ptr %p, i64 0, i64 %kz\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_else_arm_read.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %23 = getelementptr inbounds i32, ptr %7, i64 %22\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_ne_guard.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %34 = getelementptr inbounds i32, ptr %9, i64 %31\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_ne_guard_swapped.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %34 = getelementptr inbounds i32, ptr %9, i64 %31\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_no_guard.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %22 = getelementptr inbounds i32, ptr %7, i64 %21\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_nonstrict_guard.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %24 = getelementptr inbounds i32, ptr %7, i64 %23\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_offset_read.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %28 = getelementptr i32, ptr %7, i64 %27\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_range_metadata.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %24 = getelementptr inbounds i32, ptr %7, i64 %23\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_signed_guard_unsigned_index.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %23 = getelementptr inbounds i32, ptr %7, i64 %22\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_signed_index.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %23 = getelementptr inbounds i32, ptr %7, i64 %22\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_trip_wrong_eq.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %35 = getelementptr inbounds i32, ptr %9, i64 %32\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "predmux_guarded_vla_reject_wrong_direction.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=E4-gep at:   %24 = getelementptr inbounds i32, ptr %7, i64 %23\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_promote_reject_inloop_hoisted_read.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function slice i32 (): cq rail bank: array has cells no iteration writes\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_promote_reject_inloop_other_read.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq rail bank: array has cells no iteration writes\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_promote_reject_nested_outer_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq rail bank: the cell walk is re-executed by an enclosing loop\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_promote_reject_store_outside_loop.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function main i32 (): cq rail bank: array is written from more than one store site\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_add_park_after_op_slice.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_sub_park_after_op.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_xor_const_trip.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_xor_fixed_bank.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_xor_park_after_op.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_xor_read_before_and_after.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @slice entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "railbank_stale_reject_inloop_xor_runtime_bank.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq loop lowering: rail record read past an in-place gate on the same rail\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "spec_reject_clone_loop.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @__cq_q_helper_1 entry=loop merge=done gate=E2-loopstraddle\nerror: <unknown>:0:0: in function __cq_q_helper_1 i32 (i32): cq specialization: callee contains tainted control flow under quantum lift\n\n",
+  "class_before": "PHYSICS-c"
+ },
+ {
+  "fixture": "spec_reject_predicted_classical_round2_mask_growth.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "spec_reject_predicted_classical_round2_mask_growth_ry.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nCQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control\n\n",
+  "class_before": "SAFETY-NET"
+ },
+ {
+  "fixture": "spec_reject_predicted_classical_value_arm.ll",
+  "exit": 1,
+  "stderr": "CQ_PREDMUX_DBG: leave @main entry= merge= gate=W-witness\nerror: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: value-arm swap-route under quantum control\n\n",
+  "class_before": "GAP"
+ },
+ {
+  "fixture": "spec_reject_ret_poison_nested.ll",
+  "exit": 1,
+  "stderr": "error: <unknown>:0:0: in function inner i32 (i32): cq specialization: callee return value denotes no value (undef/poison)\n\n",
+  "class_before": "INPUT-ERROR"
+ }
+]

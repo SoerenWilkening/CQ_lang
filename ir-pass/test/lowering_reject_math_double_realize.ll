@@ -1,29 +1,17 @@
-; lowering_reject_math_double_realize.ll — DECLINE: a TAINTED fp-DATA result that
-; feeds BOTH a genuine data path AND a rotation's arg-1 ANGLE slot (PRD-iw81.4 §7,
-; decline-matrix D11 — the "double-realize" fan-out probe).
+; lowering_reject_math_double_realize.ll
 ;
-; `%r = fmul q, q` is consumed two ways at once:
-;   (1) `%d = fadd %r, %r`     — a genuine DATA use (measured), and
-;   (2) `cq_phi(q, %r)`        — the arg-1 ANGLE slot of a rotation.
-; The arg-1 angle exclusion is PER-OPERAND-USE, not global (TaintPropagation.cpp:303
-; skips ONLY the `cq_phi` angle edge), so `%r` stays in `Tainted` from its data use.
-; There is no sound split — realizing `%r` as basis data for the fadd AND as a
-; rotation angle would double-realize the value (angle = f(quantum value), value in
-; superposition: no fixed unitary; the f64 angle/data silent-miscompile family).
+; The fmul result has both data and angle uses. Sharing that basis value is valid coherent control.
 ;
-; The decline TRIGGER is the SAME single check as D1 — RotationLowering::
-; declineTaintedAngle (the producer-agnostic taint-of-arg-1 fence, RotationLowering.cpp:74);
-; `%r`'s extra data use does not introduce a new code path, it only makes the
-; "can't split" reason concrete (the straight-line counterpart of the
-; SelectClassify::selReachesRotationArg1 fan-out principle — "any arg-1 reach
-; declines the WHOLE construct" — that the swap-route emitter relies on; an
-; illustrative analogy, NOT a separate emitter call here). The fence fires in
-; `lowerRotations`, BEFORE `lowerOps` lowers either the fmul or the fadd — so NOT
-; ONE template is minted. Once iw81.4.b recognizes the math intrinsics, `%r = sin(q)`
-; here declines identically (D1's ordering proof).
+; Known lowering gap: coherent quantum-derived angles (NORTHSTAR goal 1; bd 94ad).
+; The current gate ABI takes a classical double angle. Passing a quantum handle
+; into that slot would miscompile the program, so this test pins the loud fence.
+; An angle register and bit-controlled rotation ladder can implement the operation;
+; its absence is a compiler gap, not a no-unitary proof. Never insert a measure.
+; Retire this negative when that lowering preserves the data and angle semantics
+; and has analytic and trace evidence for this consumer.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
-; 3qlq: migrated from register cq_phi (tainted arm -> void call, merge phi dissolved)
+
 declare void @cq_phi(double)
 declare double @cq_theta_f64(double, double)
 declare double @cq_measure_f64(double)

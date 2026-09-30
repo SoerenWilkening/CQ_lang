@@ -1,13 +1,15 @@
-; control_phase_switch_reject_tainted_angle.ll — DECLINE. A QUANTUM-DERIVED angle
-; in a switch arm's `cq_phi` (Rule 3).
+; control_phase_switch_reject_tainted_angle.ll
 ;
-; Same rule, same dialect and same string as every sibling phase path: a tainted
-; angle would put quantum data in a gate's classical slot, and after rotation
-; lowering's RAUW the emitted `cqrt_rz_i1(f, <i32 handle>)` reads a fixed per-run
-; tag standing in for a value in superposition — no fixed unitary, the f64/angle
-; miscompile family.
-; (Prose deliberately does not spell the lit directive token verbatim — lit
-; scans EVERY line for it, so quoting it in a comment mints a bogus run line.)
+; A switch arm feeds quantum-derived data to register-free cq_phi argument 0.
+;
+; Known lowering gap: coherent quantum-derived angles (NORTHSTAR goal 1; bd 94ad).
+; The current gate ABI takes a classical double angle. Passing a quantum handle
+; into that slot would miscompile the program, so this test pins the loud fence.
+; An angle register and bit-controlled rotation ladder can implement the operation;
+; its absence is a compiler gap, not a no-unitary proof. Never insert a measure.
+; Retire this negative when that lowering preserves the data and angle semantics
+; and has analytic and trace evidence for this consumer.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 
 declare void @cq_phi(double)

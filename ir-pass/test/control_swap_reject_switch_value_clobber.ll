@@ -1,55 +1,15 @@
-; control_swap_reject_switch_value_clobber.ll — DECLINE (G7 §3c clobber, the ONLY
-; G7 fixture in the tree; the §3c clobber is a value-arm-only proof).
+; control_swap_reject_switch_value_clobber.ll
 ;
-; A tainted `switch` whose VALUE arms rewrite the very register the SCRUTINEE
-; reads. Routing + rewriting `%p` while the eq-flags are minted from a value
-; derived from `%p` clobbers the wire the flag-STRIP reads back: the strip's
-; premise (`icmp_inv` sees the same basis the mint saw) dies with the rewrite,
-; and it is information-theoretically impossible to both keep `%p`'s answer and
-; disentangle the scrutinee (`SwitchArmProve.cpp`, `proveSwitchValue`).
+; The switch scrutinee is p+1; both value arms change p, which its equality flags read.
 ;
-; ===========================================================================
-; 3qlq(prep_a2): HAND DECISION — RE-SPELLED, and the old spelling is GONE for a
-; reason worth stating rather than hiding.
-;
-; WHAT THIS FIXTURE USED TO BE. The scrutinee was `%q = cq_phi_si32(%p, θ)` — a
-; DIAGONAL derivation of the routed base. `cq_phi` was an Rz, so `%q` and `%p`
-; were SSA-DISJOINT but WIRE-IDENTICAL (RAUW collapses them to one handle), and
-; the fixture existed to prove that G7 tests the physical WIRE and not SSA value
-; identity. It reached the decline through `diagonalAliasHit`'s HOP — the walk up
-; the `cq_phi` arg-0 chain.
-;
-; WHY IT CANNOT BE SPELLED THAT WAY ANY MORE, MEASURED. `diagonalAliasHit`
-; (ArmClassify.cpp) hops only through `isPhiCall`, and `isPhiCall(V)` is
-; `isCallToPrefix(V, "cq_phi_")` — the RETIRED register-form family. Since
-; round-1 finding F-L6-1 that name is RESERVED and any module declaring it
-; declines before analysis runs, so no module that reaches `diagonalAliasHit`
-; can contain one. **Its hop loop is therefore structurally unreachable at HEAD,
-; and so is `walkPhaseSpine`'s** (same prefix test). What survives is the
-; ZERO-HOP arm of the same function — `Prov.count(V)` on entry — which is the
-; `Hit == P` case that renders this exact string. Under D1 no value carries a
-; relative phase, so "SSA-disjoint but wire-identical" has no spelling at all;
-; the property that remains is the one below.
-;
-; THE RE-SPELLING. The scrutinee is now an ARITHMETIC derivation (`add i32 %p, 1`)
-; rather than a diagonal one. `condProvenance` still puts `%p` in the scrutinee's
-; read set, the straight-through base is still `%p`, and `P != condition`, so
-; `proveSwitchValue` reaches `diagonalAliasHit` at zero hops and renders the
-; PERMANENT string. Same clause, same message, one branch shallower.
-;
-; ⚠ MUTATION-VALIDATED AS A DISCRIMINATOR, both ways (prep_a2, measured on
-; `build/ir-pass/cq-opt`; probes under $SP/progress/prep_a2_work/g7/):
-;   * WITH the clobber (this module, and the `xor`/`mul` scrutinee variants):
-;     exit 1, `arm rewrites a condition operand under quantum control`.
-;   * WITHOUT it — the identical module with the arms rewriting a SECOND,
-;     disjoint `cq_theta` register (`g7/f_control.ll`): exit 0, ACCEPTS.
-;   * The pre-existing `control_swap_switch_value.ll` is that accepting
-;     no-clobber shape as a committed fixture, so the pair is a discriminator in
-;     the tree and not only in a scratch directory.
-;   * A THIRD variant is NOT this decline and is recorded so it is not mistaken
-;     for one: making the scrutinee `%p` ITSELF hits `proveSwitchValue`'s C2
-;     mis-anchor first (`value-arm swap-route`), because the routed base and the
-;     condition are then the same value. The derived scrutinee is load-bearing.
+; Safety net for the current condition/arm lowering (NORTHSTAR goal 1).
+; Reversing the predicate from a changed source can leave its flag dirty; freeing
+; that flag would introduce an implicit measurement. Preserve the loud fence.
+; A coherent basis copy or retained source history can preserve the original
+; condition while an out-of-place arm computes its answer. CNOT basis fanout is
+; valid and does not clone an unknown quantum state. This is a lowering gap.
+; Retire this negative after a proved lowering preserves the predicate, answer
+; and interference, and cleans any rail it frees without an implicit measure.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}cq controlled lowering: arm rewrites a condition operand under quantum control

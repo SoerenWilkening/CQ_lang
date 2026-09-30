@@ -1,19 +1,18 @@
-; control_inplace_ry_reject_stateprep_tainted_angle.ll — DECLINE (R2): the
-; state-prep theta's ANGLE is quantum-derived.
+; control_inplace_ry_reject_stateprep_tainted_angle.ll
 ;
-;     int r = 0;  if (q == 5) r = cq_theta(0, (double)q);
+; A literal state-preparation seed does not make its quantum-derived angle classical.
 ;
-; Rule 3: the arg-1 angle operand is CLASSICAL, always. A quantum-derived angle
-; has no fixed unitary and the emitter would replay it as a handle tag. R2 is
-; asked in the rotation clause (not by `taintedAngleGate`, which walks a `cq_phi`
-; SPINE and never inspects a theta at the arm incoming) and is UNCHANGED by
-; Inc 4 — it runs BEFORE the state-prep block, so a tainted angle is refused on
-; the angle, never on the seed.
+; Known lowering gap: coherent quantum-derived angles (NORTHSTAR goal 1; bd 94ad).
+; The current gate ABI takes a classical double angle. Passing a quantum handle
+; into that slot would miscompile the program, so this test pins the loud fence.
+; An angle register and bit-controlled rotation ladder can implement the operation;
+; its absence is a compiler gap, not a no-unitary proof. Never insert a measure.
+; Retire this negative when that lowering preserves the data and angle semantics
+; and has analytic and trace evidence for this consumer.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}rotation angle under quantum control
 ; CHECK-NOT: cqrt_ry_i32_controlled
-; 3qlq: migrated from register cq_phi (dead declare erased)
 
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)

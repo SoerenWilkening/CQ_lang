@@ -1,0 +1,25 @@
+{
+  "mapped_lit": {
+    "passed": 1201,
+    "seconds": 41.04,
+    "results": "lit_results.tsv"
+  },
+  "header_lit": {
+    "passed": 15,
+    "seconds": 1.24,
+    "fixtures": "header_rewrites.txt"
+  },
+  "ctest": {
+    "passed": 585,
+    "failed": 0,
+    "seconds": 1235.91,
+    "command": "ctest --test-dir build -j6"
+  },
+  "equivalence": {
+    "compared": 2501,
+    "mismatches": 0,
+    "command": "cmake --build build --target cq-opt-equivalence-full"
+  },
+  "core_lowering_changed": false,
+  "cq_opt_sha256": "e42a3dd742d7b69d53e7f80afc4c5c64037d6ce5f7aa48739b6cc677a1673ae6"
+}

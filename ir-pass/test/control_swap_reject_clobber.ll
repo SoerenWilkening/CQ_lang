@@ -1,19 +1,19 @@
-; control_swap_reject_clobber.ll — §3c PERMANENT reject (SCOPING §3c).
+; control_swap_reject_clobber.ll
 ;
-; The one shape the swap-route emitter must DECLINE loudly even once it accepts
-; phase-arm diamonds/if-else: an arm that VALUE-CHANGES a quantum variable the
-; branch condition transitively reads. The flag is `icmp(q0)`; once the arm
-; overwrites q's computational-basis value, NO control model and NO Bennett copy
-; can produce a clean disentangled answer (conservation of information). This
-; stays a permanent decline through 4.2+; it is NOT a "pending" transitional one.
+; The add arm changes a value read by the branch condition.
 ;
-; Detection is pure SSA-value analysis BEFORE any mutation (Rule 9): the arm's
-; merge contribution is a value-changing redefinition (`add`, not a rotation) of
-; %q, and %q is the diamond's straight-through (Pred-edge) incoming, which is in
-; the transitive taint provenance of the branch condition.
+; Safety net for the current condition/arm lowering (NORTHSTAR goal 1).
+; Reversing the predicate from a changed source can leave its flag dirty; freeing
+; that flag would introduce an implicit measurement. Preserve the loud fence.
+; A coherent basis copy or retained source history can preserve the original
+; condition while an out-of-place arm computes its answer. CNOT basis fanout is
+; valid and does not clone an unknown quantum state. This is a lowering gap.
+; Retire this negative after a proved lowering preserves the predicate, answer
+; and interference, and cleans any rail it frees without an implicit measure.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}arm rewrites a condition operand under quantum control
+
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
 define i32 @example(i32 %u0) {
