@@ -58,6 +58,11 @@ means its real source injected before `cq-lowering`, never recognition by name. 
 figures published before 2026-09-30 were scored without the non-trivial-input rule and
 are a baseline to re-score, not the current number.
 
+CQ-provided implementations count in their own component, with their numerical
+accuracy and range limits published. Retaining an approximation is an owner decision.
+Publish both scalar-input C/Q coverage and broader API coverage including classical-only
+`nan`/`nanf`/`nanl`; report those three constructors separately as well.
+
 **3. Every known quantum routine can be implemented in CQ.**
 
 The acceptance corpus is the set of textbook and research routines, each written as

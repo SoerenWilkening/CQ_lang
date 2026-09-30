@@ -75,7 +75,7 @@ The PHYSICS-c rows with actual infinite backedges or nonterminating recursion re
 
 Rewrote the 15 angle/fanout/clobber headers listed in `header_rewrites.txt`. Compared the complete remaining IR and all test directives byte-for-byte before and after: unchanged. All 15 selected lit tests passed (1.24 seconds). Filed recheck issue **zxor** after this run. The runtime census is being measured separately from the historical constant-operand artifacts. Disputed tracker statuses and fixture class TSVs await owner review.
 
-Five owner questions remain: fmod via native frem accounting; the CQ sin leaf's supported range; nan's denominator; disposition of the 43 authored substitute slices; and whether a decline-to-accept change should keep twin matrices red until its semantic evidence is reviewed.
+The five owner questions raised here concern native-frem accounting, the CQ sin approximation, nan's denominator, authored substitute slices and decline-to-accept twin transitions. The subsequent owner decisions and both census figures are in [OWNER_RULINGS.md](OWNER_RULINGS.md). Native-frem accounting and the exact test-retirement scope remain unresolved; the approximation is retained, both census figures are to be published, and twin transitions require semantic review before their expectations change.
 
 ## Classical sin range check
 

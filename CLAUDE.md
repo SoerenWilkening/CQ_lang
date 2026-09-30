@@ -117,6 +117,10 @@ Fixture-hygiene traps that each shipped through a green suite:
 - a fixture whose subject no longer exists pins nothing.
 
 Validate by mutation and record the MISSED count. Regenerate baselines deliberately, never by reflex.
+When a twin-matrix cell changes from decline to accept, keep the gate red until the
+new acceptance's semantic evidence is reviewed. Update the expectation in the same
+reviewed capability change; the historical decline is not a permanent restriction.
+Twin disagreement remains a failure to investigate.
 
 **R11 — Core lowering changes get adversarial review, not just green tests.** Core =
 `TaintPropagation`, the control emitters, `FreePoint`, `EmitInverse`, `ChainWalk`,
@@ -153,6 +157,13 @@ classical/quantum combinations) and is computed by
 Rulings that walled off a construct because Bennett.jl lacks a gate sequence (the
 `fmod`/`remainder`/`remquo` family, Payne–Hanek `rem_pio2`, quantum-dependent trip
 counts) are **retired**: those cells are work items, and a user-supplied loop bound is valid.
+
+The owner retains the current CQ-provided `sin` approximation and accepts its reported
+accuracy; publish its documented range and special-value behavior with its coverage.
+A hand-authored body can count as CQ-provided when the runtime C/Q combinations compile.
+It earns no credit for lifting the upstream library implementation. Test retention is
+a separate decision: review redundant substitute slices without removing useful
+regression evidence or silently breaking the current census qualification checks.
 
 **R15 — Run what can witness the change** (owner ruling 2026-08-13, revised 2026-09-29).
 

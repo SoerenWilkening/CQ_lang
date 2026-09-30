@@ -1,0 +1,44 @@
+\labsessionheader{2026-09-30}{Owner math coverage decisions}%
+  {176abb9d (parent)}{n/a}%
+  {docs/audits-2026-09-30/OWNER\_RULINGS.md}
+
+\subsection*{What changed}
+The owner retained the current CQ-provided sin approximation, accepted its reported
+accuracy, requested both scalar-input and broader API census figures, and adopted
+semantic review before decline-to-accept twin expectations change. These decisions
+are recorded in NORTHSTAR.md goal 2 and CLAUDE.md R10/R14. The published policy
+record calculates both census figures from the committed runtime-census JSON;
+it does not replace the historical measurement snapshots.
+
+The owner also questioned native-fmod credit and the value of authored substitute
+tests. The clarification distinguishes native opcode acceptance, injected-source
+declines and an implemented reversible backend. Hand-authored bodies can count in
+the CQ-provided component. No matrix expectation, fixture body, issue status or
+test registration changed. The recheck and census issues remain open:
+\bd{zxor}, \bd{3c6m.49} and \bd{3c6m}.
+
+\subsection*{Measurement and verification}
+The unchanged runtime harness was rerun with \texttt{--native-fmod}, runtime
+operands and an evidence directory. All 12 probes compiled, linked and trace-ran;
+all 12 structural free checks passed. The complete result parsed identically to
+the previously committed \texttt{native\_fmod.json}. The command was:
+
+\begin{quote}\small\ttfamily
+BC=/private/tmp/cq-northstar-bc\newline
+OPENLIBM=/private/tmp/cq-northstar-openlibm\newline
+python3 tools/library\_coverage/runtime\_census.py\newline
+--native-fmod --output /private/tmp/cq-owner-native-fmod.json\newline
+--evidence-dir /private/tmp/cq-owner-fmod-evidence
+\end{quote}
+
+The double quantum/quantum probe calls \texttt{cq\_template\_frem\_f64}; its
+generated runtime body allocates a handle and prints a trace. This run establishes
+pipeline acceptance and does not demonstrate a gate expansion or numerical/unitary
+correctness. No compiler binary or implementation changed. The full ctest batch
+was not rerun for these documentation changes, per CLAUDE.md R15.
+
+\subsection*{Errata and remaining scope}
+Entry 027's five pending owner questions are partly resolved by the record cited
+above. Native-fmod accounting and the exact retirement/replacement set for authored
+substitute tests remain unresolved. The original audit's disputed tracker and
+fixture verdict changes still await owner adjudication.
