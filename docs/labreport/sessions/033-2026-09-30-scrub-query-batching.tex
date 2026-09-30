@@ -1,0 +1,55 @@
+\labsessionheader{2026-09-30}{Batch scrub-guard compiler queries}%
+  {15663460 + session changes}{n/a}%
+  {docs/audits-2026-09-30/scrub\_query\_batching.json}
+
+\subsection*{Changes}
+\bd{test\_C\_libtooling-b1l3}: the root probe now asks previously encountered
+non-template record identities and member-type questions in one compiler
+translation unit. Only answers from that pass's AST and compiler flags are
+reused. Guesses contain names and member accesses, never previous AST nodes or
+verdicts. Template instances are excluded from speculation. Missing answers
+use the existing probes; errors outside speculative lines also fall back.
+
+The new 96-line \texttt{tools/scrub\_guard\_batch.py} shares the existing
+alias-to-compiler-ID resolution with ordinary probes. Alias and member-query
+answers come only from the helper namespaces; definitions are selected by AST
+ID from the full dump. The file loader also supports reviewer harnesses that
+import the guard by path without registering it in \texttt{sys.modules}.
+No mutation corpus entries were removed.
+
+\subsection*{Focused measurements}
+Ran \texttt{python3 /tmp/cq\_guard\_profile.py} before and after batching,
+with \texttt{set\_jobs(2)} and a raw-pointer-field check followed by a pristine
+check. The pristine API check runs four configuration/PCH passes: it took
+19.62 seconds and 19 compiler invocations before, versus 15.14 seconds and
+15 invocations after, with the same clean result and 78 members. The cold
+raw-field check took 7.45 seconds before and 7.33 seconds after; both reported
+one raw-pointer problem and 79 members. These are single samples.
+
+\subsection*{Verification}
+\texttt{python3 /tmp/cq\_batch\_controls.py} checked fallback on an empty AST
+dump, selection of a record by compiler ID when printed names collide,
+selection of a template owner's identity instead of its argument's identity,
+and preservation of the uninstantiated-template verdict. A real no-PCH guard
+run through an unregistered importlib module was clean over 78 members.
+The full \texttt{ctest --test-dir build -j6 --output-on-failure} run passed
+585/585 entries in 375.65 seconds (375.86 seconds external wall time), versus
+492.98 seconds (493.02 external) in session 032: approximately 24 percent less
+wall time in these two runs. Both had existing stage caches enabled; these are
+single consecutive measurements, not a repeated controlled benchmark.
+The three mutation shards took 375.60, 339.47 and 348.59 seconds versus
+492.93, 437.84 and 446.40 previously. Every shard reported zero failures,
+covering the same 157 mutants and 19 expected-clean corpus entries.
+
+The required \texttt{cmake --build build --target cq-opt-equivalence-full}
+sweep compared 2,489 fixtures with zero mismatches in 118.28 seconds external
+wall time, versus 147.75 seconds previously, despite unchanged compiler code.
+Runtime-condition variation therefore contributes to the observed full-suite
+reduction; the compiler-invocation count is the direct evidence of batching's
+work reduction. \texttt{python3 tools/update\_code\_map.py --check} and
+\texttt{git diff --check} passed.
+
+\subsection*{Follow-up}
+\bd{test\_C\_libtooling-2n7r} tracks the remaining decomposition of the
+existing large guard tool. This change extracts only compiler identity and
+batching concerns.

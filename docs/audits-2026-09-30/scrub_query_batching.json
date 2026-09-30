@@ -1,0 +1,91 @@
+{
+  "base_commit": "15663460",
+  "controls": {
+    "elapsed": 10.295957700000145,
+    "empty_dump": "fallback, never cached",
+    "members": 78,
+    "same_name_records": "compiler ID selected",
+    "template_argument": "owner ID selected, uninstantiated",
+    "unregistered_import": "clean"
+  },
+  "corpus": {
+    "entries": 176,
+    "entries_removed": 0,
+    "expected_clean": 19,
+    "mutants": 157
+  },
+  "equivalence": {
+    "command": "cmake --build build --target cq-opt-equivalence-full",
+    "compared_fixtures": 2489,
+    "external_wall_seconds": 118.28,
+    "limit": "Unchanged compiler sweep also became faster; runtime-condition variation contributes to the observed full-suite reduction.",
+    "mismatches": 0,
+    "previous_external_wall_seconds": 147.75
+  },
+  "external_wall_reduction_percent": 23.76374183603098,
+  "focused_comparison": {
+    "before": [
+      {
+        "compiler_invocations": 6,
+        "elapsed": 7.445785095042083,
+        "errors": [
+          "cq::TaintSet::Stray: RAW POINTER to `llvm::Value`, which derives from llvm::Value \u2014 use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason"
+        ],
+        "label": "self: raw pointer field",
+        "members": 79
+      },
+      {
+        "compiler_invocations": 19,
+        "elapsed": 19.61504653596785,
+        "errors": [],
+        "label": "NULL: pristine tree",
+        "members": 78
+      }
+    ],
+    "final": [
+      {
+        "compiler_invocations": 6,
+        "elapsed": 7.327345377008896,
+        "errors": [
+          "cq::TaintSet::Stray: RAW POINTER to `llvm::Value`, which derives from llvm::Value \u2014 use a scrub:: container or a value handle (WeakVH / WeakTrackingVH), or allowlist the qualified member with a reason"
+        ],
+        "label": "self: raw pointer field",
+        "members": 79
+      },
+      {
+        "compiler_invocations": 15,
+        "elapsed": 15.136719367001206,
+        "errors": [],
+        "label": "NULL: pristine tree",
+        "members": 78
+      }
+    ]
+  },
+  "full_suite_after": {
+    "command": "ctest --test-dir build -j6 --output-on-failure",
+    "ctest_seconds": 375.65,
+    "external_wall_seconds": 375.86,
+    "passed": 585,
+    "shards_seconds": {
+      "taintset-scrub-guard-selftest-1of3": 375.6,
+      "taintset-scrub-guard-selftest-2of3": 339.47,
+      "taintset-scrub-guard-selftest-3of3": 348.59
+    }
+  },
+  "full_suite_before": {
+    "command": "ctest --test-dir build -j6 --output-on-failure",
+    "ctest_seconds": 492.98,
+    "external_wall_seconds": 493.02,
+    "passed": 585,
+    "shards_seconds": {
+      "taintset-scrub-guard-selftest-1of3": 492.93,
+      "taintset-scrub-guard-selftest-2of3": 437.84,
+      "taintset-scrub-guard-selftest-3of3": 446.4
+    }
+  },
+  "limits": "Single consecutive measurements, existing stage caches enabled. Not a repeated controlled benchmark; timings depend on runtime conditions. Focused after profile predates the missing-AST-ID guard, which does not change valid compiler output behavior.",
+  "source_sha256": {
+    "tools/scrub_guard_batch.py": "4bade1758035f2b47a232888bf9407e7ef31d4898e7f934c3c75d664ebdecb6e",
+    "tools/taintset_scrub_guard.py": "3edac8b52967acf6678f42df7254557d4e9ad100b69519fd0721f28ca3f6192e"
+  }
+}

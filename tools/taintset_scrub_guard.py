@@ -318,7 +318,14 @@ import subprocess
 import sys
 import tempfile
 import threading
+from importlib.util import module_from_spec, spec_from_file_location
+from types import SimpleNamespace
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+_BATCH_SPEC = spec_from_file_location(
+    "scrub_guard_batch", os.path.join(os.path.dirname(os.path.abspath(__file__)), "scrub_guard_batch.py"))
+scrub_guard_batch = module_from_spec(_BATCH_SPEC)
+_BATCH_SPEC.loader.exec_module(scrub_guard_batch)
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 INCLUDE_DIR = os.path.join(ROOT, "ir-pass", "include")
@@ -644,6 +651,7 @@ class Ctx:
         # Compiler line markers repeat each header many times; resolve each path
         # once here, rather than walking its symlinks for every marker.
         self.marker_paths = {}
+        self.batch_identities = {}
         self.n = 0
         self.lock = threading.Lock()
 
@@ -1428,6 +1436,9 @@ def _identify(ctx, qname, idx, retry=False, state=None, force=False):
     necessarily what the build uses). With `state`, the members this record's tree had in
     earlier passes are asked in the same TU (answers go to state['rob_cache']); never for a
     template instance, whose members would instantiate it."""
+    if not force and qname in ctx.batch_identities:
+        kind, payload = ctx.batch_identities[qname]
+        return kind, payload, []
     comps = _split_scope(qname)
     j = next((i for i, c in enumerate(comps) if "<" in c), None)
     fcomps = list(comps[: j + 1] if j is not None else comps)
@@ -1480,26 +1491,10 @@ def _identify(ctx, qname, idx, retry=False, state=None, force=False):
         if target is None:
             last_err = "; ".join(errs[:3]) or "the compiler did not resolve it"
             continue
-        tid = tkind = None
-        stack = list(reversed(target.get("inner") or []))
-        while stack:   # DFS, NOT into template arguments (their records are not the target)
-            n = stack.pop()
-            if n.get("kind") == "TemplateArgument":
-                continue
-            if n.get("kind") in ("RecordType", "EnumType") and isinstance(n.get("decl"), dict):
-                tid, tkind = n["decl"].get("id"), n["kind"]
-                break
-            stack.extend(reversed(n.get("inner") or []))
-        if tkind == "EnumType":
-            return ("enum", None, errs)
-        if tid is None:
-            return ("error", f"`{qname}` does not name a record or enum", errs)
-        same = [n for n in _iter_nodes(docs) if n.get("id") == tid and n.get("kind") in RECORD_KINDS]
-        nodes = [n for n in same if n.get("completeDefinition")]
-        if nodes:
-            return ("record", nodes, errs)
-        if not force and any(n.get("kind") == "ClassTemplateSpecializationDecl" for n in same):
-            return ("uninstantiated", None, errs)
+        answer = scrub_guard_batch.record_identity(
+            SimpleNamespace(**globals()), list(_iter_nodes(docs)), target, qname, force)
+        if answer is not None:
+            return answer[0], answer[1], errs
     if last_err:
         return ("error", last_err, errs)
     return ("missing", None, errs)
@@ -1784,7 +1779,7 @@ def _check_one(tmp, cfg, use_pch, allowlist, selftest_src):
     state = {"rob_cache": {}, "next_k": 0, "access": {}, "lock": threading.Lock()}
     # the root, by the compiler's identity; a header that does not compile fails closed
     rootq = ROOT_RECORD
-    kind, found, errs = _identify(ctx, rootq, 0, state=state)
+    kind, found, errs = scrub_guard_batch.identify_root(SimpleNamespace(**globals()), ctx, state)
     if errs:   # re-asked with no speculative line and (under the PCH) retried without it
         kind, found, errs = _identify(ctx, rootq, 0, retry=True)
     if errs:   # ANY error in the root TU: the header does not compile
