@@ -640,6 +640,10 @@ class Ctx:
 
     def __init__(self, tmp, cfg, use_pch):
         self.tmp, self.cfg, self.use_pch = tmp, cfg, use_pch
+        # All probes in this pass use the same immutable include snapshot and cwd.
+        # Compiler line markers repeat each header many times; resolve each path
+        # once here, rather than walking its symlinks for every marker.
+        self.marker_paths = {}
         self.n = 0
         self.lock = threading.Lock()
 
@@ -1657,7 +1661,9 @@ def _preprocessed(ctx, text, stem):
             if f.startswith("<"):
                 cur = None
                 continue
-            f = os.path.realpath(os.path.join(ctx.cfg.cwd, f))
+            if f not in ctx.marker_paths:
+                ctx.marker_paths[f] = os.path.realpath(os.path.join(ctx.cfg.cwd, f))
+            f = ctx.marker_paths[f]
             seen.add(f)
             cur = os.path.relpath(f, tmp) if f.startswith(tmp + os.sep) else None
             if started and cur is not None and "1" in line[m.end():].split():
@@ -1956,12 +1962,14 @@ def _check_one(tmp, cfg, use_pch, allowlist, selftest_src):
 LAST_RUN = {}   # main()'s report: the passes run and the tolerated notes of the last check()
 
 
-def check(header_src, selftest_src, allowlist, scrub_src=None, extra_headers=None):
+def check(header_src, selftest_src, allowlist, scrub_src=None, extra_headers=None, *, use_pch=None):
     """-> (errors, members walked). Parses the given texts in a temp include dir with
     EVERY build configuration that compiles the header. Under USE_PCH each configuration
     is asked with a PCH first and every clean verdict is re-asked without it; without
     USE_PCH the configurations are asked (in parallel) without one. A problem in any
-    pass refuses; each problem names the pass it came from unless it is the first."""
+    pass refuses; each problem names the pass it came from unless it is the first.
+    `use_pch` overrides USE_PCH for this call without changing other threads."""
+    use_pch = USE_PCH if use_pch is None else use_pch
     try:
         cfgs = _configs()
     except GuardError as ex:
@@ -1983,7 +1991,7 @@ def check(header_src, selftest_src, allowlist, scrub_src=None, extra_headers=Non
 
         run_log, members, tolerated = [], 0, []
         try:
-            if USE_PCH:
+            if use_pch:
                 passes = [(c, True) for c in cfgs] + [(c, False) for c in cfgs]
                 for i, (cfg, pch) in enumerate(passes):
                     errs, n, tol = _check_one(tmp, cfg, pch, allowlist, selftest_src)
@@ -2670,7 +2678,12 @@ def selftest(jobs=None, shard=(1, 1)):
     def run(m):
         label, h, s, x, al, expect = m[:6]
         extra = m[6] if len(m) > 6 else None
-        errs, n_ = check(h, s, al, x, extra_headers=extra)
+        # Expected-clean controls exercise the gate's actual no-PCH path directly.
+        # A preliminary PCH pass only repeats that work: check() re-asks clean
+        # results without it anyway. The explicit equivalence control above still
+        # checks the PCH path; negative mutants keep the PCH acceleration.
+        errs, n_ = check(h, s, al, x, extra_headers=extra,
+                         use_pch=False if expect is None else USE_PCH)
         return label, expect, errs, n_
 
     with ThreadPoolExecutor(jobs) as ex:   # each verdict is printed as it completes

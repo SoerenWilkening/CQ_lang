@@ -1,0 +1,49 @@
+\labsessionheader{2026-09-30}{Scrub-guard runtime reduction}%
+  {b5965333 + session changes}{n/a}%
+  {docs/audits-2026-09-30/full\_suite\_runtime.json}
+
+\subsection*{Changes}
+\bd{test\_C\_libtooling-xkev}: cache compiler line-marker path resolutions
+within each configuration pass. Every pass has a fixed working directory and
+its own copied include tree; the cache is discarded with that pass. The parser
+still records every entered file and compares every preprocessed line.
+Expected-clean self-test entries now use the actual gate's no-PCH path directly,
+avoiding preliminary PCH checks that would recheck clean results without it.
+The separate PCH equivalence control remains, as do all 157 mutants and
+19 expected-clean corpus entries. Existing callers of \texttt{check()} retain
+their default behavior.
+
+\subsection*{Evidence}
+Profiling one minimal-context preprocessor result counted 118,562
+\texttt{lstat} calls before caching and 12,456 afterwards, with 889 distinct
+resolved files in both results. This is a function-call comparison; the
+profiles ran alongside the maintenance benchmark and are not isolated timing
+measurements. Replaying the same three real compiler outputs through the old
+and new parsers produced identical text maps and file sets. Combined parsing
+time was 2.958 seconds before and 0.447 seconds after, including an initially
+empty cache. Empty and sentinel-free outputs were refused by both parsers.
+A trial PCH containing the mutated project header returned incomplete AST
+records; that experiment was discarded.
+
+\subsection*{Verification and timing}
+Before changes, \texttt{ctest --test-dir build -L maintenance -j6 --output-on-failure}
+passed all three shards in 427.06 seconds (427.36 seconds external wall time).
+After changes, \texttt{ctest --test-dir build -j6 --output-on-failure}
+passed all 585 entries in 492.98 seconds (493.02 seconds external wall time),
+including all three mutation shards. Existing stage caches were enabled.
+These select different workloads: they do not establish a controlled full-suite
+speedup. The earlier 17--19-minute shard timings are historical, not a fresh
+baseline. The loop matrix took 28.90 seconds here versus 257.79 seconds in
+session 031; no loop-matrix code changed in this session, so that variation
+cannot be attributed to the path cache.
+
+The required \texttt{cmake --build build --target cq-opt-equivalence-full}
+sweep compared 2,489 fixtures with zero mismatches (147.75 seconds external
+wall time). \texttt{python3 tools/update\_code\_map.py --check} and
+\texttt{git diff --check} passed. All 157 mutants were killed for their expected
+reasons; all three shards reported zero failures.
+
+\subsection*{Remaining work}
+\bd{test\_C\_libtooling-0a5x} tracks the loop matrix's work.
+\bd{test\_C\_libtooling-2n7r} tracks decomposition of the existing large
+scrub-guard tool; this session did not change its module structure.

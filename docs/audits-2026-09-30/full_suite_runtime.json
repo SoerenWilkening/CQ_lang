@@ -1,0 +1,75 @@
+{
+  "after_full_suite": {
+    "command": "ctest --test-dir build -j6 --output-on-failure",
+    "ctest_seconds": 492.98,
+    "external_wall_seconds": 493.02,
+    "passed": 585,
+    "shards_seconds": {
+      "taintset-scrub-guard-selftest-1of3": 492.93,
+      "taintset-scrub-guard-selftest-2of3": 437.84,
+      "taintset-scrub-guard-selftest-3of3": 446.4
+    }
+  },
+  "base_commit": "b5965333",
+  "before_maintenance_only": {
+    "command": "ctest --test-dir build -L maintenance -j6 --output-on-failure",
+    "ctest_seconds": 427.06,
+    "external_wall_seconds": 427.36,
+    "passed": 3,
+    "shards_seconds": {
+      "taintset-scrub-guard-selftest-1of3": 427.01,
+      "taintset-scrub-guard-selftest-2of3": 359.14,
+      "taintset-scrub-guard-selftest-3of3": 363.21
+    }
+  },
+  "comparison_limit": "Before and after commands select different workloads; not a controlled full-suite speedup measurement. Historical 17-19 minute shard timings are not a fresh baseline. Existing stage caches were enabled; loop-matrix timing varied substantially.",
+  "corpus": {
+    "entries": 176,
+    "entries_removed": 0,
+    "expected_clean": 19,
+    "mutants": 157
+  },
+  "equivalence": {
+    "command": "cmake --build build --target cq-opt-equivalence-full",
+    "compared_fixtures": 2489,
+    "external_wall_seconds": 147.75,
+    "mismatches": 0
+  },
+  "guard_source_sha256": "17cea8371d84f61af6986328153b0b7a2adf6bd39700adba079e21be73b6528d",
+  "parser_equivalence": {
+    "cached_paths": 1076,
+    "contexts": [
+      {
+        "after_seconds": 0.1995422539766878,
+        "before_seconds": 0.9274279710371047,
+        "lines": 111597,
+        "markers": 8366,
+        "seen": 889
+      },
+      {
+        "after_seconds": 0.10282141104107723,
+        "before_seconds": 0.9427610840066336,
+        "lines": 111590,
+        "markers": 8366,
+        "seen": 889
+      },
+      {
+        "after_seconds": 0.14441811694996431,
+        "before_seconds": 1.0874976919731125,
+        "lines": 170195,
+        "markers": 10029,
+        "seen": 1074
+      }
+    ],
+    "equal_contexts": 3,
+    "silent_controls": "both refused"
+  },
+  "preprocessor_profile": {
+    "after_lstat_calls": 12456,
+    "after_realpath_calls": 890,
+    "before_lstat_calls": 118562,
+    "before_realpath_calls": 8362,
+    "distinct_resolved_files": 889,
+    "limit": "Profiles ran alongside the baseline; call counts, not isolated timings."
+  }
+}
