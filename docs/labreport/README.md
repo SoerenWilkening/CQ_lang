@@ -3,12 +3,12 @@
 `labreport.pdf` (built locally, **not committed**) is the human-readable history
 of the project: one entry per working session, at most five pages, appended at
 session close. It exists so the owner can read progress and the state of the art
-without reading `CLAUDE.md`'s dated history blocks or the per-increment notes.
+without reading the per-increment notes (the pre-2026-09-30 ones are in git at tag `pre-northstar`).
 
 ## Rules (the mechanical ones are enforced by `tools/labreport/build.py`)
 
 1. **Non-normative.** An entry records what happened and cites where rules live
-   (`CLAUDE.md`, `ROADMAP.md`, PRDs, `bd` ids). It never states a new rule. This
+   (`NORTHSTAR.md`, `CLAUDE.md`, `bd` ids). It never states a new rule. This
    is deliberate: agent-authored prose has hardened into de-facto rulings before
    (the `fenv` lesson in `CLAUDE.md`), and this document must not be a fourth
    place for that to happen.

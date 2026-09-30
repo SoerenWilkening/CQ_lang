@@ -5,9 +5,20 @@ through a single mechanism — **taint** on LLVM SSA values — rather
 than a keyword on declarations or a cast on conversions. This
 document explains why taint is the right boundary, what triggers
 it, what propagates it, what crosses it, and what does not. It is
-the conceptual heart of the taint-driven design: every other
-surface (the frontend intrinsics, the IR pass, the runtime ABI) is
-downstream of the decisions stated here.
+the conceptual heart of the design: every other surface (the
+frontend intrinsics, the IR pass, the runtime ABI) is downstream of
+the decisions stated here.
+
+The plan of record is [`../NORTHSTAR.md`](../NORTHSTAR.md): its goals and
+design principles win over anything written here. Where this document
+says a construct "fails loudly", read that as *not lowered yet* (a
+compiler gap that is filed, never a pass) unless the construct is on
+the closed physics list in NORTHSTAR goal 1.
+
+Section numbers are cited from other documents and from source comments
+(for example `quantum-classical-handling.md` §5.2, "the classical operand is
+not promoted to a handle", from `PredMuxFlatten.cpp` and several lit
+fixtures); keep them stable.
 
 Companion documents:
 - [`frontend.md`](./frontend.md) — the user-facing intrinsic surface
@@ -16,10 +27,7 @@ Companion documents:
 - [`backend.md`](./backend.md) — the IR pass that performs the taint
   analysis and lowering, plus the runtime ABI
 - [`llvm-implementation.md`](./llvm-implementation.md) — the stock
-  LLVM C++ APIs every mechanism in this document depends on
-- [`rationale/proposal-taint-driven-pipeline.md`](./rationale/proposal-taint-driven-pipeline.md)
-  — the proposal that diagnosed the previous design's failures and
-  motivated the move to taint-driven semantics
+  LLVM C++ APIs the pass depends on
 
 ---
 
@@ -31,25 +39,26 @@ This document defines:
   from classical behavior in CQ programs
 - What triggers taint, how it propagates through stock LLVM
   opcodes, and where it stops
+- How a tainted branch or `select` leaves the taint relation and is
+  handed to a control emitter
 - How mixed quantum + classical operands are handled — the
   dispatch rule, the runtime entry points, and what the IR pass
-  must never do
+  does not do
 - How type conversions interact with taint — and why casts are
   representation changes, never measurements
-- The diagnostic the previous (`quantum` keyword + cast-as-
-  measurement) design failed on — function lifting with hidden
-  casts — and how the taint-driven boundary fixes it
+- Why this makes a plain classical function liftable to quantum
+  callers without source changes
 
 It does **not** define:
 
 - The user-facing intrinsics themselves (signatures, dispatch
-  macros, fan-out across the 14 C scalar types) — see
-  [`frontend.md`](./frontend.md) §3
-- The data-flow algorithm the IR pass uses to compute taint — see
-  [`backend.md`](./backend.md) §4
-- The full set of stock LLVM opcodes covered by template lowering
-  and their per-width / per-shape templates — see
-  [`backend.md`](./backend.md) §6.3, §12
+  macros, fan-out across the C scalar types) — see
+  [`frontend.md`](./frontend.md) §3 and `include/CQ.h`
+- The full lowering of control flow, loops, memory (QRAM) and I/O —
+  see [`backend.md`](./backend.md); this document states only the
+  parts the boundary itself decides
+- The set of opcodes and widths covered by template lowering — see
+  `tools/opcode_table.yaml` and [`backend.md`](./backend.md) §12
 
 ---
 
@@ -58,12 +67,11 @@ It does **not** define:
 **Quantum behavior is a property of SSA values, not of variable
 declarations or static types.** A value is quantum if it has been
 *tainted* — derived (transitively, by stock LLVM data flow) from a
-qubit-allocating gate call. A value is classical if it has not.
-The boundary is therefore implicit: it follows the data, moves
-where the data moves, and exists only where taint exists.
+`cq_theta` result. A value is classical if it has not. The boundary
+is therefore implicit: it follows the data, moves where the data
+moves, and exists only where taint exists.
 
-A `quantum` keyword on a declaration plays no role in this scheme.
-There is no such keyword in `CQ.h`, no struct wrapper, no
+There is no `quantum` keyword in `CQ.h`, no struct wrapper, no
 type-system distinction in the IR. Two variables both declared
 `int a` are indistinguishable until one of them flows through a
 taint source — at which point the SSA value emerging from that
@@ -73,129 +81,52 @@ The rest of this document derives from this single point.
 
 ---
 
-## 3. The previous boundary and why it failed
+## 3. Two operations that must not be conflated
 
-The taint-driven design exists because an earlier
-keyword-and-cast design did not compose. Stating that diagnosis
-plainly is the right entry point for understanding what the new
-boundary buys.
+A central goal of CQ is **function lifting**: a plain classical
+function accepts tainted arguments and executes as its quantum
+analog without source-level modification. A library author writes
+`average(a, b)` once; quantum callers and classical callers use the
+same body. That goal fixes how two easily-confused operations must
+be separated.
 
-### 3.1 The previous boundary
+- **Type conversion** is a representation change. An `int` and a
+  `double` differ in how the same numerical quantity is laid out in
+  bits. Conversion adjusts the layout (widen, narrow, sign-extend,
+  round to nearest float). It says nothing about whether the bits
+  live on transistors or qubits.
+- **Measurement** is a substrate change. A qubit register's
+  superposed amplitudes collapse to a single computational-basis
+  state; the result moves from the qubit substrate to the classical
+  substrate. The result's C type is the same as before
+  (`cq_measure(int_register)` returns `int`) but the substrate has
+  changed.
 
-Under the prior design (now archived at
-[`docs/archive/old-design/`](./archive/old-design/)), the
-quantum/classical boundary had two source-level expressions:
-
-- **Declaration** — `quantum int a;` marked `a` as living on
-  qubits. The frontend rewriter expanded the keyword to a
-  `qint_mid_t` struct wrapper and emitted a `@cq_init_i32(value)`
-  call to allocate the qubit register at declaration time.
-- **Type cast** — a cast like `(int) q` on a `quantum int q` was
-  the measurement primitive. The rewriter detected the cast
-  pattern and lowered it to a `cqrt_measure_i32(handle)` call.
-
-The keyword identified the quantum *type*; the cast crossed the
-boundary in the measurement direction.
-
-### 3.2 The function-lifting-with-hidden-casts diagnosis
-
-A central design goal of CQ is **function lifting**: a plain
-classical function should accept tainted arguments and execute as
-its quantum analog without source-level modification. A library
-author writes `average(a, b)` once; quantum callers and classical
-callers both use the same body.
-
-Consider this function, idiomatic in C and harmless under classical
-semantics:
+If a conversion were the measurement primitive, lifting would break
+silently. Consider:
 
 ```c
-double average(double a, double b) {
-    int count = 2;
-    return (a + b) / (double) count;   /* (double) cast on count */
+double average(double a, double b, int n) {
+    return (a + b) / (double) n;      /* (double) cast inside the callee */
 }
 ```
 
-Now consider a quantum caller:
+The `(double) n` is an implementation detail of the callee; nothing
+in its signature tells a quantum caller that it would collapse the
+state, and an equivalent body written without the cast would not.
+So the design commits to three things:
 
-```c
-double q_avg = average(q1, q2);   /* q1, q2 already tainted */
-```
-
-Under classical semantics this is fine. Under quantum semantics
-it *must* be fine — the boundary the caller cares about is its own
-inputs, not the callee's internal arithmetic.
-
-But under the previous design, the `(double) count` inside the
-callee body was a measurement *if* `count` was tainted. And `count`
-would become tainted as soon as taint propagated into the body of
-`average` — once the cloned specialization seeded its parameters
-as tainted, `count` (which interacts with tainted operands in the
-final division) inherited taint through the arithmetic chain. The
-harmless `(double) count` cast then collapsed the quantum state
-mid-computation, returning a classical scalar where the caller
-expected a quantum result.
-
-Three properties of this failure made it not patchable in place:
-
-1. **The caller cannot see the offending cast.** The cast is an
-   implementation detail of `average`'s body. The function's
-   *signature* says `(double, double) → double` — nothing in that
-   signature tells the caller that internal cast patterns will
-   collapse the state.
-2. **Equivalent implementations behave differently.** A different
-   author writing the same function without the `(double) count`
-   cast — say, by using a literal `2.0` directly — would not
-   collapse the state. Whether a classical function is "safe to
-   lift" depends on its internal cast patterns; the type system
-   gives no way to declare a function "lift-safe."
-3. **The failure is silent.** Nothing diagnoses the unwanted
-   measurement. The program compiles, the program runs, and the
-   caller receives a numerical result that happens not to be
-   quantum.
-
-This pattern recurs across libm wrappers, accumulator-style
-helpers, division-by-integer-count patterns, and most code that
-operates on heterogeneous numeric types. The whole class of code
-is exactly what function lifting was supposed to compose with.
-
-### 3.3 The root cause — two unrelated operations conflated
-
-The cast-as-measurement rule treated *type conversion* and
-*measurement* as a single operation. They are not.
-
-- **Type conversion** is a representation change. An `int` and a
-  `double` differ in how the same numerical quantity is laid out
-  in bits. Conversion adjusts the layout (widen, narrow, sign-
-  extend, round to nearest float). It says nothing about whether
-  the bits live on transistors or qubits.
-- **Measurement** is a substrate change. A qubit register's
-  superposed amplitudes collapse to a single computational-basis
-  state; the result is moved from the qubit substrate to the
-  classical substrate. The result's C type is the same as before
-  the call (`cq_measure(int_register)` returns `int`) but the
-  substrate has changed.
-
-The prior design used the type-conversion syntax `(int) q` to
-trigger the substrate change. That choice broke lifting because
-type conversion happens routinely inside function bodies for
-reasons unrelated to substrate, and the caller cannot see them.
-
-### 3.4 The redesign commitment
-
-The taint-driven design fixes the failure by:
-
-1. **Separating the two operations.** Type conversion under taint
-   is a representation change at the quantum layer (a quantum
-   cast template); measurement requires an explicit,
-   syntactically distinct call (`cq_measure`).
-2. **Putting the Q/C boundary on values (taint), not on
-   declarations (keyword).** A function body need not be authored
-   with quantum awareness; data flow alone determines what is
-   quantum and where.
-3. **Making the only taint source an unambiguous explicit gate
-   (`cq_theta`, i.e. Ry).** No declaration site is a taint
-   source; no conversion site introduces taint; nothing
-   accidental can mint superposition.
+1. **Separate the operations.** Type conversion under taint is a
+   representation change at the quantum layer (a quantum cast
+   template, §6); measurement requires an explicit, syntactically
+   distinct call (`cq_measure`).
+2. **Put the Q/C boundary on values (taint), not on declarations.**
+   A function body need not be authored with quantum awareness;
+   data flow alone determines what is quantum and where.
+3. **Make the only taint source an unambiguous explicit gate**
+   (`cq_theta`, i.e. Ry). No declaration site is a taint source; no
+   conversion site introduces taint; nothing accidental can mint
+   superposition.
 
 The remaining sections describe how those three commitments play
 out.
@@ -216,8 +147,7 @@ in the entire compilation unit:
 
 ```c
 int a = 3;                      /* %a is classical */
-int a1 = cq_theta(a, 0.5);      /* %a1 is tainted — Ry(0.5) on a
-                                   fresh register initialized to 3 */
+int a1 = cq_theta(a, 0.5);      /* %a1 is tainted */
 ```
 
 In LLVM IR after Clang `-O1`:
@@ -226,6 +156,13 @@ In LLVM IR after Clang `-O1`:
 %a1 = call i32 @cq_theta_si32(i32 %a, double 5.0e-01)
 ;     ^^ — %a1 is the seed of the taint relation
 ```
+
+The pass lowers it to `cqrt_alloc_i32(seed)` followed by
+`cqrt_ry_i32(h, 0.5)` when the seed is a still-classical value (a
+fresh register is born holding the seed), and to a rotation of the
+existing register when the seed is already quantum (the linear rule,
+[`frontend.md`](./frontend.md) §3.2). `cq_ry(x, θ)` is the statement
+spelling of `x = cq_theta(x, θ)`.
 
 The single-source choice is principled, not minimal-by-omission.
 Ry is the gate that physically introduces superposition: it
@@ -236,40 +173,47 @@ operation either preserves whether a value is in superposition
 (measurement). Making Ry the unique source aligns the IR-level
 boundary with the physical-level boundary.
 
+**The angle is classical.** The angle operand of a rotation — arg 1
+of `cq_theta`, arg 0 (the only operand) of `cq_phi` — is a classical
+scalar, and taint never flows through it. The exclusion is per
+operand *use*, not per value: a value that reaches a `cq_theta` both
+as the arg-0 seed and as the angle stays tainted through the seed
+edge. The pass never allocates a qubit for an angle. A
+quantum-derived angle currently fails loudly (`cq rotation lowering:
+unsupported quantum-derived rotation angle`, or `cq controlled
+lowering: rotation angle under quantum control` inside a tainted
+region); the way to get an angle out of quantum data is an explicit
+`cq_measure`.
+
 Two operations that look like they should introduce taint but
 deliberately do not:
 
-- **`cq_phi` (the branch phase).** Since Increment 1 of bd
-  `test_C_libtooling-3qlq` the surface is `void cq_phi(double φ)`:
-  it has **no data operand at all**. So it introduces no taint and
-  **propagates none** — there is nothing for taint to flow through.
-  It multiplies the amplitude of the branch it sits in by `e^{iφ}`,
-  and is ordered by the block it sits in rather than by a data
-  dependence. Its **one** operand is the **angle**, which is
-  classical; a quantum-derived angle is a loud decline
-  (`cq rotation lowering: unsupported quantum-derived rotation
-  angle`, or `cq controlled lowering: rotation angle under quantum
-  control` inside a tainted region), never a new source. Under a
-  tainted condition it lowers by **kickback** onto the condition
-  flag; uncontrolled or classically controlled it is a global phase
-  and is deleted (see [`backend.md`](./backend.md) §6.1a and
-  [`frontend.md`](./frontend.md) §3.3). *Before that increment
-  `cq_phi` took a register and was taint-propagating-but-not-a-source
-  for the reason the rest of this bullet used to give; that reading
-  is history.*
-- **Plain declarations.** A `int a = 3` is classical. There is no
+- **`cq_phi` (the branch phase).** The surface is
+  `void cq_phi(double θ)`: it has **no data operand at all**. So it
+  introduces no taint and propagates none — there is nothing for
+  taint to flow through. It multiplies the amplitude of the branch
+  it sits in by `e^{iθ}`, and is ordered by the block it sits in
+  rather than by a data dependence. Under a tainted condition it
+  lowers by **kickback**: the condition is minted into a flag qubit
+  and the phase goes on the flag (`cqrt_rz_i1(flag, θ)`,
+  uncontrolled), with nothing applied to any data register.
+  Uncontrolled or classically controlled it is a global phase and is
+  deleted. The two-argument spelling `cq_phi(x, θ)` no longer
+  exists; a use of the retired `cq_phi_<sfx>` names is a loud
+  failure. See [`frontend.md`](./frontend.md) §3.3 and
+  [`backend.md`](./backend.md) §6.1a.
+- **Plain declarations.** An `int a = 3` is classical. There is no
   surface form that declares a variable "intended quantum" without
-  invoking a gate. This is the deliberate replacement of the
-  prior `cq_init_*` family — allocation is gate-triggered, not
+  invoking a gate: allocation is gate-triggered, not
   declaration-triggered.
 
 ### 4.2 Propagation through stock LLVM opcodes
 
 Taint propagates by the **operand rule**: an SSA value `v`
 produced by some instruction is tainted if any operand of that
-instruction is tainted. The rule is local (one instruction at a
-time), monotone (taint never un-propagates), and forward (along
-SSA def-use, with no need to re-process predecessors).
+instruction is tainted (except a rotation's angle operand, §4.1).
+The rule is local (one instruction at a time), monotone (taint never
+un-propagates), and forward (along SSA def-use).
 
 Every LLVM data-carrying opcode is a propagation site:
 
@@ -281,13 +225,15 @@ Every LLVM data-carrying opcode is a propagation site:
 | `fadd %x, %y` | `%x` or `%y` tainted |
 | `sext %x` (and other casts) | `%x` tainted |
 | `fneg %x` | `%x` tainted |
-| `phi [%a, %BB1], [%b, %BB2]` | `%a` or `%b` tainted, **or** the φ sits in a tainted-branch shadow (§4.4) |
-| `call @f(%a, %b)` | the return's taint depends on callee specialization (§4.5) |
+| `phi` / `select` | any data operand is tainted (a **tainted condition** is a separate matter, §4.4) |
+| `call @f(%a, %b)` | the return's taint follows the callee's specialization (§4.5); a function that returns a quantum handle also taints the result of each direct call to it |
 
 The propagation runs on whatever IR Clang's `-O1` produces. There
 is no requirement that the input be in any special form beyond
 the standard `mem2reg` / `SROA` cleanup; the SSA def-use graph
 that comes out of `-O1` is the data structure the rule walks.
+(`-O1` is the validated pipeline: the control-flow shapes the pass
+recognizes are the ones `-O1` produces.)
 
 ### 4.3 The only sink — `cq_measure`
 
@@ -311,83 +257,107 @@ In LLVM IR:
 %x = add i32 %m, 1                                    ; classical
 ```
 
-The qubit register underlying `%q` is preserved across the measure
-call (per [`frontend.md`](./frontend.md) §3.4): the register
-persists in a classical eigenstate and may be re-rotated by
-subsequent `cq_theta` calls. From the IR-level taint relation's
-perspective, however, the measure is a hard sink: `%m` is
-classical, and no use of `%m` carries taint forward.
+`cq_measure_<sfx>` lowers to `cqrt_measure_<W>(handle)`. The compiler
+never frees a rail it has seen measured — the measurement owns it —
+and never inserts a measurement the user did not write.
 
-### 4.4 Control-flow taint
+### 4.4 Quantum control flow — a tainted branch leaves the taint relation
 
 A branch whose `i1 %cond` is tainted is a *quantum branch*: the
-program is in a superposition of "taken" and "not taken." This
-case extends taint propagation in one structural way: **values
-defined in the dominated shadow of a tainted branch are
-control-tainted**, even if their direct SSA operands are classical
-literals.
+program is in a superposition of "taken" and "not taken." The
+operand rule cannot describe what happens next, and the pass does
+**not** try to extend it with a control-flow "shadow" of tainted
+values. Instead a tainted `br` / `select` / `switch` is handed to a
+**control emitter** (or fails loudly if none applies); which
+emitter is decided by the class of the arm:
 
-The motivating case is a φ-node at the post-dominator block:
+- a **phase arm** (`cq_phi(θ)`) is the register-free kickback of §4.1;
+- a **rotation arm** (`cq_theta` on a register the condition does
+  not read) is one controlled Ry on that register;
+- a **value arm** (an arithmetic result) hoists the arm's pure
+  chain into the predecessor so it runs unconditionally on the
+  original registers, mints the condition into a flag qubit, and
+  merges the answer into a fresh `|0⟩` rail by two controlled
+  copies (the second bracketed by `cqrt_x` on the flag), then
+  strips the flag back to `|0⟩` and frees it.
+
+The motivating case is the merge of two classical literals:
 
 ```c
-int x = cq_theta(0, 0.3);    /* x tainted */
+int q = cq_theta(a, 0.5);   /* q tainted */
 int y;
-if (x > 0)
-    y = 10;
-else
-    y = 20;
-/* y is classical-by-operand (the φ merges two literals) but
-   semantically depends on the quantum branch — must be
-   control-tainted */
+if (q > 0) y = 10; else y = 20;
+return cq_measure(y);
 ```
 
-In LLVM:
+`y` is classical-by-operand at the merge (its two incoming values are
+literals) yet semantically depends on the quantum branch. At `-O1`
+the diamond becomes `%y = select i1 (icmp sgt %q, 0), i32 10, i32 20`,
+and the lowered module (measured on the built `cq-opt`; regenerate
+rather than trust this listing) is:
 
 ```llvm
-%cmp = icmp sgt i32 %x, 0                ; tainted (operand %x is tainted)
-br i1 %cmp, label %T, label %F           ; tainted branch
-...
-merge:
-  %y = phi i32 [ 10, %T ], [ 20, %F ]    ; operands are literals
-                                           ; — but the φ is in the
-                                           ; merge of a tainted branch
-                                           ; so %y is control-tainted
+%h     = call i32 @cqrt_alloc_i32(i32 %a)
+         call void @cqrt_ry_i32(i32 %h, double 5.0e-01)
+%h_cmp = call i32 @cq_template_icmp_sgt_i32_hl(i32 %h, i32 0)   ; the flag
+%out   = call i32 @cqrt_alloc_i32(i32 0)                        ; fresh |0> rail
+%selop = call i32 @cqrt_alloc_i32(i32 10)
+         call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop, i32 %out)
+         call void @cqrt_x(i32 %h_cmp)                          ; ¬flag bracket
+%selop1= call i32 @cqrt_alloc_i32(i32 20)
+         call void @cqrt_copy_i32_controlled(i32 %h_cmp, i32 %selop1, i32 %out)
+         call void @cqrt_x(i32 %h_cmp)
+         call void @cq_template_icmp_sgt_i32_hl_unc(i32 %h_cmp, i32 %h, i32 0)
+         call void @cqrt_free(i32 %h_cmp)                       ; flag back to |0>
+%m     = call i32 @cqrt_measure_i32(i32 %out)
 ```
 
-The IR pass computes the controlled shadow structurally via
-`PostDominatorTree` (see [`backend.md`](./backend.md) §8) and
-promotes every value defined in that shadow to tainted. The
-operand-only rule on its own would miss the φ promotion, so the
-structural extension is load-bearing.
+The merged value is therefore a **fresh quantum rail** (`%out`), and
+taint is re-seeded from it: control detection and lowering run to a
+fixpoint with taint re-propagation in between, because each round's
+emitters mint new quantum values that later stages must see. The
+operand rule alone would have left the `select` classical. A tainted
+`br` / `select` / `switch` that no emitter can lower fails loudly
+(`… under quantum control`); it is never passed on as classical
+control over quantum state.
 
-There is no user-facing marker for control-flow taint. A plain
-C `if (tainted_cond) { ... }` *is* the controlled region; the
-brace-bounded shadow is the post-dominated subgraph the pass
-identifies. This is consistent with the design principle that
-the boundary is implicit and follows the data — including the
-data carried by branch conditions.
+There is no user-facing marker for control-flow taint. A plain C
+`if (tainted_cond) { ... }` *is* the controlled region; the pass
+recovers the region structurally, by matching its shape in the CFG
+and SSA by value identity ([`backend.md`](./backend.md) §8.1). This is consistent with the design principle that the
+boundary is implicit and follows the data — including the data
+carried by branch conditions. What each emitter does and which
+region shapes it accepts is in [`backend.md`](./backend.md) §6.1a and
+§8.
 
 ### 4.5 Taint at function-call boundaries
 
 A call instruction with any tainted argument is a *tainted call*.
-The callee is specialized via one of the two lifting paths
-([`backend.md`](./backend.md) §7):
+What happens depends on what the pass can see of the callee:
 
-- **Curated symbol substitution** — for callees with no visible
-  IR body (libm, LLVM intrinsics, opaque shared libraries). The
-  pass swaps `@sin` for `@cq_template_sin_f64` etc.; the call's
-  return is tainted.
-- **Clone-on-taint** — for callees with visible IR bodies (user
-  code, LTO-linked libraries). The pass clones the callee, seeds
-  taint on the parameters corresponding to the tainted arguments,
-  propagates taint through the clone's body recursively, and
-  retargets the call. The call's return is tainted iff the
-  clone's return value is tainted under the propagation.
-
-Both paths preserve the property that the original function
-remains unchanged for classical callers. The IR-pass-level taint
-relation is the substrate determining which path applies, what
-gets cloned, and where taint stops inside the clone.
+- **A visible body** (user code, a linked library, or a library
+  function whose real source has been injected before `cq-lowering`)
+  is lifted by **clone-on-taint**. The pass clones the callee once
+  per (callee, tainted-argument mask), seeds taint on the
+  corresponding parameters, lowers the clone's body with the same
+  rules as any other code, wraps it (forward stream, copy-out of the
+  result onto a fresh rail, reverse of the forward stream), gives it
+  internal linkage under a `__cq_q_<callee>_<mask>` name and
+  retargets the call. The original function is untouched for
+  classical callers. The call's result is tainted iff the clone
+  returns a quantum value; §7 shows a measured example.
+- **A curated `llvm.*` intrinsic** with a reversible template
+  (bit manipulation, min/max, saturating arithmetic, the rotation
+  form of funnel shifts, and the hardware-backed floating-point
+  survivors) is lowered directly to a `cq_template_*` call.
+  Membership is by exact `Intrinsic::ID`, never by name.
+- **A library function such as `sin` or `pow`** is not recognized by
+  name. Its real implementation is compiled from injected source, so
+  the pass sees stock opcodes (NORTHSTAR goal 2).
+- **A callee with no visible or injected body** and a tainted
+  argument fails loudly (`cq taint escape: tainted value consumed by
+  an unknown callee`): there is no implementation to lift, which is
+  one of the closed physics reasons in NORTHSTAR goal 1.
 
 ---
 
@@ -396,32 +366,41 @@ gets cloned, and where taint stops inside the clone.
 The most common kind of tainted instruction is one with mixed
 operands: one tainted (a handle) and one classical (a literal or
 another untainted SSA value). How those are lowered is one of the
-load-bearing decisions of the taint-driven design.
+load-bearing decisions of the design.
 
-### 5.1 The two operand shapes the pass recognizes
+### 5.1 The operand shapes the pass recognizes
 
 For a tainted binary opcode like `add i32 %x, %y`, the pass
-classifies the operand shape:
+classifies the operand shape by **taint membership** (not by
+`isa<Constant>`: a classical function argument is as classical as a
+literal):
 
-| Shape | LHS taint | RHS taint | Lowering |
+| Shape | LHS | RHS | Template |
 |---|---|---|---|
-| **H+H** (handle + handle) | tainted | tainted | `cq_template_add_i32(%h_x, %h_y)` |
-| **H+C** (handle + classical) | tainted | classical | `cq_template_add_i32_hl(%h_x, %c)` |
-| **C+H** | classical | tainted | canonicalized to H+C for commutative opcodes; `_lh` variant deferred otherwise (see [`backend.md`](./backend.md) §6.2) |
-| **C+C** (both classical) | classical | classical | left alone (stock LLVM `add`) |
+| **QQ** (handle, handle) | tainted | tainted | `cq_template_add_i32(h_x, h_y)` |
+| **HL** (handle, literal) | tainted | classical | `cq_template_add_i32_hl(h_x, c)` |
+| **LH** (literal, handle) | classical | tainted | commutative opcodes are canonicalized to HL; non-commutative ones (`sub`, shifts, `fsub`, `fdiv`, …) use `cq_template_<op>_<W>_lh(c, h)` with source order preserved |
+| classical, classical | classical | classical | left alone (stock LLVM `add`) |
 
-The IR pass dispatches on **LLVM operand kind** at lowering time:
-an `isa<ConstantInt>(operand)` test (or "this SSA value is not in
-the tainted set") decides which template name is emitted. The
-shape decision is local to the instruction; no global analysis is
-needed beyond the taint classification already in hand from §4.
+Integer and floating-point compares have QQ and HL forms only: a
+classical left operand is canonicalized by flipping the predicate
+(`5 < x` ⇒ `x > 5`), so there is no `_lh` compare. The runtime
+ABI is width-only: signedness lives in the opcode or predicate the
+pass reads (`add nsw` vs `nuw`, `icmp slt` vs `ult`) and is stripped
+before the runtime sees it, and every handle is an `i32`.
 
-### 5.2 The classical operand is never promoted to a handle
+The shape decision is local to the instruction; no global analysis
+is needed beyond the taint classification already in hand from §4.
+The symbol grammar is
+`cq_template_<op>[_<pred>]_<W>[_<from>_to_<to>][_hl|_lh][_controlled][_inv]`
+plus a void `_unc` twin per forward symbol; `tools/opcode_table.yaml`
+is its single source of truth.
 
-The H+C case is where the design's most important runtime-ABI
-rule lives: **the classical operand is passed to the runtime as a
-literal, not allocated onto a fresh qubit register.** Concretely,
-the lowering does *not* look like this:
+### 5.2 The classical operand is not promoted to a handle
+
+In opcode lowering (arithmetic, compares, casts) **the classical
+operand is passed to the runtime as a literal, not allocated onto a
+fresh qubit register.** The lowering does *not* look like this:
 
 ```llvm
 ; NOT what the pass emits
@@ -436,72 +415,38 @@ It looks like this:
 %h_z = call i32 @cq_template_add_i32_hl(i32 %h_x, i32 %c)
 ```
 
-Three reasons drive the rule:
+Two reasons carry the rule:
 
-1. **Preserve the classical operand's identity.** Once a classical
-   value has been promoted to a qubit register, it has paid a
-   non-zero qubit cost and the rest of the pipeline has no easy
-   way to recover the fact that it was "originally a literal."
-   Keeping the literal as a literal across the runtime ABI keeps
-   the option open.
-2. **Preserve the future `cq_alloc` deferral / elision
-   optimization.** A planned optimization backward-analyzes the
-   IR for "superposition reachability" and elides
-   `cqrt_alloc_<W>` calls whose downstream uses never reach a
-   superposition-meaningful sink. Promoting a classical literal
-   to a handle introduces a synthetic allocation site that the
-   elision analysis cannot prove unnecessary without first
-   recovering "this was a literal" — work the `_hl` dispatch
-   already did at lowering time, and that the elision pass would
-   have to redo. The rule preserves the degrees of freedom the
-   optimization needs.
-3. **Match the runtime's mixed-shape capability.** The template
-   library is explicitly parameterized by operand shape (see
-   [`backend.md`](./backend.md) §12.2): `cq_template_add_i32`
-   and `cq_template_add_i32_hl` are different symbols with
-   different signatures. The runtime is built around the
-   distinction; the IR pass passes the right shape through.
+1. **A classical operand has no superposition to carry.** Promoting
+   it would spend a qubit register on a value that is the same on
+   every branch.
+2. **The runtime ABI is built around operand shape.**
+   `cq_template_add_i32` and `cq_template_add_i32_hl` are different
+   symbols with different signatures, generated from the same table
+   ([`backend.md`](./backend.md) §12.2); the pass passes the right
+   shape through.
 
-This rule is not negotiable. Any future template op
-(`cq_template_sub_i32`, `cq_template_mul_i32`, …) follows the
-same pattern — distinct runtime entry points per operand shape,
-dispatched by the IR pass based on LLVM operand kind, never
-promoting classical operands to handles. Any future change to
-mixed-operand lowering must preserve all three properties above.
+Any new template op follows the same pattern: distinct runtime entry
+points per operand shape, dispatched by the pass on taint membership,
+never promoting classical operands to handles.
 
-### 5.3 Operand symmetry and non-commutative ops
+**Where a classical value *is* materialized on a rail.** The rule is
+about opcode lowering, not about every place a classical value meets
+quantum data. A rail is born from a classical seed (`cq_theta`,
+§4.1), and the merge of a quantum branch copies *from handles*: in
+the example of §4.4 the literals `10` and `20` are each allocated
+onto a temporary rail (`cqrt_alloc_i32(10)`) that serves as the copy
+source of `cqrt_copy_i32_controlled`.
 
-For commutative opcodes (`add`, `mul`, `and`, `or`, `xor`,
-`fadd`, `fmul`), the pass canonicalizes operand order before
-dispatch so the tainted operand is conventionally on the LHS.
-This collapses H+C and C+H to a single `_hl` template; no `_lh`
-is needed.
+### 5.3 The classical operand's flow is preserved
 
-For non-commutative opcodes (`sub`, `sdiv`, `srem`, `lshr`,
-`ashr`, `shl`, `fsub`, `fdiv`), canonicalization is not possible:
-`a - b` and `b - a` differ in result. Each shape in principle
-needs its own template — `_hl` (handle on LHS) and `_lh` (handle
-on RHS). The current pass ships `_hl` only; `_lh` is deferred
-until a real call site demands it (see
-[`backend.md`](./backend.md) §6.2). When the demand arrives the
-pass dispatches on the same operand-kind check; no change to the
-overall rule is required.
-
-### 5.4 The classical operand's flow is preserved
-
-A classical SSA value passed to an `_hl` template stays
-classical throughout. Its uses outside the template call are
-unchanged; the template call is just another use. The pass
-inserts no allocation, no rebinding, and no handle wrapper for
-the classical side.
-
-On its side of the ABI, the runtime is free to perform any
-classical-shadow shortcut it wants for the operation (e.g., if
-the handle's register has not yet entered superposition, the
-`_hl` template body may decline to apply any gates and just
-update the register's classical shadow value). This optimization
-lives entirely behind the runtime boundary and is invisible to
-the IR-emitted caller.
+A classical SSA value passed to an `_hl` template stays classical
+throughout. Its uses outside the template call are unchanged; the
+template call is just another use. The pass inserts no allocation,
+no rebinding, and no handle wrapper for the classical side (the
+`%4 = sitofp i32 %2 to double` of §7 stays an ordinary classical
+instruction and is handed to `cq_template_fdiv_f64_hl` as a
+`double`).
 
 ---
 
@@ -511,10 +456,11 @@ Type conversion at the LLVM-IR level — `sext`, `zext`, `trunc`,
 `fpext`, `fptrunc`, `sitofp`, `uitofp`, `fptosi`, `fptoui` — is a
 **representation change**. It says how a numerical value is
 encoded in bits; it says nothing about whether those bits live on
-classical transistors or quantum qubits. The taint-driven design
-honors this: under taint, every cast opcode lowers to its
-corresponding quantum cast template; none of them is ever a
-measurement.
+classical transistors or quantum qubits. Under taint, every cast
+opcode whose (opcode, width) pair has a template lowers to that
+quantum cast template; none of them is ever a measurement. A pair
+with no template is a loud failure — a gap to fill, not a
+measurement in disguise.
 
 ### 6.1 The principle
 
@@ -526,44 +472,27 @@ substrate (both tainted, both on qubits) or not, but the
 conversion between them is a representation operation regardless
 of substrate.
 
-This is the core observation the previous design got wrong by
-conflating the two. The taint-driven design takes them as
-genuinely independent dimensions:
-
 | | int → int | int → double | double → int |
 |---|---|---|---|
 | **Classical operand** | stock `sext` / `zext` / `trunc` | stock `sitofp` / `uitofp` | stock `fptosi` / `fptoui` |
 | **Tainted operand** | `cq_template_<cast>_<from>_to_<to>` | `cq_template_sitofp_…` | `cq_template_fptosi_…` |
 
-The right column under "tainted operand" is what the previous
-design replaced with measurement; under the new design it is a
-representation change at the quantum layer, implemented by a
-quantum cast template that maps the tainted register's qubits to
-a new representation without observing the underlying state.
-
 ### 6.2 What a quantum cast template does
 
-Conceptually, `cq_template_sitofp_i32_to_f64(handle_int)`:
+`cq_template_sitofp_i32_to_f64(handle_int)` is an **additive
+producer**: it returns a fresh handle at the target representation
+and leaves the source register intact. Conceptually it maps the bits
+of the source register onto the target register by the conversion's
+mathematical rule, without observing the state. The whole-DAG
+uncompute pass later emits the template's `_unc` twin and frees the
+produced rail at its post-dominator, and only where the rail is
+provably back to `|0⟩` (a rail it cannot prove is left allocated,
+never freed dirty). At no point is the register measured.
 
-1. Allocates a fresh register at the target representation (f64).
-2. Maps the bits of the source register onto the bits of the
-   target register according to the conversion's mathematical
-   rule. For int-to-float this is a reversible permutation of
-   computational-basis states (Bennett's classical-to-reversible
-   construction at the per-op layer); for widening it is a
-   circuit that copies the low bits and zero/sign-extends the
-   high bits.
-3. Returns the new handle.
-
-The source register is not consumed; it remains a valid handle
-for as long as its SSA uses extend. Auto-uncomputation at last
-use applies the inverse representation circuit and frees both
-handles (see [`backend.md`](./backend.md) §9). At no point is
-the register measured.
-
-Concrete gate sequences for each cast template are deferred to
-template-implementation work that runs after the frontend
-freeze; declarations live in
+The runtime that ships today is a **trace backend**: each `cqrt_*`
+and `cq_template_*` call prints one line, and the golden trace is the
+contract. The gate-level bodies of the cast templates are not
+implemented; their declarations are generated into
 [`runtime/cq_templates.h`](../runtime/cq_templates.h).
 
 ### 6.3 The user-visible consequence
@@ -581,114 +510,85 @@ What this guarantees:
 
 1. **Casts are never the measurement primitive.** A function
    author can write `(int) x` inside a callee body without
-   worrying that the caller has tainted `x`. The cast does what
-   casts do: change representation.
-2. **Measurement is syntactically obvious.** Every measurement
-   in the program is spelled `cq_measure(...)`. A reviewer can
-   grep for them. There is no other path to a measurement gate
-   at runtime.
+   worrying that the caller has tainted `x`.
+2. **Measurement is syntactically obvious.** Every measurement the
+   user wants is spelled `cq_measure(...)`, and the compiler inserts
+   none of its own. A reviewer can grep for them. There is no flag,
+   attribute, or syntactic form that turns a cast into a
+   measurement.
 3. **Cast chains compose.** `(int)(double) q` and
    `(double)(int) q` are both legal under taint; each cast
-   lowers to a quantum template. Neither chain collapses the
-   state. The user can reason about them at the source level as
-   they would in plain C.
+   lowers to a quantum template and neither collapses the state.
 
-### 6.4 What this is not
-
-Two failure modes the rule does not introduce, despite the strong
-"casts never measure" statement:
-
-- **A cast in a tainted shadow is still a representation change.**
-  Inside an `if (tainted_cond) { ... }`, casts are subject to
-  control-form lowering (their templates become controlled
-  variants), but they remain casts — not measurements. The same
-  rule applies recursively in nested tainted branches.
-- **Measurement-on-cast cannot be opted into.** There is no
-  flag, attribute, or syntactic form that turns a cast into a
-  measurement. If a user wants measurement, they write
-  `cq_measure(...)`. The asymmetry is by design: a single,
-  unambiguous syntax for state collapse, with no path to
-  reintroduce the diagnosable failure mode that motivated the
-  redesign.
+A cast inside a quantum-controlled arm is still a cast: a value
+arm's pure chain — casts included — is hoisted and runs
+unconditionally on the original registers, and only the merge copy
+is controlled (§4.4).
 
 ---
 
-## 7. The function-lifting fix
+## 7. The function-lifting consequence
 
-The taint-driven boundary's most important downstream
-consequence is that **classical functions lift to quantum callers
-without modification and without surprise**. This section walks
-the diagnostic from §3 through to closure under the new rules.
-
-### 7.1 The motivating callee, revisited
+The boundary's most important downstream consequence is that
+**classical functions lift to quantum callers without modification
+and without surprise.** Take the callee of §3, called with two
+tainted arguments and one classical one, and keep it out of line so
+that the lifting path is visible:
 
 ```c
-double average(double a, double b) {
-    int count = 2;
-    return (a + b) / (double) count;
+__attribute__((noinline))
+double average(double a, double b, int n) { return (a + b) / (double) n; }
+
+double f(int n) {
+    double q1 = cq_theta(1.0, 0.5);
+    double q2 = cq_theta(2.0, 0.3);
+    return cq_measure(average(q1, q2, n));
 }
 ```
 
-Under classical semantics this function is a four-line average.
-Under the previous design with a tainted caller it would
-silently collapse the state at `(double) count`.
+At `-O1` the callee is `fadd`, `sitofp i32 %n to double`, `fdiv`. The
+lowered module (measured on the built `cq-opt`; regenerate rather
+than trust this listing) contains, besides the untouched original
+`@average`, the clone for the mask "arguments 0 and 1 tainted":
 
-### 7.2 What the new pipeline does
-
-The IR pass receives this body via the clone-on-taint path
-(§4.5). For the call `average(q1, q2)` with both arguments
-tainted, the pass clones `average` with signature `(tainted,
-tainted)`, seeds taint on both parameters, and runs propagation
-through the clone's body. Each instruction lowers per §4–§6:
-
+```llvm
+define internal i32 @__cq_q_average_011(i32 %0, i32 %1, i32 noundef %2) {
+  %h_op  = call i32 @cq_template_fadd_f64(i32 %0, i32 %1)          ; QQ
+  %4     = sitofp i32 %2 to double                                 ; classical, untouched
+  %h_op1 = call i32 @cq_template_fdiv_f64_hl(i32 %h_op, double %4) ; HL: literal stays a literal
+  %cqq.out = call i32 @cqrt_alloc_f64(double 0.0)
+  call void @cqrt_copy_f64(i32 %h_op1, i32 %cqq.out)               ; copy-out
+  call void @cq_template_fdiv_f64_hl_unc(i32 %h_op1, i32 %h_op, double %4)
+  call void @cq_template_fadd_f64_unc(i32 %h_op, i32 %0, i32 %1)
+  call void @cqrt_free(i32 %h_op)
+  call void @cqrt_free(i32 %h_op1)
+  ret i32 %cqq.out
+}
 ```
-IR before lowering (in the cloned specialization):
-  %sum    = fadd double %a, %b              ; tainted (operands tainted)
-  %count  = ... constant 2                  ; classical literal
-  %countd = sitofp i32 %count to double     ; classical (operand classical)
-  %avg    = fdiv double %sum, %countd       ; H+C division
-  ret double %avg
 
-IR after lowering:
-  %h_sum  = call double @cq_template_fadd_f64(double %h_a, double %h_b)
-  ; %count and %countd are not touched — they remain classical SSA
-  %h_avg  = call double @cq_template_fdiv_f64_hl(double %h_sum, double %countd)
-  ret double %h_avg
-```
+(Without `noinline`, `-O1` inlines the small callee and the same
+three instructions are lowered in place in `@f`.)
 
 Three things happen automatically:
 
-1. **`int count = 2`** stays classical. The constant `2` is a
-   literal; no operand of any instruction in `count`'s definition
-   chain is tainted. Taint never reaches `count`.
-2. **`(double) count`** is therefore a classical `sitofp` on a
-   classical operand. The pass leaves it alone — stock LLVM IR,
-   no template lowering, no measurement.
-3. **`(a + b) / (double) count`** is the only place the boundary
-   shows up. The `fadd` is H+H tainted (lowered to
-   `cq_template_fadd_f64`). The `fdiv` is H+C: tainted handle
-   `%h_sum` on the LHS, classical `%countd` on the RHS. The pass
-   emits the `_hl` variant; the classical operand is passed
-   through as a value, not promoted to a handle. No
-   `cqrt_alloc_<W>` is inserted for `%countd`.
+1. **`n` and `(double) n`** never receive taint: no operand in
+   their definition chain is tainted. The `sitofp` is a classical
+   instruction on a classical operand, so the pass leaves it alone —
+   no template, no measurement.
+2. **`fadd`** is QQ and lowers to `cq_template_fadd_f64`.
+   **`fdiv`** is HL: tainted handle on the left, classical `double`
+   on the right. The classical operand is passed as a value; no
+   `cqrt_alloc_f64` is inserted for it.
+3. **The clone is Bennett-wrapped**: the answer is copied onto a
+   fresh rail, and the forward stream is run backwards so the
+   intermediates return to `|0⟩` before being freed. The caller
+   receives a tainted handle and no measurement happened inside the
+   body.
 
-The result is a tainted `%h_avg` returned to the caller. No
-measurement happens inside the body. The author of `average` did
-not need to know anything about CQ to write a function that
-works for both classical and quantum callers.
+The author of `average` needed to know nothing about CQ to write a
+function that works for both classical and quantum callers.
 
-### 7.3 Why each prior failure mode is addressed
-
-Recapping §3.2:
-
-| Prior failure | How the new design addresses it |
-|---|---|
-| Caller cannot see the offending cast | There is no offending cast — casts never measure under taint |
-| Equivalent implementations behave differently | They behave the same — representation-only cast lowering is independent of authoring choice |
-| Failure is silent | Measurement is now syntactically explicit (`cq_measure`); a reviewer can find every measurement by grep, and an unintended one would require an unintended `cq_measure` call, not an unintended cast |
-| Boundary lives on declarations | Boundary lives on values — it follows the data, not the type system; `count` is not classical by virtue of a declaration, it is classical because no tainted value flowed into it |
-
-### 7.4 The properties guaranteed to library authors
+### 7.1 The properties guaranteed to library authors
 
 A function author writing C code can rely on:
 
@@ -698,25 +598,22 @@ A function author writing C code can rely on:
    conversions become quantum representation changes; if the
    caller passes classical arguments, they are stock LLVM casts.
 2. **Constant safety.** A literal anywhere inside a function body
-   (`int count = 2`, `for (int i = 0; i < n; i++)`, `* 1.5`) is
-   classical. Its uses contribute classical operands to mixed
-   operations; the `_hl` lowering keeps the literal as a literal
-   across the runtime ABI.
+   (`int count = 2`, `* 1.5`) is classical. Its uses contribute
+   classical operands to mixed operations; the `_hl`/`_lh` lowering
+   keeps the literal as a literal across the runtime ABI.
 3. **Arithmetic ubiquity.** Stock `+`, `-`, `*`, `/`, comparisons,
    shifts, and bitwise operations all work on tainted operands
    without source modification. The pass lowers them to template
    calls via the same mechanism that classified them as
    quantum — taint propagation on stock LLVM opcodes.
-4. **Composition with libm and intrinsics.** `sin`, `cos`,
-   `sqrt`, `fabs`, etc., have curated quantum templates; calling
-   them with tainted arguments substitutes the symbol at
-   lowering time, no source change. Symbols on the
-   Bennett-rejection list (`printf`, syscalls — see
-   [`backend.md`](./backend.md) §7.4) diagnose at compile time.
+4. **Composition with libraries.** A `math.h` function lifts because
+   its real source is injected and lowered like any other body
+   (NORTHSTAR goal 2); a curated `llvm.*` intrinsic lowers to its
+   template (§4.5).
 
 The fundamental promise the boundary mechanism makes — *write
 your library once, in plain C, and it lifts* — is what the
-taint-driven design exists to keep.
+design exists to keep.
 
 ---
 
@@ -724,13 +621,12 @@ taint-driven design exists to keep.
 
 | Concern | Where it is documented |
 |---|---|
-| User-facing intrinsic surface (`cq_theta`, `cq_phi`, `cq_measure`, `cq_invert_*`) | [`frontend.md`](./frontend.md) §3 |
-| IR-pass mechanism that computes taint (data-flow algorithm; operand handling; control-flow shadow) | [`backend.md`](./backend.md) §4, §8 |
+| Plan of record: goals, closed list of valid declines, design principles | [`../NORTHSTAR.md`](../NORTHSTAR.md) |
+| User-facing intrinsic surface (`cq_theta`, `cq_phi`, `cq_measure`, `cq_invert_*`) | [`frontend.md`](./frontend.md) §3, `include/CQ.h` |
+| IR-pass mechanism that computes taint (data-flow algorithm) | [`backend.md`](./backend.md) §4 |
 | Allocation lowering, including the `_hl` runtime entry-point dispatch | [`backend.md`](./backend.md) §5, §6.2 |
-| 38-opcode template surface and the autogenerated declaration set | [`backend.md`](./backend.md) §6.3, §12 |
-| Function-lifting paths — curated substitution and clone-on-taint | [`backend.md`](./backend.md) §7 |
-| Stock LLVM C++ APIs every mechanism uses | [`llvm-implementation.md`](./llvm-implementation.md) |
-| Proposal that diagnosed the prior failures and motivated the redesign | [`rationale/proposal-taint-driven-pipeline.md`](./rationale/proposal-taint-driven-pipeline.md) |
+| Branch phase by kickback; control-flow lowering | [`backend.md`](./backend.md) §6.1a, §8 |
+| Template library and the generated declaration set | [`backend.md`](./backend.md) §12, `tools/opcode_table.yaml` |
+| Function-lifting paths (clone-on-taint, curated intrinsics) | [`backend.md`](./backend.md) §7 |
+| Stock LLVM C++ APIs the pass uses | [`llvm-implementation.md`](./llvm-implementation.md) |
 | End-to-end worked example, source → lowered IR | [`example.md`](./example.md) |
-| Design comparison with Sturm.jl / Bennett.jl (incl. control-flow `switch`/escape/measurement cross-check, 2026-06-02) | [`bennett-jl-comparison.md`](./bennett-jl-comparison.md) |
-| Archived prior-design Q/C handling doc (cast-as-measurement) | [`archive/old-design/quantum-classical-handling.md`](./archive/old-design/quantum-classical-handling.md) |

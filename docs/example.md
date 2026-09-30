@@ -1,24 +1,29 @@
-# Worked Example — Pipeline End-to-End Under the Taint-Driven Design
+# Worked Example — Pipeline End-to-End
 
-A minimal program walked through each stage of the new CQ pipeline:
-plain C source with `cq_*` primitives, then raw LLVM IR out of Clang,
-then the post-`-O1` IR the pass actually receives, then the lowered IR
-after the pass has run.
+A minimal program walked through the CQ pipeline in four parts: plain C
+source with `cq_*` primitives, then raw LLVM IR out of Clang, then the
+post-`-O1` IR the pass actually receives, then the lowered IR and the runtime
+trace after the pass has run. (The "Compilation flow" section at the end uses
+the pipeline's own stage numbers, Stage 1 clang, Stage 2 `cq-lowering`, Stage 3
+link, as [`frontend.md`](./frontend.md) §8 does; the four parts here are a
+different, finer numbering.)
+
+Every listing below was produced by running the pipeline (LLVM 19 tools,
+`build/ir-pass/cq-opt` — the same pass as `libCQPass.so` — and the trace
+runtime) on the source shown; IR is trimmed to the function body and value
+names are as printed. The plan of record is [`../NORTHSTAR.md`](../NORTHSTAR.md).
 
 Read alongside:
 
 - [`frontend.md`](./frontend.md) — the user-facing intrinsic surface
   that defines the calls (`cq_theta`, `cq_phi`, `cq_measure`,
-  `cq_invert_*`) and the three-stage compilation flow
+  `cq_invert_*`) and the compilation flow
 - [`backend.md`](./backend.md) — the IR pass that performs taint
   analysis, allocation, opcode lowering, and the runtime ABI the
   lowered IR calls into
 - [`quantum-classical-handling.md`](./quantum-classical-handling.md) —
   the Q/C boundary mechanism (taint), mixed-operand semantics, and the
-  function-lifting fix that motivated the redesign
-- [`rationale/proposal-taint-driven-pipeline.md`](./rationale/proposal-taint-driven-pipeline.md)
-  — the staged walkthrough this example mirrors, with the original
-  motivation for the design
+  function-lifting consequence (§7) that motivated the design
 
 ---
 
@@ -28,34 +33,22 @@ Read alongside:
 - A second `int` promoted to a quantum register by `cq_theta` (the only
   taint source)
 - Forward taint propagation through a mixed-operand binary `add`
-  (H+C → `_hl` template)
+  (quantum + classical immediate)
 - Explicit measurement via `cq_measure` as the sole taint sink
 - The end-to-end shape of the lowered IR — no `@cq_*` calls remain,
   only `cqrt_*` and `cq_template_*`
 
-What this example does **not** exercise (deferred to future walkthroughs;
-mechanism described in the cited sections of the other docs):
+What this example does **not** exercise — each is walked with a real trace in
+[`frontend.md`](./frontend.md):
 
-- `cq_phi` — the **branch phase**, `void cq_phi(double φ)`, which has no
-  operand but the angle: under a tainted condition it lowers by kickback
-  onto the condition flag, and uncontrolled it is a global phase and is
-  deleted ([`backend.md`](./backend.md) §6.1a,
-  [`frontend.md`](./frontend.md) §3.3)
-- Chained `cq_theta` on an already-tainted handle
-  ([`backend.md`](./backend.md) §5.1)
-- Quantum control flow — tainted `br i1`, post-dominator-driven
-  controlled-form lowering
-  ([`backend.md`](./backend.md) §8)
-- Function lifting — curated symbol substitution and clone-on-taint
-  ([`backend.md`](./backend.md) §7)
-- Manual inversion via `cq_invert_begin` / `cq_invert_end`
-  ([`frontend.md`](./frontend.md) §3.5, [`backend.md`](./backend.md) §10)
-- Per-op auto-uncomputation — suppressed here because the enclosing
-  function is `main`, per [`backend.md`](./backend.md) §9.3
+- `cq_phi`, the branch phase (`frontend.md` §3.3)
+- Function lifting — clone-on-taint (`frontend.md` §6)
+- Quantum control flow — tainted `br i1` and the three arm classes
+  (`frontend.md` §7)
 
 ---
 
-## Stage 1 — CQ source
+## Part 1 — CQ source
 
 ```c
 /* example.c */
@@ -79,40 +72,15 @@ int main(void) {
 This is what the user writes. **Plain C** — no `quantum` keyword, no
 struct wrapper, no cast-to-measure idiom. The only CQ-specific
 elements are the `cq_theta` and `cq_measure` call sites, both
-declared in `CQ.h`.
-
-Compare against the old surface for the same example (archived at
-[`archive/old-design/example.md`](./archive/old-design/example.md)):
-
-```c
-/* old design — required quantum keyword and cast-as-measurement */
-quantum int a = 3;
-quantum int c = a + b;
-int measured = (int) c;
-```
-
-```c
-/* new design — plain C plus explicit primitives */
-int a = 3;
-a = cq_theta(a, 0.5);
-int c = a + b;
-int result = cq_measure(c);
-```
-
-The new surface adds an explicit `cq_theta` (the Ry rotation that
-physically introduces superposition — the prior design would have
-needed this eventually too) and replaces the implicit measurement-on-
-cast with an explicit `cq_measure` call. The `quantum` keyword and
-the `qint_mid_t` wrapper struct are gone; `a`, `b`, `c`, and `result`
-are plain `int` throughout, distinguished only by whether the SSA
-value carries taint at the IR layer.
+declared in `CQ.h`. `a`, `b`, `c`, and `result` are plain `int` throughout,
+distinguished only by whether the SSA value carries taint at the IR layer.
 
 ### `CQ.h` — what gets included
 
-`CQ.h` declares the four primitive families described in
-[`frontend.md`](./frontend.md) §3 — `cq_theta`, `cq_phi`, `cq_measure`
-(each fanned out across the 14 standard C scalar types), plus
-`cq_invert_begin` / `cq_invert_end`. The example uses only the `int`
+`CQ.h` declares the `cq_theta` and `cq_measure` families (each fanned out across
+the C scalar types), the register-free `void cq_phi(double)`, the `cq_ry` macro
+and the `cq_invert_begin` / `cq_invert_end` markers
+([`frontend.md`](./frontend.md) §3). The example uses only the `int`
 specializations:
 
 ```c
@@ -120,77 +88,67 @@ specializations:
 int cq_theta_si32  (int x, double angle);   /* Ry — taint source */
 int cq_measure_si32(int x);                  /* measurement — taint sink */
 
-#define cq_theta(x, angle) _Generic((x), int: cq_theta_si32 /* + 13 more */)(x, angle)
-#define cq_measure(x)      _Generic((x), int: cq_measure_si32 /* + 13 more */)(x)
+#define cq_theta(x, angle) _Generic((x), int: cq_theta_si32 /* + the other types */)(x, angle)
+#define cq_measure(x)      _Generic((x), int: cq_measure_si32 /* + the other types */)(x)
 ```
 
-There is no transpiler step. The source goes straight to Clang.
+(In the real header every `cq_theta_*` declaration also carries
+`__attribute__((nomerge))`, which is why the calls below carry a `#2` attribute
+group; see `frontend.md` §3.1.) There is no rewriting step. The source goes
+straight to Clang.
 
 ---
 
-## Stage 2 — Raw LLVM IR (`clang -O0 -emit-llvm`)
+## Part 2 — Raw LLVM IR (`clang -O0 -emit-llvm`)
 
-Before any optimization passes have run. Shown for orientation only;
-the CQ IR pass operates on the `-O1` cleanup of this (see Stage 3
-below).
+Before any optimization passes have run. Shown for orientation only:
+the CQ pass does **not** accept this form. `-O0` keeps every variable in an
+`alloca`, so the tainted value is stored to memory and the pass refuses with
+`cq taint escape: tainted value stored to memory`. It operates on the `-O1`
+cleanup of this (next part).
 
 ```llvm
-declare i32 @cq_theta_si32  (i32, double)
-declare i32 @cq_measure_si32(i32)
-
 define i32 @main() {
-entry:
-  %a      = alloca i32
-  %b      = alloca i32
-  %c      = alloca i32
-  %result = alloca i32
-
-  store i32 3, i32* %a
-  store i32 5, i32* %b
-
-  ; a = cq_theta(a, 0.5);
-  %a_load1 = load i32, i32* %a
-  %a_theta = call i32 @cq_theta_si32(i32 %a_load1, double 5.0e-01)
-  store i32 %a_theta, i32* %a
-
-  ; int c = a + b;
-  %a_load2 = load i32, i32* %a
-  %b_load  = load i32, i32* %b
-  %sum     = add i32 %a_load2, %b_load
-  store i32 %sum, i32* %c
-
-  ; int result = cq_measure(c);
-  %c_load  = load i32, i32* %c
-  %m       = call i32 @cq_measure_si32(i32 %c_load)
-  store i32 %m, i32* %result
-
-  %r_load  = load i32, i32* %result
-  ret i32 %r_load
+  %1 = alloca i32, align 4                 ; return slot
+  %2 = alloca i32, align 4                 ; a
+  %3 = alloca i32, align 4                 ; b
+  %4 = alloca i32, align 4                 ; c
+  %5 = alloca i32, align 4                 ; result
+  store i32 0, ptr %1, align 4
+  store i32 3, ptr %2, align 4
+  store i32 5, ptr %3, align 4
+  %6 = load i32, ptr %2, align 4
+  %7 = call i32 @cq_theta_si32(i32 noundef %6, double noundef 5.000000e-01) #2
+  store i32 %7, ptr %2, align 4
+  %8 = load i32, ptr %2, align 4
+  %9 = load i32, ptr %3, align 4
+  %10 = add nsw i32 %8, %9
+  store i32 %10, ptr %4, align 4
+  %11 = load i32, ptr %4, align 4
+  %12 = call i32 @cq_measure_si32(i32 noundef %11)
+  store i32 %12, ptr %5, align 4
+  %13 = load i32, ptr %5, align 4
+  ret i32 %13
 }
 ```
 
-Notice what is *not* here: no `%struct.qint_mid_t`, no
-`extractvalue`/`insertvalue` chains, no `@cq_init_*` calls. Variables
-are plain `i32` slots; the taint-relevant calls (`@cq_theta_si32`,
+Variables are plain `i32` slots; the taint-relevant calls (`@cq_theta_si32`,
 `@cq_measure_si32`) are visible as ordinary external calls.
 
 ---
 
-## Stage 3 — LLVM IR after Clang `-O1`
+## Part 3 — LLVM IR after Clang `-O1`
 
 This is what the **CQ IR pass actually receives** as input. After
 `mem2reg` and `SROA` collapse the `alloca`/`load`/`store` traffic and
 constant-fold the literals:
 
 ```llvm
-declare i32 @cq_theta_si32  (i32, double)
-declare i32 @cq_measure_si32(i32)
-
-define i32 @main() {
-  %a1 = call i32 @cq_theta_si32(i32 3, double 5.0e-01)   ; ← taint source
-  %c  = add i32 %a1, 5                                   ; ← stock LLVM add
-  %m  = call i32 @cq_measure_si32(i32 %c)                ; ← taint sink
-  ret i32 %m
+define i32 @main() local_unnamed_addr {
+  %1 = tail call i32 @cq_theta_si32(i32 noundef 3, double noundef 5.000000e-01) #2   ; ← taint source
+  %2 = add nsw i32 %1, 5                                                            ; ← stock LLVM add
+  %3 = tail call i32 @cq_measure_si32(i32 noundef %2) #3                            ; ← taint sink
+  ret i32 %3
 }
 ```
 
@@ -202,198 +160,216 @@ Four observations:
 2. **`b` has been folded away.** The classical constant `5` is inlined
    directly into the add. In a less trivial program `b` would survive
    as its own SSA value — the taint analysis is unchanged either way.
-3. **`%c = add i32 %a1, 5`** is a stock LLVM `add` instruction. There
+3. **`%2 = add nsw i32 %1, 5`** is a stock LLVM `add` instruction. There
    is no `@cq_add` intrinsic. The pass will classify it as quantum
    purely from its operands' taint state.
-4. **`%a` was reassigned in the source** (`a = cq_theta(a, 0.5)`); SSA
+4. **`a` was reassigned in the source** (`a = cq_theta(a, 0.5)`); SSA
    handles this by renaming — the pre-rotation classical value is the
-   `i32 3` literal, the post-rotation tainted value is `%a1`. No
+   `i32 3` literal, the post-rotation tainted value is `%1`. No
    pre-existing taint signal needs to flow across the rebinding; the
    `@cq_theta_si32` return *is* the source.
 
 SSA chain:
 
 ```
-3 ─▶ @cq_theta_si32(·, 0.5) ─▶ %a1 ──┐
-                                     ├─▶ %c ─▶ @cq_measure_si32 ─▶ %m ─▶ ret
-5 ───────────────────────────────────┘
+3 ─▶ @cq_theta_si32(·, 0.5) ─▶ %1 ──┐
+                                    ├─▶ %2 ─▶ @cq_measure_si32 ─▶ %3 ─▶ ret
+5 ──────────────────────────────────┘
 ```
-
-This is the input contract the backend expects, as documented in
-[`backend.md`](./backend.md) §3.
 
 ---
 
 ## Taint analysis on this IR
 
-The first thing the pass does. Per [`backend.md`](./backend.md) §4,
-the operand rule is monotone, forward, single-sweep over the SSA DAG:
+The first thing the pass does. The operand rule is monotone, forward, single-sweep
+over the SSA DAG ([`backend.md`](./backend.md) §4, forward taint propagation):
 
 | SSA value | Tainted? | Why |
 |---|---|---|
 | `i32 3` (literal) | no | classical constant |
 | `i32 5` (literal) | no | classical constant |
-| `%a1` | **yes** | return value of `@cq_theta_si32` — taint **source** |
-| `%c` | **yes** | `add i32` whose LHS `%a1` is tainted (Q+C mixed) |
-| `%m` | classical | return of `@cq_measure_si32` — taint **sink** |
+| `%1` | **yes** | return value of `@cq_theta_si32` — taint **source** |
+| `%2` | **yes** | `add i32` whose LHS `%1` is tainted (Q+C mixed) |
+| `%3` | classical | return of `@cq_measure_si32` — taint **sink** |
 
 A few things to read from this table:
 
 - The single source of taint in the whole program is the `@cq_theta`
-  return. Per [`quantum-classical-handling.md`](./quantum-classical-handling.md)
-  §4.1, this is the only way to mint quantum behavior anywhere in the
-  pipeline.
-- `%c` carries taint despite having one classical operand. Operand
+  return. This is the only way to mint quantum behavior anywhere in the
+  pipeline ([`quantum-classical-handling.md`](./quantum-classical-handling.md) §4.1).
+- `%2` carries taint despite having one classical operand. Operand
   rule: *any* tainted operand suffices. The classification is
   independent of which side of the binary op the taint sits on; the
-  H+C shape is what determines the lowering template, not the
+  operand shape (handle + literal) is what determines the lowering, not the
   classification.
-- `%m` is hard-classical. Downstream uses of `%m` — here, just the
+- `%3` is hard-classical. Downstream uses of `%3` — here, just the
   `ret i32` — are plain classical SSA. No subsequent operation can
   re-promote it without flowing through a fresh `cq_theta`.
 
 ---
 
-## Stage 4 — What the IR pass emits
+## Part 4 — What the IR pass emits
 
-The pass walks the analysis above and, per
-[`backend.md`](./backend.md) §§5–6, rewrites each tainted construct in
+The pass walks the analysis above and rewrites each tainted construct in
 place. The steps relevant to this example:
 
 ### Step 1 — Allocation lowering at the `cq_theta` site
 
-Per [`backend.md`](./backend.md) §5.1, dispatch on the theta operand's
-taint state. Here the operand `i32 3` is a classical literal, so the
-classical-operand branch fires:
+Dispatch on the theta operand's taint state. Here the operand `i32 3` is a
+classical literal, so the classical-operand branch fires:
 
 ```llvm
 ; before
-%a1 = call i32 @cq_theta_si32(i32 3, double 5.0e-01)
+%1 = tail call i32 @cq_theta_si32(i32 3, double 5.0e-01)
 
 ; after
-%h_a = call i32 @cqrt_alloc_i32(i32 3)            ; allocate, init to 3
-call void @cqrt_ry_i32(i32 %h_a, double 5.0e-01)  ; Ry(0.5) on the register
-; every downstream use of %a1 is replaced by %h_a (the new handle)
+%h = call i32 @cqrt_alloc_i32(i32 3)              ; allocate, init to 3
+call void @cqrt_ry_i32(i32 %h, double 5.0e-01)    ; Ry(0.5) on the register
+; every downstream use of %1 is replaced by %h (the new handle)
 ```
 
 The runtime ABI is width-only (`cqrt_alloc_i32`, not `cqrt_alloc_si32`)
-— signedness drops out at the IR-pass / runtime boundary per
-[`backend.md`](./backend.md) §6.4.
+— signedness drops out at the IR-pass / runtime boundary. A handle is always an
+`i32`.
 
 ### Step 2 — Opcode lowering for the tainted `add`
 
-`%c = add i32 %a1, 5` has one tainted handle and one classical
-literal — H+C shape. Per [`backend.md`](./backend.md) §6.2 and
-[`quantum-classical-handling.md`](./quantum-classical-handling.md) §5,
-the classical operand must **not** be promoted to a handle; the pass
-emits the `_hl` variant:
+`%2 = add nsw i32 %1, 5` has one tainted handle and one classical
+literal. The classical operand must **not** be promoted to a handle
+([`quantum-classical-handling.md`](./quantum-classical-handling.md) §5.2); it flows
+through the ABI as a value, not as a synthetic qubit register. And because the
+register `%1` has **no other use** after this add, the pass emits the add
+**in place** — the register itself becomes the sum:
 
 ```llvm
 ; before
-%c = add i32 %h_a, 5
+%2 = add nsw i32 %h, 5
 
 ; after
-%h_c = call i32 @cq_template_add_i32_hl(i32 %h_a, i32 5)
-; downstream uses of %c → %h_c
+call void @cqrt_addc_i32(i32 %h, i32 5)           ; h := (h + 5) mod 2^32
+; downstream uses of %2 → %h
 ```
 
-The literal `5` flows through the ABI as a value, not as a synthetic
-qubit register. This preserves the optimization headroom for future
-`cqrt_alloc` elision (§5.2 of
-[`quantum-classical-handling.md`](./quantum-classical-handling.md)).
+`cqrt_addc_<W>(h, imm)` is the in-place add of a classical immediate
+(`runtime/cq_runtime.h`). The reason it is in place: out of place, the add would
+mint a fresh rail and leave the parent standing as a live basis *record* of the
+same wire, which would dephase any later non-diagonal gate applied to it.
+
+If the pre-add value **stays live** — say the program also measures `a` — the
+add is out of place instead, and mints a fresh handle through the `_hl`
+(handle + literal) template. Measured on
+`int c = a + b; int ra = cq_measure(a); int rc = cq_measure(c);`:
+
+```llvm
+%h    = call i32 @cqrt_alloc_i32(i32 3)
+call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+%h_op = call i32 @cq_template_add_i32_hl(i32 %h, i32 5)   ; fresh rail, %h stays live
+%m    = call i32 @cqrt_measure_i32(i32 %h)
+%m1   = call i32 @cqrt_measure_i32(i32 %h_op)
+```
+
+and its trace is `alloc(3) -> h0; ry(h0, 0.5); cq_template_add_i32_hl(h0, 5) -> h1;
+measure(h0); measure(h1)`.
 
 ### Step 3 — Measure lowering
 
-`@cq_measure_si32(%h_c)` lowers to the width-only runtime entry point:
+`@cq_measure_si32(%2)` lowers to the width-only runtime entry point, on the
+handle the add produced (`%h`, since the add was in place):
 
 ```llvm
 ; before
-%m = call i32 @cq_measure_si32(i32 %h_c)
+%3 = tail call i32 @cq_measure_si32(i32 %2)
 
 ; after
-%m = call i32 @cqrt_measure_i32(i32 %h_c)
+%m = call i32 @cqrt_measure_i32(i32 %h)
 ```
 
-The handle `%h_c` is **not** consumed by the measure — the register
-persists in a classical eigenstate after the call per
-[`frontend.md`](./frontend.md) §3.4. The `%m` return is classical;
-its only use here is the `ret i32`.
+The handle is **not** consumed by the measure — the register persists in a
+classical eigenstate after the call ([`frontend.md`](./frontend.md) §3.4). The
+`%m` return is classical; its only use here is the `ret i32`.
 
-### Step 4 — Uncomputation? Not in `main`
+### Step 4 — Uncomputation: nothing to do here
 
-The escape rule in [`backend.md`](./backend.md) §9.3 suppresses
-auto-uncomputation when the enclosing function is `main` — there is
-no caller responsible for downstream cleanup, so no `cqrt_free` is
-emitted. In a regular callee, `%h_c` (and `%h_a`) would have their
-adjoints emitted at the post-dominator of their last uses. This
-example skips that machinery entirely.
+Nothing in this program needs uncomputing: its only register is the one that is
+measured, and a measured register belongs to the measurement — the compiler never
+frees it (a hidden reset of a measured, possibly entangled register would be a
+second measurement). The compiler does emit adjoints and `cqrt_free` for rails it
+mints as **intermediates**, but only where the rail is provably `|0⟩` again: the
+flag of a controlled region and its strip ([`frontend.md`](./frontend.md) §3.3),
+or `x*x` in `x*x*x`, whose `cq_template_mul_i32_unc` and `cqrt_free` appear in the
+stream even inside `main`. A function's final live register is left for its
+caller, and in `main` there is no caller to hand it to, so it is left allocated
+(`FreePoint.cpp`); [`frontend.md`](./frontend.md) §6.1 shows the full stream for
+a lifted function.
 
 ### The fully lowered IR
 
 ```llvm
-define i32 @main() {
-  %h_a = call i32 @cqrt_alloc_i32(i32 3)               ; allocate qubit register
-  call void @cqrt_ry_i32(i32 %h_a, double 5.0e-01)     ; Ry(0.5)
-
-  %h_c = call i32 @cq_template_add_i32_hl(i32 %h_a, i32 5)   ; Q+C add
-
-  %m   = call i32 @cqrt_measure_i32(i32 %h_c)          ; measure
+define i32 @main() local_unnamed_addr {
+  %h = call i32 @cqrt_alloc_i32(i32 3)                 ; allocate qubit register
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)  ; Ry(0.5)
+  call void @cqrt_addc_i32(i32 %h, i32 5)              ; Q+C add, in place
+  %m = call i32 @cqrt_measure_i32(i32 %h)              ; measure
   ret i32 %m
 }
 ```
 
 No `@cq_*` intrinsic calls remain. Only `cqrt_*` runtime calls,
 `cq_template_*` template calls, and stock LLVM classical IR threading
-them — exactly the output contract [`backend.md`](./backend.md) §13.1
-describes.
+them — exactly the output contract [`backend.md`](./backend.md) §13.1 describes.
+
+Linked against the trace runtime and run, the program prints its circuit, one
+line per gate (the trace runtime does not simulate; `measure` returns 0):
+
+```
+cqrt_alloc_i32(3) -> h0
+cqrt_ry_i32(h0, 0x1p-1)
+cqrt_addc_i32(h0, 5)
+cqrt_measure_i32(h0) -> 0
+```
 
 ---
 
 ## Compilation flow
 
-The three-stage flow that produced the IR above
-([`frontend.md`](./frontend.md) §8, [`backend.md`](./backend.md) §13):
+The flow that produced the IR above ([`frontend.md`](./frontend.md) §8), from the
+repository root with LLVM 19's tools on `PATH`:
 
 ```bash
 # Stage 1: frontend — plain Clang -O1 with CQ.h on the include path
-clang -O1 -emit-llvm -include CQ.h example.c -o example.bc
+clang -O1 -emit-llvm -c -include CQ.h -Iinclude example.c -o example.bc
 
 # Stage 2: backend IR pass — taint propagation, allocation, opcode lowering,
-# measure lowering. No uncomputation here (enclosing function is main).
-opt -load-pass-plugin libCQPass.so -passes=cq-lowering \
+# measure lowering.
+opt -load-pass-plugin build/ir-pass/libCQPass.so -passes=cq-lowering \
     example.bc -o example.lowered.bc
 
-# Stage 3: standard codegen + link against templates and one runtime variant
-clang example.lowered.bc -lcq_templates -lcq_runtime -o example
+# Stage 3: standard codegen + link against templates, then runtime
+# (this order is load-bearing: template bodies call cqrt_*)
+clang example.lowered.bc -Lbuild/runtime -lcq_templates -lcq_runtime -o example
 
 ./example   # emits the circuit
 ```
 
-The driver `cqc` wraps this multi-step flow into a single
-clang-flavored command line; for multi-file programs the cloning path
-needs an `llvm-link` pre-link so callee bodies are visible to the
-pass (see [`backend.md`](./backend.md) §13.2).
+`tools/cqc` wraps this multi-step flow into a single command line
+(`cqc example.c -o example`); for multi-file programs the cloning path needs the
+callee bodies in the same module, which `cqc` arranges with `llvm-link` before
+`opt` ([`frontend.md`](./frontend.md) §8).
 
 ---
 
-## What this walkthrough leaves to follow-up examples
+## Where the other mechanisms are walked
 
-| Mechanism | Documented in | Walked end-to-end here? |
-|---|---|---|
-| Forward taint propagation | [`backend.md`](./backend.md) §4 | yes (table above) |
-| Allocation lowering on classical operand | [`backend.md`](./backend.md) §5.1 | yes (Step 1) |
-| Allocation skipped on tainted operand (chained rotation) | [`backend.md`](./backend.md) §5.1 | no |
-| H+C `_hl` template dispatch | [`backend.md`](./backend.md) §6.2 | yes (Step 2) |
-| `cq_phi` branch phase — kickback under control, deletion uncontrolled | [`backend.md`](./backend.md) §6.1a | no |
-| Function lifting (curated symbol substitution) | [`backend.md`](./backend.md) §7.1 | no |
-| Function lifting (clone-on-taint) | [`backend.md`](./backend.md) §7.2 | no |
-| Controlled-form lowering for tainted branches | [`backend.md`](./backend.md) §8 | no |
-| Per-op auto-uncomputation at SSA last use | [`backend.md`](./backend.md) §9 | suppressed in `main` |
-| Manual inversion bracket | [`backend.md`](./backend.md) §10 | no |
-
-A future walkthrough will pick one of these (probably function lifting
-through `ipow`, mirroring the proposal's §Function-lifting example) to
-demonstrate the substrate the next layer of the pipeline depends on.
+| Mechanism | Documented in |
+|---|---|
+| Forward taint propagation | [`backend.md`](./backend.md) §4; table above |
+| Allocation lowering on classical operand | Step 1 above; [`frontend.md`](./frontend.md) §4; [`backend.md`](./backend.md) §5.1 |
+| Allocation skipped on tainted operand (chained rotation) | [`frontend.md`](./frontend.md) §3.2; [`backend.md`](./backend.md) §5.1 |
+| Q+C add: in place (`cqrt_addc`) vs out of place (`_hl` template) | Step 2 above; [`backend.md`](./backend.md) §6.1, §6.2 |
+| `cq_phi` branch phase — kickback under control, deletion uncontrolled | [`frontend.md`](./frontend.md) §3.3; [`backend.md`](./backend.md) §6.1a |
+| Function lifting (clone-on-taint) | [`frontend.md`](./frontend.md) §6; [`backend.md`](./backend.md) §7 |
+| Quantum control flow: tainted branches (phase / rotation / value arms) | [`frontend.md`](./frontend.md) §7; [`backend.md`](./backend.md) §8 |
+| Manual inversion bracket | [`frontend.md`](./frontend.md) §3.5; [`backend.md`](./backend.md) §10.3 (declared, not lowered yet) |
 
 ---
 
@@ -402,12 +378,10 @@ demonstrate the substrate the next layer of the pipeline depends on.
 | Concern | Where |
 |---|---|
 | User-facing intrinsic surface (`cq_theta`, `cq_phi`, `cq_measure`, `cq_invert_*`) | [`frontend.md`](./frontend.md) §3 |
-| Compilation flow, single-file and multi-file | [`frontend.md`](./frontend.md) §8 / [`backend.md`](./backend.md) §13 |
+| Compilation flow, single-file and multi-file | [`frontend.md`](./frontend.md) §8; [`backend.md`](./backend.md) §13 |
 | Forward taint propagation algorithm | [`backend.md`](./backend.md) §4 |
-| Allocation lowering (gate-triggered) | [`backend.md`](./backend.md) §5 |
-| Opcode lowering + `_hl` mixed-operand dispatch | [`backend.md`](./backend.md) §6 |
+| Allocation lowering (gate-triggered) | [`frontend.md`](./frontend.md) §4; [`backend.md`](./backend.md) §5 |
+| Opcode lowering + mixed-operand dispatch | [`backend.md`](./backend.md) §6; [`quantum-classical-handling.md`](./quantum-classical-handling.md) §5 |
 | Why classical operands are never promoted to handles | [`quantum-classical-handling.md`](./quantum-classical-handling.md) §5.2 |
-| Runtime ABI (`cqrt_alloc_<W>`, `cqrt_ry_<W>`, `cqrt_measure_<W>`) | [`backend.md`](./backend.md) §11 |
-| Template library (`cq_template_<op>_<W>{,_hl}`) | [`backend.md`](./backend.md) §12 |
-| Why no `quantum` keyword; why no cast-as-measurement | [`quantum-classical-handling.md`](./quantum-classical-handling.md) §3, [`rationale/proposal-taint-driven-pipeline.md`](./rationale/proposal-taint-driven-pipeline.md) |
-| Same example under the prior `quantum`-keyword design | [`archive/old-design/example.md`](./archive/old-design/example.md) |
+| Runtime ABI (`cqrt_alloc_<W>`, `cqrt_ry_<W>`, `cqrt_measure_<W>`, `cqrt_addc_<W>`) | [`backend.md`](./backend.md) §11; `runtime/cq_runtime.h` |
+| The plan of record | [`../NORTHSTAR.md`](../NORTHSTAR.md) |

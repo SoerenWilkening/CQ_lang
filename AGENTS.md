@@ -1,21 +1,17 @@
 # Agent Instructions — CQ_lang
 
-**The full agent guide is [`CLAUDE.md`](CLAUDE.md) — read it first.** It is the
-canonical operating manual for this taint-driven quantum-C compiler: the
-non-negotiable rules, the pipeline architecture, the tainted-control-flow
-correctness risks, the build/test commands, conventions, prohibitions, and the
-file/docs map. This file carries only the runtime-agnostic operational notes plus
-the Beads workflow; everything else lives in `CLAUDE.md`.
+**Read [`NORTHSTAR.md`](NORTHSTAR.md) (the three goals and ten design principles), then
+[`CLAUDE.md`](CLAUDE.md) (the operating rules, build/test commands and file map).** This file
+carries only the runtime-agnostic operational notes plus the Beads workflow.
 
-## Prime Directive (the one rule never to break)
+## The one posture to remember
 
-This is a quantum **reversible** compiler: a wrong lowering that passes
-`opt -verify` is a **silent miscompile** — the dominant failure mode. **When any
-detection or lowering precondition is unproven or off-pattern, DECLINE** — emit
-the loud `DiagnosticInfoUnsupported` (`"… under quantum control"`, `opt` exits
-non-zero) and lower nothing. Over-declining is always safe; over-accepting is the
-only unforgivable bug. See `CLAUDE.md` → "The Prime Directive" and the full rule
-list.
+A decline is valid only if physics forbids the program (`NORTHSTAR.md`, goal 1); everything
+else must compile. A construct the compiler does not lower yet is a compiler bug, not a
+valid decline: it fails loudly, is filed in bd, and is then built. A wrong lowering that passes
+`opt -verify` is a **silent miscompile**, the dominant failure mode. Never accept a lowering
+you cannot argue is correct, and never buy safety by declining a valid program. See
+`CLAUDE.md` R1/R2.
 
 ## Non-Interactive Shell Commands
 

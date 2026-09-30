@@ -27,7 +27,11 @@ A backend must:
 
 `cqrt_h` and `cqrt_h_controlled` remain declared but cannot be emitted by the
 current pass. They are recorded as declared-but-unemitted and are not required
-of a backend. All other current declarations are required.
+of a backend. All other current declarations are required, including symbols
+the pass does not mint today (for example `cqrt_x_controlled`,
+`cqrt_cnot_controlled`, `cqrt_rz_<W>` for `W > 1` and the `cqrt_rz_<W>_controlled`
+family; see [`backend.md`](./backend.md) §11.3, §11.4): "not minted today" is
+not the same as "exempt".
 
 Generate the provider manifest from the CQ revision whose headers the backend
 uses:

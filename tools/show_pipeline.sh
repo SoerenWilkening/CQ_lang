@@ -58,10 +58,9 @@ if [ "$rc" -ne 0 ]; then
   printf '\033[1mThe CQ lowering pass REFUSED this program.  That is a compiler\n'
   printf 'verdict, not a script error\033[0m — `opt` exited %s and lowered nothing.\n\n' "$rc"
   cat "$OUT/s2.stderr"
-  printf '\nA loud decline is the designed behaviour when a lowering precondition\n'
-  printf 'is unproven (CLAUDE.md, "The Prime Directive").  Over-declining is safe;\n'
-  printf 'over-accepting is a silent miscompile.  If you believe this program\n'
-  printf 'SHOULD lower, that is an over-decline and a defect worth filing.\n\n'
+  printf '\nA loud failure beats a silent miscompile, but it is only a VALID decline\n'
+  printf 'when physics forbids the program (NORTHSTAR.md, goal 1).  Otherwise it is\n'
+  printf 'a compiler gap: this program SHOULD lower, and that is a defect worth filing.\n\n'
   printf 'Stage-1 IR (the pass input) is at:\n  %s\n' "$OUT/s1.O1.ll"
   printf 'Stage-2 stderr is at:\n  %s\n\n' "$OUT/s2.stderr"
   exit "$rc"

@@ -26,7 +26,8 @@ int main(void) {
 The intrinsic surface is small: `cq_theta` (the only taint source),
 `cq_phi(θ)` (the branch phase — register-free, no data operand),
 `cq_measure` (the only sink), and a manual
-inversion bracket `cq_invert_begin` / `cq_invert_end`. No quantum
+inversion bracket `cq_invert_begin` / `cq_invert_end` (declared in `CQ.h`, not
+lowered yet: [`docs/frontend.md`](docs/frontend.md) §3.5). No quantum
 arithmetic intrinsics — stock LLVM opcodes on tainted operands are
 lowered to reversible template calls by the IR pass.
 
@@ -154,7 +155,13 @@ when no installer selection exists.
 
 ## Demonstrator — standard-library coverage under tainted inputs
 
-**Current coverage:** `math.h` **159/183 cells (87%)** — **101/120** real-body
+> **Baseline, not the current number.** The figures below were scored before the
+> [northstar](NORTHSTAR.md) goal-2 rule: a function counts only when it compiles for
+> non-trivial input (every classical/quantum argument combination, and classical values
+> that exercise the real body, so `powf` at exponents `0.5`/`2.0` does not count). They
+> are to be re-scored under that rule.
+
+**Baseline coverage:** `math.h` **159/183 cells (87%)** — **101/120** real-body
 injection, **6/6** CQ-provided leaves, **42/42** recognition cases, **10/12**
 type-generic macros, and **0/3** `nan` cases (no quantum input by design).
 
@@ -202,8 +209,8 @@ the selected `math.h` implementation.
 
 ## Documentation
 
-- [`ROADMAP.md`](ROADMAP.md) — phase-by-phase trajectory and
-  cross-cutting design principles
+- [`NORTHSTAR.md`](NORTHSTAR.md) — the three goals and the design principles
+- [`CLAUDE.md`](CLAUDE.md) — operating rules for contributors and AI agents
 - [`docs/frontend.md`](docs/frontend.md) — the user-facing intrinsic
   surface (`cq_theta`, `cq_phi`, `cq_measure`, `cq_invert_*`) and the
   Clang/`-O1` stage that prepares the IR
@@ -217,15 +224,13 @@ the selected `math.h` implementation.
   of a small program through every stage
 - [`docs/llvm-implementation.md`](docs/llvm-implementation.md) — the
   stock LLVM C++ APIs the pipeline depends on
-- [`docs/bennett-jl-comparison.md`](docs/bennett-jl-comparison.md) —
-  comparison against Bennett-style and Quantum.jl-style approaches
-- [`docs/rationale/proposal-taint-driven-pipeline.md`](docs/rationale/proposal-taint-driven-pipeline.md)
-  — the proposal that motivated the current design
-- [`docs/archive/old-design/`](docs/archive/old-design/) — the
-  retired `quantum`-keyword design, preserved for reference
+- [`docs/design/qram-local-array-uncompute.md`](docs/design/qram-local-array-uncompute.md)
+  — design note: uncompute and escape of a local QRAM array whose load is
+  measured or returned
 
 ## Status
 
-The taint-driven design is the current trajectory; phase work is
-tracked in [`ROADMAP.md`](ROADMAP.md). The pre-redesign Phase 1
-artifacts are archived under `docs/archive/old-design/`.
+[`NORTHSTAR.md`](NORTHSTAR.md) is the plan of record: a decline is valid only if physics
+forbids the program, `math.h` coverage counts only for non-trivial input, and every known
+quantum routine must be implementable. Agent operating rules are in [`CLAUDE.md`](CLAUDE.md).
+The retired roadmap, per-phase records and old manual are in git at tag `pre-northstar`.

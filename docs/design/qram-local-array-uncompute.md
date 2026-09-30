@@ -1,8 +1,14 @@
 # QRAM local-array uncompute on a returned/measured load (bug `sxuk`)
 
 > **Design note pinning the fix integration point.** Core escape/uncompute-spine
-> change (Rule 13). Companion to the corrected `7-5-qram-design-decisions` memory
-> (decisions 4/6) and `docs/design/bennett-parity/PARITY_MAP.md`.
+> change (independent adversarial review required: `CLAUDE.md` R11). Companion to
+> the corrected `7-5-qram-design-decisions` bd memory (decisions 4/6). The same
+> reasoning is carried in the source comments at `kMsgQramCohEscape` and
+> `emitCopyOutIfDirectMeasure` (`ir-pass/src/QramLowering.cpp`) and at `isCopyOutSink`
+> (`ir-pass/src/ChainWalk.cpp`); symbols and fixture names below were checked against
+> the tree on 2026-09-30. Plan of record: `NORTHSTAR.md`. The QRAM lowering and
+> the `cqrt_qram_*` ABI this note builds on are in [`../backend.md`](../backend.md)
+> §6.1 and §11.4.
 
 ## The bug
 
@@ -36,8 +42,8 @@ caller cannot own a local array it cannot reach.
 
 ## The fix — method-B copy-out (mirrors the 7.6 I/O tape-write)
 
-This is structurally identical to how Phase 7.6 keeps a taped value's lineage
-alive: a `cqrt_tape_write` is a **source-preserving sink** (`isOutputSink`) that
+This is structurally identical to how the I/O output-tape write keeps a taped value's
+lineage alive: a `cqrt_tape_write` is a **source-preserving sink** (`isOutputSink`) that
 reads-and-preserves its source, so the source stays a non-escaped terminal and
 its lineage "uncomputes normally (Bennett copy-out)" while the kept output rail
 carries the answer out. We do the same with a `cqrt_copy`:
@@ -47,7 +53,8 @@ carries the answer out. We do the same with a `cqrt_copy`:
 > correct **only for a MEASURED** loaded value. For a **coherent `ret`/`cq_invert`**
 > escape it is a *silent dephasing miscompile*: `arr[p]` at a superposed address is
 > entangled with the **local index** `p` (and the store index `q`); the reversal
-> uncomputes and **frees those index rails**, a dirty free (Rule 6) that dephases the
+> uncomputes and **frees those index rails**, a dirty free (a reset of a rail that is
+> not `|0⟩`; `CLAUDE.md` R5) that dephases the
 > returned carrier to a classical mixture (off-diagonal coherence **exactly 0**;
 > `ρ = diag(2c²s², c⁴+s⁴)`). No-cloning forbids returning a clean coherent `arr[p]`
 > once its local address is erased — and *leaving the index allocated does not help*
@@ -61,17 +68,30 @@ carries the answer out. We do the same with a `cqrt_copy`:
 > escaped return" claim (step 1 / the end of this section) is TRUE for the measure
 > sink and FALSE for a coherent return.
 >
+> **Status against NORTHSTAR goal 1 (2026-09-30): this decline is current behavior,
+> not a ruled physics wall.** What the argument above establishes is that the
+> returned carrier can never be *pure* (it is entangled with the local index
+> whether that rail is freed or left allocated). It does not establish that the
+> program cannot be compiled: nothing is cloned by a plain `ret`, and a
+> faithful lowering (copy nothing, reverse nothing, leave the local index and array
+> rails allocated, return the load result, so the caller receives the mixed
+> carrier the source literally asks for) is not built. "No-cloning forbids it"
+> above describes why the *copy-out plus whole-DAG reversal* strategy is wrong for
+> a coherent return, not why the construct is unlowerable. Read the decline as
+> **not yet lowered**: it needs a bd issue and an owner ruling (goal 1's closed
+> list is extended only by the owner), and until then it stays loud.
+>
 > **AMENDMENT 2026-08-11 (bd `5pio`, owner ruling).** The index rails described above
 > as *freed* are **no longer freed**, on either path. `ChainWalk::isCopyOutSink` now
 > seeds the bd 261j record freeze — a `cqrt_copy_<W>` **destination** is a kept
 > carrier exactly as an output tape is — so the correlation propagates **backward**
 > from the copy source and any ancestor whose gate is `cqrt_ry_` (these `cq_theta`
 > index roots) fails `preservesBasisUnderRecord`, is fully reverse-played, and is then
-> **left allocated** (Rule 6's fallback). The measurement-immunity argument above is
+> **left allocated** (the rule for a rail not provably `|0⟩`, `CLAUDE.md` R5). The measurement-immunity argument above is
 > still *valid on its own terms*; it is simply no longer what the compiler relies on,
 > and the ruling deliberately preferred one uniform source-side invariant over two
 > independent justifications — measurement immunity is a different claim from "the
-> rail is |0⟩", and only the latter is what Rule 6 licenses. Measured cost: 9 lit
+> rail is |0⟩", and only the latter is what freeing a rail requires (`CLAUDE.md` R5). Measured cost: 9 lit
 > fixtures and 6 e2e goldens moved, 30 `cqrt_free`s removed, every changed line a
 > removed free. **The coherent-escape decline is NOT made redundant by this** — a
 > coherent `ret` mints no copy (`emitCopyOutIfDirectMeasure` returns early unless the
@@ -107,7 +127,7 @@ With those two pieces, `Out` becomes a non-escaped terminal and the **existing
 whole-DAG dead-array reversal** does the rest: `cqrt_qram_load_<W>_unc` then the
 `cqrt_qram_store_<W>_unc` chain (strict LIFO), then `Out` freed. The array handle is
 left allocated but now **clean `|0>`** (stores restored it), so it is a
-Rule-6-compliant safe leak — disentangled from the returned `%qret`.
+accepted leak (never freed dirty, `CLAUDE.md` R5) — disentangled from the returned `%qret`.
 
 > **AMENDED 2026-08-11 (bd `5pio`).** This step list used to read "…the index/value
 > rails **freed**, `Out` freed". The index/value rails are now fully reverse-played
@@ -139,7 +159,7 @@ wrong instinct — see the correction above) but by **splitting on the sink type
 - **arith-then-MEASURE** (`cq_measure(a[p]+1)`) — **accepts**, immune. The escaped
   terminal is the arith result whose forward sink is a measure; the load's direct
   user is the `add`, so the direct-measure copy-out does not fire — the array/index
-  rails are **left allocated (a Rule-6 safe leak)**, which is correct under
+  rails are **left allocated (an accepted leak, never freed dirty)**, which is correct under
   measurement immunity (the measured distribution is right; resource cleanup is the
   only thing skipped). Fixture `lowering_qram_store_arith_measure.ll`.
 - **arith-then-RETURN / fan-out-then-RETURN** (`return a[p]+a[r]`) — **loud
@@ -159,7 +179,7 @@ is the process-exit observation (immune; not declined).
   (`lowering_qram_store_alloca_i32.ll`, `lowering_qram_store_flat_gep.ll`:
   `CHECK-NOT: cqrt_qram_store_i32_unc` → assert `cqrt_copy` + `..._store_..._unc`
   + `..._load_..._unc`).
-- `lowering_qram_store_dead_lifo.ll` (dead load) and `..._load_copy.ll`
+- `lowering_qram_store_dead_lifo.ll` (dead load) and `lowering_qram_store_load_copy.ll`
   (load-into-store) are unaffected (load result not observed).
 
 > **`l6xk` update:** the sxuk return-form ACCEPT fixture was renamed and **flipped to
@@ -171,5 +191,5 @@ is the process-exit observation (immune; not declined).
 
 ## Clearance
 
-Rule-13 independent adversarial review of the spine edits (`ChainWalk`,
+Independent adversarial review (`CLAUDE.md` R11) of the spine edits (`ChainWalk`,
 `DagTraversal`, `QramLowering`) before commit — a green suite does not clear it.

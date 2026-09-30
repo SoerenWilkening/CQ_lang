@@ -1,12 +1,13 @@
 # LLVM Substrate — What CQ Uses from Stock LLVM
 
 A stage-by-stage reference for the LLVM C++ APIs the CQ compilation
-pipeline relies on. Every transformation maps to a stable, documented
+pipeline relies on. Every transformation maps to a public, documented
 extension point in upstream LLVM — no patched sources, no vendored
-`llvm-project`, no per-release rebase. The no-fork shape was validated
-2026-05-22 by a working prototype against LLVM 19.1.7
-([`../archive/prototype/`](../archive/prototype/)); this document records the substrate
-the prototype and full pipeline depend on.
+`llvm-project`, no per-release rebase. This is
+[`../NORTHSTAR.md`](../NORTHSTAR.md) design principle 9 (no LLVM fork,
+no MLIR dialect) seen from the API side. The API names below were
+checked against `ir-pass/src/`; where a claim depends on a particular
+file, the file is named.
 
 Companion documents:
 - [`frontend.md`](./frontend.md) — user-facing intrinsic surface
@@ -16,31 +17,33 @@ Companion documents:
   load-bearing half of the pipeline
 - [`quantum-classical-handling.md`](./quantum-classical-handling.md)
   — taint as the Q/C boundary
-- [`bennett-jl-comparison.md`](./bennett-jl-comparison.md) — design
-  convergences with Sturm.jl / Bennett.jl / Orkan
 
 ---
 
-## 1. Background
+## 1. The no-fork constraint
 
-Earlier project notes asked whether CQ would need to fork LLVM — patch
-its sources, vendor a copy of `llvm-project`, maintain a rebase against
-upstream — to enable the Stage 1 → Stage 2 transition where tainted
-LLVM opcodes are traced back to quantum-derived SSA values and replaced
-with calls that emit reversible-gate sequences. The answer is no: the
-pipeline was designed against a no-fork constraint, every transformation
-maps to a stable documented LLVM C++ API, and four production-quality
-precedents (Enzyme, AddressSanitizer, OpenMP runtime, Polly) ship the
-same shape without forking LLVM. The conclusion was validated against
-stock LLVM 19.1.7 by the prototype at [`../archive/prototype/`](../archive/prototype/).
+CQ needs one thing from LLVM that it does not have out of the box:
+tainted stock opcodes must be traced back to quantum-derived SSA
+values and replaced with calls that emit reversible-gate sequences.
+That is an IR-to-IR transformation, and LLVM provides a supported
+place for one: an **out-of-tree, new-pass-manager module plugin**
+loaded with `-load-pass-plugin`. No new instruction kind, type, calling
+convention or optimization pass is required (§4). Out-of-tree projects
+such as Polly and Enzyme use the same loading mechanism.
 
-The remainder of this document is the substrate reference: stage by
-stage, the specific LLVM extension points and C++ APIs CQ uses. Stage
-numbering follows [`frontend.md`](./frontend.md) §8:
+**LLVM 19 is mandatory.** The top-level `CMakeLists.txt` stops with a
+`FATAL_ERROR` if `LLVM_VERSION_MAJOR` is not 19, and `LLVM_DIR` must be
+passed explicitly.
 
-- **Stage 1.** `clang -O1 -emit-llvm -include CQ.h example.c -o example.bc`
-- **Stage 2.** `opt -load-pass-plugin libCQPass.so -passes=cq-lowering example.bc -o example.lowered.bc`
-- **Stage 3.** `clang example.lowered.bc -lcq_templates -lcq_runtime -o example`
+The three stages (numbering follows [`frontend.md`](./frontend.md) §8;
+the exact flags are in `tests/e2e/run_slice.sh`):
+
+- **Stage 1.** `clang -I include -include CQ.h -O1 -emit-llvm -S example.c`
+- **Stage 2.** `opt -load-pass-plugin libCQPass.so -passes=cq-lowering`
+- **Stage 3.** `clang example.lowered.ll libcq_templates.a libcq_runtime.a`
+  — the templates archive comes **before** the runtime archive
+  (template bodies call `cqrt_*`, and single-pass `ld` needs the caller
+  first).
 
 ## 2. Stage-by-stage substrate
 
@@ -49,24 +52,32 @@ Each stage is mapped to the specific LLVM C++ API surface it uses.
 ### 2.1 Source surface — `CQ.h`
 
 The user writes plain C. `CQ.h` is a header-only intrinsic surface
-declaring three primitive families plus an inversion bracket:
+declaring:
 
-- `cq_theta_<sfx>(x, θ)` — Ry rotation; the only taint source.
-- `cq_phi(φ)` — the **branch phase**; register-free (`void cq_phi(double)`)
-  since bd `test_C_libtooling-3qlq` Increment 1, so it neither introduces
-  nor propagates taint. The retired 15-width `cq_phi_<sfx>(x, φ)` family
-  is gone from the header.
-- `cq_measure_<sfx>(x)` — measurement; the only sink.
-- `cq_invert_begin()` / `cq_invert_end()` — bracket markers.
+- `cq_theta_<sfx>(x, θ)` — Ry rotation; the only taint source. One
+  declaration per scalar suffix, selected by a C11 `_Generic` macro,
+  each carrying `__attribute__((nomerge))` (§3.2).
+- `cq_measure_<sfx>(x)` — measurement; the only sink. Same suffix set
+  and `_Generic` macro.
+- `cq_phi(φ)` — the **branch phase**: a single register-free
+  `void cq_phi(double)` with no suffix family and no `_Generic`. It
+  neither introduces nor propagates taint. The old
+  `cq_phi_<sfx>(x, φ)` family is not declared; a use of those names
+  is a loud failure in the pass.
+- `cq_ry(x, θ)` — a statement macro, exactly `x = cq_theta(x, θ)`.
+- `cq_invert_begin()` / `cq_invert_end()` — bracket macros around bare
+  externs `__cq_invert_begin` / `__cq_invert_end`, each pinned by an
+  `asm volatile("" ::: "memory")` barrier so the optimizer cannot move
+  bracketed code across the marker.
 
-The two register-carrying families have per-type specializations and a
-`_Generic` dispatch macro; `cq_phi` is a single declaration with neither
-(see [`frontend.md`](./frontend.md) §3). The declarations are
-ordinary C `extern` functions — the IR pass identifies the two suffixed
-families later by name **prefix**, and `cq_phi` by **exact** name.
-
-There is no `quantum` keyword, no annotation attribute, no Clang AST
-plugin, no rewriter. Stock Clang accepts the source unchanged.
+The declarations are ordinary C `extern` functions. The pass finds
+them by **exact name** in a fixed suffix table
+(`WidthDispatch::thetaFn` is `M.getFunction("cq_theta_" + sfx)`;
+`cq_phi` is looked up by its exact name), never by name prefix — a
+user function that merely starts with `cq_theta_` is an unknown
+callee. There is no `quantum` keyword, no annotation attribute, no
+Clang AST plugin, no rewriter. Stock Clang accepts the source
+unchanged.
 
 **LLVM API used:** none — stock C compilation.
 
@@ -79,46 +90,62 @@ calls remain as opaque external calls because they have unknown side
 effects by default; LLVM will not fold or eliminate them across
 optimization passes.
 
-`-O1` is the validated floor for Stage 1. Higher levels are not
-prohibited but introduce risks documented in [`frontend.md`](./frontend.md)
-§8 "Optimization-level guidance" (aggressive inlining pre-empting
-clone-on-taint; IPSCCP rewriting signatures; SLPVectorize fusing
-tainted + untainted scalars at `-O3`; etc.).
+`-O1` is the pipeline the pass is validated against: control-flow
+recognition is written against the shapes `-O1` produces (branch
+polarity, `select` and `phi` forms, hoisting and sinking). Other levels
+are not the supported floor; the risks are listed in
+[`frontend.md`](./frontend.md) §8 "Optimization-level guidance".
 
 **LLVM API used:** stock `-O1` pipeline.
 
 ### 2.3 Stage 2 — The IR pass (`cq-lowering`)
 
-Every operation the pass performs, with the specific LLVM C++ API it
-uses:
+`cq::CQLoweringPass` is a **module pass** (`run(Module &,
+ModuleAnalysisManager &)`; it ignores the analysis manager). It is
+registered by `ir-pass/src/Plugin.cpp`, which exports the weak C
+symbol `llvmGetPassPluginInfo` returning a
+`PassPluginLibraryInfo{LLVM_PLUGIN_API_VERSION, "cq-lowering", …}`
+whose callback calls `PassBuilder::registerPipelineParsingCallback`.
+That is the **only** registration: the pass runs when named in
+`-passes=cq-lowering`. It is not attached to a pipeline extension
+point, so `clang -fpass-plugin=libCQPass.so` loads the plugin but does
+not run the pass. A module containing no call to `cq_theta`, `cq_phi`
+or `cq_measure` gets `PreservedAnalyses::all()` back and is left
+byte-identical.
 
-| Operation | LLVM API | Notes |
+Every operation the pass performs, with the LLVM API it uses:
+
+| Operation | LLVM API | Where |
 |---|---|---|
-| Register as pass plugin | `llvm::PassPluginLibraryInfo`, `PassBuilder::registerPipelineParsingCallback` | New PM, stable since LLVM 13 |
-| Iterate functions/blocks/instructions | `Module::functions()`, `Function::begin()/end()`, `BasicBlock::begin()/end()` | |
-| Identify `@cq_*` calls | `CallInst::getCalledFunction()`, `Function::getName()` (string prefix match) | |
-| Forward taint propagation | `Value::users()`, `Instruction::operand_values()`, set-based work queue | Bog-standard SSA dataflow |
-| Read function-parameter types | `Function::arg_begin()`, `Argument::getType()` | |
-| Build call graph | `llvm::CallGraphAnalysis` (analysis pass, new PM) | |
-| Clone function for specialization | `llvm::CloneFunction`, `CloneFunctionInto`, `ValueToValueMapTy` | Same mechanism as Enzyme |
-| Create function with rewritten signature | `Function::Create(FunctionType, Linkage, Name, Module)` | |
-| Replace instruction with new call | `IRBuilder::CreateCall`, `Instruction::replaceAllUsesWith`, `Instruction::eraseFromParent` | |
-| Identify tainted `br i1` for controlled-form | `BranchInst::getCondition()` + taint-set membership | Stock SSA |
-| Post-dominator analysis for controlled-region merge / uncomputation | `PostDominatorTreeAnalysis` via `FunctionAnalysisManagerModuleProxy`, `findNearestCommonDominator` | Same API as uncompute last-use |
-| Emit adjoint sequences | `IRBuilder` constructing new `cqrt_*` calls in reverse order | |
-| Preserve source locations | `Instruction::setDebugLoc(SourceInst->getDebugLoc())` | |
-| Emit user diagnostics | `LLVMContext::diagnose(DiagnosticInfo&)`, `OptimizationRemark*` | |
-| Mark `cqrt_*` calls side-effecting | `Function::addFnAttr(Attribute::NoUnwind)`; deliberately not `ReadNone`/`ReadOnly` | |
-| Run at a specific pipeline position | `PassBuilder::registerOptimizerLastEPCallback` (and phase callbacks) | |
+| Register as pass plugin | `PassPluginLibraryInfo`, `PassBuilder::registerPipelineParsingCallback` | `Plugin.cpp` |
+| Find the front-end calls | `Module::getFunction(name)`, `Value::users()`, `CallBase` (so an `invoke` is seen too) | `WidthDispatch.cpp`, `TaintPropagation.cpp` |
+| Forward taint propagation | `Value::users()` + a work list over SSA def-use | `TaintPropagation.cpp` |
+| Replace an instruction with a runtime call | `IRBuilder::CreateCall`, `Value::replaceAllUsesWith`, `Instruction::eraseFromParent` | the `*Lowering.cpp` and `*Emit.cpp` files |
+| Declare runtime symbols lazily | `Module::getOrInsertFunction` with a `FunctionType` built from the ABI width (no attributes, so LLVM must assume unknown side effects) | `WidthDispatch.cpp`, `ControlledSymbols.cpp` |
+| Recognize a tainted `br i1` / `select` / `switch` | `BranchInst::getCondition()` etc. + taint-set membership | `ControlDetect.cpp` |
+| Region shape, free points, loops | `DominatorTree DT(F)`, `PostDominatorTree PDT(F)`, `LoopInfo LI(DT)` — constructed directly per function, not fetched from an analysis manager | `FreePoint.cpp`, `Uncomputation.cpp`, `LoopLowering.cpp`, `PredMuxFlatten.cpp`, `QramLowering.cpp` |
+| Trip counts | `ScalarEvolution SE(F, TLI, AC, DT, LI)` built by hand (`TargetLibraryInfoImpl(Triple(M.getTargetTriple()))`, `AssumptionCache`) | `LoopUnrollPrepass.cpp`, `OpcodeLowering.cpp` |
+| Value-range facts | `LazyValueInfo`, `ConstantRange`, `KnownBits`, `simplifyInstruction` | `ArmClassify.cpp`, `PredMuxFlatten.cpp` |
+| Fully unroll a proven-constant-trip loop | `simplifyLoop`, `formLCSSARecursively`, `UnrollLoop` | `LoopUnrollPrepass.cpp` |
+| Clone a callee for a tainted-argument mask | `CloneFunction`, `CloneFunctionInto`, `ValueToValueMapTy`, `Function::Create(FunctionType, Linkage, Name, Module)`, `CallInst::setCalledFunction` | `SpecializeClone.cpp`, `Specialization.cpp` |
+| Keep clone attributes honest | `Function::setMemoryEffects`, `removeFnAttr(WillReturn/NoFree)`, `removeRetAttr(Range)` — a lowered clone calls side-effecting runtime primitives | `SpecializeClone.cpp` |
+| Recognize curated `llvm.*` intrinsics | `IntrinsicInst`, exact `Intrinsic::ID` | `IntrinsicLowering.cpp` |
+| Membership records on instructions | `Instruction::setMetadata` with an empty `MDNode` (the `!cq.branchphase` tag) | `ChainWalk.cpp` |
+| Self-cleaning pointer-keyed tables | `CallbackVH` / `WeakTrackingVH`, so a deleted `Value` drops out of every table | `ScrubOnDelete.h` |
+| Emit adjoint sequences | `IRBuilder` constructing new `cqrt_*` / `cq_template_*_unc` calls in reverse program order | `EmitInverse.cpp`, `Uncomputation.cpp` |
+| Preserve source locations | `Instruction::setDebugLoc(SourceInst->getDebugLoc())` | every emitter |
+| Emit loud diagnostics | `LLVMContext::diagnose(DiagnosticInfoUnsupported(…, DS_Error))` carrying the offending instruction's `!dbg` | every decline site |
+| Verify the output | not the pass: `opt` (and `cq-opt`) run `VerifierPass` after it | `ir-pass/tools/cq_opt_main.cpp` |
 
-Every entry is a stock LLVM C++ API.
+`opt -verify` clean shows the IR is well typed; it says nothing about
+whether the emitted unitary is right.
 
 **The specific Stage 1 → 2 transformation** — tracing opcodes back to
 quantum-derived SSA values and inserting emission-function calls —
 decomposes into:
 
 1. Forward taint propagation (SSA walk): stock `Value::users()` +
-   dataflow, seeded from `@cq_theta_*` return values.
+   a work list, seeded from `@cq_theta_*` return values.
 2. Identify tainted `add`/`mul`/`icmp`/etc.: stock
    `Instruction::getOpcode()`.
 3. Build a new `CallInst` to `@cq_template_<opcode>_<width>` with
@@ -126,31 +153,28 @@ decomposes into:
 4. `oldInst->replaceAllUsesWith(newCall); oldInst->eraseFromParent()`:
    stock.
 
-This is the same shape used by Enzyme (cloning functions and emitting
-derivative versions), AddressSanitizer (inserting instrumentation calls
-before/after memory ops), ThreadSanitizer, MSan, UBSan, and GCOV — all
-out-of-tree or in-tree pass plugins against stock upstream LLVM.
-
 ### 2.4 Stage 3 — Lowered IR → object code → binary
 
 Post-pass, the IR contains only stock LLVM opcodes + extern `cqrt_*`
-and `cq_template_*` calls. Standard `clang -c` backend codegen handles
-it. The linker (preferably `ld.lld` for LTO) links against
-`libcq_runtime.{a,so}` and `libcq_templates.{bca,a,so}`.
+and `cq_template_*` calls. Standard `clang` codegen handles it and the
+link resolves the externs against `libcq_templates.a` and
+`libcq_runtime.a`.
 
-Everything past Stage 2 is plain C-toolchain operation. The Stage 3
-`-O` level can be any of `-O0`–`-O3` without risk; the IR contains no
-tainted ops for stock optimizations to miscompile
-([`frontend.md`](./frontend.md) §8).
+The e2e harness links at clang's **default `-O0`, deliberately**: the
+lowered IR is the verified artifact, and an optimized Stage 3 could
+constant-fold or reorder the classical remainder and desynchronize the
+trace from the golden. Other Stage 3 levels are not exercised.
 
-**LLVM API used:** stock `clang -c`, stock linker.
+**LLVM API used:** stock `clang`, stock linker.
 
-### 2.5 Runtime (`libcq_runtime`)
+### 2.5 Runtime (`libcq_runtime`, `libcq_templates`)
 
-Stock C library, compiled with stock Clang, no LLVM dependency at all.
-Implements `cqrt_*` functions; emits OpenQASM strings, builds in-memory
-`Circuit` structs, or drives a simulator/hardware backend. Not an LLVM
-consumer.
+Stock C libraries, built by CMake with the platform C compiler, with no
+LLVM dependency at all. Today they are a **trace backend**: each
+`cqrt_*` and `cq_template_*` call prints one line
+(`symbol(args) -> ret`), `cqrt_measure_*` returns 0, and there is no
+simulation. The golden trace is the contract. `cq_templates.{h,c}` are
+generated from `tools/opcode_table.yaml`. Not an LLVM consumer.
 
 ## 3. Edge cases and clarifications
 
@@ -164,52 +188,50 @@ No. Real LLVM intrinsics (`@llvm.memcpy`, `@llvm.ctpop`) are registered
 in `Intrinsics.td` and *would* require LLVM source modifications to
 add. But `@cq_theta_*`, `@cq_phi`, `@cq_measure_*` are **not LLVM
 intrinsics in the technical sense** — they are ordinary external
-function declarations whose names happen to start with `cq_`. The IR
-pass pattern-matches by string name. Same trick Enzyme uses with
-`__enzyme_autodiff` and ASan uses with `__asan_*`.
-
-The CQ vocabulary's use of "intrinsic" is informal — it means
-"function the IR pass treats specially," not `llvm::Intrinsic::ID`.
+function declarations whose names the pass looks up (§2.1). The CQ
+vocabulary's use of "intrinsic" is informal — it means "function the IR
+pass treats specially," not `llvm::Intrinsic::ID`. (The pass *does*
+also recognize a curated set of real `llvm.*` intrinsics, by exact
+`Intrinsic::ID`, to lower them to templates.)
 
 ### 3.2 "Won't LLVM's optimizer CSE/DCE our `cq_*` calls into oblivion?"
 
-No, provided we don't mark them `readnone`/`readonly`. By default,
-external function calls have unknown side effects and LLVM will not
-fold or eliminate them. The required behavior comes from attribute
-discipline on the declarations — a property of how we declare the
-functions, not of LLVM.
+No, provided the declarations carry no `readnone`/`readonly`-style
+attributes. By default, external function calls have unknown side
+effects and LLVM will not fold or eliminate them; the required
+behavior comes from how the functions are declared, not from LLVM.
 
-### 3.3 "What about `__cq_q_<f>_<mask>` mangled names? Does the C++ name mangler need extending?"
+One optimization needed a second, explicit answer. `SimplifyCFG` can
+hoist or merge two *identical* calls from the arms of a branch, and
+for `cq_theta(5, .9)` on two arms that turns a register seeded under a
+condition into an unconditional one. `CQ.h` therefore marks every
+`cq_theta_*` call `nomerge` (`__attribute__((nomerge))`, and the header
+refuses to compile on a compiler without it). This covers direct calls
+only: a call through a function pointer does not carry the attribute
+(see the header comment for the residual cases).
 
-No. We choose the mangling. They are plain C identifiers with `_`
-separators. No Itanium mangler involvement.
+### 3.3 "What about `__cq_q_<callee>_<mask>` mangled names? Does the C++ name mangler need extending?"
 
-### 3.4 "What if a stock LLVM pass folds across our intrinsic in a way we can't prevent?"
+No. We choose the mangling: the specialization clone for a callee is
+named `__cq_q_<callee>_<binary>`, where `<binary>` renders the
+tainted-argument mask MSB-first, zero-padded to the argument count
+(`ipow(tainted, classical)` → `__cq_q_ipow_01`). They are plain C
+identifiers with `_` separators; no Itanium mangler involvement.
 
-Attribute discipline plus pipeline ordering handle this. Worst case
-(not expected for any Phase 1–11 case): register our pass
-`EP_EarlyAsPossible` to run before problematic passes. Stock
-pipeline-extension-point API.
+### 3.4 "Will `!dbg` survive enough opt passes for usable diagnostics?"
 
-### 3.5 "Will `!dbg` survive enough opt passes for usable diagnostics?"
+Diagnostics carry the offending instruction's `DebugLoc`, and every
+emitter copies the source instruction's `DebugLoc` onto the
+instructions it creates, so a decline is source-located whenever the
+input was compiled with debug info. Whether a given `-O1` transform
+preserves the location is an LLVM property the pass does not control.
 
-`!dbg` survives the standard `-O1` pipeline. Some aggressive late
-passes can drop it, but our pass runs before those and attaches `!dbg`
-to its own emitted instructions. If a specific opt pass turns out to
-be lossy, we either re-attach `!dbg` afterwards (our responsibility)
-or disable that pass at our pipeline position — stock mechanisms
-either way.
+### 3.5 "What about MLIR?"
 
-### 3.6 "What about cross-language input — Rust/Fortran needing IR?"
-
-Stock LLVM linker handles `.bc` from any frontend. Polyglot LTO is
-exactly what `clang`, `rustc --emit=llvm-bc`, `flang -emit-llvm` are
-designed for. No CQ-side involvement.
-
-### 3.7 "What about MLIR?"
-
-Explicitly rejected for Phases 1–10. If ever adopted, MLIR is *part
-of* upstream LLVM — not a separate substrate.
+Not used. Re-evaluating MLIR is an owner decision
+([`../NORTHSTAR.md`](../NORTHSTAR.md) principle 9). If it were ever
+adopted, MLIR is part of the upstream LLVM project, not a separate
+substrate.
 
 ## 4. Operations CQ deliberately avoids
 
@@ -223,244 +245,39 @@ than extending stock LLVM. CQ's design avoids all of them.
 | Adding a new fundamental `Type` (e.g. a qubit-IR-type that isn't a struct or pointer) | Avoided — `i32` handles suffice |
 | Modifying Clang's lexer/parser to recognize a new keyword | Avoided — no source-level keyword; user writes plain C and calls extern `cq_*` functions declared in `CQ.h` |
 | Adding a new ABI calling convention | Avoided — stock C calling convention works |
-| Modifying an existing optimization pass to know about quantum semantics | Avoided — pass ordering + attributes are sufficient |
+| Modifying an existing optimization pass to know about quantum semantics | Avoided — `nomerge` on the `cq_theta` calls (§3.2) and the `-O1` pipeline are sufficient |
 
-If any of these became necessary in some far-future phase, the
-substrate question would warrant re-evaluation. None are on the
-horizon.
+If any of these became necessary, the substrate question would warrant
+re-evaluation as an owner decision.
 
-## 5. Precedent — pass-plugin projects on stock LLVM
+## 5. Build, load, ship
 
-All four ship the same architectural shape CQ uses, against stock
-upstream LLVM:
-
-| Project | What it does | Shipping shape |
-|---|---|---|
-| **Enzyme** | Reverse-mode automatic differentiation at LLVM IR level. Clones functions, transforms bodies, emits derivative versions. | Out-of-tree pass plugin |
-| **AddressSanitizer** | Instruments memory accesses with shadow-memory checks; inserts intrinsic-style calls. | In-tree pass shipping as `libclang_rt.asan.so` |
-| **OpenMP runtime lowering** | Lowers `#pragma omp parallel` to `@__kmpc_*` runtime calls; brackets regions. | In-tree but uses the same intrinsic-call + region-bracket mechanism |
-| **Polly** | Polyhedral optimization with custom analysis and IR transformation. | Pass plugin |
-
-CQ's extension surface (~7 intrinsic families, no new types, no new
-opcodes) is *smaller* than any of these.
-
-## 6. What this means in practice
-
-- **Build dependency:** Stock upstream LLVM, version-pinned (LLVM 19
-  per project memory). When upstream releases LLVM 20, we update our
-  pass plugin to the new PassPlugin API revision (usually a one-day
-  port). No patch maintenance.
-- **Plugin shipping:** `libCQPass.so` (the pass),
-  `libcq_templates.{bca,a,so}` (templates), `libcq_runtime_<variant>.{a,so}`
-  (runtime). All consumable by stock `opt` / `clang`.
-- **User-facing command:** the three stages from §1 run as a pipeline:
+- **Build dependency:** stock upstream LLVM, exactly major version 19
+  (§1). Moving to a newer LLVM means re-checking the API names in
+  §2.3 against the new headers; there is no patch maintenance.
+- **The pass:** `libCQPass.so`, a CMake `MODULE` library that does
+  **not** link LLVM — symbols resolve from the host `opt` at `dlopen`
+  time (on macOS, `-undefined dynamic_lookup`). It is loaded with the
+  new-PM `-load-pass-plugin`, never the legacy `-load`.
+- **`cq-opt`:** a purpose-built driver (`build/ir-pass/cq-opt`, from
+  `ir-pass/tools/cq_opt_main.cpp`) compiled from the **same** pass
+  sources and linking only the LLVM libraries the pass needs. It
+  accepts and ignores `-load-pass-plugin`, accepts only
+  `-passes=cq-lowering`, and runs `VerifierPass` after the pass exactly
+  as `opt` does. It exists so the test suite does not pay stock `opt`'s
+  per-spawn start-up cost; it is a test-harness tool, not part of the
+  user pipeline.
+- **Runtime archives:** `libcq_templates.a` and `libcq_runtime.a`
+  (static), consumable by stock `clang`.
+- **User-facing command:** the three stages of §1 run as a pipeline:
   `clang -O1 -emit-llvm -include CQ.h | opt -load-pass-plugin
-  libCQPass.so -passes=cq-lowering | clang -lcq_templates -lcq_runtime`.
-  Or equivalently `clang -fpass-plugin=libCQPass.so` on a single line
-  (see [`frontend.md`](./frontend.md) §8 for the canonical invocation).
-- **Distribution:** Same shape as Polly, Enzyme, AddressSanitizer when
-  shipped out-of-tree.
+  libCQPass.so -passes=cq-lowering | clang … libcq_templates.a
+  libcq_runtime.a`. See [`frontend.md`](./frontend.md) §8 for the
+  canonical invocation.
 
-## 7. Prototype validation
+## 6. References
 
-The substrate claims above are not paper-only. A working prototype
-exercises every architecturally novel mechanism against stock LLVM
-19.1.7.
-
-### 7.1 Validation status
-
-**VALIDATED 2026-05-22** across the architecturally novel LLVM C++
-APIs the pass relies on. A working prototype lives at
-[`../archive/prototype/`](../archive/prototype/) and exposes four passes
-(`cq-lowering`, `cq-uncompute`, `cq-specialize`, `cq-control`) — one
-per validation slice.
-
-**Important caveat on source/sink set.** The prototype was built
-against the **old-design** IR shape (`@cq_init_<sfx>` as taint source,
-`qint_mid_t` struct wrapper, `cq_when_*` bracket calls). The new
-design retires those surfaces in favor of `@cq_theta_<sfx>` as taint
-source, plain SSA scalars, and post-dominator-driven controlled-region
-detection. **The LLVM C++ APIs the prototype exercised are identical
-under both designs** — only the IR shape the pass walks changes. The
-findings below note explicitly where the new design re-uses the same
-mechanism vs. where a new-design slice is still pending validation.
-
-#### cq-lowering findings
-
-| Claim | Validation | New-design status |
-|---|---|---|
-| Pass plugin builds against stock LLVM 19 | ✓ — clean build against LLVM 19.1.7, no LLVM source modifications | Same APIs; carries over unchanged |
-| Pass loads via `opt -load-pass-plugin` and runs without crash | ✓ | Carries over unchanged |
-| Output IR passes `opt -verify` | ✓ | Carries over unchanged |
-| Forward taint propagation works on stock SSA APIs | ✓ — `Value::users()` + worklist | Carries over; only the source-set predicate changes (`@cq_init_*` → `@cq_theta_*`) |
-| Old-design source `@cq_init_i32` → `@cqrt_alloc_classical_i32` lowering | ✓ | Replaced under new design by `@cq_theta_<sfx>` → `cqrt_alloc_<W>` + `cqrt_ry_<W>` ([`backend.md`](./backend.md) §5.1). Same `IRBuilder::CreateCall` mechanism; pending new-design fixture |
-| Tainted `add i32` → `@cqrt_template_add_i32` lowering | ✓ | Carries over; opcode lowering map unchanged |
-| `@cq_measure` → `@cqrt_measure` lowering | ✓ | Carries over unchanged |
-| Front-end intrinsic declarations erased after lowering | ✓ — module-level cleanup works on stock `Module::getFunction()` | Carries over unchanged |
-
-The `qint_mid_t` struct rebinding step (validated as
-`extractvalue` / `insertvalue` cleanup) is **retired** under the new
-design — the IR contains plain SSA scalars from the start, so the
-rebinding module has no inputs and is removed.
-
-#### cq-uncompute findings (Phase 5 / post-dom)
-
-| Claim | Validation |
-|---|---|
-| `PostDominatorTreeAnalysis` accessible from a Module pass via `FunctionAnalysisManagerModuleProxy` | ✓ |
-| `findNearestCommonDominator` over user blocks gives the right insertion BB | ✓ — handles single-BB and multi-BB |
-| `IRBuilder::SetInsertPoint` at post-dominating last use works | ✓ — `cqrt_free` emitted at correct point for each handle |
-| `ReturnInst` escape detection (skip uncomputation when handle is returned) | ✓ |
-| Composes with `cq-lowering` in the same pipeline | ✓ — `-passes='cq-lowering,cq-uncompute'` works end-to-end |
-
-All APIs here carry over directly. The new design re-uses
-`PostDominatorTree` for **two** purposes — uncomputation last-use (this
-slice) and controlled-region merge detection (§8.2 of `backend.md`) —
-on the same analysis infrastructure.
-
-#### cq-specialize findings (Phase 7 / function lifting)
-
-| Claim | Validation |
-|---|---|
-| `CloneFunction` + `ValueToValueMapTy` clones a function with full body fidelity | ✓ — clone has matching `extractvalue + add + insertvalue + ret` shape |
-| Mangled-name renaming via `Function::setName` works | ✓ — `__cq_q_<orig>_q1` |
-| `Function::setLinkage(InternalLinkage)` works (DCE-eligible) | ✓ |
-| `CallInst::setCalledFunction` retargets call sites | ✓ — original `@example` now calls `@__cq_q_double_it_q1` |
-| Pre-existing front-end intrinsics (`@cq_*`) correctly skipped, not re-cloned | ✓ |
-
-All APIs here carry over directly to the new design's clone-on-taint
-path ([`backend.md`](./backend.md) §7.2). The body fidelity check
-exercised an old-design body shape (with `extractvalue`/`insertvalue`
-on the mid-struct); under the new design the body is plain SSA, which
-is simpler — strictly less to validate.
-
-#### Multi-BB post-dom findings
-
-| Claim | Validation |
-|---|---|
-| `PostDominatorTree::findNearestCommonDominator` returns the merge block when uses span both arms of an `if` | ✓ |
-| `getFirstInsertionPt()` correctly places `cqrt_free` between `phi` and `ret` in the merge block | ✓ |
-| `cqrt_free` is emitted **exactly once** (not duplicated into either arm) | ✓ |
-| No code changes were needed — original `computeFreePoint()` already correct for non-trivial CFG | ✓ |
-
-#### cq-control findings (retired bracket mechanism)
-
-| Claim | Validation | New-design status |
-|---|---|---|
-| Region detection via `cq_when_begin`/`cq_when_end` bracket walking works | ✓ | **Retired** — bracket calls are no longer in the input IR |
-| `cqrt_template_*` calls inside a region are substituted with the `_controlled` variant | ✓ — control handle prepended as first arg | **Mechanism carries over** — same `_controlled` template substitution + control-handle prepending |
-| `cqrt_template_*` calls **outside** any region are left alone | ✓ | Same under new design |
-| Bracket call sites and declarations erased after substitution | ✓ | N/A — no brackets to erase |
-| `Module::getOrInsertFunction` with dynamically-built `FunctionType` works for variant declarations | ✓ | Carries over unchanged |
-
-**The new-design controlled-region detection is pending prototype
-validation.** Under the new design, controlled regions are identified
-structurally from a tainted `br i1` plus `PostDominatorTree` to find
-the merge block ([`backend.md`](./backend.md) §8). The substitution
-step inside the region — replace each gate with its `_controlled`
-variant, prepend control handle — is **identical** to the validated
-prototype. Only the trigger differs (was bracket pair, now tainted
-branch). The prerequisite APIs (`PostDominatorTreeAnalysis`,
-`BranchInst::getCondition()`, taint-set membership) are all exercised
-elsewhere in the prototype.
-
-#### Overall
-
-| Claim | Result |
-|---|---|
-| "Lightweight extension" claim quantitatively defensible | ✓ — 525 LOC C++ for all four prototype passes combined |
-| All checks pass on stock LLVM 19.1.7 | ✓ — no LLVM source patches anywhere in the dependency chain |
-| Every architecturally novel LLVM-API mechanism that carries over to the new design is demonstrated working | ✓ — taint propagation, post-dominator analysis (linear + branched), function cloning, controlled-variant substitution |
-| New-design slices pending validation | One: tainted-`br i1`-driven controlled-region trigger (the substitution step is already validated; only the trigger is new) |
-
-### 7.2 What the prototype slices prove
-
-The prototype passes collectively exercise every architecturally novel
-LLVM C++ API the new-design IR pass needs. Specifically:
-
-| Mechanism | LLVM API exercised | Demonstrated by | Carries to new design? |
-|---|---|---|---|
-| Taint propagation across stock SSA | `Value::users()` + worklist | cq-lowering | ✓ source predicate changes; algorithm unchanged |
-| Opcode substitution with runtime calls | `IRBuilder::CreateCall`, `Instruction::eraseFromParent` | cq-lowering | ✓ unchanged |
-| Module-level cleanup of unused declarations | `Module::getFunction`, `Function::eraseFromParent` | cq-lowering | ✓ unchanged |
-| SSA last-use analysis | `PostDominatorTreeAnalysis`, `findNearestCommonDominator`, `Instruction::comesBefore` | cq-uncompute | ✓ unchanged; same API reused for controlled-region merge |
-| Cross-pass analysis-manager access | `FunctionAnalysisManagerModuleProxy` | cq-uncompute | ✓ unchanged |
-| Function cloning with full body fidelity | `CloneFunction`, `ValueToValueMapTy` | cq-specialize | ✓ unchanged (plain-SSA bodies are strictly simpler) |
-| Function attribute manipulation | `Function::setName`, `Function::setLinkage` | cq-specialize | ✓ unchanged |
-| Call-site retargeting | `CallInst::setCalledFunction` | cq-specialize | ✓ unchanged |
-| Controlled-variant template substitution | `Module::getOrInsertFunction` with dynamic `FunctionType`, control-handle prepending | cq-control | ✓ substitution step unchanged; only the region-trigger mechanism differs |
-| Cross-pass composition | `opt -passes='cq-lowering,cq-uncompute'` runs end-to-end | cq-lowering + cq-uncompute | ✓ unchanged |
-
-The remaining unbuilt items reuse these same APIs — no new substrate
-required:
-
-- **Multi-width** (`i1`/`i8`/`i16`/`i64`/`f32`/`f64`) — parametrize
-  the existing `i32` pattern over `Type::getIntNTy(Ctx, W)`. No new
-  mechanism.
-- **Real adjoint gate-sequence emission** — replace the `cqrt_free`
-  placeholder with the actual reverse-order template calls before the
-  free. Pure IR construction; uses already-validated `IRBuilder` API.
-- **Bennett wrap-around for specializations** — replace the
-  signature-preserving clone with a `Function::Create` + new
-  `FunctionType` + body migration via `CloneFunctionInto`. Adds
-  forward-CNOT-copy + reverse on top, both reusing already-validated
-  IR construction.
-- **Tainted-`br i1`-driven controlled-region detection** — read the
-  branch condition, check membership in the taint set, recover the
-  merge block via the already-validated `PostDominatorTree` API. New
-  trigger, validated mechanism.
-- **Real template body implementation** — runtime/library C code that
-  calls `cqrt_x` / `cqrt_cnot` / `cqrt_toffoli` to implement reversible
-  gate sequences. Not an LLVM extension question at all.
-
-None of these involves an LLVM API the prototype has not already
-demonstrated working. They are downstream implementation work, not
-substrate-level validation.
-
-### 7.3 When the substrate question would warrant re-evaluation
-
-Re-evaluate only if one of the §4 scenarios becomes plausible. The
-plausible trigger conditions: Phase 11 (optimization passes) needs
-cross-region quantum/classical reasoning the intrinsic shape can't
-express; a second frontend (Rust/Python) makes a richer substrate
-worthwhile; a community quantum-MLIR dialect ratifies. Even then, the
-alternative would be MLIR adoption (which is part of upstream LLVM) —
-not a separate substrate.
-
-## 8. Summary
-
-CQ runs on stock LLVM. Validated 2026-05-22 by working prototype
-against stock LLVM 19.1.7, covering the architecturally novel LLVM C++
-APIs the IR pass relies on: forward lowering, per-op auto-uncomputation
-via post-dominator analysis, call-graph specialization via function
-cloning, and controlled-variant template substitution.
-
-Every architecturally novel transformation in the pipeline maps to a
-stable, documented LLVM C++ API. Four precedents prove the pattern
-works at scale; the prototype proves it works for *this* project
-across the load-bearing mechanism families. The one slice still
-pending validation under the new design — tainted-`br i1`-driven
-controlled-region detection — re-uses APIs (`PostDominatorTree`,
-`BranchInst::getCondition()`) the prototype has already demonstrated
-working in other contexts.
-
-What remains is implementation engineering against the same already-
-validated extension surface — multi-width parametrization, real
-adjoint gate-sequence emission, Bennett wrap-around for
-specializations, tainted-branch controlled-region detection, real
-template bodies. None of these introduce LLVM API surface not already
-exercised by the prototype.
-
-## 9. References
-
-- LLVM PassPlugin documentation:
-  https://llvm.org/docs/WritingAnLLVMPass.html (legacy PM) and
-  https://llvm.org/docs/NewPassManager.html (current)
-- Clang plugin attributes:
-  https://clang.llvm.org/docs/ClangPlugins.html
-- Enzyme: https://enzyme.mit.edu/ — out-of-tree LLVM autodiff pass
-  plugin
-- AddressSanitizer:
-  https://clang.llvm.org/docs/AddressSanitizer.html — intrinsic-call +
-  pass-plugin pattern
-- Polly: https://polly.llvm.org/ — pass-plugin polyhedral optimization
+- LLVM new pass manager: https://llvm.org/docs/NewPassManager.html
+- Writing an LLVM pass: https://llvm.org/docs/WritingAnLLVMPass.html
+- Enzyme (out-of-tree LLVM autodiff pass plugin): https://enzyme.mit.edu/
+- Polly (polyhedral optimization, loadable as a plugin): https://polly.llvm.org/
