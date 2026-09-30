@@ -1,8 +1,0 @@
-N0_null_r2	null	failed 0 / discovered 2466	cq-opt 73cfb84713d6b7ba	
-V1_no_record_time_strip	KILLED	failed 3 / discovered 2466	cq-opt d2c6078138c0d782	spec_accept_phantom_arg_read_unc_twin_nofpclass_stripped.ll spec_accept_phantom_arg_read_unc_twin_range_stripped.ll spec_accept_phantom_arg_read_unc_twin_range_stripped_nullsafe.ll
-V2_record_strip_range_only	KILLED	failed 1 / discovered 2466	cq-opt 8b641a7f47c7943f	spec_accept_phantom_arg_read_unc_twin_nofpclass_stripped.ll
-V3_record_strip_every_param	MISSED	failed 0 / discovered 2466	cq-opt e7324042bc8b9b28	
-V4_no_callsite_strip	KILLED	failed 1 / discovered 2466	cq-opt 39cb53a9d28eea34	spec_accept_phantom_arg_read_unread_scalar_inner_arg_range.ll
-V5_decline_inalloca_too	KILLED	failed 1 / discovered 2466	cq-opt 90611a1dcecb544b	spec_accept_musttail_in_clone_demoted_inalloca.ll
-V6_no_preallocated_decline	KILLED	failed 1 / discovered 2466	cq-opt 188ca0a404d4fa1f	spec_reject_musttail_forward_preallocated.ll
-V7_fence_value_is_existence	KILLED	failed 2 / discovered 2466	cq-opt c3a9b7b24264a59d	spec_reject_phantom_arg_read_unread_scalar_inner_inst.ll spec_reject_phantom_arg_read_unread_scalar_inner_inst_musttail.ll

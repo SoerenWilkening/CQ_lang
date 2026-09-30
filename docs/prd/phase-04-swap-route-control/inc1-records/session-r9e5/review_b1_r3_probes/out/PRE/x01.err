@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function qrom_rail i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control
-

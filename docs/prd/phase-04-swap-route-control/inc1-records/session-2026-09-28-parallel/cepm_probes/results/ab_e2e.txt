@@ -1,3 +1,0 @@
-[e2e] denominator: 608 modules (0 missing/0-byte excluded)  A=cq-opt.main_9a230646  B=cq-opt.subj1
-[e2e] NULL CONTROL (subject twice): 0 of 608 differ
-[e2e] accepts A=499 B=499; movers 0 of 608: {}

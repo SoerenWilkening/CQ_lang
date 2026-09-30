@@ -1,4 +1,0 @@
-STREAM	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_dropped_arg_boolsel.ll
-	A rc=0 []
-	B rc=0 []
-DENOM=1 MOVERS=1 UNREADABLE=0 TOOLFAIL=0

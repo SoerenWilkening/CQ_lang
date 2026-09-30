@@ -1,2 +1,0 @@
-error: src/ob1b_first_iteration_flag.c:5:42: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

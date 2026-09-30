@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: if/else state prep allocates two rails under quantum control
-

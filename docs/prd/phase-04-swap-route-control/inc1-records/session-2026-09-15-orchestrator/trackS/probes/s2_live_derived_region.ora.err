@@ -1,2 +1,0 @@
-error: s2_live_derived_region.c:11:22: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
-

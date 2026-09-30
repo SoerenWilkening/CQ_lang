@@ -1,2 +1,0 @@
-error: src/r5d_invariant_seed_measure_only.c:3:79: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

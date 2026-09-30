@@ -1,2 +1,0 @@
-error: src/r9_g2_measure_parent.c:3:70: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

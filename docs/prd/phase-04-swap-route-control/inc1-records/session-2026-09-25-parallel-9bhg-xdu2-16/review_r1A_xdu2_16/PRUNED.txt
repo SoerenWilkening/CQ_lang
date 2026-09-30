@@ -1,8 +1,0 @@
-Pruned at commit time by the xdu2.16 implementer (coordinator instruction: keep probe
-dirs lean, no built executables). Removed: generated OUTPUTS only — every *.s2.ll,
-every *.s1.ll that has a sibling .c it is compiled from, and every *.trace / *.err /
-*.ea / *.eb. Kept: every .c, every .s1.ll with no sibling .c (hand-written or
-recipe-generated IR), all scripts, ledgers, logs, the instrumentation patch and
-REVIEW.md. No built executables were present. Regenerate with this round's own
-harness (probes/corpus_*.sh, probes/twins_r1A.py) against the binaries REVIEW.md names
-(subject cq-opt b1603d237fc3a739, oracle 438c77bf45c02e3e).

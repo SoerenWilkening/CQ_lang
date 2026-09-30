@@ -1,6 +1,0 @@
-ok  refused CONTROL intact database, A5-shape member  [75 members, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)]]
-        ERR  `TaintPropagation.h` preprocesses DIFFERENTLY after the headers this configuration's TUs include (an include-order dependent member, e.g. under `#ifdef` of another header's macro?) — first difference: alone `ScrubCallLis
-BAD CLEAN   G1 compiler exits 0 with NO output on both include-order -E TUs  [75 members, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)]]
-BAD CLEAN   G2 compiler preprocesses the include-order TUs with -P (no line markers)  [75 members, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)]]
-ok  refused G3 compiler SIGKILLed on the include-order -E TUs  [75 members, passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)]]
-        ERR  `cc_ctx_kill.sh` was killed by signal 9 (from /private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rev_r2_scrubguard/cc_cc_ctx_kill.sh.json) — this gate F

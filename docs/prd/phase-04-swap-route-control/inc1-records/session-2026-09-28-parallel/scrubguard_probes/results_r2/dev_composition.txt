@@ -1,3 +1,0 @@
-guard bbf1a106a84e79ad
-clean   agent-a3c46257bc3bd028d (refs/heads/worktree-agent-a3c46257bc3bd028d @ 7f0be42ffc)  [77 members, 0 problem(s), passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 15 tolerated]
-clean   agent-a284a60d747f2ed82 (refs/heads/worktree-agent-a284a60d747f2ed82 @ 9a68064f1c)  [76 members, 0 problem(s), passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 15 tolerated]

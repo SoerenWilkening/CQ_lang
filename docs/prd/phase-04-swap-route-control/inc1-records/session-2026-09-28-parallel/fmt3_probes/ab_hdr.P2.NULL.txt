@@ -1,4 +1,0 @@
-tmpdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/fmt3hdrgxowfxq3
-denominator: 636 (source, CASE) jobs; 611 compiled at stage 1 on BOTH headers; 25 did not (need other TUs / flags) and were NOT swept
-stage-1 movers (normalised): 0 of 611
-stage-2 verdict/stream movers: 0 of 611

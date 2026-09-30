@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function body i32 (): cq taint escape: tainted value muxed by a classical-condition select
-

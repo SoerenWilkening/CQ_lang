@@ -1,4 +1,0 @@
-ok  refused F3 compiler SIGKILLed on every member-type TU (pristine header)  [57 members, passes=[('CQPass', False, 47), ('cq-opt/cq-scrub-selftest', False, 47)]]
-        ERR  cq::TaintSet::BirthOrder: `cq::scrub::Map<llvm::Value *, unsigned int>` — this field's type could not be asked of the compiler (its access path cannot be spelled), and only builtins are accepted there (closed world: refu
-        ERR  cq::TaintSet::BreakRegions: `llvm::SmallVector<cq::LoopBreakRegion, 2>` — this field's type could not be asked of the compiler (its access path cannot be spelled), and only builtins are accepted there (closed world: refu
-exit=0

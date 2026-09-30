@@ -1,6 +1,0 @@
-mutant MRED: cq-opt 6c27249e8cce1fc0
-lit rc=0
-lit: Total Discovered Tests: 2288 | Passed           : 2287 (99.96%) | Expectedly Failed:    1 (0.04%)
-lit failures: 0
-probes: 179 run, 0 moved
-restored: cq-opt 8b837d1f79574156

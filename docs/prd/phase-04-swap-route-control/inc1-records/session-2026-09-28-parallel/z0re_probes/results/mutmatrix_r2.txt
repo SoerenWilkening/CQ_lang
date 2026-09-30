@@ -1,8 +1,0 @@
-subj_r2	SURVIVED	minilit: 250 fixtures  PASS 250  FAIL 0  SKIP 0 	FAILS: 
-R0_null	SURVIVED	minilit: 250 fixtures  PASS 250  FAIL 0  SKIP 0 	FAILS: 
-R1_step0_rederive	SURVIVED	minilit: 250 fixtures  PASS 250  FAIL 0  SKIP 0 	FAILS: 
-R2_step0_never	SURVIVED	minilit: 250 fixtures  PASS 250  FAIL 0  SKIP 0 	FAILS: 
-R3_step0_always	KILLED	minilit: 250 fixtures  PASS 246  FAIL 4  SKIP 0 	FAILS: control_angle_select_ry_runtime_base_f64.ll control_angle_select_ry_runtime_base_i8.ll control_angle_select_ry_runtime_base.ll spec_angle_select_runtime_base_side_door_twin.ll 
-R4_step0_flag_only	KILLED	minilit: 250 fixtures  PASS 234  FAIL 16  SKIP 0 	FAILS: control_angle_select_accept_exact_difference_large.ll control_angle_select_accept_rounding_at_bound.ll control_angle_select_accept_rounding_flagship_bound.ll control_angle_select_ry_alias_pre_gate.ll control_angle_select_ry_dead_base_frozen.ll control_angle_select_ry_derived_base_late_use_frozen.ll control_angle_select_ry_derived_cond.ll control_angle_select_ry_diamond.ll control_angle_select_ry_f64_fcmp.ll control_angle_select_ry_i8.ll control_angle_select_ry_lifted_phi_after_select.ll control_angle_select_ry_lifted_phi_base.ll control_angle_select_ry_ne_swapped.ll control_angle_select_ry_sgt.ll control_angle_select_ry_then_region.ll spec_angle_select_runtime_base_side_door.ll 
-R5_readd_constant	SURVIVED	minilit: 250 fixtures  PASS 250  FAIL 0  SKIP 0 	FAILS: 
-R6_no_scope_line	KILLED	minilit: 250 fixtures  PASS 246  FAIL 4  SKIP 0 	FAILS: control_angle_select_reject_literal_base_offwire_fold.ll control_angle_select_reject_state_prep.ll control_inplace_ry_reject_stateprep_constexpr_seed.ll control_inplace_ry_reject_stateprep_constexpr_undef_seed.ll 

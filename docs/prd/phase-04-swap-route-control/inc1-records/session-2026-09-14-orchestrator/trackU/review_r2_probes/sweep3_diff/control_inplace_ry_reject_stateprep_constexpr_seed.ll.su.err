@@ -1,3 +1,0 @@
-cq-opt: /tmp/cqu_r2_mutants/control_inplace_ry_reject_stateprep_constexpr_seed.ll:42:57: error: expected type
-  %rt = call i32 @cq_theta_si32(i32 ptrtoint (ptr @G to undef, double 9.000000e-01)
-                                                        ^

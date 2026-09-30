@@ -1,7 +1,0 @@
-A=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rhk5/bin/cq-opt.r2
-B=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/rhk5/bin/cq-opt.R9_no_function_backstop
-[lit] denominator 2426 swept, 0 not buildable alone (NOT swept); accepts A=1245 B=1245; warned A=57 B=57; movers 0
-[e2e] denominator 615 swept, 26 not buildable alone (NOT swept); accepts A=502 B=502; warned A=5 B=5; movers 0
-[multi] denominator 36 swept, 0 not buildable alone (NOT swept); accepts A=36 B=36; warned A=3 B=3; movers 0
-[probes] denominator 307 swept, 0 not buildable alone (NOT swept); accepts A=260 B=260; warned A=11 B=11; movers 0
-TOTAL movers 0

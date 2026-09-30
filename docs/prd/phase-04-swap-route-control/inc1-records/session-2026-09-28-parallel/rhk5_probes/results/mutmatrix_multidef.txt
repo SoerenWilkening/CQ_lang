@@ -1,3 +1,0 @@
-subject_v2 | Total Discovered Tests: 2416  Excluded: 2091 (86.55%) | failed=0 | 
-M7_no_handle_mask | Total Discovered Tests: 2416  Excluded: 2091 (86.55%) | failed=0 | 
-M8_no_record | Total Discovered Tests: 2416  Excluded: 2091 (86.55%) | failed=0 | 

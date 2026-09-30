@@ -1,2 +1,0 @@
-error: ./w2i2_h1_round2.c:18:13: in function slice i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
-

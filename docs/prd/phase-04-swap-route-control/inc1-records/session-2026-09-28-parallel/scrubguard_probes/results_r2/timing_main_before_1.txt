@@ -1,8 +1,0 @@
-guard /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/tools/zz_guard_before_9a230646.py sha256 d26862662f12f1f5  args: 
-load before: 8,04 16,71 35,19
-taintset_scrub_guard: 57 TaintSet members walked (compiler: /usr/bin/c++, flags from /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/build/compile_commands.json, PCH ok), 0 problem(s), 2 allowlisted
-real 31,31
-user 10,55
-sys 1,60
-rc=0
-load after: 81,77 33,30 40,53

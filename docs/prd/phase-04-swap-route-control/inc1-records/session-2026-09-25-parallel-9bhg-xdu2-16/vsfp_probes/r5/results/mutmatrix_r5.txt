@@ -1,6 +1,0 @@
-N0_null discovered=2404 seen=2404 failed=0 :: 
-E1_no_slot_eligibility discovered=2404 seen=2404 failed=3 :: FAIL:spec_accept_phantom_arg_read_byval_inner_slot_kept.ll FAIL:spec_accept_phantom_arg_read_pointer_slot_kept.ll FAIL:spec_accept_phantom_arg_read_byval_slot_kept.ll 
-E2_no_ineligible_decline discovered=2404 seen=2404 failed=1 :: FAIL:spec_reject_phantom_arg_read_range_attr.ll 
-Q1_no_implicit_section discovered=2404 seen=2404 failed=2 :: FAIL:lowering_reject_volatile_global_pragma_bss.ll FAIL:lowering_reject_volatile_global_pragma_data.ll 
-A1_no_addrspace discovered=2404 seen=2404 failed=1 :: FAIL:lowering_reject_volatile_global_addrspace.ll 
-done N0_null E1_no_slot_eligibility E2_no_ineligible_decline Q1_no_implicit_section A1_no_addrspace

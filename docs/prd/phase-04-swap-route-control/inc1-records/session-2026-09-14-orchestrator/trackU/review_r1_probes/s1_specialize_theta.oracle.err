@@ -1,2 +1,0 @@
-error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/s1_specialize_theta.c:9:5: in function helper i1 (): cq taint escape: tainted value returned at non-i32 width
-

@@ -1,5 +1,0 @@
-denominator: 425 modules  A=ab/e2eDefault  B=ab/e2eAlways
-counts: A2D=3 same=422
-  A2D	s_e2e-slice-control-grover-loop-derived.ll	0	1
-  A2D	s_e2e-slice-control-grover-loop-range-oracle.ll	0	1
-  A2D	s_e2e-slice-control-inplace-ry-loop-derived.ll	0	1

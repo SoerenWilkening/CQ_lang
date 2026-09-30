@@ -1,3 +1,0 @@
-tmpdir /var/folders/1v/g83tnnts1bdb_xk5b2hfl9x40000gn/T/fmt3multit6hufbgw
-denominator: 32 run_slice_multi.sh entries parsed; 32 built on BOTH headers; 0 failed to build
-CQ-TU stage-1 movers (normalised): 0; stage-2 verdict/stream movers: 0

@@ -1,7 +1,0 @@
-STREAM	/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/rA_vsfp/e2e/e2e-slice-spec-dropped-arg-boolsel.s1.ll
-	A rc=0 []
-	B rc=0 []
-STREAM	/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/rA_vsfp/e2e/e2e-slice-spec-dropped-arg-inplace.s1.ll
-	A rc=0 ['warning: <unknown>:0:0: in function slice i32 (i32): cq rotation lowering: non-diagonal gate over a live derived record']
-	B rc=0 []
-DENOM=428 MOVERS=2 UNREADABLE=0 TOOLFAIL=0

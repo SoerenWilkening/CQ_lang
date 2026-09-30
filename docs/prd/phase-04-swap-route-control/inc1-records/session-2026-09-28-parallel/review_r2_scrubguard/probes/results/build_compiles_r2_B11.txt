@@ -1,7 +1,0 @@
-B11  INCLUDE ORDER through a CLOSURE file's own guard: `#ifdef CQ_IRPASS_LOOP_PLAN_H_` tested BEFORE TaintPropagation.h includes LoopPlan.h (LoopLowering.cpp includes LoopPlan.h FIRST; the union context #undef's every closure guard before the final include)
-    scrub_selftest.cpp[cq-opt cfg]: exit 0
-    CQLoweringPass.cpp[CQPass cfg]: exit 0
-    usage TU[CQPass cfg]: exit 0
-    CQLoweringPass.cpp -E: exit 0, `RvLpFirst` lines: ['static inline std::set<llvm::Value *> RvLpFirst;']
-    SpecializeSeed.cpp -E: exit 0, `RvLpFirst` lines: []
-    LoopLowering.cpp -E: exit 0, `RvLpFirst` lines: ['static inline std::set<llvm::Value *> RvLpFirst;']

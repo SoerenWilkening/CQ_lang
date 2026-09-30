@@ -1,3 +1,0 @@
-Total Discovered Tests: 2328
-  Passed           : 2327 (99.96%)
-  Expectedly Failed:    1 (0.04%)

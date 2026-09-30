@@ -1,8 +1,0 @@
-taintset_scrub_guard: 57 TaintSet members walked (compiler: /usr/local/opt/llvm@19/bin/clang++), 0 problem(s), 2 allowlisted
-rc=0
-taintset_scrub_guard: clang++ / LLVM include dir not usable (clang=/nonexistent/clang++, include=/usr/local/opt/llvm@19/include); pass --clang/--llvm-include or set CQ_GUARD_CLANG / CQ_GUARD_LLVM_INCLUDE — this gate FAILS CLOSED, it never skips
-taintset_scrub_guard: 0 TaintSet members walked (compiler: /nonexistent/clang++), 1 problem(s), 2 allowlisted
-rc(nonexistent clang)=1
-taintset_scrub_guard: clang++ / LLVM include dir not usable (clang=/usr/local/opt/llvm@19/bin/clang++, include=/tmp); pass --clang/--llvm-include or set CQ_GUARD_CLANG / CQ_GUARD_LLVM_INCLUDE — this gate FAILS CLOSED, it never skips
-taintset_scrub_guard: 0 TaintSet members walked (compiler: /usr/local/opt/llvm@19/bin/clang++), 1 problem(s), 2 allowlisted
-rc(bad include)=1

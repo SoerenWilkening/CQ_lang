@@ -1,2 +1,0 @@
-  %spec.select = select i1 %c, i1 true, i1 false
-  ret i1 %spec.select

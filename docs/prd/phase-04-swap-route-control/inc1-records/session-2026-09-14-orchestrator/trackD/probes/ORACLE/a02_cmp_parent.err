@@ -1,2 +1,0 @@
-error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackD/probes/src/a02_cmp_parent.c:2:61: in function main i32 (): cq controlled lowering: condition predates a non-diagonal gate under quantum control
-

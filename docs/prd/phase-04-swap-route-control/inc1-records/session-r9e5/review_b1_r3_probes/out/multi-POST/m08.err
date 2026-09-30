@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
-

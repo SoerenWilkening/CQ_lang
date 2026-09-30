@@ -1,2 +1,0 @@
-error: ./w2b_sameloop_mixed_derived.c:7:14: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
-

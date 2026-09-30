@@ -1,4 +1,0 @@
-LISTNULL events: 8577 in 2078 modules
-  4421  cq::lowerMeasures  <- cq::CQLoweringPass::run   [1787 modules; e.g. condtree_classical_leaf_accept_and.ll, condtree_classical_leaf_accept_and_taintfirst.ll, condtree_classical_leaf_accept_argument_literal.ll]
-  4153  cq::lowerRotations  <- cq::CQLoweringPass::run   [1946 modules; e.g. condtree_classical_leaf_accept_and.ll, condtree_classical_leaf_accept_and_taintfirst.ll, condtree_classical_leaf_accept_argument_literal.ll]
-     3  cq::removeUnreachableBlocksChecked  <- cq::   [1 modules; e.g. lowering_fp80_reject_blockaddress_markalive_entry.ll]

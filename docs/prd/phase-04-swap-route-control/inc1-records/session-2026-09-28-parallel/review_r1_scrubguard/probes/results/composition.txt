@@ -1,3 +1,0 @@
-clean   agent-a284a60d747f2ed82 @ 369c61b9 feat(control): bd z0re — admit a RUNTIME state-prep seed and an UNTAINTED Ry-stem  [76 members, 0 problem(s), passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)]]
-REFUSED agent-a3c46257bc3bd028d @ 3a2d690e fix(spec): bd cepm + bd 3zr4 — a Phase-6 call whose lifted callee returns a class  [77 members, 1 problem(s), passes=[('CQPass', False, 1), ('cq-opt/cq-scrub-selftest', False, 1)]]
-        ERR  self-cleaning member `cq::TaintSet::SpecPredictedClassical` is not exercised by ir-pass/tools/scrub_selftest.cpp (comments do not count)

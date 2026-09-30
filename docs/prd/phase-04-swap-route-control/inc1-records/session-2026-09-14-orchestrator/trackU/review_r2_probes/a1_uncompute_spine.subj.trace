@@ -1,7 +1,0 @@
-cqrt_alloc_i32(0) -> h0
-cqrt_ry_i32(h0, 0x1p-1)
-cqrt_addc_i32(h0, 3)
-cqrt_measure_i32(h0) -> 0
-cqrt_alloc_i32(0) -> h1
-cqrt_ry_i32(h1, 0x1p-2)
-cqrt_measure_i32(h1) -> 0

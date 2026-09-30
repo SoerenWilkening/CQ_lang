@@ -1,2 +1,0 @@
-error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/r4_qram_body.c:9:14: in function slice i32 (): cq QRAM access: tainted-index memory access inside a loop
-

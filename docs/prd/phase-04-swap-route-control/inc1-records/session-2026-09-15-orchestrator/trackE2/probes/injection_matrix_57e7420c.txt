@@ -1,3 +1,0 @@
-  checked 15 mutants over prefixes ['CHECK', 'NOCLASSICAL', 'ACC'] in lowering_reject_measure_undef_operand.ll: 15 caught, 0 MISSED
-  checked 27 mutants over prefixes ['CHECK', 'MOD', 'COUNT', 'NOALLOC', 'NOUNDEF', 'NOINTR', 'ACC'] in lowering_accept_measure_undef_zero.ll: 27 caught, 0 MISSED
-injection matrix: 42 mutations over 2 fixtures, 0 MISSED, 0 HOLE(s)

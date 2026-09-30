@@ -1,2 +1,0 @@
-error: src/e2a_direct_undef_bool.c:5:33: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
-

@@ -1,4 +1,0 @@
-N0_null discovered=2378 seen=2378 failed=0 :: 
-S2_condseed_nophi_only discovered=2378 seen=2378 failed=1 :: FAIL:lowering_volatile_globalfold_equal_phi.ll 
-O3_no_postcondition discovered=2378 seen=2378 failed=0 :: 
-done N0_null S2_condseed_nophi_only O3_no_postcondition

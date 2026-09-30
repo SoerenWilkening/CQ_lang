@@ -1,4 +1,0 @@
-ora load0=2,22 rc=1 real 48,95 user 430,08 sys 71,16  Failed Tests (1):   Failed: 1 (0.04%) 
-subj load0=9,26 rc=0 real 55,74 user 495,53 sys 80,86  
-ora load0=12,75 rc=0 real 56,00 user 497,31 sys 81,22  
-subj load0=15,02 rc=0 real 60,06 user 533,71 sys 86,15  

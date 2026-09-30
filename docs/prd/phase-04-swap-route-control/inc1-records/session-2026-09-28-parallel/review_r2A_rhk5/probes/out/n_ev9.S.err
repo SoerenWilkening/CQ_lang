@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function main i32 (i32, ptr): cq taint escape: quantum value returned across a function boundary
-

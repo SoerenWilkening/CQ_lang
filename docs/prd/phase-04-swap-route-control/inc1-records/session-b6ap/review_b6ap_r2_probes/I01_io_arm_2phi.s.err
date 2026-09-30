@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function main i32 (): cq I/O output sink: conditional output is not a lowerable single-sink if(q) diamond
-

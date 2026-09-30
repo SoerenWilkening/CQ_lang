@@ -1,2 +1,0 @@
-error: fence.c:6:22: in function __cq_q_h_01 i32 (i32, i32): cq specialization: quantum argument to a parameter the lifted callee never reads
-

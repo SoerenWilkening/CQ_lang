@@ -1,6 +1,0 @@
-
-Testing Time: 255.22s
-
-Total Discovered Tests: 2427
-  Passed           : 2426 (99.96%)
-  Expectedly Failed:    1 (0.04%)

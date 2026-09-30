@@ -1,2 +1,0 @@
-error: src/ob1_reader_runs_once_in_loop.c:7:41: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

@@ -1,9 +1,0 @@
-[probes-r1-vs-r1b] denominator: 377 modules (0 missing/0-byte excluded)  A=cq-opt.subj1  B=cq-opt.subj2
-[probes-r1-vs-r1b] NULL CONTROL (subject twice): 0 of 377 differ
-[probes-r1-vs-r1b] accepts A=197 B=195; movers 2 of 377: {'A->D': 2}
-[probes-r1-vs-r1b] A->D	$S/cepm/p/r2bC.s1.ll
-    A=(0, '60bcb617fc090493', '')
-    B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control')
-[probes-r1-vs-r1b] A->D	$S/cepm/p/r2dC.s1.ll
-    A=(0, '9de893a3d375dca7', '')
-    B=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function main i32 (i32, ptr): cq controlled lowering: control flow under quantum control')

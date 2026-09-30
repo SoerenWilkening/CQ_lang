@@ -1,2 +1,0 @@
-error: a2_measure_undef.c:3:32: in function main i32 (): cq_measure_<sfx> operand is an undef/poison literal; a classical measurement needs a defined value
-

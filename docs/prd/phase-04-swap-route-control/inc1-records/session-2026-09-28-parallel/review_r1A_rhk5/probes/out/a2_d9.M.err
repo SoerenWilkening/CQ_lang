@@ -1,5 +1,0 @@
-warning: <unknown>:0:0: in function main i32 (i32, ptr): cq rotation lowering: non-diagonal gate over a live derived record
-
-real 0,33
-user 0,17
-sys 0,01

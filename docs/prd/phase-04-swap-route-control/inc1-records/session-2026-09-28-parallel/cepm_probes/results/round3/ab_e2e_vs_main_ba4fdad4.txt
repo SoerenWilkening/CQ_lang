@@ -1,3 +1,0 @@
-[e2e] denominator: 634 modules (0 missing/0-byte excluded)  A=cq-opt.main_ba4fdad4  B=cq-opt.merged
-[e2e] NULL CONTROL (subject twice): 0 of 634 differ
-[e2e] accepts A=515 B=515; movers 0 of 634: {}

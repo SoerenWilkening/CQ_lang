@@ -1,2 +1,0 @@
-error: src/r5b_invariant_template_seed.c:4:31: in function slice i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

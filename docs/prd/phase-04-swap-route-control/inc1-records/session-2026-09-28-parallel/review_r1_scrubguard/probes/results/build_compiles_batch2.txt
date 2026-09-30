@@ -1,8 +1,0 @@
-A9   scrub::Set<StorageT, PtrT> whose StorageT is a PROJECT record carrying a second, raw table
-    scrub_selftest.cpp[cq-opt cfg]: exit 0
-    CQLoweringPass.cpp[CQPass cfg]: exit 0
-    usage TU[CQPass cfg]: exit 0
-A10  TYPE-ERASED library base: llvm::SmallPtrSetImplBase * to a heap SmallPtrSet<Value*> (void* is refused)
-    scrub_selftest.cpp[cq-opt cfg]: exit 0
-    CQLoweringPass.cpp[CQPass cfg]: exit 0
-    usage TU[CQPass cfg]: exit 0

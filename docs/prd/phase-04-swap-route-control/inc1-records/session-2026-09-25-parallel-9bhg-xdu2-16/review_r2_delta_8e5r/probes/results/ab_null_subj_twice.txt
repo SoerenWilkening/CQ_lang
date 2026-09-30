@@ -1,2 +1,0 @@
-denominator: 2306 modules  A=$R2/ab/subjA  B=$R2/ab/subjB
-counts: same=2306

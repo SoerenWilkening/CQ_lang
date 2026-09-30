@@ -1,2 +1,0 @@
-error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-15-orchestrator/trackT/probes/adv/a3_mixed_invariant_rails.c:11:34: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a register rotated after the loop
-

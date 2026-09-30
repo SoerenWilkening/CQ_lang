@@ -1,6 +1,0 @@
-oracle system: non-reference 10/20, emits cq_template_mul 10/20
-oracle rb8-lifo: non-reference 20/20, emits cq_template_mul 20/20
-oracle rb8-nofree: non-reference 0/20, emits cq_template_mul 0/20
-subject system: non-reference 0/20, emits cq_template_mul 0/20
-subject debugalloc-lifo: non-reference 0/20, emits cq_template_mul 0/20
-(first attempt compared against a reference with a different ModuleID path and reported 20/20 for EVERY row incl. the subject - the subject row as null control exposed it)

@@ -1,5 +1,0 @@
-guard /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a196dcc5b08be6dc0/tools/taintset_scrub_guard.py sha256 e4ab4f28d0fa30ec; JOBS=4; USE_PCH=False
-MISSED             B11  INCLUDE ORDER through a CLOSURE file's own guard: `#ifdef CQ_IRPASS_LOOP_PLAN_H_` tested BEFORE TaintPropagation.h includes LoopPlan.h (LoopLowering.cpp includes LoopPlan.h FIRST; the union context #undef's every closure guard before the final include)  [75 members, 0 problem(s), 15 tolerated, passes=[('CQPass', False, 0), ('cq-opt/cq-scrub-selftest', False, 0)], 55s]
-
-controls bad: 0 []; attacks 1, MISSED 1 ['B11']
-elapsed 55s

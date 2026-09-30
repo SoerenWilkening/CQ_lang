@@ -1,2 +1,0 @@
-error: ./b1_twofn_rev.c:9:31: in function f_fail i32 (): cq controlled lowering: control flow inside a loop body under quantum control
-

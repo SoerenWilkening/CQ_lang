@@ -1,4 +1,0 @@
-built lit: 2418 jobs, 2418 modules, 0 build failures
-built e2e: 636 jobs, 610 modules, 26 build failures
-built multi: 33 jobs, 33 modules, 0 build failures
-built probe: 1435 jobs, 1435 modules, 0 build failures

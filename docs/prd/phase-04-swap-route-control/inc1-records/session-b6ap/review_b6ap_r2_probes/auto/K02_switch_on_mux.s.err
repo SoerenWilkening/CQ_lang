@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function main i32 (): cq taint escape: tainted value consumed by an unknown callee
-

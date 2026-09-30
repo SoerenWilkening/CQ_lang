@@ -1,2 +1,0 @@
-regenerated /Users/sorenwilkening/Desktop/CQ_VERIFY/tools/loop_twin_matrix.expected.txt (330 cells; 29 quarantined and omitted)
-    preserved 461 header line(s) of loop_twin_matrix.expected.txt byte-for-byte

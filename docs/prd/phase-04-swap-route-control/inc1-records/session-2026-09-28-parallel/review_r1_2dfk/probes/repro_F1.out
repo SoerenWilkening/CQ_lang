@@ -1,8 +1,0 @@
-warm-up (unmodified harness)
-100% tests passed, 0 tests failed out of 10
-== F-1a: run_slice_multi.sh lib TUs get -include CQ.h (trips the C18 #error in every lib)
-  WARM:     100% tests passed, 0 tests failed out of 5
-  NO_CACHE: 0% tests passed, 5 tests failed out of 5
-== F-1b: stage 3 compiled at -O2 (the bd szpr 'do not add -O here' pin)
-  WARM:     100% tests passed, 0 tests failed out of 5
-  NO_CACHE: 0% tests passed, 5 tests failed out of 5

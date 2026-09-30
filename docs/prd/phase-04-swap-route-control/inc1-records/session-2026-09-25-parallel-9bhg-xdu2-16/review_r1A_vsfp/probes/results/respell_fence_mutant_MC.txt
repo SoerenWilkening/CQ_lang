@@ -1,6 +1,0 @@
-FAIL: CQ IR-pass :: orig__control_predmux_reject_selectform_purecallee_retpoison.ll (18 of 30)
-FAIL: CQ IR-pass :: orig__spec_reject_ret_undef_spelling.ll (27 of 30)
-FAIL: CQ IR-pass :: orig__spec_reject_ret_poison_nested.ll (28 of 30)
-FAIL: CQ IR-pass :: orig__spec_reject_ret_undef_derived.ll (29 of 30)
-FAIL: CQ IR-pass :: orig__spec_reject_ret_poison.ll (30 of 30)
-Total Discovered Tests: 60

@@ -1,5 +1,0 @@
-declare void @cq_phi(double)
-declare i1 @cq_theta_i1(i1, double)
-declare i1 @cq_measure_i1(i1)
-declare i32 @cq_theta_si32(i32, double)
-declare i32 @cq_measure_si32(i32)

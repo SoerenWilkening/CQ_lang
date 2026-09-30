@@ -1,6 +1,0 @@
-N0-null: MISSED (0 of 2287 lit fail)
-M4-no-late-slot: KILLED (2 of 2287 lit fail)
-    taint_reject_spec_quantum_return_branch.ll
-    taint_reject_spec_quantum_return_measure.ll
-M16-early-skip-no-caller-check: MISSED (0 of 2287 lit fail)
-restored pristine sources; rebuild ok

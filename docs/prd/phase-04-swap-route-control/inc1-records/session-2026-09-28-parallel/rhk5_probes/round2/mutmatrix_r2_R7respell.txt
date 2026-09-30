@@ -1,1 +1,0 @@
-R7_whole_plan_always | Total Discovered Tests: 2426  Excluded: 2015 (83.06%) | failed=1 | spec_accept_clone_two_components_both_discharged.ll 

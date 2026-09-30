@@ -1,9 +1,0 @@
-== slice_spec_clone_read_in_window twin: subject-build vs oracle-build twin trace: IDENTICAL
-slice_spec_clone_read_in_window.subject.log vs slice_spec_clone_read_in_window_twin.subject.log: EQUIV (Bennett blocks contracted: subject 1, twin 0)
-  ORACLE: slice_spec_clone_read_in_window.oracle.log vs slice_spec_clone_read_in_window_twin.oracle.log: DIFF (Bennett blocks contracted: subject 1, twin 0)
-== slice_spec_clone_consumes_chain_rail twin: subject-build vs oracle-build twin trace: IDENTICAL
-slice_spec_clone_consumes_chain_rail.subject.log vs slice_spec_clone_consumes_chain_rail_twin.subject.log: EQUIV (Bennett blocks contracted: subject 1, twin 0)
-  ORACLE: slice_spec_clone_consumes_chain_rail.oracle.log vs slice_spec_clone_consumes_chain_rail_twin.oracle.log: DIFF (Bennett blocks contracted: subject 1, twin 0)
-== slice_spec_clone_read_nested twin: subject-build vs oracle-build twin trace: IDENTICAL
-slice_spec_clone_read_nested.subject.log vs slice_spec_clone_read_nested_twin.subject.log: EQUIV (Bennett blocks contracted: subject 3, twin 0)
-  ORACLE: slice_spec_clone_read_nested.oracle.log vs slice_spec_clone_read_nested_twin.oracle.log: DIFF (Bennett blocks contracted: subject 3, twin 0)

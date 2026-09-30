@@ -1,4 +1,0 @@
-guard held  expect=None            NULL: pristine tree  [75 members, 0 problems]
-guard held  expect='RAW POINTER'   new: many project template INSTANCES in one round, one raw (AST ids of separate compiles)  [87 members, 1 problems]  -> cq::R4D<4>::P: RAW POINTER to `llvm::Value`, which derives from llvm::Value — use a scrub:: container or a value handle 
-S3    held  expect=None            NULL: pristine tree  [75 members, 0 problems]
-S3    MOVED expect='RAW POINTER'   new: many project template INSTANCES in one round, one raw (AST ids of separate compiles)  [82 members, 0 problems]

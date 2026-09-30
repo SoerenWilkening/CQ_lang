@@ -1,5 +1,0 @@
-mutant M16: cq-opt e6b236f86be38771
-lit: Total Discovered Tests: 2288
-lit failures: 0
-probes: 132 run, 0 moved
-restored: cq-opt 8b837d1f79574156

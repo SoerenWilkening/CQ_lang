@@ -1,2 +1,0 @@
-error: src/m14d_measure_then_two_siblings.c:5:32: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function cq_template_evil_i32 i32 (i32): cq specialization: callee contains a non-reversibilizable construct under quantum lift (nested call)
-

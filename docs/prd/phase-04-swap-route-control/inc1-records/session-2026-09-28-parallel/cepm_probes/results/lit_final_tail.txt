@@ -1,8 +1,0 @@
-PASS: CQ IR-pass :: lowering_ctlz_idiom_reject_counter_width_mismatch.ll (2424 of 2425)
-PASS: CQ IR-pass :: lowering_ctlz_idiom_reject_inverted_successors.ll (2425 of 2425)
-
-Testing Time: 241.60s
-
-Total Discovered Tests: 2425
-  Passed           : 2424 (99.96%)
-  Expectedly Failed:    1 (0.04%)

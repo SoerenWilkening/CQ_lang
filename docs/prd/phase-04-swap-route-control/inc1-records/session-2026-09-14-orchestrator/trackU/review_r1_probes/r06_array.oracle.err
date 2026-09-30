@@ -1,2 +1,0 @@
-error: docs/prd/phase-04-swap-route-control/inc1-records/session-2026-09-14-orchestrator/trackU/review_r1_probes/r06_array.c:6:10: in function f i32 (i32): cq literal integrity: undef/poison literal reaches two emitted gate operands
-

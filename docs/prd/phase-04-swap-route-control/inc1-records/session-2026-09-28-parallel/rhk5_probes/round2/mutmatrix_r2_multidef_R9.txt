@@ -1,2 +1,0 @@
-r2 | Total Discovered Tests: 2426  Excluded: 2101 (86.60%) | failed=0 | 
-R9_no_function_backstop | Total Discovered Tests: 2426  Excluded: 2101 (86.60%) | failed=0 | 

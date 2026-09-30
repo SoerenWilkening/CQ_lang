@@ -1,2 +1,0 @@
-error: b7b_w2k_interfered.c:12:14: in function slice i32 (): cq loop lowering: rolled body leaks a rail entangled with a rotated register
-

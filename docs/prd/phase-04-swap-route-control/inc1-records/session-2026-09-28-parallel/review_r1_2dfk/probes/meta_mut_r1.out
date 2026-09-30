@@ -1,7 +1,0 @@
-m_null    selftest rc=0  (all rows ok)
-m_tpl     selftest rc=0  (all rows ok)
-m_ld      selftest rc=0  (all rows ok)
-m_base    selftest rc=0  (all rows ok)
-m_2bfpc   selftest rc=0  (all rows ok)
-m_2bflg   selftest rc=0  (all rows ok)
-m_s1src   selftest rc=0  (all rows ok)

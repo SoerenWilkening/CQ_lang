@@ -1,7 +1,0 @@
-R1B_MUT=0 rc=1 Failed Tests (1):   Passed           : 2424 (99.92%)   Expectedly Failed:    1 (0.04%)   Failed           :    1 (0.04%)  FAILS: FAIL: CQ IR-pass :: zz_r1b_envprobe.ll (1 of 2426) 
-R1B_MUT=1 rc=1 Failed Tests (1):   Passed           : 2424 (99.92%)   Expectedly Failed:    1 (0.04%)   Failed           :    1 (0.04%)  FAILS: FAIL: CQ IR-pass :: zz_r1b_envprobe.ll (1 of 2426) 
-R1B_MUT=2 rc=1 Failed Tests (1):   Passed           : 2424 (99.92%)   Expectedly Failed:    1 (0.04%)   Failed           :    1 (0.04%)  FAILS: FAIL: CQ IR-pass :: zz_r1b_envprobe.ll (1 of 2426) 
-R1B_MUT=3 rc=1 Failed Tests (1):   Passed           : 2424 (99.92%)   Expectedly Failed:    1 (0.04%)   Failed           :    1 (0.04%)  FAILS: FAIL: CQ IR-pass :: zz_r1b_envprobe.ll (1 of 2426) 
-R1B_MUT=4 rc=1 Failed Tests (1):   Passed           : 2424 (99.92%)   Expectedly Failed:    1 (0.04%)   Failed           :    1 (0.04%)  FAILS: FAIL: CQ IR-pass :: zz_r1b_envprobe.ll (1 of 2426) 
-
-[exited with code 0]

@@ -1,2 +1,0 @@
-int h(int a, int k); int g(int a);
-int main(int c, char **v) { int q = cq_theta(c, .5); int b[4]; for (int i = 0; i < 4; i++) b[i] = h(q, i); int s = 0; for (int i = 0; i < 4; i++) s += cq_measure(g(b[i])); return s + cq_measure(q); }

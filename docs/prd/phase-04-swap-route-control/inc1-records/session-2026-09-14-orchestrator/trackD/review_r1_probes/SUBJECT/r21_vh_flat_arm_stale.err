@@ -1,2 +1,0 @@
-error: src/r21_vh_flat_arm_stale.c:4:15: in function slice i32 (i32): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

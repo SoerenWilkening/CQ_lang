@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function example i1 (i32): cq loop lowering: loop-carried tainted value crosses iterations
-

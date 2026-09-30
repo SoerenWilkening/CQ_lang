@@ -1,9 +1,0 @@
-#include <stdlib.h>
-int h2(int a, int k);
-__attribute__((noinline)) int f(int m, int k) {
-  int y = cq_theta(m & 7, .5); int s = 0;
-  for (int i = 0; i < k; ++i) { int u = cq_theta(6, .4); s += cq_measure((u >> 1) & 1) + cq_measure(y & 1); }
-  s += cq_measure(y);
-  return h2(y, s);
-}
-int main(int c, char **v) { int m = atoi(v[1]); return f(m, 2); }

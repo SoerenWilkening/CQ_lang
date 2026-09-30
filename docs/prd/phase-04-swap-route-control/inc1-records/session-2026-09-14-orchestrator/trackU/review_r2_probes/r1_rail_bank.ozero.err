@@ -1,2 +1,0 @@
-error: r1_rail_bank.zero.c:6:54: in function main i32 (): cq taint escape: tainted value stored to memory
-

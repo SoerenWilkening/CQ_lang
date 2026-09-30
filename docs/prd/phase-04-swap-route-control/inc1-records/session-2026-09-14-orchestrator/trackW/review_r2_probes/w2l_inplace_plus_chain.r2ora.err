@@ -1,2 +1,0 @@
-error: ./w2l_inplace_plus_chain.c:6:14: in function slice i32 (): cq controlled lowering: control flow inside a loop body under quantum control
-

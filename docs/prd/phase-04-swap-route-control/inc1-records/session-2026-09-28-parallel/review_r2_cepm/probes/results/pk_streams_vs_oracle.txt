@@ -1,9 +1,0 @@
-pk1 argv[5 7] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       80/      75
-pk1 argv[2 9] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       80/      75
-pk1 argv[9 1] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       80/      75
-pk2 argv[5 7] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       87/      82
-pk2 argv[2 9] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       87/      82
-pk2 argv[9 1] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       87/      82
-pkd argv[5 7] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       75/      71
-pkd argv[2 9] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       75/      71
-pkd argv[9 1] C subj==ora:y C subj==1b:y T subj==ora:y ORA C==T:n lines C/T       75/      71

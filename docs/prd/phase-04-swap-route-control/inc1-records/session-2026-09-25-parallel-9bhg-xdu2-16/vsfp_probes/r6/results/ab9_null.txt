@@ -1,2 +1,0 @@
-denominator=3712 A=bin/cq-opt.r6a B=bin/cq-opt.r6a
-summary 

@@ -1,2 +1,0 @@
-MUTB-MOVER j02C subj rc=0 mutB rc=0
-mutB vs subj: denominator=330 movers=1

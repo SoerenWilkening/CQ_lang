@@ -1,9 +1,0 @@
-[multi] denominator: 36 modules (0 missing/0-byte excluded)  A=cq-opt.main_9a230646  B=cq-opt.subj3
-[multi] NULL CONTROL (subject twice): 0 of 36 differ
-[multi] accepts A=34 B=36; movers 2 of 36: {'D->A': 2}
-[multi] D->A	$S/cepm/corpus/multi/e2e-slice-spec-predicted-classical-branch.s1.ll
-    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq controlled lowering: condition predates a non-diagonal gate under quantum control')
-    B=(0, 'b79e272ab680cead', '')
-[multi] D->A	$S/cepm/corpus/multi/e2e-slice-spec-predicted-classical-round2.s1.ll
-    A=(1, 'e3b0c44298fc1c14', '<unknown>:0:0: in function slice i32 (i32): cq taint escape: classical call result used as a quantum register')
-    B=(0, '4a9cc943fc71c9fb', '')

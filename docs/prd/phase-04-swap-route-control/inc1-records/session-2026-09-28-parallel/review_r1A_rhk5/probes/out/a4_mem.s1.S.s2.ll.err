@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function h i32 (i32, i32, ptr): cq specialization: callee contains a non-reversibilizable construct under quantum lift (memory access)
-

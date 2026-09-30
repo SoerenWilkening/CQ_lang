@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function rotk i32 (i32, i32): cq taint escape: tainted value muxed by a classical-condition phi
-

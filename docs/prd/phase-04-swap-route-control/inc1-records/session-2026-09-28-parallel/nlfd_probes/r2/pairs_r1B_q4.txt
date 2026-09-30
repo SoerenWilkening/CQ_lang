@@ -1,6 +1,0 @@
-q4/s1 q4/s1T
-q4/s1 q4/s1N
-q4/s2 q4/s2T
-q4/s2 q4/s2N
-q4/j1 q4/j1T
-q4/j1 q4/j1N

@@ -1,3 +1,0 @@
-MUTA-MOVER a03C subj rc=1 mutA rc=0
-MUTA-MOVER a03Q subj rc=1 mutA rc=0
-mutA vs subj: denominator=330 movers=2

@@ -1,3 +1,0 @@
-#include <stdlib.h>
-int h(int a, int k);
-int main(int c, char **v) { int m = atoi(v[1]); int n = atoi(v[2]); int q = cq_theta(m, .5); int y, z; if (q > 5) { cq_phi(0.2); cq_phi(0.5); y = n; z = m; } else { cq_phi(0.3); cq_phi(0.1); cq_phi(0.4); y = m; z = n; } int t = h(q, y); int q2 = cq_theta(n, .4); if (t > 3) q2 = cq_theta(q2, .2); return cq_measure(q2) + cq_measure(q) + z; }

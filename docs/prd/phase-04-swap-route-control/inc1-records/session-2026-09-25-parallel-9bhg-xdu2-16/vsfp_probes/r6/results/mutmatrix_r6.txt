@@ -1,4 +1,0 @@
-N0_null discovered=2405 seen=2405 failed=0 :: 
-W1_policy_in_liveness discovered=2405 seen=2405 failed=1 :: FAIL:spec_accept_phantom_arg_read_musttail_inner_slot.ll 
-W2_bare_record_consumers discovered=2405 seen=2405 failed=0 :: 
-done N0_null W1_policy_in_liveness W2_bare_record_consumers

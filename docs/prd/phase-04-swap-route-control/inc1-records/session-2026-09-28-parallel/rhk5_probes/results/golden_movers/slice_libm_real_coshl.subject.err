@@ -1,4 +1,0 @@
-free_pairing_check: 1 file(s), 401 rail mint(s) of which 22 left allocated, 520 template rail mint(s) of which 39 left dirty, 860 cqrt_free site(s): 860 verified, 0 violation(s), 0 unproven
-ld: warning: object file (/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a7712272d6ca568e9/build/runtime/libcq_templates.a[2](cq_templates.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
-ld: warning: object file (/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a7712272d6ca568e9/build/runtime/libcq_templates.a[3](cq_intrinsic_templates.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)
-ld: warning: object file (/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a7712272d6ca568e9/build/runtime/libcq_runtime.a[2](cq_runtime.c.o)) was built for newer 'macOS' version (26.0) than being linked (16.0)

@@ -1,2 +1,0 @@
-denominator=361 A=bin/cq-opt.9bhg B=bin/cq-opt.9bhg
-summary 

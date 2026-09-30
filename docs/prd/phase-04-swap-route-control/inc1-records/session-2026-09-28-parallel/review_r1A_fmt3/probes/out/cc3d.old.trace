@@ -1,6 +1,0 @@
-cqrt_alloc_i32(1) -> h0
-cqrt_ry_i32(h0, 0x1.999999999999ap-3)
-cqrt_ry_i32(h0, 0x1.a8f5c28f5c28fp-1)
-cqrt_ry_i32(h0, -0x1.a8f5c28f5c28fp-1)
-cqrt_ry_i32(h0, 0x1.a8f5c28f5c28fp-1)
-cqrt_measure_i32(h0) -> 0

@@ -1,5 +1,0 @@
-denominator: 2306 modules  A=ab/litDefault  B=ab/litAlways
-counts: A2D=2 STRING=1 same=2303
-  A2D	control_swap_inloop_derived_cond.ll	0	1
-  A2D	control_swap_inloop_range_cond.ll	0	1
-  STRING	loop_leak_dephase_reject_inplace_ry_loop_leak_slice.ll	1	1

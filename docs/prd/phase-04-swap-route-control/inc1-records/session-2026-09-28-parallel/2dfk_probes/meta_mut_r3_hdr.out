@@ -1,4 +1,0 @@
-null             rc=0 green (NULL CONTROL, expected) 
-s1_hdr_b         rc=1 CAUGHT   DR CQ.h BYTES changed, CQ_S1_BASE unchanged: stage 1 MIS
-s1_hdr_p         rc=1 CAUGHT   S1 python file key: header BYTES changed (same dir, same
-meta_mut_r2: 2 mutant(s): 2 CAUGHT, 0 MISSED, 0 NOT PLANTED; files restored: True

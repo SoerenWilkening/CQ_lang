@@ -1,8 +1,0 @@
-== orch_full_ctest_inc2_rebased
-100% tests passed, 0 tests failed out of 361
-Total Test time (real) = 356.58 sec
-EXIT=0
-== orch_full_ctest_inc2
-100% tests passed, 0 tests failed out of 361
-Total Test time (real) = 531.88 sec
-EXIT=0

@@ -1,6 +1,0 @@
-denominator=3712 A=bin/cq-opt.r5keep B=bin/cq-opt.r6a
-STREAM	/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-abf65d7dcfbff38c8/ir-pass/test/spec_accept_phantom_arg_read_musttail_inner_slot.ll	A_rc=0 B_rc=0	A:	B:
-STREAM	/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/corp6/R_review_r5_vsfp__LL_probes_csrc_mt1.s1.s1.ll	A_rc=0 B_rc=0	A:	B:
-STREAM	/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/corp6/R_review_r5_vsfp__probes_csrc_mt1.s1.ll	A_rc=0 B_rc=0	A:	B:
-STREAM	/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/d2ac97c1-732d-4a6e-83a0-786b16babcc6/scratchpad/vsfp/corp6/M_e2e-slice-spec-dropped-arg-musttail-inner.s1.ll	A_rc=0 B_rc=0	A:	B:
-summary STREAM=4

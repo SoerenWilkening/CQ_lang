@@ -1,2 +1,0 @@
-denominator=3440 A=bin/cq-opt.r3a B=bin/cq-opt.r3a
-summary 

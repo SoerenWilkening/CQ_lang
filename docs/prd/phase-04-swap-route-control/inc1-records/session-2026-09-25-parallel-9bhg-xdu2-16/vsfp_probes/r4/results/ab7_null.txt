@@ -1,2 +1,0 @@
-denominator=3564 A=bin/cq-opt.r4f B=bin/cq-opt.r4f
-summary 

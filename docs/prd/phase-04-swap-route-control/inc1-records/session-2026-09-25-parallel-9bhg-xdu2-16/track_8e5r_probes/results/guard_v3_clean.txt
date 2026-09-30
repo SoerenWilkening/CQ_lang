@@ -1,2 +1,0 @@
-taintset_scrub_guard: 56 TaintSet members walked (compiler: /usr/bin/c++, flags from /Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a2cf1f874e5ec99d2/build/compile_commands.json, PCH ok), 0 problem(s), 2 allowlisted
-rc=0

@@ -1,2 +1,0 @@
-error: <unknown>:0:0: in function slice i32 (i32, i32): cq loop lowering: rolled body leaks a rail entangled with a rotated register
-

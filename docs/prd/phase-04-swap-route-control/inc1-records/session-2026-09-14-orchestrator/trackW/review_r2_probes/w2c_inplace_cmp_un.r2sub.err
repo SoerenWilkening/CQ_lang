@@ -1,2 +1,0 @@
-error: ./w2c_inplace_cmp_un.c:8:13: in function slice i32 (): cq controlled lowering: condition measured before the control route under quantum control
-

@@ -1,2 +1,0 @@
-error: src/r5e_nested_invariant.c:4:31: in function main i32 (): cq opcode lowering: rotation/measure operand predates a non-diagonal gate
-

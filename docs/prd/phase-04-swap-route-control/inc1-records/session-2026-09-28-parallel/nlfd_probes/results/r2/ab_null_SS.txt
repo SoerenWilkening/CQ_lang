@@ -1,6 +1,0 @@
-denominator lit: 2466 modules (0 build failures not swept)
-denominator e2e: 633 modules (30 build failures not swept)
-denominator multi: 39 modules (1 build failures not swept)
-denominator probe: 1591 modules (0 build failures not swept)
-denominator total: 4729  A=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/nlfd/bin/cq-opt.R2  B=/private/tmp/claude-501/-Users-sorenwilkening-Desktop-Projects-CQ-lang/e5b5b1db-0ae7-4581-b33c-ce92d95d4f38/scratchpad/nlfd/bin/cq-opt.R2
-movers 0 of 4729

@@ -1,3 +1,0 @@
-100% tests passed, 0 tests failed out of 515
-
-Total Test time (real) = 596.95 sec

@@ -1,2 +1,0 @@
-denominator: 2418 fixtures  plain=/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a333a1777db2f2295/build/ir-pass/cq-opt  debugalloc=/Users/sorenwilkening/Desktop/Projects/CQ_lang/.claude/worktrees/agent-a333a1777db2f2295/build/ir-pass/cq-opt-debugalloc
-disagreements: 0 of 2418

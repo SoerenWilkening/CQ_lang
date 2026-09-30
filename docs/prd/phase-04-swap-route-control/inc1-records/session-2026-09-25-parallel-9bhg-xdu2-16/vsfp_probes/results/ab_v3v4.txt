@@ -1,2 +1,0 @@
-denominator=5421 A=bin/cq-opt.v3 B=bin/cq-opt.v4
-summary 

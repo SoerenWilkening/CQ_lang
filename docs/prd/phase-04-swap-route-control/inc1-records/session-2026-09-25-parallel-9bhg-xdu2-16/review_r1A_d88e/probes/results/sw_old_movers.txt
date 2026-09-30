@@ -1,2 +1,0 @@
-DIAG	lowering_reject_classical_mux_phi_spec_scrubbed_base_pure_consumer.ll
-denominator 2302; DIAG=1

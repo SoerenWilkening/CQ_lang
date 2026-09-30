@@ -1,4 +1,0 @@
-warning: b11_cmp_rail_data.c:11:9: in function slice i32 (): cq rotation lowering: non-diagonal gate over a live derived record
-
-warning: b11_cmp_rail_data.c:11:9: in function main i32 (): cq rotation lowering: non-diagonal gate over a live derived record
-
