@@ -1,19 +1,11 @@
-; control_angle_select_reject_stale_measure.ll — DECLINE (S9): a pre-gate RECORD
-; of the rotated rail is MEASURED after the gate (bd drbq Inc 2b).
+; control_angle_select_reject_stale_measure.ll — a pre-gate SSA record of
+; the rotated rail is measured after an angle-select Ry (bd drbq Inc 2b).
 ;
-;     int mark = cq_phi(r, .1);
-;     r = cq_theta(r, q == 5 ? .9 : .3);
-;     ... cq_measure(mark);
-;
-; `%mark` is a second SSA name for `r`'s physical rail (Rz lowers in place), and
-; the source means the record BEFORE the rotation. Post-lowering both names ARE
-; the one handle, so the emitted `cqrt_measure` would read the POST-Ry register —
-; a different value, `opt` exit 0, verify-clean and stage-2b clean. That is the
-; wrong-VALUE class of bd `0njv`; S9 keeps it unreachable through this accept
-; rather than fixing `0njv`.
-;
-; The accept control is `control_angle_select_ry_alias_pre_gate.ll` — the same IR
-; with the measurement BEFORE the gate, which lowers.
+; Both %r and %t lower to the same physical handle. Measuring %r after the
+; gate would observe the post-Ry state instead of the earlier record it names.
+; This pins the loud stale-record fence until that record can be preserved.
+; control_angle_select_ry_alias_pre_gate.ll puts the read before the gate.
+; The retired diagonal alias hops no longer occur in this input.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}stale rail record read past a controlled Ry under quantum control

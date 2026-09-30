@@ -1,5 +1,5 @@
 ; lowering_classical_mux_phi_lift_diaghop_before_sibling.ll — ACCEPT: the
-; don't-over-decline twin of lowering_reject_classical_mux_phi_lift_diaghop_stale.ll
+; don't-over-decline twin of lowering_reject_classical_mux_phi_lift_stale.ll
 ; (test_C_libtooling-2qyz).
 ;
 ; Same lift + intervening diagonal hop `%qphi = cq_phi(%p, ·)` + sibling chained

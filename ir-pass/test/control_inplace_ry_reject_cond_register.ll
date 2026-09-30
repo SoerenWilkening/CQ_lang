@@ -1,23 +1,11 @@
-; control_inplace_ry_reject_cond_register.ll — DECLINE: the arm's Ry lands on the
-; CONDITION's own register (PRD shape S2; owner Q5, bd test_C_libtooling-drbq).
+; control_inplace_ry_reject_cond_register.ll — the arm's Ry changes the
+; condition's own register (bd test_C_libtooling-drbq).
 ;
-;     if (q > 5) q = cq_theta(q, .9);
-;
-; PHYSICS, not shape: the flag is stripped by recomputing `q > 5` and XORing it
-; back onto the flag rail, which is valid only while `q`'s COMPUTATIONAL BASIS is
-; what the forward mint read. Rz is diagonal, so a PHASE arm may rotate the
-; condition register freely (control_swap_diamond.ll accepts exactly that). An Ry
-; RELABELS it: after the gate the flag is no longer a function of `q`'s basis and
-; cannot be stripped, and the arm selection itself is read off a state the gate
-; has already changed. Owner ruling 2026-09-02: this stays declined FOR THETA and
-; keeps accepting for phi.
-;
-; It declines on the PRE-EXISTING stale-condition wire guard
-; (`ArmClassify::condWireDisposition`), which sees a non-diagonal gate on the
-; condition's provenance wire and never reaches the rotation-arm clause — so this
-; fixture also pins that the new clause did not weaken it. The `q == 5` spelling
-; of the same source never even gets here: `clang -O1` const-folds the arm's `q`
-; to the literal 5, making it a classical-seed theta (state prep, Inc 4).
+; The current flag strip recomputes q > 5. After an Ry on q, that recomputation
+; cannot recover the predicate's earlier basis value, so the existing lowering
+; would strip the wrong flag. This fixture pins the loud condition-wire fence.
+; It does not establish that every implementation of this program is forbidden.
+; The retired diagonal alias hops no longer occur in this input.
 ;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; CHECK: error{{.*}}condition predates a non-diagonal gate under quantum control

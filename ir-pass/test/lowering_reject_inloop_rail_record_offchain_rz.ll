@@ -23,7 +23,7 @@
 ; what `collectRailGates`' `OnRailOut` hands `staleRailRecordRead`.
 ;
 ; Note the mirror-image relationship to
-; lowering_reject_inloop_rail_record_offchain_rz_theta.ll (round 2, F-1): there the
+; lowering_reject_inloop_rail_record_postloop_theta.ll (round 2, F-1): there the
 ; RECORD is a chain member and the GATE sits behind the Rz; here the GATE is direct
 ; and the RECORD sits behind the Rz. One fixture per direction, because the two
 ; were fixed by two different edits a round apart.

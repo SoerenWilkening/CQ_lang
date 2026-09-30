@@ -1,0 +1,63 @@
+\labsessionheader{2026-09-30}{Test suite cost and duplicate retirement}%
+  {61999c4a (parent)}{n/a}%
+  {docs/audits-2026-09-30/test\_suite\_pruning.tsv}
+
+\subsection*{Changes}
+Removed 13 negative lit fixtures from ten duplicate groups. For each deletion,
+LLVM 19 \texttt{opt -passes=strip -S} produced the same IR as the retained
+fixture after omitting ModuleID and source-filename lines. Every RUN and CHECK
+directive also matched. The TSV records the retained witness and normalized
+IR digest for each deletion. Updated surviving references and four explanatory
+headers whose diagonal-alias descriptions no longer matched their inputs.
+
+CTest now uses PyPy, when available and compatible, for the code-map drift
+check. Other Python checks retain their existing interpreter. This repository
+uses CTest and lit; it has no registered Pytest suite.
+
+The three exhaustive scrub-guard mutation shards now carry the
+\texttt{maintenance} label. The routine batch command is
+\texttt{ctest --test-dir build -LE maintenance -j6}. CLAUDE.md R15 lists
+the checker, tracked-type, scrub-selftest and compiler-configuration changes
+that require the maintenance sweep. The ordinary scrub guard, executable
+scrub tests and compiler matrices remain in the batch gate. An unfiltered
+CTest run still includes every entry. Test pruning and scheduling changes
+use affected fixtures and registration checks.
+
+\subsection*{Measurements}
+Before edits, \texttt{ctest --test-dir build -LE heavy -j6} passed
+573 entries in 300.08 seconds. The existing cost file recorded
+1042--1159 seconds for each of the three scrub-guard mutation shards;
+these are historical measurements. The attempted full run was stopped at
+the owner's request, so this session has no completed full-run timing.
+
+\begin{tabular}{@{}lrr@{}}\toprule
+Operation & CPython & PyPy \\ \midrule
+\texttt{update\_code\_map.py --check} & 4.49 s & 3.45 s \\
+Short free-pairing check, median of 8 & 0.104 s & 0.210 s \\
+\bottomrule\end{tabular}
+
+Both interpreter timings used \texttt{/usr/bin/time -p}, except the checker
+medians, which used \texttt{time.perf\_counter} around subprocess calls.
+The checker input was the lowered \texttt{slice\_branchless\_exp.c} module.
+These measurements support selecting PyPy for the map scanner, and CPython
+for the short checker. They do not establish a total-suite speedup.
+
+Lit discovery with \texttt{--show-tests} took 0.69 seconds under CPython.
+No repeated ignored-fragment path construction was found in the harness.
+Two runs of \texttt{ctest -I 1,150 -LE heavy}, with \texttt{-j6} and
+\texttt{-j12}, passed 150 entries in 98.95 and 97.25 seconds respectively.
+That small difference did not justify changing concurrency.
+
+\subsection*{Verification and stop}
+All 23 original duplicate-group fixtures passed their actual lit directives
+before deletion. Rechecked normalized IR and directive identity for all 13
+deleted-to-retained pairs after the header edits. The configured PyPy
+code-map entry passed; a separate configure with an unusable candidate
+interpreter selected CPython and its code-map entry passed.
+
+The owner then stopped test execution. Terminated only this session's test
+process group and verified that it had exited. The partial full gate printed
+36 completed entries out of 585. No full-gate success or post-change
+equivalence sweep is claimed. After the stop, CMake configuration succeeded
+and its generated registrations showed exactly three maintenance entries;
+no further tests were started. \bd{test\_C\_libtooling-cdq7} records this scope.

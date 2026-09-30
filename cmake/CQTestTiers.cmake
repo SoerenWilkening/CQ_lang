@@ -1,32 +1,21 @@
-# cmake/CQTestTiers.cmake — the TWO-TIER ctest suite (owner ruling 2026-09-29,
-# bd test_C_libtooling-2dfk; bd memory owner-ruling-batch-gate-two-tier-2026-09-29).
+# CTest schedules (routine gate revised after the 2026-09-30 runtime audit).
 #
-#   FAST tier  : ctest --test-dir build -LE heavy -j6   (intermediate merges)
-#   FULL suite : ctest --test-dir build -j6             (the BATCH gate on main)
+#   Fast:        ctest --test-dir build -LE heavy -j6
+#   Batch:       ctest --test-dir build -LE maintenance -j6
+#   Maintenance: ctest --test-dir build -L maintenance -j6
+#   Full:        ctest --test-dir build -j6
 #
-# The FULL suite has NO label filter, so it runs every entry whatever this file
-# says — a pattern here can only ever move an entry OUT OF THE FAST TIER, never
-# out of the gate. That asymmetry is the whole safety argument: a wrong or stale
-# pattern costs fast-tier coverage (the batch gate still runs the entry) and can
-# never make the batch gate skip anything.
+# Heavy matrices exercise compiler behavior and remain in the batch gate.
+# Maintenance validates the scrub checker's own mutant corpus. Run it when
+# that checker, its tracked types, scrub selftest or compiler configuration
+# changes; see CLAUDE.md R15. Three shards historically took 1042-1159 s each.
+# The ordinary taintset-scrub-guard and executable scrub tests remain in both
+# the fast and batch schedules.
 #
-# WHAT IS HEAVY. The matrices and the instrument self-tests: entries that
-# re-derive a whole DISPOSITION TABLE by compiling many generated programs, as
-# opposed to one slice / one fixture. Measured at this session's three merge gates
-# (load 40-65 on 12 threads, 2026-09-29), the ten entries below are the ten
-# slowest non-`ir-pass-lit` entries of the 570 (64-2040 s each; 3 829 s of the
-# 13 858 s summed test time at the cepm gate). `ir-pass-lit` is slow too and is
-# deliberately FAST tier: it is the one layer every change must witness.
-#
-# THE LABEL IS APPLIED BY PATTERN, NOT BY EDITING EACH add_test. Tests are
-# registered by several parallel tracks at once (the e2e CMakeLists is the
-# hottest file in the tree), and a label written at the call site is a label the
-# next track forgets. `^taintset-scrub-guard-selftest` deliberately matches both
-# today's single entry and a sharded `-selftest-<n>` spelling.
-#
-# Requires CMake >= 3.28 (set_property/get_property on another directory's
-# tests). On an older CMake no label is applied and the FAST tier degrades to the
-# FULL suite — slower, never weaker — and configure says so.
+# Apply labels by name after every test has been registered. CMake < 3.28
+# cannot label tests across directories, so filtered schedules run everything
+# there and configure emits a warning.
+set(CQ_MAINTENANCE_TEST_PATTERN "^taintset-scrub-guard-selftest")
 set(CQ_HEAVY_TEST_PATTERNS
   "^e2e-loop-twin-matrix$"
   "^e2e-railbank-[a-z-]+-matrix$"
@@ -41,19 +30,24 @@ set(CQ_HEAVY_TEST_PATTERNS
 # call is not seen.
 function(cq_apply_test_tiers dir)
   if(CMAKE_VERSION VERSION_LESS 3.28)
-    message(WARNING "cq: CMake ${CMAKE_VERSION} < 3.28 — the `heavy` ctest label "
-                    "is not applied, so `ctest -LE heavy` runs the FULL suite.")
+    message(WARNING "cq: CMake ${CMAKE_VERSION} < 3.28 — test labels are not applied; "
+                    "filtered schedules run the full suite.")
     return()
   endif()
   set(_stack "${dir}")
   set(_matched "")
   set(_nheavy 0)
+  set(_nmaintenance 0)
   while(_stack)
     list(POP_FRONT _stack _d)
     get_property(_subs DIRECTORY "${_d}" PROPERTY SUBDIRECTORIES)
     list(APPEND _stack ${_subs})
     get_property(_tests DIRECTORY "${_d}" PROPERTY TESTS)
     foreach(_t IN LISTS _tests)
+      if(_t MATCHES "${CQ_MAINTENANCE_TEST_PATTERN}")
+        set_property(TEST "${_t}" DIRECTORY "${_d}" APPEND PROPERTY LABELS maintenance)
+        math(EXPR _nmaintenance "${_nmaintenance} + 1")
+      endif()
       foreach(_p IN LISTS CQ_HEAVY_TEST_PATTERNS)
         if(_t MATCHES "${_p}")
           set_property(TEST "${_t}" DIRECTORY "${_d}" APPEND PROPERTY LABELS heavy)
@@ -73,6 +67,11 @@ function(cq_apply_test_tiers dir)
                       "update cmake/CQTestTiers.cmake")
     endif()
   endforeach()
+  if(_nmaintenance EQUAL 0)
+    message(WARNING "cq test tiers: no scrub-guard maintenance tests found")
+  endif()
+  message(STATUS "cq test tiers: ${_nmaintenance} maintenance entr(y/ies) "
+                 "(batch gate: ctest -LE maintenance)")
   message(STATUS "cq test tiers: ${_nheavy} entr(y/ies) labelled `heavy` "
                  "(fast tier: ctest -LE heavy)")
 endfunction()

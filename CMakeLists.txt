@@ -57,9 +57,22 @@ enable_testing()
 # generated from maintained files, so this catches moved or added functions
 # before an agent can hand off a stale navigation guide.
 find_program(CQ_MAP_PYTHON NAMES python3 python REQUIRED)
+# The map scanner benefits from PyPy's JIT (4.49 s -> 3.45 s measured here).
+# Keep short-lived Python checks on CPython: PyPy's startup costs more there.
+find_program(CQ_MAP_CHECK_PYTHON NAMES pypy3)
+if(CQ_MAP_CHECK_PYTHON)
+    execute_process(
+        COMMAND "${CQ_MAP_CHECK_PYTHON}" -c
+                "import sys; sys.exit(sys.version_info < (3, 9))"
+        RESULT_VARIABLE _CQ_MAP_CHECK_COMPATIBLE
+        OUTPUT_QUIET ERROR_QUIET)
+endif()
+if(NOT CQ_MAP_CHECK_PYTHON OR NOT _CQ_MAP_CHECK_COMPATIBLE EQUAL 0)
+    set(CQ_MAP_CHECK_PYTHON "${CQ_MAP_PYTHON}")
+endif()
 add_test(
     NAME code_map_drift
-    COMMAND ${CQ_MAP_PYTHON} ${CMAKE_SOURCE_DIR}/tools/update_code_map.py --check
+    COMMAND ${CQ_MAP_CHECK_PYTHON} ${CMAKE_SOURCE_DIR}/tools/update_code_map.py --check
 )
 add_test(
     NAME install_cq_unit
@@ -206,9 +219,9 @@ add_test(
             -Dcq_config=$<CONFIG>
             -P ${CMAKE_CURRENT_SOURCE_DIR}/tests/package-consumer/run_test.cmake)
 
-# THE TWO-TIER SUITE (owner ruling 2026-09-29, bd test_C_libtooling-2dfk).
-# `ctest -LE heavy -j6` = FAST tier (intermediate merges); `ctest -j6` = FULL
-# suite (the batch gate). Keep this call LAST: it labels every test registered
+# Test schedules: `ctest -LE heavy -j6` for the fast tier,
+# `ctest -LE maintenance -j6` for a batch, and `ctest -j6` for the full audit.
+# Keep this call LAST: it labels every test registered
 # anywhere in the tree so far, by the patterns in cmake/CQTestTiers.cmake.
 include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CQTestTiers.cmake")
 cq_apply_test_tiers("${CMAKE_CURRENT_SOURCE_DIR}")

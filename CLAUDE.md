@@ -169,7 +169,7 @@ of lifting upstream source. Review substitute tests without breaking provider qu
 Counts come from census tooling, never hand-copied. Pipeline success does not certify
 primitive eligibility, numerical accuracy or a correct unitary.
 
-**R15 — Run what can witness the change** (owner ruling 2026-08-13, revised 2026-09-29).
+**R15 — Run what can witness the change** (owner ruling 2026-08-13, revised 2026-09-30).
 
 | you edited | run | cost |
 |---|---|---|
@@ -182,11 +182,20 @@ primitive eligibility, numerical accuracy or a correct unitary.
 
 Branches never run the full suite; they run what witnesses the change. Merges to `main`
 run at most the fast tier `ctest --test-dir build -LE heavy -j6`. **Once per batch** (normally
-before `git push`) the **batch gate** runs everything: `ctest --test-dir build -j6` +
+before `git push`) the **batch gate** runs `ctest --test-dir build -LE maintenance -j6` +
 `cq-opt-equivalence-full` + `python3 tools/update_code_map.py --check`. It is mandatory whenever
 the batch touches the lowering core, any code/fixture/golden/harness (`run_slice*.sh`, any
 `CMakeLists.txt`, `lit.cfg.py`, `cq-opt`), regenerated templates, or an accept/decline predicate.
-If it fails, bisect over the batch's merges. **Report only what you ran** ("lit green
+The `maintenance` label contains the exhaustive `taintset-scrub-guard-selftest` mutant
+shards. Run `ctest --test-dir build -L maintenance -j6` when editing
+`tools/taintset_scrub_guard.py`, `ir-pass/include/TaintPropagation.h`,
+`ir-pass/include/ScrubOnDelete.h`, types reachable from `TaintSet`,
+`ir-pass/tools/cq_scrub_selftest.cpp`, or their compiler flags / include configuration.
+The ordinary scrub guard and executable scrub tests stay in the routine gates.
+`ctest --test-dir build -j6` remains the explicit full audit.
+A batch containing only test pruning or test scheduling changes uses the affected
+fixtures and registration checks; it does not trigger a compiler-wide batch run.
+If a gate fails, bisect over the batch's merges. **Report only what you ran** ("lit green
 (N)", never "tests pass"), and say when a gate sampled. Never relink a binary under a running
 measurement, and never `pkill` by pattern. Contention causes false failures, never false
 passes, so re-run a `-j` red serially before calling it a regression.

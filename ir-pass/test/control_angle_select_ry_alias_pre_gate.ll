@@ -13,7 +13,7 @@
 ;
 ; Move that same measurement AFTER the gate and it becomes the wrong-VALUE class
 ; the whole fence exists for: see
-; `control_angle_select_reject_stale_diag_alias_forward.ll`, which is this IR with
+; `control_angle_select_reject_stale_measure.ll`, which is this IR with
 ; the `cq_measure` relocated and nothing else changed. Read the two together.
 ; ORACLE DISPOSITION: RED on the pre-2b binary (`rotation angle under quantum
 ; control`, SelectClassify gate 3) — Rule 12 red-green.
