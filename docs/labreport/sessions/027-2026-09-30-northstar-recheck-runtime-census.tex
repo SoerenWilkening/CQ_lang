@@ -1,0 +1,90 @@
+\labsessionheader{2026-09-30}{Northstar audit recheck and runtime math census}%
+  {e3e6f231}{n/a}{docs/audits-2026-09-30/RECHECK.md}
+
+\subsection*{Goal}
+Recheck the Sonnet audit after \commit{03eae8b6} and \commit{33d30faf}
+replaced the roadmap with \texttt{NORTHSTAR.md}. Review closures and retitles
+before P3 deferrals; execute the decline fixtures; then rewrite 15 misleading
+headers and measure the census with runtime classical operands.
+
+\subsection*{What landed}
+\commit{e3e6f231} --- \bd{zxor} --- restored the original audit TSVs from the
+previous session's scratch files, published disputed verdicts and execution
+results, rewrote 15 fixture headers, and added a separate runtime census harness.
+Fixture IR and test directives are byte-identical before and after the header
+rewrites. No lowering implementation or disputed tracker status was changed.
+Census results were appended to \bd{3c6m} and \bd{3c6m.49}; \bd{zxor} remains
+open for owner adjudication.
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fdoc\ \bd{iwz1}'s closure omits the mechanical freeze/hoist pin its
+    notes still request. Retitle disputes: \bd{lo7u} drops the unmeasured stale
+    scrutinee hazard; \bd{k02s} overstates guard independence; \bd{ogwt} treats a
+    proposed abort-arm interpretation as an owner ruling. Proposals are in the
+    recheck, not applied to the tracker.
+  \item \foverdecline\ Three fixtures labelled unbounded have finite signed-i32
+    bounds. A visible pure callee, dead internal store, private out-parameter
+    and dead allocation were also misclassified as physics restrictions.
+    Current fences and negative tests remain in place.
+  \item \fdoc\ Four proposed duplicates were confirmed by stripping LLVM local
+    names and comparing normalized IR. None was deleted. Duplicate recommendations
+    overlap the exclusive fixture classes; they are not four additional fixtures.
+  \item \fdoc\ \bd{3c6m.57}'s obsolete Bennett-based keep/retire decision can
+    close, while native-fmod accounting remains open. All 12 native-fmod runtime
+    probes accepted. They are separate from the declining injected bodies.
+  \item \fdoc\ A classical check of the unchanged CQ sin leaf matches host sin
+    at 0.5 and $10^6$, disagrees at $10^{20}$, returns a finite value for infinity
+    and NaN, and loses negative zero. This is a numerical check, not a quantum
+    simulation; full-domain cell credit remains an owner question.
+\end{itemize}
+
+\subsection*{Runtime census}
+\begin{tabular}{@{}lrr@{}}\toprule
+Provider & Every mixture accepted & Modelled cells \\ \midrule
+Real source injected & 76 & 120 \\
+Intrinsic lowered & 39 & 42 \\
+CQ provided (range qualified) & 6 & 6 \\
+Macros (historical f64 scope) & 10 & 12 \\
+Scalar-input total & 131 & 180 \\
+Classical-only nan (separate) & 3 & 3 \\
+\bottomrule\end{tabular}
+
+The harness ran 483 probes including every all-classical combination: 391
+accepted and 92 declined. Every accepted probe linked, trace-ran and passed the
+structural free checker. Classical operands and quantum seeds are function
+parameters; byref outputs are consumed and explicitly measured; signgam survives
+internalization. OpenLibm is pinned at
+\texttt{5fe399749f9276eaa0b8403e507470da05cbbb3f}, built with the faithful
+252-file recipe. No new goldens or independent unitary reviews were performed.
+Including classical-only nan would give 134/183 pipeline acceptance; its denominator
+and the six CQ leaves' range qualification remain explicit. These measurements
+are not a new semantic-verification count (\texttt{CLAUDE.md} R2).
+
+\subsection*{Verification run}
+\begin{tabular}{@{}lrl@{}}\toprule
+Measurement & Result & Command \\ \midrule
+Mapped decline fixtures & 1201 passed & \measured{lit ir-pass/test -j6 --filter <mapped-names>} \\
+Selected header fixtures & 15 passed & \measured{lit ir-pass/test -j6 --filter <15-names>} \\
+Full suite & 585/585 & \measured{ctest --test-dir build -j6} \\
+Full suite wall & 1235.91 s & same command \\
+Compiler equivalence & 2501; 0 mismatch & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+Code map & pass & \measured{python3 tools/update\_code\_map.py --check} \\
+\bottomrule\end{tabular}
+
+Additionally ran 488 loop/PredMux/region/nested primary modules. The generated-input
+fixture whose empty primary module accepts passed its actual lit command.
+The compiler binary remained byte-identical to the initial audit binary;
+per-fixture results, diagnostics and hashes are in the audit directory.
+The new harness also passed \measured{python3 -Werror -m py\_compile} and its
+483-mixture/all-classical/structural-check accounting assertions.
+
+\subsection*{Open questions}
+\begin{itemize}
+  \item \bd{zxor}: owner adjudication before tracker/classification corrections.
+    Clarify the conditional-measure, global-memory and opaque-classical-call boundaries.
+  \item \bd{3c6m.49}: native frem/fmod route accounting; CQ sin range; nan denominator;
+    disposition of 43 authored substitute slices; whether decline-to-accept twin
+    gates stay red until semantic review. Questions were sent to the owner and
+    remain unanswered at this record.
+\end{itemize}
