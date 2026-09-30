@@ -6,9 +6,9 @@
    *** WHY openlibm's fmod DECLINES. *** openlibm's e_fmod.c is a data-dependent
    shift-and-subtract loop over the mantissa words (a bounded loop with tainted trip
    count + special-case branches — the nested tainted control flow the census flags).
-   This body dissolves the loop with the direct truncated-quotient identity:
+   This body replaces the loop with a truncated-quotient approximation:
 
-       fmod(x,y) = x - trunc(x / y) * y
+       approximate_fmod(x,y) = x - trunc(x / y) * y
 
    trunc is hardware-kept (@llvm.trunc, roundsd, Rule 18); the whole body is ONE
    fdiv + ONE trunc + ONE fmul + ONE fsub — NO selects, NO branches — so it lowers
@@ -17,13 +17,11 @@
    The e2e golden twins are tests/e2e/slice_branchless_fmod{,_cq,_qq}.c — one per
    accepted taint mask (3c6m.48), same body inlined as the static `bfmod` helper.
 
-   Domain: finite x, finite y != 0 with |x/y| within the exactly-representable
-   integer range of trunc (|x/y| < 2^53). y == 0 (x/y = +-inf/NaN -> trunc(inf) =
-   inf -> inf*y NaN) and the huge-ratio octave (where trunc's rounding drops the
-   low-order remainder bits the openlibm bit-loop keeps) are UNSPECIFIED. This is the
-   textbook truncated-division remainder — exact for the common small-ratio range,
-   with a coarser tail than the bit-exact loop (accuracy is a SANITY check on a
-   trace-only runtime, not a gate).
+   This is not numerically equivalent to C fmod, even at small finite ratios:
+   x=1.0, y=0.1 produces 0 here but fmod(1.0,0.1) is about 0.1 because rounded
+   division loses the low remainder bits. Zero divisors and huge ratios also fail.
+   These fixtures witness lowering of the authored arithmetic expression, not
+   numerical correctness of math.h fmod or an exact source-injected coverage cell.
 
    Compile like the openlibm corpus: `clang -g -O1 -emit-llvm -c`, NO -fno-builtin
    (see branchless/log.c for the inliner-compatibility reason). */

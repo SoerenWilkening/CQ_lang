@@ -8,10 +8,9 @@
 ; reversible gate sequence — `soft_round` (round-to-nearest-even = rint/nearbyint
 ; under the default FP env) and `soft_trunc` (src/softfloat/fround.jl).
 ;
-; CONTRAST (why there is NO `fmod` companion fixture here): `fmod` folds to the
-; in-grid `frem` OPCODE (recognizer holds) but Bennett has NO frem/fmod gate
-; sequence, so it is NOT a keep and stays a declining library cell (bd 3c6m.56 /
-; 3c6m.57 frem-inversion). The e2e proofs are tests/e2e/slice_libm_keep_*.c.
+; `fmod` can fold to LLVM `frem`, which has no approved hardware route or
+; Bennett implementation and therefore fails loudly. Its exact source-lifting
+; gap is bd 3c6m.68. The e2e proofs are tests/e2e/slice_libm_keep_*.c.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

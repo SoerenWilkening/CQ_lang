@@ -1,6 +1,6 @@
 // ArithLowering.cpp — per-instruction lowering for the two data-arithmetic
 // classes (binary + unary `fneg`). See header for the operand-shape rules.
-// Generalizes the Phase-2 `add`/`fadd` body to all 16 in-scope stems with
+// Generalizes the Phase-2 `add`/`fadd` body to all supported arithmetic stems with
 // HH/HL/LH shapes and commutativity-gated BirthOrder; the driver
 // (`OpcodeLowering`) owns collection, program order, and erase.
 
@@ -201,7 +201,7 @@ bool rewriteBinary(BinaryOperator *bo, WidthDispatch &wd, TaintSet &taint) {
   // guards against malformed IR picking a mismatched template.
   const bool FpStem = bo->getType()->isFloatingPointTy();
   const bool IntStem = bo->getType()->isIntegerTy();
-  const bool WantsFp = Stem.starts_with("f");  // fadd/fsub/fmul/fdiv/frem
+  const bool WantsFp = Stem.starts_with("f");  // fadd/fsub/fmul/fdiv
   if ((WantsFp && !FpStem) || (!WantsFp && !IntStem)) {
     diagnoseNoTemplate(bo);
     return false;

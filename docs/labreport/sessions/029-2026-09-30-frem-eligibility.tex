@@ -1,0 +1,48 @@
+\labsessionheader{2026-09-30}{Native remainder eligibility}%
+  {1f2c0c69 (parent)}{n/a}%
+  {docs/audits-2026-09-30/OWNER\_RULINGS.md}
+
+\subsection*{Goal}
+Apply the owner's direct-intrinsic rule to the native LLVM remainder path:
+direct lowering requires an approved plausible hardware operation without
+injectable source, or a Bennett.jl implementation. The prior native-fmod
+snapshot showed 12 successful trace-only probes but no implemented gate.
+
+\subsection*{What changed}
+Removed tainted \texttt{frem} from the opcode supported set and removed its
+four-width, 60-symbol row from the generated runtime ABI. A new lit fixture
+requires a loud diagnostic when quantum operands reach \texttt{frem}.
+The exact source-lifting task remains \bd{3c6m.68}; this change does not
+establish valid permanent rejection of \texttt{fmod}.
+
+\subsection*{Findings}
+The current Bennett.jl source at
+\texttt{3e2a3c7f6fd13db2a6e8f979202500a29c8adca6} names \texttt{frem}
+only in an error table. The authored substitute
+\texttt{x - trunc(x/y)*y} is not C \texttt{fmod}: a compiled probe at
+\texttt{x=1.0}, \texttt{y=0.1} returned zero while host \texttt{fmod}
+returned about 0.1. Its explanatory header was corrected. Neither path
+earns exact \texttt{fmod} coverage.
+
+\subsection*{Verification run}
+The new lit fixture failed before the code change because the pass emitted
+\texttt{cq\_template\_frem\_f64}, then passed after removal. Twelve direct
+IR probes (f16/f32/f64/f80 crossed with CQ/QC/QQ operands) each produced a
+loud no-template diagnostic and no \texttt{frem} template emission.
+The generator drift check and its 19 tests passed after regeneration.
+The complete \texttt{ctest --test-dir build -j6} batch ran 585 cases:
+583 passed immediately and two generated-file drift checks failed because
+the YAML comment and fixture had changed during the run. Regeneration and
+the focused rerun passed both drift checks. After the final rebuild, the
+new lit fixture passed. The full \texttt{cq\_opt\_equivalence.py} sweep
+compared 2,502 fixtures against stock opt with zero mismatches.
+
+The runtime-operand source-injected census reran with the \texttt{fmod}
+filter. For each of fmodf, fmod and fmodl, classical/classical compiled;
+CQ, QC and QQ declined (0/3 complete cells). This measured the exact
+OpenLibm source path, not the authored approximation.
+
+\subsection*{Open work}
+\bd{3c6m.68} retains exact source lifting, numeric and unitary evidence,
+and per-width eligibility review of other direct primitives. The earlier
+fmod JSON remains historical evidence of trace-pipeline acceptance only.

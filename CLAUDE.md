@@ -144,26 +144,30 @@ opcode and the pass strips it. A runtime handle is always `i32`, and a classical
 operand in a mixed Q+C op is passed as a literal to the `_hl`/`_lh` template, never
 `cqrt_alloc`'d.
 
-**R14 — A library function means its real source, injected.** `math.h`/libc coverage
-means compiling with the real implementation injected as source (an openlibm-style body
-llvm-linked and inlined before `cq-lowering`, caller `-fno-builtin-<fn>`), so the pass
-sees stock opcodes. Recognizing `@llvm.<fn>` or `@<fn>` by name and emitting a per-fn
-template is not coverage. Functions that fold to an in-grid hardware instruction or a
-recognized `@llvm.*` intrinsic at `-O1` (`sqrt`, `fabs`, `floor`, `fma`, …) are
-recognition cells, and CQ-shipped leaves (trig at f64/f80) are CQ-provided cells. Each
-is reported separately. Coverage follows NORTHSTAR goal 2 (non-trivial input, all
-classical/quantum combinations) and is computed by
-`tools/library_coverage/probe.py`, never hand-copied.
-Rulings that walled off a construct because Bennett.jl lacks a gate sequence (the
-`fmod`/`remainder`/`remquo` family, Payne–Hanek `rem_pio2`, quantum-dependent trip
-counts) are **retired**: those cells are work items, and a user-supplied loop bound is valid.
+**R14 — Inject library source; justify every directly lowered primitive.**
+Library coverage means compiling the real implementation as injected source
+(llvm-link and inline before `cq-lowering`, caller `-fno-builtin-<fn>`).
 
-The owner retains the current CQ-provided `sin` approximation and accepts its reported
-accuracy; publish its documented range and special-value behavior with its coverage.
-A hand-authored body can count as CQ-provided when the runtime C/Q combinations compile.
-It earns no credit for lifting the upstream library implementation. Test retention is
-a separate decision: review redundant substitute slices without removing useful
-regression evidence or silently breaking the current census qualification checks.
+Direct intrinsic/opcode lowering requires an approved plausible hardware route with
+no intrinsic implementation source to inject, or a reversible implementation provided
+by Bennett.jl. Record the operation, widths and numerical contract; an LLVM name or
+trace-template ABI entry alone never qualifies. When that route is absent, lift the
+available source. Missing lowering fails loudly as a compiler gap under R1; it is
+never a permanent physics decline or a covered cell.
+
+Native `frem` had only trace templates and no Bennett.jl implementation;
+it now fails loudly. Exact `fmod` source-lowering remains bd `3c6m.68`.
+Absence from Bennett.jl cannot forbid a valid program: build the source-lifting route.
+This differs from accepting an unsupported opaque primitive.
+
+Publish source-injected, CQ-provided and eligible intrinsic-lowered components
+separately, following NORTHSTAR goal 2's runtime operands and every C/Q mixture.
+The owner retains the CQ-provided `sin` approximation and accepts its reported
+accuracy; publish its range and special-value behavior. Hand-authored bodies can
+count as CQ-provided when their numerical contract and runtime mixtures hold, independently
+of lifting upstream source. Review substitute tests without breaking provider qualification.
+Counts come from census tooling, never hand-copied. Pipeline success does not certify
+primitive eligibility, numerical accuracy or a correct unitary.
 
 **R15 — Run what can witness the change** (owner ruling 2026-08-13, revised 2026-09-29).
 

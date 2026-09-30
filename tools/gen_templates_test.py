@@ -111,7 +111,7 @@ class GenTemplatesTest(unittest.TestCase):
     def tearDownClass(cls):
         cls.tmpdir.cleanup()
 
-    def test_total_symbol_count_is_2479(self):
+    def test_total_symbol_count_is_2419(self):
         # 1562 baseline -> 1732 (f16, Increment D) -> 1947 (i128 Tier-1 +215) ->
         # 2091 (8rvn fcmp predicate fill +144). bd 3c6m.4 adds ONE long-double fp
         # width f80 to EVERY fp row + the fp-WIDTH cast grid (NOT the cross-domain
@@ -140,7 +140,10 @@ class GenTemplatesTest(unittest.TestCase):
         #   CompareLowering / castInScope guards — i80 a zext DEST + trunc SOURCE
         #   only, sext/cross-domain excluded); the >64 fence keeps i80 out of
         #   copyFn/addc/xorc/tape/qram. i80 is NEVER a control-merged data value.
-        self.assertEqual(len(self.h_decls), 2479)
+        # Native frem has no approved hardware route or Bennett implementation:
+        # remove its 15 variants at four widths from the historical 2479 grid.
+        self.assertEqual(len(self.h_decls), 2419)
+        self.assertNotIn("cq_template_frem_f64", self.h_decls)
 
     def test_unc_family_is_void_in_place(self):
         """PRD §2.3 / DD-3: the `_unc` uncompute family is VOID and in-place.

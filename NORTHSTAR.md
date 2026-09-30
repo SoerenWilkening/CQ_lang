@@ -58,6 +58,12 @@ means its real source injected before `cq-lowering`, never recognition by name. 
 figures published before 2026-09-30 were scored without the non-trivial-input rule and
 are a baseline to re-score, not the current number.
 
+Direct intrinsic or opcode lowering requires either an approved plausible hardware
+route with no intrinsic implementation source to inject, or a reversible implementation
+provided by Bennett.jl. An LLVM name or a generated trace template alone is insufficient.
+When that route is absent, lift available source and build the missing lowering. Missing
+implementation is a compiler gap under goal 1 and earns no coverage credit.
+
 CQ-provided implementations count in their own component, with their numerical
 accuracy and range limits published. Retaining an approximation is an owner decision.
 Publish both scalar-input C/Q coverage and broader API coverage including classical-only

@@ -1,6 +1,6 @@
 # Northstar audit recheck — 2026-09-30
 
-This recheck disputes iwz1's closure, three retitle rationales, and several fixture classifications. It also flags the fmod accounting handoff from the closed 3c6m.57 decision. Proposed tracker changes below have **not** been applied. The original verdict TSVs are preserved unchanged. The 15 separately authorized fixture edits change explanatory headers only.
+This recheck disputes iwz1's closure, three retitle rationales, and several fixture classifications. The owner has since resolved native-fmod eligibility: a placeholder trace primitive does not qualify; missing enforcement and exact source lowering are tracked in 3c6m.68. The other proposed tracker changes below have **not** been applied. The original verdict TSVs are preserved unchanged. The 15 separately authorized fixture edits change explanatory headers only.
 
 ## Evidence and limits
 
@@ -17,7 +17,7 @@ The detail TSV's exclusive classes are 587 SAFETY-NET, 473 GAP, 49 INPUT-ERROR, 
 | Issue | Proposed disposition | Evidence |
 | --- | --- | --- |
 | iwz1 | Reopen/reframe as the missing mechanical freeze/hoist invariant | `ClassicalCallArmEmit.cpp` queries `freezeDischargesHoistedArg` before moving the call, and comments document this order. Its issue notes explicitly say the remaining obligation is a mechanical pin. A comment and the current order do not provide that pin. |
-| 3c6m.57 | Its obsolete keep/retire decision can close; hand off the accounting question to 3c6m.49 | NORTHSTAR removes the Bennett-only retirement criterion, so keeping native `frem` is consistent with goal 1. That does not answer whether fmod counts as intrinsic-lowered or source-injected. The recalled owner followups leave the accounting question open. Do not reopen the obsolete proposal to remove a valid lowering. |
+| 3c6m.57 | Its original triage closure does not settle the subsequent owner ruling; follow up in 3c6m.68 | The compiler's native `frem` route passes through trace templates but has no implementation supplied by Bennett.jl. The owner now limits direct lowering to approved hardware primitives without source to inject or implementations provided by Bennett.jl. Exact fmod source must be lifted when that route is absent. Missing lowering is a compiler gap, not a physics prohibition or a valid completed capability. The old issue status is unchanged. |
 | 0njv, 67s8, 67n5 | Original silent-defect closures can stand only with live successor gap tracking | The new stale-alias fences prevent the old silent error. They do not implement coherent basis fanout. CNOT fanout is valid, so the declined source still needs a lowering ticket. Confirm an active successor rather than treating the fence as completion of goal 1. |
 | zujr | Keep closure scoped to its delivered headline | Original notes reject dependency subsumption as a closure argument. The new rationale can close the delivered parent, while each undelivered blocker remains independently tracked; it should not claim those blockers were delivered. |
 
@@ -75,7 +75,7 @@ The PHYSICS-c rows with actual infinite backedges or nonterminating recursion re
 
 Rewrote the 15 angle/fanout/clobber headers listed in `header_rewrites.txt`. Compared the complete remaining IR and all test directives byte-for-byte before and after: unchanged. All 15 selected lit tests passed (1.24 seconds). Filed recheck issue **zxor** after this run. The runtime census is being measured separately from the historical constant-operand artifacts. Disputed tracker statuses and fixture class TSVs await owner review.
 
-The five owner questions raised here concern native-frem accounting, the CQ sin approximation, nan's denominator, authored substitute slices and decline-to-accept twin transitions. The subsequent owner decisions and both census figures are in [OWNER_RULINGS.md](OWNER_RULINGS.md). Native-frem accounting and the exact test-retirement scope remain unresolved; the approximation is retained, both census figures are to be published, and twin transitions require semantic review before their expectations change.
+The five owner questions raised here concern native-frem accounting, the CQ sin approximation, nan's denominator, authored substitute slices and decline-to-accept twin transitions. The subsequent owner decisions and both census figures are in [OWNER_RULINGS.md](OWNER_RULINGS.md). Native frem is excluded from credit and its enforcement/source-lowering gap is tracked in 3c6m.68. The exact test-retirement scope remains unresolved; the approximation is retained, both census figures are published, and twin transitions require semantic review before their expectations change.
 
 ## Classical sin range check
 

@@ -1435,10 +1435,10 @@ add_test(NAME e2e-slice-branchless-acos
 #   logb  = (double)(((bits>>52)&0x7FF)-1023)         [field extract]
 #   fdim  = fmax(x-y, 0)                               [keep-set fmax]
 #   scalbn/scalbln = x * bitcast((n+1023)<<52)         [INSERT_WORDS scale, n classical]
-#   fmod  = x - trunc(x/y)*y                           [keep-set trunc]
+#   fmod approximation = x - trunc(x/y)*y              [keep-set trunc]
 #   remainder = x - rint(x/y)*y                        [keep-set rint]
 #   hypot = fmax(|x|,|y|)*sqrt(1+(fmin/fmax)^2)         [overflow-safe, keep-set fmax/fmin/sqrt]
-# The four 2-arg fns (fdim/fmod/remainder/hypot) get a golden PER accepted taint mask
+# The four 2-arg expressions (fdim/fmod approximation/remainder/hypot) get a golden PER accepted taint mask
 # (qc/cq/qq — 3c6m.48: each mask is a distinct unitary). All traces are PURE
 # value-embeddings (0 selects → 0 controlled rotations, 0 flags, single measure).
 # Corpus twins tools/library_coverage/branchless/{logb,fdim,scalbn,scalbln,fmod,
@@ -4083,9 +4083,9 @@ add_test(NAME e2e-slice-control-select-compound
 # because Bennett.jl ships the reversible gate sequence — `soft_round`
 # (round-to-nearest-even = rint/nearbyint under the default FP env) and
 # `soft_trunc` (`src/softfloat/fround.jl`) — so a real Phase-9 backend has a
-# Bennett source. Contrast `fmod`→`frem`: an in-grid OPCODE but with NO Bennett
-# frem/fmod primitive, so it is NOT a keep and is deliberately absent here (bd
-# fmod-frem-keep-2026-07-24 + the frem-inversion follow-up). Each golden is the
+# Bennett source. `fmod` can fold to `frem`, but tainted frem now fails loudly:
+# it has no approved hardware route or Bennett implementation. Exact fmod source
+# lifting remains bd 3c6m.68. Each golden is the
 # Rule-2 e2e proof (link + run + deterministic trace) promoting the census cell
 # from COMPILES-by-recognition to VERIFIED; the census (probe.py keep-set) already
 # skips these bases, so the ld80 scoreboard is unchanged.

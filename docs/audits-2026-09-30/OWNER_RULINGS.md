@@ -35,9 +35,30 @@ BC=/private/tmp/cq-northstar-bc OPENLIBM=/private/tmp/cq-northstar-openlibm pyth
 The quantum double/double probe emits `cq_template_frem_f64`. Its generated runtime
 body allocates a handle and prints a trace; it does not expand a reversible circuit.
 The injected OpenLibm fmod bodies still decline on loop/control shapes. The old
-Bennett frem failure concerns the missing backend route, not failure of CQ's current
-opcode lowering. The owner questioned counting native fmod on that basis. Accounting
-remains unresolved in bd 3c6m.49; no native-fmod credit was added to the figures above.
+Bennett frem failure concerns the missing backend route, not the audited CQ
+opcode lowering. The subsequent owner ruling excludes unsupported placeholder primitives
+from direct lowering and coverage: require an approved plausible hardware route without
+intrinsic implementation source to inject, or an implementation provided by Bennett.jl.
+Available library source is lifted when that direct route is absent. Native fmod earns
+no credit in the figures above. The former recognizer and exact source-lowering
+work are tracked by bd 3c6m.68. This recheck removes tainted `frem` from direct
+lowering and its generated runtime template inventory; the exact source-lifting
+work remains open. The prior native-fmod JSON is historical evidence of the
+placeholder behavior, not a current acceptance claim.
+
+The current compiler source contains 31 curated LLVM intrinsic IDs. The source inventory
+in `intrinsic_policy_recheck.json` maps the floating-point candidates to named Bennett
+primitives where present and records fabs/copysign as bitmask candidates. It is not a
+width-by-width semantics certification. Bennett was checked at commit
+`3e2a3c7f6fd13db2a6e8f979202500a29c8adca6`; frem appears only in its error-name table,
+with no corresponding implementation. Missing backend support must remain separate from
+the source-injection loop/control gaps and from physics-forbidden programs.
+
+The authored branchless `fmod` substitute is also not exact: at finite inputs
+`x=1.0, y=0.1`, a compiled probe returned zero for `x-trunc(x/y)*y`, whereas
+host `fmod(x,y)` returned about 0.1. Its fixtures witness lowering of that
+expression, not correctness or coverage of the math.h function. This numerical
+gap is recorded on bd 3c6m.68.
 
 ## Approximation and authored implementations
 

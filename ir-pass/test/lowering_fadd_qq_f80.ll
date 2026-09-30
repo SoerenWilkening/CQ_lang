@@ -2,7 +2,7 @@
 ; f80 (x86_fp80) ABI. Two thetas allocate two x86_fp80 handles that flow through
 ; `fadd x86_fp80` and lower to `cq_template_fadd_f80(handle, handle)`. Proves the
 ; f80 binary surface (fadd_f80 Q+Q), regenerated from the YAML. This is the
-; `long double` arithmetic underlying the `…l` math.h variants (e.g. fmodl→frem).
+; `long double` arithmetic used by source-injected math.h variants.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll

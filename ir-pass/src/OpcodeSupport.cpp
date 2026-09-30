@@ -86,7 +86,6 @@ StringRef binaryStem(unsigned opcode) {
   case Instruction::FSub: return "fsub";
   case Instruction::FMul: return "fmul";
   case Instruction::FDiv: return "fdiv";
-  case Instruction::FRem: return "frem";
   default:
     return {};
   }
