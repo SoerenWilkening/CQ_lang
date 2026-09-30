@@ -1,0 +1,17 @@
+{
+  "source_commit": "ae840fac",
+  "command": "ctest --test-dir build -LE maintenance -j6 --output-on-failure",
+  "tests": 582,
+  "passed": 582,
+  "failed": 0,
+  "ctest_elapsed_seconds": 257.84,
+  "external_elapsed_seconds": 257.94,
+  "existing_stage_caches_enabled": true,
+  "critical_path_test": "e2e-loop-twin-matrix",
+  "critical_path_elapsed_seconds": 257.79,
+  "excluded_maintenance_tests": [
+    "taintset-scrub-guard-selftest-1of3",
+    "taintset-scrub-guard-selftest-2of3",
+    "taintset-scrub-guard-selftest-3of3"
+  ]
+}

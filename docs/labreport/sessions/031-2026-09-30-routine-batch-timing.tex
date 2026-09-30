@@ -1,0 +1,25 @@
+\labsessionheader{2026-09-30}{Routine batch timing}%
+  {ae840fac}{n/a}%
+  {docs/audits-2026-09-30/routine\_batch\_timing.json}
+
+\subsection*{Measurement}
+After the owner authorized testing again, ran exactly
+\texttt{ctest --test-dir build -LE maintenance -j6 --output-on-failure}
+under \texttt{/usr/bin/time -p}. All 582 selected entries passed.
+CTest reported 257.84 seconds; external wall time was 257.94 seconds,
+or about 4 minutes 18 seconds. The existing stage caches were enabled.
+The three exhaustive scrub-guard maintenance shards were excluded.
+
+The \texttt{e2e-loop-twin-matrix} entry took 257.79 seconds and determined
+the run's critical path. The result establishes the new routine gate's
+duration on this machine with these caches. It is not a controlled
+before/after comparison with the historical 17--19-minute maintenance
+shard timings recorded in session 030. Those shards' implementation
+cost is unchanged.
+
+\subsection*{Scope}
+This run exercised the compiler matrices, end-to-end slices, lit suites,
+ordinary scrub checks, runtime and package gates. No maintenance sweep
+or separate full cq-opt equivalence sweep was run. There were no code
+changes in this measurement session. \bd{test\_C\_libtooling-2ngq}
+records the command and outcome.
