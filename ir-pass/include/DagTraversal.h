@@ -73,6 +73,12 @@ struct DataDag {
   // measured as four separate hidden measurements. See the long note at the
   // suppression site in `Uncomputation::emitDagReversal`.
   //
+  // bd r2j3.3 adds a SECOND writer, `RecordWindowFreeze` (step 3c): a rail whose
+  // own chain IS a basis permutation but whose gate READ a register that a later
+  // non-basis gate moved and a kept carrier then recorded — its `_unc` would
+  // recompute from a label the inverse gate no longer restores. Same effect: no
+  // free, every adjoint kept.
+  //
   // Consumed ONLY by `Uncomputation::emitDagReversal`, deliberately: `D.Calls`
   // stays intact so the driver's invertibility / InLoop / dominance scans still
   // see every recovered gate and still decline loudly. Pruning `Calls` instead

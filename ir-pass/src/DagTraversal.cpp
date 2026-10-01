@@ -6,6 +6,7 @@
 #include "DagTraversal.h"
 
 #include "ChainWalk.h"          // isInPlaceGateOn / isAllocMint / isMeasureSink
+#include "RecordWindowFreeze.h"  // step 3c (bd r2j3.3)
 #include "TaintPropagation.h"
 
 #include "llvm/ADT/STLExtras.h"
@@ -54,10 +55,12 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   SmallVector<Value *, 16> Work(Terminals.begin(), Terminals.end());
   SmallPtrSet<Value *, 16> VisitedHandles;
   SmallPtrSet<CallInst *, 16> SeenGates;
-  // The DAG's ANCESTOR edges as (child, parent) pairs. The walk below already
-  // computes them — it just did not retain them. Step 3b closes the "recorded
-  // into a kept carrier" seed BACKWARD over these edges (bd 261j(a)).
-  SmallVector<std::pair<Value *, Value *>, 32> AncEdges;
+  // The DAG's ANCESTOR edges as (child, parent, reading gate) triples. The walk
+  // below already computes them — it just did not retain them. Step 3b closes
+  // the "recorded into a kept carrier" seed BACKWARD over these edges (bd
+  // 261j(a)); step 3c also needs WHEN each parent was read, hence the gate (bd
+  // r2j3.3).
+  SmallVector<AncestorEdge, 32> AncEdges;
   while (!Work.empty()) {
     Value *H = Work.pop_back_val();
     if (!VisitedHandles.insert(H).second)
@@ -135,7 +138,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
             if (Op != H && taint.Tainted.count(Op)) {
               if (!isFrontier(Op))
                 Work.push_back(Op);
-              AncEdges.emplace_back(H, Op);  // Op is a parent of H's rail
+              AncEdges.push_back({H, Op, G});  // Op is a parent of H's rail
             }
         }
     auto *CI = dyn_cast<CallInst>(H);
@@ -146,7 +149,7 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
         if (taint.Tainted.count(Op)) {
           if (!isFrontier(Op))
             Work.push_back(Op);
-          AncEdges.emplace_back(CI, Op);  // Op is a parent of the produced rail
+          AncEdges.push_back({CI, Op, CI});  // Op is a parent of the produced rail
         }
     } else {
       D.Roots.push_back(H);
@@ -407,9 +410,9 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
 
     while (!CWork.empty()) {
       Value *C = CWork.pop_back_val();
-      for (const auto &E : AncEdges)
-        if (E.first == C && Correlated.insert(E.second).second)
-          CWork.push_back(E.second);
+      for (const AncestorEdge &E : AncEdges)
+        if (E.Child == C && Correlated.insert(E.Parent).second)
+          CWork.push_back(E.Parent);
     }
 
     for (CallInst *G : D.Calls) {
@@ -431,6 +434,15 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
     // argument was sound for the FREEZE and false for `Earliest` keying, which is
     // the half uow0 fixed.
   }
+
+  // 3c. RECORD-WINDOW FREEZE (bd test_C_libtooling-r2j3.3). Step 3b proves each
+  //     rail's OWN chain is a basis permutation; it leaves clause (d) of the
+  //     invariant to reverse program order. A kept-carrier record of a parent
+  //     taken AFTER a non-basis gate on that parent, and before that gate's
+  //     adjoint, breaks (d) for every gate that read the parent earlier — the
+  //     adjoint no longer restores it. Freeze those readers' rails (frees only;
+  //     every adjoint stays). See RecordWindowFreeze.h.
+  freezeRecordWindowReaders(D, AncEdges, DT);
   return D;
 }
 

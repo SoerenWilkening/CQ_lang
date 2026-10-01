@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 832 maintained source files, 6515 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 833 maintained source files, 6516 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -95,9 +95,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tests/e2e/slice_libm_real_atanhl.c` — 453 physical lines
 - `tests/e2e/slice_libm_real_erfcl.c` — 451 physical lines
 - `tools/predmux_probe_gen.py` — 450 physical lines
+- `ir-pass/src/DagTraversal.cpp` — 449 physical lines
 - `ir-pass/src/EmitInverse.cpp` — 442 physical lines
 - `tests/e2e/slice_libm_real_pow.c` — 439 physical lines
-- `ir-pass/src/DagTraversal.cpp` — 437 physical lines
 - `tools/record_census/source_ir.py` — 434 physical lines
 - `tests/e2e/slice_libm_real_erfl.c` — 432 physical lines
 - `tools/record_census/census_02_mc_population.py` — 430 physical lines
@@ -453,10 +453,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CtlzIdiomPrepass.cpp:407` — `emitClosedForm`
 - `ir-pass/src/CtlzIdiomPrepass.cpp:465` — `recognizeCtlzIdiomLoops`
 
-### `ir-pass/src/DagTraversal.cpp` (437 lines)
+### `ir-pass/src/DagTraversal.cpp` (449 lines)
 
-- `ir-pass/src/DagTraversal.cpp:24` — `isInvertEscape`
-- `ir-pass/src/DagTraversal.cpp:39` — `recoverDataDag`
+- `ir-pass/src/DagTraversal.cpp:25` — `isInvertEscape`
+- `ir-pass/src/DagTraversal.cpp:40` — `recoverDataDag`
 
 ### `ir-pass/src/DeadValueLiveness.cpp` (485 lines)
 
@@ -6834,6 +6834,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 ### `tests/e2e/slice_qram_store.c` (23 lines)
 
 - `tests/e2e/slice_qram_store.c:16` — `main`
+
+### `tests/e2e/slice_qram_store_computed_index.c` (33 lines)
+
+- `tests/e2e/slice_qram_store_computed_index.c:18` — `main`
 
 ### `tests/e2e/slice_qram_store_fp.c` (22 lines)
 
