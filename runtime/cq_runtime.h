@@ -523,6 +523,26 @@ int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
  * backend implements. The strategy choice (Shadow vs MUX vs QROM) is a
  * backend detail and NEVER leaks into these signatures (PRD-7.5 §2.1).
  *
+ * THE INDEX (every load, store and guarded store below, forward and `_unc`):
+ * `idx` is an i32 handle (NORTHSTAR principle 8) AND the rail behind it has
+ * LOGICAL WIDTH 32. `<W>` names only the CELL width, so the index width is
+ * fixed here, not by the symbol. The IR pass strips the -O1 `sext`/`zext ...
+ * to i64` and, for an index of any other logical width (a `long` subscript, a
+ * mask built at i64, a nested read of an i64 cell; a `char`/`short`/`_Bool`
+ * subscript), wraps EACH call in its own bracket
+ *     t = cq_template_<trunc|sext|zext>_<W>_to_i32(idx)
+ *     cqrt_qram_*(.., t, ..)
+ *     cq_template_<...>_to_i32_unc(t, idx);  cqrt_free(t)
+ * (`resolveQramIndex` + `bracketQramIndexCasts`): a narrower index re-extends
+ * with the stripped cast's own kind (`sext` when none was stripped: GEP
+ * semantics). The bracket rail never outlives its call, so it is never a live
+ * copy of the index register. The trunc is exact on every in-bounds index
+ * (`count` is an int32_t, so idx in [0, count) fits); an out-of-bounds index is
+ * outside this contract. The width comes from the index's IR type or its
+ * `HandleWidth` record; a rail minted without that record is not covered yet
+ * (bd test_C_libtooling-01po.3). Agreed with libcqops (bead
+ * opcode_quantum_operations-b6a, 2026-09-28).
+ *
  *   cqrt_qram_alloc_<W>(count) -> arr
  *       Register a KNOWN-SHAPE array of `count` width-`W` cells; the
  *       backend allocates the physical register block and returns the
@@ -538,12 +558,13 @@ int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
  *       Read the cell at the (quantum) index `idx` into a FRESH i32 value
  *       handle (Toffoli-copy-out — the cell is PRESERVED). An ordinary
  *       reversible data producer: the whole-DAG uncompute spine reverses
- *       a dead loaded value via the `_unc` twin below. The index handle is
- *       ALWAYS i32 (Rule 15; the -O1 `sext …to i64` is stripped). The 5
- *       INTEGER widths only ({i1,i8,i16,i32,i64}, `widthHasReversibleCopy`):
- *       an fp cell is the f64/angle hazard and there is no
- *       `cqrt_qram_load_i128` — both DECLINE in the IR pass, never minting
- *       a phantom.
+ *       a dead loaded value via the `_unc` twin below. The index is a
+ *       logical-i32 rail (see THE INDEX above), never a wider or narrower
+ *       one. Cell widths: integer {i1,i8,i16,i32,i64} and fp
+ *       {f16,f32,f64,f80} (`widthHasQramCell`; bd 38t2 — an fp cell is a
+ *       bit-pattern copy, not an angle). There is no `cqrt_qram_load_i128`
+ *       or `_f128`: an i128/fp128 cell fails loudly in the IR pass, never
+ *       minting a phantom.
  *
  *   cqrt_qram_load_<W>_unc(out, arr, idx)
  *       Adjoint of a load: un-copy the dead loaded value `out` back to |0>

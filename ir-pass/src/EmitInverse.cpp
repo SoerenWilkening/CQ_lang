@@ -11,6 +11,7 @@
 // (the loud-decline signal, PRD §2.12).
 
 #include "EmitInverse.h"
+#include "QramIndexWidth.h"  // inheritQramIndexTag (libcqops b6a)
 
 #include "ChainWalk.h"  // isAbiQramStore — the shared frozen-ABI store shape (Rule 14)
                         // isBranchPhaseGate — the kickback-gate record (bd 3qlq F-L7-1)
@@ -187,9 +188,10 @@ bool emitInverseCall(IRBuilder<> &B, CallInst *Forward, WidthDispatch &wd,
   // SELF-INVERSE gate from a forward one (they are the same call — see
   // EmitInverse.h). One helper, applied at every return-true site, so a new
   // inversion recipe cannot forget to record (Rule 14).
-  auto minted = [Rec](CallInst *Inv) {
+  auto minted = [Rec, Forward](CallInst *Inv) {
     if (Rec)
       Rec->insert(Inv);
+    inheritQramIndexTag(Forward, Inv);  // libcqops b6a: the `_unc`'s own cast.
     return true;
   };
 

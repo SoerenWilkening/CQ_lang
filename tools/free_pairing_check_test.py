@@ -380,6 +380,45 @@ define internal fastcc i32 @measured_local() unnamed_addr #1 {
      # `%1` (the load result, a basis permutation of arr/idx) is still freed, which is
      # what keeps this a live free-pairing fixture rather than a leak-only one.
 
+# libcqops b6a — QRAM_LOCAL with `long` (i64) index rails, as the pass now
+# lowers it: every QRAM call, forward AND `_unc`, sits in its own
+# `trunc; call; trunc_unc; free` bracket (`bracketQramIndexCasts`), so the load
+# and its `_unc` read two different bracket rails. The load rail `%1` must still
+# pair (by the bracket's source register) and every bracket rail must verify.
+QRAM_BRACKET = """
+define internal fastcc i32 @measured_local_long() unnamed_addr #1 {
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %h = call i32 @cqrt_alloc_i64(i64 0)
+  call void @cqrt_ry_i64(i32 %h, double 5.000000e-01)
+  %h1 = call i32 @cqrt_alloc_i64(i64 1)
+  call void @cqrt_ry_i64(i32 %h1, double 5.000000e-01)
+  %qval = call i32 @cqrt_alloc_i32(i32 7)
+  %qidx = call i32 @cq_template_trunc_i64_to_i32(i32 %h)
+  call void @cqrt_qram_store_i32(i32 %arr, i32 %qidx, i32 %qval)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %qidx, i32 %h)
+  call void @cqrt_free(i32 %qidx)
+  %qidx1 = call i32 @cq_template_trunc_i64_to_i32(i32 %h1)
+  %1 = call i32 @cqrt_qram_load_i32(i32 %arr, i32 %qidx1)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %qidx1, i32 %h1)
+  call void @cqrt_free(i32 %qidx1)
+  %qret = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_copy_i32(i32 %1, i32 %qret)
+  %qidx2 = call i32 @cq_template_trunc_i64_to_i32(i32 %h1)
+  call void @cqrt_qram_load_i32_unc(i32 %1, i32 %arr, i32 %qidx2)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %qidx2, i32 %h1)
+  call void @cqrt_free(i32 %qidx2)
+  call void @cqrt_free(i32 %1)
+  %qidx3 = call i32 @cq_template_trunc_i64_to_i32(i32 %h)
+  call void @cqrt_qram_store_i32_unc(i32 %arr, i32 %qidx3, i32 %qval)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %qidx3, i32 %h)
+  call void @cqrt_free(i32 %qidx3)
+  call void @cqrt_ry_i64(i32 %h1, double -5.000000e-01)
+  call void @cqrt_ry_i64(i32 %h, double -5.000000e-01)
+  %m = call i32 @cqrt_measure_i32(i32 %qret)
+  ret i32 %m
+}
+"""
+
 IDENTICAL_INV = """
 define void @slice() local_unnamed_addr #0 {
   %out46 = call i32 @cqrt_alloc_f80(x86_fp80 0xK00000000000000000000)
@@ -948,6 +987,7 @@ POSITIVE = [
     ("clone-unc-twin", CLONE_UNC),
     ("uncompute-lifo-chain", UNCOMPUTE_CHAIN),
     ("qram-store-load-lifo", QRAM_LOCAL),
+    ("qram-index-bracket-lifo", QRAM_BRACKET),
     ("identical-inv-group", IDENTICAL_INV),
     ("break-index-rail", BREAK_INDEX),
     ("case-a-aliased-inputs", CASE_A_ALIASED),
@@ -1371,6 +1411,67 @@ MUTANTS = [
     ("qram-load-unc-deleted",
      drop(QRAM_LOCAL, "@cqrt_qram_load_i32_unc", 0),
      "T1-no-reversal"),
+    # ---- libcqops b6a: the QRAM index bracket is RECOGNISED, not trusted ----
+    # The reversal's bracket casts a DIFFERENT source register: the load `_unc`
+    # un-copies a different cell, so `%1` must not pair.
+    ("qram-bracket-unc-casts-other-source",
+     sub(sub(QRAM_BRACKET, "%qidx2 = call", "(i32 %h1)", "(i32 %h)"),
+         "_unc(i32 %qidx2", "i32 %h1)", "i32 %h)"),
+     "T1-no-reversal"),
+    # The reversal's bracket uses a DIFFERENT cast (zext for the forward's
+    # trunc): a different index function, so no pairing.
+    ("qram-bracket-unc-cast-op-differs",
+     sub(sub(QRAM_BRACKET, "%qidx2 = call", "trunc_i64", "zext_i64"),
+         "_unc(i32 %qidx2", "trunc_i64", "zext_i64"),
+     "T1-no-reversal"),
+    # The forward bracket's `_unc` is gone: the bracket rail is freed dirty
+    # and the four-call shape is no longer recognised.
+    ("qram-bracket-cast-unc-dropped",
+     drop(QRAM_BRACKET, "_unc(i32 %qidx1, i32 %h1)", 0),
+     "T1-no-reversal"),
+    # The index SOURCE is mutated between the forward load and its `_unc`:
+    # T2 must look through the bracket to `%h1`.
+    ("qram-bracket-source-mutated-in-between",
+     insert_after(QRAM_BRACKET, "@cqrt_copy_i32(i32 %1",
+                  "  call void @cqrt_xorc_i64(i32 %h1, i64 1)"),
+     "T2-operand-mutated"),
+    # Round-2 review (2026-10-01) adversarial shapes: the four-call bracket is
+    # present but the pairing claim is false. (a3) the bracketed `_unc` WRITES
+    # the bracket's own source register; (a4) the bracket rail sits in the
+    # reversal's OUT slot, so the call writes it.
+    ("qram-bracket-call-writes-its-source", """
+define i32 @f(i64 %u, i64 %v) {
+entry:
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %y = call i32 @cqrt_alloc_i64(i64 %u)
+  call void @cqrt_ry_i64(i32 %y, double 5.000000e-01)
+  %t0 = call i32 @cq_template_trunc_i64_to_i32(i32 %y)
+  %x = call i32 @cqrt_qram_load_i32(i32 %arr, i32 %t0)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %t0, i32 %y)
+  call void @cqrt_free(i32 %t0)
+  %t = call i32 @cq_template_trunc_i64_to_i32(i32 %x)
+  call void @cqrt_qram_load_i32_unc(i32 %x, i32 %arr, i32 %t)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %t, i32 %x)
+  call void @cqrt_free(i32 %t)
+  ret i32 0
+}
+""",
+     "T2-operand-mutated"),
+    ("qram-bracket-rail-in-out-slot", """
+define i32 @f(i64 %u) {
+entry:
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %x = call i32 @cqrt_alloc_i64(i64 %u)
+  call void @cqrt_ry_i64(i32 %x, double 5.000000e-01)
+  %y = call i32 @cqrt_alloc_i32(i32 3)
+  %t = call i32 @cq_template_trunc_i64_to_i32(i32 %x)
+  call void @cqrt_qram_load_i32_unc(i32 %t, i32 %arr, i32 %y)
+  call void @cq_template_trunc_i64_to_i32_unc(i32 %t, i32 %x)
+  call void @cqrt_free(i32 %t)
+  ret i32 0
+}
+""",
+     "T3-rail-written-before-reversal"),
     # A Shadow store moved INSIDE the load's live range: the cell the `_unc`
     # un-copies from is no longer the cell the load copied. (Deleting the
     # store's `_unc` twin outright is deliberately NOT in this list — it dirties

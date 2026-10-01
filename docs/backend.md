@@ -1286,6 +1286,12 @@ idx)`; `cqrt_qram_store_<W>(arr, idx, val)` is a void in-place mutation on the
 array handle with `_unc`, `_controlled` and `_controlled_unc` variants. The
 array's contents are classical metadata replayed at inspection; the strategy
 (shadow, mux, QROM) is a backend detail that never appears in a signature.
+`<W>` names the cell width only; the index `idx` is always a rail of logical
+width 32. For any other index width the pass wraps each QRAM call, forward and
+`_unc`, in its own `cq_template_<trunc|sext|zext>_<W>_to_i32` cast, the cast's
+`_unc` and a `cqrt_free` (`bracketQramIndexCasts`, after `uncompute`), so the
+cast rail never outlives its call. The trunc is exact because `count` is an
+`int32_t`.
 
 ### 11.5 One IR, any backend
 

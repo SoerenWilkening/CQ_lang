@@ -835,6 +835,55 @@ def classify(sym):
 # ---------------------------------------------------------------------------
 
 DEFINE_RE = re.compile(r"^define\s.*?@([\w.$\"]+)\s*\(")
+
+# libcqops b6a — a QRAM INDEX BRACKET. The pass hands every QRAM call whose
+# index rail is not 32 bits wide its OWN cast, emitted as four consecutive calls
+# (`bracketQramIndexCasts`, ir-pass/src/QramIndexWidth.cpp):
+#     %t = call i32 @cq_template_<trunc|sext|zext>_<W>_to_i32(i32 %x)
+#     <the cqrt_qram_* call, reading %t in exactly one slot>
+#     call void @cq_template_<...>_to_i32_unc(i32 %t, i32 %x)
+#     call void @cqrt_free(i32 %t)
+# so a forward load/store and its `_unc` read two DIFFERENT bracket rails. Each
+# bracket rail is checked as an ordinary minted rail (T1a). For the PAIRING of
+# the QRAM call itself, its index operand compares as `<cast sym>(%x)`: the same
+# OPERAND-TEXT standard every pairing here applies to a raw index `%x` (the
+# forward and the `_unc` read the same register text), lifted through one cast
+# that is uncomputed against that same text before anything else runs. Only
+# the exact four-call shape is recognised; anything else compares raw and
+# fails to pair, never the other way round.
+_QRAM_IDX_CAST_RE = re.compile(r"cq_template_(?:trunc|sext|zext)_i\d+_to_i32")
+# canonical bracketed index -> the source register it reads. T2 ("forward
+# operands unchanged across [mint, reversal]") checks THAT register for a
+# bracketed slot: the canonical operand denotes cast(%x), so %x is what must not
+# change between the forward and the reversal's own bracket.
+_QRAM_IDX_SOURCE = {}
+
+
+def pairing_register(v):
+    return _QRAM_IDX_SOURCE.get(v, v)
+
+
+def mark_qram_index_brackets(calls):
+    for i in range(len(calls) - 3):
+        d, q, u, f = calls[i:i + 4]
+        if not (d.res and _QRAM_IDX_CAST_RE.fullmatch(d.sym) and
+                len(d.vals) == 1):
+            continue
+        if not q.sym.startswith("cqrt_qram_") or \
+                q.sym.startswith("cqrt_qram_alloc_"):
+            continue
+        slots = [k for k, v in enumerate(q.vals) if v == d.res]
+        if len(slots) != 1:
+            continue
+        if u.res or u.sym != d.sym + "_unc" or u.vals != [d.res, d.vals[0]]:
+            continue
+        if f.sym != "cqrt_free" or f.vals != [d.res]:
+            continue
+        k, canon = slots[0], f"{d.sym}({d.vals[0]})"
+        _QRAM_IDX_SOURCE[canon] = d.vals[0]
+        q.cargs = q.args[:k] + [q.args[k].split()[0] + " " + canon] + \
+            q.args[k + 1:]
+        q.cvals = q.vals[:k] + [canon] + q.vals[k + 1:]
 LABEL_RE = re.compile(r"^([-\w.$]+):")
 CALL_RE = re.compile(
     r"^\s*(?:(%[-\w.$]+|%\"[^\"]+\")\s*=\s*)?"
@@ -948,7 +997,7 @@ def arg_value(a):
 
 class Call:
     __slots__ = ("line", "res", "sym", "args", "vals", "eff", "text",
-                 "ctl_parity")
+                 "ctl_parity", "cargs", "cvals")
 
     def __init__(self, line, res, sym, args, text):
         self.line = line
@@ -956,6 +1005,9 @@ class Call:
         self.sym = sym
         self.args = [norm_arg(a) for a in args]
         self.vals = [arg_value(a) for a in args]
+        # The operands a forward/reversal PAIRING compares. Equal to args/vals
+        # except for a bracketed QRAM index (`mark_qram_index_brackets`).
+        self.cargs, self.cvals = self.args, self.vals
         self.eff = None
         self.text = text
         self.ctl_parity = ()   # per-control `cqrt_x` parity at this position
@@ -1149,6 +1201,8 @@ def parse_module(text):
                 continue
             i += 1
         fn.blocks.append((cur_label, cur_calls, term))
+        for _, blk_calls, _ in fn.blocks:
+            mark_qram_index_brackets(blk_calls)
         for label, _, t in fn.blocks:
             tgt = ["%" + x for x in TERM_TARGETS_RE.findall(t)]
             fn.succ[label] = tgt
@@ -1498,7 +1552,7 @@ class StreamAnalysis:
                 r.writes.append((pos, c))
                 continue
             if e.role == "inv":
-                self.inv_pool.setdefault((e.base, tuple(c.args)),
+                self.inv_pool.setdefault((e.base, tuple(c.cargs)),
                                          []).append(pos)
             if not e.diagonal:
                 for wi in e.writes:
@@ -1868,7 +1922,7 @@ class StreamAnalysis:
             return True
         if ea.adjoint_of.startswith("twin:"):
             want = ea.adjoint_of[len("twin:"):]
-            return b.sym == want and a.vals == b.vals
+            return b.sym == want and a.cvals == b.cvals
         return False
 
     def commutes(self, u_pos, u, w_pos, w):
@@ -2423,12 +2477,12 @@ class StreamAnalysis:
                 f"and not by VALUE (bd 1739 hole 2)")
 
         # (T4b) the `_unc` reversal, in THIS stream, before the free.
-        fwd_args = tuple(fwd.args)
+        fwd_args = tuple(fwd.cargs)
         rev_pos = None
         for p, w in r.writes:
             if p < pos and w.eff.role == "unc" and w.eff.base == fwd.sym and \
                     w.vals and w.vals[0] == name and \
-                    tuple(w.args[1:]) == fwd_args:
+                    tuple(w.cargs[1:]) == fwd_args:
                 rev_pos = p
         if rev_pos is None:
             return False, None, None, (
@@ -2537,13 +2591,13 @@ class StreamAnalysis:
 
     def check_minted_rail(self, pos, c, r):
         fwd, base = r.origin, r.origin.sym
-        fwd_args = tuple(fwd.args)
+        fwd_args = tuple(fwd.cargs)
 
         # (T1a) an explicit `_unc(%r, forward args...)` naming the rail.
         rev_pos = rev_kind = None
         for p, w in r.writes:
             if r.pos < p < pos and w.eff.role == "unc" and \
-                    w.eff.base == base and tuple(w.args[1:]) == fwd_args:
+                    w.eff.base == base and tuple(w.cargs[1:]) == fwd_args:
                 rev_pos, rev_kind = p, "_unc"
         # (T1b) otherwise an unclaimed `_inv(forward args...)` token.
         if rev_pos is None:
@@ -2610,8 +2664,9 @@ class StreamAnalysis:
                      f"{post[0][1].line}) after its {rev_kind} reversal at "
                      f"line {rev.line} and before the free")
             return
-        # (T2) forward operands must be unchanged across [mint, reversal].
-        for v in fwd.vals:
+        # (T2) forward operands must be unchanged across [mint, reversal]. A
+        # bracketed QRAM index is checked through to its source register.
+        for v in map(pairing_register, fwd.cvals):
             if v not in self.rails:
                 continue
             ok, wit = self.unchanged_over(v, r.pos, rev_pos)

@@ -259,7 +259,11 @@ touching it.
 which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a rail φ),
 `yiid` (reading a name after measuring it), `4e4p` (function-pointer `cq_theta` drops
 `nomerge`), `uw5u` (`cq_theta((t==s)?t:s, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
-with a wrong body is trusted), the twin half of `kyy1`, and `jlf8`, `yldg`, `etj3`.
+with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, `etj3`, and
+`r2j3.1` (a computed QRAM store-index rail stays live across a later gate on its source),
+`r2j3.2` (a bare `i64` QRAM index read after an in-place `cq_theta` on it) and `r2j3.3` (a
+QRAM load rail freed dirty after a tape record between `Ry`/`Ry⁻¹`; stage 2b certifies it),
+all filed 2026-10-01.
 `cfmv` (a user `cq_theta` erased by a residue simplifier) was closed 2026-09-18 with no
 recorded reason: re-verify before trusting it. Over-declines to remove are tracked in the
 goal-1 umbrellas `dm7f` (control flow), `8h7d` (loops), `p3kd` (function lifting) and

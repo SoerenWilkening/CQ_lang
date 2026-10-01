@@ -61,7 +61,10 @@ entry:
 ; CHECK-LABEL: define internal {{.*}}i32 @__cq_q_lookupP_1(i32 %x)
 ; CHECK:     %[[ARR:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_f64(i32 4)
 ; CHECK:     %[[IDX:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 3)
-; CHECK:     %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARR]], i32 %[[IDX]])
+; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[IDX]])
+; CHECK-NEXT: %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARR]], i32 %[[XI]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[IDX]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])
 ; the diamond is FLATTENED and the read LOWERED — no raw load / control survives:
 ; CHECK-NOT: load double
 ; CHECK-NOT: br i1
@@ -70,7 +73,10 @@ entry:
 ; CHECK:     call void @cqrt_copy_f64_controlled(
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK:     call void @cqrt_copy_f64(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
-; CHECK:     call void @cqrt_qram_load_f64_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[IDX]])
+; CHECK:      %[[XU:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[IDX]])
+; CHECK-NEXT: call void @cqrt_qram_load_f64_unc(i32 %[[V]], i32 %[[ARR]], i32 %[[XU]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XU]], i32 %[[IDX]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XU]])
 ; the reverse is `_unc` (never `_inv`); the entangled array handle + result rail are
 ; NEVER freed (Rule 6/8):
 ; CHECK-NOT: cqrt_qram_load_f64_inv

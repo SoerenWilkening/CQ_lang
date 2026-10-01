@@ -3856,7 +3856,10 @@ public:
     // masked garbage-row value, where it survives the merge predicate, only ever
     // replaces an undefined one. The claim gate (classifyQromReadUnderControl)
     // keeps the index at the pointer-index width, so `and idx, N-1` (N ≤ 2^63)
-    // yields a non-negative in-range offset for every bit pattern. Inserted AT
+    // yields a non-negative in-range offset for every bit pattern (each QRAM
+    // call then reads it through its own i32 trunc bracket,
+    // `bracketQramIndexCasts`; exact, since the masked value is < N, an i32
+    // count). Inserted AT
     // the (already-moved) gep so the index dominates textually; the And is
     // tainted by the caller's re-propagate and lowers as an ordinary hl template.
     for (auto &ML : R.MaskLoads) {

@@ -21,7 +21,7 @@
 ; load and must feed it. A fixture that merely asserted `cq_template_and_i64_hl`
 ; appears somewhere would pass on a module that masked a different value, or
 ; masked after the read — so the load's index operand is bound to the mask's
-; result by name. This is the whole behavioural difference the fence buys.
+; result by name (through the i32 index trunc, libcqops b6a). This is the whole behavioural difference the fence buys.
 ;
 ; *** THERE IS NO DECLINE TWIN, AND THAT IS A STRUCTURAL FACT, NOT AN OMISSION.
 ; *** `cttz(x, i1 true)` bounds at [0,63] and `i1 false` at [0,64], so the ONLY
@@ -63,4 +63,7 @@ merge:
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_f64(i32 64)
 ; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cq_template_cttz_i64(i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:     %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[Z]], i64 63)
-; CHECK:     call i32 @cqrt_qram_load_f64(i32 %[[T]], i32 %[[M]])
+; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[M]])
+; CHECK-NEXT: call i32 @cqrt_qram_load_f64(i32 %[[T]], i32 %[[XI]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[M]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])

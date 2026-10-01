@@ -45,7 +45,10 @@ merge:
 ; the table read, then the kjd1 fp merges:
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_f64(i32 4)
 ; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 3)
-; CHECK:     call i32 @cqrt_qram_load_f64(i32 %[[T]], i32 %[[MSK]])
+; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[MSK]])
+; CHECK-NEXT: call i32 @cqrt_qram_load_f64(i32 %[[T]], i32 %[[XI]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[MSK]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])
 ; CHECK:     call void @cqrt_copy_f64_controlled(
 ; CHECK:     call double @cqrt_measure_f64(
 ; CHECK-NOT: br i1

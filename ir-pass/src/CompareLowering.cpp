@@ -340,7 +340,7 @@ Value *lowerCompareToFlag(CmpInst *cmp, WidthDispatch &wd, TaintSet &taint,
 // bd adia (3c6m.55 Lever C): logical ABI width of a (possibly already-RAUW'd) tainted
 // operand — the `HandleWidth` side-table wins over the (possibly laundered
 // i32) LLVM type, exactly the p119.6 downstream-consumer discipline.
-static StringRef logicalOperandWidth(Value *V, TaintSet &taint) {
+StringRef logicalOperandWidth(Value *V, TaintSet &taint) {
   auto It = taint.HandleWidth.find(V);
   if (It != taint.HandleWidth.end())
     return It->second;

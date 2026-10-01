@@ -200,6 +200,11 @@ llvm::Value *lowerCompareToFlag(llvm::CmpInst *cmp, WidthDispatch &wd,
 // template surface ever narrows below `compareInScope`.
 bool compareFlagMintable(llvm::CmpInst *cmp, TaintSet &taint);
 
+// bd adia: logical ABI width of a (possibly already-RAUW'd) tainted value — the
+// `HandleWidth` record wins over a laundered i32 LLVM type; else the type's width.
+// The one spelling (also read by `resolveQramIndex`).
+llvm::StringRef logicalOperandWidth(llvm::Value *V, TaintSet &taint);
+
 // bd adia (3c6m.55 Lever C): the Q+Q select-leaf width — non-empty iff BOTH compare
 // operands are tainted and share one in-surface logical width (HandleWidth-
 // aware). Shared by SelectClassify (detection) and SelectMergeEmit (emission).

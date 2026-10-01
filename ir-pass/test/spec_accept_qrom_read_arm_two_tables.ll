@@ -65,10 +65,16 @@ entry:
 ; CHECK:     %[[ARRHI:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_f64(i32 4)
 ; the shared index rail masked into read 0's own index, then read 0:
 ; CHECK:     %[[M0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[SEL:[a-zA-Z0-9_.]+]], i64 3)
-; CHECK:     %[[V0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARRHI]], i32 %[[M0]])
+; CHECK:     %[[X0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[M0]])
+; CHECK-NEXT: %[[V0:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARRHI]], i32 %[[X0]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[X0]], i32 %[[M0]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X0]])
 ; the SAME shared index rail masked into read 1's own index (fan-out), then read 1:
 ; CHECK:     %[[M1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %[[SEL]], i64 3)
-; CHECK:     %[[V1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARRLO]], i32 %[[M1]])
+; CHECK:     %[[X1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[M1]])
+; CHECK-NEXT: %[[V1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_f64(i32 %[[ARRLO]], i32 %[[X1]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[X1]], i32 %[[M1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X1]])
 ; no raw load / control survives between the reads and the fp arm-merge:
 ; CHECK-NOT: load double
 ; CHECK-NOT: br i1
@@ -78,8 +84,14 @@ entry:
 ; CHECK:     %[[OUT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK:     call void @cqrt_copy_f64(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[OUT]])
 ; BOTH reads reverse-played exactly once (LIFO), each with its own masked index:
-; CHECK:     call void @cqrt_qram_load_f64_unc(i32 %[[V1]], i32 %[[ARRLO]], i32 %[[M1]])
-; CHECK:     call void @cqrt_qram_load_f64_unc(i32 %[[V0]], i32 %[[ARRHI]], i32 %[[M0]])
+; CHECK:      %[[XU1:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[M1]])
+; CHECK-NEXT: call void @cqrt_qram_load_f64_unc(i32 %[[V1]], i32 %[[ARRLO]], i32 %[[XU1]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XU1]], i32 %[[M1]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XU1]])
+; CHECK:      %[[XU0:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[M0]])
+; CHECK-NEXT: call void @cqrt_qram_load_f64_unc(i32 %[[V0]], i32 %[[ARRHI]], i32 %[[XU0]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XU0]], i32 %[[M0]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XU0]])
 ; neither array handle, nor the shared index, nor the result rail is freed (Rule 6/8),
 ; and the reverse never mints a fresh `_inv`:
 ; CHECK-NOT: cqrt_qram_load_f64_inv

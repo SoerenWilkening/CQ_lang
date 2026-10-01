@@ -22,6 +22,7 @@
 #include "OpcodeLowering.h"
 #include "PredMuxFlatten.h"
 #include "QramLowering.h"
+#include "QramIndexWidth.h"     // bracketQramIndexCasts / stripForeignQramIndexTags (libcqops b6a)
 #include "RailBankPromote.h"
 #include "RotationLowering.h"
 #include "SpecializeDetect.h"
@@ -245,6 +246,10 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // owner. ONE bank per call + a full re-propagate (the `flattenPredMuxRegions` /
   // `promoteVolatileScalarLocals` precedent) so each claim sees fresh taint and
   // fresh dominance and no cached block identity crosses an erasure (Rule 9).
+  // libcqops b6a — the QRAM index tag is compiler-owned: drop any the input
+  // carries before an emitter can mint one (round-3 review H1). Dropping, not
+  // declining: the tag means nothing to the program, so the IR is unchanged.
+  stripForeignQramIndexTags(M);
   if (declineForeignRailBankSeeds(M))
     return PreservedAnalyses::none();
   while (promoteRailBankCells(M, wd, taint))
@@ -1139,6 +1144,11 @@ PreservedAnalyses CQLoweringPass::run(Module &M, ModuleAnalysisManager &) {
   // Phase 5 (PRD §2.8): per-op uncomputation runs LAST, after every other
   // mutation has settled `taint` into its final post-lowering state.
   uncompute(M, wd, taint);
+  // libcqops b6a — every QRAM call (forward and `_unc`) whose index is not a
+  // 32-bit rail gets its own `cast; call; cast_unc; free` bracket. AFTER
+  // `uncompute` so no cast rail is ever a live record in the DAG it planned, and
+  // BEFORE the literal-integrity guard so that guard still sees every emitted call.
+  bracketQramIndexCasts(M, wd, taint);
   // bd xy9n — the literal-integrity guard, AFTER `uncompute` and so after the
   // last emitting stage: an `undef`/`poison` literal reaching TWO emitted gate
   // operands is read as two DIFFERENT values at the shipped `-O0` stage 3
@@ -1319,6 +1329,7 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // separated from the call — the L1 SLOT ARGUMENT: this stage grows the taint
   // set, so it is sound ONLY because it runs above every stage that adjudicates
   // consumers of tainted values, `foldIdentityBitcasts` included.
+  stripForeignQramIndexTags(M);  // libcqops b6a — mirrored from run().
   if (declineForeignRailBankSeeds(M))
     return false;
   while (promoteRailBankCells(M, wd, taint)) {
@@ -1728,6 +1739,8 @@ bool CQLoweringPass::runOnFunction(Function &F) {
   // Phase 5 (PRD §2.8): uncomputation runs LAST in this entry point too — miss
   // one and unit-level callers diverge from `run()`.
   uncompute(M, wd, taint);
+  // libcqops b6a — mirrored from `run()` (twin-pipeline parity, WI-1.12).
+  bracketQramIndexCasts(M, wd, taint);
   // bd xy9n — mirrored from `run()` (twin-pipeline parity, WI-1.12): miss it and
   // a unit-level caller silently keeps the pairing break. See run() for why this
   // position is the complete one, and for why the bool is consumed.

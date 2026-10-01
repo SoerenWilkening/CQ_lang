@@ -32,11 +32,14 @@ merge:
   ret i32 %m
 }
 
-; the table handle births first, then the masked index (and i64 idx, 3) feeds
-; the read, then the integer select merge routes the arm value:
+; the table handle births first, then the masked index (and i64 idx, 3), narrowed
+; to the i32 index rail by its own trunc bracket, feeds the read, then the integer select merge routes the arm value:
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
 ; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 3)
-; CHECK:     call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[MSK]])
+; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[MSK]])
+; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[XI]])
+; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[MSK]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: br i1

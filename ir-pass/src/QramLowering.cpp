@@ -14,6 +14,7 @@
 
 #include "OpcodeSupport.h"      // abiWidthFromType / widthHasReversibleCopy
 #include "PoisonFacts.h"        // indexBoundIsPoisonConditional (bd s6ao)
+#include "QramIndexWidth.h"     // resolveQramIndex / tagQramIndexCast (libcqops b6a)
 #include "TaintPropagation.h"   // TaintSet
 #include "WidthDispatch.h"
 
@@ -3235,24 +3236,25 @@ void lowerQramReads(Module &M, WidthDispatch &wd, TaintSet &taint,
     // self-referential store web). `matchAddressGep` proved the index is the
     // trailing gep operand, so the fresh read is the same value modulo RAUW.
     //
-    // Then resolve the index handle: strip the mandatory `-O1` widening sext/zext
-    // so the index is the i32 handle (Rule 15 — the widening is irrelevant to the
-    // symbol). The cross-type RAUW launders the operand to its i32 handle later,
-    // EXACTLY like the I/O tape-write `src` (RotationLowering §1). If the cast is
-    // single-use (the gep was its only user) it dies here; otherwise it is left
-    // for `lowerOps` and the source value is still the right index.
-    Value *Idx = R.Gep->getOperand(R.Gep->getNumOperands() - 1);
-    Instruction *DeadCast = nullptr;
-    if (auto *CI = dyn_cast<CastInst>(Idx))
-      if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
-          taint.Tainted.count(CI->getOperand(0))) {
-        Idx = CI->getOperand(0);
-        if (CI->hasOneUse())
-          DeadCast = CI;
-      }
+    // Then resolve the index handle (`resolveQramIndex`): strip the mandatory
+    // `-O1` widening sext/zext so the index is the source rail (Rule 15 — the
+    // widening is irrelevant to the symbol). The cross-type RAUW launders the
+    // operand to its i32 handle later, EXACTLY like the I/O tape-write `src`
+    // (RotationLowering §1). If the cast is single-use (the gep was its only
+    // user) it dies here; otherwise it is left for `lowerOps` and the source
+    // value is still the right index. A rail whose LOGICAL width is not 32 is
+    // tagged here and bracketed by its own i32 cast after `uncompute`
+    // (`bracketQramIndexCasts`; libcqops b6a) — never a cast rail kept alive.
+    QramIndex QI = resolveQramIndex(
+        R.Gep->getOperand(R.Gep->getNumOperands() - 1), R.Load, taint);
+    if (!QI.Idx)
+      continue;  // loud diagnostic already fired.
+    Value *Idx = QI.Idx;
+    Instruction *DeadCast = QI.DeadCast;
 
     IRBuilder<> B(R.Load);
     CallInst *Out = B.CreateCall(LoadFn, {Arr, Idx});
+    tagQramIndexCast(Out, /*Slot=*/1, QI);
     if (DebugLoc DL = R.Load->getDebugLoc())
       Out->setDebugLoc(DL);
     // The loaded value is a tainted data producer (a copy-out): record its element
@@ -3476,6 +3478,13 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
         return;
       }
 
+  // Every index must resolve to the i32 index width (`resolveQramIndex`); ask
+  // before emitting anything so a failure never leaves the alloca half-lowered.
+  for (const ShadowAccess &A : Accesses)
+    if (!checkQramIndexWidth(A.Gep->getOperand(A.Gep->getNumOperands() - 1),
+                             A.MemOp, taint))
+      return;
+
   // All invariants hold → emit. Array-handle birth: ONE `cqrt_qram_alloc_<W>(N)` at
   // entry. TAINTED — an alloca-backed mutable array is an in-place-mutated register
   // the whole-DAG uncompute spine reverses (a dead scratch array's stores reverse
@@ -3503,18 +3512,17 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
     // verifier UAF SIGSEGV). `matchAddressGep` proved the index is the trailing
     // gep operand, so the fresh read is the same value modulo intervening RAUW.
     //
-    // Then resolve the index handle: strip the mandatory `-O1` widening sext/zext
-    // so the index is the i32 handle (Rule 15) — the cross-type RAUW launders it
-    // later, EXACTLY like Inc 1's read and the I/O tape-write `src`.
-    Value *Idx = A.Gep->getOperand(A.Gep->getNumOperands() - 1);
-    Instruction *DeadCast = nullptr;
-    if (auto *CI = dyn_cast<CastInst>(Idx))
-      if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
-          taint.Tainted.count(CI->getOperand(0))) {
-        Idx = CI->getOperand(0);
-        if (CI->hasOneUse())
-          DeadCast = CI;
-      }
+    // Then resolve the index handle (`resolveQramIndex`, shared with Inc 1's
+    // read): strip the mandatory `-O1` widening sext/zext (Rule 15) — the
+    // cross-type RAUW launders it later, EXACTLY like Inc 1's read and the I/O
+    // tape-write `src`. A non-32 LOGICAL width is tagged on the call below and
+    // bracketed after `uncompute` (`bracketQramIndexCasts`; libcqops b6a).
+    QramIndex QI = resolveQramIndex(
+        A.Gep->getOperand(A.Gep->getNumOperands() - 1), A.MemOp, taint);
+    if (!QI.Idx)
+      return;  // unreachable past checkQramIndexWidth; the diagnostic fired.
+    Value *Idx = QI.Idx;
+    Instruction *DeadCast = QI.DeadCast;
 
     IRBuilder<> B(A.MemOp);
     if (A.IsStore) {
@@ -3551,14 +3559,17 @@ void processShadowAlloca(AllocaInst *AI, ArrayRef<ShadowAccess> Accesses,
       if (GsIt != taint.GuardedStores.end()) {
         FunctionCallee GStoreFn = wd.qramStoreControlledFn(ElemAbi);
         St = B.CreateCall(GStoreFn, {GsIt->second, Arr, Idx, Val});
+        tagQramIndexCast(St, /*Slot=*/2, QI);
       } else {
         St = B.CreateCall(StoreFn, {Arr, Idx, Val});
+        tagQramIndexCast(St, /*Slot=*/1, QI);
       }
       if (DebugLoc DL = A.MemOp->getDebugLoc())
         St->setDebugLoc(DL);
       ToErase.push_back(A.MemOp);  // the store
     } else {
       CallInst *Out = B.CreateCall(LoadFn, {Arr, Idx});
+      tagQramIndexCast(Out, /*Slot=*/1, QI);
       if (DebugLoc DL = A.MemOp->getDebugLoc())
         Out->setDebugLoc(DL);
       // A loaded value is a tainted reversible data producer (copy-out): record its
