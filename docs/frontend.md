@@ -351,7 +351,7 @@ diagnostic, because different stages are the first to see the violation:
 |---|---|---|
 | the stale-record fence for an in-place rotation arm under quantum control | `ArmClassify.cpp` | `stale rail record read past a controlled Ry` |
 | a rail record read at a position where the register no longer holds it, inside a classically-bounded loop | `LoopLowering.cpp` | `cq loop lowering: rail record read past an in-place gate on the same rail` |
-| the pass-wide guard: a tainted pure op scheduled past a non-diagonal wire gate | `OpcodeLowering.cpp` | `cq opcode lowering: operand predates a non-diagonal gate` |
+| the pass-wide guard: a tainted pure op, or a QRAM access's index register or stored value (`tbl[mark]`, `arr[i] = mark`), scheduled past a non-diagonal wire gate | `OpcodeLowering.cpp` | `cq opcode lowering: operand predates a non-diagonal gate` |
 | the same guard for a `cq_theta` operand or a `cq_measure` operand | `OpcodeLowering.cpp` | `cq opcode lowering: rotation/measure operand predates a non-diagonal gate` |
 
 A program that trips any of them is asking for a value the hardware no longer

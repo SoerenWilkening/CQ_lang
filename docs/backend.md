@@ -855,7 +855,10 @@ fall on the closed physics list. The named fences a widening has to argue with:
 - **Stale readers and stale rails in loops** — a `cq_theta` arg-0 or a
   `cq_measure` operand that reads a name the pass cannot prove executes before
   a non-diagonal gate on the same wire declines
-  (`rotation/measure operand predates a non-diagonal gate`).
+  (`rotation/measure operand predates a non-diagonal gate`). A QRAM access reads
+  its index register, and a store its value, where the access runs, so the same
+  case for `tbl[q]` or `arr[i] = q` declines with the pure-op message
+  (`operand predates a non-diagonal gate`; bd r2j3.2).
 - **Loop scope** — the rolled loop lowering claims natural, single-latch loops
   whose exit test is classical. A loop whose exit depends on quantum data
   declines (`loop under quantum control`); NORTHSTAR goal 1 admits such a loop

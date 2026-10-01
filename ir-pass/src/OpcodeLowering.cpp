@@ -39,6 +39,7 @@
 // ask it, never re-spell it.
 #include "LoopPlan.h"
 #include "OpcodeSupport.h"
+#include "QramLowering.h"     // qramAccessReads — a QRAM access's reads (bd r2j3.2)
 #include "RailBankPromote.h"  // railBankParkedRails — the memory hop (review F-1)
 #include "TaintPropagation.h"
 #include "WidthDispatch.h"
@@ -219,16 +220,19 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
   return false;
 }
 
-// Per-op stale-record check (shared by the straight-line guard and the
-// post-lift re-check, Rule 14). For each tainted operand of `I`, walk its
-// forward in-place-gate wire; if it gains a non-diagonal gate not provably
-// after `I`'s emission point, fire the loud diagnostic, record `I` in
-// `StaleDeclined` (so `lowerOps` lowers nothing for it), and return true. `DT`
-// must be the dominator tree of `I`'s function.
-bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
+// Per-read stale-record check (shared by the straight-line guard and the
+// post-lift re-check, Rule 14). `I` reads each tainted value in `Reads` AT ITS
+// OWN POSITION: walk that value's forward in-place-gate wire; if it gains a
+// non-diagonal gate not provably after `I`, fire the loud diagnostic, record `I`
+// in `StaleDeclined` (so `lowerOps` lowers nothing for it), and return true. `DT`
+// must be the dominator tree of `I`'s function. A pure op reads its operands
+// (`checkStaleOp`); a QRAM access reads its index register and stored value
+// (`qramAccessReads`, bd test_C_libtooling-r2j3.2) — one policy, one diagnostic.
+bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
+                     DominatorTree &DT) {
   if (taint.StaleDeclined.count(&I))
     return false;  // already declined — idempotent across the post-lift re-sweep.
-  for (Value *Op : I.operands()) {
+  for (Value *Op : Reads) {
     if (!taint.Tainted.count(Op))
       continue;  // classical operand — no wire.
     if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I, &DT,
@@ -239,6 +243,11 @@ bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
     }
   }
   return false;
+}
+
+bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
+  SmallVector<Value *, 4> Ops(I.operand_values());
+  return checkStaleReads(I, Ops, taint, DT);
 }
 
 }  // namespace
@@ -292,18 +301,35 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   // it is one operand policy inside one function rather than a new stage with a
   // premise of its own. A NEW SWEEP SITE would have owed the L1 question; this
   // does not, and that is the reason it was built this way.
+  //
+  // ── THE QRAM ACCESS (bd test_C_libtooling-r2j3.2, P1 silent miscompile) ────
+  // A QRAM call reads its index register (and a store its value) AT THE ACCESS,
+  // so it is asked the pure-op question about exactly those registers
+  // (`qramAccessReads`, owned by QramLowering). `long q2 = cq_theta(q, .3);
+  // v = tbl[q];` used to lower to `qram_load(arr, q)` after the Ry: a bare index
+  // has no op between the gep and the register, and the `int` twin declined only
+  // because its widening `sext` happened to be scheduled after the gate. All four
+  // slots above see the pre-emission `load`/`store`, except the post-lift re-sweep,
+  // which runs after both emitters and sees the emitted call — and needs to, since
+  // the lift is what turns a φ index into its wire base.
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
     // Built lazily — only when a tainted in-scope op exists in `F`.
     std::optional<DominatorTree> DT;
+    SmallVector<Value *, 4> QramReads;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
-        if (!inLowerOpsScope(I, taint))
+        QramReads.clear();
+        const bool PureOp = inLowerOpsScope(I, taint);
+        if (!PureOp && !qramAccessReads(I, taint, QramReads))
           continue;
         if (!DT)
-          DT.emplace(F);  // a tainted in-scope op always has a tainted operand.
-        checkStaleOp(I, taint, *DT);
+          DT.emplace(F);  // either form always has a tainted read.
+        if (PureOp)
+          checkStaleOp(I, taint, *DT);
+        else
+          checkStaleReads(I, QramReads, taint, *DT);
       }
     }
   }

@@ -55,6 +55,12 @@ struct QramIndex {
   llvm::StringRef FromW;                  // Idx's logical width when CastOp set
 };
 
+// The register a QRAM access reads as its index: `GepIdx` with a widening
+// `sext`/`zext` over a tainted operand stripped (the strip `resolveQramIndex`
+// applies). Pure; the stale-record sweep asks it before either emitter runs
+// (bd r2j3.2).
+llvm::Value *qramIndexRegister(llvm::Value *GepIdx, const TaintSet &taint);
+
 // The pre-emission check: true iff the index resolves to the i32 width; else a
 // loud diagnostic at `At`. `processShadowAlloca` asks it for every access before
 // emitting any, so a failing access never leaves an alloca half-lowered on a
