@@ -54,17 +54,16 @@ IndexPlan planIndex(Value *GepIdx, TaintSet &taint) {
   // GEP sign-extends a narrow index, so a bare narrow index re-extends as
   // `sext`; a stripped widening keeps its own kind.
   Instruction::CastOps ExtOp = Instruction::SExt;
-  // Strip the mandatory -O1 widening sext/zext. A one-use cast (the gep was its
-  // only user) dies with the gep; otherwise `lowerOps` lowers it for its other
-  // users and the source value is still the right index.
-  if (auto *CI = dyn_cast<CastInst>(P.R.Idx))
-    if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
-        taint.Tainted.count(CI->getOperand(0))) {
-      ExtOp = CI->getOpcode();
-      P.R.Idx = CI->getOperand(0);
-      if (CI->hasOneUse())
-        P.R.DeadCast = CI;
-    }
+  // Strip the mandatory -O1 widening sext/zext (`qramIndexRegister`). A one-use
+  // cast (the gep was its only user) dies with the gep; otherwise `lowerOps`
+  // lowers it for its other users and the source value is still the right index.
+  P.R.Idx = qramIndexRegister(GepIdx, taint);
+  if (P.R.Idx != GepIdx) {
+    auto *CI = cast<CastInst>(GepIdx);
+    ExtOp = CI->getOpcode();
+    if (CI->hasOneUse())
+      P.R.DeadCast = CI;
+  }
   // The LOGICAL width, read while an IR-typed index still carries it in its
   // type; a laundered i32 handle's `HandleWidth` record wins over its SSA type
   // (a nested QRAM load, a retyped loop-carried φ, an emitter rail).
@@ -133,6 +132,14 @@ bool bracket(CallInst *C, unsigned Slot, const Tag &T, WidthDispatch &wd,
 }
 
 }  // namespace
+
+Value *qramIndexRegister(Value *GepIdx, const TaintSet &taint) {
+  if (auto *CI = dyn_cast<CastInst>(GepIdx))
+    if ((isa<SExtInst>(CI) || isa<ZExtInst>(CI)) &&
+        taint.Tainted.count(CI->getOperand(0)))
+      return CI->getOperand(0);
+  return GepIdx;
+}
 
 bool checkQramIndexWidth(Value *GepIdx, Instruction *At, TaintSet &taint) {
   if (planIndex(GepIdx, taint).Ok)

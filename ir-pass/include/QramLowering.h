@@ -20,6 +20,7 @@
 #define CQ_IRPASS_QRAM_LOWERING_H_
 
 #include "llvm/ADT/SmallPtrSet.h"
+#include "llvm/ADT/SmallVector.h"
 #include "llvm/ADT/StringRef.h"
 
 #include <cstdint>
@@ -89,6 +90,27 @@ QramCarve qramCarveVerdict(const llvm::Instruction *I, const TaintSet &taint,
 // to straight-line before `lowerShadowMemory` runs). Pure analysis (no mutation).
 bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
                              llvm::DominatorTree &DT, llvm::LoopInfo &LInfo);
+
+// bd test_C_libtooling-r2j3.2 — THE REGISTERS A QRAM ACCESS READS AT ITS OWN
+// POSITION. A QRAM call reads its index (and a store its value) when it runs, at
+// the access, so `declineStaleRecordOps` asks the pure-op stale question about
+// these values with the access as the emission point. True iff `I` is a QRAM
+// access; `Reads` receives its tainted read operands (APPENDED, not cleared):
+//   * the pre-emission form — a `load`/`store` through a canonical tainted-index
+//     address gep (`matchAddressGep`): the register the emitter will read as the
+//     index (`qramIndexRegister`, the strip `resolveQramIndex` applies), and the
+//     stored value;
+//   * the emitted form (the post-lift re-sweep runs after both emitters) — a
+//     `cqrt_qram_load_*` / `cqrt_qram_store_*` call: every tainted argument.
+// Pure analysis (no mutation).
+bool qramAccessReads(llvm::Instruction &I, const TaintSet &taint,
+                     llvm::SmallVectorImpl<llvm::Value *> &Reads);
+
+// Is `I` control-dependent on a tainted br/switch (inside a tainted arm, not after
+// its merge)? The carve's straight-line gate; also asked by the stale-record sweep
+// (bd r2j3.2). Pure analysis.
+bool instUnderTaintedControl(const llvm::Instruction *I, const TaintSet &taint,
+                             llvm::DominatorTree &DT);
 
 // ── 3c6m.14 (L6) Inc 3: const-global QROM read under tainted control ────────────
 //

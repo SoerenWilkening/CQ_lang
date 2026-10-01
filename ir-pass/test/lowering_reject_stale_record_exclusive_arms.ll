@@ -34,6 +34,13 @@
 ; RETIREMENT TRIGGER: when that increment lands, this file becomes an ACCEPT and
 ; its stream is the twin's; re-derive it then, do not delete it.
 ;
+; bd r2j3.2 (review round 1, F1) widened the pure-op policy by ONE case, not this
+; one: a gate that fails dominance is granted when it POST-dominates the read and
+; cannot reach it (`gateFollowsRead`, OpcodeLowering.cpp — a read in a classical arm,
+; or a QRAM access in a tainted one, with the gate after the merge). A sibling arm
+; never post-dominates, so this decline stands; its tainted-branch twin is
+; lowering_reject_stale_record_tainted_sibling_arms.ll.
+;
 ; RUN: not %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s 2>&1 | %filecheck %s
 ; 3qlq: migrated from register cq_phi (uncontrolled -> deleted (D2))
 declare i32 @cq_theta_si32(i32, double)

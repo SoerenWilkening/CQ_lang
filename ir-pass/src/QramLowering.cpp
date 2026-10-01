@@ -685,6 +685,8 @@ struct ShadowAccess {
   bool IsStore;
 };
 
+}  // namespace
+
 // Is `I` genuinely CONTROL-DEPENDENT on a tainted-condition branch? 7.5 lowers
 // STRAIGHT-LINE memory only (§2.11); a CONDITIONALLY-executed access inside a
 // tainted-control region (e.g. the const `@switch.table` gep/load of a clang-folded
@@ -704,6 +706,8 @@ struct ShadowAccess {
 // post-dominating one is correct (it is exactly the straight-line 7.5 shape). The
 // `PostDominatorTree` is built lazily — ONLY when a dominating tainted br is found
 // (the rare case) — so the common no-tainted-control access pays nothing.
+// EXPORTED (QramLowering.h) for the stale-record sweep (bd r2j3.2 review round 2),
+// which asks the same "inside a tainted arm" question of a pure op.
 bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
                              DominatorTree &DT) {
   BasicBlock *IB = const_cast<BasicBlock *>(I->getParent());
@@ -732,6 +736,8 @@ bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
   }
   return false;
 }
+
+namespace {
 
 // ── Phase 7.5 Increment 3: the single-PtrOrigin provenance walk ─────────────────
 //
@@ -2580,6 +2586,49 @@ RailBankCarve railBankCarveVerdict(const llvm::StoreInst *SI,
 bool guardedShadowStoreShape(StoreInst *SI, const TaintSet &taint,
                              DominatorTree &DT, LoopInfo &LInfo) {
   return guardedShadowStoreShapeImpl(SI, taint, DT, LInfo);
+}
+
+// bd test_C_libtooling-r2j3.2 (P1 silent miscompile) — see QramLowering.h. Both
+// emitters mint the QRAM call AT the memop (`IRBuilder<> B(MemOp)`), so the
+// access reads its index and value registers there. A bare index has no op of
+// its own between the gep and the register, so before this the stale-record
+// sweep asked nothing about it: `long q2 = cq_theta(q, .3); v = tbl[q];`
+// emitted `qram_load(arr, q)` after the Ry while `q` names the pre-Ry record.
+bool qramAccessReads(Instruction &I, const TaintSet &taint,
+                     SmallVectorImpl<Value *> &Reads) {
+  const size_t Before = Reads.size();
+  auto Read = [&](Value *V) {
+    if (taint.Tainted.count(V))
+      Reads.push_back(V);
+  };
+  if (auto *CI = dyn_cast<CallInst>(&I)) {
+    // The emitted form. Only `declineLiftedStaleRecordOps` meets it: the
+    // one-register merge-phi lift RAUWs a phi index to its wire base AFTER
+    // both emitters ran, so the register the call reads changes then. Every
+    // QRAM call reads all its handles where it runs (an `_unc` too; the only
+    // ones alive at that slot are a Bennett clone's, which holds no gate).
+    const Function *F = CI->getCalledFunction();
+    StringRef N = F ? F->getName() : StringRef();
+    if (!N.starts_with("cqrt_qram_load_") && !N.starts_with("cqrt_qram_store_"))
+      return false;
+    for (Value *A : CI->args())
+      Read(A);
+    return Reads.size() != Before;
+  }
+  auto *GEP = dyn_cast_or_null<GetElementPtrInst>(getLoadStorePointerOperand(&I));
+  Value *Idx = nullptr;
+  Type *CellTy = nullptr;
+  if (!GEP || !matchAddressGep(GEP, taint, Idx, CellTy))
+    return false;
+  // The register the emitter reads: `resolveQramIndex` strips a widening
+  // sext/zext and the b6a bracket re-casts AT the call. Seeding the cast as well
+  // would decline `long w = tbl[q]; cq_theta(w, .3); tbl2[w]`, which lowers
+  // correctly; seeding only the cast misses a gate on `q` between a hoisted
+  // `sext` and the load.
+  Read(qramIndexRegister(Idx, taint));
+  if (auto *SI = dyn_cast<StoreInst>(&I))
+    Read(SI->getValueOperand());  // a store copies its value in at the access
+  return Reads.size() != Before;
 }
 
 QromClaim classifyQromReadUnderControl(
