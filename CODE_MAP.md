@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 833 maintained source files, 6516 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 837 maintained source files, 6525 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -26,8 +26,8 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/SwapRouteEmit.cpp` — 3089 physical lines
 - `runtime/cq_link_smoke.c` — 2873 physical lines
 - `tools/taintset_scrub_guard.py` — 2758 physical lines
+- `ir-pass/src/Uncomputation.cpp` — 2478 physical lines
 - `runtime/cq_templates.h` — 2437 physical lines
-- `ir-pass/src/Uncomputation.cpp` — 2364 physical lines
 - `runtime/cq_intrinsic_templates.c` — 2355 physical lines
 - `tools/golden_multiset_audit.py` — 2211 physical lines
 - `ir-pass/src/RotationLowering.cpp` — 2179 physical lines
@@ -853,6 +853,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/RailBankPromote.cpp:1679` — `rewriteOneBank`
 - `ir-pass/src/RailBankPromote.cpp:1946` — `rewriteRailBankCellTypes`
 
+### `ir-pass/src/RecordWindowFreeze.cpp` (99 lines)
+
+- `ir-pass/src/RecordWindowFreeze.cpp:23` — `freezeRecordWindowReaders`
+
 ### `ir-pass/src/RegionFlatten.cpp` (308 lines)
 
 - `ir-pass/src/RegionFlatten.cpp:37` — `scrubTaint`
@@ -1105,7 +1109,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/TemplateName.cpp:117` — `isUncHandleSlot`
 - `ir-pass/src/TemplateName.cpp:133` — `castName`
 
-### `ir-pass/src/Uncomputation.cpp` (2364 lines)
+### `ir-pass/src/Uncomputation.cpp` (2478 lines)
 
 - `ir-pass/src/Uncomputation.cpp:84` — `diagnose`
 - `ir-pass/src/Uncomputation.cpp:92` — `isDataProducer`
@@ -1116,17 +1120,20 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/Uncomputation.cpp:384` — `useCompleteBeforeDischarge`
 - `ir-pass/src/Uncomputation.cpp:402` — `dagInsertPoint`
 - `ir-pass/src/Uncomputation.cpp:474` — `emitDagReversal`
-- `ir-pass/src/Uncomputation.cpp:595` — `reverseTerminalGroup`
-- `ir-pass/src/Uncomputation.cpp:825` — `preservesBorrowedParent`
-- `ir-pass/src/Uncomputation.cpp:1036` — `routeGroupFullyInside`
-- `ir-pass/src/Uncomputation.cpp:1118` — `planInteriorComponent`
-- `ir-pass/src/Uncomputation.cpp:1619` — `addDischargedRails`
-- `ir-pass/src/Uncomputation.cpp:1629` — `collectInteriorPlansMode`
-- `ir-pass/src/Uncomputation.cpp:2111` — `collectInteriorPlans`
-- `ir-pass/src/Uncomputation.cpp:2136` — `reverseInteriorGroup`
-- `ir-pass/src/Uncomputation.cpp:2151` — `collectTerminalCandidates`
-- `ir-pass/src/Uncomputation.cpp:2192` — `uncompute`
-- `ir-pass/src/Uncomputation.cpp:2288` — `planInteriorDischarges`
+- `ir-pass/src/Uncomputation.cpp:581` — `planTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:771` — `emitTerminalReversal`
+- `ir-pass/src/Uncomputation.cpp:816` — `reverseTerminalGroup`
+- `ir-pass/src/Uncomputation.cpp:917` — `preservesBorrowedParent`
+- `ir-pass/src/Uncomputation.cpp:1128` — `routeGroupFullyInside`
+- `ir-pass/src/Uncomputation.cpp:1211` — `borrowedParentsUnmoved`
+- `ir-pass/src/Uncomputation.cpp:1407` — `planInteriorComponent`
+- `ir-pass/src/Uncomputation.cpp:1733` — `addDischargedRails`
+- `ir-pass/src/Uncomputation.cpp:1743` — `collectInteriorPlansMode`
+- `ir-pass/src/Uncomputation.cpp:2225` — `collectInteriorPlans`
+- `ir-pass/src/Uncomputation.cpp:2250` — `reverseInteriorGroup`
+- `ir-pass/src/Uncomputation.cpp:2265` — `collectTerminalCandidates`
+- `ir-pass/src/Uncomputation.cpp:2306` — `uncompute`
+- `ir-pass/src/Uncomputation.cpp:2402` — `planInteriorDischarges`
 
 ### `ir-pass/src/WidthDispatch.cpp` (581 lines)
 
@@ -6816,6 +6823,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `tests/e2e/slice_qram_guarded_store_swapped.c:19` — `guarded_swapped`
 - `tests/e2e/slice_qram_guarded_store_swapped.c:28` — `main`
+
+### `tests/e2e/slice_qram_load_index_record_window.c` (38 lines)
+
+- `tests/e2e/slice_qram_load_index_record_window.c:20` — `defect`
+- `tests/e2e/slice_qram_load_index_record_window.c:28` — `only_v`
+- `tests/e2e/slice_qram_load_index_record_window.c:36` — `main`
+
+### `tests/e2e/slice_qram_local_store_measured_index.c` (30 lines)
+
+- `tests/e2e/slice_qram_local_store_measured_index.c:17` — `local_store_measured_index`
+- `tests/e2e/slice_qram_local_store_measured_index.c:27` — `main`
 
 ### `tests/e2e/slice_qram_local_uncompute.c` (32 lines)
 
