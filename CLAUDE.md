@@ -253,15 +253,17 @@ touching it.
 - **L9 — "Pre-existing" is true of a defect and false of its population.** A landing that
   adds customers to a known-bad path owes that disclosure.
 
-**Known open silent miscompiles — count them, never claim zero:** bd `lo7u` (4.5 `switch`
-eq-flags from a measured scrutinee), `s82e` (in-loop leak of entangled which-path rails),
-`a3z7` (a dtzb-mutated `cq_theta` result carried through a rail φ), `yiid`
-(reading a name after measuring it), `cfmv` (a user `cq_theta` erased by a residue
-simplifier), `4e4p` (function-pointer `cq_theta` drops `nomerge`), `uw5u`
-(`cq_theta((t==s)?t:s, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin with a wrong body is
-trusted), and the twin half of `kyy1`. Over-declines to remove are tracked in bd
-(`35t0`, `onq1`, `lgu8`, `l4x4.a`, `54ur`, `fg9k`, `boi6`, `r903`, `4l5q`, `cx6j`, `707a`,
-`41g3`, …).
+**Known open silent miscompiles — count them, never claim zero:** tracked in bd umbrella
+`r2j3` section A (consolidated 2026-10-01; each original ID stays readable with `bd show`):
+`lo7u` (4.5 `switch` eq-flags from a measured scrutinee), `s82e` (in-loop leak of entangled
+which-path rails), `a3z7` (a dtzb-mutated `cq_theta` result carried through a rail φ),
+`yiid` (reading a name after measuring it), `4e4p` (function-pointer `cq_theta` drops
+`nomerge`), `uw5u` (`cq_theta((t==s)?t:s, θ)` folds), `9oob` (a user `__cq_q_*_unc` twin
+with a wrong body is trusted), the twin half of `kyy1`, and `jlf8`, `yldg`, `etj3`.
+`cfmv` (a user `cq_theta` erased by a residue simplifier) was closed 2026-09-18 with no
+recorded reason: re-verify before trusting it. Over-declines to remove are tracked in the
+goal-1 umbrellas `dm7f` (control flow), `8h7d` (loops), `p3kd` (function lifting) and
+`01po` (memory and data types).
 
 ## Pipeline
 
