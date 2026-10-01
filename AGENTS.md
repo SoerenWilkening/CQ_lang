@@ -27,7 +27,8 @@ once), **green** (new plus plausibly affected fixtures, once), **final** (once, 
 changed since green). Mutation validation runs a no-op mutant plus at most **three** real
 mutants, each against only its killing fixture. Between checkpoints: one `cq-opt` run on
 one probe, then read the IR. Never re-run a passing set; never run `ir-pass-lit`, a label
-tier or the full suite while iterating; reviewers run no suites. Report the invocation
+tier or the full suite while iterating. Reviewers re-run none of the implementer's tests
+and use at most six targeted probes per round. Report the invocation
 count. Exceeding the budget needs the owner's approval.
 
 ## Code map and file-size budget

@@ -191,7 +191,9 @@ Mutation validation adds one no-op mutant and at most **three** real mutants. Ea
 runs only the fixture written to kill it. Between checkpoints, run no lit or ctest: run `cq-opt` once on one probe
 and read the IR. Never re-run a passing set to confirm. Never run `ir-pass-lit` or a
 label tier while iterating. Keep probe matrices to the shapes that test a stated
-hypothesis. Reviewers run no suites. Report the invocation count. Exceeding the budget
+hypothesis. Reviewers re-run none of the implementer's tests (no suites, no fixtures, no
+corpus re-lowering); a review round is at most six targeted probes on the highest-risk
+hypotheses, reported findings-first. Report the invocation count. Exceeding the budget
 needs the owner's approval. A coordinator assigns each parallel unit a disjoint
 fixture/slice set and runs the one batch gate below.
 
