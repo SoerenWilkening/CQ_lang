@@ -1,0 +1,97 @@
+\labsessionheader{2026-10-01}{QRAM index rails at logical width 32 (libcqops handoff b6a)}%
+  {27fc9a62}{n/a}{libcqops bead opcode\_quantum\_operations-b6a (handoff pasted by the owner)}
+
+\subsection*{Goal}
+The circuit backend libcqops reported that three CQ e2e fixtures abort in its
+QRAM shim (``the index rail is not i32'') and asked that every
+\texttt{cqrt\_qram\_*} index rail have logical width 32, with the contract text
+saying so. The libcqops maintainer had ruled for that reading on 2026-09-28. The
+request is outside \texttt{NORTHSTAR.md}'s goals and consistent with them: it
+declines nothing and fixes the width of an ABI operand.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item \commit{27fc9a62} --- \bd{test\_C\_libtooling-01po.1} --- the QRAM emitters
+  decide a \texttt{trunc}/\texttt{sext}/\texttt{zext} from the index's logical
+  width (\fpath{ir-pass/src/QramIndexWidth.cpp}) and tag the call. A new post-%
+  \texttt{uncompute} stage wraps every QRAM call, forward and \texttt{\_unc}, in
+  its own \texttt{cast; call; cast\_unc; cqrt\_free}. \fpath{runtime/cq_runtime.h}
+  and \fpath{docs/backend.md} state the width. The stage-2b checker
+  (\texttt{tools/\allowbreak free\_pairing\_check.py}) recognises the four-call bracket. Seven goldens and seven lit fixtures were
+  regenerated; five fixtures are new.
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ (introduced, then fixed before landing). The first draft
+  minted one cast rail per access and kept it until the access was reversed,
+  or for ever for a store that is never reversed. That rail is a CNOT copy of
+  the index register, so a later \texttt{cq\_theta} on the register is a wrong
+  unitary. Example: the source measures $b=0$ with probability 1, the draft gave
+  $P(b=1)=\sin^2(0.5)/2\approx0.115$. \texttt{opt} exit 0, stage 2b clean.
+  Found by round 1 of the adversarial review. Pinned by
+  \fpath{lowering_qram_index_width_shadow.ll} (\texttt{@main}).
+  \item \fconfirmed\ (introduced, then fixed before landing). The second draft
+  paired each \texttt{\_unc} with a forward by (callee, index value). A
+  \texttt{sext} and a \texttt{zext} store of one \texttt{i8} then swapped casts
+  on reversal, an out-of-bounds pop on in-contract states. Found by round 2.
+  Each \texttt{\_unc} now inherits its own forward's tag through
+  \texttt{emitInverseCall}. Pinned by \fpath{lowering_qram_index_width_unc_pairing.ll}.
+  \item Hardening (round 3): a forged \texttt{!cq.qram.idxcast} on input IR was
+  trusted. Input tags are now dropped at pass entry. Pinned by
+  \fpath{lowering_qram_index_width_foreign_tag.ll}.
+  \item \fpreexisting\ \bd{test\_C\_libtooling-r2j3.1}: a computed QRAM store
+  index such as \texttt{and\_i32\_hl} for \texttt{arr[q\&7]} stays live across a
+  later gate on its source, with no warning. This is a silent miscompile of the
+  same class as the first finding, now listed in \texttt{CLAUDE.md}.
+  \item \fpreexisting\ \bd{test\_C\_libtooling-r2j3.2}: a bare \texttt{i64} index read
+  after an in-place \texttt{cq\_theta} on it is accepted (stale read).
+  \item \fpreexisting\ \bd{test\_C\_libtooling-r2j3.3}: a QRAM load rail is freed
+  dirty after a tape record between \texttt{Ry} and \texttt{Ry}$^{-1}$ outside
+  \texttt{main}, and stage 2b certifies the free.
+  \item \fpreexisting\ \bd{test\_C\_libtooling-01po.3}: LoopLowering's break rails
+  carry no \texttt{HandleWidth}, so an \texttt{i64} \texttt{cq.brk.out} index is
+  passed unbracketed. The contract text names this gap.
+  \item \foverdecline\ \bd{test\_C\_libtooling-01po.4}: the first finding's shape
+  declines outside \texttt{main}. A lifted function with an \texttt{i64}
+  argument or return declines with a ``floating-point'' message; that is
+  already tracked in \bd{test\_C\_libtooling-p3kd}.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+QRAM calls in goldens (fwd + \texttt{\_unc}) & 101 & \measured{qram\_index\_census.py <all goldens> (scratch)} \\
+\quad non-i32 index, \texttt{main} goldens & 16 & \measured{same, on git show HEAD:<golden>} \\
+\quad non-i32 index, this change & 0 & \measured{same, on the working tree} \\
+QRAM/QROM lit fixtures & 110/110 & \measured{lit ir-pass/test --filter 'qram|qrom'} \\
+Semantic mutants killed & 8/8 & \measured{M1--M8, QramIndexWidth.cpp / EmitInverse.cpp} \\
+Checker selftest named mutants & 83, 0 fail & \measured{python3 tools/free\_pairing\_check\_test.py} \\
+Batch gate entries passed & 582/582 & \measured{ctest --test-dir build -LE maintenance -j6} \\
+\quad wall time & 181.3 s & \measured{same (Total Test time)} \\
+cq-opt equivalence & 2495, 0 mism. & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+ctest entries & 585 & \measured{ctest --test-dir build -N | tail -1} \\
+lit fixtures & 2495 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+e2e goldens & 473 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Before each change, red fixtures were confirmed failing. A no-op mutant stayed
+green and every semantic mutant was killed. The new pins were checked against
+the earlier draft binaries and failed there as intended. Four review rounds by
+an independent agent used trace and IR probes, a census, forward/\texttt{\_unc}
+pairing checks and a strip-diff against a pre-change binary. Round 4 result:
+no findings (120 forward/\texttt{\_unc} pairs, 0 mismatches; 217 brackets, 0 wrong slots). Not run: the \texttt{maintenance} label (no scrub-guard input
+changed); libcqops' own L6 harness, which is theirs to run.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-01po.2}: build the PredMux mask at the
+  pre-widening \texttt{i32} width. That saves a \texttt{sext} and every bracket
+  on masked reads; it is gate cost only.
+  \item Each QRAM call with a non-32 index now costs one cast and one uncast,
+  forward and reverse. This is the price of never keeping a live index copy.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+None.
