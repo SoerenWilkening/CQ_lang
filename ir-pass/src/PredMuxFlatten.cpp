@@ -4883,9 +4883,16 @@ private:
   // The QRAM emitter (`resolveQramIndex`) strips the zext and takes the masked
   // W-bit rail: at W = 32 it IS the index (no bracket); below, it is bracketed
   // by `zext_iW_to_i32`. Either way the rail the call reads equals the old
-  // `trunc_i64_to_i32(E(src) & M)` bit for bit. An i1 mask is a flatten residue
-  // that `simplifyFlattenResiduesInFunction` folds: N = 2 leaves the flag itself,
-  // N = 1 the constant index 0 (a classical tbl[0] read, no QRAM call).
+  // `trunc_i64_to_i32(E(src) & M)` bit for bit. M = 2^W - 1 (N = 2^W) is the
+  // identity on W bits, so no `and` is built and the index is zext(src) (this
+  // covers an i1 source at N = 2, so no i1 `and` reaches the residue folder).
+  // ⚠ M = 0 (N = 1) KEEPS its `and`, deliberately: a constant 0 index would
+  // ORPHAN the source cone, and a dead tainted op outside the region lowers to a
+  // forward template that is never uncomputed (measured: `add_i32_hl` with no
+  // `_unc`), a live copy of its source. The `and` keeps the source a used,
+  // reversed value. Only an i1 `and i1 b, false` still folds, in
+  // `simplifyFlattenResiduesInFunction`, whose `deleteDeadPreservingCqOwned`
+  // erases the orphaned cone (classical tbl[0] read, a `zext i1 false` residue).
   // SCOPE: W ≤ 32 (a wider source would still need a trunc), N ≤ 2^31 (the
   // QRAM count is an i32), and W is the source's LOGICAL width (no laundered
   // `HandleWidth` record says otherwise: the argument above is about the
@@ -4901,7 +4908,9 @@ private:
         if (Src->getType()->isIntegerTy() && W <= 32 && (Mask >> W) == 0 &&
             logicalOperandWidth(Src, Taint) == abiWidthFromType(Src->getType())) {
           Value *Narrow =
-              track(MB.CreateAnd(Src, ConstantInt::get(Src->getType(), Mask)));
+              Mask == maxUIntN(W)
+                  ? Src
+                  : track(MB.CreateAnd(Src, ConstantInt::get(Src->getType(), Mask)));
           return track(MB.CreateZExt(Narrow, Idx->getType()));
         }
       }

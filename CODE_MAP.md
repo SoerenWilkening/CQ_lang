@@ -17,7 +17,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.c` — 15665 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9703 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 7413 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5457 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5466 physical lines
 - `tools/loop_twin_matrix.py` — 4110 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3639 physical lines
 - `tools/free_pairing_check.py` — 3478 physical lines
@@ -713,7 +713,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5457 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5466 lines)
 
 - `ir-pass/src/PredMuxFlatten.cpp:123` — `isTaintedCtrlTerm`
 - `ir-pass/src/PredMuxFlatten.cpp:142` — `isMuxableType`
@@ -745,17 +745,17 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PredMuxFlatten.cpp:4604` — `edgePred`
 - `ir-pass/src/PredMuxFlatten.cpp:4637` — `convertPhis`
 - `ir-pass/src/PredMuxFlatten.cpp:4852` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4894` — `maskQromIndex`
-- `ir-pass/src/PredMuxFlatten.cpp:4911` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:4977` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:5077` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:5101` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5149` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5208` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5253` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5277` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5328` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5445` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:4901` — `maskQromIndex`
+- `ir-pass/src/PredMuxFlatten.cpp:4920` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:4986` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:5086` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5110` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5158` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5217` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5262` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5286` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5337` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5454` — `declineConvertedRailPhiLeaves`
 
 ### `ir-pass/src/QramIndexWidth.cpp` (200 lines)
 

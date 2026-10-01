@@ -18,15 +18,18 @@
 ; around every QRAM call).
 ;   * i8 sext / i16 zext source: the masked iW rail gets the QRAM emitter's own
 ;     `zext_iW_to_i32` bracket (logical width 32 at the call);
-;   * i1 source: the i1 mask is a flatten residue (`and i1 x, C`, folded by
-;     `simplifyFlattenResiduesInFunction`). N = 2 (`and i1 b, true` = b): the
-;     flag itself feeds the zext_i1_to_i32 bracket. N = 1 (`and i1 b, false` =
-;     0): the index is the constant 0, so the read is the CLASSICAL tbl[0] (no
-;     QRAM alloc, no index rail) and the dead flag is swept. Both exact: the
-;     masked index never depended on b. (Pre-01po.2 these were
-;     `<ext>_i1_to_i64 -> and_i64_hl(.., 1|0) -> trunc_i64_to_i32` reads.)
-;   * N == 2^W (`[256 x i8]` on a signed i8): the mask is `and i8 src, -1` and the
-;     result is re-extended by ZEXT — sext(src) & 255 == zext(src);
+;   * N == 2^W, the all-ones mask (`[256 x i8]` on a signed i8, `[2 x i32]` on a
+;     signed i1): no `and` at all, the index is zext(src) — sext(src) & 255 ==
+;     zext(src) — and the source rail itself feeds the zext_iW_to_i32 bracket;
+;   * N == 1, the zero mask, KEEPS its `and` so the source stays a used,
+;     uncomputed value (a constant index would orphan it, and an orphaned op
+;     outside the region is never uncomputed): an i32 source outside the region
+;     gets `and_i32_hl(src, 0)` and its own `_unc`. On an i1 the `and i1 b, false`
+;     is a flatten residue: folded, the read is the CLASSICAL tbl[0] (no QRAM
+;     alloc, no index rail; a `zext i1 false` residue stays) and the residue
+;     folder's guarded eraser removes the orphaned flag.
+;     (Pre-01po.2 each of these was
+;     `<ext>_iW_to_i64 -> and_i64_hl(.., 1|0|255) -> trunc_i64_to_i32`.)
 ;   * an i32 source that is a template result (`add`) and a region-internal
 ;     i32 phi (`select` after the flatten): one `and_i32_hl`, no bracket;
 ;   * a widening cast with ANOTHER user: it survives for that user, and the
@@ -40,6 +43,7 @@
 @t256 = internal unnamed_addr constant [256 x i8] zeroinitializer
 @t2 = internal unnamed_addr constant [2 x i32] [i32 5, i32 6]
 @t1 = internal unnamed_addr constant [1 x i32] [i32 4]
+@t1b = internal unnamed_addr constant [1 x i32] [i32 4]
 declare i8 @cq_theta_si8(i8, double)
 declare i16 @cq_theta_si16(i16, double)
 declare i32 @cq_theta_si32(i32, double)
@@ -110,9 +114,9 @@ merge:
 ; NARROW-NOT: and_i64
 ; NARROW-NOT: trunc_i64_to_i32
 
-; (3) N == 2^W: a signed i8 into a 256-cell table. The mask is all-ones on i8,
-; and the bracket is ZEXT (the masked value is the unsigned byte, as the gep
-; read it: sext(src) & 255 == zext(src)), never sext.
+; (3) N == 2^W: a signed i8 into a 256-cell table. The mask would be all-ones
+; on i8, so no `and` is built; the bracket is ZEXT (the index is the unsigned
+; byte, as the gep read it: sext(src) & 255 == zext(src)), never sext.
 define i8 @sext_i8_n256(i8 %u0) {
 entry:
   %q = call i8 @cq_theta_si8(i8 %u0, double 5.000000e-01)
@@ -131,18 +135,18 @@ merge:
 ; CHECK-LABEL: define i8 @sext_i8_n256(
 ; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i8(i32 256)
 ; CHECK:      %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 %u0)
-; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i8_hl(i32 %[[Q]], i8 -1)
-; CHECK-NEXT: %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i8_to_i32(i32 %[[M]])
+; CHECK:      %[[X:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i8_to_i32(i32 %[[Q]])
 ; CHECK-NEXT: call i32 @cqrt_qram_load_i8(i32 %[[T]], i32 %[[X]])
-; CHECK-NEXT: call void @cq_template_zext_i8_to_i32_unc(i32 %[[X]], i32 %[[M]])
+; CHECK-NEXT: call void @cq_template_zext_i8_to_i32_unc(i32 %[[X]], i32 %[[Q]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
 ; NARROW-LABEL: define i8 @sext_i8_n256(
 ; NARROW-NOT: _to_i64
-; NARROW-NOT: and_i64
+; NARROW-NOT: and_i
 ; NARROW-NOT: trunc_i64_to_i32
 ; NARROW-NOT: sext_i8_to_i32
 
-; (4) a sign-extended _Bool-width index (0 or -1), N = 2: the i1 mask
-; `and i1 b, true` folds to b, which the emitter's zext_i1_to_i32 brackets.
+; (4) a sign-extended _Bool-width index (0 or -1), N = 2 = 2^1: the all-ones
+; mask is not built; the flag b itself feeds the emitter's zext_i1_to_i32.
 define i32 @sext_i1_n2(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -172,8 +176,8 @@ merge:
 ; NARROW-NOT: and_i
 ; NARROW-NOT: trunc_i64_to_i32
 
-; (4b) a zero-extended _Bool into a ONE-cell table: the zero mask makes the
-; index the constant 0, so the read is the classical tbl[0] = 4.
+; (4b) a zero-extended _Bool into a ONE-cell table: the i1 zero mask folds, the
+; index is 0, so the read is the classical tbl[0] = 4.
 define i32 @zext_i1_n1(i32 %u0) {
 entry:
   %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
@@ -201,6 +205,38 @@ merge:
 ; NARROW-NOT: icmp_sgt
 ; NARROW-NOT: _to_i
 ; NARROW-NOT: and_i
+
+; (4c) N == 1 with a source OUTSIDE the region (an `add` in the entry block):
+; the zero mask keeps its `and`, so the add stays used and is uncomputed. The
+; witness is the add's `_unc`: with a constant 0 index the add is orphaned and
+; lowers as a forward `add_i32_hl` with no `_unc` (measured), a live copy of %q.
+define i32 @n1_outside(i32 %u0) {
+entry:
+  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
+  %a = add i32 %q, 1
+  %c = icmp ult i32 %q, 4
+  br i1 %c, label %arm, label %merge
+arm:
+  %idx = sext i32 %a to i64
+  %g = getelementptr inbounds [1 x i32], ptr @t1b, i64 0, i64 %idx
+  %v = load i32, ptr %g, align 4
+  br label %merge
+merge:
+  %rm = phi i32 [ %v, %arm ], [ 99, %entry ]
+  %m = call i32 @cq_measure_si32(i32 %rm)
+  ret i32 %m
+}
+; CHECK-LABEL: define i32 @n1_outside(
+; CHECK:      %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 1)
+; CHECK:      %[[A:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[Q:[a-zA-Z0-9_.]+]], i32 1)
+; CHECK:      %[[M:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[A]], i32 0)
+; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[M]])
+; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[M]], i32 %[[A]], i32 0)
+; CHECK:      call void @cq_template_add_i32_hl_unc(i32 %[[A]], i32 %[[Q]], i32 1)
+; NARROW-LABEL: define i32 @n1_outside(
+; NARROW-NOT: _to_i64
+; NARROW-NOT: and_i64
+; NARROW-NOT: trunc_i64_to_i32
 
 ; (5) the source is a TEMPLATE RESULT (`add`), not a theta rail.
 define i32 @tmpl_i32(i32 %u0) {
