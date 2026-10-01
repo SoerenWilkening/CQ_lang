@@ -19,6 +19,17 @@ Always use force/batch flags so an aliased interactive (`-i`) mode cannot hang t
 agent on a y/n prompt: `cp -f` · `mv -f` · `rm -f` · `rm -rf` ·
 `ssh`/`scp -o BatchMode=yes` · `apt-get -y` · `HOMEBREW_NO_AUTO_UPDATE=1`.
 
+## Test budget (hard limit)
+
+Testing is hard-limited (owner ruling 2026-10-01; full text in `CLAUDE.md` R15). Each bd
+issue gets at most **three** lit/ctest invocations, all scoped by name: **red** (new fixtures,
+once), **green** (new plus plausibly affected fixtures, once), **final** (once, only if code
+changed since green). Mutation validation runs a no-op mutant plus at most **three** real
+mutants, each against only its killing fixture. Between checkpoints: one `cq-opt` run on
+one probe, then read the IR. Never re-run a passing set; never run `ir-pass-lit`, a label
+tier or the full suite while iterating; reviewers run no suites. Report the invocation
+count. Exceeding the budget needs the owner's approval.
+
 ## Code map and file-size budget
 
 Before using `rg`, `grep`, `find`, or another source search to locate a

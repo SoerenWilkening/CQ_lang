@@ -177,8 +177,23 @@ primitive eligibility, numerical accuracy or a correct unitary.
 | one e2e slice or golden | `ctest --test-dir build -R '^e2e-slice-<name>$'` | ~2 s |
 | `tools/opcode_table.yaml`, `runtime/*` | `ctest --test-dir build -R runtime -j6` + an e2e slice | ~5 s |
 | `include/CQ.h` | `ctest --test-dir build -R frontend-lit` + e2e | ~5 s |
-| pass source, iterating | `ctest --test-dir build -R ir-pass-lit` | ~60–105 s |
+| pass source | the fixtures that pin the changed code, by name (`lit --filter`) | seconds |
 | docs / comments only | nothing | |
+
+**Test budget: a hard limit** (owner ruling 2026-10-01). Each bd issue gets at most
+**three** lit/ctest invocations, and each one names its fixtures or slices:
+1. **red**: the new fixtures only, once, before the fix;
+2. **green**: the new fixtures plus the existing fixtures and slices the change can plausibly
+   alter, once, after the fix;
+3. **final**: once before the commit, and only if code changed since green.
+
+Mutation validation adds one no-op mutant and at most **three** real mutants. Each mutant
+runs only the fixture written to kill it. Between checkpoints, run no lit or ctest: run `cq-opt` once on one probe
+and read the IR. Never re-run a passing set to confirm. Never run `ir-pass-lit` or a
+label tier while iterating. Keep probe matrices to the shapes that test a stated
+hypothesis. Reviewers run no suites. Report the invocation count. Exceeding the budget
+needs the owner's approval. A coordinator assigns each parallel unit a disjoint
+fixture/slice set and runs the one batch gate below.
 
 Branches never run the full suite; they run what witnesses the change. Merges to `main`
 run at most the fast tier `ctest --test-dir build -LE heavy -j6`. **Once per batch** (normally
