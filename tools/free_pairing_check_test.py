@@ -91,6 +91,12 @@ It runs three layers:
      where the aliasing is the signature itself and no mutation can introduce
      it. Every POSITIVE fixture covers that one.)
 
+  2h. LIGHT CONE (bd r2j3.3) — a superposing pair `Ry(-t) … Ry(t)` cancels
+     only if nothing between its halves kept the rotated state. The compiler's
+     own certified-dirty output is FROZEN here (R2J3_3_FROZEN) with one mutant
+     row per consumer class and per restoration conjunct, each asserted by
+     code, HANDLE and refusal text, against positives one operand away.
+
   3. PROOF-TARGETED SWEEP — for every free site a fixture VERIFIES, blank each
      source line that site's own proof consumed (`--explain` shows them) and
      assert the module stops verifying clean. This is the layer that catches a
@@ -2948,6 +2954,392 @@ INVOKE_STOP_MUTANTS = [
 ]
 
 
+# ---------------------------------------------------------------------------
+# bd test_C_libtooling-r2j3.3 — AN OBSERVATION INSIDE A SUPERPOSING RESTORE
+# WINDOW (the checker half, 2026-10-01).
+#
+# THE CERTIFIED DEFECT. `Ry(-t) ... Ry(t)` on a register reduces to identity in
+# this file's WRITE model, so (T2) "the forward's operand is unchanged across
+# [mint, reversal]" accepted it no matter what READ the register in between.
+# A read there sees the register in the ROTATED basis: a tape record, a
+# measurement, a copy onto a kept carrier, or a template rail that is not
+# reversed before the second rotation leaves the register entangled with it,
+# so `Ry(t)` does not restore the label and the QRAM load's `_unc` recomputes
+# against the wrong index. The load rail is then freed dirty — the hidden
+# measurement Rule 5 forbids — and stage 2b reported `5 verified, 0
+# violation(s), 0 unproven`, exit 0, on the compiler's own output.
+#
+# R2J3_3_FROZEN is that output, VERBATIM, and it is FROZEN on purpose: the
+# compiler half of r2j3.3 (another unit) will stop emitting the free, after
+# which no compiler run reproduces it, and a checker test whose subject stops
+# existing pins nothing (CLAUDE.md R10). Note the observation is TRANSITIVE:
+# the direct read of `%h_cmp` is a template mint (`zext -> %h_cast`) that IS
+# reversed inside the window, and it is `%h_cast` that the tape records. A rule
+# that looked only at direct readers of the operand and admitted reversed
+# template reads would certify this module again.
+#
+# THE RULE IS A LIGHT-CONE CLOSURE, not "no read at all": the whole-DAG LIFO
+# spine puts every rail derived from a rotated root INSIDE that root's restore
+# window (UNCOMPUTE_CHAIN is the shipped example), and every one of those reads
+# is reversed before the second rotation. So the positives below are as
+# load-bearing as the mutants: each is one operand away from a mutant, and a
+# blanket "any read in the window" rule turns them red.
+#
+# THE RED HALF, MEASURED against the pre-change checker (main 52e669c4,
+# sha256 44e80018…): 23 of the 24 LIGHT_CONE_MUTANTS rows reported NOTHING on
+# the rail under test, and the frozen module's verdict map read
+# `%1: OK:T1-unc-reversal`. The one row already refused is
+# `lc-t2-measure-inside-restore-window`, through the plain write model (a
+# measurement IS a write, with no adjoint), so it is a regression row and
+# carries no arm. Two rows did report something pre-change, on ANOTHER rail:
+# `lc-t2-template-read-reversed-after-restore` (T2 on the template's own `%x`)
+# and `lc-t2-inv-reads-operand-inside-restore-window` (W on the orphan `_inv`);
+# neither said anything about `%v`, the load rail they exist to test, which is
+# why the harness matches the finding's HANDLE and not only its code. All 13
+# LIGHT_CONE_POSITIVES verified clean pre-change as well, so none of them is a
+# new acceptance.
+# ---------------------------------------------------------------------------
+
+# Stage-2 output of this C, frozen at main 52e669c4 (libCQPass.so sha256
+# baee093c…, `opt -passes=cq-lowering` after `clang -O1`), function @f only —
+# @main carries the inlined copy, which frees nothing:
+#
+#     static const int tbl[8] = {3, 1, 4, 15, 5, 9, 2, 6};
+#     void f(void) {
+#         _Bool b = cq_theta(0, 0.5);
+#         int v = tbl[b];
+#         b = cq_theta(b, -0.5);
+#         printf("%d %d\n", b, v);
+#     }
+#     int main(void) { f(); return 0; }
+#
+# Pre-change verdict: `OK ... [%1] via T1-unc-reversal`, rc 0. Post-change:
+# `%qidx`, `%h_cast` and `%qidx1` still VERIFY (each is a template rail with a
+# clean reversal) and `%1` alone reports T2-operand-mutated.
+R2J3_3_FROZEN = """
+define void @f() local_unnamed_addr #0 {
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %tape = call i32 @cqrt_tape_alloc()
+  %h = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %h_cmp = call i32 @cq_template_icmp_ne_i32_hl(i32 %h, i32 0)
+  %qidx = call i32 @cq_template_zext_i1_to_i32(i32 %h_cmp)
+  %1 = call i32 @cqrt_qram_load_i32(i32 %arr, i32 %qidx)
+  call void @cq_template_zext_i1_to_i32_unc(i32 %qidx, i32 %h_cmp)
+  call void @cqrt_free(i32 %qidx)
+  call void @cqrt_ry_i1(i32 %h_cmp, double -5.000000e-01)
+  %h_cast = call i32 @cq_template_zext_i1_to_i32(i32 %h_cmp)
+  %2 = call i32 @cqrt_tape_write_i32(i32 %tape, i32 %h_cast)
+  %3 = call i32 @cqrt_tape_write_i32(i32 %tape, i32 %1)
+  call void @cq_template_zext_i1_to_i32_unc(i32 %h_cast, i32 %h_cmp)
+  call void @cqrt_free(i32 %h_cast)
+  call void @cqrt_ry_i1(i32 %h_cmp, double 5.000000e-01)
+  %qidx1 = call i32 @cq_template_zext_i1_to_i32(i32 %h_cmp)
+  call void @cqrt_qram_load_i32_unc(i32 %1, i32 %arr, i32 %qidx1)
+  call void @cq_template_zext_i1_to_i32_unc(i32 %qidx1, i32 %h_cmp)
+  call void @cqrt_free(i32 %qidx1)
+  call void @cqrt_free(i32 %1)
+  call void @cq_template_icmp_ne_i32_hl_unc(i32 %h_cmp, i32 %h, i32 0)
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  ret void
+}
+"""
+
+# The minimal hand-built core of the same shape: load at a rotated index, rotate
+# the index away and back, reverse the load, free it. `; OBS` marks the restore
+# window (between the two rotations of %b); `; PRE` sits after the load and
+# before the window opens, `; POST` after it closes and before the reversal.
+_LC_BASE = """
+define void @obs(i32 %u, i32 %s) {
+  %arr = call i32 @cqrt_qram_alloc_i32(i32 8)
+  %tape = call i32 @cqrt_tape_alloc()
+  %b = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %b, double 5.000000e-01)
+  %v = call i32 @cqrt_qram_load_i32(i32 %arr, i32 %b)
+  ; PRE
+  ; OPEN
+  ; OBS
+  ; SHUT
+  ; POST
+  call void @cqrt_qram_load_i32_unc(i32 %v, i32 %arr, i32 %b)
+  call void @cqrt_free(i32 %v)
+  ret void
+}
+"""
+
+_RY_OPEN = "  call void @cqrt_ry_i32(i32 %b, double -5.000000e-01)"
+_RY_SHUT = "  call void @cqrt_ry_i32(i32 %b, double 5.000000e-01)"
+
+
+def lc(obs="", pre="", post="", open_=_RY_OPEN, shut=_RY_SHUT):
+    """The core with the restore window opened by `open_`, closed by `shut`."""
+    return (_LC_BASE.replace("  ; OBS", obs).replace("  ; PRE", pre)
+            .replace("  ; POST", post).replace("  ; OPEN", open_)
+            .replace("  ; SHUT", shut))
+
+
+_TAPE_B = "  %w = call i32 @cqrt_tape_write_i32(i32 %tape, i32 %b)"
+
+# The (A2) twin: the rotated rail is the one FREED, and the observation is a
+# CNOT-class read that is not a tape or a `cqrt_copy_<W>`, so the R1
+# recorded-rail rule (which keys on those two sinks) does not see it. The
+# checker's own header named this the "superposition class" hole: `ry(R,t) …
+# <a CNOT-class READ of R> … ry(R,-t)` cancels while R stays entangled with the
+# reader. It is the same light cone, reached through (A2) instead of (T2).
+_LC_A2 = """
+define void @a2(i32 %u) {
+  %h = call i32 @cqrt_alloc_i32(i32 %u)
+  call void @cqrt_ry_i32(i32 %h, double 5.000000e-01)
+  %y = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cnot(i32 %h, i32 %y)
+  ; CLOSE
+  call void @cqrt_ry_i32(i32 %h, double -5.000000e-01)
+  call void @cqrt_free(i32 %h)
+  ret void
+}
+"""
+
+# The (T3) twin: the MINTED rail itself is rotated and restored before its own
+# reversal, with the observation in between.
+_LC_T3 = """
+define void @t3(i32 %u) {
+  %b = call i32 @cqrt_alloc_i32(i32 %u)
+  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)
+  call void @cqrt_ry_i32(i32 %x, double 5.000000e-01)
+  %y = call i32 @cqrt_alloc_i32(i32 0)
+  call void @cqrt_cnot(i32 %x, i32 %y)
+  ; CLOSE
+  call void @cqrt_ry_i32(i32 %x, double -5.000000e-01)
+  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)
+  call void @cqrt_free(i32 %x)
+  ret void
+}
+"""
+
+def cone_nest(D, escape=False):
+    """D nested superposing windows, each closed by a LIFO template reversal:
+    `ry(x_k); x_{k+1} = add(x_k)` down, `add_unc; free; ry⁻¹(x_k)` back up.
+    Every level re-enters the light-cone edge through `_minted_closed`, so
+    this is the depth probe for that edge (and for the frame count in
+    `_FRAMES_PER_LEVEL`). With `escape`, the innermost rail is CNOT-read into
+    a rail nothing restores: no tape and no `cqrt_copy_<W>`, so R1 is silent
+    and only the light cone can see that EVERY enclosing window is open.
+    """
+    L = ["define void @nest(i32 %u) {",
+         "  %x0 = call i32 @cqrt_alloc_i32(i32 %u)"]
+    for k in range(D):
+        L.append(f"  call void @cqrt_ry_i32(i32 %x{k}, double 5.000000e-01)")
+        L.append(f"  %x{k + 1} = call i32 @cq_template_add_i32_hl(i32 %x{k}, "
+                 f"i32 1)")
+    if escape:
+        L.append("  %y = call i32 @cqrt_alloc_i32(i32 0)")
+        L.append(f"  call void @cqrt_cnot(i32 %x{D}, i32 %y)")
+    for k in range(D - 1, -1, -1):
+        L.append(f"  call void @cq_template_add_i32_hl_unc(i32 %x{k + 1}, "
+                 f"i32 %x{k}, i32 1)")
+        L.append(f"  call void @cqrt_free(i32 %x{k + 1})")
+        L.append(f"  call void @cqrt_ry_i32(i32 %x{k}, double -5.000000e-01)")
+    L += ["  call void @cqrt_free(i32 %x0)", "  ret void", "}"]
+    return "\n" + "\n".join(L) + "\n"
+
+
+DEEP_POSITIVE.append(("lc-closed-window-nest-d60", cone_nest(60)))
+
+LC_TAG = "light cone is left open"
+
+# (name, module, code on the rail under test, arm fragment of the refusal or
+# None, handle the finding must name). The harness asserts the CODE, the
+# HANDLE, the common LC_TAG and the per-arm fragment, because a row caught by
+# some other rule (or on some other rail) proves nothing about the arm it was
+# built for.
+LIGHT_CONE_MUTANTS = [
+    # -- the shipped defect, frozen --------------------------------------------
+    ("lc-r2j3.3-frozen-compiler-output", R2J3_3_FROZEN,
+     "T2-operand-mutated", "output tape", "%1"),
+    # -- one row per consumer class, each the minimal core ---------------------
+    ("lc-t2-tape-read-inside-restore-window", lc(obs=_TAPE_B),
+     "T2-operand-mutated", "output tape", "%v"),
+    ("lc-t2-controlled-tape-read-inside-restore-window",
+     lc(obs="  %w = call i32 @cqrt_tape_write_i32_controlled(i32 %b, i32 %tape, "
+            "i32 %s)"),
+     "T2-operand-mutated", "output tape", "%v"),
+    ("lc-t2-measure-inside-restore-window",
+     lc(obs="  %m = call i32 @cqrt_measure_i32(i32 %b)"),
+     "T2-operand-mutated", None, "%v"),
+    ("lc-t2-copy-to-kept-carrier-inside-restore-window",
+     lc(obs="  %d = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_copy_i32(i32 %b, i32 %d)"),
+     "T2-operand-mutated", "is not provably restored", "%v"),
+    ("lc-t2-cnot-read-inside-restore-window",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_cnot(i32 %b, i32 %y)"),
+     "T2-operand-mutated", "is not provably restored", "%v"),
+    ("lc-t2-template-read-never-reversed",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)"),
+     "T2-operand-mutated", "no matching", "%v"),
+    ("lc-t2-template-read-reversed-after-restore",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)",
+        post="  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+             "  call void @cqrt_free(i32 %x)"),
+     "T2-operand-mutated", "no matching", "%v"),
+    # TRANSITIVE: the direct read is closed, its result is what escapes (the
+    # frozen shape in miniature).
+    ("lc-t2-reversed-template-whose-result-is-recorded",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  %w = call i32 @cqrt_tape_write_i32(i32 %tape, i32 %x)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_free(i32 %x)"),
+     "T2-operand-mutated", "output tape", "%v"),
+    # Through a WRITE slot: a cswap route pair that cancels on %b, with the
+    # routed-out half recorded in between. %z picks up %b's state through the
+    # co-written slot, not through a read slot.
+    ("lc-t2-routed-out-and-recorded-inside-restore-window",
+     lc(obs="  %f = call i32 @cqrt_alloc_i1(i1 true)\n"
+            "  %z = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_cswap(i32 %f, i32 %b, i32 %z)\n"
+            "  %w = call i32 @cqrt_tape_write_i32(i32 %tape, i32 %z)\n"
+            "  call void @cqrt_cswap(i32 %f, i32 %b, i32 %z)"),
+     "T2-operand-mutated", "output tape", "%v"),
+    ("lc-t2-unmodelled-call-reads-operand-inside-restore-window",
+     lc(obs="  call void @sink(i32 %b)"),
+     "T2-operand-mutated", "does not model", "%v"),
+    # A VOID Phase-6 clone: `classify()` models `__cq_q_*` as a rail mint, and
+    # with no result there is no rail whose reversal could be looked for.
+    ("lc-t2-void-clone-reads-operand-inside-restore-window",
+     lc(obs="  call void @__cq_q_helper_1(i32 %b)"),
+     "T2-operand-mutated", "leaves no rail", "%v"),
+    ("lc-t2-inv-reads-operand-inside-restore-window",
+     lc(obs="  %i = call i32 @cq_template_add_i32_hl_inv(i32 %b, i32 1)"),
+     "T2-operand-mutated", "`_inv`", "%v"),
+    # A measurement of a cone rail that is NOT the target (the target's own
+    # measurement never reaches this rule: it is an unpaired write).
+    ("lc-t2-measure-of-a-derived-rail-inside-restore-window",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  %m = call i32 @cqrt_measure_i32(i32 %x)"),
+     "T2-operand-mutated", "is measured", "%v"),
+    # -- one row per RESTORATION conjunct of a minted cone rail ----------------
+    ("lc-t2-derived-rail-written-after-its-reversal",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_x(i32 %x)"),
+     "T2-operand-mutated", "writes it after its reversal", "%v"),
+    ("lc-t2-derived-rail-written-before-its-reversal",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cqrt_x(i32 %x)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)"),
+     "T2-operand-mutated", "written between its mint and its reversal", "%v"),
+    ("lc-t2-derived-rail-reversed-after-its-other-operand-moved",
+     lc(obs="  %z = call i32 @cqrt_alloc_i32(i32 %s)\n"
+            "  %x = call i32 @cq_template_add_i32(i32 %b, i32 %z)\n"
+            "  call void @cqrt_x(i32 %z)\n"
+            "  call void @cq_template_add_i32_unc(i32 %x, i32 %b, i32 %z)"),
+     "T2-operand-mutated", "forward operand %z", "%v"),
+    ("lc-t2-derived-rail-reversed-with-a-different-literal",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 2)"),
+     "T2-operand-mutated", "no matching", "%v"),
+    ("lc-t2-derived-rail-paired-only-by-undef-text",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 undef)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, "
+            "i32 undef)"),
+     "T2-operand-mutated", "`undef`/`poison`", "%v"),
+    # -- the other two SUPERPOSING symbols, each as the restore pair -----------
+    ("lc-t2-controlled-rotation-pair-around-a-tape-read",
+     lc(obs=_TAPE_B,
+        pre="  %f = call i32 @cqrt_alloc_i1(i1 true)",
+        open_="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+              "double -5.000000e-01)",
+        shut="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+             "double 5.000000e-01)"),
+     "T2-operand-mutated", "output tape", "%v"),
+    ("lc-t2-hadamard-pair-around-a-tape-read",
+     lc(obs=_TAPE_B, open_="  call void @cqrt_h(i32 %b)",
+        shut="  call void @cqrt_h(i32 %b)"),
+     "T2-operand-mutated", "output tape", "%v"),
+    # -- the same light cone through (A2) and (T3) -----------------------------
+    ("lc-a2-cnot-read-between-the-rail-s-own-rotations",
+     _LC_A2.replace("  ; CLOSE", ""),
+     "A-not-reducible", "is not provably restored", "%h"),
+    ("lc-t3-cnot-read-between-the-minted-rail-s-own-rotations",
+     _LC_T3.replace("  ; CLOSE", ""),
+     "T3-rail-written-before-reversal", "is not provably restored", "%x"),
+    # -- depth: the escape sits 60 windows down, and the OUTERMOST rail must
+    # still see it. Its cone check meets `%x1` first, whose restoration proof
+    # re-enters the edge window by window down to the escape --------------------
+    ("lc-escape-60-windows-down-reaches-the-root",
+     cone_nest(60, escape=True),
+     "A-not-reducible", "is not provably restored", "%x0"),
+]
+
+# Each one operand away from a row above, and each MUST verify clean — every
+# free site, zero findings.
+LIGHT_CONE_POSITIVES = [
+    ("lc-restore-window-empty", lc()),
+    ("lc-tape-read-before-the-window-opens", lc(pre=_TAPE_B)),
+    ("lc-tape-read-after-the-window-closes", lc(post=_TAPE_B)),
+    ("lc-template-read-reversed-inside-the-window",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_free(i32 %x)")),
+    ("lc-template-chain-reversed-lifo-inside-the-window",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  %z = call i32 @cq_template_mul_i32_hl(i32 %x, i32 3)\n"
+            "  call void @cq_template_mul_i32_hl_unc(i32 %z, i32 %x, i32 3)\n"
+            "  call void @cqrt_free(i32 %z)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_free(i32 %x)")),
+    ("lc-cnot-read-uncomputed-inside-the-window",
+     lc(obs="  %y = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_cnot(i32 %b, i32 %y)\n"
+            "  call void @cqrt_cnot(i32 %b, i32 %y)\n"
+            "  call void @cqrt_free(i32 %y)")),
+    ("lc-copy-uncopied-inside-the-window",
+     lc(obs="  %d = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_copy_i32(i32 %b, i32 %d)\n"
+            "  call void @cqrt_copy_i32(i32 %b, i32 %d)\n"
+            "  call void @cqrt_free(i32 %d)")),
+    ("lc-routed-out-and-back-inside-the-window",
+     lc(obs="  %f = call i32 @cqrt_alloc_i1(i1 true)\n"
+            "  %z = call i32 @cqrt_alloc_i32(i32 0)\n"
+            "  call void @cqrt_cswap(i32 %f, i32 %b, i32 %z)\n"
+            "  call void @cqrt_cswap(i32 %f, i32 %b, i32 %z)\n"
+            "  call void @cqrt_free(i32 %z)")),
+    ("lc-unmodelled-call-on-a-classical-value-inside-the-window",
+     lc(obs="  call void @sink(i32 %s)")),
+    # The other two superposing symbols must not over-decline either.
+    ("lc-controlled-rotation-pair-with-a-closed-read",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_free(i32 %x)",
+        pre="  %f = call i32 @cqrt_alloc_i1(i1 true)",
+        open_="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+              "double -5.000000e-01)",
+        shut="  call void @cqrt_ry_i32_controlled(i32 %f, i32 %b, "
+             "double 5.000000e-01)")),
+    ("lc-hadamard-pair-with-a-closed-read",
+     lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"
+            "  call void @cq_template_add_i32_hl_unc(i32 %x, i32 %b, i32 1)\n"
+            "  call void @cqrt_free(i32 %x)",
+        open_="  call void @cqrt_h(i32 %b)", shut="  call void @cqrt_h(i32 %b)")),
+    ("lc-a2-cnot-read-uncomputed-before-the-rail-s-restore",
+     _LC_A2.replace("  ; CLOSE", "  call void @cqrt_cnot(i32 %h, i32 %y)\n"
+                                 "  call void @cqrt_free(i32 %y)")),
+    ("lc-t3-cnot-read-uncomputed-before-the-minted-rail-s-restore",
+     _LC_T3.replace("  ; CLOSE", "  call void @cqrt_cnot(i32 %x, i32 %y)\n"
+                                 "  call void @cqrt_free(i32 %y)")),
+]
+
+# The frozen module's OTHER three frees are sound and must keep verifying: the
+# rule is a statement about %1, not a refusal of the module.
+R2J3_3_FROZEN_VERDICTS = {
+    "%qidx": "OK:T1-unc-reversal", "%h_cast": "OK:T1-unc-reversal",
+    "%qidx1": "OK:T1-unc-reversal", "%1": "UNPROVEN:T2-operand-mutated"}
+
+# Through layer 3 as well: the light-cone proof's witness lines (the reversals
+# that close the cone) must each be load-bearing.
+POSITIVE.extend(LIGHT_CONE_POSITIVES)
+
+
 UNCLASSIFIED_MUTANT = sub(PHASE_DIAMOND, "@cqrt_cswap", "@cqrt_cswap",
                           "@cqrt_teleport_i32", 0)
 
@@ -3221,6 +3613,40 @@ def main():
         elif verbose:
             print(f"  ok  t4        {name:44s} -> {n} T4 proof(s)")
 
+    # ---- layer 2h: bd r2j3.3, the superposing restore window --------------
+    n_lc = 0
+    for name, text, want, arm, handle in LIGHT_CONE_MUTANTS:
+        n_lc += 1
+        got = [x for x in findings(text) if x.code == want and
+               x.handle == handle]
+        if not got:
+            fails.append(f"LIGHT-CONE MUTANT {name}: expected {want} on "
+                         f"{handle}, got " + (", ".join(
+                             f"{x.code}[{x.handle}]" for x in findings(text))
+                             or "NOTHING (survived)"))
+            continue
+        if arm is not None and not any(LC_TAG in x.msg and arm in x.msg
+                                       for x in got):
+            fails.append(f"LIGHT-CONE MUTANT {name}: got {want} on {handle} "
+                         f"but no light-cone refusal naming {arm!r}, so some "
+                         f"OTHER rule caught it. Got: "
+                         + " | ".join(x.msg[-240:] for x in got))
+        elif verbose:
+            print(f"  ok  lightcone {name:52s} -> {want}")
+    for name, text in LIGHT_CONE_POSITIVES:
+        n_lc += 1
+        got = findings(text)
+        if got:
+            fails.append(f"LIGHT-CONE POSITIVE {name}: expected 0 findings, "
+                         f"got " + "; ".join(str(x) for x in got))
+        elif verbose:
+            print(f"  ok  lightcone {name:52s} -> clean")
+    n_lc += 1
+    vm = verdict_map(R2J3_3_FROZEN)
+    if vm != R2J3_3_FROZEN_VERDICTS:
+        fails.append(f"LIGHT-CONE FROZEN r2j3.3 verdicts: expected "
+                     f"{R2J3_3_FROZEN_VERDICTS}, got {vm}")
+
     # ---- layer 2e: the CENSUS (bd rixk, bd 19vy, bd 1739 hole 1) ---------
     # No other layer can see this: the census is not a finding, so a census
     # reporting twice the truth scores as a pass everywhere above.
@@ -3293,7 +3719,7 @@ def main():
           f"free-order pair(s), {n_cost} cost bound(s), {n_mut} named "
           f"mutant(s), {n_mem} memory mutant(s)/refusal(s), {n_neg} Case-A "
           f"negative(s), {n_census} census case(s), {n_t4} T4 loop-exit "
-          f"case(s), {n_sweep} proof-targeted "
+          f"case(s), {n_lc} light-cone case(s), {n_sweep} proof-targeted "
           f"mutant(s) ({exempt} exempt by rule), {len(fails)} failure(s)")
     for x in fails:
         print("  FAIL " + x, file=sys.stderr)

@@ -62,7 +62,12 @@ undone:
        the reversal — either never written, or written only in a self-cancelling
        way (below). An `_inv` recomputes `f` from the live sources; if a source
        moved in between, it recomputes a DIFFERENT value and leaves the rail
-       dirty.
+       dirty. A self-cancelling pair of SUPERPOSING writes (`Ry(-t) … Ry(t)`)
+       counts only if its LIGHT CONE closes (L): nothing between the two may
+       keep a copy of the rotated-basis state — no tape record, measurement,
+       unreversed template rail or unrestored CNOT target (bd r2j3.3; see
+       `StreamAnalysis.light_cone_closed`). Rule (L) lives in the reduction,
+       so it binds (A2) and (T3) exactly as it binds (T2).
   (T3) the rail itself is unchanged between mint and reversal (the `¬flag`
        `cqrt_x` bracket is such a self-cancelling pair) and is NOT written at
        all between the reversal and the free.
@@ -233,6 +238,13 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
     trace's job, and the two gates are complementary by construction: the trace
     sees the angles and not the rail identities, this file sees the rail
     identities and not the angles.
+    ⚠ AND IT IS NOT ONLY ABOUT ANGLES. Transparency is sound for a rail in a
+    basis state and FALSE between two SUPERPOSING writes: `Ry(-t)·Rz(φ)·Ry(t)`
+    changes POPULATIONS, so `ry; rz; ry⁻¹; free` VERIFIES a dirty free here,
+    before and after rule (L) — (L) closes a restore window against
+    observations, not against phases. MEASURED live on hand IR only (the
+    compiler leaves the rail allocated on the C probe); filed as bd
+    test_C_libtooling-r2j3.4.
   * The UNITARY. This is a structural check, not a simulator. It proves the
     emitted gate sequence has the SHAPE of a reversal; it does not evaluate it.
     Reduction-to-identity is SUFFICIENT for "unchanged", never necessary:
@@ -253,7 +265,10 @@ WHAT IT DOES **NOT** WITNESS  (read this before quoting the tool)
     leaked dirty rail is invisible here (and is accepted in the
     qubits-not-scarce regime).
   * The ENTANGLEMENT half of Rule 8. A copy+uncompute that should have been a
-    `cqrt_cswap` presents as a well-formed reversal.
+    `cqrt_cswap` presents as a well-formed reversal. (Rule (L) witnesses ONE
+    slice of it: a superposing pair whose window leaks the rotated state into
+    a rail that is not restored before the pair closes. Entanglement created
+    OUTSIDE any superposing window is still invisible.)
   * ESCAPE analysis (`ret` / `cq_invert_*` handles) beyond "was it measured in
     this function", and anything cross-function or cross-stream (below).
   * The FORWARD program. It checks reversal, not computation.
@@ -499,18 +514,25 @@ the 4201 — every one of which was adjudicated, none of which was dirty.
 
 AND READ THE POPULATION'S SCOPE, which is a real limit and not a formality: it
 is permutation-only BECAUSE that is the class the oracle can decide, and that
-deliberately excludes the superposition class — `cqrt_ry` / `cqrt_h`. This file
-does not witness that class at all (see WHAT IT DOES **NOT** WITNESS: "The
-ENTANGLEMENT half of Rule 8"), at any depth, before or after this change: a
-`cqrt_ry(R,t) … <a CNOT-class READ of R> … cqrt_ry(R,-t)` pair cancels here
-while R is left entangled with the reader, because the reduction reasons over
-WRITES to R and never asks what read it. The bd xzdx Rule-13 round confirmed
-both halves of the attribution — the hole is HEAD's (patch HEAD's `depth > 6` to
-`> 100` and HEAD accepts the same input at any depth), and removing the budget
-widens its REACH from depth <= 6 to any depth. So the two zeros above are zeros
-over the permutation class only; the superposition class is the pre-existing
-8txa "expensive half" and needs the basis-state evaluator, not a deeper fuzz.
-It is filed, with its one live corpus instance, rather than left implicit.
+deliberately excludes the superposition class — `cqrt_ry` / `cqrt_h`. When this
+paragraph was written the file did not witness that class at all: a
+`cqrt_ry(R,t) … <a CNOT-class READ of R> … cqrt_ry(R,-t)` pair cancelled here
+while R was left entangled with the reader, because the reduction reasoned over
+WRITES to R and never asked what read it. The bd xzdx Rule-13 round confirmed
+both halves of the attribution — the hole was HEAD's (patch HEAD's `depth > 6`
+to `> 100` and HEAD accepts the same input at any depth), and removing the
+budget widened its REACH from depth <= 6 to any depth. So the two zeros above
+are zeros over the permutation class only.
+  ⚠ SUPERSEDED IN PART, 2026-10-01 (bd test_C_libtooling-r2j3.3): that READ is
+  now refused. The hole shipped: stage 2b certified the compiler's dirty free
+  of a QRAM load rail whose index was rotated away, TAPE-RECORDED, and rotated
+  back between the load and its `_unc` — the same shape reached through (T2).
+  Rule (L), `StreamAnalysis.light_cone_closed`, makes a superposing pair cancel
+  only when nothing between its halves kept the rotated state, and it binds
+  this reduction wherever it runs. What is still open in the superposition
+  class: a PHASE between the two halves (bd test_C_libtooling-r2j3.4), and any
+  correct closure that is not a LIFO reversal (a Bennett recompute), which
+  over-declines. Both need more than a deeper fuzz.
 
 The other three measurements: verdict diff over the 237 slices, 0 moved (above);
 proof-targeted mutants planted in the SHIPPED lowered IR, 735 planted (at most 4
@@ -576,6 +598,39 @@ kill test means the PROBE was too weak, and "redundant by construction" is a
 claim about all inputs that a corpus sweep cannot establish — measuring zero
 moved verdicts shows only that the corpus lacks the distinguishing shape. Build
 the probe; do not promote its absence into a proof.
+
+THE (L) LIGHT-CONE RULE (bd test_C_libtooling-r2j3.3, 2026-10-01) was validated
+the same way, and its corpus figure is the one to read most carefully.
+ (1) VERDICT DIFF over all 474 registered run_slice*.sh slices (stage 2 rebuilt
+     from `ctest -N -V -R '^e2e-'` with the harness's own stage-1/2 commands, at
+     main 52e669c4), FULL finding lists against the pinned pre-change file:
+     60677 free sites, 60661 verified before and after, 0 findings moved, 0
+     exit codes moved; the pre-change file passes all 474 under their
+     registered flags. Comparator controls: the r2j3.3 reproducer moves (1 of
+     1), the pre-change file against itself moves nothing.
+ (2) BUT THAT DIFF HAS ALMOST NO POWER, and that is the measurement worth
+     quoting: across the 474 slices only 4 superposing pairs ever reach the
+     rule, every one with a TRIVIAL cone (nothing in its window touches the
+     rotated rail). The current spine leaves rotated roots allocated instead
+     of reverse-playing them, so the window shape is rare. "0 moved" therefore
+     says nothing about false positives on non-trivial cones; the accept arms
+     are exercised only by the selftest's LIGHT_CONE_POSITIVES (13 shapes, each
+     one operand from a mutant) and the D=60 nest.
+ (3) ARM-KILL MATRIX, 24 kill-expected mutants of the rule against the
+     committed selftest: 24 killed, MISSED 0 (no-op control survives; the two
+     memo caches and the re-entry assertion are equivalent by design). Three
+     are killed ONLY through the refusal-text assertion and survive a
+     verdict-only harness — measure-is-closable, tape-is-a-plain-mint, and the
+     (T2) message dropping the reason — because a measured or tape-recorded
+     cone rail can never be RESTORED either (neither has an adjoint), so the
+     restoration conjunct refuses it one step later. Those two consumer arms
+     are defence in depth with a precise diagnostic, not independent gates.
+ (4) COST. Linear in the corpus (474-slice sweep 265 s -> 267 s summed). On a
+     synthetic D-deep nest of closed windows it is QUADRATIC — every window
+     rescans its interior: D=100 0.2 s, D=500 3.0 s, D=1000 10.2 s (2026-10-01,
+     `cone_nest` in the selftest). The first draft unioned every cone rail's
+     sub-proof lines into each enclosing window and was cubic (D=500 13.5 s);
+     the witness is now each cone rail's reversal line alone.
 
 USAGE
     tools/free_pairing_check.py [options] lowered1.ll [lowered2.ll ...]
@@ -677,13 +732,21 @@ class Effect:
     an ASSERTION ABOUT THE ABI, never a fact about the call — rule (A1) must
     CHECK the slot before relying on it (bd az1h), and the Case-B scan treats
     these slots as inputs like any other.
+    `superposing` marks a write that is NOT a computational-basis permutation
+    (`cqrt_ry_<W>`, its `_controlled` twin, `cqrt_h`): between such a write
+    and its adjoint the rail is in a rotated basis, so the pair cancels only
+    if nothing in between left its light cone open (bd r2j3.3,
+    `StreamAnalysis.light_cone_closed`). A permutation pair needs no such
+    check: it restores the rail's label in EVERY basis branch whatever read
+    it in between.
     """
 
     __slots__ = ("role", "reads", "writes", "mints", "adjoint_of", "base",
-                 "diagonal", "controls", "classical_imm")
+                 "diagonal", "controls", "classical_imm", "superposing")
 
     def __init__(self, role, reads=(), writes=(), mints=None, adjoint_of=None,
-                 base=None, diagonal=False, controls=(), classical_imm=()):
+                 base=None, diagonal=False, controls=(), classical_imm=(),
+                 superposing=False):
         self.role = role
         self.reads = reads
         self.writes = tuple(writes)
@@ -696,6 +759,7 @@ class Effect:
         # addc/xorc: the slot the ABI says is a classical literal. CHECKED, not
         # trusted — see `provably_not_a_rail` / rule (A1).
         self.classical_imm = tuple(classical_imm)
+        self.superposing = superposing  # bd r2j3.3: not a basis permutation
 
 
 def classify(sym):
@@ -728,7 +792,8 @@ def classify(sym):
         return Effect("gate", writes=(0,), adjoint_of="negate-arg1",
                       diagonal=True)
     if re.fullmatch(rf"cqrt_ry_{_W}", sym):
-        return Effect("gate", writes=(0,), adjoint_of="negate-arg1")
+        return Effect("gate", writes=(0,), adjoint_of="negate-arg1",
+                      superposing=True)
     # Control-in-place rotations (control-in-place-PRD §5, bd
     # test_C_libtooling-drbq): `cqrt_{ry,rz}_<W>_controlled(ctrl, handle, angle)`.
     # The control flag is arg 0 (READ), the register is arg 1 (WRITTEN), the
@@ -744,12 +809,12 @@ def classify(sym):
                       controls=(0,), diagonal=True)
     if re.fullmatch(rf"cqrt_ry_{_W}_controlled", sym):
         return Effect("gate", reads=(0,), writes=(1,), adjoint_of="negate-arg2",
-                      controls=(0,))
+                      controls=(0,), superposing=True)
     if sym == "cqrt_x":
         return Effect("gate", writes=(0,), adjoint_of="self")
     if sym == "cqrt_h":
         # Self-adjoint; the pass does not emit it. Classified for safety.
-        return Effect("gate", writes=(0,), adjoint_of="self")
+        return Effect("gate", writes=(0,), adjoint_of="self", superposing=True)
     if sym == "cqrt_cnot":
         return Effect("gate", reads=(0,), writes=(1,), adjoint_of="self",
                       controls=(0,))
@@ -1467,6 +1532,8 @@ def is_negation(a, b):
 
 VIOLATION = "VIOLATION"    # demonstrably unsound
 UNPROVEN = "UNPROVEN"      # outside the structural proofs this file can give
+# The common tail of every light-cone refusal (bd r2j3.3); the selftest keys on it.
+LC_OPEN = "light cone is left open"
 
 
 class Finding:
@@ -1518,6 +1585,9 @@ class StreamAnalysis:
         self._stable_active = set()  # queries currently being computed
         self._co_written_memo = {}   # (v, p1, p2, id(c1)) -> (ok, lines)
         self._co_written_active = set()   # ditto, the co-written edge
+        self._cone_memo = {}         # (target, p1, p2) -> (ok, lines, why)
+        self._cone_active = set()    # ditto, the light-cone edge (r2j3.3)
+        self._minted_core_memo = {}  # (rail, mint pos, rev pos) -> why|None
         self.proofs = []            # [(fn, free_line, handle, rule, lines)]
         # bd 1739 hole 2: adjoint pairs refused because their operand match was
         # `undef`/`poison` TEXT rather than a value. Kept so the free site can
@@ -1982,8 +2052,19 @@ class StreamAnalysis:
                 ok, sub, blocker = self.pair_operands_unchanged(
                     ck, pk, p, target)
                 if not ok:
-                    rejects.append((ck, c, blocker))
+                    rejects.append((ck, c, f"operand {blocker} is not "
+                                           f"provably unchanged between them"))
                     continue
+                if ck.eff.superposing:
+                    # bd r2j3.3: a rotation pair is the identity on `target`
+                    # only if nothing between them kept a copy of the
+                    # rotated-basis state. Permutation pairs skip this — they
+                    # restore the label in every basis branch regardless.
+                    ok, csub, why = self.light_cone_closed(target, pk, p)
+                    if not ok:
+                        rejects.append((ck, c, why))
+                        continue
+                    sub = sub | csub
                 witness |= sub
                 witness.add(ck.line)
                 witness.add(c.line)
@@ -2004,10 +2085,9 @@ class StreamAnalysis:
             # operand moved. Name it, or the ticket's own repro reports only
             # that two identical `cqrt_cswap`s failed to pair, which reads as a
             # checker bug rather than as the dirty rail it is.
-            ck, cc, blocker = rejects[-1]
+            ck, cc, reason = rejects[-1]
             why += (f"; the nearest adjoint candidate (lines {ck.line} and "
-                    f"{cc.line}) matched but was REJECTED because operand "
-                    f"{blocker} is not provably unchanged between them")
+                    f"{cc.line}) matched but was REJECTED because {reason}")
         return False, why, frozenset(witness)
 
     def pair_operands_unchanged(self, c1, p1, p2, target):
@@ -2218,6 +2298,218 @@ class StreamAnalysis:
             self._co_written_active.discard(key)
         self._co_written_memo[key] = (ok, lines)
         return ok, lines
+
+    # -- (L) the LIGHT CONE of a superposing pair (bd r2j3.3) ---------------
+    def light_cone_closed(self, target, p1, p2):
+        """(ok, witness, why) — is `pair · U · pair⁻¹` the identity on `target`?
+
+        `p1`/`p2` are an adjoint pair of SUPERPOSING writes to `target`
+        (`cqrt_ry_<W>` and its `_controlled` twin, `cqrt_h`) that the reduction
+        has matched, and U is everything the stream runs between them.
+
+        THE HOLE (bd test_C_libtooling-r2j3.3, P1, 2026-10-01). The write model
+        cancels `Ry(-t) … Ry(t)` on `key()` equality plus a negated angle, and
+        never asks what READ `target` in between. Between the two rotations the
+        register is in a ROTATED basis, so a read there copies a rotated-basis
+        label: a tape record, a measurement, a copy onto a kept carrier, or a
+        template rail that is not reversed before the second rotation leaves
+        `target` entangled with it, and `Ry(t)` does not restore the label. The
+        compiler's own lowering of `_Bool b=cq_theta(0,.5); int v=tbl[b];
+        b=cq_theta(b,-.5); printf(b, v)` in a non-`main` function frees the
+        QRAM load rail after exactly that, and stage 2b certified it through
+        (T2): "the load's index operand is unchanged" because its writes were
+        `Ry(-.5) Ry(.5)`. The frozen module is
+        `R2J3_3_FROZEN` in tools/free_pairing_check_test.py.
+
+        THE RULE IS A CLOSURE, NOT "NO READ", because the whole-DAG LIFO spine
+        puts every rail derived from a rotated root INSIDE that root's restore
+        window, reversed before the second rotation (UNCOMPUTE_CHAIN, a shipped
+        lowering). "Any read in the window declines" would fail that build. So:
+
+          * THE CONE. Scan U in stream order from `{target}`. A call with ANY
+            operand in the cone — read, control, classical-immediate or WRITE
+            slot (a `cqrt_cswap` moves `target`'s state into its co-written
+            rail through a write slot) — adds every rail it writes and the rail
+            it mints. `cqrt_free` adds nothing; a diagonal write adds nothing
+            new (its only write slot is already in the cone).
+          * THE CONSUMERS THAT CAN NEVER CLOSE IT. A cone rail reaching a
+            measurement, the output tape (`cqrt_tape_write_<W>[_controlled]`,
+            slot-blind like R1's seed), an `_inv` (it names no rail), an alloc
+            seed, or any call `classify()` does not model, refuses at once.
+          * RESTORATION. Every cone rail other than `target` must be back where
+            it was by `p2`: a rail MINTED in U needs its (T1a) `_unc` inside U,
+            an unchanged history from mint to reversal, nothing written after
+            it, and its own forward operands held still — (T1a)/(T2)/(T3) in a
+            window; a rail that EXISTED before it joined needs its writes from
+            the joining write onward to reduce to identity (`unchanged_over`).
+
+        Why that suffices, relative to the reduction's own soundness: by
+        construction no call writes a rail OUTSIDE the cone while reading one
+        inside it, so the rest of the circuit evolves independently of
+        `target`'s rotated state; and every cone rail is returned, so U acts on
+        `target ⊗ cone` as the identity. Nested superposing pairs inside U reach
+        this same rule through the recursive reductions.
+
+        WHAT IT DOES **NOT** CLOSE, stated so it is not read as covering it:
+          * DIAGONAL writes inside the window. `Ry(-t) · Rz(φ) · Ry(t)` is NOT
+            the identity — the phase between two rotations changes populations —
+            and this file still drops every diagonal write from every history
+            (`if not e.diagonal`), so `ry; rz; ry⁻¹; free` VERIFIES. That is the
+            PHASE blind spot in WHAT IT DOES **NOT** WITNESS, made sharper: it
+            is not only "a wrong angle the golden sees", it is a population
+            change on a freed rail. Filed as bd test_C_libtooling-r2j3.4, not
+            closed here.
+          * A rail reaching a NON-CALL instruction (`store`, `phi`, `select`,
+            `ret`) inside U. Only calls are modelled, as everywhere else here.
+          * Any closure that is not a LIFO reversal: a Bennett recompute, an
+            `_inv`. Those refuse (over-decline, the safe direction).
+
+        NARROWING, for `unchanged_over`'s termination argument: every query
+        issued here is over `(q, rev)` or `(qj - 1, p2)` with `p1 <= qj - 1`,
+        `p1 < q < rev < p2`, and `(p1, p2)` is itself strictly inside the
+        interval whose reduction matched the pair — so each edge narrows by at
+        least 2, and the re-entry assertion below can only fire on a future
+        edge that does not. Memoised on `(target, p1, p2)`; it reads only calls
+        and write lists at positions `< p2`, all scanned before any free site
+        that can reach it, so the memo is pure for the same reasons
+        `unchanged_over` gives.
+        """
+        key = (target, p1, p2)
+        hit = self._cone_memo.get(key)
+        if hit is not None:
+            return hit
+        if key in self._cone_active:
+            raise NarrowingViolation(key)
+        self._cone_active.add(key)
+        try:
+            res = self._light_cone(target, p1, p2)
+        finally:
+            self._cone_active.discard(key)
+        self._cone_memo[key] = res
+        return res
+
+    def _light_cone(self, target, p1, p2):
+        a, b = self.calls[p1], self.calls[p2]
+        where = (f"{target}'s state between the superposing pair at lines "
+                 f"{a.line} and {b.line}")
+        cone, minted = {target: p1}, set()
+        calls = self.calls
+        for q in range(p1 + 1, p2):
+            c = calls[q]
+            hit = None
+            for v in c.vals:
+                if v in cone:
+                    hit = v
+                    break
+            if hit is None:
+                continue
+            e = c.eff
+            role = e.role if e is not None else None
+            if role == "free":
+                continue
+            # The closable consumers: an in-place gate, a `_unc`, and a rail
+            # MINT that names its result (so its reversal can be looked for).
+            # Everything else that touches the cone refuses below.
+            if not (role in ("gate", "unc") or
+                    (role == "mint" and c.res and not _tape_sink(c.sym))):
+                if e is None:
+                    what = (f"is passed to @{c.sym}, a call this file does "
+                            f"not model,")
+                elif role == "measure":
+                    what = "is measured"
+                elif role == "inv":
+                    what = ("is read by an `_inv`, which writes a rail the "
+                            "ABI does not name,")
+                elif _tape_sink(c.sym):
+                    what = ("is recorded onto the output tape, a carrier no "
+                            "reversal restores,")
+                else:
+                    what = (f"reaches @{c.sym}, which leaves no rail this "
+                            f"file can see reversed,")
+                return False, frozenset(), (
+                    f"{hit} — carrying {where} — {what} at line {c.line} "
+                    f"(`{c.text}`), so that {LC_OPEN}")
+            vals = c.vals
+            for wi in e.writes:
+                if wi < len(vals) and vals[wi] not in cone:
+                    cone[vals[wi]] = q
+            if c.res and e.mints == "rail":
+                cone[c.res] = q
+                minted.add(c.res)
+        wit = set()
+        for v, qj in cone.items():
+            if v == target:
+                continue
+            if v in minted:
+                ok, lines, detail = self._minted_closed(v, qj, p2)
+            else:
+                ok, lines = self.unchanged_over(v, qj - 1, p2)
+                detail = (f"its writes from line {self.calls[qj].line} on do "
+                          f"not reduce to identity before line {b.line}")
+            if not ok:
+                return False, frozenset(), (
+                    f"{v} picks up {where} at line {self.calls[qj].line} and "
+                    f"is not provably restored before line {b.line} "
+                    f"({detail}), so that {LC_OPEN}")
+            wit |= lines
+        return True, frozenset(wit), None
+
+    def _minted_closed(self, x, q, hi):
+        """(ok, witness, detail) — (T1a)/(T3)/(T2) for rail `x`, minted at
+        stream position `q`, restored inside the window `(q, hi)`.
+
+        The reversal is the FIRST matching `_unc` after the mint; any later
+        write before `hi` (a second `_unc` included) refuses. The part that
+        does not depend on `hi` is memoised on `(x, q, rev)`, which is pure:
+        every position it reads is below `rev < hi <= ` the free being checked.
+        """
+        fwd, r = self.calls[q], self.rails.get(x)
+        rev = None
+        if r is not None:
+            fwd_args = tuple(fwd.cargs)
+            for p, w in r.writes:
+                if q < p < hi and w.eff.role == "unc" and \
+                        w.eff.base == fwd.sym and \
+                        tuple(w.cargs[1:]) == fwd_args:
+                    rev = p
+                    break
+        if rev is None:
+            return False, frozenset(), (
+                f"no matching @{fwd.sym}_unc reverses it inside the window")
+        rl = self.calls[rev].line
+        late = [w for p, w in r.writes if rev < p < hi]
+        if late:
+            return False, frozenset(), (
+                f"`{late[0].text}` (line {late[0].line}) writes it after its "
+                f"reversal at line {rl}")
+        key = (x, q, rev)
+        detail = self._minted_core_memo.get(key, 0)
+        if detail == 0:
+            detail = self._minted_core(x, q, rev, fwd, rl)
+            self._minted_core_memo[key] = detail
+        if detail is not None:
+            return False, frozenset(), detail
+        # The WITNESS is the reversal line alone, deliberately. The sub-proofs
+        # are each some rail's OWN proof too, and unioning their line sets
+        # into every enclosing cone made a D-deep nest of closed windows cubic
+        # (MEASURED: D=500, 13.5 s, almost all in frozenset unions).
+        return True, frozenset((rl,)), None
+
+    def _minted_core(self, x, q, rev, fwd, rl):
+        """None if `x` holds still from its mint to its reversal and so do the
+        forward's operands (and none is `undef`); else the reason."""
+        if any(carries_undef(a) for a in fwd.cargs):
+            return (f"its forward operands carry `undef`/`poison`, so its "
+                    f"reversal at line {rl} matches by text only (bd 1739 "
+                    f"hole 2)")
+        if not self.unchanged_over(x, q, rev)[0]:
+            return (f"it is written between its mint and its reversal at line "
+                    f"{rl}")
+        for v in map(pairing_register, fwd.cvals):
+            if v in self.rails and not self.unchanged_over(v, q, rev)[0]:
+                return (f"its forward operand {v} is not provably unchanged "
+                        f"before its reversal at line {rl}")
+        return None
 
     # -- the free site -----------------------------------------------------
     def check_free(self, pos, c):
@@ -2672,12 +2964,17 @@ class StreamAnalysis:
             ok, wit = self.unchanged_over(v, r.pos, rev_pos)
             if not ok:
                 bad = self.writes_in(v, r.pos, rev_pos)
+                # The reduction's own reason, so a pair refused for an open
+                # light cone (bd r2j3.3) says so instead of reading as an
+                # unpaired write. Recomputed only on this failure path.
+                _ok, why, _w = self.reduces_to_identity(bad, v)
                 self.add(UNPROVEN, "T2-operand-mutated", c, r.name,
                          f"forward operand {v} of `{fwd.text}` (line "
                          f"{fwd.line}) is written by `{bad[0][1].text}` (line "
                          f"{bad[0][1].line}) with no proof it is restored "
                          f"before the {rev_kind} reversal at line {rev.line}, "
-                         f"so the reversal may recompute a different value")
+                         f"so the reversal may recompute a different value: "
+                         f"{why}")
                 return
             witness |= wit
         self.ok(c, r, "T1-" + rev_kind.strip("_") + "-reversal", witness)
@@ -2686,8 +2983,12 @@ class StreamAnalysis:
 # Python frames the stability recursion burns per nesting level: the chain is
 # `unchanged_over -> reduces_to_identity -> pair_operands_unchanged ->
 # {unchanged_over | co_written_stable -> reduces_to_identity -> ...}`, so three
-# to four, and 4 is the generous count.
-_FRAMES_PER_LEVEL = 4
+# to four — and since bd r2j3.3 the light-cone edge `reduces_to_identity ->
+# light_cone_closed -> _light_cone -> _minted_closed -> _minted_core ->
+# unchanged_over` is six. 6 is the count; `ensure_recursion_headroom` multiplies
+# it by the whole stream length although a level consumes at least two
+# positions, which is the margin.
+_FRAMES_PER_LEVEL = 6
 
 
 def ensure_recursion_headroom(stream_len):
@@ -2711,10 +3012,12 @@ def ensure_recursion_headroom(stream_len):
       * the deepest nesting any of the 237 registered slices actually reaches is
         3 frames — the headroom is for adversarial input, not the ship floor;
       * the longest single stream in that corpus is 14135 calls
-        (`slice_libm_real_lgammaf`), which makes this function set the limit to
-        57540. That is the CEILING it grants, not a frame count anything
-        reaches: narrowing caps that stream at 7067 levels and the measured cost
-        is 3 frames per level, so its true worst case is ~21k frames;
+        (`slice_libm_real_lgammaf`), which made this function set the limit to
+        57540 at 4 frames per level (85810 since bd r2j3.3 raised the count to
+        6 for the light-cone edge). That is the CEILING it grants, not a frame
+        count anything reaches: narrowing caps that stream at 7067 levels and
+        the measured cost was 3 frames per level, so its true worst case was
+        ~21k frames (~42k if every level went through the light-cone edge);
       * either number is far inside what the interpreter takes — a plain
         300000-deep pure-Python recursion completes on CPython 3.11 here without
         a segfault (3.11 does not consume C stack for Python-to-Python calls,
@@ -2787,6 +3090,16 @@ def ensure_recursion_headroom(stream_len):
 # classical immediates in and turn a GATE into a false-positive generator, which is
 # the expensive direction (bd memory [gate-validation-not-corpus-silence-2026-07-31]).
 _TAPE_SINK = re.compile(rf"cqrt_tape_write_{_W}(?:_controlled)?$")
+_TAPE_SINK_MEMO = {}
+
+
+def _tape_sink(sym):
+    """`_TAPE_SINK.fullmatch(sym)`, cached — the light-cone scan asks it once
+    per cone-touching call (bd r2j3.3)."""
+    hit = _TAPE_SINK_MEMO.get(sym)
+    if hit is None:
+        hit = _TAPE_SINK_MEMO[sym] = bool(_TAPE_SINK.fullmatch(sym))
+    return hit
 
 # THE COPY-OUT SURFACE (bd 5pio, owner ruling 2026-08-11). A method-B
 # `cqrt_copy_<W>(src, dst)` records `src`'s basis label onto `dst`, and `dst` is a
