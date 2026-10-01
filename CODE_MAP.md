@@ -43,7 +43,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_runtime.c` — 1236 physical lines
 - `tools/migrate_phi_fixtures.py` — 1201 physical lines
 - `ir-pass/src/ArithLowering.cpp` — 1189 physical lines
-- `ir-pass/src/ChainWalk.cpp` — 1151 physical lines
+- `ir-pass/src/ChainWalk.cpp` — 1186 physical lines
 - `ir-pass/src/OpcodeLowering.cpp` — 1128 physical lines
 - `tools/loop_twin_matrix_quarantine_test.py` — 1110 physical lines
 - `ir-pass/src/SpecializeReject.cpp` — 1043 physical lines
@@ -60,7 +60,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/include/ControlPlan.h` — 749 physical lines
 - `tools/cq_stage_cache_test.py` — 730 physical lines
 - `runtime/cq_runtime.h` — 714 physical lines
-- `ir-pass/include/ChainWalk.h` — 673 physical lines
+- `ir-pass/include/ChainWalk.h` — 677 physical lines
 - `ir-pass/src/AngleSelectEmit.cpp` — 665 physical lines
 - `ir-pass/src/MergePhiPeel.cpp` — 662 physical lines
 - `ir-pass/include/ScrubOnDelete.h` — 661 physical lines
@@ -355,7 +355,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/CastLowering.cpp:38` — `promote`
 - `ir-pass/src/CastLowering.cpp:50` — `rewriteCast`
 
-### `ir-pass/src/ChainWalk.cpp` (1151 lines)
+### `ir-pass/src/ChainWalk.cpp` (1186 lines)
 
 - `ir-pass/src/ChainWalk.cpp:32` — `markBranchPhaseGate`
 - `ir-pass/src/ChainWalk.cpp:38` — `isBranchPhaseGate`
@@ -372,10 +372,10 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/ChainWalk.cpp:723` — `railOf`
 - `ir-pass/src/ChainWalk.cpp:765` — `isTerminalHandle`
 - `ir-pass/src/ChainWalk.cpp:820` — `isInteriorConsumer`
-- `ir-pass/src/ChainWalk.cpp:954` — `isInteriorTerminalHandle`
-- `ir-pass/src/ChainWalk.cpp:1034` — `clonePassPreserves`
-- `ir-pass/src/ChainWalk.cpp:1075` — `formalLabelPreserved`
-- `ir-pass/src/ChainWalk.cpp:1140` — `cloneCallPreservesArg`
+- `ir-pass/src/ChainWalk.cpp:989` — `isInteriorTerminalHandle`
+- `ir-pass/src/ChainWalk.cpp:1069` — `clonePassPreserves`
+- `ir-pass/src/ChainWalk.cpp:1110` — `formalLabelPreserved`
+- `ir-pass/src/ChainWalk.cpp:1175` — `cloneCallPreservesArg`
 
 ### `ir-pass/src/ClassicalCallArmEmit.cpp` (281 lines)
 

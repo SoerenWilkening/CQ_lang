@@ -866,6 +866,41 @@ bool isInteriorConsumer(const CallInst *C, const Value *R,
         return false;
     return true;
   }
+  // (b″) A FORWARD QRAM STORE reading the rail in any slot but its ARRAY (bd
+  //      test_C_libtooling-r2j3.1). The load above has been an interior consumer
+  //      since Inc 5 for the reason (b) gives: it READS its index and moves on.
+  //      A store does the same with every operand except its array: it is in
+  //      place on the ARRAY only (`isInPlaceGateOn` matches that slot alone, and
+  //      (a) above has already answered it); the index selects a cell, the cell
+  //      receives a copy of `val`, and the guarded form's path flag only gates
+  //      the write — all three are preserved. Before this row a store
+  //      disqualified the rail, so a COMPUTED index (`arr[q&7]` →
+  //      `and_i32_hl(h,7)`), a computed value (`arr[p] = q+1`) or a guarded
+  //      store's flag (`icmp_slt(h,3)`) of a store that is never reversed stood
+  //      allocated as a live CNOT copy of its source across every later gate on
+  //      it: `ry(h,-0.5)` then rotated a register entangled with the copy (the
+  //      source measured q at random where it should read its initial basis
+  //      value; `opt` exit 0, stage 2b clean, one M-A warning).
+  //
+  //      THE STORE'S OWN REVERSAL IS WHY THIS IS SAFE, NOT A HOLE. A store the
+  //      dead-terminal spine reverses re-reads flag/idx/val in its `_unc`; that
+  //      spine walks those operands as DAG parents (`DagTraversal`), so the rail
+  //      is in its `ReversedRails` and the interior partition, which runs after
+  //      it, never takes it (and a rail read by both a reversed and an
+  //      unreversed store makes the reversed DAG `NotClosed`, so it emits
+  //      nothing). The M-C prediction withholds the same superset
+  //      (`planInteriorDischarges`). So this row only ever governs a store that is
+  //      NOT reversed — one that reads the rail once and never again — exactly
+  //      the load's situation. For the GUARDED store's flag that is the case the
+  //      arm emitter's "the strip rides the same LIFO as the store" did not
+  //      cover: with no store reversal there was no strip at all.
+  if (isAbiQramStore(C)) {
+    bool Reads = false;
+    for (unsigned I = 0, E = C->arg_size(); I != E; ++I)
+      if (C->getArgOperand(I) == R)
+        Reads = true;
+    return Reads;  // the array slot never reaches here: (a) answered it.
+  }
   // (b′) A PHASE-6 CLONE CALL that reads the rail and provably never writes it
   //      (bd test_C_libtooling-rhk5). The same role as (b): a consumer that reads
   //      `R`, mints a FRESH result rail, and is finished with `R` once it has run —

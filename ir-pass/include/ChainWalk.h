@@ -498,7 +498,11 @@ bool isTerminalHandle(llvm::Value *Handle, const TaintSet &taint);
 //        or — since M-B Increment 6 — an EMITTER-RECORDED Phase-4 flag strip
 //        (`TaintSet::DischargedFlagGates`) reading it in a shifted handle slot,
 //        or — since bd rhk5 — a Phase-6 CLONE CALL whose body is PROVEN not to
-//        write it (`cloneCallPreservesArg`, below).
+//        write it (`cloneCallPreservesArg`, below), or — since bd r2j3.1 — a
+//        forward ABI QRAM STORE reading it outside its array slot (index, value
+//        or guarded path flag: read and preserved; a store the dead-terminal
+//        spine reverses has already claimed the rail, so this governs only a
+//        never-reversed store).
 //        A measure, a tape write, a copy-out, a `ret`, a φ/select, a
 //        controlled gate, a route, an UNPROVEN clone call, a `cqrt_free` or any OTHER
 //        adjoint twin all DISQUALIFY the rail (it is observed, escaped, recorded

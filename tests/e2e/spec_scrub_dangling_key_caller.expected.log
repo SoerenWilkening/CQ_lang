@@ -6,9 +6,13 @@ cqrt_ry_i32(h2, 0x1p-2)
 cq_template_and_i32_hl(h2, 7) -> h3
 cqrt_alloc_i32(7) -> h4
 cqrt_qram_store_i32(a0, h3, h4)
+cq_template_and_i32_hl_unc(h3, h2, 7)
+cqrt_free(h3)
 cq_template_and_i32_hl(h1, 7) -> h5
 cqrt_alloc_i32(9) -> h6
 cqrt_qram_store_i32(a0, h5, h6)
+cq_template_and_i32_hl_unc(h5, h1, 7)
+cqrt_free(h5)
 cq_template_add_i32_hl(h2, 1) -> h7
 cq_template_and_i32_hl(h7, 7) -> h8
 cqrt_qram_load_i32(a0, h8) -> h9

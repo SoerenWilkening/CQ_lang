@@ -53,15 +53,28 @@
 ; USER's circuit, so `opt` prints `warning: …`, exits ZERO, and hands back the
 ; lowered module. THE ANALYSIS AND THE MESSAGE STRING ARE UNCHANGED — only the
 ; severity moved, so everything this header says about WHY the record counts
-; still holds verbatim. The record is LEFT ALLOCATED and never freed (Rule 6 is
-; untouched: nothing frees a rail that is not provably |0>), which the
-; `NOFREEREC` prefix below pins alongside the gate that IS now emitted. The file KEEPS its
+; still holds verbatim. The record was LEFT ALLOCATED and never freed (Rule 6 is
+; untouched: nothing frees a rail that is not provably |0>), which a `NOFREEREC`
+; prefix pinned alongside the gate that IS now emitted.
+;
+; ⚠ bd test_C_libtooling-r2j3.1 (2026-10-01) MOVED THE STREAM, NOT THE WARNING. A
+; QRAM store is now an M-B interior consumer of the rails it reads in its idx/val
+; slots (`ChainWalk::isInteriorConsumer` (b″)), so `c` is DISCHARGED right after
+; its only use, the store — i.e. AFTER the gate. That is a clean free: `c`'s chain
+; is one `mul` of `%h`, and `%h` is unchanged between that `mul` and its `_unc`
+; (the gate rotates the WIRE `%h_op`, not `%h`), so the bd 261j algebra returns
+; `c` to |0> with the cell keeping its copy. `c` still STANDS at the gate and is
+; still unobserved there, so the warning is unchanged. What the old NOFREEREC
+; asserted — "never freed" — is now false for a sound reason, so it is replaced by
+; the PREGATE prefix: no free of `c` BEFORE the gate (a discharge there would
+; precede the store that reads it), and the discharge AFTER the store, pinned in
+; order. The file KEEPS its
 ; `reject_` name deliberately — see RotationLowering.h, which also states what
 ; the ruling does NOT cover (every wrong-value and dirty-free guard stays loud).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll 2> %t.err
 ; RUN: %filecheck %s --check-prefix=WARN < %t.err
 ; RUN: %filecheck %s --check-prefix=LOWER < %t.cqd0.ll
-; RUN: %filecheck %s --check-prefix=NOFREEREC < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=PREGATE < %t.cqd0.ll
 declare void @llvm.memset.p0.i64(ptr nocapture writeonly, i8, i64, i1 immarg)
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -93,11 +106,14 @@ entry:
 ; THE PROGRAM LOWERS. `opt` exits zero and the gate is in the stream:
 ; LOWER-LABEL: define{{.*}}@slice(
 ; LOWER: call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)
-; and the record is LEFT ALLOCATED — never freed dirty (Rule 6), which is the
-; whole of what the ruling changes about the emitted circuit.
-; NOFREEREC-NOT: call void @cqrt_free(i32 %h_op3)
-; It is its OWN prefix, with no positive directive, so its window is the
-; WHOLE lowered module rather than the span after the gate — a free emitted
-; BEFORE the rotation would be caught too. That is also the spelling
-; tools/fixture_guard_liveness.py recognizes (`NOFREE*`), which counts it as
-; unanchored-and-therefore-not-dead rather than passing over it in silence.
+; and the record is never freed BEFORE the gate (window: module start -> the
+; gate), then discharged right after the store that is its last use:
+; PREGATE-LABEL: define{{.*}}@slice(
+; PREGATE-NOT: call void @cqrt_free(i32 %h_op3)
+; PREGATE:      call void @cqrt_ry_i32(i32 %h_op, double 5.000000e-01)
+; PREGATE-NEXT: call void @cqrt_qram_store_i32(i32 %arr1, i32 %h2, i32 %h_op3)
+; PREGATE-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %h_op3, i32 %h, i32 3)
+; PREGATE-NEXT: call void @cqrt_free(i32 %h_op3)
+; (Deliberately NOT a `NOFREE*` prefix: tools/fixture_guard_liveness.py injects a
+; free before `ret` and expects every NOFREE window to catch it, which a window
+; that ENDS at the gate is not meant to.)

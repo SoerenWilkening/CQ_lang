@@ -27,9 +27,15 @@
 ;     cqrt_measure_f64(%0)
 ; The loaded value is `[pi == qi] · carrier` — a function of `pi`. `%h_cast4`
 ; (the fptosi rail holding `pi`) and `%h3` (the alloc rail holding `p`) are
-; therefore BASIS RECORDS of the wire's value. Neither is read again after the
-; load, neither is uncomputed, neither is freed: they are dead, undischarged and
-; entangled when the chained `cqrt_ry_f64(%0, 1.0)` fires. The wire's reduced
+; therefore BASIS RECORDS of the wire's value. `%h_cast4` is discharged by the
+; M-B interior partition right after the load (a load is an interior consumer of
+; its index); `%h3`, an alloc rail carrying the Ry that minted `p`, can never be
+; (it stays a borrowed parent), so it is dead, undischarged and entangled when the
+; chained `cqrt_ry_f64(%0, 1.0)` fires. (Corrected 2026-10-01, bd r2j3.1: this
+; paragraph said NEITHER rail is uncomputed, which the pinned stream below already
+; contradicted for `%h_cast4`. Since r2j3.1 the STORE's index `%h_cast` is
+; discharged after the store the same way; that changes the stream, not the
+; warning.) The wire's reduced
 ; state is diagonal in `pi`, so the Ry — the very phase-to-amplitude conversion
 ; the original fixture existed to demonstrate — acts on a MIXTURE. That is bd
 ; test_C_libtooling-nepx's argument, at fp width, with the records on the
@@ -131,6 +137,10 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[H2]], double 1.000000e-01)
 ; CHECK-NEXT: %[[H_CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[H2]])
 ; CHECK-NEXT: call void @cqrt_qram_store_f64(i32 %[[ARR1]], i32 %[[H_CAST]], i32 %[[H]])
+; bd r2j3.1: the STORE's computed index is an M-B interior rail too (the store is
+; never reversed and reads it once), so it is discharged right after the store:
+; CHECK-NEXT: call void @cq_template_fptosi_f64_to_i32_unc(i32 %[[H_CAST]], i32 %[[H2]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[H_CAST]])
 ; CHECK-NEXT: %[[H3:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double 0.000000e+00)
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[H3]], double 2.000000e-01)
 ; CHECK-NEXT: %[[H_CAST4:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fptosi_f64_to_i32(i32 %[[H3]])
@@ -170,7 +180,7 @@ entry:
 ; an ORDER assertion, and a `-NOT` after a count in the same prefix is
 ; windowed to the text past the count.  `-COUNT-n` then `-NOT` of the SAME
 ; pattern is the only spelling that pins `exactly n`.
-; FCNT-COUNT-1: call void @cqrt_free(
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 
 ; ---------------------------------------------------------------------------

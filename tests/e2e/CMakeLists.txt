@@ -3779,6 +3779,19 @@ add_test(NAME e2e-slice-qram-store-fp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_fp.expected.log")
 
+# bd test_C_libtooling-r2j3.1: never-reversed stores (main-resident) reading
+# COMPUTED rails — an `and` index, an `add` value, a guarded store's `icmp` path
+# flag. Each rail is discharged (`_unc` + `cqrt_free`) right after its store,
+# against an un-rotated source, before the chained Ry on that source; before the
+# fix all three stood live (CNOT copies) across those rotations.
+add_test(NAME e2e-slice-qram-store-computed-index
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.expected.log")
+
 # Phase 7.5 bug sxuk: a LOCAL alloca array built+loaded in a NON-main helper whose
 # loaded value is measured INSIDE the helper. Unlike slice_qram_store (main-resident,
 # no reversal), the local scratch MUST uncompute: the loaded value is copied out to a
