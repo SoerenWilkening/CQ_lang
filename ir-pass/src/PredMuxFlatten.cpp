@@ -68,6 +68,7 @@
 
 #include "PredMuxFlatten.h"
 
+#include "CompareLowering.h"  // logicalOperandWidth (bd 01po.2 — the mask's width)
 #include "CondLiteral.h"    // markPredictedTaintCone (bd xdu2.13 — the rule-(B) record)
 #include "Fp80Union.h"      // foldConstantConesInFunction (adia fold residue)
 #include "IntrinsicLowering.h"
@@ -3833,8 +3834,10 @@ public:
   // recorded as a condition-tree rail leaf. Null when the driver does not police
   // the property; the flattener's behaviour is otherwise identical either way —
   // it only ever WRITES a bool, never reads one back.
-  RegionFlattener(PredMuxRegion &R, IRBuilder<> &B, PredMuxRailPhiRecord *Rec)
-      : R(R), B(B), Rec(Rec) {}
+  // `Taint` is read only by `maskQromIndex` (a logical-width query).
+  RegionFlattener(PredMuxRegion &R, IRBuilder<> &B, PredMuxRailPhiRecord *Rec,
+                  TaintSet &Taint)
+      : R(R), B(B), Rec(Rec), Taint(Taint) {}
 
   void run() {
     // Process arm blocks in topological order: convert phis to select
@@ -3855,23 +3858,20 @@ public:
     // on the guard bounding the index (the guard may be unrelated to it); the
     // masked garbage-row value, where it survives the merge predicate, only ever
     // replaces an undefined one. The claim gate (classifyQromReadUnderControl)
-    // keeps the index at the pointer-index width, so `and idx, N-1` (N ≤ 2^63)
-    // yields a non-negative in-range offset for every bit pattern (each QRAM
-    // call then reads it through its own i32 trunc bracket,
-    // `bracketQramIndexCasts`; exact, since the masked value is < N, an i32
-    // count). Inserted AT
-    // the (already-moved) gep so the index dominates textually; the And is
-    // tainted by the caller's re-propagate and lowers as an ordinary hl template.
+    // keeps the index at the pointer-index width, so the mask (N ≤ 2^63) yields
+    // a non-negative in-range offset for every bit pattern; WHERE it is built
+    // (the narrow source of the -O1 widening, or the i64 index) is
+    // `maskQromIndex`'s. Inserted AT the (already-moved) gep so the index
+    // dominates textually; the And is tainted by the caller's re-propagate and
+    // lowers as an ordinary hl template.
     for (auto &ML : R.MaskLoads) {
       auto *GEP = cast<GetElementPtrInst>(ML.first->getPointerOperand());
       unsigned IdxNo = GEP->getNumOperands() - 1;
       Value *Idx = GEP->getOperand(IdxNo);
       IRBuilder<> MB(GEP);
       MB.SetCurrentDebugLocation(GEP->getDebugLoc());
-      Value *Masked = MB.CreateAnd(
-          Idx, ConstantInt::get(Idx->getType(), ML.second - 1));
-      GEP->setOperand(IdxNo, Masked);
-      track(Masked);
+      GEP->setOperand(IdxNo, maskQromIndex(MB, Idx, ML.second));
+      track(Idx);  // a widening cast only this gep read is dead now: swept.
     }
     // bd xdu2.8 — every read E4 admitted only under an arm-local classical
     // guard gets its bounds-checked address NOW, after `moveBody` put it at the
@@ -3907,6 +3907,7 @@ private:
   PredMuxRegion &R;
   IRBuilder<> &B;
   PredMuxRailPhiRecord *Rec = nullptr;  // bd woa0 — write-only, may be null
+  TaintSet &Taint;
   DenseMap<BasicBlock *, Value *> BlockPred;   // nullptr = ⊤ (entry)
   DenseMap<std::pair<BasicBlock *, unsigned>, Value *> LitCache;
   SmallVector<WeakTrackingVH, 32> MaybeDead;
@@ -4859,6 +4860,54 @@ private:
     }
   }
 
+  // bd 01po.2 — the NeedsMask index `and idx, N-1` for a pow2 table of N cells.
+  // -O1 widens a narrow gep index as `E iW src to i64`, E ∈ {sext, zext}.
+  // Masking that i64 costs a W→64 widening template, an `and_i64_hl` and a
+  // `trunc_i64_to_i32` bracket around EVERY QRAM call, forward and `_unc` (the
+  // index rail has logical width 32, QramIndexWidth.h). So mask the source:
+  //     gep index := zext iW (and iW src, N-1) to i64
+  // EXACT, equal for every bit pattern of `src`, iff N-1 < 2^W:
+  //   * E = zext: zext(src) & M == zext(src & M) for any M that fits in W bits
+  //     (bits ≥ W are 0 on both sides);
+  //   * E = sext: sext(src) equals src on bits [0,W) and M has no bit ≥ W, so
+  //     sext(src) & M == zext(src & M). Up to N = 2^W only because the re-
+  //     widening is ZEXT; a sext (or the gep's implicit sext of a narrow index)
+  //     would need M below the sign bit, N ≤ 2^(W-1).
+  // Always `zext`, never the source's kind, for two more reasons: the index
+  // stays at the pointer-index width that any re-classification of this read
+  // requires (`classifyQromReadUnderControlImpl`); and the shared bounds proof
+  // (`qromIndexKnownInBounds`, re-asked by the Bennett-clone read fence and by an
+  // enclosing claim) reads `zext` as value-preserving and `and` as ≤ M but
+  // `sext` at full range (PoisonFacts `unconditionalMax`), so a sext would make
+  // a masked clone read decline and an enclosing claim mask it again.
+  // The QRAM emitter (`resolveQramIndex`) strips the zext and takes the masked
+  // W-bit rail: at W = 32 it IS the index (no bracket); below, it is bracketed
+  // by `zext_iW_to_i32`. Either way the rail the call reads equals the old
+  // `trunc_i64_to_i32(E(src) & M)` bit for bit. An i1 mask is a flatten residue
+  // that `simplifyFlattenResiduesInFunction` folds: N = 2 leaves the flag itself,
+  // N = 1 the constant index 0 (a classical tbl[0] read, no QRAM call).
+  // SCOPE: W ≤ 32 (a wider source would still need a trunc), N ≤ 2^31 (the
+  // QRAM count is an i32), and W is the source's LOGICAL width (no laundered
+  // `HandleWidth` record says otherwise: the argument above is about the
+  // register's bits). Any other index (not a sext/zext: an i64 phi, a
+  // `cttz.i64`, a `long`; a wider source; a larger table) keeps the i64 mask.
+  Value *maskQromIndex(IRBuilder<> &MB, Value *Idx, uint64_t Count) {
+    const uint64_t Mask = Count - 1;
+    if (auto *Ext = dyn_cast<CastInst>(Idx))
+      if ((isa<SExtInst>(Ext) || isa<ZExtInst>(Ext)) &&
+          Count <= (uint64_t(1) << 31)) {
+        Value *Src = Ext->getOperand(0);
+        unsigned W = Src->getType()->getScalarSizeInBits();
+        if (Src->getType()->isIntegerTy() && W <= 32 && (Mask >> W) == 0 &&
+            logicalOperandWidth(Src, Taint) == abiWidthFromType(Src->getType())) {
+          Value *Narrow =
+              track(MB.CreateAnd(Src, ConstantInt::get(Src->getType(), Mask)));
+          return track(MB.CreateZExt(Narrow, Idx->getType()));
+        }
+      }
+    return track(MB.CreateAnd(Idx, ConstantInt::get(Idx->getType(), Mask)));
+  }
+
   Value *track(Value *V) {
     MaybeDead.push_back(V);
     return V;
@@ -5349,7 +5398,7 @@ bool flattenPredMuxRegions(Module &M, TaintSet &Taint, bool ClaimAll,
         markPredictedTaintCone(PC);
       IRBuilder<> Builder(T);
       Builder.SetCurrentDebugLocation(T->getDebugLoc());
-      RegionFlattener(R, Builder, Rec).run();
+      RegionFlattener(R, Builder, Rec, Taint).run();
       // bd adia (3c6m.55 Lever C): collapse fold residues the flatten materialized
       // (a select chain over constant incomings folds to a constant, leaving
       // a constant-operand compare feeding a "classical" branch that would

@@ -10,8 +10,14 @@
 ; §6.1) — the atan atanhi[id] mechanism (its id phi carries −1, so known-bits
 ; provably cannot cover it).
 ;
+; bd 01po.2: the mask is built on the STRIPPED i32 source of the -O1 `sext`
+; (`and i32 q, 3`, re-widened by a `zext` the QRAM emitter strips), so the read
+; takes the masked i32 rail directly: no `sext_i32_to_i64`, no `and_i64_hl`, no
+; per-call `trunc_i64_to_i32` bracket. The NARROW prefix scans the whole module.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=NARROW %s < %t.cqd0.ll
 @tbl = internal unnamed_addr constant [4 x i32] [i32 7, i32 9, i32 11, i32 13]
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -32,16 +38,20 @@ merge:
   ret i32 %m
 }
 
-; the table handle births first, then the masked index (and i64 idx, 3), narrowed
-; to the i32 index rail by its own trunc bracket, feeds the read, then the integer select merge routes the arm value:
+; the table handle births first, then the masked index (and i32 q, 3) on the
+; theta rail itself feeds the read with no cast bracket, its `_unc` and free
+; follow the read, then the integer select merge routes the arm value:
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 3)
-; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[MSK]])
-; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[XI]])
-; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[MSK]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 3)
+; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[MSK]])
+; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[MSK]], i32 %[[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[MSK]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: br i1
 ; CHECK-NOT: phi i32
 ; CHECK-NOT: select i1
+; NARROW-NOT: cq_template_sext_i32_to_i64
+; NARROW-NOT: cq_template_and_i64
+; NARROW-NOT: cq_template_trunc_i64_to_i32
