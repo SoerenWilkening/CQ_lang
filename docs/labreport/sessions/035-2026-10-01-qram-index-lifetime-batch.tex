@@ -1,0 +1,139 @@
+\labsessionheader{2026-10-01}{Closing the six issues filed by the QRAM-index work (five-unit coordinated batch)}%
+  {a192bfa6}{n/a}{owner handoff pasted into the session (lab report 034 follow-up)}
+
+\subsection*{Goal}
+Entry 034 (\commit{27fc9a62}) filed six issues on the way: three silent
+miscompiles (\bd{test\_C\_libtooling-r2j3.1}, \bd{test\_C\_libtooling-r2j3.2},
+\bd{test\_C\_libtooling-r2j3.3}), a missing width record
+(\bd{test\_C\_libtooling-01po.3}), an over-decline
+(\bd{test\_C\_libtooling-01po.4}) and a gate-cost task
+(\bd{test\_C\_libtooling-01po.2}). The owner asked for one coordinated batch:
+five implementer agents in separate worktrees with disjoint fixture sets, an
+independent reviewer per core unit for at least three rounds, merges in a fixed
+order, and exactly one batch gate.
+
+\subsection*{What landed}
+\begin{itemize}
+  \item U4, \commit{18b3f5ff}, \commit{a56bd050}, \commit{33a8b03a} (merge
+  \commit{1d06e0ee}) --- \bd{test\_C\_libtooling-01po.3},
+  \bd{test\_C\_libtooling-r2j3.5} --- the break rails
+  \texttt{cq.brk.R/idx/out} carry \texttt{HandleWidth}.
+  \texttt{AbortParkEmit}, \texttt{IOSinkLowering}, \texttt{GuardedStoreArmEmit}
+  and the loop cast forecast ask \texttt{logicalOperandWidth} instead of
+  the SSA type. New slice \texttt{e2e-slice-loop-break-qram-index-i64}.
+  \item U3, \commit{e356c25a}, \commit{61d0c48b} (merge \commit{43420e34}) ---
+  \bd{test\_C\_libtooling-r2j3.2} --- the stale-read guard asks about a QRAM
+  access's bare index (\texttt{qramIndexRegister}, now exported from
+  \fpath{QramIndexWidth.cpp}) and a store's value at the access. A gate that
+  fails dominance is granted if it post-dominates the read and cannot reach
+  it, except for a pure-op read inside a tainted arm.
+  \item U5, \commit{d99e6da3}, \commit{77663022} (merge \commit{ed1fa788}) ---
+  \bd{test\_C\_libtooling-01po.2} --- the PredMux QROM mask is built at the
+  narrow source width, \texttt{zext iW (and iW src, N-1)}, and skipped when
+  $N=2^W$. No golden changed: the atan-family index is already an \texttt{i64}
+  phi at \texttt{-O1}.
+  \item U1, \commit{3a0a5cd3}, \commit{df63520b}, \commit{a972b121},
+  \commit{8f53d1c2}, \commit{0f72e96c} (merge \commit{43adc53e}) ---
+  \bd{test\_C\_libtooling-r2j3.1}, \bd{test\_C\_libtooling-r2j3.3} (compiler
+  half), \bd{test\_C\_libtooling-01po.4} --- a never-reversed QRAM store's
+  computed operands are discharged right after the store. The new
+  \fpath{RecordWindowFreeze.cpp} freezes a rail whose \texttt{\_unc} reads a
+  register recorded after a later \texttt{Ry}. The dead-terminal walk retries
+  once with QRAM arrays read-only. Three new slices; one golden regenerated.
+  \item U2, \commit{650432d8}, \commit{4e92b378}, \commit{c3d5fdd3} (merge
+  \commit{a192bfa6}) --- \bd{test\_C\_libtooling-r2j3.3} (checker half) ---
+  stage 2b's rule L: a cancelling \texttt{ry}/\texttt{h} pair counts only if
+  its light cone closes inside the window. Indirect calls and inline asm are
+  now unmodelled.
+  \item \commit{b4fc78cd}, \commit{dc6f6872} --- \texttt{CLAUDE.md} R15 and
+  \texttt{AGENTS.md}: a hard test budget per issue and a six-probe review
+  round (owner ruling, this session).
+\end{itemize}
+
+\subsection*{Findings}
+\begin{itemize}
+  \item \fconfirmed\ (pre-existing, fixed) \bd{test\_C\_libtooling-r2j3.1}:
+  \texttt{arr[q\&7]=0} left \texttt{and\_i32\_hl} live as a copy of
+  \texttt{q} across a later \texttt{Ry}. Now
+  \texttt{and; store; and\_unc; free; ry}.
+  \item \fconfirmed\ (pre-existing, fixed) \bd{test\_C\_libtooling-r2j3.2}
+  and the \texttt{int} twin whenever clang put the \texttt{sext} before the
+  rotation. Also covered: shadow, guarded, nested, \texttt{size\_t} and
+  lifted-phi indices, and stale store values. 13 new decline fixtures.
+  \item \fconfirmed\ (pre-existing, fixed) \bd{test\_C\_libtooling-r2j3.3},
+  both the compiler free and the stage-2b over-accept.
+  \item \fconfirmed\ (pre-existing, fixed) \bd{test\_C\_libtooling-r2j3.5},
+  found by U4's audit. An abort park sized its graveyard from the SSA type, so
+  an \texttt{i64} routed register was swapped with an \texttt{i32} graveyard.
+  Review round 2 showed it also hit plain round-2 merge outputs on
+  \texttt{main}. U4's audit also found two more width miscompiles on break
+  answers: casts of the wrong width and an \texttt{i32} compare of two
+  \texttt{i64} answers.
+  \item \fconfirmed\ (introduced, then fixed before landing). U4's record made
+  r2j3.5 newly reachable (review round 1, L9). U3's first post-dominance
+  grant accepted a read in a tainted arm that \texttt{GuardedStoreArmEmit}
+  hoists, so the read became unconditional. That copy dephases \texttt{q}:
+  $P(q_2{=}1)$ is $0.081$ instead of $\sin^2 0.4\approx0.152$, with
+  \texttt{opt} exit 0 (review round 2). Pinned by
+  \fpath{lowering_reject_stale_record_tainted_arm_hoisted_chain.ll}.
+  \item \foverdecline\ (introduced, then fixed) U3 round 1 declined reads
+  \emph{before} a rotation that \texttt{main} lowered (dominance-only grant).
+  \item \fpreexisting\ new and open: \bd{test\_C\_libtooling-r2j3.6} (a lifted
+  call reads a stale argument), \bd{test\_C\_libtooling-r2j3.7} (a dead tainted
+  op is never uncomputed), \bd{test\_C\_libtooling-r2j3.9} (latent: an
+  unconditional hoisted chain), \bd{test\_C\_libtooling-r2j3.4} (stage 2b
+  certifies a diagonal phase inside a restore window, widened by the U2
+  review), \bd{test\_C\_libtooling-r2j3.10} (spurious live-record warnings).
+  Over-declines: \bd{test\_C\_libtooling-01po.7}, \texttt{01po.8},
+  \texttt{01po.9}, \bd{test\_C\_libtooling-dm7f.1}, \texttt{dm7f.2},
+  \texttt{dm7f.3}, \bd{test\_C\_libtooling-p3kd.1}. A table of
+  $\ge2^{31}$ cells wraps its count: \bd{test\_C\_libtooling-01po.6}.
+\end{itemize}
+
+\subsection*{Measurements}
+\begin{tabular}{@{}lrl@{}}\toprule
+Quantity & Value & Command \\ \midrule
+Batch gate entries passed & 586/586 & \measured{ctest --test-dir build -LE maintenance -j6} \\
+\quad wall time & 805.8 s & \measured{same (Total Test time)} \\
+cq-opt equivalence & 2536, 0 mism. & \measured{cmake --build build --target cq-opt-equivalence-full} \\
+Code map & passes & \measured{python3 tools/update\_code\_map.py --check} \\
+ctest entries & 589 & \measured{ctest --test-dir build -N | tail -1} \\
+lit fixtures & 2536 & \measured{ls ir-pass/test/*.ll | wc -l} \\
+\quad added by this batch & 41 & \measured{git diff --name-only --diff-filter=A dc6f6872 HEAD -- ir-pass/test} \\
+e2e goldens & 477 & \measured{ls tests/e2e/*.expected.log | wc -l} \\
+\quad changed / added & 1 / 4 & \measured{git diff --name-only --diff-filter=M|A dc6f6872 HEAD -- tests/e2e} \\
+Mutants MISSED (U4/U3/U5/U1/U2) & 2/0/2/1/0 & \measured{implementer reports; all MISSED argued equivalent or unreachable} \\
+\bottomrule\end{tabular}
+
+\subsection*{Verification run}
+Each implementer confirmed its fixtures were red before the fix and green
+after, and ran its mutants on its own disjoint fixture and slice set. Most
+implementers spent far more test invocations than the budget allows, mostly
+before the budget was set mid-session. Reviews used only probes and no
+suites. U4 had three rounds and U3 two; U5 and U1 had one round each,
+two for U5. Two further reviewers probed the merged binary
+(\texttt{15fabccd}) for cross-unit compositions. They found no miscompile;
+their one low finding is r2j3.10. The batch gate ran once, after all five
+merges. Not run: the \texttt{maintenance} label, since no scrub-guard input
+changed.
+
+\subsection*{Open questions and next steps}
+\begin{itemize}
+  \item \bd{test\_C\_libtooling-r2j3.8} (deferred by the owner): a reversed
+  QRAM call keeps its computed index live until its \texttt{\_unc}. The case
+  is warned (\texttt{lyyf}) and never freed dirty. The fix is a per-call
+  recompute bracket plus stage-2b pairing of template brackets.
+  \item \bd{test\_C\_libtooling-57ch}, owner ruling this session. A movable
+  stale read compiles by placing it before the gate. An unmovable one
+  compiles with a kept snapshot and a warning. Neither is a physics decline.
+  \texttt{docs/frontend.md} \S3.2's cloning rationale is superseded.
+  \item Another session reset \texttt{main} to \commit{dc6f6872} during the
+  batch. That removed vmz9 (\commit{30158d92}) and its entry 035, which must
+  be renumbered if it re-lands.
+\end{itemize}
+
+\subsection*{Errata to earlier entries}
+Entry 034, Findings (r2j3.1): ``\ldots later gate on its source, with no
+warning'' should read ``\ldots with only the M-A `live derived record'
+warning''. U1 measured that warning on \texttt{main} for the r2j3.1 program;
+the \texttt{opt} exit code was 0 either way.
