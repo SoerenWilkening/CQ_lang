@@ -3203,6 +3203,17 @@ LIGHT_CONE_MUTANTS = [
     ("lc-t2-unmodelled-call-reads-operand-inside-restore-window",
      lc(obs="  call void @sink(i32 %b)"),
      "T2-operand-mutated", "does not model", "%v"),
+    # Review F3 (round 1): a call through a FUNCTION POINTER, and inline asm.
+    # `CALL_RE` reads only calls to a named `@symbol`, so both lines used to be
+    # dropped by the parser and the window verified with the rail escaping.
+    ("lc-t2-indirect-call-reads-operand-inside-restore-window",
+     lc(obs="  call void %fp(i32 %b)").replace(
+         "define void @obs(i32 %u, i32 %s)",
+         "define void @obs(i32 %u, i32 %s, ptr %fp)"),
+     "T2-operand-mutated", "does not model", "%v"),
+    ("lc-t2-inline-asm-reads-operand-inside-restore-window",
+     lc(obs='  call void asm sideeffect "", "r"(i32 %b)'),
+     "T2-operand-mutated", "does not model", "%v"),
     # A VOID Phase-6 clone: `classify()` models `__cq_q_*` as a rail mint, and
     # with no result there is no rail whose reversal could be looked for.
     ("lc-t2-void-clone-reads-operand-inside-restore-window",
@@ -3306,6 +3317,11 @@ LIGHT_CONE_POSITIVES = [
             "  call void @cqrt_free(i32 %z)")),
     ("lc-unmodelled-call-on-a-classical-value-inside-the-window",
      lc(obs="  call void @sink(i32 %s)")),
+    # Review F4 (round 1): an old-style debug intrinsic naming the rotated rail
+    # is not a gate and must not open the cone.
+    ("lc-dbg-value-intrinsic-on-the-operand-inside-the-window",
+     lc(obs="  call void @llvm.dbg.value(metadata i32 %b, metadata !12, "
+            "metadata !DIExpression())")),
     # The other two superposing symbols must not over-decline either.
     ("lc-controlled-rotation-pair-with-a-closed-read",
      lc(obs="  %x = call i32 @cq_template_add_i32_hl(i32 %b, i32 1)\n"

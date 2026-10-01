@@ -960,6 +960,18 @@ TERM_START_RE = re.compile(r"^\s*(br|switch|ret|unreachable|indirectbr|resume)\b
 # An `invoke` is a CALL and a TERMINATOR at once, and this file models neither
 # half of it — see the loud refusal in `parse_module`.
 INVOKE_RE = re.compile(r"^\s*(?:%[-\w.$]+\s*=\s*)?invoke\b")
+# ANY `call` instruction, named callee or not. `CALL_RE` above reads only a
+# call to a named `@symbol`, so a call through a FUNCTION POINTER
+# (`call void %fp(i32 %b)`) or to INLINE ASM (`call void asm "…", "r"(i32 %b)`)
+# used to be dropped by the parser: the rail it took was invisible, and a
+# superposing window whose state escaped through it VERIFIED (bd r2j3.3 review
+# F3, probe `@indir`). Such a line is now recorded as a call to the sentinel
+# `UNNAMED_CALLEE`, which `classify()` does not model (it is not `cqrt_*`), so
+# every rule treats it exactly like a named classical call: its operands
+# escape, and a light cone that reaches it is refused.
+ANY_CALL_RE = re.compile(r"^\s*(?:(%[-\w.$]+|%\"[^\"]+\")\s*=\s*)?"
+                         r"(?:tail\s+|musttail\s+|notail\s+)?call\b")
+UNNAMED_CALLEE = "<indirect or inline-asm callee>"
 
 
 def read_terminator(lines, i):
@@ -1226,6 +1238,15 @@ def parse_module(text):
                 cur_calls.append(Call(i + 1, cm.group(1),
                                       cm.group(2).strip('"'),
                                       split_args(ln[open_at + 1:j]), ln.strip()))
+            elif ANY_CALL_RE.match(ln):
+                # An indirect or inline-asm call (see `ANY_CALL_RE`). Its
+                # operands are every SSA name after the `call` keyword — the
+                # callee pointer included, which is harmless: it is never a
+                # rail name. Over-collecting is the safe direction here.
+                am = ANY_CALL_RE.match(ln)
+                cur_calls.append(Call(i + 1, am.group(1), UNNAMED_CALLEE,
+                                      SSA_NAME_RE.findall(ln[am.end():]),
+                                      ln.strip()))
             elif INVOKE_RE.match(ln):
                 # bd `t4sw` F-1's neighbour, and it is refused rather than
                 # half-parsed. An `invoke` is BOTH a call and a terminator, and
@@ -2335,7 +2356,13 @@ class StreamAnalysis:
           * THE CONSUMERS THAT CAN NEVER CLOSE IT. A cone rail reaching a
             measurement, the output tape (`cqrt_tape_write_<W>[_controlled]`,
             slot-blind like R1's seed), an `_inv` (it names no rail), an alloc
-            seed, or any call `classify()` does not model, refuses at once.
+            seed, a void `__cq_q_*` clone, or any call `classify()` does not
+            model, refuses at once. "Any call" includes a call through a
+            function pointer or to inline asm: `parse_module` records those
+            as calls to `UNNAMED_CALLEE` (review F3 — before that they were
+            not parsed at all, and a window leaking through one VERIFIED). The
+            one exemption is `@llvm.dbg.*`: a debug intrinsic names a value
+            and acts on no rail (review F4).
           * RESTORATION. Every cone rail other than `target` must be back where
             it was by `p2`: a rail MINTED in U needs its (T1a) `_unc` inside U,
             an unchanged history from mint to reversal, nothing written after
@@ -2360,7 +2387,14 @@ class StreamAnalysis:
             change on a freed rail. Filed as bd test_C_libtooling-r2j3.4, not
             closed here.
           * A rail reaching a NON-CALL instruction (`store`, `phi`, `select`,
-            `ret`) inside U. Only calls are modelled, as everywhere else here.
+            `ret`) inside U. Only calls are modelled, as everywhere else here,
+            so the cone stops at the instruction: `%s = select i1 %c, i32 %b,
+            i32 %k` followed by a tape record of `%s` records the rotated rail
+            under a name the cone never reaches, and the window VERIFIES (review
+            F2). What stands in front of that is the PASS —
+            `declineClassicalMuxes` (ir-pass/src/TaintPropagation.cpp) refuses
+            a live select/phi over tainted data, the same guard the header's
+            NON-CALL bullet relies on — not this rule.
           * Any closure that is not a LIFO reversal: a Bennett recompute, an
             `_inv`. Those refuse (over-decline, the safe direction).
 
@@ -2405,7 +2439,9 @@ class StreamAnalysis:
                 continue
             e = c.eff
             role = e.role if e is not None else None
-            if role == "free":
+            if role == "free" or (e is None and c.sym.startswith("llvm.dbg.")):
+                # A debug intrinsic is not a gate: it names a value for the
+                # debugger and acts on no rail (review F4).
                 continue
             # The closable consumers: an in-place gate, a `_unc`, and a rail
             # MINT that names its result (so its reversal can be looked for).
@@ -2413,7 +2449,9 @@ class StreamAnalysis:
             if not (role in ("gate", "unc") or
                     (role == "mint" and c.res and not _tape_sink(c.sym))):
                 if e is None:
-                    what = (f"is passed to @{c.sym}, a call this file does "
+                    callee = (c.sym if c.sym == UNNAMED_CALLEE
+                              else "@" + c.sym)
+                    what = (f"is passed to {callee}, a call this file does "
                             f"not model,")
                 elif role == "measure":
                     what = "is measured"
