@@ -12,8 +12,13 @@
 ; lowering_reject_qram_read_under_control_nonpow2.ll (bounds) and the
 ; _nonconst/_wide/_cohescape family (shape/width/no-cloning).
 ;
+; bd 01po.2: the switch-table index is clang's `zext i32` widening, so the mask
+; is built on the stripped i32 scrutinee (`and i32 q, 3`, re-widened by a `zext`
+; the QRAM emitter strips): one `and_i32_hl`, no `zext_i32_to_i64`, no
+; `and_i64_hl` and no per-call `trunc_i64_to_i32` bracket (NARROW scans the module).
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck --check-prefix=NARROW %s < %t.cqd0.ll
 @switch.table.example = private unnamed_addr constant [4 x i32] [i32 7, i32 9, i32 11, i32 13]
 declare i32 @cq_theta_si32(i32, double)
 declare i32 @cq_measure_si32(i32)
@@ -35,12 +40,15 @@ merge:
 }
 
 ; CHECK:     %[[T:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_alloc_i32(i32 4)
-; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i64_hl(i32 %{{[a-zA-Z0-9_.]+}}, i64 3)
-; CHECK:     %[[XI:[a-zA-Z0-9_.]+]] = call i32 @cq_template_trunc_i64_to_i32(i32 %[[MSK]])
-; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[XI]])
-; CHECK-NEXT: call void @cq_template_trunc_i64_to_i32_unc(i32 %[[XI]], i32 %[[MSK]])
-; CHECK-NEXT: call void @cqrt_free(i32 %[[XI]])
+; CHECK:     %[[Q:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; CHECK:     %[[MSK:[a-zA-Z0-9_.]+]] = call i32 @cq_template_and_i32_hl(i32 %[[Q]], i32 3)
+; CHECK-NEXT: call i32 @cqrt_qram_load_i32(i32 %[[T]], i32 %[[MSK]])
+; CHECK-NEXT: call void @cq_template_and_i32_hl_unc(i32 %[[MSK]], i32 %[[Q]], i32 3)
+; CHECK-NEXT: call void @cqrt_free(i32 %[[MSK]])
 ; CHECK:     call void @cqrt_copy_i32_controlled(
 ; CHECK:     call i32 @cqrt_measure_i32(
 ; CHECK-NOT: br i1
 ; CHECK-NOT: phi i32
+; NARROW-NOT: cq_template_zext_i32_to_i64
+; NARROW-NOT: cq_template_and_i64
+; NARROW-NOT: cq_template_trunc_i64_to_i32

@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 833 maintained source files, 6521 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 833 maintained source files, 6522 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -17,7 +17,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `runtime/cq_templates.c` — 15665 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9703 physical lines
 - `ir-pass/src/LoopLowering.cpp` — 7429 physical lines
-- `ir-pass/src/PredMuxFlatten.cpp` — 5408 physical lines
+- `ir-pass/src/PredMuxFlatten.cpp` — 5466 physical lines
 - `tools/loop_twin_matrix.py` — 4110 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3688 physical lines
 - `tools/free_pairing_check.py` — 3478 physical lines
@@ -715,48 +715,49 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/PoisonFacts.cpp:289` — `unconditionalMax`
 - `ir-pass/src/PoisonFacts.cpp:330` — `indexBoundIsPoisonConditional`
 
-### `ir-pass/src/PredMuxFlatten.cpp` (5408 lines)
+### `ir-pass/src/PredMuxFlatten.cpp` (5466 lines)
 
-- `ir-pass/src/PredMuxFlatten.cpp:122` — `isTaintedCtrlTerm`
-- `ir-pass/src/PredMuxFlatten.cpp:141` — `isMuxableType`
-- `ir-pass/src/PredMuxFlatten.cpp:156` — `isTemplateWidthType`
-- `ir-pass/src/PredMuxFlatten.cpp:167` — `isSupportedCompareLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:257` — `definedOpAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:344` — `classifyConeNode`
-- `ir-pass/src/PredMuxFlatten.cpp:740` — `coneDefinedAfterFlagDrop`
-- `ir-pass/src/PredMuxFlatten.cpp:831` — `isConvertiblePhiCond`
-- `ir-pass/src/PredMuxFlatten.cpp:925` — `isSupportedCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1361` — `isBooleanCondTree`
-- `ir-pass/src/PredMuxFlatten.cpp:1540` — `isSpeculatableDataflow`
-- `ir-pass/src/PredMuxFlatten.cpp:1933` — `isSpeculatablePureCalleeBodyImpl`
-- `ir-pass/src/PredMuxFlatten.cpp:2262` — `isSpeculatablePureCalleeBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2308` — `recordHoldsRailPhiLeaf`
-- `ir-pass/src/PredMuxFlatten.cpp:2364` — `collectCycleBlocks`
-- `ir-pass/src/PredMuxFlatten.cpp:2381` — `topoOrderRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:2523` — `regionStrictlyInsideLoopBody`
-- `ir-pass/src/PredMuxFlatten.cpp:2647` — `classicalTableReadIsSpeculatable`
-- `ir-pass/src/PredMuxFlatten.cpp:2803` — `mergeIgnoringUnreachable`
-- `ir-pass/src/PredMuxFlatten.cpp:2924` — `ensure`
-- `ir-pass/src/PredMuxFlatten.cpp:2935` — `recoverRegion`
-- `ir-pass/src/PredMuxFlatten.cpp:3839` — `run`
-- `ir-pass/src/PredMuxFlatten.cpp:3917` — `literal`
-- `ir-pass/src/PredMuxFlatten.cpp:4109` — `stripPoisonCone`
-- `ir-pass/src/PredMuxFlatten.cpp:4144` — `canonicalizePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4320` — `buildNegation`
-- `ir-pass/src/PredMuxFlatten.cpp:4586` — `blockPred`
-- `ir-pass/src/PredMuxFlatten.cpp:4603` — `edgePred`
-- `ir-pass/src/PredMuxFlatten.cpp:4636` — `convertPhis`
-- `ir-pass/src/PredMuxFlatten.cpp:4851` — `moveBody`
-- `ir-pass/src/PredMuxFlatten.cpp:4862` — `track`
-- `ir-pass/src/PredMuxFlatten.cpp:4928` — `trackCondCone`
-- `ir-pass/src/PredMuxFlatten.cpp:5028` — `sweepDead`
-- `ir-pass/src/PredMuxFlatten.cpp:5052` — `isSpeculatablePureCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5100` — `isSpeculatableTotalCallee`
-- `ir-pass/src/PredMuxFlatten.cpp:5159` — `isFlattenResidue`
-- `ir-pass/src/PredMuxFlatten.cpp:5204` — `deleteDeadPreservingCqOwned`
-- `ir-pass/src/PredMuxFlatten.cpp:5228` — `simplifyFlattenResiduesInFunction`
-- `ir-pass/src/PredMuxFlatten.cpp:5279` — `flattenPredMuxRegions`
-- `ir-pass/src/PredMuxFlatten.cpp:5396` — `declineConvertedRailPhiLeaves`
+- `ir-pass/src/PredMuxFlatten.cpp:123` — `isTaintedCtrlTerm`
+- `ir-pass/src/PredMuxFlatten.cpp:142` — `isMuxableType`
+- `ir-pass/src/PredMuxFlatten.cpp:157` — `isTemplateWidthType`
+- `ir-pass/src/PredMuxFlatten.cpp:168` — `isSupportedCompareLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:258` — `definedOpAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:345` — `classifyConeNode`
+- `ir-pass/src/PredMuxFlatten.cpp:741` — `coneDefinedAfterFlagDrop`
+- `ir-pass/src/PredMuxFlatten.cpp:832` — `isConvertiblePhiCond`
+- `ir-pass/src/PredMuxFlatten.cpp:926` — `isSupportedCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1362` — `isBooleanCondTree`
+- `ir-pass/src/PredMuxFlatten.cpp:1541` — `isSpeculatableDataflow`
+- `ir-pass/src/PredMuxFlatten.cpp:1934` — `isSpeculatablePureCalleeBodyImpl`
+- `ir-pass/src/PredMuxFlatten.cpp:2263` — `isSpeculatablePureCalleeBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2309` — `recordHoldsRailPhiLeaf`
+- `ir-pass/src/PredMuxFlatten.cpp:2365` — `collectCycleBlocks`
+- `ir-pass/src/PredMuxFlatten.cpp:2382` — `topoOrderRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:2524` — `regionStrictlyInsideLoopBody`
+- `ir-pass/src/PredMuxFlatten.cpp:2648` — `classicalTableReadIsSpeculatable`
+- `ir-pass/src/PredMuxFlatten.cpp:2804` — `mergeIgnoringUnreachable`
+- `ir-pass/src/PredMuxFlatten.cpp:2925` — `ensure`
+- `ir-pass/src/PredMuxFlatten.cpp:2936` — `recoverRegion`
+- `ir-pass/src/PredMuxFlatten.cpp:3842` — `run`
+- `ir-pass/src/PredMuxFlatten.cpp:3918` — `literal`
+- `ir-pass/src/PredMuxFlatten.cpp:4110` — `stripPoisonCone`
+- `ir-pass/src/PredMuxFlatten.cpp:4145` — `canonicalizePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4321` — `buildNegation`
+- `ir-pass/src/PredMuxFlatten.cpp:4587` — `blockPred`
+- `ir-pass/src/PredMuxFlatten.cpp:4604` — `edgePred`
+- `ir-pass/src/PredMuxFlatten.cpp:4637` — `convertPhis`
+- `ir-pass/src/PredMuxFlatten.cpp:4852` — `moveBody`
+- `ir-pass/src/PredMuxFlatten.cpp:4901` — `maskQromIndex`
+- `ir-pass/src/PredMuxFlatten.cpp:4920` — `track`
+- `ir-pass/src/PredMuxFlatten.cpp:4986` — `trackCondCone`
+- `ir-pass/src/PredMuxFlatten.cpp:5086` — `sweepDead`
+- `ir-pass/src/PredMuxFlatten.cpp:5110` — `isSpeculatablePureCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5158` — `isSpeculatableTotalCallee`
+- `ir-pass/src/PredMuxFlatten.cpp:5217` — `isFlattenResidue`
+- `ir-pass/src/PredMuxFlatten.cpp:5262` — `deleteDeadPreservingCqOwned`
+- `ir-pass/src/PredMuxFlatten.cpp:5286` — `simplifyFlattenResiduesInFunction`
+- `ir-pass/src/PredMuxFlatten.cpp:5337` — `flattenPredMuxRegions`
+- `ir-pass/src/PredMuxFlatten.cpp:5454` — `declineConvertedRailPhiLeaves`
 
 ### `ir-pass/src/QramIndexWidth.cpp` (207 lines)
 
