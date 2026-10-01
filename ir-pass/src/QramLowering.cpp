@@ -685,6 +685,8 @@ struct ShadowAccess {
   bool IsStore;
 };
 
+}  // namespace
+
 // Is `I` genuinely CONTROL-DEPENDENT on a tainted-condition branch? 7.5 lowers
 // STRAIGHT-LINE memory only (§2.11); a CONDITIONALLY-executed access inside a
 // tainted-control region (e.g. the const `@switch.table` gep/load of a clang-folded
@@ -704,6 +706,8 @@ struct ShadowAccess {
 // post-dominating one is correct (it is exactly the straight-line 7.5 shape). The
 // `PostDominatorTree` is built lazily — ONLY when a dominating tainted br is found
 // (the rare case) — so the common no-tainted-control access pays nothing.
+// EXPORTED (QramLowering.h) for the stale-record sweep (bd r2j3.2 review round 2),
+// which asks the same "inside a tainted arm" question of a pure op.
 bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
                              DominatorTree &DT) {
   BasicBlock *IB = const_cast<BasicBlock *>(I->getParent());
@@ -732,6 +736,8 @@ bool instUnderTaintedControl(const Instruction *I, const TaintSet &taint,
   }
   return false;
 }
+
+namespace {
 
 // ── Phase 7.5 Increment 3: the single-PtrOrigin provenance walk ─────────────────
 //

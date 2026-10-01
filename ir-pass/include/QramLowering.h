@@ -106,6 +106,12 @@ bool guardedShadowStoreShape(llvm::StoreInst *SI, const TaintSet &taint,
 bool qramAccessReads(llvm::Instruction &I, const TaintSet &taint,
                      llvm::SmallVectorImpl<llvm::Value *> &Reads);
 
+// Is `I` control-dependent on a tainted br/switch (inside a tainted arm, not after
+// its merge)? The carve's straight-line gate; also asked by the stale-record sweep
+// (bd r2j3.2). Pure analysis.
+bool instUnderTaintedControl(const llvm::Instruction *I, const TaintSet &taint,
+                             llvm::DominatorTree &DT);
+
 // ── 3c6m.14 (L6) Inc 3: const-global QROM read under tainted control ────────────
 //
 // The claim classification consulted by BOTH the carve (`qramCarveVerdict` →

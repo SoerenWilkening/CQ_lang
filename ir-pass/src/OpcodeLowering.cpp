@@ -51,6 +51,7 @@
 #include "llvm/Analysis/AssumptionCache.h"   // leg 1b's SCEV (bd 3d8q F-D2-2)
 #include "llvm/Analysis/CFG.h"  // isPotentiallyReachable (bd 3d8q mutual-exclusion leg)
 #include "llvm/Analysis/LoopInfo.h"
+#include "llvm/Analysis/PostDominators.h"    // gateFollowsRead (bd r2j3.2 F1)
 #include "llvm/Analysis/ScalarEvolution.h"   // leg 1b (bd 3d8q F-D2-2)
 #include "llvm/Analysis/TargetLibraryInfo.h" // leg 1b's SCEV (bd 3d8q F-D2-2)
 #include "llvm/TargetParser/Triple.h"        // leg 1b's SCEV (bd 3d8q F-D2-2)
@@ -228,26 +229,78 @@ bool inLowerOpsScope(Instruction &I, TaintSet &taint) {
 // must be the dominator tree of `I`'s function. A pure op reads its operands
 // (`checkStaleOp`); a QRAM access reads its index register and stored value
 // (`qramAccessReads`, bd test_C_libtooling-r2j3.2) — one policy, one diagnostic.
+//
+// THE GATE SET, NOT THE FIRST GATE (bd r2j3.2 review round 1, F1; L3). The walk's
+// position-aware proof keeps the CONSERVATIVE precondition `I` dominates `T`
+// (`RequireEmitDominance`, WireWalk.h), so a read in a branch arm declined against
+// a gate after the merge — `if (k) v = tbl[q]; cq_theta(q, .3);` — though every
+// trace runs the read first. A gate that fails only that precondition is still
+// harmless when `gateFollowsRead`; every collected gate must pass it.
+//
+// ⚠ ONLY FOR A READ THAT RUNS WHERE IT STANDS (review round 2, F1: a wrong unitary
+// on d6ffaca3). A value arm's pure chain inside a TAINTED arm is hoisted into the
+// pred, where it runs UNCONDITIONALLY, and the guarded-store region never
+// discharges it: `if (c > 2) arr[j] = (int)(q ^ 6); cq_theta(q, .3);` left
+// `trunc(q)` a live copy of q on every branch across the Ry (rc 0). So a read under
+// tainted control (`instUnderTaintedControl`, the carve's own predicate) keeps the
+// dominance precondition unless `InPlace`: a QRAM access, which its emitter issues
+// at the access under control with nothing hoisted
+// (lowering_reject_stale_record_tainted_arm_hoisted_chain.ll pins the pure op).
+bool gateFollowsRead(const Instruction &I, const CallInst *T,
+                     const DominatorTree &DT, const PostDominatorTree &PDT);
+
 bool checkStaleReads(Instruction &I, ArrayRef<Value *> Reads, TaintSet &taint,
-                     DominatorTree &DT) {
+                     DominatorTree &DT, std::optional<PostDominatorTree> &PDT,
+                     bool InPlace) {
   if (taint.StaleDeclined.count(&I))
     return false;  // already declined — idempotent across the post-lift re-sweep.
   for (Value *Op : Reads) {
     if (!taint.Tainted.count(Op))
       continue;  // classical operand — no wire.
-    if (findNonDiagonalWireGate(Op, /*CrossValueRouting=*/true, &I, &DT,
-                                &taint)) {
-      diagnoseStaleRecord(&I);
-      taint.StaleDeclined.insert(&I);
-      return true;  // one diagnostic per op; lowerOps will skip it.
-    }
+    SmallVector<CallInst *, 4> Gates;
+    collectNonDiagonalWireGates(Op, /*CrossValueRouting=*/true, &I, &DT, &taint,
+                                Gates);
+    if (Gates.empty())
+      continue;
+    if (!PDT)
+      PDT.emplace(*I.getFunction());
+    if ((InPlace || !instUnderTaintedControl(&I, taint, DT)) &&
+        llvm::all_of(Gates, [&](const CallInst *T) {
+          return gateFollowsRead(I, T, DT, *PDT);
+        }))
+      continue;
+    diagnoseStaleRecord(&I);
+    taint.StaleDeclined.insert(&I);
+    return true;  // one diagnostic per op; lowerOps will skip it.
   }
   return false;
 }
 
-bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT) {
+// `T` runs after `I` on every trace that runs both, and the two are never
+// alternatives of one branch. Leg 1 of the walk's proof, `!isPotentiallyReachable
+// (T, I)` (conservative toward "reachable", so exact in this direction), means no
+// path runs `T` and then `I`. The precondition it replaces also excluded paths that
+// reach `T` without `I`. `T` post-dominating `I` keeps the part of that which
+// flattening can break: `I` and `T` in SIBLING arms of a tainted branch, which a
+// control emitter runs in sequence. Every path from `I` passes `T`, so `T` is after
+// the merge or later in `I`'s own arm, and a claimed region is emitted inside its
+// own span with each arm in program order. ORDER IS NOT THE WHOLE STORY: a hoisted
+// read also becomes UNCONDITIONAL, which is why the caller withholds this for a
+// read under tainted control (above). Sibling arms keep declining, classical or
+// tainted (lowering_reject_stale_record_exclusive_arms.ll,
+// lowering_reject_stale_record_tainted_sibling_arms.ll). Leg 2 (a back edge
+// refreshing the record) is not widened: a `T` that can reach `I` still needs `I`
+// to dominate it.
+bool gateFollowsRead(const Instruction &I, const CallInst *T,
+                     const DominatorTree &DT, const PostDominatorTree &PDT) {
+  return PDT.dominates(T, &I) &&
+         !isPotentiallyReachable(T, &I, /*ExclusionSet=*/nullptr, &DT);
+}
+
+bool checkStaleOp(Instruction &I, TaintSet &taint, DominatorTree &DT,
+                  std::optional<PostDominatorTree> &PDT) {
   SmallVector<Value *, 4> Ops(I.operand_values());
-  return checkStaleReads(I, Ops, taint, DT);
+  return checkStaleReads(I, Ops, taint, DT, PDT, /*InPlace=*/false);
 }
 
 }  // namespace
@@ -315,8 +368,10 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
   for (Function &F : M) {
     if (F.isDeclaration())
       continue;
-    // Built lazily — only when a tainted in-scope op exists in `F`.
+    // Built lazily — only when a tainted in-scope op exists in `F` (the
+    // post-dominator tree only when a gate fails the dominance precondition).
     std::optional<DominatorTree> DT;
+    std::optional<PostDominatorTree> PDT;
     SmallVector<Value *, 4> QramReads;
     for (BasicBlock &BB : F) {
       for (Instruction &I : BB) {
@@ -327,9 +382,9 @@ void declineStaleRecordOps(Module &M, TaintSet &taint) {
         if (!DT)
           DT.emplace(F);  // either form always has a tainted read.
         if (PureOp)
-          checkStaleOp(I, taint, *DT);
+          checkStaleOp(I, taint, *DT, PDT);
         else
-          checkStaleReads(I, QramReads, taint, *DT);
+          checkStaleReads(I, QramReads, taint, *DT, PDT, /*InPlace=*/true);
       }
     }
   }
