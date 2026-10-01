@@ -75,7 +75,13 @@ entry:
 ; CHECK:      %[[B:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ne_i32_hl(i32 %{{[a-zA-Z0-9_.]+}}, i32 0)
 ; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = call i32 @cqrt_qram_load_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %{{[a-zA-Z0-9_.]+}})
 ; CHECK:      call void @cqrt_ry_i1(i32 %[[B]], double -5.000000e-01)
+; CHECK-NEXT: %[[HC:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[B]])
 ; CHECK:      call i32 @cqrt_tape_write_i32(i32 %{{[a-zA-Z0-9_.]+}}, i32 %[[V]])
+; The zext rail that CARRIED b's post-N label to the tape reads b only AFTER N, so
+; N's adjoint is not inside its window: it is a clean `_unc` + free (the freeze
+; must not reach it — it freezes readers that may run BEFORE N only):
+; CHECK:      call void @cq_template_zext_i1_to_i32_unc(i32 %[[HC]], i32 %[[B]])
+; CHECK-NEXT: call void @cqrt_free(i32 %[[HC]])
 ; CHECK:      call void @cqrt_ry_i1(i32 %[[B]], double 5.000000e-01)
 ; CHECK:      call void @cqrt_qram_load_i32_unc(i32 %[[V]],
 ; CHECK:      call void @cq_template_icmp_ne_i32_hl_unc(i32 %[[B]],
