@@ -4025,6 +4025,24 @@ add_test(NAME e2e-slice-loop-break-qq-i64
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qq_i64.expected.log"
     "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
 
+# bd test_C_libtooling-01po.3: the slice above with its i64 break answer used as a
+# QROM index (`tbl[q]`). The only layer that LINKS the composed break + QROM +
+# index bracket: the answer rail `cq.brk.out` is 64-bit, so the load must sit in
+# `cq_template_trunc_i64_to_i32` / `_unc` / `cqrt_free` (runtime/cq_runtime.h QRAM
+# contract: every index has LOGICAL width 32). Up to the array handle and the
+# resulting handle shift, the golden is e2e-slice-loop-break-qq-i64's trace with its
+# final `cqrt_measure_i64(out)` replaced by that bracketed load and a measure of the
+# loaded cell. No new frozen runtime ABI. --allow-unproven: the same break-only
+# U1-cross-stream reason as e2e-slice-loop-break.
+add_test(NAME e2e-slice-loop-break-qram-index-i64
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qram_index_i64.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_loop_break_qram_index_i64.expected.log"
+    "--allow-unproven")   # dtzb whole-loop reverse-play; see e2e-slice-loop-break
+
 # Phase 7.3 Increment 2 (test_C_libtooling-799w.2): the per-iteration in-body
 # uncompute Case B. Each iteration mints a FRESH rail, derives an iteration-local
 # temp (xor_hl), keeps it alive with a dead cq_phi, and drops both. The Phase-5

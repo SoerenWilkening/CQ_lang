@@ -539,8 +539,7 @@ int32_t cqrt_tape_write_i64_controlled(int32_t ctrl, int32_t tape, int32_t src);
  * copy of the index register. The trunc is exact on every in-bounds index
  * (`count` is an int32_t, so idx in [0, count) fits); an out-of-bounds index is
  * outside this contract. The width comes from the index's IR type or its
- * `HandleWidth` record; a rail minted without that record is not covered yet
- * (bd test_C_libtooling-01po.3). Agreed with libcqops (bead
+ * `HandleWidth` record. Agreed with libcqops (bead
  * opcode_quantum_operations-b6a, 2026-09-28).
  *
  *   cqrt_qram_alloc_<W>(count) -> arr

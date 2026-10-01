@@ -2356,6 +2356,16 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     taint.Tainted.insert(H);
     taint.ControlOwnedRails.insert(H);
   }
+  // Each mint is an i32 HANDLE for a rail of RailWidth / IdxWidth, so record the
+  // logical width (bd 01po.3). `out` replaces the user's exit phi below, and every
+  // width consumer reads a laundered handle through this record; without it they
+  // fall back to the i32 type: an i64 `out` reached `cqrt_qram_load` as an
+  // unbracketed 64-bit index, `(long long)q` of an i8 `out` minted
+  // `sext_i32_to_i64`, and two i64 answers compared as `icmp_eq_i32`.
+  // lowering_loop_break_{qram_index_*,out_width_*}.ll pin each consumer.
+  taint.HandleWidth[RReg] = RailWidth;
+  taint.HandleWidth[IdxReg] = IdxWidth;
+  taint.HandleWidth[OutReg] = RailWidth;
   // NB: the rail Root (`cq_theta`) is RAUW'd to its `cqrt_alloc` handle by
   // `lowerRotations`, so inserting it here would go STALE. The rail handle (and
   // every break-body scratch handle) is excluded from the whole-DAG uncompute
