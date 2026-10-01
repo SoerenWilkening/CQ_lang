@@ -299,8 +299,9 @@ AbortParkDisp classifyAbortPark(BranchInst *BI, TaintSet &Taint,
   // The routed handle width must have a real allocator + flag-mint template
   // (`widthHasReversibleCopy` = the {i1,i8,i16,i32,i64} integer surface, EXACTLY
   // the IOSink/select fence; an i128 / fp width has no `cqrt_alloc`/copy and must
-  // decline, never mint a phantom).
-  if (!widthHasReversibleCopy(abiWidthFromType(Q->getType()))) {
+  // decline, never mint a phantom). The LOGICAL width (bd r2j3.5): `Q` may already
+  // be a laundered i32 handle (a break answer `cq.brk.out`), so ask its record.
+  if (!widthHasReversibleCopy(logicalOperandWidth(Q, Taint))) {
     diagnoseUnderControl(Cond, "control flow");
     return AbortParkDisp::Declined;
   }
@@ -359,7 +360,10 @@ void emitAbortParkRegion(const ControlRegion &R, WidthDispatch &wd,
   if (!Q)
     return bailLoud(R);
 
-  StringRef Abi = abiWidthFromType(Q->getType());
+  // The graveyard is cswapped against Q, so it takes Q's LOGICAL width, never the
+  // laundered i32 type of a handle (bd r2j3.5: an i64 break answer got an i32
+  // graveyard; lowering_loop_break_abort_park_width.ll).
+  StringRef Abi = logicalOperandWidth(Q, taint);
   Type *RailTy = Abi.empty() ? nullptr : wd.llvmWidthType(Abi);
   FunctionCallee Alloc = Abi.empty() ? FunctionCallee() : wd.allocFn(Abi);
   // The abort flag is recorded as a 1-bit tape entry (the truncate-at-inspection

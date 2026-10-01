@@ -2356,6 +2356,18 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     taint.Tainted.insert(H);
     taint.ControlOwnedRails.insert(H);
   }
+  // Each mint is an i32 HANDLE for a rail of RailWidth / IdxWidth, so record the
+  // logical width (bd 01po.3). `out` replaces the user's exit phi below. A consumer
+  // that asks `logicalOperandWidth` or the raw record (QRAM index, Q+Q compare and
+  // select leaf, lowerOps cast capture, IO tape, abort park) fell back to the i32
+  // type without it: an i64 `out` reached `cqrt_qram_load` as an unbracketed
+  // 64-bit index, `(long long)q` of an i8 `out` minted `sext_i32_to_i64`, two i64
+  // answers compared as `icmp_eq_i32`. A reader that takes the width from the SSA
+  // TYPE never sees this record (QramLowering's store-value check declines on the
+  // mismatch). lowering_loop_break_{qram_index,out_width,io_tape,abort_park}*.ll.
+  taint.HandleWidth[RReg] = RailWidth;
+  taint.HandleWidth[IdxReg] = IdxWidth;
+  taint.HandleWidth[OutReg] = RailWidth;
   // NB: the rail Root (`cq_theta`) is RAUW'd to its `cqrt_alloc` handle by
   // `lowerRotations`, so inserting it here would go STALE. The rail handle (and
   // every break-body scratch handle) is excluded from the whole-DAG uncompute
@@ -5271,7 +5283,11 @@ bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint) {
   if (auto *Cmp = dyn_cast<CmpInst>(I))
     return isDataPositionCompare(Cmp) && compareFlagMintable(Cmp, taint);
   if (auto *C = dyn_cast<CastInst>(I))
-    return castInScope(C->getOpcodeName(), abiWidthFromType(C->getSrcTy()),
+    // The SOURCE width `lowerOps` will emit from: a laundered i32 handle (a
+    // retyped carried phi, a break answer) carries it in `HandleWidth`, not in
+    // `getSrcTy()` (R12; lowering_loop_carried_cast_forecast_width.ll).
+    return castInScope(C->getOpcodeName(),
+                       logicalOperandWidth(C->getOperand(0), taint),
                        abiWidthFromType(C->getDestTy()));
   if (auto *U = dyn_cast<UnaryOperator>(I))
     return U->getOpcode() == Instruction::FNeg &&
