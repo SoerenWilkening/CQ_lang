@@ -8,7 +8,7 @@ This is the source-of-truth index for named function definitions in the maintain
 
 Agents must consult this file before searching source for a function. After adding, moving, renaming, or deleting a function, run `python3 tools/update_code_map.py` and include the map update in the same change. Use `python3 tools/update_code_map.py --check` to detect drift.
 
-Scope: 838 maintained source files, 6532 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
+Scope: 838 maintained source files, 6539 named function definitions. Build output, scratch probes, archived code, documentation, and corpus artifacts are excluded.
 
 ## Files over the 400-line budget
 
@@ -19,9 +19,9 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp` — 7429 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5466 physical lines
 - `tools/loop_twin_matrix.py` — 4110 physical lines
+- `tools/free_pairing_check.py` — 3829 physical lines
+- `tools/free_pairing_check_test.py` — 3746 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3688 physical lines
-- `tools/free_pairing_check.py` — 3478 physical lines
-- `tools/free_pairing_check_test.py` — 3304 physical lines
 - `ir-pass/src/TaintPropagation.cpp` — 3123 physical lines
 - `ir-pass/src/SwapRouteEmit.cpp` — 3089 physical lines
 - `runtime/cq_link_smoke.c` — 2873 physical lines
@@ -7635,84 +7635,91 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `tools/fixture_guard_liveness.py:91` — `guards_in`
 - `tools/fixture_guard_liveness.py:122` — `main`
 
-### `tools/free_pairing_check.py` (3478 lines)
+### `tools/free_pairing_check.py` (3829 lines)
 
-- `tools/free_pairing_check.py:614` — `Unclassified.__init__`
-- `tools/free_pairing_check.py:639` — `Undecidable.__init__`
-- `tools/free_pairing_check.py:657` — `NarrowingViolation.__init__`
-- `tools/free_pairing_check.py:685` — `Effect.__init__`
-- `tools/free_pairing_check.py:701` — `classify`
-- `tools/free_pairing_check.py:862` — `pairing_register`
-- `tools/free_pairing_check.py:866` — `mark_qram_index_brackets`
-- `tools/free_pairing_check.py:900` — `read_terminator`
-- `tools/free_pairing_check.py:949` — `split_args`
-- `tools/free_pairing_check.py:967` — `norm_arg`
-- `tools/free_pairing_check.py:993` — `arg_value`
-- `tools/free_pairing_check.py:1002` — `Call.__init__`
-- `tools/free_pairing_check.py:1015` — `Call.key`
-- `tools/free_pairing_check.py:1018` — `Call.read_idx`
-- `tools/free_pairing_check.py:1028` — `Function.__init__`
-- `tools/free_pairing_check.py:1053` — `balanced`
-- `tools/free_pairing_check.py:1093` — `first_ptr_operand`
-- `tools/free_pairing_check.py:1106` — `ModuleFns.__init__`
-- `tools/free_pairing_check.py:1111` — `parse_module`
-- `tools/free_pairing_check.py:1217` — `build_streams`
-- `tools/free_pairing_check.py:1291` — `CrossStreamIndex.__init__`
-- `tools/free_pairing_check.py:1317` — `CrossStreamIndex.cyclic_blocks`
-- `tools/free_pairing_check.py:1342` — `CrossStreamIndex.stream_runs_at_most_once`
-- `tools/free_pairing_check.py:1359` — `_hex_neg`
-- `tools/free_pairing_check.py:1420` — `carries_undef`
-- `tools/free_pairing_check.py:1425` — `is_negation`
-- `tools/free_pairing_check.py:1473` — `Finding.__init__`
-- `tools/free_pairing_check.py:1478` — `Finding.__str__`
-- `tools/free_pairing_check.py:1486` — `Rail.__init__`
-- `tools/free_pairing_check.py:1494` — `StreamAnalysis.__init__`
-- `tools/free_pairing_check.py:1529` — `StreamAnalysis.run`
-- `tools/free_pairing_check.py:1570` — `StreamAnalysis.check_orphan_reversals`
-- `tools/free_pairing_check.py:1596` — `StreamAnalysis.rail_for_write`
-- `tools/free_pairing_check.py:1617` — `StreamAnalysis.check_case_b`
-- `tools/free_pairing_check.py:1685` — `StreamAnalysis.provably_not_a_rail`
-- `tools/free_pairing_check.py:1754` — `StreamAnalysis.add`
-- `tools/free_pairing_check.py:1758` — `StreamAnalysis.ok`
-- `tools/free_pairing_check.py:1772` — `StreamAnalysis.writes_in`
-- `tools/free_pairing_check.py:1776` — `StreamAnalysis.unchanged_over`
-- `tools/free_pairing_check.py:1891` — `StreamAnalysis.adjoint_matches`
-- `tools/free_pairing_check.py:1928` — `StreamAnalysis.commutes`
-- `tools/free_pairing_check.py:1956` — `StreamAnalysis.reduces_to_identity`
-- `tools/free_pairing_check.py:2013` — `StreamAnalysis.pair_operands_unchanged`
-- `tools/free_pairing_check.py:2115` — `StreamAnalysis.co_written_stable`
-- `tools/free_pairing_check.py:2223` — `StreamAnalysis.check_free`
-- `tools/free_pairing_check.py:2300` — `StreamAnalysis.loop_exit_discharge`
-- `tools/free_pairing_check.py:2540` — `StreamAnalysis.check_alloc_rail`
-- `tools/free_pairing_check.py:2592` — `StreamAnalysis.check_minted_rail`
-- `tools/free_pairing_check.py:2693` — `ensure_recursion_headroom`
-- `tools/free_pairing_check.py:2811` — `recorded_rails`
-- `tools/free_pairing_check.py:2854` — `resolve_object`
-- `tools/free_pairing_check.py:2885` — `bank_address_confined`
-- `tools/free_pairing_check.py:2946` — `adjudicate_memory`
-- `tools/free_pairing_check.py:3184` — `address_taken`
-- `tools/free_pairing_check.py:3207` — `live_functions`
-- `tools/free_pairing_check.py:3244` — `census_of`
-- `tools/free_pairing_check.py:3288` — `check_module`
-- `tools/free_pairing_check.py:3363` — `main`
-- `tools/free_pairing_check.py:3420` — `main.dump`
+- `tools/free_pairing_check.py:669` — `Unclassified.__init__`
+- `tools/free_pairing_check.py:694` — `Undecidable.__init__`
+- `tools/free_pairing_check.py:712` — `NarrowingViolation.__init__`
+- `tools/free_pairing_check.py:747` — `Effect.__init__`
+- `tools/free_pairing_check.py:765` — `classify`
+- `tools/free_pairing_check.py:927` — `pairing_register`
+- `tools/free_pairing_check.py:931` — `mark_qram_index_brackets`
+- `tools/free_pairing_check.py:977` — `read_terminator`
+- `tools/free_pairing_check.py:1026` — `split_args`
+- `tools/free_pairing_check.py:1044` — `norm_arg`
+- `tools/free_pairing_check.py:1070` — `arg_value`
+- `tools/free_pairing_check.py:1079` — `Call.__init__`
+- `tools/free_pairing_check.py:1092` — `Call.key`
+- `tools/free_pairing_check.py:1095` — `Call.read_idx`
+- `tools/free_pairing_check.py:1105` — `Function.__init__`
+- `tools/free_pairing_check.py:1130` — `balanced`
+- `tools/free_pairing_check.py:1170` — `first_ptr_operand`
+- `tools/free_pairing_check.py:1183` — `ModuleFns.__init__`
+- `tools/free_pairing_check.py:1188` — `parse_module`
+- `tools/free_pairing_check.py:1303` — `build_streams`
+- `tools/free_pairing_check.py:1377` — `CrossStreamIndex.__init__`
+- `tools/free_pairing_check.py:1403` — `CrossStreamIndex.cyclic_blocks`
+- `tools/free_pairing_check.py:1428` — `CrossStreamIndex.stream_runs_at_most_once`
+- `tools/free_pairing_check.py:1445` — `_hex_neg`
+- `tools/free_pairing_check.py:1506` — `carries_undef`
+- `tools/free_pairing_check.py:1511` — `is_negation`
+- `tools/free_pairing_check.py:1561` — `Finding.__init__`
+- `tools/free_pairing_check.py:1566` — `Finding.__str__`
+- `tools/free_pairing_check.py:1574` — `Rail.__init__`
+- `tools/free_pairing_check.py:1582` — `StreamAnalysis.__init__`
+- `tools/free_pairing_check.py:1620` — `StreamAnalysis.run`
+- `tools/free_pairing_check.py:1661` — `StreamAnalysis.check_orphan_reversals`
+- `tools/free_pairing_check.py:1687` — `StreamAnalysis.rail_for_write`
+- `tools/free_pairing_check.py:1708` — `StreamAnalysis.check_case_b`
+- `tools/free_pairing_check.py:1776` — `StreamAnalysis.provably_not_a_rail`
+- `tools/free_pairing_check.py:1845` — `StreamAnalysis.add`
+- `tools/free_pairing_check.py:1849` — `StreamAnalysis.ok`
+- `tools/free_pairing_check.py:1863` — `StreamAnalysis.writes_in`
+- `tools/free_pairing_check.py:1867` — `StreamAnalysis.unchanged_over`
+- `tools/free_pairing_check.py:1982` — `StreamAnalysis.adjoint_matches`
+- `tools/free_pairing_check.py:2019` — `StreamAnalysis.commutes`
+- `tools/free_pairing_check.py:2047` — `StreamAnalysis.reduces_to_identity`
+- `tools/free_pairing_check.py:2114` — `StreamAnalysis.pair_operands_unchanged`
+- `tools/free_pairing_check.py:2216` — `StreamAnalysis.co_written_stable`
+- `tools/free_pairing_check.py:2324` — `StreamAnalysis.light_cone_closed`
+- `tools/free_pairing_check.py:2425` — `StreamAnalysis._light_cone`
+- `tools/free_pairing_check.py:2495` — `StreamAnalysis._minted_closed`
+- `tools/free_pairing_check.py:2536` — `StreamAnalysis._minted_core`
+- `tools/free_pairing_check.py:2553` — `StreamAnalysis.check_free`
+- `tools/free_pairing_check.py:2630` — `StreamAnalysis.loop_exit_discharge`
+- `tools/free_pairing_check.py:2870` — `StreamAnalysis.check_alloc_rail`
+- `tools/free_pairing_check.py:2922` — `StreamAnalysis.check_minted_rail`
+- `tools/free_pairing_check.py:3032` — `ensure_recursion_headroom`
+- `tools/free_pairing_check.py:3134` — `_tape_sink`
+- `tools/free_pairing_check.py:3162` — `recorded_rails`
+- `tools/free_pairing_check.py:3205` — `resolve_object`
+- `tools/free_pairing_check.py:3236` — `bank_address_confined`
+- `tools/free_pairing_check.py:3297` — `adjudicate_memory`
+- `tools/free_pairing_check.py:3535` — `address_taken`
+- `tools/free_pairing_check.py:3558` — `live_functions`
+- `tools/free_pairing_check.py:3595` — `census_of`
+- `tools/free_pairing_check.py:3639` — `check_module`
+- `tools/free_pairing_check.py:3714` — `main`
+- `tools/free_pairing_check.py:3771` — `main.dump`
 
-### `tools/free_pairing_check_test.py` (3304 lines)
+### `tools/free_pairing_check_test.py` (3746 lines)
 
-- `tools/free_pairing_check_test.py:665` — `order_ladder`
-- `tools/free_pairing_check_test.py:775` — `cswap_braid`
-- `tools/free_pairing_check_test.py:1018` — `drop`
-- `tools/free_pairing_check_test.py:1027` — `sub`
-- `tools/free_pairing_check_test.py:1037` — `insert_after`
-- `tools/free_pairing_check_test.py:2663` — `_swap_lines`
-- `tools/free_pairing_check_test.py:2675` — `_hoist_line`
-- `tools/free_pairing_check_test.py:2975` — `_Stop.__init__`
-- `tools/free_pairing_check_test.py:2979` — `_Stop.__str__`
-- `tools/free_pairing_check_test.py:2983` — `findings`
-- `tools/free_pairing_check_test.py:2991` — `proofs_of`
-- `tools/free_pairing_check_test.py:3008` — `verdict_map`
-- `tools/free_pairing_check_test.py:3020` — `main`
-- `tools/free_pairing_check_test.py:3058` — `main.counted`
+- `tools/free_pairing_check_test.py:671` — `order_ladder`
+- `tools/free_pairing_check_test.py:781` — `cswap_braid`
+- `tools/free_pairing_check_test.py:1024` — `drop`
+- `tools/free_pairing_check_test.py:1033` — `sub`
+- `tools/free_pairing_check_test.py:1043` — `insert_after`
+- `tools/free_pairing_check_test.py:2669` — `_swap_lines`
+- `tools/free_pairing_check_test.py:2681` — `_hoist_line`
+- `tools/free_pairing_check_test.py:3074` — `lc`
+- `tools/free_pairing_check_test.py:3119` — `cone_nest`
+- `tools/free_pairing_check_test.py:3383` — `_Stop.__init__`
+- `tools/free_pairing_check_test.py:3387` — `_Stop.__str__`
+- `tools/free_pairing_check_test.py:3391` — `findings`
+- `tools/free_pairing_check_test.py:3399` — `proofs_of`
+- `tools/free_pairing_check_test.py:3416` — `verdict_map`
+- `tools/free_pairing_check_test.py:3428` — `main`
+- `tools/free_pairing_check_test.py:3466` — `main.counted`
 
 ### `tools/gen_templates.py` (473 lines)
 
