@@ -1,0 +1,41 @@
+cqrt_qram_alloc_i32(8) -> a0
+cqrt_tape_alloc() -> t1
+cqrt_alloc_i32(1) -> h2
+cqrt_ry_i32(h2, 0x1p-1)
+cq_template_icmp_ne_i32_hl(h2, 0) -> h3
+cq_template_zext_i1_to_i32(h3) -> h4
+cqrt_qram_load_i32(a0, h4) -> h5
+cq_template_zext_i1_to_i32_unc(h4, h3)
+cqrt_free(h4)
+cqrt_ry_i1(h3, -0x1p-1)
+cq_template_zext_i1_to_i32(h3) -> h6
+cqrt_tape_write_i32(t1, h6) -> h7
+cqrt_tape_write_i32(t1, h5) -> h8
+cq_template_zext_i1_to_i32_unc(h6, h3)
+cqrt_free(h6)
+cqrt_ry_i1(h3, 0x1p-1)
+cq_template_zext_i1_to_i32(h3) -> h9
+cqrt_qram_load_i32_unc(h5, a0, h9)
+cq_template_zext_i1_to_i32_unc(h9, h3)
+cqrt_free(h9)
+cq_template_icmp_ne_i32_hl_unc(h3, h2, 0)
+cqrt_ry_i32(h2, -0x1p-1)
+cqrt_qram_alloc_i32(8) -> a10
+cqrt_tape_alloc() -> t11
+cqrt_alloc_i32(1) -> h12
+cqrt_ry_i32(h12, 0x1p-1)
+cq_template_icmp_ne_i32_hl(h12, 0) -> h13
+cq_template_zext_i1_to_i32(h13) -> h14
+cqrt_qram_load_i32(a10, h14) -> h15
+cq_template_zext_i1_to_i32_unc(h14, h13)
+cqrt_free(h14)
+cqrt_ry_i1(h13, -0x1p-1)
+cqrt_tape_write_i32(t11, h15) -> h16
+cqrt_ry_i1(h13, 0x1p-1)
+cq_template_zext_i1_to_i32(h13) -> h17
+cqrt_qram_load_i32_unc(h15, a10, h17)
+cq_template_zext_i1_to_i32_unc(h17, h13)
+cqrt_free(h17)
+cqrt_free(h15)
+cq_template_icmp_ne_i32_hl_unc(h13, h12, 0)
+cqrt_ry_i32(h12, -0x1p-1)

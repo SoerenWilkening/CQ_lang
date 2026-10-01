@@ -16,7 +16,9 @@
 
    TRACE CONTRACT (analytically audited). h1 = |5> rotated by Ry(0.5) (q), h2 =
    |3> rotated by Ry(0.25) (q2). The shadow array becomes QRAM a0: two stores at
-   (q2&7) and (q&7) — index rails h3, h5 left allocated (frozen, bd 5pio), value
+   (q2&7) and (q&7) — index rails h3, h5, each discharged right after its own
+   store (and_unc against the unmoved source, then free; the stores are never
+   reversed, bd r2j3.1 — before that fix both stood allocated to the end), value
    rails h4=|7>, h6=|9> — and one load at ((q2+1)&7): h7 = q2+1, h8 = h7&7, the
    load h9, then the index chain uncomputed LIFO (and_unc, free h8; add_unc,
    free h7 — both proven |0>), and h9 measured. Then the two calls of the ONE

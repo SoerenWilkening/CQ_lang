@@ -281,8 +281,14 @@ void emitGuardedStoreArmRegion(const ControlRegion &R, WidthDispatch &wd,
   //     AFTER the store's `_controlled_unc` (SSA dominance — the store's `_unc`
   //     reads the flag). The flag is NOT a data terminal (the store consumes it),
   //     so it is never selected as one; it reverses purely as a DAG ancestor. This
-  //     is why the flag is left LIVE (not eagerly stripped) — the strip rides the
-  //     same LIFO as the store, guaranteeing store-reverse-then-strip ordering.
+  //     is why the flag is left LIVE (not eagerly stripped) — WHEN THE SPINE
+  //     REVERSES THE STORE, the strip rides the same LIFO as the store,
+  //     guaranteeing store-reverse-then-strip ordering. When the store is NEVER
+  //     reversed (main-resident, or its DAG bails) there is no store `_unc` and,
+  //     before bd r2j3.1, no strip at all: the flag stood live as a copy of the
+  //     condition across later gates on it. Since r2j3.1 the M-B interior
+  //     partition takes it instead (`ChainWalk::isInteriorConsumer` (b″): a store
+  //     reads its flag and preserves it) and strips it right after the store.
   //     LOAD-BEARING ORDERING (Rule-13 landmine): the flag mint MUST precede the
   //     store in program order (it does — the mint is emitted `before BI`, the store
   //     is spliced `before BI` AFTER it). The whole-DAG driver frees each rail after

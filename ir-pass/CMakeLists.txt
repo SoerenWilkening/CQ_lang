@@ -84,6 +84,8 @@ add_library(CQPass MODULE
   src/PredMuxFlatten.cpp
   src/QramIndexWidth.cpp
   src/QramLowering.cpp
+  # bd r2j3.3: the record-window half of the bd 261j(a) freeze.
+  src/RecordWindowFreeze.cpp
   # bd xdu2 / L-1a: the rail-bank per-activation promoter (clause C5).
   src/RailBankPromote.cpp
   src/RegionFlatten.cpp

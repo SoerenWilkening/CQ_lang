@@ -561,6 +561,227 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
   }
 }
 
+// Defined with the M-B partition below (it is that partition's clause-(d) scan);
+// declared here for the dead-terminal driver's QRAM-array retry (bd 01po.4).
+bool borrowedParentsUnmoved(const DataDag &D,
+                            const SmallPtrSetImpl<Value *> &Borrowed,
+                            Instruction *At, DominatorTree &DT,
+                            const TaintSet &taint, bool AdmitCloneCalls);
+
+// The verdict of `planTerminalReversal` — what the dead-terminal driver does
+// with one recovered group (bd test_C_libtooling-01po.4 split the checks out
+// of `reverseTerminalGroup` so its QRAM-array retry re-asks EXACTLY them).
+enum class TerminalPlan { Emit, Leak, DeclineUninvertible, DeclineDivergent };
+
+// Every post-recovery check of `reverseTerminalGroup`, in its original order,
+// as PURE ANALYSIS: each place that used to `return` (a leak) or `diagnose`
+// and `return` (a decline) now hands back that verdict, with the culprit gate
+// in `Culprit` for a decline. On `Emit`, `At` is the single insertion point and
+// every gate of `D` dominates it. The caller owns every diagnostic.
+TerminalPlan planTerminalReversal(Function &F, const DataDag &D,
+                                  ArrayRef<Instruction *> InsertAts,
+                                  TaintSet &taint, DominatorTree &DT,
+                                  PostDominatorTree &PDT, LoopInfo &LI,
+                                  bool IterLocal, Instruction *&At,
+                                  CallInst *&Culprit) {
+  if (D.Escaped || D.NotClosed || D.Calls.empty())
+    return TerminalPlan::Leak;
+
+  // Invertibility pre-scan (WI-5, PRD §2.12/§2.10).
+  CallInst *Uninvertible = nullptr;
+  for (CallInst *G : D.Calls)
+    if (!isInverseEmittable(G)) {
+      Uninvertible = G;
+      break;
+    }
+  if (Uninvertible) {
+    Culprit = Uninvertible;
+    return TerminalPlan::DeclineUninvertible;
+  }
+
+  // §2.9 acyclic backstop. A loop-carried tainted live range is loudly declined
+  // UPSTREAM; defense-in-depth here: a single adjoint cannot undo a gate that ran
+  // once per iteration, so if ANY recovered gate sits inside a natural loop,
+  // leave the DAG allocated (a safe leak) — UNLESS this is an affirmatively-
+  // recognized Phase-7.3 ITERATION-LOCAL group, whose gates all sit in
+  // `IterationLocalBlocks` and whose recovery point is IN-BODY (once per
+  // iteration). The explicit re-confirmation that every gate is in an
+  // iteration-local block is the Rule-13 backstop (a DAG that walked outside the
+  // loop is leaked, never reversed).
+  //
+  // THE PREDICATE IS `canRepeat`, NOT `LoopInfo` (bd 4p7j Rule-13 finding F1):
+  // an IRREDUCIBLE cycle is not a natural loop, `getLoopFor` returns null for
+  // its blocks, and a gate inside one was reversed ONCE for K executions —
+  // measured on `main`, `opt` rc=0 and verify-clean, freeing a rail holding
+  // `5h + 7(K-1)` (`lowering_uncompute_leak_irreducible_dead_spine.ll`). The
+  // new test is a strict superset of the old one, so the natural-loop
+  // behaviour — including the 7.3 exception below, whose blocks are in a
+  // natural loop either way — is unchanged.
+  RepeatOracle canRepeat(LI);
+  bool InLoop = false;
+  for (CallInst *G : D.Calls)
+    if (canRepeat(G->getParent())) {
+      InLoop = true;
+      break;
+    }
+  if (InLoop) {
+    if (!IterLocal)
+      return TerminalPlan::Leak;  // safe leak (acyclic backstop stands)
+    for (CallInst *G : D.Calls)
+      if (!taint.IterationLocalBlocks.count(G->getParent()))
+        return TerminalPlan::Leak;  // a gate escaped the loop body — leak,
+                                    // never reverse once.
+  }
+
+  // 4. Single insertion point (in-body for an iteration-local group — FreePoint
+  //    returned the per-iteration anchor; for the regular group, the function
+  //    post-dominator).
+  //
+  //    THE ANCHOR SET INCLUDES EVERY SOURCE-PRESERVING SINK ON EVERY RAIL (bd
+  //    8gi5(3) + bd e4zs). `computeFreePoint` is called per TERMINAL and scans
+  //    `Terminal->users()`, so it sees a tape write / method-B copy only when the
+  //    rail it reads happens to BE a terminal. A preserving sink on an UPSTREAM
+  //    rail was invisible to it, and the reversal — including that rail's
+  //    `cqrt_free` — could be placed BEFORE the read. MEASURED on both surfaces
+  //    (`opt` rc=0, verify-clean, stage 2b `F2-use-after-free`); the fixtures are
+  //    lowering_uncompute_tape_nonterminal_rail.ll and
+  //    lowering_uncompute_copy_nonterminal_rail.ll.
+  //
+  //    A sink anchors at its NEXT node because `dagInsertPoint` treats anchors as
+  //    insert-BEFORE points (that is the convention `computeFreePoint` already
+  //    uses: it returns `Latest->getNextNode()`). A `cqrt_*` sink is a CallInst and
+  //    never a terminator, so the next node always exists.
+  //
+  //    "MOVING `At` LATER CAN ONLY ADD REVERSE-READS THAT ALREADY HAPPENED" IS
+  //    FALSE, and it was this comment's first claim. It can also move the reversal
+  //    past a WRITE. Clause (d) of the record invariant (bd memory
+  //    [record-freeze-invariant-2026-08-10]) requires every register an adjoint
+  //    reads to hold the value it held when the forward gate ran, and reverse
+  //    program order delivers that only for gates the DAG WALKED. `recoverDataDag`
+  //    walks operands in `taint.Tainted` only, so an in-place gate on an UNTAINTED
+  //    live register is invisible to it — and if the anchors move `At` past such a
+  //    gate, an adjoint recomputes from a relabelled register. MEASURED: with
+  //    `cqrt_ry_i32(%idx, 0.9)` sitting between the old and new points,
+  //    `cqrt_qram_load_i32_unc(%L, %arr, %idx)` pops the wrong cell and
+  //    `cqrt_free(%L)` becomes a hidden measurement (stage 2b
+  //    `UNPROVEN T2-operand-mutated`), where HEAD was clean.
+  //
+  //    So the extension is CONDITIONAL: if the sinks actually move the point, every
+  //    register the adjoints will read must be free of in-place gates this DAG does
+  //    not own. That test is function-global rather than span-based on purpose —
+  //    a span between two blocks is exactly the kind of reasoning this ticket's
+  //    history says not to trust, and the conservative direction is a leak.
+  //
+  //    The two remaining hazards are re-proved on the FINAL `At` below, never
+  //    assumed here: the every-gate-dominates-`At` scan, and at-most-once (§2.9).
+  SmallVector<Instruction *, 8> Anchors(InsertAts.begin(), InsertAts.end());
+  for (CallInst *S : D.PreservingSinks)
+    if (Instruction *N = S->getNextNode())
+      Anchors.push_back(N);
+  At = dagInsertPoint(Anchors, PDT);
+  if (!At)
+    return TerminalPlan::Leak;
+  if (At != dagInsertPoint(InsertAts, PDT)) {
+    SmallPtrSet<Value *, 16> ReadByAdjoints;
+    for (CallInst *G : D.Calls)
+      for (Value *Op : G->args())
+        if (!isa<Constant>(Op))
+          ReadByAdjoints.insert(Op);
+    SmallPtrSet<const CallInst *, 16> InDag(D.Calls.begin(), D.Calls.end());
+    for (BasicBlock &BB : F)
+      for (Instruction &I : BB)
+        if (auto *CI = dyn_cast<CallInst>(&I))
+          if (!InDag.count(CI))
+            for (Value *Op : CI->args())
+              if (ReadByAdjoints.count(Op) && isInPlaceGateOn(CI, Op))
+                return TerminalPlan::Leak;  // clause (d) unprovable at the
+                                            // moved point — safe leak.
+  }
+
+  // Every gate must DOMINATE `At` (acyclic + dominating ⇒ ran exactly once on
+  // every reaching path). For an iteration-local group this holds WITHIN the
+  // iteration (no value crosses the backedge by construction of L4b); a gate that
+  // does not dominate the in-body `At` (a split across a classical in-body
+  // diamond) declines LOUDLY rather than reverse a partial chain.
+  CallInst *NonDominating = nullptr;
+  for (CallInst *G : D.Calls)
+    if (!DT.dominates(G, At)) {
+      NonDominating = G;
+      break;
+    }
+  // (§2.9) AT-MOST-ONCE. Dominance says every gate ran before `At`; it says NOTHING
+  // about how many TIMES `At` itself runs. If `At` sits in a natural loop, one
+  // emitted reversal executes K times: the adjoint of a once-run `cqrt_ry_i32(%h,
+  // +0.5)` is applied K times (the wrong unitary), and every `cqrt_free` resets a
+  // rail K times — iterations 2..K resetting a rail that is provably NOT |0⟩, i.e.
+  // K-1 hidden measurements plus a double free (Rules 5/6). Leave the DAG allocated
+  // instead (a safe leak), exactly as the acyclic backstop above does for a
+  // loop-resident GATE.
+  //
+  // THE TEST IS THE FINAL `At`'s BLOCK — and it is `blockCanRepeat`, a
+  // reachable-from-itself DFS, not `LoopInfo`: an IRREDUCIBLE cycle is not a
+  // natural loop and `getLoopFor` returns null for it while its blocks still run
+  // repeatedly (see that helper). Neither the `D.Calls` backstop above nor a test
+  // on the preserving SINKS is
+  // sufficient: `dagInsertPoint` takes the nearest common POST-dominator of the
+  // anchors, and the nearest common post-dominator of two divergent non-loop arms is
+  // routinely a LOOP-BODY block that both arms branch into. So `At` can land in a
+  // loop with no sink and no recovered gate in one. MEASURED two ways: a
+  // sink-anchored module whose reversal moved from an arm into `%loop` (the bd
+  // 8gi5/e4zs anchors' own regression, found by their Rule-13 round), and — with NO
+  // sink anchors at all — a terminal whose two tape-write uses sit in divergent
+  // arms, where `computeFreePoint`'s own NCA already put `cqrt_free` inside `%loop`
+  // at HEAD 1ec8c45. The second is PRE-EXISTING and this guard is what closes it.
+  //
+  // AFTER the dominance scan, deliberately. A pre-emptive placement swallows the
+  // loud `kMsgDivergentArm` decline into a silent rc-0 leak — bd 261j(a) risk 1,
+  // measured on the first draft of this guard.
+  //
+  // The 7.3 EXCEPTION is affirmative, not incidental: an ITERATION-LOCAL group is
+  // reversed IN-BODY once per iteration BY DESIGN, over rails re-minted each
+  // iteration, and `FreePoint` already re-checked that its anchor is in-body.
+  if (NonDominating) {
+    Culprit = NonDominating;
+    return TerminalPlan::DeclineDivergent;
+  }
+
+  if (blockCanRepeat(At->getParent()) &&
+      !(IterLocal && taint.IterationLocalBlocks.count(At->getParent())))
+    return TerminalPlan::Leak;  // safe leak — never a once-minted reversal
+                                // on a per-iteration path.
+  // bd `test_C_libtooling-tu9q` P1 — THE MULTIPLICITY TEST, MIRRORED HERE AS
+  // DEFENCE IN DEPTH, and it is EXPECTED NEVER TO FIRE on this partition. The
+  // dead-terminal driver already refuses the same pairing by MEMBERSHIP a few
+  // lines up (`if (InLoop) { … !taint.IterationLocalBlocks.count(G->getParent())
+  // → Leak; }`), which for an `IterLocal` group forces every recovered gate
+  // into a marked block, and the clause directly above forces `At` into one too.
+  // Equal keys therefore follow — but "follow" is an argument about two other
+  // tests, and this file already makes the same trade for the four ownership sets
+  // it re-checks rather than infers. A refusal here is a LEAK (Rule 6), never a
+  // diagnostic, so the cost of the redundancy is zero and the cost of being wrong
+  // about the inference would be a wrong unitary.
+  for (CallInst *G : D.Calls)
+    if (!multiplicityAgrees(G, At, LI, taint))
+      return TerminalPlan::Leak;
+  return TerminalPlan::Emit;
+}
+
+// Step 5 of `reverseTerminalGroup`: reverse the planned DAG once at `At` and
+// record what this group now owns (the out-params the M-B partition reads).
+void emitTerminalReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
+                          TaintSet &taint,
+                          SmallPtrSetImpl<const CallInst *> &ReversedGates,
+                          SmallPtrSetImpl<Value *> &ReversedRails) {
+  emitDagReversal(D, At, wd, taint);
+  for (CallInst *G : D.Calls) {
+    ReversedGates.insert(G);
+    if (Value *R = railOf(G))
+      ReversedRails.insert(R);
+  }
+  for (Value *R : D.Rails)
+    ReversedRails.insert(R);
+}
+
 // Classify + recover + reverse ONE group of data terminals at a single insertion
 // point (PRD §2.11; the body of the per-function driver, factored out so the
 // regular straight-line group and each Phase-7.3 ITERATION-LOCAL loop group are
@@ -616,195 +837,66 @@ void reverseTerminalGroup(Function &F, ArrayRef<CallInst *> Terminals,
   // 3. Recover the whole forward DAG (union over all Insert terminals).
   DataDag D = recoverDataDag(InsertTerms, taint, DT);
   if (D.MeasuredUpstream) {
+    // bd test_C_libtooling-01po.4 — THE QRAM-ARRAY FRONTIER RETRY. A load's
+    // reversal needs the ARRAY's state at the load (and its index), not the
+    // array's history; the whole-DAG walk nevertheless follows a QRAM array root
+    // into its stores, and a store's index or value that the user later
+    // measures (`arr[b] = 0; v = arr[p]; b = cq_theta(b, -.5); measure(b)`)
+    // declined the whole module — an over-decline (the same body lowers in
+    // `main`). Retry ONCE with every QRAM array root BORROWED: the walk stops
+    // at the array (its stores are not reversed, its cells stay as they are —
+    // the owner-ruled-deferred array-record class, exactly `main`'s stream — and
+    // an array handle is never freed anyway), and the borrowed array must hold
+    // its load-time value at the reversal (`borrowedParentsUnmoved`, the M-B
+    // clause-(d) scan, one spelling). Every other check is re-asked verbatim
+    // (`planTerminalReversal`). ANY refusal keeps today's decline, character for
+    // character, at the original measure — so no module that lowered before
+    // changes, and the retry only ever turns a decline into an emitted reversal.
+    //
+    // WHY BORROWING CANNOT RE-INTRODUCE THE MEASURED REGISTER: it was reachable
+    // only THROUGH the array's stores; if the reduced DAG still reaches a
+    // measured rail (the load's own index measured) it is still
+    // `MeasuredUpstream` and the decline stands
+    // (lowering_reject_qram_store_measured_index_load_idx_measured.ll).
+    InteriorPlan Frontier;
+    for (Value *R : D.Roots)
+      if (isQramArrayHandle(R))
+        Frontier.Borrowed.insert(R);
+    if (!Frontier.Borrowed.empty()) {
+      DataDag DR = recoverDataDag(InsertTerms, taint, DT, &Frontier);
+      Instruction *AtR = nullptr;
+      CallInst *Unused = nullptr;
+      if (!DR.MeasuredUpstream &&
+          planTerminalReversal(F, DR, InsertAts, taint, DT, PDT, LI, IterLocal,
+                               AtR, Unused) == TerminalPlan::Emit &&
+          borrowedParentsUnmoved(DR, Frontier.Borrowed, AtR, DT, taint,
+                                 /*AdmitCloneCalls=*/false)) {
+        emitTerminalReversal(DR, AtR, wd, taint, ReversedGates, ReversedRails);
+        return;
+      }
+    }
     diagnose(D.UpstreamMeasure, kMsgLineageMeasured);
     return;
   }
-  if (D.Escaped || D.NotClosed || D.Calls.empty())
+
+  Instruction *At = nullptr;
+  CallInst *Culprit = nullptr;
+  switch (planTerminalReversal(F, D, InsertAts, taint, DT, PDT, LI, IterLocal,
+                               At, Culprit)) {
+  case TerminalPlan::Leak:
     return;
-
-  // Invertibility pre-scan (WI-5, PRD §2.12/§2.10).
-  CallInst *Uninvertible = nullptr;
-  for (CallInst *G : D.Calls)
-    if (!isInverseEmittable(G)) {
-      Uninvertible = G;
-      break;
-    }
-  if (Uninvertible) {
-    diagnose(Uninvertible, kMsgUninvertible);
+  case TerminalPlan::DeclineUninvertible:
+    diagnose(Culprit, kMsgUninvertible);
     return;
-  }
-
-  // §2.9 acyclic backstop. A loop-carried tainted live range is loudly declined
-  // UPSTREAM; defense-in-depth here: a single adjoint cannot undo a gate that ran
-  // once per iteration, so if ANY recovered gate sits inside a natural loop,
-  // leave the DAG allocated (a safe leak) — UNLESS this is an affirmatively-
-  // recognized Phase-7.3 ITERATION-LOCAL group, whose gates all sit in
-  // `IterationLocalBlocks` and whose recovery point is IN-BODY (once per
-  // iteration). The explicit re-confirmation that every gate is in an
-  // iteration-local block is the Rule-13 backstop (a DAG that walked outside the
-  // loop is leaked, never reversed).
-  //
-  // THE PREDICATE IS `canRepeat`, NOT `LoopInfo` (bd 4p7j Rule-13 finding F1):
-  // an IRREDUCIBLE cycle is not a natural loop, `getLoopFor` returns null for
-  // its blocks, and a gate inside one was reversed ONCE for K executions —
-  // measured on `main`, `opt` rc=0 and verify-clean, freeing a rail holding
-  // `5h + 7(K-1)` (`lowering_uncompute_leak_irreducible_dead_spine.ll`). The
-  // new test is a strict superset of the old one, so the natural-loop
-  // behaviour — including the 7.3 exception below, whose blocks are in a
-  // natural loop either way — is unchanged.
-  RepeatOracle canRepeat(LI);
-  bool InLoop = false;
-  for (CallInst *G : D.Calls)
-    if (canRepeat(G->getParent())) {
-      InLoop = true;
-      break;
-    }
-  if (InLoop) {
-    if (!IterLocal)
-      return;  // safe leak (acyclic backstop stands)
-    for (CallInst *G : D.Calls)
-      if (!taint.IterationLocalBlocks.count(G->getParent()))
-        return;  // a gate escaped the loop body — leak, never reverse once.
-  }
-
-  // 4. Single insertion point (in-body for an iteration-local group — FreePoint
-  //    returned the per-iteration anchor; for the regular group, the function
-  //    post-dominator).
-  //
-  //    THE ANCHOR SET INCLUDES EVERY SOURCE-PRESERVING SINK ON EVERY RAIL (bd
-  //    8gi5(3) + bd e4zs). `computeFreePoint` is called per TERMINAL and scans
-  //    `Terminal->users()`, so it sees a tape write / method-B copy only when the
-  //    rail it reads happens to BE a terminal. A preserving sink on an UPSTREAM
-  //    rail was invisible to it, and the reversal — including that rail's
-  //    `cqrt_free` — could be placed BEFORE the read. MEASURED on both surfaces
-  //    (`opt` rc=0, verify-clean, stage 2b `F2-use-after-free`); the fixtures are
-  //    lowering_uncompute_tape_nonterminal_rail.ll and
-  //    lowering_uncompute_copy_nonterminal_rail.ll.
-  //
-  //    A sink anchors at its NEXT node because `dagInsertPoint` treats anchors as
-  //    insert-BEFORE points (that is the convention `computeFreePoint` already
-  //    uses: it returns `Latest->getNextNode()`). A `cqrt_*` sink is a CallInst and
-  //    never a terminator, so the next node always exists.
-  //
-  //    "MOVING `At` LATER CAN ONLY ADD REVERSE-READS THAT ALREADY HAPPENED" IS
-  //    FALSE, and it was this comment's first claim. It can also move the reversal
-  //    past a WRITE. Clause (d) of the record invariant (bd memory
-  //    [record-freeze-invariant-2026-08-10]) requires every register an adjoint
-  //    reads to hold the value it held when the forward gate ran, and reverse
-  //    program order delivers that only for gates the DAG WALKED. `recoverDataDag`
-  //    walks operands in `taint.Tainted` only, so an in-place gate on an UNTAINTED
-  //    live register is invisible to it — and if the anchors move `At` past such a
-  //    gate, an adjoint recomputes from a relabelled register. MEASURED: with
-  //    `cqrt_ry_i32(%idx, 0.9)` sitting between the old and new points,
-  //    `cqrt_qram_load_i32_unc(%L, %arr, %idx)` pops the wrong cell and
-  //    `cqrt_free(%L)` becomes a hidden measurement (stage 2b
-  //    `UNPROVEN T2-operand-mutated`), where HEAD was clean.
-  //
-  //    So the extension is CONDITIONAL: if the sinks actually move the point, every
-  //    register the adjoints will read must be free of in-place gates this DAG does
-  //    not own. That test is function-global rather than span-based on purpose —
-  //    a span between two blocks is exactly the kind of reasoning this ticket's
-  //    history says not to trust, and the conservative direction is a leak.
-  //
-  //    The two remaining hazards are re-proved on the FINAL `At` below, never
-  //    assumed here: the every-gate-dominates-`At` scan, and at-most-once (§2.9).
-  SmallVector<Instruction *, 8> Anchors(InsertAts.begin(), InsertAts.end());
-  for (CallInst *S : D.PreservingSinks)
-    if (Instruction *N = S->getNextNode())
-      Anchors.push_back(N);
-  Instruction *At = dagInsertPoint(Anchors, PDT);
-  if (!At)
+  case TerminalPlan::DeclineDivergent:
+    diagnose(Culprit, kMsgDivergentArm);
     return;
-  if (At != dagInsertPoint(InsertAts, PDT)) {
-    SmallPtrSet<Value *, 16> ReadByAdjoints;
-    for (CallInst *G : D.Calls)
-      for (Value *Op : G->args())
-        if (!isa<Constant>(Op))
-          ReadByAdjoints.insert(Op);
-    SmallPtrSet<const CallInst *, 16> InDag(D.Calls.begin(), D.Calls.end());
-    for (BasicBlock &BB : F)
-      for (Instruction &I : BB)
-        if (auto *CI = dyn_cast<CallInst>(&I))
-          if (!InDag.count(CI))
-            for (Value *Op : CI->args())
-              if (ReadByAdjoints.count(Op) && isInPlaceGateOn(CI, Op))
-                return;  // clause (d) unprovable at the moved point — safe leak.
+  case TerminalPlan::Emit:
+    break;
   }
-
-  // Every gate must DOMINATE `At` (acyclic + dominating ⇒ ran exactly once on
-  // every reaching path). For an iteration-local group this holds WITHIN the
-  // iteration (no value crosses the backedge by construction of L4b); a gate that
-  // does not dominate the in-body `At` (a split across a classical in-body
-  // diamond) declines LOUDLY rather than reverse a partial chain.
-  CallInst *NonDominating = nullptr;
-  for (CallInst *G : D.Calls)
-    if (!DT.dominates(G, At)) {
-      NonDominating = G;
-      break;
-    }
-  // (§2.9) AT-MOST-ONCE. Dominance says every gate ran before `At`; it says NOTHING
-  // about how many TIMES `At` itself runs. If `At` sits in a natural loop, one
-  // emitted reversal executes K times: the adjoint of a once-run `cqrt_ry_i32(%h,
-  // +0.5)` is applied K times (the wrong unitary), and every `cqrt_free` resets a
-  // rail K times — iterations 2..K resetting a rail that is provably NOT |0⟩, i.e.
-  // K-1 hidden measurements plus a double free (Rules 5/6). Leave the DAG allocated
-  // instead (a safe leak), exactly as the acyclic backstop above does for a
-  // loop-resident GATE.
-  //
-  // THE TEST IS THE FINAL `At`'s BLOCK — and it is `blockCanRepeat`, a
-  // reachable-from-itself DFS, not `LoopInfo`: an IRREDUCIBLE cycle is not a
-  // natural loop and `getLoopFor` returns null for it while its blocks still run
-  // repeatedly (see that helper). Neither the `D.Calls` backstop above nor a test
-  // on the preserving SINKS is
-  // sufficient: `dagInsertPoint` takes the nearest common POST-dominator of the
-  // anchors, and the nearest common post-dominator of two divergent non-loop arms is
-  // routinely a LOOP-BODY block that both arms branch into. So `At` can land in a
-  // loop with no sink and no recovered gate in one. MEASURED two ways: a
-  // sink-anchored module whose reversal moved from an arm into `%loop` (the bd
-  // 8gi5/e4zs anchors' own regression, found by their Rule-13 round), and — with NO
-  // sink anchors at all — a terminal whose two tape-write uses sit in divergent
-  // arms, where `computeFreePoint`'s own NCA already put `cqrt_free` inside `%loop`
-  // at HEAD 1ec8c45. The second is PRE-EXISTING and this guard is what closes it.
-  //
-  // AFTER the dominance scan, deliberately. A pre-emptive placement swallows the
-  // loud `kMsgDivergentArm` decline into a silent rc-0 leak — bd 261j(a) risk 1,
-  // measured on the first draft of this guard.
-  //
-  // The 7.3 EXCEPTION is affirmative, not incidental: an ITERATION-LOCAL group is
-  // reversed IN-BODY once per iteration BY DESIGN, over rails re-minted each
-  // iteration, and `FreePoint` already re-checked that its anchor is in-body.
-  if (NonDominating) {
-    diagnose(NonDominating, kMsgDivergentArm);
-    return;
-  }
-
-  if (blockCanRepeat(At->getParent()) &&
-      !(IterLocal && taint.IterationLocalBlocks.count(At->getParent())))
-    return;  // safe leak — never a once-minted reversal on a per-iteration path.
-  // bd `test_C_libtooling-tu9q` P1 — THE MULTIPLICITY TEST, MIRRORED HERE AS
-  // DEFENCE IN DEPTH, and it is EXPECTED NEVER TO FIRE on this partition. The
-  // dead-terminal driver already refuses the same pairing by MEMBERSHIP a few
-  // lines up (`if (InLoop) { … !taint.IterationLocalBlocks.count(G->getParent())
-  // → return; }`), which for an `IterLocal` group forces every recovered gate
-  // into a marked block, and the clause directly above forces `At` into one too.
-  // Equal keys therefore follow — but "follow" is an argument about two other
-  // tests, and this file already makes the same trade for the four ownership sets
-  // it re-checks rather than infers. A refusal here is a LEAK (Rule 6), never a
-  // diagnostic, so the cost of the redundancy is zero and the cost of being wrong
-  // about the inference would be a wrong unitary.
-  for (CallInst *G : D.Calls)
-    if (!multiplicityAgrees(G, At, LI, taint))
-      return;
 
   // 5. Reverse the whole DAG once at `At`.
-  emitDagReversal(D, At, wd, taint);
-  for (CallInst *G : D.Calls) {
-    ReversedGates.insert(G);
-    if (Value *R = railOf(G))
-      ReversedRails.insert(R);
-  }
-  for (Value *R : D.Rails)
-    ReversedRails.insert(R);
+  emitTerminalReversal(D, At, wd, taint, ReversedGates, ReversedRails);
 }
 
 // ── M-B INTERIOR PARTITION (bd test_C_libtooling-6uqc Inc 5a) ────────────────
@@ -1101,6 +1193,203 @@ bool routeGroupFullyInside(const CallInst *M, const Value *P, CallInst *First,
     return true;
   }
   return false;
+}
+
+// CLAUSE (d) FOR A BORROWED FRONTIER (§5 of `planInteriorComponent`, hoisted
+// VERBATIM into a function by bd test_C_libtooling-01po.4 so the dead-terminal
+// driver's QRAM-array retry asks the SAME question — Rule 14, one spelling).
+// True iff every borrowed parent `P` in `Borrowed` that some gate of `D` reads
+// holds, at every emitted `_unc`, the value it held when that gate ran: every
+// user of `P` is proven label-preserving (`preservesBorrowedParent`) or outside
+// the window `(First, At)` (the (W2) certificate) or a complete recorded route
+// (clause (d2)). The argument for each leg is at the leg, below.
+//
+// PRECONDITION, and both callers meet it before asking: every gate of `D`
+// DOMINATES `At` — §4's `DT.dominates(G, At)` scan in the interior planner, the
+// `NonDominating` test in `reverseTerminalGroup`. The `First != At` note below
+// relies on it; "§4 above" in that note means whichever of the two ran.
+bool borrowedParentsUnmoved(const DataDag &D,
+                            const SmallPtrSetImpl<Value *> &Borrowed,
+                            Instruction *At, DominatorTree &DT,
+                            const TaintSet &taint, bool AdmitCloneCalls) {
+  for (Value *P : Borrowed) {
+    CallInst *First = nullptr;
+    for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
+      bool Reads = false;
+      for (Value *Op : G->args())
+        if (Op == P)
+          Reads = true;
+      if (Reads) {
+        First = G;
+        break;
+      }
+    }
+    if (!First)
+      continue;  // borrowed but never read by an adjoint — nothing to prove.
+    // `First != At`, AND IT IS §4 THAT PROVES IT — stated here because the leg
+    // that used to be justified by the opposite claim was deleted in this commit
+    // (bd 8h7d.5, Rule-13 round-5 cleanup). `First` is drawn from `D.Calls`, and
+    // §4 above ran `if (!DT.dominates(G, At)) return false;` over EVERY
+    // `G ∈ D.Calls`; LLVM's `dominates(I, I)` is FALSE by definition ("an
+    // instruction doesn't dominate a use in itself"), so a `First` equal to `At`
+    // was already rejected before this scan began. Measured, not only argued:
+    // instrumenting `First == At` over all 1293 fixtures gives 0 hits. The
+    // Release-mode `return false` is the conservative branch (leak, Rule 6) for
+    // the impossible case, so a future §4 widening degrades to a leak rather
+    // than to a vacuous certificate.
+    assert(First != At && "§4 dominance already rejects First == At");
+    if (First == At)
+      return false;
+    // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
+    // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
+    // the window argument, and for why the `First`-barriered legs (that leg's
+    // sibling, and (W2) here) do not need it. The dominance half it assumes
+    // (`First` dominates `At`) is proven for every recovered gate in §4 above,
+    // `First` included.
+    //
+    // RULE-12 GAP, RECORDED RATHER THAN PAPERED OVER (bd 8h7d.5 round-5
+    // cleanup). Mutating this call to a constant `true` leaves all 1293 fixtures
+    // GREEN. That is not evidence the premise is dead — it is evidence the suite
+    // exercises it only in its CONSERVATIVE direction (every shape that reaches
+    // `routeGroupFullyInside`'s leg 1 today already alternates, so forcing the
+    // premise true changes no verdict), and there is no discriminating fixture: a
+    // recorded route group inside a CFG cycle through `At` that misses `First`.
+    // Do NOT read the green suite as licence to drop the premise; the F-4 round
+    // showed the loop shapes that break it exist. A fixture that goes RED under
+    // the constant-`true` mutant is owed.
+    const bool Alternates = intervalAlternates(First, At);
+    for (User *U : P->users()) {
+      auto *M = dyn_cast<CallInst>(U);
+      if (!M)
+        return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
+                 // escapes it, and none of them is a gate whose position this
+                 // scan can reason about — leak rather than guess.
+      if (!DT.isReachableFromEntry(M->getParent()))
+        continue;  // a mutation that can never execute cannot move P. Vacuous
+                   // truth is the SAFE direction here — unlike in the anchor
+                   // scan, where it would have hidden a missing proof — but it is
+                   // made explicit so the two uses of reachability are not read
+                   // as one rule.
+      if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
+        continue;
+      // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
+      //
+      // Fix one execution of the discharge at trace time `T_At`, and let
+      // `T_First` be the LAST execution of `First` before it (it exists: §4
+      // proved `First` dominates `At`). Everything this scan owes clause (d1) is
+      //
+      //     (†)  NO execution of `M` lies strictly inside `W = (T_First, T_At)`.
+      //
+      // `M` before `T_First` is harmless — `P`'s value at `T_First` already
+      // includes it and the `_unc`s read the same one. `M` after `T_At` is
+      // harmless — the adjoints are inserted BEFORE `At`, so they have already
+      // run. Only the inside is a wrong unitary.
+      //
+      // THE CERTIFICATE IS A SINGLE BARRIER WALK, AND IT NEEDS NO DOMINANCE
+      // PREMISE:
+      //
+      //   (W2) every path `M`⇝`At` re-executes `First`.  Assume `t_M ∈ W`; the
+      //        trace from `t_M` to `T_At` is such a path, so a `First` runs in
+      //        `(t_M, T_At) ⊂ W` — contradicting the MAXIMALITY of `T_First`. ∎
+      //        (This is Inc 5b's RIGHT leg, "M runs only after the discharge",
+      //        with the premise it never used removed.)
+      //
+      // TWO OTHER CERTIFICATES ARE SOUND AND BOTH ARE REDUNDANT — a theorem, not
+      // an omission, and the reason this scan ships ONE walk instead of three:
+      //
+      //   (W1) "every path `First`⇝`M` re-executes `First`" (an `M ∈ W` puts a
+      //        `First` in `W`). IMPLIES (W2): suppose some path `P: M ⇝ At`
+      //        avoids `First`. `First` dominates `At`, so every entry⇝`At` walk
+      //        executes `First` (a walk avoiding it would contain a simple path
+      //        avoiding it); prefixing `P` with any entry⇝`M` path gives such a
+      //        walk, and `P` has no `First`, so every entry⇝`M` path does. Take
+      //        the LAST `First` on one before `M`: that `First`⇝`M` segment
+      //        re-executes no `First`, contradicting (W1). ∎
+      //
+      //   (W3) "every path `First`⇝`M` passes through `At`, read under
+      //        `intervalAlternates`" — the shape the round-4 reviewer measured as
+      //        the fix (an `M ∈ W` puts a second `At` in `W`, and two `At`s with
+      //        no `First` between them contradict alternation). ALSO IMPLIES
+      //        (W2): with the same `P`, the same argument gives a `First`⇝`M`
+      //        path with no intermediate `First`; by (W3) it carries an `At`, so
+      //        `At ⇝ M ⇝ At` is an `At`⇝`At` walk with no `First` on it,
+      //        contradicting alternation. ∎
+      //
+      // Measured as well as proved: disabling (W1) and disabling (W3) each leave
+      // all 1293 fixtures green, and the 234-program probe sweep unmoved.
+      //
+      // NEITHER (W1) NOR (W3) IS SHIPPED. (W2) is the sole certificate, and the
+      // deletion of (W1) is itself a round-5 finding rather than a tidy-up
+      // (bd 8h7d.5). (W1) shipped for one stated reason: `everyPathReExecutes`
+      // tests barrier membership BEFORE the endpoint, so with `Barrier == To` it
+      // cuts at the very instruction it is trying to reach and hands back a
+      // certificate that proves nothing (the P1 vacuity trap of round 1), and
+      // (W2) was said to be the leg where that happens — at `First == At`, where
+      // (W1)'s own barrier is its start and its proof never mentions `At`.
+      //
+      // THAT JUSTIFICATION WAS FALSE, because `First == At` CANNOT HAPPEN: §4
+      // proves it (see the assert above), and it was measured at 0 hits over all
+      // 1293 fixtures. So (W1) was guarding a degeneracy that never arrives,
+      // while the one configuration in which it could still fire on its own
+      // (`M == First`, also measured at 0 hits) makes its certificate VACUOUS in
+      // exactly the P1 way it was supposed to avoid — `everyPathReExecutes(First,
+      // First, First)` is `Barrier == From == To`. A disjunct that can only
+      // return a vacuous `true` is not a weaker proof, it is a hole waiting for a
+      // widening to reach it. Removing a DISJUNCT can only ADD refusals (the safe
+      // direction, Rule 6): confirmed by 1293/1293 lit green, the 234-program
+      // sweep byte-identical, and the 120-cell rolled≡unrolled twin matrix
+      // unchanged.
+      //
+      // WHAT THIS REPLACES. Rounds 1–3 asked both legs through
+      // `provablyBeforePerActivation`, which is `DT.dominates(A,B) AND
+      // (plain-unreachability OR the barrier walk)`. That helper answers a
+      // DIFFERENT question — "did A run before B on this activation" — and its
+      // dominance conjunct is load-bearing there. It is no step of the proof
+      // above, and bundling it made the scan refuse two shapes it can prove:
+      //   * the ROLLED LEADING GATE (F-4). `for(…){ q=cq_theta(q,a);
+      //     if((q&3)==1){…} q=cq_theta(q,b); }` — the NEXT iteration's leading
+      //     `cqrt_ry` sits BEFORE `First` in the body, so it does not dominate
+      //     anything the old legs asked about, and the whole condition chain
+      //     leaked, ENTANGLED, across the trailing Ry: `opt` exit 0, strict
+      //     stage-2b clean, and — with no leading Rz to trip the M-A guard — not
+      //     one warning. Measured over a 100-cell prefix × region × suffix
+      //     matrix: 11 rolled cells whose traces differed from their
+      //     hand-unrolled twins', 5 of them silent
+      //     (lowering_inloop_derived_cond_leading_gate.ll,
+      //     tools/loop_twin_matrix.py).
+      //   * `M == At`, which is REACHABLE (`At` is the `getNextNode()` of a
+      //     consumer of an owned rail, and that can be a `cqrt_ry` on the parent).
+      //     `DT.dominates(I, I)` is FALSE by definition in LLVM ("an instruction
+      //     doesn't dominate a use in itself"), so the old RIGHT leg refused
+      //     every one of them; (W2)'s walk cannot reach `At` from `At` in an
+      //     acyclic region and admits it
+      //     (lowering_live_record_dead_compare_flag_discharged.ll).
+      // STRICTLY MORE PERMISSIVE, PROVABLY — AND STILL SO WITH (W1) DELETED,
+      // which is why the deletion cannot leak a shape that used to discharge:
+      //   * old RIGHT was `DT.dominates(At,M) AND (!isPotentiallyReachable(M,At)
+      //     OR (W2))`. `!isPotentiallyReachable(M, At)` makes (W2)'s walk
+      //     vacuously succeed, so old RIGHT ⊆ (W2).
+      //   * old LEFT was `DT.dominates(M,First) AND (!isPotentiallyReachable
+      //     (First,M) OR (W1))` — its barrier-walk half IS (W1) verbatim
+      //     (`WireWalk.cpp`'s `provablyBeforePerActivation` says so). (W1) ⇒ (W2)
+      //     by the theorem above. And `!isPotentiallyReachable(First, M)` ⇒ (W2)
+      //     directly: §4 gives `First` dominates `At`, so every entry⇝`At` walk
+      //     carries a `First`; none can lie in an entry⇝`M` prefix (that would be
+      //     `First` reaching `M`), so every `M`⇝`At` suffix carries one. So old
+      //     LEFT ⊆ (W2) too.
+      // Nothing that discharged before can leak now.
+      if (everyPathReExecutes(M, At, First))
+        continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
+                   // window certificate; the `First != At` conjunct that used to
+                   // guard it is proven above, not tested here.
+      if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
+        continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
+                   // identity on P's basis LABEL over the interval (Inc 6,
+                   // clause (d2)).
+      return false;  // unprovable ⇒ this component leaks (Rule 6).
+    }
+  }
+  return true;
 }
 
 // PLAN one interior COMPONENT: the positional half (§2), the borrowed-parent
@@ -1404,183 +1693,8 @@ bool planInteriorComponent(SmallVectorImpl<CallInst *> &Comp, TaintSet &taint,
   //    so P4 goes from a loud decline to an accept WITHOUT relaxing one clause of
   //    the guard. The division of labour holds: M-B moved the physics, M-A only
   //    re-read it.
-  for (Value *P : Borrowed) {
-    CallInst *First = nullptr;
-    for (CallInst *G : D.Calls) {  // forward program order (recoverDataDag §2)
-      bool Reads = false;
-      for (Value *Op : G->args())
-        if (Op == P)
-          Reads = true;
-      if (Reads) {
-        First = G;
-        break;
-      }
-    }
-    if (!First)
-      continue;  // borrowed but never read by an adjoint — nothing to prove.
-    // `First != At`, AND IT IS §4 THAT PROVES IT — stated here because the leg
-    // that used to be justified by the opposite claim was deleted in this commit
-    // (bd 8h7d.5, Rule-13 round-5 cleanup). `First` is drawn from `D.Calls`, and
-    // §4 above ran `if (!DT.dominates(G, At)) return false;` over EVERY
-    // `G ∈ D.Calls`; LLVM's `dominates(I, I)` is FALSE by definition ("an
-    // instruction doesn't dominate a use in itself"), so a `First` equal to `At`
-    // was already rejected before this scan began. Measured, not only argued:
-    // instrumenting `First == At` over all 1293 fixtures gives 0 hits. The
-    // Release-mode `return false` is the conservative branch (leak, Rule 6) for
-    // the impossible case, so a future §4 widening degrades to a leak rather
-    // than to a vacuous certificate.
-    assert(First != At && "§4 dominance already rejects First == At");
-    if (First == At)
-      return false;
-    // Proven ONCE per (`First`, `At`) pair and read by `routeGroupFullyInside`'s
-    // `At`-barriered leg 1 below — see `WireWalk.h`'s `intervalAlternates` for
-    // the window argument, and for why the `First`-barriered legs (that leg's
-    // sibling, and (W2) here) do not need it. The dominance half it assumes
-    // (`First` dominates `At`) is proven for every recovered gate in §4 above,
-    // `First` included.
-    //
-    // RULE-12 GAP, RECORDED RATHER THAN PAPERED OVER (bd 8h7d.5 round-5
-    // cleanup). Mutating this call to a constant `true` leaves all 1293 fixtures
-    // GREEN. That is not evidence the premise is dead — it is evidence the suite
-    // exercises it only in its CONSERVATIVE direction (every shape that reaches
-    // `routeGroupFullyInside`'s leg 1 today already alternates, so forcing the
-    // premise true changes no verdict), and there is no discriminating fixture: a
-    // recorded route group inside a CFG cycle through `At` that misses `First`.
-    // Do NOT read the green suite as licence to drop the premise; the F-4 round
-    // showed the loop shapes that break it exist. A fixture that goes RED under
-    // the constant-`true` mutant is owed.
-    const bool Alternates = intervalAlternates(First, At);
-    for (User *U : P->users()) {
-      auto *M = dyn_cast<CallInst>(U);
-      if (!M)
-        return false;  // a φ/select ROUTES the same physical rail (bd tayx), a `store`
-                 // escapes it, and none of them is a gate whose position this
-                 // scan can reason about — leak rather than guess.
-      if (!DT.isReachableFromEntry(M->getParent()))
-        continue;  // a mutation that can never execute cannot move P. Vacuous
-                   // truth is the SAFE direction here — unlike in the anchor
-                   // scan, where it would have hidden a missing proof — but it is
-                   // made explicit so the two uses of reachability are not read
-                   // as one rule.
-      if (preservesBorrowedParent(M, P, taint, AdmitCloneCalls))
-        continue;
-      // ── THE WINDOW LEMMA (bd 8h7d.5, Rule-13 ROUND 4, finding F-4) ────────
-      //
-      // Fix one execution of the discharge at trace time `T_At`, and let
-      // `T_First` be the LAST execution of `First` before it (it exists: §4
-      // proved `First` dominates `At`). Everything this scan owes clause (d1) is
-      //
-      //     (†)  NO execution of `M` lies strictly inside `W = (T_First, T_At)`.
-      //
-      // `M` before `T_First` is harmless — `P`'s value at `T_First` already
-      // includes it and the `_unc`s read the same one. `M` after `T_At` is
-      // harmless — the adjoints are inserted BEFORE `At`, so they have already
-      // run. Only the inside is a wrong unitary.
-      //
-      // THE CERTIFICATE IS A SINGLE BARRIER WALK, AND IT NEEDS NO DOMINANCE
-      // PREMISE:
-      //
-      //   (W2) every path `M`⇝`At` re-executes `First`.  Assume `t_M ∈ W`; the
-      //        trace from `t_M` to `T_At` is such a path, so a `First` runs in
-      //        `(t_M, T_At) ⊂ W` — contradicting the MAXIMALITY of `T_First`. ∎
-      //        (This is Inc 5b's RIGHT leg, "M runs only after the discharge",
-      //        with the premise it never used removed.)
-      //
-      // TWO OTHER CERTIFICATES ARE SOUND AND BOTH ARE REDUNDANT — a theorem, not
-      // an omission, and the reason this scan ships ONE walk instead of three:
-      //
-      //   (W1) "every path `First`⇝`M` re-executes `First`" (an `M ∈ W` puts a
-      //        `First` in `W`). IMPLIES (W2): suppose some path `P: M ⇝ At`
-      //        avoids `First`. `First` dominates `At`, so every entry⇝`At` walk
-      //        executes `First` (a walk avoiding it would contain a simple path
-      //        avoiding it); prefixing `P` with any entry⇝`M` path gives such a
-      //        walk, and `P` has no `First`, so every entry⇝`M` path does. Take
-      //        the LAST `First` on one before `M`: that `First`⇝`M` segment
-      //        re-executes no `First`, contradicting (W1). ∎
-      //
-      //   (W3) "every path `First`⇝`M` passes through `At`, read under
-      //        `intervalAlternates`" — the shape the round-4 reviewer measured as
-      //        the fix (an `M ∈ W` puts a second `At` in `W`, and two `At`s with
-      //        no `First` between them contradict alternation). ALSO IMPLIES
-      //        (W2): with the same `P`, the same argument gives a `First`⇝`M`
-      //        path with no intermediate `First`; by (W3) it carries an `At`, so
-      //        `At ⇝ M ⇝ At` is an `At`⇝`At` walk with no `First` on it,
-      //        contradicting alternation. ∎
-      //
-      // Measured as well as proved: disabling (W1) and disabling (W3) each leave
-      // all 1293 fixtures green, and the 234-program probe sweep unmoved.
-      //
-      // NEITHER (W1) NOR (W3) IS SHIPPED. (W2) is the sole certificate, and the
-      // deletion of (W1) is itself a round-5 finding rather than a tidy-up
-      // (bd 8h7d.5). (W1) shipped for one stated reason: `everyPathReExecutes`
-      // tests barrier membership BEFORE the endpoint, so with `Barrier == To` it
-      // cuts at the very instruction it is trying to reach and hands back a
-      // certificate that proves nothing (the P1 vacuity trap of round 1), and
-      // (W2) was said to be the leg where that happens — at `First == At`, where
-      // (W1)'s own barrier is its start and its proof never mentions `At`.
-      //
-      // THAT JUSTIFICATION WAS FALSE, because `First == At` CANNOT HAPPEN: §4
-      // proves it (see the assert above), and it was measured at 0 hits over all
-      // 1293 fixtures. So (W1) was guarding a degeneracy that never arrives,
-      // while the one configuration in which it could still fire on its own
-      // (`M == First`, also measured at 0 hits) makes its certificate VACUOUS in
-      // exactly the P1 way it was supposed to avoid — `everyPathReExecutes(First,
-      // First, First)` is `Barrier == From == To`. A disjunct that can only
-      // return a vacuous `true` is not a weaker proof, it is a hole waiting for a
-      // widening to reach it. Removing a DISJUNCT can only ADD refusals (the safe
-      // direction, Rule 6): confirmed by 1293/1293 lit green, the 234-program
-      // sweep byte-identical, and the 120-cell rolled≡unrolled twin matrix
-      // unchanged.
-      //
-      // WHAT THIS REPLACES. Rounds 1–3 asked both legs through
-      // `provablyBeforePerActivation`, which is `DT.dominates(A,B) AND
-      // (plain-unreachability OR the barrier walk)`. That helper answers a
-      // DIFFERENT question — "did A run before B on this activation" — and its
-      // dominance conjunct is load-bearing there. It is no step of the proof
-      // above, and bundling it made the scan refuse two shapes it can prove:
-      //   * the ROLLED LEADING GATE (F-4). `for(…){ q=cq_theta(q,a);
-      //     if((q&3)==1){…} q=cq_theta(q,b); }` — the NEXT iteration's leading
-      //     `cqrt_ry` sits BEFORE `First` in the body, so it does not dominate
-      //     anything the old legs asked about, and the whole condition chain
-      //     leaked, ENTANGLED, across the trailing Ry: `opt` exit 0, strict
-      //     stage-2b clean, and — with no leading Rz to trip the M-A guard — not
-      //     one warning. Measured over a 100-cell prefix × region × suffix
-      //     matrix: 11 rolled cells whose traces differed from their
-      //     hand-unrolled twins', 5 of them silent
-      //     (lowering_inloop_derived_cond_leading_gate.ll,
-      //     tools/loop_twin_matrix.py).
-      //   * `M == At`, which is REACHABLE (`At` is the `getNextNode()` of a
-      //     consumer of an owned rail, and that can be a `cqrt_ry` on the parent).
-      //     `DT.dominates(I, I)` is FALSE by definition in LLVM ("an instruction
-      //     doesn't dominate a use in itself"), so the old RIGHT leg refused
-      //     every one of them; (W2)'s walk cannot reach `At` from `At` in an
-      //     acyclic region and admits it
-      //     (lowering_live_record_dead_compare_flag_discharged.ll).
-      // STRICTLY MORE PERMISSIVE, PROVABLY — AND STILL SO WITH (W1) DELETED,
-      // which is why the deletion cannot leak a shape that used to discharge:
-      //   * old RIGHT was `DT.dominates(At,M) AND (!isPotentiallyReachable(M,At)
-      //     OR (W2))`. `!isPotentiallyReachable(M, At)` makes (W2)'s walk
-      //     vacuously succeed, so old RIGHT ⊆ (W2).
-      //   * old LEFT was `DT.dominates(M,First) AND (!isPotentiallyReachable
-      //     (First,M) OR (W1))` — its barrier-walk half IS (W1) verbatim
-      //     (`WireWalk.cpp`'s `provablyBeforePerActivation` says so). (W1) ⇒ (W2)
-      //     by the theorem above. And `!isPotentiallyReachable(First, M)` ⇒ (W2)
-      //     directly: §4 gives `First` dominates `At`, so every entry⇝`At` walk
-      //     carries a `First`; none can lie in an entry⇝`M` prefix (that would be
-      //     `First` reaching `M`), so every `M`⇝`At` suffix carries one. So old
-      //     LEFT ⊆ (W2) too.
-      // Nothing that discharged before can leak now.
-      if (everyPathReExecutes(M, At, First))
-        continue;  // (W2) — M runs only after the discharge (Inc 5b). The SOLE
-                   // window certificate; the `First != At` conjunct that used to
-                   // guard it is proven above, not tested here.
-      if (routeGroupFullyInside(M, P, First, At, DT, taint, Alternates))
-        continue;  // INSIDE — a COMPLETE emitter-recorded Phase-4 route, the
-                   // identity on P's basis LABEL over the interval (Inc 6,
-                   // clause (d2)).
-      return false;  // unprovable ⇒ this component leaks (Rule 6).
-    }
-  }
+  if (!borrowedParentsUnmoved(D, Borrowed, At, DT, taint, AdmitCloneCalls))
+    return false;  // unprovable ⇒ this component leaks (Rule 6).
 
   return true;
 }

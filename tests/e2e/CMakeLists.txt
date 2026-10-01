@@ -3779,6 +3779,47 @@ add_test(NAME e2e-slice-qram-store-fp
     "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
     "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_fp.expected.log")
 
+# bd test_C_libtooling-r2j3.1: never-reversed stores (main-resident) reading
+# COMPUTED rails — an `and` index, an `add` value, a guarded store's `icmp` path
+# flag. Each rail is discharged (`_unc` + `cqrt_free`) right after its store,
+# against an un-rotated source, before the chained Ry on that source; before the
+# fix all three stood live (CNOT copies) across those rotations.
+add_test(NAME e2e-slice-qram-store-computed-index
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_store_computed_index.expected.log")
+
+# bd test_C_libtooling-r2j3.3 (compiler half): a QROM read `v = tbl[b]`, then a
+# chained Ry on the index `b`, then a tape write of b's POST-Ry label before the
+# spine re-applies the inverse Ry. That inverse no longer restores b, so the load
+# rail's `_unc` does not zero it: the rail is LEFT ALLOCATED (no cqrt_free) while
+# every adjoint is still emitted (`RecordWindowFreeze`). The `only_v` control,
+# which records only v, keeps its free.
+add_test(NAME e2e-slice-qram-load-index-record-window
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_load_index_record_window.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_load_index_record_window.expected.log")
+
+# bd test_C_libtooling-01po.4: a non-main local array whose STORE index is later
+# rotated and measured. The copied-out load result's DAG used to walk into the
+# array's store, reach the measured index and decline the module; the
+# dead-terminal driver now retries with the array BORROWED (clause-(d) scan on
+# it) and reverses only the load. The store is not reversed; the measured index
+# is never touched by the spine.
+add_test(NAME e2e-slice-qram-local-store-measured-index
+  COMMAND bash "${CMAKE_CURRENT_SOURCE_DIR}/run_slice.sh"
+    "${_E2E_CLANG}" "${_E2E_OPT}" "$<TARGET_FILE:CQPass>"
+    "${CMAKE_SOURCE_DIR}/include"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_store_measured_index.c"
+    "$<TARGET_FILE:cq_runtime>" "$<TARGET_FILE:cq_templates>"
+    "${CMAKE_CURRENT_SOURCE_DIR}/slice_qram_local_store_measured_index.expected.log")
+
 # Phase 7.5 bug sxuk: a LOCAL alloca array built+loaded in a NON-main helper whose
 # loaded value is measured INSIDE the helper. Unlike slice_qram_store (main-resident,
 # no reversal), the local scratch MUST uncompute: the loaded value is copied out to a

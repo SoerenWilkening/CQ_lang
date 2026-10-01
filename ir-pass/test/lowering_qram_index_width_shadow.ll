@@ -12,8 +12,9 @@
 ; so the later `cq_theta(b, -0.5)` rotated a register entangled with it: the
 ; source measures b == 0 with probability 1, the draft gave P(b == 1) ≈ 0.115
 ; (`opt` rc 0, stage 2b clean, one `live derived record` warning). It is `main`
-; because outside `main` this shape declines before and after b6a ("dead chain
-; would free a measured register", pre-existing). Pinned here:
+; because outside `main` this shape declined before and after b6a ("dead chain
+; would free a measured register"); since bd 01po.4 the non-main form lowers too
+; (lowering_qram_store_measured_index_nonmain.ll). Pinned here:
 ; the store's bracket closes (`cqrt_free`) before the rotation, and no warning.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s -o %t.cqd0.ll 2>&1 | %filecheck %s --check-prefix=DIAG --allow-empty
