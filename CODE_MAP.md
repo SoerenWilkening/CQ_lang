@@ -16,7 +16,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 
 - `runtime/cq_templates.c` — 15665 physical lines
 - `ir-pass/src/ArmClassify.cpp` — 9703 physical lines
-- `ir-pass/src/LoopLowering.cpp` — 7425 physical lines
+- `ir-pass/src/LoopLowering.cpp` — 7429 physical lines
 - `ir-pass/src/PredMuxFlatten.cpp` — 5408 physical lines
 - `tools/loop_twin_matrix.py` — 4110 physical lines
 - `ir-pass/src/QramLowering.cpp` — 3639 physical lines
@@ -577,7 +577,7 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LiteralIntegrity.cpp:274` — `declineAddressTakenBlocks`
 - `ir-pass/src/LiteralIntegrity.cpp:327` — `removeUnreachableBlocksChecked`
 
-### `ir-pass/src/LoopLowering.cpp` (7425 lines)
+### `ir-pass/src/LoopLowering.cpp` (7429 lines)
 
 - `ir-pass/src/LoopLowering.cpp:130` — `diagnose`
 - `ir-pass/src/LoopLowering.cpp:155` — `inPlaceValueRailOperand`
@@ -626,23 +626,23 @@ The entries below are an inventory for decomposition work. Generated files and t
 - `ir-pass/src/LoopLowering.cpp:5112` — `taintedAncestryReaches`
 - `ir-pass/src/LoopLowering.cpp:5143` — `railIsInterior`
 - `ir-pass/src/LoopLowering.cpp:5248` — `mintsOutOfPlaceTemplateRail`
-- `ir-pass/src/LoopLowering.cpp:5369` — `bodyBlocksMarked`
-- `ir-pass/src/LoopLowering.cpp:5506` — `markedBodyRailObligations`
-- `ir-pass/src/LoopLowering.cpp:5511` — `recordMarkedBodyRailObligation`
-- `ir-pass/src/LoopLowering.cpp:5518` — `markedBodyRailsHaveInBodyDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:5644` — `deferDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:5666` — `deferredDephasingSlot`
-- `ir-pass/src/LoopLowering.cpp:5677` — `declineRound2FalsifiedRailGrants`
-- `ir-pass/src/LoopLowering.cpp:5941` — `declineDephasingUnmarkedLoopRails`
-- `ir-pass/src/LoopLowering.cpp:6273` — `declineUndischargedMarkedBodyRails`
-- `ir-pass/src/LoopLowering.cpp:6342` — `emitDeferredDephasingDecline`
-- `ir-pass/src/LoopLowering.cpp:6397` — `declineUndischargedExitObligations`
-- `ir-pass/src/LoopLowering.cpp:6466` — `loopExitDischargePoint`
-- `ir-pass/src/LoopLowering.cpp:6486` — `iterationLocalTaintEscape`
-- `ir-pass/src/LoopLowering.cpp:6650` — `bodyHasSpineDischargeCandidate`
-- `ir-pass/src/LoopLowering.cpp:6800` — `promoteLoopCarriedHandleSeeds`
-- `ir-pass/src/LoopLowering.cpp:7069` — `declineUnmarkedRolledIterLocal`
-- `ir-pass/src/LoopLowering.cpp:7265` — `lowerLoops`
+- `ir-pass/src/LoopLowering.cpp:5373` — `bodyBlocksMarked`
+- `ir-pass/src/LoopLowering.cpp:5510` — `markedBodyRailObligations`
+- `ir-pass/src/LoopLowering.cpp:5515` — `recordMarkedBodyRailObligation`
+- `ir-pass/src/LoopLowering.cpp:5522` — `markedBodyRailsHaveInBodyDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:5648` — `deferDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:5670` — `deferredDephasingSlot`
+- `ir-pass/src/LoopLowering.cpp:5681` — `declineRound2FalsifiedRailGrants`
+- `ir-pass/src/LoopLowering.cpp:5945` — `declineDephasingUnmarkedLoopRails`
+- `ir-pass/src/LoopLowering.cpp:6277` — `declineUndischargedMarkedBodyRails`
+- `ir-pass/src/LoopLowering.cpp:6346` — `emitDeferredDephasingDecline`
+- `ir-pass/src/LoopLowering.cpp:6401` — `declineUndischargedExitObligations`
+- `ir-pass/src/LoopLowering.cpp:6470` — `loopExitDischargePoint`
+- `ir-pass/src/LoopLowering.cpp:6490` — `iterationLocalTaintEscape`
+- `ir-pass/src/LoopLowering.cpp:6654` — `bodyHasSpineDischargeCandidate`
+- `ir-pass/src/LoopLowering.cpp:6804` — `promoteLoopCarriedHandleSeeds`
+- `ir-pass/src/LoopLowering.cpp:7073` — `declineUnmarkedRolledIterLocal`
+- `ir-pass/src/LoopLowering.cpp:7269` — `lowerLoops`
 
 ### `ir-pass/src/LoopUnrollPrepass.cpp` (303 lines)
 

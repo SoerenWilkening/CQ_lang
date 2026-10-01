@@ -5283,7 +5283,11 @@ bool mintsOutOfPlaceTemplateRail(Instruction *I, TaintSet &taint) {
   if (auto *Cmp = dyn_cast<CmpInst>(I))
     return isDataPositionCompare(Cmp) && compareFlagMintable(Cmp, taint);
   if (auto *C = dyn_cast<CastInst>(I))
-    return castInScope(C->getOpcodeName(), abiWidthFromType(C->getSrcTy()),
+    // The SOURCE width `lowerOps` will emit from: a laundered i32 handle (a
+    // retyped carried phi, a break answer) carries it in `HandleWidth`, not in
+    // `getSrcTy()` (R12; lowering_loop_carried_cast_forecast_width.ll).
+    return castInScope(C->getOpcodeName(),
+                       logicalOperandWidth(C->getOperand(0), taint),
                        abiWidthFromType(C->getDestTy()));
   if (auto *U = dyn_cast<UnaryOperator>(I))
     return U->getOpcode() == Instruction::FNeg &&
