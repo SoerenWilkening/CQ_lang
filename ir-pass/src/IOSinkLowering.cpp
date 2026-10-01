@@ -304,7 +304,7 @@ Value *ioTapeFor(Function *F, WidthDispatch &wd, TaintSet &taint,
 // fixture changes message — but the message identity for a given module is not
 // what the base plugin gave, so do not treat a diagnostic diff here as a
 // regression without reading which fence fired.
-bool collectTapeTargets(CallInst *Sink, const TaintSet &taint,
+bool collectTapeTargets(CallInst *Sink, TaintSet &taint,
                         SmallVectorImpl<std::pair<Value *, StringRef>> &Targets,
                         const Value *allowedExtraUser = nullptr,
                         const PHINode *valuePhi = nullptr) {
@@ -314,7 +314,9 @@ bool collectTapeTargets(CallInst *Sink, const TaintSet &taint,
         diagnose(Sink, kMsgIOArg);
         return false;
       }
-      StringRef Abi = abiWidthFromType(Arg->getType());
+      // LOGICAL width: a laundered i32 handle (a break answer) carries it in its
+      // `HandleWidth` record, not its type (lowering_loop_break_io_tape_width.ll).
+      StringRef Abi = logicalOperandWidth(Arg, taint);
       if (Abi.empty() || !widthHasReversibleCopy(Abi)) {
         diagnose(Sink, kMsgIOArg);
         return false;

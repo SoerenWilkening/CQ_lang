@@ -2357,12 +2357,14 @@ bool emitBreakForward(LoopBreakRegion &Rgn, TaintSet &taint, WidthDispatch &wd,
     taint.ControlOwnedRails.insert(H);
   }
   // Each mint is an i32 HANDLE for a rail of RailWidth / IdxWidth, so record the
-  // logical width (bd 01po.3). `out` replaces the user's exit phi below, and every
-  // width consumer reads a laundered handle through this record; without it they
-  // fall back to the i32 type: an i64 `out` reached `cqrt_qram_load` as an
-  // unbracketed 64-bit index, `(long long)q` of an i8 `out` minted
-  // `sext_i32_to_i64`, and two i64 answers compared as `icmp_eq_i32`.
-  // lowering_loop_break_{qram_index_*,out_width_*}.ll pin each consumer.
+  // logical width (bd 01po.3). `out` replaces the user's exit phi below. A consumer
+  // that asks `logicalOperandWidth` or the raw record (QRAM index, Q+Q compare and
+  // select leaf, lowerOps cast capture, IO tape, abort park) fell back to the i32
+  // type without it: an i64 `out` reached `cqrt_qram_load` as an unbracketed
+  // 64-bit index, `(long long)q` of an i8 `out` minted `sext_i32_to_i64`, two i64
+  // answers compared as `icmp_eq_i32`. A reader that takes the width from the SSA
+  // TYPE never sees this record (QramLowering's store-value check declines on the
+  // mismatch). lowering_loop_break_{qram_index,out_width,io_tape,abort_park}*.ll.
   taint.HandleWidth[RReg] = RailWidth;
   taint.HandleWidth[IdxReg] = IdxWidth;
   taint.HandleWidth[OutReg] = RailWidth;

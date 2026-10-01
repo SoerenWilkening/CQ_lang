@@ -201,7 +201,7 @@ GuardedStoreDisp classifyGuardedStoreArm(BranchInst *BI, TaintSet &Taint,
     diagnoseUnderControl(Cond, "control flow");
     return GuardedStoreDisp::Declined;
   }
-  if (!widthHasReversibleCopy(abiWidthFromType(Q->getType()))) {
+  if (!widthHasReversibleCopy(logicalOperandWidth(Q, Taint))) {  // bd r2j3.5
     diagnoseUnderControl(Cond, "control flow");
     return GuardedStoreDisp::Declined;
   }
