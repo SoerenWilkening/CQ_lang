@@ -17,8 +17,9 @@
 ; parameter, nor a rail-minting call (its docstring names `sub i32 0, %6`).
 ;
 ; The ADJOINT negates again (`EmitInverse`'s `CreateNeg`), so the reversal is a
-; second classical `sub` feeding `cqrt_addc_i32` — the in-place gate returns the
-; rail to |0> before the un-rotation and the free.
+; second classical `sub` feeding `cqrt_addc_i32` — the in-place gate is undone
+; before the un-rotation. The rail then holds its seed 41, not |0>, so it is kept,
+; never freed (bd 5c5b, libcqops vmz9).
 ;
 ; LIMIT (2b Rule-13 round, F1): (A1) clears the immediate SLOT only. The checker
 ; cannot PAIR two SSA-named immediates (`%v` vs `sub iW 0, %v`), so this very
@@ -28,6 +29,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = load volatile i32, ptr @off
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
@@ -39,7 +41,7 @@
 ; CHECK:      %[[N2:[a-zA-Z0-9_.]+]] = sub i32 0, %[[N]]
 ; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H]], i32 %[[N2]])
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK:      call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; CHECK-NOT:  cq_template_sub_
 
@@ -57,3 +59,10 @@ entry:
   %c = sub i32 %a, %v        ; parent DEAD after -> in place, SSA imm negated
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

@@ -3,8 +3,10 @@
 ;
 ; A fully DEAD chain: `%h_op1` is a dead terminal, so the EXISTING whole-DAG
 ; partition recovers `{%h_op1, %h_op, %h}` and reverses all of it, including the
-; `cqrt_ry` and the source rail's free — which is correct there and correct ONLY
-; there, because with no surviving record of the wire `Ry† Ry |0> = |0>`.
+; source rail's `cqrt_ry` — which is correct there and correct ONLY there, because
+; with no surviving record of the wire `Ry† Ry` is the identity. The source rail is
+; then KEPT, not freed: it is back at its runtime seed |u0>, not |0> (bd 5c5b,
+; libcqops vmz9; this used to read `Ry† Ry |0> = |0>` and free it).
 ;
 ; `%h_op` sits in the middle of that chain and looks exactly like an interior
 ; rail. Adjointing it a SECOND time would apply `mul_unc` twice (leaving the rail
@@ -27,7 +29,8 @@
 ; owns it) cannot be inside one.
 ;
 ; The assertion is that the stream is BYTE-IDENTICAL to what HEAD emitted: three
-; adjoints, three frees, nothing added.
+; adjoints and the two derived-rail frees, nothing added (the source free HEAD
+; emitted before bd 5c5b is gone).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -51,5 +54,4 @@ entry:
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[A]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[A]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
 ; CHECK-NEXT: ret void

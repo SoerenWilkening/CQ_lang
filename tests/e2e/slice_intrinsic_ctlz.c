@@ -60,8 +60,10 @@
    (B) DEAD ctlz kept alive by a `cq_phi` — proves the void `_unc` twin
        cq_template_ctlz_i32_unc(out, src) and the Class-2 recompute-from-live-source
        discipline: the dead ctlz is reversed by recomputing it from its STILL-LIVE
-       source, and the source is uncomputed + freed ONLY AFTER its own `_unc` (a
-       source freed before its `_unc` is the silent-collapse class). No `_inv` —
+       source, and the source stays allocated and untouched through its own
+       `_unc` (a source freed before its `_unc` is the silent-collapse class; this
+       golden never reverses or frees the source, and since bd 5c5b a
+       nonzero-seeded root is never freed). No `_inv` —
        ctlz is not invertible.
    (C) MEASURED forward ctlz in the OTHER immarg spelling — see below.
 

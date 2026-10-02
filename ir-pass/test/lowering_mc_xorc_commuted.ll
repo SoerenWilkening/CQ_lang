@@ -16,11 +16,13 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
 ; CHECK:     call void @cqrt_xorc_i32(i32 %[[H]], i32 99)
 ; CHECK:     call void @cqrt_xorc_i32(i32 %[[H]], i32 99)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): Ry-dagger restores the seed 41, not |0>: the rail is kept.
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ;
 ; CHECK-NOT: cq_template_xor_
 
@@ -35,3 +37,10 @@ entry:
   %c = xor i32 99, %a        ; LITERAL ON THE LEFT -> still in place
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

@@ -54,15 +54,17 @@
 ; can RE-READ the same source `b` it read on the forward pass; reversing in any
 ; other order would XOR back a value computed from an already-restored rail.
 ;
-; THE TWO FREES ARE LICENSED BY DIFFERENT FACTS, and the distinction is real:
+; THE TWO RAILS END IN DIFFERENT STATES, and the distinction is real:
 ;   * the DERIVED rail `%d` genuinely reaches |0⟩ — its own `_unc` XORs the value
 ;     back out in place, which is what licenses `cqrt_free(%d)` on the very NEXT
 ;     line (Rule 6: free only a proven-|0⟩ rail; a free placed BEFORE the `_unc`
 ;     would be a hidden measurement collapsing `q`);
 ;   * the ROOT `%h` was never |0⟩ to begin with — `cqrt_alloc_i32(%x)` initialises
 ;     it to the alloc-time CLASSICAL BASIS state |x⟩ and `Ry(-θ)` restores THAT
-;     state, not |0⟩. What licenses `cqrt_free(%h)` is that it is provably
-;     DISENTANGLED and in a known classical state.
+;     state, not |0⟩. So `%h` is KEPT, never freed (bd 5c5b, libcqops vmz9). This
+;     file used to license `cqrt_free(%h)` as "provably DISENTANGLED and in a known
+;     classical state" — measurement immunity, not the |0⟩ proof `cqrt_free`
+;     requires; the backend's free certificate convicts it.
 ;
 ; The adjoint MUST be the VOID `_unc`, never the fresh-minting `_inv`: `_inv`
 ; returns a NEW handle (allocating another rail) instead of driving the existing
@@ -97,12 +99,12 @@
 ; Reversed adjoint: void `_unc(out=%d, lit=100, src=%h)` — DD-3 slots preserved
 ; verbatim, reading the still-live root %h; then the now-proven-|0> out rail is
 ; freed IMMEDIATELY (nothing may re-dirty it in between); then the root is
-; un-rotated back to its alloc-time basis state and released. Handle identity is
+; un-rotated back to its alloc-time basis state and kept. Handle identity is
 ; captured, not merely symbol presence, and all handles are i32 (Rule 15).
 ; CHECK-NEXT: call void @cq_template_lshr_i32_lh_unc(i32 %[[D]], i32 100, i32 %[[H]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; No fresh-minting adjoint, no wrong-symbol `_hl` alias, and the intrinsic is gone
 ; (the swapped-slot failure mode is pinned POSITIVELY by the exact operand list

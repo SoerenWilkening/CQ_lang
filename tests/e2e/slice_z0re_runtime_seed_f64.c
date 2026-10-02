@@ -3,8 +3,11 @@
 
      double t = m + 1.0; double r = t; if (q2 > 3) r = cq_theta(t, .2);
 
-   Expected stream: the flag from the i32 `q2 > 3`; `cqrt_alloc_f64(t)` with the
-   RUNTIME double; `cqrt_ry_f64_controlled` under the flag; strip; free; measure.
+   Expected stream: the dead `q = cq_theta(m, .5)` rail is reverse-played and KEPT
+   (bd 5c5b, libcqops vmz9: `ry(h0, -.5)` restores its runtime birth value 2.5,
+   not |0>, so a `cqrt_free(h0)` would be a dirty reset); then the flag from the
+   i32 `q2 > 3`; `cqrt_alloc_f64(t)` with the RUNTIME double;
+   `cqrt_ry_f64_controlled` under the flag; strip; free the flag; measure.
    The literal-fp precautionary decline (notes §9 item 24) is about an `fcmp oeq`
    edge pinning a LITERAL seed and is untouched; this condition is an integer
    compare and the seed is SSA-identical to the straight-through value.

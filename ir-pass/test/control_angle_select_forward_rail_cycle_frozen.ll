@@ -125,7 +125,8 @@ exit:
 ; CHECK-NEXT: %[[H1:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double 2.500000e-01)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H1]])
+; bd 5c5b (libcqops vmz9): the dead `%r` root is reverse-played back to its
+; runtime seed |u1>, not |0>, so it is kept allocated: no free follows its Ry-dagger.
 ; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double 3.000000e-01)
@@ -176,7 +177,7 @@ exit:
 ; pattern is the only spelling that pins `exactly n`.
 ; ACNT-COUNT-2: call void @cqrt_rz_i1(
 ; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-2: call void @cqrt_free(
+; FCNT-COUNT-1: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; XCNT-COUNT-2: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(

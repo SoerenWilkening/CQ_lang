@@ -36,6 +36,11 @@
 ; The flag is LEFT ALLOCATED, not freed: Rule 6's fallback for a rail that is not
 ; provably |0> is a leak, never a dirty free. No measurement is inserted (Rule 5).
 ;
+; `%q` IS SEEDED WITH THE LITERAL 0, and that is load-bearing (bd 5c5b, libcqops
+; vmz9): the array-slot rail's free below is this file's discrimination control,
+; and a runtime-seeded root is not provably |0> at birth, so `BirthFreeze` would
+; keep it and the control would vanish.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREEFLAG < %t.cqd0.ll
@@ -46,7 +51,7 @@ declare void @cqrt_qram_store_i32_controlled(i32, i32, i32, i32)
 
 define void @guarded_railof(i32 %u0) {
 entry:
-  %q = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
+  %q = call i32 @cq_theta_si32(i32 0, double 5.000000e-01)
   %z = call i32 @cqrt_alloc_i32(i32 0)
   ; The tainted rail %q sits in the ARRAY slot (arg 1) — the register this gate
   ; mutates — and the independently minted %z sits in the FLAG slot (arg 0), which
@@ -63,8 +68,8 @@ entry:
 ; flag still LIVE (the pred-lifetime invariant), and the ARRAY-slot rail %H — the
 ; register the gate actually writes — reverses and frees. That free is the
 ; discrimination control: the fix re-attributes a rail, it does not suppress frees.
-; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     %[[Z:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_qram_store_i32_controlled(i32 %[[Z]], i32 %[[H]], i32 3, i32 4)
 ; CHECK:     call void @cqrt_qram_store_i32_controlled_unc(i32 %[[Z]], i32 %[[H]], i32 3, i32 4)
@@ -76,5 +81,6 @@ entry:
 ; single anchor, so the window runs anchor -> EOF (a `CHECK-NOT` is bounded by the
 ; next positive directive OF ITS OWN PREFIX; `tools/fixture_guard_liveness.py`
 ; proves this one executes by injecting the exact free the pre-fix pass emitted):
-; NOFREEFLAG:     %[[Z2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; Anchored on the store's FLAG slot (both roots now mint `cqrt_alloc_i32(i32 0)`).
+; NOFREEFLAG:     call void @cqrt_qram_store_i32_controlled(i32 %[[Z2:[a-zA-Z0-9_.]+]], i32
 ; NOFREEFLAG-NOT: call void @cqrt_free(i32 %[[Z2]])

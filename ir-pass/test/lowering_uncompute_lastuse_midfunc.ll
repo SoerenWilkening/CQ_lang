@@ -11,6 +11,12 @@
 ; SAME symbol with the NEGATED angle (no `_inv` rotation symbol exists), then the
 ; handle is freed. Template `_inv` assertions are deferred to Step 2.
 ;
+; The theta is seeded with the LITERAL 0, and that is load-bearing (bd 5c5b,
+; libcqops vmz9): `ry(-θ)` returns the handle to its BIRTH state, which is |0⟩
+; only for a null seed. A runtime seed returns it to |x>, so `BirthFreeze` keeps
+; it and the free this file pins would vanish (it used to be seeded with `%x` and
+; its free was a reset of |x>).
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
@@ -30,6 +36,6 @@ declare i32 @cq_theta_si32(i32, double)
 
 define void @slice(i32 %x) {
 entry:
-  %h = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01)
+  %h = call i32 @cq_theta_si32(i32 0, double 2.500000e-01)
   ret void
 }

@@ -18,6 +18,11 @@
 ; The `opt -verify` RUN line guards that the adjoint + free land AFTER the merge
 ; block's φ-nodes (insertion-point-vs-φ, PRD §6 / decision 2.4).
 ;
+; The theta is seeded with the LITERAL 0, and that is load-bearing (bd 5c5b,
+; libcqops vmz9): the root's free is half of this file's subject, and a runtime
+; seed is not provably |0⟩ at birth, so `BirthFreeze` would keep the root and the
+; free (and its placement after the φ) would vanish.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ;
@@ -44,7 +49,7 @@ declare i32 @cq_theta_si32(i32, double)
 
 define void @slice(i32 %x, i1 %c) {
 entry:
-  %h = call i32 @cq_theta_si32(i32 %x, double 2.500000e-01)
+  %h = call i32 @cq_theta_si32(i32 0, double 2.500000e-01)
   br i1 %c, label %a, label %b
 a:
   br label %merge

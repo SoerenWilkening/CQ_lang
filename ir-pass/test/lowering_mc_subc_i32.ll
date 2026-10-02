@@ -21,15 +21,17 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 -99)
 ; The adjoint (negate the negated immediate = the original), then the
-; un-rotation, then the free of the ONE rail this program ever allocated:
+; un-rotation; the ONE rail this program ever allocated then holds its seed 41,
+; not |0⟩, so it is kept, never freed (bd 5c5b, libcqops vmz9):
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 99)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; No out-of-place rail is minted, and the classical negation was folded (no
 ; residual `sub` instruction survives at all):
@@ -48,3 +50,10 @@ entry:
   %c = sub i32 %a, 99        ; parent DEAD after -> in place, imm negated
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

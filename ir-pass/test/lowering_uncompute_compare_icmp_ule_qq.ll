@@ -75,10 +75,11 @@
 ;     rail after `icmp_ule..._unc` genuinely DO reach |0>. A ROOT rail does not:
 ;     `cqrt_alloc_i32(%x)` initialises it to the alloc-time CLASSICAL BASIS STATE
 ;     |x> (from the data operand), and `ry(-theta)` restores THAT state, not |0>.
-;     What licenses each root's `cqrt_free` is that the rail is provably
-;     DISENTANGLED and in a known classical basis state — such a free carries no
-;     coherence to collapse. Either way no rail is freed dirty; a dirty free is a
-;     hidden measurement that collapses the register.
+;     So each root is KEPT, never freed (bd 5c5b, libcqops vmz9): this file used
+;     to license a root `cqrt_free` as "provably DISENTANGLED and in a known
+;     classical basis state", which is measurement immunity, not the |0> proof
+;     `cqrt_free` requires. No rail is freed dirty; a dirty free is a hidden
+;     measurement, and the backend's free certificate convicts it.
 ;   * FREE ADJACENCY IS ITSELF THE RULE-6 CHECK. Each `cqrt_free` below is pinned
 ;     with `CHECK-NEXT` directly on the adjoint that restored its rail, so a
 ;     stray re-dirtying gate slipped between them (e.g. `cqrt_x` on the rail
@@ -131,16 +132,15 @@ entry:
 ;      and freed;
 ;   3. the roots un-rotate in reverse allocation order (%[[H1]] first), each
 ;      returning to its alloc-time classical basis state (|y>, then |x>) — NOT
-;      |0>, see the Rule-6 bullet above — and each is freed there.
+;      |0>, see the Rule-6 bullet above — so neither is freed.
 ; All handles are i32 (Rule 15); every adjoint is the VOID `_unc`.
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[CAST]], i32 %[[CMP]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[CAST]])
 ; CHECK-NEXT: call void @cq_template_icmp_ule_i32_unc(i32 %[[CMP]], i32 %[[H]], i32 %[[H1]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[CMP]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H1]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; No fresh-minting `_inv` twin for either pinned `_unc`; the intrinsic is gone.
 ; CHECK-NOT: cq_template_icmp_ule_i32_inv

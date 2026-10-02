@@ -4,11 +4,13 @@
 ; whole-DAG uncompute spine ENTIRELY via the additive-producer mechanism it
 ; already has — ZERO new uncompute code. Pins the EXACT `_unc` slot order
 ; (out rail first, then the forward operands) and the free count: the bswap rail
-; is freed once, then the theta source is uncomputed and freed once. No dirty
+; is freed once, then the theta source is uncomputed and KEPT: its Ry-dagger
+; restores the runtime seed |u>, not |0> (bd 5c5b, libcqops vmz9). No dirty
 ; free, no double free.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
 ; CHECK:     %[[INTR:[a-zA-Z0-9_.]+]] = call i32 @cq_template_bswap_i32(i32 %[[H]])
@@ -16,7 +18,7 @@
 ; CHECK:     call void @cq_template_bswap_i32_unc(i32 %[[INTR]], i32 %[[H]])
 ; CHECK:     call void @cqrt_free(i32 %[[INTR]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.0
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ;
 ; CHECK-NOT: @llvm.bswap
 ; The involution producer reverses via `_unc`, never the `_inv` twin.
@@ -35,3 +37,10 @@ entry:
   %r = call i32 @llvm.bswap.i32(i32 %q)
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

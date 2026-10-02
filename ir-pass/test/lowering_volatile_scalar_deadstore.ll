@@ -29,9 +29,10 @@
 ; the owner in the bd vsfp record (TRACK_VSFP §6), not edited.
 ;
 ; What remains on this module: `%p` is a user `cq_theta` (a liveness ROOT, never
-; deleted) with no other reader, so its rail is allocated, rotated, reversed and
-; freed by the ordinary whole-DAG spine — exactly the hand-written program without
-; the volatile line.
+; deleted) with no other reader, so its rail is allocated, rotated and reversed by
+; the ordinary whole-DAG spine — exactly the hand-written program without the
+; volatile line. It is not freed: Ry-dagger restores its runtime seed |u1>, not |0>
+; (bd 5c5b, libcqops vmz9).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -73,10 +74,9 @@ entry:
 ; CHECK-NEXT:  call void @cqrt_ry_f32(i32 %[[R]], double 5.000000e-01)
 ;
 ; No product, no template, no adjoint pair — the dead `fmul` went with the store.
-; The now-unread `%p` rail is reversed and freed by the spine (Rule 6: |0> at the
-; free):
+; The now-unread `%p` rail is reversed by the spine and KEPT (Rule 6: a free needs
+; |0>, and Ry-dagger restores the runtime seed |u1>; bd 5c5b):
 ; CHECK-NEXT:  call void @cqrt_ry_f32(i32 %[[R]], double -5.000000e-01)
-; CHECK-NEXT:  call void @cqrt_free(i32 %[[R]])
 ;
 ; the measured rail is a DIFFERENT one and is never freed — the measurement owns
 ; it (Rule 6):

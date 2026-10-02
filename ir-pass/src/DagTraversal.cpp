@@ -5,6 +5,7 @@
 
 #include "DagTraversal.h"
 
+#include "BirthFreeze.h"        // step 3d (bd 5c5b)
 #include "ChainWalk.h"          // isInPlaceGateOn / isAllocMint / isMeasureSink
 #include "RecordWindowFreeze.h"  // step 3c (bd r2j3.3)
 #include "TaintPropagation.h"
@@ -443,6 +444,9 @@ DataDag recoverDataDag(ArrayRef<Value *> Terminals, const TaintSet &taint,
   //     adjoint no longer restores it. Freeze those readers' rails (frees only;
   //     every adjoint stays). See RecordWindowFreeze.h.
   freezeRecordWindowReaders(D, AncEdges, DT);
+
+  // 3d. BIRTH FREEZE (bd 5c5b): clause (a), "R starts at |0⟩". BirthFreeze.h.
+  freezeUnprovenBirths(D);
   return D;
 }
 

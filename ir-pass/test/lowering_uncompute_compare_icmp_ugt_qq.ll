@@ -64,7 +64,7 @@
 ;      the `zext` widen-flag leaf is undone BEFORE the compare it consumes.
 ;   3. SOURCE LIVENESS AT EACH ADJOINT STEP. `zext_..._unc` reads the compare rail
 ;      while it is still allocated; `icmp_ugt_i32_unc` reads BOTH roots while they
-;      are still allocated — the roots are un-rotated and freed only afterwards.
+;      are still allocated — the roots are un-rotated only afterwards.
 ;      Whole-DAG LIFO is what guarantees this; an adjoint reading an already-freed
 ;      rail is a use-after-free that `opt -verify` cannot see.
 ;   4. FREE ONLY A PROVEN-CLEAN RAIL (Rule 6), and free it IMMEDIATELY. The two
@@ -75,9 +75,10 @@
 ;          XORs the identical value back out. Free is then a no-op reset.
 ;        - ROOT rails do NOT reach |0>. `cqrt_alloc_i32(%x)` seeds the root in the
 ;          CLASSICAL BASIS STATE |x>, and `ry(-theta)` restores THAT state, not
-;          |0>. What licenses the root free is that it is provably DISENTANGLED
-;          and in a known classical state — the compare left both operand rails
-;          untouched, so no superposition survives for a reset to collapse.
+;          |0>. So the roots are KEPT, never freed (bd 5c5b, libcqops vmz9). This
+;          file used to license a root free as "provably DISENTANGLED and in a
+;          known classical state"; that is measurement immunity, not the |0>
+;          proof `cqrt_free` requires, and the backend's certificate convicts it.
 ;      "Immediately" is the other half of Rule 6 and is why the reversal tail
 ;      below is pinned with CHECK-NEXT rather than plain CHECK. A stray gate
 ;      slipped between an adjoint and its `cqrt_free` RE-DIRTIES the rail the
@@ -119,9 +120,9 @@ entry:
 ; CHECK:      %[[CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_ugt_i32(i32 %[[HA]], i32 %[[HB]])
 ; CHECK:      %[[CAST:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i1_to_i32(i32 %[[CMP]])
 ;
-; Reversed adjoint (LIFO, leaf-first) — and from here to the last free the chain
+; Reversed adjoint (LIFO, leaf-first) — and from here to `ret` the chain
 ; is CHECK-NEXT throughout, verified contiguous in the real lowered output (all
-; eight reversal lines are emitted back to back, immediately after the forward
+; six reversal lines are emitted back to back, immediately after the forward
 ; stream). That makes the block a gap-free window: no gate may be inserted
 ; between an adjoint and the `cqrt_free` it licenses (re-dirtied rail -> hidden
 ; measurement), and no free may be hoisted ahead of an adjoint that still reads
@@ -141,13 +142,11 @@ entry:
 ; CHECK-NEXT: call void @cq_template_icmp_ugt_i32_unc(i32 %[[CMP]], i32 %[[HA]], i32 %[[HB]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[CMP]])
 ;
-; Roots un-rotated and freed last, in LIFO order (%q2 before %q1). Each free is
-; adjacent to its own negated `ry`, so the rail is back in its alloc-time
-; classical basis state — disentangled and known, per fact #4 — when it is reset.
+; Roots un-rotated last, in LIFO order (%q2 before %q1), back to their alloc-time
+; classical basis states |y>, |x> — not |0>, per fact #4 — so neither is freed.
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HB]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HB]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HA]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HA]])
+; CHECK-NEXT: ret void
 ;
 ; Every adjoint above is the void `_unc`; no fresh-minting `_inv` twin is emitted
 ; or declared, and the theta intrinsic is fully lowered away. These trailing

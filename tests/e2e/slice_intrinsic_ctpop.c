@@ -50,8 +50,10 @@
    `__builtin_popcount` -> `@llvm.ctpop.i32`, a curated Class-2 op. The golden
    proves the central R-E source-liveness discipline: the dead ctpop is reversed
    by recomputing ctpop from its STILL-LIVE source (the `_unc` reads the source
-   handle), and the source is uncomputed + freed ONLY AFTER its own `_unc` — never
-   before (a source freed before its `_unc` is the silent-collapse class). No
+   handle), and the source stays allocated and untouched through its own `_unc`
+   (a source freed before its `_unc` is the silent-collapse class). This golden
+   never reverses or frees the source at all; a nonzero-seeded root would not be
+   freed anyway, since bd 5c5b (its Ry-dagger restores |seed>, not |0>). No
    `_inv` (ctpop is not invertible). Two lineages in a `noinline` helper:
 
    (A) MEASURED ctpop — proves the FORWARD producer.

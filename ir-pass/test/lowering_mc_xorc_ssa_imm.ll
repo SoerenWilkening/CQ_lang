@@ -21,6 +21,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:      %[[V:[a-zA-Z0-9_.]+]] = load volatile i32, ptr @msk
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
@@ -30,7 +31,8 @@
 ; ...and neither does the adjoint: it is the SAME call on the SAME SSA name.
 ; CHECK:      call void @cqrt_xorc_i32(i32 %[[H]], i32 %[[V]])
 ; CHECK:      call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK:      call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): the rail holds its seed 41 after Ry-dagger: kept, not freed.
+; CHECK-NEXT: ret void
 ;
 ; No classical negation is emitted anywhere (the 2b `sub iW 0, %v` shape):
 ; CHECK-NOT:  sub i32 0,
@@ -50,3 +52,10 @@ entry:
   %c = xor i32 %a, %v        ; parent DEAD after -> in place, SSA immediate
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 41)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

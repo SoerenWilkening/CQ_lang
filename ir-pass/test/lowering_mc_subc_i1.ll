@@ -11,13 +11,15 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 true)
 ; CHECK:     call void @cqrt_ry_i1(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_addc_i1(i32 %[[H]], i1 true)
 ; CHECK:     call void @cqrt_addc_i1(i32 %[[H]], i1 true)
 ; CHECK:     call void @cqrt_ry_i1(i32 %[[H]], double -5.000000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): the root holds its seed `true` after Ry-dagger, so it is kept.
+; CHECK-NEXT: ret void
 ;
 ; CHECK-NOT: cq_template_sub_
 ; CHECK-NOT: sub i1
@@ -33,3 +35,10 @@ entry:
   %c = sub i1 %a, true        ; parent DEAD after -> in place; -true == true
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 true)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

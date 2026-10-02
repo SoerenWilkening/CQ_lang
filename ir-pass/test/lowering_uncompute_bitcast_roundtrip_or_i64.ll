@@ -68,12 +68,13 @@
 ;     this fixture does not claim it does — `cqrt_alloc_f64(%x)` initialises the
 ;     root to its alloc-time CLASSICAL BASIS STATE |x> (from the data operand), and
 ;     `cqrt_ry_f64(-θ)` reduces the write history to identity by restoring THAT
-;     state, not |0>. What licenses the root's `cqrt_free` is that it is provably
-;     DISENTANGLED and in a known classical state — not copy+uncompute of a
-;     superposed source, which would need a `cqrt_cswap` (Rule 8).
-;     Either way the free is IMMEDIATE: never before the rail's own adjoint, and
-;     with nothing in between that could re-dirty it. Both halves are pinned below
-;     by `CHECK-NEXT` — see the note above the reversal block for why a plain
+;     state, not |0>. So the root is KEPT, never freed (bd 5c5b, libcqops vmz9):
+;     this file used to license its `cqrt_free` as "provably DISENTANGLED and in a
+;     known classical state", which is measurement immunity, not the |0> proof
+;     `cqrt_free` requires, and the backend's free certificate convicts it.
+;     Each derived free is IMMEDIATE: never before the rail's own adjoint, and
+;     with nothing in between that could re-dirty it. That is pinned below by
+;     `CHECK-NEXT` — see the note above the reversal block for why a plain
 ;     ordered check is not enough.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
@@ -81,7 +82,7 @@
 ;
 ; WHY THIS WHOLE BLOCK IS `CHECK-NEXT` (verified contiguous in the real lowered
 ; output — the emitted `@slice` body is one straight run from `cqrt_alloc_f64` to
-; the root `cqrt_free`, no intervening instruction): here ADJACENCY IS THE PHYSICS,
+; `ret`, no intervening instruction): here ADJACENCY IS THE PHYSICS,
 ; and a plain `CHECK` — which only ORDERS matches, never ABUTS them — lets the
 ; Rule-6 killer through. Demonstrated mutant: splice a stray
 ; `call void @cqrt_x(i32 %d_rail)` BETWEEN `bitcast_i64_to_f64_unc(%d, %o)` and
@@ -115,7 +116,7 @@
 ; CHECK-NEXT: call void @cq_template_bitcast_f64_to_i64_unc(i32 %[[B]], i32 %[[H]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[B]])
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; The adjoints are the VOID `_unc`, never the fresh-minting `_inv` (a minted `_inv`
 ; would leave a module-level `declare` in this trailing region — the lowered

@@ -17,7 +17,8 @@
 ;
 ; The contrast that makes it legible: the wholly UNCONTROLLED twin
 ; (`r = cq_phi(r,.3); r = cq_phi(r,.6);`, no condition at all) DOES cancel its
-; rotations, uncompute the `mul` and free both rails. That difference is bd
+; rotations and uncompute the `mul`, freeing its rail (since bd 5c5b the root stays
+; allocated: its Ry-dagger restores the runtime seed |u1>, not |0>). That difference is bd
 ; `wt3l`'s open cancel/leak/keep question about a user Rz on a possibly-dead
 ; rail; this increment does not touch it in either direction, and this fixture
 ; exists so a future reader sees which side of it the angle select lands on.
@@ -104,7 +105,7 @@ entry:
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[H_OP]], i32 %[[H1]], i32 5)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H_OP]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H1]], double -3.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H1]])
+; bd 5c5b (libcqops vmz9): the root's Ry-dagger restores |u1>, not |0>: kept, never freed.
 ; CHECK-NEXT: %[[H_CMP:[a-zA-Z0-9_.]+]] = call i32 @cq_template_icmp_eq_i32_hl(i32 %[[H]], i32 5)
 ; CHECK-NEXT: call void @cqrt_x(i32 %[[H_CMP]])
 ; CHECK-NEXT: call void @cqrt_rz_i1(i32 %[[H_CMP]], double 3.000000e-01)
@@ -145,7 +146,7 @@ entry:
 ; pattern is the only spelling that pins `exactly n`.
 ; ACNT-COUNT-2: call void @cqrt_rz_i1(
 ; ACNT-NOT:     call void @cqrt_rz_i1(
-; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(
 ; XCNT-COUNT-2: call void @cqrt_x(
 ; XCNT-NOT:     call void @cqrt_x(

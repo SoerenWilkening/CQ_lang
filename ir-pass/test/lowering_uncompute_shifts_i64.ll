@@ -73,13 +73,14 @@
 ;     back to |0>. So and only so is each DERIVED rail's `cqrt_free` here a Rule-6
 ;     legal reset and not a hidden measurement on a dirty rail.
 ;
-;     The ROOT %h discharges the same Rule-6 obligation by a DIFFERENT argument, and
-;     the distinction is real, not pedantry: `cqrt_alloc_i32(%x)` initialises the
-;     root to the alloc-time CLASSICAL BASIS state |x>, so the closing Ry(-θ)
-;     restores THAT state — it does not, and need not, produce |0>. What licenses
-;     the root's `cqrt_free` is that it is provably DISENTANGLED and in a KNOWN
-;     classical state. Only the derived rails genuinely reach |0>, and only they do
-;     so via their own `_unc`.
+;     The ROOT %h does NOT discharge it, and the distinction is real, not
+;     pedantry: `cqrt_alloc_i32(%x)` initialises the root to the alloc-time
+;     CLASSICAL BASIS state |x>, so the closing Ry(-θ) restores THAT state, not |0>.
+;     So the root is KEPT, never freed (bd 5c5b, libcqops vmz9). This file used to
+;     license its `cqrt_free` as "provably DISENTANGLED and in a KNOWN classical
+;     state" — measurement immunity, not the |0> proof `cqrt_free` requires; the
+;     backend's free certificate convicts it. Only the derived rails genuinely
+;     reach |0>, and only they do so via their own `_unc`.
 ;
 ;   * The adjoint is the VOID `_unc`, never the fresh-minting `_inv` — an `_inv`
 ;     would allocate a new rail and leave the old one dirty and allocated instead of
@@ -111,8 +112,8 @@
 ; stream — ashr_unc(out=%a, src=%s, 2), then %a is |0> and freed IMMEDIATELY;
 ; shl_unc(out=%s, src=%w, 3), then %s is |0> and freed immediately; zext_unc(out=%w,
 ; src=%h), then %w is |0> and freed immediately; finally Ry(-θ) returns the root to
-; its alloc-time classical basis state |x> — disentangled and known, NOT |0> — and
-; the root is freed last. Every free below is CHECK-NEXT on its own adjoint: that
+; its alloc-time classical basis state |x> — NOT |0> — and the root is kept (the
+; chain ends at `ret`). Every free below is CHECK-NEXT on its own adjoint: that
 ; adjacency is the Rule-6 lock (nothing may re-dirty a rail between the `_unc` that
 ; zeroed it and the reset that consumes that fact).
 ; CHECK-NEXT: call void @cq_template_ashr_i64_hl_unc(i32 %[[A]], i32 %[[S]], i64 2)
@@ -122,7 +123,7 @@
 ; CHECK-NEXT: call void @cq_template_zext_i32_to_i64_unc(i32 %[[W]], i32 %[[H]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; CHECK-NOT: cq_template_ashr_i64_hl_inv
 ; CHECK-NOT: cq_template_shl_i64_hl_inv

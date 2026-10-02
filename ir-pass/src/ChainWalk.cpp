@@ -302,7 +302,9 @@ bool isInPlaceGateOn(const CallInst *G, const Value *H) {
   //     terminal at all and is never recovered.
   //   * `DagTraversal` step 1 — the addc joins `D.Calls`, so `emitDagReversal`
   //     emits its adjoint (`cqrt_addc_<W>(H, -imm)`; `EmitInverse` already knows
-  //     the recipe) and the rail actually returns to |0> before `cqrt_free`.
+  //     the recipe) and the rail returns to its BIRTH state — |0> for a template
+  //     rail or a null-seeded root, which is then freed; a seeded root returns to
+  //     |seed> and is kept (bd 5c5b, `BirthFreeze`).
   //   * `DagTraversal` step 3 closure — an addc user no longer reads as an
   //     unowned consumer that marks the whole DAG `NotClosed`.
   //   * `railOf` — DERIVED from this predicate (bd uow0), so the gate is
@@ -421,6 +423,11 @@ bool isTemplateProducer(const CallInst *G) {
 // cond(W) up to a label-diagonal phase; (c) the emitted reversal is W†; and (d)
 // every register in cond(W) still holds its forward value when W† fires. Then
 // W† C W (|0⟩_R ⊗ |ψ⟩) = |0⟩_R ⊗ (D ^= g(cond)) for ARBITRARILY many kept records.
+//
+// (a) WAS UNCHECKED FOR ROOTS until bd test_C_libtooling-5c5b (libcqops vmz9): a
+// `cqrt_alloc_<W>(seed)` root starts at |seed⟩, and the spine freed it after
+// `Ry†` with or without a record. `BirthFreeze` (`DagTraversal` step 3d) asks it
+// now, of every rail.
 //
 // (d) IS DELICATE — it is the clause that made the first implementation of this
 // ruling a silent miscompile, so read it precisely. "Still holds its forward

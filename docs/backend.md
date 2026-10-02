@@ -958,10 +958,16 @@ slots is what guards the Q+Q operand-swap miscompile: a `mul_qq` whose two
 handle operands are reversed in the `_unc` call links cleanly yet recomputes
 the wrong rail.
 
-Each rail is freed (`cqrt_free`) right after the adjoint of its **earliest**
-forward gate — which, by SSA dominance, is emitted **last** among that rail's
-reverse-touches, so the free lands after every reverse-read of the rail. Each
-rail of a recovered DAG is freed exactly once. The end-to-end goldens
+Each freeable rail is freed (`cqrt_free`) right after the adjoint of its
+**earliest** forward gate — which, by SSA dominance, is emitted **last** among
+that rail's reverse-touches, so the free lands after every reverse-read of the
+rail. A rail is freed at most once, and only when the reversal provably returns
+it to |0⟩: reverse-play restores a rail's **birth** state, so a template rail (a
+`cq_template_*` or `cqrt_qram_load_*` result) or a `cqrt_alloc_<W>` root with a
+null-constant seed is freed, while a root born from a
+runtime or nonzero seed is reverse-played back to |seed⟩ and left allocated
+(`BirthFreeze`, bd 5c5b). Rails recorded into a kept carrier are likewise kept
+(the record freezes). Every adjoint is emitted either way. The end-to-end goldens
 (`tests/e2e/slice_uncompute_dead_dag.c`, `slice_uncompute_dead_shapes.c`) pin
 the full reversed streams — the **only** layer that links and so the only
 proof that every `_unc` symbol the emitter mints resolves and signature-matches
@@ -974,7 +980,7 @@ the generated runtime ABI.
 
 | Shape | Outcome |
 |---|---|
-| Dead, closed, acyclic, all gates dominate the merge | **reverse + free** |
+| Dead, closed, acyclic, all gates dominate the merge | **reverse**; free each rail born \|0⟩ (template and QRAM-load rails, null-seeded roots); keep the rest |
 | `ret` / `main` / `cq_invert_*` escape | **skip** — no emit; the caller owns it |
 | `Measured` terminal | **skip** — the measurement consumed it; no adjoint, no free |
 | `NotClosed` / `Escaped` rail in the recovered DAG | **safe leak** — left allocated, never a dirty free |

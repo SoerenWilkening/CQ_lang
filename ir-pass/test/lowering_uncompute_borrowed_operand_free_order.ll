@@ -37,6 +37,23 @@
 ; a statement about today's emitters, not about the spine, so the invariant is fixed
 ; rather than the input declined.
 ;
+; ⚠ SINCE bd 5c5b (libcqops vmz9) THE FREES THIS FILE ORDERED ARE GONE, and so is
+; every reachable instance of the hole. A root is freed only when it is born |0⟩
+; (`BirthFreeze`): a `cqrt_alloc_<W>` whose seed is a null CONSTANT. These three
+; roots are seeded by non-constants (`%u0`, and the tainted `%q2`/`%q3` that make
+; the hand-written `%z`/`%v` tainted at all), so all three are reverse-played and
+; KEPT. A hand-written alloc with a null-constant seed is untainted and never
+; enters the DAG, and every C-reachable root has its birth rotation first (above),
+; so no freeable rail can be read before its first write today. The touch keying in
+; `emitDagReversal` stays as the structural guarantee. What this file now pins: the
+; reversal order (each reader's `_unc` before the next older gate) and that NONE of
+; the three roots is freed — a sealed CHECK-NEXT chain from the first adjoint to
+; `ret`.
+; RETIREMENT TRIGGER: a TAINTED `cqrt_alloc_<W>` root with a null-constant seed that a
+; gate reads before the root's first write (a new emitter, or a taint source for a
+; hand-written alloc). Then restore the per-rail `cqrt_free` ordering pins below on
+; that shape.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 declare i32 @cq_theta_si32(i32, double)
@@ -61,16 +78,14 @@ entry:
   ret void
 }
 
-; The reversal runs in reverse program order. Each borrowed rail's free must come
-; after the adjoint of the store that reads it — i.e. both `_unc`s first, then the
-; two frees. FileCheck matches in sequence, so a free that moved back above its
-; reader's `_unc` (the pre-fix output, for either rail) cannot satisfy these:
-; CHECK:     call void @cqrt_ry_i32(i32 %[[V:[a-zA-Z0-9_.]+]], double -6.250000e-01)
-; CHECK:     call void @cqrt_ry_i32(i32 %[[Z:[a-zA-Z0-9_.]+]], double -7.500000e-01)
-; CHECK:     call void @cqrt_qram_store_i32_unc(i32 %[[H:[a-zA-Z0-9_.]+]], i32 3, i32 %[[V]])
-; CHECK:     call void @cqrt_free(i32 %[[V]])
-; CHECK:     call void @cqrt_qram_store_i32_controlled_unc(i32 %[[Z]], i32 %[[H]], i32 3, i32 4)
-; CHECK:     call void @cqrt_free(i32 %[[Z]])
-; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; The reversal runs in reverse program order, each reader's `_unc` before the
+; older gates it read, and — since bd 5c5b — with no free anywhere in it: every rail
+; here returns to its non-constant seed, not |0⟩.
+; CHECK:      call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double -1.000000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[V:[a-zA-Z0-9_.]+]], double -6.250000e-01)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[Z:[a-zA-Z0-9_.]+]], double -7.500000e-01)
+; CHECK-NEXT: call void @cqrt_qram_store_i32_unc(i32 %[[H]], i32 3, i32 %[[V]])
+; CHECK-NEXT: call void @cqrt_qram_store_i32_controlled_unc(i32 %[[Z]], i32 %[[H]], i32 3, i32 4)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
+; CHECK-NEXT: ret void
 ; CHECK-NOT: cqrt_measure

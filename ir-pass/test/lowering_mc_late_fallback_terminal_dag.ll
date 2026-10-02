@@ -91,7 +91,9 @@ define void @late_terminal_dag(i32 noundef %0, ptr noundef %1) {
 ; CHECK-NEXT: call void @cq_template_mul_i32_hl_unc(i32 %[[X]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[X]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): the root's Ry-dagger restores its runtime seed, not
+; |0>, so the root is kept: the chain ends without its free.
+; CHECK-NEXT: ret void
 
 ; NOCONV-NOT: cqrt_addc_i32
 ; NOCONV-NOT: cqrt_xorc_i32

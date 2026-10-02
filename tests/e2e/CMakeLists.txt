@@ -5616,7 +5616,9 @@ add_test(NAME e2e-slice-z0re-runtime-seed-f64
 # compares two spellings that BOTH run the new runtime-seed code, so they witness
 # consistency, not correctness. These two compare a z0re stream with the same
 # program written through code that PREDATES z0re and whose golden the frozen
-# ORACLE (main 9a230646) reproduces byte for byte (measured, TRACK_Z0RE.md §R2):
+# ORACLE (main 9a230646) reproduced byte for byte (measured, TRACK_Z0RE.md §R2)
+# until bd 5c5b removed the dirty `cqrt_free(h0)` the oracle also emitted on the
+# reverse-played dead `m` rail (birth value 5, not |0>; libcqops vmz9):
 #   * the runtime-seed prep vs the LITERAL-seed prep (F1's literal path, drbq Inc 4)
 #     with the literal equal to the runtime value under the harness (argc = 1);
 #   * the runtime-base angle select with EXACT angles (.75/.25) vs an unconditional

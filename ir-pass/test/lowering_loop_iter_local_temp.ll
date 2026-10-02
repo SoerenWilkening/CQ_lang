@@ -20,7 +20,9 @@
 ; dominator, which would free the rail K times → use-after-free + double-free, the
 ; central Rule-13 hazard). The reversal is the standard whole-DAG LIFO: rz(-0.5)
 ; (undo keep-alive) -> xor `_unc` (reads the live `q`) -> free t-rail -> ry(-0.25)
-; (undo mint) -> free q-rail.
+; (undo mint). The q-rail is then KEPT, not freed (bd 5c5b, libcqops vmz9): its
+; Ry-dagger restores the runtime seed |x>, not |0>, so each trip leaves one rail
+; allocated. The t-rail free is the in-body placement witness.
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
@@ -32,12 +34,13 @@
 ; CHECK:        call void @cqrt_ry_i32(i32 %[[Q]], double 2.500000e-01)
 ; CHECK:        %[[T:[a-zA-Z0-9_.]+]] = call i32 @cq_template_xor_i32_hl(i32 %[[Q]], i32 9)
 ; In-body LIFO uncompute (negated keep-alive -> xor `_unc` reading live %[[Q]] ->
-; free t-rail -> negated mint -> free q-rail), all before the backedge branch:
+; free t-rail -> negated mint; the q-rail is kept), all before the backedge branch:
 ; CHECK:   call void @cq_template_xor_i32_hl_unc(i32 %[[T]], i32 %[[Q]], i32 9)
 ; CHECK-NEXT:   call void @cqrt_free(i32 %[[T]])
 ; CHECK-NEXT:   call void @cqrt_ry_i32(i32 %[[Q]], double -2.500000e-01)
-; CHECK-NEXT:   call void @cqrt_free(i32 %[[Q]])
+; CHECK-NOT:    call void @cqrt_free(i32 %[[Q]])
 ; CHECK:        br i1 %{{.*}}, label %exit, label %loop
+; CHECK-NOT:    call void @cqrt_free(i32 %[[Q]])
 ; No fresh-minting `_inv`, no added measurement, no surviving front-end intrinsic:
 ; CHECK-NOT:  cq_template_xor_i32_hl_inv
 ; CHECK-NOT:  cqrt_measure

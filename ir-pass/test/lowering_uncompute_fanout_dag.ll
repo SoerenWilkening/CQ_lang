@@ -23,6 +23,12 @@
 ; the in-place gate, which is the new half: it is reachable from both terminals
 ; and must not be played twice.
 ;
+; The theta is seeded with the LITERAL 0, and that is load-bearing (bd 5c5b,
+; libcqops vmz9): since M-C the shared prefix IS the root, so the root's free —
+; after every sibling adjoint that reads it — is this file's ordering witness. A
+; runtime seed is not provably |0⟩ at birth, so `BirthFreeze` would keep the root
+; and the witness would vanish.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=UNC < %t.cqd0.ll
@@ -30,14 +36,14 @@
 ; RUN: %filecheck %s --check-prefix=ADC < %t.cqd0.ll
 ;
 ; Forward DAG (theta root, then the fan-out):
-; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
+; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 1.000000e-01)
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[H]], i32 1)
 ; CHECK:     %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cq_template_add_i32_hl(i32 %[[H]], i32 1)
 ; CHECK:     %[[H3:[a-zA-Z0-9_.]+]] = call i32 @cq_template_mul_i32_hl(i32 %[[H]], i32 2)
 ;
-; Reversed whole-DAG (LIFO): each gate's `_unc` once, h1 freed AFTER its last
-; consumer's adjoint (add_unc(h1,h)):
+; Reversed whole-DAG (LIFO): each gate's adjoint once; the shared root h (h1 before
+; M-C) freed AFTER its last consumer's adjoint (`addc(h,-1)`, then `ry(-θ)`):
 ; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[H3]], i32 %[[H]], i32 2)
 ; CHECK:     call void @cqrt_free(i32 %[[H3]])
 ; CHECK:     call void @cq_template_add_i32_hl_unc(i32 %[[H2]], i32 %[[H]], i32 1)
@@ -50,9 +56,10 @@
 ; CHECK-NOT: cq_template_mul_i32_hl_inv
 ; CHECK-NOT: cq_theta_si32
 ;
-; Each gate adjointed ONCE and each rail freed ONCE — exactly 3 `_unc` (the two
-; adds + the mul) and 4 frees (h3, h2, h1, h). A double-reversed shared prefix
-; (the bug the WI-3 bail avoided) would show 4+ `_unc` / 5+ frees:
+; Each gate adjointed ONCE and each rail freed ONCE — since M-C exactly 2 data
+; `_unc` (the out-of-place add and the mul), 2 addc lines (forward + adjoint) and
+; 3 frees (h3, h2, h). A double-reversed shared prefix (the bug the WI-3 bail
+; avoided) would show more of any of them:
 ; The SeenGates dedup claim ("adjointed exactly once") is pinned by COUNT, not
 ; prose: the Rule-13 round demonstrated an injected DUPLICATE addc adjoint passed
 ; every prefix here (in-place adjoints are invisible to UNC-COUNT/FRE-COUNT).
@@ -71,7 +78,7 @@ declare i32 @cq_theta_si32(i32, double)
 
 define void @slice(i32 %x) {
 entry:
-  %h = call i32 @cq_theta_si32(i32 %x, double 1.000000e-01)
+  %h = call i32 @cq_theta_si32(i32 0, double 1.000000e-01)
   %h1 = add i32 %h, 1
   %h2 = add i32 %h1, 1                            ; dead terminal A (shares %h1)
   %h3 = mul i32 %h1, 2                            ; dead terminal B (shares %h1)

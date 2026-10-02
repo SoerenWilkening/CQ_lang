@@ -61,7 +61,7 @@
 ;     with `a` kept. LIFO is what guarantees that liveness, and the CHECK order
 ;     below pins it: `trunc_i80_to_i32_unc` reads %h_op BEFORE %h_op is freed,
 ;     `or_i80_hl_unc` reads %h_cast BEFORE %h_cast is freed, `zext_i32_to_i80_unc`
-;     reads the root BEFORE the root is freed. An adjoint reading an already-freed
+;     reads the root BEFORE the root is un-rotated. An adjoint reading an already-freed
 ;     rail would be a hidden measurement on a collapsed wire (Rule 6).
 ;
 ;   * PROVEN-CLEAN FREE, AND ONLY THEN — pinned by CHECK-NEXT, not plain CHECK.
@@ -71,10 +71,11 @@
 ;     |0⟩: `cqrt_alloc_i32(%x)` initialises the root to the alloc-time CLASSICAL
 ;     BASIS state |x⟩ (runtime/cq_runtime.h — the allocator takes an initial
 ;     classical value), and `cqrt_ry(-θ)` restores exactly THAT state, not |0⟩.
-;     What licenses the root's free is that it is provably DISENTANGLED and in a
-;     KNOWN classical state, which is a different proof obligation from the
-;     derived rails' — worth spelling out, since `cqrt_free` is a hardware reset
-;     = projective measurement (Rule 6) and the two cases are licensed differently.
+;     So the root is KEPT, never freed (bd 5c5b, libcqops vmz9). This file used to
+;     license its free as "provably DISENTANGLED and in a KNOWN classical state";
+;     that is measurement immunity, not the |0⟩ proof a `cqrt_free` (a hardware
+;     reset = projective measurement, Rule 6) requires, and the backend's free
+;     certificate convicts it.
 ;     ADJACENCY IS THE POINT AND IT IS LOAD-BEARING: a plain (non-`-NEXT`)
 ;     directive pins only relative ORDER, and a stray gate inserted BETWEEN an
 ;     `_unc` and its `cqrt_free` re-dirties the just-zeroed rail, turning that free
@@ -97,7 +98,7 @@
 ; The lowered body is ONE contiguous stream — verified against the real lowered
 ; output, not assumed — so every directive after the anchor is a `-NEXT` form, and
 ; no gate, no free and no extra template call may appear anywhere between the
-; alloc and the last free.
+; alloc and `ret`.
 ;
 ; Forward chain: theta -> alloc + ry, the i80 widen, the HL bitwise or, the narrow.
 ; CHECK:      %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
@@ -116,9 +117,9 @@
 ; CHECK-NEXT: call void @cq_template_zext_i32_to_i80_unc(i32 %[[W]], i32 %[[H]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[W]])
 ; The root closes differently: un-rotate to the alloc-time classical basis state
-; |x>, then free that disentangled, known-state rail.
+; |x> — not |0> — and keep it (no free).
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; The whole-DAG adjoint is the VOID `_unc`, NEVER the fresh-minting `_inv` twin
 ; (an `_inv` here would allocate a NEW rail instead of returning the old one to
@@ -128,7 +129,7 @@
 ; CHECK-NOT: cq_template_trunc_i80_to_i32_inv
 ; The intrinsic surface is fully lowered.
 ; CHECK-NOT: cq_theta_
-; Exactly four frees, one per rail: no fifth free after the root's. (Spelled with
+; Exactly three frees, one per derived rail: none after the root's un-rotation. (Spelled with
 ; `call void @` so it cannot match the module-scope `declare void @cqrt_free(i32)`
 ; that shares this trailing [last match -> EOF] region.)
 ; CHECK-NOT: call void @cqrt_free(

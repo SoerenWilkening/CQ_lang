@@ -65,14 +65,17 @@
 ;     in play here are different, and the difference is real:
 ;       - the DERIVED `out` rail genuinely reaches |0>, and it earns that proof
 ;         from the XOR-back IMMEDIATELY preceding it;
-;       - the two ROOT rails are NOT freed at |0>. `cqrt_alloc_i32(%x)`
+;       - the two ROOT rails do NOT return to |0>. `cqrt_alloc_i32(%x)`
 ;         initialises a root to the alloc-time CLASSICAL BASIS STATE |x>, and
-;         `Ry(-theta)` restores THAT state — not |0>. What licenses their free is
-;         that each is provably DISENTANGLED and in a known classical state.
-;     Both proofs are only good IMMEDIATELY after the instruction that
-;     establishes them, which is why every free below is CHECK-NEXT-pinned rather
+;         `Ry(-theta)` restores THAT state — not |0>. So the roots are KEPT,
+;         never freed (bd 5c5b, libcqops vmz9). This file used to license their
+;         free as "provably DISENTANGLED and in a known classical state"; that is
+;         measurement immunity, not the |0> proof `cqrt_free` requires, and the
+;         backend's free certificate convicts the reset of |x>.
+;     The derived rail's proof is only good IMMEDIATELY after the instruction that
+;     establishes it, which is why its free below is CHECK-NEXT-pinned rather
 ;     than pinned by a plain CHECK — a single stray in-place gate slipped between
-;     an un-compute/un-rotation and its free re-dirties that rail and turns the
+;     an un-compute and its free re-dirties that rail and turns the
 ;     free into a hidden measurement that collapses `q1`/`q2` (empirically a
 ;     passing mutant under a plain CHECK directive; nothing else covers it at the
 ;     lit layer — tools/free_pairing_check.py is an e2e stage-2b gate and never
@@ -86,7 +89,7 @@
 ; RUN: %filecheck %s --check-prefix=CNT < %t.cqd0.ll
 ;
 ; The CHECK-LABEL + unbroken CHECK-NEXT chain below seals the WHOLE function body,
-; from `entry:` to the last free, against any inserted instruction — including the
+; from `entry:` to `ret`, against any inserted instruction — including the
 ; region before the first gate, where a prepended stray gate otherwise slips in
 ; unnoticed.
 ;
@@ -102,15 +105,14 @@
 ; Reversed adjoint (LIFO, leaf-first): the AND rail is XOR-ed back to |0> from
 ; the STILL-LIVE roots %[[HA]]/%[[HB]] in DD-3 slots (out, then the forward
 ; operands in original order), then that now-proven-|0> rail is freed; only then
-; do the roots un-rotate to their alloc-time basis states and free, in reverse
-; allocation order. Every free is CHECK-NEXT-adjacent to the instruction that
-; proves its rail.
+; do the roots un-rotate to their alloc-time basis states, in reverse
+; allocation order, and stay allocated. The one free is CHECK-NEXT-adjacent to
+; the instruction that proves its rail.
 ; CHECK-NEXT: call void @cq_template_and_i32_unc(i32 %[[D]], i32 %[[HA]], i32 %[[HB]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HB]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HB]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HA]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HA]])
+; CHECK-NEXT: ret void
 ;
 ; The adjoint is the VOID `_unc`, never the fresh-minting `_inv` twin (an `_inv`
 ; here would allocate a NEW result rail and leave the old one dirty and
@@ -125,12 +127,12 @@
 ; past the end of the chain is a double-uncompute / use-after-free (Rule 8) and an
 ; extra `cqrt_free` is a double-free of an already-reset rail (Rule 6), and both
 ; were empirically passing mutants before this prefix existed. Exactly ONE `_unc`
-; (the single AND gate, adjointed once) and THREE frees (the AND rail + both
-; roots). NOTE the deliberate ordering: BOTH `CNT-NOT`s sit after the LAST
+; (the single AND gate, adjointed once) and ONE free (the AND rail; the roots
+; are kept). NOTE the deliberate ordering: BOTH `CNT-NOT`s sit after the LAST
 ; positive directive so each scopes [last match -> EOF] and catches an APPENDED
 ; duplicate; the mid-chain region is already sealed by the CHECK-NEXT chain above.
 ; CNT-COUNT-1: _unc(i32 %
-; CNT-COUNT-3: call void @cqrt_free(
+; CNT-COUNT-1: call void @cqrt_free(
 ; CNT-NOT:     call void @cqrt_free(
 ; CNT-NOT:     _unc(i32 %
 ;

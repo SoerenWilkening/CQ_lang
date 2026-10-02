@@ -17,7 +17,9 @@
 ; with a NEGATED angle (no `_inv`/`_unc` rotation symbol exists). NOTHING is minted
 ; (the void uncompute zeroes the rail in place — never the fresh-minting `_inv`
 ; OPERATION, which would free a dirty rail = a hidden measurement, Rule 6/8). The
-; `cqrt_free` targets the recovered ROOT (`h0`), now |0> after the un-rotation.
+; un-rotation returns the recovered ROOT (`h0`) to its runtime seed |x>, NOT |0>,
+; so the root is kept, never freed (bd 5c5b, libcqops vmz9; this sentence used to
+; claim |0> and the free that went with it was dirty). Only the mul rail is freed.
 ;
 ; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a) — AND THIS FILE IS NOW THE
 ; CLAUSE-(d) ORDERING PIN. `q = q + 1` lowers IN PLACE, so the reassignment chain
@@ -32,6 +34,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; Forward chain (theta → alloc + ry, then the two reassignments):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H0:[a-zA-Z0-9_.]+]], double 2.500000e-01)
@@ -40,12 +43,12 @@
 ;
 ; Reversed whole-chain adjoint (LIFO) via the void in-place `_unc` forms:
 ; mul_unc(out=h2, src=h1) BEFORE add_unc(out=h1, src=h0) BEFORE ry(-θ), each
-; reading its STILL-LIVE forward source; then free the |0> root h0. No fresh mint.
+; reading its STILL-LIVE forward source; the root h0 is then kept. No fresh mint.
 ; CHECK:     call void @cq_template_mul_i32_hl_unc(i32 %[[H2]], i32 %[[H0]], i32 2)
 ; CHECK:     call void @cqrt_free(i32 %[[H2]])
 ; CHECK:     call void @cqrt_addc_i32(i32 %[[H0]], i32 -1)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H0]], double -2.500000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H0]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[H0]])
 ;
 ; CHECK-NOT: cq_template_mul_i32_hl_inv
 ; CHECK-NOT: cq_template_add_i32_hl_inv
@@ -65,3 +68,10 @@ entry:
   %mul = mul i32 %add, 2
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

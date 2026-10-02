@@ -46,7 +46,7 @@
 ;     SOURCE LIVENESS at the adjoint step is load-bearing, not incidental.
 ;   * Whole-DAG LIFO, leaf-first, is what guarantees that liveness: the leaf `%d`
 ;     is reversed FIRST, while its source %h is still allocated; only then is the
-;     root un-rotated and freed. Free the root first and the adjoint would be
+;     root un-rotated. Free the root first and the adjoint would be
 ;     unrealizable (it would have to read a rail the hardware already reset).
 ;   * The adjoint is the VOID `_unc`, never the fresh-minting `_inv` — an `_inv`
 ;     here would allocate a NEW rail and leave the dead one dirty and entangled
@@ -57,10 +57,12 @@
 ;     zero from the still-live source, and only THEN is `cqrt_free(%d)` emitted.
 ;     The ROOT %h does NOT return to |0⟩ and was never there — `cqrt_alloc_i32(%x)`
 ;     initialises it to the alloc-time CLASSICAL BASIS STATE |x⟩, so `ry(-θ)`
-;     restores |x⟩, not |0⟩. What licenses `cqrt_free(%h)` is that the rail is
-;     provably DISENTANGLED and in a KNOWN CLASSICAL state — its write history
-;     reduces to identity, the same clause `tools/free_pairing_check.py` applies
-;     at e2e stage 2b. Either way: no dirty free, so no hidden measurement.
+;     restores |x⟩, not |0⟩. So %h is KEPT, never freed (bd 5c5b, libcqops vmz9).
+;     This file used to license `cqrt_free(%h)` as "provably DISENTANGLED and in a
+;     KNOWN CLASSICAL state" (its write history reduces to identity, the clause
+;     `tools/free_pairing_check.py` (A2) still applies at e2e stage 2b); that is
+;     measurement immunity, not the |0⟩ proof `cqrt_free` requires, and the
+;     backend's free certificate convicts it. No dirty free, no hidden measurement.
 ;   * ADJACENCY IS PART OF THAT PROOF, which is why the reversal CHECKs below are
 ;     CHECK-NEXT and not plain CHECK. "Freed at |0⟩" is a claim about the rail's
 ;     state AT THE FREE SITE, so one extra non-diagonal gate spliced between an
@@ -89,15 +91,15 @@
 ; CHECK-NOT: cqrt_free
 ; Reversed adjoint (LIFO, leaf-first): the void `_unc(out=%d, src=%h, lit=3)` —
 ; `out` prepended, forward operands in ORIGINAL `_hl` order, reading the STILL-LIVE
-; root %h; then the now-proven-|0> rail free, then un-rotate + free the root at its
-; alloc-time classical |x>. Handle identity is captured, not just symbol presence:
+; root %h; then the now-proven-|0> rail free, then un-rotate the root to its
+; alloc-time classical |x> and keep it. Handle identity is captured, not just symbol presence:
 ; the adjoint must read THAT rail in THAT slot. CHECK-NEXT throughout, because the
 ; real emission is contiguous and the Rule-6 claim is about the rail's state AT the
 ; free site — nothing may be interleaved into this run.
 ; CHECK-NEXT: call void @cq_template_lshr_i32_hl_unc(i32 %[[D]], i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[D]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; The adjoint is the VOID `_unc`, never a fresh-minting `_inv`; the intrinsic is gone.
 ; CHECK-NOT: cq_template_lshr_i32_hl_inv

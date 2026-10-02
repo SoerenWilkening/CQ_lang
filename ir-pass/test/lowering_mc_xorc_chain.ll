@@ -40,7 +40,8 @@ declare i32 @cq_theta_si32(i32, double)
 ; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[H]], i32 3)
 ; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[H]], i32 9)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): the rail holds its seed 41, not |0>: kept, never freed.
+; CHECK-NEXT: ret void
 define void @chain() {
 entry:
   %a  = call i32 @cq_theta_si32(i32 41, double 5.000000e-01)
@@ -58,7 +59,7 @@ entry:
 ; CHECK-NEXT: call void @cqrt_xorc_i32(i32 %[[H2]], i32 3)
 ; CHECK-NEXT: call void @cqrt_addc_i32(i32 %[[H2]], i32 -5)
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H2]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H2]])
+; CHECK-NEXT: ret void
 define void @mixed() {
 entry:
   %a  = call i32 @cq_theta_si32(i32 41, double 5.000000e-01)

@@ -13,19 +13,22 @@
 ; The reversal is the spine's, not a special case: `ChainWalk::isInPlaceGateOn`
 ; learned `cqrt_addc_<W>` in this same increment, so the gate joins `%a`'s DAG,
 ; `EmitInverse` adjoints it by NEGATING the immediate, and reverse program order
-; puts that adjoint before the `cqrt_ry` un-rotation and the `cqrt_free`.
+; puts that adjoint before the `cqrt_ry` un-rotation. The rail is then KEPT, not
+; freed: Ry-dagger restores its nonzero literal seed, not |0⟩ (bd 5c5b, libcqops
+; vmz9).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 true)
 ; CHECK:     call void @cqrt_ry_i1(i32 %[[H]], double 5.000000e-01)
 ; CHECK:     call void @cqrt_addc_i1(i32 %[[H]], i1 true)
-; The adjoint (negated immediate), then the un-rotation, then the free of the
-; ONE rail this program ever allocated:
+; The adjoint (negated immediate), then the un-rotation, and NO free of the ONE
+; rail this program ever allocated (it holds its seed, not |0⟩):
 ; CHECK:     call void @cqrt_addc_i1(i32 %[[H]], i1 true)
 ; CHECK:     call void @cqrt_ry_i1(i32 %[[H]], double -5.000000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NEXT: ret void
 ;
 ; No out-of-place rail is minted and none is uncomputed by a data `_unc`:
 ; CHECK-NOT: cq_template_add_
@@ -43,3 +46,10 @@ entry:
   %c = add i1 %a, true        ; parent DEAD after -> in place
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i1(i1 true)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

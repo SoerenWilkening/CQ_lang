@@ -23,9 +23,12 @@ declare i16 @cq_theta_si16(i16, double)
 declare i64 @cq_theta_sll(i64, double)
 
 ; CHECK-LABEL: define void @w_i8
-; CHECK:       call void @cqrt_xorc_i8(i32 %[[H8:[a-zA-Z0-9_.]+]], i8 42)
+; CHECK:       %[[H8:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i8(i8 11)
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H8]])
 ; CHECK:       call void @cqrt_xorc_i8(i32 %[[H8]], i8 42)
-; CHECK:       call void @cqrt_free(i32 %[[H8]])
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H8]])
+; CHECK:       call void @cqrt_xorc_i8(i32 %[[H8]], i8 42)
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H8]])
 define void @w_i8() {
 entry:
   %a = call i8 @cq_theta_si8(i8 11, double 5.000000e-01)
@@ -34,9 +37,12 @@ entry:
 }
 
 ; CHECK-LABEL: define void @w_i16
-; CHECK:       call void @cqrt_xorc_i16(i32 %[[H16:[a-zA-Z0-9_.]+]], i16 100)
+; CHECK:       %[[H16:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i16(i16 21)
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H16]])
 ; CHECK:       call void @cqrt_xorc_i16(i32 %[[H16]], i16 100)
-; CHECK:       call void @cqrt_free(i32 %[[H16]])
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H16]])
+; CHECK:       call void @cqrt_xorc_i16(i32 %[[H16]], i16 100)
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H16]])
 define void @w_i16() {
 entry:
   %a = call i16 @cq_theta_si16(i16 21, double 5.000000e-01)
@@ -45,9 +51,14 @@ entry:
 }
 
 ; CHECK-LABEL: define void @w_i64
-; CHECK:       call void @cqrt_xorc_i64(i32 %[[H64:[a-zA-Z0-9_.]+]], i64 1000000)
+; CHECK:       %[[H64:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i64(i64 51)
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H64]])
 ; CHECK:       call void @cqrt_xorc_i64(i32 %[[H64]], i64 1000000)
-; CHECK:       call void @cqrt_free(i32 %[[H64]])
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H64]])
+; CHECK:       call void @cqrt_xorc_i64(i32 %[[H64]], i64 1000000)
+; bd 5c5b (libcqops vmz9): each root holds its nonzero seed after Ry-dagger, so none
+; is freed — pinned from each root's alloc to the next CHECK-LABEL (or EOF).
+; CHECK-NOT:   call void @cqrt_free(i32 %[[H64]])
 define void @w_i64() {
 entry:
   %a = call i64 @cq_theta_sll(i64 51, double 5.000000e-01)

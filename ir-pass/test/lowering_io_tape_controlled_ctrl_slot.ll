@@ -27,6 +27,12 @@
 ; AND frees. A module-global or "any tape write in the function" rule would drop
 ; %P's free.
 ;
+; BOTH ROOTS ARE SEEDED WITH THE LITERAL 0, and that is load-bearing (bd 5c5b,
+; libcqops vmz9). A runtime seed is not provably |0⟩ at birth, so `BirthFreeze`
+; would keep %P (no free to discriminate) and would keep %H for a reason that is
+; not the record — masking the slot-blindness this file exists to pin. With zero
+; seeds the record freeze is the ONLY reason %H stays allocated.
+;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
 ; RUN: %filecheck %s --check-prefix=NOFREE < %t.cqd0.ll
@@ -36,8 +42,8 @@ declare i32 @cqrt_tape_write_i32_controlled(i32, i32, i32)
 
 define void @slice(i32 %u0, i32 %u1, i32 %plain) {
 entry:
-  %ctrl = call i32 @cq_theta_si32(i32 %u0, double 5.000000e-01)
-  %p = call i32 @cq_theta_si32(i32 %u1, double 2.500000e-01)
+  %ctrl = call i32 @cq_theta_si32(i32 0, double 5.000000e-01)
+  %p = call i32 @cq_theta_si32(i32 0, double 2.500000e-01)
   %tape = call i32 @cqrt_tape_alloc()
   %w = call i32 @cqrt_tape_write_i32_controlled(i32 %ctrl, i32 %tape, i32 %plain)
   ret void
@@ -45,9 +51,9 @@ entry:
 
 ; The ctrl rail %H is recorded and frozen (reversed, never freed); the unrecorded
 ; sibling %P reverses AND frees:
-; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
-; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
-; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u1)
+; CHECK:     %[[H:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
+; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[H]], double 5.000000e-01)
+; CHECK:     %[[P:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 0)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[P]], double 2.500000e-01)
 ; CHECK:     call i32 @cqrt_tape_write_i32_controlled(i32 %[[H]], i32 %{{[a-zA-Z0-9_.]+}}, i32 %plain)
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[P]], double -2.500000e-01)
@@ -57,5 +63,7 @@ entry:
 ; CHECK-NOT: cq taint escape
 
 ; The ctrl-slot rail is never freed, anywhere in the module:
-; NOFREE:     %[[H2:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u0)
+; Anchored on the tape write's CTRL slot: both roots now mint `cqrt_alloc_i32(i32 0)`,
+; and one anchor per prefix keeps `tools/fixture_guard_liveness.py` able to check it.
+; NOFREE:     call i32 @cqrt_tape_write_i32_controlled(i32 %[[H2:[a-zA-Z0-9_.]+]],
 ; NOFREE-NOT: call void @cqrt_free(i32 %[[H2]])

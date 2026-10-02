@@ -73,8 +73,9 @@
 ;
 ;  * FREE ONLY A PROVEN-SAFE RAIL, IN LIFO ORDER (Rule 6). Each rail is freed on
 ;    the step IMMEDIATELY AFTER the adjoint that restored it: the widened flag
-;    after `zext_unc`, the compare flag after `icmp_ult_..._unc`, and each theta
-;    root after its own `cqrt_ry(-theta)`. That adjacency is pinned below with
+;    after `zext_unc` and the compare flag after `icmp_ult_..._unc`; each theta
+;    root is un-rotated by its own `cqrt_ry(-theta)` and KEPT (bd 5c5b — see the
+;    THETA ROOTS item below). That adjacency is pinned below with
 ;    CHECK-NEXT and NOT with plain CHECK, deliberately: a stray in-place gate
 ;    slipped between an adjoint and its `cqrt_free` (e.g. `cqrt_x` on the rail
 ;    just zeroed) RE-DIRTIES the rail and turns the free into a hidden
@@ -83,21 +84,21 @@
 ;    would also catch it, but that is an e2e stage-2b gate and never runs on lit
 ;    fixtures — here the CHECK-NEXT chain IS the Rule-6 gate. Do not loosen it.
 ;
-;    The two rail classes are freed on DIFFERENT proofs; do not conflate them:
+;    The two rail classes are NOT in the same state; do not conflate them:
 ;      - DERIVED rails (the compare flag and the widened flag) genuinely reach
 ;        |0>. Each was minted fresh by its template, and its void `_unc` XORs the
 ;        recomputed value back out — |0>-restoration, `free_pairing_check.py`'s
 ;        T1/T2/T3 clause for MINTED rails.
 ;      - THETA ROOTS do NOT reach |0>, and writing that they do would be wrong.
 ;        `cqrt_alloc_i32(%x)` initialises the root to the alloc-time CLASSICAL
-;        BASIS STATE |x>, so `cqrt_ry(-theta)` restores |x>, not |0>. What
-;        licenses their free is that they are provably DISENTANGLED and in a
-;        KNOWN CLASSICAL state — the checker's A2 clause for ALLOCATED rails
-;        ("the write history REDUCES TO IDENTITY, returning the rail to its
-;        alloc-time classical v"), `ry(theta)` pairing with `ry(-theta)`.
-;        (Two committed fixtures, lowering_uncompute_{cast_chain,lh_slot}.ll, say
-;        "the |0> root". That is house shorthand and it is imprecise — do not
-;        propagate it into new files.)
+;        BASIS STATE |x>, so `cqrt_ry(-theta)` restores |x>, not |0>. So the
+;        roots are KEPT, never freed (bd 5c5b, libcqops vmz9). This file used to
+;        license their free as "provably DISENTANGLED and in a KNOWN CLASSICAL
+;        state" — the checker's A2 clause for ALLOCATED rails ("the write
+;        history REDUCES TO IDENTITY, returning the rail to its alloc-time
+;        classical v"). That is measurement immunity, not the |0> proof
+;        `cqrt_free` requires; the backend's free certificate convicts it, and
+;        (A2) still certifies it (the stage-2b half, filed separately).
 ;    Note the roots un-rotate in reverse allocation order — %h_q2 (allocated
 ;    second) before %h_q1 — which the CHECK sequence pins.
 ;
@@ -131,17 +132,16 @@ entry:
 ; then a proven-|0> free. The compare adjoint is the VOID `_unc` in DD-3 slots —
 ; out prepended, then q1, q2 in ORIGINAL order — reading both still-live roots;
 ; the flag rail is then a proven-|0> free. Finally the roots un-rotate in reverse
-; allocation order and are freed — at their alloc-time classical basis state |x>,
-; NOT at |0> (see the Rule-6 bullet above). Every free is CHECK-NEXT-adjacent to
-; the adjoint that restored it. Every handle is i32 (Rule 15); no fresh mint.
+; allocation order to their alloc-time classical basis states — NOT |0> (see the
+; Rule-6 bullet above) — and are kept. Every free is CHECK-NEXT-adjacent to the
+; adjoint that restored it. Every handle is i32 (Rule 15); no fresh mint.
 ; CHECK-NEXT: call void @cq_template_zext_i1_to_i32_unc(i32 %[[CAST]], i32 %[[CMP]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[CAST]])
 ; CHECK-NEXT: call void @cq_template_icmp_ult_i32_unc(i32 %[[CMP]], i32 %[[HQ1]], i32 %[[HQ2]])
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[CMP]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HQ2]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HQ2]])
 ; CHECK-NEXT: call void @cqrt_ry_i32(i32 %[[HQ1]], double -2.500000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[HQ1]])
+; CHECK-NEXT: ret void
 ;
 ; The uncompute adjoint is the VOID `_unc`, NEVER the fresh-minting `_inv` (an
 ; `_inv` here would leak a new rail instead of restoring the old one), and the

@@ -16,10 +16,12 @@
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 2.500000e-01)
 ; CHECK:     %[[D:[a-zA-Z0-9_.]+]] = call i32 @cq_template_sub_i32_lh(i32 100, i32 %[[H]])
 ; Reversed adjoint: void `_unc(out=%d, lit=100, src=%h)` — DD-3 slots preserved,
-; reading the still-live root %h; then free the |0> root.
+; reading the still-live root %h; the root then returns to its runtime seed |x>,
+; not |0>, and is KEPT (bd 5c5b, libcqops vmz9; this used to say "free the |0>
+; root").
 ; CHECK:     call void @cq_template_sub_i32_lh_unc(i32 %[[D]], i32 100, i32 %[[H]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ;
 ; CHECK-NOT: cq_template_sub_i32_lh_inv
 ; CHECK-NOT: cq_theta_si32

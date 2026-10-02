@@ -8,22 +8,27 @@
 ; fma qql uses — a distinct STEM needs zero uncompute-spine code (Rule 14).
 ; Sources are kept live through the forward pass and uncomputed in strict reverse
 ; program order; every rail is freed only after being returned to |0> (Rule 6/8).
+; The two theta roots are reverse-played to their runtime seeds |u>,|v>, not |0>,
+; so they are kept allocated (bd 5c5b, libcqops vmz9).
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEA < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEB < %t.cqd0.ll
 ;
 ; Forward: alloc both, forward funnel producer, phase-arm Rz.
 ; CHECK:     %[[HA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
 ; CHECK:     %[[HB:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v)
 ; CHECK:     %[[R:[a-zA-Z0-9_.]+]] = call i32 @cq_template_fshl_i32_qql(i32 %[[HA]], i32 %[[HB]], i32 16)
 ; Reverse-play (LIFO): undo Rz, void `_unc` (out-first), free funnel rail, then
-; undo+free each source theta.
+; undo each source theta (kept: see above).
 ; CHECK:     call void @cq_template_fshl_i32_qql_unc(i32 %[[R]], i32 %[[HA]], i32 %[[HB]], i32 16)
 ; CHECK:     call void @cqrt_free(i32 %[[R]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[HB]], double -2.5
-; CHECK:     call void @cqrt_free(i32 %[[HB]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[HB]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[HA]], double -5.0
-; CHECK:     call void @cqrt_free(i32 %[[HA]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[HB]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[HA]])
 ;
 ; CHECK-NOT: @llvm.fshl
 ; CHECK-NOT: cq_template_fshl_i32_qql_inv
@@ -42,3 +47,12 @@ entry:
   %r = call i32 @llvm.fshl.i32(i32 %a, i32 %b, i32 16)
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEA:     %[[RA:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %u)
+; NOFREEA-NOT: call void @cqrt_free(i32 %[[RA]])
+; NOFREEB:     %[[RB:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %v)
+; NOFREEB-NOT: call void @cqrt_free(i32 %[[RB]])

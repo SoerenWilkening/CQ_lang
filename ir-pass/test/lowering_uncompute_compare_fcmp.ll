@@ -16,6 +16,7 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 declare double @cq_theta_f64(double, double)
 
 define void @slice(double %x) {
@@ -33,14 +34,22 @@ entry:
 ; Reversed adjoint (LIFO): zext_unc(out=%w, src=%c) BEFORE the compare adjoint
 ; fcmp_..._hl_unc(out=%c, src=%q, f64 5.0) reading the still-live root — DD-3 slots
 ; (out i32, src i32 handle, f64 classical), then the proven-|0> rail free, then
-; un-rotate + free the root. Void `_unc`, no fresh mint.
+; un-rotate the root, which is KEPT: Ry-dagger restores its runtime seed |x>, not
+; |0> (bd 5c5b, libcqops vmz9). Void `_unc`, no fresh mint.
 ; CHECK:     call void @cq_template_zext_i1_to_i32_unc(i32 %[[CAST]], i32 %[[CMP]])
 ; CHECK:     call void @cq_template_fcmp_olt_f64_hl_unc(i32 %[[CMP]], i32 %[[H]], double 5.000000e+00)
 ; CHECK:     call void @cqrt_free(i32 %[[CMP]])
 ; CHECK:     call void @cqrt_ry_f64(i32 %[[H]], double -2.500000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ;
 ; The adjoint is the VOID `_unc`, never the fresh-minting `_inv`; the theta is lowered.
 ; CHECK-NOT: cq_template_fcmp_olt_f64_hl_inv
 ; CHECK-NOT: cq_template_fcmp_olt_f64_inv
 ; CHECK-NOT: cq_theta_f64
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_f64(double %x)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])

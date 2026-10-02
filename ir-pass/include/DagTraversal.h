@@ -79,7 +79,15 @@ struct DataDag {
   // recompute from a label the inverse gate no longer restores. Same effect: no
   // free, every adjoint kept.
   //
-  // Consumed ONLY by `Uncomputation::emitDagReversal`, deliberately: `D.Calls`
+  // bd 5c5b (libcqops vmz9) adds a THIRD writer, `BirthFreeze` (step 3d): clause
+  // (a), "R starts at |0⟩". Reverse-play returns a rail to its BIRTH state, and a
+  // `cqrt_alloc_<W>(seed)` root is born |seed⟩, so only a template producer or a
+  // null-constant-seeded alloc can be freed. Same effect: no free, every adjoint
+  // kept.
+  //
+  // Consumed by `Uncomputation::emitDagReversal` (the suppression) and by its
+  // planner's `addDischargedRails` (which counts only rails it will free),
+  // deliberately: `D.Calls`
   // stays intact so the driver's invertibility / InLoop / dominance scans still
   // see every recovered gate and still decline loudly. Pruning `Calls` instead
   // would blind all three (bd 261j(a) risks 1-2, MEASURED rc=1 → rc=0).

@@ -88,7 +88,8 @@ entry:
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[H2]], double -1.000000e-01)
 ; CHECK-NEXT: call void @cqrt_free(i32 %[[H2]])
 ; CHECK-NEXT: call void @cqrt_ry_f64(i32 %[[H]], double -5.000000e-01)
-; CHECK-NEXT: call void @cqrt_free(i32 %[[H]])
+; bd 5c5b (libcqops vmz9): %[[H2]] (seed +0.0) is born |0> and freed above; %[[H]]
+; (runtime seed %u0) returns to |u0>, not |0>, so it is kept.
 ; CHECK-NEXT: ret void
 ; CHECK-NEXT: }
 
@@ -120,5 +121,5 @@ entry:
 ; an ORDER assertion, and a `-NOT` after a count in the same prefix is
 ; windowed to the text past the count.  `-COUNT-n` then `-NOT` of the SAME
 ; pattern is the only spelling that pins `exactly n`.
-; FCNT-COUNT-3: call void @cqrt_free(
+; FCNT-COUNT-2: call void @cqrt_free(
 ; FCNT-NOT:     call void @cqrt_free(

@@ -437,7 +437,10 @@ Instruction *dagInsertPoint(ArrayRef<Instruction *> Ats, PostDominatorTree &PDT)
 // hole exists for the PLAIN store's borrowed `idx`/`val` and PRE-DATES uow0 — uow0
 // merely stopped an unrelated mis-attribution from accidentally papering over the
 // guarded-flag instance of it. Fixture:
-// lowering_uncompute_borrowed_operand_free_order.ll.
+// lowering_uncompute_borrowed_operand_free_order.ll. Since bd 5c5b every rail of
+// that measured shape is birth-frozen (a hand-written alloc is tainted only through
+// a non-constant seed, so it is never provably |0⟩ and never freed); the touch
+// keying stays as the structural guarantee for a future null-seeded tainted root.
 //
 // THIS RE-KEYING DOES NOT CHANGE THE FREED SET — only positions, and only LATER. A
 // rail is freeable iff some recovered gate WRITES it (`Freeable`), exactly as
@@ -552,7 +555,9 @@ void emitDagReversal(const DataDag &D, Instruction *At, WidthDispatch &wd,
                    // `cqrt_free` on it would be a hidden measurement of the
                    // (now-restored) classical cells (§2.9, Inc 1
                    // "array-handle-never-freed"); a frozen rail is the bd 261j(a)
-                   // case above.
+                   // case above, a bd r2j3.3 record-window reader, or (bd 5c5b)
+                   // a rail whose BIRTH is not provably |0⟩ — a `cqrt_alloc`
+                   // root this reversal returns to |seed⟩, not |0⟩.
       CallInst *Free = B.CreateCall(wd.freeFn(), {FR});
       if (DebugLoc DL = G->getDebugLoc())
         Free->setDebugLoc(DL);

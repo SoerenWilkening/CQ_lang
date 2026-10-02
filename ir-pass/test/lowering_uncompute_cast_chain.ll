@@ -10,7 +10,8 @@
 ;   * the i64 arithmetic adjoint `cq_template_add_i64_hl_unc(out, src, i64 7)` keeps
 ;     the i64 classical literal at its real width in the forward slot.
 ; Liveness is leaf-first: add_unc reads the still-live cast handle, cast_unc reads
-; the still-live alloc root, then the rotation un-rotates the root and it is freed.
+; the still-live alloc root, then the rotation un-rotates the root. The root is then
+; KEPT: Ry-dagger restores its runtime seed |x>, not |0> (bd 5c5b, libcqops vmz9).
 ;
 ; M-C NOTE (bd test_C_libtooling-6uqc, Increment 2a): the `+ 7` lowers IN PLACE
 ; onto the CAST rail (`cqrt_addc_i64`), so the chain is root -> cast rail and the
@@ -22,17 +23,19 @@
 ;
 ; RUN: %cq-opt -load-pass-plugin %cq-pass -passes=cq-lowering -S %s > %t.cqd0.ll
 ; RUN: %filecheck %s < %t.cqd0.ll
+; RUN: %filecheck %s --check-prefix=NOFREEROOT < %t.cqd0.ll
 ;
 ; Forward chain (theta -> alloc + ry, then the zext cast, then the i64 add):
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H:[a-zA-Z0-9_.]+]], double 2.500000e-01)
 ; CHECK:     %[[W:[a-zA-Z0-9_.]+]] = call i32 @cq_template_zext_i32_to_i64(i32 %[[H]])
 ; CHECK:     call void @cqrt_addc_i64(i32 %[[W]], i64 7)
 ; Reversed adjoint (LIFO): add_unc(out=%d, src=%w, i64 7) BEFORE zext_unc(out=%w,
-; src=%h) BEFORE ry(-θ), then free the |0> root %h. All handles i32; no fresh mint.
+; src=%h) BEFORE ry(-θ); the root %h is kept (|x>, not |0>). All handles i32; no
+; fresh mint.
 ; CHECK:     call void @cqrt_addc_i64(i32 %[[W]], i64 -7)
 ; CHECK:     call void @cq_template_zext_i32_to_i64_unc(i32 %[[W]], i32 %[[H]])
 ; CHECK:     call void @cqrt_ry_i32(i32 %[[H]], double -2.500000e-01)
-; CHECK:     call void @cqrt_free(i32 %[[H]])
+; CHECK-NOT: call void @cqrt_free(i32 %[[H]])
 ;
 ; CHECK-NOT: cq_template_add_i64_hl_inv
 ; CHECK-NOT: cq_template_zext_i32_to_i64_inv
@@ -50,3 +53,10 @@ entry:
   %d = add i64 %w, 7                              ; dead mixed-width chain terminal
   ret void
 }
+
+; bd 5c5b review r2: the root is never freed ANYWHERE after its birth — own prefix,
+; one anchor (the alloc), so the window runs alloc -> EOF and also covers a free
+; slipped in BEFORE the root's un-rotation; `tools/fixture_guard_liveness.py`
+; checks the window by injection.
+; NOFREEROOT:     %[[RT:[a-zA-Z0-9_.]+]] = call i32 @cqrt_alloc_i32(i32 %x)
+; NOFREEROOT-NOT: call void @cqrt_free(i32 %[[RT]])
