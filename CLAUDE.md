@@ -12,7 +12,10 @@ This file is *how to work*. The previous 150 KB manual, the roadmap and the per-
 records are in git at tag `pre-northstar` (`git show pre-northstar:CLAUDE.md`). Code
 comments and fixture headers that cite "CLAUDE.md Rule N", "L10", "§4x" or `docs/prd/…`
 mean that file (likewise `docs/design/rssa-swap-control/`, `docs/rationale/`, `docs/archive/`,
-`ROADMAP.md`). They are history, not rules.
+`ROADMAP.md`). They are history, not rules. The same holds for a bd memory key cited in a
+comment or fixture that `bd memories` no longer lists: the 2026-10-03 consolidation retired
+it (521 memories to 134). Read the old text from Dolt history with
+`cd .beads/embeddeddolt/test_C_libtooling && dolt sql -r csv -q "select value from config as of 'vlca8sj02jpgil1i0ntj8vhnbhmd197d' where config.key='kv.memory.<key>'"`.
 
 ## The defining hazard
 
@@ -282,9 +285,12 @@ with a wrong body is trusted), the twin half of `kyy1`, `jlf8`, `yldg`, `etj3`, 
 2026-10-01. Warned rather than silent (owner ruling `lyyf`): `r2j3.8` (a reversed QRAM
 call's computed index stays live until its `_unc`; deferred by the owner). Latent, masked by
 a loud decline today: `r2j3.9` (`GuardedStoreArmEmit` never discharges a hoisted tainted-arm
-value chain). Instrument gap: `r2j3.4` (stage 2b certifies a diagonal phase inside a
-superposing restore window). `r2j3.1`–`r2j3.3` and `r2j3.5` were fixed 2026-10-01
-(lab report 035).
+value chain). Dirty-rail leak (r2j3 section B): `iwr7` (a dead `cq_template_zext` beside a
+QRAM load of the same index is never uncomputed; 10 libm goldens). Latent, not yet built
+from C (section D): `hp0x` (the 6.5 classical-call argument clause keys on `noundef` alone,
+so a `dereferenceable` parameter without `noundef` is hoisted with poison). Instrument gap:
+`r2j3.4` (stage 2b certifies a diagonal phase inside a superposing restore window).
+`r2j3.1`–`r2j3.3` and `r2j3.5` were fixed 2026-10-01 (lab report 035).
 `cfmv` (a user `cq_theta` erased by a residue simplifier) was closed 2026-09-18 with no
 recorded reason: re-verify before trusting it. Over-declines to remove are tracked in the
 goal-1 umbrellas `dm7f` (control flow), `8h7d` (loops), `p3kd` (function lifting) and
